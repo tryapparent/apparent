@@ -34,6 +34,9 @@ fn hosted_upload_logging_child() {
 fn hosted_upload_logging_omits_sensitive_paths_and_error_contents() {
     let root = std::env::temp_dir().join(format!("hosted-logging-{}", random_id().unwrap()));
     fs::DirBuilder::new().mode(0o700).create(&root).unwrap();
+    // Darwin's temporary-directory aliases must not trigger the symlink guard
+    // before this fixture reaches its deliberately malformed credential.
+    let root = root.canonicalize().unwrap();
     struct Cleanup(PathBuf);
     impl Drop for Cleanup {
         fn drop(&mut self) {
