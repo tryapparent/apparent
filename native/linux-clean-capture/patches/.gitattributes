@@ -1,0 +1,2 @@
+# Unified diff context uses literal single-space lines and can end on one.
+*.patch whitespace=-blank-at-eol,-blank-at-eof

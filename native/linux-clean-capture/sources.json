@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "inputs": [
+    {
+      "name": "Hyprland",
+      "commit": "efb50993780079460b0cbed1363e2166a2de1d9f",
+      "url": "https://codeload.github.com/hyprwm/Hyprland/tar.gz/efb50993780079460b0cbed1363e2166a2de1d9f",
+      "sha256": "5b05ce7ba5296fa46e666852bf108ab5af121bf577f8043787e2d2c252d8f109",
+      "destinations": [
+        "Hyprland"
+      ]
+    },
+    {
+      "name": "portal",
+      "commit": "1d20fadc304f6601452b5db65ed91197dba77041",
+      "url": "https://codeload.github.com/flatpak/xdg-desktop-portal/tar.gz/1d20fadc304f6601452b5db65ed91197dba77041",
+      "sha256": "d849fbf765ee3e84ed7907c21f24023305b6f1cafd6ab43444f28ddaa33e079e",
+      "destinations": [
+        "portal"
+      ]
+    },
+    {
+      "name": "backend",
+      "commit": "cc8e5ef8fb2acef3db488b9a33b0c48c2a4ee204",
+      "url": "https://codeload.github.com/hyprwm/xdg-desktop-portal-hyprland/tar.gz/cc8e5ef8fb2acef3db488b9a33b0c48c2a4ee204",
+      "sha256": "040f7ccbba3a701ca116b18e5da1069408b4e8f3fb0839f4afd93ef7080d877a",
+      "destinations": [
+        "backend"
+      ]
+    },
+    {
+      "name": "udis86",
+      "commit": "5336633af70f3917760a6d441ff02d93477b0c86",
+      "url": "https://codeload.github.com/canihavesomecoffee/udis86/tar.gz/5336633af70f3917760a6d441ff02d93477b0c86",
+      "sha256": "2f459fafa19535ef1be417bf7614e4f92475e5787d7ba76df20287cc29d1b5a9",
+      "destinations": [
+        "Hyprland/subprojects/udis86"
+      ]
+    },
+    {
+      "name": "hyprland-protocols",
+      "commit": "bd153e76f751f150a09328dbdeb5e4fab9d23622",
+      "url": "https://codeload.github.com/hyprwm/hyprland-protocols/tar.gz/bd153e76f751f150a09328dbdeb5e4fab9d23622",
+      "sha256": "f31112800ec83ec529d0d35699a3d20fa0ed3cbb97d344146340815fec5ac055",
+      "destinations": [
+        "Hyprland/subprojects/hyprland-protocols",
+        "backend/subprojects/hyprland-protocols"
+      ]
+    },
+    {
+      "name": "glaze",
+      "commit": "b518eec7a22e56ffa238b072c07f47efa7cea97f",
+      "url": "https://codeload.github.com/stephenberry/glaze/tar.gz/b518eec7a22e56ffa238b072c07f47efa7cea97f",
+      "sha256": "0d108903feb443df316fb53eaec2fd6c1c6d96b368562ad830debc5c6c29c304",
+      "destinations": [
+        "glaze"
+      ]
+    },
+    {
+      "name": "libglnx",
+      "commit": "ff64d52116ae74f0d25e24f089db28921ea171ff",
+      "url": "https://codeload.github.com/GNOME/libglnx/tar.gz/ff64d52116ae74f0d25e24f089db28921ea171ff",
+      "sha256": "fcf7670f61f003ae290ed8486814dc89bbe50eebb0bd5f56a77ebccc6ddefc94",
+      "destinations": [
+        "portal/subprojects/libglnx"
+      ]
+    },
+    {
+      "name": "gvdb",
+      "commit": "c6f2359cc1d00f16e0a0e2527fa0bc1882b8b5ab",
+      "url": "https://codeload.github.com/GNOME/gvdb/tar.gz/c6f2359cc1d00f16e0a0e2527fa0bc1882b8b5ab",
+      "sha256": "14f082f122eb4e495e2ac96f235efb01525ae5d4a1f0fd98148b4f7c7f95ccd2",
+      "destinations": [
+        "portal/subprojects/gvdb"
+      ]
+    }
+  ]
+}
