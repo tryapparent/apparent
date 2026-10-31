@@ -1,0 +1,98 @@
+"""Credential-free checks for exact Pages delivery identity."""
+import importlib.util
+from io import BytesIO
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location('pages', Path(__file__).with_name('publish_pages.py'))
+assert spec is not None and spec.loader is not None
+pages = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(pages)
+
+
+class PagesDeliveryTests(unittest.TestCase):
+    def test_old_main_is_refused(self):
+        with patch.object(pages.subprocess, 'check_output', return_value='b' * 40 + '\trefs/heads/main\n'):
+            with self.assertRaisesRegex(ValueError, 'stale'):
+                pages.current_main('a' * 40)
+
+    def test_readback_binds_revision_before_requesting_public_pages(self):
+        project = {'canonical_deployment': {'latest_stage': {'status': 'success'},
+                   'deployment_trigger': {'metadata': {'commit_hash': 'b' * 40}}}}
+        with patch.object(pages, 'api', return_value=project), patch.object(pages, 'urlopen') as http:
+            with self.assertRaisesRegex(ValueError, 'checked revision'):
+                pages.verify('a' * 40, Path('unused'))
+            http.assert_not_called()
+
+    def test_readback_requires_exact_root_and_connect_bytes_and_pages_marker(self):
+        sha = 'a' * 40
+        project = {'canonical_deployment': {'id': 'deployment', 'url': 'https://deployment.apparent-capture.pages.dev',
+                   'latest_stage': {'status': 'success'}, 'deployment_trigger': {'metadata': {'commit_hash': sha}}}}
+        class Response(BytesIO):
+            headers = {'X-Apparent-Publisher': 'cloudflare-pages'}
+        class MovieResponse(BytesIO):
+            headers = {'Content-Type': 'video/mp4'}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'site/public').mkdir(parents=True)
+            (root / 'site/public/Apparent-ghost-demo-v4-lilac.mp4').write_bytes(b'checked movie')
+            for name in ['index.html', 'connect/index.html', 'connect/device/index.html']:
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).write_bytes(name.encode())
+            def fetch(request, timeout):
+                if request.full_url.endswith('.mp4'):
+                    return MovieResponse(b'checked movie')
+                path = {'/': 'index.html', '/connect/': 'connect/index.html', '/connect/device/': 'connect/device/index.html'}
+                from urllib.parse import urlsplit
+                return Response(path[urlsplit(request.full_url).path].encode())
+            with patch.object(pages, 'ROOT', root), patch.object(pages, 'api', return_value=project), patch.object(pages, 'urlopen', side_effect=fetch):
+                self.assertEqual(pages.verify(sha, root)['deployment_id'], 'deployment')
+                (root / 'connect/device/index.html').write_text('different bytes')
+                with self.assertRaisesRegex(ValueError, 'different bytes'):
+                    pages.verify(sha, root)
+            with patch.object(pages, 'api', return_value=project), patch.object(pages, 'urlopen', return_value=BytesIO(b'index.html')):
+                with self.assertRaises((AttributeError, ValueError)):
+                    pages.verify(sha, root)
+
+    def test_main_stages_only_public_inputs_and_selects_pages_not_worker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, data in [('site/dist-apparent/404.html', 'not found'),
+                               ('site/dist-apparent/_routes.json', '{}'),
+                               ('site/functions/movie.js', 'function source'),
+                               ('site/lib/metadata.js', 'fixed metadata'),
+                               ('site/wrangler.pages.jsonc', '{"name":"apparent-capture"}'),
+                               ('site/wrangler.jsonc', 'unrelated Worker'),
+                               ('.env', 'private sentinel')]:
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).write_text(data)
+            def deploy(argv, cwd, env, check):
+                self.assertEqual(argv[1:3], ['pages', 'deploy'])
+                self.assertIn('apparent-capture', argv)
+                self.assertEqual((cwd / 'wrangler.jsonc').read_text(), '{"name":"apparent-capture"}')
+                self.assertEqual(sorted(p.name for p in cwd.iterdir()), ['dist-apparent', 'functions', 'lib', 'wrangler.jsonc'])
+                self.assertFalse((cwd / '.env').exists())
+                self.assertEqual(env['CLOUDFLARE_ACCOUNT_ID'], pages.ACCOUNT)
+            with patch.object(pages, 'ROOT', root), patch.dict(pages.os.environ, {'GITHUB_SHA': 'a' * 40, 'GITHUB_REF': 'refs/heads/main', 'WEBSITE_PAGES_API_TOKEN': 'synthetic'}), patch.object(pages, 'current_main') as current, patch.object(pages.subprocess, 'run', side_effect=deploy) as upload, patch.object(pages, 'verify', return_value={'revision': 'a' * 40}):
+                pages.main()
+                current.assert_called_once_with('a' * 40)
+                upload.assert_called_once()
+                (root / 'site/dist-apparent/private-link').symlink_to(root, target_is_directory=True)
+                upload.reset_mock()
+                with self.assertRaisesRegex(ValueError, 'symlink'):
+                    pages.main()
+                upload.assert_not_called()
+
+    def test_clanker_publisher_cannot_activate_production(self):
+        spec = importlib.util.spec_from_file_location('old', Path(__file__).with_name('publish_site.py'))
+        assert spec is not None and spec.loader is not None
+        old = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(old)
+        with self.assertRaisesRegex(ValueError, 'retired'):
+            old.publish('/opt/presentations/releases', 'unused', 'a' * 40, 'unused')
+
+
+if __name__ == '__main__':
+    unittest.main()
