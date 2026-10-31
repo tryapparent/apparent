@@ -815,6 +815,7 @@
       "name": "Running build identity",
       "says": "Settings › About shows the package version and compiled commit, with +modified for tracked local edits and build unknown when revision metadata is unavailable.",
       "status": "main",
+      "added": "2026-10-31",
       "platforms": ["mac", "linux"],
       "docs": ["docs/onboarding-and-settings.md"]
     },
