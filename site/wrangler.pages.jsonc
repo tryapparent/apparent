@@ -1,0 +1,6 @@
+{
+  "name": "apparent-capture",
+
+  "pages_build_output_dir": "./dist-apparent",
+  "compatibility_date": "2026-10-30"
+}
