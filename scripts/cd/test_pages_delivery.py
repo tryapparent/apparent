@@ -1,5 +1,6 @@
 """Credential-free checks for exact Pages delivery identity."""
 import importlib.util
+from email.message import Message
 from io import BytesIO
 from pathlib import Path
 import tempfile
@@ -88,17 +89,17 @@ class PagesDeliveryTests(unittest.TestCase):
     def test_readiness_retry_is_bounded_and_never_masks_integrity_or_auth_failures(self):
         from urllib.error import HTTPError
         for code in (404, 502, 503, 504):
-            with self.subTest(code=code), patch.object(pages, 'verify', side_effect=[HTTPError('https://example.test', code, 'temporary', {}, None), {'deployment_id': 'ready'}]) as verify, patch.object(pages.time, 'sleep') as sleep:
+            with self.subTest(code=code), patch.object(pages, 'verify', side_effect=[HTTPError('https://example.test', code, 'temporary', Message(), None), {'deployment_id': 'ready'}]) as verify, patch.object(pages.time, 'sleep') as sleep:
                 self.assertEqual(pages.verify_ready('a' * 40, Path('checked')), {'deployment_id': 'ready'})
                 self.assertEqual(verify.call_count, 2)
                 sleep.assert_called_once_with(1)
-        for error in [HTTPError('https://example.test', 403, 'denied', {}, None), ValueError('different bytes')]:
+        for error in [HTTPError('https://example.test', 403, 'denied', Message(), None), ValueError('different bytes')]:
             with patch.object(pages, 'verify', side_effect=error) as verify, patch.object(pages.time, 'sleep') as sleep:
                 with self.assertRaises(type(error)):
                     pages.verify_ready('a' * 40, Path('checked'))
                 verify.assert_called_once()
                 sleep.assert_not_called()
-        with patch.object(pages, 'verify', side_effect=HTTPError('https://example.test', 404, 'not ready', {}, None)) as verify, patch.object(pages.time, 'sleep') as sleep:
+        with patch.object(pages, 'verify', side_effect=HTTPError('https://example.test', 404, 'not ready', Message(), None)) as verify, patch.object(pages.time, 'sleep') as sleep:
             with self.assertRaises(HTTPError):
                 pages.verify_ready('a' * 40, Path('checked'))
             self.assertEqual(verify.call_count, 5)
