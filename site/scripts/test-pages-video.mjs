@@ -240,7 +240,7 @@ test("cancellation aborts an in-flight next-chunk request without leaking its bo
   assert.equal((await pending).done, true)
 })
 
-test("an ASSETS 200 is accepted only when the entire chunk was requested", async () => {
+test("an ASSETS full-chunk 200 supports an exact whole-chunk range", async () => {
   const response = await serve({ Range: "bytes=0-8388607" }, "GET", binding("ignored-range"))
   assert.equal(response.status, 206)
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), original.subarray(0, 8388608))
