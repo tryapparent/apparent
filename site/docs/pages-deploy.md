@@ -96,32 +96,40 @@ Do not change `hosted.tryapparent.com`, its Worker routes, API/auth services,
 Google callback, cookies, OAuth configuration or credentials. Do not change
 `tryapparent.com` or `www.tryapparent.com` or their Pages project.
 
-## Rollback
+## Origin retirement and rollback
 
-Keep `presentations-caddy-1`, all volumes, `/opt/presentations/Caddyfile`, the
-`apparent-site` symlink and its old target intact. The old publisher refuses new
-production writes, but origin service remains available.
+The canonical Pages cutover was accepted on 2026-11-01, from main
+`6f043ff4ab4f4bdfa7e180c97ef7c37a397ff2ef`, Actions run `41252306148`, deployment
+`476a95dd.apparent-capture.pages.dev`. Public-file hashes, full/range movie bytes,
+first-load chapter seeking, mobile controls, Connect redirects and anonymous
+credentialed session/CORS were checked at the canonical hostname. Real Google
+sign-in and device approval still require human presence; these checks do not
+claim an authenticated end-to-end session.
+
+After acceptance, the obsolete `app.tryapparent.com` Caddy serving block, its
+`apparent-site` symlink, historical capture-site releases and obsolete Connect
+staging copy were removed from Clanker. There is no Clanker fallback. Do not
+restore the old A record, recreate that symlink or run old overlay activators.
+The shared `presentations-caddy-1` container, volumes, other Caddy routes and the
+separate document-product deployment services remain: they are not capture-site
+resources. The cooperative lock file remains to avoid splitting lock ownership.
+
+For a bad subsequent Pages release:
 
 1. Disable `WEBSITE_CD_ENABLED` and ensure no website deployment is in flight.
-2. Guard against a newer operator cutover: read the exact app DNS record and
-   Pages domain ownership before changing either.
-3. Restore app's saved full DNS payload (type A, content `148.251.88.146`, proxied
-   true, TTL 1, original comment/tags) using the same record ID.
-4. Remove only this migration's app custom-domain association from
-   `apparent-capture` if needed to release Cloudflare routing. Do not delete the
-   Pages project or any other custom domain. Remove only zone redirect rules with
-   refs `apparent_capture_connect_device` and `apparent_capture_connect_home`,
-   preserving all other rules. Connect's unchanged CNAME follows app back to the
-   existing Caddy shortcut.
-5. Verify original homepage hash, videos/ranges, Connect/legacy routes and both
-   document-product domains. Do not switch the Clanker release symlink: it was
-   never modified by this migration.
+2. Read the current production deployment and recorded previously accepted
+   deployment. Do not overwrite a newer operator's repair.
+3. Use Pages' production-deployment rollback within `apparent-capture`. Keep its
+   custom domain, DNS, Connect redirect rules and unrelated projects unchanged.
+4. Verify the selected deployment ID, exact public bytes, private-path denial,
+   video ranges/seeking and Connect behavior at `app.tryapparent.com` before
+   re-enabling the gate.
 
-The private operator snapshot is retained outside the served tree at
-`~/.local/share/apparent-deployments/pages-cutover/`. Never publish its inventory.
-For a bad subsequent Pages release, use Pages' production-deployment rollback to
-the recorded previously accepted deployment; verify the exact deployment ID and
-public bytes. Do not roll back hosted databases or the auth Worker with this site.
+The private cutover and retirement receipts remain outside served content at
+`~/.local/share/apparent-deployments/pages-cutover/`. They are historical evidence,
+not permission or a procedure to reactivate the retired origin. Never publish
+their inventories. Do not roll back hosted databases or the auth Worker with this
+site.
 
 ## Verification
 
