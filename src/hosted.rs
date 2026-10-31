@@ -1452,11 +1452,17 @@ pub fn command(command: ConnectCommand) -> Result<()> {
             client.process_once()
         }
         ConnectCommand::Upload { bundle } => {
-            let bundle = crate::handoff::resolve_bundle_dir(&bundle)?;
-            println!(
-                "Queued hosted capture: {}",
-                client.enqueue_explicit(&bundle)?
-            );
+            // CLI errors are printed with their source chain by main. Do not
+            // attach path/credential parsing errors to these public diagnostics.
+            let bundle = crate::handoff::resolve_bundle_dir(&bundle).map_err(|_| {
+                anyhow::anyhow!("invalid_bundle: choose an existing .apparent directory")
+            })?;
+            client.enqueue_explicit(&bundle).map_err(|_| {
+                anyhow::anyhow!(
+                    "queue_unavailable: check upload consent, sign-in and private hosted state; local capture is unchanged"
+                )
+            })?;
+            println!("Queued hosted capture; inspect its ID with apparent connect status");
             client.process_once()
         }
     }
@@ -1509,6 +1515,10 @@ pub fn start_worker() {
 #[cfg(test)]
 #[path = "hosted_tests.rs"]
 mod regression_tests;
+
+#[cfg(test)]
+#[path = "hosted_logging_tests.rs"]
+mod logging_tests;
 
 #[cfg(test)]
 mod tests {

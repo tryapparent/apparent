@@ -5,6 +5,25 @@ import { MAP_DIR } from "./scripts/feature-audit.ts"
 
 const TYPES: Record<string, string> = { ".txt": "text/plain; charset=utf-8", ".md": "text/markdown; charset=utf-8" }
 
+// Match only account/device routes, keeping device codes and other query bytes.
+function connectEntry(): Plugin {
+  const rewrite = (preview: boolean) => (req: { url?: string }, _res: unknown, next: () => void) => {
+    const url = req.url ?? ""
+    const query = url.indexOf("?")
+    const path = query < 0 ? url : url.slice(0, query)
+    if (/^\/(?:connect|hosted)(?:\/device)?\/?$/.test(path)) {
+      // Prerender removes the temporary input. Preview serves its route documents.
+      req.url = (preview ? `${path.replace(/\/$/, "")}/index.html` : "/connect.html") + (query < 0 ? "" : url.slice(query))
+    }
+    next()
+  }
+  return {
+    name: "apparent-connect-entry",
+    configureServer(server) { server.middlewares.use(rewrite(false)) },
+    configurePreviewServer(server) { server.middlewares.use(rewrite(true)) },
+  }
+}
+
 // llms.txt, llms-full.txt and skill.md at the site root, plus the JSON-LD in index.html.
 function forAgents(): Plugin {
   return {
@@ -45,9 +64,9 @@ function featureMap(): Plugin {
 
 export default defineConfig({
   // The public Apparent demo has no Kit release feed, agent instructions or feature map.
-  plugins: [react(), ...(process.env.APPARENT_PUBLIC_SITE === "1" ? [] : [forAgents(), featureMap()])],
+  plugins: [react(), connectEntry(), ...(process.env.APPARENT_PUBLIC_SITE === "1" ? [] : [forAgents(), featureMap()])],
   // three.js lives in the lazily loaded hero brush chunk.
-  build: { chunkSizeWarningLimit: 700 },
+  build: { chunkSizeWarningLimit: 700, rolldownOptions: { input: { index: "index.html", connect: "connect.html" } } },
   // Previews are shared over Tailscale (studio.*.ts.net).
   server: { allowedHosts: [".ts.net"] },
   preview: { allowedHosts: [".ts.net"] },

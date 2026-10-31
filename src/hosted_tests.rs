@@ -1186,7 +1186,12 @@ fn hosted_explicit_upload_recovers_changed_expired_and_tombstoned_ids() {
     );
     // An immutable reserved manifest cannot be reused after the local bundle changes.
     let stage = Scratch::new(&f.client.state).unwrap();
-    let mut job = f.client.jobs().unwrap().remove(0);
+    let Ok(jobs) = f.client.jobs() else {
+        panic!("Could not read hosted queue for explicit upload recovery");
+    };
+    let Some(mut job) = jobs.into_iter().next() else {
+        panic!("Hosted queue was empty for explicit upload recovery");
+    };
     job.files = snapshot(&bundle, &stage.0).unwrap();
     job.status = "failed".into();
     f.client.save_job(&job).unwrap();
@@ -1262,7 +1267,12 @@ fn hosted_automatic_dedup_ends_when_terminal_record_is_pruned() {
         fs::rename(f.bundle(), &a).unwrap();
         let b = f.bundle();
         let first = f.client.enqueue(&a).unwrap();
-        let mut job = f.client.jobs().unwrap().remove(0);
+        let Ok(jobs) = f.client.jobs() else {
+            panic!("Could not read hosted jobs for terminal-record dedup test");
+        };
+        let Some(mut job) = jobs.into_iter().next() else {
+            panic!("Hosted queue was empty for terminal-record dedup test");
+        };
         job.status = terminal.into();
         f.client.save_job(&job).unwrap();
         assert_eq!(f.client.enqueue(&a).unwrap(), first);
