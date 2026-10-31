@@ -9,6 +9,7 @@ import unittest
 
 
 HOOK = Path(__file__).resolve().parents[1] / ".githooks" / "pre-push"
+SELECTOR = HOOK.parents[1] / "scripts" / "verification.py"
 
 
 def run(*args, cwd, env=None, input=None):
@@ -30,7 +31,15 @@ class PrePushGuardTests(unittest.TestCase):
         run("git", "config", "user.name", "Test", cwd=self.repo)
         run("git", "config", "user.email", "test@example.invalid", cwd=self.repo)
         (self.repo / "file").write_text("original\n")
-        run("git", "add", "file", cwd=self.repo)
+        (self.repo / "scripts").mkdir()
+        (self.repo / "tests").mkdir()
+        # The driver runs tests as well as Cargo. Keep this fixture finite:
+        # copying the real hook tests here would recursively invoke itself.
+        fixture_test = "import unittest\nclass Fixture(unittest.TestCase):\n    def test_fixture(self):\n        self.assertTrue(True)\n"
+        for name in ("test_fixture_push.py", "test_verification.py"):
+            (self.repo / "tests" / name).write_text(fixture_test)
+        shutil.copy2(SELECTOR, self.repo / "scripts" / "verification.py")
+        run("git", "add", ".", cwd=self.repo)
         run("git", "commit", "-qm", "original", cwd=self.repo)
         self.head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
         self.bin = Path(self.tmp.name) / "bin"
@@ -39,7 +48,8 @@ class PrePushGuardTests(unittest.TestCase):
         taskpolicy = self.bin / "taskpolicy"
         taskpolicy.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$COMMAND_LOG\"\nexit \"${MOCK_STATUS:-0}\"\n")
         taskpolicy.chmod(0o755)
-        self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", COMMAND_LOG=str(self.log))
+        self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
+                        COMMAND_LOG=str(self.log), PYTHONDONTWRITEBYTECODE="1")
 
     def push(self, oid=None, local="refs/heads/feature", remote="refs/heads/feature", env=None):
         line = f"{local} {oid or self.head} {remote} {'0' * 40}\n"
@@ -59,12 +69,37 @@ class PrePushGuardTests(unittest.TestCase):
         self.assertEqual(self.log.read_text().splitlines(), [
             "-c utility cargo build -j 3 --offline",
             "-c utility cargo test -j 3 --offline -- --test-threads=2",
+            "-c utility cargo build --manifest-path capture/engine/Cargo.toml -j 3 --offline",
+            "-c utility cargo test --manifest-path capture/engine/Cargo.toml -j 3 --offline -- --test-threads=2",
         ])
 
     def test_failed_verification_rejects_push(self):
         result = self.push(env=dict(self.env, MOCK_STATUS="1"))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("failed", result.stderr)
+
+    def test_document_only_push_avoids_cargo(self):
+        run("git", "update-ref", "refs/remotes/origin/main", self.head, cwd=self.repo)
+        (self.repo / "refactor.md").write_text("plan\n")
+        run("git", "add", "refactor.md", cwd=self.repo)
+        run("git", "commit", "-qm", "document", cwd=self.repo)
+        self.head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
+        result = self.push()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_later_document_commit_does_not_hide_source_delta(self):
+        run("git", "update-ref", "refs/remotes/origin/main", self.head, cwd=self.repo)
+        (self.repo / "file").write_text("source change\n")
+        run("git", "add", "file", cwd=self.repo)
+        run("git", "commit", "-qm", "source", cwd=self.repo)
+        (self.repo / "refactor.md").write_text("plan\n")
+        run("git", "add", "refactor.md", cwd=self.repo)
+        run("git", "commit", "-qm", "document", cwd=self.repo)
+        self.head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
+        result = self.push()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("cargo build", self.log.read_text())
 
     def test_tree_changed_during_verification_rejects_push(self):
         taskpolicy = self.bin / "taskpolicy"
@@ -128,7 +163,7 @@ class PrePushGuardTests(unittest.TestCase):
         failed = run("git", "push", "origin", "HEAD:refs/heads/test", cwd=self.repo,
                      env=dict(self.env, MOCK_STATUS="1"))
         self.assertNotEqual(failed.returncode, 0)
-        self.assertIn("build failed", failed.stderr)
+        self.assertIn("verification failed", failed.stderr)
         self.assertNotEqual(run("git", "show-ref", "--verify", "refs/heads/test",
                                 cwd=remote).returncode, 0)
 

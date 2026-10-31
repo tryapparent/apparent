@@ -1,0 +1,62 @@
+name: Changed-tree verification
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  select:
+    runs-on: ubuntu-24.04
+    outputs:
+      root: ${{ steps.plan.outputs.root }}
+      engine: ${{ steps.plan.outputs.engine }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Selector and hook contracts (no native proof)
+        run: |
+          python3 -m unittest discover -s tests -p 'test_pre_push_guard.py'
+          python3 -m unittest discover -s tests -p 'test_verification.py'
+      - id: plan
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 scripts/verification.py --base "${BASE:-unknown}" --github-output "$GITHUB_OUTPUT"
+
+  rust:
+    needs: select
+    if: needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Linux application dependencies
+        if: runner.os == 'Linux' && needs.select.outputs.root == 'true'
+        run: ./scripts/linux/dependencies.sh
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            capture/engine -> target
+      - name: Execute the same changed-tree checks (not GUI acceptance)
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # Engine finalizer proofs reject group-writable cache ancestors.
+          export TMPDIR="$(mktemp -d "$HOME/.apparent-verification.XXXXXX")"
+          trap 'rm -rf "$TMPDIR"' EXIT
+          python3 scripts/verification.py --base "${BASE:-unknown}" --run --online
