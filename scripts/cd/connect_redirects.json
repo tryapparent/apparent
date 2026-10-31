@@ -1,0 +1,30 @@
+[
+  {
+    "ref": "apparent_capture_connect_device",
+    "description": "Preserve existing Connect device shortcut independently of Clanker",
+    "expression": "http.host eq \"connect.tryapparent.com\" and http.request.uri.path in {\"/device\" \"/device/\" \"/connect/device\" \"/connect/device/\" \"/hosted/device\" \"/hosted/device/\"}",
+    "enabled": true,
+    "action": "redirect",
+    "action_parameters": {
+      "from_value": {
+        "status_code": 302,
+        "target_url": { "value": "https://app.tryapparent.com/connect/device" },
+        "preserve_query_string": true
+      }
+    }
+  },
+  {
+    "ref": "apparent_capture_connect_home",
+    "description": "Preserve existing Connect home shortcut independently of Clanker",
+    "expression": "http.host eq \"connect.tryapparent.com\"",
+    "enabled": true,
+    "action": "redirect",
+    "action_parameters": {
+      "from_value": {
+        "status_code": 302,
+        "target_url": { "value": "https://app.tryapparent.com/connect" },
+        "preserve_query_string": true
+      }
+    }
+  }
+]

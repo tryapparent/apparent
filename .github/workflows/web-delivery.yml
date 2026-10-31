@@ -54,6 +54,12 @@ jobs:
           node scripts/package-apparent.mjs
           node --test scripts/test-brand-favicon.mjs scripts/test-github-stars.mjs scripts/test-latest-download.mjs scripts/test-platform-os.mjs scripts/test-public-homepage.mjs scripts/test-video-demo.mjs
           node --test scripts/test-package-text.mjs scripts/test-expected-canonical-packaging.mjs scripts/test-upstream-link-guard.mjs scripts/test-package-feature-grid.mjs scripts/test-og-stage-redirect.mjs scripts/test-og-video-stage-browser.mjs
+      - name: Reconcile accepted live homepage and prepare Pages-only artifact
+        working-directory: site
+        run: |
+          node --test scripts/test-pages-package.mjs scripts/test-pages-video.mjs
+          node scripts/prepare-pages.mjs
+          node scripts/prepare-pages-video.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: website-${{ github.sha }}
@@ -95,32 +101,18 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: website-${{ github.sha }}
-          path: package
-      - name: Publish checked package through the existing locked Caddy release path
+          path: site/dist-apparent
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+          cache: npm
+          cache-dependency-path: hosted/package-lock.json
+      - run: npm ci
+        working-directory: hosted
+      - name: Publish checked main to Cloudflare Pages (never Clanker or the Worker)
         env:
-          DEPLOY_HOST: ${{ vars.WEBSITE_SSH_HOST }}
-          DEPLOY_USER: ${{ vars.WEBSITE_SSH_USER }}
-          DEPLOY_KEY: ${{ secrets.WEBSITE_SSH_KEY }}
-          KNOWN_HOSTS: ${{ secrets.WEBSITE_KNOWN_HOSTS }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
-          [[ -n "$DEPLOY_KEY" && -n "$KNOWN_HOSTS" ]]
-          install -m 700 -d "$RUNNER_TEMP/ssh"
-          trap 'rm -rf "$RUNNER_TEMP/ssh"' EXIT
-          printf '%s\n' "$DEPLOY_KEY" > "$RUNNER_TEMP/ssh/key"
-          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
-          chmod 600 "$RUNNER_TEMP/ssh/"*
-          ssh_args=(-i "$RUNNER_TEMP/ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" -o ConnectTimeout=15)
-          target="$DEPLOY_USER@$DEPLOY_HOST"
-          incoming=".cache/apparent-cd/$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          ssh "${ssh_args[@]}" "$target" "umask 077; mkdir -p .cache/apparent-cd; mkdir '$incoming'"
-          scp "${ssh_args[@]}" -r package scripts/cd/publish_site.py "$target:$incoming/"
-          baseline=$(ssh "${ssh_args[@]}" "$target" 'readlink -f /opt/presentations/releases/apparent-site')
-          [[ "$baseline" =~ ^/opt/presentations/releases/[a-zA-Z0-9._-]+$ ]]
-          ssh "${ssh_args[@]}" "$target" "python3 '$incoming/publish_site.py' publish '$incoming/package' '$GITHUB_SHA' '$baseline'" > website-receipt.json
-          ssh "${ssh_args[@]}" "$target" "rm -rf '$incoming'"
+          WEBSITE_PAGES_API_TOKEN: ${{ secrets.WEBSITE_PAGES_API_TOKEN }}
+        run: python3 scripts/cd/publish_pages.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
