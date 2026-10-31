@@ -141,5 +141,8 @@ export async function onRequest({ request, env }) {
     },
     cancel: stop,
   }, { highWaterMark: 0 })
-  return new Response(body, { status, headers })
+  // workerd ignores a manually set Content-Length on an ordinary stream.
+  // Its fixed-length stream preserves the wire length, allowing Cloudflare's
+  // custom-domain cache to serve byte ranges instead of a chunked full 200.
+  return new Response(body.pipeThrough(new FixedLengthStream(end - start + 1)), { status, headers })
 }

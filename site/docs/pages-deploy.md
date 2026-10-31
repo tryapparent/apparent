@@ -42,7 +42,11 @@ must prove equivalent design and interactions before retiring this snapshot.
 The approved movie exceeds Pages' 25 MiB asset ceiling. A **Pages Function**, not a
 separate Worker deployment or external origin, serves the existing movie URL from
 small static chunks. It preserves the original bytes, audio, duration and range
-seeking. Only that exact movie path invokes the Function; other website assets
+seeking. Its `FixedLengthStream` supplies a real wire `Content-Length`: a manual
+header on an ordinary stream is ignored by workerd, which can make the custom-domain
+cache replace byte-range responses with full `200` responses and break seeking.
+The workerd HTTP regression checks this boundary; Node response-header tests alone
+do not. Only that exact movie path invokes the Function; other website assets
 remain static. The account stays on its existing plan. Function requests consume
 the existing Workers Free daily allowance; no paid service is activated. The project
 is configured fail-closed. At quota exhaustion the movie may be unavailable; static
