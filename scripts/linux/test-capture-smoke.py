@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
@@ -100,6 +101,85 @@ class ParserTests(unittest.TestCase):
         result = subprocess.run(['bash', str(Path(__file__).with_name('capture-smoke.py')), '--help'], capture_output=True, text=True, timeout=5)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('--consent-timeout', result.stdout)
+
+
+class CleanupTests(unittest.TestCase):
+    def test_reaped_peer_never_signalled_or_probed_and_live_peer_is_joined(self):
+        with tempfile.TemporaryDirectory(prefix='cs-', dir=os.environ.get('TMPDIR')) as directory:
+            recipe = smoke.Recipe(Path(directory), Path('/unused'), 1)
+            stale = recipe.launch([sys.executable, '-c', 'pass'], 'stale.log')
+            stale.wait(timeout=3)
+            live = recipe.launch([sys.executable, '-c', 'import time; time.sleep(120)'], 'live.log')
+            real_killpg = os.killpg
+            def owned_only(pid, sig):
+                # Never deliver even a probe to the stale numeric ID on old code.
+                if pid != stale.pid:
+                    return real_killpg(pid, sig)
+            try:
+                with patch.object(smoke.os, 'killpg', side_effect=owned_only) as signals:
+                    recipe.cleanup()
+                self.assertFalse(any(call.args[0] == stale.pid for call in signals.call_args_list))
+                self.assertIsNotNone(live.returncode)
+                self.assertEqual(recipe.report['gates']['owned_process_cleanup'], 'FAIL')
+                self.assertTrue(any('ownership' in error for error in recipe.report['cleanup_errors']))
+            finally:
+                if live.poll() is None:
+                    live.kill()
+                live.wait(timeout=3)
+
+    def check_anchored_cleanup(self, ignore_term=False, exited=False):
+        with tempfile.TemporaryDirectory(prefix='cs-', dir=os.environ.get('TMPDIR')) as directory:
+            root = Path(directory)
+            recipe = smoke.Recipe(root, Path('/unused'), 1)
+            ready = root / 'ready'
+            code = ('import signal,pathlib,sys,time; '
+                    f'signal.signal(signal.SIGTERM, signal.{"SIG_IGN" if ignore_term else "SIG_DFL"}); '
+                    'pathlib.Path(sys.argv[1]).touch(); ' + ('pass' if exited else 'time.sleep(120)'))
+            job = recipe.launch([sys.executable, '-c', code, str(ready)], 'peer.log')
+            real_killpg = os.killpg
+            def anchored(pid, sig):
+                self.assertIsNone(job.returncode, 'group operation after Popen reap')
+                # WNOWAIT confirms that this exact child is still ours, even exited.
+                os.waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                return real_killpg(pid, sig)
+            try:
+                recipe.wait(ready.exists, 3, 'peer not ready')
+                if exited:
+                    recipe.wait(lambda: os.waitid(os.P_PID, job.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None,
+                                3, 'peer did not exit')
+                with patch.object(smoke.os, 'killpg', side_effect=anchored) as signals:
+                    recipe.cleanup()
+                self.assertIsNotNone(job.returncode)
+                self.assertEqual(recipe.report['gates']['owned_process_cleanup'], 'PASS', recipe.report)
+                self.assertIn(signal.SIGTERM, [call.args[1] for call in signals.call_args_list])
+                if ignore_term:
+                    self.assertIn(signal.SIGKILL, [call.args[1] for call in signals.call_args_list])
+            finally:
+                if job.poll() is None:
+                    job.kill()
+                job.wait(timeout=3)
+
+    def test_live_peer_stopped_and_joined(self):
+        self.check_anchored_cleanup()
+
+    def test_missing_kernel_child_anchor_refuses_all_group_operations(self):
+        with tempfile.TemporaryDirectory(prefix='cs-', dir=os.environ.get('TMPDIR')) as directory:
+            recipe = smoke.Recipe(Path(directory), Path('/unused'), 1)
+            job = recipe.launch([sys.executable, '-c', 'pass'], 'peer.log')
+            # Reap outside Popen, leaving returncode unset: checking the cached
+            # attribute alone cannot establish ownership of the numeric PID.
+            os.waitpid(job.pid, 0)
+            with patch.object(smoke.os, 'killpg') as signals:
+                recipe.cleanup()
+            signals.assert_not_called()
+            self.assertEqual(recipe.report['gates']['owned_process_cleanup'], 'FAIL')
+            job.wait(timeout=3)
+
+    def test_timeout_kill_retains_unreaped_anchor(self):
+        self.check_anchored_cleanup(ignore_term=True)
+
+    def test_exited_but_unreaped_leader_retains_anchor(self):
+        self.check_anchored_cleanup(exited=True)
 
 
 class TransportTests(unittest.TestCase):

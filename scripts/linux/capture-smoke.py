@@ -281,21 +281,41 @@ class Recipe:
                 self.report["cleanup_errors"].append(str(error))
         for job in reversed(self.jobs):
             try:
+                # poll()/wait() elsewhere may already have reaped this child.
+                # A reaped PID is not an ownership token, even for killpg(pid, 0).
+                if job.returncode is not None:
+                    raise ChildProcessError("ownership anchor already reaped; runner must retain/stop guest")
+                os.waitid(os.P_PID, job.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                # This recipe is single-threaded: no poll/wait or SIGCHLD reaper
+                # can release the child until the final wait below. Its unreaped
+                # PID pins the numeric group ID, including when the leader exited.
+                def stopped():
+                    if os.waitid(os.P_PID, job.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is None:
+                        return False
+                    # killpg(0) includes our zombie anchor. Instead require every
+                    # remaining member to be dead before releasing that anchor.
+                    for entry in Path('/proc').iterdir():
+                        if not entry.name.isdigit():
+                            continue
+                        try:
+                            fields = (entry / 'stat').read_text().rsplit(')', 1)[1].split()
+                        except (FileNotFoundError, ProcessLookupError):
+                            continue
+                        if int(fields[2]) == job.pid and fields[0] not in {'Z', 'X'}:
+                            return False
+                    return True
+
                 try:
                     os.killpg(job.pid, signal.SIGTERM)
                 except ProcessLookupError:
                     pass
                 try:
-                    job.wait(timeout=3)
-                except subprocess.TimeoutExpired:
+                    self.wait(stopped, 3, "owned group did not stop after SIGTERM")
+                except Failure:
                     os.killpg(job.pid, signal.SIGKILL)
-                    job.wait(timeout=3)
-                try:
-                    os.killpg(job.pid, 0)
-                    self.report["cleanup_errors"].append(f"process group {job.pid} still exists; runner must retain/stop guest")
-                except ProcessLookupError:
-                    pass
-            except (OSError, subprocess.SubprocessError) as error:
+                    self.wait(stopped, 3, "owned group still active; runner must retain/stop guest")
+                job.wait(timeout=3)  # No numeric group operations after this reap.
+            except (OSError, ValueError, IndexError, Failure, subprocess.SubprocessError) as error:
                 self.report["cleanup_errors"].append(f"process group {job.pid}: {error}")
         # SIGTERM leaves Unix socket directory entries behind. SCP cannot retain
         # sockets: remove only the two known private endpoints after writers stop.
