@@ -12,6 +12,10 @@ use x11rb::rust_connection::RustConnection;
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::OwnedObjectPath;
 
+#[path = "ax_linux_x11.rs"]
+pub(super) mod x11;
+type NativeConnection = RustConnection<x11::DeadlineStream>;
+
 type Result<T> = std::result::Result<T, &'static str>;
 type Ref = (String, OwnedObjectPath);
 const ACCESSIBLE: &str = "org.a11y.atspi.Accessible";
@@ -84,7 +88,7 @@ fn parse_bridge(bytes: &[u8]) -> Result<Ref> {
 }
 
 pub struct Snapshot {
-    conn: RustConnection,
+    conn: NativeConnection,
     wrapper: Ref,
     viewport: Rect,
     frame: Rect,
@@ -93,7 +97,7 @@ pub struct Snapshot {
     y: f64,
     at: Instant,
 }
-struct Grab<'a>(&'a RustConnection);
+struct Grab<'a>(&'a NativeConnection);
 impl Drop for Grab<'_> {
     fn drop(&mut self) {
         let _ = self.0.ungrab_server();
@@ -121,7 +125,7 @@ impl Snapshot {
             return Err("outside-capture");
         }
         let at = Instant::now();
-        let (conn, screen) = RustConnection::connect(None).map_err(|_| "x11-unavailable")?;
+        let (conn, screen) = x11::connect(at + Duration::from_millis(75))?;
         let root = conn.setup().roots[screen].root;
         let atom = conn
             .intern_atom(false, b"_XEMBED_AT_SPI_PATH")
@@ -270,6 +274,12 @@ impl Snapshot {
         if conn.poll_for_event().map_err(|_| "x11-query")?.is_some() {
             return Err("native-changed");
         }
+        if at.elapsed() >= Duration::from_millis(75) {
+            return Err("native-budget");
+        }
+        // Acquisition (including ungrab/barrier) was bounded at 75 ms. All
+        // later event barriers share the original event's total 350 ms budget.
+        conn.stream().set_deadline(at + BUDGET);
         Ok(Self {
             conn,
             wrapper,
@@ -282,6 +292,9 @@ impl Snapshot {
         })
     }
     pub(super) fn unchanged(&self) -> Result<()> {
+        if self.at.elapsed() >= BUDGET {
+            return Err("lookup-budget");
+        }
         // Round-trip barrier flushes structure/property events before inspecting this dedicated queue.
         self.conn
             .get_input_focus()
@@ -295,6 +308,8 @@ impl Snapshot {
             .is_some()
         {
             Err("native-changed")
+        } else if self.at.elapsed() >= BUDGET {
+            Err("lookup-budget")
         } else {
             Ok(())
         }

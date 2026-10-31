@@ -1133,13 +1133,19 @@ impl SharedCaptureTelemetry {
     /// this Mac's screen (not the iPhone mirror) and Accessibility is granted.
     fn probing(&self) -> bool {
         #[cfg(target_os = "linux")]
-        return self.agent_context.load(Ordering::Acquire)
-            && self.capture_mode.load(Ordering::Acquire) != 3
-            && self.linux_nearby_text.load(Ordering::Acquire);
+        {
+            // No recording-source XID reaches this path. Desktop-point ownership is
+            // meaningful only for Display/Region, never a selected Window or Device.
+            self.agent_context.load(Ordering::Acquire)
+                && matches!(self.capture_mode.load(Ordering::Acquire), 0 | 1)
+                && self.linux_nearby_text.load(Ordering::Acquire)
+        }
         #[cfg(not(target_os = "linux"))]
-        self.agent_context.load(Ordering::Acquire)
-            && self.capture_mode.load(Ordering::Acquire) != 3
-            && accessibility_granted()
+        {
+            self.agent_context.load(Ordering::Acquire)
+                && self.capture_mode.load(Ordering::Acquire) != 3
+                && accessibility_granted()
+        }
     }
 
     /// A mouse button went down at a global point.
@@ -1562,53 +1568,62 @@ fn track_shift_ink(
         }
     } else if !pure_shift && prev_shift_ink {
         telemetry.shift_held.store(false, Ordering::Release);
-        if let Some(stroke) = telemetry
+        commit_shift_ink(telemetry, |stroke| {
+            let frame = *telemetry
+                .target_frame
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some((x, y)) = crate::ax::stroke_probe_point(stroke, frame) {
+                #[cfg(target_os = "linux")]
+                if stroke.on.is_none() {
+                    let excluded = telemetry
+                        .excluded_window_ids
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clone();
+                    let passthrough = telemetry
+                        .passthrough_window_ids
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clone();
+                    crate::ax::Prober::shared().probe_stroke(
+                        crate::ax::Target::Stroke(stroke.t0),
+                        x,
+                        y,
+                        frame,
+                        &excluded,
+                        &passthrough,
+                    );
+                }
+                #[cfg(not(target_os = "linux"))]
+                crate::ax::Prober::shared().probe(crate::ax::Target::Stroke(stroke.t0), x, y);
+            }
+        });
+    }
+}
+
+/// Commit geometry before optional attribution. Neither the live ink nor the
+/// completed-strokes lock may span a native query; finish can drain them meanwhile.
+fn commit_shift_ink(telemetry: &SharedCaptureTelemetry, probe: impl FnOnce(&Stroke)) {
+    let completed = {
+        telemetry
             .live_ink
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
-            // Ignore stationary Shift taps (e.g. typing a capital letter without moving the mouse).
-            && is_real_ink(&stroke)
-        {
-            if telemetry.probing() {
-                let frame = *telemetry
-                    .target_frame
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some((x, y)) = crate::ax::stroke_probe_point(&stroke, frame) {
-                    #[cfg(target_os = "linux")]
-                    if stroke.on.is_none() {
-                        let excluded = telemetry
-                            .excluded_window_ids
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .clone();
-                        let passthrough = telemetry
-                            .passthrough_window_ids
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .clone();
-                        crate::ax::Prober::shared().probe_stroke(
-                            crate::ax::Target::Stroke(stroke.t0),
-                            x,
-                            y,
-                            frame,
-                            &excluded,
-                            &passthrough,
-                        );
-                    }
-                    #[cfg(not(target_os = "linux"))]
-                    crate::ax::Prober::shared().probe(crate::ax::Target::Stroke(stroke.t0), x, y);
-                }
-            }
-            telemetry
-                .strokes
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .push(stroke);
-            let _ = telemetry
-                .ui_sender
-                .try_send(LiveOverlayEvent::RequestSnapshot);
+    };
+    // Ignore stationary Shift taps (e.g. typing a capital letter).
+    if let Some(stroke) = completed.filter(is_real_ink) {
+        telemetry
+            .strokes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(stroke.clone());
+        let _ = telemetry
+            .ui_sender
+            .try_send(LiveOverlayEvent::RequestSnapshot);
+        if telemetry.probing() {
+            probe(&stroke);
         }
     }
 }
@@ -2235,6 +2250,101 @@ mod tests {
             scale: 2.0,
         });
         telemetry
+    }
+
+    #[cfg(target_os = "linux")]
+    fn label_test_ink() -> Stroke {
+        Stroke {
+            t0: 1,
+            t1: 20,
+            fw: 1000,
+            fh: 1000,
+            pts: vec![1000, 5000, 0, 3000, 5050, 19],
+            on: None,
+            pin: None,
+            laser: false,
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn selected_window_and_device_never_acquire_desktop_label_snapshot() {
+        let telemetry = session(1000., 1000.);
+        telemetry.agent_context.store(true, Ordering::Release);
+        telemetry.linux_nearby_text.store(true, Ordering::Release);
+        let calls = std::cell::Cell::new(0);
+        let names = std::cell::RefCell::new(Vec::new());
+        // A permissive provider models an otherwise admissible covering plug.
+        // No negative bridge/privacy/occlusion guard can mask mode admission.
+        let covering_plug = |_: &Stroke| {
+            calls.set(calls.get() + 1);
+            names.borrow_mut().push("Friday");
+        };
+        // Same frame and point for all modes: a different covering GtkPlug may
+        // otherwise satisfy every bridge/label guard. Its acquisition callback
+        // (and therefore every downstream Name getter) must remain unreachable.
+        for mode in [CaptureMode::Window, CaptureMode::Device] {
+            telemetry.set_capture_mode(mode);
+            *telemetry.live_ink.lock().unwrap() = Some(label_test_ink());
+            commit_shift_ink(&telemetry, covering_plug);
+            assert_eq!(calls.get(), 0);
+            assert!(names.borrow().is_empty(), "covering plug Name was not read");
+        }
+        for mode in [CaptureMode::Display, CaptureMode::Region] {
+            telemetry.set_capture_mode(mode);
+            *telemetry.live_ink.lock().unwrap() = Some(label_test_ink());
+            commit_shift_ink(&telemetry, covering_plug);
+        }
+        assert_eq!(calls.get(), 2, "positive admission controls");
+        assert_eq!(*names.borrow(), ["Friday", "Friday"]);
+        assert_eq!(telemetry.strokes.lock().unwrap().len(), 4);
+        telemetry.agent_context.store(false, Ordering::Release);
+        telemetry.finish_session();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn silent_x_acquisition_releases_ink_locks_before_finish() {
+        use std::io::Read;
+        use std::os::unix::net::UnixStream;
+        let telemetry = session(1000., 1000.);
+        telemetry.agent_context.store(true, Ordering::Release);
+        telemetry.linux_nearby_text.store(true, Ordering::Release);
+        telemetry.set_capture_mode(CaptureMode::Display);
+        *telemetry.live_ink.lock().unwrap() = Some(label_test_ink());
+        let (client, mut peer) = UnixStream::pair().unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+        let (resume, resume_rx) = flume::bounded(1);
+        let input = Arc::clone(&telemetry);
+        let handle = std::thread::spawn(move || {
+            commit_shift_ink(&input, |_| {
+                let at = std::time::Instant::now();
+                let stream =
+                    crate::ax::DeadlineStream::from_socket(client, at + Duration::from_millis(75))
+                        .unwrap();
+                assert!(
+                    x11rb::rust_connection::RustConnection::connect_to_stream(stream, 0).is_err()
+                );
+                assert!(at.elapsed() < Duration::from_millis(300));
+                // Keep attribution in flight even on an overloaded test host
+                // that schedules finish only after the socket deadline expires.
+                resume_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            });
+        });
+        let mut byte = [0];
+        assert_eq!(peer.read(&mut byte).unwrap(), 1, "actual setup began");
+        assert!(telemetry.live_ink.try_lock().unwrap().is_none());
+        assert_eq!(
+            telemetry.strokes.try_lock().unwrap().as_slice(),
+            &[label_test_ink()]
+        );
+        // Avoid the global worker: this test owns the geometry/finish boundary,
+        // while ax's socket-stall test owns stale label publication.
+        telemetry.agent_context.store(false, Ordering::Release);
+        let (_, strokes) = telemetry.finish_session();
+        assert_eq!(strokes, vec![label_test_ink()]);
+        resume.send(()).unwrap();
+        handle.join().unwrap();
     }
 
 

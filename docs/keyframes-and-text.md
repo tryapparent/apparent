@@ -57,11 +57,19 @@ stroke, through the existing `Stroke.on` → `Mark.on` path. Existing page-suppl
 names win; stroke geometry, images, clicks and clipboard behavior do not change.
 Reprocessing cannot reconstruct a live lookup that was not recorded.
 
-This is a narrow candidate, **not runtime-proven coverage**. The first ordinary
-app acceptance target is the stock external `xfce4-datetime-plugin` in
-`xfce4-panel` (GTK3 `GtkPlug` / `WrapperPlug`, `X-XFCE-Internal=FALSE`), not the
-built-in internal Clock plugin. No app injection or modified image is needed.
-Native proof must still establish the actual installed plugin's tree and result.
+Only **Display and Region** captures are admitted. Window and Device captures
+decline before any native snapshot or AT-SPI query. No recording-source XID is
+passed to this path: a desktop window covering a selected Window is not part of
+that Window's recording. Matching frame, PID or title cannot establish ownership.
+
+This is a narrow candidate, **not runtime-proven coverage**. The stock external
+`xfce4-datetime-plugin` in `xfce4-panel` exposed the explicit GtkPlug reference in
+an isolated X11 guest, but its toggle-button accessible hides the label children.
+It therefore supplies no eligible leaf label and is not supported coverage.
+The next ordinary-app acceptance target is stock external `xfce4-genmon-plugin`
+with normal system-monitor configuration. Its installed tree and actual capture
+result still need native proof. No app injection or modified image is needed;
+the built-in internal Clock plugin is not an external GtkPlug substitute.
 
 At the stroke-probe event a dedicated X connection walks native stacking and
 ancestry under that point. It accepts only the plug's `_XEMBED_AT_SPI_PATH`
@@ -93,13 +101,31 @@ events on the dedicated connection invalidate the snapshot, even if a window is
 replaced with the same XID or its property later returns to the old value. Any
 relevant event causes an empty result rather than a fresh query against the
 replacement. No X server grab is held during D-Bus calls.
+The full rectangle of every accessible ancestor must also be uncovered and inside
+the viewport. A partly covered/clipped plugin can therefore decline even when a
+leaf label itself is visible. Keep that case in the native evaluation matrix;
+this conservative refusal is not partial-subtree occlusion support.
 
 The worker queue holds at most two waiting jobs, plus one running lookup.
-Native traversal has 16 levels, 256 child queries and a 75 ms between-query
-budget. Accessibility traversal has 48 nodes, 12 levels, 192 calls, 50 ms method
-timeouts and a 350 ms between-call budget (including queue age). X server and
-D-Bus connection setup still rely on the local session transport responding;
-these budgets are not a hard process-level kill deadline. Finish drains for at
+Native traversal has 16 levels and 256 child queries. Its dedicated nonblocking
+local Unix socket has one **75 ms acquisition I/O deadline**, covering connect,
+X authentication handshake, all replies/checks, ungrab flush and the event barrier.
+Only local `:DISPLAY[.screen]` pathname sockets are supported; remote/TCP,
+SSH forwarding and abstract-only sockets decline. x11rb encodes/decodes X messages;
+the adapter bounds its Stream reads, writes and poll waits with an absolute deadline.
+Timeout shuts down the dedicated socket; return/drop closes it, so no client or
+server grab is retained awaiting another reply. Successful acquisition releases
+the grab before enqueueing the frozen snapshot, never a delayed fresh query.
+Subsequent X event barriers use the original event's **350 ms total I/O deadline**,
+including queue age, not a new per-call allowance. Geometry is committed and both
+ink/stroke locks released before acquisition, so finish/cancel need not await it.
+
+Auth-file discovery runs once in the background label worker; until ready,
+acquisition declines without waiting. Changes to DISPLAY/Xauthority require an app
+restart. That discovery and D-Bus connection setup can still stall the worker;
+these are availability limits, not a hard process-level kill deadline. Accessibility
+traversal has 48 nodes, 12 levels, 192 calls, 50 ms method timeouts and a 350 ms
+between-call budget. No grab is held across that work. Finish drains for at
 most 400 ms and closes publication; cancellation/session generation is checked
 before and after lookup and under the final store lock. A native event check
 also runs after lookup before publication. Static reason codes appear in the

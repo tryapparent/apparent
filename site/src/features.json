@@ -25,10 +25,10 @@
       "id": "linux-nearby-text",
       "group": "agent",
       "name": "Nearby visible Linux labels for unnamed marks",
-      "says": "Adds a nearby noneditable label through an explicit XEmbed AT-SPI plug bridge without changing ink geometry. No general window matching, OCR or editable text reads.",
+      "says": "Adds a nearby noneditable label through an explicit XEmbed AT-SPI plug bridge for Display/Region captures only, without changing ink geometry. Window/Device decline before native or AT-SPI lookup; no recording-source XID is inferred. No general window matching, OCR or editable text reads.",
       "status": "experiment:linuxNearbyText",
       "platforms": ["linux"],
-      "note": "Default off and also requires agentContext. Candidate only: stock external xfce4-datetime-plugin native X11 proof is pending. Native Wayland/XWayland sessions, missing bridges, occlusion uncertainty and stale windows stay empty with noncontent log reasons. Noneditable labels may still contain private data.",
+      "note": "Default off and also requires agentContext. Candidate only: stock external Genmon native capture proof is pending; DateTime exposes the native bridge but hides eligible label children. Local :DISPLAY pathname X sockets only, with 75 ms acquisition I/O and 350 ms total X event-validation deadlines; background auth discovery/D-Bus setup remain availability limits. Native Wayland/XWayland sessions, missing bridges, partly covered/clipped ancestors, occlusion uncertainty and stale windows stay empty with noncontent log reasons. Noneditable labels may still contain private data.",
       "docs": ["docs/linux.md", "docs/keyframes-and-text.md"]
     },
     {

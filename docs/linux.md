@@ -28,6 +28,19 @@ Verified in an Ubuntu 24.04 arm64 VM with GNOME 46 (Wayland and X11) and Plasma 
 | App in front | `_NET_ACTIVE_WINDOW` | AT-SPI when the app exposes it (`linux::atspi`; X11 apps use XWayland) | AT-SPI when available; Kate did not expose context in the test VM |
 | Paste | XTEST `Ctrl+V` | RemoteDesktop portal, asks once | same |
 
+The default-off `linuxNearbyText` experiment admits **Display/Region only**, on a
+local X11 `:DISPLAY[.screen]` pathname socket. Window/Device decline before any
+native/AT-SPI query: the label path has no recording-source XID and cannot infer
+one from a frame, PID or title. An explicit GtkPlug bridge is still required.
+X acquisition I/O (connect/auth handshake/replies/checks/ungrab) shares a 75 ms
+deadline; later event validation shares 350 ms from acquisition start. A timeout
+shuts down/closes the dedicated connection, releasing any server grab. Completed
+ink geometry is stored before acquisition with no ink/stroke mutex held. Auth-file
+discovery and D-Bus setup remain background availability limits; restart after
+DISPLAY/Xauthority changes. Whole-ancestor clipping/occlusion checks deliberately
+reject partly covered plugins even if an individual label is visible. Native
+stock-app proof remains pending; see [the full boundary](keyframes-and-text.md#experiment-linuxnearbytext-srcax_linuxrs-srcax_linux_nativers).
+
 ### Clicks and ink on Wayland
 
 `apparent record --duration N` is a separate timed recorder, not a shortcut-driven app session. Even with input access it does not collect click or Shift ink events; its manifest and summary explicitly mark that interaction-telemetry gap. Use `apparent shortcut record` with the app to start and finish when those events matter. The permission and pointer-position limits below still apply to the shortcut path.

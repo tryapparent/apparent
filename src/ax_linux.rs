@@ -12,6 +12,10 @@ pub use fallback::Target;
 pub(crate) use fallback::percent_decode;
 #[path = "ax_linux_native.rs"]
 mod native;
+// Let capture's owner-boundary regressions exercise the real transport without
+// changing DISPLAY, starting X, or replacing the production snapshot provider.
+#[cfg(test)]
+pub(crate) use native::x11::DeadlineStream;
 
 pub const LINUX_NEARBY_TEXT: &str = "linuxNearbyText";
 #[derive(Clone, Debug)]
@@ -89,6 +93,9 @@ impl Prober {
             std::thread::Builder::new()
                 .name("apparent-labels".into())
                 .spawn(move || {
+                    // Auth-file discovery stays off the input path. Until ready,
+                    // event-time acquisition declines without waiting for setup.
+                    native::x11::prepare();
                     for job in queue {
                         publish_lookup(
                             &worker,
@@ -210,6 +217,56 @@ pub fn stroke_probe_point(stroke: &Stroke, frame: TargetFrame) -> Option<(f64, f
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn actual_socket_stall_cannot_publish_into_replacement_session() {
+        use std::io::Read;
+        use std::os::unix::net::UnixStream;
+        let state = Arc::new(Mutex::new(Results {
+            generation: 1,
+            accepting: true,
+            ..Default::default()
+        }));
+        let (jobs, _queue) = flume::bounded(2);
+        let prober = Prober {
+            jobs,
+            results: Arc::clone(&state),
+            pending: Arc::new(AtomicUsize::new(0)),
+        };
+        let (client, mut peer) = UnixStream::pair().unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+        let (resume, resume_rx) = flume::bounded(1);
+        let worker = Arc::clone(&state);
+        let handle = std::thread::spawn(move || {
+            publish_lookup(
+                &worker,
+                1,
+                Target::Stroke(1),
+                |_| {
+                    let at = Instant::now();
+                    let stream =
+                        DeadlineStream::from_socket(client, at + Duration::from_millis(75))
+                            .unwrap();
+                    assert!(
+                        x11rb::rust_connection::RustConnection::connect_to_stream(stream, 0)
+                            .is_err()
+                    );
+                    assert!(at.elapsed() < Duration::from_millis(300));
+                    resume_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+                    // Even a lookup that erroneously returns a value after the stall
+                    // cannot cross the real generation/publication boundary.
+                    Ok("old".into())
+                },
+                || panic!("stale work must not reach validation"),
+            );
+        });
+        let mut byte = [0];
+        assert_eq!(peer.read(&mut byte).unwrap(), 1, "actual setup began");
+        assert!(prober.finish().is_empty());
+        prober.begin();
+        resume.send(()).unwrap();
+        handle.join().unwrap();
+        assert!(state.lock().unwrap().hits.is_empty());
+    }
     #[test]
     fn actual_publication_drops_lookup_that_finishes_after_session_replacement() {
         let state = Arc::new(Mutex::new(Results {
