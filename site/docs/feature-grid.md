@@ -14,7 +14,13 @@ Validate with the public-site build (`APPARENT_PUBLIC_SITE=1 npm run build`), `n
 
 The live page can include approved overlays not yet reconciled into main. Build the isolated feature entry with `vite build --config vite.feature-grid.config.ts`, then run `node scripts/package-feature-grid.mjs BASELINE NEW_CANDIDATE PRIVATE_MANIFEST` from `site/`. It adds only the feature module/CSS and animation documents; existing files except the two new tags in `index.html` remain byte-identical. The entry mounts after the existing homepage hydrates.
 
-Stage and inventory the candidate privately. The publisher must honor `/opt/presentations/releases/.apparent-site-publish.lock`, verify the active release and baseline inventory, validate/reload the narrow `/feature-demos/*` Caddy allowlist addition, then atomically switch the site symlink. Keep the previous release and Caddyfile for guarded rollback. Verify normal public responses and browser behavior after activation. Never replace other approved live changes with a whole-site build just to add this section.
+Stage and inventory the candidate privately, then reconcile the tested overlay
+into `published-homepage/` and its checksum contract for main-branch Pages
+publication (`pages-deploy.md`). The Clanker Caddy block and release link are
+retired; do not recreate them or run old symlink activators. Verify normal public
+responses and browser behavior after publication. Never replace other approved
+live changes with a whole-site build just to add this section. Recovery uses a
+previously accepted Pages deployment, not a Clanker release.
 
 ## Approved homepage refinements
 
