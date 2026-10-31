@@ -62,14 +62,20 @@ decline before any native snapshot or AT-SPI query. No recording-source XID is
 passed to this path: a desktop window covering a selected Window is not part of
 that Window's recording. Matching frame, PID or title cannot establish ownership.
 
-This is a narrow candidate, **not runtime-proven coverage**. The stock external
+This is a narrow experiment, **not broad application coverage**. The stock external
 `xfce4-datetime-plugin` in `xfce4-panel` exposed the explicit GtkPlug reference in
 an isolated X11 guest, but its toggle-button accessible hides the label children.
 It therefore supplies no eligible leaf label and is not supported coverage.
-The next ordinary-app acceptance target is stock external `xfce4-genmon-plugin`
-with normal system-monitor configuration. Its installed tree and actual capture
-result still need native proof. No app injection or modified image is needed;
-the built-in internal Clock plugin is not an external GtkPlug substitute.
+Stock external `xfce4-genmon-plugin` now has a real Display-capture positive:
+its visible `(genmon)` label attached to a stroke and its separate Mark after
+moving the recording-controls window fully clear. The baseline stroke stayed
+unnamed. A separate capture withheld text when another part of the plug was
+covered, even though the label itself stayed clear. This nested-X11 proof used
+a locked, solid-color panel, normal system-monitor configuration and a stock
+compositing manager. It is not Region or broad application proof. Full native
+rectangles count for occlusion, including transparent recording-controls margins.
+No app injection or modified image is needed; the built-in internal Clock plugin
+is not an external GtkPlug substitute.
 
 At the stroke-probe event a dedicated X connection walks native stacking and
 ancestry under that point. It accepts only the plug's `_XEMBED_AT_SPI_PATH`

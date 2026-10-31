@@ -38,8 +38,12 @@ shuts down/closes the dedicated connection, releasing any server grab. Completed
 ink geometry is stored before acquisition with no ink/stroke mutex held. Auth-file
 discovery and D-Bus setup remain background availability limits; restart after
 DISPLAY/Xauthority changes. Whole-ancestor clipping/occlusion checks deliberately
-reject partly covered plugins even if an individual label is visible. Native
-stock-app proof remains pending; see [the full boundary](keyframes-and-text.md#experiment-linuxnearbytext-srcax_linuxrs-srcax_linux_nativers).
+reject partly covered plugins even if an individual label is visible. Stock
+external Genmon has a narrow real Display positive and separate partial-ancestor
+occlusion negative with a locked, solid-color panel and stock compositing manager.
+Keep the entire recording-controls native rectangle clear, including transparent
+margins. This is not Region or broad application proof; see
+[the full boundary](keyframes-and-text.md#experiment-linuxnearbytext-srcax_linuxrs-srcax_linux_nativers).
 
 ### Clicks and ink on Wayland
 
@@ -215,7 +219,7 @@ for lifecycle and same-process replay limits.
 
 ## Not on Linux
 
-The cabled iPhone, general OS element lookups for `agentContext`, Sparkle (Linux instead updates AppImages itself) and the dev-site tab URL (`/sdk.js` registrations still route). With `agentContext` on, an unnamed Linux click says `clicked (element unavailable)`. Marks normally have no OS-derived label; the separate default-off `linuxNearbyText` candidate supports only a source-valued GtkPlug accessibility bridge on native X11, not general AT-SPI window attribution or Wayland. Stock external xfce4-datetime-plugin exposes the native bridge but no eligible leaf label. Stock external xfce4-genmon-plugin is the next acceptance candidate; its native bridge and visible leaf labels have been observed in an isolated guest, but source lookup and full-capture proof remain unrun. Neither observation establishes accepted coverage. AT-SPI cannot securely join an accessible top-level to the X11 window where the action occurred; matching PID, title and bounds do not rule out a stale window. Registered dev pages can still supply their own context. See `docs/keyframes-and-text.md`.
+The cabled iPhone, general OS element lookups for `agentContext`, Sparkle (Linux instead updates AppImages itself) and the dev-site tab URL (`/sdk.js` registrations still route). With `agentContext` on, an unnamed Linux click says `clicked (element unavailable)`. Marks normally have no OS-derived label; the separate default-off `linuxNearbyText` experiment supports only a source-valued GtkPlug accessibility bridge on native X11, not general AT-SPI window attribution or Wayland. Stock external xfce4-datetime-plugin exposes the native bridge but no eligible leaf label. Stock external xfce4-genmon-plugin has a narrow real Display-capture positive and separate partial-ancestor-occlusion negative under the configuration described above; this is not broad application or Region proof. AT-SPI cannot securely join an accessible top-level to the X11 window where the action occurred; matching PID, title and bounds do not rule out a stale window. Registered dev pages can still supply their own context. See `docs/keyframes-and-text.md`.
 
 ## Packaging
 
