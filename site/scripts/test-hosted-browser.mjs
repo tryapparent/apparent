@@ -2,7 +2,7 @@
 // No real Google or Connect service; loopback builds are not production artifacts.
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { readFile, mkdir } from 'node:fs/promises'
+import { readFile, mkdir, access } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { resolve, extname } from 'node:path'
 import { chromium } from 'playwright-core'
@@ -10,6 +10,23 @@ import { renderShare, shareViewScript, shareViewStyles } from '../../hosted/src/
 const root = resolve(process.env.SITE_ARTIFACT || 'dist-apparent')
 const evidence = resolve(process.env.SITE_EVIDENCE || `${process.env.TMPDIR}/hosted-web-evidence`)
 await mkdir(evidence, { recursive: true })
+// Traverse emitted imports, modulepreloads, CSS links and Vite preload maps.
+// A different entry filename alone does not prove an isolated browser graph.
+async function closure(document) {
+  const files = new Map()
+  async function visit(path) {
+    if (files.has(path)) return
+    const text = await readFile(`${root}${path}`, 'utf8')
+    files.set(path, text)
+    for (const match of text.matchAll(/["']((?:\/assets\/|\.\/|assets\/)[^"'\s]+\.(?:js|css))["']/g)) {
+      await visit(new URL(match[1], `http://artifact${path}`).pathname)
+    }
+  }
+  await visit(document)
+  return files
+}
+const landingGraph = await closure('/index.html')
+const connectGraphs = []
 for (const route of ['connect', 'connect/device', 'connect/shares', 'hosted', 'hosted/device', 'hosted/shares']) {
   const html = await readFile(`${root}/${route}/index.html`, 'utf8')
   assert.match(html, /noindex, nofollow/); assert.match(html, /Checking your account/)
@@ -21,7 +38,22 @@ for (const route of ['connect', 'connect/device', 'connect/shares', 'hosted', 'h
     assert.match(html, /href="\/connect\/"/)
   }
   assert(!html.includes('verified@example.com'))
+  const graph = await closure(`/${route}/index.html`)
+  assert.doesNotMatch(html, /fonts\.bunny\.net|rel="canonical"|property="og:|name="twitter:/)
+  for (const [path, text] of graph) {
+    assert.doesNotMatch(text, /Visual feedback gets lost|pond-hero|pond-demo|pond-team/, `${route}: marketing closure in ${path}`)
+  }
+  connectGraphs.push(graph)
 }
+for (const [path, text] of landingGraph) assert.doesNotMatch(text, /X-CSRF-Token|hosted-panel|hosted-page/, `landing includes Connect/API closure: ${path}`)
+const connectGraph = connectGraphs[0]
+for (const graph of connectGraphs) assert.deepEqual([...graph.keys()].filter(p => p.startsWith('/assets/')), [...connectGraph.keys()].filter(p => p.startsWith('/assets/')))
+// Shared React runtime is allowed; application-owned JS/CSS must be disjoint.
+for (const [path, text] of connectGraph) if (landingGraph.has(path)) {
+  assert.match(text, /react/i, `only the React runtime may be shared: ${path}`)
+  assert.doesNotMatch(text, /hosted-|pond-|X-CSRF-Token/)
+}
+await assert.rejects(access(`${root}/connect.html`), 'temporary HTML input must not be published')
 assert(!(await readFile(`${root}/index.html`, 'utf8')).includes('href="/hosted'))
 assert(!(await readFile(`${root}/sitemap.xml`, 'utf8')).includes('/hosted'))
 const sharesCursor = '1793437200000:' + 'b'.repeat(32)
@@ -32,7 +64,7 @@ assert(!(await readFile(`${root}/sitemap.xml`, 'utf8')).includes('/connect'))
 for (const asset of ['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png', 'hosted/agent-reading-v4.png', 'HostGrotesk-Variable.ttf', 'apparent-wordmark.svg']) {
   assert.deepEqual(await readFile(`${root}/${asset}`), await readFile(`public/${asset}`), `packaged ${asset}`)
 }
-
+let uiOrigin = ''
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost')
   if (url.pathname === '/share-view.js') { res.setHeader('Content-Type','text/javascript'); return res.end(shareViewScript) }
@@ -43,7 +75,7 @@ const server = createServer(async (req, res) => {
     return res.end(renderShare({url:`http://127.0.0.1:${server.address().port}/s/synthetic`,status:recipientStatus,title:'Feedback <script>window.injected=true</script>',summary:'Synthetic summary <img src=x onerror=evil()>',transcript:'[00:02] Move this button.',uploadedBytes:recipientStatus==='ready'?10:5,totalBytes:10,files:[{path:'recording.mp4',size:10,sha256:'a'.repeat(64),url:`http://127.0.0.1:${server.address().port}/s/synthetic/files/recording.mp4`}]}))
   }
   if (url.pathname.startsWith('/v1/') || url.pathname === '/auth/logout') {
-    res.setHeader('Access-Control-Allow-Origin', `http://127.0.0.1:${server.address().port}`)
+    res.setHeader('Access-Control-Allow-Origin', uiOrigin)
     res.setHeader('Access-Control-Allow-Credentials', 'true')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-CSRF-Token')
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
@@ -56,7 +88,7 @@ const server = createServer(async (req, res) => {
       const chunks = []; for await (const chunk of req) chunks.push(chunk)
       const body = JSON.parse(Buffer.concat(chunks).toString() || '{}')
       writes.push({ method: req.method, path: url.pathname, body, csrf: req.headers['x-csrf-token'], cookie: req.headers.cookie, origin: req.headers.origin })
-      if (req.headers['x-csrf-token'] !== 'synthetic-csrf' || !req.headers.cookie?.includes('fixture=1') || req.headers.origin !== `http://127.0.0.1:${server.address().port}` || scenario.forbidden) return res.writeHead(403).end('{}')
+      if (req.headers['x-csrf-token'] !== 'synthetic-csrf' || !req.headers.cookie?.includes('fixture=1') || req.headers.origin !== uiOrigin || scenario.forbidden) return res.writeHead(403).end('{}')
       await new Promise(r => setTimeout(r, 180))
       if (url.pathname === '/v1/device/approve') approved = true
       if (url.pathname === '/v1/waitlist') interest = body.interestedAtFiveDollars
@@ -84,14 +116,72 @@ const server = createServer(async (req, res) => {
   catch { res.writeHead(404).end() }
 })
 await new Promise(r => server.listen(Number(process.env.HOSTED_FIXTURE_PORT || 0), '127.0.0.1', r))
+uiOrigin = `http://127.0.0.1:${server.address().port}`
 const apiOrigin = process.env.HOSTED_TEST_API_ORIGIN || ''
 const apiServer = apiOrigin ? createServer(server.listeners('request')[0]) : null
 if (apiServer) await new Promise(r => apiServer.listen(Number(new URL(apiOrigin).port), '127.0.0.1', r))
 console.log(`Synthetic Connect fixture at http://127.0.0.1:${server.address().port}/connect/`)
 if (process.env.HOSTED_FIXTURE_ONLY) await new Promise(() => {})
+const mode = process.env.HOSTED_TEST_MODE || 'package'
+assert(['package', 'dev', 'preview'].includes(mode))
+let viteServer
+if (mode !== 'package') {
+  const vite = await import('vite')
+  viteServer = mode === 'dev'
+    ? await vite.createServer({ server: { host: '127.0.0.1', port: 0 } })
+    : await vite.preview({ preview: { host: '127.0.0.1', port: 0 } })
+  if (mode === 'dev') await viteServer.listen()
+  uiOrigin = `http://127.0.0.1:${viteServer.httpServer.address().port}`
+}
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/home/simon/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome', headless: true, args: ['--no-sandbox'] })
 const results = []
+const routeResults = []
+function assertResources(resources, connect) {
+  for (const { url, type } of resources) {
+    const resource = new URL(url), path = resource.pathname
+    if (connect) assert.notEqual(resource.hostname, 'fonts.bunny.net', 'Connect must not request the demo font service')
+    if (!['script', 'stylesheet'].includes(type)) continue
+    if (mode === 'dev') {
+      assert.doesNotMatch(path, connect ? /\/src\/(?:App|main|styles|pond-hero|cta|belief|Belief|pond|footer|github)/ : /\/src\/hosted\//, `wrong dev resource owner: ${url}`)
+    } else {
+      const other = connect ? landingGraph : connectGraph
+      const own = connect ? connectGraph : landingGraph
+      assert(!other.has(path) || own.has(path), `wrong built resource owner: ${url}`)
+      if (path.startsWith('/assets/')) assert(own.has(path), `resource outside browser closure: ${url}`)
+    }
+  }
+}
 try {
+  // Exercise the real Vite middleware, not a fixture that implements the rewrite.
+  for (const route of ['connect', 'connect/device', 'connect/shares', 'hosted', 'hosted/device', 'hosted/shares']) for (const slash of ['', '/']) {
+    scenario = {}; writes = []; calls = []
+    const page = await browser.newPage(), resources = [], errors = []
+    page.on('request', r => resources.push({ url: r.url(), type: r.resourceType() }))
+    page.on('pageerror', e => errors.push(String(e)))
+    await page.context().addCookies([{ name: 'fixture', value: '1', url: uiOrigin }])
+    const query = '?code=SYNTHETIC&extra=kept%2Bvalue'
+    await page.goto(`${uiOrigin}/${route}${slash}${query}`)
+    await page.waitForFunction(() => document.querySelector('.hosted-panel')?.getAttribute('aria-busy') === 'false')
+    assert.equal(new URL(page.url()).search, query)
+    if (route.endsWith('shares')) await page.getByRole('heading', { name: 'Manage shared links' }).waitFor()
+    else assert.equal(await page.getByRole('tab', { name: route.endsWith('device') ? 'Your agent' : 'This computer', exact: true }).getAttribute('aria-selected'), 'true')
+    assert.equal(writes.length, 0)
+    assertResources(resources, true); assert.deepEqual(errors, [])
+    routeResults.push({ route: `/${route}${slash}`, resources }); await page.close()
+  }
+  for (const route of mode === 'package' ? ['/'] : ['/', '/connect-unrelated?code=untouched', '/hosted/device/extra']) {
+    const page = await browser.newPage(), resources = [], errors = []
+    page.on('request', r => resources.push({ url: r.url(), type: r.resourceType() }))
+    page.on('pageerror', e => errors.push(String(e)))
+    await page.route('https://api.github.com/**', r => r.fulfill({ json: { stargazers_count: 2 } }))
+    await page.goto(uiOrigin + route)
+    await page.locator('.pond-demo').waitFor()
+    assert.equal(await page.locator('.hosted-page').count(), 0)
+    assertResources(resources, false); assert.deepEqual(errors, [])
+    assert(!resources.some(r => new URL(r.url).pathname.startsWith('/v1/')), 'landing must not fetch Connect API')
+    if (route === '/') await page.screenshot({ path: `${evidence}/homepage.png`, fullPage: true })
+    routeResults.push({ route, resources }); await page.close()
+  }
   for (const test of [
     { name: 'anonymous', anonymous: true, width: 1440 }, { name: 'anonymous-device', anonymous: true, device: true }, { name: 'loading', loading: true },
     { name: 'desktop-1440', width: 1440 }, { name: 'desktop-1280', width: 1280 }, { name: 'phone-390', width: 390 }, { name: 'empty-account', width: 320 }, { name: 'zoom-200-equivalent', width: 640, height: 450 },
@@ -110,9 +200,10 @@ try {
     scenario = test; writes = []; calls = []; approved = false; signedOut = false; interest = false
     scenario.expiresAt = Date.now() + 2500
     const page = await browser.newPage({ viewport: { width: test.width || 1100, height: test.height || 900 } })
-    const errors = []; page.on('pageerror', e => errors.push(String(e)))
-    await page.context().addCookies([{ name: 'fixture', value: '1', url: `http://127.0.0.1:${server.address().port}` }])
-    await page.goto(`http://127.0.0.1:${server.address().port}/${test.legacy ? 'hosted' : 'connect'}${test.device ? `/device${test.deviceSlash ? '/' : ''}${test.noCode ? '' : '?code=SYNTHETIC'}` : `${test.noSlash ? '' : '/'}?returnTo=https://evil.example`}`)
+    const errors = [], resources = []; page.on('pageerror', e => errors.push(String(e)))
+    page.on('request', r => resources.push({ url: r.url(), type: r.resourceType() }))
+    await page.context().addCookies([{ name: 'fixture', value: '1', url: uiOrigin }])
+    await page.goto(`${uiOrigin}/${test.legacy ? 'hosted' : 'connect'}${test.device ? `/device${test.deviceSlash ? '/' : ''}${test.noCode ? '' : '?code=SYNTHETIC'}` : `${test.noSlash ? '' : '/'}?returnTo=https://evil.example`}`)
     if (test.loading) { await page.getByRole('status').filter({ hasText: 'Checking your account' }).waitFor(); await page.screenshot({ path: `${evidence}/loading-pending.png` }) }
     await page.waitForFunction(() => document.querySelector('.hosted-panel')?.getAttribute('aria-busy') === 'false')
     assert.equal(writes.length, 0, 'never auto approve or mutate on load')
@@ -123,11 +214,12 @@ try {
       await page.evaluate(() => document.fonts.ready)
       const geometry = await page.evaluate(() => {
         const sheet = document.querySelector('.hosted-main'), title = document.querySelector('h1'), cta = document.querySelector('.hosted-main-action')
-        return { width: sheet.getBoundingClientRect().width, radius: getComputedStyle(sheet).borderRadius, title: getComputedStyle(title).fontSize, ctaRadius: getComputedStyle(cta).borderRadius, ctaColor: getComputedStyle(cta).backgroundColor, font: getComputedStyle(sheet).fontFamily }
+        return { width: sheet.getBoundingClientRect().width, radius: getComputedStyle(sheet).borderRadius, title: getComputedStyle(title).fontSize, textColor: getComputedStyle(title).color, ctaRadius: getComputedStyle(cta).borderRadius, ctaColor: getComputedStyle(cta).backgroundColor, font: getComputedStyle(sheet).fontFamily }
       })
       assert.equal(geometry.width, test.width >= 760 ? 720 : (test.width || 1100) > 550 ? Math.min(720, (test.width || 1100) - 40) : test.width - 24)
       assert.equal(geometry.radius, '0px'); assert.equal(geometry.ctaRadius, '0px'); assert.equal(geometry.ctaColor, 'rgb(25, 22, 29)')
       assert.equal(geometry.title, test.width <= 550 ? '32px' : '36px'); assert.match(geometry.font, /Host Grotesk/)
+      assert.equal(geometry.textColor, 'rgb(2, 1, 2)', 'preserve the current marketing cascade text colour')
       await page.screenshot({ path: `${evidence}/${test.name}-computer.png`, fullPage: true })
       await computer.focus(); await page.keyboard.press('ArrowRight')
       assert.equal(await agent.getAttribute('aria-selected'), 'true'); assert.equal(await agent.evaluate(e => e === document.activeElement), true)
@@ -215,6 +307,7 @@ try {
     assert(!(await page.content()).includes('must-not-render'))
     assert(!(await page.content()).includes('synthetic-csrf'))
     assert.deepEqual(errors, [])
+    assertResources(resources, true)
     await page.screenshot({ path: `${evidence}/${test.name}.png`, fullPage: true })
     if (test.name === 'empty-account') {
       await page.getByRole('button', { name: 'Log out' }).click()
@@ -232,8 +325,8 @@ try {
   for (const test of [{name:'shares',width:390},{name:'shares-320',width:320},{name:'shares-empty',empty:true},{name:'shares-denied',forbidden:true},{name:'shares-unconfirmed',unconfirmed:true},{name:'shares-page-two',paginated:true,width:390},{name:'shares-page-two-unconfirmed',paginated:true,unconfirmed:true},{name:'shares-page-two-readback-unavailable',paginated:true,readbackUnavailable:true},{name:'legacy-shares',legacy:true},{name:'legacy-shares-slash',legacy:true,slash:true},{name:'canonical-shares-slash',slash:true}]) {
     scenario=test; writes=[];calls=[];shareReads=[];signedOut=false;revoked=false
     const page=await browser.newPage({viewport:{width:test.width||1100,height:900}})
-    await page.context().addCookies([{name:'fixture',value:'1',url:`http://127.0.0.1:${server.address().port}`}])
-    await page.goto(`http://127.0.0.1:${server.address().port}/${test.legacy?'hosted':'connect'}/shares${test.slash?'/':''}`)
+    await page.context().addCookies([{name:'fixture',value:'1',url:uiOrigin}])
+    await page.goto(`${uiOrigin}/${test.legacy?'hosted':'connect'}/shares${test.slash?'/':''}`)
     await page.getByRole('heading',{name:'Manage shared links'}).waitFor({timeout:3000})
     await page.waitForFunction(()=>document.querySelector('.hosted-panel')?.getAttribute('aria-busy')==='false')
     assert.match(await page.locator('main').innerText(),/Anyone with this link/)
@@ -246,7 +339,7 @@ try {
       await page.getByRole('button',{name:'Stop sharing'}).evaluate(e=>{e.click();e.click()})
       await page.waitForFunction(()=>document.querySelector('.hosted-panel')?.getAttribute('aria-busy')==='false')
       assert.equal(writes.length,1);assert.equal(writes[0].method,'DELETE');assert.equal(writes[0].path,'/v1/shares/share-1');assert.equal(writes[0].csrf,'synthetic-csrf')
-      assert.equal(writes[0].origin,`http://127.0.0.1:${server.address().port}`)
+      assert.equal(writes[0].origin,uiOrigin)
       assert.match(writes[0].cookie || '',/fixture=1/)
       if(test.forbidden||test.unconfirmed||test.readbackUnavailable) assert.equal(await page.getByRole('alert').count(),1)
       else {assert.equal(await page.getByRole('link',{name:'Open shared recording'}).count(),0);assert.match(await page.locator('main').innerText(),/revoked/)}
@@ -292,6 +385,7 @@ try {
   assert.equal(await page.evaluate(()=>window.injected),undefined);assert.deepEqual(errors,[])
   await page.close();results.push('recipient-progress-validation-pending-ready-csp')
   const receipt = { synthetic: true, artifact: root, apiOrigin: apiOrigin || 'same-origin', passed: results, count: results.length, screenshots: evidence, assets: Object.fromEntries(await Promise.all(['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png', 'hosted/agent-reading-v4.png', 'HostGrotesk-Variable.ttf', 'apparent-wordmark.svg'].map(async name => [name, createHash('sha256').update(await readFile(`${root}/${name}`)).digest('hex')]))), limits: 'Controlled synthetic API only; not live OAuth, service, native, or deployment proof. 640×450 CSS pixels is a 200%-equivalent layout, not browser zoom.' }
+  Object.assign(receipt, { mode, routes: routeResults, closures: { landing: [...landingGraph.keys()], connect: [...connectGraph.keys()] } })
   await import('node:fs/promises').then(fs => fs.writeFile(`${evidence}/receipt.json`, JSON.stringify(receipt, null, 2)))
   console.log(JSON.stringify(receipt, null, 2))
-} finally { await browser.close(); if (apiServer) await new Promise(r => apiServer.close(r)); await new Promise(r => server.close(r)) }
+} finally { await browser.close(); if (viteServer) await viteServer.close(); if (apiServer) await new Promise(r => apiServer.close(r)); await new Promise(r => server.close(r)) }

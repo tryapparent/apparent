@@ -1,7 +1,10 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+mod build_version;
+
 fn main() {
+    build_version::emit();
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
         stage_transcribe_shared_objects();
         // cargo binaries and tests resolve the staged libraries beside themselves.

@@ -1585,7 +1585,7 @@ impl Panel {
             ]
         };
         View {
-            version: env!("CARGO_PKG_VERSION").to_owned(),
+            version: env!("APPARENT_VERSION_LABEL").to_owned(),
             hosted: crate::handoff::experiment_enabled_in(&config, crate::hosted::HOSTED_SHARING)
                 .then(|| crate::hosted::account_view_in(&host.config_path())),
             login: LoginView {

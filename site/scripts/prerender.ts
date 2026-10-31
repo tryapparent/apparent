@@ -15,7 +15,8 @@ const ssr = join(site, "dist-ssr")
 
 const { render, renderHosted, mapPage } = await import(join(ssr, "entry-server.js"))
 let html = readFileSync(join(dist, "index.html"), "utf8")
-const template = html
+const connectTemplate = readFileSync(join(dist, "connect.html"), "utf8")
+if (!connectTemplate.includes("<!--app-->")) throw new Error("prerender: no <!--app--> in dist/connect.html")
 if (!html.includes("<!--app-->")) throw new Error("prerender: no <!--app--> in dist/index.html")
 html = html.replace("<!--app-->", render())
 
@@ -30,15 +31,17 @@ writeFileSync(join(dist, "index.html"), html)
 // Unlinked account routes: no prerendered account data and no sitemap entries.
 for (const [route, device, shares] of [["connect", false, false], ["connect/device", true, false], ["connect/shares", false, true], ["hosted", false, false], ["hosted/device", true, false], ["hosted/shares", false, true]] as const) {
   const title = shares ? "Manage shared links — Apparent" : device ? "Connect a device — Apparent" : "Connect — Apparent"
-  const page = template.replace("<!--app-->", renderHosted(device, shares))
+  const page = connectTemplate.replace("<!--app-->", renderHosted(device, shares))
     .replace(/<title>.*?<\/title>/, `<title>${title}</title>`)
     .replace(/<link rel="canonical"[^>]*>/, "")
     .replace(/<meta (?:property="og:[^"]+"|name="twitter:[^"]+"|name="description")[^>]*>/g, "")
     .replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/g, "")
+    .replace(/<meta name="robots"[^>]*>/g, "")
     .replace("</head>", '<meta name="robots" content="noindex, nofollow" /><meta name="referrer" content="no-referrer" /><meta http-equiv="Cache-Control" content="no-store" /></head>')
   mkdirSync(join(dist, route), { recursive: true })
   writeFileSync(join(dist, route, "index.html"), page)
 }
+rmSync(join(dist, "connect.html"))
 
 // The feature map: unlinked, noindex, and left out of the sitemap and llms.txt.
 if (process.env.APPARENT_PUBLIC_SITE !== "1") {

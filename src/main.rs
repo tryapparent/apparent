@@ -1,4 +1,7 @@
 mod agent_context;
+#[cfg(test)]
+#[path = "../build_version.rs"]
+mod build_version;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 mod agent_capture;
 mod audio;
