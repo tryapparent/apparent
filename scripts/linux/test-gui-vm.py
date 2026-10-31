@@ -373,8 +373,8 @@ while not (root / 'release-writer').exists(): time.sleep(.01)
             self.assertIn('manifest mismatch', status['primary_failure']['message'])
             self.assertTrue((results / 'disk.qcow2').exists())
 
-    def test_unknown_remote_exit_keeps_disk_despite_matching_partial_snapshot(self):
-        for remote_exit in ('timeout', 255):
+    def test_failed_or_unknown_remote_exit_keeps_disk_despite_matching_partial_snapshot(self):
+        for remote_exit in ('timeout', 255, 7):
             with self.subTest(remote_exit=remote_exit), tempfile.TemporaryDirectory() as root:
                 code, status, results = self.exercise(root, scenario_exit=remote_exit, delayed_writer=True)
                 self.assertNotEqual(code, 0)

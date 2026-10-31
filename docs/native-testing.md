@@ -131,6 +131,12 @@ the original report, command streams and bundles even when the recipe or outer
 runner fails. An artifact-copy error or outer timeout requires the runner's
 retention/recovery path; a bundle on a deleted guest is not retained evidence.
 Verify the runner's exact owned QEMU/expiry/writable-state cleanup separately.
+
+Only a successful trusted scenario plus a matching copied-file manifest permits
+disk deletion. A failed, interrupted or transport-unknown scenario keeps its cold
+disk and firmware, even if an initial copy matches: remote writers can outlive
+the shell or SSH client. That copy is labeled `partial_snapshot`, never verified
+final retention. Preserve the cold disk until recovery is explicitly complete.
 The scenario cannot certify host VM teardown.
 
 After shutdown resolve only the saved receipt's relative path, never `latest`:

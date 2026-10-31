@@ -390,9 +390,10 @@ def main():
                         result = subprocess.run(scenario_command, stdout=output, stderr=errors,
                                                 timeout=min(args.scenario_timeout, max(0.1, deadline - time.monotonic() - 25)))
                         status['scenario_exit'] = result.returncode
-                        # SSH 255, a signal or an interrupted local client says
-                        # nothing about whether the remote writer has stopped.
-                        scenario_completed = 0 <= result.returncode < 255
+                        # Only successful trusted scenarios certify their writer
+                        # cleanup. A failure may leave descendants alive, even
+                        # when SSH returned the remote shell's exit status.
+                        scenario_completed = result.returncode == 0
                         code = result.returncode
                         if code:
                             raise subprocess.CalledProcessError(code, scenario_command)
