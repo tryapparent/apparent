@@ -73,6 +73,8 @@ def verify_http(release):
 
 def publish(root, package, sha, expected, *, current_sha=current_main, verify=verify_http):
     root, package = Path(root).resolve(), Path(package)
+    require(root != Path('/opt/presentations/releases'),
+            'Clanker production publication is retired; use the main-branch Pages publisher')
     require(re.fullmatch('[0-9a-f]{40}', sha) is not None, 'Invalid commit SHA')
     require(package.is_dir() and not package.is_symlink(), 'Package must be a real directory')
     require(all(p.name in PUBLIC for p in package.iterdir()), 'Non-public package path')
