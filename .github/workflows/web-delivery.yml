@@ -57,7 +57,7 @@ jobs:
       - name: Reconcile accepted live homepage and prepare Pages-only artifact
         working-directory: site
         run: |
-          node --test scripts/test-pages-package.mjs scripts/test-pages-video.mjs
+          node --test scripts/test-pages-package.mjs scripts/test-pages-video.mjs scripts/test-pages-video-runtime.mjs
           node scripts/prepare-pages.mjs
           node scripts/prepare-pages-video.mjs
       - uses: actions/upload-artifact@v4

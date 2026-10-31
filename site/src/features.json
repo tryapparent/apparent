@@ -367,6 +367,20 @@
       "docs": ["docs/recording-capsule-drag.md", "docs/capture.md"]
     },
     {
+      "id": "lower-playback-linux",
+      "group": "record",
+      "name": "Lower other audio (Linux experiment)",
+      "says": "Temporarily multiplies eligible mono/stereo playback by a self-expiring gain during one capture; never snapshots or restores user volume.",
+      "status": "experiment:linux-playback-ducking",
+      "platforms": ["linux"],
+      "note": "Manual setup only, targeted at PipeWire 1.6.9 / WirePlumber 0.5.18. No live effectiveness indicator. Custom filter graphs, surround audio and concurrent captures are unsupported. Neutral filters remain until clients exit.",
+      "config": [
+        { "key": "lowerPlayback", "value": "true", "does": "Request lowering on the next capture after manual setup and experiment opt-in" },
+        { "key": "playbackLevel", "value": "0–100 (20)", "does": "Percent of playback samples to keep; 100 skips the helper" }
+      ],
+      "docs": ["docs/linux-playback.md", "docs/linux.md"]
+    },
+    {
       "id": "lower-playback",
       "group": "record",
       "name": "Lower other audio",

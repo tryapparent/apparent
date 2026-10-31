@@ -7,6 +7,8 @@ import re
 import subprocess
 import shutil
 import tempfile
+import time
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 ACCOUNT = 'a54dcebead3b8ad688f891da0ab54d1f'
@@ -64,6 +66,19 @@ def verify(sha, package):
     return {'revision': sha, 'project': PROJECT, 'deployment_id': deployment['id'], 'url': origin}
 
 
+def verify_ready(sha, package):
+    # A successful deployment can precede Function/asset propagation. Retry
+    # only temporary HTTP readiness failures, never identity or hash failures.
+    for attempt in range(5):
+        try:
+            return verify(sha, package)
+        except HTTPError as error:
+            if error.code not in (404, 502, 503, 504) or attempt == 4:
+                raise
+            error.close()
+            time.sleep(2 ** attempt)
+
+
 def main():
     sha = os.environ['GITHUB_SHA']
     if not re.fullmatch('[0-9a-f]{40}', sha) or os.environ.get('GITHUB_REF') != 'refs/heads/main':
@@ -87,7 +102,7 @@ def main():
         subprocess.run([str(ROOT / 'hosted/node_modules/.bin/wrangler'), 'pages', 'deploy',
                         '--project-name', PROJECT, '--branch', 'main', '--commit-hash', sha,
                         '--commit-dirty=false'], cwd=stage, env=env, check=True)
-    receipt = verify(sha, package)
+    receipt = verify_ready(sha, package)
     (ROOT / 'website-receipt.json').write_text(json.dumps(receipt) + '\n')
     print(json.dumps(receipt))
 

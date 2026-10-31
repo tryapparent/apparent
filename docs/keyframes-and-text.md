@@ -2,6 +2,13 @@
 
 Read this before changing `src/keyframes.rs`, `src/transcribe.rs`, `src/hex.rs`, `src/command_transcriber.rs`, `src/sketch.rs` (`summary.md`) or `src/render.rs` (frames and the contact sheet).
 
+## Experiment `linux-playback-ducking` (`src/linux/playback/`)
+
+Off by default. Manually configured mono/stereo playback lowering, one capture
+at a time, on PipeWire 1.6.9 / WirePlumber 0.5.18. A self-expiring DSP lease
+preserves user volume/mute edits and recovers without the app or policy. No
+live effectiveness indicator or automatic installer. See [setup and limits](linux-playback.md).
+
 ## Images and text
 
 - **Images (`frames/*.png` and `contact-sheet.png`)**: Keep images purely visual. Each keyframe shows the screenshot, active red tldraw stroke(s) for that moment, a subtle click mark (thin translucent ring and small dot, no fill, so the clicked thing stays readable; phone swipes are a thin translucent trail), and the keyframe's number alone (no `#`, no time; `summary.md` pairs each `[#N · M:SS]` with its words) in bold black on a small white rounded square with a thin dark ring, inset 5 px from the top-left corner and dodging to bottom-left when top-left has ink, a click or the cursor. The chip never moves over the top-right action controls in a captured app. The chip is drawn at one size on every contact-sheet tile, about 24 px with its ring: blind reading tests found 20 px failed when the sheet was shown at half size, a bare digit was read as screenshot text, and `#6` was read as `8`. `contact-sheet.png` packs frames in time order (left→right, top→bottom) into aspect-ratio-justified rows separated by tight 6 px gutters on a dark canvas (no card borders or rounded frame masks, capped at 1600 px long edge / ~1.56 MP) with no rasterized transcript headers or caption boxes.
