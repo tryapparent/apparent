@@ -32,7 +32,12 @@ fn hosted_upload_logging_child() {
 
 #[test]
 fn hosted_upload_logging_omits_sensitive_paths_and_error_contents() {
-    let root = std::env::temp_dir().join(format!("hosted-logging-{}", random_id().unwrap()));
+    // As in Fixture::new, resolve macOS temp-root aliases so the fixture reaches
+    // the sensitive credential error instead of an earlier symlink rejection.
+    let root = std::env::temp_dir()
+        .canonicalize()
+        .unwrap()
+        .join(format!("hosted-logging-{}", random_id().unwrap()));
     fs::DirBuilder::new().mode(0o700).create(&root).unwrap();
     struct Cleanup(PathBuf);
     impl Drop for Cleanup {
