@@ -18,6 +18,8 @@ use gpui::{
 #[cfg_attr(target_os = "linux", path = "ui/linux.rs")]
 mod platform;
 mod whiteboard;
+mod recording_completion;
+mod desktop_completion;
 #[cfg(target_os = "linux")]
 pub(crate) use platform::set_app_icon;
 use platform::{
@@ -3248,74 +3250,9 @@ impl ApparentCoordinator {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let (screen_session, audio_recorder, window_log) = match source {
-                        CaptureSource::Screen {
-                            session,
-                            audio,
-                            windows,
-                        } => (session, audio, windows),
-                        CaptureSource::Phone(session) => {
-                            let finalized = session.stop().and_then(|recording| {
-                                crate::phone::finalize_live_capture(
-                                    &bundle_dir,
-                                    recording,
-                                    events,
-                                    strokes,
-                                    None,
-                                )
-                            }).map(|(dir, bundle, summary)| {
-                                let (bundle, summary) = whiteboard::finish_handoff(
-                                    &dir, bundle, summary, &final_whiteboard,
-                                );
-                                (dir, bundle, summary)
-                            });
-                            if let Err(error) = &finalized {
-                                apparent_log(format!("iPhone capture failed: {error:#}"));
-                            }
-                            let duration_ms =
-                                finalized.as_ref().map_or(0, |(_, b, _)| b.duration_ms);
-                            return (finalized, duration_ms);
-                        }
-                        CaptureSource::Lab => {
-                            return (Err(anyhow::anyhow!("a lab recording has no bundle")), 0);
-                        }
-                    };
-                    let stop_started = Instant::now();
-                    let (recording, recorded_audio, mut activity) = std::thread::scope(|s| {
-                        let screen_handle = s.spawn(|| screen_session.stop());
-                        let win_handle = s.spawn(|| {
-                            window_log
-                                .map(crate::windows::WindowLogger::stop)
-                                .unwrap_or_default()
-                        });
-                        let audio = audio_recorder.and_then(|r| r.stop().ok());
-                        (
-                            screen_handle.join().unwrap(),
-                            audio,
-                            win_handle.join().unwrap_or_default(),
-                        )
-                    });
-                    activity.stop_started = Some(stop_started);
-                    activity.stop_ms = Some(stop_started.elapsed().as_millis() as u64);
-                    let duration_ms = recording.duration_ms;
-                    let finalized = crate::finalize_capture_bundle(
-                        &bundle_dir,
-                        target,
-                        recording,
-                        strokes,
-                        events,
-                        recorded_audio,
-                        None,
-                        activity,
-                        None,
+                    recording_completion::finalize(
+                        source, target, bundle_dir, events, strokes, final_whiteboard,
                     )
-                    .map(|(dir, bundle, summary)| {
-                        let (bundle, summary) = whiteboard::finish_handoff(
-                            &dir, bundle, summary, &final_whiteboard,
-                        );
-                        (dir, bundle, summary)
-                    });
-                    (finalized, duration_ms)
                 })
                 .await;
 
@@ -3328,138 +3265,16 @@ impl ApparentCoordinator {
                         finishing_id.as_deref(),
                         feedback_capture,
                         finalized,
-                        |dir| {
-                            #[cfg(any(target_os = "macos", target_os = "linux"))]
-                            crate::hosted::completed(dir);
-                        },
+                        desktop_completion::connect_completed,
                         |coord, finalized| {
-                            coord.completed_dir = None;
-                            let (dir, bundle, _) = match finalized {
-                                Ok(capture) => capture,
-                                Err(error) => {
-                                    apparent_log(format!("Capture failed: {error:#}"));
-                                    #[cfg(target_os = "linux")]
-                                    crate::linux::shell::notify("Capture failed", &error.to_string());
-                                    if let Ok(mut status) = CAPTURE_STATUS.lock() {
-                                        *status = Some(if error.to_string().starts_with("No screen frames were captured") {
-                                            "Capture failed — no screen frames".into()
-                                        } else {
-                                            "Capture failed".into()
-                                        });
-                                    }
-                                    coord.set_island_phase(IslandPhase::Dismissing);
-                                    cx.notify();
-                                    return;
-                                }
-                            };
-                            let frame_count = bundle.keyframes.len();
-                            if let Ok(mut status) = CAPTURE_STATUS.lock() {
-                                *status = None;
-                            }
-                            #[cfg(target_os = "linux")]
-                            if let Ok(summary) = std::fs::read_to_string(dir.join("summary.md")) {
-                                if summary.contains("Image quality: ") {
-                                    crate::linux::shell::notify(
-                                        "Capture used smaller keyframes",
-                                        "Full-quality MP4 decoding failed. Open summary.md for details and Settings › Recording for decoder setup.",
-                                    );
-                                }
-                            }
-                            // Feedback stays local until the user explicitly copies or attaches it.
-                            // For the blocked automatic trial, leave only text on Ctrl+V even if
-                            // the independent clipboardImage experiment is enabled.
-                            let clipboard_ready = !feedback_capture
-                                && (if auto_active {
-                                    #[cfg(target_os = "linux")]
-                                    { crate::handoff::copy_bundle_text_to_clipboard(&dir) }
-                                    #[cfg(not(target_os = "linux"))]
-                                    { crate::handoff::copy_bundle_to_clipboard(&dir) }
-                                } else {
-                                    crate::handoff::copy_bundle_to_clipboard(&dir)
-                                })
-                                .map_err(|error| apparent_log(format!("Copy handoff failed: {error:#}")))
-                                .is_ok();
-                            #[cfg(target_os = "linux")]
-                            if auto_active && clipboard_ready {
-                                // Do not dispatch a paste until the receiver can prove its
-                                // draft identity and acknowledge the image attachment.
-                                if let Err(error) = crate::linux::auto_paste::auto_receiver_preflight() {
-                                    apparent_log(format!("Automatic draft paste skipped: {error:#}"));
-                                    crate::linux::shell::notify(
-                                        "Draft paste skipped",
-                                        &format!("{error:#}. Press Ctrl+V for the text; attach contact-sheet.png from {} if needed", dir.display()),
-                                    );
-                                }
-                            } else if auto_active {
-                                crate::linux::shell::notify("Draft paste skipped", "Could not copy the handoff. Use the saved bundle from the paper tile.");
-                            }
-                            coord.completed_dir = Some(dir.clone());
-                            coord.last_local_capture_ms = crate::now_epoch_ms();
-                            if feedback_capture {
-                                // No automatic clipboard write: the completed pill must not claim
-                                // that this private capture was copied.
-                                coord.completed_note = Some("Saved · review".into());
-                            }
-                            #[cfg(target_os = "linux")]
-                            if auto_active {
-                                // No receiver receipt: keep the manual handoff visible.
-                                coord.completed_note = Some(crate::linux::auto_paste::completion_note(clipboard_ready).into());
-                            }
-                            coord.set_review_bundle((dir, bundle), coord.completed_note.clone());
-                            if feedback_capture {
-                                coord.review_feedback = true;
-                                coord.review_status = Some("Review before sharing publicly. Nothing is uploaded automatically.".into());
-                                let entity = entity.clone();
-                                cx.defer(move |cx| {
-                                    close_capture_windows(cx);
-                                    if let Some(entity) = entity.upgrade() {
-                                        open_review_window(&entity, cx);
-                                    }
-                                });
-                            }
-                            coord.set_island_phase(IslandPhase::Completed {
-                                finished_at: Instant::now(),
-                                frame_count,
-                                duration_ms,
-                                inbox_count: 0,
-                            });
-                            cx.notify();
+                            coord.present_capture_result(
+                                finalized, duration_ms, feedback_capture, auto_active, &entity, cx,
+                            );
                         },
                     );
                 });
         })
         .detach();
-    }
-
-    /// Dispatches a finalizer receipt separately from effects on the current capture UI.
-    fn receive_capture_result(
-        &mut self,
-        generation: u64,
-        #[cfg(any(target_os = "macos", target_os = "linux"))] finishing_id: Option<&str>,
-        feedback_capture: bool,
-        finalized: anyhow::Result<(PathBuf, ApparentBundle, String)>,
-        on_completed: impl FnOnce(&std::path::Path),
-        on_current: impl FnOnce(&mut Self, anyhow::Result<(PathBuf, ApparentBundle, String)>),
-    ) {
-        // The worker still owns its exact ID's receipt after dismissal. Only its
-        // UI/clipboard/onboarding effects lose ownership when a new capture starts.
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        if let Some(id) = finishing_id {
-            self.agent_captures.finish(id, finalized.as_ref()
-                .map(|(dir, _, _)| dir.as_path())
-                .map_err(|error| format!("{error:#}")));
-        }
-        // A saved ordinary capture completes independently of its pill. Hosted
-        // admission rechecks current consent; feedback and failed takes stay local.
-        if !feedback_capture {
-            if let Ok((dir, _, _)) = &finalized {
-                on_completed(dir);
-            }
-        }
-        if !self.accepts_capture_result(generation) {
-            return;
-        }
-        on_current(self, finalized);
     }
 
     fn accepts_capture_result(&self, generation: u64) -> bool {
