@@ -65,11 +65,11 @@
       "status": "experiment:hostedSync",
       "added": "2026-10-30",
       "platforms": ["mac", "linux"],
-      "note": "Default off; CLI sign-in only. Connect browser routes at app.tryapparent.com/connect and /connect/device retain /hosted aliases; API, Google callback, host-only sessions and device credentials stay at hosted.tryapparent.com. The V4 web UI provides account sign-in, independent scope review and verified device approval; website approval does not prove local upload settings or CLI credentials. Native capsule, connection and recovery UI remain deferred. Candidate requires native capture/paste proof on each OS and deployed account approval. V1 rejects files above 90,000,000 bytes rather than omitting media. No automatic historical uploads. Explicit cloud upload creates a fresh ID; cloud retry keeps existing IDs. Device grants require reauthorization after 30 days.",
+      "note": "Default off; CLI sign-in only. Update Apparent for apparent connect; older apps use apparent cloud, retained as a compatibility alias. Connect browser routes at app.tryapparent.com/connect and /connect/device retain /hosted aliases; API, Google callback, host-only sessions and device credentials stay at hosted.tryapparent.com. The V4 web UI provides account sign-in, independent scope review and verified device approval; website approval does not prove local upload settings or CLI credentials. Native capsule, connection and recovery UI remain deferred. Candidate requires native capture/paste proof on each OS and deployed account approval. V1 rejects files above 90,000,000 bytes rather than omitting media. No automatic historical uploads. Explicit apparent connect upload creates a fresh ID; apparent connect retry keeps existing IDs. Device grants require reauthorization after 30 days.",
       "config": [
         { "key": "cloud.enabled", "value": "boolean; false by default", "does": "Enable the automatic upload queue only with experiment and consent" },
         { "key": "cloud.uploadConsent", "value": "boolean; false by default", "does": "Record explicit permission to share capture contents" },
-        { "key": "cloud.server", "value": "HTTPS API origin; loopback HTTP for development", "does": "Select the hosted account API, not a token or preference store" }
+        { "key": "cloud.server", "value": "HTTPS API origin; loopback HTTP for development", "does": "Select the Connect account API, not a token or preference store" }
       ],
       "docs": ["docs/hosted-client.md", "docs/hosted-api.md", "site/docs/hosted-design.md"]
 
@@ -808,6 +808,15 @@
       "status": "stable@0.3.4",
       "platforms": ["mac", "linux"],
       "docs": ["README.md#settings", "docs/onboarding-and-settings.md"]
+    },
+    {
+      "id": "about-build-identity",
+      "group": "settings",
+      "name": "Running build identity",
+      "says": "Settings › About shows the package version and compiled commit, with +modified for tracked local edits and build unknown when revision metadata is unavailable.",
+      "status": "main",
+      "platforms": ["mac", "linux"],
+      "docs": ["docs/onboarding-and-settings.md"]
     },
     {
       "id": "github-star-link",

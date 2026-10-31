@@ -1,36 +1,40 @@
-# Hosted desktop client and remote CLI (candidate)
+# Apparent Connect desktop client and remote CLI (candidate)
 
 Shared macOS/Linux implementation, default-off `hostedSync` experiment. This is an implementation candidate, not a deployed service or proof of native GUI behavior. No Windows support. See [hosted-api.md](hosted-api.md) for the v1 protocol and hosting prerequisites.
 
 ## Opt in on the recording computer
 
+Update Apparent to use `apparent connect`. Older apps with Connect support use
+`apparent cloud`, which remains a compatibility alias in updated apps. The name
+change does not move the API, credentials or `cloud` config keys.
+
 ```
-apparent cloud login --server https://api.example.com --scope upload --consent-upload
-apparent cloud status
-apparent cloud status --account
+apparent connect login --server https://api.example.com --scope upload --consent-upload
+apparent connect status
+apparent connect status --account
 ```
 
-Replace the example with the real deployed API origin. The API and approval website can have different origins. Login prints the verification URI and one-time user code and opens the browser (use `--no-browser` to print only). Approve the requested **upload** scope on the website. This shares screen images, recording, voice, transcript, context and all supported bundle assets with the hosted account. `--consent-upload` is required before beginning upload authorization; successful upload login enables the experiment and the `cloud` preference. Read login never enables uploads. Tokens are neither printed nor copied.
+Replace the example with the real deployed API origin. The API and approval website can have different origins. Login prints the verification URI and one-time user code and opens the browser (use `--no-browser` to print only). Approve the requested **upload** scope on the website. This shares screen images, recording, voice, transcript, context and all supported bundle assets with the Connect account. `--consent-upload` is required before beginning upload authorization; successful upload login enables the experiment and the `cloud` preference. Read login never enables uploads. Tokens are neither printed nor copied.
 
 Only newly completed ordinary GUI captures are automatically queued. Feedback captures are excluded. Enabling the feature does **not** scan or upload historical captures. An explicit historical upload is:
 
 ```
-apparent cloud upload /absolute/path/capture.apparent
-apparent cloud retry
-apparent cloud disable
-apparent cloud logout
+apparent connect upload /absolute/path/capture.apparent
+apparent connect retry
+apparent connect disable
+apparent connect logout
 ```
 
 `upload` explicitly queues that completed bundle **under a fresh ID on every invocation**, then makes one processing pass. It supersedes any unfinished local job for that bundle/server without changing an already reserved remote manifest. Use it to recover a changed bundle, an expired reservation or a tombstoned ID, or to deliberately share a previously cancelled capture. Automatic completion notifications deduplicate only retained queue records, including cancelled/expired records. Admission of another bundle prunes terminal or expired records; after pruning, a repeated completion notification for the original bundle can create a fresh ID. There is no permanent dedup history and no automatic historical scan. `retry` keeps existing IDs, resets eligible failed/pending jobs and makes one processing pass; it cannot enable disabled uploads or revive cancelled jobs. The running desktop worker resumes persisted pending jobs at startup, checks every two seconds, and retries with bounded exponential backoff (eight attempts, at most seven days, 100 queue records). CLI-only users run `retry` to resume after the command exits. `disable` acquires the queue lock before reading settings, clears consent/enabled state and cancels unfinished jobs durably under that same lock. `logout` additionally deletes local read and upload credentials before releasing it. Already sent server data is not deleted by local logout; it expires under the server's seven-day policy. Local logout does not revoke a copied token on another machine.
 
-**Known login-usability gap:** device tokens expire after a fixed 30 days. There is no automatic token refresh. On expiry/HTTP 401 (`auth_required` in upload queue status), rerun `apparent cloud login` for the required server and scope; upload login still requires `--consent-upload`. Signing in on the approval website alone does **not** renew the CLI token. A new upload login creates a new grant generation, so explicitly run `cloud upload <bundle>` to recover historical jobs tied to the expired grant. The intended smoother long-lived login experience is not implemented.
+**Known login-usability gap:** device tokens expire after a fixed 30 days. There is no automatic token refresh. On expiry/HTTP 401 (`auth_required` in upload queue status), rerun `apparent connect login` for the required server and scope; upload login still requires `--consent-upload`. Signing in on the approval website alone does **not** renew the CLI token. A new upload login creates a new grant generation, so explicitly run `apparent connect upload <bundle>` to recover historical jobs tied to the expired grant. The intended smoother long-lived login experience is not implemented.
 
-Completion publishes a random 32-lowercase-hex ID to the disk queue before clipboard construction. Clipboard text includes the ID, current status and remote fetch command even while upload is pending. It includes no bearer token. Hashing, media staging, network requests and retries run outside capture completion/paste. Network, auth, quota and upload errors leave the original capture and local clipboard handoff usable. Queue errors fall back to local-only handoff. `cloud status` is local JSON with queue path, status, attempts, next retry and sanitized error codes; `--account` explicitly queries account quota.
+Completion publishes a random 32-lowercase-hex ID to the disk queue before clipboard construction. Clipboard text includes the ID, current status and remote fetch command even while upload is pending. It includes no bearer token. Hashing, media staging, network requests and retries run outside capture completion/paste. Network, auth, quota and upload errors leave the original capture and local clipboard handoff usable. Queue errors fall back to local-only handoff. `apparent connect status` is local JSON with queue path, status, attempts, next retry and sanitized error codes; `--account` explicitly queries account quota.
 
 ## Fetch on an agent's computer
 
 ```
-apparent cloud login --server https://api.example.com --scope read --no-browser
+apparent connect login --server https://api.example.com --scope read --no-browser
 apparent fetch 0123456789abcdef0123456789abcdef --out ./capture.apparent --wait 120
 ```
 
@@ -65,7 +69,7 @@ Preferences live only in `~/.config/apparent/config.json` (`APPARENT_CONFIG` ove
 
 Preserve unrelated keys when editing. Login/disable use the existing atomic config writer. Login's settings snapshot, credential/grant-generation write and preference updates share the queue lock with disable/logout's settings snapshot, gate update, queue cancellation and credential removal. A login that commits before disable cannot restore stale consent after disable returns. Read login preserves both gates and cannot switch servers while uploads are enabled; a later explicit upload login can enable uploads with fresh consent. Device authorization, media staging and network transfers run outside the queue lock; active transports hold it only for brief state checks, so disable does not wait for a network timeout. Admission, retry and worker saves use the same lock and never acquire it recursively.
 
-Direct file edits take effect on the next worker/handoff check, without restart; external editors do not participate in the queue or config writer locks. A gate observed off stops subsequent sends and cancels a transport already in progress at its next 20ms supervision check; bytes already transmitted cannot be recalled. A brief off/on config edit between checks is not a durable cancellation. Use `cloud disable` to cancel the queue durably rather than merely pause it through a config gate. Admission rechecks upload eligibility under the queue lock, so an enqueue paused before that lock cannot insert a job after `cloud disable` returns while uploads remain disabled. Under the same lock, the worker rereads the authoritative job before saving or allowing a transport to continue; a cancelled or superseded job cannot resurrect when gates turn back on, even with the retained credential. A new upload grant has a fresh generation; jobs tied to an old grant cannot send under it.
+Direct file edits take effect on the next worker/handoff check, without restart; external editors do not participate in the queue or config writer locks. A gate observed off stops subsequent sends and cancels a transport already in progress at its next 20ms supervision check; bytes already transmitted cannot be recalled. A brief off/on config edit between checks is not a durable cancellation. Use `apparent connect disable` to cancel the queue durably rather than merely pause it through a config gate. Admission rechecks upload eligibility under the queue lock, so an enqueue paused before that lock cannot insert a job after `apparent connect disable` returns while uploads remain disabled. Under the same lock, the worker rereads the authoritative job before saving or allowing a transport to continue; a cancelled or superseded job cannot resurrect when gates turn back on, even with the retained credential. A new upload grant has a fresh generation; jobs tied to an old grant cannot send under it.
 
 The sibling `hosted/` directory is private mode `0700`; `upload.credential` and `read.credential` are **secret artifacts**, not settings, written atomically with mode `0600`. Each contains server, scope, token and grant generation. Jobs (`<id>.job`, mode `0600`) contain local bundle path, ID, manifest, retry/status metadata and grant generation, not tokens. Lock files serialize queue/worker operations. Do not print or copy credentials, add them to a bundle, or put them in version control. Permissions/ownership/symlinks are checked before secret reads. Process crashes can leave private `request-*` scratch directories under `hosted/`, or `.apparent-fetch-*` sibling stages under the fetch output parent; remove abandoned scratch only after ensuring no hosted transfer is running. This client requires `curl` and the system SHA-256 tool (`sha256sum` on Linux, `/usr/bin/shasum` on macOS). Bearer tokens and device secrets go through curl stdin configuration/private JSON bodies, never subprocess argv. Curl defaults/netrc/redirects and stderr are disabled; only sanitized protocol errors are surfaced.
 
@@ -73,7 +77,7 @@ The sibling `hosted/` directory is private mode `0700`; `upload.credential` and 
 
 The allowlist exactly matches the API: summary, metadata, contact sheets including full-sheet originals, numbered `frames/` and `frames-full/` PNGs, recording MP4/MOV, WAV audio, `timeline.json` and `finish-trace.json`. Whiteboard content already becomes numbered frames plus manifest data; no separate whiteboard extension is needed. Unknown assets fail the entire upload with `unsupported_asset`, never silently disappear. Symlinks are not uploaded, even when named like an allowed file. Files are staged and hashed before reservation; retry requires the same manifest. Reordered server manifests are accepted only if their complete path/size/hash sets agree.
 
-The server quota is **500,000,000 bytes per account**. Separately, v1 accepts at most 512 files and **90,000,000 bytes per file**, with a 128KiB manifest request. `file_too_large` is reported in queue status; the capture stays local. There is no multipart/chunk protocol and the client never drops a large recording/audio asset to fit. Real larger recordings therefore need a future coordinated protocol change. Server retention is seven days after reservation, with incomplete reservations reclaimed after 24 hours; a tombstoned ID requires a fresh explicit `cloud upload`, not a retry of that ID.
+The server quota is **500,000,000 bytes per account**. Separately, v1 accepts at most 512 files and **90,000,000 bytes per file**, with a 128KiB manifest request. `file_too_large` is reported in queue status; the capture stays local. There is no multipart/chunk protocol and the client never drops a large recording/audio asset to fit. Real larger recordings therefore need a future coordinated protocol change. Server retention is seven days after reservation, with incomplete reservations reclaimed after 24 hours; a tombstoned ID requires a fresh explicit `apparent connect upload`, not a retry of that ID.
 
 ## Verification
 

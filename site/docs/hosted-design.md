@@ -8,8 +8,9 @@ The Connect React UI implements the selected V4 paper-sheet composition. It uses
 | --- | --- |
 | `/connect` (or `/hosted`), anonymous | This computer / Upload new captures / Connect. Your agent / Read your captures / Review access. Either action opens sign-in; Google authentication alone grants neither permission. |
 | `/hosted`, active account | Same initial composition, not an inferred connected state. Connect / Review access opens terminal setup instructions, not native launch or permission mutation. |
-| Setup, upload | `apparent cloud login --server <API origin> --scope upload --consent-upload`, followed by `apparent cloud status` and `apparent cloud status --account`. Explicit consent; new captures only; add/read/delete scope. |
-| Setup, read | `apparent cloud login --server <API origin> --scope read --no-browser`. Separate approval of all current and future hosted captures; no upload/delete. |
+| Setup, upload | `apparent connect login --server <API origin> --scope upload --consent-upload`, followed by `apparent connect status` and `apparent connect status --account`. Explicit consent; new captures only; add/read/delete scope. |
+| Setup, read | `apparent connect login --server <API origin> --scope read --no-browser`. Separate approval of all current and future Connect uploads; no upload/delete. |
+| Installed app compatibility | Both setup tabs explain that `apparent connect` requires an updated app. Older apps can use `apparent cloud`, retained as a compatibility alias; no installation or version is inferred by the website. |
 | API origin | Configured `VITE_HOSTED_API_ORIGIN` is used in commands. When absent, a clearly marked placeholder must be replaced with the deployment's actual API origin; the website origin is not assumed to be the API. |
 | `/hosted/device?code=…`, signed out | Sign-in keeps only the fixed approval route and its code. No visitor-supplied return URL is forwarded. |
 | Loading | Checking your account. No approval action. |

@@ -70,6 +70,15 @@ require that footage. Export a separate polished video and review it before shar
 export supports macOS and Linux (`ffmpeg` and `ffprobe` are required on Linux).
 Installing either skill does not install the app or a media renderer.
 
+## Apparent Connect (candidate)
+
+[Connect](docs/hosted-client.md) lets a recording computer upload complete captures
+and an agent fetch them with separate read approval. Uploads are off by default;
+website sign-in alone grants neither permission. Update Apparent to use
+`apparent connect login` and `apparent connect status`. Older apps with this feature
+use `apparent cloud`, retained as a compatibility alias. Service and native
+integration verification are still required; this is not a release announcement.
+
 ## Usage
 
 ```sh

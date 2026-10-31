@@ -32,6 +32,8 @@ test("star badge handles counts, failure, keyboard focus and narrow headers", { 
       assert.ok(bounds.height >= 44)
       await page.locator(".brand").first().focus()
       await page.keyboard.press("Tab")
+      assert.equal(await page.locator('.pond-nav a[href="#team"]').evaluate((el) => document.activeElement === el), true)
+      await page.keyboard.press("Tab")
       assert.equal(await page.locator(".github-stars").evaluate((el) => document.activeElement === el), true)
       assert.equal(await page.locator(".github-stars").evaluate((el) => getComputedStyle(el).outlineStyle), "solid")
     }

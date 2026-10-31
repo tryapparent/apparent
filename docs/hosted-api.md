@@ -1,4 +1,4 @@
-# Hosted Apparent API (v1)
+# Apparent Connect API (v1)
 
 Implementation candidate; no deployment or live Google verification is implied. The Worker owns API/auth only; Connect's canonical browser routes are `/connect` and `/connect/device`. The site retains `/hosted` and `/hosted/device` rendering aliases.
 

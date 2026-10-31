@@ -24,7 +24,8 @@ try{
   await page.waitForTimeout(60);
   assert.equal(await page.locator('#make-room').textContent(),'Me too','agreement action');
   assert.equal(await page.locator('#belief').textContent(),'We believe work should be enjoyable and leave us free for late nights with friends.');
-  assert(await page.evaluate(()=>[...document.images].filter(i=>i.getAttribute('src')).every(i=>i.complete&&i.naturalWidth)));
+  const unloaded=await page.evaluate(()=>[...document.images].filter(i=>i.getAttribute('src')&&i.loading!=='lazy'&&(!i.complete||!i.naturalWidth)).map(i=>i.getAttribute('src')));
+  assert.deepEqual(unloaded,[],'eager image assets load');
   const box=selector=>page.locator(selector).boundingBox();
   const initial={left:await box('.pair-left'),right:await box('.pair-right'),frog:await box('.newcomer')};
   assert(initial.frog.x+initial.frog.width*.8<initial.left.x,'newcomer starts all the way left');
@@ -113,6 +114,8 @@ try{
     assert.equal(await page.locator('.github-stars span').textContent(),'GitHub');
     console.log(`${name}: live GitHub API returned 403; verified optional counter fallback`);
   }
+  await page.locator('#team').scrollIntoViewIfNeeded();
+  await page.waitForFunction(()=>[...document.querySelectorAll('#team img')].every(i=>i.complete&&i.naturalWidth>0));
   assert.deepEqual(errors,[]);results.push({viewport:`${width}x${height}`,status:'PASS',checks:['unchanged belief','distant newcomer','Me too under single frog','large and small lily pads','central gap','static pair during flight','high single rightward jump','existing air pose','heading clearance','hug','keyboard','reentry guard','reset','reduced motion before and during flight','no overflow','exact sequential scroll mapping','reversible marks','no drift when stopped','all assets and no page errors']});await page.close();
  }
  await writeFile(`${evidence}/jump-results.json`,JSON.stringify(results,null,2));console.log(JSON.stringify(results,null,2));

@@ -1,4 +1,4 @@
-name: Website and Connect delivery
+name: Website and Connect — checks & deploy
 
 on:
   pull_request:
@@ -53,6 +53,7 @@ jobs:
           npm run build
           node scripts/package-apparent.mjs
           node --test scripts/test-brand-favicon.mjs scripts/test-github-stars.mjs scripts/test-latest-download.mjs scripts/test-platform-os.mjs scripts/test-public-homepage.mjs scripts/test-video-demo.mjs
+          node --test scripts/test-package-text.mjs scripts/test-expected-canonical-packaging.mjs scripts/test-upstream-link-guard.mjs scripts/test-package-feature-grid.mjs scripts/test-og-stage-redirect.mjs scripts/test-og-video-stage-browser.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: website-${{ github.sha }}

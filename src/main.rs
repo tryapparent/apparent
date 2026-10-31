@@ -1,4 +1,7 @@
 mod agent_context;
+#[cfg(test)]
+#[path = "../build_version.rs"]
+mod build_version;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 mod agent_capture;
 mod audio;
@@ -244,7 +247,8 @@ enum TuneCommand {
 enum Command {
     /// Opt-in hosted account and upload queue management.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    Cloud { #[command(subcommand)] command: hosted::CloudCommand },
+    #[command(alias = "cloud")]
+    Connect { #[command(subcommand)] command: hosted::ConnectCommand },
     /// Retrieve and validate a complete hosted capture using a separate read credential.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     Fetch {
@@ -1723,7 +1727,7 @@ fn main() -> Result<()> {
     };
     match command {
         #[cfg(any(target_os = "macos", target_os = "linux"))]
-        Command::Cloud { command } => hosted::command(command),
+        Command::Connect { command } => hosted::command(command),
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Fetch { id, out, wait } => hosted::fetch(&id, &out, wait),
         #[cfg(target_os = "linux")]
@@ -2578,6 +2582,58 @@ mod retirement_pill_model;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn hosted_connect_is_canonical_in_help_and_usage() {
+        let help = Cli::try_parse_from(["apparent", "--help"]).err().unwrap().to_string();
+        assert!(help.lines().any(|line| line.trim_start().starts_with("connect ")), "{help}");
+        assert!(!help.lines().any(|line| line.trim_start().starts_with("cloud ")), "{help}");
+        for name in ["connect", "cloud"] {
+            for tail in [vec!["--help"], vec!["login", "--help"], vec!["upload", "--help"]] {
+                let mut args = vec!["apparent", name];
+                args.extend(tail);
+                let error = Cli::try_parse_from(args).err().unwrap();
+                assert_eq!(error.kind(), clap::error::ErrorKind::DisplayHelp);
+                assert!(!error.use_stderr());
+                let text = error.to_string();
+                assert!(text.contains("apparent connect"), "{text}");
+                assert!(!text.contains("apparent cloud"), "{text}");
+            }
+            let error = Cli::try_parse_from(["apparent", name, "login"]).err().unwrap().to_string();
+            assert!(error.contains("apparent connect login --server <SERVER>"), "{error}");
+        }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn hosted_connect_and_cloud_parse_identical_commands_and_flags() {
+        use clap::CommandFactory;
+        for tail in [
+            vec!["login", "--server", "https://hosted.tryapparent.com"],
+            vec!["login", "--server", "https://hosted.tryapparent.com", "--scope", "read", "--no-browser"],
+            vec!["login", "--server", "https://hosted.tryapparent.com", "--scope", "upload", "--consent-upload", "--no-browser"],
+            vec!["status"], vec!["status", "--account"], vec!["logout"],
+            vec!["disable"], vec!["retry"], vec!["upload", "./synthetic capture.apparent"],
+        ] {
+            let parse = |name| {
+                let mut args = vec!["apparent", name];
+                args.extend(tail.iter().copied());
+                assert!(matches!(Cli::try_parse_from(&args).unwrap().command, Some(Command::Connect { .. })));
+                let matches = Cli::command().try_get_matches_from(args).unwrap();
+                assert_eq!(matches.subcommand_name(), Some("connect"));
+                matches.subcommand().unwrap().1.clone()
+            };
+            assert_eq!(parse("connect"), parse("cloud"), "{tail:?}");
+        }
+        for name in ["connect", "cloud"] {
+            for tail in [vec!["login"], vec!["login", "--server", "https://hosted.tryapparent.com", "--scope", "admin"], vec!["status", "--consent-upload"], vec!["upload"]] {
+                let mut args = vec!["apparent", name];
+                args.extend(tail);
+                assert!(Cli::try_parse_from(args).is_err());
+            }
+        }
+    }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]

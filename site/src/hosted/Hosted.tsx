@@ -127,10 +127,11 @@ export function Hosted({ devicePage = false }: { devicePage?: boolean }) {
       <h2 id="hosted-dialog-title">{dialogKind === "read" ? "Separate read approval" : !authenticated ? "Sign in" : computer ? "Start on this computer" : "Start with your agent"}</h2>
       {dialogKind === "read" ? <><p>Connecting this computer does not grant an agent read access.</p><p>A separate read grant covers all current and future uploads, including screen images, recording, voice, transcript and window context. It cannot upload or delete. This page cannot check an agent's credential or whether it has read a capture.</p></> : !authenticated ? <><p>Signing in grants no upload or read permission.</p><SignIn devicePage={devicePage} code={code} /></> : <>
         <p>Run this in the {computer ? "recording computer’s" : "agent’s"} terminal. Open its approval link, then let the CLI finish connecting.</p>
-        <pre><code>{`apparent cloud login --server ${setupOrigin || "https://YOUR-HOSTED-API-ORIGIN"} --scope ${computer ? "upload --consent-upload" : "read --no-browser"}`}</code></pre>
+        <p>Update Apparent to use <code>apparent connect</code>. Older apps can use <code>apparent cloud</code>; it remains a compatibility alias.</p>
+        <pre><code>{`apparent connect login --server ${setupOrigin || "https://YOUR-HOSTED-API-ORIGIN"} --scope ${computer ? "upload --consent-upload" : "read --no-browser"}`}</code></pre>
         {!setupOrigin && <p>Replace <code>https://YOUR-HOSTED-API-ORIGIN</code> with your deployed API origin, not the approval website.</p>}
         <p>{computer ? "Explicit upload consent is required. Only new captures upload automatically; existing captures stay local. This grant can add, read and delete uploaded captures." : "Approve all current and future uploads for read-only access. This grant cannot upload or delete; upload permission is independent."}</p>
-        {computer && <><p>Check the computer’s actual local state:</p><pre><code>{"apparent cloud status\napparent cloud status --account"}</code></pre></>}
+        {computer && <><p>Check the computer’s actual local state:</p><pre><code>{"apparent connect status\napparent connect status --account"}</code></pre></>}
         <p>The website cannot inspect local settings or credentials, launch Apparent, or finish the CLI login for you.</p>
       </>}
       <Limits />
