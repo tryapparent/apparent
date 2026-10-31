@@ -53,8 +53,9 @@ mod onboarding;
 mod onboarding_window;
 mod page;
 mod phone;
-// Lowers the output volume while recording on macOS; elsewhere a no-op.
-#[cfg_attr(not(target_os = "macos"), path = "win/playback.rs")]
+// Shared capture guard; each OS supplies only its audio mechanics.
+#[cfg_attr(target_os = "linux", path = "linux/playback.rs")]
+#[cfg_attr(target_os = "windows", path = "win/playback.rs")]
 mod playback;
 mod recover;
 mod render;
