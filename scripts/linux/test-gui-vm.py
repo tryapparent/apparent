@@ -28,6 +28,20 @@ def load_reaper():
 
 
 class GuestIsolationTests(unittest.TestCase):
+    def test_readonly_chain_can_back_owned_overlay_but_writable_member_refuses(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            base, derived, overlay = [root / name for name in ('base.qcow2', 'derived.qcow2', 'overlay.qcow2')]
+            runner.run_checked('qemu-img', 'create', '-f', 'qcow2', str(base), '1M')
+            runner.make_overlay(base, derived)
+            derived.chmod(0o400)
+            with self.assertRaisesRegex(RuntimeError, 'read-only'):
+                runner.make_overlay(derived, overlay, True)
+            self.assertFalse(overlay.exists())
+            base.chmod(0o400)
+            runner.make_overlay(derived, overlay, True)
+            self.assertTrue(overlay.exists())
+
     @patch.object(runner.os, 'getgroups', return_value=[1234])
     @patch.object(runner.Path, 'stat', return_value=SimpleNamespace(st_gid=1234))
     def test_fixture_network_denies_guest_egress_but_keeps_loopback_ssh(self, _stat, _groups):
