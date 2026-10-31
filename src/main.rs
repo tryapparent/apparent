@@ -6,9 +6,10 @@ mod build_version;
 mod agent_capture;
 mod audio;
 mod autocrop;
-// Windows looks elements up through UI Automation (`win/uia.rs`); other systems have no lookup.
+// Native element adapters; Linux is limited to the default-off GtkPlug bridge.
+#[cfg_attr(target_os = "linux", path = "ax_linux.rs")]
 #[cfg_attr(
-    not(any(target_os = "macos", target_os = "windows")),
+    not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
     path = "ax_other.rs"
 )]
 mod ax;

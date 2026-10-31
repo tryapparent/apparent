@@ -202,7 +202,7 @@ for lifecycle and same-process replay limits.
 
 ## Not on Linux
 
-The cabled iPhone, OS element lookups for `agentContext` (`ax_other.rs`), Sparkle (Linux instead updates AppImages itself) and the dev-site tab URL (`/sdk.js` registrations still route). With `agentContext` on, an unnamed Linux click says `clicked (element unavailable)` and a mark receives no OS-derived element label. AT-SPI cannot securely join an accessible top-level to the X11 window where the action occurred; matching PID, title and bounds do not rule out a stale window. Registered dev pages can still supply their own context. See `docs/keyframes-and-text.md`.
+The cabled iPhone, general OS element lookups for `agentContext`, Sparkle (Linux instead updates AppImages itself) and the dev-site tab URL (`/sdk.js` registrations still route). With `agentContext` on, an unnamed Linux click says `clicked (element unavailable)`. Marks normally have no OS-derived label; the separate default-off `linuxNearbyText` candidate supports only a source-valued GtkPlug accessibility bridge on native X11, not general AT-SPI window attribution or Wayland. Its first stock acceptance target is the external xfce4-datetime-plugin, and runtime proof is still pending. AT-SPI cannot securely join an accessible top-level to the X11 window where the action occurred; matching PID, title and bounds do not rule out a stale window. Registered dev pages can still supply their own context. See `docs/keyframes-and-text.md`.
 
 ## Packaging
 

@@ -22,6 +22,16 @@
   ],
   "features": [
     {
+      "id": "linux-nearby-text",
+      "group": "agent",
+      "name": "Nearby visible Linux labels for unnamed marks",
+      "says": "Adds a nearby noneditable label through an explicit XEmbed AT-SPI plug bridge without changing ink geometry. No general window matching, OCR or editable text reads.",
+      "status": "experiment:linuxNearbyText",
+      "platforms": ["linux"],
+      "note": "Default off and also requires agentContext. Candidate only: stock external xfce4-datetime-plugin native X11 proof is pending. Native Wayland/XWayland sessions, missing bridges, occlusion uncertainty and stale windows stay empty with noncontent log reasons. Noneditable labels may still contain private data.",
+      "docs": ["docs/linux.md", "docs/keyframes-and-text.md"]
+    },
+    {
       "id": "site-feature-grid",
       "group": "install",
       "name": "Animated homepage feature explanations",

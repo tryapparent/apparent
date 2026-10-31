@@ -44,9 +44,75 @@ A scene-change keyframe says `[changed: the whole screen]` when its `autocrop.ch
 
 With `agentContext` on when a Mac capture starts (not the iPhone mirror, and only with Accessibility granted), `crate::ax` looks up what each click and ⇧ stroke lands on in the Accessibility tree: the element at the mouse-down point, and for a stroke the middle of its box (just above a flat stroke, since an underline sits under what it marks). A click on a button's text or icon is named by the button (up to two parents). It reads the role description, a label (title, description, value, placeholder), `AXIdentifier` or `AXDOMIdentifier`, and the file name of the window's `AXDocument`; never a window title, never the value of a secure or other input field, and every string cut to one line of 60 characters. Lookups run one at a time on the `apparent-ax` thread with a 0.1 s messaging timeout and a 250 ms budget each; lookups that hit Apparent's own windows retry on the app whose window is under the point. `finish_session` waits up to 400 ms for running lookups and puts the results on `Click.role` / `Click.label` (`“New Tab” #tab-new in main.rs`), `Drag.label` and `Stroke.on` (`button “Area”`, which `Mark.on` and the mark's description pick up). Results of an earlier capture are dropped (`Prober::begin`).
 
-Linux does not attribute clicks or marks to OS accessibility elements. AT-SPI cannot reliably bind an accessible top-level to the X11 window where an action occurred, so a matching PID, title, bounds and active state could still name a different window after a replacement. With `agentContext` on, an unnamed Linux click says `clicked (element unavailable)`; marks have no OS-derived `on` label. Context supplied by a registered dev page remains separate and can name its own elements. Native Wayland elements are unavailable too.
+Linux does not generally attribute clicks or marks to OS accessibility elements. AT-SPI cannot reliably bind an accessible top-level to an X11 window by matching PID, title or bounds. With `agentContext` on, an unnamed Linux click says `clicked (element unavailable)`. The separate default-off `linuxNearbyText` experiment below supports only an explicit XEmbed accessibility bridge for unnamed marks. Registered dev-page context remains separate. Native Wayland elements are unavailable.
 
 Dev pages that load `/sdk.js` add what only the page knows (`src/page.rs`, `src/sdk.js`). With `agentContext` on, `/web/register` answers `"context": true` to loopback pages, and the script then hooks in once: the element under each `pointerdown` and under ⇧ mouse moves (every 250 ms) as tag, id, two classes, a label (`aria-label`, `title`, `alt`, `data-testid`, else up to 60 characters of text; for form fields only the placeholder or name, nothing for password fields, never a typed value), and the component and source `file:line` from React's fiber (`_debugSource`, or the first project frame of `_debugStack`) or a locator attribute (`data-source-loc`, `data-inspector-relative-path`/`-line`, `data-sentry-component`/`-source-file`); `<video>`/`<audio>` seeks, plays and pauses (file name, time, duration); `console.error`, uncaught errors and unhandled rejections (message and first project frame); and fetch/XHR requests that fail or answer 400+ (method, path without query, status, duration; no bodies, headers or cookies). It batches them to `POST /web/context`, which takes loopback pages from this Mac only, token or not, and drops them when the experiment is off. The app keeps 3 minutes per tab (300 events, 16 tabs) and cuts every string again. When a capture finishes (`finish_session`, not the iPhone mirror), `page::apply` takes the window's events from tabs that were clicked, marked or focused then: a page click within 400 ms of a Mac click or drag replaces its label (`<button.tab-new> “New tab” in BrowserHeader (src/BrowserHeader.tsx:88)`), the most common element under a stroke's ⇧ moves becomes its `on`, and errors, failed requests and video playback become app events (`console error: …`, `GET /api/tabs → 404`, `video clips.mp4 scrubbed to 0:04 / 0:11`, a scrub's seeks folded into its last). The agentContext summary shows a Mac capture's app events without the `app:` prefix.
+
+## Experiment `linuxNearbyText` (`src/ax_linux.rs`, `src/ax_linux_native.rs`)
+
+Default off, Linux **X11 sessions only**. Set both `experiments.agentContext` and
+`experiments.linuxNearbyText` to `true` before starting a recording. It adds a
+nearby visible, noneditable AT-SPI **label Name** to an otherwise unnamed Shift
+stroke, through the existing `Stroke.on` → `Mark.on` path. Existing page-supplied
+names win; stroke geometry, images, clicks and clipboard behavior do not change.
+Reprocessing cannot reconstruct a live lookup that was not recorded.
+
+This is a narrow candidate, **not runtime-proven coverage**. The first ordinary
+app acceptance target is the stock external `xfce4-datetime-plugin` in
+`xfce4-panel` (GTK3 `GtkPlug` / `WrapperPlug`, `X-XFCE-Internal=FALSE`), not the
+built-in internal Clock plugin. No app injection or modified image is needed.
+Native proof must still establish the actual installed plugin's tree and result.
+
+At the stroke-probe event a dedicated X connection walks native stacking and
+ancestry under that point. It accepts only the plug's `_XEMBED_AT_SPI_PATH`
+property with type **the same atom**, format 8 and an unterminated
+`<unique-bus-name>:<object-path>` value. The property explicitly joins the plug
+XID to an `AtkPlug` wrapper; it is mutable same-user source data, not
+authentication. No PID/title/rectangle matching, registry-wide search, OCR,
+editable Name/Value/Text getters, toolkit injection or compositor hook is used.
+The wrapper's own native bounds supply its clipping rectangle because `AtkPlug`
+has an empty Component vtable; every descendant supplies its own AT-SPI bounds.
+Every descendant edge and the entire selected label-to-wrapper path must stay
+on the same unique bus. The foreign embedding socket is outside this tree scope.
+
+Only SHOWING and VISIBLE branches are visited. Editable, password, entry, text,
+terminal and combo-box branches are rejected without reading their content.
+The only content getter is the chosen leaf label's Name, after ancestry, role, state,
+bounds and native checks. The label must fit inside the capture frame and
+uncovered plug rectangle. Noneditable labels can still contain private data;
+this is not a sensitive-content detector. The nearest label must be within
+48 root pixels, with at least a 4-pixel distance lead over the next candidate;
+missing or ambiguous labels stay empty. Output is one line, at most 60 characters.
+
+Native bounds conservatively block: excluded windows are not transparent holes.
+Only explicitly supplied own ink passthrough IDs may be ignored. Input shape
+is never used as visual occlusion. Nonrectangular native ancestry and an
+InputOutput native child over the point are unsupported; other such plug
+children block any intersecting label. Structure, property and bounding-shape
+events on the dedicated connection invalidate the snapshot, even if a window is
+replaced with the same XID or its property later returns to the old value. Any
+relevant event causes an empty result rather than a fresh query against the
+replacement. No X server grab is held during D-Bus calls.
+
+The worker queue holds at most two waiting jobs, plus one running lookup.
+Native traversal has 16 levels, 256 child queries and a 75 ms between-query
+budget. Accessibility traversal has 48 nodes, 12 levels, 192 calls, 50 ms method
+timeouts and a 350 ms between-call budget (including queue age). X server and
+D-Bus connection setup still rely on the local session transport responding;
+these budgets are not a hard process-level kill deadline. Finish drains for at
+most 400 ms and closes publication; cancellation/session generation is checked
+before and after lookup and under the final store lock. A native event check
+also runs after lookup before publication. Static reason codes appear in the
+local app log as `Linux nearby text: <reason>` without labels, IDs or bus paths.
+Wayland/XWayland sessions decline with `wayland-native-occlusion-unavailable`;
+missing bridges, inaccessible trees and exhausted budgets remain empty honestly.
+
+Sources: GTK [gtkplug.c](https://github.com/GNOME/gtk/blob/3.24.41/gtk/gtkplug.c)
+(`_gtk_plug_accessible_embed_set_info`),
+[gtkplugaccessible.c](https://github.com/GNOME/gtk/blob/3.24.41/gtk/a11y/gtkplugaccessible.c),
+AT-SPI [atkplug.c](https://github.com/GNOME/at-spi2-core/blob/main/atk/atkplug.c)
+and [bridge.c](https://github.com/GNOME/at-spi2-core/blob/main/atk-adaptor/bridge.c)
+(`get_plug_id`, `socket_embed_hook`).
 
 ## Missing transcript warning (`src/ui.rs`)
 

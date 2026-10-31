@@ -878,6 +878,8 @@ pub struct SharedCaptureTelemetry {
     /// The `agentContext` experiment was on when this capture started: clicks and strokes are
     /// looked up in the Accessibility tree (`crate::ax`, macOS only).
     agent_context: AtomicBool,
+    #[cfg(target_os = "linux")]
+    linux_nearby_text: AtomicBool,
     /// A ⇧-press inside the target: when, where (global points) and on which frame.
     shift_press: Mutex<Option<(u64, f64, f64, TargetFrame)>>,
 }
@@ -926,6 +928,8 @@ impl SharedCaptureTelemetry {
             last_shortcut_ms: AtomicU64::new(0),
             drag_start: Mutex::new(None),
             agent_context: AtomicBool::new(false),
+            #[cfg(target_os = "linux")]
+            linux_nearby_text: AtomicBool::new(false),
             shift_press: Mutex::new(None),
         })
     }
@@ -1076,6 +1080,11 @@ impl SharedCaptureTelemetry {
         self.window_log_request.store(false, Ordering::Release);
         let agent_context = crate::handoff::experiment(crate::handoff::AGENT_CONTEXT);
         self.agent_context.store(agent_context, Ordering::Release);
+        #[cfg(target_os = "linux")]
+        self.linux_nearby_text.store(
+            agent_context && crate::handoff::experiment(crate::ax::LINUX_NEARBY_TEXT),
+            Ordering::Release,
+        );
         if agent_context {
             crate::ax::Prober::shared().begin();
         }
@@ -1123,6 +1132,11 @@ impl SharedCaptureTelemetry {
     /// Whether to look up what clicks and strokes land on: `agentContext` is on, the target is
     /// this Mac's screen (not the iPhone mirror) and Accessibility is granted.
     fn probing(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        return self.agent_context.load(Ordering::Acquire)
+            && self.capture_mode.load(Ordering::Acquire) != 3
+            && self.linux_nearby_text.load(Ordering::Acquire);
+        #[cfg(not(target_os = "linux"))]
         self.agent_context.load(Ordering::Acquire)
             && self.capture_mode.load(Ordering::Acquire) != 3
             && accessibility_granted()
@@ -1562,6 +1576,28 @@ fn track_shift_ink(
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if let Some((x, y)) = crate::ax::stroke_probe_point(&stroke, frame) {
+                    #[cfg(target_os = "linux")]
+                    if stroke.on.is_none() {
+                        let excluded = telemetry
+                            .excluded_window_ids
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .clone();
+                        let passthrough = telemetry
+                            .passthrough_window_ids
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .clone();
+                        crate::ax::Prober::shared().probe_stroke(
+                            crate::ax::Target::Stroke(stroke.t0),
+                            x,
+                            y,
+                            frame,
+                            &excluded,
+                            &passthrough,
+                        );
+                    }
+                    #[cfg(not(target_os = "linux"))]
                     crate::ax::Prober::shared().probe(crate::ax::Target::Stroke(stroke.t0), x, y);
                 }
             }
