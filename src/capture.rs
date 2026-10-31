@@ -1618,8 +1618,8 @@ fn track_shift_ink(
     }
 }
 
-/// Commit geometry before optional attribution. Neither the live ink nor the
-/// completed-strokes lock may span a native query; finish can drain them meanwhile.
+/// Event-owned attribution context. Linux acquisition runs after geometry unlocks;
+/// Mac only enqueues here, and its worker performs the AX query separately.
 struct StrokeProbeContext {
     frame: TargetFrame,
     #[cfg(target_os = "linux")]
@@ -1655,10 +1655,20 @@ fn commit_shift_ink(telemetry: &SharedCaptureTelemetry, probe: impl FnOnce(&Stro
             #[cfg(target_os = "linux")]
             passthrough: telemetry.passthrough_window_ids.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone(),
         });
+        // Mac Prober samples its session at enqueue. Keep that short queue send
+        // under admission ownership so finish/reset cannot retag A's event as B.
+        // The completed-strokes guard is already gone; AX runs on its worker.
+        #[cfg(not(target_os = "linux"))]
+        if let Some(context) = context {
+            probe(&stroke, context);
+        }
         drop(live_ink);
         let _ = telemetry
             .ui_sender
             .try_send(LiveOverlayEvent::RequestSnapshot);
+        // Unlike Mac enqueue, Linux takes a native snapshot in this callback.
+        // Never hold geometry locks over that I/O; retain the admitted generation.
+        #[cfg(target_os = "linux")]
         if let Some(context) = context {
             probe(&stroke, context);
         }
@@ -2289,7 +2299,6 @@ mod tests {
         telemetry
     }
 
-    #[cfg(target_os = "linux")]
     fn label_test_ink() -> Stroke {
         Stroke {
             t0: 1,
@@ -2300,6 +2309,92 @@ mod tests {
             on: None,
             pin: None,
             laser: false,
+        }
+    }
+
+    // Uses the real Mac admission check, but replaces only the existing enqueue
+    // callback with an inert receipt. Never performs an AX element lookup.
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "requires Accessibility granted to the test executable; no AX lookup"]
+    fn mac_shift_enqueue_cannot_cross_finish_into_replacement_session() {
+        assert!(accessibility_granted(), "run on an authorized disposable Mac");
+        for replacement in [CaptureMode::Device, CaptureMode::Display] {
+            let telemetry = session(1000., 1000.);
+            telemetry.set_capture_mode(CaptureMode::Display);
+            telemetry.agent_context.store(true, Ordering::Release);
+            *telemetry.live_ink.lock().unwrap() = Some(label_test_ink());
+            let (admitted, admitted_rx) = flume::bounded(1);
+            let (resume, resume_rx) = flume::bounded(1);
+            let (queued, queue) = flume::unbounded();
+            let input = Arc::clone(&telemetry);
+            let a_queue = queued.clone();
+            let callback = std::thread::spawn(move || {
+                commit_shift_ink(&input, |stroke, context| {
+                    // This is after actual admission, immediately before the
+                    // production callback would sample Mac Prober's session.
+                    admitted.send(()).unwrap();
+                    resume_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                    assert_eq!(context.frame.width, 1000.);
+                    a_queue.send((
+                        input.capture_mode.load(Ordering::Acquire),
+                        input.target_frame.lock().unwrap().width as u32,
+                        stroke.clone(),
+                    )).unwrap();
+                });
+            });
+            admitted_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let enqueue_owns_session = telemetry.live_ink.try_lock().is_err();
+            // Completed geometry's guard must not span even this short enqueue.
+            assert_eq!(telemetry.strokes.try_lock().unwrap().as_slice(), &[label_test_ink()]);
+            let next = Arc::clone(&telemetry);
+            let (replaced, replaced_rx) = flume::bounded(1);
+            let teardown = std::thread::spawn(move || {
+                let (_, a) = next.finish_session(); // Also the discard boundary.
+                next.set_capture_mode(replacement);
+                next.reset_for_session(TargetFrame {
+                    x: 0., y: 0., width: 800., height: 1000., scale: 2.,
+                });
+                next.agent_context.store(true, Ordering::Release);
+                // Deliberately collide with A's relative timestamp.
+                *next.live_ink.lock().unwrap() = Some(label_test_ink());
+                replaced.send(a).unwrap();
+            });
+            if enqueue_owns_session {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                while telemetry.active.load(Ordering::Acquire) && Instant::now() < deadline {
+                    std::thread::yield_now();
+                }
+                assert!(!telemetry.active.load(Ordering::Acquire));
+            }
+            // On the broken boundary, force replacement before resuming A.
+            // On the repaired boundary, waiting here would deadlock by design.
+            let early = if enqueue_owns_session {
+                None
+            } else {
+                Some(replaced_rx.recv_timeout(Duration::from_secs(5)).unwrap())
+            };
+            resume.send(()).unwrap();
+            callback.join().unwrap();
+            teardown.join().unwrap();
+            let a = early.unwrap_or_else(|| replaced_rx.recv_timeout(Duration::from_secs(5)).unwrap());
+            assert_eq!(a, vec![label_test_ink()]);
+            let receipt = queue.recv_timeout(Duration::from_secs(5)).unwrap();
+            assert_eq!(receipt, (0, 1000, label_test_ink()), "A must enqueue before B can own the session");
+            assert!(enqueue_owns_session, "finish/reset crossed admitted Mac enqueue");
+            assert!(queue.is_empty());
+            // Forbidden Device B gets no enqueue; allowed B reaches the same
+            // callback with its own frame despite colliding t0. No deny-all pass.
+            commit_shift_ink(&telemetry, |stroke, context| {
+                queued.send((telemetry.capture_mode.load(Ordering::Acquire), context.frame.width as u32, stroke.clone())).unwrap();
+            });
+            if replacement == CaptureMode::Device {
+                assert!(queue.is_empty(), "Device B must not authorize lookup");
+            } else {
+                assert_eq!(queue.recv_timeout(Duration::from_secs(5)).unwrap(), (0, 800, label_test_ink()));
+            }
+            assert!(queue.is_empty());
+            assert_eq!(telemetry.finish_session().1, vec![label_test_ink()], "B retains exact unnamed geometry");
         }
     }
 
