@@ -65,6 +65,8 @@ jobs:
           name: website-${{ github.sha }}
           path: site/dist-apparent/
           if-no-files-found: error
+          # The checked public demos use .local-media; do not drop their assets.
+          include-hidden-files: true
           retention-days: 7
       - name: Verify Connect browser behavior across credentialed origins
         working-directory: site
