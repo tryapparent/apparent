@@ -1,15 +1,11 @@
 // apparent-helper: the parts of Apparent that need Swift-only Apple frameworks.
 //
-//   apparent-helper devices                               cabled iPhones/iPads (USB registry) as JSON
-//   apparent-helper mirror --out FILE.mov [--device ID] [--microphone UID --microphone-name NAME]
-//                                                       live mirror window + native recording (JSON lines)
 //   apparent-helper transcribe FILE [--locale ID]          SpeechAnalyzer transcript with word timings
 //   apparent-helper transcribe-stream [--locale ID]        the same while recording: PCM on stdin, JSON lines (LiveTranscribe.swift)
 //   apparent-helper speech-model [--install] [--locale ID] the speech model's status; install it (JSON lines)
 //   apparent-helper frames MOVIE --out-dir DIR (--every MS | --at MS,MS…) [--max-edge PX]
 //   apparent-helper audio MOVIE OUT.wav                   16 kHz mono PCM of every audio track, mixed
 //   apparent-helper probe MOVIE                           duration and video size
-//   apparent-helper shrink MOVIE --out FILE.mov [--max-edge PX] [--bitrate BPS]   HEVC copy, same timeline
 //   apparent-helper export PLAN.json                      shareable .mp4: crop/camera, burned-in ink, audio (Export.swift)
 //   apparent-helper permissions                           what Apparent has been granted, as JSON
 //   apparent-helper sck-probe [--watch SECONDS]           can this process capture with ScreenCaptureKit (ScreenProbe.swift)
@@ -17,8 +13,7 @@
 //   apparent-helper onboarding [--shortcut L] [--render DIR]   the welcome window (Onboarding.swift)
 //   apparent-helper settings [--pane P] [--render DIR]         the Settings window (Settings.swift)
 //
-// Every timestamp in the output is integer milliseconds. Apparent drives the long-running
-// `mirror` command over stdin (`stop`, `cancel`) and reads its events from stdout.
+// Every timestamp in the output is integer milliseconds.
 
 import AppKit
 import CoreImage
@@ -105,17 +100,6 @@ func runAsync(_ body: @escaping () async throws -> Void) -> Never {
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 switch arguments.first {
-case "devices":
-  emit(Phone.cabled())
-case "mirror":
-  let preview = arguments.contains("--preview")
-  let hidden = arguments.contains("--hidden")
-  let out = option("--out", in: arguments).map { URL(filePath: $0) }
-  if !preview && out == nil { fail("mirror needs --out FILE.mov or --preview") }
-  Mirror.run(
-    output: out, previewOnly: preview, hiddenPreview: hidden, deviceID: option("--device", in: arguments),
-    microphone: option("--microphone", in: arguments).map { ($0, option("--microphone-name", in: arguments) ?? $0) }
-  )
 case "transcribe":
   guard arguments.count >= 2 else { fail("transcribe needs a file") }
   runAsync { emit(try await Transcriber.transcribe(URL(filePath: arguments[1]), preferred: option("--locale", in: arguments))) }
@@ -137,13 +121,6 @@ case "frames":
 case "audio":
   guard arguments.count >= 3 else { fail("audio needs MOVIE OUT.wav") }
   runAsync { emit(try await Media.exportAudio(movie: URL(filePath: arguments[1]), wav: URL(filePath: arguments[2]))) }
-case "shrink":
-  guard arguments.count >= 2, let out = option("--out", in: arguments) else { fail("shrink needs MOVIE --out FILE.mov") }
-  let maxEdge = option("--max-edge", in: arguments).flatMap(Int.init) ?? 1600
-  let bitRate = option("--bitrate", in: arguments).flatMap(Int.init) ?? 2_500_000
-  runAsync {
-    emit(try await Media.shrink(movie: URL(filePath: arguments[1]), out: URL(filePath: out), maxEdge: maxEdge, bitRate: bitRate))
-  }
 case "export":
   guard arguments.count >= 2 else { fail("export needs PLAN.json") }
   runAsync { try await Exporter.run(plan: URL(filePath: arguments[1])) }
@@ -169,5 +146,5 @@ case "qr":
   }
   emit(["qr": qr])
 default:
-  fail("usage: apparent-helper devices|mirror|transcribe|transcribe-stream|speech-model|frames|audio|probe|export|shrink|permission-panel|permissions|sck-probe|onboarding|settings|qr …")
+  fail("usage: apparent-helper transcribe|transcribe-stream|speech-model|frames|audio|probe|export|permission-panel|permissions|sck-probe|onboarding|settings|qr …")
 }

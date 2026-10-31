@@ -323,27 +323,26 @@ pub enum ElemId {
     ChipArea = 2,
     ChipWindow = 3,
     ChipScreen = 4,
-    ChipIphone = 5,
-    Record = 6,
-    DividerClose = 7,
-    Close = 8,
-    Cancel = 9,
-    Finish = 10,
-    Processing = 11,
-    DoneLead = 12,
-    Paste = 13,
-    Inspect = 14,
+    Record = 5,
+    DividerClose = 6,
+    Close = 7,
+    Cancel = 8,
+    Finish = 9,
+    Processing = 10,
+    DoneLead = 11,
+    Paste = 12,
+    Inspect = 13,
     /// The Completed island's sessions one click away (smart routing).
-    Route0 = 15,
-    Route1 = 16,
-    MicWarning = 17,
-    DividerWarning = 18,
-    LiveWarning = 19,
-    Whiteboard = 20,
+    Route0 = 14,
+    Route1 = 15,
+    MicWarning = 16,
+    DividerWarning = 17,
+    LiveWarning = 18,
+    Whiteboard = 19,
 }
 
 impl ElemId {
-    pub const COUNT: usize = 21;
+    pub const COUNT: usize = 20;
     pub const ROUTES: [ElemId; 2] = [Self::Route0, Self::Route1];
     pub const ALL: [ElemId; Self::COUNT] = [
         Self::Lead,
@@ -351,7 +350,6 @@ impl ElemId {
         Self::ChipArea,
         Self::ChipWindow,
         Self::ChipScreen,
-        Self::ChipIphone,
         Self::Record,
         Self::DividerClose,
         Self::Close,
@@ -376,7 +374,6 @@ impl ElemId {
             Self::ChipArea => "chip:Area",
             Self::ChipWindow => "chip:Window",
             Self::ChipScreen => "chip:Screen",
-            Self::ChipIphone => "chip:iPhone",
             Self::Record => "record",
             Self::DividerClose => "divider.close",
             Self::Close => "close",
@@ -400,7 +397,6 @@ impl ElemId {
             SelectionMode::Area => Self::ChipArea,
             SelectionMode::Window => Self::ChipWindow,
             SelectionMode::Screen => Self::ChipScreen,
-            SelectionMode::Iphone => Self::ChipIphone,
         }
     }
 
@@ -409,7 +405,6 @@ impl ElemId {
             Self::ChipArea => Some(SelectionMode::Area),
             Self::ChipWindow => Some(SelectionMode::Window),
             Self::ChipScreen => Some(SelectionMode::Screen),
-            Self::ChipIphone => Some(SelectionMode::Iphone),
             _ => None,
         }
     }
@@ -429,7 +424,6 @@ impl ElemId {
             Self::ChipArea => "Area",
             Self::ChipWindow => "Window",
             Self::ChipScreen => "Screen",
-            Self::ChipIphone => "iPhone",
             Self::Record => "Record",
             Self::Close | Self::Cancel => "Cancel",
             Self::Finish => "Finish",
@@ -449,15 +443,12 @@ pub enum Pres {
     Hidden,
     Recording {
         chips: bool,
-        has_iphone: bool,
     },
     RecordingWarning {
         chips: bool,
-        has_iphone: bool,
     },
     Selecting {
         mode: SelectionMode,
-        has_iphone: bool,
     },
     Processing,
     /// `routes`: the labels of sessions offered one click away, beside Paste.
@@ -477,33 +468,27 @@ impl Pres {
             (
                 Self::Recording {
                     chips: a,
-                    has_iphone: ia,
                 },
                 Self::Recording {
                     chips: b,
-                    has_iphone: ib,
                 },
-            ) => a == b && (ia == ib || !*a),
+            ) => a == b,
             (
                 Self::RecordingWarning {
                     chips: a,
-                    has_iphone: ia,
                 },
                 Self::RecordingWarning {
                     chips: b,
-                    has_iphone: ib,
                 },
-            ) => a == b && (ia == ib || !*a),
+            ) => a == b,
             (
                 Self::Selecting {
                     mode: ma,
-                    has_iphone: ia,
                 },
                 Self::Selecting {
                     mode: mb,
-                    has_iphone: ib,
                 },
-            ) => ia == ib && ma.shows_record() == mb.shows_record(),
+            ) => ma.shows_record() == mb.shows_record(),
             (
                 Self::Completed {
                     label: a,
@@ -527,7 +512,6 @@ pub struct Metrics {
     pub area: f32,
     pub window: f32,
     pub screen: f32,
-    pub iphone: f32,
     pub record: f32,
     pub cancel: f32,
     pub whiteboard: f32,
@@ -547,7 +531,6 @@ impl Default for Metrics {
             area: 30.0,
             window: 50.0,
             screen: 44.0,
-            iphone: 43.0,
             record: 46.0,
             cancel: 44.0,
             whiteboard: 69.0,
@@ -577,7 +560,6 @@ impl Metrics {
             SelectionMode::Area => self.area,
             SelectionMode::Window => self.window,
             SelectionMode::Screen => self.screen,
-            SelectionMode::Iphone => self.iphone,
         }
     }
 
@@ -676,8 +658,8 @@ fn layout_of_warning(
         Pres::Hidden => {
             return (Layout::centered(IDLE_W, IDLE_H), Vec::new());
         }
-        Pres::Selecting { mode, has_iphone } => {
-            for &seg in SelectionMode::available(*has_iphone) {
+        Pres::Selecting { mode } => {
+            for &seg in SelectionMode::available() {
                 raw.push((
                     ElemId::from_mode(seg),
                     m.segment_width(seg),
@@ -698,8 +680,8 @@ fn layout_of_warning(
             raw.push((ElemId::DividerClose, DIVIDER_W, 0.0, 0.0, false));
             raw.push((ElemId::Close, CHIP_H, CHIP_CORE_ROUND, 0.0, true));
         }
-        Pres::Recording { chips, has_iphone }
-        | Pres::RecordingWarning { chips, has_iphone } => {
+        Pres::Recording { chips }
+        | Pres::RecordingWarning { chips } => {
             let clock_w = m.clock_width(clock);
             let lead_w = CHIP_H + clock_w + LEAD_TRAIL;
             raw.push((ElemId::Lead, lead_w, CHIP_CORE_ROUND, 0.0, true));
@@ -710,7 +692,7 @@ fn layout_of_warning(
                 raw.push((ElemId::DividerWarning, DIVIDER_W, 0.0, 0.0, false));
             }
             if *chips {
-                for &seg in SelectionMode::available(*has_iphone) {
+                for &seg in SelectionMode::available() {
                     raw.push((
                         ElemId::from_mode(seg),
                         m.segment_width(seg),
@@ -1725,8 +1707,8 @@ mod tests {
     #[test]
     fn recording_warning_stays_inline_and_keeps_finish_and_cancel() {
         let metrics = Metrics::default();
-        let (plain, _) = layout_of(&Pres::Recording { chips: false, has_iphone: false }, "00:12", LabelWidths::default(), &metrics);
-        let (warned, items) = layout_of(&Pres::RecordingWarning { chips: false, has_iphone: false }, "00:12", LabelWidths::default(), &metrics);
+        let (plain, _) = layout_of(&Pres::Recording { chips: false }, "00:12", LabelWidths::default(), &metrics);
+        let (warned, items) = layout_of(&Pres::RecordingWarning { chips: false }, "00:12", LabelWidths::default(), &metrics);
         assert!(warned.r - warned.l > plain.r - plain.l);
         let ids: Vec<_> = items.iter().map(|elem| elem.id).collect();
         assert!(ids.contains(&ElemId::LiveWarning));
@@ -1736,7 +1718,7 @@ mod tests {
         let text_right = warning.rect[0] + 26.0 + metrics.warning;
         assert!((warned.r - text_right - (ISLAND_INSET + 4.0 + LIVE_WARNING_END_PAD)).abs() < 0.5);
         let (with_mic, items) = layout_of_warning(
-            &Pres::RecordingWarning { chips: false, has_iphone: false },
+            &Pres::RecordingWarning { chips: false },
             "00:12", LabelWidths::default(), &metrics, Some(InputWarning::VeryQuiet),
         );
         assert!(with_mic.r - with_mic.l <= PANEL_W - 16.0, "both warnings must fit the panel");
@@ -1747,7 +1729,7 @@ mod tests {
     #[test]
     fn microphone_warning_can_arrive_after_no_words_warning() {
         let mut model = PillModel::new(Metrics::default());
-        model.set_pres(Pres::RecordingWarning { chips: false, has_iphone: false });
+        model.set_pres(Pres::RecordingWarning { chips: false });
         model.advance(1.0);
         model.set_mic_warning(Some(InputWarning::Stopped));
         model.advance(1.0);
@@ -1845,14 +1827,12 @@ mod tests {
                     0.0,
                     Pres::Recording {
                         chips: true,
-                        has_iphone: false,
                     },
                 ),
                 (
                     1.2,
                     Pres::Selecting {
                         mode: SelectionMode::Area,
-                        has_iphone: false,
                     },
                 ),
                 (2.4, Pres::Hidden),
@@ -1863,14 +1843,12 @@ mod tests {
                     0.0,
                     Pres::Recording {
                         chips: true,
-                        has_iphone: false,
                     },
                 ),
                 (
                     1.2,
                     Pres::Selecting {
                         mode: SelectionMode::Window,
-                        has_iphone: false,
                     },
                 ),
                 (2.4, Pres::Hidden),
@@ -1881,14 +1859,12 @@ mod tests {
                     0.0,
                     Pres::Recording {
                         chips: true,
-                        has_iphone: false,
                     },
                 ),
                 (
                     1.2,
                     Pres::Recording {
                         chips: false,
-                        has_iphone: false,
                     },
                 ),
                 (2.4, Pres::Hidden),
@@ -1899,28 +1875,24 @@ mod tests {
                     0.0,
                     Pres::Selecting {
                         mode: SelectionMode::Screen,
-                        has_iphone: false,
                     },
                 ),
                 (
                     0.9,
                     Pres::Selecting {
                         mode: SelectionMode::Area,
-                        has_iphone: false,
                     },
                 ),
                 (
                     1.8,
                     Pres::Selecting {
                         mode: SelectionMode::Screen,
-                        has_iphone: false,
                     },
                 ),
                 (
                     2.7,
                     Pres::Recording {
                         chips: false,
-                        has_iphone: false,
                     },
                 ),
                 (3.9, Pres::Hidden),
@@ -1931,14 +1903,12 @@ mod tests {
                     0.0,
                     Pres::Recording {
                         chips: true,
-                        has_iphone: false,
                     },
                 ),
                 (
                     0.9,
                     Pres::Recording {
                         chips: false,
-                        has_iphone: false,
                     },
                 ),
                 (2.0, Pres::Processing),
@@ -1982,7 +1952,6 @@ mod tests {
         // Start a visible width expansion (`Processing` -> `Recording(chips)`).
         m.set_pres(Pres::Recording {
             chips: true,
-            has_iphone: false,
         });
         for _ in 0..8 {
             m.advance(FRAME_DT);
@@ -1993,7 +1962,6 @@ mod tests {
         // Retarget mid-expansion to Selecting(Area): position and velocity must carry over unchanged.
         m.set_pres(Pres::Selecting {
             mode: SelectionMode::Area,
-            has_iphone: false,
         });
         assert_eq!((m.l.x, m.l.v, m.r.x, m.r.v, m.b.x, m.b.v), before);
 
@@ -2009,19 +1977,15 @@ mod tests {
             Pres::Hidden,
             Pres::Recording {
                 chips: true,
-                has_iphone: false,
             },
             Pres::Recording {
                 chips: false,
-                has_iphone: false,
             },
             Pres::Selecting {
                 mode: SelectionMode::Area,
-                has_iphone: false,
             },
             Pres::Selecting {
                 mode: SelectionMode::Screen,
-                has_iphone: true,
             },
             Pres::Processing,
             Pres::Completed {
@@ -2077,7 +2041,6 @@ mod tests {
         let mut m = PillModel::new(Metrics::default());
         m.set_pres(Pres::Recording {
             chips: true,
-            has_iphone: false,
         });
         let mut saw_sharp_before_opaque = false;
         for _ in 0..120 {
@@ -2096,7 +2059,6 @@ mod tests {
         // then clears its blur before landing.
         m.set_pres(Pres::Recording {
             chips: false,
-            has_iphone: false,
         });
         let mut peak_travel_blur = 0.0_f32;
         for _ in 0..120 {
@@ -2125,7 +2087,6 @@ mod tests {
         let mut m = PillModel::new(Metrics::default());
         m.set_pres(Pres::Recording {
             chips: true,
-            has_iphone: false,
         });
         let target_w = m.r.target - m.l.target;
         m.advance(FRAME_DT);
@@ -2202,7 +2163,6 @@ mod tests {
         let start_w = m.frame().shape.width();
         m.set_pres(Pres::Recording {
             chips: true,
-            has_iphone: false,
         });
         let target_w = m.r.target - m.l.target;
         let mut first: Vec<(ElemId, f32)> = Vec::new();
@@ -2235,7 +2195,6 @@ mod tests {
     fn recording_controls_include_whiteboard_between_cancel_and_finish() {
         let pres = Pres::Recording {
             chips: false,
-            has_iphone: false,
         };
         let (layout, items) =
             layout_of(&pres, "0:00", LabelWidths::default(), &Metrics::default());
@@ -2252,7 +2211,7 @@ mod tests {
     fn mic_warning_stays_inline_without_replacing_recording_or_finish() {
         for warning in [InputWarning::Unavailable, InputWarning::Stopped, InputWarning::VeryQuiet] {
             for chips in [false, true] {
-                let pres = Pres::Recording { chips, has_iphone: true };
+                let pres = Pres::Recording { chips };
                 let (layout, items) = layout_of_warning(
                     &pres, "0:00", LabelWidths::default(), &Metrics::default(), Some(warning),
                 );
@@ -2267,7 +2226,7 @@ mod tests {
             }
         }
         let mut model = PillModel::new(Metrics::default());
-        model.set_pres(Pres::Recording { chips: false, has_iphone: false });
+        model.set_pres(Pres::Recording { chips: false });
         model.set_mic_warning(Some(InputWarning::Stopped));
         assert!(model.frame().mic_warning.is_some());
         model.set_pres(Pres::Processing);
@@ -2281,7 +2240,6 @@ mod tests {
         m.reduced = true;
         m.set_pres(Pres::Recording {
             chips: true,
-            has_iphone: false,
         });
         for _ in 0..60 {
             m.advance(FRAME_DT);
@@ -2289,7 +2247,6 @@ mod tests {
         let w0 = m.frame().shape.width();
         m.set_pres(Pres::Selecting {
             mode: SelectionMode::Area,
-            has_iphone: false,
         });
         m.advance(FRAME_DT);
         let f = m.frame();

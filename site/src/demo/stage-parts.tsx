@@ -4,7 +4,6 @@ import {
   AREA,
   clock,
   type Mode,
-  PHONE,
   PILL,
   type Pill,
   pillState,
@@ -21,10 +20,9 @@ import {
   MAC_WINDOW,
 } from "./script"
 import { INK_SHADOW, InkPath, PinMark } from "./ink"
-import { BROKEN, type Fix, MacWindow, PhoneMirror } from "./apps"
+import { BROKEN, type Fix, MacWindow } from "./apps"
 import { easeOutCubic, motion, smoother, springAt } from "./motion"
 
-const pressedAt = (t: number, at: number) => t >= at - 60 && t < at + 160
 
 // Ghostty becomes the key window once the cursor clicks into the Pi prompt.
 export const terminalActive = (t: number) => t >= T.promptClick
@@ -114,17 +112,13 @@ const Divider = () => <span className="island-divider" />
 
 type IslandProps = {
   state: Pill
-  phone: boolean
-  // The iPhone chip was clicked (`phonePressed` while the button is down).
-  phoneOn: boolean
-  phonePressed: boolean
   recText: string
   // 1 while the switch chips show, 0 once they've folded into Cancel · Finish.
   chips: number
 }
 
-const islandItems = (state: Pill, phone: boolean, chips: number): number[] => {
-  const reveal = phone ? PILL.items.revealPhone : PILL.items.reveal
+const islandItems = (state: Pill, chips: number): number[] => {
+  const reveal = PILL.items.reveal
   if (state === "notch" || state === "reveal") return reveal
   if (state === "recording") return chips > 0.5 ? reveal : PILL.items.recording
   return PILL.items[state]
@@ -140,8 +134,8 @@ const CloseChip = ({ w }: { w: number }) => (
 
 // The recording capsule: the lead (dot + clock) stays pinned to the left edge while the trailing
 // items swap in place, the switch chips fading out as Cancel · Finish fade in (src/ui.rs).
-function RecordingContent({ phone, phoneOn, phonePressed, recText, chips }: Omit<IslandProps, "state">) {
-  const reveal = phone ? PILL.items.revealPhone : PILL.items.reveal
+function RecordingContent({ recText, chips }: Omit<IslandProps, "state">) {
+  const reveal = PILL.items.reveal
   const [lead] = reveal
   const [, , cancel, finish] = PILL.items.recording
   const blur = (k: number) => (k > 0.001 && k < 0.999 ? `blur(${(Math.sin(Math.PI * k) * 2).toFixed(2)}px)` : undefined)
@@ -160,14 +154,9 @@ function RecordingContent({ phone, phoneOn, phonePressed, recText, chips }: Omit
           <span className="island-chips" style={{ opacity: chips, filter: blur(chips) }}>
             <Chip w={reveal[2]}>Area</Chip>
             <Chip w={reveal[3]}>Window</Chip>
-            <Chip w={reveal[4]} on={!phoneOn}>
+            <Chip w={reveal[4]} on>
               Screen
             </Chip>
-            {phone && (
-              <Chip w={reveal[5]} on={phoneOn} pressed={phonePressed}>
-                iPhone
-              </Chip>
-            )}
             <Divider />
             <CloseChip w={reveal[reveal.length - 1]} />
           </span>
@@ -186,7 +175,7 @@ function RecordingContent({ phone, phoneOn, phonePressed, recText, chips }: Omit
 }
 
 function IslandContent({ state, ...props }: IslandProps) {
-  const items = islandItems(state, props.phone, props.chips)
+  const items = islandItems(state, props.chips)
   const [lead, , c2, c3, c4] = items
   return (
     <>
@@ -227,7 +216,7 @@ type Leaving = { state: Pill; opacity: number } | null
 
 const IslandInner = memo(function IslandInner({ gone, leaving, ...props }: IslandProps & { gone: boolean; leaving: Leaving }) {
   const { state } = props
-  const width = pillWidth(islandItems(state, props.phone, props.chips))
+  const width = pillWidth(islandItems(state, props.chips))
   const recording = state === "reveal" || state === "recording"
   return (
     <div
@@ -237,7 +226,7 @@ const IslandInner = memo(function IslandInner({ gone, leaving, ...props }: Islan
     >
       {leaving && (
         <div className="island-content island-leaving" style={{ opacity: leaving.opacity }} aria-hidden>
-          <IslandContent {...props} state={leaving.state} chips={0} phoneOn={false} phonePressed={false} />
+          <IslandContent {...props} state={leaving.state} chips={0} />
         </div>
       )}
       {/* One key across reveal and recording, so the lead never remounts when the chips fold. */}
@@ -259,7 +248,6 @@ const FOLD_MS = 160
 
 export function Island({ t, mode }: { t: number; mode: Mode }) {
   const state = pillState(t, mode)
-  const phone = mode === "iphone"
   const fold = revealEnd(mode)
   const chips = t < fold ? 1 : +(1 - smoother((t - fold) / FOLD_MS)).toFixed(3)
   const gone = state === "notch" || t >= T.paste
@@ -269,9 +257,6 @@ export function Island({ t, mode }: { t: number; mode: Mode }) {
   return (
     <IslandInner
       state={state}
-      phone={phone}
-      phoneOn={phone && t >= T.phoneClick - 60}
-      phonePressed={phone && pressedAt(t, T.phoneClick)}
       recText={recording ? clock(t - recStart(mode, t)) : clock(T.finish - recStart(mode, t))}
       chips={state === "notch" ? 1 : chips}
       gone={gone}
@@ -363,8 +348,8 @@ const TAPS = [
   { down: T.finish - 160, up: T.finish + 120 },
 ]
 
-export function Keys({ t, mode }: { t: number; mode: Mode }) {
-  const cx = mode === "mac" ? MAC_WINDOW.x + MAC_WINDOW.w / 2 : PHONE.x + PHONE.w / 2
+export function Keys({ t }: { t: number; mode: Mode }) {
+  const cx = MAC_WINDOW.x + MAC_WINDOW.w / 2
   const tap = TAPS.find((k) => t >= k.down - 150 && t < k.up + 350)
   const paste = t >= T.paste - 400 && t < T.paste + 500
   if (tap) {
@@ -487,7 +472,7 @@ export function Caption({ t, script }: { t: number; script: Script }) {
   )
 }
 
-export const captureArea = (mode: Mode): Rect => (mode === "mac" ? AREA : { x: PHONE.x - 6, y: PHONE.y - 6, w: PHONE.w + 12, h: PHONE.h + 12 })
+export const captureArea = (_mode: Mode): Rect => AREA
 
 export const KeyframeScene = memo(function KeyframeScene({
   mode,
@@ -503,7 +488,7 @@ export const KeyframeScene = memo(function KeyframeScene({
   const area = captureArea(mode)
   return (
     <div className="sheet-scene wallpaper" style={{ width: STAGE.w, height: STAGE.h, transform: `scale(${scale}) translate(${-area.x}px, ${-area.y}px)` }}>
-      {mode === "mac" ? <MacWindow fix={BROKEN} /> : <PhoneMirror fix={BROKEN} />}
+      <MacWindow fix={BROKEN} />
       <svg className="ink" viewBox={`0 0 ${STAGE.w} ${STAGE.h}`} style={INK_SHADOW}>
         {script.strokes
           .filter((st) => frame.strokes.includes(st.id))
@@ -601,5 +586,3 @@ export function fixState(t: number): Fix {
 
 // When each diff hunk lands on the stage (ms after T.fix[0]): the badge, then rows and buttons.
 export const hunkDelay = (hunk: number) => (hunk === 0 ? 0 : motion().stagger)
-
-export const phoneLive = (t: number) => Math.min(progress(t, T.phoneRecord, T.phoneRecord + 300), 1 - progress(t, T.finish, T.finish + 300))

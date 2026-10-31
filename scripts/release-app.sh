@@ -74,8 +74,6 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" <<PLIST
   <string>Apparent captures your screen to build annotated agent bundles.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Apparent records your voice to align transcripts with keyframes.</string>
-  <key>NSCameraUsageDescription</key>
-  <string>Apparent mirrors and records a cabled iPhone's screen.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
   <string>Apparent transcribes your narration on this Mac.</string>
   <key>NSAppleEventsUsageDescription</key>

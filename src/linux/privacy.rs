@@ -27,7 +27,6 @@ pub fn permissions() -> BTreeMap<Permission, Status> {
         (Permission::Microphone, Status::Granted),
         (Permission::InputMonitoring, Status::Granted),
         (Permission::Accessibility, input),
-        (Permission::Camera, Status::Granted),
     ])
 }
 

@@ -7,7 +7,6 @@ use gpui::{AssetSource, SharedString};
 pub const AREA: &str = "icons/area.svg";
 pub const WINDOW: &str = "icons/window.svg";
 pub const SCREEN: &str = "icons/screen.svg";
-pub const IPHONE: &str = "icons/iphone.svg";
 pub const MIC: &str = "icons/mic.svg";
 pub const CHECK: &str = "icons/check.svg";
 pub const CHECK_CIRCLE: &str = "icons/check-circle.svg";
@@ -27,12 +26,11 @@ pub const ARROW_UP_RIGHT: &str = "icons/arrow-up-right.svg";
 pub const TERMINAL: &str = "icons/terminal.svg";
 pub const X: &str = "icons/x.svg";
 
-const ICONS: [(&str, &[u8]); 22] = [
+const ICONS: [(&str, &[u8]); 21] = [
     (SPINNER, include_bytes!("../assets/icons/spinner.svg")),
     (AREA, include_bytes!("../assets/icons/area.svg")),
     (WINDOW, include_bytes!("../assets/icons/window.svg")),
     (SCREEN, include_bytes!("../assets/icons/screen.svg")),
-    (IPHONE, include_bytes!("../assets/icons/iphone.svg")),
     (MIC, include_bytes!("../assets/icons/mic.svg")),
     (CHECK, include_bytes!("../assets/icons/check.svg")),
     (

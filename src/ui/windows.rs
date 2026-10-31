@@ -735,7 +735,7 @@ fn refresh(tray: &mut Tray) {
     if inbox.len() > 0 {
         let now = crate::now_epoch_ms();
         let mut rows: Vec<Box<dyn IsMenuItem>> =
-            vec![Box::new(MenuItem::new("From iPhone", false, None))];
+            vec![Box::new(MenuItem::new("Saved captures", false, None))];
         for entry in inbox.entries() {
             rows.push(Box::new(MenuItem::with_id(
                 format!("{INBOX_PREFIX}{}", entry.dir.display()),
@@ -774,8 +774,8 @@ fn update_tooltip(tray: &Tray) {
     let text = match (&tray.status, tray.inbox) {
         (Some(status), _) => format!("Apparent — {status}"),
         (None, 0) => "Apparent".to_owned(),
-        (None, 1) => "Apparent — 1 capture from iPhone".to_owned(),
-        (None, n) => format!("Apparent — {n} captures from iPhone"),
+        (None, 1) => "Apparent — 1 saved capture".to_owned(),
+        (None, n) => format!("Apparent — {n} saved captures"),
     };
     let _ = tray.icon.set_tooltip(Some(text));
 }
@@ -790,7 +790,7 @@ pub(super) fn set_status_text(text: &str) {
     });
 }
 
-/// The unhandled iPhone capture count, in the icon's tooltip.
+/// The historical imported capture count, in the icon's tooltip.
 pub(super) fn set_status_inbox_count(count: usize) {
     TRAY.with(|slot| {
         if let Some(tray) = slot.borrow_mut().as_mut() {

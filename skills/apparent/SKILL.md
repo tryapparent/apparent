@@ -44,6 +44,8 @@ What the drawings mean:
 
 Other files: `apparent.json` is the full manifest (keyframes, `marks` with shape and box, `events`, `transcript.words` with times, app `context`, and `autocrop`). `recording.mp4` or `recording.mov` and `audio.wav` are the source media. A `.media-pending` file means the video is still being copied from another Mac.
 
+Older saved device bundles (`source: "iphone"`, `target.mode: "device"`, mirror or ApparentKit metadata) remain readable with `inspect`, `copy`, `reprocess`, `zoom` and `export`. These are file-only operations; retain the original archive and its timing/context metadata. Live device discovery, recording, mirroring, Camera permission and automatic phone-video shrinking are retired. Do not reconnect a device or request Camera access to read an archive.
+
 ## The apparent CLI
 
 ### Configuring Apparent

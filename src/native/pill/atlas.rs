@@ -45,7 +45,6 @@ pub enum IconKind {
     Area,
     Window,
     Screen,
-    Iphone,
     Close,
     Check,
     Warning,
@@ -57,7 +56,6 @@ impl IconKind {
             SelectionMode::Area => Self::Area,
             SelectionMode::Window => Self::Window,
             SelectionMode::Screen => Self::Screen,
-            SelectionMode::Iphone => Self::Iphone,
         }
     }
 }
@@ -120,7 +118,6 @@ pub fn measure_metrics() -> Metrics {
         area: measure_text_pt("Area", HUD_TEXT, WEIGHT_MEDIUM, false),
         window: measure_text_pt("Window", HUD_TEXT, WEIGHT_MEDIUM, false),
         screen: measure_text_pt("Screen", HUD_TEXT, WEIGHT_MEDIUM, false),
-        iphone: measure_text_pt("iPhone", HUD_TEXT, WEIGHT_MEDIUM, false),
         record: measure_text_pt("Record", HUD_TEXT, WEIGHT_SEMIBOLD, false),
         cancel: measure_text_pt("Cancel", HUD_TEXT, WEIGHT_MEDIUM, false),
         whiteboard: measure_text_pt("Whiteboard", HUD_TEXT, WEIGHT_MEDIUM, false),
@@ -261,10 +258,6 @@ fn rasterize_icon(kind: IconKind, size_pt: f32, scale: f32) -> (u32, u32, [f32; 
             line_seg(&ctx, 8.0, 21.0, 16.0, 21.0);
             line_seg(&ctx, 12.0, 17.0, 12.0, 21.0);
         }
-        IconKind::Iphone => {
-            rrect(&ctx, 5.5, 2.0, 13.0, 20.0, 3.0);
-            line_seg(&ctx, 10.5, 6.0, 13.5, 6.0);
-        }
         IconKind::Close => {
             ctx.set_line_width(2.4 * s);
             line_seg(&ctx, 6.5, 6.5, 17.5, 17.5);
@@ -363,7 +356,6 @@ impl GlyphAtlas {
             (IconKind::Area, 14.0),
             (IconKind::Window, 14.0),
             (IconKind::Screen, 14.0),
-            (IconKind::Iphone, 14.0),
             (IconKind::Close, 12.0),
             (IconKind::Check, 13.0),
             (IconKind::Warning, 13.0),
@@ -377,7 +369,6 @@ impl GlyphAtlas {
             ("Area", HUD_TEXT, WEIGHT_MEDIUM),
             ("Window", HUD_TEXT, WEIGHT_MEDIUM),
             ("Screen", HUD_TEXT, WEIGHT_MEDIUM),
-            ("iPhone", HUD_TEXT, WEIGHT_MEDIUM),
             ("Record", HUD_TEXT, WEIGHT_SEMIBOLD),
             ("Cancel", HUD_TEXT, WEIGHT_MEDIUM),
             ("Whiteboard", HUD_TEXT, WEIGHT_MEDIUM),
@@ -556,7 +547,6 @@ mod tests {
             IconKind::Area,
             IconKind::Window,
             IconKind::Screen,
-            IconKind::Iphone,
             IconKind::Close,
             IconKind::Check,
             IconKind::Warning,

@@ -907,13 +907,6 @@ impl PillRuntimeState {
                     PillAction::SwitchRecording(SelectionMode::Screen)
                 }
             }
-            ElemId::ChipIphone => {
-                if is_selecting {
-                    PillAction::SelectMode(SelectionMode::Iphone)
-                } else {
-                    PillAction::SwitchRecording(SelectionMode::Iphone)
-                }
-            }
             ElemId::Record => PillAction::RecordSelected,
             ElemId::Cancel => PillAction::Cancel,
             ElemId::Whiteboard => PillAction::Whiteboard,
@@ -1284,12 +1277,11 @@ fn emit_elem_prims(
     };
 
     match elem.id {
-        ElemId::ChipArea | ElemId::ChipWindow | ElemId::ChipScreen | ElemId::ChipIphone => {
+        ElemId::ChipArea | ElemId::ChipWindow | ElemId::ChipScreen => {
             let mode = match elem.id {
                 ElemId::ChipArea => SelectionMode::Area,
                 ElemId::ChipWindow => SelectionMode::Window,
                 ElemId::ChipScreen => SelectionMode::Screen,
-                ElemId::ChipIphone => SelectionMode::Iphone,
                 _ => unreachable!(),
             };
             let selected = elem.active > 0.01;
@@ -1728,9 +1720,9 @@ mod tests {
         let mut pipelines = MetalPipelines::new(2.0).expect("MetalPipelines::new failed");
         let mut model = PillModel::new(atlas::measure_metrics());
         let states = [
-            ("selecting", Pres::Selecting { mode: SelectionMode::Screen, has_iphone: false }),
-            ("recording", Pres::Recording { chips: false, has_iphone: false }),
-            ("recording-warning", Pres::RecordingWarning { chips: false, has_iphone: false }),
+            ("selecting", Pres::Selecting { mode: SelectionMode::Screen }),
+            ("recording", Pres::Recording { chips: false }),
+            ("recording-warning", Pres::RecordingWarning { chips: false }),
             ("processing", Pres::Processing),
             ("completed", Pres::Completed { label: "Copied".into(), routes: vec![], warning: false }),
             ("completed-warning", Pres::Completed { label: "No words found".into(), routes: vec![], warning: true }),

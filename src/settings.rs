@@ -1532,6 +1532,7 @@ impl Panel {
     /// Like onboarding: the first press asks macOS, later ones (or a denied one) open the
     /// System Settings pane.
     fn grant(&mut self, permission: Permission) -> Effect {
+        if !permission.asked(self.grants.as_ref()) { return Effect::None; }
         let status = self.status(permission);
         if status == Status::Granted {
             return Effect::None;
@@ -1558,7 +1559,7 @@ impl Panel {
             .map(|program| program.name());
         let policy = crate::retention::Policy::load_from(&host.config_path());
         let login = login_item();
-        // Windows asks for no screen or accessibility grant, and has no cabled iPhone. Linux
+        // Windows asks for no screen or accessibility grant. Linux
         // asks for the input devices on Wayland only (the Accessibility row).
         let order: &[Permission] = if cfg!(target_os = "windows") {
             &[Permission::Microphone]
@@ -1573,7 +1574,6 @@ impl Panel {
                 Permission::ScreenRecording,
                 Permission::Microphone,
                 Permission::Accessibility,
-                Permission::Camera,
                 Permission::SpeechRecognition,
             ]
         };
@@ -2048,6 +2048,13 @@ impl Drop for Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stale_camera_grant_cannot_dispatch_an_os_action() {
+        let mut panel = Panel::default();
+        assert!(matches!(panel.grant(Permission::Camera), Effect::None));
+        assert!(!panel.requested.contains(&Permission::Camera));
+    }
 
     // Key codes: macOS `kVK_*` (ANSI), Windows virtual keys.
     /// Windows and Linux store virtual keys.
@@ -3031,7 +3038,7 @@ mod tests {
         );
         assert_eq!(
             grant(&mut panel, &mut host, Permission::Camera),
-            Effect::OpenSettings(Permission::Camera)
+            Effect::None
         );
         let view = panel.view(&host);
         if WIN {
@@ -3047,12 +3054,11 @@ mod tests {
                     Permission::ScreenRecording,
                     Permission::Microphone,
                     Permission::Accessibility,
-                    Permission::Camera
                 ],
                 "no Input Monitoring"
             );
             assert!(view.permissions[..3].iter().all(|p| p.required));
-            assert!(!view.permissions[3].required);
+            assert_eq!(view.permissions.len(), 3);
         }
         // Screen Recording granted but not yet usable: Reopen relaunches.
         assert_eq!(panel.on(Action::Reopen, &mut host), Effect::None);
@@ -3156,7 +3162,9 @@ mod tests {
         );
         let row = panel.view(&host).command_line;
         assert_eq!(row.button, Some("uninstall"));
-        assert_eq!(row.path.as_deref(), Some(link.to_str().unwrap()));
+        // The row displays a home-relative path when TMPDIR is below HOME too.
+        // Verify the installed target above, and the presentation contract here.
+        assert_eq!(row.path, Some(crate::command_line::tilde(&link)));
         // Not Homebrew's or /usr/local's bin, so it may not be on PATH.
         assert!(row.caption.contains("to your PATH"), "{}", row.caption);
         assert!(!row.error);

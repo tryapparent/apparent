@@ -1,5 +1,5 @@
 //! The capture shortcut. Press ⌥⇧S, briefly or held, and the display under the pointer starts
-//! recording as the keys come up; the recording's capsule shows Area · Window · Screen · iPhone
+//! recording as the keys come up; the recording's capsule shows Area · Window · Screen
 //! as chips for a few seconds (`Reveal`), so the target can still change.
 
 /// A press this soon after a recording starts is a double press, not "finish".
@@ -87,8 +87,7 @@ pub const REVEAL_MIN_MS: u64 = 900;
 /// After the pointer leaves the capsule the chips stay this much longer.
 pub const REVEAL_LINGER_MS: u64 = 1_200;
 
-/// The switch chips a tap-started recording shows in its capsule (Area · Window · Screen ·
-/// iPhone), so a tap teaches that the target can change. They fold back into the recording pill
+/// The switch chips a tap-started recording shows in its capsule (Area · Window · Screen), so a tap teaches that the target can change. They fold back into the recording pill
 /// after `REVEAL_MS`, or once the user starts working (a click, scroll or stroke), but not while
 /// the pointer is on the capsule.
 #[derive(Debug, Default)]

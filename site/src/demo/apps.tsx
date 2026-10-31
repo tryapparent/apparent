@@ -1,5 +1,5 @@
 import { memo, type ReactNode, type Ref } from "react"
-import { lerp, MAC_WINDOW, PHONE } from "./script"
+import { lerp, MAC_WINDOW } from "./script"
 
 export type CardRefs = {
   badge?: Ref<HTMLSpanElement>
@@ -203,77 +203,6 @@ export const MacWindow = memo(function MacWindow({ fix, sheen = 0, refs, inactiv
             </ul>
           </div>
         </div>
-      </div>
-    </div>
-  )
-})
-
-const PhoneStatus = memo(function PhoneStatus() {
-  return (
-    <div className="phone-status">
-      <b>9:41</b>
-      <span className="phone-island" />
-      <span className="phone-glyphs" aria-hidden>
-        <svg viewBox="0 0 18 12">
-          <rect x="0" y="8" width="3" height="4" rx="0.8" />
-          <rect x="5" y="5.5" width="3" height="6.5" rx="0.8" />
-          <rect x="10" y="3" width="3" height="9" rx="0.8" />
-          <rect x="15" y="0" width="3" height="12" rx="0.8" />
-        </svg>
-        <svg viewBox="0 0 16 12">
-          <path d="M8 11.4l2-2.3a2.9 2.9 0 00-4 0zM3.6 6.6l1.3 1.5a4.7 4.7 0 016.2 0l1.3-1.5a6.6 6.6 0 00-8.8 0zM.8 3.6l1.3 1.5a8.6 8.6 0 0111.8 0l1.3-1.5a10.6 10.6 0 00-14.4 0z" />
-        </svg>
-        <span className="phone-battery">
-          <i />
-        </span>
-      </span>
-    </div>
-  )
-})
-
-export const PhoneMirror = memo(function PhoneMirror({ fix, sheen = 0, refs, live }: { fix: Fix; sheen?: number; refs?: CardRefs; live?: number }) {
-  return (
-    <div
-      className="phone"
-      style={{
-        left: PHONE.x,
-        top: PHONE.y,
-        width: PHONE.w,
-        height: PHONE.h,
-        boxShadow: live
-          ? `0 0 0 ${2 * live}px rgba(255,59,48,${0.85 * live}), 0 0 0 1px #3a3a3e, 0 30px 80px rgba(0,0,0,.55)`
-          : undefined,
-      }}
-    >
-      <div className="phone-screen">
-        <PhoneStatus />
-        <div className="phone-nav">
-          <span>‹ Pulse</span>
-          <h2>Deploys</h2>
-        </div>
-        <DeployCard fix={fix} sheen={sheen} refs={refs} compact />
-        <div className="phone-section">
-          <b>Incidents</b>
-          <div className="phone-incident">
-            <i />
-            <span>billing-worker exited 137</span>
-            <em>9m</em>
-          </div>
-          <div className="phone-incident ok">
-            <i />
-            <span>web-console p95 latency</span>
-            <em>2h</em>
-          </div>
-        </div>
-        <div className="phone-tabs">
-          {["Overview", "Deploys", "Alerts", "Settings"].map((t) => (
-            <span key={t} className={t === "Deploys" ? "on" : ""}>
-              <i />
-              {t}
-            </span>
-          ))}
-        </div>
-        <span className="phone-home" />
       </div>
     </div>
   )

@@ -6,8 +6,6 @@
   <string>dev.kitlangton.apparent.helper</string>
   <key>CFBundleName</key>
   <string>Apparent Helper</string>
-  <key>NSCameraUsageDescription</key>
-  <string>Apparent mirrors and records a cabled iPhone's screen.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Apparent records your voice to align transcripts with keyframes.</string>
   <key>NSSpeechRecognitionUsageDescription</key>

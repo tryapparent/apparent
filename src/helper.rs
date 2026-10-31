@@ -1,8 +1,7 @@
 //! `apparent-helper`, the Swift executable shipped beside `apparent` (see `helper/main.swift`).
 //!
 //! It owns the Apple frameworks that are Swift-only or absent from the objc2 bindings Apparent
-//! uses: SpeechAnalyzer transcription, CoreMediaIO/AVFoundation iPhone capture with a live
-//! mirror window, and AVFoundation movie decoding.
+//! uses: SpeechAnalyzer transcription and shared AVFoundation movie decoding/export.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -87,26 +86,12 @@ fn os(s: &str) -> &std::ffi::OsStr {
     std::ffi::OsStr::new(s)
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct PhoneDevice {
-    pub id: String,
-    pub name: String,
-    pub model: String,
-    pub width: u32,
-    pub height: u32,
-}
 
 /// What macOS has granted Apparent, from a fresh helper process (a long-running one can miss a
 /// Screen Recording grant).
 pub fn permissions()
 -> Result<std::collections::BTreeMap<crate::onboarding::Permission, crate::onboarding::Status>> {
     run(&[os("permissions")], Duration::from_secs(5))
-}
-
-/// Cabled iPhones and iPads, from the USB registry (no camera permission needed). `id` is the
-/// USB serial and the size is unknown until the mirror attaches.
-pub fn devices() -> Result<Vec<PhoneDevice>> {
-    run(&[os("devices")], Duration::from_secs(5))
 }
 
 #[derive(Deserialize)]
@@ -273,24 +258,6 @@ pub fn probe(movie: &Path) -> Result<Probe> {
 
 /// Re-encodes `movie` into `out` as HEVC with its long edge at most `max_edge`, audio copied and
 /// every sample at its original time. Runs at utility priority; minutes of video take seconds.
-pub fn shrink(movie: &Path, out: &Path, max_edge: u32) -> Result<crate::retention::Shrunk> {
-    let edge = max_edge.to_string();
-    let helper = path()?;
-    let args = [
-        helper.as_os_str(),
-        os("shrink"),
-        movie.as_os_str(),
-        os("--out"),
-        out.as_os_str(),
-        os("--max-edge"),
-        os(&edge),
-    ];
-    run_program(
-        Path::new("/usr/sbin/taskpolicy"),
-        &[&[os("-c"), os("utility")], &args[..]].concat(),
-        Duration::from_secs(1800),
-    )
-}
 
 /// Mixes a movie's audio to 16 kHz mono WAV, aligned to the movie's start.
 pub fn export_audio(movie: &Path, wav: &Path) -> Result<()> {

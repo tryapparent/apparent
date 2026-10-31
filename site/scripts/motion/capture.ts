@@ -5,7 +5,7 @@
 // the tracked elements and (optionally) a PNG of the stage. Any frame renders the same on every run.
 //
 //   bun scripts/motion/capture.ts --url http://localhost:4602/ --out /tmp/cap --from 19500 --to 21800 \
-//     [--size desktop|iphone] [--mode mac|iphone] [--fps 60] [--slow 4] [--preroll 2500] [--no-frames]
+//     [--size desktop|iphone] [--mode mac] [--fps 60] [--slow 4] [--preroll 2500] [--no-frames]
 //     [--browser chromium|webkit] [--query look=2]
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
@@ -25,6 +25,7 @@ const url = arg("url", "http://localhost:4602/")
 const out = arg("out", "/tmp/apparent-cap")
 const size = arg("size", "desktop")
 const mode = arg("mode", "mac")
+if (mode !== "mac") throw new Error("Only desktop capture mode is supported; --size iphone is a responsive viewport.")
 const from = Number(arg("from", "0"))
 const to = Number(arg("to", "23000"))
 const fps = Number(arg("fps", "60"))
@@ -55,10 +56,6 @@ const page = await context.newPage()
 const full = `${url}${url.includes("?") ? "&" : "?"}${query}`
 await page.goto(full, { waitUntil: "networkidle" })
 await page.waitForFunction(() => window.__apparentDemo?.ready?.() === true, null, { timeout: 20000 })
-if (mode === "iphone") {
-  await page.evaluate(() => window.__apparentDemo!.mode("iphone"))
-  await page.waitForFunction(() => window.__apparentDemo?.ready?.() === true)
-}
 // Let the lazy GPU overlay initialise before the first frame.
 await page.waitForTimeout(1200)
 
@@ -87,7 +84,7 @@ await page.evaluate(() => {
 
   // Tracked elements: [id, selector, container selector for relative positions].
   // The stage's own app window only: the contact-sheet miniatures and the bundle probe draw cards too.
-  const APP = ".stage > :is(.win, .phone)"
+  const APP = ".stage > .win"
   const TRACK: [string, string, string | null][] = [
     ["caption", ".caption", null],
     ["clause", ".caption .caption-clause", ".caption"],
@@ -96,7 +93,7 @@ await page.evaluate(() => {
     ["badge", `${APP} .card .badge`, null],
     ["actions", `${APP} .card .actions-inner`, null],
     ["row", `${APP} .card .rows li`, null],
-    ["incidents", ".stage > .win .incidents, .stage > .phone .phone-section", null],
+    ["incidents", ".stage > .win .incidents", null],
     ["island", ".island", null],
     ["island-content", ".island .island-content:not(.island-leaving)", null],
     ["island-leaving", ".island .island-leaving", null],

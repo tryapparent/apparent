@@ -52,7 +52,7 @@ mod native;
 mod onboarding;
 mod onboarding_window;
 mod page;
-mod phone;
+mod saved_movie;
 // Lowers the output volume while recording on macOS; elsewhere a no-op.
 #[cfg_attr(not(target_os = "macos"), path = "win/playback.rs")]
 mod playback;
@@ -273,9 +273,6 @@ enum Command {
         /// Start a capture session immediately on launch.
         #[arg(long)]
         record: bool,
-        /// Start capturing the cabled iPhone immediately on launch.
-        #[arg(long, conflicts_with = "record")]
-        iphone: bool,
     },
     /// Inspect or manage Linux AppImage updates.
     #[cfg(target_os = "linux")]
@@ -302,9 +299,7 @@ enum Command {
         /// Optional window title or app substring to target.
         #[arg(long)]
         window: Option<String>,
-        /// Capture the cabled iPhone instead of the screen (live mirror window + native video).
-        #[arg(long, conflicts_with = "window")]
-        iphone: bool,
+
         /// Recording duration in seconds (default: 5).
         #[arg(long, default_value_t = 5)]
         duration: u64,
@@ -315,8 +310,7 @@ enum Command {
         #[arg(long)]
         out: Option<PathBuf>,
     },
-    /// List cabled iPhones and iPads that can be captured.
-    Devices,
+
     /// Try a one-frame ScreenCaptureKit capture in this process and print the result as JSON,
     /// once or (with `--watch`) every second, to see whether a Screen Recording grant reaches a
     /// running process. Asks for Screen Recording if it was never decided.
@@ -496,7 +490,7 @@ enum Command {
         no_audio: bool,
     },
     /// Clean up old captures now, as the app does daily: video and audio past the Keep
-    /// Recordings setting go to the Trash, then whole bundles; native iPhone video is shrunk.
+    /// Recordings setting go to the Trash, then whole bundles. Original recordings are never automatically re-encoded.
     Clean {
         /// Print what would happen without doing it.
         #[arg(long)]
@@ -1671,7 +1665,7 @@ enum LaunchHandlerCommand {
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn run_owned_app(record: bool, iphone: bool) -> Result<()> {
+fn run_owned_app(record: bool) -> Result<()> {
     let Some(owner) = launch_instance::acquire()? else {
         #[cfg(target_os = "linux")]
         if record {
@@ -1703,7 +1697,7 @@ fn run_owned_app(record: bool, iphone: bool) -> Result<()> {
     if let Err(error) = linux::update::record_running() {
         eprintln!("Apparent could not record its running version in config: {error:#}");
     }
-    ui::run_app(None, record, iphone, None);
+    ui::run_app(None, record, None);
     Ok(())
 }
 
@@ -1729,7 +1723,6 @@ fn main() -> Result<()> {
         }
         None => Command::App {
             record: false,
-            iphone: false,
         },
     };
     match command {
@@ -1752,7 +1745,7 @@ fn main() -> Result<()> {
             } else {
                 launch_instance::request_open();
             }
-            run_owned_app(false, false)
+            run_owned_app(false)
         }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Capture { command } => {
@@ -1771,7 +1764,7 @@ fn main() -> Result<()> {
             ensure!(!matches!(value["outcome"].as_str(), Some("wrong_capture" | "not_ready")), "GUI capture control: {value}");
             Ok(())
         }
-        Command::App { record, iphone } => {
+        Command::App { record } => {
             #[cfg(target_os = "windows")]
             {
                 win::shell::release_own_console();
@@ -1785,10 +1778,10 @@ fn main() -> Result<()> {
                 return Ok(());
             }
             #[cfg(any(target_os = "macos", target_os = "linux"))]
-            return run_owned_app(record, iphone);
+            return run_owned_app(record);
             #[cfg(target_os = "windows")]
             {
-                ui::run_app(None, record, iphone, None);
+                ui::run_app(None, record, None);
                 Ok(())
             }
         }
@@ -1828,48 +1821,6 @@ fn main() -> Result<()> {
         }
         Command::Record {
             window,
-            iphone: true,
-            duration,
-            note,
-            out,
-        } => {
-            let bundle_dir = out.unwrap_or_else(|| {
-                handoff::default_captures_dir().join(format!("{}.apparent", make_bundle_id()))
-            });
-            std::fs::create_dir_all(&bundle_dir)?;
-            let dev_id = window.or_else(|| {
-                helper::devices()
-                    .ok()
-                    .and_then(|mut d| d.drain(..).next().map(|p| p.id))
-            });
-            let playback = playback::Guard::start();
-            let session = phone::PhoneSession::start(
-                &bundle_dir.join("recording.mov"),
-                dev_id.as_deref(),
-                None,
-            )?;
-            let started = std::time::Instant::now();
-            while !session.has_recording()
-                && !session.has_ended()
-                && started.elapsed() < Duration::from_secs(15)
-            {
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            let record_started = std::time::Instant::now();
-            let target_dur = Duration::from_secs(duration.max(1));
-            while !session.has_ended() && record_started.elapsed() < target_dur {
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            drop(playback);
-            let recording = session.stop()?;
-            let (_dir, _bundle, summary) =
-                phone::finalize_live_capture(&bundle_dir, recording, Vec::new(), Vec::new(), note)?;
-            print!("{summary}");
-            Ok(())
-        }
-        Command::Record {
-            window,
-            iphone: false,
             duration,
             note,
             out,
@@ -1984,10 +1935,14 @@ fn main() -> Result<()> {
                     for i in 0..iters {
                         let (iter_out, linked) = prep_iter(i)?;
                         let t0 = std::time::Instant::now();
-                        phone::build_movie_bundle(
+                        saved_movie::build_movie_bundle(
                             &iter_out,
-                            phone::MovieCapture {
+                            saved_movie::MovieCapture {
                                 movie: linked,
+                                source: old.source.clone(),
+                                duration_ms: old.duration_ms,
+                                video_offset_ms: old.video_offset_ms,
+                                interaction_telemetry: old.interaction_telemetry,
                                 target: old.target.clone(),
                                 device: device.clone(),
                                 events: old.events.clone(),
@@ -2118,10 +2073,14 @@ fn main() -> Result<()> {
                 let _ = std::fs::copy(&timeline_src, out.join("timeline.json"));
             }
             let summary = if let Some(device) = old.device.clone() {
-                phone::build_movie_bundle(
+                saved_movie::build_movie_bundle(
                     &out,
-                    phone::MovieCapture {
+                    saved_movie::MovieCapture {
                         movie: copied,
+                        source: old.source,
+                        duration_ms: old.duration_ms,
+                        video_offset_ms: old.video_offset_ms,
+                        interaction_telemetry: old.interaction_telemetry,
                         target: old.target,
                         device,
                         events: old.events,
@@ -2254,12 +2213,6 @@ fn main() -> Result<()> {
             hex_status();
             Ok(())
         }
-        Command::Devices => {
-            for device in helper::devices()? {
-                println!("{}\t{}", device.name, device.id);
-            }
-            Ok(())
-        }
         #[cfg(target_os = "linux")]
         Command::DecoderCheck { movie } => {
             anyhow::ensure!(linux::media::h264_decoder_available(), "{}", linux::media::decoder_warning().unwrap_or_default());
@@ -2336,7 +2289,7 @@ fn main() -> Result<()> {
             let captures = captures.unwrap_or_else(handoff::default_captures_dir);
             let policy = retention::Policy::load();
             let ahead = Duration::from_secs_f64(days_ahead.max(0.0) * 86_400.0);
-            let (actions, report) = retention::run_pass(&captures, &policy, dry_run, ahead, true);
+            let (actions, report) = retention::run_pass(&captures, &policy, dry_run, ahead);
             for action in &actions {
                 let line = match action {
                     retention::Action::TrashMedia { bundle, .. } => {
@@ -2344,9 +2297,6 @@ fn main() -> Result<()> {
                     }
                     retention::Action::TrashBundle(bundle) => {
                         format!("trash bundle {}", bundle.display())
-                    }
-                    retention::Action::Shrink { video, .. } => {
-                        format!("shrink       {}", video.display())
                     }
                 };
                 println!("{line}");
@@ -2603,7 +2553,7 @@ fn main() -> Result<()> {
                     .ok()
                     .map(|(dir, loaded, _)| (dir, loaded))
             });
-            ui::run_app(initial, false, false, capture_screenshot);
+            ui::run_app(initial, false, capture_screenshot);
             Ok(())
         }
         Command::Skill => {
@@ -2620,6 +2570,14 @@ fn copy_confirmation(dir: &std::path::Path) -> String {
         dir.join("contact-sheet.png").display()
     )
 }
+
+#[cfg(test)]
+mod retirement_tests;
+
+// Exercise the pure native-pill state/layout model here too. This does not compile Metal/AppKit.
+#[cfg(all(test, not(target_os = "macos")))]
+#[path = "native/pill/model.rs"]
+mod retirement_pill_model;
 
 #[cfg(test)]
 mod tests {

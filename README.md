@@ -101,10 +101,6 @@ cargo run -- frames /tmp/demo.apparent --from 0:02 --to 0:07
 # Copy contact-sheet.png + summary.md to the clipboard
 cargo run -- copy /tmp/demo.apparent
 
-# Capture a cabled iPhone for 8 seconds from the terminal (mirror window + native video)
-cargo run -- record --iphone --duration 8
-cargo run -- devices
-
 # Rebuild an existing bundle with the current transcriber and keyframe rules
 cargo run -- reprocess latest --out /tmp/again.apparent
 
@@ -136,7 +132,6 @@ Continue unlocks once all three are on, and the screen is skipped when they alre
 | Screen & System Audio Recording | Recording the screen (ScreenCaptureKit) | onboarding, required |
 | Microphone | Your narration | onboarding, required |
 | Accessibility ("Device Control and Data Access" on macOS 27) | The key event tap (⌘Z, Esc, ⌘-shortcuts in the window log), and `⌥⇧V` and the Paste chip, which post ⌘V into the app in front | onboarding, required |
-| Camera | The cabled iPhone mirror (macOS treats it as a camera) | the first time you pick iPhone |
 
 Apparent never asks for Input Monitoring. Clicks, drags and scrolls in other apps come from an AppKit
 global mouse monitor (`NSEvent.addGlobalMonitorForEvents`), which needs no permission; ⇧ for ink
@@ -151,11 +146,10 @@ Settings window (or, with no room on screen there, over the window's empty lower
 Apparent row lined up under the list. Drag that row into the list. The card follows the window,
 steps aside when another app is in front, and shows "Apparent is allowed" once a fresh process sees
 the grant (a drop alone proves nothing). The row drags the `Apparent.app` that contains the helper,
-the bundle macOS grants. With Reduce Motion on, the card fades in place. Microphone and Camera
-can't be dragged in, so they use the macOS prompt.
+the bundle macOS grants. With Reduce Motion on, the card fades in place. Microphone uses the macOS prompt instead.
 
-Camera is asked for in the same window, with just its row, when first needed. Speech recognition
-isn't asked for: SpeechAnalyzer transcribes without it. The ⌥⇧S and ⌥⇧V hotkeys themselves need
+Camera is retired and is never checked or requested. SpeechAnalyzer needs no Speech Recognition
+grant; the older macOS 15 transcriber offers that permission as an optional row. The ⌥⇧S and ⌥⇧V hotkeys themselves need
 no permission (Carbon `RegisterEventHotKey`).
 
 Until the required permissions are on, ⌥⇧S starts nothing (no picker or overlay that
@@ -211,8 +205,7 @@ for Updates… and Quit.
 uses as it changes. The list updates as devices are plugged in or out. A chosen device is saved by
 its CoreAudio UID as `"microphone": {"id", "name"}`; if it isn't connected when you record, Apparent
 records from the default instead and says so under the popup (and once in the log). The level
-meter runs only while the Recording pane is on screen and Microphone is allowed. Cabled-iPhone
-narration uses the same microphone. From the terminal, `apparent mic list` shows the inputs and the
+meter runs only while the Recording pane is on screen and Microphone is allowed. From the terminal, `apparent mic list` shows the inputs and the
 one recordings will use, `apparent mic set <id|default>` chooses, and `apparent mic watch` prints the
 list again on every change.
 
@@ -225,11 +218,11 @@ Preview every pane, dark and light, with the recorder listening and a combinatio
   held it, auto-cropped (see below). Press it again to finish; a press within 0.4 s of the start is
   ignored, so a double press doesn't leave an empty capture. `⌃⌥⇧S` also works (only while `⌥⇧S` is the
   shortcut; see [Settings](#settings) to change it). As it starts, the island opens onto the modes (Area · Window ·
-  **Screen** · iPhone when one is cabled) for about 3.5 s, or until you click, scroll or draw;
+  **Screen**) for about 3.5 s, or until you click, scroll or draw;
   hovering keeps them. Click Window or Area to retarget (the first seconds are dropped and the
-  picker takes over: click a window or drag an area), iPhone to record the phone instead, or just
+  picker takes over: click a window or drag an area), or just
   carry on.
-- **Choose What to Record…** in the menu bar: the picker (Area, Window, Screen, iPhone) opens on
+- **Choose What to Record…** in the menu bar: the picker (Area, Window, Screen) opens on
   the display under the pointer. Click a mode, click a window or drag an area; `Esc` cancels.
 - `⌥⇧V`: Paste both `contact-sheet.png` and `summary.md` into the active app or terminal (`⌃⌥⇧V` also works while it's the default)
 - **Normal pointer**: Clicks and scrolls pass straight through to the app underneath
@@ -238,11 +231,10 @@ Preview every pane, dark and light, with the recorder listening and a combinatio
 - **`⌘Z`**: Undo the last stroke
 - **`Esc`**: Cancel the active selection or capture
 
-While picking a target, the island shows the modes **Area**, **Window**, **Screen**, and **iPhone**
-(when one is cabled). It opens on the mode you used last:
+While picking a target, the island shows the modes **Area**, **Window**, and **Screen**. It opens on the mode you used last:
 
-- `1`–`4` jump to a mode; `Tab`/`→` and `⇧Tab`/`←` step through them; `Space` toggles Area and Window
-- Area: drag a region. Window: click a window. Screen and iPhone: `⏎`, `S`, `⌥⇧S`, **Record**, or
+- `1`–`3` jump to a mode; `Tab`/`→` and `⇧Tab`/`←` step through them; `Space` toggles Area and Window
+- Area: drag a region. Window: click a window. Screen: `⏎`, `S`, `⌥⇧S`, **Record**, or
   clicking the selected mode again starts recording (`⏎`/`⌥⇧S` record the full screen from Area and
   Window too)
 
@@ -326,28 +318,19 @@ bun scripts/autocrop-gallery.mjs /tmp/gallery /tmp/bundles --scores /tmp/scores.
 
 `autocrop-eval --export src/autocrop-corpus.json` refreshes the corpus the unit tests score.
 
-## iPhone
+## Saved device bundles
 
-Plug an iPhone in with a cable (unlocked, trusted) and the picker shows **iPhone** next to Area,
-Window, and Screen. Choosing it opens a floating mirror of the
-phone on the right of the screen and starts recording:
+Live iPhone discovery, capture and mirroring are retired. There is no iPhone picker mode,
+Camera permission, `--iphone` flag or `devices` command. A saved `last-mode` of `iphone`
+falls back to the desktop Area picker; other preferences are not reset.
 
-- The phone's own video is recorded natively (1320×2868 at up to 60 fps on an iPhone Pro Max) with
-  your narration from the Mac's microphone, into the bundle as `recording.mov`. Keyframes are
-  decoded from that video, never from a screenshot of the mirror. A minute after the capture the
-  video is re-encoded to HEVC at the keyframes' 1600 px (see [Keeping captures small](#keeping-captures-small)).
-- The laser, ink, pins, and clicks work over the mirror exactly as over a window. The mirror's
-  on-screen rect is the capture target, so everything you draw is stored in phone-screen
-  coordinates and lands in the right place on the phone keyframes. Move or resize the mirror
-  freely; the mapping follows it.
-- Press **M** with the mirror focused to flag a moment ("look here"); flags always get a keyframe
-  and show as `⚑` in the summary.
-- Finish from the island as usual. Unplugging the phone finishes the capture with what was recorded.
-
-Phone bundles are ordinary bundles: `apparent.json` adds `"source": "iphone"` and a `device` object
-(name, capture `mirror`, id, native size, screen points and scale), and the target's `mode` is `device`. Keyframes fit a 1600 px long edge
-(736×1600 for a 1320×2868 phone); `apparent frames` and `apparent zoom` extract more frames from the
-video when you need them.
+Existing `.apparent` bundles from a mirror or ApparentKit remain readable. `inspect`, `copy`,
+`reprocess --out`, `frames`, `zoom` and `export` use saved files, not a connected phone.
+Archive metadata (`source: "iphone"`, `device`, `target.mode: "device"`, context and video
+clock offsets) remains meaningful history. Reprocessing writes a separate bundle and
+export writes a separate movie; neither rewrites the original archive. Automatic phone-video
+shrinking is retired. Ordinary retention still applies unless a bundle is pinned or retention
+is disabled. See [saved-file compatibility and browser SDK](docs/iphone-and-routing.md).
 
 ## Export as video
 
@@ -366,7 +349,7 @@ apparent export latest --crop 0.1,0.2,0.6,0.5       # x,y,w,h as fractions, or p
 ```
 
 - **Crop** (`--crop full|auto|x,y,w,h`): `full`, the default, opens on the whole recorded screen,
-  window, area or iPhone. Explicit `auto` uses the activity region for Screen captures; explicit
+  window, area or historical device recording. Explicit `auto` uses the activity region for Screen captures; explicit
   rectangles are respected, including at the opening. The output keeps the crop's
   aspect with even sides, is capped at `--size` (1920) on its long edge, and is never scaled up.
 - **Zoom** (on by default; `--no-zoom` opts out): after a 0.5 s whole-view opening, the camera eases to ~1.5–1.8× toward clicks, drags, marks and laser points,
@@ -375,7 +358,7 @@ apparent export latest --crop 0.1,0.2,0.6,0.5       # x,y,w,h as fractions, or p
   The path is a pure function of the bundle (`src/export/camera.rs`, critically damped springs,
   no bounce); the renderer only draws each frame's rectangle. Without saved interaction events
   the camera stays still: use the app's recording shortcut for demos, not timed `record --duration`.
-- **Audio**: `audio.wav` starts where the video does (`videoOffsetMs`); a cabled iPhone's movie
+- **Audio**: `audio.wav` starts where the video does (`videoOffsetMs`); a historical device movie
   uses its own audio track. `--no-ink` and `--no-clicks` leave the annotations out, `--fps` sets the
   rate (default 60 for a 60 fps recording).
 - **Menu**: with **Video export** on in Settings › Recording (`"videoExport": true` in
@@ -402,13 +385,9 @@ hourly, at low priority, and logs what it did:
   take and opens the folder in Finder.
 - Never touched: a bundle under a day old or changed in the last day (a copy just arrived from
   another Mac, a zoom), one whose media is still copying (`.media-pending` there, `.media-sending`
-  here; a marker over a day old is ignored), one being recorded or re-encoded, and one with a
+  here; a marker over a day old is ignored), one being recorded or read, and one with a
   `.pinned` file (`apparent pin`, `apparent pin --off`).
-- **iPhone video** from the cable is ~18 Mbps at 1320×2868. A minute after the capture (after any
-  copy to another Mac finishes, and never during a recording) `apparent-helper shrink` re-encodes it
-  to HEVC at a 1600 px long edge, audio copied as is and every frame at its original time, and
-  swaps it in place: a 4.5-minute capture goes from 750 MB to 72 MB in about 20 s. One pass a day
-  shrinks any native iPhone video that was missed.
+- Original saved device movies are never automatically re-encoded.
 
 `apparent clean --dry-run` prints what a pass would do now.
 
@@ -536,24 +515,22 @@ microphone to `apparent-helper transcribe-stream` as it records, so finishing on
 words (tens of milliseconds) instead of transcribing the whole recording. The streamed samples are
 exactly the ones `audio.wav` holds, so word times are on the same clock. If the stream fails, the
 speech model isn't installed yet, or it takes too long, the recording is transcribed afterwards as
-usual; the log says which (`Live transcription: …`). Hex and iPhone recordings are unaffected.
+usual; the log says which (`Live transcription: …`). Hex and saved device-file transcription are unaffected.
 `apparent reprocess <bundle> --out … --bench 1 --live-speed 1` replays a bundle's audio through it.
 
 ## Helper
 
 `apparent-helper` is a small Swift executable built by `build.rs` from `helper/` and shipped inside
 `Apparent.app` next to `apparent`. It owns the Swift-only or unbound Apple frameworks: SpeechAnalyzer,
-CoreMediaIO/AVFoundation iPhone capture with the mirror window, AVFoundation movie decoding, and the
+AVFoundation movie decoding, shared export, microphone metering, and the
 SwiftUI welcome window (`onboarding`).
-Apparent runs it as a subprocess (JSON on stdout; `stop`/`cancel` on stdin for the mirror). Run it
+Apparent runs it as a subprocess (JSON on stdout). Run it
 directly to test a piece in isolation:
 
 ```sh
-target/debug/apparent-helper devices
 target/debug/apparent-helper permissions
 target/debug/apparent-helper transcribe audio.wav
 target/debug/apparent-helper frames recording.mov --out-dir /tmp/f --at 1000,2000 --max-edge 1600
-target/debug/apparent-helper shrink recording.mov --out /tmp/small.mov --max-edge 1600
 target/debug/apparent-helper export plan.json   # the plan `apparent export` writes (src/export)
 target/debug/apparent-helper permission-panel --permission screen-recording --preview   # the drag card, no grant polling
 ```
@@ -589,7 +566,7 @@ windows run through XWayland.
   and ink show in the recording (no Linux desktop lets an app leave its windows out).
 - **Window picker:** lists X11/XWayland windows. Use Screen or Area for native Wayland apps.
   On KDE Wayland, desktop ink hides when Shift is released so clicks reach the app; the bundle keeps it.
-- **Not on Linux:** the cabled iPhone, video export, `agentContext` and Sparkle updates.
+- **Not on Linux:** `agentContext` and Sparkle updates. Video export uses FFmpeg.
 
 See [docs/linux.md](docs/linux.md) for how it works and how to build it.
 
@@ -604,9 +581,7 @@ On Linux, run `cargo test`; then run `apparent app` in a desktop session and rec
 `APPARENT_SHOW_OWN_WINDOWS=1` keeps Apparent's own windows (capsule, overlay, picker) in screenshots,
 which normally leave them out.
 
-- **iPhone:** connect a phone, press `⌥⇧S`, click the iPhone chip, talk, draw over the mirror, press M,
-  Finish. Inspect the bundle's `summary.md`, `apparent.json` (`source`, `device`), contact sheet, and
-  frames.
+- **Saved device archives:** run `python3 scripts/test-saved-device-bundles.py target/debug/apparent /absolute/fresh-evidence-dir` on Linux; inspect the generated summaries and contact sheets. No phone is required.
 - **Transcription:** `apparent-helper transcribe <wav or movie>` prints words with timings;
   `apparent reprocess <bundle> --out …` reruns transcription and keyframe selection on a real bundle.
 

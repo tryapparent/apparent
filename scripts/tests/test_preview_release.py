@@ -58,6 +58,14 @@ class PreviewReleaseTest(unittest.TestCase):
                                     env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             info = plistlib.loads((root / "dist/Apparent Preview.app/Contents/Info.plist").read_bytes())
+            # Inspect the generated package, not just the script's source text.
+            # Retired acquisition must not remove active desktop declarations.
+            self.assertNotIn("NSCameraUsageDescription", info)
+            for permission in ("NSScreenCaptureUsageDescription", "NSMicrophoneUsageDescription",
+                               "NSSpeechRecognitionUsageDescription", "NSAppleEventsUsageDescription"):
+                with self.subTest(permission=permission):
+                    self.assertIsInstance(info[permission], str)
+                    self.assertTrue(info[permission].strip())
             self.assertEqual(info["CFBundleIdentifier"], "dev.simonvanlaak.apparent.preview")
             self.assertEqual(info["CFBundleShortVersionString"], "0.123.2")
             self.assertEqual(info["CFBundleVersion"], "123.2")

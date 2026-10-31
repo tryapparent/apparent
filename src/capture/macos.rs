@@ -46,7 +46,7 @@ pub(super) fn raw_windows_now() -> Vec<crate::windows::RawWindow> {
     objc2::rc::autoreleasepool(|_| crate::windows::raw_windows())
 }
 
-/// Whether `pid` runs this Apparent's `apparent-helper` (the iPhone mirror, Settings, onboarding, the
+/// Whether `pid` runs this Apparent's `apparent-helper` (Settings, onboarding, the
 /// permission panel), going by its executable, so a helper started by another helper counts too.
 pub(super) fn is_helper_process(pid: i32) -> bool {
     static HELPER: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();

@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -197,8 +197,6 @@ pub enum LiveOverlayEvent {
     PasteLatestShortcut,
     UndoStroke,
     RequestSnapshot,
-    /// The iPhone mirror ended on its own (unplugged, never found, or access denied).
-    PhoneEnded,
     /// The welcome window: a button, fresh permission states, or the helper exiting.
     Onboarding(crate::onboarding::Event),
     /// The initial permission check is finished, including when grants are unavailable.
@@ -847,9 +845,6 @@ pub struct SharedCaptureTelemetry {
     /// Apparent's windows that let clicks through (the ink overlay), skipped when deciding whether
     /// a click landed on Apparent itself.
     pub passthrough_window_ids: Mutex<Vec<u32>>,
-    /// The `apparent-helper` whose window is what's being recorded (the iPhone mirror): its clicks
-    /// count, unlike those on other helper windows (Settings, onboarding). 0 when none.
-    capture_source_pid: AtomicI32,
     /// The last `on_apparent_window` answer (when, where, what), reused for a burst of scrolls.
     apparent_hit: Mutex<Option<(Instant, f64, f64, bool)>>,
     /// macOS's key event tap (`CFMachPortRef`), made once Accessibility is on (`check_key_tap`).
@@ -913,7 +908,6 @@ impl SharedCaptureTelemetry {
             window_log_request: Arc::new(AtomicBool::new(false)),
             ui_sender,
             passthrough_window_ids: Mutex::new(Vec::new()),
-            capture_source_pid: AtomicI32::new(0),
             apparent_hit: Mutex::new(None),
             tap_port: AtomicU64::new(0),
             tap_run_loop: AtomicU64::new(0),
@@ -1121,7 +1115,7 @@ impl SharedCaptureTelemetry {
     }
 
     /// Whether to look up what clicks and strokes land on: `agentContext` is on, the target is
-    /// this Mac's screen (not the iPhone mirror) and Accessibility is granted.
+    /// the desktop and Accessibility is granted.
     fn probing(&self) -> bool {
         self.agent_context.load(Ordering::Acquire)
             && self.capture_mode.load(Ordering::Acquire) != 3
@@ -1281,15 +1275,7 @@ impl SharedCaptureTelemetry {
         true
     }
 
-    /// The helper process whose window is the capture target (the iPhone mirror).
-    #[cfg_attr(target_os = "windows", allow(dead_code))]
-    pub fn set_capture_source_pid(&self, pid: u32) {
-        self.capture_source_pid
-            .store(i32::try_from(pid).unwrap_or(0), Ordering::Release);
-    }
-
-    /// Whether the topmost window at a global point is Apparent's own or a `apparent-helper`'s other
-    /// than the capture source (ignoring the click-through ink overlay). Asked once per press, and
+    /// Whether the topmost window at a global point is Apparent's own or a `apparent-helper`'s window (ignoring the click-through ink overlay). Asked once per press, and
     /// for scrolls, which come in bursts at one point, at most every 250 ms.
     fn on_apparent_window(&self, x: f64, y: f64) -> bool {
         let mut hit = self
@@ -1326,9 +1312,8 @@ impl SharedCaptureTelemetry {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         let own = std::process::id() as i32;
-        let source = self.capture_source_pid.load(Ordering::Acquire);
         crate::windows::owned_window_at(windows, x, y, &passthrough, |pid| {
-            pid == own || (pid != source && is_helper(pid))
+            pid == own || is_helper(pid)
         })
     }
 
@@ -1872,9 +1857,9 @@ mod tests {
     }
 
     /// Clicks on `apparent-helper`'s windows (the SwiftUI capsule, Settings, onboarding) are
-    /// Apparent's own, except on the iPhone mirror, which is what's being recorded.
+    /// Apparent's own and must always be excluded from desktop telemetry.
     #[test]
-    fn helper_windows_are_apparent_s_except_the_capture_source() {
+    fn all_helper_windows_remain_excluded_from_desktop_telemetry() {
         let (sender, _receiver) = flume::unbounded();
         let telemetry = SharedCaptureTelemetry::new(sender);
         let window = |id, pid, bounds| crate::windows::RawWindow {
@@ -1895,13 +1880,11 @@ mod tests {
             window(4, app, [0.0, 0.0, 1728.0, 1117.0]),
         ];
         telemetry.passthrough_window_ids.lock().unwrap().push(1);
-        telemetry.set_capture_source_pid(mirror as u32);
         let helper = |pid| pid == settings || pid == mirror;
         let at = |x, y| telemetry.apparent_window_in(&windows, x, y, helper);
         assert!(at(300.0, 300.0), "Settings");
-        assert!(!at(1400.0, 400.0), "the iPhone mirror");
+        assert!(at(1400.0, 400.0), "all helper windows are excluded");
         assert!(!at(1000.0, 900.0), "the app under the ink overlay");
-        telemetry.set_capture_source_pid(0);
         assert!(at(1400.0, 400.0), "a helper that isn't the source");
     }
 

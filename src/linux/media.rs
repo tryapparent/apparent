@@ -863,9 +863,6 @@ pub fn export_audio(movie: &Path, wav: &Path) -> Result<()> {
         .with_context(|| format!("Could not write {}", wav.display()))
 }
 
-pub fn shrink(_movie: &Path, _out: &Path, _max_edge: u32) -> Result<crate::retention::Shrunk> {
-    bail!("Only cabled-iPhone recordings (macOS) are re-encoded")
-}
 
 #[cfg(test)]
 mod tests {

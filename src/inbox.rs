@@ -1,4 +1,4 @@
-//! Recent captures that arrived from elsewhere (the iPhone) and haven't been opened, copied,
+//! Legacy saved imports that have not been opened, copied,
 //! pasted or dismissed yet. Persisted so the list survives a relaunch.
 
 use std::path::{Path, PathBuf};
@@ -13,7 +13,7 @@ const CAPACITY: usize = 8;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct InboxEntry {
     pub dir: PathBuf,
-    /// `"iphone"` for ingested recordings, `"mac"` for local captures.
+    /// Historical `"iphone"` imports or `"mac"` local captures. No live ingestion remains.
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app: Option<String>,

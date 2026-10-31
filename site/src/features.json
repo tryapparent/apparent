@@ -5,7 +5,6 @@
     { "id": "finish", "title": "Finishing" },
     { "id": "agent", "title": "What the agent gets" },
     { "id": "delivery", "title": "Delivery and routing" },
-    { "id": "iphone", "title": "iPhone" },
     { "id": "settings", "title": "Settings" },
     { "id": "storage", "title": "Storage and retention" },
     { "id": "cli", "title": "CLI and agent skill" },
@@ -14,13 +13,24 @@
     { "id": "platforms", "title": "Platforms" }
   ],
   "flow": [
-    { "title": "Capture", "detail": "⌥⇧S, the picker, a cabled iPhone", "group": "start" },
+    { "title": "Capture", "detail": "⌥⇧S and the desktop picker", "group": "start" },
     { "title": "Record", "detail": "Screen, voice, clicks and ⇧ ink on one clock", "group": "record" },
     { "title": "Bundle", "detail": "Keyframes, contact sheet, summary.md, apparent.json", "group": "agent" },
     { "title": "Deliver", "detail": "Clipboard and ⌥⇧V; no automatic session send", "group": "delivery" },
     { "title": "Agent", "detail": "The skill, then apparent zoom for a closer look", "group": "cli" }
   ],
   "features": [
+    {
+      "id": "saved-device-bundles",
+      "added": "2026-10-30",
+      "group": "agent",
+      "name": "Read historical device bundles",
+      "says": "Inspect, copy, reprocess, zoom and export existing mirror or ApparentKit bundles without starting a device or rewriting source recordings.",
+      "status": "main",
+      "platforms": ["mac", "linux"],
+      "note": "Live iPhone discovery, capture, mirroring, Camera permission and automatic video shrinking are retired. Native Mac verification remains required for this candidate.",
+      "docs": ["README.md#saved-device-bundles", "docs/iphone-and-routing.md"]
+    },
     {
       "id": "site-feature-grid",
       "group": "install",
@@ -141,17 +151,16 @@
       "id": "switch-chips",
       "group": "start",
       "name": "Switch target as it starts",
-      "says": "The capsule opens onto Area · Window · Screen · iPhone for 3.5 s; a chip restarts the capture on that target.",
+      "says": "The capsule opens onto Area · Window · Screen for 3.5 s; a chip restarts the capture on that target.",
       "status": "stable@0.3.4",
       "platforms": ["mac", "linux"],
-      "note": "The iPhone chip is Mac only.",
       "docs": ["docs/capture.md"]
     },
     {
       "id": "picker",
       "group": "start",
       "name": "Choose What to Record…",
-      "says": "The menu's picker opens on the pointer's display: drag an area, click a window, or pick Screen or iPhone.",
+      "says": "The menu's picker opens on the pointer's display: drag an area, click a window, or pick Screen.",
       "status": "stable@0.3.4",
       "platforms": ["mac", "linux"],
       "note": "The Linux preview's Window mode lists X11 windows only.",
@@ -792,17 +801,6 @@
     },
 
     {
-      "id": "cabled-iphone",
-      "group": "iphone",
-      "name": "Cabled iPhone",
-      "says": "Pick iPhone with a phone plugged in: a mirror opens, the phone's own video records with your narration, and ink works over the mirror.",
-      "status": "stable@0.3.4",
-      "platforms": ["mac"],
-      "note": "Needs AVFoundation's screen capture devices.",
-      "shortcuts": [{ "keys": "M", "does": "Flag a moment (iPhone mirror focused)" }],
-      "docs": ["README.md#iphone", "docs/iphone-and-routing.md"]
-    },
-    {
       "id": "settings-window",
       "group": "settings",
       "name": "Settings window",
@@ -817,6 +815,7 @@
       "name": "Running build identity",
       "says": "Settings › About shows the package version and compiled commit, with +modified for tracked local edits and build unknown when revision metadata is unavailable.",
       "status": "main",
+      "added": "2026-10-31",
       "platforms": ["mac", "linux"],
       "docs": ["docs/onboarding-and-settings.md"]
     },
@@ -890,16 +889,6 @@
       "says": "apparent pin keeps a capture out of cleanup; apparent clean --dry-run shows what a pass would do.",
       "status": "stable@0.3.4",
       "platforms": ["mac", "linux"],
-      "docs": ["README.md#keeping-captures-small"]
-    },
-    {
-      "id": "iphone-shrink",
-      "group": "storage",
-      "name": "Shrink iPhone video",
-      "says": "A minute after a cabled capture, its video is re-encoded to HEVC at 1600 px (750 MB to 72 MB in one test).",
-      "status": "stable@0.3.4",
-      "platforms": ["mac"],
-      "note": "The iPhone path is Mac only.",
       "docs": ["README.md#keeping-captures-small"]
     },
     {
@@ -1088,6 +1077,7 @@
       "name": "Developer ID signing and notarization setup",
       "says": "The Mac preview release workflow can accept a Developer ID certificate and notarization credentials without changing its update channel.",
       "status": "main",
+      "added": "2026-10-30",
       "platforms": ["mac"],
       "note": "Off by default via the repository Actions variable MAC_APPLE_SIGNING_ENABLED. Preparation only: native signing, Apple acceptance and the first signed Sparkle update still require real-credential verification. This is a release switch, not an app config setting.",
       "docs": ["docs/mac-signing.md", "docs/release.md"]
@@ -1143,6 +1133,7 @@
       "name": "Choose and try your Record shortcut",
       "says": "Onboarding requires an explicit shortcut choice and a successful shortcut-started recording before it can finish. Closing leaves setup unfinished for the next launch.",
       "status": "experiment:onboardingFirstCapture",
+      "added": "2026-10-31",
       "platforms": ["mac", "linux"],
       "note": "Default off. Desktop-owned Linux shortcuts must be explicitly accepted rather than edited. Native Mac and Linux interaction proof is required before promotion.",
       "docs": ["docs/onboarding-and-settings.md"]
@@ -1181,7 +1172,7 @@
       "id": "linux",
       "group": "platforms",
       "name": "Linux preview",
-      "says": "X11, and GNOME, KDE and Hyprland on Wayland through XWayland; without the iPhone, export, OS element names, Sparkle or the tab URL. Agent context has an unnamed-click fallback.",
+      "says": "X11, and GNOME, KDE and Hyprland on Wayland through XWayland; without OS element names, Sparkle or the tab URL. Agent context has an unnamed-click fallback.",
       "status": "main",
       "platforms": ["linux"],
       "added": "2026-10-26",

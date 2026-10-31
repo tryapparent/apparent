@@ -1,7 +1,7 @@
 //! The Windows side of `apparent-helper`: the same calls as `src/helper.rs`, answered in process.
 //! Movies go through Media Foundation (`win::media`), transcription through `transcribe.cpp`
 //! with Hex's model or Apparent's own copy of it (`speech`), and permissions through the privacy settings
-//! (`win::privacy`). There is no cabled-iPhone mirror on Windows.
+//! (`win::privacy`). Live device acquisition is retired.
 
 use std::path::{Path, PathBuf};
 
@@ -15,25 +15,12 @@ pub fn path() -> Result<PathBuf> {
     bail!("apparent-helper is macOS-only")
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct PhoneDevice {
-    pub id: String,
-    pub name: String,
-    pub model: String,
-    pub width: u32,
-    pub height: u32,
-}
 
 /// What Windows lets Apparent use: the microphone and camera privacy switches. Screen capture,
 /// input monitoring and pasting need no permission.
 pub fn permissions()
 -> Result<std::collections::BTreeMap<crate::onboarding::Permission, crate::onboarding::Status>> {
     Ok(crate::win::privacy::permissions())
-}
-
-/// Cabled iPhones need AVFoundation's screen capture devices, which only macOS has.
-pub fn devices() -> Result<Vec<PhoneDevice>> {
-    Ok(Vec::new())
 }
 
 /// One line of macOS's `apparent-helper speech-model [--install]`.
@@ -86,9 +73,6 @@ pub fn probe(movie: &Path) -> Result<Probe> {
 }
 
 /// Re-encodes `movie` into `out` as H.264 with its long edge at most `max_edge`.
-pub fn shrink(movie: &Path, out: &Path, max_edge: u32) -> Result<crate::retention::Shrunk> {
-    crate::win::media::shrink(movie, out, max_edge)
-}
 
 /// Mixes a movie's audio to 16 kHz mono WAV, aligned to the movie's start.
 pub fn export_audio(movie: &Path, wav: &Path) -> Result<()> {

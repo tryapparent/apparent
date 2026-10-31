@@ -167,7 +167,7 @@ struct EditorState {
 
 /// Permissions this platform asks for. Windows has no Screen Recording, Input Monitoring or
 /// Accessibility switch, so those rows never show there. Linux shows the microphone, and on
-/// Wayland the input devices (the Accessibility row); it has no cabled iPhone.
+/// Wayland the input devices (the Accessibility row).
 fn shown_on_this_platform(permission: Permission) -> bool {
     #[cfg(target_os = "linux")]
     return permission == Permission::Microphone
@@ -746,11 +746,7 @@ impl OnboardingWindow {
 
     fn how_it_works(&self) -> Div {
         let (s, paste, shift) = self.labels();
-        let pick = if cfg!(not(target_os = "macos")) {
-            "a window or an area"
-        } else {
-            "a window, an area or your iPhone"
-        };
+        let pick = "a window or an area";
         let row = |keys: Div, text: String| {
             div()
                 .flex()
@@ -853,11 +849,7 @@ impl OnboardingWindow {
                     crate::settings::paste_label()
                 ),
             ),
-            Permission::Camera => (
-                crate::icons::IPHONE,
-                "Camera",
-                "Show and record a cabled iPhone".to_owned(),
-            ),
+            Permission::Camera => return div(),
             Permission::SpeechRecognition => (
                 crate::icons::MIC,
                 "Speech Recognition",
@@ -1000,12 +992,7 @@ impl OnboardingWindow {
             "the macOS prompt or System Settings"
         };
         let only = |p: Permission| rows.len() == 1 && rows[0].permission == p;
-        let (title, body) = if state.fix && only(Permission::Camera) {
-            (
-                "Camera, for your iPhone".to_owned(),
-                "macOS treats a cabled iPhone's screen as a camera, so apparent needs Camera access to show and record it. Pick iPhone again once it's on.".to_owned(),
-            )
-        } else if state.fix && only(Permission::Accessibility) && cfg!(target_os = "linux") {
+        let (title, body) = if state.fix && only(Permission::Accessibility) && cfg!(target_os = "linux") {
             (
                 "The input devices, for ⇧ ink".to_owned(),
                 "On Wayland, clicks and Shift ink need access to input devices.".to_owned(),

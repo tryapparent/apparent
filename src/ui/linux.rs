@@ -624,8 +624,8 @@ impl ksni::Tray for ApparentTray {
         let description = match (&self.status, self.inbox) {
             (Some(status), _) => status.clone(),
             (None, 0) => String::new(),
-            (None, 1) => "1 capture from iPhone".to_owned(),
-            (None, n) => format!("{n} captures from iPhone"),
+            (None, 1) => "1 saved capture".to_owned(),
+            (None, n) => format!("{n} saved captures"),
         };
         ksni::ToolTip {
             title: "Apparent".into(),
@@ -657,7 +657,7 @@ impl ksni::Tray for ApparentTray {
             let now = crate::now_epoch_ms();
             items.push(
                 ksni::menu::StandardItem {
-                    label: "From iPhone".into(),
+                    label: "Saved captures".into(),
                     enabled: false,
                     ..Default::default()
                 }
@@ -773,7 +773,7 @@ pub(super) fn set_status_text(text: &str) {
     });
 }
 
-/// The unhandled iPhone capture count, in the icon's tooltip.
+/// The historical imported capture count, in the icon's tooltip.
 pub(super) fn set_status_inbox_count(count: usize) {
     TRAY.with(|slot| {
         if let Some(handle) = slot.borrow().as_ref() {

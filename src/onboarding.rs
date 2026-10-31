@@ -4,8 +4,8 @@
 //! `~/.config/apparent/config.json` (`"onboarding"`, see `Progress`).
 //!
 //! Screen Recording, Microphone and Accessibility are required and asked for together on the
-//! permissions screen, Screen Recording first. Camera (the cabled iPhone) is asked for the first
-//! time it's used, in the same window with just that row (`Flow::fix`). On macOS 15, where
+//! permissions screen, Screen Recording first. Camera is only an inert serialized tombstone.
+//! On macOS 15, where
 //! transcripts come from SFSpeechRecognizer, Speech Recognition is an optional fourth row, so
 //! its prompt comes up here rather than after the first capture. Until the required ones
 //! are on, ⌥⇧S starts nothing: it brings this window forward once the keys are up (`Gate`).
@@ -31,6 +31,7 @@ pub enum Permission {
     /// a config written by 0.3.x, which lists it under `granted`, still loads.
     InputMonitoring,
     Accessibility,
+    /// Serialized archive tombstone. Never checked, shown or dispatched to the OS.
     Camera,
     /// SFSpeechRecognizer's own permission, for transcripts on macOS 15. Optional, and only on
     /// the screen when the helper reports it (SpeechAnalyzer on macOS 26 needs none).
@@ -40,7 +41,7 @@ pub enum Permission {
 impl Permission {
     /// What a capture needs, in the order the checklist shows them. Screen Recording comes first
     /// because it's the one that may relaunch Apparent. Accessibility drives the key event tap
-    /// (⌘Z, Esc) and ⌥⇧V's paste. Camera is asked for when first used.
+    /// (⌘Z, Esc) and ⌥⇧V's paste.
     pub const REQUIRED: [Permission; 3] = [
         Permission::ScreenRecording,
         Permission::Microphone,
@@ -62,8 +63,9 @@ impl Permission {
     /// Whether this Mac asks for it at all: Speech Recognition only when the helper reports it
     /// (macOS before 26).
     pub fn asked(self, grants: Option<&Grants>) -> bool {
-        self != Permission::SpeechRecognition
-            || grants.is_some_and(|g| g.statuses.contains_key(&self))
+        !matches!(self, Permission::Camera | Permission::InputMonitoring)
+            && (self != Permission::SpeechRecognition
+                || grants.is_some_and(|g| g.statuses.contains_key(&self)))
     }
 
     /// Privacy lists the app can be dragged into: Grant flies the drag panel to System
@@ -183,7 +185,7 @@ pub enum Mode {
     /// The whole tour, first launch or "Welcome to Apparent…".
     Tour,
     /// Just the permissions screen, for permissions that are missing now: required ones that
-    /// went away or that ⌥⇧S found off, or Accessibility or Camera on first use. Closes once
+    /// went away or that ⌥⇧S found off, or Accessibility on first use. Closes once
     /// they're on.
     Fix,
 }
@@ -615,7 +617,7 @@ impl Flow {
     }
 
     fn grant(&mut self, permission: Permission) -> Effect {
-        if self.step != Step::Permissions || !self.asks.contains(&permission) {
+        if !permission.asked(self.grants.as_ref()) || self.step != Step::Permissions || !self.asks.contains(&permission) {
             return Effect::None;
         }
         // The fallback after a relaunch that didn't take: the row's button is Reopen.
@@ -778,11 +780,14 @@ pub struct Progress {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tutorial: Option<Tutorial>,
     /// Explicitly saved Record shortcut (or accepted desktop-owned shortcut) in the tour.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub shortcut_chosen: bool,
     /// A shortcut-started practice recording produced a completed local capture.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub first_capture_completed: bool,
+    /// Preserve future/legacy nested progress keys when updating this object.
+    #[serde(flatten)]
+    extra: BTreeMap<String, serde_json::Value>,
 }
 
 impl Progress {
@@ -1511,7 +1516,7 @@ mod tests {
         assert_eq!(flow.step(), Step::Permissions);
         assert_eq!(rows(&flow), Permission::REQUIRED);
         assert!(flow.view().rows.iter().all(|r| r.required));
-        // Camera is asked for when used, never in the tour.
+        // Camera is retired, never in the tour.
         assert!(!rows(&flow).contains(&Camera));
         // Continue does nothing until the required ones are on.
         assert!(!flow.view().ready);
@@ -1981,21 +1986,11 @@ mod tests {
     }
 
     #[test]
-    fn camera_is_asked_for_on_its_own_when_first_used() {
+    fn camera_tombstone_is_never_shown_or_dispatched() {
         let mut flow = Flow::fix(vec![Camera], Some(grants(&[ScreenRecording])));
-        assert_eq!(rows(&flow), [Camera]);
-        let view = flow.view();
-        assert!(view.fix && !view.ready && !view.rows[0].required);
-        assert_eq!(flow.on(Input::Grant(Camera)), Effect::Request(Camera));
-        // A permission that isn't on this screen can't be asked for from it.
+        assert!(rows(&flow).is_empty());
+        assert_eq!(flow.on(Input::Grant(Camera)), Effect::None);
         assert_eq!(flow.on(Input::Grant(Microphone)), Effect::None);
-        let camera = grants(&[Camera]);
-        assert_eq!(tick(&mut flow, &camera, 100), Effect::None);
-        assert!(flow.view().ready);
-        assert_eq!(
-            tick(&mut flow, &camera, 100 + AUTO_ADVANCE_MS),
-            Effect::Close
-        );
         // ⌥⇧V after Accessibility was turned off asks for just that row.
         let mut flow = Flow::fix(vec![Accessibility], Some(grants(&[])));
         assert_eq!(flow.on(Input::Later), Effect::Close);
@@ -2064,6 +2059,7 @@ mod tests {
             tutorial: Some(Tutorial::Practiced),
             shortcut_chosen: true,
             first_capture_completed: true,
+            ..Default::default()
         };
         progress.save_to(&path).unwrap();
         assert_eq!(Progress::load_from(&path), progress);

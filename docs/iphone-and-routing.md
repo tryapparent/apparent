@@ -1,16 +1,34 @@
-# Cabled iPhone capture and dev-site routing
+# Saved device files and browser SDK routing
 
-Read this before changing `src/phone.rs`, `src/routing.rs`, `src/web.rs`, `src/sdk.js` or the helper's phone capture.
+Live iPhone discovery, recording and mirroring are retired. No connected-phone setup, Camera
+permission, helper devices/mirror/shrink mode, CLI flag or acquisition experiment remains.
+This historical filename is kept for existing links; it is not a support claim.
 
-## iPhone sources (`src/phone.rs`, `helper/`)
+## Saved device-file compatibility (`src/saved_movie.rs`)
 
-- `apparent-helper` (Swift, built by `build.rs` into `target/<profile>/`, copied and signed into `Apparent.app/Contents/MacOS` by `install-app.sh`) does SpeechAnalyzer, CoreMediaIO/AVFoundation phone capture with the mirror window, and movie decoding. Swift was chosen over objc2 bindings because SpeechAnalyzer has no Objective-C surface and `objc2-av-foundation` is not in the lockfile.
-- Picker discovery (`apparent-helper devices`) reads the USB registry only: it is instant and never touches AVFoundation, so opening the picker can't raise a camera prompt or hang. The first time iPhone is chosen without Camera, Apparent closes the picker and opens the onboarding window's Camera row instead of starting the mirror (whose prompt would land under the picker).
-- Live capture: the mirror window's rect (global top-left points, streamed by the helper) is the telemetry target, so ink/laser/clicks normalize into phone coordinates; inputs are re-based onto the movie's clock (`recording.startedAt`) at finish. Keyframes are selected on 320 px candidates and re-decoded from the native video at a 1600 px long edge.
-- Audio for transcription is always the movie's audio exported on the asset timeline (`apparent-helper audio`). Do not feed a `.mov` straight to SpeechAnalyzer: `AVAudioFile` ignores the movie timeline and its word times drift (≈1.5 s late at 41 s on a phone recording).
+Keep `CaptureMode::Device`, `DeviceInfo`, `source`, `device`, context and `videoOffsetMs`
+readable for old mirror and ApparentKit `.apparent` bundles. `MovieCapture` and
+`build_movie_bundle` are file-only: inspect, copy, reprocess, frames, zoom and export must
+not discover a device, request permission or launch a mirror. Reprocessing writes a new
+bundle; export writes a new movie. Original source files remain byte-for-byte unchanged.
 
-## Dev-site routing (`src/routing.rs`, `src/web.rs`, `src/sdk.js`)
+The existing movie pipeline decodes 320 px candidates and re-decodes selected frames at a
+1600 px long edge. Extract audio from the movie's asset timeline before transcription;
+never hand `.mov` directly to SpeechAnalyzer. Reprocessing retains the archive's bundle
+clock and offsets its decoded frames/audio accordingly. Export uses the saved movie's
+own audio track. Shared Swift AVFoundation Media/Export and Settings microphone metering stay.
+There is no background phone-video re-encoding; ordinary pin/retention safety still applies.
 
-Screen and Window captures are saved and copied, without looking up an OpenCode session or sending anywhere. Old routing code and `/sdk.js` remain for local dev-page registration, but nothing calls the capture-routing entry point. The app binds the browser SDK server to `127.0.0.1:47777`; it does not accept phone uploads.
+On Linux, run `python3 scripts/test-saved-device-bundles.py target/debug/apparent
+/absolute/fresh-evidence-dir` (one command) for synthetic mirror/ApparentKit metadata, audio
+clock, real decode, zoom, export and source-hash proof. It needs FFmpeg plus the repository's
+GStreamer movie decoder. This does not prove native Mac helper or either OS's live GUI.
 
+## Browser SDK routing (`src/routing.rs`, `src/web.rs`, `src/sdk.js`)
+
+Screen and Window captures are saved and copied, without looking up an OpenCode session or
+sending anywhere. Old routing code and `/sdk.js` remain for local dev-page registration,
+but nothing calls the capture-routing entry point. The SDK server binds to
+`127.0.0.1:47777`, retains its Host/Origin protections, and rejects `/ingest` phone uploads.
+Old session metadata is archive evidence, never authorization to send a capture.
 The old `smartRouting` experiment has no effect on capture delivery.

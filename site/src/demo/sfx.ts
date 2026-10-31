@@ -614,7 +614,7 @@ export type AudioDiagnostics = {
   narrationPlaying: boolean
   narrationMode: Mode | null
   narrationCurrentTime: number
-  narrationDecoded: { mac: boolean; iphone: boolean }
+  narrationDecoded: { mac: boolean }
   narrationGain: number
   timelineMs: number
   driftMs: number
@@ -636,7 +636,6 @@ export function getDiagnostics(): AudioDiagnostics {
     narrationCurrentTime,
     narrationDecoded: {
       mac: decodedNarration.has("mac"),
-      iphone: decodedNarration.has("iphone"),
     },
     narrationGain: narrationGain ? narrationGain.gain.value : 1,
     timelineMs: lastTimelineMs,
@@ -654,7 +653,7 @@ if (typeof window !== "undefined") {
 
 export type Cue = { t: number; sound: Sound; volume?: number }
 
-export function demoCues(mode: Mode): Cue[] {
+export function demoCues(_mode: Mode): Cue[] {
   const keys = (down: number[], up: number[]): Cue[] => [
     ...down.map((t) => ({ t, sound: "press" as const })),
     ...up.map((t) => ({ t, sound: "release" as const })),
@@ -674,6 +673,5 @@ export function demoCues(mode: Mode): Cue[] {
     ...keys([T.submit], [T.submit + 90]),
     { t: T.fix[0], sound: "success" },
   ]
-  if (mode === "iphone") cues.push({ t: T.phoneClick, sound: "pulse" })
   return cues.sort((a, b) => a.t - b.t)
 }

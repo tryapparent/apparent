@@ -1838,92 +1838,6 @@ kbd {
   background-size: 250% 100%;
 }
 
-/* ---------- Phone mirror ---------- */
-
-.phone {
-  position: absolute;
-  z-index: 1;
-  border-radius: 44px;
-  padding: 9px;
-  background: linear-gradient(145deg, #3a3a3e, #1a1a1d 40%, #2c2c30);
-  box-shadow:
-    0 0 0 1px #4a4a4f,
-    0 30px 80px rgba(0, 0, 0, 0.55);
-  transition: box-shadow 0.2s;
-}
-
-.phone-screen {
-  position: relative;
-  height: 100%;
-  border-radius: 35px;
-  overflow: hidden;
-  background: #000;
-  padding: 0 12px;
-  box-shadow: 0 0 0 2px #050506;
-}
-
-.phone-status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 46px;
-  padding: 2px 14px 0 20px;
-  font-size: 14px;
-}
-
-.phone-island {
-  width: 78px;
-  height: 23px;
-  border-radius: 12px;
-  background: #000;
-  box-shadow: inset 0 0 0 1px #141416;
-}
-
-.phone-glyphs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.phone-glyphs svg {
-  width: 15px;
-  height: 10px;
-  fill: #fff;
-}
-
-.phone-battery {
-  position: relative;
-  width: 20px;
-  height: 10px;
-  border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  padding: 1px;
-}
-
-.phone-battery i {
-  display: block;
-  width: 80%;
-  height: 100%;
-  border-radius: 1.5px;
-  background: #fff;
-}
-
-.phone-nav {
-  padding: 6px 4px 12px;
-}
-
-.phone-nav span {
-  font-size: 14px;
-  color: #0a84ff;
-}
-
-.phone-nav h2 {
-  margin: 4px 0 0;
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
 .card.compact {
   padding: 14px 12px 12px;
   border-radius: 16px;
@@ -1963,99 +1877,6 @@ kbd {
   padding: 0;
   font-size: 12.5px;
   border-radius: 9px;
-}
-
-.phone-section {
-  margin-top: 18px;
-  padding: 0 4px;
-  font-size: 12px;
-}
-
-.phone-section b {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 16px;
-  font-weight: 650;
-}
-
-.phone-incident {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 10px;
-  margin-bottom: 6px;
-  border-radius: 12px;
-  background: #1c1c1e;
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.phone-incident i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #ff453a;
-}
-
-.phone-incident.ok i {
-  background: #ffd60a;
-}
-
-.phone-incident span {
-  flex: 1;
-}
-
-.phone-incident em {
-  font-style: normal;
-  color: var(--muted);
-}
-
-.phone-tabs {
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  bottom: 22px;
-  display: flex;
-  justify-content: space-around;
-  padding: 7px 6px 6px;
-  border-radius: 999px;
-  background: rgba(38, 38, 42, 0.86);
-  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
-  font-size: 9.5px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.phone-tabs span {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-}
-
-.phone-tabs i {
-  width: 18px;
-  height: 16px;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.4);
-}
-
-.phone-tabs .on {
-  color: #0a84ff;
-}
-
-.phone-tabs .on i {
-  background: #0a84ff;
-}
-
-.phone-home {
-  position: absolute;
-  left: 50%;
-  bottom: 7px;
-  width: 92px;
-  height: 4px;
-  margin-left: -46px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.85);
 }
 
 /* ---------- Contact sheet (render_contact_sheet) ---------- */
@@ -3242,10 +3063,6 @@ kbd {
   transition: transform 0.38s cubic-bezier(0.22, 1.25, 0.36, 1);
 }
 
-.mode-thumb.iphone {
-  transform: translate3d(100%, 0, 0);
-}
-
 .mode-switch button {
   position: relative;
   display: flex;
@@ -3394,15 +3211,13 @@ kbd {
     font-size: 13px;
   }
   .how-section,
-  .iphone-section,
   .split {
     padding: 44px max(20px, env(safe-area-inset-right)) 44px max(20px, env(safe-area-inset-left));
   }
 }
 
-/* ---------- iPhone section ---------- */
+/* ---------- Feature sections ---------- */
 
-.iphone-section,
 .how-section {
   max-width: 1080px;
   margin: 0 auto;
@@ -3410,7 +3225,6 @@ kbd {
   border-top: 1px solid var(--line);
 }
 
-.iphone-section h2,
 .how-section h2 {
   margin: 0 0 24px;
   font-size: 22px;
@@ -3435,255 +3249,6 @@ kbd {
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.ip-visual {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 32px 20px;
-  background:
-    radial-gradient(360px 240px at 50% 30%, rgba(96, 80, 230, 0.22), transparent 70%),
-    linear-gradient(#111114, #0d0d10);
-  border-bottom: 1px solid var(--line);
-}
-
-.ip-stack {
-  position: relative;
-}
-
-.ip-bezel {
-  width: 160px;
-  height: 330px;
-  padding: 6px;
-  border-radius: 32px;
-  background: linear-gradient(145deg, #8e8a85, #4a4844 22%, #2c2b29 50%, #5b5853 80%, #9a9690);
-  box-shadow:
-    0 0 0 1px #5d5a55,
-    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
-    0 24px 60px rgba(0, 0, 0, 0.6);
-}
-
-.ip-screen {
-  position: relative;
-  height: 100%;
-  overflow: hidden;
-  border-radius: 26px;
-  padding: 0 9px;
-  background: #000;
-  box-shadow: 0 0 0 2px #050506;
-}
-
-.ip-status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 28px;
-  padding: 0 8px;
-  font-size: 9px;
-  color: #fff;
-}
-
-.ip-island {
-  width: 46px;
-  height: 14px;
-  border-radius: 8px;
-  background: #111;
-  box-shadow: inset 0 0 0 1px #1c1c1e;
-}
-
-.ip-batt {
-  width: 16px;
-  height: 8px;
-  border-radius: 2.5px;
-  background: #f5f5f7;
-}
-
-.ip-nav {
-  margin: 6px 2px 10px;
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: #fff;
-}
-
-.ip-card {
-  padding: 10px 9px;
-  border-radius: 12px;
-  background: #1c1c1e;
-}
-
-.ip-head {
-  position: relative;
-  height: 14px;
-  margin-bottom: 8px;
-}
-
-.ip-title {
-  position: absolute;
-  top: 3px;
-  left: 0;
-  width: 70%;
-  height: 8px;
-  border-radius: 4px;
-  background: #e5e5ea;
-}
-
-.ip-live {
-  position: absolute;
-  top: -5px;
-  left: 44%;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  font-size: 8px;
-  font-weight: 600;
-  color: #30d158;
-  background: #12301b;
-  box-shadow: 0 0 0 1px rgba(48, 209, 88, 0.45);
-}
-
-.ip-live i {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: #30d158;
-}
-
-.ip-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 14px;
-}
-
-.ip-row i,
-.ip-rows i {
-  height: 5px;
-  border-radius: 3px;
-  background: #48484a;
-}
-
-.ip-row em {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #30d158;
-}
-
-.ip-row em.fail {
-  background: #ff453a;
-}
-
-.ip-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 16px 4px 0;
-}
-
-.ip-bar {
-  position: absolute;
-  left: 9px;
-  right: 9px;
-  bottom: -12px;
-  display: grid;
-  place-items: center;
-  height: 40px;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #fff;
-  background: #0a84ff;
-}
-
-.ip-bar span {
-  transform: translateY(-6px);
-}
-
-.ip-ink,
-.ip-touch {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.ip-ink path {
-  fill: none;
-  stroke: var(--ink);
-  stroke-width: 3.2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
-}
-
-.ip-pin {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  margin: -9px 0 0 -9px;
-  border-radius: 50%;
-  font-size: 10px;
-  font-weight: 700;
-  color: #fff;
-  background: var(--ink);
-  box-shadow:
-    0 0 0 1.5px #fff,
-    0 2px 6px rgba(0, 0, 0, 0.5);
-}
-
-.ip-rec {
-  position: absolute;
-  top: 18px;
-  left: -58px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
-  padding: 0 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #fff;
-  background: rgba(30, 30, 34, 0.9);
-  box-shadow:
-    inset 0 0 0 0.5px rgba(255, 255, 255, 0.2),
-    0 6px 18px rgba(0, 0, 0, 0.5);
-}
-
-
-.ip-rec i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ink);
-  box-shadow: 0 0 6px var(--ink);
-}
-
-.ip-tap {
-  fill: rgba(255, 255, 255, 0.85);
-  stroke: rgba(0, 0, 0, 0.3);
-  stroke-width: 1;
-}
-
-.ip-ring {
-  fill: none;
-  stroke: rgba(255, 255, 255, 0.7);
-  stroke-width: 2;
-}
-
-.ip-ring.faint {
-  stroke: rgba(255, 255, 255, 0.3);
-}
-
-.ip-ring.long {
-  stroke: #ffd60a;
-  stroke-dasharray: 3 3;
-}
 
 .feature-copy {
   padding: 20px 22px 24px;

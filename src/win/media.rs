@@ -1087,9 +1087,6 @@ pub fn frames(movie: &Path, times: FrameTimes, max_edge: u32) -> Result<Vec<Rgba
     Ok(out)
 }
 
-pub fn shrink(_movie: &Path, _out: &Path, _max_edge: u32) -> Result<crate::retention::Shrunk> {
-    bail!("Only cabled-iPhone recordings (macOS) are re-encoded")
-}
 
 /// The movie's first audio track as 16 kHz mono WAV, starting at the movie's start.
 pub fn export_audio(movie: &Path, wav: &Path) -> Result<()> {

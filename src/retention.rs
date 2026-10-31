@@ -6,11 +6,10 @@
 //! `bundleDays` the whole bundle goes. Both live under `"retention"` in `~/.config/apparent/config.json` (`null` keeps forever). A bundle
 //! younger than a day or changed within the last day, one whose media is still copying
 //! (`.media-pending`, `.media-sending`), one Apparent is working on, a pinned one (`.pinned`), one
-//! still waiting to reach OpenCode (`.deliver.json`), and one `apparent recover` hasn't built yet
+//! with legacy pending-delivery metadata (`.deliver.json`), and one `apparent recover` hasn't built yet
 //! are never touched.
 //!
-//! Cabled-iPhone videos are also re-encoded to HEVC at the size keyframes use (`shrink`), which
-//! makes them about ten times smaller.
+//! Saved device movies are never automatically re-encoded.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -35,23 +34,10 @@ pub const MEDIA_CLEANED: &str = ".media-cleaned";
 const DAY_MS: u64 = 24 * 60 * 60 * 1000;
 /// A sync marker older than this belongs to a copy that died.
 const STALE_MARKER: Duration = Duration::from_secs(24 * 60 * 60);
-/// Long edge iPhone video is re-encoded to: the size its keyframes are decoded at.
-const SHRINK_EDGE: u32 = crate::phone::PHONE_FRAME_EDGE;
-/// Videos above this rate are worth re-encoding (native iPhone mirror video is ~18 Mbps; a
-/// shrunk one ~2).
-const SHRINK_ABOVE_BPS: u64 = 6_000_000;
-/// How long after a capture its video is shrunk, so pasting and sending go first.
-const SHRINK_DELAY: Duration = Duration::from_secs(60);
-/// The daily shrink sweep picks up bundles left alone this long (a capture whose shrink was
-/// missed, or one copied from another Mac).
-const SHRINK_SETTLE_MS: u64 = 10 * 60 * 1000;
-/// How often cleanup runs. Hourly, so media goes within an hour of `mediaDays`, not a day late.
+/// How often cleanup runs.
 const PASS_EVERY: Duration = Duration::from_secs(3600);
-/// How often a pass also re-encodes missed iPhone videos (each try can take a while).
-const SHRINK_EVERY: Duration = Duration::from_secs(24 * 3600);
-/// Made from the heavy media (`apparent zoom` sheets and frame ranges), so it goes with it.
+/// Derived heavy-media previews go with the source media.
 const DERIVED_MEDIA: [&str; 1] = ["zoom"];
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Policy {
@@ -167,7 +153,7 @@ impl Drop for Claim {
     }
 }
 
-/// Held by a running capture; cleanup and re-encoding wait until none is.
+/// Held by a running capture; cleanup waits until none is.
 pub struct Recording(());
 
 impl Recording {
@@ -194,21 +180,8 @@ fn recording() -> bool {
 struct Manifest {
     #[serde(default)]
     created_at_ms: Option<u64>,
-    #[serde(default)]
-    duration_ms: u64,
-    #[serde(default)]
-    video: Option<String>,
-    #[serde(default)]
-    source: Option<String>,
-    #[serde(default)]
-    device: Option<ManifestDevice>,
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct ManifestDevice {
-    #[serde(default)]
-    capture: String,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
@@ -219,8 +192,6 @@ pub enum Action {
     },
     /// Move the whole bundle to the Trash.
     TrashBundle(PathBuf),
-    /// Re-encode the bundle's iPhone video.
-    Shrink { bundle: PathBuf, video: PathBuf },
 }
 
 fn modified_ago(path: &Path, now: SystemTime) -> Option<Duration> {
@@ -301,13 +272,7 @@ pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Vec<Action> {
         let age_ms = now_ms.saturating_sub(created);
         let unchanged_ms = changed_ago(&dir, now).map_or(0, |ago| ago.as_millis() as u64);
         let settled = |ms: u64| age_ms >= ms && unchanged_ms >= ms;
-        if !settled(SHRINK_SETTLE_MS) {
-            continue;
-        }
         if !settled(DAY_MS) {
-            if let Some(video) = shrinkable(&dir, &manifest) {
-                actions.push(Action::Shrink { bundle: dir, video });
-            }
             continue;
         }
         let due = |days: Option<u32>| days.is_some_and(|d| age_ms >= u64::from(d.max(1)) * DAY_MS);
@@ -327,29 +292,10 @@ pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Vec<Action> {
             }
             continue;
         }
-        if let Some(video) = shrinkable(&dir, &manifest) {
-            actions.push(Action::Shrink { bundle: dir, video });
-        }
     }
     actions
 }
 
-/// A cabled-iPhone video recorded at native size and rate.
-fn shrinkable(dir: &Path, manifest: &Manifest) -> Option<PathBuf> {
-    if manifest.source.as_deref() != Some("iphone")
-        || manifest
-            .device
-            .as_ref()
-            .is_none_or(|d| d.capture != "mirror")
-        || manifest.duration_ms == 0
-    {
-        return None;
-    }
-    let video = dir.join(manifest.video.as_deref()?);
-    let bytes = video.metadata().ok()?.len();
-    let bps = bytes.saturating_mul(8_000) / manifest.duration_ms;
-    (bps > SHRINK_ABOVE_BPS).then_some(video)
-}
 
 // MARK: Doing it
 
@@ -432,7 +378,6 @@ pub struct Report {
     pub media_trashed: usize,
     pub bundles_trashed: usize,
     pub freed: u64,
-    pub shrunk: usize,
     pub errors: usize,
 }
 
@@ -476,13 +421,11 @@ fn trash_media(bundle: &Path, items: &[PathBuf], days: u32, trasher: Trasher) ->
 
 /// Runs a plan. Each step is checked again just before it runs, in case a capture or a copy
 /// started meanwhile.
-pub fn apply(actions: &[Action], policy: &Policy, trasher: Trasher, shrink: bool) -> Report {
+pub fn apply(actions: &[Action], policy: &Policy, trasher: Trasher) -> Report {
     let mut report = Report::default();
     for action in actions {
         let bundle = match action {
-            Action::TrashMedia { bundle, .. }
-            | Action::TrashBundle(bundle)
-            | Action::Shrink { bundle, .. } => bundle,
+            Action::TrashMedia { bundle, .. } | Action::TrashBundle(bundle) => bundle,
         };
         let Some(_claim) = claim(bundle) else {
             continue;
@@ -508,18 +451,6 @@ pub fn apply(actions: &[Action], policy: &Policy, trasher: Trasher, shrink: bool
                     report.freed += size;
                 })
             }
-            Action::Shrink { bundle, video } if shrink => {
-                if recording() {
-                    continue;
-                }
-                shrink_video(bundle, video).map(|shrunk| {
-                    if let Some(s) = shrunk {
-                        report.shrunk += 1;
-                        report.freed += s.before.saturating_sub(s.after);
-                    }
-                })
-            }
-            Action::Shrink { .. } => Ok(()),
         };
         if let Err(error) = result {
             report.errors += 1;
@@ -527,71 +458,6 @@ pub fn apply(actions: &[Action], policy: &Policy, trasher: Trasher, shrink: bool
         }
     }
     report
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Shrunk {
-    pub before: u64,
-    pub after: u64,
-    pub width: u32,
-    pub height: u32,
-    pub ms: u64,
-}
-
-/// Re-encodes `video` (inside `bundle`) to HEVC at the keyframe size with the same timeline,
-/// then swaps it in. The new movie is written beside the bundle, not in it, so a copy to
-/// another Mac never picks up half of it. `None` when it was already small.
-pub fn shrink_video(bundle: &Path, video: &Path) -> Result<Option<Shrunk>> {
-    let probe = crate::helper::probe(video)?;
-    if probe.width.max(probe.height) <= SHRINK_EDGE * 115 / 100 {
-        return Ok(None);
-    }
-    let name = bundle
-        .file_stem()
-        .context("Bundle has no name")?
-        .to_string_lossy();
-    let tmp = bundle
-        .parent()
-        .context("Bundle has no parent")?
-        .join(format!(".{name}.shrinking.mov"));
-    let result = crate::helper::shrink(video, &tmp, SHRINK_EDGE);
-    let shrunk = match result {
-        Ok(s) if s.after > 0 && s.after < s.before => s,
-        Ok(s) => {
-            let _ = std::fs::remove_file(&tmp);
-            apparent_log(format!(
-                "shrink: {} kept ({} → {} bytes)",
-                video.display(),
-                s.before,
-                s.after
-            ));
-            return Ok(None);
-        }
-        Err(e) => {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(e);
-        }
-    };
-    // A sync that started while encoding streams the original; let it finish with that.
-    let now = SystemTime::now();
-    if live_marker(bundle, MEDIA_SENDING, now)
-        || live_marker(bundle, crate::handoff::MEDIA_PENDING, now)
-    {
-        let _ = std::fs::remove_file(&tmp);
-        anyhow::bail!("its media started copying while it was being shrunk");
-    }
-    std::fs::rename(&tmp, video)?;
-    apparent_log(format!(
-        "shrink: {} {} → {} ({}×{}, {:.1} s)",
-        video.display(),
-        format_bytes(shrunk.before),
-        format_bytes(shrunk.after),
-        shrunk.width,
-        shrunk.height,
-        shrunk.ms as f64 / 1000.0
-    ));
-    Ok(Some(shrunk))
 }
 
 /// Removes what a crash mid-cleanup or mid-shrink left beside the bundles.
@@ -614,30 +480,24 @@ fn sweep_leftovers(captures: &Path, now: SystemTime) {
 }
 
 /// One cleanup pass over `captures`, planned as if `ahead` from now (for trying it out).
-/// Without `shrink` it only trashes, so a video that doesn't get smaller isn't re-encoded hourly.
 pub fn run_pass(
     captures: &Path,
     policy: &Policy,
     dry_run: bool,
     ahead: Duration,
-    shrink: bool,
 ) -> (Vec<Action>, Report) {
     let now = SystemTime::now();
-    let mut actions = plan(captures, policy, now + ahead);
-    if !shrink {
-        actions.retain(|a| !matches!(a, Action::Shrink { .. }));
-    }
+    let actions = plan(captures, policy, now + ahead);
     if dry_run {
         return (actions, Report::default());
     }
     sweep_leftovers(captures, now);
-    let report = apply(&actions, policy, &trash, true);
+    let report = apply(&actions, policy, &trash);
     if report != Report::default() {
         apparent_log(format!(
-            "retention: media of {} bundle(s) and {} whole bundle(s) to the Trash, {} video(s) shrunk, {} freed, {} error(s)",
+            "retention: media of {} bundle(s) and {} whole bundle(s) to the Trash, {} freed, {} error(s)",
             report.media_trashed,
             report.bundles_trashed,
-            report.shrunk,
             format_bytes(report.freed),
             report.errors
         ));
@@ -667,7 +527,6 @@ pub fn missing_media_reason(dir: &Path) -> Option<String> {
 
 enum Job {
     Pass,
-    Shrink(PathBuf),
 }
 
 static WORKER: std::sync::OnceLock<flume::Sender<Job>> = std::sync::OnceLock::new();
@@ -688,7 +547,6 @@ fn lower_priority() {
 }
 
 /// Starts the app's cleanup: a pass shortly after launch, then hourly, plus shrinking each
-/// iPhone capture a minute after it's made.
 pub fn start() {
     if WORKER.get().is_some() {
         return;
@@ -709,57 +567,22 @@ pub fn nudge() {
     }
 }
 
-/// Queues a just-finished iPhone capture for shrinking (only in the app).
-pub fn after_phone_capture(bundle: &Path) {
-    if let Some(worker) = WORKER.get() {
-        let _ = worker.send(Job::Shrink(bundle.to_path_buf()));
-    }
-}
 
 fn worker(jobs: &flume::Receiver<Job>) {
     lower_priority();
     let captures = crate::handoff::default_captures_dir();
     let mut next_pass = Instant::now() + Duration::from_secs(90);
     let mut last_pass: Option<SystemTime> = None;
-    let mut last_shrink: Option<SystemTime> = None;
-    let mut shrinks: Vec<(Instant, Instant, PathBuf)> = Vec::new();
     loop {
         let now = Instant::now();
-        let wake = shrinks
-            .iter()
-            .map(|(due, _, _)| *due)
-            .chain([next_pass])
-            .min()
-            .unwrap_or(next_pass);
         match jobs.recv_timeout(
-            wake.saturating_duration_since(now)
+            next_pass.saturating_duration_since(now)
                 .min(Duration::from_secs(3600)),
         ) {
             Ok(Job::Pass) => next_pass = Instant::now() + Duration::from_secs(5),
-            Ok(Job::Shrink(dir)) => {
-                let due = Instant::now() + SHRINK_DELAY;
-                shrinks.push((due, due + Duration::from_secs(2 * 3600), dir));
-            }
             Err(flume::RecvTimeoutError::Timeout) => {}
             Err(flume::RecvTimeoutError::Disconnected) => return,
         }
-        let now = Instant::now();
-        let mut later = Vec::new();
-        for (due, give_up, dir) in shrinks.drain(..) {
-            if due > now {
-                later.push((due, give_up, dir));
-                continue;
-            }
-            match shrink_now(&dir) {
-                // Busy: a capture is running or the media is still copying. Try again soon; a
-                // later pass catches anything that gives up.
-                Err(()) if now < give_up => {
-                    later.push((now + Duration::from_secs(30), give_up, dir))
-                }
-                _ => {}
-            }
-        }
-        shrinks = later;
         // The Mac sleeps through `Instant`s, so passes also go by the wall clock.
         let pass_due = last_pass.is_none_or(|at| {
             SystemTime::now().duration_since(at).unwrap_or_default() >= PASS_EVERY
@@ -770,13 +593,7 @@ fn worker(jobs: &flume::Receiver<Job>) {
                 continue;
             }
             let policy = Policy::load();
-            let shrink = last_shrink.is_none_or(|at| {
-                SystemTime::now().duration_since(at).unwrap_or_default() >= SHRINK_EVERY
-            });
-            let (actions, report) = run_pass(&captures, &policy, false, Duration::ZERO, shrink);
-            if shrink {
-                last_shrink = Some(SystemTime::now());
-            }
+            let (actions, report) = run_pass(&captures, &policy, false, Duration::ZERO);
             // Hourly passes that find nothing stay out of the log after the first.
             if last_pass.is_none() || !actions.is_empty() {
                 apparent_log(format!(
@@ -793,36 +610,6 @@ fn worker(jobs: &flume::Receiver<Job>) {
             next_pass = Instant::now() + PASS_EVERY;
         }
     }
-}
-
-/// `Err` when the bundle is busy and should be retried.
-fn shrink_now(dir: &Path) -> std::result::Result<(), ()> {
-    let now = SystemTime::now();
-    if recording()
-        || live_marker(dir, crate::handoff::MEDIA_PENDING, now)
-        || live_marker(dir, MEDIA_SENDING, now)
-    {
-        return Err(());
-    }
-    let Some(_claim) = claim(dir) else {
-        return Err(());
-    };
-    let manifest: Manifest = match std::fs::read(dir.join("apparent.json"))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-    {
-        Some(m) => m,
-        None => return Ok(()),
-    };
-    if dir.join(PINNED).exists() {
-        return Ok(());
-    }
-    if let Some(video) = shrinkable(dir, &manifest)
-        && let Err(error) = shrink_video(dir, &video)
-    {
-        apparent_log(format!("shrink: {}: {error:#}", dir.display()));
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -940,6 +727,7 @@ mod tests {
         );
     }
 
+
     #[test]
     fn old_media_and_older_bundles_are_planned_for_the_trash() {
         let tmp = TempDir::new("plan");
@@ -1031,7 +819,7 @@ mod tests {
         };
         let actions = planned(&captures, &Policy::default());
         assert_eq!(actions.len(), 2);
-        let report = apply(&actions, &Policy::default(), &fake_trash, false);
+        let report = apply(&actions, &Policy::default(), &fake_trash);
         assert_eq!(
             (report.media_trashed, report.bundles_trashed, report.errors),
             (1, 1, 0)
@@ -1069,40 +857,14 @@ mod tests {
     }
 
     #[test]
-    fn only_native_iphone_video_is_shrunk() {
-        let tmp = TempDir::new("shrink");
+    fn saved_native_movies_never_queue_transcoding() {
+        let tmp = TempDir::new("no-shrink");
         let phone = bundle(&tmp.0, "apparent-phone", 2.0, true);
-        bundle(&tmp.0, "apparent-mac", 2.0, false);
-        let small = bundle(&tmp.0, "apparent-small", 2.0, true);
-        std::fs::write(small.join("recording.mov"), vec![0u8; 2_500_000]).unwrap();
-        assert_eq!(
-            planned(&tmp.0, &Policy::default()),
-            vec![Action::Shrink {
-                bundle: phone.clone(),
-                video: phone.join("recording.mov")
-            }]
-        );
-        // Hours old is enough to shrink; minutes old is left to the capture's own shrink.
-        let hours = bundle(&tmp.0, "apparent-hours", 0.1, true);
+        bundle(&tmp.0, "apparent-desktop", 2.0, false);
+        bundle(&tmp.0, "apparent-hours", 0.1, true);
         bundle(&tmp.0, "apparent-minutes", 0.003, true);
-        let shrinks: Vec<PathBuf> = planned(&tmp.0, &Policy::default())
-            .into_iter()
-            .filter_map(|a| match a {
-                Action::Shrink { bundle, .. } => Some(bundle),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(shrinks, vec![hours, phone.clone()]);
-        // Due for cleanup instead: not worth re-encoding.
-        let short = Policy {
-            media_days: Some(1),
-            bundle_days: None,
-        };
-        assert!(
-            planned(&tmp.0, &short)
-                .iter()
-                .all(|a| !matches!(a, Action::Shrink { bundle, .. } if *bundle == phone))
-        );
+        assert!(planned(&tmp.0, &Policy::default()).is_empty());
+        assert_eq!(std::fs::metadata(phone.join("recording.mov")).unwrap().len(), 25_000_000);
     }
 
     #[test]

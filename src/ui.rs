@@ -34,13 +34,11 @@ use crate::capture::{
     record_external_frontmost_app, region_target, selectable_window_at, shortcut_from_key_and_mods,
     start_global_input_tap, update_global_shortcut,
 };
-use crate::helper::PhoneDevice;
 #[cfg(target_os = "macos")]
 use crate::laser_overlay::MetalLaserOverlay as LaserOverlay;
 #[cfg(target_os = "linux")]
 use crate::linux::overlay::InkOverlay as LaserOverlay;
-use crate::model::{ApparentBundle, CaptureMode, TargetFrame, TargetInfo, format_clock};
-use crate::phone::PhoneSession;
+use crate::model::{ApparentBundle, CaptureMode, TargetInfo, format_clock};
 use crate::sketch::timeline;
 #[cfg(target_os = "windows")]
 use crate::win::overlay::InkOverlay as LaserOverlay;
@@ -235,12 +233,12 @@ fn clock_template(clock: &str) -> String {
 }
 
 /// Lead text of the Completed island: local captures were copied (or sent, as `note` says);
-/// iPhone ones count the inbox.
+/// Historical imported captures count the saved inbox.
 fn completed_label(inbox_count: usize, note: Option<&str>) -> String {
     match inbox_count {
         0 => note.unwrap_or("Copied").to_owned(),
-        1 => "From iPhone".to_owned(),
-        n => format!("{n} from iPhone"),
+        1 => "Saved capture".to_owned(),
+        n => format!("{n} saved captures"),
     }
 }
 
@@ -329,9 +327,9 @@ fn segment_width(window: &Window, mode: SelectionMode) -> f32 {
 
 /// Widths of the items after a Recording capsule's divider: the switch chips while the reveal
 /// is open (`crate::shortcut::Reveal`), else Cancel · Finish.
-fn recording_trail_widths(window: &Window, chips: bool, iphone: bool) -> Vec<f32> {
+fn recording_trail_widths(window: &Window, chips: bool) -> Vec<f32> {
     if chips {
-        SelectionMode::available(iphone)
+        SelectionMode::available()
             .iter()
             .map(|&mode| segment_width(window, mode))
             .collect()
@@ -352,12 +350,11 @@ fn whiteboard_enabled() -> bool {
 /// Trace names for a Recording capsule's trailing group, with each item's opacity.
 fn trail_keys(
     chips: bool,
-    iphone: bool,
     alphas: &[f32],
     prefix: &str,
 ) -> Vec<Option<(String, f32)>> {
     let names: Vec<String> = if chips {
-        SelectionMode::available(iphone)
+        SelectionMode::available()
             .iter()
             .map(|m| format!("chip:{}", m.label()))
             .collect()
@@ -421,7 +418,6 @@ fn island_content_width(
     window: &Window,
     phase: IslandPhase,
     clock: &str,
-    iphone: bool,
     chips: bool,
     warning: Option<InputWarning>,
     completed_note: Option<&str>,
@@ -431,7 +427,7 @@ fn island_content_width(
     let divider = 1.0 + 2.0 * DIVIDER_MX;
     let inner = match phase {
         IslandPhase::Selecting { mode } => {
-            let labels: Vec<f32> = SelectionMode::available(iphone)
+            let labels: Vec<f32> = SelectionMode::available()
                 .iter()
                 .map(|m| measure_text(window, m.label(), HUD_TEXT, FontWeight::MEDIUM))
                 .collect();
@@ -441,7 +437,7 @@ fn island_content_width(
             selecting_row_width(&labels, record)
         }
         IslandPhase::Recording => {
-            let trail = recording_trail_widths(window, chips, iphone);
+            let trail = recording_trail_widths(window, chips);
             let warning_w = warning.map_or(0.0, |warning| {
                 measure_text(window, warning.label(), HUD_TEXT, FontWeight::MEDIUM)
                     + 2.0 * CHIP_PX
@@ -650,18 +646,16 @@ pub enum SelectionMode {
     Window,
     /// The whole display the picker covers.
     Screen,
-    Iphone,
 }
 
 impl SelectionMode {
-    const ALL: [SelectionMode; 4] = [Self::Area, Self::Window, Self::Screen, Self::Iphone];
+    const ALL: [SelectionMode; 3] = [Self::Area, Self::Window, Self::Screen];
 
     fn key(self) -> &'static str {
         match self {
             Self::Area => "area",
             Self::Window => "window",
             Self::Screen => "screen",
-            Self::Iphone => "iphone",
         }
     }
 
@@ -689,22 +683,14 @@ impl SelectionMode {
         }
     }
 
-    /// Modes shown in the HUD, in order; iPhone only while one is cabled.
-    pub(crate) fn available(has_iphone: bool) -> &'static [SelectionMode] {
-        // A cabled iPhone's screen is an AVFoundation capture device, which only macOS has.
-        if has_iphone && cfg!(target_os = "macos") {
-            &Self::ALL
-        } else {
-            &Self::ALL[..3]
-        }
-    }
+    /// Desktop modes in HUD order.
+    pub(crate) fn available() -> &'static [SelectionMode] { &Self::ALL }
 
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Area => "Area",
             Self::Window => "Window",
             Self::Screen => "Screen",
-            Self::Iphone => "iPhone",
         }
     }
 
@@ -713,7 +699,6 @@ impl SelectionMode {
             Self::Area => crate::icons::AREA,
             Self::Window => crate::icons::WINDOW,
             Self::Screen => crate::icons::SCREEN,
-            Self::Iphone => crate::icons::IPHONE,
         }
     }
 
@@ -722,24 +707,23 @@ impl SelectionMode {
             Self::Area => "sel-area",
             Self::Window => "sel-window",
             Self::Screen => "sel-screen",
-            Self::Iphone => "sel-iphone",
         }
     }
 
-    /// Screen and iPhone need no pointer gesture, so the HUD offers a Record chip for them.
+    /// Screen needs no pointer gesture, so the HUD offers a Record chip.
     pub(crate) fn shows_record(self) -> bool {
-        matches!(self, Self::Screen | Self::Iphone)
+        matches!(self, Self::Screen)
     }
 
-    /// `1`–`4` pick a mode by its position in the HUD.
-    fn from_digit(key: &str, has_iphone: bool) -> Option<Self> {
+    /// `1`–`3` pick a mode by its position in the HUD.
+    fn from_digit(key: &str) -> Option<Self> {
         let index = key.parse::<usize>().ok()?.checked_sub(1)?;
-        Self::available(has_iphone).get(index).copied()
+        Self::available().get(index).copied()
     }
 
     /// The neighbouring mode in HUD order, wrapping at either end.
-    fn cycled(self, forward: bool, has_iphone: bool) -> Self {
-        let modes = Self::available(has_iphone);
+    fn cycled(self, forward: bool) -> Self {
+        let modes = Self::available();
         let Some(index) = modes.iter().position(|m| *m == self) else {
             return if forward {
                 modes[0]
@@ -768,7 +752,7 @@ pub enum IslandPhase {
         finished_at: Instant,
         frame_count: usize,
         duration_ms: u64,
-        /// Unhandled iPhone captures including this one; 0 for a local capture.
+        /// Historical imported captures including this one; 0 for a local capture.
         inbox_count: usize,
     },
     Dismissing,
@@ -794,8 +778,6 @@ enum CaptureSource {
         /// Screen mode only: which windows were where, for `apparent autocrop`.
         windows: Option<crate::windows::WindowLogger>,
     },
-    /// The helper's mirror window records the phone's native video and the narration.
-    Phone(PhoneSession),
     /// `apparent lab pill`: nothing is captured.
     Lab,
 }
@@ -815,14 +797,13 @@ impl ActiveRecording {
                 audio: Some(audio), ..
             } => audio.warning(),
             CaptureSource::Screen { audio: None, .. } => Some(InputWarning::Unavailable),
-            CaptureSource::Phone(_) | CaptureSource::Lab => None,
+            CaptureSource::Lab => None,
         }
     }
 
     fn elapsed_ms(&self) -> u64 {
         match &self.source {
             CaptureSource::Screen { session, .. } => session.elapsed_ms(),
-            CaptureSource::Phone(session) => session.elapsed_ms(),
             CaptureSource::Lab => self.started.elapsed().as_millis() as u64,
         }
     }
@@ -845,7 +826,6 @@ pub struct ApparentCoordinator {
     playback: Option<crate::playback::Guard>,
     picker_metal_overlay: Option<LaserOverlay>,
     native_pill: Option<crate::native::pill::NativePill>,
-    iphone_preview: Option<PhoneSession>,
     island_phase: IslandPhase,
     island_prev_phase: IslandPhase,
     /// `motion::now()` when the phase last changed.
@@ -903,8 +883,6 @@ pub struct ApparentCoordinator {
     review_feedback: bool,
     selected_tab: ReviewTab,
     selected_keyframe: usize,
-    /// A cabled iPhone, refreshed each time the picker opens.
-    iphone: Option<PhoneDevice>,
     /// The bundle the Completed island is showing.
     completed_dir: Option<PathBuf>,
     /// The Completed island's lead text.
@@ -914,9 +892,6 @@ pub struct ApparentCoordinator {
     inbox: crate::inbox::Inbox,
     /// The mode the last recording used; the picker opens on it.
     last_mode: SelectionMode,
-    /// The picker opened on Area because the last recording was the iPhone and no phone had been
-    /// seen yet: switch to the phone when discovery finds one, unless Kit picked a mode himself.
-    open_iphone_when_found: bool,
     /// The welcome window, while it's open (`crate::onboarding`).
     onboarding: Option<crate::onboarding::Session>,
     onboarding_editor: crate::settings::Panel,
@@ -962,7 +937,6 @@ impl ApparentCoordinator {
             playback: None,
             picker_metal_overlay: None,
             native_pill: None,
-            iphone_preview: None,
             island_phase: IslandPhase::Hidden,
             island_prev_phase: IslandPhase::Hidden,
             island_phase_since: motion::now(),
@@ -1006,13 +980,11 @@ impl ApparentCoordinator {
             review_feedback: false,
             selected_tab: ReviewTab::Keyframes,
             selected_keyframe: 0,
-            iphone: None,
             completed_dir: None,
             completed_note: None,
             last_local_capture_ms: 0,
             inbox: crate::inbox::Inbox::load_default(),
             last_mode: SelectionMode::load_last_used(),
-            open_iphone_when_found: false,
             onboarding: None,
             onboarding_editor: crate::settings::Panel::default(),
             settings: None,
@@ -1039,7 +1011,7 @@ impl ApparentCoordinator {
         }
     }
 
-    /// What ⌥⇧V pastes: the bundle on the Completed island, else the newest unhandled iPhone
+    /// What ⌥⇧V pastes: the bundle on the Completed island, else the newest unhandled saved import
     /// capture unless this Mac captured something since, else the latest bundle.
     fn take_paste_target(&mut self) -> PathBuf {
         let showing = matches!(self.island_phase, IslandPhase::Completed { .. })
@@ -1085,39 +1057,6 @@ impl ApparentCoordinator {
         });
     }
 
-    /// Looks for a cabled iPhone in the background; the picker shows "iPhone" when one is there.
-    fn refresh_iphone(&mut self, cx: &mut Context<Self>) {
-        cx.spawn(async move |entity, cx| {
-            let found = cx
-                .background_executor()
-                .spawn(async {
-                    crate::helper::devices()
-                        .inspect_err(|error| apparent_log(format!("iPhone discovery: {error:#}")))
-                        .ok()
-                        .and_then(|devices| devices.into_iter().next())
-                })
-                .await;
-            let _ = entity.update(cx, |coord, cx| {
-                if coord.iphone != found {
-                    coord.iphone = found;
-                    cx.notify();
-                }
-                if std::mem::take(&mut coord.open_iphone_when_found)
-                    && coord.iphone.is_some()
-                    && matches!(
-                        coord.island_phase,
-                        IslandPhase::Selecting {
-                            mode: SelectionMode::Area | SelectionMode::Iphone
-                        }
-                    )
-                {
-                    coord.preview_iphone(cx);
-                }
-            });
-        })
-        .detach();
-    }
-
     pub fn is_recording(&self) -> bool {
         self.active_recording.is_some()
     }
@@ -1145,7 +1084,6 @@ impl ApparentCoordinator {
         let phase = if let Some(recording) = &self.active_recording {
             match &recording.source {
                 CaptureSource::Screen { session, .. } if !session.has_frames() => Phase::Starting,
-                CaptureSource::Phone(session) if !session.has_recording() => Phase::Starting,
                 _ => Phase::Recording,
             }
         } else {
@@ -1181,7 +1119,7 @@ impl ApparentCoordinator {
         if let Some((Action::Start, id)) = &request.action {
             let occupied = self.lab || self.active_recording.is_some()
                 || self.is_selecting() || self.is_processing()
-                || self.iphone_preview.is_some() || self.agent_capture_id.is_some()
+                || self.agent_capture_id.is_some()
                 || self.recording_shortcut_key;
             if self.agent_captures.admit(id, occupied, request.expired()) {
                 self.agent_capture_id = Some(id.clone());
@@ -1345,24 +1283,6 @@ impl ApparentCoordinator {
             "Not recording: {missing:?} off; opening onboarding"
         ));
         self.gate.defer(missing);
-        false
-    }
-
-    /// Whether `permission`, asked for on first use (Camera, Accessibility), is on. If not, its
-    /// window comes forward once the modifiers are up.
-    fn ready_for(&mut self, permission: crate::onboarding::Permission) -> bool {
-        let granted = |g: &crate::onboarding::Grants| g.granted(permission);
-        if self.lab || self.grants.as_ref().is_none_or(granted) {
-            return true;
-        }
-        if let Some(fresh) = crate::onboarding::read_grants() {
-            self.note_grants(&fresh);
-            if granted(&fresh) {
-                return true;
-            }
-        }
-        apparent_log(format!("{permission:?} is off; asking for it"));
-        self.gate.defer(vec![permission]);
         false
     }
 
@@ -1686,10 +1606,6 @@ impl ApparentCoordinator {
 
     /// The recording just started from a tap: the capsule opens onto the switch chips.
     fn show_reveal(&mut self, cx: &mut Context<Self>) {
-        // The iPhone chip shows only while one is cabled (a USB registry read, no prompt).
-        if !self.lab {
-            self.refresh_iphone(cx);
-        }
         self.reduced_motion = reduce_motion();
         let activity = self.reveal_activity();
         self.reveal.show(reveal_clock_ms(), activity);
@@ -1724,7 +1640,7 @@ impl ApparentCoordinator {
     /// A switch chip on a tap-started recording. Screen keeps it. Anything else drops the few
     /// seconds recorded so far and starts over on the new target, exactly as if it had been
     /// chosen first: Window and Area morph the capsule into the picker (hover and click a window,
-    /// or drag an area), iPhone goes straight into the phone's mirror.
+    /// or drag an area).
     pub fn switch_recording(&mut self, mode: SelectionMode, cx: &mut Context<Self>) {
         if !self.is_recording() {
             return;
@@ -1740,13 +1656,6 @@ impl ApparentCoordinator {
         let Some((_, overlay)) = self.discard_recording() else {
             return;
         };
-        if mode == SelectionMode::Iphone {
-            // Recording → Recording: the chips fold into the pill as the phone starts.
-            self.fold_reveal();
-            drop(overlay);
-            self.start_recording_iphone(cx);
-            return;
-        }
         // Window and Area: the chips stay up while the capsule morphs into the picker.
         // The recording's overlay becomes the picker's (moved if the picker opens on another
         // display), so the border never swaps windows (as the picker → recording path does).
@@ -1777,7 +1686,6 @@ impl ApparentCoordinator {
                     let _ = audio.stop();
                 }
             }
-            CaptureSource::Phone(session) => session.cancel(),
             CaptureSource::Lab => return Some((rec.target, rec._metal_overlay)),
         }
         let _ = std::fs::remove_dir_all(rec.bundle_dir);
@@ -1832,29 +1740,16 @@ impl ApparentCoordinator {
             IslandPhase::Selecting {
                 mode: SelectionMode::Screen,
             } => Some((self.display_rect, 2)),
-            IslandPhase::Selecting {
-                mode: SelectionMode::Iphone,
-            } => self
-                .iphone_preview
-                .as_ref()
-                .and_then(PhoneSession::rect)
-                .map(|r| (r, 3)),
             _ => None,
         };
         self.telemetry.set_picker_rect(rect);
     }
 
     pub fn set_selection_mode(&mut self, mode: SelectionMode, cx: &mut Context<Self>) {
-        self.open_iphone_when_found = false;
         if let IslandPhase::Selecting { mode: prev_mode } = self.island_phase {
             if prev_mode != mode {
                 // Crisp tactile Dynamic Island scale micro-pulse when Space toggles camera/crosshair mode.
                 self.island_scale_velocity += 1.25;
-            }
-            if mode != SelectionMode::Iphone
-                && let Some(ref mut preview) = self.iphone_preview
-            {
-                preview.hide_preview();
             }
             self.island_phase = IslandPhase::Selecting { mode };
             self.selection_drag = None;
@@ -1884,43 +1779,11 @@ impl ApparentCoordinator {
         }
     }
 
-    /// Opens the live iPhone mirror window in preview mode so the user can see their phone before
-    /// starting a recording. Clicking `iPhone` a second time or clicking `Record` starts recording.
-    pub fn preview_iphone(&mut self, cx: &mut Context<Self>) {
-        if self.is_recording() || self.is_processing() {
-            return;
-        }
-        apparent_log("preview_iphone invoked");
-        // The mirror would raise the camera prompt under the picker, which takes its clicks.
-        if !self.ready_for(crate::onboarding::Permission::Camera) {
-            self.cancel_recording(cx);
-            return;
-        }
-        self.set_selection_mode(SelectionMode::Iphone, cx);
-        if let Some(ref mut preview) = self.iphone_preview {
-            preview.show_preview();
-        } else {
-            let dev_id = self.iphone.as_ref().map(|d| d.id.as_str());
-            match PhoneSession::start_preview(dev_id, false, Some(Arc::clone(&self.telemetry))) {
-                Ok(session) => {
-                    self.iphone_preview = Some(session);
-                }
-                Err(error) => {
-                    apparent_log(format!("iPhone preview could not start: {error:#}"));
-                    self.set_selection_mode(SelectionMode::Area, cx);
-                    return;
-                }
-            }
-        }
-        self.sync_picker_overlay();
-        cx.notify();
-    }
-
     pub fn toggle_selection_mode(&mut self, cx: &mut Context<Self>) {
         if let IslandPhase::Selecting { mode } = self.island_phase {
             let next = match mode {
                 SelectionMode::Area => SelectionMode::Window,
-                SelectionMode::Window | SelectionMode::Screen | SelectionMode::Iphone => {
+                SelectionMode::Window | SelectionMode::Screen => {
                     SelectionMode::Area
                 }
             };
@@ -1935,19 +1798,15 @@ impl ApparentCoordinator {
         }
     }
 
-    /// Switches the picker to `mode`; choosing iPhone opens its live preview.
+    /// Switches the desktop picker to `mode`.
     pub fn choose_selection_mode(&mut self, mode: SelectionMode, cx: &mut Context<Self>) {
         if self.selection_mode().is_none() {
             return;
         }
-        if mode == SelectionMode::Iphone {
-            self.preview_iphone(cx);
-        } else {
-            self.set_selection_mode(mode, cx);
-        }
+        self.set_selection_mode(mode, cx);
     }
 
-    /// A HUD segment click: picks the mode, or records when Screen/iPhone is already selected.
+    /// A HUD segment click: picks the mode, or records when Screen is already selected.
     pub fn click_selection_mode(&mut self, mode: SelectionMode, cx: &mut Context<Self>) {
         if self.selection_mode() == Some(mode) && mode.shows_record() {
             self.record_selected_mode(cx);
@@ -1956,11 +1815,10 @@ impl ApparentCoordinator {
         }
     }
 
-    /// Return, `s`, the capture shortcut, or Record: iPhone records the phone, anything else
+    /// Return, `s`, the capture shortcut, or Record:
     /// records the full screen.
     pub fn record_selected_mode(&mut self, cx: &mut Context<Self>) {
         match self.selection_mode() {
-            Some(SelectionMode::Iphone) => self.start_recording_iphone(cx),
             Some(_) => self.start_recording_full_screen(cx),
             None => {}
         }
@@ -2030,7 +1888,6 @@ impl ApparentCoordinator {
         if mods.platform || mods.control || mods.alt {
             return false;
         }
-        let has_iphone = self.iphone.is_some();
         // The record shortcut's key ("S") also records on its own while the picker is up.
         let label = self.shortcut_label();
         let record_key = crate::capture::shortcut_parts(&label).1;
@@ -2041,10 +1898,10 @@ impl ApparentCoordinator {
             "escape" => self.cancel_recording(cx),
             "enter" => self.record_selected_mode(cx),
             key if key.eq_ignore_ascii_case(record_key) => self.record_selected_mode(cx),
-            "tab" => self.choose_selection_mode(mode.cycled(!mods.shift, has_iphone), cx),
-            "right" => self.choose_selection_mode(mode.cycled(true, has_iphone), cx),
-            "left" => self.choose_selection_mode(mode.cycled(false, has_iphone), cx),
-            key => match SelectionMode::from_digit(key, has_iphone) {
+            "tab" => self.choose_selection_mode(mode.cycled(!mods.shift), cx),
+            "right" => self.choose_selection_mode(mode.cycled(true), cx),
+            "left" => self.choose_selection_mode(mode.cycled(false), cx),
+            key => match SelectionMode::from_digit(key) {
                 Some(next) => self.choose_selection_mode(next, cx),
                 None => return false,
             },
@@ -2174,37 +2031,6 @@ impl ApparentCoordinator {
         }
     }
 
-    /// The iPhone's mirror window can be dragged to another display mid-recording: the ink
-    /// overlay and the capsule go with it.
-    fn follow_phone_mirror(&mut self) {
-        let Some(ActiveRecording {
-            source: CaptureSource::Phone(_),
-            _metal_overlay: Some(overlay),
-            ..
-        }) = self.active_recording.as_mut()
-        else {
-            return;
-        };
-        let f = *self
-            .telemetry
-            .target_frame
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if f.x <= -10_000.0 {
-            return;
-        }
-        let centre = [f.x + f.width / 2.0, f.y + f.height / 2.0];
-        if crate::screens::contains(overlay.screen(), centre)
-            || !overlay.move_to([f.x, f.y, f.width, f.height])
-        {
-            return;
-        }
-        self.display_rect = overlay.screen().map(|v| v as f32);
-        if let Some(ref pill) = self.native_pill {
-            pill.place_on(centre);
-        }
-    }
-
     /// Follow the pointer with Linux controls, not with the capture source. On Mac,
     /// a dragged capsule must stay where it was dropped for the whole recording.
     #[cfg(target_os = "linux")]
@@ -2247,10 +2073,8 @@ impl ApparentCoordinator {
     /// While picking, the picker (its window, overlay and the capsule) follows the pointer to
     /// whichever display it's on, unless an area is being dragged (an area stays on one display).
     fn follow_pointer_display(&mut self, pointer: [f32; 2], cx: &mut Context<Self>) {
-        // The iPhone's mirror window stays where it is, and so does the highlight around it.
         if self.selection_drag.is_some()
             || self.lab
-            || self.selection_mode() == Some(SelectionMode::Iphone)
         {
             return;
         }
@@ -2337,20 +2161,17 @@ impl ApparentCoordinator {
             .map(ActiveRecording::elapsed_ms);
         let elapsed_ms = recording_ms.unwrap_or(self.last_elapsed_ms);
         let clock = format_clock(elapsed_ms);
-        let has_iphone = self.iphone.is_some();
 
         let pres = match self.island_phase {
             IslandPhase::Hidden | IslandPhase::Dismissing => Pres::Hidden,
-            IslandPhase::Selecting { mode } => Pres::Selecting { mode, has_iphone },
+            IslandPhase::Selecting { mode } => Pres::Selecting { mode },
             IslandPhase::Recording if self.recording_has_no_words() && !self.reveal.is_open() => {
                 Pres::RecordingWarning {
                     chips: false,
-                    has_iphone,
                 }
             }
             IslandPhase::Recording => Pres::Recording {
                 chips: self.reveal.is_open(),
-                has_iphone,
             },
             IslandPhase::Processing => Pres::Processing,
             IslandPhase::Completed { inbox_count, .. } => {
@@ -2425,7 +2246,6 @@ impl ApparentCoordinator {
             .store(false, std::sync::atomic::Ordering::Release);
         self.telemetry.set_picker_rect(None);
         self.picker_metal_overlay = None;
-        self.iphone_preview = None;
         self.selection_drag = None;
         self.hovered_window = None;
         self.animated_window_rect = None;
@@ -2569,7 +2389,6 @@ impl ApparentCoordinator {
             }
             self.sync_picker_overlay();
         }
-        self.follow_phone_mirror();
         #[cfg(target_os = "linux")]
         self.follow_recording_pointer();
 
@@ -2692,9 +2511,6 @@ impl ApparentCoordinator {
         }
         self.selection_generation += 1;
         self.windows_loading = !self.lab;
-        if !self.lab {
-            self.refresh_iphone(cx);
-        }
         let generation = self.selection_generation;
         cx.spawn(async move |entity, cx| {
             if entity.read_with(cx, |coord, _| coord.lab).unwrap_or(true) {
@@ -2753,21 +2569,7 @@ impl ApparentCoordinator {
             self.island_opacity = 0.0;
             self.island_phase = IslandPhase::Hidden;
         }
-        // Open on the mode the last recording used. The phone needs a live preview, started once
-        // the picker is up; Window starts on Area's crosshair until the window list arrives.
-        let opening = match mode.unwrap_or(self.last_mode) {
-            SelectionMode::Iphone => SelectionMode::Area,
-            mode => mode,
-        };
-        self.set_island_phase(IslandPhase::Selecting { mode: opening });
-        self.open_iphone_when_found = false;
-        if mode.is_none() && self.last_mode == SelectionMode::Iphone {
-            if self.iphone.is_some() {
-                self.preview_iphone(cx);
-            } else {
-                self.open_iphone_when_found = true;
-            }
-        }
+        self.set_island_phase(IslandPhase::Selecting { mode: mode.unwrap_or(self.last_mode) });
         self.telemetry.begin_picker_session();
         self.sync_picker_overlay();
         if self.picker_metal_overlay.is_none() && !self.lab {
@@ -2863,7 +2665,6 @@ impl ApparentCoordinator {
             self.remember_mode(mode);
         }
         self.recording_shortcut_key = false;
-        self.iphone_preview = None;
         self.selection_drag = None;
         self.hovered_window = None;
         self.animated_window_rect = None;
@@ -3011,7 +2812,6 @@ impl ApparentCoordinator {
         if let IslandPhase::Selecting { mode } = self.island_phase {
             motion::trace_event(format!("record:{}", mode.label()));
         }
-        self.iphone_preview = None;
         self.selection_drag = None;
         self.hovered_window = None;
         self.animated_window_rect = None;
@@ -3023,146 +2823,6 @@ impl ApparentCoordinator {
             _metal_overlay: None,
         });
         self.present_recording_island(cx);
-    }
-
-    /// Mirrors the cabled iPhone in the helper's window and records its native video. The
-    /// window's on-screen rect is the capture target, so the laser, ink, pins and clicks over it
-    /// normalize straight into phone-screen coordinates (kept current as the window moves).
-    pub fn start_recording_iphone(&mut self, cx: &mut Context<Self>) {
-        if self.is_recording() || self.is_processing() {
-            return;
-        }
-        if let Ok(mut status) = CAPTURE_STATUS.lock() {
-            *status = None;
-        }
-        apparent_log("start_recording_iphone invoked");
-        if self.lab {
-            self.start_lab_recording(crate::phone::phone_target("iPhone", None, None, 0, 0), cx);
-            return;
-        }
-        if !self.ready_for(crate::onboarding::Permission::Camera) {
-            self.cancel_recording(cx);
-            return;
-        }
-        whiteboard::reset_for_capture(&self.whiteboard);
-        self.begin_playback();
-        self.remember_mode(SelectionMode::Iphone);
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        {
-            let Ok(id) = crate::agent_capture::new_id() else {
-                apparent_log("Could not create capture identity; refusing an untracked recording");
-                self.cancel_recording(cx);
-                return;
-            };
-            self.agent_captures.begin(&id);
-            self.agent_capture_id = Some(id);
-        }
-        self.recording_shortcut_key = false;
-        self.selection_drag = None;
-        self.hovered_window = None;
-        self.animated_window_rect = None;
-        let bundle_dir = crate::handoff::default_captures_dir()
-            .join(format!("{}.apparent", crate::make_bundle_id()));
-        let _ = std::fs::create_dir_all(&bundle_dir);
-        let movie_path = bundle_dir.join("recording.mov");
-        let existing_preview = self.iphone_preview.take();
-        if let Some(dev) = existing_preview.as_ref().and_then(PhoneSession::device) {
-            self.iphone = Some(dev);
-        }
-        let device = self.iphone.clone();
-        let name = device
-            .as_ref()
-            .map_or("iPhone", |d| d.name.as_str())
-            .to_owned();
-        let target = crate::phone::phone_target(&name, None, None, 0, 0);
-        let initial_frame = existing_preview
-            .as_ref()
-            .and_then(PhoneSession::rect)
-            .map_or(
-                TargetFrame {
-                    x: -100_000.0,
-                    y: -100_000.0,
-                    width: 1.0,
-                    height: 1.0,
-                    scale: 2.0,
-                },
-                |[rx, ry, rw, rh]| TargetFrame {
-                    x: f64::from(rx),
-                    y: f64::from(ry),
-                    width: f64::from(rw),
-                    height: f64::from(rh),
-                    scale: 2.0,
-                },
-            );
-        self.telemetry.set_capture_mode(CaptureMode::Device);
-        self.telemetry.reset_for_session(initial_frame);
-        // Hold interaction telemetry inactive until the helper's `recording` event arrives.
-        self.telemetry
-            .active
-            .store(false, std::sync::atomic::Ordering::Release);
-        let session = if let Some(mut preview) = existing_preview {
-            preview.begin_recording(&movie_path);
-            preview
-        } else {
-            let dev_id = device.as_ref().map(|d| d.id.as_str());
-            match PhoneSession::start(&movie_path, dev_id, Some(Arc::clone(&self.telemetry))) {
-                Ok(session) => session,
-                Err(error) => {
-                    apparent_log(format!("iPhone capture could not start: {error:#}"));
-                    #[cfg(any(target_os = "macos", target_os = "linux"))]
-                    {
-                        if let Some(id) = self.agent_capture_id.take() {
-                            self.agent_captures.set(&id, "failed", None, Some("start_failed"));
-                        }
-                    }
-                    self.telemetry.finish_session();
-                    let _ = std::fs::remove_dir_all(&bundle_dir);
-                    self.dismiss_island(cx);
-                    return;
-                }
-            }
-        };
-        // Over the mirror window's display (the pointer's until the window reports its rect).
-        let mirror = (initial_frame.x > -10_000.0).then_some([
-            initial_frame.x,
-            initial_frame.y,
-            initial_frame.width,
-            initial_frame.height,
-        ]);
-        let metal_overlay = self.picker_metal_overlay.take().or_else(|| {
-            platform::open_overlay(Arc::clone(&self.telemetry), mirror, cx)
-                .map_err(|error| apparent_log(format!("Metal overlay failed: {error}")))
-                .ok()
-        });
-        self.active_recording = Some(ActiveRecording {
-            started: Instant::now(),
-            target,
-            bundle_dir,
-            source: CaptureSource::Phone(session),
-            _metal_overlay: metal_overlay,
-        });
-        self.present_recording_island(cx);
-    }
-
-    /// The mirror ended without being asked: keep what was recorded, or drop an empty capture.
-    fn phone_ended(&mut self, cx: &mut Context<Self>) {
-        if self.iphone_preview.is_some() {
-            self.iphone_preview = None;
-            self.set_selection_mode(SelectionMode::Area, cx);
-            return;
-        }
-        let recorded = match &self.active_recording {
-            Some(ActiveRecording {
-                source: CaptureSource::Phone(session),
-                ..
-            }) => session.has_recording(),
-            _ => return,
-        };
-        if recorded {
-            self.finish_recording(cx);
-        } else {
-            self.cancel_recording(cx);
-        }
     }
 
     pub fn cancel_recording(&mut self, cx: &mut Context<Self>) {
@@ -3254,28 +2914,6 @@ impl ApparentCoordinator {
                             audio,
                             windows,
                         } => (session, audio, windows),
-                        CaptureSource::Phone(session) => {
-                            let finalized = session.stop().and_then(|recording| {
-                                crate::phone::finalize_live_capture(
-                                    &bundle_dir,
-                                    recording,
-                                    events,
-                                    strokes,
-                                    None,
-                                )
-                            }).map(|(dir, bundle, summary)| {
-                                let (bundle, summary) = whiteboard::finish_handoff(
-                                    &dir, bundle, summary, &final_whiteboard,
-                                );
-                                (dir, bundle, summary)
-                            });
-                            if let Err(error) = &finalized {
-                                apparent_log(format!("iPhone capture failed: {error:#}"));
-                            }
-                            let duration_ms =
-                                finalized.as_ref().map_or(0, |(_, b, _)| b.duration_ms);
-                            return (finalized, duration_ms);
-                        }
                         CaptureSource::Lab => {
                             return (Err(anyhow::anyhow!("a lab recording has no bundle")), 0);
                         }
@@ -3587,7 +3225,6 @@ impl Render for HudPillWindow {
         let highlight_prev = coord.highlight_prev;
         let highlight_p = ease_out_cubic(motion::age(coord.highlight_since) / HIGHLIGHT_FADE_S);
         let clock = format_clock(elapsed_ms);
-        let has_iphone = coord.iphone.is_some();
         let completed_note = coord.completed_note.clone();
         let completed_issue = coord.completed_audio_issue();
         let completed_warning = completed_issue.is_some();
@@ -3617,8 +3254,7 @@ impl Render for HudPillWindow {
             window,
             target_phase,
             &clock,
-            has_iphone,
-            chips,
+                        chips,
             mic_warning,
             completed_note.as_deref(),
             completed_issue,
@@ -3771,7 +3407,7 @@ impl Render for HudPillWindow {
             let Some(layout) = switch_layout else {
                 return Vec::new();
             };
-            let modes = SelectionMode::available(has_iphone);
+            let modes = SelectionMode::available();
             let mut widths: Vec<f32> = modes.iter().map(|&m| segment_width(window, m)).collect();
             if mode.shows_record() {
                 widths.push(chip_width(window, "Record", FontWeight::SEMIBOLD));
@@ -3841,14 +3477,14 @@ impl Render for HudPillWindow {
             IslandPhase::Selecting { mode } => {
                 let alphas = selecting_alphas(mode);
                 let alpha = |i: usize| alphas.get(i).copied().unwrap_or(1.0);
-                let n_modes = SelectionMode::available(has_iphone).len();
+                let n_modes = SelectionMode::available().len();
                 let record = mode.shows_record();
                 let after = n_modes + usize::from(record);
                 traced(
                     row.when_some(switch_layout, |row, layout| {
                         row.relative().left(px(layout.dx))
                     }),
-                    SelectionMode::available(has_iphone)
+                    SelectionMode::available()
                         .iter()
                         .map(|m| m.label())
                         .map(|label| format!("chip:{label}"))
@@ -3858,7 +3494,7 @@ impl Render for HudPillWindow {
                         .map(|(i, key)| Some((key, alpha(i))))
                         .collect(),
                 )
-                .children(SelectionMode::available(has_iphone).iter().enumerate().map(
+                .children(SelectionMode::available().iter().enumerate().map(
                     |(i, &segment)| {
                         let c_segment = self.coordinator.clone();
                         mode_segment_level(segment, highlight(segment, mode), pill_theme, !record)
@@ -4091,7 +3727,7 @@ impl Render for HudPillWindow {
                         + meter_w;
                     let inner_now = render_width - 2.0 * ISLAND_INSET;
                     let alphas = |group_chips: bool, fade: f32| -> (Vec<f32>, f32) {
-                        let widths = recording_trail_widths(window, group_chips, has_iphone);
+                        let widths = recording_trail_widths(window, group_chips);
                         let alphas = trail_offsets(trail_x0, &widths)
                             .iter()
                             .zip(&widths)
@@ -4110,13 +3746,12 @@ impl Render for HudPillWindow {
                             traced(
                                 self.recording_trail(
                                     out_chips,
-                                    has_iphone,
-                                    &out_alphas,
+                                                                        &out_alphas,
                                     false,
                                     pill_theme,
                                     recording_warning,
                                 ),
-                                trail_keys(out_chips, has_iphone, &out_alphas, "out:"),
+                                trail_keys(out_chips, &out_alphas, "out:"),
                             )
                         })
                     });
@@ -4133,13 +3768,12 @@ impl Render for HudPillWindow {
                         .child(traced(
                             self.recording_trail(
                                 chips,
-                                has_iphone,
-                                &in_alphas,
+                                                                &in_alphas,
                                 true,
                                 pill_theme,
                                 recording_warning,
                             ),
-                            trail_keys(chips, has_iphone, &in_alphas, ""),
+                            trail_keys(chips, &in_alphas, ""),
                         ))
                 })
                 .when(live_no_words, |row| {
@@ -4332,7 +3966,6 @@ impl HudPillWindow {
     fn recording_trail(
         &self,
         chips: bool,
-        has_iphone: bool,
         alphas: &[f32],
         interactive: bool,
         theme: PillTheme,
@@ -4341,7 +3974,7 @@ impl HudPillWindow {
         let alpha = |i: usize| alphas.get(i).copied().unwrap_or(1.0);
         let group = div().flex().flex_none().items_center().gap(px(CHIP_GAP));
         if chips {
-            return group.children(SelectionMode::available(has_iphone).iter().enumerate().map(
+            return group.children(SelectionMode::available().iter().enumerate().map(
                 |(i, &mode)| {
                     let c_switch = self.coordinator.clone();
                     mode_segment(mode, mode == SelectionMode::Screen, theme, true)
@@ -4648,14 +4281,6 @@ impl Render for TargetPickerWindow {
             f32::from(win_bounds.size.height),
         ];
 
-        let iphone_rect = coord.iphone_preview.as_ref().and_then(PhoneSession::rect);
-        let iphone_name = coord
-            .iphone_preview
-            .as_ref()
-            .and_then(PhoneSession::device)
-            .or_else(|| coord.iphone.clone())
-            .map_or_else(|| "iPhone".to_string(), |d| d.name);
-
         // Selection rect in window-local coordinates, clipped to the screen, plus its badge.
         let highlight: Option<([f32; 4], String)> = match mode {
             SelectionMode::Area => drag.map(|(a, b)| {
@@ -4699,12 +4324,6 @@ impl Render for TargetPickerWindow {
                 [0.0, 0.0, screen[0], screen[1]],
                 "Full screen · Click to record".to_string(),
             )),
-            SelectionMode::Iphone => iphone_rect.map(|[rx, ry, rw, rh]| {
-                (
-                    [(rx - origin[0]) * k, (ry - origin[1]) * k, rw * k, rh * k],
-                    format!("{iphone_name} · Click to record"),
-                )
-            }),
         }
         .map(|(rect, label)| (clip_rect(rect, screen), label));
 
@@ -4719,7 +4338,7 @@ impl Render for TargetPickerWindow {
                 measure_text(window, &measured_label, BADGE_TEXT, FontWeight::MEDIUM).min(max_text);
             let size = [text_w + 2.0 * BADGE_PX + 2.0, BADGE_H];
             let anchor = match mode {
-                SelectionMode::Area | SelectionMode::Iphone => BadgeAnchor::BelowTrailing,
+                SelectionMode::Area => BadgeAnchor::BelowTrailing,
                 SelectionMode::Window | SelectionMode::Screen => BadgeAnchor::Center,
             };
             (
@@ -4740,7 +4359,7 @@ impl Render for TargetPickerWindow {
             .relative()
             .when(mode == SelectionMode::Area, |d| d.cursor_crosshair())
             .when(
-                matches!(mode, SelectionMode::Iphone | SelectionMode::Screen),
+                matches!(mode, SelectionMode::Screen),
                 |d| d.cursor_pointer(),
             )
             .when(mode == SelectionMode::Window, |d| {
@@ -4807,22 +4426,6 @@ impl Render for TargetPickerWindow {
                             coord.sync_picker_overlay();
                             cx.notify();
                         }
-                        SelectionMode::Iphone => {
-                            if let Some([rx, ry, rw, rh]) =
-                                coord.iphone_preview.as_ref().and_then(PhoneSession::rect)
-                                && sx >= rx
-                                && sx <= rx + rw
-                                && sy >= ry
-                                && sy <= ry + rh
-                            {
-                                coord.start_recording_iphone(cx);
-                            } else {
-                                coord.set_selection_mode(SelectionMode::Area, cx);
-                                coord.selection_drag = Some(([sx, sy], [sx, sy]));
-                                coord.sync_picker_overlay();
-                                cx.notify();
-                            }
-                        }
                         SelectionMode::Window => {
                             if coord.windows_loading {
                                 return;
@@ -4860,9 +4463,6 @@ impl Render for TargetPickerWindow {
                             coord.sync_picker_overlay();
                             cx.notify();
                         }
-                    }
-                    SelectionMode::Iphone => {
-                        coord.sync_picker_overlay();
                     }
                     SelectionMode::Screen => {}
                     SelectionMode::Window => {
@@ -6308,7 +5908,6 @@ pub fn run_start_benchmark() {
 pub fn run_app(
     initial_bundle: Option<(PathBuf, ApparentBundle)>,
     start_recording_immediately: bool,
-    start_iphone_immediately: bool,
     screenshot_out: Option<PathBuf>,
 ) {
     let app = Application::new().with_assets(crate::icons::Assets);
@@ -6408,9 +6007,6 @@ pub fn run_app(
         if start_recording_immediately {
             let coord_clone = coordinator.clone();
             coord_clone.update(cx, |coord, cx| coord.record_or_finish(cx));
-        }
-        if start_iphone_immediately {
-            coordinator.update(cx, |coord, cx| coord.start_recording_iphone(cx));
         }
 
         if let Some(out_path) = screenshot_out {
@@ -6559,7 +6155,6 @@ pub fn run_app(
                                 coord.request_immediate_frame();
                                 cx.notify();
                             }
-                            LiveOverlayEvent::PhoneEnded => coord.phone_ended(cx),
                             LiveOverlayEvent::Onboarding(event) => {
                                 coord.onboarding_event(event, cx)
                             }
@@ -7022,7 +6617,7 @@ mod tests {
     #[test]
     fn recording_controls_offer_whiteboard_on_every_desktop() {
         assert!(whiteboard_enabled());
-        let controls = trail_keys(false, false, &[], "hud-");
+        let controls = trail_keys(false, &[], "hud-");
         assert_eq!(
             controls.iter().any(|item| item
                 .as_ref()
@@ -7131,43 +6726,18 @@ mod tests {
     }
 
     #[test]
-    fn selection_modes_cycle_in_hud_order() {
-        use SelectionMode::{Area, Iphone, Screen, Window};
-        let walk = |has_iphone: bool, forward: bool| {
-            let mut mode = Area;
-            let mut seen = Vec::new();
-            for _ in 0..5 {
-                mode = mode.cycled(forward, has_iphone);
-                seen.push(mode);
-            }
-            seen
-        };
-        if cfg!(target_os = "macos") {
-            assert_eq!(walk(true, true), [Window, Screen, Iphone, Area, Window]);
-            assert_eq!(walk(true, false), [Iphone, Screen, Window, Area, Iphone]);
-        } else {
-            // No cabled iPhone off macOS, even when one is plugged in.
-            assert_eq!(walk(true, true), walk(false, true));
+    fn desktop_modes_cycle_and_digits_never_offer_phone() {
+        use SelectionMode::{Area, Window, Screen};
+        assert_eq!(SelectionMode::available(), &[Area, Window, Screen]);
+        assert_eq!(Area.cycled(true), Window);
+        assert_eq!(Window.cycled(true), Screen);
+        assert_eq!(Screen.cycled(true), Area);
+        assert_eq!(Area.cycled(false), Screen);
+        for (key, mode) in [("1", Area), ("2", Window), ("3", Screen)] {
+            assert_eq!(SelectionMode::from_digit(key), Some(mode));
         }
-        assert_eq!(walk(false, true), [Window, Screen, Area, Window, Screen]);
-        assert_eq!(walk(false, false), [Screen, Window, Area, Screen, Window]);
-        // An unplugged phone leaves the picker on a mode that is no longer listed.
-        assert_eq!(Iphone.cycled(true, false), Area);
-        assert_eq!(Iphone.cycled(false, false), Screen);
-    }
-
-    #[test]
-    fn digits_pick_modes_by_hud_position() {
-        use SelectionMode::{Area, Iphone, Screen, Window};
-        let pick = |key, has_iphone| SelectionMode::from_digit(key, has_iphone);
-        assert_eq!(pick("1", true), Some(Area));
-        assert_eq!(pick("2", true), Some(Window));
-        assert_eq!(pick("3", false), Some(Screen));
-        assert_eq!(pick("4", true), cfg!(target_os = "macos").then_some(Iphone));
-        assert_eq!(pick("4", false), None);
-        assert_eq!(pick("0", true), None);
-        assert_eq!(pick("5", true), None);
-        assert_eq!(pick("a", true), None);
+        for key in ["0", "4", "5", "a"] { assert_eq!(SelectionMode::from_digit(key), None); }
+        assert_eq!(SelectionMode::from_key("iphone\n").unwrap_or(Area), Area);
     }
 
     #[test]
@@ -7332,7 +6902,7 @@ mod tests {
         }
         assert_eq!(
             SelectionMode::from_key("iphone\n"),
-            Some(SelectionMode::Iphone)
+            None
         );
         assert_eq!(SelectionMode::from_key("fullscreen"), None);
     }
@@ -7345,8 +6915,8 @@ mod tests {
             completed_label(0, Some("Sent to APPARENT")),
             "Sent to APPARENT"
         );
-        assert_eq!(completed_label(1, Some("Sent to APPARENT")), "From iPhone");
-        assert_eq!(completed_label(3, None), "3 from iPhone");
+        assert_eq!(completed_label(1, Some("Sent to APPARENT")), "Saved capture");
+        assert_eq!(completed_label(3, None), "3 saved captures");
         assert_eq!(
             completed_status_label(0, None, Some(CompletedAudioIssue::NoWords)),
             "Copied · No words"

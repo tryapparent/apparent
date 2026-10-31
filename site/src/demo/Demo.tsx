@@ -1,6 +1,6 @@
 import { type ComponentType, type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { flushSync } from "react-dom"
-import { MacWindow, PhoneMirror } from "./apps"
+import { MacWindow } from "./apps"
 import type { StageGpuOverlay as StageGpuOverlayType } from "./gpu-fx"
 import { afterLoad, useAfterLoad, useHydrated } from "../idle"
 import { INK_SHADOW, InkPath, inkPath } from "./ink"
@@ -8,7 +8,7 @@ import { measureAnchors, sameAnchors } from "./measure"
 import { motion, motionControls, motionServer } from "./motion"
 import { AGENT, type Anchors, BEATS, buildScript, cursorAt, type Mode, STAGE, T } from "./script"
 import * as sfx from "./sfx"
-import { Caption, Cursor, EdgeGlow, fixState, Island, Ink, Keys, MenuBar, phoneLive, Ripples, terminalActive } from "./stage-parts"
+import { Caption, Cursor, EdgeGlow, fixState, Island, Ink, Keys, MenuBar, Ripples, terminalActive } from "./stage-parts"
 import { Terminal } from "./terminal"
 
 type UserStroke = { points: [number, number, number][]; done: boolean }
@@ -427,7 +427,6 @@ export function Demo() {
   }
 
   const cursor = script ? cursorAt(script, t) : null
-  const live = mode === "iphone" ? phoneLive(t) : 0
   const refs = useMemo(() => ({ badge: badgeRef, actions: actionsRef, title: titleRef }), [])
   const drawing = shiftDown || drawMode
   const cues = useMemo(() => sfx.demoCues(mode), [mode])
@@ -502,11 +501,7 @@ export function Demo() {
           {ready && (
             <div className="stage-live">
               <MenuBar t={t} />
-              {mode === "mac" ? (
-                <MacWindow fix={fix} sheen={look.sheen} refs={refs} inactive={terminalActive(t)} />
-              ) : (
-                <PhoneMirror fix={fix} sheen={look.sheen} refs={refs} live={live} />
-              )}
+              <MacWindow fix={fix} sheen={look.sheen} refs={refs} inactive={terminalActive(t)} />
               {script && <Terminal t={t} mode={mode} script={script} />}
               <EdgeGlow t={t} />
               {script && <Ink t={t} script={script} />}

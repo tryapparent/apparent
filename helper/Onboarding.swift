@@ -13,7 +13,7 @@ import SwiftUI
 //     "status":"not-determined","requested":false,"required":true,"reopening":false,
 //     "relaunch":false},…],"ready":false,"fix":false,"tutorial":null|"skipped"|"watched"|"practiced"}
 //   {"type":"request","permission":"microphone"}      ask macOS (the system prompt)
-//   {"type":"open-settings","permission":"camera"}    its System Settings pane
+//   {"type":"open-settings","permission":"microphone"}    its System Settings pane
 //   {"type":"hide"} {"type":"show"} {"type":"close"}
 // Buttons come back on stdout as {"action":"continue"|"back"|"later"|"close"|"settings"|"skip"} or
 // {"action":"grant","permission":"microphone"} for a row's button; the how-it-works demo also
@@ -37,7 +37,6 @@ enum Permissions {
       "screen-recording": CGPreflightScreenCaptureAccess() ? "granted" : "not-determined",
       "microphone": av(.audio),
       "accessibility": AXIsProcessTrusted() ? "granted" : "not-determined",
-      "camera": av(.video),
     ]
     // Only SFSpeechRecognizer, the macOS 15 transcriber, needs it; SpeechAnalyzer doesn't.
     if !SpeechModel.analyzer {
@@ -53,7 +52,6 @@ enum Permissions {
   static func request(_ permission: String) {
     switch permission {
     case "microphone": AVCaptureDevice.requestAccess(for: .audio) { _ in }
-    case "camera": AVCaptureDevice.requestAccess(for: .video) { _ in }
     case "speech-recognition": SFSpeechRecognizer.requestAuthorization { _ in }
     case "accessibility":
       let prompt = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
@@ -69,13 +67,13 @@ enum Permissions {
   /// The System Settings pane; for lists an app can be dragged into, the drag panel flies there
   /// from the row's button (`button`, screen coordinates).
   static func openSettings(_ permission: String, from button: NSRect? = nil) {
+    guard ["screen-recording", "microphone", "accessibility", "speech-recognition"].contains(permission) else { return }
     if PermissionPanel.Kind(rawValue: permission) != nil {
       if let old = panels[permission] { PermissionPanel.tell(old, "cancel") }
       panels[permission] = PermissionPanel.launch(permission: permission, from: button) { _ in }
       return
     }
     let anchor = switch permission {
-    case "camera": "Privacy_Camera"
     case "speech-recognition": "Privacy_SpeechRecognition"
     default: "Privacy_Microphone"
     }
@@ -472,8 +470,6 @@ func permissionInfo(_ permission: String, paste: String) -> PermissionInfo {
     return PermissionInfo(symbol: "mic", name: "Microphone", why: "Hear what you say while you record")
   case "accessibility":
     return PermissionInfo(symbol: "accessibility", name: accessibilityName, why: "Undo with ⌘Z while you record, and paste with \(paste)")
-  case "camera":
-    return PermissionInfo(symbol: "iphone", name: "Camera", why: "Show and record a cabled iPhone")
   case "speech-recognition":
     return PermissionInfo(symbol: "waveform", name: "Speech Recognition", why: "Write down what you say, on this Mac")
   default:
@@ -739,9 +735,6 @@ struct OnboardingView: View {
 
   private var permissionsCopy: (title: String, body: String?) {
     let required = state.rows.filter(\.required).count
-    if state.fix, state.rows.count == 1, state.rows.first?.permission == "camera" {
-      return ("Camera, for your iPhone", "macOS treats a cabled iPhone's screen as a camera, so apparent needs Camera access to show and record it. Pick iPhone again once it's on.")
-    }
     if state.fix {
       return ("apparent can't record yet", "Turn these on, then press \(model.shortcut) again.")
     }
@@ -1222,7 +1215,6 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
       ("done", OnboardingState(step: "done", index: 5, count: 5), 0),
       ("fix-required", OnboardingState(step: "permissions", index: 0, count: 1, rows: lost, fix: true), 0),
       ("fix-screen-reopening", OnboardingState(step: "permissions", index: 0, count: 1, rows: reopening, fix: true), 0.3),
-      ("fix-camera", OnboardingState(step: "permissions", index: 0, count: 1, rows: [row("camera", requested: true)], fix: true), 0.3),
     ]
     let practice: [CGPoint] = (0...40).map { i in
       let a = Double(i) / 40 * 2.1 * Double.pi + 3.4

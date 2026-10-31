@@ -1591,12 +1591,7 @@ impl SettingsWindow {
                 crate::icons::PERSON,
                 BLUE,
             ),
-            Permission::Camera => (
-                "Camera",
-                "To show a cabled iPhone".to_owned(),
-                crate::icons::IPHONE,
-                GREEN,
-            ),
+            Permission::Camera => return div(),
             Permission::SpeechRecognition => (
                 "Speech Recognition",
                 "To write down what you say".to_owned(),

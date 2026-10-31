@@ -82,7 +82,6 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
   <key>NSScreenCaptureUsageDescription</key><string>Apparent captures your screen to build annotated agent bundles.</string>
   <key>NSMicrophoneUsageDescription</key><string>Apparent records your voice to align transcripts with keyframes.</string>
-  <key>NSCameraUsageDescription</key><string>Apparent mirrors and records a cabled iPhone's screen.</string>
   <key>NSSpeechRecognitionUsageDescription</key><string>Apparent transcribes your narration on this Mac.</string>
   <key>NSAppleEventsUsageDescription</key><string>Apparent reads the address of the browser tab you captured to record its context.</string>
   <key>SUEnableAutomaticChecks</key><true/>

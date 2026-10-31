@@ -572,7 +572,7 @@ fn record_menu_title() -> String {
     )
 }
 
-/// Lists unhandled iPhone captures at the top of the status menu, read fresh from disk so the
+/// Lists historical imported captures at the top of the status menu, read fresh from disk so the
 /// ages are current.
 fn rebuild_inbox_menu_items(menu: &NSMenu, target: &ApparentMenuTarget) {
     let Some(mtm) = MainThreadMarker::new() else {
@@ -595,7 +595,7 @@ fn rebuild_inbox_menu_items(menu: &NSMenu, target: &ApparentMenuTarget) {
     let has_section_header: bool = unsafe {
         msg_send![objc2::class!(NSMenuItem), respondsToSelector: sel!(sectionHeaderWithTitle:)]
     };
-    let title = NSString::from_str("From iPhone");
+    let title = NSString::from_str("Saved captures");
     rows.push(if has_section_header {
         NSMenuItem::sectionHeaderWithTitle(&title, mtm)
     } else {
@@ -611,7 +611,7 @@ fn rebuild_inbox_menu_items(menu: &NSMenu, target: &ApparentMenuTarget) {
         header
     });
     let icon = NSImage::imageWithSystemSymbolName_accessibilityDescription(
-        &NSString::from_str("iphone"),
+        &NSString::from_str("tray"),
         None,
     );
     for entry in inbox.entries() {
@@ -651,7 +651,7 @@ pub(super) fn set_status_text(text: &str) {
     });
 }
 
-/// Shows the unhandled iPhone capture count beside the menu bar icon.
+/// Shows the historical imported capture count beside the menu bar icon.
 pub(super) fn set_status_inbox_count(count: usize) {
     let Some(mtm) = MainThreadMarker::new() else {
         return;

@@ -1476,7 +1476,7 @@ pub fn sync_bundle_to(host: &str, bundle_dir: &Path) -> Result<()> {
              for f in {staging_q}/*/*; do rm -rf {bundle_q}/\"$(basename \"$f\")\" && mv \"$f\" {bundle_q}/; done; \
              rm -rf {staging_q} {bundle_q}/{MEDIA_PENDING}"
         );
-        // Held until the media lands, so the iPhone video isn't re-encoded or cleaned up under
+        // Held until the media lands, so saved video isn't cleaned up under
         // the copy (see `retention`).
         let sending = bundle_dir.join(crate::retention::MEDIA_SENDING);
         let _ = fs::write(&sending, host);

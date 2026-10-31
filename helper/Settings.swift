@@ -22,7 +22,6 @@ import SwiftUI
 // {"action":"record-shortcut","kind":"record"}, {"action":"shortcut","kind":"record",
 // "keyCode":15,"modifiers":6144,"key":"r","reserved":false}, {"action":"cancel-shortcut"},
 // {"action":"reset-shortcut","kind":"paste"}, {"action":"clear-shortcut","kind":"paste"},
-// {"action":"grant","permission":"camera"},
 // {"action":"reopen"}, {"action":"show-captures"}, {"action":"check-for-updates"},
 // {"action":"set","key":"capturesDir","value":"/Users/me/Captures"} ("" resets),
 // {"action":"tour"}, {"action":"install-cli"}, {"action":"uninstall-cli"}, {"action":"close"}.
@@ -164,7 +163,7 @@ struct SettingsState: Decodable, Equatable {
   var retention = SettingsRetention()
   var capturesSize: String?
   var capturesDir = SettingsCapturesDir()
-  var permissions: [SettingsPermission] = ["screen-recording", "microphone", "accessibility", "camera"]
+  var permissions: [SettingsPermission] = ["screen-recording", "microphone", "accessibility"]
     .map { SettingsPermission(permission: $0, required: ["screen-recording", "microphone", "accessibility"].contains($0)) }
   var updates = true
   var commandLine = SettingsCommandLine()
@@ -1280,7 +1279,6 @@ struct PermissionLine: View {
     case "screen-recording": "To see your screen"
     case "microphone": "To hear you"
     case "accessibility": "For ⌘Z and \(paste)"
-    case "camera": "To show a cabled iPhone"
     case "speech-recognition": "To write down what you say"
     default: ""
     }
@@ -1291,7 +1289,6 @@ struct PermissionLine: View {
     case "screen-recording": (Color(red: 0.62, green: 0.5, blue: 1), Color(red: 0.44, green: 0.32, blue: 0.92))
     case "microphone": (Color(red: 1, green: 0.62, blue: 0.3), Color(red: 0.95, green: 0.44, blue: 0.12))
     case "accessibility": (Color(red: 0.36, green: 0.66, blue: 1), Color(red: 0.16, green: 0.45, blue: 0.95))
-    case "camera": (Color(red: 0.36, green: 0.82, blue: 0.56), Color(red: 0.16, green: 0.66, blue: 0.4))
     case "speech-recognition": (Color(red: 1, green: 0.42, blue: 0.56), Color(red: 0.9, green: 0.24, blue: 0.4))
     default: (Color(white: 0.62), Color(white: 0.45))
     }
@@ -1595,7 +1592,6 @@ final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
     base.permissions = base.permissions.map { row in
       var row = row
       row.status = ["screen-recording", "microphone", "accessibility"].contains(row.permission) ? "granted" : "not-determined"
-      if row.permission == "camera" { row.status = "denied" }
       return row
     }
     let devices = [

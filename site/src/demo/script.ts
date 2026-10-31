@@ -1,6 +1,6 @@
 import { inkPath } from "./ink"
 
-export type Mode = "mac" | "iphone"
+export type Mode = "mac"
 export type Point = [number, number]
 export type Rect = { x: number; y: number; w: number; h: number }
 
@@ -9,19 +9,15 @@ export const INK = "#ff3b30"
 
 export const MENUBAR_H = 28
 export const MAC_WINDOW: Rect = { x: 52, y: 78, w: 684, h: 540 }
-export const PHONE: Rect = { x: 265, y: 76, w: 258, h: 556 }
 export const AGENT: Rect = { x: 760, y: 48, w: 422, h: 640 }
 export const AREA: Rect = { x: 40, y: 66, w: 708, h: 564 }
 
 // A tap of ⌥⇧S records the screen as the keys come up (`keysUp`), with a red edge glow, and the
-// capsule shows the switch chips (Area · Window · Screen · iPhone) until `REVEAL_MS` pass or the
-// first stroke. On iPhone the iPhone chip restarts the recording on the phone (`phoneRecord`).
+// capsule shows Area · Window · Screen until `REVEAL_MS` pass or the first stroke.
 // The narration and the marks are timed from `record`; another tap finishes at `finish`.
 export const T = {
   keys: 2000,
   keysUp: 2300,
-  phoneClick: 3450,
-  phoneRecord: 3600,
   record: 3600,
   circle: [5600, 7100] as const,
   pin1: 7600,
@@ -44,11 +40,11 @@ export const T = {
 // `crate::shortcut::REVEAL_MS`.
 export const REVEAL_MS = 3500
 
-// When the recording the capsule's clock counts began: the screen on the Mac, the phone on iPhone.
-export const recStart = (mode: Mode, t = Infinity) => (mode === "iphone" && t >= T.phoneRecord ? T.phoneRecord : T.keysUp)
+// When the desktop recording starts.
+export const recStart = (_mode: Mode, _t = Infinity) => T.keysUp
 
 // When the switch chips fold into Cancel · Finish.
-export const revealEnd = (mode: Mode) => (mode === "iphone" ? T.phoneRecord : Math.min(T.keysUp + REVEAL_MS, T.circle[0]))
+export const revealEnd = (_mode: Mode) => Math.min(T.keysUp + REVEAL_MS, T.circle[0])
 
 export const BEATS = [
   { label: "Broken", t: 0 },
@@ -63,12 +59,6 @@ const MAC_WORDS: [string, number][] = [
   ["The", 1100], ["live", 1380], ["badge", 1680], ["overlaps", 2050], ["the", 2600], ["title.", 2790],
   ["And", 5400], ["the", 5660], ["buttons", 5850], ["sit", 6170], ["too", 6390], ["low.", 6600],
   ["Move", 6970], ["the", 7220], ["badge", 7410], ["and", 7700], ["align", 7960], ["the", 8230], ["row.", 8460],
-]
-
-const IPHONE_WORDS: [string, number][] = [
-  ["The", 1100], ["live", 1380], ["pill", 1680], ["covers", 1930], ["the", 2310], ["phone's", 2500], ["title.", 2820],
-  ["And", 5400], ["the", 5680], ["bottom", 5880], ["action", 6220], ["bar", 6520], ["is", 6710], ["clipped.", 6940],
-  ["Please", 7450], ["make", 7730], ["both", 8020], ["visible.", 8360],
 ]
 
 export type Narration = {
@@ -94,7 +84,6 @@ const narration = (src: string, spoken: [string, number][], speechEnd: number, d
 
 export const NARRATION: Record<Mode, Narration> = {
   mac: narration("/apparent-narration-mac.mp3", MAC_WORDS, 8900, 10000, []),
-  iphone: narration("/apparent-narration-iphone.mp3", IPHONE_WORDS, 8800, 10000, []),
 }
 
 export const WORDS = NARRATION.mac.words
@@ -136,8 +125,6 @@ export const PILL = {
   items: {
     // Lead (dot + clock), divider, Area · Window · Screen, divider, ×.
     reveal: [70, 13, 56, 72, 66, 13, 32],
-    // With a cabled iPhone, its chip after Screen.
-    revealPhone: [70, 13, 56, 72, 66, 66, 13, 32],
     recording: [70, 13, 68, 68],
     processing: [132],
     copied: [98, 13, 62, 74, 32],
@@ -147,11 +134,6 @@ export const PILL_CY = PILL.top + PILL.h / 2
 
 export const pillWidth = (items: number[]) => items.reduce((a, b) => a + b, 0) + PILL.gap * (items.length - 1) + PILL.inset * 2
 
-const chipCenter = (items: number[], index: number): Point => {
-  let x = PILL.cx - pillWidth(items) / 2 + PILL.inset
-  for (let i = 0; i < index; i++) x += items[i] + PILL.gap
-  return [x + items[index] / 2, PILL_CY]
-}
 
 // The home-screen prompt row inside the Pi terminal (see Terminal in stage-parts.tsx).
 export const PROMPT_AT: Point = [AGENT.x + 150, AGENT.y + 356]
@@ -219,12 +201,9 @@ export function buildScript(mode: Mode, a: Anchors): Script {
 
   // On the Mac the arrow swings up from below-left into the clipped "Retry failed" button.
   const buttons = a.actions.x + a.actions.w - 200
-  const tip: Point =
-    mode === "mac"
-      ? [buttons - 10, a.actions.y + a.actions.h * 0.6]
-      : [a.actions.x + a.actions.w * 0.62, a.actions.y + a.actions.h + 6]
-  const start: Point = mode === "mac" ? [tip[0] - 104, tip[1] + 52] : [tip[0] + 34, tip[1] + 92]
-  const ctrl: Point = mode === "mac" ? [tip[0] - 44, tip[1] + 46] : [tip[0] + 44, tip[1] + 34]
+  const tip: Point = [buttons - 10, a.actions.y + a.actions.h * 0.6]
+  const start: Point = [tip[0] - 104, tip[1] + 52]
+  const ctrl: Point = [tip[0] - 44, tip[1] + 46]
   const shaft = curvePoints(start, ctrl, tip, 40)
   // A quadratic's end tangent points from the control point to the tip.
   const angle = Math.atan2(tip[1] - ctrl[1], tip[0] - ctrl[0])
@@ -245,20 +224,10 @@ export function buildScript(mode: Mode, a: Anchors): Script {
   // The pill rides to the left of each mark, so it never covers the ink or the thing being
   // described, and its glide between clauses never crosses the circle.
   const circleLeft = Math.min(...circle.map((p) => p[0]))
-  const speech: Script["speech"] =
-    mode === "mac"
-      ? [
-          [circleLeft - 12, badge[1]],
-          [start[0] - 20, start[1]],
-        ]
-      : [
-          [PHONE.x - 16, badge[1]],
-          [PHONE.x - 16, start[1]],
-        ]
+  const speech: Script["speech"] = [[circleLeft - 12, badge[1]], [start[0] - 20, start[1]]]
 
   const pin1: Point = [a.badge.x + a.badge.w + 2, a.badge.y - 2]
-  const pin2: Point =
-    mode === "mac" ? [a.actions.x + a.actions.w - 92, a.actions.y + 10] : [a.actions.x + a.actions.w * 0.52, a.actions.y + 8]
+  const pin2: Point = [a.actions.x + a.actions.w - 92, a.actions.y + 10]
   const pins: Pin[] = [
     { n: 1, t: T.pin1, at: pin1 },
     { n: 2, t: T.pin2, at: pin2 },
@@ -273,18 +242,7 @@ export function buildScript(mode: Mode, a: Anchors): Script {
     { t: 1650, at: [520, 300], arc: 0 },
   ]
 
-  if (mode === "mac") {
-    path.push({ t: T.circle[0] - 1400, at: [520, 300], arc: 0.06 })
-  } else {
-    const phoneChip = chipCenter(PILL.items.revealPhone, 5)
-    clicks.push({ t: T.phoneClick, at: phoneChip })
-    path.push(
-      { t: T.keysUp + 200, at: [520, 300], arc: 0.06 },
-      { t: T.phoneClick - 80, at: phoneChip, arc: 0 },
-      { t: T.phoneClick + 160, at: phoneChip, arc: 0 },
-      { t: T.circle[0] - 1400, at: phoneChip, arc: -0.07 },
-    )
-  }
+  path.push({ t: T.circle[0] - 1400, at: [520, 300], arc: 0.06 })
 
   const restAfterPin2: Point = [pin2[0] + 28, pin2[1] + 34]
 
@@ -392,7 +350,7 @@ export const clauses = (mode: Mode) => {
 
 export const summaryText = (mode: Mode, short = false) => {
   const dir = short ? "~/…/captures" : "~/Library/Application Support/apparent/captures"
-  const target = mode === "mac" ? "Pulse “Deploy Activity”" : "iPhone · dev.pulse.app (212)"
+  const target = "Pulse “Deploy Activity”"
   const [first, second] = clauses(mode)
   const start = recStart(mode)
   return [

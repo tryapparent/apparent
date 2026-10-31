@@ -188,7 +188,7 @@ fn compile_metal_shader(src_rel: &str, name: &str) {
     assert!(metallib.success(), "Metal library creation failed for {src_rel}");
 }
 
-/// Builds `apparent-helper` (Swift: SpeechAnalyzer, iPhone capture, movie decoding) beside the
+/// Builds `apparent-helper` (Swift: SpeechAnalyzer, shared movie decoding/export, native UI) beside the
 /// `apparent` binary, where `helper::path` and `scripts/install-app.sh` look for it.
 fn compile_helper() {
     let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
