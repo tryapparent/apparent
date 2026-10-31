@@ -324,9 +324,12 @@ pub fn missing(why: &str, locale: &str, error: Option<&str>) -> MissingTranscrip
 
 /// Marks a freshly written bundle whose transcript can come later; if the model has arrived
 /// meanwhile, transcribes it now.
-pub fn mark_pending(bundle_dir: &Path) {
-    let _ = std::fs::write(bundle_dir.join(PENDING), b"");
-    if current().state == State::Ready {
+pub fn mark_pending(bundle_dir: &Path) -> Result<()> {
+    crate::bundle_pipeline::publication::write(bundle_dir, PENDING, b"")
+}
+
+pub(crate) fn resume_pending(bundle_dir: &Path) {
+    if current().state == State::Ready && bundle_dir.join(PENDING).is_file() {
         let dir = bundle_dir.to_path_buf();
         std::thread::spawn(move || transcribe_one(&dir));
     }
@@ -348,7 +351,12 @@ pub fn transcribe_pending(captures: &Path) {
 }
 
 fn transcribe_one(dir: &Path) {
-    match transcribe_again(dir) {
+    let result = (|| {
+        let _guard = crate::bundle_pipeline::publication::coordinate(dir)?;
+        if !dir.join(PENDING).is_file() { return Ok(false); }
+        transcribe_again(dir)
+    })();
+    match result {
         Ok(done) => crate::capture::apparent_log(format!(
             "transcribed again {}: {}",
             dir.display(),
@@ -359,7 +367,7 @@ fn transcribe_one(dir: &Path) {
                 "transcribing {} again failed: {error:#}",
                 dir.display()
             ));
-            let _ = std::fs::remove_file(dir.join(PENDING));
+            // Keep durable pending work on I/O/validation/transcription failure.
         }
     }
 }
@@ -368,10 +376,27 @@ fn transcribe_one(dir: &Path) {
 /// keyframe's words, `apparent.json` and `summary.md`. Returns `false` (and keeps the marker)
 /// while there's still no model.
 pub fn transcribe_again(dir: &Path) -> Result<bool> {
-    let (dir, mut bundle) = crate::handoff::load_bundle(dir)?;
+    transcribe_again_with(dir, crate::helper::transcribe)
+}
+
+fn transcribe_again_with(dir: &Path, transcribe: impl FnOnce(&Path) -> Result<crate::model::TranscriptData>) -> Result<bool> {
+    use crate::bundle_pipeline::publication;
+    let _publication = publication::coordinate(dir)?;
+    let root = publication::Directory::open(dir, false)?;
+    let names = root.names()?;
+    if [publication::IN_PROGRESS, crate::recover::UNFINISHED, crate::recover::UNSAFE_VIDEO]
+        .iter().any(|name| names.iter().any(|n| n == name)) {
+        return Ok(false);
+    }
+    let dir = dir.to_path_buf();
+    let old_manifest = publication::read_text(&dir, "apparent.json")?;
+    let mut bundle: crate::model::ApparentBundle = serde_json::from_str(&old_manifest)?;
+    let original = bundle.clone();
+    let old_summary = publication::read_text(&dir, "summary.md")?;
+    publication::checked(&dir, &bundle, &old_summary)?;
     let wav = dir.join(bundle.audio.as_deref().unwrap_or("audio.wav"));
     anyhow::ensure!(wav.is_file(), "the bundle has no audio.wav any more");
-    let transcript = crate::helper::transcribe(&wav)?;
+    let transcript = transcribe(&wav)?;
     if transcript
         .missing
         .as_ref()
@@ -385,17 +410,28 @@ pub fn transcribe_again(dir: &Path) -> Result<bool> {
         frame.said = said;
     }
     bundle.transcript = transcript;
-    std::fs::write(
-        dir.join("apparent.json"),
-        serde_json::to_vec_pretty(&bundle).context("Could not encode apparent.json")?,
-    )?;
-    std::fs::write(
-        dir.join("summary.md"),
-        crate::sketch::summary_markdown(&bundle, &dir),
-    )?;
-    let _ = std::fs::remove_file(dir.join(PENDING));
+    let summary = crate::sketch::summary_markdown(&bundle, &dir);
+    let updated = publication::publish_after(&dir, || {
+        publication::write(&dir, "apparent.json", &serde_json::to_vec_pretty(&bundle).context("Could not encode apparent.json")?)?;
+        publication::write(&dir, "summary.md", summary.as_bytes())?;
+        Ok((dir.clone(), bundle, summary))
+    });
+    if let Err(error) = updated {
+        // A failed in-place update must leave the prior valid bundle retryable,
+        // rather than stranding its pending work behind our publication marker.
+        publication::write(&dir, "apparent.json", old_manifest.as_bytes())?;
+        publication::write(&dir, "summary.md", old_summary.as_bytes())?;
+        publication::checked(&dir, &original, &old_summary)
+            .with_context(|| format!("{error:#}; could not restore original transcript bundle"))?;
+        return Err(error);
+    }
+    root.remove(PENDING)?;
+    root.0.sync_all()?;
     Ok(true)
 }
+
+#[cfg(test)]
+mod publication_tests;
 
 #[cfg(test)]
 mod tests {

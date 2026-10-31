@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::audio::RecordedAudio;
+pub mod publication;
+#[cfg(test)]
 use crate::capture::write_bundle_artifacts;
 use crate::keyframes::select_keyframes;
 use crate::model::{
@@ -79,10 +81,7 @@ struct FinishTrace {
 }
 
 fn save_finish_trace(bundle_dir: &Path, trace: &FinishTrace) -> Result<()> {
-    std::fs::write(
-        bundle_dir.join("finish-trace.json"),
-        serde_json::to_vec_pretty(trace)?,
-    )?;
+    publication::write(bundle_dir, "finish-trace.json", &serde_json::to_vec_pretty(trace)?)?;
     Ok(())
 }
 
@@ -290,6 +289,7 @@ pub fn finalize_capture_bundle(
     activity: windows::ActivityLog,
     interaction_telemetry: Option<model::InteractionTelemetry>,
 ) -> Result<(PathBuf, ApparentBundle, String)> {
+    publication::publish_after(bundle_dir, || {
     let started_at = activity
         .stop_started
         .unwrap_or_else(std::time::Instant::now);
@@ -312,12 +312,12 @@ pub fn finalize_capture_bundle(
         anyhow::bail!("{message}");
     }
     if let Some(ref audio) = recorded_audio {
-        let wav_path = bundle_dir.join("audio.wav");
-        let _ = std::fs::create_dir_all(bundle_dir);
-        let _ = std::fs::write(&wav_path, &audio.wav_bytes);
+        publication::write(bundle_dir, "audio.wav", &audio.wav_bytes)
+            .context("Could not persist captured audio")?;
     }
     let wav_path = bundle_dir.join("audio.wav");
     let has_wav = wav_path.exists();
+    let wav_required = recorded_audio.is_some() || has_wav;
     recover::write(
         bundle_dir,
         &recover::Unfinished {
@@ -335,7 +335,7 @@ pub fn finalize_capture_bundle(
             windows: activity.windows.clone(),
             cursor: activity.cursor.clone(),
         },
-    );
+    )?;
     let crop_settings = (target.mode == CaptureMode::Display)
         .then(autocrop::Settings::configured)
         .flatten();
@@ -423,10 +423,11 @@ pub fn finalize_capture_bundle(
             ..SourceExtras::default()
         },
     );
-    if built.is_ok() {
-        recover::finished(bundle_dir);
-    }
-    built
+    let built = built?;
+    anyhow::ensure!(!wav_required || built.1.audio.as_deref() == Some("audio.wav"),
+        "captured audio disappeared during bundle construction");
+    Ok(built)
+    })
 }
 
 /// Builds a Screen capture's bundle in `out`, which holds its video and `audio.wav`, from them
@@ -508,10 +509,11 @@ pub fn rebuild_screen_bundle_with(
 }
 
 /// A bundle without its transcript yet (the speech model was still downloading) gets it later.
-fn mark_transcript_pending(bundle_dir: &Path, bundle: &ApparentBundle) {
+fn mark_transcript_pending(bundle_dir: &Path, bundle: &ApparentBundle) -> Result<()> {
     if bundle.transcript.missing.as_ref().is_some_and(|m| m.retry) {
-        speech_model::mark_pending(bundle_dir);
+        speech_model::mark_pending(bundle_dir)?;
     }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -527,6 +529,7 @@ pub fn build_bundle_from_parts(
     note: Option<String>,
     extras: SourceExtras,
 ) -> Result<(PathBuf, ApparentBundle, String)> {
+    publication::publish_after(bundle_dir, || {
     let total_started = extras
         .timings
         .started_at
@@ -691,11 +694,12 @@ pub fn build_bundle_from_parts(
         .and_then(|s| s.to_str())
         .unwrap_or("apparent-bundle")
         .to_string();
-    let video_rel = video_path.and_then(|p| {
-        p.exists()
-            .then(|| p.file_name()?.to_str().map(str::to_owned))
-            .flatten()
-    });
+    // A requested movie remains required if it disappears during finalization.
+    // Sources with no movie (image and phone image modes) remain valid.
+    let video_rel = video_path.map(|p| -> Result<String> {
+        anyhow::ensure!(p.parent().is_some_and(|parent| parent == bundle_dir), "movie is outside its bundle");
+        Ok(p.file_name().and_then(|n| n.to_str()).context("invalid movie name")?.to_owned())
+    }).transpose()?;
     let audio_rel = bundle_dir
         .join("audio.wav")
         .exists()
@@ -733,32 +737,20 @@ pub fn build_bundle_from_parts(
 
     match output {
         BundleOutput::Prepared(prep) => {
-            std::fs::create_dir_all(bundle_dir.join("frames"))
-                .with_context(|| format!("could not create {}", bundle_dir.display()))?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ =
-                    std::fs::set_permissions(bundle_dir, std::fs::Permissions::from_mode(0o700));
-            }
-            std::fs::write(
-                bundle_dir.join(&bundle.contact_sheet),
-                &prep.contact_sheet_png,
-            )?;
+            let root = publication::Directory::open(bundle_dir, true)?;
+            root.write(&bundle.contact_sheet, &prep.contact_sheet_png)?;
             for (rel, bytes) in &prep.frame_pngs {
-                std::fs::write(bundle_dir.join(rel), bytes)?;
+                root.write(rel, bytes)?;
             }
             if let (Some(info), Some(full_sheet_png)) = (&bundle.autocrop, &prep.full_sheet_png) {
-                let full_dir = bundle_dir.join(&info.full_frames);
-                std::fs::create_dir_all(&full_dir)?;
-                std::fs::write(bundle_dir.join(&info.full_contact_sheet), full_sheet_png)?;
+                root.write(&info.full_contact_sheet, full_sheet_png)?;
                 for (name, bytes) in &prep.full_frame_pngs {
-                    std::fs::write(full_dir.join(name), bytes)?;
+                    root.write(&format!("{}/{name}", info.full_frames), bytes)?;
                 }
             }
             let manifest_bytes = serde_json::to_vec_pretty(&bundle)?;
-            std::fs::write(bundle_dir.join("apparent.json"), manifest_bytes)?;
-            std::fs::write(bundle_dir.join("summary.md"), summary.as_bytes())?;
+            root.write("apparent.json", &manifest_bytes)?;
+            root.write("summary.md", summary.as_bytes())?;
         }
         BundleOutput::Rendered {
             annotated,
@@ -769,11 +761,11 @@ pub fn build_bundle_from_parts(
             std::thread::scope(|scope| -> Result<()> {
                 let full_write = match (&cropped, &full_sheet) {
                     (Some((info, full)), Some(sheet)) => Some(
-                        scope.spawn(|| autocrop::write_full_frames(bundle_dir, info, full, sheet)),
+                        scope.spawn(|| publication::write_full(bundle_dir, info, full, sheet)),
                     ),
                     _ => None,
                 };
-                write_bundle_artifacts(bundle_dir, &bundle, &annotated, &contact_sheet, &summary)?;
+                publication::write_artifacts(bundle_dir, &bundle, &annotated, &contact_sheet, &summary)?;
                 if let Some(handle) = full_write {
                     handle
                         .join()
@@ -842,8 +834,9 @@ pub fn build_bundle_from_parts(
         }
     }
 
-    mark_transcript_pending(bundle_dir, &bundle);
+    mark_transcript_pending(bundle_dir, &bundle)?;
     Ok((bundle_dir.to_path_buf(), bundle, summary))
+    })
 }
 
 mod demo;
@@ -851,3 +844,6 @@ pub use demo::generate_demo_bundle;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod publication_tests;
