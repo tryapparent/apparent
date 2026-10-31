@@ -839,6 +839,8 @@ pub struct SharedCaptureTelemetry {
     pub strokes: Mutex<Vec<Stroke>>,
     pub active_laser: Mutex<Option<Stroke>>,
     pub live_ink: Mutex<Option<Stroke>>,
+    #[cfg(test)]
+    ink_transfer_pause: Mutex<Option<(flume::Sender<()>, flume::Receiver<()>)>>,
     pub excluded_window_ids: Arc<Mutex<Vec<u32>>>,
     /// Raised when a click, ink stroke or shortcut starts, so the Screen-mode window log takes
     /// a snapshot right away.
@@ -880,11 +882,25 @@ pub struct SharedCaptureTelemetry {
     agent_context: AtomicBool,
     #[cfg(target_os = "linux")]
     linux_nearby_text: AtomicBool,
+    #[cfg(target_os = "linux")]
+    label_generation: AtomicU64,
+    #[cfg(all(test, target_os = "linux"))]
+    label_prober: crate::ax::Prober,
     /// A ⇧-press inside the target: when, where (global points) and on which frame.
     shift_press: Mutex<Option<(u64, f64, f64, TargetFrame)>>,
 }
 
 impl SharedCaptureTelemetry {
+    #[cfg(target_os = "linux")]
+    fn label_prober(&self) -> &crate::ax::Prober {
+        #[cfg(test)]
+        {
+            &self.label_prober
+        }
+        #[cfg(not(test))]
+        crate::ax::Prober::shared()
+    }
+
     pub fn new(ui_sender: flume::Sender<LiveOverlayEvent>) -> Arc<Self> {
         let shortcuts = crate::settings::Shortcuts::load();
         crate::settings::note_paste_label(&shortcuts.paste.label);
@@ -911,6 +927,8 @@ impl SharedCaptureTelemetry {
             strokes: Mutex::new(Vec::new()),
             active_laser: Mutex::new(None),
             live_ink: Mutex::new(None),
+            #[cfg(test)]
+            ink_transfer_pause: Mutex::new(None),
             excluded_window_ids: Arc::new(Mutex::new(Vec::new())),
             window_log_request: Arc::new(AtomicBool::new(false)),
             ui_sender,
@@ -930,6 +948,10 @@ impl SharedCaptureTelemetry {
             agent_context: AtomicBool::new(false),
             #[cfg(target_os = "linux")]
             linux_nearby_text: AtomicBool::new(false),
+            #[cfg(target_os = "linux")]
+            label_generation: AtomicU64::new(0),
+            #[cfg(all(test, target_os = "linux"))]
+            label_prober: crate::ax::Prober::inert(),
             shift_press: Mutex::new(None),
         })
     }
@@ -1035,6 +1057,11 @@ impl SharedCaptureTelemetry {
     }
 
     pub fn reset_for_session(&self, frame: TargetFrame) {
+        let agent_context = crate::handoff::experiment(crate::handoff::AGENT_CONTEXT);
+        #[cfg(target_os = "linux")]
+        let linux_nearby_text = crate::ax::enabled(agent_context);
+        // Serialize reset with the short live-to-completed transfer.
+        let mut live_ink = self.live_ink.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.selecting.store(false, Ordering::Release);
         *self
             .picker_rect
@@ -1060,10 +1087,7 @@ impl SharedCaptureTelemetry {
             .active_laser
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-        *self
-            .live_ink
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        *live_ink = None;
         *self
             .drag_start
             .lock()
@@ -1078,17 +1102,20 @@ impl SharedCaptureTelemetry {
             .clear();
         self.shift_held.store(false, Ordering::Release);
         self.window_log_request.store(false, Ordering::Release);
-        let agent_context = crate::handoff::experiment(crate::handoff::AGENT_CONTEXT);
         self.agent_context.store(agent_context, Ordering::Release);
         #[cfg(target_os = "linux")]
         self.linux_nearby_text.store(
-            agent_context && crate::handoff::experiment(crate::ax::LINUX_NEARBY_TEXT),
+            linux_nearby_text,
             Ordering::Release,
         );
         if agent_context {
+            #[cfg(target_os = "linux")]
+            self.label_generation.store(self.label_prober().begin(), Ordering::Release);
+            #[cfg(not(target_os = "linux"))]
             crate::ax::Prober::shared().begin();
         }
         self.active.store(true, Ordering::Release);
+        drop(live_ink);
         let clicks = if self.mouse_live.load(Ordering::Acquire) {
             platform::MOUSE_SOURCE
         } else {
@@ -1408,11 +1435,8 @@ impl SharedCaptureTelemetry {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         self.finish_active_laser(None);
-        if let Some(ink) = self
-            .live_ink
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
+        let mut live_ink = self.live_ink.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(ink) = live_ink.take()
             && ink.pts.len() >= 3
         {
             self.strokes
@@ -1432,7 +1456,11 @@ impl SharedCaptureTelemetry {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
         );
+        drop(live_ink);
         if self.agent_context.swap(false, Ordering::AcqRel) {
+            #[cfg(target_os = "linux")]
+            let hits = self.label_prober().finish();
+            #[cfg(not(target_os = "linux"))]
             let hits = crate::ax::Prober::shared().finish();
             crate::ax::apply(&hits, &mut events, &mut strokes);
             if self.capture_mode.load(Ordering::Acquire) != 3 {
@@ -1568,31 +1596,19 @@ fn track_shift_ink(
         }
     } else if !pure_shift && prev_shift_ink {
         telemetry.shift_held.store(false, Ordering::Release);
-        commit_shift_ink(telemetry, |stroke| {
-            let frame = *telemetry
-                .target_frame
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        commit_shift_ink(telemetry, |stroke, context| {
+            let frame = context.frame;
             if let Some((x, y)) = crate::ax::stroke_probe_point(stroke, frame) {
                 #[cfg(target_os = "linux")]
                 if stroke.on.is_none() {
-                    let excluded = telemetry
-                        .excluded_window_ids
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .clone();
-                    let passthrough = telemetry
-                        .passthrough_window_ids
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .clone();
-                    crate::ax::Prober::shared().probe_stroke(
+                    telemetry.label_prober().probe_stroke(
+                        context.generation,
                         crate::ax::Target::Stroke(stroke.t0),
                         x,
                         y,
                         frame,
-                        &excluded,
-                        &passthrough,
+                        &context.excluded,
+                        &context.passthrough,
                     );
                 }
                 #[cfg(not(target_os = "linux"))]
@@ -1604,26 +1620,47 @@ fn track_shift_ink(
 
 /// Commit geometry before optional attribution. Neither the live ink nor the
 /// completed-strokes lock may span a native query; finish can drain them meanwhile.
-fn commit_shift_ink(telemetry: &SharedCaptureTelemetry, probe: impl FnOnce(&Stroke)) {
-    let completed = {
-        telemetry
-            .live_ink
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
-    };
+struct StrokeProbeContext {
+    frame: TargetFrame,
+    #[cfg(target_os = "linux")]
+    generation: u64,
+    #[cfg(target_os = "linux")]
+    excluded: Vec<u32>,
+    #[cfg(target_os = "linux")]
+    passthrough: Vec<u32>,
+}
+
+fn commit_shift_ink(telemetry: &SharedCaptureTelemetry, probe: impl FnOnce(&Stroke, StrokeProbeContext)) {
+    let mut live_ink = telemetry.live_ink.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let completed = live_ink.take();
     // Ignore stationary Shift taps (e.g. typing a capital letter).
     if let Some(stroke) = completed.filter(is_real_ink) {
+        #[cfg(test)]
+        if let Some((paused, resume)) = telemetry.ink_transfer_pause.lock().unwrap().take() {
+            paused.send(()).unwrap();
+            resume.recv_timeout(Duration::from_secs(5)).unwrap();
+        }
         telemetry
             .strokes
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(stroke.clone());
+        // Capture event-owned admission before finish/reset can replace it.
+        let context = telemetry.probing().then(|| StrokeProbeContext {
+            frame: *telemetry.target_frame.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
+            #[cfg(target_os = "linux")]
+            generation: telemetry.label_generation.load(Ordering::Acquire),
+            #[cfg(target_os = "linux")]
+            excluded: telemetry.excluded_window_ids.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone(),
+            #[cfg(target_os = "linux")]
+            passthrough: telemetry.passthrough_window_ids.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone(),
+        });
+        drop(live_ink);
         let _ = telemetry
             .ui_sender
             .try_send(LiveOverlayEvent::RequestSnapshot);
-        if telemetry.probing() {
-            probe(&stroke);
+        if let Some(context) = context {
+            probe(&stroke, context);
         }
     }
 }
@@ -2268,6 +2305,107 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn shift_transfer_is_atomic_with_finish_and_reset() {
+        let telemetry = session(1000., 1000.);
+        *telemetry.live_ink.lock().unwrap() = Some(label_test_ink());
+        let (paused, paused_rx) = flume::bounded(1);
+        let (resume, resume_rx) = flume::bounded(1);
+        *telemetry.ink_transfer_pause.lock().unwrap() = Some((paused, resume_rx));
+        let input = Arc::clone(&telemetry);
+        let transfer = std::thread::spawn(move || commit_shift_ink(&input, |_, _| {}));
+        paused_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        // This observation is deterministic even if finish's thread is not
+        // scheduled during the bounded wait below: the actual transfer must
+        // still own live_ink at its pre-push pause.
+        let transfer_owns_live_ink = telemetry.live_ink.try_lock().is_err();
+        let finishing = Arc::clone(&telemetry);
+        let (finished, finished_rx) = flume::bounded(1);
+        let finish = std::thread::spawn(move || {
+            finished.send(finishing.finish_session()).unwrap();
+        });
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while telemetry.active.load(Ordering::Acquire) && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert!(!telemetry.active.load(Ordering::Acquire));
+        let drained_early = finished_rx.recv_timeout(Duration::from_millis(50)).ok();
+        resume.send(()).unwrap();
+        transfer.join().unwrap();
+        finish.join().unwrap();
+        assert!(transfer_owns_live_ink, "live_ink ownership ended before completed push");
+        let (_, strokes) = drained_early.clone().unwrap_or_else(|| finished_rx.recv().unwrap());
+        assert_eq!(strokes, vec![label_test_ink()], "finish must return the transferred geometry");
+        assert!(drained_early.is_none(), "finish crossed the paused geometry transfer");
+        assert!(telemetry.strokes.lock().unwrap().is_empty());
+        let frame = *telemetry.target_frame.lock().unwrap();
+        telemetry.reset_for_session(frame);
+        assert!(telemetry.finish_session().1.is_empty(), "no replacement-session residue");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn admitted_shift_callback_cannot_adopt_replacement_window_session() {
+        let telemetry = session(1000., 1000.);
+        // Set the session-sampled flags directly: do not mutate process-global
+        // experiment overrides or consult real config in a concurrent regression.
+        let enable = || {
+            telemetry.agent_context.store(true, Ordering::Release);
+            telemetry.linux_nearby_text.store(true, Ordering::Release);
+            telemetry.label_generation.store(telemetry.label_prober().begin(), Ordering::Release);
+        };
+        enable();
+        telemetry.set_capture_mode(CaptureMode::Display);
+        *telemetry.excluded_window_ids.lock().unwrap() = vec![41];
+        *telemetry.passthrough_window_ids.lock().unwrap() = vec![42];
+        *telemetry.live_ink.lock().unwrap() = Some(label_test_ink());
+        let (admitted, admitted_rx) = flume::bounded(1);
+        let (resume, resume_rx) = flume::bounded(1);
+        let acquisitions = Arc::new(AtomicU64::new(0));
+        let input = Arc::clone(&telemetry);
+        let calls = Arc::clone(&acquisitions);
+        let callback = std::thread::spawn(move || {
+            commit_shift_ink(&input, |stroke, context| {
+                admitted.send(()).unwrap();
+                resume_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                assert_eq!(context.frame.width, 1000.);
+                assert_eq!(context.excluded, [41]);
+                assert_eq!(context.passthrough, [42]);
+                // Same admission method used by probe_stroke, with an inert
+                // acquisition boundary: no X/D-Bus or content getters can run.
+                input.label_prober().acquire_stroke(context.generation, crate::ax::Target::Stroke(stroke.t0), || {
+                    calls.fetch_add(1, Ordering::AcqRel);
+                    Err("inert-snapshot")
+                });
+            });
+        });
+        admitted_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let (_, a) = telemetry.finish_session();
+        assert_eq!(a, vec![label_test_ink()]);
+        telemetry.set_capture_mode(CaptureMode::Window);
+        let mut frame = *telemetry.target_frame.lock().unwrap();
+        frame.width = 800.;
+        telemetry.reset_for_session(frame);
+        enable();
+        *telemetry.passthrough_window_ids.lock().unwrap() = vec![99];
+        // Real replacement geometry deliberately collides at t0=1.
+        *telemetry.live_ink.lock().unwrap() = Some(label_test_ink());
+        resume.send(()).unwrap();
+        callback.join().unwrap();
+        assert_eq!(acquisitions.load(Ordering::Acquire), 0, "stale work must decline before snapshot and Name");
+        let (_, b) = telemetry.finish_session();
+        assert_eq!(b, vec![label_test_ink()], "old attribution cannot name B's colliding stroke");
+        // Positive control: current-generation admission reaches acquisition.
+        let generation = telemetry.label_prober().begin();
+        telemetry.label_prober().acquire_stroke(generation, crate::ax::Target::Stroke(1), || {
+            acquisitions.fetch_add(1, Ordering::AcqRel);
+            Err("inert-snapshot")
+        });
+        assert_eq!(acquisitions.load(Ordering::Acquire), 1);
+        assert!(telemetry.label_prober().finish().is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn selected_window_and_device_never_acquire_desktop_label_snapshot() {
         let telemetry = session(1000., 1000.);
         telemetry.agent_context.store(true, Ordering::Release);
@@ -2276,7 +2414,7 @@ mod tests {
         let names = std::cell::RefCell::new(Vec::new());
         // A permissive provider models an otherwise admissible covering plug.
         // No negative bridge/privacy/occlusion guard can mask mode admission.
-        let covering_plug = |_: &Stroke| {
+        let covering_plug = |_: &Stroke, _: StrokeProbeContext| {
             calls.set(calls.get() + 1);
             names.borrow_mut().push("Friday");
         };
@@ -2317,7 +2455,7 @@ mod tests {
         let (resume, resume_rx) = flume::bounded(1);
         let input = Arc::clone(&telemetry);
         let handle = std::thread::spawn(move || {
-            commit_shift_ink(&input, |_| {
+            commit_shift_ink(&input, |_, _| {
                 let at = std::time::Instant::now();
                 let stream =
                     crate::ax::DeadlineStream::from_socket(client, at + Duration::from_millis(75))

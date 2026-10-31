@@ -18,6 +18,9 @@ mod native;
 pub(crate) use native::x11::DeadlineStream;
 
 pub const LINUX_NEARBY_TEXT: &str = "linuxNearbyText";
+pub fn enabled(agent_context: bool) -> bool {
+    agent_context && crate::handoff::experiment(LINUX_NEARBY_TEXT)
+}
 #[derive(Clone, Debug)]
 pub struct Hit(pub String);
 
@@ -115,7 +118,7 @@ impl Prober {
             }
         })
     }
-    pub fn begin(&self) {
+    pub fn begin(&self) -> u64 {
         let mut state = self
             .results
             .lock()
@@ -123,11 +126,13 @@ impl Prober {
         state.generation = state.generation.wrapping_add(1);
         state.accepting = true;
         state.hits.clear();
+        state.generation
     }
     /// Pointer attribution is intentionally not part of this experiment.
     pub fn probe(&self, _target: Target, _x: f64, _y: f64) {}
     pub fn probe_stroke(
         &self,
+        generation: u64,
         target: Target,
         x: f64,
         y: f64,
@@ -135,22 +140,32 @@ impl Prober {
         excluded: &[u32],
         passthrough: &[u32],
     ) {
-        let generation = {
+        self.acquire_stroke(generation, target, || {
+            native::Snapshot::take(x, y, frame, excluded, passthrough)
+        });
+    }
+    // Admission retains the input event's generation, never a replacement's.
+    pub(crate) fn acquire_stroke(
+        &self,
+        generation: u64,
+        target: Target,
+        acquire: impl FnOnce() -> Result<native::Snapshot, &'static str>,
+    ) {
+        {
             let state = self
                 .results
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if !state.accepting {
+            if !state.accepting || state.generation != generation {
                 return;
             }
-            state.generation
-        };
+        }
         if self.jobs.is_full() {
             decline("queue-full");
             return;
         }
         // Snapshot *now*, never a queued fresh query that could name a replacement plug.
-        match native::Snapshot::take(x, y, frame, excluded, passthrough) {
+        match acquire() {
             Ok(snapshot) => {
                 self.pending.fetch_add(1, Ordering::AcqRel);
                 if self
@@ -167,6 +182,15 @@ impl Prober {
                 }
             }
             Err(reason) => decline(reason),
+        }
+    }
+    #[cfg(test)]
+    pub(crate) fn inert() -> Self {
+        let (jobs, _queue) = flume::bounded(2);
+        Self {
+            jobs,
+            results: Arc::new(Mutex::new(Results::default())),
+            pending: Arc::new(AtomicUsize::new(0)),
         }
     }
     pub fn finish(&self) -> HashMap<Target, Hit> {

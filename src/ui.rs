@@ -1668,20 +1668,21 @@ impl ApparentCoordinator {
     fn reveal_activity(&self) -> usize {
         use std::sync::PoisonError;
         let t = &self.telemetry;
-        t.events
+        // Do not retain events/strokes guards while acquiring live_ink:
+        // commit, finish and reset take live_ink before completed geometry.
+        let events = t.events
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .len()
-            + t.strokes
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .len()
-            + usize::from(
-                t.live_ink
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .is_some(),
-            )
+            .len();
+        let strokes = t.strokes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len();
+        let live = t.live_ink
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some();
+        events + strokes + usize::from(live)
     }
 
     /// The recording just started from a tap: the capsule opens onto the switch chips.

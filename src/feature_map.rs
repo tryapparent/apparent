@@ -190,7 +190,7 @@ fn the_scanner_sees_known_keys_and_flags() {
         assert!(keys.contains(key), "scanner missed config key {key}: {keys:?}");
     }
     let flags = experiments(&sources).unwrap();
-    for flag in ["agentContext", "liveTranscribe", "clipboardImage"] {
+    for flag in ["agentContext", "liveTranscribe", "clipboardImage", "linuxNearbyText"] {
         assert!(flags.contains(flag), "scanner missed experiment {flag}: {flags:?}");
     }
 }
