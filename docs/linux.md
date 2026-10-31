@@ -57,6 +57,13 @@ Plasma 5 can report successful GlobalShortcuts binding with an empty result. App
 
 ### Hyprland
 
+The separately built [clean-capture producer candidate](../native/linux-clean-capture/README.md)
+tracks #229. It requires pinned compositor and portal patches plus an explicit
+native client request. Normal Apparent builds do not enable it; it is not a
+claim that saved ink duplication or native Window capture has been repaired.
+Its source, authority, per-buffer consumer contract and remaining native gates
+are documented with the candidate.
+
 Tried on Omarchy 4 (Hyprland 0.56, Lua config), Wayland. `linux::hyprland` binds the shortcuts at runtime with `hyprctl eval hl.bind(…)` (a hyprlang config takes `keyword bindd` instead, untested), each running `apparent shortcut record|paste`. Hyprland consumes the chord, so it doesn't also reach the app in front, and nothing needs the `input` group. The binds are described `Apparent: record` and `Apparent: paste`. A chord some other bind holds is left alone and reported as taken; a bind with Apparent's description (a permanent one in the user's config, which a config reload doesn't drop) is left in place:
 
 ```lua

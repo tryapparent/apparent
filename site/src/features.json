@@ -22,6 +22,17 @@
   ],
   "features": [
     {
+      "id": "hyprland-clean-capture-producer",
+      "group": "platforms",
+      "name": "Hyprland clean-capture producer candidate",
+      "says": "Separately built compositor and portal patches bind an owned native ink surface to an explicitly requested clean capture and per-buffer receipt. They are not enabled by a normal Apparent build and do not repair the capture consumer or renderer.",
+      "status": "branch:t3/issue-229-clean-hyprland",
+      "added": "2026-10-31",
+      "platforms": ["linux"],
+      "note": "Producer-only candidate for pinned Hyprland and portal sources. Full native portal, pixel, permission and lifecycle acceptance remains required; no installed desktop change, default-on feature or historical capture migration.",
+      "docs": ["native/linux-clean-capture/README.md"]
+    },
+    {
       "id": "site-feature-grid",
       "group": "install",
       "name": "Animated homepage feature explanations",

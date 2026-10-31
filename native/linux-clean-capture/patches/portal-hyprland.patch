@@ -1,0 +1,429 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -124,6 +124,21 @@
+ 
+ protocolwayland()
+ 
++# Private clean extension uses raw libwayland while the original capture stays
++# on the existing generated screencopy wrappers and the same connection.
++find_program(APPARENT_WAYLAND_SCANNER wayland-scanner REQUIRED)
++set(APPARENT_CLEAN_PROTOCOL_DIR "${CMAKE_SOURCE_DIR}/../Hyprland/protocols" CACHE PATH "Issue229 private protocol sources")
++add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/apparent-clean-v1-client.h
++                          ${CMAKE_CURRENT_BINARY_DIR}/apparent-clean-v1-protocol.c
++  COMMAND ${APPARENT_WAYLAND_SCANNER} client-header ${APPARENT_CLEAN_PROTOCOL_DIR}/apparent-clean-v1.xml ${CMAKE_CURRENT_BINARY_DIR}/apparent-clean-v1-client.h
++  COMMAND ${APPARENT_WAYLAND_SCANNER} private-code ${APPARENT_CLEAN_PROTOCOL_DIR}/apparent-clean-v1.xml ${CMAKE_CURRENT_BINARY_DIR}/apparent-clean-v1-protocol.c
++  DEPENDS ${APPARENT_CLEAN_PROTOCOL_DIR}/apparent-clean-v1.xml)
++target_sources(xdg-desktop-portal-hyprland PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/apparent-clean-v1-client.h
++                                                   ${CMAKE_CURRENT_BINARY_DIR}/apparent-clean-v1-protocol.c)
++target_include_directories(xdg-desktop-portal-hyprland PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${APPARENT_CLEAN_PROTOCOL_DIR})
++pkg_check_modules(APPARENT_SYSTEMD REQUIRED IMPORTED_TARGET libsystemd>=256)
++target_link_libraries(xdg-desktop-portal-hyprland PRIVATE PkgConfig::APPARENT_SYSTEMD)
++
+ protocolnew("${CMAKE_SOURCE_DIR}/protocols"
+             "wlr-foreign-toplevel-management-unstable-v1" true)
+ protocolnew("${CMAKE_SOURCE_DIR}/protocols" "wlr-screencopy-unstable-v1" true)
+--- a/src/portals/Screencopy.cpp
++++ b/src/portals/Screencopy.cpp
+@@ -49,11 +49,19 @@
+ 
+     const Hyprutils::Memory::CWeakPointer<SSession> PSESSION = m_vSessions.emplace_back(Hyprutils::Memory::makeUnique<SSession>(appID, requestHandle, sessionHandle));
+     PSESSION->self                                           = PSESSION;
++    PSESSION->cleanSender = m_pObject->getCurrentlyProcessedMessage().getSender();
+ 
+     // create objects
+     PSESSION->session            = createDBusSession(sessionHandle);
++    PSESSION->session->onClosing = [PSESSION]() {
++        if (PSESSION->cleanRequested && PSESSION->cleanSender != PSESSION->session->object->getCurrentlyProcessedMessage().getSender())
++            throw sdbus::Error{sdbus::Error::Name{"org.freedesktop.DBus.Error.AccessDenied"}, "Session owner mismatch"};
++        PSESSION->cleanStream.reset();
++        if (PSESSION->cleanRequested) PSESSION->sharingData.active = false;
++    };
+     PSESSION->session->onDestroy = [PSESSION, this]() {
+-        if (PSESSION->sharingData.active) {
++        PSESSION->cleanStream.reset();
++        if (PSESSION->sharingData.active || PSESSION->cleanRequested) {
+             m_pPipewire->destroyStream(PSESSION.get());
+             Debug::log(LOG, "[screencopy] Stream destroyed");
+         }
+@@ -83,6 +91,24 @@
+         Debug::log(ERR, "[screencopy] SelectSources: no session found??");
+         throw sdbus::Error{sdbus::Error::Name{"NOSESSION"}, "No session found"};
+         return {1, {}};
++    }
++
++    if (PSESSION->cleanRequested || options.contains("apparent_clean_role")) {
++        const std::string sender = m_pObject->getCurrentlyProcessedMessage().getSender();
++        if (PSESSION->cleanRequested || sender != PSESSION->cleanSender || PSESSION->cleanStarted || PSESSION->appid != appID)
++            return {2, {}};
++        auto frontend = CCleanFrontend::admit(sender);
++        if (!frontend) return {2, {}};
++        if (options.contains("cursor_mode")) {
++            const auto mode = options.at("cursor_mode").get<uint32_t>();
++            if (mode != HIDDEN && mode != EMBEDDED) return {2, {}};
++        }
++        if (options.contains("multiple") && options.at("multiple").get<bool>()) return {2, {}};
++        const auto fd = options.at("apparent_clean_role").get<sdbus::UnixFd>();
++        PSESSION->cleanRoleFD = fcntl(fd.get(), F_DUPFD_CLOEXEC, 0);
++        if (PSESSION->cleanRoleFD < 0) return {2, {}};
++        PSESSION->cleanFrontend = std::move(frontend);
++        PSESSION->cleanRequested = true;
+     }
+ 
+     if (**PCURSORMODE == HIDDEN || **PCURSORMODE == EMBEDDED) {
+@@ -248,7 +274,10 @@
+ 
+     PSESSION->selection = SHAREDATA;
+ 
+-    return {SHAREDATA.type == TYPE_INVALID ? 1 : 0, {}};
++    if (PSESSION->cleanRequested && SHAREDATA.type != TYPE_OUTPUT && SHAREDATA.type != TYPE_GEOMETRY)
++        return {2, {}};
++    return {SHAREDATA.type == TYPE_INVALID ? 1 : 0,
++        PSESSION->cleanRequested ? std::unordered_map<std::string, sdbus::Variant>{{"apparent_clean_role", sdbus::Variant{true}}} : std::unordered_map<std::string, sdbus::Variant>{}};
+ }
+ 
+ dbUasv CScreencopyPortal::onStart(sdbus::ObjectPath requestHandle, sdbus::ObjectPath sessionHandle, std::string appID, std::string parentWindow,
+@@ -267,6 +296,23 @@
+         return {1, {}};
+     }
+ 
++    if (PSESSION->cleanRequested) {
++        const std::string sender = m_pObject->getCurrentlyProcessedMessage().getSender();
++        if (PSESSION->cleanStarted || !PSESSION->cleanFrontend || !PSESSION->cleanFrontend->sender(sender) ||
++            PSESSION->appid != appID || (PSESSION->selection.type != TYPE_OUTPUT && PSESSION->selection.type != TYPE_GEOMETRY)) return {2, {}};
++        PSESSION->cleanStarted = true;
++        auto output = g_pPortalManager->getOutputFromName(PSESSION->selection.output);
++        if (!output) return {2, {}};
++        auto display = g_pPortalManager->m_sWaylandConnection.display;
++        PSESSION->cleanStream = std::make_unique<CCleanStream>(display, PSESSION->cleanFrontend);
++        const auto& s = PSESSION->selection;
++        const bool area = s.type == TYPE_GEOMETRY;
++        if (!PSESSION->cleanStream->authorize(display, PSESSION->cleanRoleFD, output->output->resource(),
++                area ? s.x : 0, area ? s.y : 0, area ? s.w : 0, area ? s.h : 0, PSESSION->cursorMode == EMBEDDED)) {
++            PSESSION->cleanStream.reset(); return {2, {}};
++        }
++        close(PSESSION->cleanRoleFD); PSESSION->cleanRoleFD = -1;
++    }
+     startSharing(PSESSION);
+ 
+     std::unordered_map<std::string, sdbus::Variant> options;
+@@ -345,7 +391,16 @@
+     Debug::log(TRACE, "[screencopy] frame callbacks initialized");
+ }
+ 
++void CScreencopyPortal::SSession::stopClean() {
++    cleanStream.reset(); sharingData.active = false; sharingData.status = FRAME_FAILED;
++    const auto stream = g_pPortalManager->m_sPortals.screencopy->m_pPipewire->streamFromSession(this);
++    if (stream && stream->stream) pw_stream_set_error(stream->stream, -EACCES, "Native clean frame authorization or receipt lost");
++}
++
+ void CScreencopyPortal::SSession::startCopy() {
++    if (cleanRequested && (!cleanStream || !cleanStream->live())) {
++        stopClean(); return;
++    }
+     const auto     POUTPUT       = g_pPortalManager->getOutputFromName(selection.output);
+     const uint32_t OVERLAYCURSOR = cursorMode == EMBEDDED ? 1 : 0;
+ 
+@@ -501,6 +556,10 @@
+                 return;
+             }
+ 
++            if (cleanRequested && (!cleanStream ||
++                !cleanStream->attach(sharingData.frameCallback->resource(), PSTREAM->currentPWBuffer->wlBuffer->resource(), PSTREAM->currentPWBuffer->cleanGeneration))) {
++                stopClean(); return;
++            }
+             sharingData.frameCallback->sendCopyWithDamage(PSTREAM->currentPWBuffer->wlBuffer->resource());
+             sharingData.copyRetries = 0;
+ 
+@@ -786,7 +845,7 @@
+     }
+ 
+     spa_pod_dynamic_builder dynBuilder[3];
+-    const spa_pod*          params[4];
++    const spa_pod*          params[5];
+     uint8_t                 params_buffer[3][1024];
+ 
+     spa_pod_dynamic_builder_init(&dynBuilder[0], params_buffer[0], sizeof(params_buffer[0]), 2048);
+@@ -910,7 +969,12 @@
+         &dynBuilder[2].b, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta, SPA_PARAM_META_type, SPA_POD_Id(SPA_META_VideoDamage), SPA_PARAM_META_size,
+         SPA_POD_CHOICE_RANGE_Int(sizeof(struct spa_meta_region) * 4, sizeof(struct spa_meta_region) * 1, sizeof(struct spa_meta_region) * 4));
+ 
+-    pw_stream_update_params(PSTREAM->stream, params, 4);
++    uint32_t count = 4;
++    if (PSTREAM->pSession->cleanRequested) {
++        params[count++] = (const spa_pod*)spa_pod_builder_add_object(&dynBuilder[2].b, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
++            SPA_PARAM_META_type, SPA_POD_Id(APPARENT_CLEAN_META_TYPE), SPA_PARAM_META_size, SPA_POD_Int(sizeof(apparent_clean_receipt_v1)));
++    }
++    pw_stream_update_params(PSTREAM->stream, params, count);
+     spa_pod_dynamic_builder_clean(&dynBuilder[0]);
+     spa_pod_dynamic_builder_clean(&dynBuilder[1]);
+     spa_pod_dynamic_builder_clean(&dynBuilder[2]);
+@@ -1183,6 +1247,16 @@
+     }
+ 
+     spa_buffer* spaBuf  = PSTREAM->currentPWBuffer->pwBuffer->buffer;
++    if (pSession->cleanRequested) {
++        auto meta = static_cast<apparent_clean_receipt_v1*>(spa_buffer_find_meta_data(spaBuf, APPARENT_CLEAN_META_TYPE, sizeof(apparent_clean_receipt_v1)));
++        if (!pSession->sharingData.active || pSession->sharingData.status != FRAME_READY || !pSession->cleanStream ||
++            !pSession->cleanStream->publish(PSTREAM->currentPWBuffer->wlBuffer->resource(), PSTREAM->currentPWBuffer->cleanGeneration, meta)) {
++            // Never queue pixels without the matching native receipt.
++            if (meta) memset(meta, 0, sizeof(*meta));
++            pSession->stopClean();
++            return;
++        }
++    }
+     const bool  CORRUPT = PSTREAM->pSession->sharingData.status != FRAME_READY;
+     if (CORRUPT)
+         Debug::log(TRACE, "[pw] buffer corrupt");
+@@ -1276,6 +1350,15 @@
+ 
+     const auto PBUF = (SBuffer*)PWBUF->user_data;
+ 
++    if (pSession->cleanRequested) {
++        if (PSTREAM->cleanNextGeneration == UINT32_MAX) {
++            pSession->stopClean(); return;
++        }
++        PBUF->cleanGeneration = ++PSTREAM->cleanNextGeneration;
++        auto meta = spa_buffer_find_meta_data(PWBUF->buffer, APPARENT_CLEAN_META_TYPE, sizeof(apparent_clean_receipt_v1));
++        if (meta) memset(meta, 0, sizeof(apparent_clean_receipt_v1));
++    }
++
+     PSTREAM->currentPWBuffer = PBUF;
+ }
+ 
+--- a/src/portals/Screencopy.hpp
++++ b/src/portals/Screencopy.hpp
+@@ -9,6 +9,7 @@
+ #include "../shared/ScreencopyShared.hpp"
+ #include <gbm.h>
+ #include "../shared/Session.hpp"
++#include "../shared/CleanStream.hpp"
+ #include "../dbusDefines.hpp"
+ #include <chrono>
+ 
+@@ -38,6 +39,7 @@
+ struct pw_buffer;
+ 
+ struct SBuffer {
++    uint32_t cleanGeneration = 0;
+     bool           isDMABUF = false;
+     uint32_t       w = 0, h = 0, fmt = 0;
+     int            planeCount = 0;
+@@ -69,6 +71,13 @@
+         sdbus::ObjectPath                         requestHandle, sessionHandle;
+         uint32_t                                  cursorMode  = HIDDEN;
+         uint32_t                                  persistMode = 0;
++        std::string                               cleanSender;
++        std::shared_ptr<CCleanFrontend>            cleanFrontend;
++        std::unique_ptr<CCleanStream>              cleanStream;
++        int                                       cleanRoleFD = -1;
++        bool                                      cleanRequested = false;
++        bool                                      cleanStarted = false;
++        ~SSession() { if (cleanRoleFD >= 0) close(cleanRoleFD); }
+ 
+         std::unique_ptr<SDBusRequest>             request;
+         std::unique_ptr<SDBusSession>             session;
+@@ -76,6 +85,7 @@
+         Hyprutils::Memory::CWeakPointer<SSession> self;
+ 
+         void                                      startCopy();
++        void                                      stopClean();
+         void                                      initCallbacks();
+ 
+         struct {
+@@ -158,6 +168,7 @@
+         spa_video_info_raw                    pwVideoInfo;
+         uint32_t                              seq           = 0;
+         bool                                  isDMA         = false;
++        uint32_t                              cleanNextGeneration = 0;
+         uint32_t                              dmaBufRetries = 0;
+         bool                                  dmaBufFailed  = false;
+ 
+--- /dev/null
++++ b/src/shared/CleanFrontend.hpp
+@@ -0,0 +1,57 @@
++#pragma once
++#include <systemd/sd-bus.h>
++#include <poll.h>
++#include <unistd.h>
++#include <string>
++#include <string_view>
++#include <memory>
++
++// A frontend-owned D-Bus connection/lifetime, not a caller session-path string.
++class CCleanFrontend {
++    int pidfd = -1;
++    std::string unique;
++    mutable bool terminal = false;
++    sd_bus* bus = nullptr;
++    sd_bus_slot* watch = nullptr;
++    CCleanFrontend(int fd, std::string name) : pidfd(fd), unique(std::move(name)) {}
++  public:
++    ~CCleanFrontend() { sd_bus_slot_unref(watch); sd_bus_unref(bus); if (pidfd >= 0) close(pidfd); }
++    static std::shared_ptr<CCleanFrontend> admit(const std::string& sender) {
++        sd_bus* bus = nullptr; sd_bus_creds* creds = nullptr;
++        const char* owner = nullptr; int fd = -1;
++        bool ok = sd_bus_open_user(&bus) >= 0 &&
++            sd_bus_get_name_creds(bus, "org.freedesktop.portal.Desktop", SD_BUS_CREDS_UNIQUE_NAME | SD_BUS_CREDS_PIDFD, &creds) >= 0 &&
++            sd_bus_creds_get_unique_name(creds, &owner) >= 0 && owner && sender == owner &&
++            sd_bus_creds_get_pidfd_dup(creds, &fd) >= 0;
++        sd_bus_creds_unref(creds);
++        if (!ok) { sd_bus_unref(bus); if (fd >= 0) close(fd); return {}; }
++        auto result = std::shared_ptr<CCleanFrontend>(new CCleanFrontend(fd, sender));
++        result->bus = bus;
++        if (sd_bus_match_signal(bus, &result->watch, "org.freedesktop.DBus", "/org/freedesktop/DBus",
++                "org.freedesktop.DBus", "NameOwnerChanged",
++                [](sd_bus_message* message, void* data, sd_bus_error*) -> int {
++                    auto self = static_cast<CCleanFrontend*>(data);
++                    const char *name = nullptr, *old = nullptr, *now = nullptr;
++                    if (sd_bus_message_read(message, "sss", &name, &old, &now) < 0) { self->terminal = true; return 0; }
++                    if (std::string_view(name) == "org.freedesktop.portal.Desktop" && self->unique == old && std::string_view(old) != now)
++                        self->terminal = true;
++                    return 0;
++                }, result.get()) < 0) return {};
++        return result->live() ? result : nullptr;
++    }
++    bool sender(const std::string& s) const { return s == unique && live(); }
++    bool live() const {
++        pollfd p{pidfd, POLLIN, 0};
++        if (terminal || pidfd < 0 || poll(&p, 1, 0) != 0) { terminal = true; return false; }
++        int processed;
++        while ((processed = sd_bus_process(bus, nullptr)) > 0) {}
++        if (processed < 0 || terminal) { terminal = true; return false; }
++        sd_bus_creds* creds = nullptr;
++        const char* owner = nullptr;
++        bool ok = sd_bus_get_name_creds(bus, "org.freedesktop.portal.Desktop", SD_BUS_CREDS_UNIQUE_NAME, &creds) >= 0 &&
++            sd_bus_creds_get_unique_name(creds, &owner) >= 0 && owner && unique == owner && !terminal;
++        sd_bus_creds_unref(creds);
++        if (!ok) terminal = true;
++        return ok;
++    }
++};
+--- /dev/null
++++ b/src/shared/CleanStream.hpp
+@@ -0,0 +1,90 @@
++#pragma once
++#include "apparent-clean-v1-client.h"
++#include "apparent-clean-receipt.h"
++#include "apparent-clean-receipt-validate.h"
++#include "CleanFrontend.hpp"
++#include <cstring>
++#include <fcntl.h>
++#include <limits>
++#include <optional>
++#include <sys/stat.h>
++#include <wayland-client.h>
++
++// Uses the backend's existing native connection and actual screencopy objects.
++// No private screenshot endpoint and no source selector outside portal Start.
++class CCleanStream {
++    wl_display* display = nullptr;
++    wl_registry* registry = nullptr;
++    apparent_clean_manager_v1* manager = nullptr;
++    apparent_clean_grant_v1* grant = nullptr;
++    apparent_clean_sample_v1* sample = nullptr;
++    std::shared_ptr<CCleanFrontend> frontend;
++    uint32_t portal = 0, sequence = 0, generation = 0, frameID = 0, bufferID = 0;
++    bool failed = false;
++    std::optional<apparent_clean_receipt_v1> received;
++  public:
++    explicit CCleanStream(wl_display* display, std::shared_ptr<CCleanFrontend> f) : display(display), frontend(std::move(f)) {
++        registry = wl_display_get_registry(display);
++        static const wl_registry_listener listener{
++            [](void* data, wl_registry* registry, uint32_t name, const char* iface, uint32_t) {
++                auto self = static_cast<CCleanStream*>(data);
++                if (!strcmp(iface, "apparent_clean_manager_v1"))
++                    self->manager = static_cast<apparent_clean_manager_v1*>(wl_registry_bind(registry, name, &apparent_clean_manager_v1_interface, 1));
++            }, [](void*, wl_registry*, uint32_t) {}};
++        wl_registry_add_listener(registry, &listener, this);
++        if (wl_display_roundtrip(display) < 0 || !manager) failed = true;
++    }
++    ~CCleanStream() {
++        cancelSample();
++        if (grant) apparent_clean_grant_v1_destroy(grant);
++        if (manager) apparent_clean_manager_v1_destroy(manager);
++        if (registry) wl_registry_destroy(registry);
++    }
++    bool authorize(wl_display* display, int fd, wl_proxy* output, int x, int y, int w, int h, bool cursor) {
++        if (!live() || grant || !object(output, "wl_output")) return false;
++        // libwayland represents every generated opaque interface by wl_proxy.
++        // Check its runtime interface AND connection before the C ABI view.
++        grant = apparent_clean_manager_v1_authorize(manager, fd, reinterpret_cast<wl_output*>(output), x,y,w,h,cursor);
++        static const apparent_clean_grant_v1_listener listener{
++            [](void* data, apparent_clean_grant_v1*, uint32_t serial) { static_cast<CCleanStream*>(data)->portal = serial; },
++            [](void* data, apparent_clean_grant_v1*) { static_cast<CCleanStream*>(data)->failed = true; }};
++        apparent_clean_grant_v1_add_listener(grant, &listener, this);
++        if (wl_display_roundtrip(display) < 0) failed = true;
++        return live() && portal;
++    }
++    bool live() const { return !failed && frontend && frontend->live(); }
++    bool object(wl_proxy* proxy, const char* iface) const {
++        return proxy && wl_proxy_get_display(proxy) == display && !strcmp(wl_proxy_get_class(proxy), iface);
++    }
++    void cancelSample() {
++        received.reset();
++        if (sample) { apparent_clean_sample_v1_destroy(sample); sample = nullptr; }
++    }
++    bool attach(wl_proxy* frame, wl_proxy* buffer, uint32_t bufferGeneration) {
++        cancelSample();
++        if (!live() || !portal || !grant || sequence == UINT32_MAX || !bufferGeneration ||
++            !object(frame, "zwlr_screencopy_frame_v1") || !object(buffer, "wl_buffer")) { failed = true; return false; }
++        frameID = wl_proxy_get_id(frame);
++        bufferID = wl_proxy_get_id(buffer);
++        generation = bufferGeneration;
++        sample = apparent_clean_grant_v1_attach(grant, reinterpret_cast<zwlr_screencopy_frame_v1*>(frame), ++sequence, generation);
++        static const apparent_clean_sample_v1_listener listener{
++            [](void* data, apparent_clean_sample_v1*, int fd) {
++                auto self = static_cast<CCleanStream*>(data);
++                apparent_clean_receipt_v1 r{};
++                const bool ok = self->live() && !self->received && apparent_clean_read_receipt_v1(fd,
++                    self->portal, self->sequence, self->generation, self->frameID, self->bufferID, &r);
++                close(fd);
++                if (ok) self->received = r; else self->failed = true;
++            }, [](void* data, apparent_clean_sample_v1*) { static_cast<CCleanStream*>(data)->failed = true; }};
++        apparent_clean_sample_v1_add_listener(sample, &listener, this);
++        return true;
++    }
++    bool publish(wl_proxy* buffer, uint32_t bufferGeneration, apparent_clean_receipt_v1* meta) {
++        if (!live() || !received || !meta || bufferGeneration != generation ||
++            !object(buffer, "wl_buffer") || wl_proxy_get_id(buffer) != bufferID) return false;
++        *meta = *received;
++        cancelSample(); // a dequeued buffer can receive this sample exactly once
++        return true;
++    }
++};
+--- a/src/shared/Session.cpp
++++ b/src/shared/Session.cpp
+@@ -19,6 +19,8 @@
+ 
+     if (!sess)
+         return 0;
++
++    if (sess->onClosing) sess->onClosing();
+ 
+     auto destroy = std::move(sess->onDestroy);
+     g_pPortalManager->addTimer({0, [sess, destroy]() {
+--- a/src/shared/Session.hpp
++++ b/src/shared/Session.hpp
+@@ -1,13 +1,14 @@
+ #pragma once
+ 
+ #include "../includes.hpp"
+-
+ #include <sdbus-c++/sdbus-c++.h>
+ 
+ struct SDBusSession {
+     std::unique_ptr<sdbus::IObject> object;
+     sdbus::ObjectPath               handle;
+     std::function<void()>           onDestroy;
++    // Synchronous invalidation before the existing deferred destruction.
++    std::function<void()>           onClosing;
+ };
+ 
+ struct SDBusRequest {
+@@ -17,4 +18,4 @@
+ };
+ 
+ std::unique_ptr<SDBusSession> createDBusSession(sdbus::ObjectPath handle);
+-std::unique_ptr<SDBusRequest> createDBusRequest(sdbus::ObjectPath handle);
+\ No newline at end of file
++std::unique_ptr<SDBusRequest> createDBusRequest(sdbus::ObjectPath handle);

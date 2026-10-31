@@ -1,0 +1,1115 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -303,6 +303,18 @@
+ endif()
+ 
+ add_library(hyprland_lib STATIC ${SRCFILES})
++find_program(APPARENT_WAYLAND_SCANNER wayland-scanner REQUIRED)
++set(APPARENT_CLEAN_XML ${CMAKE_CURRENT_SOURCE_DIR}/protocols/apparent-clean-v1.xml)
++add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/apparent-clean-v1-server.h
++                          ${CMAKE_CURRENT_BINARY_DIR}/apparent-clean-v1-protocol.c
++  COMMAND ${APPARENT_WAYLAND_SCANNER} server-header ${APPARENT_CLEAN_XML} ${CMAKE_CURRENT_BINARY_DIR}/apparent-clean-v1-server.h
++  COMMAND ${APPARENT_WAYLAND_SCANNER} private-code ${APPARENT_CLEAN_XML} ${CMAKE_CURRENT_BINARY_DIR}/apparent-clean-v1-protocol.c
++  DEPENDS ${APPARENT_CLEAN_XML})
++target_sources(hyprland_lib PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/apparent-clean-v1-protocol.c
++                                   ${CMAKE_CURRENT_BINARY_DIR}/apparent-clean-v1-server.h)
++target_include_directories(hyprland_lib PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
++pkg_check_modules(APPARENT_SYSTEMD REQUIRED IMPORTED_TARGET libsystemd>=256)
++target_link_libraries(hyprland_lib PUBLIC PkgConfig::APPARENT_SYSTEMD)
+ add_executable(Hyprland src/main.cpp ${TRACY_CPP_FILES})
+ target_link_libraries(Hyprland hyprland_lib)
+ 
+--- /dev/null
++++ b/protocols/apparent-clean-receipt-validate.h
+@@ -0,0 +1,20 @@
++#pragma once
++#include "apparent-clean-receipt.h"
++#include <stdbool.h>
++#include <fcntl.h>
++#include <sys/stat.h>
++#include <unistd.h>
++/* Receipt integrity/identity validator, not an authorization factory. Only use
++ * on receipt FDs received from the native sample object on the compositor's
++ * established Wayland connection, after a live authorized portal grant. */
++static inline bool apparent_clean_read_receipt_v1(int fd, uint32_t portal, uint64_t sequence,
++    uint64_t generation, uint32_t frame, uint32_t buffer, struct apparent_clean_receipt_v1 *r) {
++    struct stat st;
++    const int required=F_SEAL_WRITE|F_SEAL_SHRINK|F_SEAL_GROW|F_SEAL_SEAL;
++    const int seals=fcntl(fd,F_GET_SEALS);
++    return r && seals>=0 && (seals&required)==required && fstat(fd,&st)==0 && st.st_size==sizeof(*r) &&
++        pread(fd,r,sizeof(*r),0)==sizeof(*r) && r->magic==APPARENT_CLEAN_MAGIC && r->version==1 && r->size==sizeof(*r) &&
++        r->portal==portal && r->sequence==sequence && r->buffer_generation==generation && r->frame_id==frame && r->buffer_id==buffer &&
++        r->source_generation && r->role_serial && r->surface_id && r->width>0 && r->height>0 &&
++        r->output_width>0 && r->output_height>0 && r->scale==1.0 && r->transform==0 && r->cursor<=1;
++}
+--- /dev/null
++++ b/protocols/apparent-clean-receipt.h
+@@ -0,0 +1,15 @@
++#pragma once
++#include <stdint.h>
++/* Private v1 wire ABI; little-endian Linux x86_64 only. No timestamps or raw
++ * pointers are authority. Copy this record unchanged with its associated pixels. */
++#define APPARENT_CLEAN_META_TYPE 0x10001u
++#define APPARENT_CLEAN_MAGIC 0x314e4c43u
++struct apparent_clean_receipt_v1 {
++    uint32_t magic, version, size, portal;
++    uint64_t sequence, source_generation, buffer_generation;
++    uint32_t frame_id, buffer_id, role_serial, surface_id;
++    int32_t x, y, width, height;
++    int32_t output_width, output_height;
++    uint32_t transform, cursor;
++    double scale;
++};
+--- /dev/null
++++ b/protocols/apparent-clean-v1.xml
+@@ -0,0 +1,26 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<protocol name="apparent_clean_v1">
++ <copyright>Copyright 2026 Apparent contributors. MIT license.</copyright>
++ <interface name="apparent_clean_manager_v1" version="1">
++  <description summary="per-portal, per-frame clean capture">Private experiment. Does not replace screencopy permission. Only the live Hyprland portal backend process may authorize a grant. Surface capabilities identify one native surface, never a process-wide exclusion.</description>
++  <request name="destroy" type="destructor"/>
++  <request name="register_surface"><arg name="id" type="new_id" interface="apparent_clean_role_v1"/><arg name="surface" type="object" interface="wl_surface"/></request>
++  <request name="authorize"><arg name="id" type="new_id" interface="apparent_clean_grant_v1"/><arg name="role" type="fd"/><arg name="output" type="object" interface="wl_output"/><arg name="x" type="int"/><arg name="y" type="int"/><arg name="width" type="int"/><arg name="height" type="int"/><arg name="cursor" type="uint"/></request>
++ </interface>
++ <interface name="apparent_clean_role_v1" version="1">
++  <request name="destroy" type="destructor"/>
++  <event name="capability"><arg name="fd" type="fd"/></event>
++  <event name="failed"/>
++ </interface>
++ <interface name="apparent_clean_grant_v1" version="1">
++  <request name="destroy" type="destructor"/>
++  <request name="attach"><arg name="id" type="new_id" interface="apparent_clean_sample_v1"/><arg name="frame" type="object" interface="zwlr_screencopy_frame_v1"/><arg name="sequence" type="uint"/><arg name="buffer_generation" type="uint"/></request>
++  <event name="authorized"><arg name="generation" type="uint"/></event>
++  <event name="failed"/>
++ </interface>
++ <interface name="apparent_clean_sample_v1" version="1">
++  <request name="destroy" type="destructor"/>
++  <event name="receipt"><arg name="fd" type="fd"/></event>
++  <event name="failed"/>
++ </interface>
++</protocol>
+--- a/src/managers/ProtocolManager.cpp
++++ b/src/managers/ProtocolManager.cpp
+@@ -41,6 +41,7 @@
+ #include "../protocols/DRMLease.hpp"
+ #include "../protocols/DRMSyncobj.hpp"
+ #include "../protocols/Screencopy.hpp"
++#include "../protocols/ApparentClean.hpp"
+ #include "../protocols/ToplevelExport.hpp"
+ #include "../protocols/ToplevelMapping.hpp"
+ #include "../protocols/TextInputV1.hpp"
+@@ -130,6 +131,7 @@
+ }
+ 
+ CProtocolManager::CProtocolManager() {
++    PROTO::apparentClean = makeUnique<CApparentCleanProtocol>();
+ 
+     static const auto PENABLECM = CConfigValue<Config::INTEGER>("render:cm_enabled");
+     static const auto PDEBUGCM  = CConfigValue<Config::INTEGER>("debug:full_cm_proto");
+@@ -312,6 +314,7 @@
+     PROTO::dataWlr.reset();
+     PROTO::primarySelection.reset();
+     PROTO::xwaylandShell.reset();
++    PROTO::apparentClean.reset();
+     PROTO::screencopy.reset();
+     PROTO::toplevelExport.reset();
+     PROTO::toplevelMapping.reset();
+--- a/src/managers/permissions/DynamicPermissionManager.cpp
++++ b/src/managers/permissions/DynamicPermissionManager.cpp
+@@ -68,10 +68,12 @@
+ }
+ 
+ void CDynamicPermissionManager::clearConfigPermissions() {
++    m_cleanPolicyChanged.emit();
+     std::erase_if(m_rules, [](const auto& e) { return e->m_source == PERMISSION_RULE_SOURCE_CONFIG; });
+ }
+ 
+ void CDynamicPermissionManager::addConfigPermissionRule(const std::string& binaryName, eDynamicPermissionType type, eDynamicPermissionAllowMode mode) {
++    m_cleanPolicyChanged.emit();
+     m_rules.emplace_back(SP<CDynamicPermissionRule>(new CDynamicPermissionRule(binaryName, type, mode)));
+ }
+ 
+@@ -229,6 +231,7 @@
+ }
+ 
+ void CDynamicPermissionManager::askForPermission(wl_client* client, const std::string& binaryPath, eDynamicPermissionType type, pid_t pid) {
++    m_cleanPolicyChanged.emit();
+     auto rule = m_rules.emplace_back(SP<CDynamicPermissionRule>(new CDynamicPermissionRule(client, type, PERMISSION_RULE_ALLOW_MODE_PENDING)));
+ 
+     if (!client)
+@@ -296,6 +299,7 @@
+         }
+ 
+         const std::string& result = pr->result();
++        g_pDynamicPermissionManager->m_cleanPolicyChanged.emit();
+ 
+         Log::logger->log(Log::TRACE, "CDynamicPermissionRule: user returned {}", result);
+ 
+@@ -361,5 +365,6 @@
+ }
+ 
+ void CDynamicPermissionManager::removeRulesForClient(wl_client* client) {
++    m_cleanPolicyChanged.emit();
+     std::erase_if(m_rules, [client](const auto& e) { return e->m_client == client; });
+ }
+--- a/src/managers/permissions/DynamicPermissionManager.hpp
++++ b/src/managers/permissions/DynamicPermissionManager.hpp
+@@ -7,6 +7,7 @@
+ #include <wayland-server-core.h>
+ #include <sys/types.h>
+ #include "../../helpers/defer/Promise.hpp"
++#include "../../helpers/signal/Signal.hpp"
+ 
+ // NOLINTNEXTLINE
+ namespace re2 {
+@@ -81,6 +82,7 @@
+ 
+ class CDynamicPermissionManager {
+   public:
++    CSignalT<> m_cleanPolicyChanged;
+     void clearConfigPermissions();
+     void addConfigPermissionRule(const std::string& binaryPath, eDynamicPermissionType type, eDynamicPermissionAllowMode mode);
+ 
+--- /dev/null
++++ b/src/managers/screenshare/CleanFrame.cpp
+@@ -0,0 +1,90 @@
++#include "CleanFrame.hpp"
++#include "../../Compositor.hpp"
++#include "../../state/MonitorState.hpp"
++#include "../SessionLockManager.hpp"
++#include "../permissions/DynamicPermissionManager.hpp"
++#include "../../desktop/view/Window.hpp"
++
++using namespace Screenshare;
++
++CCleanRole::CCleanRole(PHLWINDOW w, SP<CWLSurfaceResource> x, std::shared_ptr<Apparent::Clean::RoleCapability> cap, std::shared_ptr<Apparent::Clean::Peer> peer) :
++    m_window(w), m_surface(x), m_peer(std::move(peer)), m_cap(std::move(cap)) {
++    m_unmap = x->m_events.unmap.listen([this] { revoke(); });
++    m_destroy = x->m_events.destroy.listen([this] { revoke(); });
++    m_reassociate = w->m_events.destroy.listen([this] { revoke(); });
++}
++CCleanRole::~CCleanRole() { revoke(); }
++void CCleanRole::revoke() { if (m_cap) m_cap->revoke(); }
++bool CCleanRole::live() const {
++    auto w = m_window.lock(); auto x = m_surface.lock();
++    return m_peer && m_peer->live() && m_cap && m_cap->live() && w && x && w->m_isMapped && !w->m_isX11 &&
++        w->resource() == x && x->m_mapped && x->good();
++}
++
++CCleanPortalBinding::CCleanPortalBinding(wl_resource* r, uint64_t generation, std::shared_ptr<Apparent::Clean::Peer> peer) :
++    m_resource(r), m_owner(wl_resource_get_client(r)), m_lifetime(std::make_shared<Apparent::Clean::PortalLifetime>(generation)), m_peer(std::move(peer)) {
++    m_destroy.owner = this;
++    m_destroy.listener.notify = [](wl_listener* l, void*) {
++        auto d = reinterpret_cast<SDestroyListener*>(l);
++        d->owner->revoke();
++        d->owner->m_resource = nullptr;
++        wl_list_remove(&l->link); wl_list_init(&l->link);
++    };
++    wl_resource_add_destroy_listener(r, &m_destroy.listener);
++    m_permissions = g_pDynamicPermissionManager->m_cleanPolicyChanged.listen([this] { revoke(); });
++    m_lock = g_pSessionLockManager->m_events.lock.listen([this] { revoke(); });
++}
++CCleanPortalBinding::~CCleanPortalBinding() {
++    revoke(); wl_list_remove(&m_destroy.listener.link);
++}
++void CCleanPortalBinding::revoke() { m_lifetime->revoke(); }
++bool CCleanPortalBinding::live(wl_client* owner) const {
++    return m_resource && m_owner == owner && m_lifetime->live() && m_peer && m_peer->ownsBackendName();
++}
++
++CCleanFrameContext::CCleanFrameContext(SP<CCleanPortalBinding> portal, SP<CCleanRole> role, WP<CScreenshareSession> session,
++        CBox region, bool cursor, uint64_t sequence, uint64_t bufferGeneration, uintptr_t nativeFrame) :
++    m_portal(portal), m_role(role), m_session(session), m_monitor(session->monitor()), m_region(region),
++    m_outputPixels(session->monitor()->m_pixelSize), m_scale(session->monitor()->m_scale), m_transform(session->monitor()->m_transform),
++    m_cursor(cursor), m_sourceGeneration(session->sourceGeneration()), m_sequence(sequence), m_bufferGeneration(bufferGeneration), m_nativeFrame(nativeFrame) {
++    m_lock = g_pSessionLockManager->m_events.lock.listen([this] { revoke(); });
++    m_dpms = m_monitor->m_events.dpmsChanged.listen([this] { revoke(); });
++    m_constraints = session->m_events.constraintsChanged.listen([this] { revoke(); });
++    m_stopped = session->m_events.stopped.listen([this] { revoke(); });
++    m_permissions = g_pDynamicPermissionManager->m_cleanPolicyChanged.listen([this] { revoke(); });
++}
++
++bool CCleanFrameContext::bindBuffer(SP<IHLBuffer> buffer, wl_client* owner) {
++    if (m_buffer || !live(owner, m_region, m_cursor) || !buffer || !buffer->m_resource || !buffer->m_resource->good()) return false;
++    m_buffer = buffer;
++    const Apparent::Clean::Receipt identity{m_portal->lifetime()->generation, m_sequence, m_sourceGeneration,
++        m_bufferGeneration, m_nativeFrame, reinterpret_cast<uintptr_t>(buffer.get())};
++    m_lease = std::make_unique<Apparent::Clean::FrameLease>(m_portal->lifetime(), m_role->capability(), identity);
++    return m_lease->live(m_sourceGeneration, m_nativeFrame, reinterpret_cast<uintptr_t>(buffer.get()), m_bufferGeneration);
++}
++
++bool CCleanFrameContext::live(wl_client* owner, CBox region, bool cursor) const {
++    auto m = m_monitor.lock();
++    if (m_revoked || !m_portal || !m_portal->live(owner) || !m_role || !m_role->live() || !m_session || !m_session->isActive() || !m ||
++        m_session->monitor() != m || !State::monitorState()->contains(m) || m_session->sourceGeneration() != m_sourceGeneration ||
++        m_region != region || m_cursor != cursor || m_outputPixels != m->m_pixelSize || m_scale != m->m_scale || m_transform != m->m_transform ||
++        !m->m_output || !m->m_dpmsStatus || m->m_isBeingLeased || m->isMirror() ||
++        !g_pCompositor->m_sessionActive || !g_pCompositor->m_dpmsStateOn || g_pSessionLockManager->isSessionLocked()) return false;
++    if (g_pDynamicPermissionManager->clientPermissionMode(owner, PERMISSION_TYPE_SCREENCOPY) != PERMISSION_RULE_ALLOW_MODE_ALLOW || m_revoked) return false;
++    return !m_buffer || (m_buffer->m_resource && m_buffer->m_resource->good() && m_lease &&
++        m_lease->live(m_sourceGeneration, m_nativeFrame, reinterpret_cast<uintptr_t>(m_buffer.get()), m_bufferGeneration));
++}
++
++bool CCleanFrameContext::complete(wl_client* owner, CBox region, bool cursor) {
++    if (m_receipt || !m_buffer || !live(owner, region, cursor)) { revoke(); return false; }
++    const auto identity = m_lease->complete(m_sourceGeneration, m_nativeFrame, reinterpret_cast<uintptr_t>(m_buffer.get()), m_bufferGeneration);
++    if (!identity) { revoke(); return false; }
++    m_receipt = SCleanReceipt{*identity, m_monitor, m_role->window(), m_region, m_outputPixels, m_scale, m_transform, m_cursor};
++    return true;
++}
++void CCleanFrameContext::revoke() {
++    m_revoked = true;
++    if (m_lease) m_lease->revoke();
++    // A receipt already handed to a consumer must never be mutated/reminted.
++    // Protocol publication consumes the completed frame's immutable receipt.
++}
+--- /dev/null
++++ b/src/managers/screenshare/CleanFrame.hpp
+@@ -0,0 +1,85 @@
++#pragma once
++#include "ScreenshareManager.hpp"
++#include "../../protocols/core/Compositor.hpp"
++#include "CleanPeer.hpp"
++
++class CApparentCleanProtocol;
++
++namespace Screenshare {
++class CCleanRole {
++    PHLWINDOWREF m_window;
++    WP<CWLSurfaceResource> m_surface;
++    std::shared_ptr<Apparent::Clean::Peer> m_peer;
++    std::shared_ptr<Apparent::Clean::RoleCapability> m_cap;
++    CHyprSignalListener m_unmap, m_destroy, m_reassociate;
++    CCleanRole(PHLWINDOW w, SP<CWLSurfaceResource> x, std::shared_ptr<Apparent::Clean::RoleCapability> cap, std::shared_ptr<Apparent::Clean::Peer> peer);
++    friend class ::CApparentCleanProtocol;
++  public:
++    ~CCleanRole();
++    bool live() const;
++    PHLWINDOW window() const { return m_window.lock(); }
++    const auto& capability() const { return m_cap; }
++    void revoke();
++
++};
++
++class CCleanPortalBinding {
++    wl_resource* m_resource = nullptr;
++    wl_client* m_owner = nullptr;
++    std::shared_ptr<Apparent::Clean::PortalLifetime> m_lifetime;
++    std::shared_ptr<Apparent::Clean::Peer> m_peer;
++    struct SDestroyListener { wl_listener listener; CCleanPortalBinding* owner; } m_destroy;
++    CHyprSignalListener m_permissions, m_lock;
++    CCleanPortalBinding(wl_resource* authenticatedPortalResource, uint64_t generation, std::shared_ptr<Apparent::Clean::Peer> peer);
++    friend class ::CApparentCleanProtocol;
++  public:
++    ~CCleanPortalBinding();
++    bool live(wl_client* owner) const;
++    void revoke();
++    const auto& lifetime() const { return m_lifetime; }
++
++};
++
++struct SCleanReceipt {
++    Apparent::Clean::Receipt identity;
++    PHLMONITORREF monitor;
++    PHLWINDOWREF excluded;
++    CBox physicalRegion;
++    Vector2D outputPixels;
++    double scale;
++    wl_output_transform transform;
++    bool overlayCursor;
++};
++
++class CCleanFrameContext {
++    SP<CCleanPortalBinding> m_portal;
++    SP<CCleanRole> m_role;
++    WP<CScreenshareSession> m_session;
++    PHLMONITORREF m_monitor;
++    CBox m_region;
++    Vector2D m_outputPixels;
++    double m_scale;
++    wl_output_transform m_transform;
++    bool m_cursor;
++    uint64_t m_sourceGeneration;
++    uint64_t m_sequence, m_bufferGeneration;
++    uintptr_t m_nativeFrame = 0;
++    SP<IHLBuffer> m_buffer;
++    std::unique_ptr<Apparent::Clean::FrameLease> m_lease;
++    std::optional<SCleanReceipt> m_receipt;
++    bool m_revoked = false;
++
++    CHyprSignalListener m_lock, m_dpms, m_constraints, m_stopped, m_permissions;
++  public:
++    CCleanFrameContext(SP<CCleanPortalBinding> portal, SP<CCleanRole> role, WP<CScreenshareSession> session,
++                      CBox region, bool cursor, uint64_t sequence, uint64_t bufferGeneration, uintptr_t nativeFrame);
++    bool bindBuffer(SP<IHLBuffer> buffer, wl_client* owner);
++    bool matchesNativeFrame(wl_resource* frame) const { return m_nativeFrame == reinterpret_cast<uintptr_t>(frame); }
++    bool live(wl_client* owner, CBox region, bool cursor) const;
++    bool complete(wl_client* owner, CBox region, bool cursor);
++    void revoke();
++    PHLWINDOW excluded() const { return m_role ? m_role->window() : nullptr; }
++    const std::optional<SCleanReceipt>& receipt() const { return m_receipt; }
++    uint32_t bufferResourceID() const { return m_buffer && m_buffer->m_resource && m_buffer->m_resource->good() ? wl_resource_get_id(m_buffer->m_resource->getResource()) : 0; }
++};
++}
+--- /dev/null
++++ b/src/managers/screenshare/CleanLease.hpp
+@@ -0,0 +1,101 @@
++#pragma once
++// Internal compositor adapter state; not a capture permission or public IPC API.
++#include <cstdint>
++#include <limits>
++#include <memory>
++#include <optional>
++#include <stdexcept>
++#include <sys/stat.h>
++#include <fcntl.h>
++#include <unistd.h>
++#include <vector>
++
++namespace Apparent::Clean {
++class RoleCapability {
++    int retained = -1;
++    int peer = -1;
++    bool revoked = false;
++    explicit RoleCapability(int r, int w) : retained(r), peer(w) {}
++  public:
++    RoleCapability(const RoleCapability&) = delete;
++    ~RoleCapability() { if (retained >= 0) close(retained); if (peer >= 0) close(peer); }
++    static std::shared_ptr<RoleCapability> mintInternal() {
++        int fd[2];
++        if (pipe2(fd, O_CLOEXEC | O_NONBLOCK) != 0) throw std::runtime_error("role capability pipe2 failed");
++        return std::shared_ptr<RoleCapability>(new RoleCapability(fd[0], fd[1]));
++    }
++    int exportFD() const { return revoked ? -1 : fcntl(retained, F_DUPFD_CLOEXEC, 0); }
++    bool matches(int incoming) const {
++        struct stat a{}, b{};
++        const int flags = fcntl(incoming, F_GETFL);
++        return !revoked && flags >= 0 && (flags & O_ACCMODE) == O_RDONLY &&
++            fstat(retained, &a) == 0 && fstat(incoming, &b) == 0 && S_ISFIFO(b.st_mode) &&
++            a.st_dev == b.st_dev && a.st_ino == b.st_ino;
++    }
++    void revoke() { revoked = true; }
++    bool live() const { return !revoked; }
++};
++
++class CapabilityRegistry {
++    std::vector<std::weak_ptr<RoleCapability>> entries;
++  public:
++    std::shared_ptr<RoleCapability> mintInternal() {
++        auto cap = RoleCapability::mintInternal(); entries.emplace_back(cap); return cap;
++    }
++    std::shared_ptr<RoleCapability> importFD(int fd) {
++        for (auto it = entries.begin(); it != entries.end();) {
++            auto cap = it->lock();
++            if (!cap) { it = entries.erase(it); continue; }
++            if (cap->matches(fd)) return cap;
++            ++it;
++        }
++        return {};
++    }
++};
++
++// This is NOT the deduplicated CScreenshareSession. One instance belongs to one
++// independently authorized backend SSession resource. EOF/Close must revoke it.
++class PortalLifetime {
++    bool active = true;
++    uint64_t next = 1;
++  public:
++    const uint64_t generation;
++    explicit PortalLifetime(uint64_t g) : generation(g) { if (!g) active = false; }
++    ~PortalLifetime() { revoke(); }
++    void revoke() { active = false; }
++    bool live() const { return active; }
++    bool claim(uint64_t sequence) {
++        if (!active || !sequence || sequence != next || next == std::numeric_limits<uint64_t>::max()) return false;
++        ++next; return true;
++    }
++};
++
++// Copied by value only at native completion. No PTS participates in identity.
++struct Receipt {
++    uint64_t portalGeneration, sequence, sourceGeneration, bufferGeneration;
++    uintptr_t nativeFrame, nativeBuffer;
++    bool operator==(const Receipt&) const = default;
++};
++
++class FrameLease {
++    std::weak_ptr<PortalLifetime> portal;
++    std::weak_ptr<RoleCapability> role;
++    Receipt identity;
++    bool claimed = false, terminal = false;
++  public:
++    FrameLease(std::shared_ptr<PortalLifetime> p, std::shared_ptr<RoleCapability> r, Receipt i) : portal(p), role(r), identity(i) {
++        claimed = p && r && p->generation == i.portalGeneration && p->claim(i.sequence) && r->live() &&
++            i.sourceGeneration && i.bufferGeneration && i.nativeFrame && i.nativeBuffer;
++    }
++    bool live(uint64_t source, uintptr_t frame, uintptr_t buffer, uint64_t bufferGeneration) const {
++        auto p = portal.lock(); auto r = role.lock();
++        return claimed && !terminal && p && p->live() && r && r->live() && source == identity.sourceGeneration &&
++            frame == identity.nativeFrame && buffer == identity.nativeBuffer && bufferGeneration == identity.bufferGeneration;
++    }
++    std::optional<Receipt> complete(uint64_t source, uintptr_t frame, uintptr_t buffer, uint64_t generation) {
++        if (!live(source, frame, buffer, generation)) { terminal = true; return {}; }
++        terminal = true; return identity;
++    }
++    void revoke() { terminal = true; }
++};
++}
+--- /dev/null
++++ b/src/managers/screenshare/CleanPeer.hpp
+@@ -0,0 +1,68 @@
++#pragma once
++#include <systemd/sd-bus.h>
++#include <sys/socket.h>
++#include <poll.h>
++#include <unistd.h>
++#include <wayland-server-core.h>
++#include <memory>
++#include <string>
++#include <string_view>
++
++namespace Apparent::Clean {
++// SO_PEERPIDFD pins the process that opened the Wayland socket. No pidfd_open
++// on a cached numeric PID, no /proc executable guess, no same-UID admission.
++class Peer {
++    int fd = -1;
++    mutable std::string backendOwner;
++    mutable bool backendRevoked = false;
++    mutable sd_bus* backendBus = nullptr;
++    mutable sd_bus_slot* backendWatch = nullptr;
++    explicit Peer(int f) : fd(f) {}
++  public:
++    ~Peer() { sd_bus_slot_unref(backendWatch); sd_bus_unref(backendBus); if (fd >= 0) close(fd); }
++    Peer(const Peer&) = delete;
++    static std::shared_ptr<Peer> pin(wl_client* c) {
++        int f = -1; socklen_t n = sizeof(f);
++        constexpr int peerPidfd = 77; // Linux SO_PEERPIDFD (6.5+)
++        if (!c || getsockopt(wl_client_get_fd(c), SOL_SOCKET, peerPidfd, &f, &n) || n != sizeof(f)) return {};
++        return std::shared_ptr<Peer>(new Peer(f));
++    }
++    bool live() const { pollfd p{fd, POLLIN, 0}; return fd >= 0 && poll(&p, 1, 0) == 0; }
++    bool ownsBackendName() const {
++        if (backendRevoked || !live()) { backendRevoked = true; return false; }
++        if (!backendBus) {
++            if (sd_bus_open_user(&backendBus) < 0 || sd_bus_match_signal(backendBus, &backendWatch,
++                    "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameOwnerChanged",
++                    [](sd_bus_message* message, void* data, sd_bus_error*) -> int {
++                        auto self = static_cast<const Peer*>(data);
++                        const char *name = nullptr, *old = nullptr, *now = nullptr;
++                        if (sd_bus_message_read(message, "sss", &name, &old, &now) < 0) { self->backendRevoked = true; return 0; }
++                        if (std::string_view(name) == "org.freedesktop.impl.portal.desktop.hyprland" &&
++                            !self->backendOwner.empty() && self->backendOwner == old && std::string_view(old) != now)
++                            self->backendRevoked = true;
++                        return 0;
++                    }, const_cast<Peer*>(this)) < 0) { backendRevoked = true; return false; }
++        }
++        int processed;
++        while ((processed = sd_bus_process(backendBus, nullptr)) > 0) {}
++        if (processed < 0 || backendRevoked) { backendRevoked = true; return false; }
++        sd_bus_creds *owner = nullptr, *peer = nullptr;
++        bool ok = false; pid_t a = 0, b = 0; int ownerfd = -1; const char* unique = nullptr;
++        if (sd_bus_get_name_creds(backendBus, "org.freedesktop.impl.portal.desktop.hyprland", SD_BUS_CREDS_PID | SD_BUS_CREDS_PIDFD | SD_BUS_CREDS_UNIQUE_NAME, &owner) >= 0 &&
++            sd_bus_creds_get_unique_name(owner, &unique) >= 0 && unique &&
++            sd_bus_creds_get_pidfd_dup(owner, &ownerfd) >= 0 &&
++            sd_bus_creds_new_from_pidfd(&peer, fd, SD_BUS_CREDS_PID) >= 0 &&
++            sd_bus_creds_get_pid(owner, &a) >= 0 && sd_bus_creds_get_pid(peer, &b) >= 0) {
++            pollfd p{ownerfd, POLLIN, 0};
++            // Both process handles stay pinned and live across the equality
++            // test. Thus numeric reuse cannot supply process equivalence.
++            ok = !backendRevoked && a > 0 && a == b && live() && poll(&p, 1, 0) == 0 && (backendOwner.empty() || backendOwner == unique);
++            if (ok && backendOwner.empty()) backendOwner = unique;
++        }
++        if (ownerfd >= 0) close(ownerfd);
++        sd_bus_creds_unref(owner); sd_bus_creds_unref(peer);
++        if (!ok) backendRevoked = true;
++        return ok;
++    }
++};
++}
+--- a/src/managers/screenshare/ScreenshareFrame.cpp
++++ b/src/managers/screenshare/ScreenshareFrame.cpp
+@@ -1,4 +1,5 @@
+ #include "ScreenshareManager.hpp"
++#include "CleanFrame.hpp"
+ #include "../../pointer/PointerManager.hpp"
+ #include "../input/InputManager.hpp"
+ #include "../permissions/DynamicPermissionManager.hpp"
+@@ -28,6 +29,8 @@
+ }
+ 
+ CScreenshareFrame::~CScreenshareFrame() {
++    if (m_cleanContext)
++        m_cleanContext->revoke();
+     if (m_failed || !m_shared)
+         return;
+ 
+@@ -110,6 +113,9 @@
+         return ERROR_BUFFER_FORMAT;
+     }
+ 
++    if (m_cleanContext && (!cleanValid() || !m_cleanContext->bindBuffer(buffer, m_session->m_client)))
++        return ERROR_STOPPED;
++
+     m_buffer   = buffer;
+     m_callback = callback;
+     m_shared   = true;
+@@ -153,11 +159,20 @@
+     // store a snapshot before the permission popup so we don't break screenshots
+     const auto PERM = g_pDynamicPermissionManager->clientPermissionMode(m_session->m_client, PERMISSION_TYPE_SCREENCOPY);
+     if (PERM == PERMISSION_RULE_ALLOW_MODE_PENDING) {
++        // Never populate the shared pre-permission cache from a clean frame.
++        // A later ordinary portal stream may share this native session.
++        if (m_cleanContext) {
++            m_cleanContext->revoke(); m_failed = true; m_callback(RESULT_NOT_COPIED); return;
++        }
+         if (!m_session->m_tempFB || !m_session->m_tempFB->isAllocated())
+             storeTempFB();
+ 
+         // don't copy a frame while allow is pending because screenshot tools will only take the first frame we give, which is empty
+         return;
++    }
++
++    if (m_cleanContext && !prepareClean()) {
++        m_failed = true; m_callback(RESULT_NOT_COPIED); return;
+     }
+ 
+     if (m_buffer->shm().success)
+@@ -179,7 +194,7 @@
+ 
+     const auto PMONITOR = m_session->monitor();
+ 
+-    auto       TEXTURE = g_pHyprRenderer->m_renderData.pMonitor->resources()->getMirrorTexture();
++    auto       TEXTURE = m_cleanContext ? m_cleanFB->getTexture() : g_pHyprRenderer->m_renderData.pMonitor->resources()->getMirrorTexture();
+     if (!TEXTURE) {
+         LOGM(Log::ERR, "Invalid source texture");
+         return;
+@@ -374,7 +389,7 @@
+         return;
+     }
+ 
+-    if (m_session->m_tempFB && m_session->m_tempFB->isAllocated()) {
++    if (!m_cleanContext && m_session->m_tempFB && m_session->m_tempFB->isAllocated()) {
+         CBox texbox = {{}, m_bufferSize};
+         g_pHyprRenderer->draw(CTexPassElement::SRenderData{.tex = m_session->m_tempFB->getTexture(), .box = texbox}, texbox);
+         m_session->m_tempFB->release();
+@@ -415,6 +430,9 @@
+         if (self->m_copied)
+             return;
+ 
++        if (!self->finishClean()) {
++            self->m_failed = true; self->m_callback(RESULT_NOT_COPIED); return;
++        }
+         LOGM(Log::TRACE, "Copied frame via dma");
+         self->m_callback(RESULT_COPIED);
+         self->m_copied = true;
+@@ -471,6 +489,8 @@
+     }
+ 
+     if (!m_copied) {
++        if (!finishClean())
++            return false;
+         LOGM(Log::TRACE, "Copied frame via shm");
+         m_callback(RESULT_COPIED);
+         m_copied = true;
+@@ -519,3 +539,24 @@
+ const CRegion& CScreenshareFrame::damage() const {
+     return m_damage;
+ }
++
++bool CScreenshareFrame::attachCleanContext(SP<CCleanFrameContext> context) {
++    if (!context || m_cleanContext || m_shared || done() ||
++        (m_session->m_type != SHARE_MONITOR && m_session->m_type != SHARE_REGION) ||
++        !context->live(m_session->m_client, m_session->m_captureBox, m_overlayCursor)) return false;
++    m_cleanContext = context;
++    return true;
++}
++bool CScreenshareFrame::cleanValid() const {
++    return !m_cleanContext || (m_session && m_cleanContext->live(m_session->m_client, m_session->m_captureBox, m_overlayCursor));
++}
++bool CScreenshareFrame::prepareClean() {
++    if (!cleanValid()) return false;
++    // Render the original selected monitor offscreen before beginning the
++    // destination render. Never swap this texture into the live monitor/cache.
++    m_cleanFB = g_pHyprRenderer->renderCleanMonitor(m_session->monitor(), m_cleanContext->excluded());
++    return m_cleanFB && cleanValid();
++}
++bool CScreenshareFrame::finishClean() {
++    return !m_cleanContext || (cleanValid() && m_cleanContext->complete(m_session->m_client, m_session->m_captureBox, m_overlayCursor));
++}
+--- a/src/managers/screenshare/ScreenshareManager.hpp
++++ b/src/managers/screenshare/ScreenshareManager.hpp
+@@ -6,12 +6,14 @@
+ #include "../../render/Framebuffer.hpp"
+ #include "../eventLoop/EventLoopTimer.hpp"
+ #include "../../render/Renderer.hpp"
++#include "CleanLease.hpp"
+ 
+ // TODO: do screenshare damage
+ 
+ class CWLPointerResource;
+ 
+ namespace Screenshare {
++    class CCleanFrameContext;
+     enum eScreenshareType : uint8_t {
+         SHARE_MONITOR,
+         SHARE_WINDOW,
+@@ -46,11 +48,14 @@
+         UP<CScreenshareFrame> nextFrame(bool overlayCursor);
+         void                  stop();
+         bool                  isActive();
++        uint64_t              sourceGeneration() const { return m_sourceGeneration; }
+ 
+         // constraints
+         const std::vector<DRMFormat>& allowedFormats() const;
+         Vector2D                      bufferSize() const;
+         PHLMONITOR                    monitor() const; // this will return the correct monitor based on type
++        CBox originalRegion() const { return m_captureBox; }
++        eScreenshareType sourceType() const { return m_type; }
+ 
+         struct {
+             CSignalT<> stopped;
+@@ -64,6 +69,7 @@
+ 
+         WP<CScreenshareSession>  m_self;
+         bool                     m_stopped = false;
++        uint64_t                 m_sourceGeneration = 1;
+ 
+         eScreenshareType         m_type = SHARE_NONE;
+         PHLMONITORREF            m_monitor;
+@@ -165,6 +171,10 @@
+         Vector2D            bufferSize() const;
+         wl_output_transform transform() const; // returns the transform applied by compositor on the buffer
+         const CRegion&      damage() const;
++        // Internal only: context is created by the authorized producer adapter,
++        // never selected via the shared managed-session state.
++        bool attachCleanContext(SP<CCleanFrameContext> context);
++        const SP<CCleanFrameContext>& cleanContext() const { return m_cleanContext; }
+ 
+       private:
+         WP<CScreenshareFrame>   m_self;
+@@ -177,6 +187,11 @@
+         bool                    m_copyInFlight  = false; // a dmabuf copy is issued and waiting on its fence
+         bool                    m_overlayCursor = true;
+         bool                    m_isFirst       = false;
++        SP<CCleanFrameContext>   m_cleanContext;
++        SP<Render::IFramebuffer> m_cleanFB;
++        bool                    cleanValid() const;
++        bool                    prepareClean();
++        bool                    finishClean();
+ 
+         //
+         void copy();
+--- a/src/managers/screenshare/ScreenshareSession.cpp
++++ b/src/managers/screenshare/ScreenshareSession.cpp
+@@ -56,6 +56,7 @@
+     if (m_stopped)
+         return;
+     m_stopped = true;
++    ++m_sourceGeneration;
+ 
+     screenshareEvents(false);
+     m_events.stopped.emit();
+@@ -94,6 +95,10 @@
+ }
+ 
+ void CScreenshareSession::calculateConstraints() {
++    // Even an output mode change that returns to the old dimensions revokes
++    // already-issued clean frames. Equality of later geometry is not freshness.
++    if (++m_sourceGeneration == 0)
++        stop();
+     const auto PMONITOR = monitor();
+     if (!PMONITOR) {
+         stop();
+--- /dev/null
++++ b/src/protocols/ApparentClean.cpp
+@@ -0,0 +1,143 @@
++#include "ApparentClean.hpp"
++#include "Screencopy.hpp"
++#include "core/Output.hpp"
++#include "../Compositor.hpp"
++#include "../desktop/state/WindowState.hpp"
++#include "../desktop/view/Window.hpp"
++#include "apparent-clean-v1-server.h"
++#include "apparent-clean-receipt.h"
++#include <sys/mman.h>
++#include <fcntl.h>
++#include <limits>
++
++using namespace Screenshare;
++namespace {
++struct Sample {
++    wl_resource* resource = nullptr;
++    SP<CCleanFrameContext> context;
++};
++void sampleDestroy(wl_resource* r) {
++    auto p = static_cast<std::shared_ptr<Sample>*>(wl_resource_get_user_data(r));
++    (*p)->resource = nullptr;
++    if ((*p)->context) (*p)->context->revoke();
++    delete p;
++}
++}
++
++void CApparentCleanProtocol::destroy(wl_client*, wl_resource* r) { wl_resource_destroy(r); }
++CApparentCleanProtocol::CApparentCleanProtocol() {
++    global = wl_global_create(g_pCompositor->m_wlDisplay, &apparent_clean_manager_v1_interface, 1, this, bind);
++}
++CApparentCleanProtocol::~CApparentCleanProtocol() {
++    // Clear user data before releasing owners; resources can outlive globals.
++    for (auto& g : grants) { g->binding->revoke(); if (g->resource) wl_resource_set_user_data(g->resource, nullptr); }
++    for (auto& r : roles) { r->role->revoke(); if (r->resource) wl_resource_set_user_data(r->resource, nullptr); }
++    if (global) wl_global_destroy(global);
++}
++void CApparentCleanProtocol::bind(wl_client* c, void* data, uint32_t, uint32_t id) {
++    static const struct apparent_clean_manager_v1_interface impl{destroy, registerSurface, authorize};
++    auto r = wl_resource_create(c, &apparent_clean_manager_v1_interface, 1, id);
++    if (!r) { wl_client_post_no_memory(c); return; }
++    wl_resource_set_implementation(r, &impl, data, nullptr);
++}
++void CApparentCleanProtocol::registerSurface(wl_client* c, wl_resource* manager, uint32_t id, wl_resource* surface) {
++    auto self = static_cast<CApparentCleanProtocol*>(wl_resource_get_user_data(manager));
++    static const struct apparent_clean_role_v1_interface impl{destroy};
++    auto r = wl_resource_create(c, &apparent_clean_role_v1_interface, 1, id);
++    if (!r) { wl_client_post_no_memory(c); return; }
++    wl_resource_set_implementation(r, &impl, nullptr, [](wl_resource* r) {
++        auto role = static_cast<Role*>(wl_resource_get_user_data(r));
++        if (role) { role->role->revoke(); role->resource = nullptr; }
++    });
++    auto s = CWLSurfaceResource::fromResource(surface);
++    auto peer = Apparent::Clean::Peer::pin(c);
++    PHLWINDOW window;
++    if (self && peer && peer->live() && s && s->client() == c && s->m_mapped) {
++        for (const auto& w : Desktop::windowState()->windows())
++            if (!w->m_isX11 && w->m_isMapped && w->resource() == s) { window = w; break; }
++    }
++    bool duplicate = false;
++    if (self) for (const auto& existing : self->roles)
++        if (existing->role->live() && existing->role->window() == window) duplicate = true;
++    if (!window || duplicate || self->serial == UINT32_MAX) { apparent_clean_role_v1_send_failed(r); return; }
++    auto role = SP<CCleanRole>(new CCleanRole(window, s, Apparent::Clean::RoleCapability::mintInternal(), peer));
++    auto entry = std::make_unique<Role>(Role{r, role, ++self->serial});
++    wl_resource_set_user_data(r, entry.get());
++    self->roles.emplace_back(std::move(entry));
++    int fd = role->capability()->exportFD();
++    if (fd < 0) { role->revoke(); apparent_clean_role_v1_send_failed(r); return; }
++    apparent_clean_role_v1_send_capability(r, fd); close(fd);
++}
++void CApparentCleanProtocol::authorize(wl_client* c, wl_resource* manager, uint32_t id, int32_t fd, wl_resource* output,
++                                      int32_t x, int32_t y, int32_t w, int32_t h, uint32_t cursor) {
++    auto self = static_cast<CApparentCleanProtocol*>(wl_resource_get_user_data(manager));
++    static const struct apparent_clean_grant_v1_interface impl{destroy, attach};
++    auto r = wl_resource_create(c, &apparent_clean_grant_v1_interface, 1, id);
++    if (!r) { close(fd); wl_client_post_no_memory(c); return; }
++    wl_resource_set_implementation(r, &impl, nullptr, [](wl_resource* r) {
++        auto grant = static_cast<Grant*>(wl_resource_get_user_data(r));
++        if (grant) { grant->binding->revoke(); grant->resource = nullptr; }
++    });
++    auto peer = Apparent::Clean::Peer::pin(c);
++    auto o = CWLOutputResource::fromResource(output);
++    Role* role = nullptr;
++    if (self) for (const auto& candidate : self->roles)
++        if (candidate->role->live() && candidate->role->capability()->matches(fd)) { role = candidate.get(); break; }
++    close(fd);
++    // Only the currently registered, pidfd-pinned portal backend may turn a
++    // surface identifier into capture policy. Ordinary clients cannot mint it.
++    if (!self || !peer || !peer->ownsBackendName() || !role || !o || !o->m_monitor || cursor > 1 ||
++        x < 0 || y < 0 || w < 0 || h < 0 || ((w == 0) != (h == 0)) || (!w && (x || y)) || self->serial == UINT32_MAX ||
++        o->m_monitor->m_scale != 1.0 || o->m_monitor->m_transform != WL_OUTPUT_TRANSFORM_NORMAL) {
++        apparent_clean_grant_v1_send_failed(r); return;
++    }
++    const auto generation = ++self->serial;
++    auto binding = SP<CCleanPortalBinding>(new CCleanPortalBinding(r, generation, peer));
++    auto grant = std::make_unique<Grant>(Grant{r, binding, role->role, o->m_monitor, CBox{x,y,w,h}, !!cursor, role->serial});
++    grant->disconnect = o->m_monitor->m_events.disconnect.listen([binding] { binding->revoke(); });
++    grant->mode = o->m_monitor->m_events.modeChanged.listen([binding] { binding->revoke(); });
++    grant->dpms = o->m_monitor->m_events.dpmsChanged.listen([binding] { binding->revoke(); });
++    wl_resource_set_user_data(r, grant.get());
++    self->grants.emplace_back(std::move(grant));
++    apparent_clean_grant_v1_send_authorized(r, generation);
++}
++void CApparentCleanProtocol::attach(wl_client* c, wl_resource* r, uint32_t id, wl_resource* frame, uint32_t seq, uint32_t bufferGeneration) {
++    static const struct apparent_clean_sample_v1_interface impl{destroy};
++    auto sample = std::make_shared<Sample>();
++    sample->resource = wl_resource_create(c, &apparent_clean_sample_v1_interface, 1, id);
++    if (!sample->resource) { wl_client_post_no_memory(c); return; }
++    wl_resource_set_implementation(sample->resource, &impl, new std::shared_ptr<Sample>(sample), sampleDestroy);
++    auto grant = static_cast<Grant*>(wl_resource_get_user_data(r));
++    if (!grant || !grant->monitor || !grant->binding->live(c) || !grant->role->live() || !seq || !bufferGeneration) {
++        apparent_clean_sample_v1_send_failed(sample->resource); return;
++    }
++    const auto roleSerial = grant->roleSerial;
++    const auto surfaceID = grant->role->window()->resource()->id();
++    const auto frameID = wl_resource_get_id(frame);
++    const auto logical = grant->region;
++    sample->context = PROTO::screencopy->bindCleanFrame(c, frame, grant->binding, grant->role, grant->monitor.lock(),
++        logical, grant->cursor, seq, bufferGeneration, [sample, roleSerial, surfaceID, frameID, logical]() {
++            if (!sample->resource || !sample->context || !sample->context->receipt()) return false;
++            const auto& r = *sample->context->receipt();
++            // Native completion has revalidated permission/source/role/buffer.
++            // Sealed receipt is sent on this exact sample before frame.ready.
++            apparent_clean_receipt_v1 wire{};
++            wire.magic = APPARENT_CLEAN_MAGIC; wire.version = 1; wire.size = sizeof(wire);
++            wire.portal = r.identity.portalGeneration; wire.sequence = r.identity.sequence;
++            wire.source_generation = r.identity.sourceGeneration; wire.buffer_generation = r.identity.bufferGeneration;
++            wire.frame_id = frameID; wire.buffer_id = sample->context->bufferResourceID();
++            wire.role_serial = roleSerial; wire.surface_id = surfaceID;
++            wire.x = logical.x; wire.y = logical.y;
++            wire.width = logical.w ? logical.w : r.outputPixels.x;
++            wire.height = logical.h ? logical.h : r.outputPixels.y;
++            wire.output_width = r.outputPixels.x; wire.output_height = r.outputPixels.y;
++            wire.transform = r.transform; wire.cursor = r.overlayCursor; wire.scale = r.scale;
++            int fd = memfd_create("apparent-clean-sample", MFD_CLOEXEC | MFD_ALLOW_SEALING);
++            if (fd < 0) return false;
++            bool ok = write(fd, &wire, sizeof(wire)) == sizeof(wire) &&
++                fcntl(fd, F_ADD_SEALS, F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL) == 0;
++            if (ok) apparent_clean_sample_v1_send_receipt(sample->resource, fd);
++            close(fd); return ok;
++        });
++    if (!sample->context) apparent_clean_sample_v1_send_failed(sample->resource);
++}
+--- /dev/null
++++ b/src/protocols/ApparentClean.hpp
+@@ -0,0 +1,31 @@
++#pragma once
++#include "WaylandProtocol.hpp"
++#include "../managers/screenshare/CleanFrame.hpp"
++#include <vector>
++
++class CApparentCleanProtocol {
++    struct Role { wl_resource* resource; SP<Screenshare::CCleanRole> role; uint32_t serial; };
++    struct Grant {
++        wl_resource* resource;
++        SP<Screenshare::CCleanPortalBinding> binding;
++        SP<Screenshare::CCleanRole> role;
++        PHLMONITORREF monitor;
++        CBox region;
++        bool cursor;
++        uint32_t roleSerial;
++        CHyprSignalListener disconnect, mode, dpms;
++    };
++    wl_global* global = nullptr;
++    std::vector<std::unique_ptr<Role>> roles;
++    std::vector<std::unique_ptr<Grant>> grants;
++    uint32_t serial = 0;
++    static void destroy(wl_client*, wl_resource*);
++    static void bind(wl_client*, void*, uint32_t, uint32_t);
++    static void registerSurface(wl_client*, wl_resource*, uint32_t, wl_resource*);
++    static void authorize(wl_client*, wl_resource*, uint32_t, int32_t, wl_resource*, int32_t, int32_t, int32_t, int32_t, uint32_t);
++    static void attach(wl_client*, wl_resource*, uint32_t, wl_resource*, uint32_t, uint32_t);
++  public:
++    CApparentCleanProtocol();
++    ~CApparentCleanProtocol();
++};
++namespace PROTO { inline UP<CApparentCleanProtocol> apparentClean; }
+--- a/src/protocols/Screencopy.cpp
++++ b/src/protocols/Screencopy.cpp
+@@ -5,6 +5,7 @@
+ #include "types/Buffer.hpp"
+ #include "../helpers/Format.hpp"
+ #include "../helpers/time/Time.hpp"
++#include "../managers/screenshare/CleanFrame.hpp"
+ #include <hyprgraphics/egl/Egl.hpp>
+ 
+ using namespace Hyprgraphics::Egl;
+@@ -132,6 +133,10 @@
+             return;
+         switch (result) {
+             case RESULT_COPIED: {
++                if (m_cleanPublish && !m_cleanPublish()) {
++                    m_resource->sendFailed();
++                    break;
++                }
+                 m_resource->sendFlags(sc<zwlrScreencopyFrameV1Flags>(0));
+                 if (withDamage)
+                     m_frame->damage().forEachRect([&](const auto& rect) { m_resource->sendDamage(rect.x1, rect.y1, rect.x2 - rect.x1, rect.y2 - rect.y1); });
+@@ -191,3 +196,42 @@
+ void CScreencopyProtocol::destroyResource(CScreencopyFrame* frame) {
+     std::erase_if(m_frames, [&](const auto& other) { return other.get() == frame; });
+ }
++
++bool CScreencopyProtocol::attachCleanFrame(wl_client* requester, wl_resource* resource, SP<Screenshare::CCleanFrameContext> context) {
++    if (!requester || !resource || !context || !context->matchesNativeFrame(resource) || wl_resource_get_client(resource) != requester)
++        return false;
++    for (const auto& frame : m_frames) {
++        if (frame->m_resource->resource() != resource || frame->m_resource->client() != requester)
++            continue;
++        // Attach once, before copy(), to the existing selected frame only.
++        // No new managed session or output selector is introduced here.
++        return !frame->m_buffer && frame->m_frame && frame->m_frame->attachCleanContext(context);
++    }
++    return false;
++}
++
++SP<CCleanFrameContext> CScreencopyProtocol::bindCleanFrame(wl_client* requester, wl_resource* resource,
++        SP<CCleanPortalBinding> portal, SP<CCleanRole> role, PHLMONITOR monitor, CBox region, bool cursor,
++        uint64_t sequence, uint64_t generation, std::function<bool()> publish) {
++    for (const auto& f : m_frames) {
++        if (f->m_resource->resource() != resource || f->m_resource->client() != requester) continue;
++        if (f->m_buffer || f->m_cleanPublish || !f->m_session || !f->m_frame) return {};
++        f->m_cleanPublish = [] { return false; }; // failed attachment never becomes ordinary success
++        auto s = f->m_session;
++        if (!monitor) return {};
++        const bool whole = region.w == 0 && region.h == 0;
++        const CBox physical = whole ? CBox{} : region.copy().scale(monitor->m_scale).round();
++        if (!portal || !portal->live(requester) || !role || !role->live() || s->monitor() != monitor ||
++            cursor != f->m_overlayCursor || s->sourceType() != (whole ? SHARE_MONITOR : SHARE_REGION) ||
++            s->originalRegion() != physical) return {};
++        // Capture's physical region is calculated by the original session,
++        // including its rounding/scaling. Never substitute a new source.
++
++        auto ctx = makeShared<CCleanFrameContext>(portal, role, s, physical, cursor, sequence, generation,
++                                                  reinterpret_cast<uintptr_t>(resource));
++        if (!f->m_frame->attachCleanContext(ctx)) return {};
++        f->m_cleanPublish = std::move(publish);
++        return ctx;
++    }
++    return {};
++}
+--- a/src/protocols/Screencopy.hpp
++++ b/src/protocols/Screencopy.hpp
+@@ -13,6 +13,9 @@
+ namespace Screenshare {
+     class CScreenshareSession;
+     class CScreenshareFrame;
++    class CCleanFrameContext;
++    class CCleanPortalBinding;
++    class CCleanRole;
+ };
+ 
+ class CScreencopyClient {
+@@ -40,6 +43,7 @@
+ 
+   private:
+     SP<CZwlrScreencopyFrameV1>           m_resource;
++    std::function<bool()>               m_cleanPublish;
+     WP<CScreencopyFrame>                 m_self;
+     WP<CScreencopyClient>                m_client;
+ 
+@@ -64,6 +68,11 @@
+     virtual void bindManager(wl_client* client, void* data, uint32_t version, uint32_t id);
+     void         destroyResource(CScreencopyClient* resource);
+     void         destroyResource(CScreencopyFrame* resource);
++    bool         attachCleanFrame(wl_client* requester, wl_resource* frame, SP<Screenshare::CCleanFrameContext> context);
++    SP<Screenshare::CCleanFrameContext> bindCleanFrame(wl_client* requester, wl_resource* frame,
++        SP<Screenshare::CCleanPortalBinding> portal, SP<Screenshare::CCleanRole> role,
++        PHLMONITOR monitor, CBox region, bool cursor, uint64_t sequence, uint64_t bufferGeneration,
++        std::function<bool()> publish);
+ 
+   private:
+     std::vector<SP<CScreencopyFrame>>  m_frames;
+--- /dev/null
++++ b/src/render/CleanMonitor.cpp
+@@ -0,0 +1,65 @@
++// Source-integrated R8 offscreen scene render. No plugin, hook or HyprCtl IPC.
++#include "Renderer.hpp"
++#include "../Compositor.hpp"
++#include "../config/ConfigValue.hpp"
++#include "../state/MonitorState.hpp"
++#include "../desktop/state/FocusState.hpp"
++#include "../notification/NotificationOverlay.hpp"
++#include "../errorOverlay/Overlay.hpp"
++#include <GLES3/gl32.h>
++
++using namespace Render;
++
++SP<IFramebuffer> IHyprRenderer::renderCleanMonitor(PHLMONITOR monitor, PHLWINDOW excluded) {
++    // These are the R8 renderer's still-unproved cases, not a product contract.
++    // Never certify an untested transform/effect as clean.
++    if (m_cleanRendering || m_renderData.pMonitor || m_bRenderingSnapshot || type() != RT_GL ||
++        !monitor || !excluded || !excluded->m_isMapped || !monitor->m_output || !monitor->m_activeWorkspace ||
++        !monitor->m_dpmsStatus || monitor->isMirror() || monitor->m_isBeingLeased ||
++        g_pSessionLockManager->isSessionLocked() || !g_pCompositor->m_sessionActive || !g_pCompositor->m_dpmsStateOn ||
++        monitor->m_scale != 1.0 || monitor->m_transform != WL_OUTPUT_TRANSFORM_NORMAL || monitor->m_enabled10bit || monitor->m_cmType != NCMType::CM_SRGB ||
++        monitor->m_cursorZoom->value() != 1.F || m_crashingInProgress || !Desktop::fadingOutState()->fadeouts().empty()) return {};
++    static auto debugOverlay = CConfigValue<Config::INTEGER>("debug:overlay");
++    static auto damageBlink = CConfigValue<Config::INTEGER>("debug:damage_blink");
++    static auto screenShader = CConfigValue<std::string>("decoration:screen_shader");
++    if (*debugOverlay || *damageBlink || (!(*screenShader).empty() && *screenShader != STRVAL_EMPTY) || monitor->m_dpmsBlackOpacity->value() != 0.F) return {};
++    const auto size = monitor->m_pixelSize;
++    if (size.x < 1 || size.y < 1 || size.x > 8192 || size.y > 8192) return {};
++    auto fb = createFB("Apparent per-frame clean monitor source");
++    if (!fb || !fb->alloc(size.x, size.y, DRM_FORMAT_ABGR8888)) return {};
++    fb->setImageDescription(NColorManagement::DEFAULT_SRGB_IMAGE_DESCRIPTION);
++    GLint savedDraw = 0, read = 0, viewport[4]{};
++    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &savedDraw);
++    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read);
++    glGetIntegerv(GL_VIEWPORT, viewport);
++    const auto savedData = m_renderData;
++    const bool savedFeedback = m_bBlockSurfaceFeedback;
++    const auto savedMode = m_renderMode;
++    CRenderPass savedPass;
++    std::swap(savedPass, m_renderPass);
++    CScopeGuard restore([&] {
++        m_cleanRendering = false; m_cleanExcluded.reset();
++        m_bBlockSurfaceFeedback = savedFeedback; m_renderData = savedData; m_renderMode = savedMode;
++        std::swap(savedPass, m_renderPass);
++        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, savedDraw); glBindFramebuffer(GL_READ_FRAMEBUFFER, read);
++        glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
++    });
++    CRegion damage{0, 0, size.x, size.y};
++    if (!beginFullFakeRender(monitor, damage, fb)) return {};
++    m_bBlockSurfaceFeedback = true;
++    m_cleanRendering = true; m_cleanExcluded = excluded;
++    draw(CClearPassElement::SClearData{CHyprColor(0, 0, 0, 1)});
++    startRenderPass();
++    const auto now = Time::steadyNow();
++    CBox box{{}, size};
++    // Read the current scene on the originally selected monitor. This is not
++    // a Workspace source: pinned/special/floating/layer content stays in scene.
++    renderWorkspace(monitor, monitor->m_activeWorkspace, now, box);
++    renderIME(monitor, now, box);
++    if (monitor == Desktop::focusState()->monitor()) {
++        Notification::overlay()->draw(monitor); ErrorOverlay::overlay()->draw();
++    }
++    // No cursor here. The existing capture path adds it after protection masks.
++    endRender();
++    return fb;
++}
+--- a/src/render/Renderer.cpp
++++ b/src/render/Renderer.cpp
+@@ -547,6 +547,8 @@
+ }
+ 
+ void IHyprRenderer::renderWindow(PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp& time, bool decorate, eRenderPassMode mode, bool ignorePosition, bool standalone) {
++    if (m_cleanRendering && m_cleanExcluded == pWindow)
++        return;
+     if (pWindow->isHidden() && !standalone)
+         return;
+ 
+@@ -1522,6 +1524,8 @@
+ }
+ 
+ bool IHyprRenderer::shouldUseNewBlurOptimizations(PHLLS pLayer, PHLWINDOW pWindow) {
++    if (m_cleanRendering)
++        return false;
+     static auto PBLURNEWOPTIMIZE = CConfigValue<Config::INTEGER>("decoration:blur:new_optimizations");
+     static auto PBLURXRAY        = CConfigValue<Config::INTEGER>("decoration:blur:xray");
+ 
+@@ -1856,6 +1860,8 @@
+ }
+ 
+ void IHyprRenderer::preBlurForCurrentMonitor(CRegion* fakeDamage) {
++    if (m_cleanRendering)
++        return;
+ 
+     const auto blurredTex = blurMainFramebuffer(1, fakeDamage);
+ 
+--- a/src/render/Renderer.hpp
++++ b/src/render/Renderer.hpp
+@@ -101,6 +101,7 @@
+         SP<IFramebuffer>                    makeSnapshotFB(WP<Desktop::View::CPopup>);
+         void                                renderFadeouts(PHLMONITOR monitor, Desktop::eFadeoutPlane plane, PHLWORKSPACE workspace = nullptr);
+         bool                                beginFullFakeRender(PHLMONITOR pMonitor, CRegion& damage, SP<IFramebuffer> fb);
++        SP<IFramebuffer>                    renderCleanMonitor(PHLMONITOR monitor, PHLWINDOW excluded);
+         bool                                beginRenderToBuffer(PHLMONITOR pMonitor, CRegion& damage, SP<IHLBuffer> buffer, bool simple = false);
+         virtual void                        startRenderPass() {};
+         virtual void                        endRender(const std::function<void()>& renderingDoneCallback = {}) = 0;
+@@ -304,6 +305,8 @@
+ 
+         std::vector<SP<IRenderbuffer>> m_renderbuffers;
+         std::vector<PHLWINDOWREF>      m_renderUnfocused;
++        PHLWINDOWREF                  m_cleanExcluded;
++        bool                          m_cleanRendering = false;
+         SP<CEventLoopTimer>            m_renderUnfocusedTimer;
+ 
+         friend class CRenderPass;

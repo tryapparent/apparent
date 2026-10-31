@@ -1,0 +1,173 @@
+--- /dev/null
++++ b/src/clean-role-fd.h
+@@ -0,0 +1,60 @@
++/* Private SelectSources extension. Carries a descriptor, not permission. */
++#pragma once
++#include <gio/gio.h>
++#include <gio/gunixfdlist.h>
++#include <unistd.h>
++
++#define XDP_CLEAN_ROLE_KEY "apparent_clean_role"
++
++static gboolean
++xdp_clean_role_forward (GDBusMessage *message,
++                        GVariant *options,
++                        GVariantBuilder *filtered,
++                        GUnixFDList **out_fds,
++                        GError **error)
++{
++  GVariantIter iter;
++  const char *key;
++  GVariant *value;
++  g_autoptr(GVariant) role = NULL;
++  g_autoptr(GUnixFDList) compact = NULL;
++  GUnixFDList *incoming;
++  int fd, index;
++
++  g_variant_iter_init (&iter, options);
++  while (g_variant_iter_next (&iter, "{&sv}", &key, &value))
++    {
++      if (g_str_equal (key, XDP_CLEAN_ROLE_KEY))
++        {
++          if (role || !g_variant_is_of_type (value, G_VARIANT_TYPE_HANDLE))
++            {
++              g_variant_unref (value);
++              g_set_error_literal (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
++                                   "Clean role must be one Unix FD handle");
++              return FALSE;
++            }
++          role = g_variant_ref (value);
++        }
++      g_variant_unref (value);
++    }
++  if (!role)
++    return TRUE;
++  incoming = g_dbus_message_get_unix_fd_list (message);
++  if (!incoming)
++    {
++      g_set_error_literal (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
++                           "Clean role FD list missing");
++      return FALSE;
++    }
++  fd = g_unix_fd_list_get (incoming, g_variant_get_handle (role), error);
++  if (fd < 0)
++    return FALSE;
++  compact = g_unix_fd_list_new ();
++  index = g_unix_fd_list_append (compact, fd, error);
++  close (fd);
++  if (index < 0)
++    return FALSE;
++  g_variant_builder_add (filtered, "{sv}", XDP_CLEAN_ROLE_KEY, g_variant_new_handle (index));
++  *out_fds = g_steal_pointer (&compact);
++  return TRUE;
++}
+--- a/src/screen-cast.c
++++ b/src/screen-cast.c
+@@ -38,6 +38,7 @@
+ #include "xdp-session-persistence.h"
+ #include "xdp-session.h"
+ #include "xdp-utils.h"
++#include "clean-role-fd.h"
+ 
+ #define PERMISSION_ITEM(item_id, item_permissions) \
+   ((struct pw_permission) { \
+@@ -97,6 +98,7 @@
+   XdpSession parent;
+ 
+   ScreenCastSessionState state;
++  gboolean clean_requested;
+ 
+   GList *streams;
+   char *restore_token;
+@@ -357,14 +359,22 @@
+   SESSION_AUTOLOCK_UNREF (g_object_ref (session));
+   g_object_set_qdata (G_OBJECT (request), quark_request_session, NULL);
+ 
+-  if (!xdp_dbus_impl_screen_cast_call_select_sources_finish (impl,
+-                                                             &response,
+-                                                             &results,
+-                                                             res,
+-                                                             &error))
++  g_autoptr(GVariant) reply =
++    g_dbus_proxy_call_with_unix_fd_list_finish (G_DBUS_PROXY (impl), NULL, res, &error);
++  if (!reply)
+     {
+       g_dbus_error_strip_remote_error (error);
+       g_warning ("A backend call failed: %s", error->message);
++    }
++  else
++    g_variant_get (reply, "(u@a{sv})", &response, &results);
++
++  if (response == 0 && IS_SCREEN_CAST_SESSION (session) &&
++      SCREEN_CAST_SESSION (session)->clean_requested)
++    {
++      gboolean acknowledged = FALSE;
++      if (!results || !g_variant_lookup (results, XDP_CLEAN_ROLE_KEY, "b", &acknowledged) || !acknowledged)
++        response = 2; /* No success-shaped downgrade to ordinary capture. */
+     }
+ 
+   should_close_session = !request->exported || response != 0;
+@@ -542,6 +552,7 @@
+   XdpSession *session;
+   g_autoptr(GError) error = NULL;
+   g_autoptr(XdpDbusImplRequest) impl_request = NULL;
++  g_autoptr(GUnixFDList) clean_role_fds = NULL;
+   g_auto(GVariantBuilder) options_builder =
+     G_VARIANT_BUILDER_INIT (G_VARIANT_TYPE_VARDICT);
+   g_autoptr(GVariant) options = NULL;
+@@ -638,6 +649,22 @@
+       return G_DBUS_METHOD_INVOCATION_HANDLED;
+     }
+ 
++  /* Existing session-owner/state checks authorize this request, not the FD.
++   * Forward only the selected descriptor and reindex the handle. */
++  if (xdp_variant_contains_key (arg_options, XDP_CLEAN_ROLE_KEY) &&
++      !IS_SCREEN_CAST_SESSION (session))
++    {
++      g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR,
++                                             G_DBUS_ERROR_INVALID_ARGS,
++                                             "Clean role requires ScreenCast session");
++      return G_DBUS_METHOD_INVOCATION_HANDLED;
++    }
++  if (!xdp_clean_role_forward (g_dbus_method_invocation_get_message (invocation),
++                               arg_options, &options_builder, &clean_role_fds, &error))
++    {
++      g_dbus_method_invocation_return_gerror (invocation, error);
++      return G_DBUS_METHOD_INVOCATION_HANDLED;
++    }
+   options = g_variant_ref_sink (g_variant_builder_end (&options_builder));
+ 
+   /* If 'restore_token' is passed, lookup the corresponding data in the
+@@ -658,16 +685,22 @@
+     {
+       SCREEN_CAST_SESSION (session)->state =
+         SCREEN_CAST_SESSION_STATE_SELECTING_SOURCES;
+-    }
+-
+-  xdp_dbus_impl_screen_cast_call_select_sources (screen_cast->impl,
+-                                                 request->id,
+-                                                 arg_session_handle,
+-                                                 xdp_app_info_get_id (request->app_info),
+-                                                 options,
+-                                                 NULL,
+-                                                 select_sources_done,
+-                                                 g_object_ref (request));
++      SCREEN_CAST_SESSION (session)->clean_requested = clean_role_fds != NULL;
++    }
++
++  if (clean_role_fds && !IS_SCREEN_CAST_SESSION (session))
++    {
++      g_dbus_method_invocation_return_error_literal (invocation, XDG_DESKTOP_PORTAL_ERROR,
++        XDG_DESKTOP_PORTAL_ERROR_INVALID_ARGUMENT, "Clean capture requires a ScreenCast session");
++      return G_DBUS_METHOD_INVOCATION_HANDLED;
++    }
++
++  g_dbus_proxy_call_with_unix_fd_list (
++    G_DBUS_PROXY (screen_cast->impl), "SelectSources",
++    g_variant_new ("(oos@a{sv})", request->id, arg_session_handle,
++                   xdp_app_info_get_id (request->app_info), g_variant_ref (options)),
++    G_DBUS_CALL_FLAGS_NONE, -1, clean_role_fds, NULL,
++    select_sources_done, g_object_ref (request));
+ 
+   xdp_dbus_screen_cast_complete_select_sources (object, invocation, request->id);
+ 
