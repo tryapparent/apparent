@@ -44,7 +44,8 @@ as a substitute for disposable-VM verification.** No AppImage/package install
 runs these steps automatically, and the app does not install or restart services.
 
 1. Check `pipewire --version` and `wireplumber --version`. Use the versions above.
-   Build with a C11 compiler and the matching PipeWire/SPA development headers:
+   Build with a C11 compiler and the matching PipeWire/SPA development headers.
+   Tests also need Python 3 and an installed Lua 5.3/5.4 library:
 
    ```sh
    sh scripts/linux/build-playback.sh "$HOME/.cache/apparent-playback-build" --test
@@ -63,7 +64,7 @@ runs these steps automatically, and the app does not install or restart services
    ```sh
    install -Dm755 "$HOME/.cache/apparent-playback-build/apparent-playback-helper" \
      "$HOME/.local/lib/apparent/apparent-playback-helper"
-   sudo install -Dm755 "$HOME/.cache/apparent-playback-build/libspa-filter-graph-plugin-apparentlease.so" \
+   sudo install -Dm644 "$HOME/.cache/apparent-playback-build/libspa-filter-graph-plugin-apparentlease.so" \
      /usr/lib/spa-0.2/filter-graph/libspa-filter-graph-plugin-apparentlease.so
    ```
 
@@ -85,6 +86,23 @@ runs these steps automatically, and the app does not install or restart services
    apparent.playback = { exclusive-order-minus35 = true }
    ```
 
+   The lease file must exist before playback clients construct their processors.
+   To prepare it on each session start, create the user-service drop-in
+   `~/.config/systemd/user/wireplumber.service.d/90-apparent-playback.conf`:
+
+   ```ini
+   [Service]
+   ExecStartPre=%h/.local/lib/apparent/apparent-playback-helper --init
+   ```
+
+   This only validates/initializes the neutral runtime file; it does not start a
+   capture or renew a lease. If initialization fails, `ExecStartPre` prevents
+   WirePlumber itself from starting, not just this experiment. To roll back that
+   startup dependency, remove only this owned drop-in and run
+   `systemctl --user daemon-reload` before starting WirePlumber again. Do not
+   overwrite an unrelated drop-in. Run
+   `systemctl --user daemon-reload`, then inspect
+   `systemctl --user show wireplumber -p ExecStartPre` for the installed helper.
    Restart WirePlumber in that idle session (`systemctl --user restart wireplumber`),
    then restart playback applications. This restart can interrupt audio; Apparent
    does not do it for you. Inspect the WirePlumber journal for load errors.
@@ -134,6 +152,8 @@ Do not claim a setup works from those observations alone.
 descriptor, persistent/in-place buffers, mono/stereo instances, unsupported replica
 indices, normal EOF, single-helper ownership, stopped/killed-helper expiry, zero
 and full gain, malformed leases, stable inode, safe lock contention and unsafe mode.
+The Lua policy fixture covers delayed node info/channel negotiation, bounded
+setup, stale callbacks and both controlled and control-free custom graphs.
 
 The disposable native integration test must additionally record sink-monitor PCM
 with a non-reconnecting synthetic player: unchanged player identity, port topology,
@@ -143,6 +163,9 @@ policy code. Cover both mono and stereo, user volume/mute edits, default-off and
 100% requests. Exercise the built GPUI Settings controls and real capture start,
 stop, cancel and failure, not just the helper. Inspect the generated capture bundle.
 These tests must run in an owned disposable guest, with no physical speaker output.
+Compare exact port topology around capture actions. A deliberate external
+WirePlumber restart can reassign ports; compare the surviving player identity and
+channel layout across that restart, not unchanged port-to-channel assignments.
 Do not publish private captures or substitute a host build for GUI/native proof.
 
 ## Disable, remove or upgrade
@@ -151,7 +174,8 @@ Turning the experiment off prevents new helper requests; it does not remove the
 manually installed neutral graphs. Finish/cancel capture first. Wait for the helper
 to exit (or its lease to expire) before removing anything. Set
 `experiments.linux-playback-ducking` to `false` in the same config file. Remove the
-WirePlumber config and script you installed. **Log out and back in** so all clients
+WirePlumber config, script and service drop-in you installed, then run
+`systemctl --user daemon-reload`. **Log out and back in** so all clients
 release their neutral graphs and mappings; this explicit interruption is the
 manual removal/upgrade procedure, not an automatic app action. Only then remove
 or replace the SPA module/helper. Never delete/truncate a live lease inode.

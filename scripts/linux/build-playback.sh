@@ -25,9 +25,10 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags="$flags -g -fsanitize=address,undefined 
 # shellcheck disable=SC2086
 "$cc" $flags "$src/helper.c" -o "$out/apparent-playback-helper"
 if [ "$2" = --test ]; then
+    python3 "$src/test_policy.py"
     # shellcheck disable=SC2086
     "$cc" $flags $1 "$src/test_native.c" -ldl -o "$out/test-native"
-    runtime=$(mktemp -d "${TMPDIR:?set TMPDIR to a private scratch directory}/apparent-playback.XXXXXX")
+    runtime=$(mktemp -d "$out/apparent-playback.XXXXXX")
     trap 'rm -rf -- "$runtime"' EXIT HUP INT TERM
     XDG_RUNTIME_DIR="$runtime" timeout 30 "$out/test-native" "$out/libspa-filter-graph-plugin-apparentlease.so" "$out/apparent-playback-helper"
 fi
