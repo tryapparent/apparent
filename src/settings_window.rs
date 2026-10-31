@@ -179,7 +179,7 @@ struct PermissionRow {
 
 // This is permission to request the optional feature, not a live audio check.
 fn playback_available() -> bool {
-    MACOS || cfg!(target_os = "linux") && crate::handoff::experiment("linux-playback-ducking")
+    cfg!(target_os = "macos") || cfg!(target_os = "linux") && crate::handoff::experiment("linux-playback-ducking")
 }
 
 fn playback_note() -> String {
