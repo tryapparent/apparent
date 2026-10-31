@@ -101,6 +101,10 @@ impl Shortcuts {
             }
         }
         if stored.is_some() {
+            if shortcuts_conflict(&shortcuts) {
+                eprintln!("config.json: conflicting shortcuts; using defaults");
+                shortcuts = Self::default();
+            }
             return (shortcuts, false);
         }
         let old = read_json(legacy);
@@ -114,8 +118,8 @@ impl Shortcuts {
             && let Some(cfg) = from_stored(
                 ShortcutKind::Record,
                 Stored {
-                    key_code: key_code as u32,
-                    modifiers: modifiers as u32,
+                    key_code: u32::try_from(key_code).unwrap_or(u32::MAX),
+                    modifiers: u32::try_from(modifiers).unwrap_or(u32::MAX),
                     label: label.to_owned(),
                 },
             )
@@ -124,6 +128,9 @@ impl Shortcuts {
             && cfg.label != "⌃⌥⇧S"
         {
             shortcuts.record = cfg;
+            if shortcuts_conflict(&shortcuts) {
+                return (Self::default(), false);
+            }
             return (shortcuts, true);
         }
         (shortcuts, false)
@@ -137,6 +144,13 @@ fn kind_key(kind: ShortcutKind) -> &'static str {
     }
 }
 
+fn shortcuts_conflict(shortcuts: &Shortcuts) -> bool {
+    !shortcuts.paste.is_unset()
+        && (shortcuts.record.key_code == shortcuts.paste.key_code
+            && shortcuts.record.carbon_modifiers == shortcuts.paste.carbon_modifiers
+            || shortcuts.record.label == shortcuts.paste.label)
+}
+
 /// A stored default is read as the default, so it follows the active layout's key.
 fn from_stored(kind: ShortcutKind, stored: Stored) -> Option<ShortcutConfig> {
     let cfg = ShortcutConfig {
@@ -144,7 +158,19 @@ fn from_stored(kind: ShortcutKind, stored: Stored) -> Option<ShortcutConfig> {
         carbon_modifiers: stored.modifiers,
         label: stored.label,
     };
-    if cfg.label.is_empty() || cfg.key_label().is_empty() {
+    let allowed = CARBON_CMD_KEY | CARBON_CONTROL_KEY | CARBON_OPTION_KEY | CARBON_SHIFT_KEY;
+    if cfg.label.trim().is_empty()
+        || cfg.key_label().is_empty()
+        || cfg.key_code > u32::from(u16::MAX)
+        || cfg.carbon_modifiers & !allowed != 0
+        || validate(kind, &Pressed {
+            key_code: cfg.key_code,
+            modifiers: cfg.carbon_modifiers,
+            key: cfg.key_label().to_owned(),
+            reserved: false,
+        }, &ShortcutConfig::unset()).is_err()
+    {
+        eprintln!("config.json: ignoring invalid {} shortcut", kind_key(kind));
         return None;
     }
     Some(if cfg.is_default_for(kind) {
@@ -181,31 +207,37 @@ pub fn save_shortcut_in(
     kind: ShortcutKind,
     cfg: &ShortcutConfig,
 ) -> anyhow::Result<()> {
-    let mut shortcuts = read_json(path)
-        .get("shortcuts")
-        .cloned()
-        .filter(serde_json::Value::is_object)
-        .unwrap_or_else(|| serde_json::json!({}));
-    let map = shortcuts.as_object_mut().expect("an object");
-    if cfg.is_default_for(kind) {
-        map.remove(kind_key(kind));
-    } else if cfg.is_unset() {
-        anyhow::ensure!(
-            kind.can_unset(),
-            "the {kind:?} shortcut can't be turned off"
-        );
-        map.insert(kind_key(kind).to_owned(), serde_json::Value::Null);
-    } else {
-        map.insert(
-            kind_key(kind).to_owned(),
-            serde_json::to_value(Stored {
-                key_code: cfg.key_code,
-                modifiers: cfg.carbon_modifiers,
-                label: cfg.label.clone(),
-            })?,
-        );
-    }
-    crate::handoff::set_config_value_in(path, "shortcuts", shortcuts)
+    crate::handoff::update_config_in(path, |config| {
+        // Read the submap only after the shared writer has locked and read the
+        // latest config. A pre-lock snapshot loses concurrent sibling edits.
+        let shortcuts = config
+            .as_object_mut()
+            .expect("transaction validated an object")
+            .entry("shortcuts")
+            .or_insert_with(|| serde_json::json!({}));
+        let map = shortcuts
+            .as_object_mut()
+            .ok_or_else(|| anyhow::anyhow!("shortcuts must be an object"))?;
+        if cfg.is_default_for(kind) {
+            map.remove(kind_key(kind));
+        } else if cfg.is_unset() {
+            anyhow::ensure!(
+                kind.can_unset(),
+                "the {kind:?} shortcut can't be turned off"
+            );
+            map.insert(kind_key(kind).to_owned(), serde_json::Value::Null);
+        } else {
+            map.insert(
+                kind_key(kind).to_owned(),
+                serde_json::to_value(Stored {
+                    key_code: cfg.key_code,
+                    modifiers: cfg.carbon_modifiers,
+                    label: cfg.label.clone(),
+                })?,
+            );
+        }
+        Ok(())
+    })
 }
 
 /// The label of the paste shortcut, for hints (`⌥⇧V`, or `Alt+Shift+V`, unless changed; "the
@@ -391,6 +423,9 @@ const KEY_ESCAPE: u32 = 53;
 
 /// The name a key is shown with: a function key, a named key, or the typed character in capitals.
 pub fn key_label(key_code: u32, typed: &str) -> Option<String> {
+    if cfg!(target_os = "linux") && key_code == 201 {
+        return Some("Copilot".to_owned());
+    }
     if let Some((_, name)) = FUNCTION_KEYS
         .iter()
         .chain(NAMED_KEYS.iter())
@@ -439,6 +474,10 @@ fn reserved(modifiers: u32, key: &str) -> bool {
             .contains(&(modifiers, key));
     }
     if cfg!(target_os = "linux") {
+        // The documented Apparent-owned Copilot chord is not a desktop binding.
+        if modifiers == CMD | SHIFT && key == "Copilot" {
+            return false;
+        }
         // Super (⌘'s bit) with a key, alone or with Shift, is the desktop's (Super+A, the
         // workspaces…); Ctrl with one key is an app's. Then Alt+Tab, Alt+F2, Ctrl+Alt+T…
         return modifiers & CMD != 0 && modifiers & (CTRL | OPT) == 0
@@ -2447,6 +2486,81 @@ mod tests {
         .unwrap();
         assert!(read_json(&path)["shortcuts"].get("record").is_none());
         assert_eq!(read_json(&path)["ingestToken"], "secret");
+    }
+
+    #[test]
+    fn file_shortcuts_follow_settings_validation_without_rewriting_the_file() {
+        let dir = TempDir::new("shortcut-semantics");
+        let path = dir.0.join("config.json");
+        let legacy = dir.0.join("legacy.json");
+        for (modifiers, key, code) in [
+            (0, "R", R),
+            // Linux and macOS F1 codes can validate without a typed character,
+            // but an empty persisted label must never disable Record.
+            (0, "", 112),
+            (0, "", 122),
+            (CARBON_CONTROL_KEY | 1, "R", R),
+            (CTRL_OPT, "not-a-key", R),
+            (CTRL_OPT, "R", u32::MAX),
+        ] {
+            let bytes = serde_json::json!({"unknown":{"secret":"synthetic"},"shortcuts":{
+                "record":{"keyCode":code,"modifiers":modifiers,"label":label(modifiers,key)},
+                "paste":null
+            }}).to_string();
+            std::fs::write(&path, &bytes).unwrap();
+            let (loaded, migrate) = Shortcuts::load_from(&path, &legacy);
+            assert_eq!(loaded.record, ShortcutConfig::default_record());
+            assert!(loaded.paste.is_unset());
+            assert!(!migrate);
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), bytes);
+        }
+        let custom = serde_json::json!({"keyCode":R,"modifiers":CTRL_OPT,"label":label(CTRL_OPT,"R")});
+        std::fs::write(&path, serde_json::json!({"shortcuts":{"record":custom,"paste":custom}}).to_string()).unwrap();
+        assert_eq!(Shortcuts::load_from(&path, &legacy).0, Shortcuts::default());
+    }
+
+    #[test]
+    fn shortcut_edit_uses_fresh_transaction_snapshot() {
+        let dir = TempDir::new("fresh-shortcut-snapshot");
+        let path = dir.0.join("config.json");
+        std::fs::write(&path, r#"{"shortcuts":{"future":{"keep":true}},"unknown":{"dummySecret":"test-only"},"experiments":{"clipboardImage":true}}"#).unwrap();
+        // Another writer finishes immediately before this transaction acquires its
+        // lock. A pre-lock shortcut-map snapshot would erase the sibling edit.
+        let mut ran = false;
+        crate::handoff::set_config_write_hook(Some(Box::new(move |point, path| {
+            if point == "before_lock" && !ran {
+                ran = true;
+                let path = path.to_path_buf();
+                std::thread::spawn(move || {
+                    save_shortcut_in(&path, ShortcutKind::Paste, &ShortcutConfig::unset()).unwrap();
+                    crate::handoff::set_experiment_in(&path, "clipboardImage", false).unwrap();
+                }).join().unwrap();
+            }
+        })));
+        let result = save_shortcut_in(&path, ShortcutKind::Record, &ShortcutConfig {
+            key_code: R,
+            carbon_modifiers: CTRL_OPT,
+            label: label(CTRL_OPT, "R"),
+        });
+        crate::handoff::set_config_write_hook(None);
+        result.unwrap();
+        let saved = read_json(&path);
+        assert_eq!(saved["shortcuts"].get("paste"), Some(&serde_json::Value::Null));
+        assert_eq!(saved["shortcuts"]["record"]["keyCode"], R);
+        assert_eq!(saved["shortcuts"]["future"]["keep"], true);
+        assert_eq!(saved["unknown"]["dummySecret"], "test-only");
+        assert_eq!(saved["experiments"]["clipboardImage"], false);
+    }
+
+    #[test]
+    fn shortcut_edit_preserves_invalid_config_and_submaps() {
+        let dir = TempDir::new("invalid-shortcut-config");
+        let path = dir.0.join("config.json");
+        for bytes in ["{invalid", "[]", r#"{"shortcuts":42,"future":"keep"}"#] {
+            std::fs::write(&path, bytes).unwrap();
+            assert!(save_shortcut_in(&path, ShortcutKind::Paste, &ShortcutConfig::unset()).is_err());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), bytes);
+        }
     }
 
     #[cfg(target_os = "linux")]

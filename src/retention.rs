@@ -119,12 +119,23 @@ impl Policy {
     }
 
     pub fn load_from(path: &Path) -> Self {
-        std::fs::read(path)
+        let value = std::fs::read(path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-            .and_then(|config| config.get("retention").cloned())
-            .and_then(|value| serde_json::from_value(value).ok())
-            .unwrap_or_default()
+            .and_then(|config| config.get("retention").cloned());
+        let Some(serde_json::Value::Object(fields)) = value else {
+            return Self::default();
+        };
+        // A malformed sibling must not turn an explicit "keep forever" into deletion.
+        let days = |key: &str, default| {
+            fields.get(key).map_or(default, |value| {
+                serde_json::from_value::<Option<u32>>(value.clone()).unwrap_or(default)
+            })
+        };
+        Self {
+            media_days: days("mediaDays", default_media_days()),
+            bundle_days: days("bundleDays", default_bundle_days()),
+        }
     }
 
     /// Writes `"retention"`, keeping the rest of the config (and its `0600` mode) as it is.
@@ -938,6 +949,27 @@ mod tests {
                 bundle_days: Some(90)
             }
         );
+    }
+
+    #[test]
+    fn invalid_retention_field_keeps_valid_sibling_preference() {
+        let tmp = TempDir::new("partial-config");
+        let path = tmp.0.join("config.json");
+        for (retention, expected) in [
+            (serde_json::json!({"mediaDays": null, "bundleDays": "bad"}),
+             Policy { media_days: None, bundle_days: Some(30) }),
+            (serde_json::json!({"mediaDays": -1, "bundleDays": null}),
+             Policy { media_days: Some(7), bundle_days: None }),
+            (serde_json::json!({"mediaDays": 0, "bundleDays": false}),
+             Policy { media_days: Some(0), bundle_days: Some(30) }),
+        ] {
+            let bytes = serde_json::to_vec(&serde_json::json!({
+                "retention": retention, "unknown": {"dummySecret": "test-only"}
+            })).unwrap();
+            std::fs::write(&path, &bytes).unwrap();
+            assert_eq!(Policy::load_from(&path), expected);
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        }
     }
 
     #[test]

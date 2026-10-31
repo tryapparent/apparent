@@ -1,5 +1,21 @@
 # Onboarding, permissions and Settings
 
+See [config preference coverage](config-preferences.md) for accepted values,
+defaults, direct-file reload points and the distinction between preferences,
+OS state and runtime history.
+
+The picker remembers `lastCaptureMode` (`area`, `window`, `screen`, `iphone`) in
+the canonical config. Direct file edits take effect after restart. Legacy
+`last-mode` is migration input only: it is used if the key is absent and removed
+after the next successful save. Invalid explicit values select Area.
+
+`automaticUpdateChecks` and `automaticUpdateDownloads` accept booleans. Linux
+reads them at each background check; a false download setting permits discovery
+without installation. Manual Check for Updates still downloads and installs.
+macOS reconciles JSON and packaged defaults before Sparkle starts; restart after
+a file edit. Missing/invalid values use package defaults, not old UserDefaults, and Sparkle's
+package restrictions still apply. These keys do not grant OS permissions.
+
 Read this before changing `src/onboarding.rs`, `src/settings.rs`, `src/command_line.rs` or the helper's `Onboarding.swift`, `PermissionPanel.swift` and `Settings.swift`.
 
 ## Onboarding (`src/onboarding.rs`, `helper/Onboarding.swift`)
@@ -73,7 +89,7 @@ On Omarchy, Hyprland's `code:201` is the Copilot key. At launch Apparent reads t
 
 Recording › Microphone (`src/mic.rs`): `"microphone": {"id","name"}` holds an input id in `~/.config/apparent/config.json`; the name only labels a missing device. Absent = System default. Mac uses CoreAudio UIDs (also `AVCaptureDevice.uniqueID`). Linux with a PulseAudio-compatible server (including PipeWire) and `pactl` lists source names as `pulse:<name>`; `src/linux/microphone.rs` opens the chosen source with GStreamer's `pulsesrc`, converting it to 16 kHz mono samples for the same capture buffer and Settings meter. A new capture waits for its first sample before accepting the source; a disconnected or unopenable choice falls back to the Pulse default shown in Settings, then to CPAL only if that default cannot open. It never changes the system default. Linux without a working Pulse server / `pactl` falls back to CPAL's available inputs; this may expose only the shared `default` or `pipewire` device, so distinct microphones cannot be selected there. Windows is unsupported; retained code is not a parity target. `mic::Watch` re-lists inputs while Settings is open: CoreAudio listeners on Mac, one-second checks elsewhere. `AudioRecorder` opens the chosen input on its worker thread, otherwise the current system default; a disconnected or unopenable choice remains saved but does not stop a new capture (`mic::Pick` explains the fallback in Settings and `note_pick` logs once). An error partway through a capture keeps samples heard so far. Mac's helper `MicMeter` uses AVCaptureSession; Linux GPUI Settings starts a separate input stream, stops it when leaving Recording, and expires stale level readings after 300 ms. The meter shows input samples, not recognized words or speaker identity; #16 owns no-transcript messaging. `apparent mic list|set <id|default>|watch` reports and changes the same saved selection.
 
-Storage › Location (`CapturesDirView`): Change… opens the helper's folder picker and sends `set capturesDir` with an absolute path; Reset sends `""`, which removes the key. `handoff::default_captures_dir` reads it on every call (`APPARENT_CAPTURES_DIR` wins, then `"capturesDir"`, then `builtin_captures_dir`; `~` expands, a relative path is logged and skipped; tests never read the config), so new captures, retention, `apparent latest` and the size all follow at once. Captures already made aren't moved. A folder that can't be created or written falls back to the built-in one (logged once). State kept beside the captures (`inbox.json`, `last-mode`, legacy `config.json`) stays under `builtin_captures_dir`'s parent. The legacy config path stays under `builtin_captures_dir`.
+Storage › Location (`CapturesDirView`): Change… opens the helper's folder picker and sends `set capturesDir` with an absolute path; Reset sends `""`, which removes the key. `handoff::default_captures_dir` reads it on every call (`APPARENT_CAPTURES_DIR` wins, then `"capturesDir"`, then `builtin_captures_dir`; `~` expands, a relative path is logged and skipped; tests never read the config), so new captures, retention, `apparent latest` and the size all follow at once. Captures already made aren't moved. A folder that can't be created or written falls back to the built-in one (logged once). State kept beside the captures (`inbox.json`, legacy `config.json`) stays under `builtin_captures_dir`'s parent. The legacy config path stays under `builtin_captures_dir`.
 
 Recording › Language shows under Transcription while it's Apple Speech: Automatic, then the helper's supported `locales` by name. It writes `appleLocale` (Automatic removes the key) and returns `Effect::SpeechModel`, which restarts the model check for the new language (see `docs/keyframes-and-text.md`).
 

@@ -22,6 +22,31 @@
   ],
   "features": [
     {
+      "id": "config-picker-mode",
+      "group": "settings",
+      "name": "Remembered picker mode in config",
+      "says": "The last capture mode is inspectable in config.json; the legacy sidecar is migration input only.",
+      "status": "main",
+      "platforms": ["mac", "linux"],
+      "config": [{"key": "lastCaptureMode", "value": "\"area\" | \"window\" | \"screen\" | \"iphone\"", "does": "Remembered picker mode; read at startup"}],
+      "docs": ["docs/config-preferences.md", "docs/onboarding-and-settings.md"],
+      "note": "Candidate; native proof is pending. Shared writer integration is complete. iPhone mode is Mac-only."
+    },
+    {
+      "id": "config-update-automation",
+      "group": "install",
+      "name": "Configurable updater automation",
+      "says": "Explicit config booleans override automatic update checks and downloads without disabling manual checks.",
+      "status": "main",
+      "platforms": ["mac", "linux"],
+      "config": [
+        {"key": "automaticUpdateChecks", "value": "true | false", "does": "Override background update checks; manual checks remain available"},
+        {"key": "automaticUpdateDownloads", "value": "true | false", "does": "Override background downloads; package restrictions still apply"}
+      ],
+      "docs": ["docs/config-preferences.md", "docs/onboarding-and-settings.md"],
+      "note": "Candidate; native proof pending. Mac launch reconciles legacy defaults from JSON and package policy, fixes checks to a daily interval and profiling off, and restores the packaged feed. Runtime defaults edits are not a supported live preference interface. Linux automatic download also installs for next launch; Mac package restrictions remain unchanged."
+    },
+    {
       "id": "site-feature-grid",
       "group": "install",
       "name": "Animated homepage feature explanations",

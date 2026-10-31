@@ -227,6 +227,30 @@ impl Settings {
                 Some(Self::default())
             }
             Some(serde_json::Value::Bool(false)) => None,
+            Some(serde_json::Value::Object(fields)) => {
+                let mut accepted = serde_json::Map::new();
+                let defaults = serde_json::to_value(Self::default()).expect("crop settings serialize");
+                for (key, value) in fields {
+                    let canonical = if key == "keepInk" {
+                        if fields.contains_key("keepInput") {
+                            continue;
+                        }
+                        "keepInput"
+                    } else {
+                        key.as_str()
+                    };
+                    if defaults.get(canonical).is_none() {
+                        continue;
+                    }
+                    let field = serde_json::json!({canonical: value});
+                    if serde_json::from_value::<Self>(field).is_ok() {
+                        accepted.insert(canonical.to_owned(), value.clone());
+                    } else {
+                        eprintln!("config.json: ignoring invalid autocrop.{canonical}");
+                    }
+                }
+                Some(serde_json::from_value(serde_json::Value::Object(accepted)).unwrap_or_default())
+            }
             Some(other) => Some(serde_json::from_value(other.clone()).unwrap_or_default()),
         }
     }
@@ -2399,6 +2423,23 @@ mod tests {
         .unwrap();
         assert_eq!((s.padding, s.scope), (32.0, Scope::Whole));
         assert_eq!(s.min_w, Settings::default().min_w);
+    }
+
+    #[test]
+    fn malformed_crop_field_does_not_reset_valid_siblings() {
+        let settings = Settings::from_config(Some(&serde_json::json!({
+            "scope": "whole", "padding": 32, "snap": "not-a-bool", "keepInk": false,
+            "futureOption": {"ignored": true}
+        }))).unwrap();
+        assert_eq!(settings.scope, Scope::Whole);
+        assert_eq!(settings.padding, 32.0);
+        assert!(!settings.keep_input);
+        assert_eq!(settings.snap, Settings::default().snap);
+        let canonical = Settings::from_config(Some(&serde_json::json!({
+            "keepInput": true, "keepInk": false, "padding": 12
+        }))).unwrap();
+        assert!(canonical.keep_input);
+        assert_eq!(canonical.padding, 12.0);
     }
 
     #[test]

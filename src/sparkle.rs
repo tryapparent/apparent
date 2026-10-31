@@ -11,7 +11,7 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, AnyProtocol, Bool, NSObjectProtocol, ProtocolObject};
 use objc2::{AnyThread, DefinedClass, MainThreadMarker, msg_send};
 use objc2_app_kit::NSApplication;
-use objc2_foundation::{NSError, NSInteger, NSObject};
+use objc2_foundation::{NSError, NSInteger, NSObject, NSString};
 
 use crate::capture::apparent_log;
 
@@ -126,6 +126,20 @@ fn start_inner() -> Result<()> {
         let updater = updater
             .as_ref()
             .context("Sparkle controller returned no updater")?;
+        // Reconcile the compatibility defaults store on every launch. Missing JSON
+        // values use the package, never an old mutable UserDefaults value.
+        let config = crate::handoff::load_config_from(&crate::handoff::default_config_path());
+        let checks = config.automatic_update_checks(packaged_bool("SUEnableAutomaticChecks", true));
+        let downloads = config.automatic_update_downloads(packaged_bool("SUAutomaticallyUpdate", false));
+        // Fixed app policy, not additional preferences. Restore the interval first:
+        // Sparkle treats a legacy interval of zero as disabling checks.
+        let _: () = msg_send![updater, setUpdateCheckInterval: 86_400.0_f64];
+        let _: () = msg_send![updater, setSendsSystemProfile: Bool::NO];
+        let _: () = msg_send![updater, setAutomaticallyChecksForUpdates: if checks { Bool::YES } else { Bool::NO }];
+        let _: () = msg_send![updater, setAutomaticallyDownloadsUpdates: if downloads { Bool::YES } else { Bool::NO }];
+        // Feed and verification are package policy, not mutable preference inputs.
+        // Clear only this stale override, never the entire defaults domain.
+        let _: Option<Retained<AnyObject>> = msg_send![updater, clearFeedURLFromUserDefaults];
         let mut error: Option<Retained<NSError>> = None;
         let started: Bool = msg_send![updater, startUpdater: &mut error];
         if !started.as_bool() {
@@ -133,6 +147,13 @@ fn start_inner() -> Result<()> {
         }
         UPDATE_STATUS.store(UpdateStatus::Idle as u8, Ordering::Release);
         let auto_checks: Bool = msg_send![updater, automaticallyChecksForUpdates];
+        let auto_downloads: Bool = msg_send![updater, automaticallyDownloadsUpdates];
+        let interval: f64 = msg_send![updater, updateCheckInterval];
+        let profile: Bool = msg_send![updater, sendsSystemProfile];
+        apparent_log(format!(
+            "Sparkle policy: checks={}, downloads={} (requested={downloads}), interval={interval}, systemProfile={}",
+            auto_checks.as_bool(), auto_downloads.as_bool(), profile.as_bool()
+        ));
         if auto_checks.as_bool() {
             let _: () = msg_send![updater, checkForUpdatesInBackground];
         }
@@ -172,6 +193,19 @@ pub fn check_for_updates() {
             }
         }
     });
+}
+
+/// Read the package Info.plist without NSUserDefaults' higher-priority mirror.
+unsafe fn packaged_bool(key: &str, fallback: bool) -> bool {
+    unsafe {
+        let Some(class) = AnyClass::get(c"NSBundle") else { return fallback };
+        let bundle: *mut AnyObject = msg_send![class, mainBundle];
+        let value: Option<Retained<AnyObject>> = msg_send![bundle, objectForInfoDictionaryKey: &*NSString::from_str(key)];
+        value.map_or(fallback, |value| {
+            let enabled: Bool = msg_send![&*value, boolValue];
+            enabled.as_bool()
+        })
+    }
 }
 
 fn framework_path() -> Result<Option<PathBuf>> {

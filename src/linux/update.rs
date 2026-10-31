@@ -96,7 +96,7 @@ pub fn status() -> Result<serde_json::Value> {
 pub fn check_cli() -> Result<&'static str> {
     target()?.context("Updates require an AppImage owned by you under your home directory")?;
     let _guard = CHECK.lock().map_err(|_| anyhow::anyhow!("update check lock poisoned"))?;
-    Ok(if check()? {
+    Ok(if check(true, false)? {
         "installed; restart Apparent to use it"
     } else if status()?["pendingRestart"] == true {
         "already installed; restart Apparent to use it"
@@ -383,7 +383,7 @@ fn exchange(stage: &Path, image: &Path) -> Result<()> {
     Ok(())
 }
 
-fn install(candidate: &Candidate, image: &Path) -> Result<()> {
+fn install(candidate: &Candidate, image: &Path, automatic: bool) -> Result<()> {
     let parent = image.parent().context("AppImage has no parent")?;
     let name = image.file_name().context("AppImage has no name")?.to_string_lossy();
     let stage = parent.join(format!(".{name}.download-{}", std::process::id()));
@@ -401,6 +401,7 @@ fn install(candidate: &Candidate, image: &Path) -> Result<()> {
         let current = fs::symlink_metadata(image)?;
         ensure!(current.is_file() && !current.file_type().is_symlink() && current.uid() == unsafe { libc::geteuid() }, "installed AppImage changed while downloading");
         let config = crate::handoff::load_config_from(&crate::handoff::default_config_path());
+        ensure!(!automatic || (config.automatic_update_checks(true) && config.automatic_update_downloads(true)), "automatic updates disabled while downloading");
         let selected = if config.update_channel.as_deref() == Some("main") { "main" } else { "stable" };
         ensure!(selected == candidate.channel, "channel changed while downloading");
         let mut f = OpenOptions::new().write(true).create_new(true).open(&staged_sidecar)?;
@@ -439,7 +440,15 @@ fn install(candidate: &Candidate, image: &Path) -> Result<()> {
     result
 }
 
-fn check() -> Result<bool> {
+fn run_check(config_path: &Path, automatic: bool, action: impl FnOnce(bool) -> Result<bool>) -> Result<bool> {
+    let config = crate::handoff::load_config_from(config_path);
+    if automatic && !config.automatic_update_checks(true) {
+        return Ok(false);
+    }
+    action(!automatic || config.automatic_update_downloads(true))
+}
+
+fn check(download: bool, automatic: bool) -> Result<bool> {
     let Some(image) = target()? else { return Ok(false) };
     let status = status()?;
     let arch = arch().context("no AppImage for this CPU")?;
@@ -452,14 +461,26 @@ fn check() -> Result<bool> {
     let failed = image.with_file_name(format!(".{name}.failed-update.json"));
     ensure!(!previously_failed(&failed, &candidate), "this update failed to start previously; waiting for a newer release");
     if !newer(&candidate, installed_id(&image)) { return Ok(false) }
-    install(&candidate, &image)?;
+    if !download {
+        super::shell::notify("Apparent update available", "Choose Check for Updates in Settings to download and install it.");
+        return Ok(false);
+    }
+    let config = crate::handoff::load_config_from(&crate::handoff::default_config_path());
+    if automatic && (!config.automatic_update_checks(true) || !config.automatic_update_downloads(true)) {
+        return Ok(false);
+    }
+    install(&candidate, &image, automatic)?;
     super::shell::notify("Apparent updated", "The new version will start the next time you open Apparent. Your previous AppImage is kept beside it.");
     Ok(true)
 }
 
 pub fn check_now() {
+    check_with_policy(false);
+}
+
+fn check_with_policy(automatic: bool) {
     if let Ok(_guard) = CHECK.try_lock()
-        && let Err(error) = check()
+        && let Err(error) = run_check(&crate::handoff::default_config_path(), automatic, |download| check(download, automatic))
     {
         crate::capture::apparent_log(format!("Linux update: {error:#}"));
     }
@@ -468,7 +489,7 @@ pub fn check_now() {
 pub fn start() {
     if std::env::var_os("APPIMAGE").is_none() { return }
     std::thread::spawn(|| loop {
-        check_now();
+        check_with_policy(true);
         std::thread::sleep(Duration::from_secs(3600));
     });
 }
@@ -476,6 +497,20 @@ pub fn start() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_gates_background_checks_and_downloads_but_not_manual_checks() {
+        let dir = std::env::temp_dir().join(format!("apparent-update-gates-{}", crate::make_bundle_id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        fs::write(&path, br#"{"automaticUpdateChecks":false}"#).unwrap();
+        assert!(!run_check(&path, true, |_| panic!("disabled automatic check ran")).unwrap());
+        assert!(run_check(&path, false, |download| { assert!(download); Ok(true) }).unwrap());
+        fs::write(&path, br#"{"automaticUpdateChecks":true,"automaticUpdateDownloads":false}"#).unwrap();
+        assert!(run_check(&path, true, |download| { assert!(!download); Ok(true) }).unwrap());
+        assert!(run_check(&path, false, |download| { assert!(download); Ok(true) }).unwrap());
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn main_channel_selects_latest_published_main_release() {
