@@ -211,7 +211,7 @@ class GuestIsolationTests(unittest.TestCase):
 class RunnerFailureTests(unittest.TestCase):
     """Real owned child/streams and disk cleanup; VM/SSH/systemd are inert adapters."""
 
-    def exercise(self, root, scenario_exit=7, transfer_exit=0, cleanup_exit=0, corrupt=False):
+    def exercise(self, root, scenario_exit: int | str = 7, transfer_exit=0, cleanup_exit=0, corrupt=False, delayed_writer=False):
         root = Path(root)
         binary = root / 'candidate'
         binary.write_bytes(b'synthetic candidate')
@@ -237,6 +237,10 @@ if operation == 'ssh':
     elif ' bash ' in command:
         print('scenario output', flush=True)
         sys.stderr.write('first scenario diagnostic\\n')
+        sys.stderr.flush()
+        if sys.argv[3] == 'timeout':
+            import time
+            time.sleep(30)
         sys.exit(int(sys.argv[3]))
 elif operation == 'scp' and '-r' in sys.argv:
     if int(sys.argv[3]):
@@ -257,7 +261,13 @@ elif operation == 'cleanup':
                            'corrupt' if corrupt else 'normal', *command[1:]]
             elif command[0] == 'systemctl':
                 command = [sys.executable, str(transport), str(root), 'cleanup', str(cleanup_exit)]
-            return real_execute(command, **kwargs)
+            result = real_execute(command, **kwargs)
+            if writer is not None and command[:3] == [sys.executable, '-c', runner.MANIFEST_SCRIPT]:
+                # Both manifests now match, but the guest is still live. Let
+                # its writer produce evidence before main can shut it down.
+                (root / 'release-writer').touch()
+                writer.wait(timeout=5)
+            return result
 
         def overlay(_template, destination):
             destination.write_bytes(b'owned synthetic disk')
@@ -265,7 +275,7 @@ elif operation == 'cleanup':
         results = root / 'r'
         options = ['gui-vm.py', '--template', str(root / 'template'), '--ovmf-vars', str(root / 'vars'),
                    '--ssh-key', str(root / 'key'), '--ssh-user', 'fixture', '--scenario', str(root / 'scenario'),
-                   '--binary', str(binary), '--results', str(results)]
+                   '--binary', str(binary), '--results', str(results), '--scenario-timeout', '1']
         owned_processes = []
         real_popen = runner.subprocess.Popen
 
@@ -274,17 +284,38 @@ elif operation == 'cleanup':
             owned_processes.append(process)
             return process
 
-        with patch.object(sys, 'argv', options), \
-             patch.object(runner, 'make_overlay', side_effect=overlay), \
-             patch.object(runner, 'qemu_command', return_value=[sys.executable, '-c', 'import time; time.sleep(30)']), \
-             patch.object(runner, 'arm_expiry', return_value='owned-fixture-expiry'), \
-             patch.object(runner, 'wait_for_desktop'), \
-             patch.object(runner, 'ssh_prefix', return_value=[sys.executable, str(transport), str(root), 'ssh', str(scenario_exit)]), \
-             patch.object(runner, 'execute', side_effect=transport_execute), \
-             patch.object(runner.subprocess, 'Popen', side_effect=track_process), contextlib.redirect_stdout(io.StringIO()):
-            code = runner.main()
+        # An independent remote-writer analogue survives the local transport.
+        # It waits until the copied snapshot has already been hashed.
+        writer = None
+        if delayed_writer:
+            writer = real_popen([sys.executable, '-c', '''import pathlib, sys, time
+root = pathlib.Path(sys.argv[1])
+while not (root / 'release-writer').exists(): time.sleep(.01)
+(root / 'guest/late.txt').write_text('late primary evidence')
+''', str(root)])
+        try:
+            with patch.object(sys, 'argv', options), \
+                 patch.object(runner, 'make_overlay', side_effect=overlay), \
+                 patch.object(runner, 'qemu_command', return_value=[sys.executable, '-c', 'import time; time.sleep(30)']), \
+                 patch.object(runner, 'arm_expiry', return_value='owned-fixture-expiry'), \
+                 patch.object(runner, 'wait_for_desktop'), \
+                 patch.object(runner, 'ssh_prefix', return_value=[sys.executable, str(transport), str(root), 'ssh', str(scenario_exit)]), \
+                 patch.object(runner, 'execute', side_effect=transport_execute), \
+                 patch.object(runner.subprocess, 'Popen', side_effect=track_process), contextlib.redirect_stdout(io.StringIO()):
+                code = runner.main()
+        finally:
+            if writer is not None:
+                (root / 'release-writer').touch()
+                try:
+                    writer.wait(timeout=5)
+                finally:
+                    if writer.poll() is None:
+                        writer.kill()
+                        writer.wait(timeout=5)
         self.assertTrue(owned_processes)
         self.assertTrue(all(process.poll() is not None for process in owned_processes))
+        if writer is not None:
+            self.assertEqual(writer.returncode, 0)
         status = json.loads((results / 'result.json').read_text())
         self.assertEqual((results / 'result.json').stat().st_mode & 0o777, 0o600)
         self.assertEqual(status['candidate_sha256'], hashlib.sha256(binary.read_bytes()).hexdigest())
@@ -341,6 +372,25 @@ elif operation == 'cleanup':
             self.assertNotEqual(code, 0)
             self.assertIn('manifest mismatch', status['primary_failure']['message'])
             self.assertTrue((results / 'disk.qcow2').exists())
+
+    def test_unknown_remote_exit_keeps_disk_despite_matching_partial_snapshot(self):
+        for remote_exit in ('timeout', 255):
+            with self.subTest(remote_exit=remote_exit), tempfile.TemporaryDirectory() as root:
+                code, status, results = self.exercise(root, scenario_exit=remote_exit, delayed_writer=True)
+                self.assertNotEqual(code, 0)
+                self.assertEqual(status['primary_failure']['stage'], 'scenario')
+                self.assertEqual(status['primary_failure']['stdout'], 'scenario output\n')
+                self.assertEqual(status['primary_failure']['stderr'], 'first scenario diagnostic\n')
+                self.assertEqual((results / 'artifacts/evidence.txt').read_text(), 'only evidence')
+                self.assertEqual((Path(root) / 'guest/late.txt').read_text(), 'late primary evidence')
+                self.assertFalse((results / 'artifacts/late.txt').exists())
+                self.assertFalse((results / 'artifacts-retained').exists())
+                self.assertEqual(status['artifact_retention'], 'partial_snapshot')
+                self.assertTrue((results / 'disk.qcow2').exists())
+                self.assertEqual(status['cleanup']['disk'], 'retained_cold')
+                reaper = load_reaper()
+                reaper.expire(results)
+                self.assertTrue((results / 'disk.qcow2').exists())
 
     def test_preflight_failure_writes_receipt_without_allocating_vm(self):
         with tempfile.TemporaryDirectory() as root:
@@ -433,14 +483,29 @@ elif operation == 'cleanup':
             root = Path(root)
             primary = {'stage': 'scenario', 'message': 'first failure'}
             runner.write_result(root, {'version': 1, 'primary_failure': primary})
-            process = subprocess.run([sys.executable, str(REAPER), str(root)], capture_output=True, timeout=5)
-            self.assertEqual(process.returncode, 0, process.stderr)
-            stale = {'primary_failure': None, 'driver': 'passed', 'exit_code': 0}
+            reaper = load_reaper()
+            with patch.object(reaper, 'reap', side_effect=RuntimeError('injected reap failure')):
+                with self.assertRaisesRegex(RuntimeError, 'injected reap failure'):
+                    reaper.expire(root)
+            expired = json.loads((root / 'result.json').read_text())
+            stale = {'primary_failure': None, 'driver': 'passed', 'exit_code': 0,
+                     'stage': 'finished', 'progress': ['cleanup'],
+                     'secondary_failures': [{'message': 'late runner diagnostic'}],
+                     'cleanup': {'status': 'complete', 'disk': 'removed', 'expiry': 'stopped',
+                                 'errors': [{'message': 'late cleanup diagnostic'}]}}
             runner.write_result(root, stale)
             status = json.loads((root / 'result.json').read_text())
             self.assertEqual(status['primary_failure'], primary)
             self.assertEqual(status['driver'], 'failed')
             self.assertNotEqual(status['exit_code'], 0)
+            self.assertEqual(status['stage'], 'expired')
+            self.assertIn('expired', status['progress'])
+            self.assertEqual(status['cleanup']['expiry'], 'fired')
+            self.assertEqual(status['cleanup']['status'], 'failed')
+            self.assertEqual(status['cleanup']['disk'], expired['cleanup']['disk'])
+            self.assertIn({'stage': 'expiry', 'message': 'injected reap failure'}, status['cleanup']['errors'])
+            self.assertIn({'message': 'late cleanup diagnostic'}, status['cleanup']['errors'])
+            self.assertIn({'message': 'late runner diagnostic'}, status['secondary_failures'])
 
 
 if __name__ == "__main__":

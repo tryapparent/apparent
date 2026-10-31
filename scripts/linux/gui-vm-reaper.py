@@ -65,7 +65,8 @@ def reap(directory):
     if list(qemu_users(disk)):
         raise RuntimeError("QEMU still owns job disk; refusing to unlink it")
     # A killed runner may never have copied the evidence. Stop writers, but
-    # preserve the only copy on the cold disk until retention was verified.
+    # preserve the only copy on the cold disk until retention was verified
+    # after an observed remote exit. A partial live snapshot earns no marker.
     names = ['known_hosts', 'qmp.sock', 'vnc.sock']
     if (directory / 'artifacts-retained').is_file():
         names += ['disk.qcow2', 'OVMF_VARS.fd']

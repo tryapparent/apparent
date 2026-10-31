@@ -54,7 +54,7 @@ def failure_record(stage, error):
 
 def write_result(directory, status):
     # Runner and independent expiry may finish together. Serialize read/replace
-    # and keep the first persisted primary failure across both writers.
+    # and keep the first persisted failure and terminal expiry facts.
     with (directory / 'result.lock').open('a') as lock:
         os.fchmod(lock.fileno(), 0o600)
         deadline = time.monotonic() + 2
@@ -70,7 +70,9 @@ def write_result(directory, status):
             previous = json.loads((directory / 'result.json').read_text())
         except (FileNotFoundError, ValueError):
             previous = {}
-        primary = previous.get('primary_failure') if isinstance(previous, dict) else None
+        if not isinstance(previous, dict):
+            previous = {}
+        primary = previous.get('primary_failure')
         if primary:
             if status.get('primary_failure') and status['primary_failure'] != primary:
                 failures = status.setdefault('secondary_failures', [])
@@ -78,6 +80,27 @@ def write_result(directory, status):
                     failures.append(status['primary_failure'])
             status['primary_failure'] = primary
             status['driver'] = 'failed'
+            if status.get('exit_code') == 0:
+                status['exit_code'] = 1
+        # A runner may have prepared its receipt before the reaper fired. It
+        # cannot turn expiry back into successful cleanup, or erase diagnostics.
+        secondary = []
+        cleanup_errors = []
+        for receipt in (previous, status):
+            for error in receipt.get('secondary_failures', []):
+                if error not in secondary:
+                    secondary.append(error)
+            for error in receipt.get('cleanup', {}).get('errors', []):
+                if error not in cleanup_errors:
+                    cleanup_errors.append(error)
+        if previous.get('cleanup', {}).get('expiry') == 'fired':
+            status.clear()
+            status.update(previous)
+        status['secondary_failures'] = secondary
+        if cleanup_errors:
+            cleanup = status.setdefault('cleanup', {})
+            cleanup['errors'] = cleanup_errors
+            cleanup['status'] = 'failed'
             if status.get('exit_code') == 0:
                 status['exit_code'] = 1
         replace_result(directory, status)
@@ -253,6 +276,7 @@ def main():
     directory = args.results.resolve()
     process = None
     expiry_unit = None
+    scenario_completed = False
     start = time.monotonic()
     deadline = start + args.job_timeout
     status = {'version': 1, 'stage': 'preflight', 'progress': ['preflight'],
@@ -366,6 +390,9 @@ def main():
                         result = subprocess.run(scenario_command, stdout=output, stderr=errors,
                                                 timeout=min(args.scenario_timeout, max(0.1, deadline - time.monotonic() - 25)))
                         status['scenario_exit'] = result.returncode
+                        # SSH 255, a signal or an interrupted local client says
+                        # nothing about whether the remote writer has stopped.
+                        scenario_completed = 0 <= result.returncode < 255
                         code = result.returncode
                         if code:
                             raise subprocess.CalledProcessError(code, scenario_command)
@@ -389,8 +416,13 @@ def main():
                 actual = json.loads(call([sys.executable, '-c', MANIFEST_SCRIPT, str(directory / 'artifacts')]).stdout)
                 if actual != expected:
                     raise RuntimeError('artifact transfer hash manifest mismatch; keeping cold job disk')
-                status['artifact_retention'] = 'verified'
-                (directory / 'artifacts-retained').write_text('sha256 manifest verified\n')
+                if scenario_completed:
+                    status['artifact_retention'] = 'verified'
+                    (directory / 'artifacts-retained').write_text('remote exit observed; sha256 manifest verified\n')
+                else:
+                    # Matching hashes prove only this snapshot, not that a
+                    # remote writer cannot produce more evidence after it.
+                    status['artifact_retention'] = 'partial_snapshot'
     except Exception as error:
         failure(error)
         code = code or 1
