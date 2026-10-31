@@ -1,5 +1,6 @@
 """Selector contracts and real Git deltas; no compiler/native work in fixtures."""
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -49,10 +50,10 @@ class SelectionTests(unittest.TestCase):
     def test_real_rename_and_delete_include_old_owner(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            # A real pre-push inherits GIT_DIR for its own repository. The
+            # fixture must isolate both its setup and the selector subprocess.
+            env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
             def git(*args):
-                # Match the hook fixture's Git environment isolation.
-                import os
-                env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
                 return subprocess.check_output(["git", *args], cwd=root, env=env, text=True).strip()
             git("init", "-q")
             git("config", "user.name", "Test")
@@ -63,7 +64,7 @@ class SelectionTests(unittest.TestCase):
             base = git("rev-parse", "HEAD")
             git("mv", "source.rs", "README.md")
             git("commit", "-qm", "rename")
-            with patch.object(verification, "ROOT", root):
+            with patch.object(verification, "ROOT", root), patch.dict(os.environ, env, clear=True):
                 result = verification.plan(base, "HEAD")
                 self.assertEqual(result["paths"], ["README.md", "source.rs"])
                 self.assertTrue(result["root"])
