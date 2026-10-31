@@ -101,6 +101,33 @@ class PrePushGuardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("cargo build", self.log.read_text())
 
+    def test_engine_only_push_does_not_build_root(self):
+        run("git", "update-ref", "refs/remotes/origin/main", self.head, cwd=self.repo)
+        tests = self.repo / "capture" / "engine" / "tests"
+        tests.mkdir(parents=True)
+        (tests / "process.rs").write_text("// Engine-only change\n")
+        run("git", "add", ".", cwd=self.repo)
+        run("git", "commit", "-qm", "engine test", cwd=self.repo)
+        self.head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
+        result = self.push()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.log.read_text().splitlines(), [
+            "-c utility cargo build --manifest-path capture/engine/Cargo.toml -j 3 --offline",
+            "-c utility cargo test --manifest-path capture/engine/Cargo.toml -j 3 --offline -- --test-threads=2",
+        ])
+
+    def test_ci_online_mode_uses_locked_and_propagates_failure(self):
+        args = ("python3", "scripts/verification.py", "--base", "unknown", "--run", "--online")
+        result = run(*args, cwd=self.repo, env=self.env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        commands = self.log.read_text().splitlines()
+        self.assertEqual(len(commands), 4)
+        self.assertTrue(all("--locked" in line and "--offline" not in line for line in commands))
+        self.log.unlink()
+        result = run(*args, cwd=self.repo, env=dict(self.env, MOCK_STATUS="1"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(self.log.read_text().splitlines()), 1)
+
     def test_tree_changed_during_verification_rejects_push(self):
         taskpolicy = self.bin / "taskpolicy"
         taskpolicy.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$COMMAND_LOG\"\n"

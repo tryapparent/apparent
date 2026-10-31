@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15]
+        os: [ubuntu-24.04, macos-26]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -46,6 +46,14 @@ jobs:
       - name: Linux application dependencies
         if: runner.os == 'Linux' && needs.select.outputs.root == 'true'
         run: ./scripts/linux/dependencies.sh
+      - name: Select the macOS 26 SDK required by native helpers
+        if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.0'
+      - name: Install the Metal toolchain
+        if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
+        run: xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
