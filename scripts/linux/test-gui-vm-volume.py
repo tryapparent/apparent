@@ -20,6 +20,8 @@ class VolumeTests(unittest.TestCase):
             image, mount = root / 'volume.ext4', root / 'mount'
             volume.create_volume(image, mount, 64 * 1024 * 1024, os.getuid(), os.getgid())
             try:
+                self.assertGreaterEqual(image.stat().st_blocks * 512, image.stat().st_size,
+                                        'formatting must not discard the reserved backing blocks')
                 # Two files compete for the SAME filesystem budget. KEEP_SIZE
                 # consumes blocks without changing st_size (RLIMIT_FSIZE misses it).
                 (mount / 'a').touch()
@@ -30,7 +32,7 @@ class VolumeTests(unittest.TestCase):
                 self.assertIn(b'No space left', result.stderr)
                 self.assertEqual((mount / 'a').stat().st_size, 0)
                 self.assertEqual(image.stat().st_size, 64 * 1024 * 1024)
-                self.assertLessEqual(image.stat().st_blocks * 512, image.stat().st_size)
+                self.assertGreaterEqual(image.stat().st_blocks * 512, image.stat().st_size)
             finally:
                 volume.unmount(mount)
             self.assertFalse(os.path.ismount(mount))

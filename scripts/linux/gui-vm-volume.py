@@ -26,7 +26,7 @@ def create_volume(image, mount, size, uid, gid):
         os.posix_fallocate(fd, 0, size)
     finally:
         os.close(fd)
-    checked('mkfs.ext4', '-q', '-F', '-m', '0', str(image))
+    checked('mkfs.ext4', '-q', '-F', '-m', '0', '-E', 'nodiscard', str(image))
     mount.mkdir(mode=0o700)
     checked('mount', '-o', 'loop,nodev,nosuid', str(image), str(mount))
     os.chown(mount, uid, gid)
