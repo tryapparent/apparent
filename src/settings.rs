@@ -1578,7 +1578,7 @@ impl Panel {
             ]
         };
         View {
-            version: env!("CARGO_PKG_VERSION").to_owned(),
+            version: env!("APPARENT_VERSION_LABEL").to_owned(),
             login: LoginView {
                 on: matches!(login, LoginItem::On | LoginItem::NeedsApproval),
                 available: login != LoginItem::Unavailable,

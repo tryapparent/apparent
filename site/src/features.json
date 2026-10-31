@@ -812,6 +812,15 @@
       "docs": ["README.md#settings", "docs/onboarding-and-settings.md"]
     },
     {
+      "id": "about-build-identity",
+      "group": "settings",
+      "name": "Running build identity",
+      "says": "Settings › About shows the package version and compiled commit, with +modified for tracked local edits and build unknown when revision metadata is unavailable.",
+      "status": "main",
+      "platforms": ["mac", "linux"],
+      "docs": ["docs/onboarding-and-settings.md"]
+    },
+    {
       "id": "github-star-link",
       "group": "settings",
       "name": "GitHub star link",
