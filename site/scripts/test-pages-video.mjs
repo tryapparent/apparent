@@ -12,6 +12,23 @@ let output
 let original
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex")
 before(() => {
+  // Node lacks this Workers API. The separate workerd HTTP regression checks
+  // the real implementation and transmitted length, not this unit adapter.
+  globalThis.FixedLengthStream = class extends TransformStream {
+    constructor(length) {
+      let remaining = length
+      super({
+        transform(bytes, controller) {
+          remaining -= bytes.byteLength
+          if (remaining < 0) throw new Error("Oversized Pages video asset")
+          controller.enqueue(bytes)
+        },
+        flush() {
+          if (remaining !== 0) throw new Error("Truncated Pages video asset")
+        },
+      })
+    }
+  }
   mock.method(globalThis, "fetch", () => { throw new Error("Remote fetch forbidden") })
   output = mkdtempSync(join(tmpdir(), "apparent-pages-video-"))
   original = readFileSync(new URL("../public/Apparent-ghost-demo-v4-lilac.mp4", import.meta.url))
@@ -19,7 +36,7 @@ before(() => {
   writeFileSync(join(output, "index.html"), "preserve homepage")
   preparePagesVideo(output)
 })
-after(() => { rmSync(output, { recursive: true, force: true }); mock.restoreAll() })
+after(() => { rmSync(output, { recursive: true, force: true }); mock.restoreAll(); delete globalThis.FixedLengthStream })
 
 // A local static-asset binding, not an HTTP server or a handler substitute.
 // Its ranged bodies are the real split files, delivered in bounded pieces.
@@ -27,8 +44,11 @@ function binding(fault = null) {
   const calls = []
   let pulls = 0
   let cancellations = 0
+  let didCancel
+  const cancelled = new Promise((resolve) => { didCancel = resolve })
   return {
     calls,
+    cancelled,
     get pulls() { return pulls },
     get cancellations() { return cancellations },
     async fetch(request) {
@@ -55,7 +75,7 @@ function binding(fault = null) {
           controller.enqueue(bytes.subarray(position, next))
           position = next
         },
-        cancel() { cancellations++ },
+        cancel() { cancellations++; didCancel() },
       }, { highWaterMark: 0 })
       return new Response(body, {
         status: fault === "404" ? 404 : ["ignored-range", "pages-full"].includes(fault) ? 200 : 206,
@@ -120,7 +140,7 @@ test("actual handler streams the exact full movie from ASSETS only", async () =>
   assert.equal(response.headers.get("Accept-Ranges"), "bytes")
   assert.equal(response.headers.get("ETag"), movieETag)
   assert.equal(assets.calls.length, 1)
-  assert.equal(assets.pulls, 0, "no body buffering before consumer demand")
+  assert.ok(assets.pulls <= 1, "the fixed-length transform buffers at most one bounded source block")
   assert.equal(hash(Buffer.from(await response.arrayBuffer())), movie.sha256)
   assert.equal(assets.calls.length, 4)
 })
@@ -208,6 +228,7 @@ test("consumer cancellation stops the reader and never fetches subsequent chunks
   assert.equal(first.value.byteLength, 65536)
   assert.equal(assets.pulls, 1)
   await reader.cancel("player closed")
+  await assets.cancelled
   assert.equal(assets.cancellations, 1)
   assert.equal(assets.calls.length, 1)
   assert.equal(assets.calls[0].signal.aborted, true)
