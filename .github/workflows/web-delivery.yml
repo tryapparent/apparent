@@ -2,10 +2,10 @@ name: Website and Connect — checks & deploy
 
 on:
   pull_request:
-    paths: ['site/**', 'hosted/**', 'assets/brand/**', 'scripts/cd/**', '.github/workflows/web-delivery.yml']
+    paths: ['site/**', 'connect/web/**', 'hosted/**', 'assets/brand/**', 'scripts/cd/**', '.github/workflows/web-delivery.yml']
   push:
     branches: [main]
-    paths: ['site/**', 'hosted/**', 'assets/brand/**', 'scripts/cd/**', '.github/workflows/web-delivery.yml']
+    paths: ['site/**', 'connect/web/**', 'hosted/**', 'assets/brand/**', 'scripts/cd/**', '.github/workflows/web-delivery.yml']
   workflow_dispatch:
 
 permissions:
@@ -44,15 +44,23 @@ jobs:
           bun install --frozen-lockfile
           ./node_modules/.bin/playwright-core install --with-deps chromium
           echo "CHROME_PATH=$(node --input-type=module -e 'import {chromium} from "playwright-core"; console.log(chromium.executablePath())')" >> "$GITHUB_ENV"
+      # Preserve both generated locks: Connect's v2 lock needs Bun 1.4.4.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Install locked independent Connect dependencies
+        working-directory: connect/web
+        run: bun install --frozen-lockfile
       - name: Build and test production website package
         working-directory: site
         env:
           APPARENT_PUBLIC_SITE: '1'
           VITE_HOSTED_API_ORIGIN: https://hosted.tryapparent.com
         run: |
-          npm run build
-          node scripts/package-apparent.mjs
-          node --test scripts/test-brand-favicon.mjs scripts/test-github-stars.mjs scripts/test-latest-download.mjs scripts/test-platform-os.mjs scripts/test-public-homepage.mjs scripts/test-video-demo.mjs
+          node scripts/build-public.mjs
+          node --test scripts/test-brand-favicon.mjs scripts/test-github-stars.mjs scripts/test-latest-download.mjs scripts/test-platform-os.mjs scripts/test-public-homepage.mjs scripts/test-video-demo.mjs scripts/test-composed-package.mjs scripts/test-product-boundaries.mjs
+          cd ../connect/web
+          npm run test:artifact
       - uses: actions/upload-artifact@v4
         with:
           name: website-${{ github.sha }}
@@ -64,13 +72,16 @@ jobs:
         env:
           APPARENT_PUBLIC_SITE: '1'
           VITE_HOSTED_API_ORIGIN: http://127.0.0.1:18809
+          CONNECT_BUILD_DIR: dist-test
           HOSTED_TEST_API_ORIGIN: http://127.0.0.1:18809
           TMPDIR: ${{ runner.temp }}
           SITE_EVIDENCE: ${{ runner.temp }}/connect-evidence
         run: |
-          npm run build
-          node scripts/package-apparent.mjs
+          node scripts/build-public.mjs
           npm run test:hosted
+          node --test scripts/test-product-boundaries.mjs
+          cd ../connect/web
+          CONNECT_ARTIFACT=dist-test CONNECT_EVIDENCE="$SITE_EVIDENCE/independent" npm run test:browser
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

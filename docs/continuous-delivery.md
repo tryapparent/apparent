@@ -13,15 +13,20 @@ The credential-free verification job runs:
 
 - `python3 -m unittest discover -s scripts/cd -p 'test_*.py'`;
 - the complete hosted TypeScript build and real local workerd/D1/R2 suite;
-- the website's frozen Bun install, public build, allowlisted `dist-apparent`
-  packaging, and six-file public website suite;
+- separate frozen marketing and Connect installs, independent builds, allowlisted
+  composed `dist-apparent` packaging, public tests and product-boundary regressions;
 - Connect's browser scenarios against a synthetic credentialed cross-origin API.
 
-Node 22.23.0 and Bun 1.3.10 are pinned. Browser installation uses the version of
+Node 22.23.0, marketing Bun 1.3.10 and Connect Bun 1.4.4 are pinned. Connect's v2
+lock cannot be read by 1.3.10; both existing locks remain unchanged. Browser installation uses the version of
 `playwright-core` in the website lockfile. Production is built with
 `VITE_HOSTED_API_ORIGIN=https://hosted.tryapparent.com`. The production artifact
 is saved **before** a separate loopback-configured browser build. The loopback
-package is never uploaded for deployment. Artifact download is scoped to the
+package is never uploaded for deployment. `site/scripts/build-public.mjs` builds
+both products; the packager selects the four exact account pages, five approved
+assets and referenced JS/CSS, with deterministic equal-byte deduplication and
+unequal-byte refusal before replacing output. Marketing never imports Connect.
+Workflow selectors include `connect/web/**`. Artifact download is scoped to the
 same workflow run and named with its event SHA. Production runs are serialized
 without canceling a deployment halfway through; each publisher also refuses a
 candidate that is no longer current `main`. A relevant later push supplies the

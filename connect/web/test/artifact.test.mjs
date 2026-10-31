@@ -1,0 +1,35 @@
+// Public contract: this directory is a route-only artifact, not a second marketing site.
+import assert from 'node:assert/strict'
+import { readFile, readdir } from 'node:fs/promises'
+import { resolve } from 'node:path'
+import test from 'node:test'
+const root = resolve(process.env.CONNECT_ARTIFACT || 'dist')
+const routes = ['connect', 'connect/device', 'hosted', 'hosted/device']
+test('independent artifact publishes all private loading routes and nothing else', async () => {
+  let entries = []
+  try { entries = await readdir(root) } catch { /* Assert the product boundary below. */ }
+  assert(entries.includes('connect'), 'independent Connect artifact is absent')
+  assert.deepEqual(entries.sort(), ['HostGrotesk-Variable.ttf', 'apparent-wordmark.svg', 'assets', 'connect', 'hosted'].sort())
+  for (const route of routes) {
+    const html = await readFile(`${root}/${route}/index.html`, 'utf8')
+    assert.match(html, /Checking your account/)
+    assert.match(html, /name="robots" content="noindex, nofollow"/)
+    assert.match(html, /<title>Connect(?: a device)? — Apparent<\/title>/)
+    assert.doesNotMatch(html, /canonical|sitemap|application\/ld\+json|csrfToken|accessToken|verified@example/)
+    assert.match(html, /\/assets\/[^" ]+\.js/)
+    assert.match(html, /\/assets\/[^" ]+\.css/)
+  }
+})
+test('only approved public assets are copied without changing their URLs or bytes', async () => {
+  for (const asset of ['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png', 'hosted/agent-reading-v4.png', 'HostGrotesk-Variable.ttf', 'apparent-wordmark.svg']) {
+    assert.deepEqual(await readFile(`${root}/${asset}`), await readFile(`../../site/public/${asset}`))
+  }
+})
+test('runtime and SSR graph cannot import the legacy site implementation', async () => {
+  for (const name of await readdir('src')) {
+    if (!/\.(tsx?|css)$/.test(name)) continue
+    const source = await readFile(`src/${name}`, 'utf8')
+    assert.doesNotMatch(source, /(?:from\s*|import\s*)["'][^"']*(?:site\/|\.\.\/)/)
+    assert.doesNotMatch(source, /localStorage|sessionStorage|console\./)
+  }
+})

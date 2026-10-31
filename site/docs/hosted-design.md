@@ -36,10 +36,11 @@ The native connected/upload-enabled display, capsule, per-capture upload status,
 From `site/`:
 
 ```sh
-APPARENT_PUBLIC_SITE=1 npm run build
-node scripts/package-apparent.mjs
-SITE_EVIDENCE="$TMPDIR/hosted-v4-evidence" npm run test:hosted
+VITE_HOSTED_API_ORIGIN=http://127.0.0.1:18809 CONNECT_BUILD_DIR=dist-test node scripts/build-public.mjs
+HOSTED_TEST_API_ORIGIN=http://127.0.0.1:18809 SITE_EVIDENCE="$TMPDIR/hosted-v4-evidence" npm run test:hosted
 ```
+
+Use a free test port and keep both origins identical. This loopback recipe from [the web contract](../../docs/hosted-web.md#verification) keeps synthetic browser checks off the live authenticated API. Never run these tests against a production-origin artifact. Never publish the loopback-configured package; rebuild with `VITE_HOSTED_API_ORIGIN=https://hosted.tryapparent.com node scripts/build-public.mjs` before deployment.
 
 The public build intentionally omits the private feature-map route; the ordinary build has a separately recorded pre-existing feature-map validation failure unrelated to this slice. Do not repair unrelated feature entries to validate this UI.
 

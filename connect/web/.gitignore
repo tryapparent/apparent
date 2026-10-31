@@ -1,0 +1,6 @@
+node_modules
+public/
+dist/
+dist-test/
+dist-ssr/
+*.tsbuildinfo

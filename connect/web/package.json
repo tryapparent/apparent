@@ -1,0 +1,26 @@
+{
+  "name": "@apparent/connect-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && node scripts/assets.mjs && vite build && vite build --ssr src/entry-server.tsx --outDir dist-ssr && node scripts/prerender.mjs",
+    "test:artifact": "node --test test/artifact.test.mjs",
+    "test:browser": "node test/browser.mjs",
+    "test": "npm run build && npm run test:artifact && node scripts/test-browser.mjs"
+  },
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "playwright-core": "1.63.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}

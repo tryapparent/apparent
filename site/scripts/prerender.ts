@@ -13,9 +13,8 @@ const site = join(dirname(fileURLToPath(import.meta.url)), "..")
 const dist = join(site, "dist")
 const ssr = join(site, "dist-ssr")
 
-const { render, renderHosted, mapPage } = await import(join(ssr, "entry-server.js"))
+const { render, mapPage } = await import(join(ssr, "entry-server.js"))
 let html = readFileSync(join(dist, "index.html"), "utf8")
-const template = html
 if (!html.includes("<!--app-->")) throw new Error("prerender: no <!--app--> in dist/index.html")
 html = html.replace("<!--app-->", render())
 
@@ -26,19 +25,6 @@ html = html.replace(/<link rel="stylesheet"[^>]*href="(\/assets\/[^"]+\.css)"[^>
 })
 
 writeFileSync(join(dist, "index.html"), html)
-
-// Unlinked account routes: no prerendered account data and no sitemap entries.
-for (const [route, device] of [["connect", false], ["connect/device", true], ["hosted", false], ["hosted/device", true]] as const) {
-  const title = device ? "Connect a device — Apparent" : "Connect — Apparent"
-  const page = template.replace("<!--app-->", renderHosted(device))
-    .replace(/<title>.*?<\/title>/, `<title>${title}</title>`)
-    .replace(/<link rel="canonical"[^>]*>/, "")
-    .replace(/<meta (?:property="og:[^"]+"|name="twitter:[^"]+"|name="description")[^>]*>/g, "")
-    .replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/g, "")
-    .replace("</head>", '<meta name="robots" content="noindex, nofollow" /></head>')
-  mkdirSync(join(dist, route), { recursive: true })
-  writeFileSync(join(dist, route, "index.html"), page)
-}
 
 // The feature map: unlinked, noindex, and left out of the sitemap and llms.txt.
 if (process.env.APPARENT_PUBLIC_SITE !== "1") {

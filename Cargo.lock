@@ -160,6 +160,7 @@ version = "0.3.13"
 dependencies = [
  "ab_glyph",
  "anyhow",
+ "apparent-capture-engine",
  "arboard",
  "ashpd 0.11.1",
  "block2",
@@ -199,6 +200,15 @@ dependencies = [
  "windows 0.61.3",
  "x11rb",
  "zbus",
+]
+
+[[package]]
+name = "apparent-capture-engine"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

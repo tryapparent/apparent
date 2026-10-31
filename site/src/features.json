@@ -61,7 +61,7 @@
         { "key": "cloud.uploadConsent", "value": "boolean; false by default", "does": "Record explicit permission to share capture contents" },
         { "key": "cloud.server", "value": "HTTPS API origin; loopback HTTP for development", "does": "Select the Connect account API, not a token or preference store" }
       ],
-      "docs": ["docs/hosted-client.md", "docs/hosted-api.md", "site/docs/hosted-design.md"]
+      "docs": ["docs/hosted-client.md", "docs/hosted-api.md", "site/docs/hosted-design.md", "connect/web/README.md"]
 
     },
     {

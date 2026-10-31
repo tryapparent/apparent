@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+"""Reject changed staged text files longer than 2,000 physical lines."""
+
+import subprocess
+import sys
+
+
+MAX_LINES = 2000
+# Generated dependency graphs are not human-maintained source modules. Match
+# exact basenames at any depth, not arbitrary *.lock files or runtime locks.
+DEPENDENCY_LOCKFILES = frozenset({
+    b"Cargo.lock", b"package-lock.json", b"npm-shrinkwrap.json", b"yarn.lock",
+    b"pnpm-lock.yaml", b"bun.lock", b"bun.lockb", b"uv.lock", b"poetry.lock",
+    b"Pipfile.lock", b"composer.lock", b"Gemfile.lock", b"go.sum",
+})
+
+
+def git(*args):
+    return subprocess.check_output(["git", *args])
+
+
+def main():
+    # Raw records supply index blob IDs, so partial staging and odd filenames
+    # never cause us to inspect a different working-tree file. Disabling rename
+    # detection treats a rename/copy destination as an addition.
+    records = git("diff", "--cached", "--raw", "-z", "--no-abbrev",
+                  "--no-renames", "--diff-filter=AM").split(b"\0")
+    violations = []
+    for index in range(0, len(records) - 1, 2):
+        metadata, path = records[index:index + 2]
+        _, mode, _, blob, _ = metadata.split()
+        if mode not in (b"100644", b"100755"):
+            continue  # Symlinks and submodules are not source text.
+        if path.rsplit(b"/", 1)[-1] in DEPENDENCY_LOCKFILES:
+            continue
+        content = git("cat-file", "blob", blob.decode("ascii"))
+        if b"\0" in content[:8000]:
+            continue  # Git-style binary detection; no extension allowlist.
+        lines = content.count(b"\n") + int(bool(content) and not content.endswith(b"\n"))
+        if lines > MAX_LINES:
+            violations.append((path, lines))
+    if violations:
+        print(f"pre-commit: text files must contain at most {MAX_LINES} lines "
+              "(including comments and blank lines).", file=sys.stderr)
+        for path, lines in violations:
+            print(f"  {path.decode('utf-8', errors='backslashreplace')!r}: {lines} lines",
+                  file=sys.stderr)
+        print("Split the staged files into smaller cohesive modules, then stage and retry. "
+              "Only added or changed files are checked; no files were modified.",
+              file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, subprocess.CalledProcessError) as error:
+        print(f"pre-commit: could not check staged line limits: {error}", file=sys.stderr)
+        sys.exit(1)

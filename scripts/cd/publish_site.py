@@ -59,16 +59,23 @@ def verify_http(release):
     paths += [str(p.relative_to(release)) for p in (release / 'assets').rglob('*') if p.is_file()]
     for path in paths:
         url_path = '/' if path == 'index.html' else '/' + path.removesuffix('index.html')
+        urls = [url_path]
+        if path in ['connect/index.html', 'connect/device/index.html',
+                    'hosted/index.html', 'hosted/device/index.html']:
+            urls.append(url_path.rstrip('/'))
+            if '/device/' in url_path:
+                urls += [url + '?code=CD-CHECK' for url in list(urls)]
         expected = (release / path).read_bytes()
-        for attempt in range(4):
-            try:
-                with urlopen('https://app.tryapparent.com' + url_path, timeout=25) as response:
-                    require(response.read() == expected, f'Public bytes differ: {url_path}')
-                break
-            except Exception:
-                if attempt == 3:
-                    raise
-                time.sleep(3)
+        for url in urls:
+            for attempt in range(4):
+                try:
+                    with urlopen('https://app.tryapparent.com' + url, timeout=25) as response:
+                        require(response.read() == expected, f'Public bytes differ: {url}')
+                    break
+                except Exception:
+                    if attempt == 3:
+                        raise
+                    time.sleep(3)
 
 
 def publish(root, package, sha, expected, *, current_sha=current_main, verify=verify_http):
