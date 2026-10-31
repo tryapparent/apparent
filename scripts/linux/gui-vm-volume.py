@@ -27,6 +27,9 @@ def create_volume(image, mount, size, uid, gid):
     finally:
         os.close(fd)
     checked('mkfs.ext4', '-q', '-F', '-m', '0', '-E', 'nodiscard', str(image))
+    allocated = image.stat()
+    if allocated.st_size != size or allocated.st_blocks * 512 < size:
+        raise RuntimeError('formatted image lost its physical reservation')
     mount.mkdir(mode=0o700)
     checked('mount', '-o', 'loop,nodev,nosuid', str(image), str(mount))
     os.chown(mount, uid, gid)
@@ -48,7 +51,9 @@ def main():
     if os.geteuid() != 0 or 'SUDO_UID' not in os.environ:
         p.error('invoke via sudo from the owning test account')
     args = a.runner_args[1:] if a.runner_args[:1] == ['--'] else a.runner_args
-    if any(x.split('=')[0] in ('--results', '--managed-lifetime', '--job-timeout') for x in args):
+    owned_options = ('--results', '--managed-lifetime', '--job-timeout')
+    if any(x.startswith('--') and any(option.startswith(x.split('=')[0])
+                                     for option in owned_options) for x in args):
         p.error('volume owns results and lifetime')
     uid, gid = int(os.environ['SUDO_UID']), int(os.environ['SUDO_GID'])
     image = a.image.absolute()
@@ -92,21 +97,47 @@ def main():
     finally:
         # Exact owned unit only. Blocking stop completes cgroup termination before
         # unmount. A failed stop/unmount keeps the image for recovery, never deletes it.
-        stop = subprocess.run(['systemctl', 'stop', unit], capture_output=True)
-        if mounted or os.path.ismount(mount):
-            try:
+        cleanup_ok = False
+        try:
+            stop = subprocess.run(['systemctl', 'stop', unit], capture_output=True, text=True)
+            status['stop'] = {'exit': stop.returncode, 'stdout': stop.stdout, 'stderr': stop.stderr}
+            stopped = stop.returncode == 0
+            if not stopped:
+                # --wait --collect may have removed this exact owned transient
+                # unit already. A failed query or a loaded/active unit is not proof.
+                probe = subprocess.run(['systemctl', 'show', unit, '--property=LoadState',
+                                        '--property=ActiveState', '--property=SubState',
+                                        '--property=ControlGroup'], capture_output=True, text=True)
+                status['stop_probe'] = {'exit': probe.returncode, 'stdout': probe.stdout,
+                                        'stderr': probe.stderr}
+                properties = dict(line.split('=', 1) for line in probe.stdout.splitlines() if '=' in line)
+                stopped = (probe.returncode in (0, 1) and properties.get('LoadState') == 'not-found'
+                           and properties.get('ActiveState') == 'inactive'
+                           and properties.get('SubState') == 'dead'
+                           and properties.get('ControlGroup') == '')
+            if not stopped:
+                raise RuntimeError('owned unit stop unresolved; mount and image retained')
+            if mounted or os.path.ismount(mount):
                 unmount(mount)
+            if os.path.ismount(mount):
+                raise RuntimeError('owned mount remains mounted after umount')
+            if mount.exists():
                 mount.rmdir()
-                status['cleanup'] = 'unmounted; image retained'
-            except subprocess.CalledProcessError as e:
-                status['cleanup'] = 'FAILED: ' + e.stderr
+            status['cleanup'] = 'unmounted; image retained'
+            cleanup_ok = True
+        except (OSError, RuntimeError, subprocess.CalledProcessError) as e:
+            status['cleanup'] = 'FAILED: ' + str(e)
+            if isinstance(e, subprocess.CalledProcessError):
+                status['cleanup'] += ': ' + (e.stderr or '')
         status['mounted'] = os.path.ismount(mount)
+        status['overall_exit'] = (status['exit'] if status['exit'] is not None else 1) if cleanup_ok else 1
         receipt.write_text(json.dumps(status, indent=2) + '\n')
         os.chown(receipt, uid, gid)
         os.chmod(receipt, 0o600)
-        os.chown(image, uid, gid)
+        if image.exists():
+            os.chown(image, uid, gid)
     print(json.dumps(status))
-    return status['exit'] if status['exit'] is not None else 1
+    return status['overall_exit']
 
 if __name__ == '__main__':
     sys.exit(main())

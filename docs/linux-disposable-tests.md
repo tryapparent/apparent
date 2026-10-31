@@ -8,6 +8,7 @@ its live disk or remove another run's locks/sockets.
 
 ```sh
 python3 scripts/linux/test-gui-vm.py
+python3 scripts/linux/test-gui-vm-volume-lifecycle.py
 sudo env TMPDIR="$TMPDIR" python3 scripts/linux/test-gui-vm-volume.py
 sudo python3 scripts/linux/gui-vm-volume.py \
   --image "$EVIDENCE/test-unique.ext4" --disk-gib 8 --seconds 1200 -- \
@@ -18,8 +19,13 @@ sudo python3 scripts/linux/gui-vm-volume.py \
   --isolated-network --memory 3072
 ```
 
-Inputs must be trusted, powered-off and immutable. By default the base is a
-standalone qcow2. `--immutable-chain` permits an offline derivative only if every
+Inputs must be trusted, powered-off and immutable. Keep the image and receipt in
+a private, stable parent directory
+owned by the operator; pathname replacement by another host writer is outside
+this contract. Pin the executable, real sibling libraries and scenario hashes
+in the execution evidence before admission; the runner's executable transfer
+check alone does not establish the complete runtime identity.
+By default the base is a standalone qcow2. `--immutable-chain` permits an offline derivative only if every
 backing member has no write bits and no detected QEMU owner. File modes and a
 process scan do not defend against a hostile same-UID writer. Do not use this
 tool as a multi-tenant security sandbox. Sanitize the test account/session and
@@ -48,6 +54,16 @@ without lazy detach. It never deletes the image. `<image>.json` records exit,
 mountpoint, unit and cleanup. A failed artifact copy retains the cold guest disk
 inside the image. Successful runs retain copied artifacts and remove only their
 own overlay/firmware/sockets. A runner failure is not a native product pass.
+These cold-evidence guarantees apply to the managed volume wrapper: direct
+`gui-vm.py` invocations retain their expiry timer, which can remove writable
+guest state after an artifact-copy failure.
+Owned output/lifetime options (including abbreviations) are refused before
+allocation, and the child accepts only full option names. Cleanup failure returns
+nonzero even after a successful scenario. The receipt preserves the scenario's
+`exit`, the wrapper's `overall_exit`, exact stop/query diagnostics and recovery
+identifiers. A failed stop permits unmount only when a state query confirms the
+exact owned unit has already been collected; an active or unknown unit retains
+its mount and image for recovery.
 
 Inspect retained evidence by mounting the image read-only in an owned directory:
 

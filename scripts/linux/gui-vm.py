@@ -139,7 +139,7 @@ def wait_for_desktop(prefix, process, seconds):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--template", type=Path, required=True, help="offline, standalone qcow2 disk")
     parser.add_argument("--ovmf-vars", type=Path, required=True, help="template's powered-off OVMF vars")
     parser.add_argument("--ssh-key", type=Path, required=True)
