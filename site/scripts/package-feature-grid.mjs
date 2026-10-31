@@ -2,6 +2,8 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { resolve, join, relative } from 'node:path'
+import { parse } from 'parse5'
+import { hasExpectedHomepageCanonical } from './expected-homepage-canonical.mjs'
 const [baselineArg, candidateArg, manifestArg] = process.argv.slice(2)
 if (!baselineArg || !candidateArg || !manifestArg) throw Error('Usage: node scripts/package-feature-grid.mjs BASELINE NEW_CANDIDATE PRIVATE_MANIFEST')
 const baseline = resolve(baselineArg), candidate = resolve(candidateArg), manifest = resolve(manifestArg)
@@ -18,7 +20,16 @@ function inventory(root) {
   walk(root); return files
 }
 const original = readFileSync(join(baseline, 'index.html'), 'utf8')
-if (!original.includes('pond-demo') || !original.includes('app.tryapparent.com')) throw Error('Unexpected or already-overlaid baseline')
+// Use the same HTML5 tree and canonical identity as the public packager.
+// Template contents and raw text are not active demo sections.
+function hasDemo(node) {
+  if (node.namespaceURI === 'http://www.w3.org/1999/xhtml' && node.tagName === 'section') {
+    const classes = node.attrs.find(({ name }) => name === 'class')?.value ?? ''
+    if (classes.split(/[\t\n\f\r ]+/).includes('pond-demo')) return true
+  }
+  return (node.childNodes ?? []).some(hasDemo)
+}
+if (!hasExpectedHomepageCanonical(original) || !hasDemo(parse(original))) throw Error('Unexpected or already-overlaid baseline')
 const before = inventory(baseline)
 cpSync(baseline, candidate, { recursive: true })
 let html = original.replace(/<script type="module" src="\/assets\/feature-grid-overlay-[a-f0-9]+\.js"><\/script>/g, '').replace(/<link rel="stylesheet" href="\/assets\/feature-grid-overlay-[a-f0-9]+\.css">/g, '')

@@ -12,6 +12,25 @@ The Caddy `@publicApparent` path allowlist must include `/pond/*` for the frog i
 
 Rollback: atomically point `apparent-site` at the previous release target; restore the backed-up Caddyfile and reload only if the allowlist change itself caused trouble. Verify the old homepage and any affected update paths after rollback.
 
+## Homepage marker guard
+
+`package-apparent.mjs` uses `package-page-text.mjs` as a parser-only stale-build
+marker guard, not an HTML sanitizer or proof of CSS/layout visibility. Its
+intended content boundary is parsed body text, excluding `script`, `style`,
+`template`, `noscript`, and `iframe` subtrees, any subtree with a `hidden`
+attribute (regardless of its value), and any subtree with a literal inline
+`display: none` declaration (case-insensitive, with optional `!important`).
+Descendants cannot supply markers once their ancestor is excluded. This is a
+conservative exclusion even if a later declaration would override it.
+
+The guard does not evaluate the CSS cascade, CSS escapes or variables, external
+CSS, layout, or dynamic state. Other ways of concealing content remain outside
+its scope; browser visibility still needs browser verification. Normal body
+text across inline elements and decoded entities can supply markers. Extraction
+does not rewrite the packaged HTML. Run `node --test scripts/test-package-text.mjs`
+to check acceptance and rejection through the real packager, including preservation
+of the previous artifact when marker validation rejects a build.
+
 ## Recorded ghost demo
 
 `src/demo/VideoDemo.tsx` replaces the public scripted animation with the approved

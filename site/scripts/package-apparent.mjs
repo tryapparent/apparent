@@ -4,17 +4,20 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { packagePageText } from "./package-page-text.mjs"
+import { hasUpstreamLinks } from "./upstream-link-guard.mjs"
+import { hasExpectedHomepageCanonical } from "./expected-homepage-canonical.mjs"
 
 const site = join(dirname(fileURLToPath(import.meta.url)), "..")
 const dist = join(site, "dist")
 const out = join(site, "dist-apparent")
 const html = readFileSync(join(dist, "index.html"), "utf8")
-const text = html.replace(/<[^>]*>/g, "")
-if (!html.includes("https://app.tryapparent.com/") || !text.includes("Visual feedback gets lost") || !text.includes("We believe work should be")) {
-  throw new Error("Refusing to package a stale or unrelated build")
-}
-if (html.includes("https://apparent.kitlangton.com/") || html.includes("kitlangton/tap")) {
+const text = packagePageText(html)
+if (hasUpstreamLinks(html)) {
   throw new Error("Refusing to publish upstream download or canonical links")
+}
+if (!hasExpectedHomepageCanonical(html) || !text.includes("Visual feedback gets lost") || !text.includes("We believe work should be")) {
+  throw new Error("Refusing to package a stale or unrelated build")
 }
 rmSync(out, { recursive: true, force: true })
 mkdirSync(out, { recursive: true })
