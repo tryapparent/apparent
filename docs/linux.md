@@ -6,6 +6,10 @@ installs or changes the selected desktop handler.
 
 Read this before changing `src/capture/linux.rs`, `src/ui/linux.rs`, `src/linux/`, `src/ink_view.rs`, `src/speech.rs`, or anything behind a `platform::` call in `src/capture.rs` and `src/ui.rs`. The shared GPUI UI uses platform adapters for the macOS and Linux shells. Windows code is retained but unsupported.
 
+Optional [playback lowering](linux-playback.md) is a default-off, manually
+configured experiment on one pinned PipeWire/WirePlumber stack. It does not
+change user volume or routing and has no live effectiveness indicator.
+
 ## X11 everywhere, Wayland around it
 
 GPUI is built with its `x11` feature only, and `linux::prepare_process` (the first thing `main` does) hides `WAYLAND_DISPLAY` from it, so on Wayland every Apparent window is an XWayland window (`APPARENT_NATIVE_WAYLAND=1` opts out, for experiments). That keeps one window model on both: Apparent's floating windows (pill, picker, ink overlay) are override-redirect X windows it places itself in global pixels (`linux::x11::float`, `place`), with an empty input shape to let clicks through (`set_click_through`). `float` waits for the window manager to finish mapping and then unmanaging the window before it takes it over; otherwise GNOME on Wayland keeps drawing it at its old frame's offset.

@@ -177,6 +177,23 @@ struct PermissionRow {
     relaunch: bool,
 }
 
+// This is permission to request the optional feature, not a live audio check.
+fn playback_available() -> bool {
+    MACOS || cfg!(target_os = "linux") && crate::handoff::experiment("linux-playback-ducking")
+}
+
+fn playback_note() -> String {
+    if cfg!(target_os = "linux") {
+        if playback_available() {
+            "Experimental · manual setup required. Mono/stereo, one capture. No live effectiveness check."
+        } else {
+            "Linux playback lowering is opt-in. Setup: docs/linux-playback.md."
+        }
+    } else {
+        "Temporarily lower other audio while recording."
+    }.into()
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 struct ViewState {
@@ -186,6 +203,12 @@ struct ViewState {
     shortcuts: Vec<Shortcut>,
     transcriber: Transcriber,
     microphone: Microphone,
+    lower_playback: bool,
+    playback_level: u8,
+    #[serde(default = "playback_available")]
+    playback_available: bool,
+    #[serde(default = "playback_note")]
+    playback_note: String,
     video_export: bool,
     retention: Retention,
     captures_size: Option<String>,
@@ -1086,6 +1109,42 @@ impl SettingsWindow {
         }
         for shortcut in &state.shortcuts {
             column = column.child(self.recorder(theme, shortcut, cx));
+        }
+        if !WINDOWS {
+            let on = state.lower_playback;
+            let available = state.playback_available;
+            let toggle_enabled = available || on;
+            let level_enabled = on && available;
+            let level = state.playback_level.to_string();
+            let options = [0, 10, 20, 35, 50, 75, 100]
+                .into_iter()
+                .map(|n| (n.to_string(), format!("{n}%"), true))
+                .collect::<Vec<_>>();
+            column = column
+                .child(header(theme, "Other audio"))
+                .child(group(theme, vec![
+                    row(
+                        theme,
+                        "Lower other audio while recording",
+                        toggle_enabled,
+                        switch(theme, "settings-lower-playback", on, toggle_enabled)
+                            .when(toggle_enabled, |d| d.on_click(cx.listener(move |view, _, _, _| {
+                                view.set("lowerPlayback", (!on).into());
+                            }))),
+                    ).into_any_element(),
+                    row(
+                        theme,
+                        "Lower to",
+                        level_enabled,
+                        popup(theme, "settings-playback-level", &format!("{}%", state.playback_level))
+                            .when(!level_enabled, |d| d.opacity(0.4))
+                            .when(level_enabled, |d| d.on_click(cx.listener(move |view, event: &ClickEvent, _, cx| {
+                                view.open_menu("playbackLevel", options.clone(), Some(level.clone()), event);
+                                cx.notify();
+                            }))),
+                    ).into_any_element(),
+                ]))
+                .child(caption(theme, &state.playback_note, false));
         }
         column
     }
@@ -2003,7 +2062,9 @@ impl SettingsWindow {
                             .on_click(cx.listener(move |view, _, _, cx| {
                                 cx.stop_propagation();
                                 view.menu = None;
-                                view.set(key, id.clone().into());
+                                if let Some(value) = menu_setting_value(key, &id) {
+                                    view.set(key, value);
+                                }
                                 cx.notify();
                             }))
                     })
@@ -2156,9 +2217,38 @@ impl Render for SettingsWindow {
     }
 }
 
+fn menu_setting_value(key: &str, id: &str) -> Option<serde_json::Value> {
+    if key == "playbackLevel" {
+        id.parse::<u8>().ok().filter(|level| *level <= 100).map(Into::into)
+    } else {
+        Some(id.into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn playback_preferences_reach_the_gpui_window() {
+        let state: ViewState = serde_json::from_str(
+            r#"{"lowerPlayback":true,"playbackLevel":35,"playbackAvailable":true}"#,
+        ).unwrap();
+        assert!(state.lower_playback);
+        assert_eq!(state.playback_level, 35);
+        assert!(state.playback_available);
+    }
+
+    #[test]
+    fn playback_menu_sends_a_bounded_number_not_a_string() {
+        for level in [0, 20, 35, 100] {
+            assert_eq!(menu_setting_value("playbackLevel", &level.to_string()), Some(serde_json::json!(level)));
+        }
+        for invalid in ["101", "-1", "0.5", "garbage"] {
+            assert_eq!(menu_setting_value("playbackLevel", invalid), None);
+        }
+        assert_eq!(menu_setting_value("transcriber", "hex"), Some(serde_json::json!("hex")));
+    }
 
     #[test]
     fn update_check_has_one_progress_indicator() {
