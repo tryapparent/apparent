@@ -4,6 +4,33 @@ The default-off native launch experiment and explicit AppImage/desktop URL-handl
 registration are documented in [native launch](native-launch.md). Opening a URL never
 installs or changes the selected desktop handler.
 
+## Untargeted multi-monitor capture
+
+Untargeted shortcut/menu/timed-CLI starts capture all connected displays by default, without config. This is the explicitly authorized promotion of the candidate; its retired experiment flag is no longer read. Explicit Display, Window and Region selections remain scoped. A desktop request with no connected displays fails before a recorder starts; it never becomes a pointer-display capture.
+
+The candidate freezes the initial output union on one capture clock. Linux frames, pointer and ink use the existing X11/XWayland root coordinate space (RandR output names, rectangles and X UI scale), not raw Hyprland logical geometry. A compositor scale of 1.25 does not imply that a saved frame must have scale 1.25. Do not divide saved rectangles by a guessed scale: mixed-scale native proof must compare RandR and compositor inventories, pointer positions, actual movie tiles and ink together. This coordinate-space contract still needs that proof.
+
+On Hyprland/XDPH 1.4.1, each frozen output gets its own ScreenCast session, OpenPipeWireRemote FD and lease. The backend returns only one source per session and ignores `multiple`; this candidate therefore requests genuine native approval serially, **one approval per output on first use**, rather than pretending that one multiple-source request authorizes every monitor. The expected output name and progress are logged before each picker. Approved leases and FDs are held until the whole approval sequence ends; no recorder starts while another picker is pending. Native R3 evidence showed XDPH pausing an earlier approved stream behind the next picker, so starting it early could consume its startup budget before frames could arrive. Each response must actually be a Monitor with the expected `mapping_id`; the current output name, identity, rectangle and scale must still match the frozen inventory, and earlier approvals are checked again after the final picker. A wrong, duplicate, missing or changed selection closes only that session, marks that output failed and does not trigger an automatic retry. Other Wayland backends retain one multiple-source session and identity/geometry mapping; X11 keeps its per-output capture route.
+
+Opaque restore tokens remain under per-output keys in `~/.local/share/apparent/portal.json`, and are saved/rotated only after validation. Native permission to remember a choice is optional; a missing or rejected token can mean another genuine prompt. No restore data is fabricated. The whole approval sequence shares one 120-second deadline, not 120 seconds per monitor. Stop is checked between approvals and before delivery; late approvals are dropped. Caller recovery does not await native cleanup. The detached cleanup worker attempts the owned pending `Request.Close` first, then `Session.Close`, with a one-second budget for each operation. These are bounded attempts, not confirmation of native picker dismissal or backend resource release. See the [XDPH cancellation limitation](#xdph-141-pending-cancellation) below. Each authorized stream gets a fresh startup budget only when delivered after the approval sequence; consent waiting never refreshes captured pixel timestamps.
+
+### XDPH 1.4.1 pending cancellation
+
+On `xdg-desktop-portal-hyprland` 1.4.1 (tested with the Arch 1.4.1-2 package), canceling a pending capture returns Apparent to idle, but **the native sharing chooser can remain open**. A `cancelled` receipt or null active capture ID describes Apparent's local state; it does not confirm that the portal dismissed its UI or released its backend resources. Dismiss the surviving chooser yourself before starting another capture. Do not approve it as a way to resume the canceled capture; late approvals are discarded.
+
+The backend waits synchronously for `hyprland-share-picker` inside `SelectSources`, blocking the D-Bus thread that must process close requests. It also does not export a backend Request object for that distinct `SelectSources` handle. The isolated native test reproduced the surviving chooser and implementation-close timeout; the logs show Apparent used the same request path received by the backend. Upstream [XDPH issue #437](https://github.com/hyprwm/xdg-desktop-portal-hyprland/issues/437) describes the same blocking mechanism under a different trigger.
+
+Automatic chooser dismissal is an accepted limitation for this backend/version, **not a passing native cancellation check** or a guarantee for other backends. Apparent does not kill shared portal processes, bypass consent or select a source automatically to work around it. Passing the stronger dismissal guarantee requires a cancellable backend and a new targeted native check. The separate two-display save/decode proof does not establish cancellation cleanup, and this exception does not waive other platform or privacy checks.
+
+A portal user-cancel stops subsequent prompts and discards the entire capture, including an earlier output's copied frames. Ordinary per-output failure instead leaves a neutral tile while healthy sources continue. If all sources end after real frames, the GUI finishes and preserves the partial capture rather than running an empty timer or cancelling its history. All-failed startup returns to idle without a bundle. Display failure metadata survives manifest reload, summary regeneration and copy-text composition, alongside live microphone warnings. The ordinary GUI loop polls starting/live sessions even after the shortcut is released, so terminal startup failure and portal cancellation can reach the UI.
+
+Producer arrival times, not reads of cached pixels, determine source freshness. PipeWire's configured 500 ms keepalive supplies idle-screen samples; a stalled source cannot acquire fresh timestamps merely because it is polled. Native static-screen/keepalive behavior still needs portal proof. Finalized sources with no real frame history are excluded from composition, so an empty invalid source movie cannot poison healthy inputs; their private originals remain on disk. If a source produced frames but cannot finalize its movie after error/EOS, no knowingly incomplete combined movie replaces valid candidate history. A missing combined movie is persisted as an image-quality warning in the manifest and regenerated summary/copy text, not just logged. Private source files expire under the ordinary media retention policy, without following `.display-*` symlinks or removing privacy/recovery markers.
+
+The Linux host regressions include a real synthetic GStreamer pipeline error after frames, a paused-pipeline cache test, coordinator startup/loss/privacy tests and full-file synthetic composition/decode. They are not a native GUI or portal acceptance result. Use the shortcut plus `capture state`, `stop` and `cancel` in the isolated Omarchy VM; do not substitute timed CLI recording. Mac stream privacy, exclusion and pointer-following live ink require separate Mac proof. Default enablement is implemented as explicitly requested; this local candidate is not native acceptance or permission to release.
+
+Generic portals must preserve the frozen output ID, name, rectangle and scale after consent too. An absent mapping name can use a uniquely matching reported rectangle; an explicit nonmatching name cannot fall back to geometry. Backends that report opaque IDs instead of inventory names therefore fail closed rather than guessing. Overlapping unnamed outputs remain ambiguous and unavailable. This backend limitation needs genuine native testing, not fabricated consent.
+
+
 Read this before changing `src/capture/linux.rs`, `src/ui/linux.rs`, `src/linux/`, `src/ink_view.rs`, `src/speech.rs`, or anything behind a `platform::` call in `src/capture.rs` and `src/ui.rs`. The shared GPUI UI uses platform adapters for the macOS and Linux shells. Windows code is retained but unsupported.
 
 ## X11 everywhere, Wayland around it
@@ -44,7 +71,7 @@ Without the `input` group, a capture on Wayland has no clicks, keys or ⇧ ink o
 
 ### Picker and portal limits
 
-Screen and Area work on the tested desktops. The Window picker lists X11/XWayland windows only; use Screen or Area for native Wayland apps. A portal window source exists internally, but the UI does not currently offer it. A press of the record shortcut records the display under the pointer once its keys come up, however long they're held; the tray menu's **Choose What to Record…** opens the picker, which stays open until you choose a target or press Esc. The Mac-only iPhone mode is hidden. Screen sharing can ask again if a desktop does not honor the saved restore token. Finishing while the dialog is open cancels the pending session; a failed or empty capture reports an error rather than producing demo imagery, and `latest` skips its unfinished directory.
+Explicit Screen and Area work on the tested desktops. The Window picker lists X11/XWayland windows only; use Screen or Area for native Wayland apps. A portal window source exists internally, but the UI does not currently offer it. A press of the record shortcut now requests all connected displays once its keys come up, however long they're held; this new default still needs exact-candidate native proof for the remaining platform checks. The tray menu's **Choose What to Record…** opens the scoped picker, which stays open until you choose a target or press Esc. The Mac-only iPhone mode is hidden. Screen sharing can ask again if a desktop does not honor the saved restore token. Cancel while the dialog is open cancels the pending capture; a failed or empty capture reports an error rather than producing demo imagery, and `latest` skips its unfinished directory. This does not guarantee native picker dismissal: see the [XDPH 1.4.1 limitation](#xdph-141-pending-cancellation).
 
 `apparent capture start --wait --timeout 30` uses the running GUI's normal interaction-aware
 screen path and returns its own request ID. Portal consent still applies; `capture state` reports
@@ -244,6 +271,102 @@ isolation requirements and private video evidence: [Linux updater GUI acceptance
 This checks the GUI and release contract; it does not establish GitHub publication.
 
 ## Building and testing
+
+Generic multiple-source ScreenCast sessions use a fresh authorized
+`OpenPipeWireRemote` connection for each independent Recorder/node. A duplicate
+FD is not a second protocol connection: independent `pipewiresrc` cores must
+never read the same socket. These consumers still share the approved Session;
+the last consumer releases its lease. Partial failure and cancellation drop all
+already-created remotes rather than delivering a partial authorization.
+
+Session creation uses the installed zbus protocol APIs on a dedicated connection.
+The standard Request and Session token paths are owned before `CreateSession`
+is sent. Stop/deadline covers connection setup, the method reply and the withheld
+Response interval, not only SelectSources/Start. Cleanup attempts Request.Close
+then Session.Close under the existing budgets and releases the dedicated
+connection. Private-bus tests cover late Session creation during Request.Close;
+this is not proof of native picker dismissal or backend resource destruction.
+
+### Private portal resource diagnostics
+
+For an explicitly owned test app, set `APPARENT_PORTAL_DIAGNOSTICS=1` at launch.
+Other values and an absent variable disable this diagnostic; it is not a saved
+preference. Read stderr or the existing private `Logs/apparent.log` for lines
+whose message starts with `portal-resource ` followed by one JSON object.
+No CLI, capture bundle, clipboard, timeline or public telemetry field is added.
+Keep the log private and bound its retention in the test harness.
+
+Schema 1 binds PID plus Linux process start ticks, authorization `generation`,
+the authorization's dedicated zbus connection's unique `bus` name and actual
+`session` path (including its owned token path before CreateSession responds).
+`request_pending` names the exact owned Request before the method call;
+`request_response` ends that pending identity. `held_fd` records each actual
+OpenPipeWireRemote descriptor (`role=remote`, `consumer_index`, `node`) and each owned stream clone
+(`role=stream`, `parent_fd`, `clone_index`, Start-returned `node`). The clone
+also records `monitor` and a SHA-256 of its monitor `mapping_id`, not raw source
+names. Compare that hash with the frozen output inventory. `media_binding`
+records the same clone/node used to construct `pipewiresrc fd=… path=…`.
+No restore tokens, arbitrary error messages, window titles, pixels or audio
+are serialized. A maximum of 256 events per authorization is followed by
+`diagnostic_truncated`; a truncated trace cannot establish complete cleanup.
+
+While a descriptor is held, the producer reads its `/proc/self/fd` socket
+target and `SO_COOKIE`. Clones share that socket identity; cookie plus target
+distinguishes descriptor renumbering and socket inode reuse. Failure gives
+`identity_status=UNKNOWN`, never a substitute identity or success. Arbitrary
+filesystem targets are not exported. `producer_fd_dropped` is emitted only
+after the actual OwnedFd is dropped. It proves that producer handle's lifetime,
+not that GStreamer, the backend, or the server released its copies.
+`request_close_requested` / `session_close_requested` are intentions;
+`*_close_returned` records only the method result. Neither proves OS release.
+
+An independent observer must read exact held targets, both selected node
+bindings and the completed state in the **same app lifetime**, and keep each
+authorization's D-Bus socket separate from its PipeWire remotes. A global `pw-dump` does not prove
+visibility of a portal's private remote. Join selected node/client IDs and
+`object.serial` only with evidence of the same PipeWire remote/server;
+otherwise report private-graph visibility UNKNOWN separately from observed
+descriptor/session release. An object ID reused with a different serial is
+not the old object. A foreign backend survivor is not a recording leak.
+With diagnostics enabled, an additional `OpenPipeWireRemote` call for the same
+authorized Session supplies a **fresh observer connection**, never a clone of
+the recording socket. `role=observer` records its held descriptor separately.
+A bounded, read-only Linux adapter uses the installed PipeWire 0.3 library to
+read Core info and the registry, then disconnects and destroys its core before
+`graph_snapshot` is emitted. It creates no stream, binds no source, activates
+nothing and reads no media. The registry wait is capped at 300 ms; errors,
+missing library, missing ownership properties and incomplete snapshots remain
+UNKNOWN. No Cargo dependency or preference is added.
+
+`graph_snapshot.graph` reports the actual `server_cookie` and each Start-returned
+node's `serial`, `client_id` and `client_serial`, where visible. It whitelists
+numeric identifiers only. `observer_released` describes adapter teardown, not
+independent OS proof; check the observer socket's absence separately before a
+resource verdict. An independent global view may join these facts only after
+matching the Core cookie and source/client serials. The observer connection is
+already closed before normal recording starts.
+
+Schema 1 keeps its parent/clone join: each stream's `parent_fd`, socket cookie
+and target identify its own `role=remote`, not one remote shared by all nodes.
+Each recording remote gets a separate `graph_snapshot` filtered to its node.
+One multiple-source Session can therefore have several independent socket
+identities under one bus/session/generation. Do not require two Session paths
+to accept two consumers; do require distinct recording socket identities. The
+fresh observer is shared only as read-only graph facts, never as a recording FD.
+
+Registry disappearance still does **not** prove source deletion. PipeWire
+`pw_global_update_permissions` sends the same `global_remove` notification when
+read permission is revoked as object destruction does. A permission-scoped
+view that loses an object therefore remains UNKNOWN, not PASS. A same-core,
+same-serial selected source that survives can establish FAIL. Do not count a
+shared backend client alone as a recording leak. Native GUI acceptance and an
+authoritative backend/server deletion observation remain separate gates.
+
+`cargo test --offline linux::portal -- --test-threads=2` includes an isolated
+private D-Bus portal that returns real Unix descriptors through zbus, checks
+per-consumer socket identity, selected-node media construction, shared Session
+lifetime, partial/late socket EOF, and pending CreateSession/SelectSources handling.
+This is transport/lifetime proof, not native compositor acceptance.
 
 Build dependencies (Ubuntu/Debian; CI installs the same):
 

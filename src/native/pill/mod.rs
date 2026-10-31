@@ -1315,6 +1315,10 @@ fn emit_elem_prims(
                 },
                 0.75 + 0.25 * elem.active.max(elem.hover),
             );
+            if elem.text_only {
+                push_sprite(out, center_text(tx), tx.uv, fg);
+                return;
+            }
             push_sprite(
                 out,
                 [ox + CHIP_PX, oy + (CHIP_H - 14.0) * 0.5, 14.0, 14.0],

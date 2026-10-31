@@ -28,6 +28,31 @@ pub const RECOVERING: &str = ".recovering";
 /// A live capture without safe screenshots must not be rebuilt from its potentially private movie.
 pub const UNSAFE_VIDEO: &str = ".unsafe-video";
 
+pub const PRIVACY_FAILED: &str = ".privacy-failed";
+
+pub fn movie_privacy_failed(dir: &Path, displays: &[crate::model::CapturedDisplay]) -> bool {
+    dir.join(PRIVACY_FAILED).try_exists().unwrap_or(true) || displays.iter().any(|d|
+        dir.join(format!(".display-{}", d.id)).join(PRIVACY_FAILED).try_exists().unwrap_or(true))
+}
+
+#[cfg(test)]
+mod desktop_privacy_tests {
+    #[test]
+    fn one_unsafe_stream_invalidates_the_combined_movie_independently_of_frames() {
+        let dir = std::env::temp_dir().join(crate::make_bundle_id());
+        std::fs::create_dir_all(dir.join(".display-77")).unwrap();
+        let display = crate::model::CapturedDisplay { id: 77, name: "synthetic".into(),
+            frame: crate::model::TargetFrame { x: 0.0, y: 0.0, width: 32.0, height: 32.0, scale: 1.0 },
+            started_ms: Some(0), failed_ms: None, failure: None };
+        assert!(!super::movie_privacy_failed(&dir, &[display.clone()]));
+        std::fs::write(dir.join(".display-77").join(super::PRIVACY_FAILED), b"native exclusion failed").unwrap();
+        assert!(super::movie_privacy_failed(&dir, &[display]));
+        std::fs::write(dir.join(super::PRIVACY_FAILED), b"native exclusion failed").unwrap();
+        assert!(super::movie_privacy_failed(&dir, &[]));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
 /// A journal younger than this may belong to a build still running in another process.
 const SETTLE: Duration = Duration::from_secs(15);
 /// Video and audio without a journal are left alone until nothing in the bundle changed for this
@@ -171,6 +196,7 @@ pub fn orphan_recipe(video: &crate::helper::Probe, audio_ms: Option<u64>) -> Unf
             window_title: None,
             window_id: None,
             display_id: 0,
+            displays: Vec::new(),
             frame: TargetFrame {
                 x: 0.0,
                 y: 0.0,

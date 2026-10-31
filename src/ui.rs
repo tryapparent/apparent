@@ -30,7 +30,7 @@ pub(crate) use platform::{gpui_display_for, hwnd_of, set_app_icon};
 use crate::audio::{AudioRecorder, InputWarning};
 use crate::capture::{
     LiveOverlayEvent, ScreenCaptureSession, SharedCaptureTelemetry, apparent_log,
-    current_mouse_screen, discover_target, install_global_hotkeys, list_selectable_windows,
+    current_mouse_screen, install_global_hotkeys, list_selectable_windows,
     record_external_frontmost_app, region_target, selectable_window_at, shortcut_from_key_and_mods,
     start_global_input_tap, update_global_shortcut,
 };
@@ -810,13 +810,15 @@ struct ActiveRecording {
 
 impl ActiveRecording {
     fn mic_warning(&self) -> Option<InputWarning> {
-        match &self.source {
+        let mic = match &self.source {
             CaptureSource::Screen {
                 audio: Some(audio), ..
             } => audio.warning(),
             CaptureSource::Screen { audio: None, .. } => Some(InputWarning::Unavailable),
             CaptureSource::Phone(_) | CaptureSource::Lab => None,
-        }
+        };
+        let missing = matches!(&self.source, CaptureSource::Screen { session, .. } if session.monitor_warning());
+        crate::audio::recording_warning(mic, missing)
     }
 
     fn elapsed_ms(&self) -> u64 {
@@ -1164,6 +1166,17 @@ impl ApparentCoordinator {
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     fn agent_request(&mut self, request: crate::agent_capture::Request, cx: &mut Context<Self>) {
+        self.agent_request_with(request, |coord, action| match action {
+            crate::agent_capture::Action::Start => coord.record_screen_now(cx),
+            crate::agent_capture::Action::Stop => coord.finish_recording(cx),
+            crate::agent_capture::Action::Cancel => coord.cancel_recording(cx),
+            crate::agent_capture::Action::Inspect => unreachable!(),
+        });
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn agent_request_with(&mut self, request: crate::agent_capture::Request,
+        mut act: impl FnMut(&mut Self, crate::agent_capture::Action)) {
         use crate::agent_capture::{Action, Outcome};
         // Report an ended sampler, but never discard another session as a side
         // effect of State, Inspect or a competing Start. Cancellation stays explicit.
@@ -1185,7 +1198,7 @@ impl ApparentCoordinator {
                 || self.recording_shortcut_key;
             if self.agent_captures.admit(id, occupied, request.expired()) {
                 self.agent_capture_id = Some(id.clone());
-                self.record_screen_now(cx);
+                act(self, Action::Start);
                 if self.active_recording.is_none() {
                     self.agent_capture_id = None;
                     self.agent_captures.set(id, "failed", None, Some("start_failed"));
@@ -1210,9 +1223,9 @@ impl ApparentCoordinator {
             (Some((Action::Stop, _)), Some(Outcome::Stopping)) => {
                 #[cfg(target_os = "linux")]
                 { self.agent_finishing = true; }
-                self.finish_recording(cx)
+                act(self, Action::Stop)
             }
-            (Some((Action::Cancel, _)), Some(Outcome::Cancelled)) => self.cancel_recording(cx),
+            (Some((Action::Cancel, _)), Some(Outcome::Cancelled)) => act(self, Action::Cancel),
             _ => {}
         }
         let response = match outcome {
@@ -1226,7 +1239,13 @@ impl ApparentCoordinator {
                 }
                 response
             },
-            None => serde_json::json!({"state": before}),
+            None => {
+                let displays = self.active_recording.as_ref().and_then(|recording| match &recording.source {
+                    CaptureSource::Screen { session, .. } => Some(session.display_status()),
+                    _ => None,
+                }).unwrap_or_default();
+                serde_json::json!({"state": before, "displays": displays})
+            },
         };
         let _ = request.reply.send(response.to_string());
     }
@@ -1583,9 +1602,27 @@ impl ApparentCoordinator {
         self.apply_shortcut(action, cx);
     }
 
-    /// Polled from the UI loop while a press is pending: watches for ⌥⇧ coming up and Esc,
-    /// whichever app or window has focus.
+    /// Polled while a press is pending OR a recording exists, including portal startup.
+    /// Worker completion must not depend on another shortcut press.
     pub fn tick_shortcut(&mut self, cx: &mut Context<Self>) {
+        if self.active_recording.as_ref().is_some_and(|recording| matches!(&recording.source,
+            CaptureSource::Screen { session, .. } if session.cancelled())) {
+            self.cancel_recording(cx);
+            return;
+        }
+        if self.active_recording.as_ref().is_some_and(|recording| matches!(&recording.source,
+            CaptureSource::Screen { session, .. } if session.ended() && session.has_frames())) {
+            self.finish_recording(cx);
+            return;
+        }
+        if self.cleanup_failed_start() {
+            cx.defer(whiteboard::close);
+            self.dismiss_island(cx);
+            let message = "No displays could start recording. Check screen sharing and try again.";
+            apparent_log(message);
+            if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some(message.to_owned()); }
+            return;
+        }
         if !self.shortcut.is_pending() {
             return;
         }
@@ -1599,8 +1636,43 @@ impl ApparentCoordinator {
         self.apply_shortcut(action, cx);
     }
 
+    /// The ordinary GUI tick owns automatic startup teardown, not an agent poll.
+    fn cleanup_failed_start(&mut self) -> bool {
+        if !self.active_recording.as_ref().is_some_and(|recording| matches!(&recording.source,
+            CaptureSource::Screen { session, .. } if session.startup_failed())) { return false; }
+        // Take the exact owner before shared cancellation teardown. Explicit
+        // cancellation still uses discard_recording's cancelled terminal cause.
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if let Some(id) = self.agent_capture_id.take() {
+            self.agent_captures.set(&id, "failed", None, Some("start_failed"));
+        }
+        self.cancel_capture_attempt();
+        true
+    }
+
     fn apply_shortcut(&mut self, action: crate::shortcut::Action, cx: &mut Context<Self>) {
+        self.apply_shortcut_with(action, |coordinator, action| match action {
+            crate::shortcut::Action::RecordScreen => coordinator.record_screen_now(cx),
+            crate::shortcut::Action::RecordSelected => coordinator.record_selected_mode(cx),
+            crate::shortcut::Action::Finish => coordinator.finish_recording(cx),
+            _ => {}
+        });
+    }
+
+    // Keep shortcut admission and onboarding independent of native UI effects.
+    fn apply_shortcut_with(
+        &mut self,
+        action: crate::shortcut::Action,
+        dispatch: impl FnOnce(&mut Self, crate::shortcut::Action),
+    ) {
         use crate::shortcut::Action;
+        // A held start can be released after a menu capture was admitted (or
+        // finished). It owns neither that capture nor its onboarding feedback.
+        if matches!(action, Action::RecordScreen | Action::RecordSelected)
+            && (self.is_recording() || self.is_processing())
+        {
+            return;
+        }
         if action != Action::None {
             apparent_log(format!("shortcut -> {action:?}"));
         }
@@ -1617,15 +1689,15 @@ impl ApparentCoordinator {
                 if let Some(session) = self.onboarding.as_mut() {
                     session.input(crate::onboarding::Input::ShortcutTriggered);
                 }
-                self.record_screen_now(cx);
+                dispatch(self, action);
             }
             Action::RecordSelected => {
                 if let Some(session) = self.onboarding.as_mut() {
                     session.input(crate::onboarding::Input::ShortcutTriggered);
                 }
-                self.record_selected_mode(cx);
+                dispatch(self, action);
             }
-            Action::Finish => self.finish_recording(cx),
+            Action::Finish => dispatch(self, action),
         }
     }
 
@@ -1649,18 +1721,49 @@ impl ApparentCoordinator {
         self.feedback_capture = self.is_recording();
     }
 
-    /// Records the display under the cursor straight away (no picker), auto-cropped.
+    /// Records all connected displays straight away (no picker), auto-cropped.
     pub fn record_screen_now(&mut self, cx: &mut Context<Self>) {
-        self.feedback_capture = false;
-        let target = if self.lab {
-            lab::target()
-        } else {
-            discover_target(None)
-        };
-        self.start_recording_with_target(target, cx);
-        if self.is_recording() {
-            self.show_reveal(cx);
+        let lab = self.lab;
+        self.record_screen_with(
+            || if lab { Ok(lab::target()) } else { crate::capture::discover_desktop_target() },
+            |coordinator, target| {
+                if let Some(target) = target {
+                    coordinator.start_recording_with_target(target, cx);
+                    if coordinator.is_recording() {
+                        coordinator.show_reveal(cx);
+                    }
+                } else {
+                    cx.defer(whiteboard::close);
+                    coordinator.dismiss_island(cx);
+                }
+            },
+        );
+    }
+
+    // Inject only discovery and UI effects; failure cleanup remains the production path.
+    fn record_screen_with(
+        &mut self,
+        discover: impl FnOnce() -> anyhow::Result<TargetInfo>,
+        present: impl FnOnce(&mut Self, Option<TargetInfo>),
+    ) {
+        // Discovery failure cancels this attempt, so reject busy starts before
+        // discovering sources or changing any state owned by another capture.
+        if self.is_recording() || self.is_processing() {
+            return;
         }
+        self.feedback_capture = false;
+        let target = match discover() {
+            Ok(target) => target,
+            Err(error) => {
+                self.cancel_capture_attempt();
+                let message = format!("Cannot start desktop capture: {error:#}");
+                apparent_log(&message);
+                if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some(message); }
+                present(self, None);
+                return;
+            }
+        };
+        present(self, Some(target));
     }
 
     /// Activity that means the user got to work: clicks, drags, scrolls and strokes. Clicks on
@@ -2205,8 +2308,23 @@ impl ApparentCoordinator {
         }
     }
 
-    /// Follow the pointer with Linux controls, not with the capture source. On Mac,
-    /// a dragged capsule must stay where it was dropped for the whole recording.
+    /// Move only the existing excluded ink window; never retarget the capture or capsule.
+    #[cfg(target_os = "macos")]
+    fn follow_recording_ink(&mut self) {
+        let Some(recording) = self.active_recording.as_ref() else { return; };
+        let CaptureSource::Screen { session, .. } = &recording.source else { return; };
+        if recording.target.displays.is_empty() { return; }
+        let Some(overlay) = recording._metal_overlay.as_ref() else { return; };
+        let current = overlay.screen();
+        let Some(pointer) = current_mouse_screen() else { return; };
+        let pointer = pointer.map(f64::from);
+        let displays = session.display_status();
+        if let Some(frame) = recording_ink_destination(current, pointer, &displays)
+            && let Some(overlay) = self.active_recording.as_mut().and_then(|r| r._metal_overlay.as_mut()) {
+            overlay.move_to(frame);
+        }
+    }
+
     #[cfg(target_os = "linux")]
     fn follow_recording_pointer(&mut self) {
         if !matches!(self.island_phase, IslandPhase::Recording)
@@ -2570,6 +2688,8 @@ impl ApparentCoordinator {
             self.sync_picker_overlay();
         }
         self.follow_phone_mirror();
+        #[cfg(target_os = "macos")]
+        self.follow_recording_ink();
         #[cfg(target_os = "linux")]
         self.follow_recording_pointer();
 
@@ -4991,6 +5111,15 @@ fn area_rect(a: [f32; 2], b: [f32; 2], display: [f32; 4]) -> Option<[f64; 4]> {
         .then(|| [a[0].min(b[0]), a[1].min(b[1]), w, h].map(f64::from))
 }
 
+pub(crate) fn recording_ink_destination(current: [f64; 4], pointer: [f64; 2], displays: &[crate::model::CapturedDisplay]) -> Option<[f64; 4]> {
+    displays.iter().filter(|d| d.failure.is_none()).find_map(|d| {
+        let f = d.frame;
+        let frame = [f.x, f.y, f.width, f.height];
+        (pointer[0] >= f.x && pointer[1] >= f.y && pointer[0] < f.x + f.width
+            && pointer[1] < f.y + f.height && frame != current).then_some(frame)
+    })
+}
+
 fn recording_pointer_destination(
     current: [f64; 4],
     pointer: [f64; 2],
@@ -6303,6 +6432,10 @@ pub fn run_start_benchmark() {
     });
 }
 
+fn capture_tick_needed(shortcut_pending: bool, active_recording: bool) -> bool {
+    shortcut_pending || active_recording
+}
+
 /// Runs the GPUI desktop app, optionally opening an initial `.apparent` bundle in the Review window
 /// or starting recording immediately.
 pub fn run_app(
@@ -6571,7 +6704,7 @@ pub fn run_app(
                     }
 
                     motion::poll_tune();
-                    if loop_coord.read(cx).shortcut.is_pending() {
+                    if capture_tick_needed(loop_coord.read(cx).shortcut.is_pending(), loop_coord.read(cx).active_recording.is_some()) {
                         loop_coord.update(cx, |coord, cx| coord.tick_shortcut(cx));
                     } else if loop_coord.read(cx).telemetry.take_escape()
                         && loop_coord.read(cx).is_selecting()
@@ -6601,6 +6734,116 @@ pub fn run_app(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The same discovery/admission path as a menu start, replacing only native setup.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn coordinator_request(coordinator: &mut ApparentCoordinator, action: crate::agent_capture::Action, id: &str,
+        act: impl FnMut(&mut ApparentCoordinator, crate::agent_capture::Action)) -> serde_json::Value {
+        let (reply, result) = std::sync::mpsc::sync_channel(1);
+        coordinator.agent_request_with(crate::agent_capture::Request {
+            action: Some((action, id.into())), reply, deadline_ms: u64::MAX,
+        }, act);
+        serde_json::from_str(&result.recv().unwrap()).unwrap()
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn automatic_start_failure_receipt_survives_both_inspection_orders() {
+        use crate::agent_capture::Action;
+        for inspect_first in [false, true] {
+            let (sender, _receiver) = flume::unbounded();
+            let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
+            let dir = std::env::temp_dir().join(format!("failed-start-{}", crate::make_bundle_id()));
+            std::fs::create_dir(&dir).unwrap();
+            let receipt = coordinator_request(&mut coordinator, Action::Start, "a", |coord, action| {
+                assert_eq!(action, Action::Start);
+                coord.active_recording = Some(ActiveRecording {
+                    started: Instant::now(), target: lab::target(), bundle_dir: dir.clone(),
+                    source: CaptureSource::Screen { session: ScreenCaptureSession::with_test_start_failure(), audio: None, windows: None },
+                    _metal_overlay: None,
+                });
+                coord.set_island_phase(IslandPhase::Recording);
+            });
+            assert_eq!(receipt["status"], "starting");
+            let generation = coordinator.capture_generation;
+            if inspect_first {
+                let receipt = coordinator_request(&mut coordinator, Action::Inspect, "a", |_, _| panic!("Inspect dispatched"));
+                assert_eq!(receipt["error"], "start_failed");
+                // Busy admission may observe failure, but must not tear A down.
+                let busy = coordinator_request(&mut coordinator, Action::Start, "busy", |_, _| panic!("busy Start dispatched"));
+                assert_eq!(busy["error"], "occupied");
+                assert!(coordinator.active_recording.is_some());
+                assert_eq!(coordinator.capture_generation, generation);
+            }
+            assert!(coordinator.cleanup_failed_start());
+            let receipt = coordinator_request(&mut coordinator, Action::Inspect, "a", |_, _| panic!("Inspect dispatched"));
+            assert_eq!(receipt["status"], "failed", "inspection order {inspect_first}");
+            assert_eq!(receipt["error"], "start_failed");
+            assert!(coordinator.active_recording.is_none());
+            assert!(coordinator.agent_capture_id.is_none());
+            assert!(!dir.exists());
+        }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn explicit_cancel_keeps_cancelled_receipt() {
+        use crate::agent_capture::Action;
+        let (sender, _receiver) = flume::unbounded();
+        let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
+        let dir = std::env::temp_dir().join(format!("explicit-cancel-{}", crate::make_bundle_id()));
+        std::fs::create_dir(&dir).unwrap();
+        admit_test_menu_capture(&mut coordinator, &dir);
+        coordinator.agent_captures.begin("menu-capture");
+        let receipt = coordinator_request(&mut coordinator, Action::Cancel, "menu-capture", |coord, action| {
+            assert_eq!(action, Action::Cancel);
+            coord.cancel_capture_attempt();
+        });
+        assert_eq!(receipt["status"], "cancelled");
+        assert!(receipt["error"].is_null());
+        assert!(!dir.exists());
+    }
+
+    fn admit_test_menu_capture(coordinator: &mut ApparentCoordinator, dir: &std::path::Path) {
+        coordinator.record_screen_with(|| Ok(lab::target()), |coordinator, target| {
+            let target = target.expect("menu discovery succeeds");
+            assert!(!coordinator.is_recording() && !coordinator.is_processing());
+            whiteboard::reset_for_capture(&coordinator.whiteboard);
+            coordinator.active_recording = Some(ActiveRecording {
+                started: Instant::now(), target, bundle_dir: dir.into(),
+                source: CaptureSource::Screen {
+                    session: ScreenCaptureSession::with_test_history(
+                        crate::model::RgbaFrame::new(17, 2, 2, vec![73; 16]),
+                    ),
+                    audio: None, windows: None,
+                },
+                _metal_overlay: None,
+            });
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            { coordinator.agent_capture_id = Some("menu-capture".into()); }
+            coordinator.set_island_phase(IslandPhase::Recording);
+        });
+    }
+
+    fn release_with_failed_discovery(coordinator: &mut ApparentCoordinator) -> usize {
+        let action = coordinator.shortcut.tick(false);
+        assert_eq!(action, crate::shortcut::Action::RecordScreen);
+        let mut discoveries = 0;
+        coordinator.apply_shortcut_with(action, |coordinator, action| {
+            assert_eq!(action, crate::shortcut::Action::RecordScreen);
+            coordinator.record_screen_with(|| {
+                discoveries += 1;
+                anyhow::bail!("injected empty desktop inventory")
+            }, |coordinator, target| {
+                assert!(target.is_none());
+                // The UI callback dismisses a visible island on failed discovery.
+                if !matches!(coordinator.island_phase, IslandPhase::Hidden | IslandPhase::Dismissing) {
+                    coordinator.set_island_phase(IslandPhase::Dismissing);
+                }
+            });
+        });
+        discoveries
+    }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
@@ -6750,11 +6993,58 @@ mod tests {
                 assert_eq!(*effects.borrow(), if feedback { vec!["ui"] } else { vec!["completed", "ui"] });
             }
         }
+
     }
 
     #[test]
-    fn failed_hidden_shortcut_attempt_cannot_lend_eligibility_to_menu_capture() {
-        use crate::onboarding::{Effect, Flow, Grants, Input, Permission, Session, Status, Step};
+    fn pending_release_preserves_intervening_menu_capture_on_discovery_failure() {
+        let (sender, _receiver) = flume::unbounded();
+        let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
+        assert_eq!(coordinator.shortcut.press(coordinator.activity()), crate::shortcut::Action::None);
+        assert!(coordinator.shortcut.is_pending());
+        let dir = std::env::temp_dir().join(format!("r1-{}-{}", std::process::id(), crate::make_bundle_id()));
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::create_dir(dir.join(".display-1")).unwrap();
+        let original = dir.join(".display-1/recording.mp4");
+        std::fs::write(&original, b"private synthetic source original").unwrap();
+        admit_test_menu_capture(&mut coordinator, &dir);
+        coordinator.feedback_capture = true;
+        coordinator.whiteboard.borrow_mut().strokes.push(vec![[11.0, 12.0], [21.0, 22.0]]);
+        coordinator.telemetry.events.lock().unwrap().push(crate::model::InteractionEvent::Point {
+            t: 17, x: 0.2, y: 0.3, label: None,
+        });
+        let generation = coordinator.capture_generation;
+        let started = coordinator.active_recording.as_ref().unwrap().started;
+        let discoveries = release_with_failed_discovery(&mut coordinator);
+        assert!(coordinator.active_recording.is_some(), "stale release discarded the menu capture");
+        assert_eq!(discoveries, 0, "busy capture must reject before inventory discovery");
+        // Direct callers also use admission, not only shortcut dispatch.
+        coordinator.record_screen_with(
+            || panic!("busy direct start queried native inventory"),
+            |_, _| panic!("busy direct start changed UI"),
+        );
+        assert_eq!(coordinator.capture_generation, generation);
+        assert_eq!(coordinator.active_recording.as_ref().unwrap().started, started);
+        assert_eq!(coordinator.active_recording.as_ref().unwrap().bundle_dir, dir);
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        assert_eq!(coordinator.agent_capture_id.as_deref(), Some("menu-capture"));
+        assert!(coordinator.feedback_capture);
+        assert!(matches!(coordinator.island_phase, IslandPhase::Recording));
+        assert_eq!(coordinator.whiteboard.borrow().strokes, vec![vec![[11.0, 12.0], [21.0, 22.0]]]);
+        assert_eq!(coordinator.telemetry.events.lock().unwrap().len(), 1);
+        assert_eq!(std::fs::read(original).unwrap(), b"private synthetic source original");
+        let rec = coordinator.active_recording.take().unwrap();
+        let CaptureSource::Screen { session, .. } = rec.source else { panic!("source changed") };
+        let history = session.stop().frames;
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].t_ms, 17);
+        assert_eq!(history[0].rgba, vec![73; 16]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn pending_release_preserves_processing_ownership_on_discovery_failure() {
+        use crate::onboarding::{Effect, Flow, Grants, Permission, Session, Status, Step};
         let (sender, _receiver) = flume::unbounded();
         let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
         let grants = Grants {
@@ -6764,13 +7054,75 @@ mod tests {
         coordinator.onboarding = Some(Session::for_test(
             Flow::tour(Step::TryIt, Some(grants)).with_first_capture(true, true, false),
         ));
-        coordinator.onboarding.as_mut().unwrap().input(Input::ShortcutTriggered);
-        // The same cancellation path used by journal/startup failure, before any island appears.
-        coordinator.cancel_capture_attempt();
+        coordinator.shortcut.press(coordinator.activity());
+        coordinator.set_island_phase(IslandPhase::Recording);
+        coordinator.set_island_phase(IslandPhase::Processing);
+        coordinator.feedback_capture = true;
+        coordinator.whiteboard.borrow_mut().strokes.push(vec![[1.0, 2.0]]);
+        let generation = coordinator.capture_generation;
+        let discoveries = release_with_failed_discovery(&mut coordinator);
+        assert!(coordinator.is_processing(), "stale release dismissed Processing");
+        assert_eq!(discoveries, 0);
+        assert_eq!(coordinator.capture_generation, generation);
+        assert!(coordinator.accepts_capture_result(generation));
+        assert!(coordinator.feedback_capture);
+        assert_eq!(coordinator.whiteboard.borrow().strokes, vec![vec![[1.0, 2.0]]]);
+        coordinator.record_screen_with(
+            || panic!("processing direct start queried native inventory"),
+            |_, _| panic!("processing direct start changed UI"),
+        );
+        // Selected-mode dispatch is likewise a no-op when no picker owns admission.
+        coordinator.apply_shortcut_with(crate::shortcut::Action::RecordSelected, |_, _| {
+            panic!("busy selected start reached native setup")
+        });
+        coordinator.set_island_phase(IslandPhase::Completed {
+            finished_at: Instant::now(), frame_count: 1, duration_ms: 1000, inbox_count: 0,
+        });
+        // A rejected shortcut must not make this or the next menu capture practice.
+        assert_eq!(coordinator.onboarding.as_mut().unwrap().action("continue"), Effect::None);
+        admit_test_menu_capture(&mut coordinator, std::path::Path::new("synthetic-menu.apparent"));
+        let rec = coordinator.active_recording.take().unwrap();
+        let CaptureSource::Screen { session, .. } = rec.source else { unreachable!() };
+        session.stop();
+        coordinator.set_island_phase(IslandPhase::Processing);
+        coordinator.set_island_phase(IslandPhase::Completed {
+            finished_at: Instant::now(), frame_count: 1, duration_ms: 1000, inbox_count: 0,
+        });
+        assert_eq!(coordinator.onboarding.as_mut().unwrap().action("continue"), Effect::None);
+    }
+
+    #[test]
+    fn ordinary_gui_loop_polls_starting_and_live_captures_after_shortcut_release() {
+        let mut shortcut = crate::shortcut::Shortcut::default();
+        shortcut.press(crate::shortcut::Activity::Free);
+        assert!(capture_tick_needed(shortcut.is_pending(), false));
+        assert_eq!(shortcut.tick(false), crate::shortcut::Action::RecordScreen);
+        assert!(!shortcut.is_pending());
+        assert!(capture_tick_needed(shortcut.is_pending(), true), "portal refusal must reach recovery without another shortcut press");
+        assert!(!capture_tick_needed(false, false));
+    }
+
+    #[test]
+    fn failed_hidden_shortcut_attempt_cannot_lend_eligibility_to_menu_capture() {
+        use crate::onboarding::{Effect, Flow, Grants, Permission, Session, Status, Step};
+        let (sender, _receiver) = flume::unbounded();
+        let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
+        let grants = Grants {
+            statuses: Permission::REQUIRED.into_iter().map(|p| (p, Status::Granted)).collect(),
+            ..Default::default()
+        };
+        coordinator.onboarding = Some(Session::for_test(
+            Flow::tour(Step::TryIt, Some(grants)).with_first_capture(true, true, false),
+        ));
+        coordinator.shortcut.press(coordinator.activity());
+        assert_eq!(release_with_failed_discovery(&mut coordinator), 1);
         assert!(matches!(coordinator.island_phase, IslandPhase::Hidden));
         assert!(coordinator.active_recording.is_none());
         // A later menu recording has no ShortcutTriggered event.
-        coordinator.set_island_phase(IslandPhase::Recording);
+        admit_test_menu_capture(&mut coordinator, std::path::Path::new("synthetic-menu.apparent"));
+        let rec = coordinator.active_recording.take().unwrap();
+        let CaptureSource::Screen { session, .. } = rec.source else { unreachable!() };
+        session.stop();
         coordinator.set_island_phase(IslandPhase::Processing);
         coordinator.set_island_phase(IslandPhase::Completed {
             finished_at: Instant::now(), frame_count: 1, duration_ms: 1000, inbox_count: 0,

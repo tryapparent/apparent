@@ -177,10 +177,21 @@
       "id": "multi-display",
       "group": "start",
       "name": "More than one display",
-      "says": "The picker, overlay and capsule follow the pointer between displays; each capture belongs to one display.",
+      "says": "The picker, overlay and capsule follow the pointer between displays; explicit selected-target captures stay scoped. Untargeted starts use all connected displays (see all-monitor capture).",
       "status": "stable@0.3.4",
       "platforms": ["mac"],
       "docs": ["docs/capture.md"]
+    },
+    {
+      "id": "all-monitor-capture",
+      "group": "start",
+      "name": "Record all connected displays",
+      "says": "By default, untargeted starts use all connected displays on one desktop canvas and clock, without config. Explicit display, region and window selections stay scoped. Missing displays leave neutral space and persistent warnings while healthy displays continue.",
+      "status": "main",
+      "added": "2026-10-30",
+      "platforms": ["mac", "linux"],
+      "note": "Explicitly promoted to default behavior; no experiment flag is read. Hyprland requires independent native sharing approval per output, with validated per-output restore tokens; other Wayland backends retain one multi-source session. A missing mapping name permits only unambiguous geometry; a contradictory explicit name is rejected. Frozen output ID/name/rectangle/scale are revalidated after consent. One overall consent deadline; portal user-cancel discards the capture. Empty inventory refuses; all-source loss finishes partial history. Incomplete movies cannot replace candidate history. Mac ink follows the pointer only across healthy captured displays, without moving the capsule. An isolated two-output Omarchy run saved changing content on both displays; all three movies fully decoded, with blank consent-wait time and an incomplete first contact-sheet tile retained as known defects. XDPH 1.4.1 pending cancel returns Apparent to idle but can leave its sharing chooser open: dismiss it manually before retrying. Automatic chooser dismissal is an accepted backend/version limitation, not a passing cleanup check; Apparent does not kill shared portal processes or bypass consent. Restored consent, remaining cleanup, idle-stream keepalive, visible ink, mixed-scale controls and Mac privacy still require final-candidate proof; host regressions are not that proof.",
+      "docs": ["docs/capture.md", "docs/keyframes-and-text.md", "docs/linux.md"]
     },
     {
       "id": "linux-hyprland-multi-display",
@@ -1088,6 +1099,7 @@
       "name": "Developer ID signing and notarization setup",
       "says": "The Mac preview release workflow can accept a Developer ID certificate and notarization credentials without changing its update channel.",
       "status": "main",
+      "added": "2026-10-31",
       "platforms": ["mac"],
       "note": "Off by default via the repository Actions variable MAC_APPLE_SIGNING_ENABLED. Preparation only: native signing, Apple acceptance and the first signed Sparkle update still require real-credential verification. This is a release switch, not an app config setting.",
       "docs": ["docs/mac-signing.md", "docs/release.md"]
@@ -1143,6 +1155,7 @@
       "name": "Choose and try your Record shortcut",
       "says": "Onboarding requires an explicit shortcut choice and a successful shortcut-started recording before it can finish. Closing leaves setup unfinished for the next launch.",
       "status": "experiment:onboardingFirstCapture",
+      "added": "2026-10-31",
       "platforms": ["mac", "linux"],
       "note": "Default off. Desktop-owned Linux shortcuts must be explicitly accepted rather than edited. Native Mac and Linux interaction proof is required before promotion.",
       "docs": ["docs/onboarding-and-settings.md"]

@@ -820,6 +820,12 @@ pub(crate) fn summary_markdown_with_visual_policy(
     if let Some(warning) = &bundle.image_quality_warning {
         out.push_str(&format!("Image quality: {warning}\n"));
     }
+    for display in &bundle.target.displays {
+        if let Some(reason) = &display.failure {
+            out.push_str(&format!("Display warning: {} ({}) at {} ms — {}. Missing display area is blank; other displays continue.\n",
+                context_value(&display.name), display.id, display.failed_ms.unwrap_or(0), context_value(reason)));
+        }
+    }
     if let Some(crop) = &bundle.autocrop {
         out.push_str(&format!(
             "Cropped to: {} (full frames in {}/)\n",
@@ -2082,6 +2088,7 @@ mod tests {
                 window_title: Some("Window".into()),
                 window_id: None,
                 display_id: 1,
+                displays: Vec::new(),
                 frame: TargetFrame {
                     x: 0.0,
                     y: 0.0,
@@ -2354,6 +2361,7 @@ mod tests {
                 "app": "OpenCode", "appVersion": "354", "appShortVersion": "1.4"}
         }))
         .unwrap();
+
         let keyframe = |index: usize, t: u64, reason, event: &str, said: Option<&str>| Keyframe {
             index,
             t,

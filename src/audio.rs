@@ -7,11 +7,26 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 const SAMPLE_RATE: u32 = 16_000;
 
+/// The recording capsule has one warning slot, shared by native and GPUI renderers.
+pub fn recording_warning(mic: Option<InputWarning>, missing_displays: bool) -> Option<InputWarning> {
+    if !missing_displays { return mic; }
+    Some(match mic {
+        Some(InputWarning::Unavailable) => InputWarning::DisplaysMicUnavailable,
+        Some(InputWarning::Stopped) => InputWarning::DisplaysMicStopped,
+        Some(InputWarning::VeryQuiet) => InputWarning::DisplaysMicQuiet,
+        _ => InputWarning::Displays,
+    })
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InputWarning {
     Unavailable,
     Stopped,
     VeryQuiet,
+    Displays,
+    DisplaysMicUnavailable,
+    DisplaysMicStopped,
+    DisplaysMicQuiet,
 }
 
 impl InputWarning {
@@ -20,6 +35,10 @@ impl InputWarning {
             Self::Unavailable => "Mic unavailable",
             Self::Stopped => "Mic stopped",
             Self::VeryQuiet => "Mic very quiet",
+            Self::Displays => "Display missing",
+            Self::DisplaysMicUnavailable => "Display missing · mic unavailable",
+            Self::DisplaysMicStopped => "Display missing · mic stopped",
+            Self::DisplaysMicQuiet => "Display missing · mic very quiet",
         }
     }
 
@@ -28,6 +47,10 @@ impl InputWarning {
             Self::Unavailable => "Microphone unavailable; screen recording continues",
             Self::Stopped => "Microphone input stopped; screen recording continues",
             Self::VeryQuiet => "Microphone input is very quiet; screen recording continues",
+            Self::Displays => "One or more displays unavailable; recording continues on working displays",
+            Self::DisplaysMicUnavailable => "Microphone and one or more displays unavailable; recording continues on working displays",
+            Self::DisplaysMicStopped => "Microphone stopped and one or more displays unavailable; recording continues on working displays",
+            Self::DisplaysMicQuiet => "Microphone very quiet and one or more displays unavailable; recording continues on working displays",
         }
     }
 }
@@ -599,6 +622,16 @@ pub fn encode_wav_16k(samples_16k: &[f32]) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn missing_displays_are_visible_with_and_without_microphone_failure() {
+        use super::{recording_warning, InputWarning};
+        assert!(recording_warning(None, true).unwrap().label().contains("Display"));
+        let both = recording_warning(Some(InputWarning::Unavailable), true).unwrap();
+        assert!(both.label().contains("Display"));
+        assert!(both.label().contains("mic"));
+        assert!(both.announcement().contains("working displays"));
+        assert_eq!(recording_warning(Some(InputWarning::Stopped), false), Some(InputWarning::Stopped));
+    }
     use super::*;
 
     #[cfg(target_os = "linux")]

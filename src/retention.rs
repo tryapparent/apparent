@@ -316,12 +316,25 @@ pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Vec<Action> {
             continue;
         }
         if due(policy.media_days) {
-            let items: Vec<PathBuf> = crate::handoff::HEAVY_MEDIA
+            let mut items: Vec<PathBuf> = crate::handoff::HEAVY_MEDIA
                 .iter()
                 .chain(&DERIVED_MEDIA)
                 .map(|rel| dir.join(rel))
-                .filter(|p| p.exists())
+                .filter(|p| p.symlink_metadata().is_ok_and(|m| (m.is_file() || m.is_dir()) && !m.is_symlink()))
                 .collect();
+            // Source movies are recovery originals, not disposable intermediates. Expire
+            // them only with the same policy as the published movie. Never walk links.
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let Some(id) = name.to_str().and_then(|n| n.strip_prefix(".display-")) else { continue; };
+                    if id.parse::<u32>().is_err() || !entry.file_type().is_ok_and(|t| t.is_dir()) { continue; }
+                    for rel in crate::handoff::HEAVY_MEDIA.iter().chain(&DERIVED_MEDIA) {
+                        let path = entry.path().join(rel);
+                        if path.symlink_metadata().is_ok_and(|m| m.is_file() && !m.is_symlink()) { items.push(path); }
+                    }
+                }
+            }
             if !items.is_empty() {
                 actions.push(Action::TrashMedia { bundle: dir, items });
             }
@@ -453,12 +466,18 @@ fn trash_media(bundle: &Path, items: &[PathBuf], days: u32, trasher: Trasher) ->
     let mut freed = 0;
     let mut moved = Vec::new();
     for item in items {
-        let Some(file) = item.file_name() else {
-            continue;
-        };
+        let relative = item.strip_prefix(bundle).context("Media outside bundle")?;
+        anyhow::ensure!(relative.components().all(|c| matches!(c, std::path::Component::Normal(_))), "Invalid media path");
+        let mut ancestor = bundle.to_path_buf();
+        for part in relative.components() {
+            ancestor.push(part);
+            anyhow::ensure!(!ancestor.symlink_metadata()?.is_symlink(), "Media path became a symlink");
+        }
+        let destination = staging.join(relative);
+        if let Some(parent) = destination.parent() { std::fs::create_dir_all(parent)?; }
         freed += size_of(item);
-        std::fs::rename(item, staging.join(file))?;
-        moved.push(file.to_string_lossy().into_owned());
+        std::fs::rename(item, destination)?;
+        moved.push(relative.to_string_lossy().into_owned());
     }
     let note = serde_json::json!({
         "cleanedAtMs": crate::now_epoch_ms(),
@@ -902,6 +921,39 @@ mod tests {
 
     fn planned(captures: &Path, policy: &Policy) -> Vec<Action> {
         plan(captures, policy, later())
+    }
+
+    #[test]
+    fn private_display_media_expires_without_losing_markers_or_following_links() {
+        let tmp = TempDir::new("private-media");
+        let outside = TempDir::new("outside");
+        std::fs::write(outside.0.join("recording.mp4"), b"outside").unwrap();
+        for state in ["normal", "failed", "interrupted"] {
+            let dir = bundle(&tmp.0, state, 10.0, false);
+            let source = dir.join(".display-7");
+            std::fs::create_dir(&source).unwrap();
+            std::fs::write(source.join("recording.mp4"), b"sole original").unwrap();
+            std::fs::write(source.join(crate::recover::PRIVACY_FAILED), b"unsafe").unwrap();
+            if state != "normal" {
+                std::fs::remove_file(dir.join("apparent.json")).unwrap();
+                std::fs::remove_file(dir.join("recording.mp4")).unwrap();
+            }
+            if state == "interrupted" { std::fs::write(dir.join(crate::recover::UNSAFE_VIDEO), b"guard").unwrap(); }
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&outside.0, dir.join(".display-99")).unwrap();
+            std::fs::File::open(&dir).unwrap().set_modified(SystemTime::now() - Duration::from_secs(10 * 86400)).unwrap();
+            let policy = Policy { media_days: Some(7), bundle_days: None };
+            let actions = planned(&tmp.0, &policy);
+            let items = actions.iter().find_map(|a| match a {
+                Action::TrashMedia { bundle, items } if bundle == &dir => Some(items), _ => None
+            }).expect("eligible expired capture");
+            assert!(items.contains(&source.join("recording.mp4")), "{state}: hidden movie expires too");
+            assert!(!items.iter().any(|p| p.ends_with(crate::recover::PRIVACY_FAILED) || p.starts_with(dir.join(".display-99"))));
+            trash_media(&dir, items, 7, &|staging| { std::fs::remove_dir_all(staging)?; Ok(()) }).unwrap();
+            assert!(source.join(crate::recover::PRIVACY_FAILED).exists());
+            assert!(!source.join("recording.mp4").exists());
+            assert_eq!(std::fs::read(outside.0.join("recording.mp4")).unwrap(), b"outside");
+        }
     }
 
     #[test]

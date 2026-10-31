@@ -974,6 +974,126 @@ fn hosted_paths_symlinks_oversize_and_unknown_assets() {
 }
 
 #[test]
+fn hosted_snapshot_all_monitor_public_assets_keep_private_originals_local() {
+    for composite in [true, false] {
+        let f = Fixture::new();
+        let bundle = f.bundle();
+        fs::rename(bundle.join("recording.mov"), bundle.join("recording.mp4")).unwrap();
+        if !composite {
+            fs::remove_file(bundle.join("recording.mp4")).unwrap();
+        }
+        let mut metadata: Value =
+            serde_json::from_slice(&fs::read(bundle.join("apparent.json")).unwrap()).unwrap();
+        metadata["video"] = if composite { json!("recording.mp4") } else { Value::Null };
+        metadata["target"] = json!({"displays":[
+            {"id":7,"startedMs":0},
+            {"id":42,"startedMs":0,"failedMs":1000,"failure":"source history incomplete"}
+        ]});
+        fs::write(bundle.join("apparent.json"), serde_json::to_vec(&metadata).unwrap()).unwrap();
+        let public = ["apparent.json", "summary.md", "contact-sheet.png",
+            "frames/frame-01.png", "frames-full/frame-01.png", "contact-sheet-full.png",
+            "audio.wav", "timeline.json", "finish-trace.json", "recording.mp4"]
+            .into_iter().filter(|name| composite || *name != "recording.mp4")
+            .map(|name| (name.to_owned(), fs::read(bundle.join(name)).unwrap()))
+            .collect::<BTreeMap<_, _>>();
+        let mut originals = Vec::new();
+        for id in [7, 42, u32::MAX] {
+            let dir = bundle.join(format!(".display-{id}"));
+            fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
+            let path = dir.join("recording.mp4");
+            let bytes = format!("PRIVATE original source {id}; never publish").into_bytes();
+            fs::write(&path, &bytes).unwrap();
+            originals.push((path, bytes));
+        }
+        // Failed startup may leave an empty source directory.
+        fs::DirBuilder::new().mode(0o700).create(bundle.join(".display-0")).unwrap();
+        let stage = Scratch::new(&f.client.state).unwrap();
+        // The production pre-reservation boundary called by Client::upload,
+        // not completed(), whose cfg!(test) early return hides this defect.
+        let files = snapshot(&bundle, &stage.0).expect("completed all-monitor bundle must snapshot");
+        assert_eq!(files.iter().map(|a| a.path.clone()).collect::<BTreeSet<_>>(),
+            public.keys().cloned().collect());
+        for asset in &files {
+            assert_eq!(fs::read(stage.0.join(&asset.path)).unwrap(), public[&asset.path]);
+            assert_eq!(asset.size, public[&asset.path].len() as u64);
+            assert_eq!(asset.sha256, digest_file(&bundle.join(&asset.path)).unwrap());
+        }
+        assert_eq!(fs::read_dir(&stage.0).unwrap().count(), public.len());
+        assert!(!fs::read_dir(&stage.0).unwrap().any(|e|
+            e.unwrap().file_name().to_string_lossy().starts_with(".display-")));
+        for (path, bytes) in originals {
+            assert_eq!(fs::read(&path).unwrap(), bytes, "private original changed");
+        }
+        assert!(bundle.join(".display-0").is_dir());
+    }
+}
+
+#[test]
+fn hosted_snapshot_private_source_substitutions_and_unknowns_fail_closed() {
+    use std::os::unix::fs::symlink;
+    for name in [".display-", ".display-01", ".display-+1", ".display--1",
+        ".display-4294967296", ".display-1.bak", ".display-secret", ".other",
+        "unexpected.svg", "recording.desktop-plan.json", crate::recover::UNFINISHED,
+        crate::recover::RECOVERING, crate::recover::UNSAFE_VIDEO, crate::recover::PRIVACY_FAILED] {
+        for directory in [false, true] {
+            let f = Fixture::new();
+            let bundle = f.bundle();
+            if directory {
+                fs::create_dir(bundle.join(name)).unwrap();
+            } else {
+                fs::write(bundle.join(name), b"not a completed public asset").unwrap();
+            }
+            let stage = Scratch::new(&f.client.state).unwrap();
+            assert!(snapshot(&bundle, &stage.0).is_err(), "silently omitted {name}");
+        }
+    }
+    for substitution in ["file", "directory-link", "dangling-link", "movie-link",
+        "movie-directory", "movie-fifo", "unknown-file", "unknown-directory", "privacy-marker"] {
+        let f = Fixture::new();
+        let bundle = f.bundle();
+        let private = bundle.join(".display-7");
+        let outside = f.root.join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("recording.mp4"), b"outside private bytes").unwrap();
+        match substitution {
+            "file" => fs::write(&private, b"not a source directory").unwrap(),
+            "directory-link" => symlink(&outside, &private).unwrap(),
+            "dangling-link" => symlink(f.root.join("absent"), &private).unwrap(),
+            _ => {
+                fs::DirBuilder::new().mode(0o700).create(&private).unwrap();
+                let movie = private.join("recording.mp4");
+                match substitution {
+                    "movie-link" => symlink(outside.join("recording.mp4"), &movie).unwrap(),
+                    "movie-directory" => fs::create_dir(&movie).unwrap(),
+                    "movie-fifo" => {
+                        use std::os::unix::ffi::OsStrExt;
+                        let path = std::ffi::CString::new(movie.as_os_str().as_bytes()).unwrap();
+                        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+                    }
+                    "unknown-file" => fs::write(private.join("notes.txt"), b"unknown").unwrap(),
+                    "unknown-directory" => fs::create_dir(private.join("nested")).unwrap(),
+                    "privacy-marker" => fs::write(private.join(crate::recover::PRIVACY_FAILED), b"unsafe").unwrap(),
+                    _ => unreachable!(),
+                }
+            }
+        }
+        let stage = Scratch::new(&f.client.state).unwrap();
+        assert!(snapshot(&bundle, &stage.0).is_err(), "accepted {substitution}");
+        assert_eq!(fs::read(outside.join("recording.mp4")).unwrap(), b"outside private bytes");
+    }
+    // Recognizing a local private original must not make it a legal public reference.
+    let f = Fixture::new();
+    let bundle = f.bundle();
+    fs::DirBuilder::new().mode(0o700).create(bundle.join(".display-7")).unwrap();
+    fs::write(bundle.join(".display-7/recording.mp4"), b"private").unwrap();
+    fs::write(bundle.join("apparent.json"), br#"{"video":".display-7/recording.mp4"}"#).unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
+    assert!(snapshot(&bundle, &stage.0).unwrap_err().to_string()
+        .contains("Unsafe or missing bundle asset reference"));
+    assert!(!asset_path(".display-7/recording.mp4"));
+}
+
+#[test]
 fn hosted_malicious_manifests_symlink_output_and_bounds() {
     let f = Fixture::new();
     let server = Server::new("");

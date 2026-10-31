@@ -1278,7 +1278,27 @@ fn snapshot(bundle: &Path, stage: &Path) -> Result<Vec<Asset>> {
             .file_name()
             .into_string()
             .map_err(|_| anyhow::anyhow!("Invalid asset name"))?;
-        if matches!(name.as_str(), "frames" | "frames-full") {
+        // The desktop producer retains source movies locally even after publishing
+        // a composite (or safe candidate-only history). They are not wire assets.
+        // Recognize only its exact directory/file shape; never hide unknown data
+        // or a privacy failure marker behind a blanket dot-directory exclusion.
+        if name
+            .strip_prefix(".display-")
+            .is_some_and(|id| id.parse::<u32>().is_ok_and(|value| value.to_string() == id))
+        {
+            trusted_directory_tree(&entry.path(), false)?;
+            ensure!(
+                entry.file_type()?.is_dir(),
+                "Non-directory private source refused"
+            );
+            for child in fs::read_dir(entry.path())? {
+                let child = child?;
+                ensure!(
+                    child.file_name() == "recording.mp4" && child.file_type()?.is_file(),
+                    "unsupported_asset: unknown or non-regular private source artifact"
+                );
+            }
+        } else if matches!(name.as_str(), "frames" | "frames-full") {
             trusted_directory_tree(&entry.path(), false)?;
             ensure!(
                 entry.file_type()?.is_dir() && !entry.file_type()?.is_symlink(),

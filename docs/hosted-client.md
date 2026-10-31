@@ -79,6 +79,21 @@ The allowlist exactly matches the API: summary, metadata, contact sheets includi
 
 The server quota is **500,000,000 bytes per account**. Separately, v1 accepts at most 512 files and **90,000,000 bytes per file**, with a 128KiB manifest request. `file_too_large` is reported in queue status; the capture stays local. There is no multipart/chunk protocol and the client never drops a large recording/audio asset to fit. Real larger recordings therefore need a future coordinated protocol change. Server retention is seven days after reservation, with incomplete reservations reclaimed after 24 hours; a tombstoned ID requires a fresh explicit `apparent connect upload`, not a retry of that ID.
 
+All-monitor captures also retain **local-only** `.display-<id>/recording.mp4`
+source movies. Snapshot validates these private directories but never stages their
+paths or bytes. IDs must be canonical decimal `u32` values; a source directory can
+be empty after failed startup or media expiry, or contain only a regular
+`recording.mp4`. Unknown children, substituted files/directories and symlinks fail
+closed. A safe completed bundle without a composite movie still shares its full
+published screenshot/history asset set, not the retained private source movies.
+This does not expand the API allowlist or permit metadata to reference originals.
+
+Recovery journals (`unfinished.json`), recovery/unsafe markers (`.recovering`,
+`.unsafe-video`) and the temporary Mac `recording.desktop-plan.json` are not
+completed assets: finalization normally removes them, and leftovers still block
+upload rather than being silently omitted. A root or per-display `.privacy-failed`
+marker also blocks upload. Snapshot neither deletes nor repairs these artifacts.
+
 ## Verification
 
 `cargo test -j 3 --offline hosted_ -- --test-threads=2` exercises the production curl subprocess against an isolated loopback HTTP server, synthetic device auth, complete bundle upload/fetch, restart queue recovery, pending pointers, quota/disable/logout, pending/transport deadlines, corruption, path and symlink rejection and v1 bounds. Tests use private synthetic config/bundle directories, not the user's credentials/captures. Native capture/paste and macOS tooling still require platform proof; a Linux build is not GUI proof.

@@ -940,7 +940,14 @@ pub fn finalize_capture_bundle(
         video: video_path,
         duration_ms,
         video_offset_ms,
+        displays,
     } = recording;
+    let mut target = target;
+    if !displays.is_empty() { target.displays = displays; }
+    if recover::movie_privacy_failed(bundle_dir, &target.displays) {
+        recover::mark_unsafe_video(bundle_dir)?;
+        anyhow::bail!("Screen recording privacy exclusion failed; raw streams retained privately, no bundle published.");
+    }
     if frames.is_empty() {
         // The MP4 stream can succeed even when every screenshot fails. Do not turn
         // it into keyframes here: the sampler drops screenshots while a system
@@ -1221,7 +1228,9 @@ pub fn build_bundle_from_parts(
     }
 
     let mut extras = extras;
-    let mut keyframe_warning = None;
+    let combined_movie_missing = !target.displays.is_empty() && video_path.as_ref().is_none_or(|p| !p.exists());
+    let mut keyframe_warning = combined_movie_missing.then(||
+        "Combined movie unavailable. This capture uses smaller candidate frames; any private source media is retained for recovery.".to_string());
     let (keyframes, autocrop, selected_at, annotated_at, rendered_at, output) = if matches_prepared
     {
         drop(frames);
@@ -1256,13 +1265,13 @@ pub fn build_bundle_from_parts(
                             capture::apparent_log(format!(
                                 "Full-quality keyframes: decoded {matched} of {total}"
                             ));
-                            keyframe_warning = Some(format!("Only {matched} of {total} keyframes could be decoded at full quality; the rest use smaller candidate frames."));
+                            keyframe_warning.get_or_insert_with(String::new).push_str(&format!("Only {matched} of {total} keyframes could be decoded at full quality; the rest use smaller candidate frames."));
                         }
                         merged
                     }
                     Err(error) => {
                         capture::apparent_log(format!("Full-quality keyframes failed: {error:#}"));
-                        keyframe_warning = Some(format!("Full-quality keyframes could not be decoded from the MP4. This capture uses smaller candidate frames.{}", if cfg!(target_os = "linux") { " Check Settings › Recording for an H.264 decoder repair instruction." } else { "" }));
+                        keyframe_warning.get_or_insert_with(String::new).push_str(&format!("Full-quality keyframes could not be decoded from the MP4. This capture uses smaller candidate frames.{}", if cfg!(target_os = "linux") { " Check Settings › Recording for an H.264 decoder repair instruction." } else { "" }));
                         selected
                     }
                 }
@@ -1500,6 +1509,7 @@ pub fn generate_demo_bundle(out: Option<PathBuf>) -> Result<(PathBuf, ApparentBu
         window_title: Some("session/tool-running — OpenCode".into()),
         window_id: Some(4210),
         display_id: 1,
+        displays: Vec::new(),
         frame: TargetFrame {
             x: 100.0,
             y: 60.0,
@@ -2081,6 +2091,7 @@ fn main() -> Result<()> {
                                 video: Some(linked),
                                 duration_ms: old.duration_ms,
                                 video_offset_ms: offset,
+                                displays: Vec::new(),
                             },
                             iter_strokes,
                             iter_events,
@@ -2721,6 +2732,7 @@ mod tests {
             window_id: None,
             display_id: 1,
             frame: TargetFrame { x: 0.0, y: 0.0, width: 32.0, height: 32.0, scale: 1.0 },
+            displays: Vec::new(),
         };
         let error = finalize_capture_bundle(
             &dir,
@@ -2730,6 +2742,7 @@ mod tests {
                 video: Some(movie.clone()),
                 duration_ms: 1_000,
                 video_offset_ms: 0,
+                displays: Vec::new(),
             },
             Vec::new(),
             Vec::new(),
@@ -2815,6 +2828,7 @@ mod tests {
             window_id: None,
             display_id: 1,
             frame: TargetFrame { x: 0.0, y: 0.0, width: 32.0, height: 32.0, scale: 1.0 },
+            displays: Vec::new(),
         };
         let (_, bundle, summary) = build_bundle_from_parts(
             &dir, target, 1000,
@@ -2960,6 +2974,7 @@ mod tests {
             app: None, bundle_id: None, window_title: None, window_id: None,
             display_id: 1,
             frame: TargetFrame { x: 0.0, y: 0.0, width: 32.0, height: 32.0, scale: 1.0 },
+            displays: Vec::new(),
         };
         let frames = vec![RgbaFrame::new(0, 32, 32, vec![128; 32 * 32 * 4])];
         let (_, bundle, summary) = build_bundle_from_parts(
@@ -2988,6 +3003,35 @@ mod tests {
     }
 
     #[test]
+    fn missing_combined_movie_explanation_survives_written_bundle_reload_and_copy() {
+        let dir = std::env::temp_dir().join(make_bundle_id());
+        let bundle_dir = dir.join("partial.apparent");
+        let frame = TargetFrame { x: 0.0, y: 0.0, width: 32.0, height: 32.0, scale: 1.0 };
+        let target = TargetInfo {
+            mode: CaptureMode::Display, app: None, bundle_id: None, window_title: None,
+            window_id: None, display_id: 1, frame,
+            displays: vec![model::CapturedDisplay { id: 1, name: "synthetic-1".into(), frame,
+                started_ms: Some(0), failed_ms: Some(500), failure: Some("source movie failed".into()) }],
+        };
+        let (_, bundle, summary) = build_bundle_from_parts(
+            &bundle_dir, target, 1000, vec![RgbaFrame::new(0, 32, 32, vec![128; 32 * 32 * 4])],
+            vec![], vec![], TranscriptData::default(), None, None,
+            SourceExtras { autocrop: Some(None), ..SourceExtras::default() },
+        ).unwrap();
+        assert!(bundle.video.is_none());
+        assert!(summary.contains("Combined movie unavailable"));
+        assert!(summary.contains("smaller candidate frames"));
+        assert_eq!(std::fs::read_to_string(bundle_dir.join("summary.md")).unwrap(), summary);
+        let (path, loaded) = handoff::load_bundle(&bundle_dir).unwrap();
+        assert!(loaded.image_quality_warning.is_some());
+        for text in [sketch::summary_markdown(&loaded, &path), handoff::clipboard_summary(&loaded, &path)] {
+            assert!(text.contains("Combined movie unavailable"));
+            assert!(text.contains("Display warning:"));
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn decoder_fallback_keeps_moving_target_in_agent_images() {
         let root = std::env::temp_dir().join(make_bundle_id());
         let bundle_dir = root.join("fallback.apparent");
@@ -2996,6 +3040,7 @@ mod tests {
             app: None, bundle_id: None, window_title: None, window_id: None,
             display_id: 1,
             frame: TargetFrame { x: 0.0, y: 0.0, width: 480.0, height: 300.0, scale: 1.0 },
+            displays: Vec::new(),
         };
         let frame = |t, x: usize| {
             let mut rgba = vec![255; 480 * 300 * 4];
@@ -3050,6 +3095,7 @@ mod tests {
             app: None, bundle_id: None, window_title: None, window_id: None,
             display_id: 1,
             frame: TargetFrame { x: 0.0, y: 0.0, width: 1280.0, height: 800.0, scale: 1.0 },
+            displays: Vec::new(),
         };
         let candidate = RgbaFrame::new(0, 320, 200, vec![128; 320 * 200 * 4]);
         let (_, bundle, _) = build_bundle_from_parts(
@@ -3081,6 +3127,7 @@ mod tests {
             app: None, bundle_id: None, window_title: None, window_id: None,
             display_id: 1,
             frame: TargetFrame { x: 0.0, y: 0.0, width: 1280.0, height: 800.0, scale: 1.0 },
+            displays: Vec::new(),
         };
         let candidate = |t| RgbaFrame::new(t, 480, 300, vec![180; 480 * 300 * 4]);
         let click = |t| model::InteractionEvent::Click {

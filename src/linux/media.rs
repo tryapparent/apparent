@@ -42,6 +42,8 @@ fn init() -> Result<()> {
 pub enum Source {
     #[cfg(test)]
     Test,
+    #[cfg(test)]
+    TestFailure,
     /// A rect of the X screen (global pixels), `ximagesrc`.
     X11 { rect: [f64; 4] },
     /// One X11 window, `ximagesrc xid=`: it follows the window and leaves out what covers it.
@@ -227,10 +229,12 @@ pub fn decoder_warning() -> Option<String> {
     ))
 }
 
-fn source_launch(source: &Source) -> String {
+pub(super) fn source_launch(source: &Source) -> String {
     match source {
         #[cfg(test)]
         Source::Test => "videotestsrc is-live=true pattern=smpte".to_owned(),
+        #[cfg(test)]
+        Source::TestFailure => "videotestsrc is-live=true pattern=smpte ! identity error-after=40".to_owned(),
         Source::X11 { rect } => {
             let [x, y, w, h] = rect.map(|v| v.round() as i64);
             format!(
@@ -243,6 +247,7 @@ fn source_launch(source: &Source) -> String {
             format!("ximagesrc use-damage=false show-pointer=true xid={xid}")
         }
         Source::PipeWire { session, crop } => {
+            session.diagnostic_media_binding();
             let mut launch = format!(
                 "pipewiresrc fd={} path={} do-timestamp=true keepalive-time=500 always-copy=true",
                 session.fd(),
@@ -267,7 +272,7 @@ struct Recorder {
     candidate: (u32, u32),
     video: bool,
     first_frame_ms: Arc<AtomicU64>,
-    last: Option<Vec<u8>>,
+    last: Option<RgbaFrame>,
 }
 
 impl Recorder {
@@ -311,6 +316,16 @@ impl Recorder {
             .downcast::<gst_app::AppSink>()
             .map_err(|_| anyhow!("Not an appsink"))?;
         let first_frame_ms = Arc::new(AtomicU64::new(u64::MAX));
+        // Stamp at the producer boundary, not when the coordinator reads the cache.
+        // pipewiresrc's 500 ms keepalive supplies real samples on an idle desktop.
+        if let Some(sink) = candidates.static_pad("sink") {
+            sink.add_probe(gst::PadProbeType::BUFFER, move |_, info| {
+                if let Some(gst::PadProbeData::Buffer(buffer)) = info.data.as_mut() {
+                    buffer.make_mut().set_offset(started_at.elapsed().as_millis() as u64);
+                }
+                gst::PadProbeReturn::Ok
+            });
+        }
         let video = encoder.is_some();
         if let Some(sink) = pipeline
             .by_name("encoder")
@@ -355,6 +370,9 @@ impl Recorder {
     fn error(&self) -> Option<String> {
         let bus = self.pipeline.bus()?;
         while let Some(message) = bus.pop() {
+            if matches!(message.view(), gst::MessageView::Eos(..)) {
+                return Some("Display stream ended".into());
+            }
             if let gst::MessageView::Error(error) = message.view() {
                 return Some(format!(
                     "{} ({})",
@@ -368,18 +386,17 @@ impl Recorder {
 
     /// The newest frame, or the last one again: compositors send frames only when the screen
     /// changes.
-    fn candidate(&mut self, t_ms: u64, masks: &[[f64; 4]]) -> Option<RgbaFrame> {
+    fn candidate(&mut self, _t_ms: u64, masks: &[[f64; 4]]) -> Option<RgbaFrame> {
         let (w, h) = self.candidate;
         if let Some(sample) = self.candidates.try_pull_sample(gst::ClockTime::ZERO)
-            && let Some(mut rgba) = rgba_of(&sample, w, h)
+            && let Some(rgba) = rgba_of(&sample, w, h)
+            && let Some(buffer) = sample.buffer()
         {
-            for &rect in masks {
-                mask(&mut rgba, w, h, rect);
-            }
-            self.last = Some(rgba);
+            self.last = Some(RgbaFrame::new(buffer.offset(), w, h, rgba));
         }
-        let rgba = self.last.clone()?;
-        Some(RgbaFrame::new(t_ms, w, h, rgba))
+        let mut frame = self.last.clone()?;
+        for &rect in masks { mask(&mut frame.rgba, w, h, rect); }
+        Some(frame)
     }
 
     /// Sends end-of-stream and waits (a few seconds at most) for the movie to be finished.
@@ -532,6 +549,10 @@ fn own_window_masks(ids: &[u32], frame: [f64; 4], candidate: (u32, u32)) -> Vec<
 
 /// The recording thread: see `crate::capture::Sampler`.
 pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
+    run_sampler_source(sampler, None)
+}
+
+pub(crate) fn run_sampler_source(sampler: Sampler, authorized: Option<Source>) -> Option<PathBuf> {
     let Sampler {
         target,
         video_output_path,
@@ -557,7 +578,8 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         CANDIDATE_EDGE_NO_VIDEO
     };
     let candidate = crate::capture::capture_size(&target, edge);
-    let recorder = super::portal::source_for(&target, &stopping).and_then(|source| {
+    if crate::capture::desktop::injected_start(target.display_id) { return None; }
+    let recorder = authorized.map(Ok).unwrap_or_else(|| super::portal::source_for(&target, &stopping)).and_then(|source| {
         Recorder::new(&source, out, candidate, movie, started_at)
             .map_err(|error| anyhow!("{error:#}"))
             // The source (a portal session) lives as long as the recording.
@@ -612,6 +634,7 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
                 if let Some((r, _)) = recorder.take() {
                     let _ = r.pipeline.set_state(gst::State::Null);
                 }
+                break;
             } else if !offset_set {
                 let first = r.first_frame_ms.load(Ordering::Acquire);
                 if first != u64::MAX {
@@ -625,6 +648,7 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .interval();
+        if recorder.is_none() { break; }
         if is_urgent || last_sample.elapsed() >= interval {
             last_sample = Instant::now();
             let t_ms = started_at.elapsed().as_millis() as u64;
@@ -648,9 +672,7 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
     if recorder.finish() {
         video_output_path
     } else {
-        if let Some(path) = &video_output_path {
-            let _ = std::fs::remove_file(path);
-        }
+        apparent_log("Unfinalized source retained privately; candidate history remains authoritative");
         None
     }
 }
@@ -918,6 +940,21 @@ mod tests {
         );
         assert!(!directory.join("encoder-check.mp4").exists());
         std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn cached_pixels_keep_the_producer_time_when_the_pipeline_stalls() {
+        let mut r = Recorder::new(&Source::Test, (64, 32), (64, 32), None, Instant::now()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while r.candidate(0, &[]).is_none() && Instant::now() < deadline { std::thread::sleep(Duration::from_millis(10)); }
+        assert!(r.last.is_some());
+        r.pipeline.set_state(gst::State::Paused).unwrap();
+        let _ = r.pipeline.state(gst::ClockTime::from_seconds(1));
+        let old = r.candidate(1000, &[]).unwrap();
+        let cached = r.candidate(9000, &[]).unwrap();
+        assert_eq!(old.t_ms, cached.t_ms, "reading old pixels is not a fresh source sample");
+        assert_eq!(old.rgba, cached.rgba);
+        let _ = r.pipeline.set_state(gst::State::Null);
     }
 
     #[test]

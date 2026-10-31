@@ -147,6 +147,9 @@ case "shrink":
 case "export":
   guard arguments.count >= 2 else { fail("export needs PLAN.json") }
   runAsync { try await Exporter.run(plan: URL(filePath: arguments[1])) }
+case "desktop":
+  guard arguments.count >= 2 else { fail("desktop needs PLAN.json") }
+  runAsync { try await DesktopMovie.run(plan: URL(filePath: arguments[1])) }
 case "probe":
   guard arguments.count >= 2 else { fail("probe needs MOVIE") }
   runAsync { emit(try await Media.probe(URL(filePath: arguments[1]))) }

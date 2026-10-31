@@ -29,6 +29,12 @@ pub fn path() -> Result<PathBuf> {
         .context("apparent-helper is missing; rebuild Apparent")
 }
 
+#[cfg(target_os = "macos")]
+pub fn compose_desktop(plan: &Path) -> Result<()> {
+    let _: serde_json::Value = run(&[std::ffi::OsStr::new("desktop"), plan.as_os_str()], Duration::from_secs(60))?;
+    Ok(())
+}
+
 /// Runs a helper command to completion and parses its JSON output.
 fn run<T: for<'de> Deserialize<'de>>(args: &[&std::ffi::OsStr], timeout: Duration) -> Result<T> {
     run_program(&path()?, args, timeout)

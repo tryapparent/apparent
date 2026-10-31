@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -22,27 +23,117 @@ use crate::model::{CaptureMode, TargetInfo};
 pub struct Stream {
     pub node: u32,
     /// The portal's PipeWire connection; Mutter's streams are on the user's own PipeWire.
-    fd: Option<OwnedFd>,
+    fd: Option<PortalFd>,
     /// Portal compositor coordinates, not XWayland pixels; Hyprland reports (0, 0) for
     /// every output, so do not use this to identify the selected output there.
     pub rect: Option<[f64; 4]>,
     /// The output name supplied by the portal (Hyprland reports this even when position is 0).
     pub mapping_id: Option<String>,
-    stop: Option<flume::Sender<()>>,
+    monitor: bool,
+    stop: Option<Arc<SessionStop>>,
+}
+
+struct SessionStop(flume::Sender<()>);
+
+impl Drop for SessionStop {
+    fn drop(&mut self) { let _ = self.0.try_send(()); }
 }
 
 impl Stream {
     /// The PipeWire fd for `pipewiresrc fd=`, or -1 for the default PipeWire.
     pub fn fd(&self) -> i32 {
-        self.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
+        self.fd.as_ref().map_or(-1, |fd| fd.fd.as_ref().expect("held portal fd").as_raw_fd())
+    }
+
+    pub(super) fn diagnostic_media_binding(&self) {
+        if let Some(fd) = &self.fd { fd.event("media_binding", serde_json::json!({"node": self.node})); }
     }
 }
 
-impl Drop for Stream {
-    fn drop(&mut self) {
-        if let Some(stop) = self.stop.take() {
-            let _ = stop.send(());
+/// Opt-in facts only. Never serialize portal options, tokens, errors or source titles.
+/// One context per authorization, shared by its requests and every remote clone.
+#[derive(Clone)]
+struct PortalDiagnostic(Option<Arc<(serde_json::Value, std::sync::atomic::AtomicUsize)>>);
+
+impl PortalDiagnostic {
+    fn new(connection: &zbus::Connection, session: Option<serde_json::Value>) -> Self {
+        if std::env::var("APPARENT_PORTAL_DIAGNOSTICS").as_deref() != Ok("1") { return Self(None); }
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let start = std::fs::read_to_string("/proc/self/stat").ok().and_then(|s|
+            s.rsplit_once(") ").and_then(|(_, fields)| fields.split_whitespace().nth(19)).map(str::to_owned));
+        Self(Some(Arc::new((serde_json::json!({"schema": 1, "pid": std::process::id(),
+            "start_ticks": start, "generation": NEXT.fetch_add(1, Ordering::Relaxed),
+            "bus": connection.unique_name().map(|name| name.as_str()), "session": session}),
+            std::sync::atomic::AtomicUsize::new(0)))))
+    }
+
+    fn event(&self, event: &str, fields: serde_json::Value) {
+        if let Some(base) = &self.0 {
+            let index = base.1.fetch_add(1, Ordering::Relaxed);
+            if index > 256 { return; }
+            let mut value = base.0.clone();
+            value.as_object_mut().unwrap().extend(fields.as_object().unwrap().clone());
+            value["event"] = if index == 256 { "diagnostic_truncated" } else { event }.into();
+            apparent_log(format!("portal-resource {value}"));
         }
+    }
+}
+
+/// Own the actual descriptor, not a raw-number proxy. Drop logs only AFTER OwnedFd drop.
+struct PortalFd {
+    fd: Option<OwnedFd>,
+    diagnostic: PortalDiagnostic,
+    binding: serde_json::Value,
+}
+
+impl PortalFd {
+    fn new(fd: OwnedFd, diagnostic: PortalDiagnostic, mut binding: serde_json::Value) -> Self {
+        if diagnostic.0.is_some() {
+            let raw = fd.as_raw_fd();
+            // Socket cookies distinguish inode reuse. Never export arbitrary /proc path targets.
+            let target = std::fs::read_link(format!("/proc/self/fd/{raw}")).ok()
+                .and_then(|p| p.to_str().filter(|s| s.starts_with("socket:[") && s.ends_with(']')).map(str::to_owned));
+            let mut cookie: u64 = 0;
+            let mut len = std::mem::size_of::<u64>() as libc::socklen_t;
+            // SAFETY: both output pointers reference initialized storage of the advertised size.
+            let ok = unsafe { libc::getsockopt(raw, libc::SOL_SOCKET, libc::SO_COOKIE,
+                (&mut cookie as *mut u64).cast(), &mut len) } == 0 && len as usize == std::mem::size_of::<u64>();
+            binding["fd"] = raw.into();
+            binding["target"] = target.into();
+            binding["socket_cookie"] = if ok { cookie.to_string().into() } else { serde_json::Value::Null };
+            binding["identity_status"] = if binding["target"].is_string() && ok { "OBSERVED" } else { "UNKNOWN" }.into();
+        }
+        let owned = Self { fd: Some(fd), diagnostic, binding };
+        owned.event("held_fd", serde_json::json!({}));
+        owned
+    }
+
+    fn event(&self, event: &str, extra: serde_json::Value) {
+        let mut binding = self.binding.clone();
+        binding.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        self.diagnostic.event(event, binding);
+    }
+
+    fn try_clone(&self, node: u32, index: usize, mapping: Option<&str>, monitor: bool) -> Result<Self> {
+        use sha2::{Digest, Sha256};
+        let mapping_hash = mapping.filter(|_| monitor).map(|s| format!("{:x}", Sha256::digest(s.as_bytes())));
+        match self.fd.as_ref().expect("held portal fd").try_clone() {
+            Ok(fd) => Ok(Self::new(fd, self.diagnostic.clone(), serde_json::json!({
+                "role": "stream", "clone_index": index, "parent_fd": self.fd.as_ref().unwrap().as_raw_fd(),
+                "node": node, "mapping_sha256": mapping_hash, "monitor": monitor}))),
+            Err(error) => {
+                self.event("clone_failed", serde_json::json!({"clone_index": index, "node": node}));
+                Err(error.into())
+            }
+        }
+    }
+}
+
+impl Drop for PortalFd {
+    fn drop(&mut self) {
+        drop(self.fd.take());
+        // This proves this producer handle was dropped, NOT plugin/backend/kernel release.
+        self.event("producer_fd_dropped", serde_json::json!({}));
     }
 }
 
@@ -135,6 +226,131 @@ fn selected_output_matches(name: &str, mapping_id: Option<&str>) -> bool {
     mapping_id == Some(name)
 }
 
+/// Independent sessions on XDPH; preserve multi-source sessions on other backends.
+pub(crate) fn desktop_sources(displays: &[crate::model::CapturedDisplay], stopping: &AtomicBool,
+    deadline: std::time::Instant, mut deliver: impl FnMut(usize, Result<Source>))
+{
+    if !super::wayland_session() {
+        for (index, d) in displays.iter().enumerate() {
+            deliver(index, Ok(Source::X11 { rect: [d.frame.x, d.frame.y, d.frame.width, d.frame.height] }));
+        }
+        return;
+    }
+    if super::hyprland() {
+        use super::desktop_consent::{sequence, Failure};
+        let cancelled = std::cell::Cell::new(false);
+        let mut used = std::collections::HashSet::new();
+        sequence(displays.len(), stopping, deadline, |index, deadline| {
+            let d = &displays[index];
+            let key = format!("screencast:{}", d.name);
+            apparent_log(format!("Screen sharing approval {}/{}: choose monitor {}", index + 1, displays.len(), d.name));
+            let result = (|| -> Result<Source> {
+                let (mut streams, token) = portal_screencasts_until(false, false, &key, stopping, deadline)?;
+                anyhow::ensure!(streams.len() == 1, "Expected one monitor per independent sharing session");
+                let session = streams.remove(0);
+                validate_desktop_source(d, session.monitor, session.mapping_id.as_deref(), &super::monitors(), &used)?;
+                anyhow::ensure!(!stopping.load(Ordering::Acquire) && std::time::Instant::now() < deadline,
+                    "Sharing approval arrived after Stop or the consent deadline");
+                used.insert(d.name.clone());
+                save_token(&key, token.as_deref());
+                apparent_log(format!("Desktop monitor {} authorized as PipeWire node {} in its own session", d.name, session.node));
+                Ok(Source::PipeWire { session, crop: None })
+            })();
+            result.map_err(|error| {
+                save_token(&key, None);
+                if user_cancelled(&error) { cancelled.set(true); Failure::Cancelled }
+                else { Failure::Source(format!("{error:#}")) }
+            })
+        }, |index, result| {
+            // Recheck earlier approvals after the final picker while holding their
+            // independent leases. Never substitute a changed output.
+            let result = result.map_err(|message| if cancelled.get() { anyhow::Error::new(SharingCancelled) } else { anyhow!(message) })
+                .and_then(|source| {
+                    let d = &displays[index];
+                    validate_desktop_layout(d, &super::monitors())?;
+                    Ok(source)
+                });
+            deliver(index, result);
+        });
+        return;
+    }
+    let (streams, token) = match portal_screencasts_until(false, true, "screencast-desktop", stopping, deadline) {
+        Ok(result) => result,
+        Err(error) => {
+            let cancelled = user_cancelled(&error);
+            for index in 0..displays.len() {
+                deliver(index, Err(if cancelled { anyhow::Error::new(SharingCancelled) } else { anyhow!("Screen sharing: {error:#}") }));
+            }
+            return;
+        }
+    };
+    save_token("screencast-desktop", token.as_deref());
+    let identities: Vec<_> = streams.iter().map(|s| (s.mapping_id.as_deref(), s.rect)).collect();
+    let mapping = desktop_source_indices(displays, &identities, false);
+    let current = super::monitors();
+    let mut streams: Vec<Option<Stream>> = streams.into_iter().map(Some).collect();
+    for (i, (d, index)) in displays.iter().zip(mapping).enumerate() {
+        let result = (|| -> Result<Source> {
+            let index = index.map_err(|message| anyhow!(message))?;
+            validate_desktop_layout(d, &current)?;
+            let session = streams[index].take().expect("one portal stream per display");
+            anyhow::ensure!(session.monitor, "Sharing portal did not authorize a Monitor source");
+            apparent_log(format!("Desktop source {} ({}) authorized as PipeWire node {}", d.name, d.id, session.node));
+            Ok(Source::PipeWire { session, crop: None })
+        })();
+        deliver(i, result);
+    }
+}
+
+#[derive(Debug)]
+struct SharingCancelled;
+impl std::fmt::Display for SharingCancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str("Screen sharing cancelled by user") }
+}
+impl std::error::Error for SharingCancelled {}
+
+pub(crate) fn user_cancelled(error: &anyhow::Error) -> bool {
+    error.is::<SharingCancelled>() || error.chain().any(|cause| matches!(cause.downcast_ref::<ashpd::Error>(),
+        Some(ashpd::Error::Response(ashpd::desktop::ResponseError::Cancelled))))
+}
+
+fn validate_desktop_source(d: &crate::model::CapturedDisplay, monitor: bool, mapping: Option<&str>,
+    current: &[super::Monitor], used: &std::collections::HashSet<String>) -> Result<()> {
+    anyhow::ensure!(monitor, "Sharing portal did not authorize a Monitor source");
+    anyhow::ensure!(mapping == Some(d.name.as_str()) && !used.contains(&d.name),
+        "Sharing portal selected a wrong, missing or duplicate output; expected {}", d.name);
+    validate_desktop_layout(d, current)
+}
+
+fn desktop_source_indices(displays: &[crate::model::CapturedDisplay],
+    identities: &[(Option<&str>, Option<[f64; 4]>)], require_name: bool) -> Vec<Result<usize, String>> {
+    let mapping: Vec<_> = displays.iter().map(|d| {
+        let matches: Vec<_> = identities.iter().enumerate().filter_map(|(i, (name, rect))| {
+            let matched = match name {
+                Some(name) if *name == d.name => true,
+                None if !require_name => *rect == Some([d.frame.x, d.frame.y, d.frame.width, d.frame.height]),
+                _ => false,
+            };
+            matched.then_some(i)
+        }).collect();
+        if matches.len() == 1 { Ok(matches[0]) }
+        else { Err("Display not authorized or portal source identity is ambiguous".to_owned()) }
+    }).collect();
+    mapping.iter().map(|result| match result {
+        Ok(index) if mapping.iter().filter(|other| other.as_ref().ok() == Some(index)).count() != 1 =>
+            Err("One portal stream ambiguously identifies multiple displays".into()),
+        _ => result.clone(),
+    }).collect()
+}
+
+fn validate_desktop_layout(d: &crate::model::CapturedDisplay, current: &[super::Monitor]) -> Result<()> {
+    anyhow::ensure!(selected_monitor(current, d.id).is_some_and(|m|
+        m.name == d.name && m.rect == [d.frame.x, d.frame.y, d.frame.width, d.frame.height]
+            && m.scale == d.frame.scale),
+        "Display changed while screen sharing was chosen");
+    Ok(())
+}
+
 fn selected_monitor(monitors: &[super::Monitor], id: u32) -> Option<&super::Monitor> {
     monitors.iter().find(|m| super::monitor_id(m) == id)
 }
@@ -183,6 +399,50 @@ fn portal_crop(mode: CaptureMode, rect: [f64; 4], stream: Option<[f64; 4]>) -> O
 #[cfg(test)]
 mod display_tests {
     use super::*;
+
+    #[test]
+    fn desktop_post_consent_rejects_changed_frozen_identity_geometry_and_scale() {
+        let monitor = super::super::Monitor { handle: 100, name: "Virtual-1".into(),
+            rect: [0.0, 0.0, 1280.0, 800.0], work: [0.0, 0.0, 1280.0, 800.0], scale: 1.0, primary: true };
+        let d = crate::model::CapturedDisplay { id: super::super::monitor_id(&monitor), name: monitor.name.clone(),
+            frame: crate::model::TargetFrame { x: 0.0, y: 0.0, width: 1280.0, height: 800.0, scale: 1.0 },
+            started_ms: None, failed_ms: None, failure: None };
+        assert!(validate_desktop_layout(&d, &[monitor.clone()]).is_ok());
+        for changed in 0..4 {
+            let mut now = monitor.clone();
+            match changed { 0 => now.handle += 1, 1 => now.name = "replacement".into(),
+                2 => now.rect[0] += 100.0, _ => now.scale = 1.25 }
+            assert!(validate_desktop_layout(&d, &[now]).is_err(), "changed frozen field {changed}");
+        }
+    }
+
+    #[test]
+    fn desktop_explicit_wrong_mapping_cannot_fall_back_to_geometry() {
+        let d = crate::model::CapturedDisplay { id: 1, name: "Virtual-1".into(),
+            frame: crate::model::TargetFrame { x: 0.0, y: 0.0, width: 1280.0, height: 800.0, scale: 1.0 },
+            started_ms: None, failed_ms: None, failure: None };
+        let rect = Some([0.0, 0.0, 1280.0, 800.0]);
+        assert_eq!(desktop_source_indices(&[d.clone()], &[(None, rect)], false), vec![Ok(0)]);
+        assert!(desktop_source_indices(&[d], &[(Some("different-output"), rect)], false)[0].is_err());
+    }
+
+    #[test]
+    fn desktop_authorization_maps_names_not_stream_order_or_shared_positions() {
+        let display = |id, name: &str| crate::model::CapturedDisplay { id, name: name.into(),
+            frame: crate::model::TargetFrame { x: 0.0, y: 0.0, width: 1280.0, height: 800.0, scale: 1.0 },
+            started_ms: None, failed_ms: None, failure: None };
+        let a = display(11, "Virtual-1"); let b = display(22, "HEADLESS-1");
+        let identities = [(Some("HEADLESS-1"), Some([0.0, 0.0, 1280.0, 800.0])),
+            (Some("Virtual-1"), Some([0.0, 0.0, 1280.0, 800.0]))];
+        assert_eq!(desktop_source_indices(&[a.clone(), b.clone()], &identities, true), vec![Ok(1), Ok(0)]);
+        let partial = desktop_source_indices(&[a.clone(), b.clone()], &identities[..1], true);
+        assert!(partial[0].is_err()); assert_eq!(partial[1], Ok(0));
+        assert!(desktop_source_indices(&[a.clone()], &[(None, identities[0].1)], true)[0].is_err());
+        assert!(desktop_source_indices(&[a.clone(), a.clone()], &identities, true).iter().all(Result::is_err));
+        assert!(desktop_source_indices(&[a.clone()], &[identities[1], identities[1]], true)[0].is_err());
+        assert!(desktop_source_indices(&[a.clone(), b], &[(None, identities[0].1)], false).iter().all(Result::is_err));
+        assert_eq!(desktop_source_indices(&[a], &[(None, identities[0].1)], false), vec![Ok(0)]);
+    }
 
     #[test]
     fn restore_tokens_are_scoped_to_the_selected_output() {
@@ -354,7 +614,8 @@ fn mutter_area(rect: [f64; 4]) -> Result<Stream> {
         fd: None,
         rect: Some(rect),
         mapping_id: None,
-        stop: Some(stop_tx),
+        monitor: true,
+        stop: Some(Arc::new(SessionStop(stop_tx))),
     })
 }
 
@@ -387,10 +648,85 @@ fn save_token(key: &str, token: Option<&str>) {
 /// desktop asks which; the answer is remembered (a restore token), so later recordings start
 /// without asking.
 fn portal_screencast(window: bool, key: &str, stopping: &AtomicBool) -> Result<(Stream, Option<String>)> {
-    use ashpd::desktop::PersistMode;
-    use ashpd::desktop::screencast::{CursorMode, Screencast, SourceType};
+    let (mut streams, token) = portal_screencasts(window, false, key, stopping)?;
+    anyhow::ensure!(streams.len() == 1, "The selected-target portal returned multiple sources");
+    Ok((streams.remove(0), token))
+}
 
-    let (ready_tx, ready_rx) = flume::bounded::<Result<(u32, OwnedFd, Option<[f64; 4]>, Option<String>, Option<String>)>>(1);
+fn portal_screencasts(window: bool, multiple: bool, key: &str, stopping: &AtomicBool) -> Result<(Vec<Stream>, Option<String>)> {
+    portal_screencasts_until(window, multiple, key, stopping, std::time::Instant::now() + Duration::from_secs(120))
+}
+
+// ashpd 0.11.1 returns Request only after Response, and Request has no Drop.
+// Own its standard handle_token/path before sending on the authorization's connection.
+struct OwnedPortalRequest {
+    token: String,
+    path: zbus::zvariant::OwnedObjectPath,
+    diagnostic: PortalDiagnostic,
+}
+
+impl OwnedPortalRequest {
+    fn new(connection: &zbus::Connection) -> Result<Self> {
+        let token = crate::make_bundle_id().replace('-', "_");
+        let sender = connection.unique_name().context("Portal connection has no unique name")?
+            .trim_start_matches(':').replace('.', "_");
+        let path = format!("/org/freedesktop/portal/desktop/request/{sender}/{token}").try_into()?;
+        Ok(Self { token, path, diagnostic: PortalDiagnostic::new(connection, None) })
+    }
+
+    async fn perform<B: serde::Serialize + zbus::zvariant::Type>(&self, proxy: &zbus::Proxy<'_>,
+        method: &str, body: &B, pending: &std::cell::RefCell<Option<zbus::zvariant::OwnedObjectPath>>) -> Result<zbus::Message> {
+        let request = zbus::Proxy::new(proxy.connection(), "org.freedesktop.portal.Desktop", self.path.clone(),
+            "org.freedesktop.portal.Request").await?;
+        let mut responses = request.receive_signal("Response").await?;
+        pending.replace(Some(self.path.clone()));
+        self.diagnostic.event("request_pending", serde_json::json!({"request": self.path.as_str(), "method": method}));
+        let reply = proxy.call_method(method, body).await?;
+        let returned: zbus::zvariant::OwnedObjectPath = reply.body().deserialize()?;
+        anyhow::ensure!(returned == self.path, "Portal returned an unexpected request identity");
+        let message = responses.next().await.context("Sharing request ended without Response")?;
+        let (status, _): (u32, HashMap<String, zbus::zvariant::OwnedValue>) = message.body().deserialize()?;
+        pending.take(); // Response ends the request; never close an unrelated object later.
+        self.diagnostic.event("request_response", serde_json::json!({"request": self.path.as_str(), "status": status}));
+        match status {
+            0 => Ok(message),
+            1 => Err(SharingCancelled.into()),
+            _ => bail!("Sharing request failed with response {status}"),
+        }
+    }
+}
+
+async fn cleanup_portal(request: impl std::future::Future<Output = ()>, session: impl std::future::Future<Output = ()>, budget: Duration) {
+    async fn bounded(future: impl std::future::Future<Output = ()>, budget: Duration) {
+        let (tx, rx) = flume::bounded::<()>(1);
+        // This detached timer owns no portal/capture resources. No timer dependency added.
+        if std::thread::Builder::new().name("apparent-portal-cleanup-deadline".into()).spawn(move || {
+            std::thread::sleep(budget); let _ = tx.try_send(());
+        }).is_err() { return; }
+        futures_lite::future::race(future, async { let _ = rx.recv_async().await; }).await;
+    }
+    bounded(request, budget).await;
+    bounded(session, budget).await;
+}
+
+async fn open_portal_remote(proxy: &zbus::Proxy<'_>, session: &zbus::zvariant::OwnedObjectPath) -> Result<OwnedFd> {
+    let options = HashMap::<&str, zbus::zvariant::Value<'_>>::new();
+    let fd: zbus::zvariant::OwnedFd = proxy.call("OpenPipeWireRemote", &(session, options)).await?;
+    Ok(fd.into())
+}
+
+async fn close_portal_session(proxy: &zbus::Proxy<'_>, session: &zbus::zvariant::OwnedObjectPath) -> bool {
+    proxy.connection().call_method(Some("org.freedesktop.portal.Desktop"), session,
+        Some("org.freedesktop.portal.Session"), "Close", &()).await.is_ok()
+}
+
+fn portal_screencasts_until(window: bool, multiple: bool, key: &str, stopping: &AtomicBool,
+    deadline: std::time::Instant) -> Result<(Vec<Stream>, Option<String>)> {
+    use ashpd::desktop::screencast::{SourceType, Streams};
+    use zbus::zvariant::Value;
+
+    type Authorized = (u32, PortalFd, Option<[f64; 4]>, Option<String>, bool);
+    let (ready_tx, ready_rx) = flume::bounded::<Result<(Vec<Authorized>, Option<String>)>>(1);
     let (stop_tx, stop_rx) = flume::bounded::<()>(1);
     let request_key = key.to_owned();
     std::thread::Builder::new()
@@ -398,92 +734,178 @@ fn portal_screencast(window: bool, key: &str, stopping: &AtomicBool) -> Result<(
         .spawn(move || {
             futures_lite::future::block_on(async move {
                 let run = async {
-                    let proxy = Screencast::new().await?;
-                    let session = proxy.create_session().await?;
+                    // ashpd's Session constructors are private and create_session
+                    // waits for Response before exposing its Request. Use the same
+                    // wire protocol on a dedicated, owned zbus connection instead.
+                    // Stop covers connection/proxy setup too. Disconnecting this
+                    // connection after bounded cleanup also revokes late sessions.
+                    let proxy = futures_lite::future::race(async {
+                        let connection = zbus::Connection::session().await?;
+                        let proxy = zbus::Proxy::new(&connection, "org.freedesktop.portal.Desktop",
+                            "/org/freedesktop/portal/desktop", "org.freedesktop.portal.ScreenCast").await?;
+                        anyhow::Ok(proxy)
+                    }, async { let _ = stop_rx.recv_async().await; bail!("Sharing stopped during connection setup") }).await?;
+                    let mut creation = OwnedPortalRequest::new(proxy.connection())?;
+                    // The standard session_handle_token owns this exact path even
+                    // before the method reply or Response arrives.
+                    let session: zbus::zvariant::OwnedObjectPath = creation.path.as_str().replacen("/request/", "/session/", 1).try_into()?;
+                    let diagnostic = PortalDiagnostic::new(proxy.connection(), Some(serde_json::json!(session.as_str())));
+                    creation.diagnostic = diagnostic.clone();
+                    let pending = std::cell::RefCell::new(None);
                     let request = async {
+                        let options = HashMap::from([("handle_token", Value::from(creation.token.as_str())),
+                            ("session_handle_token", Value::from(creation.token.as_str()))]);
+                        let response = creation.perform(&proxy, "CreateSession", &options, &pending).await?;
+                        let (_, result): (u32, HashMap<String, zbus::zvariant::OwnedValue>) = response.body().deserialize()?;
+                        let handle = result.get("session_handle").context("CreateSession omitted its Session")?;
+                        // xdg-desktop-portal historically returns a string, not an
+                        // object path. Accept both, as installed ashpd does.
+                        let returned = handle.downcast_ref::<&str>().map(str::to_owned).or_else(|_| {
+                            handle.downcast_ref::<zbus::zvariant::ObjectPath<'_>>().map(|path| path.as_str().to_owned())
+                        })?;
+                        anyhow::ensure!(returned == session.as_str(), "Portal returned an unexpected Session identity");
+                        diagnostic.event("session_created", serde_json::json!({}));
+                        anyhow::ensure!(stop_rx.is_empty() && !stop_rx.is_disconnected(), "Sharing stopped before source selection");
                         let token = saved_token(&request_key);
-                        let kind = if window {
-                            SourceType::Window
-                        } else {
-                            SourceType::Monitor
-                        };
-                        proxy
-                            .select_sources(
-                                &session,
-                                CursorMode::Embedded,
-                                kind.into(),
-                                false,
-                                token.as_deref(),
-                                // Windows come and go: ask each time for one.
-                                if window {
-                                    PersistMode::DoNot
-                                } else {
-                                    PersistMode::ExplicitlyRevoked
-                                },
-                            )
-                            .await?;
-                        let streams = proxy.start(&session, None).await?.response()?;
+                        let mut selection = OwnedPortalRequest::new(proxy.connection())?;
+                        selection.diagnostic = diagnostic.clone();
+                        let mut options = HashMap::from([
+                            ("handle_token", Value::from(selection.token.as_str())),
+                            ("types", Value::from(if window { 2u32 } else { 1u32 })),
+                            ("cursor_mode", Value::from(2u32)), // Embedded cursor.
+                            ("multiple", Value::from(multiple)),
+                            ("persist_mode", Value::from(if window { 0u32 } else { 2u32 })),
+                        ]);
+                        if let Some(token) = token.as_deref() { options.insert("restore_token", Value::from(token)); }
+                        selection.perform(&proxy, "SelectSources", &(&session, options), &pending).await?;
+                        let mut start = OwnedPortalRequest::new(proxy.connection())?;
+                        start.diagnostic = diagnostic.clone();
+                        let options = HashMap::from([("handle_token", Value::from(start.token.as_str()))]);
+                        let response = start.perform(&proxy, "Start", &(&session, "", options), &pending).await?;
+                        let (_, streams): (u32, Streams) = response.body().deserialize()?;
                         let token = streams.restore_token().map(str::to_owned);
-                        let stream = streams.streams().first().context("Nothing was shared")?;
-                        let rect = match (stream.position(), stream.size()) {
-                            (Some((x, y)), Some((w, h))) => {
-                                Some([f64::from(x), f64::from(y), f64::from(w), f64::from(h)])
+                        anyhow::ensure!(!streams.streams().is_empty(), "Nothing was shared");
+                        // Each Recorder/pipewiresrc owns a protocol core. Different FD
+                        // integers that dup one socket do NOT share a GStreamer core.
+                        // Open a fresh authorized connection for every selected node.
+                        // A distinct portal call creates the observer connection. Never
+                        // duplicate the recording socket into a second protocol reader.
+                        let graph = if diagnostic.0.is_some() {
+                            let nodes: Vec<_> = streams.streams().iter().map(|s| s.pipe_wire_node_id()).collect();
+                            let graph = match open_portal_remote(&proxy, &session).await {
+                                Ok(observer) => {
+                                    let mut observer = PortalFd::new(observer, diagnostic.clone(),
+                                        serde_json::json!({"role": "observer"}));
+                                    let (tx, rx) = flume::bounded(1);
+                                    let started = std::thread::Builder::new().name("apparent-graph-probe".into())
+                                        .spawn(move || {
+                                            let graph = super::portal_graph::probe(observer.fd.take().unwrap(), &nodes);
+                                            // The native probe has disconnected and destroyed its
+                                            // core before this explanatory drop record is emitted.
+                                            drop(observer);
+                                            let _ = tx.send(graph);
+                                        });
+                                    if started.is_ok() { rx.recv_async().await.unwrap_or_else(|_| serde_json::json!({"status": "UNKNOWN"})) }
+                                    else { serde_json::json!({"status": "UNKNOWN", "observer_released": true}) }
+                                }
+                                Err(_) => serde_json::json!({"status": "UNKNOWN", "observer_released": true}),
+                            };
+                            Some(graph)
+                        } else { None };
+                        let mut authorized = Vec::new();
+                        for (index, stream) in streams.streams().iter().enumerate() {
+                            let rect = match (stream.position(), stream.size()) {
+                                (Some((x, y)), Some((w, h))) => Some([f64::from(x), f64::from(y), f64::from(w), f64::from(h)]),
+                                _ => None,
+                            };
+                            let node = stream.pipe_wire_node_id();
+                            let monitor = stream.source_type() == Some(SourceType::Monitor);
+                            let fd = PortalFd::new(open_portal_remote(&proxy, &session).await?, diagnostic.clone(),
+                                serde_json::json!({"role": "remote", "consumer_index": index, "node": node}));
+                            if let Some(graph) = &graph {
+                                // The observer sees all authorized nodes. Bind only this
+                                // consumer's node to this recording socket in the graph join.
+                                let mut graph = graph.clone();
+                                if let Some(selected) = graph["selected"].as_array_mut() {
+                                    selected.retain(|selected| selected["node"] == node);
+                                }
+                                fd.event("graph_snapshot", serde_json::json!({"graph": graph}));
                             }
-                            _ => None,
-                        };
-                        let node = stream.pipe_wire_node_id();
-                        let mapping_id = stream.mapping_id().map(str::to_owned);
-                        let fd = proxy.open_pipe_wire_remote(&session).await?;
-                        anyhow::Ok((node, fd, rect, mapping_id, token))
+                            authorized.push((node, fd.try_clone(node, index, stream.mapping_id(), monitor)?, rect, stream.mapping_id().map(str::to_owned), monitor));
+                        }
+                        anyhow::Ok((authorized, token))
                     };
                     let cancelled = async {
                         let _ = stop_rx.recv_async().await;
                         bail!("Screen sharing was cancelled")
                     };
                     match futures_lite::future::race(request, cancelled).await {
-                        Ok((node, fd, rect, mapping_id, token)) => anyhow::Ok((proxy, session, node, fd, rect, mapping_id, token)),
+                        Ok((authorized, token)) => anyhow::Ok((proxy, session, authorized, token, diagnostic)),
                         Err(error) => {
-                            let _ = session.close().await;
-                            Err(error)
+                            diagnostic.event("authorization_failed", serde_json::json!({}));
+                            // Return failure first; cleanup stays on this detached worker.
+                            let _ = ready_tx.try_send(Err(error));
+                            let path = pending.take();
+                            cleanup_portal(async {
+                                if let Some(path) = path {
+                                    diagnostic.event("request_close_requested", serde_json::json!({"request": path.as_str()}));
+                                    apparent_log(format!("Closing pending sharing Request {path}"));
+                                    let result = proxy.connection().call_method(Some("org.freedesktop.portal.Desktop"), path,
+                                        Some("org.freedesktop.portal.Request"), "Close", &()).await;
+                                    diagnostic.event("request_close_returned", serde_json::json!({"ok": result.is_ok()}));
+                                    if let Err(error) = result {
+                                        apparent_log(format!("Pending sharing Request.Close failed: {error}"));
+                                    }
+                                }
+                            }, async {
+                                diagnostic.event("session_close_requested", serde_json::json!({}));
+                                let ok = close_portal_session(&proxy, &session).await;
+                                diagnostic.event("session_close_returned", serde_json::json!({"ok": ok}));
+                            }, Duration::from_secs(1)).await;
+                            Err(anyhow!("Sharing request failed; cleanup finished"))
                         }
                     }
                 };
                 match run.await {
-                    Ok((_proxy, session, node, fd, rect, mapping_id, token)) => {
-                        let _ = ready_tx.send(Ok((node, fd, rect, mapping_id, token)));
+                    Ok((proxy, session, authorized, token, diagnostic)) => {
+                        let _ = ready_tx.try_send(Ok((authorized, token)));
                         let _ = stop_rx.recv_async().await;
-                        let _ = session.close().await;
+                        cleanup_portal(async {}, async {
+                            diagnostic.event("session_close_requested", serde_json::json!({}));
+                            let ok = close_portal_session(&proxy, &session).await;
+                            diagnostic.event("session_close_returned", serde_json::json!({"ok": ok}));
+                        }, Duration::from_secs(1)).await;
                     }
                     Err(error) => {
-                        let _ = ready_tx.send(Err(error));
+                        let _ = ready_tx.try_send(Err(error));
                     }
                 }
             });
         })?;
-    // The first time the desktop asks which display, so wait for the person to choose.
-    let deadline = std::time::Instant::now() + Duration::from_secs(120);
-    let (node, fd, rect, mapping_id, token) = loop {
-        if stopping.load(Ordering::Acquire) || std::time::Instant::now() >= deadline {
-            let _ = stop_tx.try_send(());
-            bail!("Screen sharing was cancelled or the dialog wasn't answered");
-        }
-        match ready_rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(Ok(stream)) => break stream,
-            Ok(Err(error)) => {
-                save_token(key, None);
-                return Err(error);
+    // Every output shares this caller deadline; cleanup never delays its result.
+    let lease = Arc::new(SessionStop(stop_tx));
+    let (authorized, token) = wait_for_consent(ready_rx, stopping, deadline).inspect_err(|_| save_token(key, None))?;
+    Ok((authorized.into_iter().map(|(node, fd, rect, mapping_id, monitor)| Stream {
+        node, fd: Some(fd), rect, mapping_id, monitor, stop: Some(Arc::clone(&lease)),
+    }).collect(), token))
+}
+
+// Caller-side wait never joins session.close. Dropping its lease signals detached cleanup.
+fn wait_for_consent<T>(ready: flume::Receiver<Result<T>>, stopping: &AtomicBool,
+    deadline: std::time::Instant) -> Result<T> {
+    loop {
+        anyhow::ensure!(!stopping.load(Ordering::Acquire) && std::time::Instant::now() < deadline,
+            "Screen sharing was stopped or the overall consent deadline expired");
+        match ready.recv_timeout(Duration::from_millis(100).min(deadline.saturating_duration_since(std::time::Instant::now()))) {
+            Ok(result) => {
+                anyhow::ensure!(!stopping.load(Ordering::Acquire) && std::time::Instant::now() < deadline,
+                    "Sharing result arrived after Stop or the consent deadline");
+                return result;
             }
-            Err(flume::RecvTimeoutError::Timeout) => {}
+            Err(flume::RecvTimeoutError::Timeout) => {},
             Err(error) => return Err(error.into()),
         }
-    };
-    Ok((Stream {
-        node,
-        fd: Some(fd),
-        rect,
-        mapping_id,
-        stop: Some(stop_tx),
-    }, token))
+    }
 }
 
 // MARK: Shortcuts
@@ -720,9 +1142,83 @@ pub fn send_paste(shift: bool) -> Result<()> {
 }
 
 #[cfg(test)]
+#[path = "portal_tests.rs"]
+mod protocol_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::capture::{CARBON_OPTION_KEY, CARBON_SHIFT_KEY};
+
+    #[test]
+    fn independent_monitor_authorization_requires_type_identity_frozen_geometry_and_uniqueness() {
+        let monitor = super::super::Monitor { handle: 7, name: "DP-7".into(), rect: [-1600.0, 0.0, 1600.0, 900.0],
+            work: [-1600.0, 0.0, 1600.0, 900.0], scale: 1.0, primary: false };
+        let d = crate::model::CapturedDisplay { id: 7, name: "DP-7".into(),
+            frame: crate::model::TargetFrame { x: -1600.0, y: 0.0, width: 1600.0, height: 900.0, scale: 1.0 },
+            started_ms: None, failed_ms: None, failure: None };
+        let empty = std::collections::HashSet::new();
+        assert!(validate_desktop_source(&d, true, Some("DP-7"), &[monitor.clone()], &empty).is_ok());
+        for (is_monitor, name) in [(false, Some("DP-7")), (true, None), (true, Some("DP-8"))] {
+            assert!(validate_desktop_source(&d, is_monitor, name, &[monitor.clone()], &empty).is_err());
+        }
+        assert!(validate_desktop_source(&d, true, Some("DP-7"), &[], &empty).is_err());
+        assert!(validate_desktop_source(&d, true, Some("DP-7"), &[monitor.clone()], &std::collections::HashSet::from(["DP-7".into()])).is_err());
+        let mut moved = monitor.clone(); moved.rect[0] += 1.0;
+        assert!(validate_desktop_source(&d, true, Some("DP-7"), &[moved], &empty).is_err());
+        let mut rescaled = monitor; rescaled.scale = 1.25;
+        assert!(validate_desktop_source(&d, true, Some("DP-7"), &[rescaled], &empty).is_err());
+    }
+
+    #[test]
+    fn owned_pending_request_is_closed_before_session_even_when_request_close_blocks() {
+        use std::cell::RefCell;
+        for blocked in [false, true] {
+            let calls = RefCell::new(Vec::new());
+            let start = std::time::Instant::now();
+            futures_lite::future::block_on(cleanup_portal(async {
+                calls.borrow_mut().push("Request.Close");
+                if blocked { std::future::pending::<()>().await; }
+            }, async {
+                calls.borrow_mut().push("Session.Close");
+                if blocked { std::future::pending::<()>().await; }
+            }, Duration::from_millis(20)));
+            assert_eq!(*calls.borrow(), vec!["Request.Close", "Session.Close"]);
+            assert!(start.elapsed() < Duration::from_secs(1));
+        }
+    }
+
+    #[test]
+    fn consent_caller_does_not_wait_for_session_close_and_late_results_drop() {
+        let (tx, rx) = flume::bounded(1);
+        let (release, held) = flume::bounded::<()>(1);
+        let worker = std::thread::spawn(move || {
+            tx.send(Err::<(), _>(SharingCancelled.into())).unwrap();
+            held.recv().unwrap(); // Stand-in for a native close that has not returned.
+        });
+        let start = std::time::Instant::now();
+        let error = wait_for_consent(rx, &AtomicBool::new(false), start + Duration::from_secs(1)).unwrap_err();
+        assert!(user_cancelled(&error));
+        assert!(!worker.is_finished(), "result must precede close completion");
+        assert!(start.elapsed() < Duration::from_secs(1));
+        release.send(()).unwrap(); worker.join().unwrap();
+
+        let (tx, rx) = flume::bounded::<Result<Stream>>(1);
+        let start = std::time::Instant::now();
+        assert!(wait_for_consent(rx, &AtomicBool::new(false), start + Duration::from_millis(30)).is_err());
+        assert!(start.elapsed() < Duration::from_secs(1));
+        let (stop, stopped) = flume::bounded(1);
+        let late = Stream { node: 7, fd: None, rect: None, mapping_id: Some("DP-7".into()), monitor: true,
+            stop: Some(Arc::new(SessionStop(stop))) };
+        drop(tx.send(Ok(late))); // The disconnected receiver destroys the unauthorized lease.
+        stopped.recv_timeout(Duration::from_secs(1)).unwrap();
+
+        let (tx, rx) = flume::bounded(1);
+        tx.send(Ok(7)).unwrap();
+        assert!(wait_for_consent(rx, &AtomicBool::new(true), std::time::Instant::now() + Duration::from_secs(1)).is_err());
+        let error: anyhow::Error = ashpd::Error::Response(ashpd::desktop::ResponseError::Cancelled).into();
+        assert!(user_cancelled(&error.context("Start response")));
+    }
 
     #[test]
     fn an_empty_success_from_plasma_is_not_a_working_shortcut_backend() {

@@ -538,7 +538,7 @@ pub struct Metrics {
     pub inspect: f32,
     pub clock_000: f32,
     pub clock_0000: f32,
-    pub mic_warning: [f32; 3],
+    pub mic_warning: [f32; 7],
 }
 
 impl Default for Metrics {
@@ -558,7 +558,7 @@ impl Default for Metrics {
             inspect: 47.0,
             clock_000: 29.0,
             clock_0000: 37.0,
-            mic_warning: [92.0, 73.0, 85.0],
+            mic_warning: [92.0, 73.0, 85.0, 95.0, 210.0, 190.0, 205.0],
         }
     }
 }
@@ -569,6 +569,10 @@ impl Metrics {
             InputWarning::Unavailable => 0,
             InputWarning::Stopped => 1,
             InputWarning::VeryQuiet => 2,
+            InputWarning::Displays => 3,
+            InputWarning::DisplaysMicUnavailable => 4,
+            InputWarning::DisplaysMicStopped => 5,
+            InputWarning::DisplaysMicQuiet => 6,
         }]
     }
 
@@ -601,6 +605,7 @@ impl Metrics {
 #[derive(Clone, Copy, Debug)]
 pub struct LayoutItem {
     pub id: ElemId,
+    pub text_only: bool,
     pub rect: [f32; 4],
     pub round: f32,
     pub rank: usize,
@@ -669,6 +674,29 @@ fn layout_of_warning(
     m: &Metrics,
     warning: Option<InputWarning>,
 ) -> (Layout, Vec<LayoutItem>) {
+    let has_iphone = matches!(pres, Pres::Selecting { has_iphone: true, .. } | Pres::Recording { has_iphone: true, .. } | Pres::RecordingWarning { has_iphone: true, .. });
+    layout_with_modes(pres, clock, labels, m, warning, SelectionMode::available(has_iphone))
+}
+
+fn mode_for_element(id: ElemId) -> Option<SelectionMode> {
+    match id {
+        ElemId::ChipArea => Some(SelectionMode::Area),
+        ElemId::ChipWindow => Some(SelectionMode::Window),
+        ElemId::ChipScreen => Some(SelectionMode::Screen),
+        ElemId::ChipIphone => Some(SelectionMode::Iphone),
+        _ => None,
+    }
+}
+
+// The platform supplies its available modes; geometry is identical on every host.
+fn layout_with_modes(
+    pres: &Pres,
+    clock: &str,
+    labels: LabelWidths,
+    m: &Metrics,
+    warning: Option<InputWarning>,
+    modes: &[SelectionMode],
+) -> (Layout, Vec<LayoutItem>) {
     let y0 = TOP + ISLAND_INSET;
     let mut raw: Vec<(ElemId, f32, f32, f32, bool)> = Vec::with_capacity(8);
     // (id, width, round, active_level, enabled)
@@ -676,8 +704,8 @@ fn layout_of_warning(
         Pres::Hidden => {
             return (Layout::centered(IDLE_W, IDLE_H), Vec::new());
         }
-        Pres::Selecting { mode, has_iphone } => {
-            for &seg in SelectionMode::available(*has_iphone) {
+        Pres::Selecting { mode, .. } => {
+            for &seg in modes {
                 raw.push((
                     ElemId::from_mode(seg),
                     m.segment_width(seg),
@@ -698,19 +726,20 @@ fn layout_of_warning(
             raw.push((ElemId::DividerClose, DIVIDER_W, 0.0, 0.0, false));
             raw.push((ElemId::Close, CHIP_H, CHIP_CORE_ROUND, 0.0, true));
         }
-        Pres::Recording { chips, has_iphone }
-        | Pres::RecordingWarning { chips, has_iphone } => {
+        Pres::Recording { chips, .. }
+        | Pres::RecordingWarning { chips, .. } => {
             let clock_w = m.clock_width(clock);
             let lead_w = CHIP_H + clock_w + LEAD_TRAIL;
             raw.push((ElemId::Lead, lead_w, CHIP_CORE_ROUND, 0.0, true));
             raw.push((ElemId::DividerLead, DIVIDER_W, 0.0, 0.0, false));
             if let Some(warning) = warning {
-                raw.push((ElemId::MicWarning, Metrics::chip_width(m.mic_warning_width(warning)),
+                let padding = if matches!(warning, InputWarning::Displays | InputWarning::DisplaysMicUnavailable | InputWarning::DisplaysMicStopped | InputWarning::DisplaysMicQuiet) { 16.0 } else { 2.0 * CHIP_PX };
+                raw.push((ElemId::MicWarning, m.mic_warning_width(warning) + padding,
                     CHIP_CORE_ROUND, 0.0, false));
                 raw.push((ElemId::DividerWarning, DIVIDER_W, 0.0, 0.0, false));
             }
             if *chips {
-                for &seg in SelectionMode::available(*has_iphone) {
+                for &seg in modes {
                     raw.push((
                         ElemId::from_mode(seg),
                         m.segment_width(seg),
@@ -744,7 +773,7 @@ fn layout_of_warning(
                     true,
                 ));
             }
-            if matches!(pres, Pres::RecordingWarning { .. }) {
+            if matches!(pres, Pres::RecordingWarning { .. }) && !matches!(warning, Some(InputWarning::Displays | InputWarning::DisplaysMicUnavailable | InputWarning::DisplaysMicStopped | InputWarning::DisplaysMicQuiet)) {
                 raw.push((ElemId::LiveWarning, 13.0 + 5.0 + m.warning + 12.0 + LIVE_WARNING_END_PAD, 0.0, 0.0, false));
             }
         }
@@ -783,8 +812,25 @@ fn layout_of_warning(
         }
     }
 
-    let inner_w: f32 =
-        raw.iter().map(|(_, w, ..)| *w).sum::<f32>() + raw.len().saturating_sub(1) as f32 * CHIP_GAP;
+    // Preserve every label and 32pt hit target. When the reveal row cannot fit,
+    // drop only its decorative mode icons and use 6pt text padding per side.
+    let text_only = warning.is_some()
+        && raw.iter().map(|(_, w, ..)| *w).sum::<f32>() > PANEL_W - 16.0 - 2.0 * ISLAND_INSET;
+    if text_only {
+        for (id, w, ..) in &mut raw {
+            if let Some(mode) = mode_for_element(*id) {
+                *w = (m.mode_label(mode) + 12.0).max(CHIP_H);
+            }
+        }
+    }
+    let content_w = raw.iter().map(|(_, w, ..)| *w).sum::<f32>();
+    let gaps = raw.len().saturating_sub(1) as f32;
+    // Combined warnings must fit the native 640pt panel, including the reveal row.
+    // Tighten whitespace after compacting mode decoration, never labels or hit targets.
+    let gap = if warning.is_some() && gaps > 0.0 {
+        CHIP_GAP.min(((PANEL_W - 16.0 - 2.0 * ISLAND_INSET - content_w) / gaps).max(0.0))
+    } else { CHIP_GAP };
+    let inner_w = content_w + gaps * gap;
     let outer_w = inner_w + 2.0 * ISLAND_INSET;
     let lay = Layout::centered(outer_w, ISLAND_H);
     let last = raw.len().saturating_sub(1);
@@ -795,6 +841,7 @@ fn layout_of_warning(
         .map(|(rank, (id, w, round, active, enabled))| {
             let item = LayoutItem {
                 id,
+                text_only: text_only && mode_for_element(id).is_some(),
                 rect: [x, y0, w, CHIP_H],
                 round,
                 rank,
@@ -802,7 +849,7 @@ fn layout_of_warning(
                 active,
                 enabled,
             };
-            x += w + CHIP_GAP;
+            x += w + gap;
             item
         })
         .collect();
@@ -813,6 +860,7 @@ fn layout_of_warning(
 
 #[derive(Clone, Copy, Debug)]
 struct ElemState {
+    text_only: bool,
     x: SpringVal,
     y: SpringVal,
     w: f32,
@@ -838,6 +886,7 @@ struct ElemState {
 impl ElemState {
     const fn new() -> Self {
         Self {
+            text_only: false,
             x: SpringVal::new(CX, SHARED_SPRING),
             y: SpringVal::new(TOP + ISLAND_INSET, SHARED_SPRING),
             w: CHIP_H,
@@ -865,6 +914,7 @@ impl ElemState {
 #[derive(Clone, Copy, Debug)]
 pub struct FrameElem {
     pub id: ElemId,
+    pub text_only: bool,
     /// Drawn bounding box `[x, y, w, h]` in panel points.
     pub rect: [f32; 4],
     /// Unscaled resting width and height `[w, h]` for texture tile layout.
@@ -1126,6 +1176,7 @@ impl PillModel {
         for item in &items {
             let st = &mut self.elems[item.id as usize];
             let [ix, iy, iw, ih] = item.rect;
+            st.text_only = item.text_only;
             st.w = iw;
             st.h = ih;
             st.round = item.round;
@@ -1650,6 +1701,7 @@ impl PillModel {
             max_alpha = max_alpha.max(alpha);
             elems.push(FrameElem {
                 id,
+                text_only: st.text_only,
                 rect,
                 base_size: [st.w, st.h],
                 alpha,
@@ -1721,6 +1773,47 @@ impl PillModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn display_and_microphone_warning_keep_native_controls_inside_panel() {
+        for chips in [false, true] {
+          for has_iphone in [false, true] {
+           for no_words in [false, true] {
+            for warning in [InputWarning::Unavailable, InputWarning::Stopped, InputWarning::VeryQuiet, InputWarning::Displays, InputWarning::DisplaysMicUnavailable, InputWarning::DisplaysMicStopped, InputWarning::DisplaysMicQuiet] {
+                let all = [SelectionMode::Area, SelectionMode::Window, SelectionMode::Screen, SelectionMode::Iphone];
+                let modes = if has_iphone { &all[..] } else { &all[..3] };
+                let pres = if no_words { Pres::RecordingWarning { chips, has_iphone } } else { Pres::Recording { chips, has_iphone } };
+                let metrics = Metrics::default();
+                let (shape, elements) = layout_with_modes(&pres, "00:12", LabelWidths::default(), &metrics, Some(warning), modes);
+                assert!(shape.r - shape.l <= PANEL_W - 16.0, "{chips} {warning:?}: {}", shape.r-shape.l);
+                assert!(shape.l >= 0.0 && shape.r <= PANEL_W);
+                for e in &elements {
+                    assert!(e.rect[0] >= 0.0 && e.rect[0] + e.rect[2] <= PANEL_W, "{chips} {has_iphone} {warning:?}: {e:?}");
+                    assert!(e.rect[0] >= shape.l && e.rect[0] + e.rect[2] <= shape.r);
+                    assert!(e.rect[1] >= shape.t && e.rect[1] + e.rect[3] <= shape.b);
+                    if e.enabled { assert!(e.rect[2] >= CHIP_H && e.rect[3] >= CHIP_H); }
+                    if let Some(mode) = mode_for_element(e.id) {
+                        let content = metrics.mode_label(mode) + if e.text_only { 0.0 } else { SEG_ICON + SEG_ICON_GAP };
+                        assert!(e.rect[2] >= content + 12.0, "mode label must fit its rendered box");
+                    }
+                }
+                if chips {
+                    for &mode in modes { assert!(elements.iter().any(|e| e.id == ElemId::from_mode(mode))); }
+                } else {
+                    for id in [ElemId::Lead, ElemId::Cancel, ElemId::Whiteboard, ElemId::Finish] {
+                        assert!(elements.iter().any(|e| e.id == id && e.enabled));
+                    }
+                }
+                for id in [ElemId::MicWarning, if chips { ElemId::Close } else { ElemId::Finish }] {
+                    let e = elements.iter().find(|e| e.id == id).expect("warning and Finish stay visible");
+                    assert!(e.rect[0] >= shape.l && e.rect[0]+e.rect[2] <= shape.r);
+                }
+                assert!(elements.iter().any(|e| e.id == if chips { ElemId::Close } else { ElemId::Cancel }));
+            }
+           }
+          }
+        }
+    }
 
     #[test]
     fn recording_warning_stays_inline_and_keeps_finish_and_cancel() {

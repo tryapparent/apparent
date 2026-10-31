@@ -872,6 +872,7 @@ mod tests {
                 window_title: None,
                 window_id: None,
                 display_id: 1,
+                displays: Vec::new(),
                 frame: TargetFrame {
                     x: 0.0,
                     y: 0.0,

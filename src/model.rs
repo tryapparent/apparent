@@ -308,6 +308,23 @@ pub struct TargetInfo {
     pub window_id: Option<u32>,
     pub display_id: u32,
     pub frame: TargetFrame,
+    /// Nonempty only for untargeted, all-display captures. Geometry is fixed at start.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub displays: Vec<CapturedDisplay>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapturedDisplay {
+    pub id: u32,
+    pub name: String,
+    pub frame: TargetFrame,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

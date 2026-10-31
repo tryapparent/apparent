@@ -125,6 +125,7 @@ pub(super) fn target() -> TargetInfo {
         window_title: None,
         window_id: None,
         display_id: 0,
+        displays: Vec::new(),
         frame: TargetFrame {
             x: 0.0,
             y: 0.0,

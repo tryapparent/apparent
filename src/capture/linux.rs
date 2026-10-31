@@ -15,7 +15,7 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -417,6 +417,7 @@ fn window_target(window: &linux::WindowInfo, app: &str, id: &str, picker: bool) 
         window_title: Some(if picker { clean_label(&window.title) } else { window.title.trim().to_owned() }).filter(|t| !t.is_empty()),
         window_id: Some(window.hwnd as u32),
         display_id: monitor.as_ref().map_or(0, linux::monitor_id),
+        displays: Vec::new(),
         frame: frame_of(window.rect, monitor.map_or(1.0, |m| m.scale)),
     }
 }
@@ -424,6 +425,54 @@ fn window_target(window: &linux::WindowInfo, app: &str, id: &str, picker: bool) 
 
 pub fn discover_target(window_query: Option<&str>) -> TargetInfo {
     discover_target_at(window_query, linux::cursor_position().map(|(x, y)| [x, y]))
+}
+
+pub(super) fn connected_displays() -> Vec<crate::model::CapturedDisplay> {
+    linux::monitors().into_iter().map(|m| crate::model::CapturedDisplay {
+        id: linux::monitor_id(&m), name: m.name.clone(), frame: frame_of(m.rect, m.scale),
+        started_ms: None, failed_ms: None, failure: None,
+    }).collect()
+}
+
+pub(super) fn desktop_runners(displays: &[crate::model::CapturedDisplay], stopping: &Arc<AtomicBool>, frames: &Arc<Mutex<super::CandidateBuffer>>)
+    -> Vec<Result<super::desktop::Runner, String>>
+{
+    let deadline = Instant::now() + Duration::from_secs(120);
+    let (senders, receivers): (Vec<_>, Vec<_>) = displays.iter().map(|_| flume::bounded(1)).unzip();
+    let outputs = displays.to_vec();
+    let stopping = Arc::clone(stopping);
+    let parent = Arc::clone(frames);
+    if let Err(error) = std::thread::Builder::new().name("apparent-desktop-consent".into()).spawn(move || {
+        linux::portal::desktop_sources(&outputs, &stopping, deadline, |index, result| {
+            if result.as_ref().err().is_some_and(linux::portal::user_cancelled) {
+                parent.lock().unwrap_or_else(std::sync::PoisonError::into_inner).cancelled = true;
+            }
+            let _ = senders[index].try_send(result.map_err(|error| format!("{error:#}")));
+        });
+    }) {
+        return displays.iter().map(|_| Err(error.to_string())).collect();
+    }
+    receivers.into_iter().map(|receiver| Ok(Box::new(move |sampler: Sampler| {
+        sampler.frames.lock().unwrap_or_else(std::sync::PoisonError::into_inner).awaiting_consent = true;
+        let source = loop {
+            if sampler.stopping.load(Ordering::Acquire) { return None; }
+            match receiver.recv_timeout(Duration::from_millis(20)) {
+                Ok(result) => break result,
+                Err(flume::RecvTimeoutError::Timeout) => {},
+                Err(_) => return None,
+            }
+        };
+        {
+            let mut buffer = sampler.frames.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            buffer.startup_ready_ms = sampler.started_at.elapsed().as_millis() as u64;
+            buffer.awaiting_consent = false;
+        }
+        if sampler.stopping.load(Ordering::Acquire) { return None; }
+        match source {
+            Ok(source) => linux::media::run_sampler_source(sampler, Some(source)),
+            Err(error) => { apparent_log(format!("Desktop display {} unavailable: {error}", sampler.target.display_id)); None }
+        }
+    }) as super::desktop::Runner)).collect()
 }
 
 /// Like `discover_target`, recording the display under `point` (see `pick_display`).
@@ -448,6 +497,7 @@ pub fn discover_target_at(_window_query: Option<&str>, point: Option<[f64; 2]>) 
         window_title: title.map(|t| clean_label(&t)).filter(|t| !t.is_empty()),
         window_id: None,
         display_id: monitors.get(index).map_or(0, linux::monitor_id),
+        displays: Vec::new(),
         frame: frame_of(rect, scale),
     }
 }

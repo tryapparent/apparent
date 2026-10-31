@@ -135,6 +135,10 @@ pub fn measure_metrics() -> Metrics {
             measure_text_pt("Mic unavailable", HUD_TEXT, WEIGHT_MEDIUM, false),
             measure_text_pt("Mic stopped", HUD_TEXT, WEIGHT_MEDIUM, false),
             measure_text_pt("Mic very quiet", HUD_TEXT, WEIGHT_MEDIUM, false),
+            measure_text_pt("Display missing", HUD_TEXT, WEIGHT_MEDIUM, false),
+            measure_text_pt("Display missing · mic unavailable", HUD_TEXT, WEIGHT_MEDIUM, false),
+            measure_text_pt("Display missing · mic stopped", HUD_TEXT, WEIGHT_MEDIUM, false),
+            measure_text_pt("Display missing · mic very quiet", HUD_TEXT, WEIGHT_MEDIUM, false),
         ],
     }
 }
@@ -383,6 +387,10 @@ impl GlyphAtlas {
             ("Whiteboard", HUD_TEXT, WEIGHT_MEDIUM),
             ("Finish", HUD_TEXT, WEIGHT_SEMIBOLD),
             ("Mic unavailable", HUD_TEXT, WEIGHT_MEDIUM),
+            ("Display missing", HUD_TEXT, WEIGHT_MEDIUM),
+            ("Display missing · mic unavailable", HUD_TEXT, WEIGHT_MEDIUM),
+            ("Display missing · mic stopped", HUD_TEXT, WEIGHT_MEDIUM),
+            ("Display missing · mic very quiet", HUD_TEXT, WEIGHT_MEDIUM),
             ("Mic stopped", HUD_TEXT, WEIGHT_MEDIUM),
             ("Mic very quiet", HUD_TEXT, WEIGHT_MEDIUM),
             ("No words yet", HUD_TEXT, WEIGHT_SEMIBOLD),
@@ -536,6 +544,70 @@ impl GlyphAtlas {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn measured_warnings_fit_panel_with_cabled_phone_and_hit_targets() {
+        use crate::audio::InputWarning;
+        use super::super::model::{PillModel, Pres, ElemId, PANEL_W, CHIP_H};
+        let metrics = measure_metrics();
+        for chips in [false, true] {
+            for has_iphone in [false, true] {
+                for no_words in [false, true] {
+                    for warning in [InputWarning::Unavailable, InputWarning::Stopped, InputWarning::VeryQuiet, InputWarning::Displays, InputWarning::DisplaysMicUnavailable, InputWarning::DisplaysMicStopped, InputWarning::DisplaysMicQuiet] {
+                        let mut model = PillModel::new(metrics.clone());
+                        model.set_clock("00:12");
+                        model.set_pres(if no_words { Pres::RecordingWarning { chips, has_iphone } } else { Pres::Recording { chips, has_iphone } });
+                        model.set_mic_warning(Some(warning));
+                        // advance clamps dt; a single large step is still an entry frame.
+                        for _ in 0..600 {
+                            model.advance(1.0 / 60.0);
+                        }
+                        assert!(model.is_at_rest(), "{chips} {has_iphone} {no_words} {warning:?}: animation did not settle");
+                        let frame = model.frame();
+                        assert!(frame.shape.l >= 0.0 && frame.shape.r <= PANEL_W, "{chips} {has_iphone} {warning:?}");
+                        let mut required = vec![ElemId::Lead, ElemId::DividerLead, ElemId::MicWarning, ElemId::DividerWarning];
+                        if chips {
+                            required.extend([ElemId::ChipArea, ElemId::ChipWindow, ElemId::ChipScreen, ElemId::DividerClose, ElemId::Close]);
+                            if has_iphone { required.push(ElemId::ChipIphone); }
+                        } else {
+                            required.extend([ElemId::Cancel, ElemId::Whiteboard, ElemId::Finish]);
+                        }
+                        if no_words && matches!(warning, InputWarning::Unavailable | InputWarning::Stopped | InputWarning::VeryQuiet) {
+                            required.push(ElemId::LiveWarning);
+                        }
+                        required.sort_unstable_by_key(|id| *id as usize);
+                        let mut actual: Vec<_> = frame.elems.iter().map(|e| e.id).collect();
+                        actual.sort_unstable_by_key(|id| *id as usize);
+                        assert_eq!(actual, required, "{chips} {has_iphone} {no_words} {warning:?}: complete resting control set");
+                        for e in &frame.elems {
+                            assert!(e.alpha >= 0.99, "{:?}: resting element must be visible", e.id);
+                            assert_eq!(e.enabled, e.id.is_interactive(), "{:?}: resting interaction state", e.id);
+                            let [x, y, w, h] = e.rect;
+                            assert!(x >= 0.0 && x + w <= PANEL_W);
+                            assert!(x >= frame.shape.l && x + w <= frame.shape.r);
+                            assert!(y >= frame.shape.t && y + h <= frame.shape.b);
+                            if e.text_only {
+                                let label = match e.id {
+                                    ElemId::ChipArea => "Area",
+                                    ElemId::ChipWindow => "Window",
+                                    ElemId::ChipScreen => "Screen",
+                                    ElemId::ChipIphone => "iPhone",
+                                    _ => panic!("only mode chips can lose decoration"),
+                                };
+                                // Use the actual rendered sprite, including transparent raster padding.
+                                let (_, _, size, _) = rasterize_text(label, HUD_TEXT, WEIGHT_MEDIUM, false, 2.0);
+                                assert!(size[0] <= w && size[1] <= h);
+                            }
+                            if e.enabled && e.id.is_interactive() {
+                                assert!(w >= CHIP_H - 0.01 && h >= CHIP_H - 0.01);
+                                assert_eq!(model.hit_element(x + w * 0.5, y + h * 0.5), Some(e.id));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn coretext_metrics_and_monospaced_clock_digits_are_stable() {

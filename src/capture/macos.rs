@@ -776,6 +776,20 @@ pub fn discover_target(window_query: Option<&str>) -> TargetInfo {
     discover_target_at(window_query, current_mouse_location().map(|p| [p.x, p.y]))
 }
 
+pub(super) fn connected_displays() -> Vec<crate::model::CapturedDisplay> {
+    crate::screens::displays().into_iter().map(|s| crate::model::CapturedDisplay {
+        id: s.id, name: format!("Display {}", s.id),
+        frame: crate::screens::with_scale(s.frame, s.scale),
+        started_ms: None, failed_ms: None, failure: None,
+    }).collect()
+}
+
+pub(super) fn desktop_runners(displays: &[crate::model::CapturedDisplay], _stopping: &Arc<AtomicBool>, _frames: &Arc<Mutex<super::CandidateBuffer>>)
+    -> Vec<Result<super::desktop::Runner, String>>
+{
+    displays.iter().map(|_| Ok(Box::new(run_sampler) as super::desktop::Runner)).collect()
+}
+
 /// Like `discover_target`, recording the display under `point` (see `pick_display`).
 pub fn discover_target_at(_window_query: Option<&str>, point: Option<[f64; 2]>) -> TargetInfo {
     let frontmost = frontmost_app_info();
@@ -817,6 +831,7 @@ pub fn discover_target_at(_window_query: Option<&str>, point: Option<[f64; 2]>) 
                 window_title,
                 window_id: None,
                 display_id: display.display_id(),
+                displays: Vec::new(),
                 frame: crate::screens::with_scale(rect, scale),
             };
         }
@@ -840,6 +855,7 @@ pub fn discover_target_at(_window_query: Option<&str>, point: Option<[f64; 2]>) 
         window_title: None,
         window_id: None,
         display_id,
+        displays: Vec::new(),
         frame,
     }
 }
@@ -897,6 +913,7 @@ fn windows_for_selection(picker: bool) -> Vec<TargetInfo> {
                 window_title: w.title().map(|t| if picker { clean_label(&t) } else { t.trim().to_owned() }).filter(|t| !t.is_empty()),
                 window_id: Some(w.window_id()),
                 display_id,
+                displays: Vec::new(),
                 frame: crate::screens::with_scale(rect, scale),
             }
         })
@@ -1006,6 +1023,9 @@ pub(super) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone();
+    if super::desktop::injected_start(sampler_target.display_id) { return None; }
+    let privacy_marker = video_output_path.as_ref().and_then(|path| path.parent()).map(|dir| dir.join(crate::recover::PRIVACY_FAILED));
+    let mut privacy_failed = false;
     // Keep SCK initialization, capture and teardown on the owning worker.
     // stop() joins even if it arrives while setup is still in progress.
     let (stream, recording_output, video_path, filter) = setup_sck_capture(
@@ -1038,16 +1058,17 @@ pub(super) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         if prompts.check(started_at) {
+            // A prompt can reach the independent movie before this observation. A later
+            // accepted filter cannot retrospectively certify those earlier movie samples.
+            privacy_failed = true;
             // Frames since the last look may show the prompt.
             thread_frames
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .drop_since(prompts.clear_until_ms);
+                .invalidate_privacy();
         }
         cur_excluded.extend(&prompts.ids);
         if cur_excluded != last_excluded {
-            last_excluded.clone_from(&cur_excluded);
-            prompts.hidden = sck_lists_windows(&prompts.ids);
             if let Some((new_filter, _)) =
                 build_sck_filter_and_config(&sampler_target, &cur_excluded)
             {
@@ -1056,8 +1077,15 @@ pub(super) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
                     && let Err(error) = stream.update_content_filter(&new_filter)
                 {
                     apparent_log(format!("Recording filter update failed: {error:?}"));
+                    privacy_failed = true;
+                    break;
                 }
+                last_excluded.clone_from(&cur_excluded);
+                prompts.hidden = sck_lists_windows(&prompts.ids);
                 filter_and_config = Some((new_filter, sck_config(&sampler_target, shot_edge)));
+            } else {
+                privacy_failed = true;
+                break;
             }
         }
         let urgent = thread_urgent.swap(false, Ordering::AcqRel);
@@ -1088,11 +1116,20 @@ pub(super) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         }
         thread::park_timeout(Duration::from_millis(30));
     }
+    prompts.checked = None;
+    privacy_failed |= prompts.check(started_at) || prompts.showing();
     if let Some(stream) = stream {
-        let _ = stream.stop_capture();
+        privacy_failed |= stream.stop_capture().is_err();
         if let Some(ref output) = recording_output {
             let _ = stream.remove_recording_output(output);
         }
+    }
+    if privacy_failed {
+        thread_frames.lock().unwrap_or_else(std::sync::PoisonError::into_inner).invalidate_privacy();
+        if let Some(marker) = privacy_marker {
+            std::fs::write(marker, b"Native recording exclusion could not be certified\n").expect("could not persist unsafe-stream marker");
+        }
+        return None;
     }
     video_path
 }
@@ -1128,7 +1165,6 @@ fn build_sck_filter_and_config(
         .displays()
         .into_iter()
         .find(|d| d.display_id() == target.display_id)
-        .or_else(|| content.displays().into_iter().next())
     {
         // With this experiment on, only explicit picker/ink overlays and system prompts are
         // excluded; the capsule remains in the movie and decoded full-quality keyframes.
