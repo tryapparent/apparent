@@ -130,6 +130,8 @@ def publish(root, package, sha, expected, *, current_sha=current_main, verify=ve
 
 def rollback(root, receipt_path):
     root = Path(root).resolve()
+    require(root != Path('/opt/presentations/releases'),
+            'Clanker production rollback is retired; use Pages deployment rollback')
     with (root / '.apparent-site-publish.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         receipt = json.loads(Path(receipt_path).read_text())
