@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location('activation', Path(__file__).with_name('activate-belief-release.py'))
 assert spec is not None and spec.loader is not None
@@ -48,6 +49,19 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(self.link.resolve(), self.baseline)
         with self.assertRaises(AssertionError):
             activation.activate(self.manifest, self.root, rollback=True)
+
+    def test_retired_origin_is_rejected_before_any_file_is_opened(self):
+        retired = Path('/opt/presentations/releases')
+        alias = self.root / 'retired-origin-alias'
+        alias.symlink_to(retired, target_is_directory=True)
+        for root in (retired, alias):
+            for entry in (activation.activate, activation.activate_locked):
+                for rollback in (False, True):
+                    with self.subTest(root=root, entry=entry.__name__, rollback=rollback):
+                        with mock.patch.object(Path, 'open', side_effect=AssertionError('Unexpected file access')) as opened:
+                            with self.assertRaisesRegex(ValueError, 'retired'):
+                                entry(self.manifest, root, rollback)
+                            opened.assert_not_called()
 
     def test_stale_baseline_is_not_overwritten(self):
         newer = self.root / 'apparent-site-newer'
