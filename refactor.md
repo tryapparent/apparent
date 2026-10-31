@@ -27,8 +27,10 @@ imports either product. Connect accepts authorized work; the caller retains
 consent/presentation policy. Public may link to Connect, not import its authenticated
 implementation. Thin composition assembles owner outputs; it does not absorb policy.
 Keep product behavior shared across macOS/Linux. Adapters provide native mechanics
-and explicit capabilities. No Windows work, web Desktop migration, new daemon/IPC,
-service, database or repository is part of this campaign. Keep GPUI working.
+and explicit capabilities. No new Windows support, web Desktop migration, new daemon/IPC,
+service, database or repository is part of this campaign. Bounded removal of verified
+obsolete Windows code is explicitly authorized under the retirement rule below.
+Keep GPUI working.
 
 Agent's final target is independently installed recording on clean macOS and Linux
 machines where Desktop has **never** been installed. A graphical session and OS
@@ -56,6 +58,21 @@ needed. Record each facade's owner, consumers and deletion condition in its slic
 remove it when all supported callers/build inputs/docs have migrated and compatibility
 checks pass. Keep only aliases required by an actual external contract. Do not widen
 legacy imports to make a new feature easy, or freeze unrelated feature delivery.
+
+### Retire before moving
+
+After this strategy merges, workers may delete verified-obsolete tracked code, docs
+and assets in bounded coherent slices without asking for each deletion. Verify
+requiredness first: trace consumers/references, current build/runtime/package inputs,
+supported compatibility and historical-data readers, and active owner reservations.
+Delete retired implementations with obsolete tests/references instead of migrating or
+archive-copying them; git history is the archive. Candidate examples include retired
+OpenCode routing glossary/`CONTEXT.md`, old icons and legacy sites, **only after that
+check**. “Not deployed” alone is not obsolete. This also authorizes bounded legacy
+Windows removal, never new Windows support. Preserve active work, supported readers
+and current inputs until verified retired. Private captures, credentials, evidence
+and uncommitted work are outside cleanup authority. This PR changes policy only;
+no bulk application/site deletion starts before the parent merges the strategy.
 
 Parallel lanes own useful outcomes and their tests/PRs, not arbitrary files. One writer
 owns each shared hotspot/module declaration/manifest. Use short-lived main-targeted
@@ -143,6 +160,9 @@ branch; main presence plus passing strategy acceptance is its completion conditi
 - [ ] **9a. Native/runtime/build closure.** After 7c/8 and active retained-capability/native-producer handoffs. Trace manifests, Swift/native helpers, generated resources, models, config callbacks, dynamic libraries, install/signing/TCC identity and embedded inputs. Move capture mechanics without Desktop policy. Accept independently built Engine/Agent closure and accurate platform capability errors; package/install regressions receive relevant native proof. No helper fallback into an installed Desktop or developer tree.
 - [ ] **9b. Standalone Agent.** After 9a. Own automation deadlines/cancellation/evidence; consume Engine directly while preserving explicit request identity, inspect/retry and local-only behavior. Accept clean macOS/Linux install and real record/readiness/stop/cancel/saved/evidence flow where Desktop was never installed; inspect resulting bundles and dynamic/runtime dependencies, plus coexistence/admission with Desktop. Graphical sessions/permissions may be required and must be stated. No claim from a root second binary or injected worker alone.
 - [ ] **10. Finish product/build separation and delete facades.** After relevant product adoptions, not necessarily after every unrelated feature. Complete Desktop/Agent/Connect/Public build, test, docs and packaging references; remove superseded implementations and forwarding paths when consumer inventories are empty. Accept fresh-checkout supported builds, import/dependency checks, installation/update/CLI/URL compatibility and privacy-clean public artifact. Keep external aliases only where needed. Excludes a cosmetic repo-wide rename, new topology or web Desktop campaign.
+
+- [ ] **C. Opportunistic coherent deletion slices.** After 1 and clearance of any active owner; may accompany a relevant slice or run independently, without waiting for 10. Verify requiredness as above, delete retired code/docs/assets with obsolete tests/references, and record why supported consumers/readers/build inputs survive. Use reference/import/artifact checks and affected verification for the actual deletion; do not exhaustively refactor dead paths or create archive copies. No private/uncommitted/evidence cleanup. Record each merged slice and acceptance; check C only after the final sweep meets acceptance.
+- [ ] **11. Final legacy sweep.** After 10 and each applicable owner handoff. Recheck remaining legacy code/docs/assets, Windows remnants and stale references against supported consumers/readers and packaged artifacts. Delete only verified-retired paths in bounded PRs, or record the remaining requirement/blocker and resume condition. Accept no unneeded donor implementations/archive copies and passing affected checks; do not turn required compatibility paths into deletion targets or refactor every historical path.
 
 ## Blockers, staging disposition and resumption
 
