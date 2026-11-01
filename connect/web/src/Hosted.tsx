@@ -12,6 +12,7 @@ function Account({ devicePage }: { devicePage: boolean }) {
   const [request, setRequest] = useState<api.Device | null>(null)
   const [code, setCode] = useState("")
   const [error, setError] = useState("")
+  const [sessionUnavailable, setSessionUnavailable] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [interested, setInterested] = useState(false)
@@ -24,21 +25,23 @@ function Account({ devicePage }: { devicePage: boolean }) {
   const generation = useRef(0)
   async function load() {
     const current = ++generation.current
-    setLoading(true); setError(""); setRequest(null)
+    let sessionLoaded = false
+    setLoading(true); setError(""); setSessionUnavailable(false); setAccount(null); setRequest(null); setConsent(false)
+    const value = new URLSearchParams(window.location.search).get("code") ?? ""
+    setCode(devicePage ? value : "")
     try {
       const result = await api.session()
       if (current !== generation.current) return
+      sessionLoaded = true
       setAccount(result)
       if (result.authenticated) {
         setInterested(result.waitlist.interestedAtFiveDollars)
-        const value = new URLSearchParams(window.location.search).get("code") ?? ""
-        setCode(value)
         if (devicePage && result.beta.access && value) {
           const preview = await api.device(value)
           if (current === generation.current) { setNow(Date.now()); setRequest(preview); setTab(preview.scope === "upload" ? "computer" : "agent"); setConsent(false) }
         }
-      } else if (devicePage) setCode(new URLSearchParams(window.location.search).get("code") ?? "")
-    } catch (e) { if (current === generation.current) setError(message(e)) }
+      }
+    } catch (e) { if (current === generation.current) { setSessionUnavailable(!sessionLoaded); setError(message(e)) } }
     finally { if (current === generation.current) setLoading(false) }
   }
   useEffect(() => { void load(); return () => { generation.current++ } }, [])
@@ -91,7 +94,16 @@ function Account({ devicePage }: { devicePage: boolean }) {
           {computer && <img className="hosted-agent" src="/hosted/agent-pond-v4.png" alt="An agent terminal waiting on a separate pond" />}
         </div>
         {loading && <p>Nothing is approved while we check.</p>}
-        {error && <div role="alert" className="hosted-error"><p>{error}</p><button disabled={busy || loading} onClick={() => void load()}>Reload account</button></div>}
+        {error && <div role="alert" className="hosted-error">
+          <p>{sessionUnavailable ? "We couldn’t check whether you’re signed in." : error}</p>
+          {sessionUnavailable ? <>
+            <p>Signing in grants no upload or read permission.</p>
+            <div className="hosted-session-actions">
+              <SignIn devicePage={devicePage} code={code} />
+              <button disabled={busy || loading} onClick={() => void load()}>Try again</button>
+            </div>
+          </> : <button disabled={busy || loading} onClick={() => void load()}>Reload account</button>}
+        </div>}
         {!loading && !error && <>
           {authenticated && !authenticated.beta.access ? <>
             <p>{authenticated.beta.enrolled} of {authenticated.beta.capacity} places occupied. {authenticated.waitlist.joined ? "You're on the waitlist." : "Join the waitlist for access updates."}</p>
