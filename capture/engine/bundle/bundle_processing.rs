@@ -287,6 +287,27 @@ fn movie_frames_at_with(
     Ok(frames)
 }
 
+/// A failed acquisition can still leave a useful, explicitly warned partial bundle.
+/// This is not successful recording completion and must not trigger automatic delivery.
+#[derive(Debug)]
+pub struct AcquisitionError {
+    pub message: String,
+    pub partial_bundle: Option<PathBuf>,
+    pub started: bool,
+}
+
+impl std::fmt::Display for AcquisitionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Screen acquisition stopped early: {}", self.message)?;
+        if let Some(path) = &self.partial_bundle {
+            write!(f, " Partial capture saved at {}.", path.display())?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for AcquisitionError {}
+
 /// Core pipeline that turns raw frames, strokes, events, and audio/transcript into a complete `.apparent` bundle on disk.
 #[allow(clippy::too_many_arguments)]
 ///
@@ -308,6 +329,7 @@ pub fn finalize_capture_bundle(
         .unwrap_or_else(std::time::Instant::now);
     let stop_ms = activity.stop_ms;
     let crate::capture::engine::runtime::ScreenRecording {
+        acquisition_error,
         annotation_evidence,
         frames,
         video: video_path,
@@ -318,13 +340,28 @@ pub fn finalize_capture_bundle(
         // The MP4 stream can succeed even when every screenshot fails. Do not turn
         // it into keyframes here: the sampler drops screenshots while a system
         // permission prompt is visible, but the movie may still contain it.
-        recover::mark_unsafe_video(bundle_dir)?;
+        let protection = recover::mark_unsafe_video(bundle_dir);
+        if let Some(message) = acquisition_error {
+            let message = match protection {
+                Ok(()) => message,
+                Err(error) => format!("{message}. Could not mark unsafe raw video: {error:#}"),
+            };
+            return Err(AcquisitionError { message, partial_bundle: None, started: false }.into());
+        }
+        protection?;
         let message = "No screen frames were captured. Choose a screen in the sharing dialog and try again.";
         if let Some(ref video) = video_path {
             anyhow::bail!("{message} The raw video was kept at {}.", video.display());
         }
         anyhow::bail!("{message}");
     }
+    let note = if let Some(error) = &acquisition_error {
+        let warning = format!("Screen acquisition stopped early: {error}. This is a partial capture, not a complete recording.");
+        Some(match note {
+            Some(note) => format!("{warning}\n\n{note}"),
+            None => warning,
+        })
+    } else { note };
     if let Some(ref audio) = recorded_audio {
         let wav_path = bundle_dir.join("audio.wav");
         let _ = std::fs::create_dir_all(bundle_dir);
@@ -445,6 +482,13 @@ pub fn finalize_capture_bundle(
     );
     if built.is_ok() {
         recover::finished(bundle_dir);
+    }
+    if let Some(message) = acquisition_error {
+        let (message, partial_bundle) = match &built {
+            Ok((path, _, _)) => (message, Some(path.clone())),
+            Err(error) => (format!("{message}. Partial capture could not be saved: {error:#}"), None),
+        };
+        return Err(AcquisitionError { message, partial_bundle, started: true }.into());
     }
     built
 }
@@ -992,6 +1036,7 @@ mod tests {
             &dir,
             target,
             crate::capture::engine::runtime::ScreenRecording {
+                acquisition_error: None,
                 annotation_evidence: Default::default(),
                 frames: Vec::new(),
                 video: Some(movie.clone()),

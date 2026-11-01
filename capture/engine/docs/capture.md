@@ -87,16 +87,27 @@ lifetime only; an app restart loses them. This is not durable bundle history. Ca
 path. Finalization failure has no saved path and includes `error: "finalization_failed"` and a
 diagnostic `message`.
 
+A classified terminal screen-acquisition error ends the live GUI recording and starts local
+finalization; it does not leave the recording controls running. While retaining available frames,
+the receipt is `processing` with the source diagnostic in `message`. The final receipt is `failed`
+with `error: "start_failed"` before any real frame, or `error: "capture_failed"` after acquisition
+began. If useful frames form a partial bundle, that failed receipt includes its `bundle_path` and
+the source cause in `message`; `summary.md` warns that acquisition stopped early. It is **not**
+`saved` success, and the automatic success clipboard/upload path is not run. Without safe frames
+there is no bundle path. Explicit cancellation still discards the take; old completion results
+cannot change a cancelled receipt or a newer capture. Individual retryable screenshot/decode
+errors remain retryable; they are not terminal acquisition failures.
+
 All capture commands emit one JSON object on stdout and diagnostics on stderr. Usage errors exit
 2; execution failures exit nonzero. Receipt fields are `capture_id` (string), `status` (string),
-`bundle_path` (string on saved, otherwise null), and `error` (symbolic string or null). Status is
+`bundle_path` (string on saved or a retained failed partial bundle, otherwise null), and `error` (symbolic string or null). Status is
 `starting`, `recording`, `processing`, `saved`, `cancelled`, `failed`, `rejected` or `unknown`.
 State keeps its existing `{ "state": { "phase": ..., "capture_id": ... } }` shape; Stop/Cancel
 also include `outcome` and global `state` in their initial reply. Do not rely on those fields in a
 waited reply: it may be the final read-only receipt. Transport/timeout errors may lack `status`
 and `bundle_path`, but carry the owned ID and recovery text. The bounded wait is 1–3600 seconds.
 Useful errors include `occupied`, `admission_expired`, `start_failed`, `unknown_capture`,
-`finalization_failed`, `cancelled`, `timeout`, `control_unavailable`, `app_busy`, `app_unresponsive`
+`capture_failed`, `finalization_failed`, `cancelled`, `timeout`, `control_unavailable`, `app_busy`, `app_unresponsive`
 and `invalid_response`; `outcome: "wrong_capture"` or `"not_ready"` also fails. After disconnect
 or timeout, inspect/retry the same ID before deciding on a new take.
 

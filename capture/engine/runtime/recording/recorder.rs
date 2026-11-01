@@ -102,6 +102,8 @@ impl CandidateBuffer {
 
 /// What a finished screen capture leaves behind.
 pub struct ScreenRecording {
+    /// Terminal acquisition failure, including when useful frames were retained.
+    pub acquisition_error: Option<String>,
     /// Encoder-associated sample evidence; empty on adapters without measured receipts.
     pub annotation_evidence: crate::capture::engine::annotation::AnnotationEvidence,
     /// Small candidate frames for keyframe selection (see `CANDIDATE_EDGE`).
@@ -145,6 +147,8 @@ pub(crate) struct Sampler {
     /// A terminal producer error, independent of worker lifetime (cleanup may still run).
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub startup_failed: Arc<AtomicBool>,
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    pub terminal_error: Arc<Mutex<Option<String>>>,
     pub video_offset_ms: Arc<AtomicU64>,
 }
 
@@ -194,6 +198,7 @@ pub struct ScreenCaptureSession {
     frames: Arc<Mutex<CandidateBuffer>>,
     real_frame_seen: Arc<AtomicBool>,
     startup_failed: Arc<AtomicBool>,
+    terminal_error: Arc<Mutex<Option<String>>>,
     video_offset_ms: Arc<AtomicU64>,
     sampler_thread: Option<JoinHandle<Option<PathBuf>>>,
     _recording: crate::capture::engine::bundle::retention::Recording,
@@ -205,6 +210,15 @@ impl ScreenCaptureSession {
         video_output_path: Option<PathBuf>,
         excluded_window_ids: Arc<Mutex<Vec<u32>>>,
     ) -> Self {
+        Self::start_sampler(target, video_output_path, excluded_window_ids, platform::run_sampler)
+    }
+
+    pub(crate) fn start_sampler(
+        target: TargetInfo,
+        video_output_path: Option<PathBuf>,
+        excluded_window_ids: Arc<Mutex<Vec<u32>>>,
+        run: impl FnOnce(Sampler) -> Option<PathBuf> + Send + 'static,
+    ) -> Self {
         let started_at = Instant::now();
         let annotation_evidence = Arc::new(Mutex::new(Default::default()));
         #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -214,6 +228,9 @@ impl ScreenCaptureSession {
         let frames = Arc::new(Mutex::new(CandidateBuffer::new(CANDIDATE_BUDGET_BYTES)));
         let real_frame_seen = Arc::new(AtomicBool::new(false));
         let startup_failed = Arc::new(AtomicBool::new(false));
+        let terminal_error = Arc::new(Mutex::new(None));
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        let thread_terminal_error = Arc::clone(&terminal_error);
         let video_offset_ms = Arc::new(AtomicU64::new(0));
 
         let thread_stopping = Arc::clone(&stopping);
@@ -227,7 +244,7 @@ impl ScreenCaptureSession {
         let sampler_thread = thread::Builder::new()
             .name("apparent-frame-sampler".into())
             .spawn(move || {
-                platform::run_sampler(Sampler {
+                run(Sampler {
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
                     annotation_evidence: thread_evidence,
                     target: sampler_target,
@@ -240,6 +257,8 @@ impl ScreenCaptureSession {
                     real_frame_seen: thread_real_frame_seen,
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
                     startup_failed: thread_startup_failed,
+                    #[cfg(any(target_os = "macos", target_os = "linux"))]
+                    terminal_error: thread_terminal_error,
                     video_offset_ms: thread_offset,
                 })
             })
@@ -253,6 +272,7 @@ impl ScreenCaptureSession {
             frames,
             real_frame_seen,
             startup_failed,
+            terminal_error,
             video_offset_ms,
             sampler_thread,
             _recording: crate::capture::engine::bundle::retention::Recording::start(),
@@ -278,20 +298,35 @@ impl ScreenCaptureSession {
     /// A known terminal error is failure even while the worker is alive or cleaning up.
     /// A pending portal reply alone never sets this producer flag.
     pub fn failed_to_start(&self) -> bool {
-        !self.has_frames()
-            && (self.startup_failed.load(Ordering::Acquire)
-                || self.sampler_thread.as_ref().is_none_or(JoinHandle::is_finished))
+        !self.has_frames() && self.terminal_error().is_some()
+    }
+
+    /// Read-only: readiness does not erase a subsequent terminal acquisition error.
+    pub fn terminal_error(&self) -> Option<String> {
+        self.terminal_error.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
+            .or_else(|| {
+                (self.startup_failed.load(Ordering::Acquire)
+                    || self.sampler_thread.as_ref().is_none_or(JoinHandle::is_finished))
+                    .then(|| "Screen acquisition worker stopped unexpectedly".into())
+            })
     }
 
     pub fn stop(mut self) -> ScreenRecording {
         let duration_ms = self.elapsed_ms();
+        let mut acquisition_error = self.terminal_error();
         self.stopping.store(true, Ordering::Release);
         let video_path = self
             .sampler_thread
             .take()
             .and_then(|handle| {
                 handle.thread().unpark();
-                handle.join().ok()
+                match handle.join() {
+                    Ok(path) => Some(path),
+                    Err(_) => {
+                        acquisition_error = Some("Screen acquisition worker panicked".into());
+                        None
+                    }
+                }
             })
             .flatten();
         let buffer = std::mem::replace(
@@ -302,9 +337,19 @@ impl ScreenCaptureSession {
             CandidateBuffer::new(0),
         );
         let collected = buffer.into_frames();
+        // Read after join too: an error can race Finish or be reported in teardown.
+        acquisition_error = self.terminal_error.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner).clone().or(acquisition_error);
+        if acquisition_error.is_none() && self.startup_failed.load(Ordering::Acquire) {
+            acquisition_error = Some("Screen acquisition failed".into());
+        }
+        let duration_ms = if acquisition_error.is_some() {
+            collected.last().map_or(duration_ms, |frame| frame.t_ms)
+        } else { duration_ms };
         let valid_video =
             video_path.filter(|path| path.exists() && path.metadata().is_ok_and(|m| m.len() > 0));
         ScreenRecording {
+            acquisition_error,
             annotation_evidence: std::mem::take(&mut *self.annotation_evidence.lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)),
             frames: collected,

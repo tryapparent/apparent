@@ -1002,6 +1002,7 @@ pub(crate) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         frames: thread_frames,
         real_frame_seen: thread_real_frame_seen,
         startup_failed,
+        terminal_error,
         video_offset_ms: thread_offset,
     } = sampler;
     let initial_excluded = excluded_window_ids
@@ -1027,6 +1028,8 @@ pub(crate) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
     let mut filter_and_config = filter.map(|f| (f, shot_config));
     if filter_and_config.is_none() {
         apparent_log("Screen capture failed to start: no ScreenCaptureKit filter");
+        *terminal_error.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some("Screen capture failed to start: no ScreenCaptureKit filter".into());
         startup_failed.store(true, Ordering::Release);
     }
     let mut last_sample = Instant::now()

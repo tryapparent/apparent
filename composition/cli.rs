@@ -998,6 +998,7 @@ pub(crate) fn run() -> Result<()> {
                             &iter_out,
                             iter_target,
                             crate::capture::engine::runtime::ScreenRecording {
+                                acquisition_error: None,
                                 annotation_evidence: old.annotation_evidence.clone(),
                                 frames: iter_frames,
                                 video: Some(linked),
