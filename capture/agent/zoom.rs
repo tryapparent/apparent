@@ -285,6 +285,8 @@ pub fn zoom(
     ensure!(!frames.is_empty(), "No frames could be decoded");
     let mut cells = Vec::with_capacity(frames.len());
     for (i, frame) in frames.iter_mut().enumerate() {
+        frame.source_evidence = frame.media_pts_ms
+            .and_then(|pts| bundle.annotation_evidence.at_video_pts(pts)).cloned();
         let t = frame.t_ms;
         let events = events_at(&bundle.events, t);
         let rect = crops

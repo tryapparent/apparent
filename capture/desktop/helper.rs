@@ -305,6 +305,8 @@ pub fn export_audio(movie: &Path, wav: &Path) -> Result<()> {
 struct FrameFile {
     t: u64,
     actual: u64,
+    #[serde(default, rename = "sourcePtsMs")]
+    source_pts_ms: Option<u64>,
     width: u32,
     height: u32,
     file: PathBuf,
@@ -355,7 +357,9 @@ pub fn frames(movie: &Path, times: FrameTimes, max_edge: u32) -> Result<Vec<Rgba
                         "Truncated helper frame"
                     );
                     let t = if sampled { file.actual } else { file.t };
-                    Ok(RgbaFrame::new(t, file.width, file.height, rgba))
+                    let mut frame = RgbaFrame::new(t, file.width, file.height, rgba);
+                    frame.media_pts_ms = file.source_pts_ms;
+                    Ok(frame)
                 })
                 .collect()
         } else {
@@ -375,7 +379,9 @@ pub fn frames(movie: &Path, times: FrameTimes, max_edge: u32) -> Result<Vec<Rgba
                                         "Truncated helper frame"
                                     );
                                     let t = if sampled { file.actual } else { file.t };
-                                    Ok(RgbaFrame::new(t, file.width, file.height, rgba))
+                                    let mut frame = RgbaFrame::new(t, file.width, file.height, rgba);
+                                    frame.media_pts_ms = file.source_pts_ms;
+                                    Ok(frame)
                                 })
                                 .collect()
                         })

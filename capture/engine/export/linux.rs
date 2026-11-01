@@ -111,6 +111,13 @@ fn drain_stderr(child: &mut Child) -> std::thread::JoinHandle<String> {
 
 pub(super) fn run(plan: &Plan<'_>, progress: &mut dyn FnMut(f32)) -> Result<Done> {
     let (probe, embedded_audio) = probe_with_audio(plan.video)?;
+    // The fps filter replaces the presentation clock, not the source identity.
+    // Receipts require explicit selection from decoded source samples instead.
+    let source_pts = if plan.ink.strokes.iter().any(|s| !s.preserve_source.is_empty()) {
+        Some(source_timestamps(plan.video)?)
+    } else {
+        None
+    };
     let source_bytes = (probe.width as usize)
         .checked_mul(probe.height as usize)
         .and_then(|n| n.checked_mul(4))
@@ -123,14 +130,14 @@ pub(super) fn run(plan: &Plan<'_>, progress: &mut dyn FnMut(f32)) -> Result<Done
     // Ceil would request frame 609 from a 608-frame, 30 fps recording.
     let frame_count =
         (((plan.duration_ms as u128 * plan.fps as u128 + 500) / 1000) as usize).max(1);
-    let mut decoder = Command::new("ffmpeg")
-        .args(["-v", "error", "-nostdin", "-i"])
-        .arg(plan.video)
-        .args([
-            "-vf",
-            &format!("fps={}", plan.fps),
-            "-frames:v",
-            &frame_count.to_string(),
+    let mut command = Command::new("ffmpeg");
+    command.args(["-v", "error", "-nostdin", "-i"]).arg(plan.video);
+    if source_pts.is_some() {
+        command.args(["-fps_mode", "passthrough"]);
+    } else {
+        command.args(["-vf", &format!("fps={}", plan.fps), "-frames:v", &frame_count.to_string()]);
+    }
+    let mut decoder = command.args([
             "-an",
             "-f",
             "rawvideo",
@@ -153,6 +160,7 @@ pub(super) fn run(plan: &Plan<'_>, progress: &mut dyn FnMut(f32)) -> Result<Done
         frame_count,
         source_bytes,
         embedded_audio,
+        source_pts.as_deref(),
         &mut decoder,
         progress,
     );
@@ -170,6 +178,7 @@ fn encode(
     count: usize,
     source_bytes: usize,
     embedded_audio: Option<usize>,
+    source_pts: Option<&[(f64, u64)]>,
     decoder: &mut Child,
     progress: &mut dyn FnMut(f32),
 ) -> Result<Done> {
@@ -242,6 +251,7 @@ fn encode(
         source_bytes,
         decoder,
         &mut encoder,
+        source_pts,
         progress,
     );
     if result.is_err() {
@@ -259,19 +269,28 @@ fn write_frames(
     source_bytes: usize,
     decoder: &mut Child,
     encoder: &mut Child,
+    source_pts: Option<&[(f64, u64)]>,
     progress: &mut dyn FnMut(f32),
 ) -> Result<Done> {
     let mut decoder_out = decoder.stdout.take().context("No decoded video stream")?;
     let mut encoder_in = encoder.stdin.take().context("No encoder input")?;
     let mut rgba = vec![0; source_bytes];
+    let mut source_index = 0;
     for i in 0..count {
-        decoder_out
-            .read_exact(&mut rgba)
-            .context("The recording ended before the export timeline")?;
         let ms = i as f64 * 1000.0 / plan.fps as f64;
+        let wanted = source_pts.map(|pts| pts.partition_point(|t| t.0 <= ms + 0.5).saturating_sub(1));
+        if let Some(wanted) = wanted {
+            while source_index <= wanted {
+                decoder_out.read_exact(&mut rgba).context("The recording ended before its measured source timeline")?;
+                source_index += 1;
+            }
+        } else {
+            decoder_out.read_exact(&mut rgba).context("The recording ended before the export timeline")?;
+        }
         let rect = camera_at(plan, ms);
         let mut output = resample(&rgba, sw, sh, plan.width, plan.height, rect);
-        crate::capture::engine::render::draw_export_annotations(&mut output, ms, rect, (sw, sh), plan.ink);
+        let actual_pts = source_pts.zip(wanted).map(|(pts, index)| pts[index].1 as f64);
+        crate::capture::engine::render::draw_export_annotations(&mut output, ms, actual_pts, rect, (sw, sh), plan.ink);
         encoder_in
             .write_all(&output.rgba)
             .context("Could not write an export frame")?;
@@ -280,6 +299,8 @@ fn write_frames(
         }
     }
     drop(encoder_in);
+    // Finish the source tail without breaking the decoder's pipe.
+    std::io::copy(&mut decoder_out, &mut std::io::sink())?;
     drop(decoder_out);
     let decoded = decoder
         .wait()
@@ -309,6 +330,31 @@ fn write_frames(
         duration_ms: output.duration_ms,
         bytes,
     })
+}
+
+fn source_timestamps(movie: &Path) -> Result<Vec<(f64, u64)>> {
+    let output = Command::new("ffprobe")
+        .args(["-v", "error", "-select_streams", "v:0", "-show_frames", "-show_streams", "-show_entries", "stream=time_base:frame=pts", "-of", "json"])
+        .arg(movie).output().context("Could not inspect source sample timestamps")?;
+    ensure!(output.status.success(), "Could not inspect source sample timestamps");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    let time_base = value["streams"][0]["time_base"].as_str()
+        .and_then(|s| s.split_once('/')).context("Missing source time base")?;
+    let numerator: u64 = time_base.0.parse()?;
+    let denominator: u64 = time_base.1.parse()?;
+    ensure!(numerator > 0 && denominator > 0, "Invalid source time base");
+    let pts = value["frames"].as_array().context("Missing source samples")?.iter()
+        .map(|frame| {
+            let ticks = frame["pts"].as_u64().context("Unknown source sample timestamp")?;
+            // Join using integer media time, not rounded decimal pts_time output.
+            let units = (ticks as u128).checked_mul(numerator as u128)
+                .and_then(|v| v.checked_mul(1000)).context("Source timestamp overflow")?;
+            let measured = u64::try_from(units / denominator as u128)?;
+            Ok((units as f64 / denominator as f64, measured))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    ensure!(!pts.is_empty() && pts.windows(2).all(|w| w[0].0 < w[1].0), "Invalid source sample timeline");
+    Ok(pts)
 }
 
 fn camera_at(plan: &Plan<'_>, ms: f64) -> [f32; 4] {

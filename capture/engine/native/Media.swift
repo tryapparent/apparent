@@ -585,10 +585,17 @@ enum Media {
             let reqTime = result.requestedTime.seconds.isFinite
               ? Int((result.requestedTime.seconds * 1000).rounded())
               : sliceReq[min(offset - 1, sliceReq.count - 1)]
-            let actual = (try? result.actualTime).map { Int(($0.seconds * 1000).rounded()) } ?? reqTime
+            let actualTime = try? result.actualTime
+            let measured = actualTime.flatMap { time -> Int? in
+              let ms = time.seconds * 1000
+              return ms.isFinite && ms >= 0 && ms < Double(Int.max) ? Int(ms.rounded(.down)) : nil
+            }
+            let actual = actualTime.map { Int(($0.seconds * 1000).rounded()) } ?? reqTime
             let file = outDir.appending(path: String(format: "frame-%04d.rgba", curIndex))
             try writeRGBA(image, to: file)
-            local.append((curIndex, ["t": reqTime, "actual": actual, "width": image.width, "height": image.height, "file": file.path]))
+            var record: [String: Any] = ["t": reqTime, "actual": actual, "width": image.width, "height": image.height, "file": file.path]
+            if let measured { record["sourcePtsMs"] = measured }
+            local.append((curIndex, record))
           }
           return local
         }

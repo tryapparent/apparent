@@ -102,6 +102,8 @@ impl CandidateBuffer {
 
 /// What a finished screen capture leaves behind.
 pub struct ScreenRecording {
+    /// Encoder-associated sample evidence; empty on adapters without measured receipts.
+    pub annotation_evidence: crate::capture::engine::annotation::AnnotationEvidence,
     /// Small candidate frames for keyframe selection (see `CANDIDATE_EDGE`).
     pub frames: Vec<RgbaFrame>,
     pub video: Option<PathBuf>,
@@ -127,6 +129,9 @@ pub fn capture_size(target: &TargetInfo, long_edge: f64) -> (u32, u32) {
 /// frames (at once when `urgent`), stores when the movie started into `video_offset_ms`, and
 /// returns the movie it wrote.
 pub(crate) struct Sampler {
+    /// Append only after binding measured evidence to an encoded sample's PTS.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    pub annotation_evidence: Arc<Mutex<crate::capture::engine::annotation::AnnotationEvidence>>,
     pub target: TargetInfo,
     pub video_output_path: Option<PathBuf>,
     /// Apparent's own windows to leave out of the recording.
@@ -182,6 +187,7 @@ pub(crate) fn sample_real_candidate(
 /// Active screen + optional MP4 recorder (ScreenCaptureKit on macOS, Windows.Graphics.Capture
 /// and Media Foundation on Windows).
 pub struct ScreenCaptureSession {
+    annotation_evidence: Arc<Mutex<crate::capture::engine::annotation::AnnotationEvidence>>,
     started_at: Instant,
     stopping: Arc<AtomicBool>,
     urgent_snapshot: Arc<AtomicBool>,
@@ -200,6 +206,9 @@ impl ScreenCaptureSession {
         excluded_window_ids: Arc<Mutex<Vec<u32>>>,
     ) -> Self {
         let started_at = Instant::now();
+        let annotation_evidence = Arc::new(Mutex::new(Default::default()));
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        let thread_evidence = Arc::clone(&annotation_evidence);
         let stopping = Arc::new(AtomicBool::new(false));
         let urgent_snapshot = Arc::new(AtomicBool::new(true));
         let frames = Arc::new(Mutex::new(CandidateBuffer::new(CANDIDATE_BUDGET_BYTES)));
@@ -219,6 +228,8 @@ impl ScreenCaptureSession {
             .name("apparent-frame-sampler".into())
             .spawn(move || {
                 platform::run_sampler(Sampler {
+                    #[cfg(any(target_os = "macos", target_os = "linux"))]
+                    annotation_evidence: thread_evidence,
                     target: sampler_target,
                     video_output_path,
                     excluded_window_ids,
@@ -236,6 +247,7 @@ impl ScreenCaptureSession {
 
         Self {
             started_at,
+            annotation_evidence,
             stopping,
             urgent_snapshot,
             frames,
@@ -293,6 +305,8 @@ impl ScreenCaptureSession {
         let valid_video =
             video_path.filter(|path| path.exists() && path.metadata().is_ok_and(|m| m.len() > 0));
         ScreenRecording {
+            annotation_evidence: std::mem::take(&mut *self.annotation_evidence.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)),
             frames: collected,
             video: valid_video,
             duration_ms: duration_ms.max(100),

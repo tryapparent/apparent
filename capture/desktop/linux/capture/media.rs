@@ -533,6 +533,7 @@ fn own_window_masks(ids: &[u32], frame: [f64; 4], candidate: (u32, u32)) -> Vec<
 /// The recording thread: see `crate::capture::engine::runtime::Sampler`.
 pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
     let Sampler {
+        annotation_evidence: _, // #229 must bind per-buffer receipts through the movie tee.
         target,
         video_output_path,
         started_at,
@@ -699,7 +700,7 @@ impl VideoReader {
     }
 
     /// The frame on screen at `ms`: the last one at or before it.
-    fn at(&self, ms: u64) -> Result<(u64, u32, u32, Vec<u8>)> {
+    fn at(&self, ms: u64) -> Result<(Option<u64>, u32, u32, Vec<u8>)> {
         let target = ms.min(self.duration_ms.saturating_sub(1));
         self.pipeline.seek_simple(
             gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
@@ -717,7 +718,7 @@ impl VideoReader {
         let t = sample
             .buffer()
             .and_then(gst::BufferRef::pts)
-            .map_or(target, gst::ClockTime::mseconds);
+            .map(gst::ClockTime::mseconds);
         Ok((t, w, h, rgba))
     }
 }
@@ -785,11 +786,13 @@ pub fn frames(movie: &Path, times: FrameTimes, max_edge: u32) -> Result<Vec<Rgba
     for want in requested {
         let (t, w, h, rgba) = video.at(want)?;
         let (w, h, rgba) = shrink_to_edge(w, h, rgba, max_edge);
-        let t = if sampled { t } else { want };
-        if sampled && out.last().is_some_and(|f| f.t_ms == t) {
+        let presentation = if sampled { t.unwrap_or(want) } else { want };
+        if sampled && out.last().is_some_and(|f| f.t_ms == presentation) {
             continue;
         }
-        out.push(RgbaFrame::new(t, w, h, rgba));
+        let mut frame = RgbaFrame::new(presentation, w, h, rgba);
+        frame.media_pts_ms = t;
+        out.push(frame);
     }
     ensure!(!out.is_empty(), "No frames decoded from {}", movie.display());
     Ok(out)

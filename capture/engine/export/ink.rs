@@ -51,6 +51,8 @@ impl InkPlan {
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InkStroke {
+    /// Media-clock intervals whose actual source sample already represents this stroke.
+    pub preserve_source: Vec<[u64; 2]>,
     /// The outline as drawn up to each moment, flat `x, y` pairs.
     pub snaps: Vec<Snap>,
     pub fade_at: u64,
@@ -159,7 +161,8 @@ pub fn plan(bundle: &ApparentBundle, video_px: (u32, u32), layers: Layers) -> In
                         fade_ms: FADE_MS,
                     });
                 }
-            } else if let Some(ink) = ink_stroke(stroke, (w, h), size, fade_at, vt) {
+            } else if let Some(mut ink) = ink_stroke(stroke, (w, h), size, fade_at, vt) {
+                ink.preserve_source = bundle.annotation_evidence.preserved_intervals(index, &bundle.strokes);
                 plan.strokes.push(ink);
             }
         }
@@ -274,6 +277,7 @@ fn ink_stroke(
         .filter(|s| s.poly.len() >= 6)
         .collect();
     (!snaps.is_empty()).then_some(InkStroke {
+        preserve_source: Vec::new(),
         snaps,
         fade_at,
         fade_ms: FADE_MS,
@@ -355,6 +359,28 @@ mod tests {
         (0..30)
             .map(|i| (3_000 + i * 100, 4_000 + (i * 37) % 900, i * 20))
             .collect()
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn represented_movie_samples_preserve_partial_completed_and_fading_pixels() {
+        let mut b = bundle();
+        b.strokes = vec![stroke(200, &drawn())];
+        let mut json = serde_json::to_value(&b).unwrap();
+        json["annotationEvidence"] = serde_json::json!({"video": [
+            {"ptsMs":100,"endMs":700,"frame":{"version":1,"sourceLifetime":"a","sourceGeneration":1,"sampleId":"partial","capturedAtMs":200,"ordinaryInk":{"state":"represented","strokes":[{"stroke":0,"throughMs":200,"opacity":1.0}]}}},
+            {"ptsMs":700,"endMs":900,"frame":{"version":1,"sourceLifetime":"a","sourceGeneration":1,"sampleId":"complete","capturedAtMs":800,"ordinaryInk":{"state":"represented","strokes":[{"stroke":0,"throughMs":780,"opacity":1.0}]}}},
+            {"ptsMs":900,"endMs":1100,"frame":{"version":1,"sourceLifetime":"b","sourceGeneration":2,"sampleId":"fading","capturedAtMs":1000,"ordinaryInk":{"state":"represented","strokes":[{"stroke":0,"throughMs":780,"opacity":0.3}]}}}
+        ]});
+        let b: ApparentBundle = serde_json::from_value(json).unwrap();
+        let p = plan(&b, (160, 100), Layers { ink: true, clicks: false });
+        for t in [200.0, 800.0, 1000.0] {
+            let mut pixels = crate::shared::model::RgbaFrame::new(0, 160, 100, vec![240; 160 * 100 * 4]);
+            let original = pixels.rgba.clone();
+            let source_pts = b.annotation_evidence.video.iter().find(|s| s.pts_ms as f64 <= t && t < s.end_ms as f64).unwrap().pts_ms;
+            crate::capture::engine::render::draw_export_annotations(&mut pixels, t, Some(source_pts as f64), [0.0,0.0,1.0,1.0], (160,100), &p);
+            assert!(pixels.rgba == original, "replayed represented source sample at {t}");
+        }
     }
 
     #[test]

@@ -992,6 +992,7 @@ pub fn frontmost_app_info() -> Option<(i32, String, Option<String>)> {
 /// screenshots are taken every `buffer.interval()` (or at once when urgent).
 pub(crate) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
     let Sampler {
+        annotation_evidence: _, // No measured native receipts yet; remains unknown.
         target: sampler_target,
         video_output_path,
         excluded_window_ids,

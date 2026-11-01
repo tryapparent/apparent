@@ -14,6 +14,60 @@ live effectiveness indicator or automatic installer. See [setup and limits](../.
 - **Images (`frames/*.png` and `contact-sheet.png`)**: Keep images purely visual. Each keyframe shows the screenshot, active red tldraw stroke(s) for that moment, a subtle click mark (thin translucent ring and small dot, no fill, so the clicked thing stays readable; phone swipes are a thin translucent trail), and the keyframe's number alone (no `#`, no time; `summary.md` pairs each `[#N · M:SS]` with its words) in bold black on a small white rounded square with a thin dark ring, inset 5 px from the top-left corner and dodging to bottom-left when top-left has ink, a click or the cursor. The chip never moves over the top-right action controls in a captured app. The chip is drawn at one size on every contact-sheet tile, about 24 px with its ring: blind reading tests found 20 px failed when the sheet was shown at half size, a bare digit was read as screenshot text, and `#6` was read as `8`. `contact-sheet.png` packs frames in time order (left→right, top→bottom) into aspect-ratio-justified rows separated by tight 6 px gutters on a dark canvas (no card borders or rounded frame masks, capped at 1600 px long edge / ~1.56 MP) with no rasterized transcript headers or caption boxes.
 - **Text (`summary.md` & Clipboard)**: Put the transcript, `[#N · M:SS]` keyframe index, and absolute file paths (`Contact sheet:`, `frames/frame-XX.png`, `Video:`, `Bundle:`) in plain text (`NSPasteboardTypeString`) without repeating the transcript multiple times, so `⌘V` pastes cleanly into any terminal (Ghostty / OpenCode TUI) or GUI composer (OpenCode Desktop).
 
+## Source ink evidence (#228)
+
+Engine's `annotation::FrameEvidence` v1 describes **the acquired pixels**, not
+the ink desired at the presentation time. It carries an opaque authorized
+`sourceLifetime`, positive `sourceGeneration`, `sampleId`, acquisition
+`capturedAtMs` on the bundle clock, and `ordinaryInk`. Only a native adapter
+that measured/validated the actual source buffer may attach it. No OS name,
+overlay visibility, colour test, new poll time or successful decode establishes
+clean pixels. `RgbaFrame::source_evidence` survives candidate caching and
+pixel-derived crop/scale; a replacement movie frame uses its own receipt,
+never the smaller candidate's identity.
+
+`ordinaryInk` is either `{"state":"clean"}` or a complete measured layer
+snapshot `{"state":"represented","strokes":[{"stroke":0,"throughMs":200,"opacity":0.3}]}`.
+Stroke indices refer to this capture's immutable stroke log. Unlisted ordinary
+strokes are absent. Duplicate/out-of-range indices, pin/laser references,
+invalid prefixes/opacities, unsupported versions and ambiguous movie timelines
+are not clean evidence. Missing or invalid evidence stays unknown and retains
+legacy replay; it does not establish that the duplication bug is fixed.
+
+Still rendering and the timed export plan share the Engine composition
+decision, not a rasterizer. They preserve a represented prefix/completed/fading
+stroke already in source pixels without topping it up, brightening it or
+restarting its fade. Removing/replacing that ink requires a matching clean
+underlay, which this contract does not invent. Clicks, pins, laser and unrelated
+content are separate layers and keep their existing behavior.
+
+The bundle/journal `annotationEvidence` stores keyframe receipts by frame index
+and video receipts as `{ptsMs,endMs,frame}`. Native recording adapters append
+video evidence to `Sampler::annotation_evidence` **only after** associating it
+with an encoded sample's actual media-clock PTS. Repeated encoded samples may
+retain one acquisition identity. Decoder PTS (`RgbaFrame::media_pts_ms`) is
+separate from the seek request and bundle/presentation time. Only an exact
+recorded boundary resolves a receipt: seeking can clip a buffer's PTS inside
+its interval. A gap is unknown. `videoOffsetMs` changes presentation, never
+source identity. Linux receipt-bearing exports explicitly select decoded source
+samples before changing output FPS; macOS export uses the retained sample's PTS.
+
+**Producer gate remains open.** Current Linux/macOS capture adapters do not yet
+produce validated v1 receipts and therefore retain legacy behavior. This is
+shared consumer integration, not native exactly-once acceptance. #229's draft
+producer at `5d91f10ca0da3e4a3a3548b897a679165abf2952` additionally requires its
+explicit portal capability exchange, native receipt/geometry/lifetime checks,
+exact PipeWire-buffer association and encoder association in the application.
+The generic Engine structure is not a substitute for those checks. Screen/Area
+selection and live drawing are unchanged; other Linux backends and macOS need
+their own measured adapter and exact-candidate native proof.
+
+No historical media or existing derived image is migrated or labelled clean on
+load, and no source-state assumption option is added. Existing explicit
+`reprocess` behavior is unchanged; it is not permission to repair a historical
+capture in place by assuming clean source. A future assumption-based rerender
+must record that assumption separately and write to a separate output.
+
 ## Transcription (`capture/engine/runtime/audio/transcription/transcribe.rs`, `shared/hex.rs`, `capture/engine/runtime/audio/transcription/command_transcriber.rs`)
 
 Apple SpeechAnalyzer by default (measured word times). `"transcriber": "hex"` + `"hexModel"` in `~/.config/apparent/config.json` (Settings › Recording, `apparent hex status`, `--transcriber` on `reprocess`/`import`) uses Hex's local API v2 (discovery file `local-api.json`, bearer token, never logged) only when Hex answers `/health` and has a ready model (`installed && verified`; Apparent never downloads). Hex gives text only, so each speech island (`audio::speech_islands`, clips merged to ≤ 24) is transcribed on its own and its words are spread over it by length: `source: "hex:<model>"`, `estimated: true`, which `keyframes.rs` reads to skip spoken cues. Any Hex failure falls back to Apple for that recording; Hex absent falls back silently (logged once). `"transcriber": "command"` (`capture/engine/runtime/audio/transcription/command_transcriber.rs`) runs the argv in `"transcribeCommand"` (no shell, own process group, wall-clock limit, 8 MiB stdout cap) and reads one versioned JSON transcript: `source: "command:<name>"`; any failure means Apple for that recording (Hex never tried; a missing or malformed command is logged once, like Hex being away), and nothing the program says or is given reaches the log. It gets no language from Apparent: `appleLocale` is Apple's, and the user's argv carries the model's. Its keys are read on their own (`Program::load_from`), never through `handoff::Config`. Settings reads `hex::cached_status` (a background poller), never the network.

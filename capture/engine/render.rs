@@ -15,6 +15,7 @@ const MUTED: Color = [150, 150, 150, 255];
 pub(crate) fn draw_export_annotations(
     frame: &mut RgbaFrame,
     ms: f64,
+    source_ms: Option<f64>,
     camera: [f32; 4],
     source: (u32, u32),
     ink: &crate::capture::engine::export::ink::InkPlan,
@@ -35,6 +36,10 @@ pub(crate) fn draw_export_annotations(
         1.0 - u * u * (3.0 - 2.0 * u)
     };
     for stroke in &ink.strokes {
+        if source_ms.is_some_and(|pts| stroke.preserve_source.iter()
+            .any(|r| r[0] as f64 == pts.floor())) {
+            continue;
+        }
         let Some(first) = stroke.snaps.first() else {
             continue;
         };
@@ -526,6 +531,12 @@ pub fn annotate_keyframe_marks_in_place(
     let shown = crate::capture::engine::sketch::marks_on(keyframe, marks);
     for (index, stroke) in strokes.iter().enumerate() {
         if stroke.laser {
+            continue;
+        }
+        if stroke.pin.is_none()
+            && crate::capture::engine::annotation::composition(frame.source_evidence.as_ref().filter(|e| e.valid_for(strokes)), index)
+                == crate::capture::engine::annotation::Composition::PreserveSource
+        {
             continue;
         }
         let belongs = shown.iter().any(|m| m.strokes.contains(&index));

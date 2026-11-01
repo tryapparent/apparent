@@ -48,7 +48,7 @@ pub fn downscale(frame: &RgbaFrame, max_w: u32) -> RgbaFrame {
             }
         }
     }
-    RgbaFrame::new(frame.t_ms, w, h, rgba)
+    frame.derived(w, h, rgba)
 }
 
 /// Area-averaged copy at exactly `w`×`h` (what ScreenCaptureKit hands the sampler).
@@ -78,7 +78,7 @@ pub fn resize(frame: &RgbaFrame, w: u32, h: u32) -> RgbaFrame {
             }
         }
     }
-    RgbaFrame::new(frame.t_ms, w as u32, h as u32, rgba)
+    frame.derived(w as u32, h as u32, rgba)
 }
 
 /// The crop algorithm's input for a bundle: change regions from `apparent.json` when the bundle

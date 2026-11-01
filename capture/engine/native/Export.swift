@@ -43,6 +43,7 @@ struct ExportPlan: Decodable {
   }
   struct Stroke: Decodable {
     var snaps: [Snap]
+    var preserveSource: [[Double]]?
     var fadeAt: Double
     var fadeMs: Double
   }
@@ -103,13 +104,14 @@ enum ExportInk {
     return 1 - u * u * (3 - 2 * u)
   }
 
-  static func draw(_ ctx: CGContext, t: Double, view: ExportView, ink: ExportPlan.Ink) {
+  static func draw(_ ctx: CGContext, t: Double, sourceMs: Double?, view: ExportView, ink: ExportPlan.Ink) {
     let s = view.scale
     let k = ink.k
     ctx.setLineCap(.round)
     ctx.setLineJoin(.round)
 
     for stroke in ink.strokes {
+      if let pts = sourceMs, stroke.preserveSource?.contains(where: { $0.count == 2 && $0[0] == floor(pts) }) == true { continue }
       guard let first = stroke.snaps.first, t >= first.t else { continue }
       let alpha = fade(t, at: stroke.fadeAt, over: stroke.fadeMs)
       guard alpha > 0.002 else { continue }
@@ -307,6 +309,7 @@ final class ExportFrames: @unchecked Sendable {
   let total: Int
   var tick = 0
   var current: CVPixelBuffer?
+  var currentSourceMs: Double?
   var pending: (CVPixelBuffer, Double)?
   var sourceDone = false
 
@@ -356,9 +359,10 @@ final class ExportFrames: @unchecked Sendable {
       let ms = Double(tick) * 1000 / Double(plan.fps)
       while let next = pending, next.1 <= ms + 0.5 {
         current = next.0
+        currentSourceMs = next.1
         advance()
       }
-      if current == nil, let next = pending { current = next.0 }
+      if current == nil, let next = pending { current = next.0; currentSourceMs = next.1 }
       guard let source = current, let pool = adaptor.pixelBufferPool else {
         writerInput.markAsFinished()
         done()
@@ -408,7 +412,7 @@ final class ExportFrames: @unchecked Sendable {
     ctx.translateBy(x: 0, y: oh)
     ctx.scaleBy(x: 1, y: -1)
     ctx.setShouldAntialias(true)
-    ExportInk.draw(ctx, t: ms, view: view, ink: plan.ink)
+    ExportInk.draw(ctx, t: ms, sourceMs: currentSourceMs, view: view, ink: plan.ink)
   }
 }
 
