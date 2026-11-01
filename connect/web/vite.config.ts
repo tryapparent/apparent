@@ -8,14 +8,14 @@ export default defineConfig({
     configureServer(server) {
       server.middlewares.use((req, _res, next) => {
         const url = new URL(req.url || "/", "http://localhost")
-        if (/^\/(?:connect|hosted)(?:\/device)?\/?$/.test(url.pathname)) req.url = `/index.html${url.search}`
+        if (/^\/(?:connect|hosted)(?:\/(?:device|shares))?\/?$/.test(url.pathname)) req.url = `/index.html${url.search}`
         next()
       })
     },
     configurePreviewServer(server) {
       server.middlewares.use((req, _res, next) => {
         const url = new URL(req.url || "/", "http://localhost")
-        if (/^\/(?:connect|hosted)(?:\/device)?\/?$/.test(url.pathname)) req.url = `${url.pathname.replace(/\/$/, "")}/index.html${url.search}`
+        if (/^\/(?:connect|hosted)(?:\/(?:device|shares))?\/?$/.test(url.pathname)) req.url = `${url.pathname.replace(/\/$/, "")}/index.html${url.search}`
         next()
       })
     },
