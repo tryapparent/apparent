@@ -1,74 +1,62 @@
 # Apparent incremental architecture campaign
 
-Status: canonical architecture target and bounded-acceptance ledger. The last
-locally observed candidate is `dd4b5001de2ea83ceff5dae616b277dd4244e56d`
-(`main`); remote `origin/main` remains `d90d10507dbdebc4a75011000316a28e38bea558`.
-Its push hook exited 1 on the Engine finalizer gate, and no push is active. Do not
-mark any stream reopened until its integrated remote result and required tests are
-verified. Deployment and release remain separate authorization decisions.
+Status: bounded architecture target and final acceptance ledger. Published `main` and
+`origin/main` are `de9358170b53b9ddc99e0c6d6ba1712fae598b74` (Connect adoption and
+finite owner-local rules). The normal hook and CI pass; all four outcome streams are
+open for ordinary owner-local development. Connect was announced open separately.
+No deployment, release, native capture, GUI session, live OAuth, or playable demo
+acceptance is implied.
 
 ## Current bounded ownership and acceptance (authoritative)
 
-This section supersedes the older full-campaign finishline and the historical
-unchecked staging checklist below. Those entries preserve provenance, not current
-pending work or permission to revive old candidates. The finite target is owner-local
-ordinary change, existing contract/regression evidence, accurate integration status,
-and named contained debt—not an ideal directory tree or completion of every staged
-refactor.
+The finite target is reached: reconcile current-main #221/#250 and #248, accept the
+four bounded outcomes on the exact published tree, retain the shared contracts, and
+name remaining contained debt. This supersedes older unchecked staging lists and the
+prior broad campaign finishline below; those lists are historical evidence, not live
+work queues or blockers. No additional extraction, feature, or test campaign is needed.
 
-| Outcome | Owner paths and dependencies | Boundary / representative existing proof |
+| Outcome | Owner boundary and evidence | Status |
 |---|---|---|
-| Shared recorder | `src/capture/recorder.rs` and `src/capture/tests_recorder.rs`; `src/capture.rs` exports compose it for `src/ui.rs`, timed CLI in `src/main.rs`, bundle processing, and native samplers. #221 config and #250 recorder extractions are already merged; #225 is obsolete and not a prerequisite. | Recorder mechanics/tests may evolve together. Changes to root composition, platform adapters, telemetry, finalization, or GUI/CLI receipts are shared-contract work. Existing window-target resolution, display-selection, bounded-candidate/full-resolution, and real-frame-readiness tests in `src/capture.rs` / `src/capture/tests_recorder.rs`, plus affected root compilation, are the finite checks for relevant deltas; existing #250 preservation/review evidence is reused, not a new native capture. This is not Engine adoption. |
-| Desktop completion | `src/ui/recording_completion.rs`; `src/ui.rs` remains the GPUI coordinator and owns shared receipt/generation checks. | Completion/presentation changes stay Desktop-owned; the coordinator is shared with Agent-owned takes. The existing `ui::tests::current_finalizer_completes_once_before_ui_for_agent_and_manual_captures`, stale-A/B completion, and `ui::tests::stale_finalization_cannot_complete_a_new_practice_recording` regressions cover the boundary. Do not describe all of `ui.rs` as separable or extract its receipt contract absent a concrete co-change. #233 remains accepted historical evidence, not fresh GUI/native proof. |
-| Agent-created proof video | `src/handoff.rs` owns the `agentDemoVideo` request policy (the file also contains other handoff policy); `docs/agent-video-workflow.md` defines capture-receipt use, stop/readiness, artifact inspection, and truthful delivery claims. It uses existing capture and `src/export/` mechanics. | Prompt/workflow changes may be Agent-video-local. GUI admission, owned receipts, readiness, finalization, and stop/cancel semantics remain shared capture contract. `handoff::test_modules::tests::demo_video_request_is_only_added_to_enabled_copy_text` and `demo_video_setting_preserves_other_experiments_and_rejects_bad_config`, with the existing UI receipt regressions, are representative. This is distinct from human-feedback capture and does not prove a standalone Agent install or a delivered playable artifact. |
-| Connect | #248 production composition is already on remote main. `connect/client/**` owns the independent client; `src/hosted.rs` is the app adapter and its existing hosted test modules retain adapter regressions. Client config access goes through the existing `ConfigProvider`; root manifests, feature map, CI, and cross-owner docs are shared integration points for this campaign. | Local `dd4b500` adopts the package and CI package steps, but its push hook failed the Engine finalizer test; it is not remotely accepted. Reuse the reviewed matching donor source, and do not claim the standalone macOS package build/test gate passed until CI proves it. Existing package and hosted tests remain the finite checks; no live OAuth, native GUI, deploy, or release claim. |
+| Shared recorder | `src/capture/recorder.rs` with `src/capture/tests_recorder.rs`; root composition, platform adapters, telemetry, finalization and GUI/CLI receipts are shared-contract work. Existing capture/recorder regressions and #250 exact-source preservation/review evidence support the seam. | Open. #250 is current; #225 obsolete. No standalone Engine or native-capture claim. |
+| Desktop completion | `src/ui/recording_completion.rs` owns completion/finalization behavior; `src/ui.rs` retains GPUI coordination and shared receipt/generation checks. Existing current-finalizer, stale-A/B, and stale-practice regressions plus bounded #233 evidence support the boundary. | Open. Not a wholesale UI split or fresh GUI/native proof. |
+| Agent-created proof video | Agent request policy in `src/handoff.rs` and workflow in `docs/agent-video-workflow.md`, using shared capture/export. Prompt tests and shared receipt regressions support the seam. | Open. Shared admission/receipt/readiness/finalizer changes require coordination. No standalone Agent install or delivered-playable claim. |
+| Connect | `connect/client/**` is the independent client; `src/hosted.rs` adapter and hosted tests remain; config-provider contract is preserved. #248 composition is already on main. | Open. Package CI passes on macOS and Linux; no live OAuth, deploy, or release claim. |
 
-For this campaign only, the designated Luna integration owner coordinates shared declarations, manifests, CI and cross-owner documentation; this is a temporary reservation, not a permanent routing rule for future edits. Owners retain ordinary owner-local code and
-documentation work. Future cross-owner contracts require explicit coordination among
-the affected owners, but local work must not become a central bottleneck.
+The shared-capture/Desktop/Agent boundary assessment at
+`/home/simon/.hermes/plans/apparent-boundary-acceptance.md` found current seams and
+regressions sufficient; no source extraction is justified. Connect source review
+`/home/simon/.hermes/plans/apparent-connect-review.md` was `APPROVE_SOURCE` on exact
+matching donor inputs, with one nonblocking test-coverage suggestion. Existing source,
+contract, and test evidence is retained at its stated revision and scope; it is not
+fresh native or GUI proof.
 
-Dependencies are limited and directional: Desktop and Agent consume the existing
-shared capture/receipt contract; Connect depends on config-provider behavior and the
-already-adopted #248 composition, not on recorder extraction. Root module declarations,
-manifests, feature inventory, cross-owner contracts, and this canonical architecture
-ledger have one integrator for this campaign only. New behavior belongs with its
-outcome owner. Move a mechanism only with its relevant callers/tests and verify
-consumers before deleting the donor. Do not add sibling-internal imports, duplicate
-behavioral implementations, new dependencies that widen a legacy owner, or a second
-facade merely to make paths look disjoint. Preserve public commands, config, bundle
-and install contracts. A real shared-contract change is coordinated and explicit; no
-ideal architecture may block an otherwise released product stream.
+Final verification for published `de9358170b53b9ddc99e0c6d6ba1712fae598b74`:
+normal verifier passed on the original `d90d105..de93581` baseline after the diagnosed
+Engine temp-ancestor issue was repaired. The original push did not invoke the hook:
+`core.hooksPath` was unset; the parent later corrected it and ran the exact normal
+verifier successfully. Details and the initial failure are retained in the private
+evidence ledger.
+The passing normal verifier ran root build/tests (684 passed, 3 ignored), Engine build/tests
+(23 passed), 15 hook-contract tests and 16 selector tests. CI run
+[41290870849](https://github.com/tryapparent/apparent/actions/runs/41290870849)
+passed both macOS 26 and Ubuntu 24.04 Rust jobs, selector, and four analysis
+check-runs; the independent Connect package build/test passed on both OS jobs. Local
+full-verifier log: `/srv/clanker-hermes/cache/scratch/apparent-de93581-verification.log`.
+The exact remote `main` readback matches that SHA. No donor deletion was required by
+this finite boundary assessment; no repository-wide sweep was part of acceptance.
 
-Acceptance is finite: verify the exact integrated remote commit and path delta; run
-the normal hook/CI and existing focused tests selected for that delta; reuse exact
-historical source/review/test evidence only with its original revision and limits;
-record fresh, reused, and unrun evidence separately. A move alone does not require a
-new native capture. No new source extraction or unrelated feature/probe is required
-by the current boundary assessment. Do not turn unavailable checks into passes. The original
-`dd4b500` push hook failed at `capture/engine/tests/finalizer.rs:42`
-before its mutation cases: `trusted_directory` rejected the writable
-`/srv/clanker-hermes/cache` ancestor of the mandated test temp path. With explicit
-authorization, the cache directory alone was changed from `0775` to `0755`; owner
-access and the complete default ACL were preserved, and no recursive chmod or
-content changes were made. On local candidate `dd4b5001de2ea83ceff5dae616b277dd4244e56d`,
-the focused finalizer test passed (1/1), then Engine build and the full Engine suite
-passed through `t3-build` with the mandated `TMPDIR` (23 tests passed: bootstrap 3,
-finalizer 1, process 12, review regressions 7). Exact before/after ACL, consumer
-inspection, commands, logs, and rollback are recorded privately at
-`~/.local/share/apparent/refactor-evidence/engine-gate-acl-20261101/`. This is fresh
-local gate evidence only: the candidate remains unpushed and remote acceptance is
-pending; no stream is reopened.
+Temporary campaign-only integration/writer reservations have ended. Future changes
+belong to their accountable owners; changes to genuinely shared contracts are
+coordinated by affected owners. Keep changes bounded to relevant mechanisms, callers,
+and tests; verify consumers before deleting donors; preserve external contracts and
+avoid duplicate behavior or ideal-architecture blockers.
 
-Contained debt, explicitly deferred and not a completion blocker: production-wide
-Engine/session ownership, standalone Engine packaging, universal archive coordination,
-a publication rewrite, and clean-machine standalone Agent installation. Preserve
-current safety behavior and revisit only for a concrete owner change or reproduced
-invariant failure. No stream is reopened by local integration alone.
+Contained debt, not an acceptance blocker: production-wide Engine/session ownership,
+standalone Engine packaging, universal archive coordination, a publication rewrite,
+and clean-machine standalone Agent installation. Preserve existing safeguards and
+revisit only for a concrete owner change or reproduced invariant failure.
 
-The remaining text is historical campaign evidence and should be read under the
-authoritative status above. Older “unchecked” items and finishline language are not
-the current acceptance denominator.
-
+The remaining text is historical campaign evidence, not current pending work.
 ## Target and dependency rules
 
 Optimize for ordinary features and recovery staying with one accountable owner,
