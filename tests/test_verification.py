@@ -47,6 +47,97 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(verification.select(["README.md", "src/main.rs", "README.md"]),
                          verification.select(["src/main.rs", "README.md"]))
 
+    def test_independent_browser_selects_its_existing_build_and_fixtures(self):
+        result = verification.select(["connect/web/src/Hosted.tsx", "connect/web/package.json",
+                                      "connect/web/test/closure.test.mjs", "connect/web/test/routes.test.mjs"])
+        self.assertFalse(result["root"])
+        self.assertFalse(result["engine"])
+        self.assertTrue(result["browser"])
+        for path in ["connect/web/unknown.rs", "hosted/src/auth.ts", "build.rs"]:
+            with self.subTest(path=path):
+                self.assertTrue(verification.select(["connect/web/src/api.ts", path])["root"])
+
+    def test_selected_absent_browser_package_fails_closed(self):
+        real_run = subprocess.run
+        def execute(command, **kwargs):
+            if command[0] in ("python3", "sh"):
+                return subprocess.CompletedProcess(command, 0)
+            return real_run(command, **kwargs)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(verification, "ROOT", Path(tmp)), patch.object(
+                verification.subprocess, "run", side_effect=execute):
+            with self.assertRaises(FileNotFoundError) as failure:
+                verification.run_checks(verification.select(["connect/web/package.json"]))
+            self.assertEqual(str(failure.exception.filename), str(Path(tmp) / "connect/web"))
+
+    def test_reviewed_moves_require_complete_exact_source_pairs(self):
+        # Real immutable Git blobs, not a caller-supplied mechanical label.
+        for name, recipe in verification.MOVES.items():
+            with self.subTest(name=name):
+                before = {p: ("100644", pair[0]) if pair[0] else None for p, pair in recipe["blobs"].items()}
+                after = {p: ("100644", pair[1]) for p, pair in recipe["blobs"].items()}
+                def tree(rev, path):
+                    return (before if rev == "base" else after).get(path)
+                with patch.object(verification, "tree_entry", side_effect=tree), patch.object(
+                        verification, "changed_paths", return_value=list(after)):
+                    result = verification.plan("base", "head")
+                    self.assertTrue(result["root"])
+                    self.assertFalse(result["engine"])
+                    self.assertEqual(result["focused"], recipe["tests"])
+                    # A changed security/lifecycle body, test deletion, executable
+                    # mode or symlink must never retain the focused route.
+                    for path in after:
+                        original = after[path]
+                        for altered in [("100644", "f" * 40), None, ("100755", original[1]), ("120000", original[1])]:
+                            after[path] = altered
+                            self.assertTrue(verification.plan("base", "head")["engine"])
+                        after[path] = original
+                with patch.object(verification, "tree_entry", side_effect=tree), patch.object(
+                        verification, "changed_paths", return_value=[*after, "Cargo.lock"]):
+                    self.assertTrue(verification.plan("base", "head")["engine"])
+
+    def test_focused_checks_compile_root_and_reject_zero_matches(self):
+        result = subprocess.CompletedProcess([], 0, stdout="test result: ok. 2 passed; 0 failed\n")
+        selection = {"root": True, "engine": False, "browser": False, "focused": ["capture::"]}
+        with patch.object(verification.subprocess, "run", return_value=result) as run:
+            verification.run_checks(selection)
+            commands = [call.args[0] for call in run.call_args_list]
+            self.assertTrue(any("build" in c for c in commands))
+            self.assertTrue(any("capture::" in c for c in commands))
+            self.assertFalse(any("capture/engine/Cargo.toml" in c for c in commands))
+            self.assertFalse(any("test" in c and "capture::" not in c for c in commands))
+        result.stdout = "test result: ok. 0 passed; 0 failed; 90 filtered out\n"
+        with patch.object(verification.subprocess, "run", return_value=result):
+            with self.assertRaises(RuntimeError):
+                verification.run_checks(selection)
+
+    def test_retired_context_deletion_is_document_only_not_unknown_markdown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+            def git(*args):
+                return subprocess.check_output(["git", *args], cwd=root, env=env, text=True).strip()
+            git("init", "-q")
+            git("config", "user.name", "Test")
+            git("config", "user.email", "test@example.invalid")
+            (root / "CONTEXT.md").write_text("Retired glossary\n")
+            (root / "docs").mkdir()
+            (root / "docs/routing.md").write_text("See CONTEXT.md\n")
+            git("add", ".")
+            git("commit", "-qm", "base")
+            base = git("rev-parse", "HEAD")
+            git("rm", "CONTEXT.md")
+            (root / "docs/routing.md").write_text("Historical routing\n")
+            git("add", ".")
+            git("commit", "-qm", "delete retired glossary")
+            with patch.object(verification, "ROOT", root), patch.dict(os.environ, env, clear=True):
+                result = verification.plan(base, "HEAD")
+            self.assertEqual(result["paths"], ["CONTEXT.md", "docs/routing.md"])
+            self.assertFalse(result["root"])
+            self.assertFalse(result["engine"])
+            self.assertFalse(result["browser"])
+            self.assertTrue(verification.select(["UNKNOWN.md"])["engine"])
+            self.assertTrue(verification.select([*result["paths"], "build.rs"])["engine"])
+
     def test_real_rename_and_delete_include_old_owner(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -71,6 +162,36 @@ class SelectionTests(unittest.TestCase):
                 git("rm", "README.md")
                 git("commit", "-qm", "delete")
                 self.assertEqual(verification.changed_paths(base, "HEAD"), ["source.rs"])
+
+    def test_real_git_preservation_gate_and_shared_delta(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+            def git(*args):
+                return subprocess.check_output(["git", *args], cwd=root, env=env, text=True).strip()
+            git("init", "-q")
+            git("config", "user.name", "Test")
+            git("config", "user.email", "test@example.invalid")
+            (root / "donor.rs").write_text("fn preserved() {}\n")
+            git("add", ".")
+            git("commit", "-qm", "base")
+            base = git("rev-parse", "HEAD")
+            old = git("rev-parse", "HEAD:donor.rs")
+            (root / "moved.rs").write_text("fn preserved() {}\n")
+            (root / "donor.rs").write_text("mod moved;\n")
+            git("add", ".")
+            git("commit", "-qm", "move")
+            recipe = {"fixture": {"blobs": {
+                "donor.rs": (old, git("rev-parse", "HEAD:donor.rs")),
+                "moved.rs": (None, git("rev-parse", "HEAD:moved.rs")),
+            }, "tests": ["preserved::"]}}
+            with patch.object(verification, "ROOT", root), patch.object(verification, "MOVES", recipe), patch.dict(os.environ, env, clear=True):
+                self.assertEqual(verification.plan(base, "HEAD")["focused"], ["preserved::"])
+                (root / "Cargo.lock").write_text("shared dependency change\n")
+                git("add", ".")
+                git("commit", "-qm", "shared input")
+                self.assertTrue(verification.plan(base, "HEAD")["engine"])
+                self.assertEqual(verification.plan(base, "HEAD")["focused"], [])
 
 
 if __name__ == "__main__":

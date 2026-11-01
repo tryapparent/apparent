@@ -5,13 +5,13 @@ import { MAP_DIR } from "./scripts/feature-audit.ts"
 
 const TYPES: Record<string, string> = { ".txt": "text/plain; charset=utf-8", ".md": "text/markdown; charset=utf-8" }
 
-// Match only account/device routes, keeping device codes and other query bytes.
+// Match only account/device/share-management routes, keeping query bytes.
 function connectEntry(): Plugin {
   const rewrite = (preview: boolean) => (req: { url?: string }, _res: unknown, next: () => void) => {
     const url = req.url ?? ""
     const query = url.indexOf("?")
     const path = query < 0 ? url : url.slice(0, query)
-    if (/^\/(?:connect|hosted)(?:\/device)?\/?$/.test(path)) {
+    if (/^\/(?:connect|hosted)(?:\/(?:device|shares))?\/?$/.test(path)) {
       // Prerender removes the temporary input. Preview serves its route documents.
       req.url = (preview ? `${path.replace(/\/$/, "")}/index.html` : "/connect.html") + (query < 0 ? "" : url.slice(query))
     }

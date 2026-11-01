@@ -32,27 +32,34 @@ class PagesDeliveryTests(unittest.TestCase):
         project = {'canonical_deployment': {'id': 'deployment', 'url': 'https://deployment.apparent-capture.pages.dev',
                    'latest_stage': {'status': 'success'}, 'deployment_trigger': {'metadata': {'commit_hash': sha}}}}
         class Response(BytesIO):
-            headers = {'X-Apparent-Publisher': 'cloudflare-pages'}
+            headers = {'X-Apparent-Publisher': 'cloudflare-pages',
+                       'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow'}
         class MovieResponse(BytesIO):
             headers = {'Content-Type': 'video/mp4'}
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'site/public').mkdir(parents=True)
             (root / 'site/public/Apparent-ghost-demo-v4-lilac.mp4').write_bytes(b'checked movie')
-            for name in ['index.html', 'connect/index.html', 'connect/device/index.html']:
+            for name in ['index.html', 'connect/index.html', 'connect/device/index.html', 'connect/shares/index.html']:
                 (root / name).parent.mkdir(parents=True, exist_ok=True)
                 (root / name).write_bytes(name.encode())
             def fetch(request, timeout):
                 if request.full_url.endswith('.mp4'):
                     return MovieResponse(b'checked movie')
-                path = {'/': 'index.html', '/connect/': 'connect/index.html', '/connect/device/': 'connect/device/index.html'}
+                path = {'/': 'index.html', '/connect/': 'connect/index.html', '/connect/device/': 'connect/device/index.html', '/connect/shares/': 'connect/shares/index.html'}
                 from urllib.parse import urlsplit
                 return Response(path[urlsplit(request.full_url).path].encode())
             with patch.object(pages, 'ROOT', root), patch.object(pages, 'api', return_value=project), patch.object(pages, 'urlopen', side_effect=fetch):
                 self.assertEqual(pages.verify(sha, root)['deployment_id'], 'deployment')
-                (root / 'connect/device/index.html').write_text('different bytes')
-                with self.assertRaisesRegex(ValueError, 'different bytes'):
-                    pages.verify(sha, root)
+                for name in ['connect/device/index.html', 'connect/shares/index.html']:
+                    (root / name).write_text('different bytes')
+                    with self.assertRaisesRegex(ValueError, 'different bytes'):
+                        pages.verify(sha, root)
+                    (root / name).write_bytes(name.encode())
+                for missing in ['Cache-Control', 'X-Robots-Tag']:
+                    with patch.dict(Response.headers, {key: value for key, value in Response.headers.items() if key != missing}, clear=True):
+                        with self.assertRaisesRegex(ValueError, 'privacy headers'):
+                            pages.verify(sha, root)
             with patch.object(pages, 'api', return_value=project), patch.object(pages, 'urlopen', return_value=BytesIO(b'index.html')):
                 with self.assertRaises((AttributeError, ValueError)):
                     pages.verify(sha, root)

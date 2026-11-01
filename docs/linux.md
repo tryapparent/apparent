@@ -1,5 +1,10 @@
 # Linux
 
+For a reusable disposable-guest capture/save/cancel check, see
+[Native testing](native-testing.md). Its runner receipts distinguish environment,
+test-driver and product failures from unrun gates; host contract tests are not
+native acceptance.
+
 The default-off native launch experiment and explicit AppImage/desktop URL-handler
 registration are documented in [native launch](native-launch.md). Opening a URL never
 installs or changes the selected desktop handler.
