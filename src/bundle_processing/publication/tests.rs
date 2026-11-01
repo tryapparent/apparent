@@ -40,6 +40,33 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn publication_rejects_replaced_lock_on_reentry_and_final_cleanup() {
+    for replace_during_validation in [false, true] {
+        let fixture = Fixture::new();
+        let (_, bundle, summary) = fixture.build();
+        let _guard = coordinate(&fixture.0).unwrap();
+        write(&fixture.0, IN_PROGRESS, b"pending").unwrap();
+        let replace = || -> Result<()> {
+            // Keep the old inode linked so inode reuse cannot hide the replacement.
+            std::fs::rename(fixture.0.join(LOCK), fixture.0.join("old-lock"))?;
+            write(&fixture.0, LOCK, b"")
+        };
+        let error = if replace_during_validation {
+            checked_with(&fixture.0, &bundle, &summary, replace)
+                .err()
+                .expect("validation accepted a replaced lock")
+        } else {
+            replace().unwrap();
+            coordinate(&fixture.0)
+                .err()
+                .expect("reentry accepted a replaced lock")
+        };
+        assert!(format!("{error:#}").contains("publication lock replaced"));
+        assert!(fixture.0.join(IN_PROGRESS).is_file());
+    }
+}
+
+#[test]
 fn publication_coordination_blocks_other_threads_until_last_guard_in_either_drop_order() {
     use std::sync::mpsc;
     use std::time::Duration;

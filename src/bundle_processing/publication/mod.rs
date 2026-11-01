@@ -41,6 +41,7 @@ struct Lease {
 pub fn coordinate(path: &Path) -> Result<Coordination> {
     let path = fs::absolute(path)?;
     if let Some(lease) = HELD.with(|held| held.borrow().get(&path).and_then(Weak::upgrade)) {
+        check_lease(&path, &lease)?;
         return Ok(Coordination { path, lease });
     }
     let root = Directory::open(&path, true)?;
@@ -67,6 +68,19 @@ pub fn coordinate(path: &Path) -> Result<Coordination> {
             .insert(path.clone(), Rc::downgrade(&lease))
     });
     Ok(Coordination { path, lease })
+}
+
+fn check_lease(path: &Path, lease: &Lease) -> Result<()> {
+    let root = Directory::open(path, false)?;
+    ensure!(
+        fs::same_directory(&lease.root, &root.0.metadata()?),
+        "bundle replaced under writer lease"
+    );
+    ensure!(
+        fs::same(&lease._lock.metadata()?, &root.file(LOCK)?.metadata()?),
+        "publication lock replaced under writer lease"
+    );
+    Ok(())
 }
 
 impl Drop for Coordination {
@@ -157,11 +171,13 @@ fn checked_with(
     summary: &str,
     after_validation: impl FnOnce() -> Result<()>,
 ) -> Result<PublicationInputs> {
+    let guard = coordinate(path)?;
     let root = Directory::open(path, false)?;
     let before = root.0.metadata()?;
     let inventory = validate::Inventory::read(&root)?;
     let manifest = inventory.validate(path, expected, summary)?;
     after_validation()?;
+    check_lease(path, &guard.lease)?;
     inventory.sync_and_check(&root)?;
     ensure!(
         fs::same_directory(&before, &Directory::open(path, false)?.0.metadata()?),
@@ -170,6 +186,7 @@ fn checked_with(
     let absolute = fs::absolute(path)?;
     let parent = Directory::open(absolute.parent().context("bundle has no parent")?, false)?;
     cleanup::finish(&root, &parent, || {
+        check_lease(path, &guard.lease)?;
         ensure!(
             fs::same_directory(&before, &Directory::open(path, false)?.0.metadata()?),
             "bundle directory changed after durability barrier"

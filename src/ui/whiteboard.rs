@@ -443,12 +443,16 @@ fn publish_artifacts(
     let stage_name = format!(".whiteboard-{}", crate::make_bundle_id());
     let stage = root.child(&stage_name, true)?;
     let mut rollback_failed = false;
+    let mut originals = vec![false; writes.len()];
     let result = (|| -> anyhow::Result<()> {
         for (index, (path, bytes)) in writes.iter().enumerate() {
             stage.write(&format!("new-{index}"), bytes)?;
             match root.file(path) {
-                Ok(_) => root.copy_to(path, &stage, &format!("old-{index}"))
-                    .with_context(|| format!("backing up {path}"))?,
+                Ok(_) => {
+                    root.copy_to(path, &stage, &format!("old-{index}"))
+                        .with_context(|| format!("backing up {path}"))?;
+                    originals[index] = true;
+                },
                 Err(error) if error.downcast_ref::<std::io::Error>().is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) => {},
                 Err(error) => return Err(error),
             }
@@ -460,7 +464,7 @@ fn publish_artifacts(
             {
                 for (prior, (path, _)) in writes[..published].iter().enumerate().rev() {
                     let backup = format!("old-{prior}");
-                    let restored = if stage.names()?.contains(&backup) {
+                    let restored = if originals[prior] {
                         stage.rename_to(&backup, &root, path)
                     } else {
                         root.remove_path(path)

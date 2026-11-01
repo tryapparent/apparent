@@ -5,7 +5,7 @@ use crate::{
     bundle_processing::{self, SourceExtras, publication},
     model::{RgbaFrame, TargetInfo, TranscriptData},
 };
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 struct Fixture(PathBuf);
 impl Fixture {
@@ -31,11 +31,9 @@ impl Fixture {
                 ..Default::default()
             },
         )?;
-        publication::write(
-            &self.0,
-            crate::recover::UNFINISHED,
-            b"recovery recipe sentinel",
-        )?;
+        let recipe: crate::recover::Unfinished =
+            serde_json::from_value(serde_json::to_value(&built.1)?)?;
+        crate::recover::write(&self.0, &recipe)?;
         Ok(built)
     }
 }
@@ -164,6 +162,15 @@ fn completion_failed_rollback_or_corrupt_fallback_preserves_recipe_and_blocks_ad
                 returned
             },
         );
+        let error = format!("{:#}", result.as_ref().unwrap_err());
+        assert!(
+            error.contains(if rollback_failure {
+                "unfinished whiteboard publication"
+            } else {
+                "invalid PNG artifact: contact-sheet.png"
+            }),
+            "unexpected rejection: {error}"
+        );
         assert!(fixture.0.join(crate::recover::UNFINISHED).exists());
         assert!(fixture.0.join(publication::IN_PROGRESS).exists());
         dispatch(result, false);
@@ -180,6 +187,11 @@ fn completion_marker_cleanup_failure_cannot_admit_an_intermediate_inner_success(
             std::fs::create_dir(dir.join(crate::recover::RECOVERING)).unwrap();
             (bundle, summary)
         },
+    );
+    let error = format!("{:#}", result.as_ref().unwrap_err());
+    assert!(
+        error.contains("cannot clean recovery marker .recovering"),
+        "unexpected rejection: {error}"
     );
     assert!(fixture.0.join(crate::recover::UNFINISHED).exists());
     dispatch(result, false);

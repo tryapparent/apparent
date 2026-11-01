@@ -10,8 +10,6 @@ use anyhow::{Context, Result};
 use crate::audio::RecordedAudio;
 pub mod publication;
 #[cfg(test)]
-mod publication_tests;
-#[cfg(test)]
 use crate::capture::write_bundle_artifacts;
 use crate::keyframes::select_keyframes;
 use crate::model::{
@@ -915,7 +913,13 @@ mod tests {
             window_title: None,
             window_id: None,
             display_id: 1,
-            frame: TargetFrame { x: 0.0, y: 0.0, width: 32.0, height: 32.0, scale: 1.0 },
+            frame: TargetFrame {
+                x: 0.0,
+                y: 0.0,
+                width: 32.0,
+                height: 32.0,
+                scale: 1.0,
+            },
         };
         let error = finalize_capture_bundle(
             &dir,
@@ -939,7 +943,10 @@ mod tests {
         assert!(movie.exists());
         assert!(!dir.join("apparent.json").exists());
         assert!(dir.join(crate::recover::UNSAFE_VIDEO).exists());
-        assert!(!crate::recover::owed(&dir), "a later recovery must not decode unsafe movie frames");
+        assert!(
+            !crate::recover::owed(&dir),
+            "a later recovery must not decode unsafe movie frames"
+        );
         assert!(crate::recover::rebuild(&dir, &crate::recover::Media::SYSTEM).is_err());
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -955,32 +962,56 @@ mod tests {
             window_title: None,
             window_id: None,
             display_id: 1,
-            frame: TargetFrame { x: 0.0, y: 0.0, width: 32.0, height: 32.0, scale: 1.0 },
+            frame: TargetFrame {
+                x: 0.0,
+                y: 0.0,
+                width: 32.0,
+                height: 32.0,
+                scale: 1.0,
+            },
         };
         let (_, bundle, summary) = build_bundle_from_parts(
-            &dir, target, 1000,
+            &dir,
+            target,
+            1000,
             vec![RgbaFrame::new(0, 32, 32, vec![128; 32 * 32 * 4])],
-            vec![], vec![], TranscriptData::default(), None, None,
+            vec![],
+            vec![],
+            TranscriptData::default(),
+            None,
+            None,
             SourceExtras {
                 interaction_telemetry: Some(model::InteractionTelemetry::VideoOnly),
                 autocrop: Some(None),
                 ..Default::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
         assert!(bundle.events.is_empty());
         assert!(bundle.marks.is_empty());
         assert!(summary.contains("clicks and Shift ink were not collected"));
-        assert_eq!(std::fs::read_to_string(dir.join("summary.md")).unwrap(), summary);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("summary.md")).unwrap(),
+            summary
+        );
         let (_, loaded) = handoff::load_bundle(&dir).unwrap();
-        assert_eq!(loaded.interaction_telemetry, Some(model::InteractionTelemetry::VideoOnly));
-        assert!(sketch::summary_markdown_with(&loaded, &dir, true).contains("clicks and Shift ink were not collected"));
-        let manifest: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("apparent.json")).unwrap()).unwrap();
+        assert_eq!(
+            loaded.interaction_telemetry,
+            Some(model::InteractionTelemetry::VideoOnly)
+        );
+        assert!(
+            sketch::summary_markdown_with(&loaded, &dir, true)
+                .contains("clicks and Shift ink were not collected")
+        );
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("apparent.json")).unwrap()).unwrap();
         assert_eq!(manifest["interactionTelemetry"], "videoOnly");
         let old: model::ApparentBundle = serde_json::from_value({
             let mut old = manifest;
             old.as_object_mut().unwrap().remove("interactionTelemetry");
             old
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(old.interaction_telemetry, None);
         assert!(!sketch::summary_markdown_with(&old, &dir, false).contains("timed CLI video only"));
         std::fs::remove_dir_all(root).unwrap();
@@ -1019,7 +1050,8 @@ mod tests {
         };
         let path = dir.join("finish-trace.json");
         save_finish_trace(&dir, &trace).unwrap();
-        let json: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(json["transcribeMs"], 40);
         assert_eq!(json["totalMs"], 50);
         assert_eq!(json["preparedVisuals"], false);
@@ -1098,24 +1130,44 @@ mod tests {
         let bundle_dir = dir.join("fallback.apparent");
         let target = TargetInfo {
             mode: CaptureMode::Window,
-            app: None, bundle_id: None, window_title: None, window_id: None,
+            app: None,
+            bundle_id: None,
+            window_title: None,
+            window_id: None,
             display_id: 1,
-            frame: TargetFrame { x: 0.0, y: 0.0, width: 32.0, height: 32.0, scale: 1.0 },
+            frame: TargetFrame {
+                x: 0.0,
+                y: 0.0,
+                width: 32.0,
+                height: 32.0,
+                scale: 1.0,
+            },
         };
         let frames = vec![RgbaFrame::new(0, 32, 32, vec![128; 32 * 32 * 4])];
         let (_, bundle, summary) = build_bundle_from_parts(
-            &bundle_dir, target, 1000, frames, vec![], vec![],
-            TranscriptData::default(), None, None,
+            &bundle_dir,
+            target,
+            1000,
+            frames,
+            vec![],
+            vec![],
+            TranscriptData::default(),
+            None,
+            None,
             SourceExtras {
                 full_frames: Some(Box::new(|_| anyhow::bail!("decoder missing"))),
                 autocrop: Some(None),
                 ..SourceExtras::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(bundle.keyframes.len(), 1);
         assert!(summary.contains("Image quality: Full-quality keyframes could not be decoded"));
         assert!(summary.contains("smaller candidate frames"));
-        assert_eq!(std::fs::read_to_string(bundle_dir.join("summary.md")).unwrap(), summary);
+        assert_eq!(
+            std::fs::read_to_string(bundle_dir.join("summary.md")).unwrap(),
+            summary
+        );
         let (directory, mut loaded) = handoff::load_bundle(&bundle_dir).unwrap();
         // macOS may canonicalize /var to /private/var when loading the bundle.
         // Regenerating for the original path must preserve the written summary.
@@ -1134,9 +1186,18 @@ mod tests {
         let bundle_dir = root.join("fallback.apparent");
         let target = TargetInfo {
             mode: CaptureMode::Display,
-            app: None, bundle_id: None, window_title: None, window_id: None,
+            app: None,
+            bundle_id: None,
+            window_title: None,
+            window_id: None,
             display_id: 1,
-            frame: TargetFrame { x: 0.0, y: 0.0, width: 480.0, height: 300.0, scale: 1.0 },
+            frame: TargetFrame {
+                x: 0.0,
+                y: 0.0,
+                width: 480.0,
+                height: 300.0,
+                scale: 1.0,
+            },
         };
         let frame = |t, x: usize| {
             let mut rgba = vec![255; 480 * 300 * 4];
@@ -1150,21 +1211,35 @@ mod tests {
         };
         let frames = vec![frame(0, 20), frame(1_000, 40)];
         let (_, bundle, summary) = build_bundle_from_parts(
-            &bundle_dir, target, 1_100, frames, vec![], vec![],
-            TranscriptData::default(), None, None,
+            &bundle_dir,
+            target,
+            1_100,
+            frames,
+            vec![],
+            vec![],
+            TranscriptData::default(),
+            None,
+            None,
             SourceExtras {
                 full_frames: Some(Box::new(|_| anyhow::bail!("decoder missing"))),
                 autocrop: Some(Some(autocrop::Settings::default())),
                 activity: windows::ActivityLog {
-                    cursor: vec![windows::CursorSample(0, 0.9, 0.85), windows::CursorSample(1_100, 0.9, 0.85)],
+                    cursor: vec![
+                        windows::CursorSample(0, 0.9, 0.85),
+                        windows::CursorSample(1_100, 0.9, 0.85),
+                    ],
                     ..Default::default()
                 },
                 ..SourceExtras::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
         assert!(summary.contains("Image quality:"));
         assert!(!bundle.keyframes.is_empty());
-        assert!(bundle.autocrop.is_none(), "fallback frames must not be cursor-cropped");
+        assert!(
+            bundle.autocrop.is_none(),
+            "fallback frames must not be cursor-cropped"
+        );
         // The idle pointer is at bottom-right; the moving target is at top-left.
         for key in &bundle.keyframes {
             let bytes = std::fs::read(bundle_dir.join(&key.file)).unwrap();
@@ -1173,13 +1248,23 @@ mod tests {
             let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
             let info = reader.next_frame(&mut pixels).unwrap();
             assert_eq!((info.width, info.height), (480, 300));
-            assert!(pixels[..info.buffer_size()].chunks_exact(4).any(|p| p[0] > 150 && p[1] < 40 && p[2] < 40));
+            assert!(
+                pixels[..info.buffer_size()]
+                    .chunks_exact(4)
+                    .any(|p| p[0] > 150 && p[1] < 40 && p[2] < 40)
+            );
         }
         let sheet = std::fs::read(bundle_dir.join("contact-sheet.png")).unwrap();
-        let mut reader = png::Decoder::new(std::io::Cursor::new(sheet)).read_info().unwrap();
+        let mut reader = png::Decoder::new(std::io::Cursor::new(sheet))
+            .read_info()
+            .unwrap();
         let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
         let info = reader.next_frame(&mut pixels).unwrap();
-        assert!(pixels[..info.buffer_size()].chunks_exact(4).any(|p| p[0] > 150 && p[1] < 40 && p[2] < 40));
+        assert!(
+            pixels[..info.buffer_size()]
+                .chunks_exact(4)
+                .any(|p| p[0] > 150 && p[1] < 40 && p[2] < 40)
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -1188,18 +1273,37 @@ mod tests {
         let root = std::env::temp_dir().join(make_bundle_id());
         let target = TargetInfo {
             mode: CaptureMode::Display,
-            app: None, bundle_id: None, window_title: None, window_id: None,
+            app: None,
+            bundle_id: None,
+            window_title: None,
+            window_id: None,
             display_id: 1,
-            frame: TargetFrame { x: 0.0, y: 0.0, width: 1280.0, height: 800.0, scale: 1.0 },
+            frame: TargetFrame {
+                x: 0.0,
+                y: 0.0,
+                width: 1280.0,
+                height: 800.0,
+                scale: 1.0,
+            },
         };
         let candidate = RgbaFrame::new(0, 320, 200, vec![128; 320 * 200 * 4]);
         let (_, bundle, _) = build_bundle_from_parts(
-            &root, target, 1_000, vec![candidate], vec![], vec![],
-            TranscriptData::default(), None, None,
+            &root,
+            target,
+            1_000,
+            vec![candidate],
+            vec![],
+            vec![],
+            TranscriptData::default(),
+            None,
+            None,
             SourceExtras {
-                full_frames: Some(Box::new(|times| Ok(times.iter().map(|&t| {
-                    RgbaFrame::new(t, 1280, 800, vec![128; 1280 * 800 * 4])
-                }).collect()))),
+                full_frames: Some(Box::new(|times| {
+                    Ok(times
+                        .iter()
+                        .map(|&t| RgbaFrame::new(t, 1280, 800, vec![128; 1280 * 800 * 4]))
+                        .collect())
+                })),
                 autocrop: Some(Some(autocrop::Settings::default())),
                 activity: windows::ActivityLog {
                     cursor: vec![windows::CursorSample(0, 0.5, 0.5)],
@@ -1207,9 +1311,13 @@ mod tests {
                 },
                 ..SourceExtras::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
         assert!(bundle.image_quality_warning.is_none());
-        assert!(bundle.autocrop.is_some(), "normal decode should still autocrop");
+        assert!(
+            bundle.autocrop.is_some(),
+            "normal decode should still autocrop"
+        );
         assert!(root.join("frames-full/frame-01.png").exists());
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1219,35 +1327,78 @@ mod tests {
         let root = std::env::temp_dir().join(make_bundle_id());
         let target = TargetInfo {
             mode: CaptureMode::Display,
-            app: None, bundle_id: None, window_title: None, window_id: None,
+            app: None,
+            bundle_id: None,
+            window_title: None,
+            window_id: None,
             display_id: 1,
-            frame: TargetFrame { x: 0.0, y: 0.0, width: 1280.0, height: 800.0, scale: 1.0 },
+            frame: TargetFrame {
+                x: 0.0,
+                y: 0.0,
+                width: 1280.0,
+                height: 800.0,
+                scale: 1.0,
+            },
         };
         let candidate = |t| RgbaFrame::new(t, 480, 300, vec![180; 480 * 300 * 4]);
         let click = |t| model::InteractionEvent::Click {
-            t, x: 0.1, y: 0.1, button: None, label: None, role: None,
+            t,
+            x: 0.1,
+            y: 0.1,
+            button: None,
+            label: None,
+            role: None,
         };
         let (_, bundle, summary) = build_bundle_from_parts(
-            &root, target, 10_000, vec![candidate(0), candidate(5_000)],
-            vec![], vec![click(0), click(5_000)], TranscriptData::default(), None, None,
+            &root,
+            target,
+            10_000,
+            vec![candidate(0), candidate(5_000)],
+            vec![],
+            vec![click(0), click(5_000)],
+            TranscriptData::default(),
+            None,
+            None,
             SourceExtras {
-                full_frames: Some(Box::new(|times| Ok(vec![RgbaFrame::new(
-                    times[0], 1280, 800, vec![180; 1280 * 800 * 4],
-                )]))),
+                full_frames: Some(Box::new(|times| {
+                    Ok(vec![RgbaFrame::new(
+                        times[0],
+                        1280,
+                        800,
+                        vec![180; 1280 * 800 * 4],
+                    )])
+                })),
                 autocrop: Some(Some(autocrop::Settings::default())),
                 ..SourceExtras::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
         assert!(summary.contains("Image quality:"));
-        assert_eq!(bundle.keyframes.len(), 2, "one decoded and one candidate keyframe");
+        assert_eq!(
+            bundle.keyframes.len(),
+            2,
+            "one decoded and one candidate keyframe"
+        );
         assert!(bundle.autocrop.is_none());
-        let sizes: Vec<_> = bundle.keyframes.iter().map(|key| {
-            let bytes = std::fs::read(root.join(&key.file)).unwrap();
-            let reader = png::Decoder::new(std::io::Cursor::new(bytes)).read_info().unwrap();
-            (reader.info().width, reader.info().height)
-        }).collect();
-        assert!(sizes.contains(&(1280, 800)), "decoded full frame must survive: {sizes:?}");
-        assert!(sizes.contains(&(480, 300)), "fallback candidate must survive: {sizes:?}");
+        let sizes: Vec<_> = bundle
+            .keyframes
+            .iter()
+            .map(|key| {
+                let bytes = std::fs::read(root.join(&key.file)).unwrap();
+                let reader = png::Decoder::new(std::io::Cursor::new(bytes))
+                    .read_info()
+                    .unwrap();
+                (reader.info().width, reader.info().height)
+            })
+            .collect();
+        assert!(
+            sizes.contains(&(1280, 800)),
+            "decoded full frame must survive: {sizes:?}"
+        );
+        assert!(
+            sizes.contains(&(480, 300)),
+            "fallback candidate must survive: {sizes:?}"
+        );
         assert!(root.join("contact-sheet.png").exists());
         std::fs::remove_dir_all(root).unwrap();
     }

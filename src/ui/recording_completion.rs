@@ -25,8 +25,9 @@ pub(super) fn finalize(
             windows,
         } => (session, audio, windows),
         CaptureSource::Phone(session) => {
-            let finalized = complete_bundle(&bundle_dir, &final_whiteboard, || {
-                session.stop().and_then(|recording| {
+            // Stop the producer before waiting for a possibly contended writer lease.
+            let finalized = session.stop().and_then(|recording| {
+                complete_bundle(&bundle_dir, &final_whiteboard, || {
                     crate::phone::finalize_live_capture(
                         &bundle_dir,
                         recording,
