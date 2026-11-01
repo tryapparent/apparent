@@ -88,6 +88,31 @@ class LocatorTests(unittest.TestCase):
 
 
 class CandidateTests(unittest.TestCase):
+    def test_capture_restart_click_requires_ack_and_bounds_focus_retries(self):
+        scenario = Path(__file__).with_name('updater-gui-scenario.sh').read_text()
+        function = scenario.split('  click_update_guard() {\n', 1)[1].split('\n  }\n', 1)[0]
+        for acknowledged_at, expected_clicks, success in [(1, 1, True), (2, 2, True), (99, 3, False)]:
+            with self.subTest(acknowledged_at=acknowledged_at), tempfile.TemporaryDirectory() as temporary:
+                script = '''out=$1; acknowledged_at=$2; clicks=0
+ui() {
+    clicks=$((clicks+1))
+    if [ "$clicks" -eq "$acknowledged_at" ]; then
+        echo 'Update restart deferred until capture is idle' >> "$out/app.log"
+    fi
+}
+sleep() { :; }
+click_update_guard() {
+''' + function + '''
+}
+click_update_guard; result=$?
+echo "$clicks"
+exit "$result"
+'''
+                result = subprocess.run(['bash', '-c', script, 'focus-retry-test', temporary, str(acknowledged_at)],
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode == 0, success, result.stderr)
+                self.assertEqual(result.stdout.strip(), str(expected_clicks))
+
     def test_capture_guard_requires_owned_admitted_receipt_and_active_state(self):
         scenario = Path(__file__).with_name('updater-gui-scenario.sh').read_text()
         source = scenario.split('cat > "$out/assert-owned-capture.py" <<\'PY\'\n', 1)[1].split('\nPY', 1)[0]

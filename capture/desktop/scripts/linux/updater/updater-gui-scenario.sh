@@ -190,12 +190,19 @@ PY
   timeout 12 "$image" capture state > "$out/capture-guard-before-state.json" 2> "$out/capture-guard-before-state.stderr"
   python3 "$out/assert-owned-capture.py" "$capture_id" "$out/capture-start.json" "$out/capture-guard-before-state.json"
   python3 "$out/assert-owned-capture.py" "$capture_id" "$out/capture-guard-before.json" "$out/capture-guard-before-state.json"
-  ui '{"op":"click","text":"Update now","label":"restart-blocked-by-capture"}'
-  # Wait for the coordinator's acknowledgment, not a race against its event queue.
-  for _ in $(seq 1 50); do
-    if grep -Fq 'Update restart deferred until capture is idle' "$out/app.log"; then break; fi
-    sleep .1
-  done
+  click_update_guard() {
+    # Starting capture can move focus to the capsule. An inactive-window click
+    # may only focus Settings; require an actual coordinator acknowledgment.
+    for attempt in 1 2 3; do
+      ui "{\"op\":\"click\",\"text\":\"Update now\",\"label\":\"restart-blocked-by-capture-$attempt\"}"
+      for _ in $(seq 1 20); do
+        if grep -Fq 'Update restart deferred until capture is idle' "$out/app.log"; then return 0; fi
+        sleep .1
+      done
+    done
+    return 1
+  }
+  click_update_guard
   grep -F 'Update restart deferred until capture is idle' "$out/app.log" > "$out/capture-restart-guard.log"
   ui '{"op":"assert","text":"Update available","label":"capture-update-still-pending"}'
   assert_deferred capture-restart-deferred
