@@ -192,6 +192,13 @@ The separate default-off `nativeLaunch` experiment opens the app by the exact
 `apparent://open` URL, never a capture or handoff. Its OS registration and validation
 contract are in [native launch](../../desktop/docs/native-launch.md).
 
+## Experiment `issueReporting`
+
+The default-off `issueReporting` experiment is documented in
+[text-only GitHub feedback](../../desktop/docs/issue-reporting.md). It adds an
+explicit CLI issue preview/submission path, never changes capture output, and
+never automatically attaches or submits a bundle.
+
 ## Experiment `agentDemoVideo` (`src/shared/handoff.rs`, `src/desktop/settings.rs`)
 
 On by default; set `"experiments": {"agentDemoVideo": false}` or switch it off in Settings › Agents to disable it. With it on, copies and manual or guarded draft pastes ask the agent to use the repository's `make-it-apparent` skill for a short video of a complex visible change, inspect the finished recording, and embed or link a playable file where the viewer can access it. A local path alone only works on a shared filesystem. The agent names the exact build/OS and what the video does not verify; if the skill, recording surface or delivery is unavailable, it reports the blocker rather than calling the walkthrough done. This does not change the saved `summary.md` or the capture; automatic OpenCode delivery has been removed. A config edit applies on the next copy/paste without a restart.

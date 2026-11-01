@@ -91,6 +91,23 @@ It prints the path of a PNG sheet of frames around that moment, the time of each
 
 ### Other commands
 
+### Report an Apparent bug or improvement
+
+Candidate builds offer `apparent issue --title 'Short title' --body 'Description' --experiment issueReporting`.
+This prints a JSON preview without contacting GitHub. `--body-file feedback.md` reads
+the exact Markdown description instead. Show the user the repository
+`tryapparent/apparent`, title and full body and obtain explicit approval before
+rerunning with `--submit`. Submission is public and uses `gh`'s github.com login;
+it returns JSON with the verified issue URL. Never include private capture content,
+transcripts, paths, credentials or personal details without approval. Nothing is
+attached automatically. Search existing issues with `gh issue list --repo
+tryapparent/apparent --state all --search '<symptom>'` first to avoid duplicates.
+On timeout or failed readback, inspect the repository before retrying: an issue
+may already exist. This files feedback only; it never starts implementation.
+See `desktop/docs/issue-reporting.md` for setup and the default-off experiment.
+
+### Capture control
+
 For a running GUI app on macOS or Linux, use `apparent capture start --wait --timeout 30`
 to start through the normal interaction-aware screen path and wait for a real frame. It refuses
 occupied sessions rather than toggling. Retain the reply's top-level `capture_id`, including on
