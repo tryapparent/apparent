@@ -153,14 +153,70 @@ class LinuxPreviewPublicationTest(unittest.TestCase):
     def test_main_preview_job_runs_the_checked_publisher(self):
         workflow = (ROOT / ".github/workflows/release-linux.yml").read_text()
         job = workflow.split("  main-preview:\n", 1)[1]
-        build = workflow.split("  linux:\n", 1)[1].split("  main-preview:\n", 1)[0]
+        build = workflow.split("  linux:\n", 1)[1].split("  attach-release:\n", 1)[0]
         self.assertIn("actions: write", workflow)
         self.assertIn("--json isDraft --jq .isDraft", workflow)
         self.assertIn("ref: ${{ inputs.tag || github.sha }}", build)
         self.assertIn('test "$(git rev-parse HEAD)" = "$GITHUB_SHA"', build)
         self.assertIn("ref: ${{ github.sha }}", job)
         self.assertIn("python3 desktop/scripts/linux/publish-main-preview.py", job)
+        self.assertIn("inputs.verify_only != true", job)
         self.assertNotIn("exit 0", job)
+
+    def test_verify_only_keeps_both_architectures_and_all_native_gates(self):
+        workflow = (ROOT / ".github/workflows/release-linux.yml").read_text()
+        build = workflow.split("  linux:\n", 1)[1].split("  attach-release:\n", 1)[0]
+        self.assertIn("verify_only:", workflow)
+        self.assertIn('default: false', workflow.split("      verify_only:", 1)[1].split("\n\npermissions:", 1)[0])
+        for arch in ("x86_64", "aarch64"):
+            self.assertIn(f"arch: {arch}", build)
+        for check in (
+            "cargo build --release --locked",
+            "cargo test --release --locked -- --test-threads=2",
+            "cargo test --release --locked speech:: -- --nocapture",
+            "cargo test --release --locked --bin apparent --no-run --message-format=json",
+            "test -f \"$test\"",
+            "GGML_NATIVE:BOOL=OFF",
+            "GGML_BACKEND_DL:BOOL=ON",
+            "No build-machine CPU specialization",
+            "CPU tiers contain only their declared instructions",
+            "./desktop/scripts/linux/appimage.sh target/release/apparent",
+            "AppImage runs headless without FUSE",
+            "Bundled GStreamer decodes an H.264 MP4",
+            "Bundled GStreamer encodes a playable H.264 MP4",
+            "Run two seconds of audio with the packaged CPU backend",
+            "petarpetrovt/setup-sde@v6.0",
+            "Run packaged model on Ice Lake (AVX512-VNNI, no AVX-VNNI)",
+        ):
+            with self.subTest(check=check):
+                self.assertIn(check, build)
+
+    def test_attach_release_step_sets_repository_context(self):
+        workflow = (ROOT / ".github/workflows/release-linux.yml").read_text()
+        attach = workflow.split("  attach-release:\n", 1)[1].split("  main-preview:\n", 1)[0]
+        self.assertIn("GH_REPO: ${{ github.repository }}", attach)
+
+    def test_verify_only_fails_closed_and_excludes_publication(self):
+        workflow = (ROOT / ".github/workflows/release-linux.yml").read_text()
+        build = workflow.split("  linux:\n", 1)[1].split("  attach-release:\n", 1)[0]
+        attach = workflow.split("  attach-release:\n", 1)[1].split("  main-preview:\n", 1)[0]
+        preview = workflow.split("  main-preview:\n", 1)[1]
+        self.assertIn('VERIFY_ONLY: ${{ inputs.verify_only }}', build)
+        self.assertIn('$GITHUB_EVENT_NAME" != "workflow_dispatch', build)
+        self.assertIn('-n "$TAG"', build)
+        self.assertIn('"$PUBLISH_MAIN" == "true"', build)
+        self.assertIn('"$GITHUB_REF" != refs/heads/*', build)
+        self.assertIn("inputs.verify_only != true", attach)
+        self.assertIn("inputs.verify_only != true", preview)
+        self.assertNotIn("gh release", build)
+        self.assertNotIn("GH_TOKEN:", build)
+        self.assertNotIn("actions: write", build)
+        self.assertIn("actions/upload-artifact@v5", build)
+        preview_check = workflow.split("  preview-needed:\n", 1)[1].split("  linux:\n", 1)[0]
+        self.assertIn('if [[ "$VERIFY_ONLY" == "true" ]]; then', preview_check)
+        self.assertIn('echo "build=true" >> "$GITHUB_OUTPUT"', preview_check)
+        self.assertIn("actions: write", preview)
+        self.assertIn("contents: write", attach)
 
 
 if __name__ == "__main__":
