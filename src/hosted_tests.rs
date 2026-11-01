@@ -579,12 +579,59 @@ impl Drop for Server {
         self.thread.take().unwrap().join().unwrap();
     }
 }
+// Exercise the real fixture reader with an accepted nonblocking socket. This
+// models a possible BSD accept contract on Linux; it is not a Mac failure trace.
+fn fragmented_nonblocking_request(split_in_body: bool) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    client.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+    client.set_write_timeout(Some(Duration::from_secs(3))).unwrap();
+    let (stream, _) = listener.accept().unwrap();
+    stream.set_nonblocking(true).unwrap();
+    let state = Arc::new(Mutex::new(State::default()));
+    let served_state = state.clone();
+    let request = b"PUT /v1/captures/test/files/summary.md HTTP/1.1\r\nAuthorization: Bearer synthetic-upload-secret\r\nContent-Length: 10\r\n\r\nfragmented";
+    let split = if split_in_body { request.len() - 5 } else { 20 };
+    client.write_all(&request[..split]).unwrap();
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        started_tx.send(()).unwrap();
+        serve(stream, &served_state, "http://127.0.0.1");
+        done_tx.send(()).unwrap();
+    });
+    started_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    // Hold back the remaining bytes while serve is running. A blocking reader
+    // waits here; the old nonblocking reader returns at the arrival gap.
+    let _ = done_rx.recv_timeout(Duration::from_millis(100));
+    let write_error = client.write_all(&request[split..]).err().map(|e| e.kind());
+    let _ = client.shutdown(std::net::Shutdown::Write);
+    let mut response = Vec::new();
+    let read_error = client.read_to_end(&mut response).err().map(|e| e.kind());
+    worker.join().unwrap();
+    assert_eq!(response, b"HTTP/1.1 200 Result\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}", "write_error={write_error:?}; read_error={read_error:?}");
+    assert_eq!(write_error, None);
+    assert_eq!(read_error, None);
+    let state = state.lock().unwrap();
+    assert_eq!(state.request_routes, ["PUT /v1/captures/test/files/summary.md"]);
+    assert_eq!(state.data.get("summary.md").unwrap(), b"fragmented");
+}
+
+#[test]
+fn hosted_fixture_reads_fragmented_headers_from_nonblocking_accept() {
+    fragmented_nonblocking_request(false);
+}
+
+#[test]
+fn hosted_fixture_reads_fragmented_body_from_nonblocking_accept() {
+    fragmented_nonblocking_request(true);
+}
+
 fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
-    use std::os::fd::AsRawFd;
-    // BSD accept may inherit O_NONBLOCK from the listener; Linux accept does
-    // not. Record the actual socket flag, not an assumption about the host.
-    let flags = unsafe { libc::fcntl(stream.as_raw_fd(), libc::F_GETFL) };
-    eprintln!("hosted fixture: accepted; nonblocking={:?}", (flags >= 0).then_some(flags & libc::O_NONBLOCK != 0));
+    // accept's flag inheritance is platform-dependent. These bounded readers
+    // require blocking I/O even though the listener polls for shutdown.
+    stream.set_nonblocking(false).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
@@ -592,14 +639,7 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
     let end = loop {
         let mut buf = [0u8; 4096];
         match stream.read(&mut buf) {
-            Ok(0) => {
-                eprintln!("hosted fixture: header EOF; bytes={}", bytes.len());
-                return;
-            }
-            Err(error) => {
-                eprintln!("hosted fixture: header read error={:?}; bytes={}", error.kind(), bytes.len());
-                return;
-            }
+            Ok(0) | Err(_) => return,
             Ok(n) => bytes.extend_from_slice(&buf[..n]),
         }
         if let Some(i) = bytes.windows(4).position(|b| b == b"\r\n\r\n") {
@@ -618,29 +658,15 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
                 .and_then(|n| n.trim().parse::<usize>().ok())
         })
         .unwrap_or(0);
-    // Observe framing before reading the body or acquiring State. A completed
-    // route journal cannot distinguish no connection from an incomplete body.
-    let expect_continue = head.lines().any(|l| l.eq_ignore_ascii_case("expect: 100-continue"));
-    let chunked = head.lines().any(|l| l.eq_ignore_ascii_case("transfer-encoding: chunked"));
-    eprintln!(
-        "hosted fixture: headers; put={}; http11={}; content_length={length}; expect_continue={expect_continue}; chunked={chunked}; body_bytes={}",
-        method == "PUT", head.lines().next().unwrap().ends_with(" HTTP/1.1"), bytes.len() - end,
-    );
+
     while bytes.len() < end + length {
         let mut buf = [0u8; 4096];
         match stream.read(&mut buf) {
-            Ok(0) => {
-                eprintln!("hosted fixture: body EOF; bytes={}; expected={length}", bytes.len() - end);
-                return;
-            }
-            Err(error) => {
-                eprintln!("hosted fixture: body read error={:?}; bytes={}; expected={length}", error.kind(), bytes.len() - end);
-                return;
-            }
+            Ok(0) | Err(_) => return,
             Ok(n) => bytes.extend_from_slice(&buf[..n]),
         }
     }
-    eprintln!("hosted fixture: body complete; bytes={length}");
+
     let body = &bytes[end..end + length];
     let mut s = state.lock().unwrap();
     s.requests += 1;
@@ -756,13 +782,12 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
                 .into_bytes()
         }
     };
-    let headers_result = write!(
+    let _ = write!(
         stream,
         "HTTP/1.1 {status} Result\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         result.len()
     );
-    let body_result = stream.write_all(&result);
-    eprintln!("hosted fixture: response; status={status}; bytes={}; header_error={:?}; body_error={:?}", result.len(), headers_result.err().map(|e| e.kind()), body_result.err().map(|e| e.kind()));
+    let _ = stream.write_all(&result);
 }
 
 #[test]
