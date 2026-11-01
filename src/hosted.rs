@@ -956,6 +956,18 @@ impl Client {
             .context("Missing curl stdout")?
             .take(16)
             .read_to_string(&mut code)?;
+        #[cfg(test)]
+        if !status.success() {
+            // Numeric evidence only; config, paths, stderr and response text
+            // can carry credentials or user data and must not be printed.
+            eprintln!(
+                "hosted curl failure: exit={:?}; http={:?}; body_bytes={:?}; response_bytes={:?}",
+                status.code(),
+                code.trim().parse::<u16>().ok(),
+                body.and_then(|path| fs::metadata(path).ok()).map(|m| m.len()),
+                fs::metadata(output).ok().map(|m| m.len()),
+            );
+        }
         ensure!(
             status.success(),
             "Hosted transport failed (network, timeout or response limit)"

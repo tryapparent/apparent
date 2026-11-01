@@ -584,6 +584,11 @@ impl Drop for Server {
     }
 }
 fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
+    use std::os::fd::AsRawFd;
+    // BSD accept may inherit O_NONBLOCK from the listener; Linux accept does
+    // not. Record the actual socket flag, not an assumption about the host.
+    let flags = unsafe { libc::fcntl(stream.as_raw_fd(), libc::F_GETFL) };
+    eprintln!("hosted fixture: accepted; nonblocking={:?}", (flags >= 0).then_some(flags & libc::O_NONBLOCK != 0));
     stream
         .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
@@ -591,7 +596,14 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
     let end = loop {
         let mut buf = [0u8; 4096];
         match stream.read(&mut buf) {
-            Ok(0) | Err(_) => return,
+            Ok(0) => {
+                eprintln!("hosted fixture: header EOF; bytes={}", bytes.len());
+                return;
+            }
+            Err(error) => {
+                eprintln!("hosted fixture: header read error={:?}; bytes={}", error.kind(), bytes.len());
+                return;
+            }
             Ok(n) => bytes.extend_from_slice(&buf[..n]),
         }
         if let Some(i) = bytes.windows(4).position(|b| b == b"\r\n\r\n") {
@@ -610,13 +622,29 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
                 .and_then(|n| n.trim().parse::<usize>().ok())
         })
         .unwrap_or(0);
+    // Observe framing before reading the body or acquiring State. A completed
+    // route journal cannot distinguish no connection from an incomplete body.
+    let expect_continue = head.lines().any(|l| l.eq_ignore_ascii_case("expect: 100-continue"));
+    let chunked = head.lines().any(|l| l.eq_ignore_ascii_case("transfer-encoding: chunked"));
+    eprintln!(
+        "hosted fixture: headers; put={}; http11={}; content_length={length}; expect_continue={expect_continue}; chunked={chunked}; body_bytes={}",
+        method == "PUT", head.lines().next().unwrap().ends_with(" HTTP/1.1"), bytes.len() - end,
+    );
     while bytes.len() < end + length {
         let mut buf = [0u8; 4096];
         match stream.read(&mut buf) {
-            Ok(0) | Err(_) => return,
+            Ok(0) => {
+                eprintln!("hosted fixture: body EOF; bytes={}; expected={length}", bytes.len() - end);
+                return;
+            }
+            Err(error) => {
+                eprintln!("hosted fixture: body read error={:?}; bytes={}; expected={length}", error.kind(), bytes.len() - end);
+                return;
+            }
             Ok(n) => bytes.extend_from_slice(&buf[..n]),
         }
     }
+    eprintln!("hosted fixture: body complete; bytes={length}");
     let body = &bytes[end..end + length];
     let mut s = state.lock().unwrap();
     s.requests += 1;
@@ -732,12 +760,13 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
                 .into_bytes()
         }
     };
-    let _ = write!(
+    let headers_result = write!(
         stream,
         "HTTP/1.1 {status} Result\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         result.len()
     );
-    let _ = stream.write_all(&result);
+    let body_result = stream.write_all(&result);
+    eprintln!("hosted fixture: response; status={status}; bytes={}; header_error={:?}; body_error={:?}", result.len(), headers_result.err().map(|e| e.kind()), body_result.err().map(|e| e.kind()));
 }
 
 #[test]
