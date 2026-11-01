@@ -2257,9 +2257,10 @@ mod tests {
         }
         let at = |want: ElemId| first.iter().find(|(id, _)| *id == want).unwrap().1;
         assert!(
-            at(ElemId::ChipWindow) <= at(ElemId::Close),
+            at(ElemId::ChipScreen) <= at(ElemId::Close),
             "inner chip enters before outer close chip"
         );
+        assert!(!first.iter().any(|(id, _)| *id == ElemId::ChipWindow));
     }
 
     #[test]
