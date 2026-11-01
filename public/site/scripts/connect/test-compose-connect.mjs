@@ -12,10 +12,7 @@ function fixture() {
   const put = (dir, path, bytes) => { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), bytes) }
   put(pub, 'index.html', '<script type="module" src="/assets/public-a.js"></script>')
   put(pub, 'assets/public-a.js', 'export const publicPage = true;')
-  for (const path of approved) {
-    const source = path.startsWith('hosted/') ? `assets/${path}` : path.endsWith('.ttf') ? `assets/fonts/${path}` : `assets/brand/${path}`
-    put(canonical, source, `approved ${path}`); put(con, path, `approved ${path}`)
-  }
+  for (const path of approved) { put(canonical, canonicalAssets.get(path), `approved ${path}`); put(con, path, `approved ${path}`) }
   for (const route of routes) put(con, `${route}/index.html`, '<meta name="robots" content="noindex, nofollow"><meta name="referrer" content="no-referrer"><meta http-equiv="Cache-Control" content="no-store"><p>Checking your account</p><script type="module" src="/assets/connect-a.js"></script><link rel="modulepreload" href="/assets/preload-a.js"><link rel="stylesheet" href="/assets/connect-a.css">')
   put(con, 'assets/connect-a.js', 'import "./child-a.js"; const preload=["assets/preload-a.js"]; export const origin="https://hosted.tryapparent.com";')
   put(con, 'assets/child-a.js', 'export const child = true;')
@@ -28,6 +25,13 @@ function fixture() {
 const snapshot = root => [...inventory(root)].sort(([a], [b]) => a.localeCompare(b))
 // Replace the complete emitted configuration value, not a helper-only input.
 const productionOrigin = 'https://hosted.tryapparent.com'
+const canonicalAssets = new Map([
+  ['hosted/source-pond-v4.png', 'assets/hosted/source-pond-v4.png'],
+  ['hosted/agent-pond-v4.png', 'assets/hosted/agent-pond-v4.png'],
+  ['hosted/agent-reading-v4.png', 'assets/hosted/agent-reading-v4.png'],
+  ['HostGrotesk-Variable.ttf', 'assets/fonts/HostGrotesk-Variable.ttf'],
+  ['apparent-wordmark.svg', 'assets/brand/apparent-wordmark.svg'],
+])
 for (const origin of [
   'https://hosted.tryapparent.com.attacker.example',
   'https://prefixhosted.tryapparent.com',
@@ -129,7 +133,7 @@ test('follow inline CSS and srcset resources while allowing fragment/data URLs',
   const f = fixture()
   try {
     f.put(f.pub, 'index.html', String.raw`<style>i{filter:URL(#local)}/* URL(/missing-comment) */b:before{content:"URL(/missing-string)"}[aria-label=Shared\ links]{color:red}</style><div style="background:url(data:image/png;base64,abc)"></div><img srcset="data:image/png;base64,abc 1x, /apparent-wordmark.svg 2x">`)
-    f.put(f.pub, 'apparent-wordmark.svg', readFileSync(join(f.canonical, 'assets/brand/apparent-wordmark.svg')))
+    f.put(f.pub, 'apparent-wordmark.svg', readFileSync(join(f.canonical, canonicalAssets.get('apparent-wordmark.svg'))))
     f.run()
     assert(resourceGraph(inventory(f.out), ['index.html']).has('apparent-wordmark.svg'))
   } finally { rmSync(f.root, { recursive: true, force: true }) }
@@ -137,7 +141,7 @@ test('follow inline CSS and srcset resources while allowing fragment/data URLs',
 test('compose independently emitted routes, preloads, import tables, CSS and identical approved collisions', () => {
   const f = fixture()
   try {
-    f.put(f.pub, 'apparent-wordmark.svg', readFileSync(join(f.canonical, 'assets/brand/apparent-wordmark.svg')))
+    f.put(f.pub, 'apparent-wordmark.svg', readFileSync(join(f.canonical, canonicalAssets.get('apparent-wordmark.svg'))))
     f.run()
     for (const route of routes) assert(inventory(f.out).has(`${route}/index.html`))
     assert.equal(inventory(f.out).has('previous.bin'), false)
@@ -158,6 +162,32 @@ test('accepts only byte-identical public assets relocated under canonical assets
     f.put(f.pub, path, bytes)
     f.put(f.pub, 'feature-demos/operator/index.html', bytes)
     assert.throws(() => validatePublic(inventory(f.pub), inventory(f.canonical)), /Unexpected Public output/)
+  } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
+test('validates relocated Public groups and all Connect served URLs against canonical grouped source paths', () => {
+  const f = fixture()
+  try {
+    const grouped = ['pond/frog-air-cohesive.png', 'team/code-wordmark.svg', 'feature-demos/anywhere/index.html']
+    for (const path of grouped) {
+      const bytes = Buffer.from(`canonical bytes: ${path}`)
+      f.put(f.canonical, `assets/${path}`, bytes)
+      f.put(f.pub, path, bytes)
+    }
+    assert.doesNotThrow(() => validatePublic(inventory(f.pub), inventory(f.canonical)))
+    f.run()
+    validatePreservedFiles(inventory(f.out), inventory(f.con))
+
+    for (const path of grouped) {
+      const bytes = readFileSync(join(f.pub, path))
+      f.put(f.pub, path, Buffer.concat([bytes, Buffer.from(' changed')]))
+      assert.throws(() => validatePublic(inventory(f.pub), inventory(f.canonical)), /Unexpected Public output/)
+      f.put(f.pub, path, bytes)
+    }
+
+    rmSync(join(f.canonical, canonicalAssets.get(approved[0])))
+    const before = snapshot(f.out)
+    assert.throws(() => f.run(), /Changed approved asset: hosted\/source-pond-v4\.png/)
+    assert.deepEqual(snapshot(f.out), before)
   } finally { rmSync(f.root, { recursive: true, force: true }) }
 })
 for (const [name, mutate, error] of [

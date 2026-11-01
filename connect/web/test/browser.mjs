@@ -39,6 +39,7 @@ let scenario = {}, writes = [], calls = [], shareReads = [], approved = false, s
 let uiOrigin = ''
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost')
+  if (url.pathname === '/v1/session' && scenario.sessionFailure) return res.writeHead(403).end()
   if (url.pathname.startsWith('/v1/') || url.pathname === '/auth/logout') {
     res.setHeader('Access-Control-Allow-Origin', uiOrigin)
     res.setHeader('Access-Control-Allow-Credentials', 'true')
@@ -93,6 +94,58 @@ const results = []
 const routeResults = []
 let viteServer
 try {
+  for (const test of [
+    { name: 'session-empty-403', failure: 'cors' },
+    { name: 'session-device-empty-403', failure: 'cors', device: true },
+    { name: 'session-legacy-network-failure', failure: 'network', legacy: true },
+    { name: 'session-legacy-device-invalid-json', failure: 'json', legacy: true, device: true },
+  ]) {
+    scenario = { scope: 'upload', sessionFailure: test.failure === 'cors' }; writes = []; calls = []; approved = false; signedOut = false
+    const page = await browser.newPage({ viewport: { width: test.device ? 390 : 1100, height: 900 } })
+    const requests = [], failures = []
+    page.on('request', request => requests.push(request.url()))
+    page.on('requestfailed', request => failures.push(request.url()))
+    await page.context().addCookies([{ name: 'fixture', value: '1', url: uiOrigin }])
+    if (test.failure !== 'cors') await page.route('**/v1/session', route => test.failure === 'network' ? route.abort('failed') : route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': uiOrigin, 'Access-Control-Allow-Credentials': 'true' },
+      body: 'invalid-json',
+    }))
+    const path = `/${test.legacy ? 'hosted' : 'connect'}${test.device ? '/device?code=SYNTHETIC' : '/'}`
+    await page.goto(uiOrigin + path)
+    await page.getByRole('alert').waitFor()
+    assert.match(await page.getByRole('alert').innerText(), /We couldn’t check whether you’re signed in\./)
+    assert.equal(await page.getByRole('link', { name: 'Continue with Google' }).getAttribute('href'), apiOrigin + '/auth/google/start?returnTo=' + encodeURIComponent(test.device ? '/connect/device?code=SYNTHETIC' : '/connect'))
+    assert.equal(await page.getByRole('button', { name: /^Allow / }).count(), 0)
+    assert.equal(await page.locator('.hosted-identity').count(), 0)
+    assert.equal(requests.some(url => url.includes('/v1/device')), false)
+    assert.equal(writes.length, 0)
+    assert.equal(new URL(page.url()).pathname + new URL(page.url()).search, path)
+    assert.equal((await page.context().cookies(uiOrigin)).find(cookie => cookie.name === 'fixture')?.value, '1')
+    if (test.failure !== 'json') assert(failures.some(url => url.endsWith('/v1/session')), 'exercise a browser-level request failure')
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+    await page.evaluate(() => document.fonts.ready)
+    const signIn = page.getByRole('link', { name: 'Continue with Google' })
+    const retry = page.getByRole('button', { name: 'Try again', exact: true })
+    const signInBox = await signIn.boundingBox(), retryBox = await retry.boundingBox()
+    assert(signInBox.height >= 44 && retryBox.height >= 44, 'both recovery actions have full-size targets')
+    const gap = Math.abs(signInBox.y - retryBox.y) < 2
+      ? retryBox.x - signInBox.x - signInBox.width
+      : retryBox.y - signInBox.y - signInBox.height
+    assert(gap >= 11.5, 'recovery actions stay visibly separated, including when wrapped')
+    assert.match(await signIn.evaluate(element => getComputedStyle(element).fontFamily), /Host Grotesk/)
+    await page.screenshot({ path: `${evidence}/${test.name}.png`, fullPage: true })
+    scenario.sessionFailure = false
+    await page.unroute('**/v1/session')
+    await retry.click()
+    await page.waitForFunction(() => document.querySelector('.hosted-panel')?.getAttribute('aria-busy') === 'false')
+    assert.equal(await page.getByRole('alert').count(), 0)
+    assert.equal(await page.getByRole('link', { name: 'Continue with Google' }).count(), 0)
+    assert.equal(writes.length, 0, 'retry never approves a device or logs out')
+    if (test.device) assert.equal(await page.getByRole('button', { name: 'Allow uploads', exact: true }).isDisabled(), true, 'recovered upload preview still requires explicit consent')
+    else assert.equal(await page.getByRole('button', { name: 'Connect', exact: true }).count(), 1)
+    await page.close(); results.push(test.name)
+  }
   for (const mode of ['dev', 'preview']) {
     const vite = await import('vite')
     viteServer = mode === 'dev' ? await vite.createServer({server:{port:0}}) : await vite.preview({build:{outDir:root},preview:{port:0}})
@@ -262,7 +315,7 @@ try {
     }
     results.push(test.name); await page.close()
   }
-  assert.equal(results.length, 32, 'all inherited auth/device scenarios must execute')
+  assert.equal(results.length, 36, 'all account/device scenarios must execute')
   for (const test of [
     {name:'shares',width:390},{name:'shares-320',width:320},{name:'shares-empty',empty:true},
     {name:'shares-denied',forbidden:true},{name:'shares-unconfirmed',unconfirmed:true},
@@ -358,7 +411,7 @@ try {
   await recovery.getByRole('link',{name:'Open shared recording'}).waitFor()
   assert.equal(await recovery.getByRole('alert').count(),0);assert.equal(writes.length,0)
   await recovery.close();results.push('shares-load-recovery')
-  assert.equal(results.length,62,'all auth and management scenarios must execute')
+  assert.equal(results.length,66,'all auth and management scenarios must execute')
   assert.equal(routeResults.length,24,'all real dev/preview route variants must execute')
   const receipt = { synthetic: true, routes:routeResults, closures:connectGraphs.map(g=>[...g.keys()]), artifact: root, apiOrigin: apiOrigin || 'same-origin', passed: results, count: results.length, screenshots: evidence, assets: Object.fromEntries(await Promise.all(['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png', 'hosted/agent-reading-v4.png', 'HostGrotesk-Variable.ttf', 'apparent-wordmark.svg'].map(async name => [name, createHash('sha256').update(await readFile(`${root}/${name}`)).digest('hex')]))), limits: 'Controlled synthetic API only; not live OAuth, service, native, or deployment proof. 640×450 CSS pixels is a 200%-equivalent layout, not browser zoom.' }
   await import('node:fs/promises').then(fs => fs.writeFile(`${evidence}/receipt.json`, JSON.stringify(receipt, null, 2)))
