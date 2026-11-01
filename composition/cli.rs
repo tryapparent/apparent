@@ -44,6 +44,10 @@ use crate::capture::engine::bundle::bundle_processing::{finalize_capture_bundle,
     about = "Shortcut-triggered screen, voice, and drawing capture for agents"
 )]
 struct Cli {
+    /// Attach this authoring command to a private workflow trace (videoTracing experiment).
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[arg(long = "trace")]
+    workflow_trace: Option<String>,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -185,6 +189,12 @@ enum TuneCommand {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Private local video-workflow traces (off-by-default videoTracing experiment).
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    Trace {
+        #[command(subcommand)]
+        command: crate::capture::agent::tracing::Command,
+    },
     /// Preview or explicitly submit text-only feedback to Apparent's GitHub repository.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     Issue(super::issues::IssueArgs),
@@ -629,11 +639,20 @@ fn run_owned_app(record: bool, iphone: bool) -> Result<()> {
 pub(crate) fn run() -> Result<()> {
     #[cfg(target_os = "linux")]
     linux::prepare_process();
-    if std::env::var_os("APPARENT_BENCH_START").is_some() {
-        ui::run_start_benchmark();
+    let requested_trace = std::env::var_os("APPARENT_TRACE").is_some()
+        || std::env::args_os().skip(1).any(|arg| arg == "trace" || arg == "--trace"
+            || arg.to_str().is_some_and(|arg| arg.starts_with("--trace=")));
+    if run_benchmark(std::env::var_os("APPARENT_BENCH_START").is_some(), requested_trace,
+        ui::run_start_benchmark)? {
         return Ok(());
     }
-    let cli = Cli::parse();
+    use clap::{CommandFactory, FromArgMatches};
+    let matches = parsing_command().get_matches();
+    let cli = Cli::from_arg_matches(&matches)?;
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    let operation = trace_operation(&matches);
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    let explicit_trace = selected_trace(&matches).or(cli.workflow_trace);
     let command = match cli.command {
         Some(command) => command,
         // `apparent` typed in a terminal (on PATH through Settings › Agents or Homebrew) would
@@ -651,7 +670,95 @@ pub(crate) fn run() -> Result<()> {
             iphone: false,
         },
     };
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    if matches!(command, Command::Trace { .. }) {
+        ensure!(handoff::experiment("videoTracing"), "Workflow tracing is disabled; enable experiments.videoTracing in Apparent config");
+        return execute(command);
+    }
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    let trace = match explicit_trace {
+        Some(id) => Some(id),
+        None => std::env::var_os("APPARENT_TRACE")
+            .map(|id| id.into_string().map_err(|_| anyhow::anyhow!("APPARENT_TRACE must be valid UTF-8")))
+            .transpose()?,
+    };
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    if let Some(id) = trace {
+        let operation = operation.context("--trace/APPARENT_TRACE requires a finite authoring command; it cannot trace the GUI or other long-running commands")?;
+        return run_traced(&id, &operation, || execute(command));
+    }
+    execute(command)
+}
+
+fn run_benchmark(requested: bool, tracing: bool, work: impl FnOnce()) -> Result<bool> {
+    if !requested { return Ok(false); }
+    ensure!(!tracing, "Workflow tracing cannot be combined with APPARENT_BENCH_START");
+    work();
+    Ok(true)
+}
+
+fn parsing_command() -> clap::Command {
+    use clap::CommandFactory;
+    let command = Cli::command();
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        // Lab pill already owns --trace with a PathBuf value. Propagate this
+        // distinct argument only into finite authoring commands, never the lab.
+        let trace = command.get_arguments().find(|arg| arg.get_id() == "workflow_trace")
+            .expect("derived workflow trace argument").clone().global(true);
+        return command.mut_subcommands(|child| {
+            if child.get_name() == "capture" || crate::capture::agent::tracing::allows_operation(child.get_name()) {
+                child.arg(trace.clone())
+            } else { child }
+        });
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    command
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn selected_trace(matches: &clap::ArgMatches) -> Option<String> {
+    let mut selected = matches.try_get_one::<String>("workflow_trace").ok().flatten().cloned();
+    let mut current = matches;
+    while let Some((_, child)) = current.subcommand() {
+        if let Some(value) = child.try_get_one::<String>("workflow_trace").ok().flatten() {
+            selected = Some(value.clone());
+        }
+        current = child;
+    }
+    selected
+}
+
+/// Names come only from clap's canonical command tree, never arguments or error text.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn trace_operation(matches: &clap::ArgMatches) -> Option<String> {
+    let (name, mut nested) = matches.subcommand()?;
+    let mut operation = name.to_owned();
+    while let Some((name, child)) = nested.subcommand() {
+        operation.push('.');
+        operation.push_str(name);
+        nested = child;
+    }
+    crate::capture::agent::tracing::allows_operation(&operation).then_some(operation)
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn run_traced(id: &str, operation: &str, work: impl FnOnce() -> Result<()>) -> Result<()> {
+    ensure!(handoff::experiment("videoTracing"), "Workflow tracing is disabled; enable experiments.videoTracing in Apparent config");
+    // Refuse before doing any work if the requested trace cannot be opened.
+    let attempt = crate::capture::agent::tracing::Attempt::begin(id, operation)?;
+    let result = work();
+    // Never turn a completed capture/export into a false failure that invites a retry.
+    if let Err(error) = attempt.finish(result.is_ok()) {
+        eprintln!("Apparent workflow trace could not record completion; reconcile its running event before ending the trace: {error:#}");
+    }
+    result
+}
+
+fn execute(command: Command) -> Result<()> {
     match command {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        Command::Trace { command } => crate::capture::agent::tracing::command(command),
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Connect { command } => hosted::command(command),
         #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -1560,6 +1667,65 @@ fn copy_confirmation(dir: &std::path::Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn workflow_trace_parser_names_only_canonical_operations() {
+        use clap::FromArgMatches;
+        for args in [
+            vec!["apparent", "--trace", "trace-example", "capture", "inspect", "private-request"],
+            vec!["apparent", "capture", "inspect", "private-request", "--trace", "trace-example"],
+        ] {
+            let matches = parsing_command().try_get_matches_from(args).unwrap();
+            Cli::from_arg_matches(&matches).unwrap();
+            assert_eq!(selected_trace(&matches).as_deref(), Some("trace-example"));
+            assert_eq!(trace_operation(&matches).as_deref(), Some("capture.inspect"));
+        }
+        for args in [vec!["apparent", "app"], vec!["apparent", "preview"], vec!["apparent", "trace", "report"]] {
+            let matches = parsing_command().try_get_matches_from(args).unwrap();
+            assert_eq!(trace_operation(&matches), None);
+        }
+        let matches = parsing_command().try_get_matches_from([
+            "apparent", "export", "private-input.apparent", "--out", "private-output.mp4", "--trace", "trace-example",
+        ]).unwrap();
+        assert_eq!(trace_operation(&matches).as_deref(), Some("export"));
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn workflow_trace_leaves_motion_lab_trace_unchanged() {
+        use clap::FromArgMatches;
+        let matches = parsing_command().try_get_matches_from([
+            "apparent", "lab", "pill", "picker", "--trace", "motion.jsonl",
+        ]).unwrap();
+        assert!(selected_trace(&matches).is_none());
+        let cli = Cli::from_arg_matches(&matches).unwrap();
+        assert!(cli.workflow_trace.is_none());
+        assert!(matches!(cli.command, Some(Command::Lab { .. })));
+    }
+
+    #[test]
+    fn workflow_trace_benchmark_refuses_before_native_action() {
+        let called = std::cell::Cell::new(false);
+        assert!(run_benchmark(true, true, || called.set(true)).is_err());
+        assert!(!called.get());
+        assert!(!run_benchmark(false, true, || called.set(true)).unwrap());
+        assert!(!called.get());
+        assert!(run_benchmark(true, false, || called.set(true)).unwrap());
+        assert!(called.get());
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn workflow_trace_disabled_refuses_before_side_effect() {
+        let called = std::cell::Cell::new(false);
+        let result = run_traced("not-a-real-id", "export", || {
+            called.set(true);
+            Ok(())
+        });
+        assert!(result.is_err());
+        assert!(!called.get());
+    }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
