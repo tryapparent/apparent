@@ -152,8 +152,9 @@ class CleanupTests(unittest.TestCase):
                 self.assertIsNotNone(job.returncode)
                 self.assertEqual(recipe.report['gates']['owned_process_cleanup'], 'PASS', recipe.report)
                 self.assertIn(signal.SIGTERM, [call.args[1] for call in signals.call_args_list])
-                if ignore_term:
-                    self.assertIn(signal.SIGKILL, [call.args[1] for call in signals.call_args_list])
+                # A /proc snapshot cannot authorize skipping the final group
+                # kill: descendants can fork while that snapshot is enumerated.
+                self.assertIn(signal.SIGKILL, [call.args[1] for call in signals.call_args_list])
             finally:
                 if job.poll() is None:
                     job.kill()

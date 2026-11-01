@@ -309,11 +309,14 @@ class Recipe:
                     os.killpg(job.pid, signal.SIGTERM)
                 except ProcessLookupError:
                     pass
+                # Never let a non-atomic /proc scan skip the final kernel group
+                # kill. Descendants can fork during enumeration after TERM.
+                # Keep the child anchor pinned through KILL and verification.
                 try:
-                    self.wait(stopped, 3, "owned group did not stop after SIGTERM")
-                except Failure:
                     os.killpg(job.pid, signal.SIGKILL)
-                    self.wait(stopped, 3, "owned group still active; runner must retain/stop guest")
+                except ProcessLookupError:
+                    pass
+                self.wait(stopped, 3, "owned group still active; runner must retain/stop guest")
                 job.wait(timeout=3)  # No numeric group operations after this reap.
             except (OSError, ValueError, IndexError, Failure, subprocess.SubprocessError) as error:
                 self.report["cleanup_errors"].append(f"process group {job.pid}: {error}")
