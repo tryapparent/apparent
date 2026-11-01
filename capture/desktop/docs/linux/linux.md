@@ -31,7 +31,7 @@ Verified in an Ubuntu 24.04 arm64 VM with GNOME 46 (Wayland and X11) and Plasma 
 |---|---|---|---|
 | Shortcuts | `XGrabKey` | GNOME custom keybindings running `apparent shortcut record\|paste` (GNOME 48+: the GlobalShortcuts portal) | Plasma 5: native KGlobalAccel; Plasma 6: GlobalShortcuts portal, with KGlobalAccel fallback |
 | Recording a display or area | `ximagesrc` | `org.gnome.Mutter.ScreenCast.RecordArea`, no dialog | ScreenCast portal, asks once (restore token in `~/.local/share/apparent/portal.json`) |
-| Recording a window | `ximagesrc xid=` | X11 apps by id; native Wayland windows are not listed | X11 apps by id; native Wayland windows are not listed |
+| Recording a window | Temporarily disabled | Temporarily disabled | Temporarily disabled |
 | Clicks, keys, ⇧ ink | the X server (pointer and key state, polled) | the input devices (`/dev/input`, needs the `input` group) | same |
 | Pointer position | the X server | XWayland while it's over X11 windows; an absolute pointing device (tablet, touchscreen, VM or remote desktop) from the input devices; the overlay takes the pointer while ⇧ is held | same |
 | App in front | `_NET_ACTIVE_WINDOW` | AT-SPI when the app exposes it (`linux::atspi`; X11 apps use XWayland) | AT-SPI when available; Kate did not expose context in the test VM |
@@ -53,7 +53,7 @@ Without the `input` group, a capture on Wayland has no clicks, keys or ⇧ ink o
 
 ### Picker and portal limits
 
-Screen and Area work on the tested desktops. The Window picker lists X11/XWayland windows only; use Screen or Area for native Wayland apps. A portal window source exists internally, but the UI does not currently offer it. A press of the record shortcut records the display under the pointer once its keys come up, however long they're held; the tray menu's **Choose What to Record…** opens the picker, which stays open until you choose a target or press Esc. The Mac-only iPhone mode is hidden. Screen sharing can ask again if a desktop does not honor the saved restore token. Finishing while the dialog is open cancels the pending session; a failed or empty capture reports an error rather than producing demo imagery, and `latest` skips its unfinished directory.
+Screen and Area work on the tested desktops. Window recording is temporarily disabled on every backend pending original-window lifetime safety (#230); the picker omits it and `record --window` returns an error without starting a recorder or substituting a screen. Choose Screen or Area explicitly. Existing Window bundles remain readable. A portal window source exists internally, but the UI does not offer it. A press of the record shortcut records the display under the pointer once its keys come up, however long they're held; the tray menu's **Choose What to Record…** opens the picker, which stays open until you choose a target or press Esc. The Mac-only iPhone mode is hidden. Screen sharing can ask again if a desktop does not honor the saved restore token. Finishing while the dialog is open cancels the pending session; a failed or empty capture reports an error rather than producing demo imagery, and `latest` skips its unfinished directory.
 
 `apparent capture start --wait --timeout 30` uses the running GUI's normal interaction-aware
 screen path and returns its own request ID. Portal consent still applies; `capture state` reports

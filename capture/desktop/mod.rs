@@ -676,7 +676,7 @@ pub enum SelectionMode {
 }
 
 impl SelectionMode {
-    const ALL: [SelectionMode; 4] = [Self::Area, Self::Window, Self::Screen, Self::Iphone];
+    const ALL: [SelectionMode; 3] = [Self::Area, Self::Screen, Self::Iphone];
 
     fn key(self) -> &'static str {
         match self {
@@ -717,7 +717,7 @@ impl SelectionMode {
         if has_iphone && cfg!(target_os = "macos") {
             &Self::ALL
         } else {
-            &Self::ALL[..3]
+            &Self::ALL[..2]
         }
     }
 
@@ -753,7 +753,7 @@ impl SelectionMode {
         matches!(self, Self::Screen | Self::Iphone)
     }
 
-    /// `1`–`4` pick a mode by its position in the HUD.
+    /// Digits pick a mode by its position in the HUD.
     fn from_digit(key: &str, has_iphone: bool) -> Option<Self> {
         let index = key.parse::<usize>().ok()?.checked_sub(1)?;
         Self::available(has_iphone).get(index).copied()
@@ -1804,6 +1804,10 @@ impl ApparentCoordinator {
     /// chosen first: Window and Area morph the capsule into the picker (hover and click a window,
     /// or drag an area), iPhone goes straight into the phone's mirror.
     pub fn switch_recording(&mut self, mode: SelectionMode, cx: &mut Context<Self>) {
+        if mode == SelectionMode::Window {
+            self.report_window_recording_disabled(cx);
+            return;
+        }
         if !self.is_recording() {
             return;
         }
@@ -1922,7 +1926,20 @@ impl ApparentCoordinator {
         self.telemetry.set_picker_rect(rect);
     }
 
+    fn report_window_recording_disabled(&self, cx: &mut Context<Self>) {
+        let message = crate::capture::engine::runtime::WINDOW_RECORDING_DISABLED;
+        apparent_log(message);
+        if let Ok(mut status) = CAPTURE_STATUS.lock() {
+            *status = Some(message.into());
+        }
+        cx.notify();
+    }
+
     pub fn set_selection_mode(&mut self, mode: SelectionMode, cx: &mut Context<Self>) {
+        if mode == SelectionMode::Window {
+            self.report_window_recording_disabled(cx);
+            return;
+        }
         self.open_iphone_when_found = false;
         if let IslandPhase::Selecting { mode: prev_mode } = self.island_phase {
             if prev_mode != mode {
@@ -1997,7 +2014,7 @@ impl ApparentCoordinator {
     pub fn toggle_selection_mode(&mut self, cx: &mut Context<Self>) {
         if let IslandPhase::Selecting { mode } = self.island_phase {
             let next = match mode {
-                SelectionMode::Area => SelectionMode::Window,
+                SelectionMode::Area => SelectionMode::Screen,
                 SelectionMode::Window | SelectionMode::Screen | SelectionMode::Iphone => {
                     SelectionMode::Area
                 }
@@ -2839,6 +2856,10 @@ impl ApparentCoordinator {
 
     /// Opens the picker on `mode`, else on the mode the last recording used.
     fn open_picker(&mut self, mode: Option<SelectionMode>, cx: &mut Context<Self>) {
+        if mode == Some(SelectionMode::Window) {
+            self.report_window_recording_disabled(cx);
+            return;
+        }
         if self.is_recording() || self.is_processing() {
             return;
         }
@@ -2984,6 +3005,10 @@ impl ApparentCoordinator {
     }
 
     pub fn start_recording_with_target(&mut self, target: TargetInfo, cx: &mut Context<Self>) {
+        if crate::capture::engine::runtime::ensure_recording_mode(target.mode).is_err() {
+            self.report_window_recording_disabled(cx);
+            return;
+        }
         if self.is_recording() || self.is_processing() {
             return;
         }
@@ -3120,11 +3145,18 @@ impl ApparentCoordinator {
         let audio_recorder = AudioRecorder::start().ok();
         start_metric("audio_start_ms", stage);
         let stage = Instant::now();
-        let screen_session = ScreenCaptureSession::start(
+        let screen_session = match ScreenCaptureSession::start(
             target.clone(),
             Some(video_path),
             Arc::clone(&self.telemetry.excluded_window_ids),
-        );
+        ) {
+            Ok(session) => session,
+            Err(error) => {
+                apparent_log(format!("Capture refused: {error:#}"));
+                self.cancel_recording(cx);
+                return;
+            }
+        };
         start_metric("sck_start_ms", stage);
         let window_log = (target.mode == CaptureMode::Display).then(|| {
             let started_at = *self
@@ -7164,14 +7196,18 @@ mod tests {
             seen
         };
         if cfg!(target_os = "macos") {
-            assert_eq!(walk(true, true), [Window, Screen, Iphone, Area, Window]);
-            assert_eq!(walk(true, false), [Iphone, Screen, Window, Area, Iphone]);
+            assert_eq!(walk(true, true), [Screen, Iphone, Area, Screen, Iphone]);
+            assert_eq!(walk(true, false), [Iphone, Screen, Area, Iphone, Screen]);
         } else {
             // No cabled iPhone off macOS, even when one is plugged in.
             assert_eq!(walk(true, true), walk(false, true));
         }
-        assert_eq!(walk(false, true), [Window, Screen, Area, Window, Screen]);
-        assert_eq!(walk(false, false), [Screen, Window, Area, Screen, Window]);
+        assert_eq!(walk(false, true), [Screen, Area, Screen, Area, Screen]);
+        assert_eq!(walk(false, false), [Screen, Area, Screen, Area, Screen]);
+        assert!(!SelectionMode::available(true).contains(&Window));
+        assert!(!SelectionMode::available(false).contains(&Window));
+        assert_eq!(Window.cycled(true, false), Area);
+        assert_eq!(Window.cycled(false, false), Screen);
         // An unplugged phone leaves the picker on a mode that is no longer listed.
         assert_eq!(Iphone.cycled(true, false), Area);
         assert_eq!(Iphone.cycled(false, false), Screen);
@@ -7179,12 +7215,13 @@ mod tests {
 
     #[test]
     fn digits_pick_modes_by_hud_position() {
-        use SelectionMode::{Area, Iphone, Screen, Window};
+        use SelectionMode::{Area, Iphone, Screen};
         let pick = |key, has_iphone| SelectionMode::from_digit(key, has_iphone);
         assert_eq!(pick("1", true), Some(Area));
-        assert_eq!(pick("2", true), Some(Window));
-        assert_eq!(pick("3", false), Some(Screen));
-        assert_eq!(pick("4", true), cfg!(target_os = "macos").then_some(Iphone));
+        assert_eq!(pick("2", true), Some(Screen));
+        assert_eq!(pick("3", false), None);
+        assert_eq!(pick("3", true), cfg!(target_os = "macos").then_some(Iphone));
+        assert_eq!(pick("4", true), None);
         assert_eq!(pick("4", false), None);
         assert_eq!(pick("0", true), None);
         assert_eq!(pick("5", true), None);
@@ -7356,6 +7393,7 @@ mod tests {
             Some(SelectionMode::Iphone)
         );
         assert_eq!(SelectionMode::from_key("fullscreen"), None);
+        assert_eq!(SelectionMode::from_key("window"), None);
     }
 
     #[test]

@@ -198,7 +198,8 @@ impl ScreenCaptureSession {
         target: TargetInfo,
         video_output_path: Option<PathBuf>,
         excluded_window_ids: Arc<Mutex<Vec<u32>>>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        super::super::ensure_recording_mode(target.mode)?;
         let started_at = Instant::now();
         let stopping = Arc::new(AtomicBool::new(false));
         let urgent_snapshot = Arc::new(AtomicBool::new(true));
@@ -234,7 +235,7 @@ impl ScreenCaptureSession {
             })
             .ok();
 
-        Self {
+        Ok(Self {
             started_at,
             stopping,
             urgent_snapshot,
@@ -244,7 +245,7 @@ impl ScreenCaptureSession {
             video_offset_ms,
             sampler_thread,
             _recording: crate::capture::engine::bundle::retention::Recording::start(),
-        }
+        })
     }
 
     pub fn request_immediate_frame(&self) {
