@@ -198,6 +198,7 @@ fn playback_note() -> String {
 #[serde(rename_all = "camelCase", default)]
 struct ViewState {
     version: String,
+    hosted: Option<crate::hosted::AccountView>,
     login: Login,
     agent_demo_video: bool,
     shortcuts: Vec<Shortcut>,
@@ -1109,6 +1110,21 @@ impl SettingsWindow {
         }
         for shortcut in &state.shortcuts {
             column = column.child(self.recorder(theme, shortcut, cx));
+        }
+        if let Some(account) = &state.hosted {
+            let available = account.server.is_some();
+            column = column.child(div().mt(px(20.0)).child("Hosted account"))
+                .child(caption(theme, if account.connected { "Connected. Captures stay private until you click Copy link." } else {
+                    "Connect to upload screen, voice, transcript and bundle media. New captures upload privately; only the selected capture is shared."
+                }, false))
+                .child(button(theme, "hosted-connect", "Connect and allow uploads", available && !account.connected)
+                    .when(available && !account.connected, |button| button.on_click(cx.listener(|view, _, _, _| view.act(Action::ConnectHosted)))))
+                .child(button(theme, "hosted-shares", "Manage shared links", available)
+                    .when(available, |button| button.on_click(cx.listener(|view, _, _, _| view.act(Action::ManageSharedLinks)))))
+                .child(caption(theme, "Anyone with a link can view and download that capture. Stopping sharing cannot recall downloads or cached previews.", false));
+            if !available {
+                column = column.child(caption(theme, "Set the API server first with apparent cloud login --server <API origin> --scope read.", false));
+            }
         }
         if !WINDOWS {
             let on = state.lower_playback;

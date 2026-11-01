@@ -12,9 +12,9 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 export function publicPath(path) {
   return /^(?:index\.html|robots\.txt|sitemap\.xml|apparent-wordmark\.svg|icon\.svg|HostGrotesk-Variable\.ttf|social-preview-v1\.png|Apparent-ghost-demo-v4-lilac(?:-poster\.jpg|\.mp4)|apparent-narration-(?:mac|iphone)\.mp3|apparent-demo-pi(?:-poster\.jpg|\.mp4))$/.test(path)
     || /^(?:assets|pond|team|feature-demos)\/.+/.test(path)
-    || /^(?:connect|connect\/device)\/index\.html$/.test(path)
+    || /^connect(?:\/(?:device|shares))?\/index\.html$/.test(path)
     || /^hosted\/(?:source-pond|agent-pond|agent-reading)-v4\.png$/.test(path)
-    || /^(?:hosted|hosted\/device)\/index\.html$/.test(path)
+    || /^hosted(?:\/(?:device|shares))?\/index\.html$/.test(path)
 }
 function files(root) {
   const result = []
@@ -43,6 +43,7 @@ writeFileSync(join(output, '404.html'), '<!doctype html><html lang="en"><meta na
 // narrow zone Redirect Rules; see scripts/cd/connect_redirects.json.
 writeFileSync(join(output, '_redirects'), [
   '/hosted/device /connect/device 302', '/hosted/device/ /connect/device 302',
+  '/hosted/shares /connect/shares 302', '/hosted/shares/ /connect/shares 302',
   '/hosted /connect 302', '/hosted/ /connect 302', ''].join('\n'))
 writeFileSync(join(output, '_headers'), '/*\n  Cache-Control: no-cache\n  X-Apparent-Publisher: cloudflare-pages\n/connect*\n  Cache-Control: no-store\n  X-Robots-Tag: noindex, nofollow\n/hosted*\n  Cache-Control: no-store\n  X-Robots-Tag: noindex, nofollow\n')
 console.log(`Pages public package: retained ${actual.length} accepted homepage files; fresh Connect; unknown paths denied`)

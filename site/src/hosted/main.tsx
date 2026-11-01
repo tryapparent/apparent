@@ -6,7 +6,7 @@ import "./base.css"
 const root = document.getElementById("root")!
 const app = (
   <StrictMode>
-    <Hosted devicePage={/^\/(?:connect|hosted)\/device\/?$/.test(window.location.pathname)} />
+    <Hosted sharesPage={/^\/(?:connect|hosted)\/shares\/?$/.test(window.location.pathname)} devicePage={/^\/(?:connect|hosted)\/device\/?$/.test(window.location.pathname)} />
   </StrictMode>
 )
 

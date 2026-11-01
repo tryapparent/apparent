@@ -12,6 +12,7 @@ SITE_ORIGIN = "https://site.example.invalid"
 # Optional exact old browser origin during Connect transition; no wildcard.
 # LEGACY_SITE_ORIGIN = "https://legacy-site.example.invalid"
 GOOGLE_CLIENT_ID = "CONFIGURE_GOOGLE_CLIENT_ID"
+SHARING_ENABLED = "false" # Explicit single-capture grants are off by default.
 
 [[d1_databases]]
 binding = "DB"

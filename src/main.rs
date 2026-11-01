@@ -1835,6 +1835,7 @@ mod tests {
             vec!["login", "--server", "https://hosted.tryapparent.com", "--scope", "upload", "--consent-upload", "--no-browser"],
             vec!["status"], vec!["status", "--account"], vec!["logout"],
             vec!["disable"], vec!["retry"], vec!["upload", "./synthetic capture.apparent"],
+            vec!["shares", "list"], vec!["shares", "revoke", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
         ] {
             let parse = |name| {
                 let mut args = vec!["apparent", name];

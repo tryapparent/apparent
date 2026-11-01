@@ -340,10 +340,11 @@ pub enum ElemId {
     DividerWarning = 18,
     LiveWarning = 19,
     Whiteboard = 20,
+    CopyLink = 21,
 }
 
 impl ElemId {
-    pub const COUNT: usize = 21;
+    pub const COUNT: usize = 22;
     pub const ROUTES: [ElemId; 2] = [Self::Route0, Self::Route1];
     pub const ALL: [ElemId; Self::COUNT] = [
         Self::Lead,
@@ -367,6 +368,7 @@ impl ElemId {
         Self::DividerWarning,
         Self::LiveWarning,
         Self::Whiteboard,
+        Self::CopyLink,
     ];
 
     pub const fn trace_key(self) -> &'static str {
@@ -392,6 +394,7 @@ impl ElemId {
             Self::DividerWarning => "divider.mic",
             Self::LiveWarning => "warning:no-words",
             Self::Whiteboard => "whiteboard",
+            Self::CopyLink => "copy-link",
         }
     }
 
@@ -437,6 +440,7 @@ impl ElemId {
             Self::Processing => "Processing",
             Self::DoneLead => "Completed",
             Self::Paste => "Paste",
+            Self::CopyLink => "Copy link",
             Self::Inspect => "Inspect",
             Self::Route0 | Self::Route1 => "Send to session",
             Self::LiveWarning => "No words recognized yet",
@@ -465,6 +469,7 @@ pub enum Pres {
         label: String,
         routes: Vec<String>,
         warning: bool,
+        share: Option<bool>,
     },
 }
 
@@ -509,13 +514,15 @@ impl Pres {
                     label: a,
                     routes: ra,
                     warning: wa,
+                    share: sa,
                 },
                 Self::Completed {
                     label: b,
                     routes: rb,
                     warning: wb,
+                    share: sb,
                 },
-            ) => a == b && ra == rb && wa == wb,
+            ) => a == b && ra == rb && wa == wb && sa == sb,
             _ => false,
         }
     }
@@ -535,6 +542,7 @@ pub struct Metrics {
     pub warning: f32,
     pub processing: f32,
     pub paste: f32,
+    pub copy_link: f32,
     pub inspect: f32,
     pub clock_000: f32,
     pub clock_0000: f32,
@@ -555,6 +563,7 @@ impl Default for Metrics {
             warning: 77.0,
             processing: 78.0,
             paste: 36.0,
+            copy_link: 56.0,
             inspect: 47.0,
             clock_000: 29.0,
             clock_0000: 37.0,
@@ -752,7 +761,7 @@ fn layout_of_warning(
             let w = CHIP_H + 6.0 + m.processing + CHIP_PX;
             raw.push((ElemId::Processing, w, CHIP_CORE_ROUND, 0.0, false));
         }
-        Pres::Completed { routes, .. } => {
+        Pres::Completed { routes, share, .. } => {
             let lead_w = CHIP_H + 8.0 + labels.completed + LEAD_TRAIL;
             raw.push((ElemId::DoneLead, lead_w, CHIP_CORE_ROUND, 0.0, true));
             raw.push((ElemId::DividerLead, DIVIDER_W, 0.0, 0.0, false));
@@ -763,6 +772,9 @@ fn layout_of_warning(
                 0.0,
                 true,
             ));
+            if let Some(enabled) = share {
+                raw.push((ElemId::CopyLink, Metrics::chip_width(m.copy_link), CHIP_CORE_ROUND, 0.0, *enabled));
+            }
             for (i, id) in ElemId::ROUTES.into_iter().enumerate().take(routes.len()) {
                 raw.push((
                     id,
@@ -1723,6 +1735,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn hosted_sharing_pill_has_disabled_or_enabled_copy_link_beside_local_paste() {
+        for share in [None, Some(false), Some(true)] {
+            let pres = Pres::Completed { label: "Copied".into(), routes: vec![], warning: false, share };
+            let (_, items) = layout_of(&pres, "0:00", LabelWidths::default(), &Metrics::default());
+            let paste = items.iter().position(|item| item.id == ElemId::Paste).unwrap();
+            let link = items.iter().position(|item| item.id.trace_key() == "copy-link");
+            assert_eq!(link.is_some(), share.is_some());
+            if let Some(link) = link {
+                assert_eq!(link, paste + 1);
+                assert_eq!(items[link].enabled, share.unwrap());
+            }
+        }
+    }
+
+    #[test]
     fn recording_warning_stays_inline_and_keeps_finish_and_cancel() {
         let metrics = Metrics::default();
         let (plain, _) = layout_of(&Pres::Recording { chips: false, has_iphone: false }, "00:12", LabelWidths::default(), &metrics);
@@ -1764,6 +1791,7 @@ mod tests {
             label: "Copied · No words".into(),
             routes: Vec::new(),
             warning,
+            share: None,
         };
         model.set_pres(completed(false));
         model.advance(1.0);
@@ -1948,6 +1976,7 @@ mod tests {
                         label: "Copied".into(),
                         routes: Vec::new(),
                         warning: false,
+                        share: None,
                     },
                 ),
                 (4.2, Pres::Hidden),
@@ -2028,6 +2057,7 @@ mod tests {
                 label: "Copied".into(),
                 routes: Vec::new(),
                 warning: false,
+                share: None,
             },
         ];
 
@@ -2151,6 +2181,7 @@ mod tests {
             label: "Copied".into(),
             routes: Vec::new(),
             warning: false,
+            share: None,
         });
         let done_target_w = m.r.target - m.l.target;
         let mut max_w = 0.0_f32;

@@ -22,7 +22,10 @@ checksum file, evidence, private prototypes, pitches, internal feature maps or
 operator metadata. `404.html` disables Pages' implicit SPA fallback. The preparation
 step checks every input path against the former Caddy public boundary, including
 only the three approved hosted illustrations. `_headers` supplies no-store/noindex
-on Connect. `_redirects` preserves legacy hosted routes and their query strings.
+on Connect, including share management. All six canonical/legacy account, device
+and share-management documents remain packaged. `_redirects` preserves legacy
+hosted routes and their query strings. Anonymous capability recipients and their
+media/manifest/preview/script/styles remain on the hosted Worker origin, not Pages.
 
 **The live homepage was not a fresh build of main.** The migration imported its
 accepted HTML and retained public assets into `published-homepage/`, bound to

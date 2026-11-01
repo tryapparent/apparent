@@ -18,9 +18,9 @@ export async function checkedHeads(env: Env,files: FileRow[],verified: (object: 
  await reserveReads(env,files.length);
  for(const f of files){if(!f.object_key)fail('not_ready',409);const h=await env.BUCKET.head(f.object_key);if(!verified(h,f))fail('not_ready',409);}
 }
-export async function getObject(env: Env,key: string | null) {
+export async function getObject(env: Env,key: string | null,options?: R2GetOptions) {
  if(!key)return null;
- await reserveReads(env,1);return env.BUCKET.get(key);
+ await reserveReads(env,1);return env.BUCKET.get(key,options);
 }
 export async function uploadAttempt(env: Env,capture: string,account: string,file: ManifestFile) {
  const key=`${account}/${capture}/${random()}`;

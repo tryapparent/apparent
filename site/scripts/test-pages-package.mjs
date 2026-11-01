@@ -19,14 +19,19 @@ const run = root => spawnSync(process.execPath, [join(root, 'scripts/prepare-pag
 test('Pages keeps accepted homepage bytes and retained assets, without replacing fresh Connect', () => {
   const root = fixture()
   try {
-    mkdirSync(join(root, 'dist-apparent/connect'), { recursive: true })
-    writeFileSync(join(root, 'dist-apparent/connect/index.html'), 'fresh Connect')
+    for (const route of ['connect', 'connect/device', 'connect/shares', 'hosted', 'hosted/device', 'hosted/shares']) {
+      mkdirSync(join(root, 'dist-apparent', route), { recursive: true })
+      writeFileSync(join(root, 'dist-apparent', route, 'index.html'), `fresh ${route}`)
+    }
     assert.equal(run(root).status, 0)
     const manifest = JSON.parse(readFileSync(join(root, 'published-homepage.sha256.json')))
     for (const [path, digest] of Object.entries(manifest)) assert.equal(hash(readFileSync(join(root, 'dist-apparent', path))), digest, path)
-    assert.equal(readFileSync(join(root, 'dist-apparent/connect/index.html'), 'utf8'), 'fresh Connect')
+    for (const route of ['connect', 'connect/device', 'connect/shares', 'hosted', 'hosted/device', 'hosted/shares']) {
+      assert.equal(readFileSync(join(root, 'dist-apparent', route, 'index.html'), 'utf8'), `fresh ${route}`)
+    }
     assert.equal(existsSync(join(root, 'dist-apparent/404.html')), true)
     assert.match(readFileSync(join(root, 'dist-apparent/_redirects'), 'utf8'), /\/hosted\/device \/connect\/device 302/)
+    for (const suffix of ['', '/']) assert.ok(readFileSync(join(root, 'dist-apparent/_redirects'), 'utf8').split('\n').includes(`/hosted/shares${suffix} /connect/shares 302`))
     assert.match(readFileSync(join(root, 'dist-apparent/_headers'), 'utf8'), /X-Apparent-Publisher: cloudflare-pages/)
     assert.equal(run(root).status, 1, 'do not silently reprocess provider metadata as public source')
   } finally { rmSync(root, { recursive: true, force: true }) }

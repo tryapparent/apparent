@@ -148,7 +148,13 @@ struct SettingsCommandLine: Decodable, Equatable {
   var error = false
 }
 
+struct HostedAccountState: Decodable, Equatable {
+  var server: String?
+  var connected: Bool
+}
+
 struct SettingsState: Decodable, Equatable {
+  var hosted: HostedAccountState?
   var version = "0.3.2"
   var login = SettingsLogin()
   var agentDemoVideo = true
@@ -949,6 +955,29 @@ struct SettingsView: View {
       ForEach(state.shortcuts) { shortcut in
         Color.clear.frame(height: 14)
         ShortcutRecorder(model: model, clock: model.clock, shortcut: shortcut)
+      }
+      if let hosted = state.hosted {
+        SettingsHeader("Hosted account")
+        SettingsCaption(text: hosted.connected
+          ? "Connected. Captures stay private until you click Copy link."
+          : "Connect to upload screen, voice, transcript and bundle media. New captures upload privately; only the selected capture is shared.")
+        SettingsGroup {
+          SettingsRow(title: "Hosted account") {
+            SettingsButton(title: "Connect and allow uploads", enabled: hosted.server != nil && !hosted.connected) {
+              model.act("connect-hosted")
+            }
+          }
+          SettingsSeparator()
+          SettingsRow(title: "Shared captures") {
+            SettingsButton(title: "Manage shared links", enabled: hosted.server != nil) {
+              model.act("manage-shared-links")
+            }
+          }
+        }
+        SettingsCaption(text: "Anyone with a link can view and download that capture. Stopping sharing cannot recall downloads or cached previews.")
+        if hosted.server == nil {
+          SettingsCaption(text: "Set the API server first with apparent cloud login --server <API origin> --scope read.")
+        }
       }
     }
   }

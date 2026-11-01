@@ -38,12 +38,18 @@ def verify(sha, package):
     if deployment['latest_stage']['status'] != 'success' or deployment['deployment_trigger']['metadata']['commit_hash'] != sha:
         raise ValueError('Pages production is not the checked revision')
     origin = deployment['url']
-    for path, route in [('index.html', '/'), ('connect/index.html', '/connect/'), ('connect/device/index.html', '/connect/device/')]:
+    for path, route in [('index.html', '/'), ('connect/index.html', '/connect/'),
+                        ('connect/device/index.html', '/connect/device/'),
+                        ('connect/shares/index.html', '/connect/shares/')]:
         request = Request(origin + route, headers={'Cache-Control': 'no-cache', 'User-Agent': 'Apparent-CD/1.0'})
         with urlopen(request, timeout=60) as response:
             body = response.read()
             if response.headers.get('X-Apparent-Publisher') != 'cloudflare-pages':
                 raise ValueError('Missing Pages publisher header')
+            if route.startswith('/connect/') and (
+                    'no-store' not in response.headers.get('Cache-Control', '').lower() or
+                    not {'noindex', 'nofollow'} <= set(response.headers.get('X-Robots-Tag', '').lower().replace(',', ' ').split())):
+                raise ValueError('Missing Connect privacy headers')
         if hashlib.sha256(body).digest() != hashlib.sha256((package / path).read_bytes()).digest():
             raise ValueError('Pages served different bytes: ' + path)
     movie = ROOT / 'site/public/Apparent-ghost-demo-v4-lilac.mp4'

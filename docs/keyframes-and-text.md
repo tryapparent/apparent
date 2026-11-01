@@ -155,6 +155,37 @@ unfinished. Enable it before opening onboarding; see
 [onboarding and settings](onboarding-and-settings.md#first-capture-experiment).
 It changes neither capture contents nor outbound delivery.
 
+## Experiment `hostedSharing` (`src/hosted.rs`, `src/ui.rs`, `src/settings.rs`)
+
+Off by default on macOS and Linux. Adds **Copy link** beside local **Paste** in
+the completed capsule and **Hosted account** controls in Settings → General.
+Set `"experiments": {"hostedSharing": true}` in isolated test config; edits apply
+on the next UI/operation check. The configured `cloud.server`, `hostedSync` and
+explicit upload consent are separate requirements. The backend additionally
+requires deployment `SHARING_ENABLED='true'`, off by default.
+
+Copy link remembers only the triggering completed bundle through account consent.
+Closing Settings or dismissing/replacing that completed capture cancels its
+foreground request. Account login and ordinary upload do not create public links
+for the backlog. Offline disables Copy link with “Connect to the internet to
+share”; it never schedules a later clipboard change. Reservation returns before
+media upload, and the existing worker continues under the same identity after
+the capsule closes. Progress uses “Estimating…” or “Waiting for connection”, not
+a countdown without measured throughput. Interrupted/failed senders best-effort
+report paused/failed state to the server outside queue/config locks.
+
+The copied handoff explains that anyone with the link can view and download this
+capture. Shared links can be stopped without deleting the private recording;
+downloads and third-party preview caches cannot be recalled. CLI
+`apparent connect shares list` follows encoded `nextCursor` pages to exhaustion;
+`apparent connect shares revoke <management-id>` reads back the complete list.
+
+**Candidate, not native acceptance:** first-time API configuration still uses the
+CLI (`connect login --server <API origin> --scope read`). Actual Linux GUI and Mac
+native pill/Swift Settings proof, onboarding cancellation and foreground
+clipboard tests, and the real-feature walkthrough remain release gates. See
+[hosted client](hosted-client.md) for limits and isolated synthetic test commands.
+
 ## Experiment `nativeLaunch`
 
 The separate default-off `nativeLaunch` experiment opens the app by the exact

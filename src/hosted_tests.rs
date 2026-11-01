@@ -172,12 +172,10 @@ fn hosted_config_and_queue_locks_are_not_network_held() {
     clear_hook();
     result.unwrap();
     assert!(checked.load(Ordering::SeqCst));
+    let jobs = f.client.jobs().unwrap();
     assert!(
-        f.client
-            .jobs()
-            .unwrap()
-            .iter()
-            .any(|job| job.id == id && job.status == "ready")
+        jobs.iter().any(|job| job.id == id && job.status == "ready"),
+        "upload did not become ready"
     );
 }
 
@@ -430,6 +428,36 @@ fn hosted_security_source_parent_swap_fails_closed() {
     );
 }
 
+/// Hold the real login transport while the coordinator delivers deferred UI events.
+pub(crate) fn deferred_cancelled_settings_login(active: Arc<AtomicBool>, cancel: impl FnOnce()) -> Result<()> {
+    let f = Fixture::new();
+    let server = Server::new("upload");
+    atomic_json(&f.client.config, &json!({"unrelated":{"kept":true},"cloud":{"enabled":false,"uploadConsent":false,"server":server.url}})).unwrap();
+    let before = fs::read(&f.client.config).unwrap();
+    let gate = Arc::new(MediaGate::default());
+    server.state.lock().unwrap().media_gate = Some(gate.clone());
+    let client = f.client.clone();
+    let url = server.url.clone();
+    let worker = std::thread::spawn(move || {
+        client.login_allowed(&url, "upload", true, false, &|| active.load(Ordering::SeqCst))
+    });
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !gate.started.load(Ordering::SeqCst) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let reached_approval = gate.started.load(Ordering::SeqCst);
+    cancel();
+    gate.release.store(true, Ordering::SeqCst); // Approve B only after Settings B closes.
+    let result = worker.join().unwrap();
+    assert!(reached_approval, "login never reached deferred approval");
+    assert_eq!(server.state.lock().unwrap().polls, 2);
+    assert!(!f.client.state.join("upload.credential").exists(), "cancelled login published credentials");
+    assert_eq!(fs::read(&f.client.config).unwrap(), before, "cancelled login published consent");
+    assert!(!f.client.enabled());
+    assert!(f.client.jobs().unwrap().is_empty());
+    result
+}
+
 struct Fixture {
     root: PathBuf,
     client: Client,
@@ -453,6 +481,7 @@ impl Fixture {
             atomic_json(
                 &self.client.state.join(format!("{scope}.credential")),
                 &Credential {
+                    site: Some(server.into()),
                     server: server.into(),
                     scope: scope.into(),
                     token: format!("synthetic-{scope}-secret"),
@@ -485,6 +514,11 @@ impl Drop for Fixture {
 
 #[derive(Default)]
 struct State {
+    request_routes: Vec<String>,
+    list_routes: Vec<String>,
+    progress: Vec<String>,
+    shares: usize,
+    revoked: bool,
     files: Vec<Asset>,
     capture_id: String,
     tombstones: BTreeSet<String>,
@@ -545,7 +579,59 @@ impl Drop for Server {
         self.thread.take().unwrap().join().unwrap();
     }
 }
+// Exercise the real fixture reader with an accepted nonblocking socket. This
+// models a possible BSD accept contract on Linux; it is not a Mac failure trace.
+fn fragmented_nonblocking_request(split_in_body: bool) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    client.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+    client.set_write_timeout(Some(Duration::from_secs(3))).unwrap();
+    let (stream, _) = listener.accept().unwrap();
+    stream.set_nonblocking(true).unwrap();
+    let state = Arc::new(Mutex::new(State::default()));
+    let served_state = state.clone();
+    let request = b"PUT /v1/captures/test/files/summary.md HTTP/1.1\r\nAuthorization: Bearer synthetic-upload-secret\r\nContent-Length: 10\r\n\r\nfragmented";
+    let split = if split_in_body { request.len() - 5 } else { 20 };
+    client.write_all(&request[..split]).unwrap();
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        started_tx.send(()).unwrap();
+        serve(stream, &served_state, "http://127.0.0.1");
+        done_tx.send(()).unwrap();
+    });
+    started_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    // Hold back the remaining bytes while serve is running. A blocking reader
+    // waits here; the old nonblocking reader returns at the arrival gap.
+    let _ = done_rx.recv_timeout(Duration::from_millis(100));
+    let write_error = client.write_all(&request[split..]).err().map(|e| e.kind());
+    let _ = client.shutdown(std::net::Shutdown::Write);
+    let mut response = Vec::new();
+    let read_error = client.read_to_end(&mut response).err().map(|e| e.kind());
+    worker.join().unwrap();
+    assert_eq!(response, b"HTTP/1.1 200 Result\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}", "write_error={write_error:?}; read_error={read_error:?}");
+    assert_eq!(write_error, None);
+    assert_eq!(read_error, None);
+    let state = state.lock().unwrap();
+    assert_eq!(state.request_routes, ["PUT /v1/captures/test/files/summary.md"]);
+    assert_eq!(state.data.get("summary.md").unwrap(), b"fragmented");
+}
+
+#[test]
+fn hosted_fixture_reads_fragmented_headers_from_nonblocking_accept() {
+    fragmented_nonblocking_request(false);
+}
+
+#[test]
+fn hosted_fixture_reads_fragmented_body_from_nonblocking_accept() {
+    fragmented_nonblocking_request(true);
+}
+
 fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
+    // accept's flag inheritance is platform-dependent. These bounded readers
+    // require blocking I/O even though the listener polls for shutdown.
+    stream.set_nonblocking(false).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
@@ -572,6 +658,7 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
                 .and_then(|n| n.trim().parse::<usize>().ok())
         })
         .unwrap_or(0);
+
     while bytes.len() < end + length {
         let mut buf = [0u8; 4096];
         match stream.read(&mut buf) {
@@ -579,9 +666,11 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
             Ok(n) => bytes.extend_from_slice(&buf[..n]),
         }
     }
+
     let body = &bytes[end..end + length];
     let mut s = state.lock().unwrap();
     s.requests += 1;
+    s.request_routes.push(format!("{method} {route}"));
     let mut status = 200;
     let result: Vec<u8> = if route == "/v1/device/start" {
         json!({"deviceCode":"synthetic-device-secret", "userCode":"TEST-CODE", "verificationUri":format!("{origin}/hosted/device?code=TEST-CODE"), "expiresIn":5,"interval":1}).to_string().into_bytes()
@@ -592,6 +681,15 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
         } else if s.polls == 1 {
             json!({"status":"pending"}).to_string().into_bytes()
         } else {
+            if let Some(gate) = s.media_gate.clone() {
+                drop(s);
+                gate.started.store(true, Ordering::SeqCst);
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while !gate.release.load(Ordering::SeqCst) && Instant::now() < deadline {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                s = state.lock().unwrap();
+            }
             json!({"status":"approved","scope":if matches!(s.mode.as_str(), "wrong-scope" | "upload") {"upload"} else {"read"},"accessToken":"synthetic-approved-secret"}).to_string().into_bytes()
         }
     } else if s.mode == "slow" {
@@ -608,7 +706,19 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
         );
         let parts: Vec<_> = route.split('/').collect();
         let id = parts.get(3).copied().unwrap_or("");
-        if s.tombstones.contains(id) {
+        if route.starts_with("/v1/shares?") || route == "/v1/shares" {
+            s.list_routes.push(route.into());
+            if s.mode == "paged-shares" || s.mode == "looped-shares" {
+                let second = route.contains('?');
+                let shares: Vec<_> = (if second {100..103} else {0..100}).map(|i| json!({"id":format!("{i:032x}"),"captureId":"a".repeat(32),"url":format!("{origin}/s/{}", "b".repeat(64)),"status":"ready"})).collect();
+                json!({"shares":shares,"nextCursor":if !second || s.mode == "looped-shares" {Some("1234:opaque /?&+")} else {None}}).to_string().into_bytes()
+            } else {
+                json!({"shares":if s.shares == 0 || s.revoked {vec![]} else {vec![json!({"id":"c".repeat(32),"captureId":s.capture_id,"url":format!("{origin}/s/{}", "b".repeat(64)),"status":"uploading","createdAt":123,"expiresAt":12345,"title":"Synthetic capture"})]},"nextCursor":null}).to_string().into_bytes()
+            }
+        } else if route == format!("/v1/shares/{}", "c".repeat(32)) && method == "DELETE" {
+            s.revoked = true;
+            json!({"ok":true}).to_string().into_bytes()
+        } else if s.tombstones.contains(id) {
             status = 410;
             json!({"error":{"code":"expired"}}).to_string().into_bytes()
         } else if method == "POST" && parts.len() == 4 {
@@ -626,9 +736,23 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
             json!({"id":id,"status":if s.ready {"ready"} else {"pending"}})
                 .to_string()
                 .into_bytes()
+        } else if parts.get(4) == Some(&"share") && parts.get(5) == Some(&"progress") {
+            assert_eq!(method, "POST");
+            let progress: Value = serde_json::from_slice(body).unwrap();
+            s.progress.push(progress["state"].as_str().unwrap().into());
+            json!({"ok":true}).to_string().into_bytes()
+        } else if parts.get(4) == Some(&"share") {
+            assert_eq!(id, s.capture_id);
+            s.shares += 1;
+            json!({"url":format!("{origin}/s/{}", "b".repeat(64)),"status":if s.ready {"ready"} else {"uploading"},"expiresAt":12345}).to_string().into_bytes()
         } else if parts.get(4) == Some(&"files") {
             let path = parts[5..].join("/");
             if method == "PUT" {
+                if s.mode == "fail-file" {
+                    status = 503;
+                    let _ = write!(stream, "HTTP/1.1 {status} Result\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}");
+                    return;
+                }
                 if path == "audio.wav" {
                     if let Some(gate) = s.media_gate.clone() {
                         drop(s);
@@ -664,6 +788,178 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
         result.len()
     );
     let _ = stream.write_all(&result);
+}
+
+#[test]
+fn hosted_sharing_management_follows_encoded_cursors_and_rejects_loops() {
+    let f = Fixture::new();
+    let server = Server::new("paged-shares");
+    f.authorize(&server.url);
+    let shares = f.client.shares().unwrap();
+    assert_eq!(shares["shares"].as_array().unwrap().len(), 103);
+    assert!(shares["nextCursor"].is_null());
+    assert_eq!(server.state.lock().unwrap().list_routes, ["/v1/shares", "/v1/shares?before=1234%3Aopaque%20%2F%3F%26%2B"]);
+    server.state.lock().unwrap().mode = "looped-shares".into();
+    assert!(f.client.shares().is_err(), "a looping response must not hang or return a partial list");
+}
+
+#[test]
+fn hosted_prepared_link_survives_upload_before_foreground_delivery() {
+    let f = Fixture::new();
+    let server = Server::new("");
+    f.authorize(&server.url);
+    crate::handoff::enable_experiment(HOSTED_SHARING);
+    // This is the production preparation/authorization seam used by the UI.
+    // Defer foreground delivery until the real uploader has advanced its job.
+    let link = f.client.prepare_link(&f.bundle(), &|| true).unwrap();
+    assert_eq!(link.job.status, "pending");
+    assert!(link.authorized());
+    f.client.process_once().unwrap();
+    assert_eq!(f.client.jobs().unwrap()[0].status, "ready");
+    assert!(server.state.lock().unwrap().ready);
+    assert!(link.authorized(), "upload completion revoked a valid foreground link");
+    assert_eq!(link.text.matches("Anyone with this link").count(), 1);
+    // A valid ready result must still lose authorization when consent is removed.
+    f.client.disable(false).unwrap();
+    assert!(!link.authorized());
+}
+
+#[test]
+fn hosted_prepared_link_rejects_changed_authorization_after_progress() {
+    let f = Fixture::new();
+    let server = Server::new("");
+    f.authorize(&server.url);
+    crate::handoff::enable_experiment(HOSTED_SHARING);
+    let link = f.client.prepare_link(&f.bundle(), &|| true).unwrap();
+    let original = f.client.jobs().unwrap()[0].clone();
+    for status in ["pending", "failed", "ready"] {
+        let mut current = original.clone();
+        current.status = status.into();
+        f.client.save_job(&current).unwrap();
+        assert!(link.authorized(), "valid progress status {status}");
+    }
+    // Each mutation alone must fail closed, even with all other gates open.
+    for change in 0..9 {
+        let mut current = original.clone();
+        match change {
+            0 => current.status = "cancelled".into(),
+            1 => current.status = "expired".into(),
+            2 => current.status = "unexpected".into(),
+            3 => current.created += 1,
+            4 => current.generation = "replacement-grant".into(),
+            5 => current.bundle = f.root.join("replacement.apparent"),
+            6 => current.server = "http://localhost:1".into(),
+            7 => current.files[0].size += 1,
+            _ => current.id = "d".repeat(32),
+        }
+        atomic_json(&f.client.state.join(format!("{}.job", original.id)), &current).unwrap();
+        assert!(!link.authorized(), "accepted authorization mutation {change}");
+    }
+    f.client.save_job(&original).unwrap();
+    assert!(link.authorized());
+    let mut credential = f.client.credential("upload", &server.url).unwrap();
+    credential.generation = "replacement-grant".into();
+    atomic_json(&f.client.state.join("upload.credential"), &credential).unwrap();
+    assert!(!link.authorized());
+    fs::remove_file(f.client.state.join(format!("{}.job", original.id))).unwrap();
+    assert!(!link.authorized());
+}
+
+#[test]
+fn hosted_share_request_survives_progress_during_transport() {
+    let f = Fixture::new();
+    let server = Server::new("");
+    f.authorize(&server.url);
+    crate::handoff::enable_experiment(HOSTED_SHARING);
+    let client = f.client.clone();
+    let advanced = Arc::new(AtomicBool::new(false));
+    let observed = advanced.clone();
+    set_hook(move |point, _| {
+        if point == "transport_poll" && !observed.swap(true, Ordering::SeqCst) {
+            // Run the production uploader while the foreground request is held.
+            client.process_once().unwrap();
+        }
+    });
+    let result = f.client.prepare_link(&f.bundle(), &|| true);
+    clear_hook();
+    let link = result.unwrap();
+    assert!(advanced.load(Ordering::SeqCst));
+    assert_eq!(f.client.jobs().unwrap()[0].status, "ready");
+    assert!(link.authorized());
+}
+
+#[test]
+fn hosted_sharing_sender_reports_interruption_and_recovers_under_same_url() {
+    let f = Fixture::new();
+    let server = Server::new("fail-file");
+    f.authorize(&server.url);
+    crate::handoff::enable_experiment(HOSTED_SHARING);
+    let bundle = f.bundle();
+    let url = f.client.share(&bundle).unwrap();
+    f.client.process_once().unwrap();
+    assert_eq!(server.state.lock().unwrap().progress.last().map(String::as_str), Some("paused"));
+    server.state.lock().unwrap().mode.clear();
+    f.client.retry().unwrap();
+    f.client.process_once().unwrap();
+    assert_eq!(f.client.share(&bundle).unwrap(), url);
+    assert!(server.state.lock().unwrap().ready);
+    server.state.lock().unwrap().mode = "fail-file".into();
+    let another = f.root.join("second.apparent");
+    fs::rename(&bundle, &another).unwrap();
+    f.client.share(&another).unwrap();
+    for _ in 0..MAX_ATTEMPTS {
+        let mut jobs = f.client.jobs().unwrap();
+        let job = jobs.iter_mut().find(|job| job.status == "pending").unwrap();
+        job.next_attempt = 0;
+        f.client.save_job(job).unwrap();
+        f.client.process_once().unwrap();
+    }
+    assert_eq!(server.state.lock().unwrap().progress.last().map(String::as_str), Some("failed"));
+}
+
+#[test]
+fn hosted_sharing_management_uses_management_id_and_verifies_revoke() {
+    let f = Fixture::new();
+    let server = Server::new("");
+    f.authorize(&server.url);
+    crate::handoff::enable_experiment("hostedSharing");
+    f.client.share(&f.bundle()).unwrap();
+    let shares = f.client.shares().unwrap();
+    assert_eq!(shares["shares"][0]["id"], "c".repeat(32));
+    let before = server.state.lock().unwrap().requests;
+    assert!(f.client.revoke_share(&"b".repeat(64)).is_err());
+    assert_eq!(server.state.lock().unwrap().requests, before);
+    f.client.revoke_share(&"c".repeat(32)).unwrap();
+    assert!(f.client.shares().unwrap()["shares"].as_array().unwrap().is_empty());
+    assert!(server.state.lock().unwrap().revoked);
+}
+
+#[test]
+fn hosted_sharing_reserves_before_media_reuses_url_and_resumes_queue() {
+    let f = Fixture::new();
+    let server = Server::new("");
+    f.authorize(&server.url);
+    crate::handoff::enable_experiment("hostedSharing");
+    let bundle = f.bundle();
+    let url = f.client.share(&bundle).unwrap();
+    assert_eq!(url, format!("{}/s/{}", server.url, "b".repeat(64)));
+    assert!(server.state.lock().unwrap().data.is_empty(), "link must be reserved before full media upload");
+    let id = f.client.jobs().unwrap()[0].id.clone();
+    assert_eq!(f.client.share(&bundle).unwrap(), url);
+    assert_eq!(f.client.jobs().unwrap().len(), 1);
+    let restarted = Client::at(f.client.config.clone());
+    restarted.process_once().unwrap();
+    let jobs = restarted.jobs().unwrap();
+    assert_eq!(jobs[0].status, "ready");
+    assert_eq!(restarted.jobs().unwrap()[0].id, id);
+    assert_eq!(restarted.share(&bundle).unwrap(), url);
+    let another = f.root.join("another.apparent");
+    fs::rename(&bundle, &another).unwrap();
+    restarted.enqueue(&another).unwrap();
+    fs::rename(&another, &bundle).unwrap();
+    assert!(restarted.jobs().unwrap().iter().any(|j| j.id == id), "sharing identity must survive ordinary queue pruning");
+    restarted.disable(false).unwrap();
+    assert!(restarted.share(&bundle).is_err());
 }
 
 #[test]
