@@ -175,7 +175,10 @@ fn hosted_config_and_queue_locks_are_not_network_held() {
     let jobs = f.client.jobs().unwrap();
     assert!(
         jobs.iter().any(|job| job.id == id && job.status == "ready"),
-        "upload did not become ready: jobs={jobs:?}; requests={:?}",
+        "upload did not become ready: jobs={:?}; requests={:?}",
+        jobs.iter()
+            .map(|job| (&job.id, &job.status, &job.error, job.attempts))
+            .collect::<Vec<_>>(),
         server.state.lock().unwrap().request_routes
     );
 }
@@ -900,7 +903,10 @@ fn hosted_sharing_reserves_before_media_reuses_url_and_resumes_queue() {
     assert_eq!(
         jobs[0].status,
         "ready",
-        "upload did not resume: jobs={jobs:?}; requests={:?}",
+        "upload did not resume: status={}; error={:?}; attempts={}; requests={:?}",
+        jobs[0].status,
+        jobs[0].error,
+        jobs[0].attempts,
         server.state.lock().unwrap().request_routes
     );
     assert_eq!(restarted.jobs().unwrap()[0].id, id);
