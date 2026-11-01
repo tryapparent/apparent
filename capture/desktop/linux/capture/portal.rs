@@ -36,6 +36,25 @@ impl Stream {
     pub fn fd(&self) -> i32 {
         self.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
     }
+
+    /// A dead portal connection need not become a GStreamer bus Error. Observe
+    /// socket closure without reading protocol bytes owned by PipeWire.
+    pub fn connection_error(&self) -> Option<String> {
+        let fd = self.fd.as_ref()?;
+        let mut poll = libc::pollfd {
+            fd: fd.as_raw_fd(),
+            events: libc::POLLRDHUP,
+            revents: 0,
+        };
+        // The OwnedFd outlives this nonblocking poll; it remains owned by Stream.
+        if unsafe { libc::poll(&mut poll, 1, 0) } < 0 {
+            let error = std::io::Error::last_os_error();
+            return (error.kind() != std::io::ErrorKind::Interrupted)
+                .then(|| format!("PipeWire connection check failed: {error}"));
+        }
+        (poll.revents & (libc::POLLRDHUP | libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0)
+            .then(|| "The screen sharing PipeWire connection closed".to_owned())
+    }
 }
 
 impl Drop for Stream {
@@ -183,6 +202,36 @@ fn portal_crop(mode: CaptureMode, rect: [f64; 4], stream: Option<[f64; 4]>) -> O
 #[cfg(test)]
 mod display_tests {
     use super::*;
+
+    #[test]
+    fn portal_connection_loss_is_detected_without_consuming_protocol_bytes() {
+        use std::io::{Read, Write};
+        use std::net::Shutdown;
+        use std::os::unix::net::UnixStream;
+
+        let (mut local, mut remote) = UnixStream::pair().unwrap();
+        let stream = Stream {
+            node: 1, fd: Some(local.try_clone().unwrap().into()),
+            rect: None, mapping_id: None, stop: None,
+        };
+        assert!(stream.connection_error().is_none(), "an idle connection is not a failure");
+        remote.write_all(b"protocol").unwrap();
+        assert!(stream.connection_error().is_none(), "readable protocol data is not a failure");
+        let mut bytes = [0; 8];
+        local.read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes, b"protocol", "the check must not consume PipeWire bytes");
+        remote.write_all(b"pending").unwrap();
+        remote.shutdown(Shutdown::Write).unwrap();
+        assert!(stream.connection_error().is_some(), "detect EOF even with unread protocol bytes");
+        drop(remote);
+        assert!(stream.connection_error().is_some(), "full peer closure is terminal too");
+    }
+
+    #[test]
+    fn default_pipewire_connection_has_no_portal_fd_to_poll() {
+        let stream = Stream { node: 1, fd: None, rect: None, mapping_id: None, stop: None };
+        assert!(stream.connection_error().is_none());
+    }
 
     #[test]
     fn restore_tokens_are_scoped_to_the_selected_output() {
