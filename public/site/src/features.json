@@ -22,6 +22,20 @@
   ],
   "features": [
     {
+      "id": "video-workflow-tracing",
+      "group": "cli",
+      "name": "Private agent video-workflow traces",
+      "says": "Opt-in apparent trace records built-in authoring command attempts, timing and outcomes; explicit friction notes and hash-linked retained evidence help improve CLI and skill workflows without sending traces online.",
+      "status": "experiment:videoTracing",
+      "added": "2026-11-01",
+      "platforms": ["mac", "linux"],
+      "note": "Default off. Candidate CLI/storage feature, not automatic interception of every agent tool call or native video QA. Linux CLI tests and separate platform proof are required before release; macOS runtime remains unverified. No separate Python utility is needed. Private selected artifacts and notes are not redacted and must not be published.",
+      "config": [
+        { "key": "videoTracing", "value": "experiment boolean; false by default", "does": "Enable private local workflow tracing on the next CLI invocation via experiments.videoTracing" }
+      ],
+      "docs": ["capture/agent/docs/video-tracing.md", "capture/agent/docs/agent-video-workflow.md"]
+    },
+    {
       "id": "site-feature-grid",
       "group": "install",
       "name": "Animated homepage feature explanations",
