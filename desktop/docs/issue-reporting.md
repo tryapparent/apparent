@@ -4,15 +4,13 @@
 `tryapparent/apparent`. It does not launch another agent, implement changes or merge.
 This candidate is shared CLI code for macOS and Linux, not a GUI control.
 
-## Enable and preview
+## Preview
 
-The `issueReporting` experiment is off by default. Add
-`"experiments": {"issueReporting": true}` to `~/.config/apparent/config.json`
-while preserving all other keys, or pass `--experiment issueReporting` for one
-invocation. CLI processes read the preference at invocation; no app restart is needed.
+The command is available by default. No experiment flag or configuration change
+is needed. Any old `issueReporting` experiment setting is ignored.
 
 ```sh
-apparent issue --experiment issueReporting \
+apparent issue \
   --title 'Explain the zoom time syntax' \
   --body 'Show an example using minutes and seconds in zoom help.'
 ```

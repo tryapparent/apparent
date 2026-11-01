@@ -192,10 +192,10 @@ The separate default-off `nativeLaunch` experiment opens the app by the exact
 `apparent://open` URL, never a capture or handoff. Its OS registration and validation
 contract are in [native launch](../../desktop/docs/native-launch.md).
 
-## Experiment `issueReporting`
+## Text-only GitHub feedback
 
-The default-off `issueReporting` experiment is documented in
-[text-only GitHub feedback](../../desktop/docs/issue-reporting.md). It adds an
+The default-available `apparent issue` command is documented in
+[text-only GitHub feedback](../../desktop/docs/issue-reporting.md). It provides an
 explicit CLI issue preview/submission path, never changes capture output, and
 never automatically attaches or submits a bundle.
 
