@@ -66,7 +66,7 @@
       "status": "experiment:hostedSync",
       "added": "2026-10-30",
       "platforms": ["mac", "linux"],
-      "note": "Default off; CLI sign-in only. Update Apparent for apparent connect; older apps use apparent cloud, retained as a compatibility alias. Connect browser routes at app.tryapparent.com/connect and /connect/device retain /hosted aliases; API, Google callback, host-only sessions and device credentials stay at hosted.tryapparent.com. The V4 web UI provides account sign-in, independent scope review and verified device approval; website approval does not prove local upload settings or CLI credentials. Native capsule, connection and recovery UI remain deferred. Candidate requires native capture/paste proof on each OS and deployed account approval. V1 rejects files above 90,000,000 bytes rather than omitting media. No automatic historical uploads. Explicit apparent connect upload creates a fresh ID; apparent connect retry keeps existing IDs. Device grants require reauthorization after 30 days.",
+      "note": "Default off; CLI sign-in only. Update Apparent for apparent connect; older apps use apparent cloud, retained as a compatibility alias. Connect browser routes at app.tryapparent.com/connect and /connect/device retain /hosted aliases; API, Google callback, host-only sessions and device credentials stay at hosted.tryapparent.com. The V4 web UI provides account sign-in, independent scope review and verified device approval; website approval does not prove local upload settings or CLI credentials. Native capsule, connection and recovery UI remain deferred. Candidate requires native capture/paste proof on each OS and deployed account approval. V1 rejects files above 90,000,000 bytes rather than omitting media. No automatic historical uploads. Explicit apparent connect upload creates a fresh ID; apparent connect retry keeps existing IDs. Better Auth migration candidate renews device credentials while renewal remains valid, preserving queued IDs and consent; revoked or expired renewal needs approval again. Existing credentials require one new login after updating. Service login does not establish encryption trust. Migration, live OAuth and both native platform gates remain required before release.",
       "config": [
         { "key": "cloud.enabled", "value": "boolean; false by default", "does": "Enable the automatic upload queue only with experiment and consent" },
         { "key": "cloud.uploadConsent", "value": "boolean; false by default", "does": "Record explicit permission to share capture contents" },
@@ -163,24 +163,24 @@
       "id": "switch-chips",
       "group": "start",
       "name": "Switch target as it starts",
-      "says": "The capsule opens onto Area · Window · Screen · iPhone for 3.5 s; a chip restarts the capture on that target.",
-      "status": "stable@0.3.4",
+      "says": "The capsule opens onto Area · Screen · iPhone for 3.5 s; a chip restarts the capture on that target.",
+      "status": "main",
       "platforms": ["mac", "linux"],
-      "note": "The iPhone chip is Mac only.",
+      "note": "The iPhone chip is Mac only. Window recording is temporarily disabled as containment for #230; #264 tracks safe restoration.",
       "docs": ["capture/engine/docs/capture.md"]
     },
     {
       "id": "picker",
       "group": "start",
       "name": "Choose What to Record…",
-      "says": "The menu's picker opens on the pointer's display: drag an area, click a window, or pick Screen or iPhone.",
-      "status": "stable@0.3.4",
+      "says": "The menu's picker opens on the pointer's display: drag an area, or pick Screen or iPhone.",
+      "status": "main",
       "platforms": ["mac", "linux"],
-      "note": "The Linux preview's Window mode lists X11 windows only.",
+      "note": "Window recording is temporarily disabled on macOS and Linux, including record --window and direct recording entry points. There is no screen fallback. Existing Window bundles remain readable.",
       "shortcuts": [
-        { "keys": "1–4", "does": "Picker: jump to a mode" },
+        { "keys": "1–3", "does": "Picker: jump to a visible mode (iPhone is Mac only)" },
         { "keys": "Tab / ⇧Tab", "does": "Picker: next or previous mode" },
-        { "keys": "Space", "does": "Picker: toggle Area and Window" },
+        { "keys": "Space", "does": "Picker: toggle Area and Screen" },
         { "keys": "⏎", "does": "Picker: record the selection" }
       ],
       "docs": ["README.md#capture-controls"]

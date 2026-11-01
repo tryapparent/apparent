@@ -2,21 +2,23 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {build} from 'esbuild';
+import {Miniflare} from 'miniflare';
 import {fixture,digest,id,file} from '../helpers.mjs';
 const settings={POSTHOG_ENABLED:'true',POSTHOG_PROJECT_TOKEN:'phc_synthetic',POSTHOG_HOST:'https://eu.i.posthog.com',POSTHOG_ENVIRONMENT:'synthetic'};
-async function setup(bindings={},legacy=false,runtime={}) {
+async function setup(bindings={},withoutAnalytics=false,runtime={}) {
  const provider={status:200,ack:{status:'Ok'},bodies:[]};
  const f=await fixture({...settings,...bindings},{...runtime,outboundService:async request=>{
+  if(request.url==='https://accounts.google.com/.well-known/openid-configuration')return Response.json({issuer:'https://accounts.google.com',authorization_endpoint:'https://accounts.google.com/o/oauth2/v2/auth',token_endpoint:'https://oauth2.googleapis.com/token',jwks_uri:'https://www.googleapis.com/oauth2/v3/certs',id_token_signing_alg_values_supported:['RS256']});
   assert.equal(request.url,'https://eu.i.posthog.com/batch/');
   provider.bodies.push(await request.json());
   if(provider.beforeResponse)await provider.beforeResponse();
   return Response.json(provider.ack,{status:provider.status});
  }});
- await f.db.exec((await readFile('migrations/0004.sql','utf8')).replaceAll('\n',' '));
- if(!legacy)await f.db.exec((await readFile('migrations/0005.sql','utf8')).replaceAll('\n',' '));
+ if(!withoutAnalytics)await f.db.exec((await readFile('migrations/0005.sql','utf8')).replaceAll('\n',' '));
  return {...f,provider};
 }
 const enroll=async(f,account,at=Date.now())=>f.db.prepare('INSERT INTO analytics_consent(account_id,consented_at) VALUES(?,?)').bind(account,at).run();
+const accountId=subject=>digest('https://accounts.google.com/'+subject);
 const queued=async f=>(await f.db.prepare('SELECT * FROM analytics_outbox ORDER BY id').all()).results;
 const sessionId=async(f,a)=>(await(await f.call('/v1/session',{cookie:a.cookie})).json()).account.analyticsId;
 const sweep=async f=>assert.equal((await(await f.mf.getWorker()).scheduled()).outcome,'ok');
@@ -106,19 +108,50 @@ test('account pilot consent: invalid and future choices do not authorize collect
   await sweep(f);assert.deepEqual(await queued(f),[]);assert.equal(f.provider.bodies.length,0);
  }finally{await f.close();}
 });
-test('account pilot consent: upgrade stops global collection and discards unapproved legacy rows',async()=>{
- const f=await setup({},true);try{
-  await f.db.exec('UPDATE analytics_control SET enabled=1');
-  const a=await f.identity(digest('legacy'));
-  assert.equal((await queued(f)).length,1);
-  assert.equal(await sessionId(f,a),null,'new runtime fails closed without the consent migration');
+test('analytics migration: fresh ordered schema includes main auth and disabled consent-gated analytics',async()=>{
+ const mf=new Miniflare({modules:true,script:'export default {fetch(){return new Response("synthetic");}}',compatibilityDate:'2026-02-05',d1Databases:{DB:'fresh'}});try{
+  const db=await mf.getD1Database('DB');
+  for(const name of ['0001','0002','0003','0004','0005'])await db.exec((await readFile('migrations/'+name+'.sql','utf8')).replace(/^--.*$/gm,'').replaceAll('\n',' '));
+  assert.ok(await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_grants'").first());
+  assert.ok(await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='shares'").first());
+  assert.equal((await db.prepare('SELECT enabled FROM analytics_control').first()).enabled,0);
+  assert.equal((await db.prepare('SELECT count(*) n FROM analytics_consent').first()).n,0);
+  const budget=await db.prepare('SELECT * FROM r2_budget').first();
+  await assert.rejects(db.exec((await readFile('migrations/0005.sql','utf8')).replaceAll('\n',' ')));
+  assert.deepEqual(await db.prepare('SELECT * FROM r2_budget').first(),budget,'rerun cannot reseed the budget');
+ }finally{await mf.dispose();}
+});
+test('analytics migration: upgrade from main preserves auth, accounts, captures and spent budget without backfill',async()=>{
+ const f=await setup({SHARING_ENABLED:'true'},true);try{
+  await f.db.exec((await readFile('migrations/0003.sql','utf8')).replaceAll('\n',' '));
+  const a=await f.identity('main upgrade'),path=await upload(f,a,95);
+  assert.equal((await f.call(path+'/complete',{token:a.token,method:'POST'})).status,200);
+  assert.equal((await f.call(path+'/share',{token:a.token,method:'POST'})).status,200);
+  const device=await(await f.call('/v1/device/start',{method:'POST',body:{scope:'upload'}})).json();
+  assert.equal((await f.call('/v1/device/approve',{...a,method:'POST',body:{userCode:device.userCode}})).status,200);
+  const issued=await(await f.call('/v1/device/poll',{method:'POST',body:{deviceCode:device.deviceCode}})).json();
+  assert.equal(issued.status,'approved');assert.equal(typeof issued.refreshToken,'string');
+  await f.db.exec('UPDATE r2_budget SET a_used=a_used+7,b_used=b_used+11');
+  const tables=['accounts','captures','shares','r2_budget','auth_user','auth_account','auth_session','auth_grants','oauthClient','oauthAccessToken','oauthRefreshToken'];
+  const rows=()=>Promise.all(tables.map(async table=>(await f.db.prepare('SELECT * FROM '+table).all()).results));
+  assert.equal(await sessionId(f,a),null,'new runtime fails closed before the analytics migration');
   await sweep(f);assert.equal(f.provider.bodies.length,0);
+  const before=await rows();
   await f.db.exec((await readFile('migrations/0005.sql','utf8')).replaceAll('\n',' '));
   assert.equal((await f.db.prepare('SELECT enabled FROM analytics_control').first()).enabled,0);
   assert.deepEqual(await queued(f),[]);
   assert.equal((await f.db.prepare('SELECT count(*) AS n FROM analytics_consent').first()).n,0);
+  assert.deepEqual(await rows(),before);
   await f.db.exec('UPDATE analytics_control SET enabled=1');
   await sweep(f);assert.equal(f.provider.bodies.length,0);
+  await enroll(f,a.id);
+  assert.equal(await sessionId(f,a),'account:'+a.id);
+  assert.deepEqual(await queued(f),[],'upgrading and enrolment do not invent signup/device/upload history');
+  assert.equal((await f.call('/v1/account',{token:a.token})).status,200,'main bearer remains valid');
+  const refreshed=await(await f.call('/v1/token/refresh',{method:'POST',body:{refreshToken:issued.refreshToken}})).json();
+  assert.equal(refreshed.grantId,issued.grantId);assert.equal(refreshed.scope,'upload');
+  assert.equal((await f.call('/v1/account',{token:refreshed.accessToken})).status,200);
+  assert.deepEqual(await queued(f),[],'refreshing an existing device does not invent a connection');
  }finally{await f.close();}
 });
 test('account pilot consent: final database authorization is the export cut-off for withdrawal, re-enrolment and disable',async()=>{
@@ -140,7 +173,7 @@ test('account pilot consent: final database authorization is the export cut-off 
     return result;
    }});return wrap(env.DB.prepare(sql));},batch(items){return env.DB.batch(items.map(s=>s.raw));}};
    return worker.scheduled(controller,{...env,DB});
-  }};`},bundle:true,format:'esm',platform:'browser',write:false});
+  }};`},bundle:true,format:'esm',platform:'browser',conditions:['workerd'],external:['node:*'],write:false});
  for(const phase of ['before','after'])for(const mode of ['withdraw','reenroll','disable']){
   const f=await setup({TEST_CONSENT_RACE:mode,TEST_CONSENT_PHASE:phase},false,{scriptPath:undefined,script:instrumented.outputFiles[0].text});try{
    await f.db.exec('UPDATE analytics_control SET enabled=1');
@@ -188,11 +221,22 @@ test('optional analytics: atomic distinct accounts, concurrent/idempotent comple
  const excluded=await f.identity(digest('collection disabled'));
  assert.equal(await sessionId(f,excluded),null);assert.deepEqual(await queued(f),[]);
  await f.db.exec('UPDATE analytics_control SET enabled=1');
- await enroll(f,digest('first'));await enroll(f,digest('second'));
+ await enroll(f,accountId(digest('first')));await enroll(f,accountId(digest('second')));
  const a=await f.identity(digest('first')),b=await f.identity(digest('second'));
  assert.equal(await sessionId(f,a),'account:'+a.id);
  const device=await(await f.call('/v1/device/start',{method:'POST',body:{scope:'upload'}})).json();
- for(let i=0;i<2;i++)await f.call('/v1/device/approve',{cookie:a.cookie,csrf:a.csrf,origin:a.origin,method:'POST',body:{userCode:device.userCode}});
+ assert.equal((await f.call('/v1/device/approve',{...a,method:'POST',body:{userCode:device.userCode}})).status,200);
+ assert.ok([200,409].includes((await f.call('/v1/device/approve',{...a,method:'POST',body:{userCode:device.userCode}})).status));
+ const issued=await(await f.call('/v1/device/poll',{method:'POST',body:{deviceCode:device.deviceCode}})).json();
+ assert.equal(issued.status,'approved');
+ const renew=()=>f.call('/v1/token/refresh',{method:'POST',body:{refreshToken:issued.refreshToken}});
+ const refreshed=await(await renew()).json(),replay=await(await renew()).json();
+ assert.equal(refreshed.grantId,issued.grantId);assert.equal(refreshed.scope,'upload');
+ assert.equal(replay.accessToken,refreshed.accessToken);assert.equal(replay.refreshToken,refreshed.refreshToken);
+ assert.equal((await f.call('/v1/token/revoke',{token:refreshed.accessToken,method:'POST'})).status,200);
+ assert.equal((await f.call('/v1/account',{token:refreshed.accessToken})).status,401);
+ const denied=await(await f.call('/v1/device/start',{method:'POST',body:{scope:'read'}})).json();
+ assert.equal((await f.call('/v1/device/reject',{...a,method:'POST',body:{userCode:denied.userCode}})).status,200);
  const paths=await Promise.all([upload(f,a,1),upload(f,b,2,'a second private recording')]);
  await Promise.all(Array.from({length:4},()=>f.call(paths[0]+'/complete',{token:a.token,method:'POST'})));
  assert.equal((await f.call(paths[1]+'/complete',{token:b.token,method:'POST'})).status,200);
@@ -216,7 +260,7 @@ test('optional analytics: atomic distinct accounts, concurrent/idempotent comple
 test('provider acknowledgement: observed Ok and legacy numeric success drain the queue; ambiguous bodies do not',async()=>{
  const f=await setup();try{
   await f.db.exec('UPDATE analytics_control SET enabled=1');
-  const account=digest('provider acknowledgement');await enroll(f,account);await f.identity(account);
+  const account=digest('provider acknowledgement');await enroll(f,accountId(account));await f.identity(account);
   for(const ack of [{},{status:0},{status:'ok'},{status:'success'},{status:'Error'},null]){
    f.provider.ack=ack;await sweep(f);assert.equal((await queued(f)).length,2,'ambiguous acknowledgement must retain signup and snapshot');
   }
@@ -228,7 +272,7 @@ test('provider acknowledgement: observed Ok and legacy numeric success drain the
 test('provider failures preserve identical event identity; retries, deletion and expired reservations do not inflate storage',async()=>{
  const f=await setup();try{
  await f.db.exec('UPDATE analytics_control SET enabled=1');
- await enroll(f,digest('retry'));
+ await enroll(f,accountId(digest('retry')));
  const a=await f.identity(digest('retry')),path=await upload(f,a,3,'hello');
  await f.call(path+'/complete',{token:a.token,method:'POST'});
  f.provider.status=503;await sweep(f);assert.ok((await queued(f)).length>0);
@@ -244,16 +288,16 @@ test('provider failures preserve identical event identity; retries, deletion and
 test('collection remains bounded during outages and overflow is explicit, not a product failure',async()=>{
  const f=await setup();try{
  await f.db.exec("UPDATE analytics_control SET enabled=1; WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<10000) INSERT INTO analytics_outbox(id,account_id,event,occurred_at) SELECT 'fill:'||x,'synthetic','connect_account_created',1 FROM n;");
- await enroll(f,digest('overflow'));const a=await f.identity(digest('overflow'));
+ await enroll(f,accountId(digest('overflow')));const a=await f.identity(digest('overflow'));
  assert.equal((await queued(f)).length,10000);assert.equal((await f.db.prepare('SELECT dropped FROM analytics_control').first()).dropped,1);
  assert.equal((await f.call('/v1/account',{token:a.token})).status,200);
  }finally{await f.close();}
 });
 test('excluded accounts cannot be linked or exported; disabled/invalid delivery never contacts provider',async()=>{
- const excluded=digest('excluded');
+ const subject=digest('excluded'),excluded=accountId(subject);
  for(const bindings of [{POSTHOG_EXCLUDED_ACCOUNT_IDS:excluded},{POSTHOG_ENABLED:'false'},{POSTHOG_HOST:'https://us.i.posthog.com'}]){
   const f=await setup(bindings);try{
-   await f.db.exec('UPDATE analytics_control SET enabled=1');await enroll(f,excluded);const a=await f.identity(excluded);
+   await f.db.exec('UPDATE analytics_control SET enabled=1');await enroll(f,excluded);const a=await f.identity(subject);
    assert.equal(await sessionId(f,a),null);await sweep(f);assert.equal(f.provider.bodies.length,0);
   }finally{await f.close();}
  }
