@@ -11,7 +11,7 @@ const REPO: &str = "tryapparent/apparent";
 const MAX_BODY: usize = 60_000;
 
 #[derive(Args)]
-#[command(after_help = "Examples:\n  apparent issue --title 'Improve zoom help' --body 'Explain the time syntax.'\n  apparent issue --title 'Improve zoom help' --body-file feedback.md --submit\n\nDefault: print a JSON preview without contacting GitHub. --submit publishes publicly\nusing gh's github.com login. Review the exact repository, title and body with the\nuser before submitting on their behalf. No files or diagnostics are attached.\nRequires the default-off issueReporting experiment; --experiment issueReporting\nenables it for this invocation only. See desktop/docs/issue-reporting.md.")]
+#[command(after_help = "Examples:\n  apparent issue --title 'Improve zoom help' --body 'Explain the time syntax.'\n  apparent issue --title 'Improve zoom help' --body-file feedback.md --submit\n\nDefault: print a JSON preview without contacting GitHub. --submit publishes publicly\nusing gh's github.com login. Review the exact repository, title and body with the\nuser before submitting on their behalf. No files or diagnostics are attached.\nAvailable by default. See desktop/docs/issue-reporting.md.")]
 pub(crate) struct IssueArgs {
     /// Short issue title.
     #[arg(long)]
@@ -25,17 +25,9 @@ pub(crate) struct IssueArgs {
     /// Publish to tryapparent/apparent. Without this flag, no network or login is needed.
     #[arg(long)]
     submit: bool,
-    /// Enable the candidate for this invocation without changing preferences.
-    #[arg(long, value_parser = ["issueReporting"])]
-    experiment: Option<String>,
 }
 
 pub(crate) fn command(args: IssueArgs) -> Result<()> {
-    if let Some(name) = &args.experiment {
-        crate::shared::handoff::enable_experiment(name);
-    }
-    ensure!(crate::shared::handoff::experiment("issueReporting"),
-        "issue reporting is experimental; rerun with --experiment issueReporting (nothing sent)");
     let body = match args.body {
         Some(body) => body,
         None => {

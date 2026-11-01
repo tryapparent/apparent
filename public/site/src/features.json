@@ -26,9 +26,9 @@
       "group": "cli",
       "name": "Agent GitHub issue reporting",
       "says": "apparent issue previews exact text as JSON; explicit --submit publishes to tryapparent/apparent using the caller's GitHub CLI login and verifies the issue before returning its URL. No automatic capture or log attachments.",
-      "status": "experiment:issueReporting",
+      "status": "main",
       "platforms": ["mac", "linux"],
-      "note": "Default off. --experiment issueReporting enables one invocation. Agents must get approval of the exact repository and text before submitting. No automatic implementation or merge.",
+      "note": "Available by default; preview stays offline unless --submit is supplied. Agents must get approval of the exact repository and text before submitting. No automatic implementation or merge.",
       "docs": ["desktop/docs/issue-reporting.md"]
     },
     {

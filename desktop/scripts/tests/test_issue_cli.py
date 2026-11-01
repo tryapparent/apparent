@@ -57,23 +57,19 @@ class IssueCli(unittest.TestCase):
         # Do not inherit runtime benchmark or test experiment overrides.
         self.env.pop("APPARENT_BENCH_START", None)
 
-    def run_cli(self, *args, enabled=True, **env):
-        flags = ["--experiment", "issueReporting"] if enabled else []
-        return subprocess.run([str(BINARY), "issue", *args, *flags], env=dict(self.env, **env),
+    def run_cli(self, *args, **env):
+        return subprocess.run([str(BINARY), "issue", *args], env=dict(self.env, **env),
                               cwd=self.root, capture_output=True, text=True, timeout=40)
 
     def calls(self):
         path = self.root / "calls"
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
-    def test_help_preview_and_disabled_never_call_gh(self):
-        result = self.run_cli("--help", enabled=False)
+    def test_help_and_default_preview_never_call_gh(self):
+        result = self.run_cli("--help")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--submit", result.stdout)
         self.assertEqual(result.stderr, "")
-        result = self.run_cli("--title", TITLE, "--body", BODY, enabled=False)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("experimental", result.stderr)
         result = self.run_cli("--title", TITLE, "--body", BODY)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), dict(repository="tryapparent/apparent",
@@ -91,11 +87,11 @@ class IssueCli(unittest.TestCase):
             ['issue', 'view', URL, '--repo', 'tryapparent/apparent', '--json', 'url,number,title,body']])
         self.assertTrue(all(c['host'] == 'github.com' and c['no_prompt'] == '1' for c in calls))
 
-    def test_body_file_and_config_enablement(self):
+    def test_body_file_ignores_retired_experiment_setting(self):
         path = self.root / "feedback draft.md"
         path.write_text(BODY)
-        self.config.write_text('{"experiments":{"issueReporting":true}}')
-        result = self.run_cli("--title", TITLE, "--body-file", str(path), enabled=False)
+        self.config.write_text('{"experiments":{"issueReporting":false}}')
+        result = self.run_cli("--title", TITLE, "--body-file", str(path))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)['body'], BODY)
         self.assertEqual(self.calls(), [])
