@@ -1,7 +1,8 @@
 # Connect browser product — migration staging
 
 Independent React/Vite browser + loading-only SSR package. It owns account and
-waitlist screens, Google sign-in entry, scope-specific device consent and readback.
+waitlist screens, Google sign-in entry, scope-specific device consent and readback,
+and the existing experimental shared-link list/revocation surface from #191.
 The existing combined website is unchanged and remains operational.
 Package scaffolding and browser fixtures selectively reuse staging #200 head
 `6123548ed5616683725a6723337fa147ab3418d9`; current main source, not staging,
@@ -28,7 +29,7 @@ Do not generate an npm lock. The ordinary generated Bun lock stays below 2,000 l
 
 `npm run dev` serves the browser template; first run `node scripts/assets.mjs` if
 assets have not been staged. Build failures are safe to retry; Vite clears the
-chosen output and prerender recreates all four routes. `dist-ssr` is transient.
+chosen output and prerender recreates all six routes. `dist-ssr` is transient.
 Never substitute `dist-test` for `dist`; it embeds a loopback API origin.
 
 For a standalone checkout, copy only this package to a directory outside the
@@ -41,12 +42,13 @@ convenience, not an implementation dependency.
 ## Thin integration contract
 
 - Build cwd: `connect/web`. Output: `connect/web/dist/`.
-- Merge only the four route directories (`connect/`, `connect/device/`, `hosted/`,
-  `hosted/device/`), hashed `assets/`, and the five allowlisted public assets into
+- Merge only the six route directories (`connect/`, `connect/device/`,
+  `connect/shares/`, `hosted/`, `hosted/device/`, `hosted/shares/`), hashed `assets/`, and the five allowlisted public assets into
   the composed website. There is deliberately **no root `index.html` or sitemap**.
   Do not overwrite the marketing root or admit Connect to public navigation.
-- Serve `/connect`, `/connect/`, `/connect/device`, `/connect/device/`, and the
-  matching `/hosted` aliases with their matching HTML, retaining `?code=...`.
+- Serve `/connect`, `/connect/`, `/connect/device`, `/connect/device/`,
+  `/connect/shares`, `/connect/shares/`, and matching `/hosted` aliases with
+  their matching HTML, retaining the full query including `?code=...`.
   Do not redirect away or strip approval codes. The origin router must return 404
   for unknown paths rather than a general SPA fallback.
 - All HTML is `noindex, nofollow`, loading-only, with no account or token props.
@@ -63,8 +65,10 @@ convenience, not an implementation dependency.
   `/apparent-wordmark.svg`. Original URLs and bytes are checked. No other site
   source, marketing CSS, navigation, manifest or external font request is needed.
 - `src/base.css` contains only the inherited box model, font, smoothing, link,
-  pointer and selection rules used by this surface. `hosted.css`, `Hosted.tsx`
-  and `api.ts` are byte-identical copies of current main `f1b46d2a`.
+  pointer and selection rules used by this surface. `base.css`, `hosted.css`,
+  `Hosted.tsx`, `SharedLinks.tsx` and `api.ts` are byte-identical copies of
+  current-main donors at `d59796c3` (after #191). Sharing retains #191's
+  experiment status; this synchronization introduces no new UI behavior.
 
 ## Removal gate and rollback
 
@@ -83,12 +87,18 @@ composition; no API, cookie, schema or native credential migration is required.
 ## Verification scope
 
 `test/artifact.test.mjs` rejects marketing/root/discovery output, verifies all
-four private loading pages and exact approved asset bytes, and checks owner-local
+six private loading pages and exact approved asset bytes, and checks owner-local
 runtime imports/storage/logging. `test/browser.mjs` exercises packaged output,
 slash aliases, query-code preservation, keyboard/modal/layout and auth behavior:
 separate upload consent/read scope, CSRF + cookies, duplicate-write guards,
 readback mismatch, expiry, malformed responses, waitlist, logout and no token DOM
-or storage leakage. Fixture screenshots and receipts are synthetic evidence only.
+or storage leakage. All 32 inherited account/device scenarios remain selected.
+Management checks cover pagination and full-list mutation readback, malformed or
+repeated cursors, duplicate IDs, safe unexpired HTTPS links, escaped titles,
+credentialed CSRF DELETE/duplicate guards, anonymous fixed return, stale loads,
+failure/reload states and every status. Real dev and preview hydration checks
+exercise all 24 route/slash variants with queries intact. Fixture screenshots
+and receipts are synthetic evidence only.
 Production artifact inspection and cross-origin checks are separate gates.
 
 Independent review belongs to the coordinator: this worker does not nest delegates.

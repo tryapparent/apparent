@@ -31,7 +31,8 @@ test('exact emitted route/resource closure excludes private and backend output',
     for (const match of refs) {
       const ref = match[1] || match[2] || match[3]
       if (ref === '/' || /^(?:https?:|data:|#)/.test(ref)) continue
-      const target = ref.startsWith('/') ? ref.slice(1) : posix.normalize(posix.join(posix.dirname(file), ref))
+      let target = ref.startsWith('/') ? ref.slice(1) : posix.normalize(posix.join(posix.dirname(file), ref))
+      if (routes.some(route => target === route || target === `${route}/`)) target = `${target.replace(/\/$/, '')}/index.html`
       assert(all.includes(target), `${file} references missing resource ${target}`)
       if (/\.(?:js|css)$/.test(target)) pending.push(target)
       else visited.add(target)

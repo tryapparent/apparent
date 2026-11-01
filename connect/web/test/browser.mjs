@@ -95,12 +95,13 @@ let viteServer
 try {
   for (const mode of ['dev', 'preview']) {
     const vite = await import('vite')
-    viteServer = mode === 'dev' ? await vite.createServer({server:{port:0}}) : await vite.preview({preview:{port:0, outDir:root}})
+    viteServer = mode === 'dev' ? await vite.createServer({server:{port:0}}) : await vite.preview({build:{outDir:root},preview:{port:0}})
     if (mode === 'dev') await viteServer.listen()
     uiOrigin = `http://127.0.0.1:${viteServer.httpServer.address().port}`
     for (const route of ['connect','connect/device','connect/shares','hosted','hosted/device','hosted/shares']) for (const slash of ['', '/']) {
       scenario = {}; writes = []; calls = []
       const page = await browser.newPage(), errors = [], resources = []
+      await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
       page.on('pageerror', e => errors.push(String(e)))
       page.on('request', r => resources.push({url:r.url(),type:r.resourceType()}))
       await page.context().addCookies([{name:'fixture',value:'1',url:uiOrigin}])
@@ -111,7 +112,7 @@ try {
       if (route.endsWith('shares')) await page.getByRole('heading',{name:'Manage shared links'}).waitFor()
       else assert.equal(await page.getByRole('tab',{name:route.endsWith('device')?'Your agent':'This computer',exact:true}).getAttribute('aria-selected'),'true')
       assert.equal(writes.length,0); assert.deepEqual(errors,[])
-      assert(calls.length > 0)
+      assert(calls.length > 0, `${mode} /${route}${slash}: ${await page.locator('main').innerText()}; API=${apiOrigin}; requests=${JSON.stringify(resources)}`)
       for (const r of resources) {
         assert.notEqual(new URL(r.url).hostname,'fonts.bunny.net')
         assert.doesNotMatch(new URL(r.url).pathname,/\/src\/(?:App|styles|pond-hero|cta|belief|Belief|pond|footer|github)/)
@@ -313,6 +314,47 @@ try {
     for(const call of calls) {assert.equal(call.host,new URL(apiOrigin).host);assert.match(call.cookie||'',/fixture=1/)}
     await page.screenshot({path:`${evidence}/${test.name}.png`,fullPage:!test.paginated}); await page.close(); results.push(test.name)
   }
+  // StrictMode starts two loads. Hold the first session until the second has
+  // published its list; a stale success or failure must not replace current UI.
+  viteServer=await (await import('vite')).createServer({server:{port:0}})
+  await viteServer.listen()
+  uiOrigin=`http://127.0.0.1:${viteServer.httpServer.address().port}`
+  for (const staleFailure of [false, true]) {
+    scenario={}; writes=[]; calls=[]; shareReads=[]; signedOut=false; revoked=false
+    const page=await browser.newPage()
+    await page.context().addCookies([{name:'fixture',value:'1',url:uiOrigin}])
+    let release, intercepted=0
+    const held = new Promise(resolve=>{release=resolve})
+    await page.route('**/v1/session',async route=>{
+      if (++intercepted !== 1) return route.continue()
+      await held
+      await route.fulfill({status:staleFailure?503:200,contentType:'application/json',body:staleFailure?'{}':'{"authenticated":false}'})
+    })
+    await page.goto(`${uiOrigin}/connect/shares`)
+    await page.getByRole('link',{name:'Open shared recording'}).waitFor()
+    const staleResponse=page.waitForResponse(r=>r.url().endsWith('/v1/session'))
+    release(); await staleResponse
+    await page.waitForTimeout(100)
+    assert(intercepted>=2,'exercise an actual superseded load')
+    assert.equal(await page.getByRole('link',{name:'Open shared recording'}).count(),1)
+    assert.equal(await page.getByRole('alert').count(),0)
+    assert.equal(await page.getByRole('link',{name:'Continue with Google'}).count(),0)
+    assert.equal(writes.length,0)
+    await page.close();results.push(staleFailure?'shares-stale-load-failure':'shares-stale-load-success')
+  }
+  await viteServer.close();viteServer=null
+  uiOrigin=`http://127.0.0.1:${server.address().port}`
+  scenario={unavailable:true}; writes=[]; signedOut=false; revoked=false
+  const recovery=await browser.newPage()
+  await recovery.context().addCookies([{name:'fixture',value:'1',url:uiOrigin}])
+  await recovery.goto(`${uiOrigin}/connect/shares`)
+  await recovery.getByRole('alert').waitFor()
+  scenario={}
+  await recovery.getByRole('button',{name:'Reload shared links'}).click()
+  await recovery.getByRole('link',{name:'Open shared recording'}).waitFor()
+  assert.equal(await recovery.getByRole('alert').count(),0);assert.equal(writes.length,0)
+  await recovery.close();results.push('shares-load-recovery')
+  assert.equal(results.length,62,'all auth and management scenarios must execute')
   assert.equal(routeResults.length,24,'all real dev/preview route variants must execute')
   const receipt = { synthetic: true, routes:routeResults, closures:connectGraphs.map(g=>[...g.keys()]), artifact: root, apiOrigin: apiOrigin || 'same-origin', passed: results, count: results.length, screenshots: evidence, assets: Object.fromEntries(await Promise.all(['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png', 'hosted/agent-reading-v4.png', 'HostGrotesk-Variable.ttf', 'apparent-wordmark.svg'].map(async name => [name, createHash('sha256').update(await readFile(`${root}/${name}`)).digest('hex')]))), limits: 'Controlled synthetic API only; not live OAuth, service, native, or deployment proof. 640×450 CSS pixels is a 200%-equivalent layout, not browser zoom.' }
   await import('node:fs/promises').then(fs => fs.writeFile(`${evidence}/receipt.json`, JSON.stringify(receipt, null, 2)))
