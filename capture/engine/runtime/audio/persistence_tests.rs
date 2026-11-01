@@ -27,19 +27,86 @@ fn wait_for(mut predicate: impl FnMut() -> bool) {
         std::thread::sleep(Duration::from_millis(5));
     }
 }
-fn spawn(dir: &Path, mode: &str) -> std::process::Child {
+struct SyntheticChild {
+    child: std::process::Child,
+    dir: PathBuf,
+    logs: Scratch,
+}
+impl SyntheticChild {
+    fn wait_for(&mut self, stage: &str, mut predicate: impl FnMut() -> bool) -> Result<()> {
+        let started = Instant::now();
+        while !predicate() {
+            let status = self.child.try_wait()?;
+            if status.is_some() || started.elapsed() >= Duration::from_secs(5) {
+                let log = |name: &str| {
+                    std::fs::read_to_string(self.logs.0.join(name))
+                        .unwrap_or_default()
+                        .chars()
+                        .take(4096)
+                        .collect::<String>()
+                };
+                anyhow::bail!(
+                    "synthetic {stage}: pid={}, elapsed={:?}, status={status:?}, produced={:?}\nstdout: {}\nstderr: {}",
+                    self.child.id(),
+                    started.elapsed(),
+                    std::fs::read_to_string(self.dir.join("produced")).ok(),
+                    log("child.stdout"),
+                    log("child.stderr"),
+                );
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        Ok(())
+    }
+}
+impl Drop for SyntheticChild {
+    fn drop(&mut self) {
+        // Reap before Scratch removes a directory still owned by the producer.
+        if !matches!(self.child.try_wait(), Ok(Some(_))) {
+            let _ = self.child.kill();
+        }
+        let _ = self.child.wait();
+    }
+}
+fn spawn_unready(dir: &Path, mode: &str) -> SyntheticChild {
+    // Capture admission requires an empty output directory. Diagnostics have
+    // their own guard, registered before spawning and dropped after reaping.
+    let log_dir = dir.with_extension("child-logs");
+    std::fs::create_dir(&log_dir).unwrap();
+    let logs = Scratch(log_dir);
     let test = format!(
         "{}::synthetic_child",
         module_path!().split_once("::").unwrap().1
     );
-    Command::new(std::env::current_exe().unwrap())
+    let child = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", &test, "--ignored", "--nocapture"])
         .env("APPARENT_SYNTHETIC_AUDIO_DIR", dir)
         .env("APPARENT_SYNTHETIC_AUDIO_MODE", mode)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::from(
+            std::fs::File::create(logs.0.join("child.stdout")).unwrap(),
+        ))
+        .stderr(Stdio::from(
+            std::fs::File::create(logs.0.join("child.stderr")).unwrap(),
+        ))
         .spawn()
-        .unwrap()
+        .unwrap();
+    SyntheticChild {
+        child,
+        dir: dir.to_owned(),
+        logs,
+    }
+}
+fn spawn(dir: &Path, mode: &str) -> SyntheticChild {
+    let mut child = spawn_unready(dir, mode);
+    // Process/dynamic-loader/writer initialization is not audio-production time.
+    child
+        .wait_for("readiness", || dir.join("ready").exists())
+        .unwrap();
+    child
+}
+fn publish_produced(dir: &Path, produced: usize) {
+    std::fs::write(dir.join("produced.next"), produced.to_string()).unwrap();
+    std::fs::rename(dir.join("produced.next"), dir.join("produced")).unwrap();
 }
 
 #[test]
@@ -47,6 +114,10 @@ fn spawn(dir: &Path, mode: &str) -> std::process::Child {
 fn synthetic_child() {
     let dir = PathBuf::from(std::env::var_os("APPARENT_SYNTHETIC_AUDIO_DIR").unwrap());
     let mode = std::env::var("APPARENT_SYNTHETIC_AUDIO_MODE").unwrap();
+    assert_ne!(
+        mode, "fail-before-ready",
+        "injected synthetic startup failure"
+    );
     let _signals = (mode == "graceful")
         .then(|| crate::capture::desktop::workflow::shutdown::Signals::install().unwrap());
     recover::begin_screen_capture(&dir).unwrap();
@@ -64,6 +135,8 @@ fn synthetic_child() {
             assert_eq!(libc::setrlimit(libc::RLIMIT_FSIZE, &limit), 0);
         }
     }
+    std::fs::write(dir.join("ready"), b"writer initialized\n").unwrap();
+    let started = Instant::now();
     let mut produced = 0;
     for at in (0..32_000).step_by(160) {
         if mode == "graceful" && crate::capture::desktop::workflow::shutdown::requested() {
@@ -71,62 +144,105 @@ fn synthetic_child() {
         }
         samples.lock().unwrap().extend((at..at + 160).map(tone));
         produced = at + 160;
-        std::fs::write(dir.join("produced"), (at + 160).to_string()).unwrap();
-        std::thread::sleep(Duration::from_millis(10));
+        // Do not truncate/write a control file for every simulated callback.
+        if produced == 4_000 || produced == 20_000 {
+            publish_produced(&dir, produced);
+        }
+        if mode.starts_with("crash") && produced == 20_000 {
+            // Freeze the published source count, not the real WAV worker. Only
+            // the parent's real kill may end this recording; never run Stop.
+            std::thread::sleep(Duration::from_secs(10));
+            panic!("parent did not kill the synthetic crash producer");
+        }
+        // Follow the source clock instead of accumulating relative-sleep drift.
+        let due = started + Duration::from_micros(produced as u64 * 1_000_000 / RATE as u64);
+        let delay = due.saturating_duration_since(Instant::now());
+        if !delay.is_zero() {
+            let late = if mode == "crash-late-wake" {
+                Duration::from_millis(40)
+            } else {
+                Duration::ZERO
+            };
+            std::thread::sleep(delay + late);
+        }
         if mode == "full" && error.lock().unwrap().is_some() {
             assert!(writer.finish().is_err());
             return;
         }
     }
     let (wav, _lease) = writer.finish().unwrap();
+    publish_produced(&dir, produced);
     assert_eq!(wav.len(), 44 + produced * 2);
 }
 
 #[test]
-fn abrupt_process_death_repairs_only_narration_and_measures_tail() {
-    let dir = Scratch::new("crash");
-    let mut child = spawn(&dir.0, "crash");
-    wait_for(|| {
-        std::fs::read_to_string(dir.0.join("produced"))
-            .ok()
-            .and_then(|n| n.parse::<usize>().ok())
-            .is_some_and(|n| n >= 20_000)
-    });
-    assert!(persistence_live(&dir.0));
-    assert!(!recover::owed(&dir.0));
-    assert!(recover::rebuild(&dir.0, &recover::Media::SYSTEM).is_err());
-    child.kill().unwrap();
-    assert!(!child.wait().unwrap().success());
-    let produced: usize = std::fs::read_to_string(dir.0.join("produced"))
-        .unwrap()
-        .parse()
-        .unwrap();
-    let raw = std::fs::read(dir.0.join("audio.wav")).unwrap();
-    let expected_samples = (raw.len() - 44) / 2;
-    assert!(recover::owed(&dir.0));
-    let summary = recover::rebuild(&dir.0, &recover::Media::SYSTEM).unwrap();
-    assert!(summary.contains("Recovered narration only"));
-    let wav = std::fs::read(dir.0.join("audio.wav")).unwrap();
-    let decoded = super::super::audio::decode_wav_16k(&wav).unwrap();
-    assert_eq!(decoded.len(), expected_samples);
-    assert!(decoded.len() > 16_000, "must retain more than a header");
-    for (at, sample) in decoded.iter().enumerate() {
-        assert!((sample - tone(at)).abs() < 0.0001);
-    }
-    let tail = produced - decoded.len();
-    eprintln!(
-        "synthetic process crash: produced={produced}, saved={}, lost={tail} samples / {} ms",
-        decoded.len(),
-        tail as f64 / 16.0
-    );
+fn synthetic_startup_failure_reports_child_error_and_reaps_it() {
+    let dir = Scratch::new("startup-diagnostic");
+    let mut child = spawn_unready(&dir.0, "fail-before-ready");
+    let failure = child
+        .wait_for("readiness", || dir.0.join("ready").exists())
+        .unwrap_err();
     assert!(
-        tail <= MAX_BACKLOG,
-        "measured tail exceeds intended backlog bound"
+        failure
+            .to_string()
+            .contains("injected synthetic startup failure")
     );
-    assert!(dir.0.join(recover::UNSAFE_VIDEO).exists());
-    assert!(!dir.0.join("apparent.json").exists());
-    assert!(!dir.0.join("frames").exists());
-    assert!(!recover::owed(&dir.0));
+    assert!(child.child.try_wait().unwrap().is_some());
+}
+
+#[test]
+fn abrupt_process_death_repairs_only_narration_and_measures_tail() {
+    for mode in ["crash", "crash-late-wake"] {
+        let dir = Scratch::new("crash");
+        let mut child = spawn(&dir.0, mode);
+        child
+            .wait_for("20,000 accepted samples", || {
+                std::fs::read_to_string(dir.0.join("produced"))
+                    .ok()
+                    .and_then(|n| n.parse::<usize>().ok())
+                    .is_some_and(|n| n >= 20_000)
+            })
+            .unwrap();
+        assert!(persistence_live(&dir.0));
+        assert!(!recover::owed(&dir.0));
+        assert!(recover::rebuild(&dir.0, &recover::Media::SYSTEM).is_err());
+        child.child.kill().unwrap();
+        assert!(!child.child.wait().unwrap().success());
+        let produced: usize = std::fs::read_to_string(dir.0.join("produced"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(
+            produced, 20_000,
+            "killed source must match its published counter"
+        );
+        let raw = std::fs::read(dir.0.join("audio.wav")).unwrap();
+        let expected_samples = (raw.len() - 44) / 2;
+        assert!(recover::owed(&dir.0));
+        let summary = recover::rebuild(&dir.0, &recover::Media::SYSTEM).unwrap();
+        assert!(summary.contains("Recovered narration only"));
+        let wav = std::fs::read(dir.0.join("audio.wav")).unwrap();
+        let decoded = super::super::audio::decode_wav_16k(&wav).unwrap();
+        assert_eq!(decoded.len(), expected_samples);
+        assert!(decoded.len() > 16_000, "must retain more than a header");
+        for (at, sample) in decoded.iter().enumerate() {
+            assert!((sample - tone(at)).abs() < 0.0001);
+        }
+        let tail = produced - decoded.len();
+        eprintln!(
+            "synthetic process crash: produced={produced}, saved={}, lost={tail} samples / {} ms",
+            decoded.len(),
+            tail as f64 / 16.0
+        );
+        assert!(
+            tail <= MAX_BACKLOG,
+            "measured tail exceeds intended backlog bound"
+        );
+        assert!(dir.0.join(recover::UNSAFE_VIDEO).exists());
+        assert!(!dir.0.join("apparent.json").exists());
+        assert!(!dir.0.join("frames").exists());
+        assert!(!recover::owed(&dir.0));
+    }
 }
 fn persistence_live(dir: &Path) -> bool {
     live(dir)
@@ -136,17 +252,19 @@ fn persistence_live(dir: &Path) -> bool {
 fn graceful_sigterm_drains_every_accepted_sample() {
     let dir = Scratch::new("term");
     let mut child = spawn(&dir.0, "graceful");
-    wait_for(|| {
-        std::fs::read_to_string(dir.0.join("produced"))
-            .ok()
-            .and_then(|n| n.parse::<usize>().ok())
-            .is_some_and(|n| n >= 4_000)
-    });
+    child
+        .wait_for("4,000 accepted samples", || {
+            std::fs::read_to_string(dir.0.join("produced"))
+                .ok()
+                .and_then(|n| n.parse::<usize>().ok())
+                .is_some_and(|n| n >= 4_000)
+        })
+        .unwrap();
     assert_eq!(
-        unsafe { libc::kill(child.id() as libc::pid_t, libc::SIGTERM) },
+        unsafe { libc::kill(child.child.id() as libc::pid_t, libc::SIGTERM) },
         0
     );
-    assert!(child.wait().unwrap().success());
+    assert!(child.child.wait().unwrap().success());
     let produced: usize = std::fs::read_to_string(dir.0.join("produced"))
         .unwrap()
         .parse()
@@ -213,7 +331,7 @@ fn kernel_enospc_is_a_save_failure_not_successful_silence() {
 fn normal_stop_keeps_every_sample_and_holds_lease_until_consumed() {
     let dir = Scratch::new("normal");
     let mut child = spawn(&dir.0, "normal");
-    assert!(child.wait().unwrap().success());
+    assert!(child.child.wait().unwrap().success());
     let before = std::fs::read(dir.0.join("audio.wav")).unwrap();
     let lease = Lease::acquire(&dir.0).unwrap();
     assert_eq!(repair(&dir.0, &lease).unwrap(), 32_000);
@@ -231,7 +349,7 @@ fn normal_stop_keeps_every_sample_and_holds_lease_until_consumed() {
 fn real_file_size_failure_retains_prefix_and_reports_failure() {
     let dir = Scratch::new("full");
     let mut child = spawn(&dir.0, "full");
-    assert!(child.wait().unwrap().success());
+    assert!(child.child.wait().unwrap().success());
     let lease = Lease::acquire(&dir.0).unwrap();
     let saved = repair(&dir.0, &lease).unwrap();
     assert_eq!(saved, 1_600);
