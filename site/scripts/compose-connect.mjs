@@ -121,6 +121,19 @@ export function resourceGraph(files, starts, connect = false) {
   return seen
 }
 export function validateConnect(files, canonical, { syntheticOrigin } = {}) {
+  const expectedOrigin = syntheticOrigin || 'https://hosted.tryapparent.com'
+  // Origins are complete, canonical URL values. URL.origin alone would discard
+  // credentials, paths, queries and fragments, and normalize malformed spellings.
+  function exactOrigin(value) {
+    try {
+      const url = new URL(value)
+      return value === url.origin && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash ? url : null
+    } catch { return null }
+  }
+  if (syntheticOrigin) {
+    const url = exactOrigin(syntheticOrigin)
+    if (!url || url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port) throw Error('Expected a labelled synthetic loopback origin')
+  }
   const docs = routes.map(route => `${route}/index.html`)
   for (const [path, bytes] of files) {
     if (!(docs.includes(path) || approved.includes(path) || /^assets\/[^/]+-[\w-]+\.(?:js|css)$/.test(path))) throw Error(`Unexpected Connect output: ${path}`)
@@ -128,12 +141,19 @@ export function validateConnect(files, canonical, { syntheticOrigin } = {}) {
       const text = bytes.toString('utf8')
       if (sensitive.test(text)) throw Error(`Private Connect content: ${path}`)
       // Match actual URL values, not the API validator's bare loopback host names.
-      for (const m of text.matchAll(/https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?/g)) if (!syntheticOrigin || m[0] !== syntheticOrigin) throw Error(`Synthetic Connect configuration: ${path}`)
+      for (const m of text.matchAll(/https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])[^\s"'`<>]*/g)) if (!syntheticOrigin || !exactOrigin(m[0]) || m[0] !== syntheticOrigin) throw Error(`Synthetic Connect configuration: ${path}`)
     }
   }
-  if (syntheticOrigin && !/^http:\/\/127\.0\.0\.1:\d+$/.test(syntheticOrigin)) throw Error('Expected a labelled synthetic loopback origin')
   const js = [...files].filter(([p]) => p.endsWith('.js')).map(([, b]) => b.toString()).join('\n')
-  if (!js.includes(syntheticOrigin || 'https://hosted.tryapparent.com')) throw Error('Missing expected Connect API origin')
+  // Vite emits the API configuration as a quoted URL (currently a backtick
+  // default argument). Require both value boundaries, not a hostname substring.
+  // This bounded artifact grammar accepts only unescaped literal URLs; it does
+  // not tokenize unrelated JavaScript, evaluate expressions or decode escapes.
+  const literals = js.matchAll(/(?<!\\)(["'`])(https?:\/\/[^"'`\\\r\n]*)\1/g)
+  if (![...literals].some(([, , value]) => {
+    const url = exactOrigin(value)
+    return url && url.origin === expectedOrigin
+  })) throw Error('Missing expected Connect API origin')
   for (const path of docs) {
     const html = files.get(path)?.toString() || ''
     if (!/Checking your account/.test(html) || !/name="robots" content="noindex, nofollow"/.test(html) || !/http-equiv="Cache-Control" content="no-store"/.test(html) || !/name="referrer" content="no-referrer"/.test(html) || /csrfToken|accessToken|application\/ld\+json|rel="canonical"/.test(html)) throw Error(`Invalid Connect loading document: ${path}`)

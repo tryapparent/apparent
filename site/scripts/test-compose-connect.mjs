@@ -23,6 +23,78 @@ function fixture() {
   return { root, pub, con, canonical, out, put, run: options => composeArtifacts(pub, con, canonical, out, options) }
 }
 const snapshot = root => [...inventory(root)].sort(([a], [b]) => a.localeCompare(b))
+// Replace the complete emitted configuration value, not a helper-only input.
+const productionOrigin = 'https://hosted.tryapparent.com'
+for (const origin of [
+  'https://hosted.tryapparent.com.attacker.example',
+  'https://prefixhosted.tryapparent.com',
+  'https://hosted.tryapparent.com@attacker.example',
+  'https://user@hosted.tryapparent.com',
+  'https://attacker.example/path/https://hosted.tryapparent.com',
+  'https://attacker.example/?next=https://hosted.tryapparent.com',
+  'https://attacker.example/#https://hosted.tryapparent.com',
+  `${productionOrigin}/path`, `${productionOrigin}?query`, `${productionOrigin}#fragment`,
+  `${productionOrigin}:444`, `${productionOrigin}:443`, `${productionOrigin}:invalid`,
+  'http://hosted.tryapparent.com', '//hosted.tryapparent.com',
+  `${productionOrigin}/`, `prefix${productionOrigin}`, `${productionOrigin}suffix`,
+  `${productionOrigin} `, `${productionOrigin}\\x2eattacker.example`,
+]) test(`refuse non-exact emitted API origin ${JSON.stringify(origin)} without destination mutation`, () => {
+  const f = fixture()
+  try {
+    const before = snapshot(f.out)
+    const js = readFileSync(join(f.con, 'assets/connect-a.js'), 'utf8')
+    f.put(f.con, 'assets/connect-a.js', js.replace(productionOrigin, origin))
+    assert.throws(() => f.run(), /expected Connect API origin/)
+    assert.deepEqual(snapshot(f.out), before)
+  } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
+for (const quote of ['"', "'", '`']) test(`accept complete production origin in emitted ${quote} literal`, () => {
+  const f = fixture()
+  try {
+    const js = readFileSync(join(f.con, 'assets/connect-a.js'), 'utf8')
+    f.put(f.con, 'assets/connect-a.js', js.replace(`"${productionOrigin}"`, `${quote}${productionOrigin}${quote}`))
+    f.run()
+    validatePreservedFiles(inventory(f.out), inventory(f.con))
+  } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
+for (const value of [
+  `"${productionOrigin}`, `'${productionOrigin}"`, `\`${productionOrigin}\${suffix}\``,
+  `"prefix\\"${productionOrigin}\\"suffix"`,
+]) test(`refuse incomplete or escaped origin literal ${JSON.stringify(value)}`, () => {
+  const f = fixture()
+  try {
+    const before = snapshot(f.out)
+    const js = readFileSync(join(f.con, 'assets/connect-a.js'), 'utf8')
+    f.put(f.con, 'assets/connect-a.js', js.replace(`"${productionOrigin}"`, value))
+    assert.throws(() => f.run(), /expected Connect API origin/)
+    assert.deepEqual(snapshot(f.out), before)
+  } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
+for (const syntheticOrigin of [
+  'http://127.0.0.1:65536', 'http://127.0.0.1:18809/path', 'http://127.0.0.1:18809?query',
+  'http://127.0.0.1:18809#fragment', 'http://127.0.0.1:18809@attacker.example',
+  'http://127.0.0.1:18809.attacker.example', 'https://127.0.0.1:18809',
+]) test(`refuse invalid synthetic label ${syntheticOrigin} before destination mutation`, () => {
+  const f = fixture()
+  try {
+    const before = snapshot(f.out)
+    assert.throws(() => f.run({ syntheticOrigin }), /labelled synthetic loopback origin/)
+    assert.deepEqual(snapshot(f.out), before)
+  } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
+for (const origin of [
+  'http://127.0.0.1:18809.attacker.example', 'http://127.0.0.1:18809@attacker.example',
+  'http://127.0.0.1:18809/path', 'http://127.0.0.1:18809?query', 'http://127.0.0.1:18809#fragment',
+  'http://127.0.0.1:188090', 'http://localhost:18809', 'http://[::1]:18809',
+]) test(`refuse labelled synthetic URL boundary bypass ${origin}`, () => {
+  const f = fixture()
+  try {
+    const before = snapshot(f.out)
+    f.put(f.con, 'assets/child-a.js', `const origin=${JSON.stringify(origin)}`)
+    assert.throws(() => f.run({ syntheticOrigin: 'http://127.0.0.1:18809' }), /Synthetic/)
+    assert.deepEqual(snapshot(f.out), before)
+  } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
 test('final preservation verification rejects missing unreferenced approved art and differing input bytes', () => {
   const f = fixture()
   try {
@@ -97,7 +169,8 @@ test('labelled synthetic composition writes only its separate destination and st
   const f = fixture()
   try {
     const production = snapshot(f.pub)
-    f.put(f.con, 'assets/child-a.js', 'const origin="http://127.0.0.1:18809"')
+    const js = readFileSync(join(f.con, 'assets/connect-a.js'), 'utf8')
+    f.put(f.con, 'assets/connect-a.js', js.replace(productionOrigin, 'http://127.0.0.1:18809'))
     f.run({ syntheticOrigin: 'http://127.0.0.1:18809' })
     assert.deepEqual(snapshot(f.pub), production)
     assert.throws(() => f.run({ syntheticOrigin: 'http://127.0.0.1:18810' }), /Synthetic/)
