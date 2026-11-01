@@ -22,15 +22,16 @@ use super::super::{
     ShortcutConfig, ShortcutKind, capture_size, clean_label, hotkey_combos, pick_display,
     poll_clicks, apparent_log, track_shift_ink,
 };
+use crate::capture::engine::runtime::sample_real_candidate;
 use crate::shared::model::{CaptureMode, InteractionEvent, RgbaFrame, TargetInfo};
 
 /// Recordings may hold up to twice a frame's size in points (Retina pixels).
 pub const MAX_CAPTURE_SCALE: f64 = 2.0;
 
 /// Where a session's clicks and keys come from, for the log.
-pub(super) const MOUSE_SOURCE: &str = "the mouse monitor";
-pub(super) const KEY_SOURCE: &str = "the key tap";
-pub(super) const NO_KEY_SOURCE: &str = "nowhere (Accessibility off; the record shortcut still works)";
+pub(crate) const MOUSE_SOURCE: &str = "the mouse monitor";
+pub(crate) const KEY_SOURCE: &str = "the key tap";
+pub(crate) const NO_KEY_SOURCE: &str = "nowhere (Accessibility off; the record shortcut still works)";
 
 /// `~/Library/Logs/Apparent`.
 pub fn log_dir() -> Option<PathBuf> {
@@ -42,13 +43,13 @@ pub fn main_display_id() -> u32 {
 }
 
 /// CGWindowList's windows, front to back, in an autorelease pool.
-pub(super) fn raw_windows_now() -> Vec<crate::shared::windows::RawWindow> {
+pub(crate) fn raw_windows_now() -> Vec<crate::shared::windows::RawWindow> {
     objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows())
 }
 
 /// Whether `pid` runs this Apparent's `apparent-helper` (the iPhone mirror, Settings, onboarding, the
 /// permission panel), going by its executable, so a helper started by another helper counts too.
-pub(super) fn is_helper_process(pid: i32) -> bool {
+pub(crate) fn is_helper_process(pid: i32) -> bool {
     static HELPER: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
     HELPER
         .get_or_init(|| {
@@ -989,7 +990,7 @@ pub fn frontmost_app_info() -> Option<(i32, String, Option<String>)> {
 
 /// The ScreenCaptureKit sampler: the recording stream writes `recording.mp4` while candidate
 /// screenshots are taken every `buffer.interval()` (or at once when urgent).
-pub(super) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
+pub(crate) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
     let Sampler {
         target: sampler_target,
         video_output_path,
@@ -1077,7 +1078,7 @@ pub(super) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
             last_sample = Instant::now();
             let t_ms = started_at.elapsed().as_millis() as u64;
             if let Some((filter, config)) = filter_and_config.as_ref() {
-                super::sample_real_candidate(
+                sample_real_candidate(
                     &thread_frames,
                     &thread_real_frame_seen,
                     &startup_failed,

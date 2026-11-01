@@ -19,12 +19,12 @@ use crate::capture::engine::autocrop::autocrop as autocrop;
 use crate::capture::engine::{ export};
 use crate::capture::engine::autocrop::autocrop_lab;
 use crate::capture::engine::bundle::{recover, retention};
-use crate::capture::engine::runtime::audio::transcription::{speech_model, transcribe, pause_transcribe};
+use crate::capture::engine::runtime::audio::transcription::{speech_model, transcribe};
+#[cfg(target_os = "linux")]
+use crate::capture::engine::runtime::audio::transcription::pause_transcribe;
 use crate::capture::agent::zoom;
 #[cfg(not(target_os = "linux"))]
-use crate::shared::live_transcribe;
-#[cfg(target_os = "linux")]
-
+use crate::capture::engine::runtime::audio::transcription::live_transcribe;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use crate::connect::hosted;
 
