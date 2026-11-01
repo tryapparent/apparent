@@ -65,6 +65,24 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           # Engine finalizer proofs reject group-writable cache ancestors.
-          export TMPDIR="$(mktemp -d "$HOME/.apparent-verification.XXXXXX")"
-          trap 'rm -rf "$TMPDIR"' EXIT
+          verification_tmp="$(mktemp -d "$HOME/.apparent-verification.XXXXXX")"
+          readonly verification_tmp
+          export TMPDIR="$verification_tmp"
+          cleanup() {
+            local status=$?
+            if ! rm -rf -- "$verification_tmp"; then
+              echo '::error::Could not remove the owned verification temporary tree' >&2
+              if [ "$status" -eq 0 ]; then status=1; fi
+            fi
+            exit "$status"
+          }
+          trap cleanup EXIT
+          # Reproduce the CI-sensitive fixtures before the full affected suites.
+          if [ "${{ needs.select.outputs.root }}" = true ]; then
+            cargo test -j 3 --locked settings::tests::the_command_line_row_ -- --test-threads=2
+            cargo test -j 3 --locked agent_capture::tests::competing_launches_cannot_remove_the_winning_control_socket -- --exact
+            if [ "$RUNNER_OS" = macOS ]; then
+              cargo test -j 3 --locked hosted::tests::hosted_security_darwin_acl_grants_fail_closed -- --exact
+            fi
+          fi
           python3 scripts/verification.py --base "${BASE:-unknown}" --run --online
