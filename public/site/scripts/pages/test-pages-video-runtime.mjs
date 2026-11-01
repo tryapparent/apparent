@@ -18,7 +18,7 @@ test("workerd transmits a fixed Content-Length for full and seeking movie respon
         export default { fetch(request, env, ctx) {
           return onRequest({ request, env, waitUntil: ctx.waitUntil.bind(ctx) });
         } };`,
-      resolveDir: fileURLToPath(new URL("../..", import.meta.url)),
+      resolveDir: fileURLToPath(new URL(".", import.meta.url)),
     },
     bundle: true, write: false, format: "esm", platform: "browser",
   })

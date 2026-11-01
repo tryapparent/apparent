@@ -6,13 +6,17 @@ import { fileURLToPath } from 'node:url'
 
 export const routes = ['connect', 'connect/device', 'connect/shares', 'hosted', 'hosted/device', 'hosted/shares']
 export const approved = ['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png', 'hosted/agent-reading-v4.png', 'HostGrotesk-Variable.ttf', 'apparent-wordmark.svg']
-// Source ownership moved; the five approved public URLs and bytes did not.
-const approvedSources = {
-  'hosted/source-pond-v4.png': 'assets/hosted/source-pond-v4.png',
-  'hosted/agent-pond-v4.png': 'assets/hosted/agent-pond-v4.png',
-  'hosted/agent-reading-v4.png': 'assets/hosted/agent-reading-v4.png',
-  'HostGrotesk-Variable.ttf': 'assets/fonts/HostGrotesk-Variable.ttf',
-  'apparent-wordmark.svg': 'assets/brand/apparent-wordmark.svg',
+// Canonical public source groups static assets under assets/, while each owner
+// serves a deliberate subset at stable root-relative URLs.
+const canonicalAssetPaths = new Map([
+  ['hosted/source-pond-v4.png', 'assets/hosted/source-pond-v4.png'],
+  ['hosted/agent-pond-v4.png', 'assets/hosted/agent-pond-v4.png'],
+  ['hosted/agent-reading-v4.png', 'assets/hosted/agent-reading-v4.png'],
+  ['HostGrotesk-Variable.ttf', 'assets/fonts/HostGrotesk-Variable.ttf'],
+  ['apparent-wordmark.svg', 'assets/brand/apparent-wordmark.svg'],
+])
+function canonicalAsset(canonical, servedPath) {
+  return canonical.get(canonicalAssetPaths.get(servedPath) || `assets/${servedPath}`)
 }
 const privatePath = /(?:^|\/)(?:\.env[^/]*|.*\.map|pitch[^/]*|captures?|contact-sheet\.png|recording\.(?:mp4|mov)|deployment\.json|node_modules|functions|backend)(?:\/|$)/i
 const sensitive = /sourceMappingURL|verified@example|synthetic-csrf|must-not-render|BEGIN (?:RSA |OPENSSH )?PRIVATE KEY|client_secret/
@@ -179,8 +183,8 @@ export function validateConnect(files, canonical, { syntheticOrigin } = {}) {
     if (!/Checking your account/.test(html) || !/name="robots" content="noindex, nofollow"/.test(html) || !/http-equiv="Cache-Control" content="no-store"/.test(html) || !/name="referrer" content="no-referrer"/.test(html) || /csrfToken|accessToken|application\/ld\+json|rel="canonical"/.test(html)) throw Error(`Invalid Connect loading document: ${path}`)
   }
   for (const path of approved) {
-    const expected = canonical.get(approvedSources[path]) ?? canonical.get(path)
-    if (!expected || !files.get(path)?.equals(expected)) throw Error(`Changed approved asset: ${path}`)
+    const bytes = canonicalAsset(canonical, path)
+    if (!files.has(path) || !bytes || !files.get(path).equals(bytes)) throw Error(`Changed approved asset: ${path}`)
   }
   const graph = resourceGraph(files, docs, true)
   for (const path of approved) graph.add(path)
@@ -199,7 +203,7 @@ export function validatePublic(files, canonical) {
   for (const [path, bytes] of files) {
     if (!/^(?:index\.html|robots\.txt|sitemap\.xml|apparent-wordmark\.svg|icon\.svg|HostGrotesk-Variable\.ttf|social-preview-v1\.png|Apparent-ghost-demo-v4-lilac(?:-poster\.jpg|\.mp4))$/.test(path)
       && !/^assets\/[^/]+-[\w-]+\.(?:js|css)$/.test(path)
-      && !(/^(?:pond|team|feature-demos)\/.+/.test(path) && canonical.get(`assets/${path}`)?.equals(bytes))) throw Error(`Unexpected Public output: ${path}`)
+      && !(/^(?:pond|team|feature-demos)\/.+/.test(path) && canonicalAsset(canonical, path)?.equals(bytes))) throw Error(`Unexpected Public output: ${path}`)
     if (/\.(?:html|js|css|svg)$/.test(path) && sensitive.test(bytes.toString())) throw Error(`Private Public content: ${path}`)
   }
   resourceGraph(files, ['index.html'])
