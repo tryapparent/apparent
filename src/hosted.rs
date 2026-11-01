@@ -1258,10 +1258,6 @@ impl Client {
                     job.error = None;
                 }
                 Err(error) => {
-                    // Loopback regressions need the first cause, not only the
-                    // deliberately coarse error persisted in the user queue.
-                    #[cfg(test)]
-                    eprintln!("hosted test upload failed: {error:#}");
                     let text = error.to_string();
                     job.error = Some(
                         if text.contains("file_too_large") {
