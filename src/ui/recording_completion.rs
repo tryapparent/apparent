@@ -37,6 +37,8 @@ pub(super) fn finalize(
                     )
                 })
             });
+            // Only the outer publication result may enqueue native movie shrinking.
+            let finalized = after_publication(finalized, crate::retention::after_phone_capture);
             if let Err(error) = &finalized {
                 apparent_log(format!("iPhone capture failed: {error:#}"));
             }
@@ -79,6 +81,16 @@ pub(super) fn finalize(
         )
     });
     (finalized, duration_ms)
+}
+
+fn after_publication(
+    result: CaptureResult,
+    on_success: impl FnOnce(&std::path::Path),
+) -> CaptureResult {
+    if let Ok((dir, _, _)) = &result {
+        on_success(dir);
+    }
+    result
 }
 
 /// Both recording sources must finish optional drawing mutations and validate

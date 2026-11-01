@@ -52,6 +52,17 @@ fn board() -> whiteboard::Board {
 }
 
 fn dispatch(result: CaptureResult, success: bool) {
+    let mut notifications = Vec::new();
+    let result = after_publication(result, |path| {
+        assert!(!path.join(publication::IN_PROGRESS).exists());
+        assert!(!path.join(crate::recover::UNFINISHED).exists());
+        notifications.push(path.to_path_buf());
+    });
+    assert_eq!(
+        notifications.len(),
+        usize::from(success),
+        "retention notification must consume only the successful outer result"
+    );
     use crate::ui::{ApparentCoordinator, IslandPhase, SharedCaptureTelemetry};
     let (sender, _receiver) = flume::unbounded();
     let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
