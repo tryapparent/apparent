@@ -39,7 +39,7 @@ test('final preservation verification rejects missing unreferenced approved art 
 test('follow inline CSS and srcset resources while allowing fragment/data URLs', () => {
   const f = fixture()
   try {
-    f.put(f.pub, 'index.html', '<style>i{filter:url(#local)}</style><div style="background:url(data:image/png;base64,abc)"></div><img srcset="data:image/png;base64,abc 1x, /apparent-wordmark.svg 2x">')
+    f.put(f.pub, 'index.html', String.raw`<style>i{filter:URL(#local)}/* URL(/missing-comment) */b:before{content:"URL(/missing-string)"}[aria-label=Shared\ links]{color:red}</style><div style="background:url(data:image/png;base64,abc)"></div><img srcset="data:image/png;base64,abc 1x, /apparent-wordmark.svg 2x">`)
     f.put(f.pub, 'apparent-wordmark.svg', readFileSync(join(f.canonical, 'apparent-wordmark.svg')))
     f.run()
     assert(resourceGraph(inventory(f.out), ['index.html']).has('apparent-wordmark.svg'))
@@ -71,6 +71,13 @@ for (const [name, mutate, error] of [
   ['missing import', f => f.put(f.con, 'assets/child-a.js', 'import "./missing-a.js"'), /Missing resource/],
   ['missing preload table', f => f.put(f.con, 'assets/child-a.js', 'const deps=["assets/missing-a.js"]'), /Missing resource/],
   ['missing CSS URL', f => f.put(f.con, 'assets/child-a.css', 'a{background:url(/missing.png)}'), /Missing resource/],
+  ['uppercase CSS URL', f => f.put(f.con, 'assets/child-a.css', 'a{background:URL(/missing.png)}'), /Missing resource/],
+  ['uppercase external CSS URL', f => f.put(f.con, 'assets/child-a.css', 'a{background:URL(https://other.example/asset.png)}'), /External Connect/],
+  ['uppercase CSS import', f => f.put(f.con, 'assets/child-a.css', '@IMPORT "/missing.css";'), /Missing resource/],
+  ['uppercase HTML rel token', f => f.put(f.pub, 'index.html', '<link rel="STYLESHEET" href="/missing.css">'), /Missing resource/],
+  ['escaped CSS identifier', f => f.put(f.con, 'assets/child-a.css', String.raw`a{background:u\72l(/missing.png)}`), /Unsupported CSS/],
+  ['escaped CSS URL', f => f.put(f.con, 'assets/child-a.css', String.raw`a{background:url("\2f missing.png")}`), /Unsupported CSS/],
+  ['unsupported CSS URL syntax', f => f.put(f.con, 'assets/child-a.css', 'a{background:url(/* comment */ /missing.png)}'), /Unsupported CSS/],
   ['missing inline style URL', f => f.put(f.pub, 'index.html', '<style>@font-face{src:url(/missing.ttf)}</style>'), /Missing resource/],
   ['missing inline style import', f => f.put(f.pub, 'index.html', '<style>@import "/assets/missing-a.css";</style>'), /Missing resource/],
   ['missing style attribute URL', f => f.put(f.pub, 'index.html', '<div style="background:url(/missing.png)"></div>'), /Missing resource/],

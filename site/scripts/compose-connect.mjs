@@ -52,7 +52,32 @@ export function resourceGraph(files, starts, connect = false) {
     pending.push(target)
   }
   function css(file, text) {
-    for (const m of text.matchAll(/url\(\s*["']?([^\s)'"\\]+)["']?\s*\)|@import\s*["']([^"']+)["']/g)) reference(file, m[1] || m[2])
+    // Bounded emitted-CSS syntax: skip comments/ordinary strings, recognize
+    // case-insensitive URL/import identifiers, and refuse escapes or URL forms
+    // outside this grammar instead of silently omitting their resource edges.
+    const tokens = /\/\*[\s\S]*?\*\/|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\\[\s\S]|(?<![-\w])url\s*\(|@import\b/gi
+    let token
+    while ((token = tokens.exec(text))) {
+      if (/^["']|^\/\*/.test(token[0])) continue
+      const tail = text.slice(token.index)
+      if (token[0].startsWith('\\')) {
+        // Vite emits escaped spaces in unquoted attribute selectors. They cannot
+        // spell a URL/import identifier; all other identifier escapes fail closed.
+        if (token[0] !== '\\ ') throw Error(`Unsupported CSS escape: ${file}`)
+        continue
+      }
+      if (/^url/i.test(token[0])) {
+        const match = /^url\(\s*(?:"([^"\\]*)"|'([^'\\]*)'|([^()"'\s\\]*))\s*\)/i.exec(tail)
+        if (!match) throw Error(`Unsupported CSS URL syntax: ${file}`)
+        reference(file, match[1] ?? match[2] ?? match[3])
+        tokens.lastIndex = token.index + match[0].length
+      } else {
+        const match = /^@import\s*(?:"([^"\\]*)"|'([^'\\]*)'|(?=url\())/i.exec(tail)
+        if (!match) throw Error(`Unsupported CSS import syntax: ${file}`)
+        if (match[1] !== undefined || match[2] !== undefined) reference(file, match[1] ?? match[2])
+        tokens.lastIndex = token.index + match[0].length
+      }
+    }
   }
   function srcset(file, text) {
     // URLs consume non-space bytes (including commas in data URLs). A trailing
@@ -83,7 +108,7 @@ export function resourceGraph(files, starts, connect = false) {
         if (attrs.srcset) srcset(file, attrs.srcset)
         if (attrs.imagesrcset) srcset(file, attrs.imagesrcset)
         if (node.tagName === 'style') css(file, (node.childNodes || []).map(child => child.value || '').join(''))
-        if (node.tagName === 'link' && /(?:stylesheet|modulepreload|preload|icon)/.test(attrs.rel || '') && attrs.href) reference(file, attrs.href)
+        if (node.tagName === 'link' && (attrs.rel || '').toLowerCase().split(/\s+/).some(rel => ['stylesheet', 'modulepreload', 'preload', 'icon'].includes(rel)) && attrs.href) reference(file, attrs.href)
         for (const child of node.childNodes || []) visit(child)
       }
       visit(parse(text))
