@@ -22,6 +22,17 @@
   ],
   "features": [
     {
+      "id": "product-analytics",
+      "group": "settings",
+      "name": "Optional website and Connect analytics",
+      "says": "With permission, website analytics count visits and download intent and link them to Connect. Separately enabled server events measure new accounts, device approvals, completed uploads and storage reservations without recording content.",
+      "status": "branch:t3/issue-175",
+      "added": "2026-11-01",
+      "platforms": ["mac", "linux"],
+      "note": "Default off. Browser collection requires build-time enablement and affirmative consent; GPC/DNT suppress it. Server collection requires a separate disabled-by-default database control and deployment config. No collection on public recording-link pages. No verified downloads, installations, exact physical object sizes or pending-cleanup measurement. Not deployed; provider ingestion, reporting views, privacy/retention/access review and native integration remain unverified.",
+      "docs": ["connect/docs/product-analytics.md"]
+    },
+    {
       "id": "site-feature-grid",
       "group": "install",
       "name": "Animated homepage feature explanations",

@@ -141,6 +141,27 @@ test('compose independently emitted routes, preloads, import tables, CSS and ide
     assert.deepEqual([...resourceGraph(inventory(f.out), ['connect/index.html'], true)].sort(), ['connect/index.html', 'assets/connect-a.js', 'assets/child-a.js', 'assets/preload-a.js', 'assets/connect-a.css', 'assets/child-a.css', 'HostGrotesk-Variable.ttf', 'hosted/source-pond-v4.png'].sort())
   } finally { rmSync(f.root, { recursive: true, force: true }) }
 })
+test('compose approved Connect assets from grouped canonical sources without weakening byte checks', () => {
+  const f = fixture()
+  try {
+    for (const [served, source] of [
+      ['hosted/source-pond-v4.png', 'assets/hosted/source-pond-v4.png'],
+      ['hosted/agent-pond-v4.png', 'assets/hosted/agent-pond-v4.png'],
+      ['hosted/agent-reading-v4.png', 'assets/hosted/agent-reading-v4.png'],
+      ['HostGrotesk-Variable.ttf', 'assets/fonts/HostGrotesk-Variable.ttf'],
+      ['apparent-wordmark.svg', 'assets/brand/apparent-wordmark.svg'],
+    ]) {
+      f.put(f.canonical, source, readFileSync(join(f.canonical, served)))
+      rmSync(join(f.canonical, served))
+    }
+    f.run()
+    validatePreservedFiles(inventory(f.out), inventory(f.con))
+    const before = snapshot(f.out)
+    f.put(f.con, 'apparent-wordmark.svg', 'changed')
+    assert.throws(() => f.run(), /Changed approved asset: apparent-wordmark.svg/)
+    assert.deepEqual(snapshot(f.out), before)
+  } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
 test('accepts only byte-identical public assets relocated under canonical assets/', () => {
   const f = fixture()
   try {

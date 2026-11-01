@@ -14,6 +14,8 @@ Production topology: `SITE_ORIGIN=https://app.tryapparent.com`, `API_ORIGIN=http
 
 Anonymous shape: `{"authenticated":false,"csrfToken":null,"account":null,"slots":{"used":1,"limit":20,"remaining":19}}`. `account.beta` is `active` or `waitlist`. usedBytes includes pending reserved manifests that have not expired. Slots never exceed 20 and admission is atomic. Overflow identities can save their interest without billing.
 
+Optional analytics adds `account.analyticsId`, normally `null`. It contains an opaque account identity only when complete EU analytics runtime config and the separate database collection switch are enabled and the account is not excluded. It grants no authority; the browser links it only after analytics consent. See [measurement, privacy and rollout](product-analytics.md). Missing analytics migration/config never fails session retrieval.
+
 Cookie-authenticated mutations require **`X-CSRF-Token`** from session plus an exact trusted `Origin` header. Missing/wrong values return `csrf_failed`. This applies to `POST /auth/logout`, `POST /v1/waitlist`, `POST /v1/device/approve`, and `POST /v1/device/reject`. Bearer endpoints do not accept cookies as authorization.
 
 - `GET /auth/google/start?returnTo=/connect` redirects to Google with state, nonce and PKCE. Only fixed `/connect`, `/connect/device`, `/hosted` and `/hosted/device` paths (optional single `code` query, optional trailing slash) are permitted. Legacy paths normalize to `/connect` paths; arbitrary URLs, other query keys and fragments are rejected. Callback revalidates and normalizes already-stored legacy destinations too, preserving only the code.

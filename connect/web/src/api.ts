@@ -49,10 +49,14 @@ function record(value: unknown): Record<string, unknown> {
 }
 export async function session(): Promise<Session> {
   const data = record(await request("/v1/session"))
-  if (data.authenticated === false) return { authenticated: false }
+  if (data.authenticated === false) {
+    window.dispatchEvent(new CustomEvent("apparent:analytics-account", {detail: null}))
+    return { authenticated: false }
+  }
   const user = record(data.account), beta = record(data.slots), waitlist = record(user.waitlist)
   if (data.authenticated !== true || typeof user.email !== "string" || typeof data.csrfToken !== "string" || !data.csrfToken || !["active", "waitlist"].includes(user.beta as string) || beta.limit !== 20 || !Number.isInteger(beta.used) || (beta.used as number) < 0 || (beta.used as number) > 20 || typeof waitlist.interestedAtFiveDollars !== "boolean") throw new Error("Connect returned an invalid account response.")
   // Pick only needed fields. Extra server fields (especially credentials) never reach UI state.
+  window.dispatchEvent(new CustomEvent("apparent:analytics-account", {detail: typeof user.analyticsId === "string" && /^account:[a-f0-9]{64}$/.test(user.analyticsId) ? user.analyticsId : null}))
   return { authenticated: true, user: { email: user.email }, csrfToken: data.csrfToken, beta: { access: user.beta === "active", capacity: 20, enrolled: beta.used as number }, waitlist: { joined: user.beta === "waitlist", interestedAtFiveDollars: waitlist.interestedAtFiveDollars } }
 }
 export async function device(userCode: string): Promise<Device> {
@@ -62,7 +66,10 @@ export async function device(userCode: string): Promise<Device> {
 }
 export const joinWaitlist = (csrf: string, interestedAtFiveDollars: boolean) => request("/v1/waitlist", csrf, { interestedAtFiveDollars })
 export const approveDevice = (csrf: string, userCode: string) => request("/v1/device/approve", csrf, { userCode })
-export const logout = (csrf: string) => request("/auth/logout", csrf)
+export const logout = async (csrf: string) => {
+  await request("/auth/logout", csrf)
+  window.dispatchEvent(new CustomEvent("apparent:analytics-account", {detail: null}))
+}
 
 export type Share = { id: string; captureId: string; title: string; status: string; createdAt: string; expiresAt: string; url?: string }
 export async function shares(): Promise<Share[]> {

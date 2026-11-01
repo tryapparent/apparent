@@ -10,6 +10,11 @@ export interface Env {
  GOOGLE_CLIENT_SECRET: string;
  TOKEN_ENCRYPTION_KEY: string;
  SHARING_ENABLED?: string;
+ POSTHOG_ENABLED?: string;
+ POSTHOG_PROJECT_TOKEN?: string;
+ POSTHOG_HOST?: string;
+ POSTHOG_ENVIRONMENT?: string;
+ POSTHOG_EXCLUDED_ACCOUNT_IDS?: string;
  OAUTH_ISSUER?: string;
  OAUTH_AUTHORIZATION_URL?: string;
  OAUTH_TOKEN_URL?: string;

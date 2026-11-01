@@ -1,9 +1,12 @@
 // Reconcile the accepted public homepage with freshly built Connect routes.
 // The snapshot is public source, not a copy of the repository or release tree.
-import { readFileSync, readdirSync, lstatSync, mkdirSync, copyFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, readdirSync, lstatSync, mkdirSync, copyFileSync, writeFileSync, rmSync } from 'node:fs'
 import { resolve, join, dirname, relative } from 'node:path'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import { analyticsConfig, analyticsHomepage, analyticsScript } from '../site-build/product-analytics.mjs'
+const analytics = analyticsConfig()
+const analyticsSource = analytics ? await analyticsScript(analytics) : null
 const site = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const output = join(site, process.env.COMPOSE_SYNTHETIC_ORIGIN ? 'dist/synthetic-composition' : 'dist-apparent')
 const snapshot = join(site, 'published-homepage')
@@ -37,6 +40,11 @@ for (const path of actual) {
   mkdirSync(dirname(target), { recursive: true })
   copyFileSync(join(snapshot, path), target)
 }
+// Only the opt-in homepage overlay may differ; Connect emits its own bytes.
+if (analytics) {
+  writeFileSync(join(output, 'index.html'), analyticsHomepage(readFileSync(join(snapshot, 'index.html'), 'utf8'), analytics))
+  writeFileSync(join(output, 'assets/product-analytics.js'), analyticsSource)
+} else rmSync(join(output, 'assets/product-analytics.js'), { force: true })
 // A real 404 disables Pages' default SPA fallback on private/unknown paths.
 writeFileSync(join(output, '404.html'), '<!doctype html><html lang="en"><meta name="robots" content="noindex"><title>Not found</title><body>Not found</body></html>\n')
 // Pages rejects host-specific source URLs. The existing connect shortcut uses
