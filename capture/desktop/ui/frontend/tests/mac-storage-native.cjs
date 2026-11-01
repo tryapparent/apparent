@@ -282,6 +282,8 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     }, 'Installed Rust socket readiness', 15000);
     application = await electron.launch({ args: [root], env, timeout: budget(15000) });
     electronChild = application.process();
+    // launch() attaches to the main process before app.whenReady() creates a window.
+    page = await application.firstWindow({ timeout: budget() });
     report.electron = await within(application.evaluate(({ app, BrowserWindow }) => ({
       pid: process.pid, version: process.versions.electron, platform: process.platform,
       home: process.env.HOME, userData: app.getPath('userData'),
@@ -293,7 +295,6 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     assert.ok(report.electron.userData.startsWith(home + path.sep), 'Electron profile escaped private HOME');
     assert.equal(report.electron.platform, 'darwin');
     assert.equal(report.electron.windowCount, 1);
-    page = await application.firstWindow({ timeout: budget() });
     page.setDefaultTimeout(5000);
     const rendererErrors = [];
     page.on('pageerror', error => rendererErrors.push(error.message));
