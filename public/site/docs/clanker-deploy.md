@@ -44,8 +44,8 @@ of the previous artifact when marker validation rejects a build.
 
 ## Recorded ghost demo
 
-`src/demo/VideoDemo.tsx` replaces the public scripted animation with the approved
-`public/Apparent-ghost-demo-v4-lilac.mp4`. Keep this file byte-identical to the
+`public/site/src/demo/core/VideoDemo.tsx` replaces the public scripted animation with the approved
+`public/site/public/assets/media/Apparent-ghost-demo-v4-lilac.mp4`. Keep this file byte-identical to the
 approved export. Its poster is a still from that same export. The movie has burned
 subtitles, lasts 59.818667 seconds, and loads only after a playback or seek action.
 Chapter times are final-export seconds: Start 0, Capture 3.733333, Sketch 15.433333,

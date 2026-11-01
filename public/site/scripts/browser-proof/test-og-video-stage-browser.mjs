@@ -8,7 +8,7 @@ import { chromium } from "playwright-core"
 
 const concepts = ["apparent-fix", "apparent-lasso", "apparent-pile"]
 const stagePath = "/scripts/og-video/stage.html"
-const root = new URL("../", import.meta.url)
+const root = new URL("../../", import.meta.url)
 let server, browser, origin
 
 before(async () => {

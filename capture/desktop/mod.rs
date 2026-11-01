@@ -7,7 +7,7 @@ pub(crate) mod icons;
 pub(crate) mod ingest_http;
 #[cfg(not(target_os = "macos"))]
 pub(crate) mod ink_view;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "linux")]
 pub(crate) mod linux;
 pub(crate) mod native;
 pub(crate) mod playback;

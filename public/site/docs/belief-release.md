@@ -1,6 +1,6 @@
 # Scoped belief release
 
-The public host serves an approved movie-demo artifact. The movie demo is now also on `main`; the canonical belief component lives in `src/BeliefPond.tsx` and `src/belief/`, and `public/pond/belief/` contains only the six approved sprites. Keep this release scoped to the belief instead of replacing unrelated production assets with a whole build.
+The public host serves an approved movie-demo artifact. The movie demo is now also on `main`; the canonical belief component lives in `public/site/src/components/home/BeliefPond.tsx` and `src/belief/`, and `public/site/public/assets/pond/belief/` contains only the six approved sprites. Keep this release scoped to the belief instead of replacing unrelated production assets with a whole build.
 
 `package-belief-release.mjs BASELINE NEW_CANDIDATE EXTERNAL_MANIFEST` makes an isolated overlay on a frozen production release. Node 22's type stripper emits the standalone behavior from the same source used by the normal build. `ACORN_MODULE` may point at an existing Acorn installation. The script replaces only the belief SSR markup and its parsed React render node, adds hashed behavior/CSS/root JS and the six sprites, and asserts all old assets and all other HTML bytes remain unchanged. It refuses to overwrite a candidate or put evidence inside the public package. No prototype lead-in/tail, review copy, recordings or local paths ship.
 

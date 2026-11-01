@@ -16,7 +16,7 @@ lib="$smoke/squashfs-root/usr/lib"
 # now points into cpu-smoke, so only the extracted AppImage libraries can load.
 export LD_LIBRARY_PATH="$lib"
 # Keep the exact filter honest: Rust's test harness succeeds when it selects 0 tests.
-test_name=shared::speech::tests::downloads_and_runs_parakeet
+test_name=capture::engine::runtime::audio::transcription::speech::tests::downloads_and_runs_parakeet
 listed="$(./speech-test "$test_name" --exact --ignored --list)"
 if [[ "$(printf '%s\n' "$listed" | grep -Fxc "$test_name: test")" != 1 ]]; then
   printf 'Expected exactly one ignored test matching %s; got:\n%s\n' "$test_name" "$listed" >&2

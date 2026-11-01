@@ -309,19 +309,19 @@ The settings were tuned on simulated captures with hand-labelled ideal crops: on
 terminal, two windows side by side, an arrow from one window to another, a tiny badge in a huge
 window, a menu-bar menu, talk-only keyframes, a dragged window, overlapping windows, thirty seconds
 hopping between three windows, a stray cursor, a full-screen app, and a scrolling page.
-`public/site/scripts/autocrop-corpus.mjs` renders them with Playwright (from `public/site/node_modules`), `apparent
+`public/site/scripts/motion/autocrop-corpus.mjs` renders them with Playwright (from `public/site/node_modules`), `apparent
 fixture` builds each into a real bundle through the capture pipeline, `apparent autocrop-eval` scores
 the crops (coverage of the ink and clicks, overlap with the ideal, context, legibility in the sheet,
-stability; `--sweep` searches the settings), and `public/site/scripts/autocrop-gallery.mjs` renders a gallery to
+stability; `--sweep` searches the settings), and `public/site/scripts/motion/autocrop-gallery.mjs` renders a gallery to
 judge them by eye:
 
 ```sh
-bun public/site/scripts/autocrop-corpus.mjs /tmp/corpus
+bun public/site/scripts/motion/autocrop-corpus.mjs /tmp/corpus
 for s in /tmp/corpus/*/scenario.json; do
   apparent fixture "$s" --out "/tmp/bundles/$(basename "$(dirname "$s")").apparent"
 done
 apparent autocrop-eval /tmp/bundles --json /tmp/scores.json   # add --sweep to search
-bun public/site/scripts/autocrop-gallery.mjs /tmp/gallery /tmp/bundles --scores /tmp/scores.json
+bun public/site/scripts/motion/autocrop-gallery.mjs /tmp/gallery /tmp/bundles --scores /tmp/scores.json
 ```
 
 `autocrop-eval --export capture/engine/autocrop/autocrop-corpus.json` refreshes the corpus the unit tests score.

@@ -626,8 +626,8 @@ impl Drop for Server {
 // Exercise the real fixture reader with an accepted nonblocking socket. This
 // models a possible BSD accept contract on Linux; it is not a Mac failure trace.
 fn fragmented_nonblocking_request(split_in_body: bool) {
+    // Keep accept blocking; the test explicitly makes the accepted stream nonblocking below.
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.set_nonblocking(true).unwrap();
     let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     client
         .set_read_timeout(Some(Duration::from_secs(3)))
