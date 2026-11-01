@@ -1,4 +1,4 @@
-use apparent_capture_engine::{Admission, Control, LeaseKind, Runtime, Status};
+use apparent_capture_engine::{Admission, Control, LeaseKind, Runtime, Status, new_id};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -10,14 +10,7 @@ const TOKEN: &str = "ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {
-        let path = std::env::temp_dir().join(format!(
-            "engine-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let path = std::env::temp_dir().join(format!("engine-{}", new_id().unwrap()));
         std::fs::create_dir(&path).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
         Self(path)
@@ -28,6 +21,30 @@ impl Drop for Fixture {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
+
+#[test]
+fn fixture_roots_are_private_distinct_and_independently_owned() {
+    let first = Fixture::new();
+    let first_path = first.0.clone();
+    let sentinel = first.0.join("existing");
+    std::fs::write(&sentinel, b"untouched").unwrap();
+    let second = Fixture::new();
+    let second_path = second.0.clone();
+    assert_ne!(first_path, second_path);
+    for path in [&first_path, &second_path] {
+        assert_eq!(
+            std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
+    assert!(std::fs::read_dir(&second_path).unwrap().next().is_none());
+    drop(second);
+    assert!(!second_path.exists());
+    assert_eq!(std::fs::read(&sentinel).unwrap(), b"untouched");
+    drop(first);
+    assert!(!first_path.exists());
+}
+
 struct Worker(Child);
 impl Worker {
     fn start(path: &Path, role: &str) -> Self {
