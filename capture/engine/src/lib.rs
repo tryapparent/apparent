@@ -1,4 +1,4 @@
-//! Staged Engine package; not yet consumed by Desktop, timed recording or Agent.
+//! Shared capture data and candidate storage, plus staged admission and bundle leases.
 #![forbid(unsafe_op_in_unsafe_fn)]
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 compile_error!("capture-engine supports Linux and macOS only");
@@ -6,7 +6,9 @@ mod finalizer;
 mod identity;
 mod lease;
 mod locking;
+pub mod model;
 mod receipt;
+pub mod recording;
 mod secure;
 mod session;
 pub use finalizer::FinalizerSuccess;

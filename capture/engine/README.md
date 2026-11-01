@@ -1,10 +1,16 @@
-# Staged capture Engine
+# Capture Engine: shared data and staged coordination
 
-This independently compiled Rust package implements admission, durable receipts and
-bundle maintenance exclusion. **No Desktop, timed recording, Agent or retention
-call path consumes it yet.** It does not record media, publish clipboard content,
-route captures, or certify a complete Apparent bundle. Package tests exercise
-real filesystem and process boundaries, not native capture or media behavior.
+This independently compiled Rust package owns the shared `RgbaFrame`, `TargetInfo`,
+`CaptureMode`, `TargetFrame`, `CandidateBuffer` and `ScreenRecording` types.
+The root application's model and capture compatibility exports forward to these
+same types; there is no second recorder. Native sampling, session startup/readiness,
+stop/join/drop, capture sizing and retention policy remain in the root application.
+
+Admission, durable receipts and bundle maintenance exclusion remain staged:
+**no production call path consumes those coordination contracts yet.** This data
+adoption does not adopt Engine admission, move native acquisition, publish clipboard
+content, route captures, or certify a complete Apparent bundle. Package tests
+exercise pure data and real filesystem/process boundaries, not native media behavior.
 
 ## Source and retained review
 
@@ -14,9 +20,18 @@ This package-only port uses the complete 16-file admission/leases package from
 portability repair from `fc658cb327dd9bc3dc872738d5fa6a95491b641c`.
 The repaired trust boundary's source approval and parent-supplied portability
 review 49 are retained for unchanged bytes, not claimed as new reviews.
-Historical Linux/macOS package proof covers these 22 tests, including two worker
-entrypoints. Later model/recording leaves and session-provider work are excluded.
-This port adds no root dependency, production caller, CI or hook-policy change.
+Historical Linux/macOS package proof covers the original 22 tests, including two
+worker entrypoints; it is not fresh proof for the shared data adoption.
+The paired model/candidate adoption takes current main's authoritative donor bodies
+and three owning candidate tests, using #214/#215 only as Git-blob evidence for the
+pure contract cases. It preserves serde names/defaults, constructor checks, private
+buffer fields and thinning behavior. Session-provider work remains excluded.
+
+The `src/model.rs` and `src/capture/recorder.rs` facades belong to this data slice.
+Their consumers include Desktop, timed recording, bundle processing, rendering and
+native samplers through the existing root paths. Remove the facades only when all
+supported callers and build inputs use the Engine contracts directly and compatibility
+checks pass. The donor implementations are deleted in this same adoption slice.
 
 ## Caller contract
 
@@ -124,7 +139,7 @@ keep the guard in its real finalization lifetime, and supply that finalizer's
 validated bytes. Wire bundle leases into `src/retention.rs`, `src/recover.rs`,
 export/reprocess/read paths before removing process-local BUSY/RECORDING guards.
 Audit all call paths together; adding this package alone provides no whole-app
-exclusion or production adoption.
+exclusion or production admission adoption.
 
 ## Verification and package boundary
 
@@ -138,9 +153,10 @@ cargo tree --manifest-path capture/engine/Cargo.toml --offline
 ```
 
 The package pins cached libc/serde/serde_json dependencies and has its own small,
-unmodified Cargo-generated lockfile. Root Cargo.toml/Cargo.lock and CI are
-unchanged: this is a staged package, not a final workspace/lock policy decision.
-There are no Agent, GPUI, recorder or product dependencies. The target branch's
+unmodified Cargo-generated lockfile. Root adoption requires the direct
+`apparent-capture-engine = { path = "capture/engine" }` dependency and its minimal
+root lock entry; it does not require a workspace or Engine manifest/lock changes.
+There are no Agent, GPUI, native recorder or product dependencies. The target branch's
 repository hooks remain unchanged; no integration-branch line-cap or lockfile
 policy is imported. Historical macOS package build/process proof is retained
 for source-identical code, not a fresh run on this port. Native capture/media

@@ -1,6 +1,19 @@
 use super::*;
 use crate::model::{CaptureMode, TargetFrame};
 
+#[test]
+fn root_capture_leaves_have_engine_type_identity() {
+    use apparent_capture_engine::{model, recording};
+    use std::any::TypeId;
+
+    assert_eq!(TypeId::of::<TargetInfo>(), TypeId::of::<model::TargetInfo>());
+    assert_eq!(TypeId::of::<CaptureMode>(), TypeId::of::<model::CaptureMode>());
+    assert_eq!(TypeId::of::<TargetFrame>(), TypeId::of::<model::TargetFrame>());
+    assert_eq!(TypeId::of::<RgbaFrame>(), TypeId::of::<model::RgbaFrame>());
+    assert_eq!(TypeId::of::<CandidateBuffer>(), TypeId::of::<recording::CandidateBuffer>());
+    assert_eq!(TypeId::of::<ScreenRecording>(), TypeId::of::<recording::ScreenRecording>());
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn producer_terminal_source_error_is_not_pending_consent() {
@@ -104,7 +117,11 @@ fn transient_screenshot_failure_retries_to_readiness_and_finalization() {
             true, || Err(error.into()),
         );
         assert!(!session.has_frames(), "a failed sample cannot supply readiness");
-        assert_eq!(session.frames.lock().unwrap().len(), 0, "no demo pixels");
+        let candidates = std::mem::replace(
+            &mut *session.frames.lock().unwrap(),
+            CandidateBuffer::new(1 << 20),
+        );
+        assert!(candidates.into_frames().is_empty(), "no demo pixels");
         let mut retried = false;
         sample_real_candidate(
             &session.frames, &session.real_frame_seen, &session.startup_failed,
@@ -211,60 +228,6 @@ fn screen_stop_joins_worker_before_collecting_its_final_media() {
     assert_eq!(recording.video.as_ref(), Some(&path));
     assert_eq!(recording.video_offset_ms, 120);
     std::fs::remove_file(path).unwrap();
-}
-
-#[test]
-fn candidate_buffer_stays_bounded_and_keeps_the_whole_timeline() {
-    // A 1 MB budget of 4 KB frames: a 256-frame cap.
-    let mut buffer = CandidateBuffer::new(1 << 20);
-    let frame = |t| RgbaFrame::new(t, 32, 32, vec![0; 32 * 32 * 4]);
-    let mut t = 0;
-    let mut peak = 0;
-    // Three hours at the sampler's pace, with a click frame every 10 s.
-    while t < 3 * 3_600_000 {
-        buffer.push(frame(t), t % 10_000 == 0);
-        peak = peak.max(buffer.len());
-        t += buffer.interval().as_millis() as u64;
-    }
-    assert!(peak <= 256, "peak {peak}");
-    assert!(buffer.interval() >= FRAME_SAMPLE_INTERVAL * 64);
-    let frames = buffer.into_frames();
-    assert_eq!(frames[0].t_ms, 0, "the start is kept");
-    assert!(frames.windows(2).all(|w| w[0].t_ms < w[1].t_ms));
-    // Spread over the whole capture, not bunched at the end.
-    let first_half = frames.iter().filter(|f| f.t_ms < 3 * 1_800_000).count();
-    assert!(
-        first_half * 3 > frames.len(),
-        "{first_half} of {}",
-        frames.len()
-    );
-}
-
-#[test]
-fn candidate_buffer_keeps_urgent_frames_when_thinning() {
-    let mut buffer = CandidateBuffer::new(40 * 4096);
-    let frame = |t| RgbaFrame::new(t, 32, 32, vec![0; 32 * 32 * 4]);
-    for t in 0..60 {
-        buffer.push(frame(t * 220), t == 33);
-    }
-    assert!(buffer.len() < 60);
-    assert_eq!(buffer.interval(), FRAME_SAMPLE_INTERVAL * 2);
-    assert!(buffer.into_frames().iter().any(|f| f.t_ms == 33 * 220));
-}
-
-#[test]
-fn frames_that_may_show_a_system_prompt_are_dropped_but_never_the_first() {
-    let mut buffer = CandidateBuffer::new(1 << 20);
-    for t in [0, 220, 440, 660, 880] {
-        buffer.push(RgbaFrame::new(t, 4, 4, vec![0; 64]), false);
-    }
-    buffer.drop_since(440);
-    let times: Vec<u64> = buffer.into_frames().iter().map(|f| f.t_ms).collect();
-    assert_eq!(times, [0, 220, 440]);
-    let mut buffer = CandidateBuffer::new(1 << 20);
-    buffer.push(RgbaFrame::new(500, 4, 4, vec![0; 64]), false);
-    buffer.drop_since(0);
-    assert_eq!(buffer.len(), 1);
 }
 
 #[test]
