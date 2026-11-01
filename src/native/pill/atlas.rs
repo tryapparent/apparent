@@ -128,6 +128,7 @@ pub fn measure_metrics() -> Metrics {
         warning: measure_text_pt("No words yet", HUD_TEXT, WEIGHT_SEMIBOLD, false),
         processing: measure_text_pt("Processing…", HUD_TEXT, WEIGHT_SEMIBOLD, false),
         paste: measure_text_pt("Paste", HUD_TEXT, WEIGHT_SEMIBOLD, false),
+        copy_link: measure_text_pt("Copy link", HUD_TEXT, WEIGHT_SEMIBOLD, false),
         inspect: measure_text_pt("Inspect", HUD_TEXT, WEIGHT_MEDIUM, false),
         clock_000: measure_text_pt("0:00", HUD_TEXT, WEIGHT_SEMIBOLD, true),
         clock_0000: measure_text_pt("00:00", HUD_TEXT, WEIGHT_SEMIBOLD, true),
@@ -388,6 +389,7 @@ impl GlyphAtlas {
             ("No words yet", HUD_TEXT, WEIGHT_SEMIBOLD),
             ("Processing…", HUD_TEXT, WEIGHT_SEMIBOLD),
             ("Paste", HUD_TEXT, WEIGHT_SEMIBOLD),
+            ("Copy link", HUD_TEXT, WEIGHT_SEMIBOLD),
             ("Inspect", HUD_TEXT, WEIGHT_MEDIUM),
         ] {
             let (w, h, size_pt, bytes) = rasterize_text(text, size_pt, weight, false, scale);

@@ -926,6 +926,7 @@ impl PillRuntimeState {
                 }
             }
             ElemId::Paste => PillAction::Paste(None),
+            ElemId::CopyLink => PillAction::CopyLink,
             ElemId::Inspect => PillAction::Inspect,
             ElemId::Route0 => PillAction::Route(0),
             ElemId::Route1 => PillAction::Route(1),
@@ -1333,11 +1334,12 @@ fn emit_elem_prims(
                 fg,
             );
         }
-        ElemId::Record | ElemId::Finish | ElemId::Paste => {
+        ElemId::Record | ElemId::Finish | ElemId::Paste | ElemId::CopyLink => {
             let label = match elem.id {
                 ElemId::Record => "Record",
                 ElemId::Finish => "Finish",
                 ElemId::Paste => "Paste",
+                ElemId::CopyLink => "Copy link",
                 _ => unreachable!(),
             };
             let tx = atlas.label(label);
@@ -1732,8 +1734,8 @@ mod tests {
             ("recording", Pres::Recording { chips: false, has_iphone: false }),
             ("recording-warning", Pres::RecordingWarning { chips: false, has_iphone: false }),
             ("processing", Pres::Processing),
-            ("completed", Pres::Completed { label: "Copied".into(), routes: vec![], warning: false }),
-            ("completed-warning", Pres::Completed { label: "No words found".into(), routes: vec![], warning: true }),
+            ("completed", Pres::Completed { label: "Copied".into(), routes: vec![], warning: false, share: None }),
+            ("completed-warning", Pres::Completed { label: "No words found".into(), routes: vec![], warning: true, share: None }),
         ];
         for (name, pres) in &states {
             let mut dark_frame = None;
@@ -1765,6 +1767,7 @@ mod tests {
             label: label.into(),
             routes: routes.iter().map(|r| (*r).to_owned()).collect(),
             warning: false,
+            share: None,
         };
         let states = [
             ("1-copied", completed("Copied", &[])),

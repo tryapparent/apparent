@@ -65,6 +65,17 @@
 
     },
     {
+      "id": "hosted-sharing",
+      "group": "delivery",
+      "name": "Share one recording by link",
+      "says": "Copy link beside Paste reserves public-by-link access for the selected capture before its media finishes uploading. Settings exposes hosted account consent and shared-link management. CLI listing follows every page and revocation preserves the private recording.",
+      "status": "experiment:hostedSharing",
+      "added": "2026-10-31",
+      "platforms": ["mac", "linux"],
+      "note": "Default off. Native candidate only: Linux GUI, macOS native pill/Swift Settings, onboarding cancellation, foreground clipboard gating and end-to-end real-feature walkthrough still require platform proof. A configured hosted API and explicit upload consent are required. Deployment also needs SHARING_ENABLED=true; it defaults off. No production deployment is implied.",
+      "docs": ["docs/keyframes-and-text.md", "docs/hosted-client.md", "docs/hosted-api.md"]
+    },
+    {
       "id": "native-launch",
       "group": "install",
       "name": "Open the installed app by URL",

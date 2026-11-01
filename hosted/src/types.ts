@@ -9,6 +9,7 @@ export interface Env {
  GOOGLE_CLIENT_ID: string;
  GOOGLE_CLIENT_SECRET: string;
  TOKEN_ENCRYPTION_KEY: string;
+ SHARING_ENABLED?: string;
  OAUTH_ISSUER?: string;
  OAUTH_AUTHORIZATION_URL?: string;
  OAUTH_TOKEN_URL?: string;
@@ -38,3 +39,16 @@ export interface CaptureRow {
  status: 'pending' | 'ready' | 'deleted'; expires_at: number; pending_until: number;
 }
 export interface AttemptSnapshot { key: string; terminal: number }
+export type ShareState = 'pending' | 'ready' | 'paused' | 'failed' | 'expired' | 'revoked' | 'deleted';
+export interface ShareRow {
+ id: string; capture_id: string; account_id: string; hash: string; envelope: string;
+ created_at: number; revoked_at: number | null; upload_state: 'uploading' | 'paused' | 'failed';
+ status: CaptureRow['status']; expires_at: number; pending_until: number; bytes: number;
+}
+export interface SharedFile extends ManifestFile { url: string }
+export interface ShareModel {
+ url: string; status: ShareState; title: string; createdAt: string; expiresAt: string;
+ uploadedBytes: number; totalBytes: number; files: SharedFile[]; thumbnailUrl: string | null;
+ retryAfterSeconds: number | null; retryGuidance: string; evidenceNotice: string;
+ summary?: string; transcript?: string;
+}

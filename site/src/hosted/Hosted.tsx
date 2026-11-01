@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react"
 import * as api from "./api"
 import "./hosted.css"
+import { SharedLinks } from "./SharedLinks"
 
-export function isHostedPath(path: string) { return /^\/(?:connect|hosted)(?:\/device)?\/?$/.test(path) }
-export function Hosted({ devicePage = false }: { devicePage?: boolean }) {
+export function isHostedPath(path: string) { return /^\/(?:connect|hosted)(?:\/(?:device|shares))?\/?$/.test(path) }
+export function Hosted({ devicePage = false, sharesPage = false }: { devicePage?: boolean; sharesPage?: boolean }) {
+  return sharesPage ? <SharedLinks /> : <Account devicePage={devicePage} />
+}
+function Account({ devicePage }: { devicePage: boolean }) {
   const [account, setAccount] = useState<api.Session | null>(null)
   const [request, setRequest] = useState<api.Device | null>(null)
   const [code, setCode] = useState("")
@@ -119,7 +123,7 @@ export function Hosted({ devicePage = false }: { devicePage?: boolean }) {
           <Limits />
         </details>
       </section>
-      {authenticated && <div className="hosted-identity"><p>{authenticated.user.email}</p><button disabled={busy || loading} onClick={() => void act(async () => { await api.logout(authenticated.csrfToken); const next = await api.session(); if (next.authenticated) throw new Error("Sign-out could not be confirmed. Reload and try again."); setAccount(next); setRequest(null) })}>Log out</button></div>}
+      {authenticated && <div className="hosted-identity"><p>{authenticated.user.email}</p>{authenticated.beta.access && <a className="hosted-manage-link" href="/connect/shares">Manage shared links</a>}<button disabled={busy || loading} onClick={() => void act(async () => { await api.logout(authenticated.csrfToken); const next = await api.session(); if (next.authenticated) throw new Error("Sign-out could not be confirmed. Reload and try again."); setAccount(next); setRequest(null) })}>Log out</button></div>}
       <noscript><p>Enable JavaScript to sign in and review permissions. No approval happens without an explicit confirmation.</p></noscript>
     </main>
     <dialog ref={dialog} className="hosted-dialog" aria-labelledby="hosted-dialog-title">

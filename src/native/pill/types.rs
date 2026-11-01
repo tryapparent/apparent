@@ -54,6 +54,7 @@ pub enum PillAction {
     Whiteboard,
     Finish,
     Paste(Option<[f32; 2]>),
+    CopyLink,
     Inspect,
     DismissCompleted,
     /// A session chip on the Completed island (smart routing), by position.

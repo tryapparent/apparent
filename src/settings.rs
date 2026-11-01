@@ -722,6 +722,7 @@ pub const SKILL_COMMAND: &str = "bunx skills add tryapparent/apparent";
 #[serde(rename_all = "camelCase")]
 pub struct View {
     pub version: String,
+    pub hosted: Option<crate::hosted::AccountView>,
     pub login: LoginView,
     pub agent_demo_video: bool,
     pub shortcuts: Vec<ShortcutView>,
@@ -1151,6 +1152,8 @@ pub enum Action {
     /// Link `apparent` into a folder on PATH, or remove that link.
     InstallCli,
     UninstallCli,
+    ConnectHosted,
+    ManageSharedLinks,
     Close,
 }
 
@@ -1158,6 +1161,8 @@ pub enum Action {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     None,
+    ConnectHosted,
+    ManageSharedLinks,
     /// Ask macOS (the system prompt): the first press on a row that was never asked.
     Request(Permission),
     /// Already asked or denied: its System Settings pane.
@@ -1259,6 +1264,8 @@ impl Panel {
 
     pub fn on(&mut self, action: Action, host: &mut dyn Host) -> Effect {
         match action {
+            Action::ConnectHosted => Effect::ConnectHosted,
+            Action::ManageSharedLinks => Effect::ManageSharedLinks,
             Action::Set { key, value } => self.set(&key, &value, host),
             Action::RecordShortcut { kind } => {
                 if external_record_owned(kind) {
@@ -1579,6 +1586,8 @@ impl Panel {
         };
         View {
             version: env!("APPARENT_VERSION_LABEL").to_owned(),
+            hosted: crate::handoff::experiment_enabled_in(&config, crate::hosted::HOSTED_SHARING)
+                .then(|| crate::hosted::account_view_in(&host.config_path())),
             login: LoginView {
                 on: matches!(login, LoginItem::On | LoginItem::NeedsApproval),
                 available: login != LoginItem::Unavailable,
@@ -2197,6 +2206,19 @@ mod tests {
                 "checking": false, "result": null
             }));
         }
+    }
+
+    #[test]
+    fn hosted_sharing_settings_are_off_by_default_and_have_explicit_account_actions() {
+        let dir = TempDir::new("hosted-sharing-settings");
+        let host = fake(&dir);
+        let panel = Panel::default();
+        assert!(serde_json::to_value(panel.view(&host)).unwrap()["hosted"].is_null());
+        std::fs::write(&host.path, r#"{"experiments":{"hostedSharing":true},"cloud":{"server":"https://synthetic.example","enabled":false,"uploadConsent":false}}"#).unwrap();
+        let view = serde_json::to_value(panel.view(&host)).unwrap();
+        assert_eq!(view["hosted"]["server"], "https://synthetic.example");
+        assert!(serde_json::from_value::<Action>(serde_json::json!({"action":"manage-shared-links"})).is_ok());
+        assert!(serde_json::from_value::<Action>(serde_json::json!({"action":"connect-hosted"})).is_ok());
     }
 
     #[test]
