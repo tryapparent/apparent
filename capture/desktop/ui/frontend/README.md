@@ -67,13 +67,18 @@ refusal and rejection of a second renderer. It is not native platform acceptance
 existing isolated Linux runner is `capture/desktop/scripts/linux/gui/gui-vm.py`;
 follow `../../docs/native-testing.md` for template/access/lifecycle requirements.
 In an owned disposable Mac, run it with `SCRAWL_GUI_OUTPUT` set to a private
-evidence directory and a fresh private HOME. It saves only its own window, never
-the host screen. Native evidence is private, not a repository asset.
+evidence directory. Use a fresh private HOME for disconnected checks; for live
+checks use the running Rust app's HOME and `NATIVE_EXPECT_CONNECTED=1`. It saves
+only its own window, never the host screen. Native evidence is private, not a
+repository asset.
 
-The Linux native run connected to the running Rust GUI. NoMac verification on
-macOS 26.6.2/arm64 with Electron 45.2.1 passed all 11 socket tests, the Electron
-interaction/security test and the native window smoke. The Mac socket replies
-were synthetic; the standalone native window correctly remained disconnected.
-An actual macOS desktop click also selected the Preparing preview. This is not
-a live Rust-on-Mac integration check. Capture, overlay, permission, installed-app
-and performance acceptance are not claimed by this read-only surface.
+The Linux native run connected to a frozen Rust baseline with recorded
+provenance. NoMac verification on macOS 26.6.2/arm64 with Electron 45.2.1 passed
+all 11 socket tests, the Electron interaction/security test and native window
+checks. A subsequent run cloned published head
+`ff420b5d7539a455e53b20e3c753475291103965`, built and installed the real Rust GUI
+with the repository installer, and passed the native smoke with a live
+`connected` / `idle` response. Its Error tab was a separately labelled synthetic
+fixture, not a failed recording. The guest and queue ticket were cleaned up.
+These are shell/bridge checks, not capture, overlay, permission, updater,
+physical-device or performance acceptance.

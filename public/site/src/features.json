@@ -835,7 +835,7 @@
       "says": "Development-only React/shadcn/Tailwind window with synthetic previews and read-only state from the running Rust app. Does not replace the installed app or recording controls.",
       "status": "branch:t3/review-ui-refactor-scope",
       "platforms": ["mac", "linux"],
-      "note": "Linux isolated-desktop run connected to Rust. macOS native window and bridge/security tests passed on NoMac using synthetic socket replies; live Rust-on-Mac integration is unverified. No Settings, capture, permission or default-launch changes.",
+      "note": "Linux isolated-desktop run connected to a frozen Rust baseline. macOS NoMac checks include native window/bridge security plus a live connection to the Rust GUI built and installed from published head ff420b5d. These checks do not establish capture, permission, overlay or performance acceptance. No Settings or default-launch changes.",
       "docs": ["capture/desktop/ui/frontend/README.md"]
     },
     {
