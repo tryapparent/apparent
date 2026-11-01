@@ -51,7 +51,7 @@ MOVES = {
     },
 }
 
-# Additive independent browser package reviewed in #200 (6123548e). Root
+# Additive independent browser package from #200, inventory checked at c5bb1b78. Root
 # build.rs/Cargo/native inputs do not consume this directory; its build reads
 # the five approved site/public brand assets. Changing those/shared inputs is
 # not this route. Explicit inventory keeps unknown new owners broad.
@@ -61,6 +61,7 @@ BROWSER_FILES = {"connect/web/" + path for path in (
     "scripts/assets.mjs", "scripts/prerender.mjs", "scripts/test-browser.mjs",
     "src/Hosted.tsx", "src/api.ts", "src/base.css", "src/entry-server.tsx",
     "src/hosted.css", "src/main.tsx", "test/artifact.test.mjs", "test/browser.mjs",
+    "test/closure.test.mjs", "test/routes.test.mjs",
 )}
 
 
@@ -161,7 +162,7 @@ def run_checks(selection, offline=True):
         # build. Do not substitute a production artifact with synthetic config.
         browser = ROOT / "connect/web"
         for command in (["bun", "install", "--frozen-lockfile"], ["bun", "run", "build"],
-                        ["node", "--test", "test/artifact.test.mjs"],
+                        ["node", "--test", "test/artifact.test.mjs", "test/closure.test.mjs", "test/routes.test.mjs"],
                         ["node", "scripts/test-browser.mjs"]):
             subprocess.run(command, cwd=browser, check=True)
 

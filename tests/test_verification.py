@@ -48,7 +48,8 @@ class SelectionTests(unittest.TestCase):
                          verification.select(["src/main.rs", "README.md"]))
 
     def test_independent_browser_selects_its_existing_build_and_fixtures(self):
-        result = verification.select(["connect/web/src/Hosted.tsx", "connect/web/package.json"])
+        result = verification.select(["connect/web/src/Hosted.tsx", "connect/web/package.json",
+                                      "connect/web/test/closure.test.mjs", "connect/web/test/routes.test.mjs"])
         self.assertFalse(result["root"])
         self.assertFalse(result["engine"])
         self.assertTrue(result["browser"])

@@ -132,7 +132,8 @@ class PrePushGuardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.log.read_text().splitlines(), [
             "bun install --frozen-lockfile", "bun run build",
-            "node --test test/artifact.test.mjs", "node scripts/test-browser.mjs",
+            "node --test test/artifact.test.mjs test/closure.test.mjs test/routes.test.mjs",
+            "node scripts/test-browser.mjs",
         ])
         result = self.push(env=dict(self.env, MOCK_STATUS="1"))
         self.assertNotEqual(result.returncode, 0)

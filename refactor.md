@@ -124,8 +124,9 @@ full root/Engine checks. These are source-pair gates, not commit-message, label,
 environment or user-selected bypasses. New donor bytes require review, not a guessed
 "mechanical" classification.
 
-The known `connect/web` package inventory from #200 selects its independent frozen
-Bun 1.3.10 install, production build, artifact fixtures and separate synthetic browser
+The known `connect/web` package inventory from #200, checked at 5b checkpoint
+`c5bb1b78`, selects its independent frozen Bun 1.3.10 install, production build,
+artifact/resource-closure and dev/preview route fixtures, and separate synthetic browser
 build/fixtures, without Rust. Its current closure reads only the five approved
 `site/public` assets outside the package; changes there or in publisher/service/shared
 inputs still broaden. CI provisions Node/Chrome for that route. This is executable
