@@ -14,6 +14,8 @@ Apparent is the human-to-agent half of a feedback loop: the agent builds, the hu
 
 **Delete verified dead paths instead of refactoring them.** After the strategy merges, bounded coherent cleanup needs no per-deletion approval, including legacy Windows removal (the separately scoped retirement authorization, never new support). First verify requiredness through current consumers, build/runtime/package inputs, supported compatibility/data readers and owner reservations. Remove retired implementations with obsolete tests/references; git history is the archive, not a copied legacy tree. “Not deployed” alone does not prove retirement. Preserve active work, private captures, credentials, evidence and uncommitted files. See `refactor.md` for campaign gates and examples.
 
+**Keep ownership local and changes bounded.** Put behavior in its accountable owner; when touching legacy code, move only the relevant mechanism with its callers/tests, preserve external contracts, and remove donors only after verifying consumers. Coordinate genuine cross-owner contract changes explicitly; ordinary owner-local work must not wait on a central integrator. See `refactor.md` for the current campaign's temporary integration arrangement and canonical architecture boundaries.
+
 ## Build, test and install
 
 - Keep `Cargo.toml` and `Cargo.lock` stable. Use `taskpolicy -c utility cargo build -j 3 --offline` and `taskpolicy -c utility cargo test -j 3 --offline -- --test-threads=2` for broad root checkpoints (omit `taskpolicy` on Linux). On Clanker, all new heavy commands and hook-backed pushes run through `/home/simon/.local/bin/t3-build`, once around the outer driver, never nested; the driver honors `T3_BUILD_JOBS`.
