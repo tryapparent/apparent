@@ -29,10 +29,11 @@ fn sources() -> Vec<(PathBuf, String)> {
     }
     let mut files = Vec::new();
     walk(&repo().join("src"), &mut files);
+    walk(&repo().join("connect/client/src"), &mut files);
     files.sort();
     files
         .into_iter()
-        .filter(|path| !path.ends_with("feature_map.rs"))
+        .filter(|path| !path.ends_with("feature_map.rs") && !path.ends_with("test_support.rs"))
         .map(|path| {
             let text = fs::read_to_string(&path).unwrap();
             let mut kept = String::new();
@@ -189,9 +190,28 @@ fn the_scanner_sees_known_keys_and_flags() {
     for key in ["autoSend", "shortcuts", "retention", "transcribeCommand", "onboarding"] {
         assert!(keys.contains(key), "scanner missed config key {key}: {keys:?}");
     }
+    let package_sources: Vec<_> = sources
+        .iter()
+        .filter(|(path, _)| path.starts_with(repo().join("connect/client/src")))
+        .cloned()
+        .collect();
+    let package_flags = experiments(&package_sources).unwrap();
+    assert!(
+        package_flags.contains("hostedSync") && package_flags.contains("hostedSharing"),
+        "Connect flags must be discovered in their production package"
+    );
     let flags = experiments(&sources).unwrap();
-    for flag in ["agentContext", "liveTranscribe", "clipboardImage"] {
-        assert!(flags.contains(flag), "scanner missed experiment {flag}: {flags:?}");
+    for flag in [
+        "agentContext",
+        "liveTranscribe",
+        "clipboardImage",
+        "hostedSync",
+        "hostedSharing",
+    ] {
+        assert!(
+            flags.contains(flag),
+            "scanner missed experiment {flag}: {flags:?}"
+        );
     }
 }
 
