@@ -149,8 +149,11 @@ export function validateConnect(files, canonical, { syntheticOrigin } = {}) {
   // default argument). Require both value boundaries, not a hostname substring.
   // This bounded artifact grammar accepts only unescaped literal URLs; it does
   // not tokenize unrelated JavaScript, evaluate expressions or decode escapes.
-  const literals = js.matchAll(/(?<!\\)(["'`])(https?:\/\/[^"'`\\\r\n]*)\1/g)
-  if (![...literals].some(([, , value]) => {
+  // Consume the matching delimiter even if another quote kind occurs inside the
+  // URL, so an inner quoted hostname cannot be rediscovered as a separate value.
+  const literals = js.matchAll(/(?<!\\)(?:"https?:\/\/(?:\\[\s\S]|[^"\\])*"|'https?:\/\/(?:\\[\s\S]|[^'\\])*'|`https?:\/\/(?:\\[\s\S]|[^`\\])*`)/g)
+  if (![...literals].some(([literal]) => {
+    const value = literal.slice(1, -1)
     const url = exactOrigin(value)
     return url && url.origin === expectedOrigin
   })) throw Error('Missing expected Connect API origin')

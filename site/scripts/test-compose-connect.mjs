@@ -57,6 +57,20 @@ for (const quote of ['"', "'", '`']) test(`accept complete production origin in 
     validatePreservedFiles(inventory(f.out), inventory(f.con))
   } finally { rmSync(f.root, { recursive: true, force: true }) }
 })
+for (const [quote, value] of [
+  ['"', "https://attacker.example/#'https://hosted.tryapparent.com'"],
+  ["'", 'https://attacker.example/#"https://hosted.tryapparent.com"'],
+  ['`', "https://attacker.example/#'https://hosted.tryapparent.com'"],
+]) test(`refuse mixed-delimiter URL value before any destination mutation: ${quote}`, () => {
+  const f = fixture()
+  try {
+    const before = snapshot(f.out)
+    const js = readFileSync(join(f.con, 'assets/connect-a.js'), 'utf8')
+    f.put(f.con, 'assets/connect-a.js', js.replace(`"${productionOrigin}"`, quote + value + quote))
+    assert.throws(() => f.run(), /expected Connect API origin/)
+    assert.deepEqual(snapshot(f.out), before)
+  } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
 for (const value of [
   `"${productionOrigin}`, `'${productionOrigin}"`, `\`${productionOrigin}\${suffix}\``,
   `"prefix\\"${productionOrigin}\\"suffix"`,
