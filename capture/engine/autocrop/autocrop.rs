@@ -1016,23 +1016,21 @@ impl Ctx<'_> {
             .copied()
     }
 
-    /// A resting pointer is not evidence that the active window is irrelevant. Check the
-    /// final geometry, after grouping and content trimming, against this frame's window log.
+    /// A resting pointer is not evidence of intent. After grouping and content trimming,
+    /// passive crops must retain the active window, or the screen if no window is known.
     fn keep_frontmost(&self, crop: &mut Crop, t: u64) {
         let deliberate = crop
             .used
             .iter()
             .any(|&i| self.input.items[i].kind.deliberate());
-        if !deliberate
-            && let Some(win) = self.frontmost(t)
-            && area(clip01(win.rect)) > 0.0
-            && (area(intersect(crop.rect, clip01(win.rect))) <= 0.0
-                || (!contains(crop.rect, clip01(win.rect))
-                    && !(crop.kind == CropKind::Focus && crop.snapped.contains(&win.id))))
-        {
+        let keeps_context = self.frontmost(t).is_some_and(|win| {
+            let rect = clip01(win.rect);
+            area(rect) > 0.0 && contains(crop.rect, rect)
+        });
+        if !deliberate && crop.rect != FULL && !keeps_context {
             crop.rect = FULL;
             crop.kind = CropKind::Full;
-            crop.reason = "whole screen: passive activity does not retain the active window".into();
+            crop.reason = "whole screen: passive activity lacks reliable window context".into();
             crop.apps.clear();
             crop.snapped.clear();
             crop.within = None;
@@ -2112,6 +2110,87 @@ mod tests {
         );
         let sheet = crate::capture::engine::render::render_contact_sheet_for_duration(197_481, &frames);
         assert!(has_target(&sheet), "contact sheet lost target pixels");
+    }
+
+    #[test]
+    fn resting_cursor_keeps_edge_content_with_or_without_window_metadata() {
+        let frame = TargetFrame {
+            width: 1280.0,
+            height: 800.0,
+            scale: 1.0,
+            ..FRAME
+        };
+        let target = TargetInfo {
+            mode: CaptureMode::Display,
+            app: None,
+            bundle_id: None,
+            window_title: None,
+            window_id: None,
+            display_id: 1,
+            frame,
+        };
+        let baseline = solid(1280, 800, 30);
+        let mut selected = Vec::new();
+        for (index, t, color) in [(1, 1_000, [10, 220, 80]), (2, 5_000, [220, 220, 80])] {
+            let mut raw = baseline.clone();
+            for y in 144..224 {
+                for x in 48..240 {
+                    let i = (y * 1280 + x) * 4;
+                    raw.rgba[i..i + 3].copy_from_slice(&color);
+                }
+            }
+            selected.push((keyframe(index, t), raw));
+        }
+        assert!(!change_regions(&baseline, &selected[0].1).is_empty());
+        assert!(!change_regions(&selected[0].1, &selected[1].1).is_empty());
+        let cursor = [CursorSample(0, 0.5, 0.5)];
+        let has_subject = |f: &RgbaFrame| {
+            f.rgba
+                .chunks_exact(4)
+                .any(|p| p[..3] == [10, 220, 80] || p[..3] == [220, 220, 80])
+        };
+        // A maximized active window used to permit a tight Focus crop; missing
+        // window metadata used to bypass the passive safety check altogether.
+        for windows in [
+            Vec::new(),
+            vec![WindowSnapshot {
+                t: 0,
+                windows: vec![window(1, "Editor", [0, 0, 1280, 800], true)],
+            }],
+        ] {
+            for scope in [Scope::Keyframe, Scope::Grouped, Scope::Whole] {
+                let settings = Settings {
+                    scope,
+                    ..Settings::default()
+                };
+                let (frames, _) = annotate_and_crop(
+                    selected.clone(),
+                    Some(&baseline),
+                    Some(&settings),
+                    &target,
+                    6_000,
+                    &[],
+                    &[],
+                    &[],
+                    &windows,
+                    &cursor,
+                );
+                assert!(
+                    frames.iter().all(|(_, f)| has_subject(f)),
+                    "{scope:?}, {} window snapshots: lost edge content",
+                    windows.len()
+                );
+                assert!(
+                    frames
+                        .iter()
+                        .all(|(_, f)| (f.width, f.height) == (1280, 800))
+                );
+                let sheet = crate::capture::engine::render::render_contact_sheet_for_duration(
+                    6_000, &frames,
+                );
+                assert!(has_subject(&sheet), "{scope:?}: sheet lost edge content");
+            }
+        }
     }
 
     #[test]
