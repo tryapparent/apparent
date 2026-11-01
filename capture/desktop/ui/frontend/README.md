@@ -149,9 +149,19 @@ The guest and expiry were cleaned up after the successful runs.
 On 1280×800 the scale-1 GTK dialog still requests 1255×1001, even when given a
 smaller GTK geometry preference. This remains a small-display desktop/toolkit
 limitation, not an app-side size fix; do not mutate users' GTK settings to hide
-it. Mac compilation and synthetic Electron smoke passed CI on the initial slice
-commit. Actual-clock and native Mac evidence remain pending their explicit CI
-runs. Keep the experiment off until the applicable native gates are closed.
+it.
+
+[CI run 41354248911](https://github.com/tryapparent/apparent/actions/runs/41354248911)
+on slice `5d6fceed` passed the explicit Electron/libuv-to-Rust regression on Linux
+and macOS. Its GitHub-hosted `macos-26`/arm64 job also passed the actual installed
+Rust GUI + shipped Electron Storage flow with Electron 45.2.1: parented native
+Choose, visible custom-path readback, Cancel with identical config bytes/inode/
+mtime, and Reset to the built-in path. Unknown config fields and the existing-file
+sentinel survived. The native picker, saved-state and reset-state images were
+inspected; owned processes exited and the private fixture was removed. This
+closes this slice's Mac Settings gate, not capture, permissions, overlays,
+performance or replacement of installed Settings. The experiment remains off by
+default; this evidence does not authorize enabling, merging or releasing it.
 
 For an actual Electron/libuv → Rust clock and persistence regression (no GUI or
 host config writes), after installing the frontend Electron binary, run from
