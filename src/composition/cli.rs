@@ -178,6 +178,9 @@ enum TuneCommand {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Preview or explicitly submit text-only feedback to Apparent's GitHub repository.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    Issue(super::issues::IssueArgs),
     /// Opt-in hosted account and upload queue management.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[command(alias = "cloud")]
@@ -644,6 +647,8 @@ pub(crate) fn run() -> Result<()> {
     match command {
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Connect { command } => hosted::command(command),
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        Command::Issue(args) => super::issues::command(args),
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Fetch { id, out, wait } => hosted::fetch(&id, &out, wait),
         #[cfg(target_os = "linux")]
