@@ -637,8 +637,12 @@ fn run_sampler_with(
             );
             masks_read = true;
         }
-        if let Some((r, _)) = recorder.as_ref() {
-            if let Some(error) = r.error() {
+        if let Some((r, source)) = recorder.as_ref() {
+            let error = r.error().or_else(|| match source {
+                Source::PipeWire { session, .. } => session.connection_error(),
+                _ => None,
+            });
+            if let Some(error) = error {
                 apparent_log(format!("Recording failed: {error}"));
                 // Publish before native teardown, which need not end the sampler thread.
                 *terminal_error.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(error);
