@@ -10,11 +10,9 @@ use std::time::{Duration, Instant};
 #[cfg(any(target_os = "macos", test))]
 use crate::capture::engine::runtime::sample_real_candidate;
 
-#[cfg(target_os = "linux")]
 #[test]
-fn producer_terminal_source_error_is_not_pending_consent() {
-    // Runs the actual Linux sampler and source resolver. An invalid selected window is
-    // refused before X11, D-Bus, microphone or any screen capture is opened.
+fn window_recording_is_refused_before_native_setup_or_output_creation() {
+    // This boundary also rejects direct callers that bypass the CLI and picker.
     let target = TargetInfo {
         mode: CaptureMode::Window,
         app: None,
@@ -30,22 +28,22 @@ fn producer_terminal_source_error_is_not_pending_consent() {
             scale: 1.0,
         },
     };
-    let session = ScreenCaptureSession::start(target, None, Arc::new(Mutex::new(vec![])));
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while !session.failed_to_start() && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(5));
+    let output = std::env::temp_dir()
+        .join(crate::shared::ids::make_bundle_id())
+        .join("recording.mp4");
+    for window_id in [None, Some(42)] {
+        let mut target = target.clone();
+        target.window_id = window_id;
+        let error = ScreenCaptureSession::start(
+            target,
+            Some(output.clone()),
+            Arc::new(Mutex::new(vec![])),
+        )
+        .err()
+        .expect("Window recording must fail synchronously, even with a valid window ID");
+        assert!(error.to_string().contains("Window recording is temporarily disabled"));
+        assert!(!output.parent().unwrap().exists());
     }
-    let failed = session.failed_to_start();
-    assert!(!session.has_frames());
-    assert!(!session.sampler_thread.as_ref().unwrap().is_finished());
-    // Explicit caller cleanup, not an Inspect side effect.
-    let recording = session.stop();
-    assert!(recording.frames.is_empty());
-    assert!(recording.video.is_none());
-    assert!(
-        failed,
-        "the source resolver returned a terminal error, not pending consent"
-    );
 }
 
 #[test]

@@ -224,13 +224,13 @@ Preview every pane, dark and light, with the recorder listening and a combinatio
 - **Press `⌥⇧S`**: record the display under the pointer as soon as you let go, however long you
   held it, auto-cropped (see below). Press it again to finish; a press within 0.4 s of the start is
   ignored, so a double press doesn't leave an empty capture. `⌃⌥⇧S` also works (only while `⌥⇧S` is the
-  shortcut; see [Settings](#settings) to change it). As it starts, the island opens onto the modes (Area · Window ·
+  shortcut; see [Settings](#settings) to change it). As it starts, the island opens onto the modes (Area ·
   **Screen** · iPhone when one is cabled) for about 3.5 s, or until you click, scroll or draw;
-  hovering keeps them. Click Window or Area to retarget (the first seconds are dropped and the
-  picker takes over: click a window or drag an area), iPhone to record the phone instead, or just
+  hovering keeps them. Click Area to retarget (the first seconds are dropped and the
+  picker takes over: drag an area), iPhone to record the phone instead, or just
   carry on.
-- **Choose What to Record…** in the menu bar: the picker (Area, Window, Screen, iPhone) opens on
-  the display under the pointer. Click a mode, click a window or drag an area; `Esc` cancels.
+- **Choose What to Record…** in the menu bar: the picker (Area, Screen, iPhone) opens on
+  the display under the pointer. Click a mode or drag an area; `Esc` cancels.
 - `⌥⇧V`: Paste both `contact-sheet.png` and `summary.md` into the active app or terminal (`⌃⌥⇧V` also works while it's the default)
 - **Normal pointer**: Clicks and scrolls pass straight through to the app underneath
 - **Hold `⇧` (Shift) + move**: Draw a persistent red marker stroke (`#ff3b30`) on screen that fades out after release
@@ -238,13 +238,17 @@ Preview every pane, dark and light, with the recorder listening and a combinatio
 - **`⌘Z`**: Undo the last stroke
 - **`Esc`**: Cancel the active selection or capture
 
-While picking a target, the island shows the modes **Area**, **Window**, **Screen**, and **iPhone**
+Window recording is temporarily disabled on macOS and Linux pending [source-lifetime safety](https://github.com/tryapparent/apparent/issues/264).
+`apparent record --window <name>` returns an explicit error before recording, without falling
+back to a screen. Existing Window bundles remain readable. Choose Screen or Area explicitly.
+
+While picking a target, the island shows the modes **Area**, **Screen**, and **iPhone**
 (when one is cabled). It opens on the mode you used last:
 
-- `1`–`4` jump to a mode; `Tab`/`→` and `⇧Tab`/`←` step through them; `Space` toggles Area and Window
-- Area: drag a region. Window: click a window. Screen and iPhone: `⏎`, `S`, `⌥⇧S`, **Record**, or
-  clicking the selected mode again starts recording (`⏎`/`⌥⇧S` record the full screen from Area and
-  Window too)
+- `1`–`3` jump to a visible mode; `Tab`/`→` and `⇧Tab`/`←` step through them; `Space` toggles Area and Screen
+- Area: drag a region. Screen and iPhone: `⏎`, `S`, `⌥⇧S`, **Record**, or
+  clicking the selected mode again starts recording (`⏎`/`⌥⇧S` record the full screen from Area too).
+  A previously saved Window picker preference opens Area instead, without starting a recording.
 
 Captures are saved as `.apparent` bundles and copied to the clipboard. Apparent does not select an
 OpenCode session or send captures automatically. Use `apparent copy <bundle>` to copy an older bundle.

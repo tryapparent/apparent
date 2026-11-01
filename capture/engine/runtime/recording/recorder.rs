@@ -209,8 +209,14 @@ impl ScreenCaptureSession {
         target: TargetInfo,
         video_output_path: Option<PathBuf>,
         excluded_window_ids: Arc<Mutex<Vec<u32>>>,
-    ) -> Self {
-        Self::start_sampler(target, video_output_path, excluded_window_ids, platform::run_sampler)
+    ) -> anyhow::Result<Self> {
+        super::super::ensure_recording_mode(target.mode)?;
+        Ok(Self::start_sampler(
+            target,
+            video_output_path,
+            excluded_window_ids,
+            platform::run_sampler,
+        ))
     }
 
     pub(crate) fn start_sampler(
