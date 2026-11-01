@@ -857,6 +857,8 @@ pub struct ApparentCoordinator {
     active_recording: Option<ActiveRecording>,
     /// Identifies the recording whose finalization may update the current UI.
     capture_generation: u64,
+    /// Media workers outlive their capsule and still own unfinished bundles.
+    pending_finalizers: usize,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     agent_capture_id: Option<String>,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -980,6 +982,7 @@ impl ApparentCoordinator {
             whiteboard: Rc::new(RefCell::new(whiteboard::Board::default())),
             active_recording: None,
             capture_generation: 0,
+            pending_finalizers: 0,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             agent_capture_id: None,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -1305,6 +1308,14 @@ impl ApparentCoordinator {
 
     fn settings_event(&mut self, event: crate::capture::desktop::settings::Event, cx: &mut Context<Self>) {
         use crate::capture::desktop::settings::{Effect, Event};
+        #[cfg(target_os = "linux")]
+        if self.defer_update_restart(&event) {
+            // Check before Session spawns its relaunch helper. Capture admission
+            // and this decision run on the same UI thread.
+            apparent_log("Update restart deferred until capture is idle");
+            crate::capture::desktop::linux::shell::notify("Update ready", "Finish or cancel the capture before restarting Apparent.");
+            return;
+        }
         if let Event::Grants(grants) = &event {
             self.note_grants(grants);
         }
@@ -1364,6 +1375,30 @@ impl ApparentCoordinator {
             }
             _ => {}
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn defer_update_restart(&self, event: &crate::capture::desktop::settings::Event) -> bool {
+        matches!(event, crate::capture::desktop::settings::Event::Action(crate::capture::desktop::settings::Action::UpdateNow))
+            && self.capture_busy()
+    }
+
+    /// UI-thread snapshot for restart/termination admission, not just visible UI.
+    pub(crate) fn capture_busy(&self) -> bool {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if self.agent_capture_id.is_some() { return true; }
+        self.pending_finalizers > 0 || self.lab || self.active_recording.is_some()
+            || self.is_selecting() || self.is_processing() || self.iphone_preview.is_some()
+            || self.recording_shortcut_key
+    }
+
+    fn capture_finalizer_started(&mut self) {
+        self.pending_finalizers += 1;
+    }
+
+    fn capture_finalizer_finished(&mut self) {
+        self.pending_finalizers = self.pending_finalizers.checked_sub(1)
+            .expect("finalizer completion must own a pending worker");
     }
 
     fn cancel_share_login(&mut self) {
@@ -3446,6 +3481,7 @@ impl ApparentCoordinator {
 
         let final_whiteboard = whiteboard::finish_snapshot(&self.whiteboard, || whiteboard::close(cx));
 
+        self.capture_finalizer_started();
         cx.spawn(async move |entity, cx| {
             let result = cx
                 .background_executor()
@@ -3459,6 +3495,9 @@ impl ApparentCoordinator {
             let _ = entity
                 .update(cx, |coord, cx| {
                     let (finalized, duration_ms) = result;
+                    // Release the worker even when its capsule was dismissed or
+                    // a newer capture owns the UI. A completion never auto-quits.
+                    coord.capture_finalizer_finished();
                     coord.receive_capture_result(
                         generation,
                         #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -6625,6 +6664,68 @@ pub fn run_app(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn update_restart_waits_for_capture_admission_and_processing() {
+        use crate::capture::desktop::settings::{Action, Event};
+        let (sender, _receiver) = flume::unbounded();
+        let mut coord = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
+        let restart = Event::Action(Action::UpdateNow);
+        assert!(!coord.defer_update_restart(&restart));
+        coord.agent_capture_id = Some("admitted-capture".into());
+        assert!(coord.defer_update_restart(&restart));
+        assert!(!coord.defer_update_restart(&Event::Action(Action::CheckForUpdates)));
+        coord.agent_capture_id = None;
+        coord.recording_shortcut_key = true;
+        assert!(coord.defer_update_restart(&restart));
+        coord.recording_shortcut_key = false;
+        coord.set_island_phase(IslandPhase::Processing);
+        assert!(coord.defer_update_restart(&restart));
+        coord.set_island_phase(IslandPhase::Selecting { mode: SelectionMode::Screen });
+        assert!(coord.defer_update_restart(&restart));
+        coord.set_island_phase(IslandPhase::Hidden);
+        assert!(!coord.defer_update_restart(&restart));
+        coord.lab = true;
+        assert!(coord.defer_update_restart(&restart));
+    }
+
+    #[test]
+    fn dismissed_and_stale_finalizers_remain_busy_until_every_worker_returns() {
+        let (sender, _receiver) = flume::unbounded();
+        let mut coord = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
+        assert!(!coord.capture_busy());
+        coord.set_island_phase(IslandPhase::Processing);
+        let generation = coord.capture_generation;
+        coord.capture_finalizer_started();
+        // Escape cancels UI ownership, not the detached encoding/bundle worker.
+        coord.cancel_capture_attempt();
+        coord.set_island_phase(IslandPhase::Dismissing);
+        coord.set_island_phase(IslandPhase::Hidden);
+        assert!(!coord.accepts_capture_result(generation));
+        assert!(coord.capture_busy());
+        #[cfg(target_os = "linux")]
+        assert!(coord.defer_update_restart(&crate::capture::desktop::settings::Event::Action(
+            crate::capture::desktop::settings::Action::UpdateNow)));
+        coord.capture_finalizer_started();
+        assert_eq!(coord.pending_finalizers, 2);
+        // Use the same reception order as finish_recording's callback: release
+        // one worker, then dispatch its result even though it no longer owns UI.
+        for remaining in [1, 0] {
+            coord.capture_finalizer_finished();
+            coord.receive_capture_result(generation,
+                #[cfg(any(target_os = "macos", target_os = "linux"))]
+                None, false, Err(anyhow::anyhow!("deferred finalizer failed")),
+                |_| panic!("failed finalizer must not publish"),
+                |_, _| panic!("dismissed finalizer must not regain UI ownership"));
+            assert_eq!(coord.pending_finalizers, remaining);
+            assert_eq!(coord.capture_busy(), remaining > 0);
+            assert_eq!(coord.island_phase, IslandPhase::Hidden);
+        }
+        #[cfg(target_os = "linux")]
+        assert!(!coord.defer_update_restart(&crate::capture::desktop::settings::Event::Action(
+            crate::capture::desktop::settings::Action::UpdateNow)));
+    }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
