@@ -86,10 +86,31 @@ on run argv
         set picker to item 1 of childSheets
         set depth to depth + 1
       end repeat
+      -- Failure diagnostics must not depend on the recursive selector succeeding.
+      if operation is "diagnose" then
+        set directChildren to UI elements of picker
+        set trace to trace & "immediate-child-count=" & (count of directChildren) & linefeed
+        set childLimit to count of directChildren
+        if childLimit > 16 then set childLimit to 16
+        repeat with childIndex from 1 to childLimit
+          set directChild to item childIndex of directChildren
+          set trace to trace & "child-role=" & (role of directChild as text) & ";next-roles="
+          set nextRoles to role of every UI element of directChild
+          if (count of nextRoles) > 32 then
+            set trace to trace & "over-32"
+          else
+            repeat with nextRole in nextRoles
+              set trace to trace & (nextRole as text) & "|"
+            end repeat
+          end if
+          set trace to trace & linefeed
+        end repeat
+        return trace
+      end if
       if depth > 0 and (name of outerWindow as text) is not "Apparent — UI foundation" then error "Picker has unexpected parent: " & trace
       if panelRole is not "AXSheet" and panelRole is not "AXWindow" then error "Unexpected picker role: " & trace
       -- A sheet can have no title. A named picker must expose the shipped title.
-      if operation is not "diagnose" and panelName is not "" and panelName is not "Choose capture location" then error "Unexpected picker title: " & trace
+      if panelName is not "" and panelName is not "Choose capture location" then error "Unexpected picker title: " & trace
       -- AppKit groups its controls below the sheet. Never widen the search to
       -- another window/process, and reject oversized or ambiguous subtrees.
       set walked to my pickerButtons(picker, 0, 512)
@@ -105,7 +126,6 @@ on run argv
         end if
       end repeat
       set trace to trace & linefeed
-      if operation is "diagnose" then return trace
       if (count of chooseMatches) is not 1 or (count of cancelMatches) is not 1 then error "Owned native picker controls missing or ambiguous: " & trace
       set chooseButton to item 1 of chooseMatches
       set cancelButton to item 1 of cancelMatches
@@ -228,7 +248,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       try { return await fn(); } catch (error) { last = error; }
       await sleep();
     } while (Date.now() < until);
-    throw new Error(`${label}: ${last?.message ?? 'not ready'}`);
+    throw new Error(`${label}: ${last?.message ?? 'not ready'}`, { cause: last });
   };
   let env;
   const osa = async (script, args = []) => {
@@ -405,9 +425,27 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     report.passed = true;
   } catch (error) {
     failure = error;
-    report.error = { message: error.message, stack: error.stack };
+    report.error = { message: error.message, stack: error.stack,
+      subprocess: error.cause && { code: error.cause.code, signal: error.cause.signal,
+        killed: error.cause.killed, stderr: error.cause.stderr } };
     if (electronChild && Date.now() < deadline) {
       try { report.failureAX = await panel('diagnose'); } catch (axError) { report.failureAXError = axError.message; }
+      // Read-only evidence from the exact live owned window, even when its native
+      // controls cannot be selected. Never expand to the display or other windows.
+      if (application && Date.now() < deadline) {
+        try {
+          const bounds = await within(application.evaluate(({ BrowserWindow }) => {
+            const windows = BrowserWindow.getAllWindows();
+            if (windows.length !== 1 || windows[0].getTitle() !== 'Apparent — UI foundation') throw new Error('Unknown owned window');
+            return windows[0].getBounds();
+          }), budget(), 'Owned failure window bounds');
+          const rectangle = [bounds.x, bounds.y, bounds.width, bounds.height];
+          assert.ok(rectangle.every(Number.isSafeInteger) && bounds.width > 0 && bounds.height > 0);
+          await run('/usr/sbin/screencapture', ['-x', '-R', rectangle.join(','), path.join(output, 'failed-owned-window.png')],
+            { env, timeout: budget(3000), killSignal: 'SIGKILL', maxBuffer: 8192 });
+          report.failureScreenshot = 'failed-owned-window.png';
+        } catch (shotError) { report.failureScreenshotUnavailable = shotError.message; }
+      }
     }
   } finally {
     if (application) {
