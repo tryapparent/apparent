@@ -7,12 +7,62 @@ Both sides of renames/deletions are included. Missing history broadens checks.
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCS = {"AGENTS.md", "README.md", "refactor.md"}
+DOCS = {"AGENTS.md", "README.md", "refactor.md", "CONTEXT.md"}
+
+# Exact reviewed extraction pairs, not an arbitrary Rust/mechanical classifier.
+# f1b46d2a donors -> #221 1ea0d146 / #225 28d83f3d preserved bodies,
+# tests and forwarding visibility. Only these files may differ; shared/native/
+# build inputs still broaden. A newer donor or any body/test edit needs review.
+# Git blob identities also bind whitespace, imports, cfgs and test-module wiring.
+MOVES = {
+    "config": {
+        "blobs": {
+            "src/handoff.rs": ("da2980adcf8e50b35019b043059d26c1697c8dd7", "7dcdf6b051b10d45d0d2e1afbfac5a5dc12ae393"),
+            "src/handoff/config_store.rs": (None, "4d960d819900123d099aa6ad4d2a7827e3ffbfdc"),
+            "src/handoff/test_modules.rs": (None, "9ac7c770ecb3aeb2d86892b5656330cf5292c405"),
+            # Retained Mac fixture repair: canonicalize the owned test root,
+            # not a product behavior change. Included in the pinned #221 slice.
+            "src/hosted_logging_tests.rs": ("1d37007b970ca92183115e70a880c311aeaf7ea6", "d4f03bd3c4c1b220897d9d804058281f3f338ee1"),
+        },
+        "tests": ["handoff::", "hosted::", "settings::"],
+    },
+    "recorder": {
+        "blobs": {
+            "src/capture.rs": ("6d26953bf949d238ace1bf292801e1bc218875a9", "1f607ee1b7e20fb36f0801c18551fa58570165f2"),
+            "src/capture/recorder.rs": (None, "c55b515736aad02abb9d8259e5ddd92cea459703"),
+            "src/capture/tests_recorder.rs": (None, "de3f93c113f0affad8745967bae829b0537d19a0"),
+        },
+        "tests": ["agent_capture::", "capture::"],
+    },
+    # 84ef8f56: exact production block + all ten artifact test bodies
+    # reconstructed against f1b46d2a; only imports and root forwarding differ.
+    "processing": {
+        "blobs": {
+            "src/main.rs": ("a0ae40bc997f6e086ffeb27a44fe66cb15dddd02", "e3468e20f7f12cffd3c070dc2d8a19f281a2a230"),
+            "src/bundle_processing.rs": (None, "88240b2b938639cfbdd190ad1209e5f306ac3f33"),
+        },
+        "tests": ["bundle_processing::", "capture::", "recover::", "sketch::"],
+    },
+}
+
+# Additive independent browser package from #200, inventory checked at c5bb1b78. Root
+# build.rs/Cargo/native inputs do not consume this directory; its build reads
+# the five approved site/public brand assets. Changing those/shared inputs is
+# not this route. Explicit inventory keeps unknown new owners broad.
+BROWSER_FILES = {"connect/web/" + path for path in (
+    ".gitignore", "AGENTS.md", "README.md", "VERIFICATION.md", "bun.lock",
+    "index.html", "package.json", "tsconfig.json", "vite.config.ts",
+    "scripts/assets.mjs", "scripts/prerender.mjs", "scripts/test-browser.mjs",
+    "src/Hosted.tsx", "src/api.ts", "src/base.css", "src/entry-server.tsx",
+    "src/hosted.css", "src/main.tsx", "test/artifact.test.mjs", "test/browser.mjs",
+    "test/closure.test.mjs", "test/routes.test.mjs",
+)}
 
 
 def select(paths, history_known=True):
@@ -21,16 +71,20 @@ def select(paths, history_known=True):
     # infer safety from a commit message, extension, or a newly created owner.
     broad = not history_known or not paths
     engine = False
+    browser = False
     reasons = []
     for path in paths:
         if path in DOCS or (path.startswith("docs/") and path.endswith(".md")):
             continue
         if path.startswith("capture/engine/tests/") or path == "capture/engine/README.md":
             engine = True
+        elif path in BROWSER_FILES:
+            browser = True
         else:
             broad = True
             reasons.append(path)
-    return {"root": broad, "engine": broad or engine, "paths": paths,
+    return {"root": broad, "engine": broad or engine, "browser": browser,
+            "focused": [], "paths": paths,
             "reason": "unknown history or empty delta" if not history_known or not paths
             else "broad inputs: " + ", ".join(reasons) if broad else "document/package-test-only delta"}
 
@@ -44,9 +98,35 @@ def changed_paths(base, head):
 
 def plan(base, head):
     try:
-        return select(changed_paths(base, head))
-    except (subprocess.CalledProcessError, UnicodeError):
+        selection = select(changed_paths(base, head))
+        remaining = set(selection["paths"])
+        focused = []
+        for recipe in MOVES.values():
+            blobs = recipe["blobs"]
+            if set(blobs) <= remaining and all(
+                tree_entry(base, path) == (("100644", old) if old else None)
+                and tree_entry(head, path) == ("100644", new)
+                for path, (old, new) in blobs.items()
+            ):
+                remaining.difference_update(blobs)
+                focused.extend(recipe["tests"])
+        rest = select(remaining) if remaining else None
+        if focused and (rest is None or not rest["root"]):
+            selection.update(root=True, engine=bool(rest and rest["engine"]),
+                             focused=sorted(set(focused)), reason="exact reviewed source-preserving extraction")
+        return selection
+    except (subprocess.CalledProcessError, UnicodeError, ValueError):
         return select([], history_known=False)
+
+
+def tree_entry(revision, path):
+    result = subprocess.run(["git", "ls-tree", "-z", revision, "--", path],
+                            cwd=ROOT, capture_output=True, check=True)
+    if not result.stdout:
+        return None
+    metadata, name = result.stdout.rstrip(b"\0").split(b"\t")
+    mode, kind, oid = metadata.decode("ascii").split()
+    return (mode, oid) if kind == "blob" else (mode, kind)
 
 
 def run_checks(selection, offline=True):
@@ -61,13 +141,30 @@ def run_checks(selection, offline=True):
     dependency_mode = "--offline" if offline else "--locked"
     if selection["root"]:
         subprocess.run(cargo + ["build", "-j", jobs, dependency_mode], cwd=ROOT, check=True)
-        subprocess.run(cargo + ["test", "-j", jobs, dependency_mode, "--", "--test-threads=2"], cwd=ROOT, check=True)
+        if selection.get("focused"):
+            for test_filter in selection["focused"]:
+                result = subprocess.run(cargo + ["test", "-j", jobs, dependency_mode, test_filter,
+                                                "--", "--test-threads=2"], cwd=ROOT,
+                                        stdout=subprocess.PIPE, text=True, check=True)
+                print(result.stdout, flush=True)
+                if not any(int(n) > 0 for n in re.findall(r"test result: ok\. (\d+) passed", result.stdout)):
+                    raise RuntimeError(f"Focused filter selected no passing tests: {test_filter}")
+        else:
+            subprocess.run(cargo + ["test", "-j", jobs, dependency_mode, "--", "--test-threads=2"], cwd=ROOT, check=True)
     if selection["engine"]:
         for command in ("build", "test"):
             args = cargo + [command, "--manifest-path", "capture/engine/Cargo.toml", "-j", jobs, dependency_mode]
             if command == "test":
                 args += ["--", "--test-threads=2"]
             subprocess.run(args, cwd=ROOT, check=True)
+    if selection.get("browser"):
+        # Use the existing package fixtures, including the separate loopback
+        # build. Do not substitute a production artifact with synthetic config.
+        browser = ROOT / "connect/web"
+        for command in (["bun", "install", "--frozen-lockfile"], ["bun", "run", "build"],
+                        ["node", "--test", "test/artifact.test.mjs", "test/closure.test.mjs", "test/routes.test.mjs"],
+                        ["node", "scripts/test-browser.mjs"]):
+            subprocess.run(command, cwd=browser, check=True)
 
 
 def main():
@@ -82,7 +179,7 @@ def main():
     print(json.dumps(selection, sort_keys=True), flush=True)
     if args.github_output:
         with args.github_output.open("a") as output:
-            for key in ("root", "engine"):
+            for key in ("root", "engine", "browser"):
                 output.write(f"{key}={str(selection[key]).lower()}\n")
     if args.run:
         run_checks(selection, offline=not args.online)

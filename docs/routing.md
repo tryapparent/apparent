@@ -3,7 +3,7 @@
 Apparent no longer routes or sends captures to OpenCode. This document describes the old
 implementation for historical reference, not an available experiment or current user workflow.
 
-Read this before changing `src/routing/smart.rs` or `src/routing/look.rs`. The old ladder and current inactive status are described in `docs/iphone-and-routing.md`, and the words used here are defined in `CONTEXT.md`.
+Read this before changing `src/routing/smart.rs` or `src/routing/look.rs`. The old ladder and current inactive status are described in `docs/iphone-and-routing.md`.
 
 Historically, `"experiments": {"smartRouting": true}` in `~/.config/apparent/config.json` selected this path. The setting no longer routes captures. The following steps describe the retired design, not current app behavior.
 

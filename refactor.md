@@ -1,11 +1,9 @@
 # Apparent incremental architecture campaign
 
-Status: strategy/tooling candidate, based on canonical `tryapparent/apparent`
-main `6f043ff4ab4f4bdfa7e180c97ef7c37a397ff2ef` (fetched and compared).
-During drafting, main advanced to `b06b1e45` through #237 (Linux audio ducking).
-Its source/build delta is not included here; this candidate remains based on the
-assigned `6f043ff4`. Parent must check combined-tree acceptance against newer main.
-**No application migration starts until this strategy PR merges.** The parent
+Status: strategy/tooling accepted on canonical `tryapparent/apparent` main through
+[#239](https://github.com/tryapparent/apparent/pull/239), merged as
+`f1b46d2a62145abae6f93a99d29de9da023e675b` (ancestry and acceptance checked).
+Application migration may now start within the ordered scopes below. The parent
 coordinator owns merge and progress updates on main; a worker finishing is not
 completion. No deployment, release or unrelated merge is authorized here.
 
@@ -78,7 +76,7 @@ Parallel lanes own useful outcomes and their tests/PRs, not arbitrary files. One
 owns each shared hotspot/module declaration/manifest. Use short-lived main-targeted
 PRs, not the #199 umbrella as an integration destination. Branch from a committed
 provider only when necessary; integrate accepted prerequisites into main promptly.
-No application edits are authorized by this document's unmerged branch.
+Application edits remain limited to assigned slices and exclusive owner reservations.
 
 ## Verification policy and executable routing
 
@@ -104,20 +102,42 @@ current delta and retained proof before acceptance; do not relabel old native wo
 
 `./.githooks/pre-push` retains clean exact-HEAD, hidden-index and final-tree guards.
 `scripts/verification.py` selects from the complete main-merge-base delta, not the last
-commit or last push. Missing history, an empty/unknown delta, shared/build/security/
-lifecycle paths and selector/hook/CI edits broaden to root plus Engine build/tests.
+commit or last push. Missing history, an empty/unknown delta, changed shared/build/
+security/lifecycle behavior and selector/hook/CI edits broaden to root plus Engine build/tests.
 Document-only changes run hook/selector contracts without Cargo. Engine-test-only
 changes build/test Engine without the root app. Rename/delete selection includes
 both donor and destination. `.github/workflows/verification.yml` uses the same selector
 on PR base/main-before deltas, on macOS and Linux, with no secrets or publication.
 Existing website/Connect, updater and release workflows remain intact.
 
-The initial selector intentionally does not guess that arbitrary Rust code is
-mechanical or claim that future packages already exist. Unknown/new owners safely
-broaden. Add reviewed focused rules with deterministic tests when a slice's closure
-is known; do not use flags, labels, commit messages or hook bypasses as proof. The
-current conservative fallback may still run a broad suite for an unrecognized move.
-This is a small routing script, not a new verification framework or native harness.
+The follow-through selector recognizes the exact reviewed config #221 (`1ea0d146`)
+and recorder #225 (`28d83f3d`), plus processing `84ef8f56`, source pairs using complete Git blob identities and
+regular-file modes, including donor bodies, destination imports/re-exports and tests.
+Only those complete deltas (alone, combined or with narrow docs/package tests) select
+root compilation plus existing owning test sets: handoff/hosted/Settings for config,
+capture/agent_capture for recorder. The pinned config fixture repair is included.
+Processing runs bundle_processing/capture/recover/sketch; its complete production
+block and all ten artifact test bodies were compared byte-for-byte to `f1b46d2a`.
+Each filter must execute passing tests; a zero-match run fails. Any altered body,
+missing test, mode change, shared/native/build change or unknown extra path restores
+full root/Engine checks. These are source-pair gates, not commit-message, label,
+environment or user-selected bypasses. New donor bytes require review, not a guessed
+"mechanical" classification.
+
+The known `connect/web` package inventory from #200, checked at 5b checkpoint
+`c5bb1b78`, selects its independent frozen Bun 1.3.10 install, production build,
+artifact/resource-closure and dev/preview route fixtures, and separate synthetic browser
+build/fixtures, without Rust. Its current closure reads only the five approved
+`site/public` assets outside the package; changes there or in publisher/service/shared
+inputs still broaden. CI provisions Node/Chrome for that route. This is executable
+routing for the additive package, not a claim it is already on main or that its
+current worker candidate has passed. Unknown new browser paths remain broad.
+
+Do not certify arbitrary `main.rs` edits: that file composes every subsystem. A
+later extraction revision must be source-compared and its exact blobs reviewed
+before replacing the pinned processing pair; the registry is deliberately bounded.
+No checklist step beyond 1 is checked by this routing follow-through. This remains
+a small selector, not a Rust parser, broad test framework or native harness.
 
 On Clanker run all new heavy builds/tests and hook-backed pushes once through
 `/home/simon/.local/bin/t3-build`; never nest it. Lightweight selector/shell fixtures
@@ -141,10 +161,10 @@ PR links use the canonical repository; main ancestry was checked at the pinned b
 
 An unchecked box stays unchecked until implementation is merged **and** the stated
 acceptance is met. Record merged PR, tested revision, reused/fresh results and remaining
-limits in the same PR where possible. The strategy itself remains pending on this
-branch; main presence plus passing strategy acceptance is its completion condition.
+limits in the same PR where possible. Strategy acceptance is recorded below; no
+other pending item becomes complete merely because a worker finishes it.
 
-- [ ] **1. Strategy and verification tooling (this PR).** Depends on no application change. Accept: this file/AGENTS agree; real hook/CI routing and deterministic fixtures pass; broad fallback and exact-tree guards preserved; main-targeted draft read back and parent merges after required checks. Excludes app code, deployment, release and fabricated native proof.
+- [x] **1. Strategy and verification tooling.** Merged #239 as `f1b46d2a62145abae6f93a99d29de9da023e675b`. All ten required checks passed, including CodeQL's five language analyses/aggregate, harness contracts, selector, and macOS/Linux Rust jobs. Final Actions run [41256544899](https://github.com/tryapparent/apparent/actions/runs/41256544899) verified root builds/full suites (Linux 671 passed/3 ignored; Mac 595 passed/3 ignored), Engine builds/22 tests on each, and hook/selector fixtures (14 + 7). Test/tooling repairs through `bdcd00650e22c0af79699aa597e137957a091233` fixed the HOME display assertion, short socket fixture, owned Mac ACL teardown and actual ACL test selector; the focused regressions passed before full suites. This is merged-main acceptance with retained final-head CI evidence, not a fresh run on this documentation change. No native GUI/capture, deployment or release acceptance is claimed.
 - [ ] **2a. Reuse config #221.** After 1. Reconcile head `1ea0d146` against current main and original reviewed blobs; integrate the existing storage/test extraction, not another implementation. Accept inverse reconstruction, preserved config/unknown keys/secrets and queue→config contract, affected compile and handoff/hosted-config/Settings tests. Reuse retained full results where inputs match. Excludes consent/schema changes, second preference store and unnecessary native replay.
 - [ ] **2b. Reuse recorder #225.** After 1 and 2a; head `28d83f3d` already contains #221. Accept preserved recorder bodies/test mapping/re-exports, affected compilation and recorder tests; inspect exact candidate difference rather than importing unrelated history. Excludes Engine adoption, native adapter changes and duplicate #204 extraction. #233 is already complete; do not redo it.
 - [ ] **3. Common bundle processing out of main.rs.** After 1; serialize `src/main.rs` ownership, preferably after 2 to avoid wiring collisions. Move current main lines 661–1488 into `src/bundle_processing.rs` with the ten existing artifact tests and direct root re-exports. Recheck ranges/symbols on the actual base. Accept reconstruction, call-site/import review, affected compilation/tests and synthetic manifest/summary/image equivalence when relevant. Demo stays root. Reuse byte-identical production evidence from #201, not its whole donor diff. Excludes publication fixes, UI/completion edits, format changes and Engine packaging.
