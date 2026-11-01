@@ -648,8 +648,6 @@ pub fn finalize_live_capture(
             screens: Vec::new(),
         },
     )?;
-    // The native video is ~18 Mbps; re-encode it a minute from now (in the app).
-    crate::retention::after_phone_capture(&built.0);
     Ok(built)
 }
 

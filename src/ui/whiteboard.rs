@@ -324,7 +324,7 @@ pub(super) fn finish_handoff(
     finish_handoff_with(dir, bundle, summary, board, |_| Ok(()))
 }
 
-fn finish_handoff_with(
+pub(super) fn finish_handoff_with(
     dir: &std::path::Path,
     mut bundle: crate::model::ApparentBundle,
     summary: String,
@@ -352,13 +352,14 @@ fn append_to_bundle_with(
     if board.strokes.is_empty() {
         return Ok(());
     }
-    let read = |path: &std::path::Path| -> anyhow::Result<crate::model::RgbaFrame> {
-        crate::render::decode_png(BufReader::new(std::fs::File::open(path)?))
+    let root = crate::bundle_processing::publication::Directory::open(dir, false)?;
+    let read = |path: &str| -> anyhow::Result<crate::model::RgbaFrame> {
+        crate::render::decode_png(BufReader::new(root.file(path)?))
     };
     let mut frames: Vec<_> = bundle
         .keyframes
         .iter()
-        .map(|key| Ok((key.clone(), read(&dir.join(&key.file))?)))
+        .map(|key| Ok((key.clone(), read(&key.file)?)))
         .collect::<anyhow::Result<_>>()?;
     let index = frames.len() + 1;
     let count = board.strokes.len();
@@ -390,7 +391,8 @@ fn append_to_bundle_with(
             .iter()
             .map(|key| {
                 let name = std::path::Path::new(&key.file).file_name().unwrap();
-                Ok((key.clone(), read(&dir.join(&crop.full_frames).join(name))?))
+                let path = format!("{}/{}", crop.full_frames, name.to_string_lossy());
+                Ok((key.clone(), read(&path)?))
             })
             .collect::<anyhow::Result<_>>()?;
         full.push((key.clone(), stamped[0].1.clone()));
@@ -401,13 +403,13 @@ fn append_to_bundle_with(
 
     let mut next = bundle.clone();
     let mut writes = vec![
-        (dir.join(&key.file), png.clone()),
-        (dir.join(&bundle.contact_sheet), crate::render::encode_png(&sheet)?),
+        (key.file.clone(), png.clone()),
+        (bundle.contact_sheet.clone(), crate::render::encode_png(&sheet)?),
     ];
     if let (Some(crop), Some(full)) = (&mut next.autocrop, full_sheet) {
         let name = std::path::Path::new(&key.file).file_name().unwrap();
-        writes.push((dir.join(&crop.full_frames).join(name), png));
-        writes.push((dir.join(&crop.full_contact_sheet), crate::render::encode_png(&full)?));
+        writes.push((format!("{}/{}", crop.full_frames, name.to_string_lossy()), png));
+        writes.push((crop.full_contact_sheet.clone(), crate::render::encode_png(&full)?));
         crop.crops.push(KeyframeCrop {
             index,
             x: 0.0,
@@ -421,49 +423,56 @@ fn append_to_bundle_with(
         crop.changes.push(Vec::new());
     }
     next.keyframes.push(key);
-    writes.push((dir.join("apparent.json"), serde_json::to_vec_pretty(&next)?));
-    writes.push((dir.join("summary.md"), crate::sketch::summary_markdown(&next, dir).into_bytes()));
+    writes.push(("apparent.json".into(), serde_json::to_vec_pretty(&next)?));
+    writes.push(("summary.md".into(), crate::sketch::summary_markdown(&next, dir).into_bytes()));
     publish_artifacts(dir, &writes, before_publish)?;
     *bundle = next;
     Ok(())
 }
 
-/// Stage everything before replacing any base capture artifact. Hard-linked backups let a
-/// failed publish restore originals with renames, even when the disk is out of space.
+/// Stage replacements and independent backups before replacing anything. Rollback
+/// renames allocate no payload bytes; a staging failure leaves originals intact.
 fn publish_artifacts(
     dir: &std::path::Path,
-    writes: &[(std::path::PathBuf, Vec<u8>)],
+    writes: &[(String, Vec<u8>)],
     mut before_publish: impl FnMut(usize) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
     use anyhow::Context;
 
-    let stage = dir.join(format!(".whiteboard-{}", crate::make_bundle_id()));
-    std::fs::create_dir(&stage)?;
+    let root = crate::bundle_processing::publication::Directory::open(dir, false)?;
+    let stage_name = format!(".whiteboard-{}", crate::make_bundle_id());
+    let stage = root.child(&stage_name, true)?;
     let mut rollback_failed = false;
+    let mut originals = vec![false; writes.len()];
     let result = (|| -> anyhow::Result<()> {
         for (index, (path, bytes)) in writes.iter().enumerate() {
-            std::fs::write(stage.join(format!("new-{index}")), bytes)?;
-            if path.exists() {
-                std::fs::hard_link(path, stage.join(format!("old-{index}")))
-                    .with_context(|| format!("backing up {}", path.display()))?;
+            stage.write(&format!("new-{index}"), bytes)?;
+            match root.file(path) {
+                Ok(_) => {
+                    root.copy_to(path, &stage, &format!("old-{index}"))
+                        .with_context(|| format!("backing up {path}"))?;
+                    originals[index] = true;
+                },
+                Err(error) if error.downcast_ref::<std::io::Error>().is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) => {},
+                Err(error) => return Err(error),
             }
         }
         let mut published = 0;
         for (index, (path, _)) in writes.iter().enumerate() {
             if let Err(error) = before_publish(index)
-                .and_then(|()| std::fs::rename(stage.join(format!("new-{index}")), path).map_err(Into::into))
+                .and_then(|()| stage.rename_to(&format!("new-{index}"), &root, path))
             {
                 for (prior, (path, _)) in writes[..published].iter().enumerate().rev() {
-                    let backup = stage.join(format!("old-{prior}"));
-                    let restored = if backup.exists() {
-                        std::fs::rename(backup, path)
+                    let backup = format!("old-{prior}");
+                    let restored = if originals[prior] {
+                        stage.rename_to(&backup, &root, path)
                     } else {
-                        std::fs::remove_file(path)
+                        root.remove_path(path)
                     };
                     if let Err(restore_error) = restored {
                         rollback_failed = true;
                         crate::capture::apparent_log(format!(
-                            "Whiteboard rollback failed for {}: {restore_error}", path.display()
+                            "Whiteboard rollback failed for {path}: {restore_error}"
                         ));
                     }
                 }
@@ -475,10 +484,11 @@ fn publish_artifacts(
     })();
     if rollback_failed {
         crate::capture::apparent_log(format!(
-            "Whiteboard backups left at {} for recovery", stage.display()
+            "Whiteboard backups left at {} for recovery", dir.join(&stage_name).display()
         ));
-    } else if let Err(error) = std::fs::remove_dir_all(&stage) {
-        crate::capture::apparent_log(format!("Whiteboard stage cleanup failed: {error}"));
+    } else {
+        for leaf in stage.names()? { stage.remove(&leaf).context("Whiteboard stage cleanup failed")?; }
+        root.remove_directory(&stage_name).context("Whiteboard stage cleanup failed")?;
     }
     result
 }

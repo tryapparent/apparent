@@ -1143,19 +1143,14 @@ fn main() -> Result<()> {
                 .collect();
             if let Some(iters) = bench {
                 let iters = iters.max(1);
-                let video_name = video.file_name().context("Bad video name")?.to_owned();
+                bundle_processing::publication::preflight_sources(&dir, Some(&video))?;
                 let prep_iter = |i: u32| -> Result<(PathBuf, PathBuf)> {
                     let iter_out = if i + 1 == iters {
                         out.clone()
                     } else {
                         out.with_file_name(format!("bench-{i}.apparent"))
                     };
-                    let _ = std::fs::remove_dir_all(&iter_out);
-                    std::fs::create_dir_all(&iter_out)?;
-                    let linked = iter_out.join(&video_name);
-                    std::fs::hard_link(&video, &linked)
-                        .or_else(|_| std::fs::copy(&video, &linked).map(|_| ()))?;
-                    Ok((iter_out, linked))
+                    bundle_processing::publication::benchmark::stage(&dir, &video, &iter_out)
                 };
                 let mut runs_ms = Vec::with_capacity(iters as usize);
                 if let Some(device) = old.device.clone() {
