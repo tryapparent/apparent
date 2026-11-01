@@ -242,7 +242,7 @@ enum Command {
     },
     /// Record for a fixed duration. Timed CLI screen capture does not collect clicks or Shift ink; use the app's recording shortcut for interaction telemetry.
     Record {
-        /// Optional window title or app substring to target.
+        /// Temporarily unavailable: Window recording is disabled; this option returns an error without recording.
         #[arg(long)]
         window: Option<String>,
         /// Capture the cabled iPhone instead of the screen (live mirror window + native video).
@@ -795,16 +795,18 @@ pub(crate) fn run() -> Result<()> {
             note,
             out,
         } => {
-            #[cfg(target_os = "macos")]
-            anyhow::ensure!(
-                crate::capture::engine::runtime::screen_capture_usable(false),
-                "Screen Recording is not available to this process. Grant Apparent Screen Recording in System Settings, then quit and reopen the app."
-            );
-            #[cfg(target_os = "linux")]
-            if let Some(warning) = linux::media::encoder_warning() {
-                anyhow::bail!("{warning}");
-            }
-            let target = record_target(window.as_deref())?;
+            let target = record_target(window.as_deref(), || {
+                #[cfg(target_os = "macos")]
+                anyhow::ensure!(
+                    crate::capture::engine::runtime::screen_capture_usable(false),
+                    "Screen Recording is not available to this process. Grant Apparent Screen Recording in System Settings, then quit and reopen the app."
+                );
+                #[cfg(target_os = "linux")]
+                if let Some(warning) = linux::media::encoder_warning() {
+                    anyhow::bail!("{warning}");
+                }
+                Ok(())
+            })?;
             let bundle_dir = out.unwrap_or_else(|| {
                 handoff::default_captures_dir().join(format!("{}.apparent", make_bundle_id()))
             });
@@ -816,7 +818,7 @@ pub(crate) fn run() -> Result<()> {
                 target.clone(),
                 Some(video_path),
                 std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
-            );
+            )?;
             let window_log = (target.mode == CaptureMode::Display).then(|| {
                 windows::WindowLogger::start(
                     target.frame,

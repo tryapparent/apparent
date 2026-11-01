@@ -152,24 +152,24 @@
       "id": "switch-chips",
       "group": "start",
       "name": "Switch target as it starts",
-      "says": "The capsule opens onto Area · Window · Screen · iPhone for 3.5 s; a chip restarts the capture on that target.",
-      "status": "stable@0.3.4",
+      "says": "The capsule opens onto Area · Screen · iPhone for 3.5 s; a chip restarts the capture on that target.",
+      "status": "main",
       "platforms": ["mac", "linux"],
-      "note": "The iPhone chip is Mac only.",
+      "note": "The iPhone chip is Mac only. Window recording is temporarily disabled as containment for #230; #264 tracks safe restoration.",
       "docs": ["capture/engine/docs/capture.md"]
     },
     {
       "id": "picker",
       "group": "start",
       "name": "Choose What to Record…",
-      "says": "The menu's picker opens on the pointer's display: drag an area, click a window, or pick Screen or iPhone.",
-      "status": "stable@0.3.4",
+      "says": "The menu's picker opens on the pointer's display: drag an area, or pick Screen or iPhone.",
+      "status": "main",
       "platforms": ["mac", "linux"],
-      "note": "The Linux preview's Window mode lists X11 windows only.",
+      "note": "Window recording is temporarily disabled on macOS and Linux, including record --window and direct recording entry points. There is no screen fallback. Existing Window bundles remain readable.",
       "shortcuts": [
-        { "keys": "1–4", "does": "Picker: jump to a mode" },
+        { "keys": "1–3", "does": "Picker: jump to a visible mode (iPhone is Mac only)" },
         { "keys": "Tab / ⇧Tab", "does": "Picker: next or previous mode" },
-        { "keys": "Space", "does": "Picker: toggle Area and Window" },
+        { "keys": "Space", "does": "Picker: toggle Area and Screen" },
         { "keys": "⏎", "does": "Picker: record the selection" }
       ],
       "docs": ["README.md#capture-controls"]
