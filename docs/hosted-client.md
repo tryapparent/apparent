@@ -2,6 +2,47 @@
 
 Shared macOS/Linux implementation, default-off `hostedSync` experiment. This is an implementation candidate, not a deployed service or proof of native GUI behavior. No Windows support. See [hosted-api.md](hosted-api.md) for the v1 protocol and hosting prerequisites.
 
+## Implementation ownership
+
+`connect/client` is the production `apparent-connect-client` library, not a
+protocol-only staging package. It owns transfer, device auth, credentials, queue
+and worker locking, generation/cancellation checks, sharing identity/reservation/
+revocation, secure staging, fetch publication and their real curl/loopback tests.
+It builds independently with only the existing anyhow, Clap derive, libc, serde
+and serde_json dependencies. It does not build the root app, GPUI, Engine,
+GStreamer, Swift helper or root build script. Runtime curl and system SHA-256
+requirements still apply; supported platforms remain macOS and Linux.
+
+`src/hosted.rs` is Desktop composition: it supplies `ConfigProvider` via the
+accepted shared config store, browser opening, CLI/bundle-selector/logging
+adapters, and the once-per-process worker launcher. All existing main/UI/Settings
+callers use that facade and therefore the package. Remove a facade entry only
+when those callers migrate to supported package composition; the `cloud` CLI
+alias remains an external compatibility contract. Clipboard, feedback exclusion,
+current-request cancellation and local fallback remain application policy.
+
+Provider cloud/experiment reads are fresh at every check, including after client
+construction and at prepared-link delivery. Root experiment reads retain
+`handoff::experiment` overrides and test semantics. Cloud/experiment writes call
+the real locked setters from #221; the package has no production config writer
+or constructor snapshot. Lock order stays **worker → queue → config**. A provider
+must not acquire the queue lock while publishing config. Provider write errors
+propagate; they are not successful disable/login results.
+
+Independent checks (run once through `t3-build` on Clanker):
+
+```
+cargo build --manifest-path connect/client/Cargo.toml --locked --offline
+cargo test --manifest-path connect/client/Cargo.toml --locked --offline -- --test-threads=2
+```
+
+The root dev-dependency alone enables `test-support`: shared synthetic scenarios
+run again with the real application provider and locked writers. Root retains
+config races, exact subprocess/CLI alias and logging assertions, and the real UI
+late-login helper. The feature is absent from normal application builds. Package
+experiment constants are included in feature-map discovery. Package checks do
+not substitute for root adoption compilation or native/platform proof.
+
 ## Opt in on the recording computer
 
 Update Apparent to use `apparent connect`. Older apps with Connect support use
