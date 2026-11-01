@@ -73,7 +73,10 @@ expiry and update the GitHub secret; never print it. The workflow does not need
 DNS, OAuth, R2, D1 or SSH credentials. Dispatch `web-delivery.yml` on main to retry.
 A successful merge without a successful website job is not a production delivery.
 
-## Hostname cutover
+## Historical hostname cutover
+
+This records the accepted migration, not instructions to repeat it. The origin
+retirement below supersedes any assumption that a Clanker baseline still exists.
 
 Before writes, snapshot exact zone records, Workers routes/custom domains, Pages
 projects/custom domains, Access applications and the active Clanker release.
@@ -100,6 +103,10 @@ Google callback, cookies, OAuth configuration or credentials. Do not change
 `tryapparent.com` or `www.tryapparent.com` or their Pages project.
 
 ## Origin retirement and rollback
+
+The following acceptance and retirement outcomes are retained operator evidence
+from 2026-11-01 (Europe/Berlin), not a fresh infrastructure check by the source-only
+cleanup. Later source revisions do not establish a new production acceptance.
 
 The canonical Pages cutover was accepted on 2026-11-01, from main
 `6f043ff4ab4f4bdfa7e180c97ef7c37a397ff2ef`, Actions run `41252306148`, deployment
