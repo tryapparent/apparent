@@ -3110,6 +3110,31 @@ mod tests {
         assert_eq!(parse(r#"{"action":"uninstall-cli"}"#), Action::UninstallCli);
     }
 
+    #[test]
+    fn the_command_line_row_abbreviates_only_paths_inside_home() {
+        let home = PathBuf::from(std::env::var_os("HOME").unwrap());
+        // A sibling with the same string prefix is not inside HOME.
+        let mut outside = home.as_os_str().to_os_string();
+        outside.push("-outside");
+        let outside = PathBuf::from(outside).join("bin/apparent");
+        for (link, expected) in [
+            (
+                home.join(".local/bin/apparent"),
+                "~/.local/bin/apparent".to_owned(),
+            ),
+            (outside.clone(), outside.display().to_string()),
+        ] {
+            let row = CommandLineView::new(
+                &crate::command_line::State::Installed {
+                    link,
+                    homebrew: false,
+                },
+                None,
+            );
+            assert_eq!(row.path, Some(expected));
+        }
+    }
+
     /// Links are a unix thing; Windows has no Apparent.app to link (`State::Unavailable`).
     #[cfg(unix)]
     #[test]
@@ -3156,7 +3181,7 @@ mod tests {
         );
         let row = panel.view(&host).command_line;
         assert_eq!(row.button, Some("uninstall"));
-        assert_eq!(row.path.as_deref(), Some(link.to_str().unwrap()));
+        assert_eq!(row.path, Some(crate::command_line::tilde(&link)));
         // Not Homebrew's or /usr/local's bin, so it may not be on PATH.
         assert!(row.caption.contains("to your PATH"), "{}", row.caption);
         assert!(!row.error);
