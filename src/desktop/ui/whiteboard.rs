@@ -290,7 +290,7 @@ pub(in crate::desktop) fn open(coord: &Entity<ApparentCoordinator>, cx: &mut App
                 focus,
                 mark: Arc::new(Image::from_bytes(
                     ImageFormat::Png,
-                    include_bytes!("../../../assets/brand/apparent-a.png").to_vec(),
+                    include_bytes!("../../../shared/assets/brand/apparent-a.png").to_vec(),
                 )),
             })
         },

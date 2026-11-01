@@ -135,7 +135,7 @@ fn synthesize(script: &Script, path: &Path, duration: u64, cache: &Path) -> Resu
         worker.is_file()
             && cache.join("model.onnx").is_file()
             && cache.join("voices/bm_fable.bin").is_file(),
-        "[NARRATION_SETUP] Local narrator is not provisioned. Run python3 scripts/provision-narrator.py from the Apparent source checkout. Export never downloads models or falls back to recorded audio."
+        "[NARRATION_SETUP] Local narrator is not provisioned. Run python3 agent-proof/scripts/provision-narrator.py from the Apparent source checkout. Export never downloads models or falls back to recorded audio."
     );
     // An exclusive private directory outside the bundle; all cue files disappear on failure too.
     let directory =

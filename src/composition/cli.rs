@@ -14,6 +14,8 @@ use crate::desktop::{linux, playback};
 use crate::desktop::playback;
 use crate::shared::{autocrop, autocrop_lab, export, handoff, hex, model, recover, retention, speech_model, transcribe, windows};
 use crate::agent_proof::zoom;
+#[cfg(not(target_os = "linux"))]
+use crate::shared::live_transcribe;
 #[cfg(target_os = "linux")]
 use crate::shared::pause_transcribe;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -463,7 +465,7 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         port: u16,
     },
-    /// Build a bundle from a simulated Screen capture (`scripts/autocrop-corpus.mjs`).
+    /// Build a bundle from a simulated Screen capture (`public/site/scripts/autocrop-corpus.mjs`).
     #[command(hide = true)]
     Fixture {
         /// The scenario's `scenario.json`.

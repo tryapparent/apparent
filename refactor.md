@@ -12,9 +12,9 @@ The physical final tree has these anchors (all paths not shown here are enumerat
 Cargo.toml / Cargo.lock / build.rs     # one root app package; build.rs is a single integration point
 src/main.rs                             # thin root entrypoint + root module declarations
 src/composition/{mod.rs,cli.rs}        # command-line parsing and application dispatch
-src/shared/{mod.rs,clock.rs,ids.rs,demo.rs}
+src/shared/{mod.rs,clock.rs,ids.rs,demo.rs,autocrop_lab.rs,autocrop-corpus.json,autocrop-playground.html}
 src/capture/mod.rs                      # capture owner module, with existing capture submodules
-src/desktop/mod.rs                      # GPUI/Desktop owner module; native inputs under owner-native paths
+src/desktop/mod.rs                      # GPUI/Desktop owner module; web SDK under src/desktop/sdk.js
 src/agent_proof/                        # request/evidence owner modules; no standalone runtime/package
 src/connect/                             # in-crate adapter modules; existing connect/client package stays at root
 capture/engine/                          # existing package, unchanged ownership and path
@@ -34,7 +34,7 @@ This first dependency-complete slice is an in-crate module extraction, not a pac
 
 - `src/main.rs` retains root module declarations and now only delegates to `composition::cli::run`; the root `pub use bundle_processing` facade is removed.
 - `src/composition/{mod.rs,cli.rs}` owns the moved CLI parser/dispatch and its existing tests. The helper skill `include_str!` path is corrected for its new location; `Cli`, `Command`, and subcommand types remain private.
-- `src/shared/{mod.rs,clock.rs,ids.rs,demo.rs}` owns the extracted `now_epoch_ms`, `make_bundle_id`, and `generate_demo_bundle` helpers.
+- `src/shared/{mod.rs,clock.rs,ids.rs,demo.rs,autocrop_lab.rs,autocrop-corpus.json,autocrop-playground.html}` owns the extracted `now_epoch_ms`, `make_bundle_id`, and `generate_demo_bundle` helpers.
 - Direct callers now use the real `shared` and `bundle_processing` modules. The hosted alias regression keeps its behavior through a test-only subprocess adapter rather than exporting CLI types. `desktop/docs/native-testing.md` points `CaptureCommand::Start` to `src/composition/cli.rs`.
 - The extraction preserves helper and CLI/test bodies; it does not move other owner implementations, modify native build inputs, or claim platform/native/GUI proof.
 
@@ -44,13 +44,13 @@ The exact currently modified Rust callers are the `src` paths changed in this ba
 
 Product contracts now live with their owner: Capture `capture/docs/{capture,export-and-retention,keyframes-and-text,iphone-and-routing}.md`; Desktop `desktop/docs/` for Linux, UI/motion, native/testing, settings, release/signing and archival Windows notes; Agent-proof `agent-proof/docs/agent-video-workflow.md`; Connect `connect/docs/` for API/client/web/acceptance; shared routing policy `shared/docs/routing.md`. Root `docs/` remains for repository-wide delivery/governance where `.github/workflows`, `.githooks`, root package composition or contributors are the actual consumers. No `enablement/` product tree is required. The issue-171 plan remains in `docs/plans/` as provenance tied to the extant hosted-sharing feature; it is not a live contract.
 
-## Explicit remaining non-Rust reservations (not moved in this batch)
+## Previously explicit non-Rust reservations (now reconciled)
 
-The original 104 exact non-Rust reservations retain their final paths in the inventory ledger. 58 script/package moves are now physically present with this lane’s external workflow/docs/tooling consumers wired: Desktop scripts/package inputs (44), Public site scripts (10), Agent-proof scripts/tests (3), and Capture benchmark (1). The inventory’s `pending_non_rust_moves` now contains only the 46 still-unresolved paths (assets and native inputs, plus other remaining owner scripts); root `build.rs`/`src/**` remain with the Rust integrator. Do not treat this finite list as authorization to edit additional assets/native inputs. Root verification selector/hooks and their two tests remain root because the hook/workflow invokes the exact `scripts/verification.py` and tests directly; no empty `enablement/` product tree is required.
+The 39 reserved asset moves are now physically present with consumer/build/package/site/docs/workflow rewiring. Seven playback inputs were already moved and verified, not pending. The private inventory now records only paths still absent from the reconciled target; no blanket pending count is carried forward. Root verification selector/hooks and their two tests remain root because the hook/workflow invokes the exact `scripts/verification.py` and tests directly; no empty `enablement/` product tree is required.
 
 External tooling integration (this bounded lane): Desktop workflows now invoke `desktop/scripts/**`, Public delivery CI/docs invoke `public/site/scripts/cd/**`, and root changed-tree verification remains at `scripts/verification.py` with its existing broad unknown-path/security gates. Linux updater PR filters now target moved Rust settings/update modules; sibling workflow source filters were audited. Agent-proof and Capture script destinations/callers are resolved in the tooling result; their Rust comment/diagnostic references remain with the Rust integrator. The wider physical campaign remains **integration in progress**.
 
-Asset target correction for the next asset lane (not physically moved here): the four identity assets `assets/brand/{apparent-a.png,apparent-app-icon.svg,apparent-wordmark.png,apparent-wordmark.svg}` belong at `shared/assets/brand/`; `assets/fonts/{HostGrotesk-Variable.ttf,OFL.txt}` belong at `shared/assets/fonts/`. Cross-consumers to update/verify together: Desktop `src/desktop/mod.rs`, `src/desktop/settings.rs`, `src/desktop/settings_window.rs`, `src/desktop/onboarding_window.rs`, `src/desktop/ui/whiteboard.rs` (brand embeds), and Public `public/site/**` asset/package references. Desktop-only application assets remain `desktop/assets/**`. This target correction does not authorize an asset move during the active Rust compilation checkpoint.
+Assets now reside at their owner destinations: the four identity assets `assets/brand/{apparent-a.png,apparent-app-icon.svg,apparent-wordmark.png,apparent-wordmark.svg}` now live at `shared/assets/brand/`; `assets/fonts/{HostGrotesk-Variable.ttf,OFL.txt}` now live at `shared/assets/fonts/`. Cross-consumers wired and verified: Desktop `src/desktop/mod.rs`, `src/desktop/settings.rs`, `src/desktop/settings_window.rs`, `src/desktop/onboarding_window.rs`, `src/desktop/ui/whiteboard.rs` (brand embeds), and Public `public/site/**` asset/package references. Desktop-only application assets remain `desktop/assets/**`. Source and package consumers now use those paths; output/resource identities are unchanged.
 
 ## Exhaustive tracked-path destination ledger
 
@@ -538,8 +538,8 @@ Classification is mechanical and exact: **MOVE iff the final path differs byte-f
 | `src/agent_capture.rs` | `src/desktop/agent_capture.rs` | MOVE | agent-proof |
 | `src/agent_context.rs` | `src/agent_proof/context.rs` | MOVE | agent-proof |
 | `src/audio.rs` | `src/capture/audio.rs` | MOVE | capture |
-| `src/autocrop-corpus.json` | `src/autocrop-corpus.json` | RETAIN | shared Rust module |
-| `src/autocrop-playground.html` | `src/autocrop-playground.html` | RETAIN | shared Rust module |
+| `src/autocrop-corpus.json` | `src/shared/autocrop-corpus.json` | MOVE | shared Rust module |
+| `src/autocrop-playground.html` | `src/shared/autocrop-playground.html` | MOVE | shared Rust module |
 | `src/autocrop.rs` | `src/shared/autocrop.rs` | MOVE | shared Rust module |
 | `src/autocrop_lab.rs` | `src/shared/autocrop_lab.rs` | MOVE | shared Rust module |
 | `src/ax.rs` | `src/shared/ax.rs` | MOVE | shared Rust module |
@@ -566,8 +566,8 @@ Classification is mechanical and exact: **MOVE iff the final path differs byte-f
 | `src/helper.rs` | `src/desktop/helper.rs` | MOVE | desktop |
 | `src/hex.rs` | `src/shared/hex.rs` | MOVE | shared Rust module |
 | `src/hosted.rs` | `src/connect/hosted.rs` | MOVE | connect |
-| `src/hosted_logging_tests.rs` | `src/connect/hosted_logging_tests.rs` | MOVE | connect |
-| `src/hosted_tests.rs` | `src/connect/hosted_tests.rs` | MOVE | connect |
+| `src/hosted_logging_tests.rs` | `src/connect/hosted/hosted_logging_tests.rs` | MOVE | connect |
+| `src/hosted_tests.rs` | `src/connect/hosted/hosted_tests.rs` | MOVE | connect |
 | `src/icons.rs` | `src/desktop/icons.rs` | MOVE | desktop |
 | `src/inbox.rs` | `src/desktop/inbox.rs` | MOVE | desktop |
 | `src/ingest_http.rs` | `src/shared/ingest_http.rs` | MOVE | shared Rust module |
@@ -628,19 +628,19 @@ Classification is mechanical and exact: **MOVE iff the final path differs byte-f
 | `src/render.rs` | `src/shared/render.rs` | MOVE | shared Rust module |
 | `src/retention.rs` | `src/shared/retention.rs` | MOVE | shared Rust module |
 | `src/routing.rs` | `src/shared/routing.rs` | MOVE | shared Rust module |
-| `src/routing/fixtures/artifact-hex-motion.json` | `src/routing/fixtures/artifact-hex-motion.json` | RETAIN | shared Rust module |
-| `src/routing/fixtures/artifact-hex-shout2.json` | `src/routing/fixtures/artifact-hex-shout2.json` | RETAIN | shared Rust module |
-| `src/routing/fixtures/artifact-lot.json` | `src/routing/fixtures/artifact-lot.json` | RETAIN | shared Rust module |
-| `src/routing/fixtures/artifact-server-onboarding.json` | `src/routing/fixtures/artifact-server-onboarding.json` | RETAIN | shared Rust module |
-| `src/routing/fixtures/dev-site-knobs.json` | `src/routing/fixtures/dev-site-knobs.json` | RETAIN | shared Rust module |
-| `src/routing/fixtures/device-hub-ios-2.json` | `src/routing/fixtures/device-hub-ios-2.json` | RETAIN | shared Rust module |
-| `src/routing/fixtures/device-hub-ios.json` | `src/routing/fixtures/device-hub-ios.json` | RETAIN | shared Rust module |
-| `src/routing/fixtures/opencode-interface.json` | `src/routing/fixtures/opencode-interface.json` | RETAIN | shared Rust module |
+| `src/routing/fixtures/artifact-hex-motion.json` | `src/desktop/routing/fixtures/artifact-hex-motion.json` | MOVE | shared Rust module |
+| `src/routing/fixtures/artifact-hex-shout2.json` | `src/desktop/routing/fixtures/artifact-hex-shout2.json` | MOVE | shared Rust module |
+| `src/routing/fixtures/artifact-lot.json` | `src/desktop/routing/fixtures/artifact-lot.json` | MOVE | shared Rust module |
+| `src/routing/fixtures/artifact-server-onboarding.json` | `src/desktop/routing/fixtures/artifact-server-onboarding.json` | MOVE | shared Rust module |
+| `src/routing/fixtures/dev-site-knobs.json` | `src/desktop/routing/fixtures/dev-site-knobs.json` | MOVE | shared Rust module |
+| `src/routing/fixtures/device-hub-ios-2.json` | `src/desktop/routing/fixtures/device-hub-ios-2.json` | MOVE | shared Rust module |
+| `src/routing/fixtures/device-hub-ios.json` | `src/desktop/routing/fixtures/device-hub-ios.json` | MOVE | shared Rust module |
+| `src/routing/fixtures/opencode-interface.json` | `src/desktop/routing/fixtures/opencode-interface.json` | MOVE | shared Rust module |
 | `src/routing/look.rs` | `src/desktop/routing/look.rs` | MOVE | shared Rust module |
 | `src/routing/served.rs` | `src/desktop/routing/served.rs` | MOVE | shared Rust module |
 | `src/routing/smart.rs` | `src/desktop/routing/smart.rs` | MOVE | shared Rust module |
 | `src/screens.rs` | `src/capture/screens.rs` | MOVE | capture |
-| `src/sdk.js` | `src/sdk.js` | RETAIN | shared Rust module |
+| `src/sdk.js` | `src/desktop/sdk.js` | MOVE | desktop |
 | `src/settings.rs` | `src/desktop/settings.rs` | MOVE | desktop |
 | `src/settings_window.rs` | `src/desktop/settings_window.rs` | MOVE | desktop |
 | `src/shortcut.rs` | `src/desktop/shortcut.rs` | MOVE | desktop |
@@ -693,7 +693,13 @@ Classification is mechanical and exact: **MOVE iff the final path differs byte-f
 | `video/src/lib.rs` | `video/src/lib.rs` | RETAIN | shared-infrastructure |
 | `video/src/main.rs` | `video/src/main.rs` | RETAIN | shared-infrastructure |
 
-Ledger invariant after the documentation-owner batch: 634 unique inventoried inputs, 514 final physical moves (21 owner-doc moves implemented; 104 exact non-Rust moves reserved but pending), 120 retained paths; no duplicate final paths or deletes. These are inventory destinations; future non-Rust moves listed in the integration handoff remain pending. A physical move is not complete until all imports, build/runtime/package inputs and focused verification are wired and read back. The four terminal Rust leaf workers have handed off; cross-owner wiring remains with the separately assigned integrator.
+Ledger invariant at this reconciliation: 634 unique baseline inputs and unique final destinations; **525 MOVE / 109 RETAIN** by exact old-path/final-path comparison. All 634 destinations exist in the current working tree; all 525 MOVE donors are absent; all 109 RETAIN paths exist with owner and concrete responsibility. No duplicate destinations, deletes, or missing destinations. The current checkout has 644 physical files: 602 tracked files present plus 42 untracked moved destinations; the committed HEAD tree has 644 tracked paths, including donor paths removed only in this dirty worktree. Ten new module files are listed separately in the private inventory, outside baseline rows. The 39 moved asset files and three moved embedded inputs are byte-identical to their baseline Git blobs. Current work remains unpublished and integration in progress pending required CI and independent review.
+
+## Final physical reconciliation and verification status
+
+The full baseline-to-current tree and path-level checks are recorded in `/home/simon/.hermes/plans/apparent-structure-final-ledger-result.md`; the machine-readable inventory keeps the original 634 `old_path` values unchanged and records 634 unique destinations, the 644-file current working tree, all ten additional module paths, and per-file asset/embedded byte hashes. The Connect test destinations are nested under `src/connect/hosted/`; the eight routing fixture destinations are `src/desktop/routing/fixtures/`; the seven playback files were already at `src/desktop/linux/playback/` and were not moved again. The full inventory has no pending destination, donor, or retain exception.
+
+The current physical changes are still dirty/unpublished. Remote `origin/main` was `4927502ab1cdcf311725a74eaaff38cb6cee875d`. Parent-reported normal hook passed. Mac CI run `41298031752` failed on a missing import; a local import fix is present in the dirty integration, but it has not been rerun and is unverified. The optional native playback proof in `/home/simon/.hermes/plans/apparent-structure-playback-proof.md` passed 13 policy cases and native descriptor-safety tests using the source-header route; it is not Mac CI, GUI/audio playback, or full campaign acceptance. Do not mark this campaign complete or claim final remote publication. Independent review and passing required CI remain explicit gates.
 
 ## Integrated external wiring (owned follow-up)
 

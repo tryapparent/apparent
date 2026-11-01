@@ -643,7 +643,7 @@ impl OnboardingWindow {
         if !cfg!(target_os = "windows") {
             return img(Arc::new(Image::from_bytes(
                 ImageFormat::Png,
-                include_bytes!("../../assets/brand/apparent-wordmark.png").to_vec(),
+                include_bytes!("../../shared/assets/brand/apparent-wordmark.png").to_vec(),
             )))
             .w(px(208.0))
             .h(px(48.0))
@@ -673,7 +673,7 @@ impl OnboardingWindow {
                 div().relative().top(px(bob)).child(
                     img(Arc::new(Image::from_bytes(
                         ImageFormat::Png,
-                        include_bytes!("../../assets/app-icon.png").to_vec(),
+                        include_bytes!("../../desktop/assets/app-icon.png").to_vec(),
                     )))
                     .size(px(128.0)),
                 ),

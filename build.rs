@@ -106,7 +106,7 @@ fn stage_transcribe_dlls() {
 fn embed_windows_resources() {
     let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let output_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
-    let icon = manifest_dir.join("assets/Apparent.ico");
+    let icon = manifest_dir.join("desktop/assets/Apparent.ico");
     println!("cargo:rerun-if-changed={}", icon.display());
     let version = std::env::var("CARGO_PKG_VERSION").unwrap();
     let numeric = version

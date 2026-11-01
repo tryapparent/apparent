@@ -237,7 +237,7 @@ fn rasterize_icon(kind: IconKind, size_pt: f32, scale: f32) -> (u32, u32, [f32; 
     ctx.set_line_width(2.5 * s);
     match kind {
         IconKind::Area => {
-            // Four corner brackets from assets/icons/area.svg
+            // Four corner brackets from desktop/assets/icons/area.svg
             let corner = |ctx: &CGContext, ax: f64, ay: f64, cx: f64, cy: f64, bx: f64, by: f64| {
                 let (p0x, p0y) = map(ax, ay);
                 let (pcx, pcy) = map(cx, cy);

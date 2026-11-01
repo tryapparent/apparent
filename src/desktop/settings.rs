@@ -1862,7 +1862,7 @@ impl Session {
         if let Some(serde_json::Value::String(pane)) = pane.map(serde_json::to_value).transpose()? {
             command.args(["--pane", &pane]);
         }
-        let dev_icon = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/brand/apparent-a.png");
+        let dev_icon = concat!(env!("CARGO_MANIFEST_DIR"), "/shared/assets/brand/apparent-a.png");
         if Path::new(dev_icon).is_file() {
             command.args(["--icon", dev_icon]);
         }

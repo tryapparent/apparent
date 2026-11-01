@@ -107,7 +107,7 @@ The app checks that an update is still staged before quitting; a failed relaunch
 shows the failure result instead of silently exiting. macOS continues to hand off to Sparkle's
 native updater; it does not synthesize a frog result from a Sparkle launch.
 
-The three embedded illustrations in `assets/settings/` isolate the frog-and-pond scenes
+The three embedded illustrations in `desktop/assets/settings/` isolate the frog-and-pond scenes
 from the selected concept. Each fits a transparent 256×192 device-pixel canvas; Settings
 shows it at native device size, including fractional DPI. The rounded lily pads, water
 ripples, coral cheeks, and the failed scene's broken cable and question mark remain.

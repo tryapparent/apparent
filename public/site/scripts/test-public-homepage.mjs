@@ -12,7 +12,7 @@ test("packaged homepage ships the brand favicon and its cache-busting URL", () =
   const html = readFileSync(join(publicDir, "index.html"), "utf8")
   assert.match(html, /<link rel="icon" href="\/icon\.svg\?v=brand-a-1" type="image\/svg\+xml"/)
   assert.equal(readFileSync(join(publicDir, "icon.svg"), "utf8"),
-    readFileSync(join(site, "../../assets/brand/apparent-app-icon.svg"), "utf8"))
+    readFileSync(join(site, "../../shared/assets/brand/apparent-app-icon.svg"), "utf8"))
 })
 
 test("public homepage has one interactive demonstration", () => {

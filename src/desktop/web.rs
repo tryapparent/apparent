@@ -23,7 +23,7 @@ use crate::shared::routing::{is_loopback_host, parse_url};
 /// How long a registration lasts after its last heartbeat. The script beats every 30 s.
 pub const TTL_MS: u64 = 120_000;
 const MAX_ENTRIES: usize = 64;
-const SDK_JS: &str = include_str!("../sdk.js");
+const SDK_JS: &str = include_str!("sdk.js");
 pub const PORT: u16 = 47777;
 
 /// The browser SDK runs on a local listener independently of phone capture.

@@ -73,7 +73,7 @@ runs these steps automatically, and the app does not install or restart services
    normal client loads it. Other SPA install layouts are not covered by this
    initial manual setup. Refuse to overwrite an unrelated existing module.
 
-3. Confirm no other audio policy uses order `-35`. Copy `src/linux/playback/policy.lua`
+3. Confirm no other audio policy uses order `-35`. Copy `src/desktop/linux/playback/policy.lua`
    to `~/.local/share/wireplumber/scripts/apparent-playback.lua`, without replacing
    an unrelated existing script. Create
    `~/.config/wireplumber/wireplumber.conf.d/90-apparent-playback.conf`:

@@ -181,7 +181,7 @@ permissions screen at launch. `APPARENT_NO_ONBOARDING=1` skips it.
 
 Do not reset real macOS permission grants to replay onboarding. Preview every screen without the app, including the permissions screen with none, some and all
 granted and each on-demand sheet: `target/debug/apparent-helper onboarding --render /tmp/onboarding
---icon assets/app-icon.png`.
+--icon desktop/assets/app-icon.png`.
 
 ## Settings
 
@@ -217,7 +217,7 @@ one recordings will use, `apparent mic set <id|default>` chooses, and `apparent 
 list again on every change.
 
 Preview every pane, dark and light, with the recorder listening and a combination turned down:
-`target/debug/apparent-helper settings --render /tmp/settings --icon assets/app-icon.png`.
+`target/debug/apparent-helper settings --render /tmp/settings --icon desktop/assets/app-icon.png`.
 
 ## Capture Controls
 
@@ -324,7 +324,7 @@ apparent autocrop-eval /tmp/bundles --json /tmp/scores.json   # add --sweep to s
 bun public/site/scripts/autocrop-gallery.mjs /tmp/gallery /tmp/bundles --scores /tmp/scores.json
 ```
 
-`autocrop-eval --export src/autocrop-corpus.json` refreshes the corpus the unit tests score.
+`autocrop-eval --export src/shared/autocrop-corpus.json` refreshes the corpus the unit tests score.
 
 ## iPhone
 

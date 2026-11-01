@@ -2,10 +2,10 @@ name: Website and Connect — checks & deploy
 
 on:
   pull_request:
-    paths: ['public/site/**', 'connect/web/**', 'connect/service/**', 'assets/brand/**', 'public/site/scripts/cd/**', '.github/workflows/web-delivery.yml']
+    paths: ['public/site/**', 'connect/web/**', 'connect/service/**', 'shared/assets/brand/**', 'public/site/scripts/cd/**', '.github/workflows/web-delivery.yml']
   push:
     branches: [main]
-    paths: ['public/site/**', 'connect/web/**', 'connect/service/**', 'assets/brand/**', 'public/site/scripts/cd/**', '.github/workflows/web-delivery.yml']
+    paths: ['public/site/**', 'connect/web/**', 'connect/service/**', 'shared/assets/brand/**', 'public/site/scripts/cd/**', '.github/workflows/web-delivery.yml']
   workflow_dispatch:
 
 permissions:

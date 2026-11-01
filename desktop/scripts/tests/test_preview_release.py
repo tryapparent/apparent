@@ -23,9 +23,10 @@ class PreviewReleaseTest(unittest.TestCase):
             (root / "bin").mkdir()
             for asset in ("fonts/HostGrotesk-Variable.ttf", "brand/apparent-wordmark.png",
                           "Apparent.icns", "brand/apparent-a.png"):
-                destination = root / "assets" / asset
+                owner = "desktop" if asset == "Apparent.icns" else "shared"
+                destination = root / owner / "assets" / asset
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                destination.write_bytes((ROOT / "assets" / asset).read_bytes())
+                destination.write_bytes((ROOT / owner / "assets" / asset).read_bytes())
             (root / "sparkle/Sparkle.framework/Versions/B/XPCServices").mkdir(parents=True)
             (root / "desktop/scripts/build-mac-preview.sh").write_bytes(
                 (ROOT / "desktop/scripts/build-mac-preview.sh").read_bytes()
@@ -68,7 +69,7 @@ class PreviewReleaseTest(unittest.TestCase):
                           "Apparent.icns", "brand/apparent-a.png"):
                 self.assertEqual(
                     (root / "dist/Apparent Preview.app/Contents/Resources" / Path(asset).name).read_bytes(),
-                    (root / "assets" / asset).read_bytes(),
+                    (root / ("desktop" if asset == "Apparent.icns" else "shared") / "assets" / asset).read_bytes(),
                 )
             self.assertTrue((root / "dist/Apparent-Preview-0.123.2-arm64.dmg.sha256").is_file())
             self.assertTrue((root / "dist/Apparent-Preview-0.123.2-arm64.zip").is_file())
@@ -76,8 +77,8 @@ class PreviewReleaseTest(unittest.TestCase):
 
     def test_app_icon_uses_the_approved_boxed_a_not_the_wordmark_or_brush(self):
         svg = '{http://www.w3.org/2000/svg}'
-        brand = ET.parse(ROOT / "assets/brand/apparent-wordmark.svg").getroot()
-        app_icon = ET.parse(ROOT / "assets/brand/apparent-app-icon.svg").getroot()
+        brand = ET.parse(ROOT / "shared/assets/brand/apparent-wordmark.svg").getroot()
+        app_icon = ET.parse(ROOT / "shared/assets/brand/apparent-app-icon.svg").getroot()
         # Primary icon master: https://tryapparent.com/brand/assets/brand/apparent-icon.svg
         self.assertEqual(app_icon.get("viewBox"), "0 0 512 512")
         self.assertEqual(app_icon.findall(f"{svg}rect")[0].get("fill"), "#020102")
@@ -87,19 +88,19 @@ class PreviewReleaseTest(unittest.TestCase):
         self.assertEqual(paths[0].get("transform"), "translate(50.08 434.56) scale(.72 -.72)")
         self.assertEqual(paths[0].get("d"), brand.findall(f"{svg}g/{svg}path")[0].get("d"))
         # Pin the reviewed raster too: the vector alone does not reach the Mac bundle.
-        raster = (ROOT / "assets/app-icon.png").read_bytes()
+        raster = (ROOT / "desktop/assets/app-icon.png").read_bytes()
         self.assertEqual(hashlib.sha256(raster).hexdigest(),
                          "328388f2e2743b72acafc7c4fdddafbefb3e8f7e221ab9b9808a00acf3db13de")
-        self.assertEqual(hashlib.sha256((ROOT / "assets/Apparent.icns").read_bytes()).hexdigest(),
+        self.assertEqual(hashlib.sha256((ROOT / "desktop/assets/Apparent.icns").read_bytes()).hexdigest(),
                          "f3028c57a513957454d2bb7caf720fcf77358b47dcf1f1c7fc78a39c46e99153")
 
     def test_mac_status_item_uses_boxed_brand_icon(self):
         # The status item must preserve the approved Carbon/Lilac box; template
         # mode would erase its two-color identity.
         source = (ROOT / "src/desktop/ui/macos.rs").read_text()
-        self.assertIn('include_bytes!("../../../assets/menubar-icon@2x.png")', source)
+        self.assertIn('include_bytes!("../../../desktop/assets/menubar-icon@2x.png")', source)
         self.assertIn('img.setTemplate(false)', source)
-        self.assertEqual(hashlib.sha256((ROOT / "assets/menubar-icon@2x.png").read_bytes()).hexdigest(),
+        self.assertEqual(hashlib.sha256((ROOT / "desktop/assets/menubar-icon@2x.png").read_bytes()).hexdigest(),
                          "4714f8ebbe8dd7816c7f7ab07ad98daa61fb4eee5fc3ed900af8f012b452dc07")
 
     def test_helper_embedded_identity_follows_preview_identity(self):

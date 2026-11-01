@@ -1057,7 +1057,7 @@ impl Session {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
-        let dev_icon = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/app-icon.png");
+        let dev_icon = concat!(env!("CARGO_MANIFEST_DIR"), "/desktop/assets/app-icon.png");
         if Path::new(dev_icon).is_file() {
             command.args(["--icon", dev_icon]);
         }

@@ -5,7 +5,7 @@ import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 
 const site = join(dirname(fileURLToPath(import.meta.url)), "..")
-const master = readFileSync(join(site, "../../assets/brand/apparent-app-icon.svg"), "utf8")
+const master = readFileSync(join(site, "../../shared/assets/brand/apparent-app-icon.svg"), "utf8")
 
 test("favicon reuses the canonical boxed a artwork", () => {
   assert.equal(readFileSync(join(site, "public/icon.svg"), "utf8"), master)

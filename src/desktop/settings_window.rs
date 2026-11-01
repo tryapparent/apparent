@@ -236,9 +236,9 @@ fn update_frog(result: UpdateResult) -> Arc<Image> {
     static LOUNGE: OnceLock<Arc<Image>> = OnceLock::new();
     static PUZZLED: OnceLock<Arc<Image>> = OnceLock::new();
     let (cache, bytes): (_, &[u8]) = match result {
-        UpdateResult::Available => (&JUMP, include_bytes!("../../assets/settings/frog-jump.png")),
-        UpdateResult::Current => (&LOUNGE, include_bytes!("../../assets/settings/frog-lounge.png")),
-        UpdateResult::Failed => (&PUZZLED, include_bytes!("../../assets/settings/frog-puzzled.png")),
+        UpdateResult::Available => (&JUMP, include_bytes!("../../desktop/assets/settings/frog-jump.png")),
+        UpdateResult::Current => (&LOUNGE, include_bytes!("../../desktop/assets/settings/frog-lounge.png")),
+        UpdateResult::Failed => (&PUZZLED, include_bytes!("../../desktop/assets/settings/frog-puzzled.png")),
     };
     cache.get_or_init(|| Arc::new(Image::from_bytes(ImageFormat::Png, bytes.to_vec()))).clone()
 }
@@ -507,7 +507,7 @@ fn open(request: Request, cx: &mut App) {
                     )),
                     wordmark: Arc::new(Image::from_bytes(
                         ImageFormat::Png,
-                        include_bytes!("../../assets/brand/apparent-wordmark.png").to_vec(),
+                        include_bytes!("../../shared/assets/brand/apparent-wordmark.png").to_vec(),
                     )),
                     copied: false,
                 }
@@ -805,7 +805,7 @@ fn pane_top_inset(pane: Pane) -> f32 {
 }
 
 fn about_icon_bytes() -> &'static [u8] {
-    include_bytes!("../../assets/brand/apparent-a.png")
+    include_bytes!("../../shared/assets/brand/apparent-a.png")
 }
 
 fn button(theme: Theme, id: impl Into<SharedString>, title: &str, enabled: bool) -> Stateful<Div> {
@@ -2290,7 +2290,7 @@ mod tests {
         let mut decoded = Vec::new();
         for pose in ["jump", "lounge", "puzzled"] {
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join(format!("assets/settings/frog-{pose}.png"));
+                .join(format!("desktop/assets/settings/frog-{pose}.png"));
             let bytes = std::fs::read(&path).expect("each update outcome needs an actual sprite");
             assert!(bytes.len() < 60_000, "the three illustrations should stay compact");
             let mut reader = png::Decoder::new(std::io::Cursor::new(bytes)).read_info().unwrap();

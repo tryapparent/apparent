@@ -150,7 +150,7 @@ pub fn input_for_bundle(dir: &Path, bundle: &ApparentBundle) -> Input {
 // Playground
 // ---------------------------------------------------------------------------------------------
 
-const PLAYGROUND: &str = include_str!("../autocrop-playground.html");
+const PLAYGROUND: &str = include_str!("autocrop-playground.html");
 const DATA_MARKER: &str = "/*APPARENT_AUTOCROP_DATA*/null";
 
 /// The named settings the playground offers as presets.
@@ -328,7 +328,7 @@ pub fn serve(dir: &Path, bundle: &ApparentBundle, port: u16, open: bool) -> Resu
 // Simulated captures
 // ---------------------------------------------------------------------------------------------
 
-/// A simulated Screen capture, written by `scripts/autocrop-corpus.mjs`: what Apparent's input
+/// A simulated Screen capture, written by `public/site/scripts/autocrop-corpus.mjs`: what Apparent's input
 /// monitors and window log would have recorded, plus a rendered frame for each screen state.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1229,11 +1229,11 @@ pub fn print_scores(label: &str, scores: &[CaseScore]) {
 mod tests {
     use super::*;
 
-    /// The simulated corpus (`scripts/autocrop-corpus.mjs`, built with `apparent fixture` and
+    /// The simulated corpus (`public/site/scripts/autocrop-corpus.mjs`, built with `apparent fixture` and
     /// exported with `apparent autocrop-eval --export`), without images: no content maps, so edges
     /// don't snap to white space here.
     fn corpus() -> Vec<Case> {
-        serde_json::from_str(include_str!("../autocrop-corpus.json")).unwrap()
+        serde_json::from_str(include_str!("autocrop-corpus.json")).unwrap()
     }
 
     fn case<'a>(cases: &'a [Case], name: &str) -> &'a Case {

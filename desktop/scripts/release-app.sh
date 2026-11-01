@@ -28,10 +28,10 @@ cp -f "${REPO_DIR}/target/release/apparent" "${APP_BUNDLE}/Contents/MacOS/appare
 cp -f "${REPO_DIR}/target/release/apparent-helper" "${APP_BUNDLE}/Contents/MacOS/apparent-helper"
 chmod +x "${APP_BUNDLE}/Contents/MacOS/apparent" "${APP_BUNDLE}/Contents/MacOS/apparent-helper"
 
-cp -f "${REPO_DIR}/assets/Apparent.icns" "${APP_BUNDLE}/Contents/Resources/Apparent.icns"
-cp -f "${REPO_DIR}/assets/fonts/HostGrotesk-Variable.ttf" "${APP_BUNDLE}/Contents/Resources/HostGrotesk-Variable.ttf"
-cp -f "${REPO_DIR}/assets/brand/apparent-wordmark.png" "${APP_BUNDLE}/Contents/Resources/apparent-wordmark.png"
-cp -f "${REPO_DIR}/assets/brand/apparent-a.png" "${APP_BUNDLE}/Contents/Resources/apparent-a.png"
+cp -f "${REPO_DIR}/desktop/assets/Apparent.icns" "${APP_BUNDLE}/Contents/Resources/Apparent.icns"
+cp -f "${REPO_DIR}/shared/assets/fonts/HostGrotesk-Variable.ttf" "${APP_BUNDLE}/Contents/Resources/HostGrotesk-Variable.ttf"
+cp -f "${REPO_DIR}/shared/assets/brand/apparent-wordmark.png" "${APP_BUNDLE}/Contents/Resources/apparent-wordmark.png"
+cp -f "${REPO_DIR}/shared/assets/brand/apparent-a.png" "${APP_BUNDLE}/Contents/Resources/apparent-a.png"
 
 /usr/bin/ditto "${SPARKLE_DIR}/Sparkle.framework" "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
 

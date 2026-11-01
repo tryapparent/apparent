@@ -576,7 +576,7 @@ thread_local! {
 /// The app icon, box-filtered down to the notification area's 32 px.
 fn tray_icon_image() -> Option<tray_icon::Icon> {
     let decoder = png::Decoder::new(std::io::Cursor::new(
-        &include_bytes!("../../../assets/app-icon.png")[..],
+        &include_bytes!("../../../desktop/assets/app-icon.png")[..],
     ));
     let mut reader = decoder.read_info().ok()?;
     let mut buffer = vec![0; reader.output_buffer_size()?];
