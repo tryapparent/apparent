@@ -264,6 +264,10 @@ fn publication_rejects_marker_cleanup_failure_and_readonly_leaf_without_root_byp
                     height: 16,
                     fps: 10.0,
                     audio_tracks: 0,
+                    #[cfg(target_os = "macos")]
+                    audio_overlaps_video: false,
+                    #[cfg(target_os = "macos")]
+                    video_duration_ms: None,
                 },
                 None
             )

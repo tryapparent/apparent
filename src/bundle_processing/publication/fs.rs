@@ -56,7 +56,7 @@ impl Directory {
                     dir = dir.child(name, create)?;
                     let m = dir.0.metadata()?;
                     let uid = unsafe { libc::geteuid() };
-                    let sticky = m.uid() == 0 && m.mode() & libc::S_ISVTX != 0;
+                    let sticky = m.uid() == 0 && m.mode() & libc::S_ISVTX as u32 != 0;
                     ensure!(
                         (m.uid() == 0 || m.uid() == uid)
                             && (m.mode() & 0o022 == 0 || sticky || private_ancestor),
