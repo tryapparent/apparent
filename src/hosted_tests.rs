@@ -1588,6 +1588,19 @@ fn hosted_config_pause_and_cancelled_dedup_do_not_backfill() {
 #[test]
 fn hosted_security_darwin_acl_grants_fail_closed() {
     let f = Fixture::new();
+    // Only this owned fixture receives ACLs. Remove them before Fixture's Drop,
+    // including when a refusal assertion panics; never clear ancestor/child ACLs.
+    struct RestoreAcl(PathBuf);
+    impl Drop for RestoreAcl {
+        fn drop(&mut self) {
+            let result = Command::new("/bin/chmod").arg("-N").arg(&self.0).status();
+            if !matches!(result, Ok(status) if status.success()) {
+                eprintln!("could not remove the hosted test fixture ACL: {result:?}");
+            }
+        }
+    }
+    let root = f.root.clone();
+    let restore_acl = RestoreAcl(root.clone());
     trusted_directory_tree(&f.root, false).unwrap();
     assert!(Command::new("/bin/chmod")
         .args(["+a", "everyone deny delete"])
@@ -1606,6 +1619,12 @@ fn hosted_security_darwin_acl_grants_fail_closed() {
         .unwrap()
         .success());
     assert!(trusted_directory_tree(&f.root, false).is_err());
+    drop(restore_acl);
+    drop(f);
+    assert!(
+        !root.exists(),
+        "the ACL fixture must be removed after the test"
+    );
 }
 
 #[test]
