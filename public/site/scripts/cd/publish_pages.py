@@ -52,7 +52,7 @@ def verify(sha, package):
                 raise ValueError('Missing Connect privacy headers')
         if hashlib.sha256(body).digest() != hashlib.sha256((package / path).read_bytes()).digest():
             raise ValueError('Pages served different bytes: ' + path)
-    movie = ROOT / 'public/site/public/Apparent-ghost-demo-v4-lilac.mp4'
+    movie = ROOT / 'public/site/public/assets/media/Apparent-ghost-demo-v4-lilac.mp4'
     expected = hashlib.sha256(movie.read_bytes()).digest()
     actual = hashlib.sha256()
     request = Request(origin + '/' + movie.name, headers={'Cache-Control': 'no-cache', 'User-Agent': 'Apparent-CD/1.0'})

@@ -11,11 +11,11 @@ Settings → About's compiled revision and the executable SHA-256 with each resu
 Use the PR's integrated head, not the old `29a1f748` artifact or an installed main build.
 
 - **macOS — PENDING:** use the documented Xcode/native dependencies, run
-  `taskpolicy -c utility cargo build -j 3 --offline`, then `./desktop/scripts/install-app.sh`
+  `taskpolicy -c utility cargo build -j 3 --offline`, then `./capture/desktop/scripts/packaging/install-app.sh`
   (`~/Applications/Apparent.app`; signing identity required). If needed launch with
-  `open -a ~/Applications/Apparent.app`. See `desktop/docs/onboarding-and-settings.md` and
+  `open -a ~/Applications/Apparent.app`. See `capture/desktop/docs/onboarding-and-settings.md` and
   `AGENTS.md`; confirm Screen Recording, Microphone and Accessibility for this build.
-- **Linux — PENDING:** prerequisites in `desktop/docs/linux.md` (desktop, Vulkan, GStreamer,
+- **Linux — PENDING:** prerequisites in `capture/desktop/docs/linux/linux.md` (desktop, Vulkan, GStreamer,
   curl, clipboard support; microphone/transcription ready). In the exact checkout run
   `cargo build -j 2 --offline`, then `./target/debug/apparent app` in the test desktop.
   On Clanker run builds through `/home/simon/.local/bin/t3-build -- ...`.

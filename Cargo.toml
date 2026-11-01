@@ -5,6 +5,10 @@ edition = "2024"
 default-run = "apparent"
 license = "MIT"
 
+[[bin]]
+name = "apparent"
+path = "main.rs"
+
 [dependencies]
 apparent-connect-client = { path = "connect/client" }
 anyhow = "1.0.104"
@@ -104,7 +108,7 @@ arboard = { version = "3.6.1", default-features = false, features = ["image-data
 ashpd = { version = "0.11", default-features = false, features = ["async-std"] }
 futures-lite = "2"
 # X11 only: GPUI 0.2.2's Wayland windows can't be placed or kept on top, so Apparent's windows
-# go through XWayland on a Wayland session (see docs/linux.md).
+# go through XWayland on a Wayland session (see capture/desktop/docs/linux/linux.md).
 gpui = { version = "0.2.2", default-features = false, features = ["font-kit", "x11"] }
 gstreamer = "0.25"
 gstreamer-app = "0.25"

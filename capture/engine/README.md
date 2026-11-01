@@ -68,9 +68,9 @@ This port adds no root dependency, production caller, CI or hook-policy change.
   this mode-bit/cooperative boundary; callers must provision output roots without
   ACL grants to other writers. Validation never repairs unsafe modes or owners.
 - Manifests have a separate **64 MiB** byte budget, not the runtime receipt's
-  64 KiB budget. `src/capture/mod.rs::write_bundle_artifacts` serializes the entire
+  64 KiB budget. `capture/engine/runtime/mod.rs::write_bundle_artifacts` serializes the entire
   `ApparentBundle` with pretty JSON, including unbounded event/stroke-point,
-  transcript and context histories (`src/shared/model.rs`); 64 KiB is not realistic.
+  transcript and context histories (`shared/model.rs`); 64 KiB is not realistic.
   The Engine rejects supplied bytes above 64 MiB before parsing/copying, reads
   at most 64 MiB + 1 from the pinned manifest and requires exact bytes. This is
   a bounded integration budget, not a promise every possible capture fits. A
@@ -117,11 +117,11 @@ Never rename/delete these directories independently of the runtime lock anchors.
 ## Integration work intentionally left to the parent
 
 Wire the common runtime into Desktop/shortcut `Recording::start` paths,
-`src/main.rs` timed recording and `src/desktop/agent_capture.rs` before any media starts.
+`main.rs` timed recording and `capture/desktop/workflow/agent_capture.rs` before any media starts.
 Replace neither a process-local Registry nor the socket listener lock with an
 unsupported global claim. Poll authenticated intent in the owning adapter,
 keep the guard in its real finalization lifetime, and supply that finalizer's
-validated bytes. Wire bundle leases into `src/shared/retention.rs`, `src/shared/recover.rs`,
+validated bytes. Wire bundle leases into `capture/engine/bundle/retention.rs`, `capture/engine/bundle/recover.rs`,
 export/reprocess/read paths before removing process-local BUSY/RECORDING guards.
 Audit all call paths together; adding this package alone provides no whole-app
 exclusion or production adoption.

@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && vite build --ssr src/entry-server.tsx --outDir dist-ssr && node scripts/prerender.ts",
+    "build": "tsc -b && vite build && vite build --ssr src/entry-server.tsx --outDir dist-ssr && node scripts/site-build/prerender.ts",
     "preview": "vite preview",
-    "test:video": "node --test scripts/test-video-demo.mjs",
-    "test:try-button": "node scripts/test-try-button-browser.mjs",
-    "test:hosted": "node scripts/test-hosted-browser.mjs",
+    "test:video": "node --test scripts/browser-proof/test-video-demo.mjs",
+    "test:try-button": "node scripts/pages/test-try-button-browser.mjs",
+    "test:hosted": "node scripts/browser-proof/test-hosted-browser.mjs",
     "generate:og-video": "node scripts/og-video/capture.mjs"
   },
   "dependencies": {

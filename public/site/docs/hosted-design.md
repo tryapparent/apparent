@@ -37,7 +37,7 @@ From `public/site/`:
 
 ```sh
 APPARENT_PUBLIC_SITE=1 npm run build
-node scripts/package-apparent.mjs
+node scripts/site-build/package-apparent.mjs
 SITE_EVIDENCE="$TMPDIR/hosted-v4-evidence" npm run test:hosted
 ```
 

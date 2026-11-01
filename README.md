@@ -13,7 +13,7 @@ Press a shortcut (`⌥⇧S`) and Apparent starts recording the screen. Talk, cli
 ## Install
 
 No branded installers, Homebrew cask, or signed update have been published yet. Build from source
-in this checkout; see [macOS packaging](desktop/docs/release.md) or [Linux](desktop/docs/linux.md). Apparent supports
+in this checkout; see [macOS packaging](capture/desktop/docs/release.md) or [Linux](capture/desktop/docs/linux/linux.md). Apparent supports
 macOS and Linux, not Windows. The Mac build needs an Apple silicon Mac on macOS 15 or later (live
 transcription and Liquid Glass need macOS 26). Linux builds target Ubuntu 24.04+ on x86_64 or ARM64.
 
@@ -30,14 +30,14 @@ welcome tour and Settings › Permissions. If the AppImage reports a missing `li
 install `libfuse2t64` on Ubuntu 24.04 (`libfuse2` on older distributions), or use
 `./Apparent-<version>-linux-x86_64.AppImage --appimage-extract-and-run app`.
 The first launch downloads the speech model (731 MB); captures get their transcript when it
-finishes. See [Linux](desktop/docs/linux.md) for desktop-specific limits.
+finishes. See [Linux](capture/desktop/docs/linux/linux.md) for desktop-specific limits.
 
 ## Agents
 
 Install the capture-reading skill for Claude Code, OpenCode, Codex and other agents:
 
 ```sh
-bunx skills add tryapparent/apparent
+bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent
 ```
 
 The `apparent` command is the binary inside Apparent.app. Click
@@ -52,7 +52,7 @@ inspect --marks` lists them) makes a dense sheet of frames around a moment, `app
 frames` pulls a range, `apparent copy` puts a capture on the clipboard, and `apparent export`
 makes a shareable `.mp4`. `apparent skill` prints the skill without installing anything.
 
-The repository also ships [`make-it-apparent`](skills/make-it-apparent/SKILL.md), a separate
+The repository also ships [`make-it-apparent`](capture/agent/skills/make-it-apparent/SKILL.md), a separate
 agent skill for a short, checked change demo, unresolved-problem demonstration or technical
 explainer. It covers causal explanation, captions, privacy, playback review and honest evidence
 limits. The capture-reading skill above is still for understanding feedback someone sends you;
@@ -61,7 +61,7 @@ does not guarantee that this named workflow is installed. Install it explicitly 
 environment before asking for a demo:
 
 ```sh
-bunx skills add tryapparent/apparent --skill make-it-apparent
+bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/make-it-apparent
 ```
 
 Live Apparent proof needs a working capture on an accessible machine; a conceptual explainer
@@ -181,7 +181,7 @@ permissions screen at launch. `APPARENT_NO_ONBOARDING=1` skips it.
 
 Do not reset real macOS permission grants to replay onboarding. Preview every screen without the app, including the permissions screen with none, some and all
 granted and each on-demand sheet: `target/debug/apparent-helper onboarding --render /tmp/onboarding
---icon desktop/assets/app-icon.png`.
+--icon capture/desktop/assets/app-icon.png`.
 
 ## Settings
 
@@ -217,7 +217,7 @@ one recordings will use, `apparent mic set <id|default>` chooses, and `apparent 
 list again on every change.
 
 Preview every pane, dark and light, with the recorder listening and a combination turned down:
-`target/debug/apparent-helper settings --render /tmp/settings --icon desktop/assets/app-icon.png`.
+`target/debug/apparent-helper settings --render /tmp/settings --icon capture/desktop/assets/app-icon.png`.
 
 ## Capture Controls
 
@@ -266,7 +266,7 @@ records, Apparent logs:
   counts.
 
 When the capture finishes, each keyframe gets the slice of the timeline halfway to its neighbours,
-and `src/shared/autocrop.rs` weighs what happened in it: ink, clicks, drags and scrolls first, then where
+and `capture/engine/autocrop/autocrop.rs` weighs what happened in it: ink, clicks, drags and scrolls first, then where
 the cursor rested and what changed on screen (a cursor wandering far from the ink is ignored). The
 crop is then:
 
@@ -324,7 +324,7 @@ apparent autocrop-eval /tmp/bundles --json /tmp/scores.json   # add --sweep to s
 bun public/site/scripts/autocrop-gallery.mjs /tmp/gallery /tmp/bundles --scores /tmp/scores.json
 ```
 
-`autocrop-eval --export src/shared/autocrop-corpus.json` refreshes the corpus the unit tests score.
+`autocrop-eval --export capture/engine/autocrop/autocrop-corpus.json` refreshes the corpus the unit tests score.
 
 ## iPhone
 
@@ -372,7 +372,7 @@ apparent export latest --crop 0.1,0.2,0.6,0.5       # x,y,w,h as fractions, or p
 - **Zoom** (on by default; `--no-zoom` opts out): after a 0.5 s whole-view opening, the camera eases to ~1.5–1.8× toward clicks, drags, marks and laser points,
   holds while activity stays nearby (2.5 s after the last), follows the cursor once it leaves a
   central safe zone, and eases back out. It never starts a zoom while the cursor is travelling fast.
-  The path is a pure function of the bundle (`src/shared/export/camera.rs`, critically damped springs,
+  The path is a pure function of the bundle (`capture/engine/export/camera.rs`, critically damped springs,
   no bounce); the renderer only draws each frame's rectangle. Without saved interaction events
   the camera stays still: use the app's recording shortcut for demos, not timed `record --duration`.
 - **Audio**: `audio.wav` starts where the video does (`videoOffsetMs`); a cabled iPhone's movie
@@ -383,7 +383,7 @@ apparent export latest --crop 0.1,0.2,0.6,0.5       # x,y,w,h as fractions, or p
   Mac saves to `~/Movies/Apparent/<name>.mp4`, shows progress beside the menu bar icon,
   and reveals the file in Finder. Linux opens the desktop Save dialog for a local `.mp4`
   destination and shows progress, cancellation and failures in the tray menu; it needs a
-  FileChooser portal backend. See [Linux tray export](capture/docs/export-and-retention.md#linux-tray-export).
+  FileChooser portal backend. See [Linux tray export](capture/engine/docs/export-and-retention.md#linux-tray-export).
   The command works without the flag.
 
 ## Keeping captures small
@@ -554,7 +554,7 @@ target/debug/apparent-helper permissions
 target/debug/apparent-helper transcribe audio.wav
 target/debug/apparent-helper frames recording.mov --out-dir /tmp/f --at 1000,2000 --max-edge 1600
 target/debug/apparent-helper shrink recording.mov --out /tmp/small.mov --max-edge 1600
-target/debug/apparent-helper export plan.json   # the plan `apparent export` writes (src/export)
+target/debug/apparent-helper export plan.json   # the plan `apparent export` writes (capture/engine/export)
 target/debug/apparent-helper permission-panel --permission screen-recording --preview   # the drag card, no grant polling
 ```
 
@@ -564,12 +564,12 @@ then `granted` or `cancelled` with a `reason` (`back`, `settings-closed`, `no-se
 `parent`, `timeout`), and exits. On stdin it takes `cancel`, `back` and `granted`.
 `permission-panel --check P` prints `{"granted":…}` from a fresh process. `permission-panel --plan --settings
 X,Y,W,H --visible X,Y,W,H` prints where the card would dock (`below`, `inside`, `right`, `left` or
-`clamped`); `desktop/scripts/check-permission-panel-dock.sh` checks the cases.
+`clamped`); `capture/desktop/scripts/support/check-permission-panel-dock.sh` checks the cases.
 
 ## Linux
 
 Apparent runs on Linux desktops (GNOME and KDE Plasma, on Wayland or X11) as the same app, from
-the same GPUI code. It ships as an AppImage (`desktop/scripts/linux/appimage.sh`; every pull request's CI
+the same GPUI code. It ships as an AppImage (`capture/desktop/scripts/linux/appimage/appimage.sh`; every pull request's CI
 run has one) with GStreamer inside, so movies record without extra packages. On Wayland its
 windows run through XWayland.
 
@@ -591,13 +591,13 @@ windows run through XWayland.
   On KDE Wayland, desktop ink hides when Shift is released so clicks reach the app; the bundle keeps it.
 - **Not on Linux:** the cabled iPhone, video export, `agentContext` and Sparkle updates.
 
-See [desktop/docs/linux.md](desktop/docs/linux.md) for how it works and how to build it.
+See [capture/desktop/docs/linux/linux.md](capture/desktop/docs/linux/linux.md) for how it works and how to build it.
 
 ## Testing
 
 ```sh
 taskpolicy -c utility cargo test -j 3 --offline -- --test-threads=2
-./desktop/scripts/install-app.sh
+./capture/desktop/scripts/packaging/install-app.sh
 ```
 
 On Linux, run `cargo test`; then run `apparent app` in a desktop session and record with `Alt+Shift+S`.
@@ -616,7 +616,7 @@ MIT. See [LICENSE](LICENSE).
 
 ### THIRD_PARTY
 
-`capture/native/ and desktop/native/PermissionPanel.swift` adapts code and tuning from two MIT-licensed projects:
+`capture/engine/native/` and `capture/desktop/native/PermissionPanel.swift` adapt code and tuning from two MIT-licensed projects:
 
 - [AskForPermission](https://github.com/riko2chen/AskForPermission), Copyright (c) 2026 Riko: the
   flight along a quadratic Bézier, waiting for the System Settings window to settle, following it

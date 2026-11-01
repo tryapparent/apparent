@@ -169,7 +169,7 @@ function inkStyle(ctx, width = 7) {
 
 // The Apparent brush, tinted to `color` once.
 async function loadBrush(color = "#f4f4f5", size = 256) {
-  const img = await loadImage("/public/icon.svg")
+  const img = await loadImage("/icon.svg")
   const c = document.createElement("canvas")
   c.width = c.height = size
   const x = c.getContext("2d")

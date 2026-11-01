@@ -15,11 +15,11 @@ locked dependencies installed in each package. From the repository root:
 (cd connect/web && bun install --frozen-lockfile && VITE_HOSTED_API_ORIGIN=https://hosted.tryapparent.com npm run build)
 cd public/site
 APPARENT_PUBLIC_SITE=1 npm run build
-node scripts/package-apparent.mjs
-node scripts/compose-connect.mjs
-node scripts/prepare-pages.mjs
-node scripts/verify-composed.mjs
-node scripts/prepare-pages-video.mjs
+node scripts/site-build/package-apparent.mjs
+node scripts/connect/compose-connect.mjs
+node scripts/pages/prepare-pages.mjs
+node scripts/site-build/verify-composed.mjs
+node scripts/pages/prepare-pages-video.mjs
 ```
 
 Upload only `dist-apparent`. Never upload `dist`, this repository, the snapshot

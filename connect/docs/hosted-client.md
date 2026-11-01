@@ -13,7 +13,7 @@ and serde_json dependencies. It does not build the root app, GPUI, Engine,
 GStreamer, Swift helper or root build script. Runtime curl and system SHA-256
 requirements still apply; supported platforms remain macOS and Linux.
 
-`src/connect/hosted.rs` is Desktop composition: it supplies `ConfigProvider` via the
+`connect/hosted.rs` is Desktop composition: it supplies `ConfigProvider` via the
 accepted shared config store, browser opening, CLI/bundle-selector/logging
 adapters, and the once-per-process worker launcher. All existing main/UI/Settings
 callers use that facade and therefore the package. Remove a facade entry only

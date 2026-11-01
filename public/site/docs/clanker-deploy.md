@@ -9,7 +9,7 @@ publication; Actions does not use SSH or the retired release tree. Recovery stay
 inside Pages, not Clanker.
 
 For checked main-branch delivery, activation gates, deployment credentials and
-Pages rollback, see [`../../../docs/continuous-delivery.md`](../../../docs/continuous-delivery.md).
+Pages rollback, see [`../../../enablement/docs/continuous-delivery.md`](../../../enablement/docs/continuous-delivery.md).
 Historical publishers' cooperative lock file remains to avoid splitting lock
 ownership. It is not an active publication path.
 
@@ -25,7 +25,7 @@ removed. The accepted public snapshot is now source-controlled; follow
 
 ## Homepage marker guard
 
-`package-apparent.mjs` uses `package-page-text.mjs` as a parser-only stale-build
+`scripts/site-build/package-apparent.mjs` uses `scripts/site-build/package-page-text.mjs` as a parser-only stale-build
 marker guard, not an HTML sanitizer or proof of CSS/layout visibility. Its
 intended content boundary is parsed body text, excluding `script`, `style`,
 `template`, `noscript`, and `iframe` subtrees, any subtree with a `hidden`
@@ -38,7 +38,7 @@ The guard does not evaluate the CSS cascade, CSS escapes or variables, external
 CSS, layout, or dynamic state. Other ways of concealing content remain outside
 its scope; browser visibility still needs browser verification. Normal body
 text across inline elements and decoded entities can supply markers. Extraction
-does not rewrite the packaged HTML. Run `node --test scripts/test-package-text.mjs`
+does not rewrite the packaged HTML. Run `node --test scripts/commerce/test-package-text.mjs`
 to check acceptance and rejection through the real packager, including preservation
 of the previous artifact when marker validation rejects a build.
 
@@ -57,12 +57,12 @@ it; copying images alone does not preserve a homepage. Record base and overlay
 commits privately and update the source-controlled snapshot checksum contract.
 
 After building and packaging, run the source and artifact Node tests with
-`node --test scripts/test-brand-favicon.mjs scripts/test-github-stars.mjs scripts/test-latest-download.mjs scripts/test-platform-os.mjs scripts/test-public-homepage.mjs scripts/test-video-demo.mjs`.
+`node --test scripts/brand/test-brand-favicon.mjs scripts/browser-proof/test-github-stars.mjs scripts/pages/test-latest-download.mjs scripts/pages/test-platform-os.mjs scripts/pages/test-public-homepage.mjs scripts/browser-proof/test-video-demo.mjs`.
 The belief/footer overlay and browser scripts require separate `SITE_BASELINE` or
 `SITE_ARTIFACT`/`SITE_EVIDENCE` inputs; the wildcard is not a standalone suite.
 Against a
 server that supports HTTP byte ranges, run
-`node scripts/verify-video-demo-browser.mjs <URL> <private evidence directory>`.
+`node scripts/browser-proof/verify-video-demo-browser.mjs <URL> <private evidence directory>`.
 `CHROME_PATH` can select an existing Chrome installation. The browser check covers
 first-load chapter seeking, play/pause, replay, all chapters, sound, pointer and
 keyboard seeking, absence of drawing controls and Shift-drag ink, natural ending, rapid switching, missing-media
@@ -72,7 +72,7 @@ and Chrome can clamp an early seek to zero. Require a live `206` response with
 the correct `Content-Range`, compare the downloaded movie's SHA-256 with the
 packaged source, and rerun the browser check on the public URL after cutover.
 
-For layout changes, run `node scripts/verify-page-density-browser.mjs <URL>`
+For layout changes, run `node scripts/browser-proof/verify-page-density-browser.mjs <URL>`
 against the packaged page. It checks the download gap, shorter hero, uncropped
 movie, and visible, reachable playback/chapter controls at seven desktop and
 phone sizes, including a 600px-tall desktop. The movie width follows viewport

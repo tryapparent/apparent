@@ -1,6 +1,6 @@
 // The hidden feature map, rendered to static HTML at build time from
 // features.json. Nothing feature-specific lives here.
-import type { Audit } from "../../scripts/feature-audit.ts"
+import type { Audit } from "../../scripts/site-build/feature-audit.ts"
 import { FEATURES, FLOW, GROUPS, PLATFORMS, STATUS_KINDS, parseStatus, type Feature, type Platform, type Status } from "../features"
 
 const REPO = "https://github.com/tryapparent/apparent"

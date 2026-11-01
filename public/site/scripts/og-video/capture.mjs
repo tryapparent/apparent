@@ -1,6 +1,6 @@
 // bun run generate:og-video [concept] [--sheet]
 // Renders every frame of a loop through headless Chromium and pipes PNGs to ffmpeg
-// (H.264 yuv420p, 60 fps, faststart, no audio). Writes public/og.mp4, or a contact
+// (H.264 yuv420p, 60 fps, faststart, no audio). Writes public/assets/media/og.mp4, or a contact
 // sheet to /tmp with --sheet. Default concept: apparent-pile.
 import { chromium } from "playwright-core"
 import { spawn } from "node:child_process"
@@ -43,7 +43,7 @@ for (const name of args) {
   await page.goto(`http://127.0.0.1:${port}/scripts/og-video/stage.html?c=${name}&capture`)
   await page.waitForFunction(() => window.ready, null, { timeout: 120000 })
   const frames = await page.evaluate(() => window.frameCount)
-  const file = path.join(root, "public/og.mp4")
+  const file = path.join(root, "public/assets/media/og.mp4")
   const crfFor = { "hex-pour": 23, "apparent-pile": 21 }[name] ?? crf
   const vf = sheet ? ["-vf", `select='not(mod(n\\,${Math.ceil(frames / 20)}))',scale=400:-1,tile=5x4`, "-frames:v", "1", `/tmp/${name}-sheet.png`] : null
   const ff = spawn(

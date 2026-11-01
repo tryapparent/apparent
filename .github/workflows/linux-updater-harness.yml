@@ -4,19 +4,19 @@ on:
   pull_request:
     paths:
       - '.github/workflows/linux-updater-harness.yml'
-      - 'desktop/scripts/linux/*gui*'
-      - 'desktop/scripts/linux/*capture-smoke.py'
-      - 'desktop/scripts/linux/updater-fixture.py'
-      - 'src/desktop/linux/update.rs'
-      - 'src/desktop/settings.rs'
-      - 'src/desktop/settings_window.rs'
+      - 'capture/desktop/scripts/linux/gui/**'
+      - 'capture/desktop/scripts/linux/updater/**'
+      - 'capture/desktop/scripts/linux/updater/updater-fixture.py'
+      - 'capture/desktop/linux/update.rs'
+      - 'capture/desktop/settings/settings.rs'
+      - 'capture/desktop/settings/settings_window.rs'
   push:
     branches: [main]
     paths:
       - '.github/workflows/linux-updater-harness.yml'
-      - 'desktop/scripts/linux/*gui*'
-      - 'desktop/scripts/linux/*capture-smoke.py'
-      - 'desktop/scripts/linux/updater-fixture.py'
+      - 'capture/desktop/scripts/linux/gui/**'
+      - 'capture/desktop/scripts/linux/updater/**'
+      - 'capture/desktop/scripts/linux/updater/updater-fixture.py'
 
 permissions:
   contents: read
@@ -37,11 +37,11 @@ jobs:
         run: python3 -m pip install Pillow
       - name: Test OCR, release fixture and disposable-runner contracts
         run: |
-          python3 desktop/scripts/linux/test-updater-gui.py
-          python3 desktop/scripts/linux/test-gui-vm.py
-          python3 desktop/scripts/linux/test-capture-smoke.py
+          python3 capture/desktop/scripts/linux/updater/test-updater-gui.py
+          python3 capture/desktop/scripts/linux/gui/test-gui-vm.py
+          python3 capture/desktop/scripts/linux/gui/test-capture-smoke.py
       - name: Check driver syntax
         run: |
-          python3 -m py_compile desktop/scripts/linux/gui-vm.py desktop/scripts/linux/gui-vm-reaper.py desktop/scripts/linux/updater-gui.py desktop/scripts/linux/updater-fixture.py desktop/scripts/linux/test-gui-vm.py
-          python3 -m py_compile desktop/scripts/linux/capture-smoke.py desktop/scripts/linux/test-capture-smoke.py
-          bash -n desktop/scripts/linux/updater-gui-scenario.sh
+          python3 -m py_compile capture/desktop/scripts/linux/gui/gui-vm.py capture/desktop/scripts/linux/gui/gui-vm-reaper.py capture/desktop/scripts/linux/updater/updater-gui.py capture/desktop/scripts/linux/updater/updater-fixture.py capture/desktop/scripts/linux/gui/test-gui-vm.py
+          python3 -m py_compile capture/desktop/scripts/linux/gui/capture-smoke.py capture/desktop/scripts/linux/gui/test-capture-smoke.py
+          bash -n capture/desktop/scripts/linux/updater/updater-gui-scenario.sh

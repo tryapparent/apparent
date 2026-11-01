@@ -57,18 +57,18 @@ jobs:
           VITE_HOSTED_API_ORIGIN: https://hosted.tryapparent.com
         run: |
           npm run build
-          node scripts/package-apparent.mjs
-          node --test scripts/test-brand-favicon.mjs scripts/test-github-stars.mjs scripts/test-latest-download.mjs scripts/test-platform-os.mjs scripts/test-public-homepage.mjs scripts/test-video-demo.mjs
-          node --test scripts/test-package-text.mjs scripts/test-expected-canonical-packaging.mjs scripts/test-upstream-link-guard.mjs scripts/test-package-feature-grid.mjs scripts/test-og-stage-redirect.mjs scripts/test-og-video-stage-browser.mjs
+          node scripts/site-build/package-apparent.mjs
+          node --test scripts/brand/test-brand-favicon.mjs scripts/browser-proof/test-github-stars.mjs scripts/pages/test-latest-download.mjs scripts/pages/test-platform-os.mjs scripts/pages/test-public-homepage.mjs scripts/browser-proof/test-video-demo.mjs
+          node --test scripts/commerce/test-package-text.mjs scripts/site-build/test-expected-canonical-packaging.mjs scripts/browser-proof/test-upstream-link-guard.mjs scripts/commerce/test-package-feature-grid.mjs scripts/browser-proof/test-og-stage-redirect.mjs scripts/browser-proof/test-og-video-stage-browser.mjs
           cp -a dist-apparent "$RUNNER_TEMP/public-artifact"
-          node scripts/compose-connect.mjs
+          node scripts/connect/compose-connect.mjs
       - name: Reconcile accepted live homepage and prepare Pages-only artifact
         working-directory: public/site
         run: |
-          node --test scripts/test-compose-connect.mjs scripts/test-pages-package.mjs scripts/test-pages-video.mjs scripts/test-pages-video-runtime.mjs
-          node scripts/prepare-pages.mjs
-          node scripts/verify-composed.mjs
-          node scripts/prepare-pages-video.mjs
+          node --test scripts/connect/test-compose-connect.mjs scripts/pages/test-pages-package.mjs scripts/pages/test-pages-video.mjs scripts/pages/test-pages-video-runtime.mjs
+          node scripts/pages/prepare-pages.mjs
+          node scripts/site-build/verify-composed.mjs
+          node scripts/pages/prepare-pages-video.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: website-${{ github.sha }}
@@ -90,9 +90,9 @@ jobs:
           SITE_EVIDENCE: ${{ runner.temp }}/connect-evidence
         run: |
           (cd ../../connect/web && CONNECT_BUILD_DIR=dist-test npm run build)
-          node scripts/compose-connect.mjs
-          node scripts/prepare-pages.mjs
-          node scripts/verify-composed.mjs
+          node scripts/connect/compose-connect.mjs
+          node scripts/pages/prepare-pages.mjs
+          node scripts/site-build/verify-composed.mjs
           npm run test:hosted
       - uses: actions/upload-artifact@v4
         if: failure()

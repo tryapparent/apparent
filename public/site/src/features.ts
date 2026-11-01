@@ -49,7 +49,7 @@ export function parseStatus(status: string): Status {
   if (status === "main") return { kind: "main" }
   const stable = status.match(/^stable@(\d+\.\d+\.\d+)$/)
   if (stable) return { kind: "stable", version: stable[1] }
-  const experiment = status.match(/^experiment:([A-Za-z][A-Za-z0-9]*)$/)
+  const experiment = status.match(/^experiment:([A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*)$/)
   if (experiment) return { kind: "experiment", flag: experiment[1] }
   const branch = status.match(/^branch:([\w./-]+)$/)
   if (branch) return { kind: "branch", branch: branch[1] }

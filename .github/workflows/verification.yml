@@ -23,12 +23,12 @@ jobs:
           persist-credentials: false
       - name: Selector and hook contracts (no native proof)
         run: |
-          python3 -m unittest discover -s tests -p 'test_pre_push_guard.py'
-          python3 -m unittest discover -s tests -p 'test_verification.py'
+          python3 -m unittest discover -s enablement/tests -p 'test_pre_push_guard.py'
+          python3 -m unittest discover -s enablement/tests -p 'test_verification.py'
       - id: plan
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: python3 scripts/verification.py --base "${BASE:-unknown}" --github-output "$GITHUB_OUTPUT"
+        run: python3 enablement/verification.py --base "${BASE:-unknown}" --github-output "$GITHUB_OUTPUT"
 
   rust:
     needs: select
@@ -46,7 +46,7 @@ jobs:
           persist-credentials: false
       - name: Linux application dependencies
         if: runner.os == 'Linux' && needs.select.outputs.root == 'true'
-        run: ./desktop/scripts/linux/dependencies.sh
+        run: ./capture/desktop/scripts/linux/appimage/dependencies.sh
       - name: Select the macOS 26 SDK required by native helpers
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
         uses: maxim-lobanov/setup-xcode@v1
@@ -100,10 +100,10 @@ jobs:
           trap cleanup EXIT
           # Reproduce the CI-sensitive fixtures before the full affected suites.
           if [ "${{ needs.select.outputs.root }}" = true ]; then
-            cargo test -j 3 --locked settings::tests::the_command_line_row_ -- --test-threads=2
-            cargo test -j 3 --locked desktop::agent_capture::tests::competing_launches_cannot_remove_the_winning_control_socket -- --exact
+            cargo test -j 3 --locked capture::desktop::settings::settings::tests::the_command_line_row_ -- --test-threads=2
+            cargo test -j 3 --locked capture::desktop::workflow::agent_capture::tests::competing_launches_cannot_remove_the_winning_control_socket -- --exact
             if [ "$RUNNER_OS" = macOS ]; then
               cargo test -j 3 --locked connect::hosted::hosted_tests::hosted_security_darwin_acl_grants_fail_closed -- --exact
             fi
           fi
-          python3 scripts/verification.py --base "${BASE:-unknown}" --run --online
+          python3 enablement/verification.py --base "${BASE:-unknown}" --run --online

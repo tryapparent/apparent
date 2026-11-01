@@ -4,6 +4,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import test from 'node:test'
 const root = resolve(process.env.CONNECT_ARTIFACT || 'dist')
+const assetSource = resolve(process.env.CONNECT_ASSET_SOURCE || '../../public/site/public/assets')
 const routes = ['connect', 'connect/device', 'connect/shares', 'hosted', 'hosted/device', 'hosted/shares']
 test('independent artifact publishes all private loading routes and nothing else', async () => {
   let entries = []
@@ -24,8 +25,14 @@ test('independent artifact publishes all private loading routes and nothing else
   }
 })
 test('only approved public assets are copied without changing their URLs or bytes', async () => {
-  for (const asset of ['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png', 'hosted/agent-reading-v4.png', 'HostGrotesk-Variable.ttf', 'apparent-wordmark.svg']) {
-    assert.deepEqual(await readFile(`${root}/${asset}`), await readFile(`${process.env.CONNECT_ASSET_SOURCE || '../../public/site/public'}/${asset}`))
+  for (const [served, source] of [
+    ['hosted/source-pond-v4.png', 'hosted/source-pond-v4.png'],
+    ['hosted/agent-pond-v4.png', 'hosted/agent-pond-v4.png'],
+    ['hosted/agent-reading-v4.png', 'hosted/agent-reading-v4.png'],
+    ['HostGrotesk-Variable.ttf', 'fonts/HostGrotesk-Variable.ttf'],
+    ['apparent-wordmark.svg', 'brand/apparent-wordmark.svg'],
+  ]) {
+    assert.deepEqual(await readFile(`${root}/${served}`), await readFile(`${assetSource}/${source}`))
   }
 })
 test('runtime and SSR graph cannot import the legacy site implementation', async () => {

@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server"
-import type { Audit } from "../../scripts/feature-audit.ts"
+import type { Audit } from "../../scripts/site-build/feature-audit.ts"
 import { FeatureMap } from "./FeatureMap"
 import css from "./map.css?raw"
 

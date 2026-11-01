@@ -19,7 +19,7 @@ The five runtime modules in `src/*.ts` use strict TypeScript and official Worker
 ## Deployment checklist (parent authorization required)
 
 The gated main-branch delivery workflow and its separate activation prerequisites
-are documented in [`../../docs/continuous-delivery.md`](../../docs/continuous-delivery.md).
+are documented in [`../../enablement/docs/continuous-delivery.md`](../../enablement/docs/continuous-delivery.md).
 It never applies migrations or initializes the budget ledger.
 
 - Discover the actual Cloudflare account/routes and existing resources first; do not deploy this template blindly.

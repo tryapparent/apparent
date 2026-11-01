@@ -45,7 +45,7 @@ jobs:
         run: '& $env:EXE --help'
 
       - name: No AVX-512 outside the CPU backends that need it
-        run: scripts\check-windows-cpu-tiers.ps1 target\x86_64-pc-windows-msvc\release
+        run: capture/desktop/scripts/legacy/check-windows-cpu-tiers.ps1 target\x86_64-pc-windows-msvc\release
 
       # transcribe.cpp builds against the DLL C runtime, so the Visual C++ runtime DLLs apparent.exe
       # and transcribe.cpp's DLLs import go beside them in the zip (app-local, as Microsoft

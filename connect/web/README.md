@@ -34,7 +34,8 @@ Never substitute `dist-test` for `dist`; it embeds a loopback API origin.
 
 For a standalone checkout, copy only this package to a directory outside the
 repository and supply `CONNECT_ASSET_SOURCE=/absolute/approved-assets` containing
-the five files below. Run the same frozen install, `npm run typecheck`, and
+the five files below in their canonical source groups (`hosted/`, `fonts/`, and
+`brand/`). Run the same frozen install, `npm run typecheck`, and
 `npm test` there. No `public/site/node_modules`, site source, root manifest, native helper
 or backend implementation is required. The default asset source is only a build
 convenience, not an implementation dependency.
@@ -59,7 +60,7 @@ convenience, not an implementation dependency.
   `VITE_HOSTED_API_ORIGIN` is a build override, defaulting to that existing API.
   Deploy topology must retain the exact credentialed CORS/CSRF allowlist and
   host-only Secure/HttpOnly/SameSite=Lax cookie contract from `connect/docs/hosted-api.md`.
-- Five approved assets are copied at build time from canonical `public/site/public`:
+- Five approved assets are copied at build time from canonical `public/site/public/assets`:
   `/hosted/source-pond-v4.png`, `/hosted/agent-pond-v4.png`,
   `/hosted/agent-reading-v4.png`, `/HostGrotesk-Variable.ttf`,
   `/apparent-wordmark.svg`. Original URLs and bytes are checked. No other site

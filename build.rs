@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-mod build_version;
+mod build_version { include!("enablement/build_version.rs"); }
 
 fn main() {
     build_version::emit();
@@ -106,7 +106,7 @@ fn stage_transcribe_dlls() {
 fn embed_windows_resources() {
     let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let output_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
-    let icon = manifest_dir.join("desktop/assets/Apparent.ico");
+    let icon = manifest_dir.join("capture/desktop/assets/Apparent.ico");
     println!("cargo:rerun-if-changed={}", icon.display());
     let version = std::env::var("CARGO_PKG_VERSION").unwrap();
     let numeric = version
@@ -156,50 +156,50 @@ END
 /// Track Desktop-owned build/runtime tools and packaging inputs after their physical move.
 fn watch_desktop_tooling() {
     for path in [
-        "desktop/scripts/Apparent.entitlements",
-        "desktop/scripts/apparent-restore-clipboard.py",
-        "desktop/scripts/bench-start.ts",
-        "desktop/scripts/build-mac-preview.sh",
-        "desktop/scripts/check-ca-roots.sh",
-        "desktop/scripts/check-permission-panel-dock.sh",
-        "desktop/scripts/install-app-remote.sh",
-        "desktop/scripts/install-app.sh",
-        "desktop/scripts/linux/appimage.sh",
-        "desktop/scripts/linux/build-playback.sh",
-        "desktop/scripts/linux/capture-smoke.py",
-        "desktop/scripts/linux/check-appimage-decoder.sh",
-        "desktop/scripts/linux/check-appimage-encoder.sh",
-        "desktop/scripts/linux/check-cpu-tiers.py",
-        "desktop/scripts/linux/dependencies.sh",
-        "desktop/scripts/linux/gui-vm-reaper.py",
-        "desktop/scripts/linux/gui-vm.py",
-        "desktop/scripts/linux/migrate-scrawl.py",
-        "desktop/scripts/linux/publish-main-preview.py",
-        "desktop/scripts/linux/smoke-cpu.sh",
-        "desktop/scripts/linux/test-capture-smoke.py",
-        "desktop/scripts/linux/test-gui-vm.py",
-        "desktop/scripts/linux/test-native-launch.sh",
-        "desktop/scripts/linux/test-updater-gui.py",
-        "desktop/scripts/linux/test_migrate_scrawl.py",
-        "desktop/scripts/linux/updater-fixture.py",
-        "desktop/scripts/linux/updater-gui-scenario.sh",
-        "desktop/scripts/linux/updater-gui.py",
-        "desktop/scripts/prepare-mac-signing.sh",
-        "desktop/scripts/preview_appcast.py",
-        "desktop/scripts/release-app.sh",
-        "desktop/scripts/setup-sparkle.sh",
-        "desktop/scripts/tests/local_preview_update.py",
-        "desktop/scripts/tests/test_export_audio.py",
-        "desktop/scripts/tests/test_launch_registration.py",
-        "desktop/scripts/tests/test_linux_preview_publication.py",
-        "desktop/scripts/tests/test_preview_appcast.py",
-        "desktop/scripts/tests/test_preview_apple_signing.py",
-        "desktop/scripts/tests/test_preview_release.py",
-        "desktop/scripts/tests/test_preview_sparkle_setup.py",
-        "desktop/scripts/verify-preview-sparkle-key.swift",
-        "desktop/scripts/virtual-display.swift",
-        "desktop/packaging/linux/dev.kitlangton.apparent.desktop",
-        "desktop/packaging/linux/dev.kitlangton.apparent.png",
+        "capture/desktop/scripts/packaging/Apparent.entitlements",
+        "capture/desktop/scripts/support/apparent-restore-clipboard.py",
+        "capture/desktop/scripts/support/bench-start.ts",
+        "capture/desktop/scripts/packaging/build-mac-preview.sh",
+        "capture/desktop/scripts/support/check-ca-roots.sh",
+        "capture/desktop/scripts/support/check-permission-panel-dock.sh",
+        "capture/desktop/scripts/packaging/install-app-remote.sh",
+        "capture/desktop/scripts/packaging/install-app.sh",
+        "capture/desktop/scripts/linux/appimage/appimage.sh",
+        "capture/desktop/scripts/linux/maintenance/build-playback.sh",
+        "capture/desktop/scripts/linux/gui/capture-smoke.py",
+        "capture/desktop/scripts/linux/appimage/check-appimage-decoder.sh",
+        "capture/desktop/scripts/linux/appimage/check-appimage-encoder.sh",
+        "capture/desktop/scripts/linux/appimage/check-cpu-tiers.py",
+        "capture/desktop/scripts/linux/appimage/dependencies.sh",
+        "capture/desktop/scripts/linux/gui/gui-vm-reaper.py",
+        "capture/desktop/scripts/linux/gui/gui-vm.py",
+        "capture/desktop/scripts/linux/maintenance/migrate-scrawl.py",
+        "capture/desktop/scripts/linux/maintenance/publish-main-preview.py",
+        "capture/desktop/scripts/linux/appimage/smoke-cpu.sh",
+        "capture/desktop/scripts/linux/gui/test-capture-smoke.py",
+        "capture/desktop/scripts/linux/gui/test-gui-vm.py",
+        "capture/desktop/scripts/linux/maintenance/test-native-launch.sh",
+        "capture/desktop/scripts/linux/updater/test-updater-gui.py",
+        "capture/desktop/scripts/linux/maintenance/test_migrate_scrawl.py",
+        "capture/desktop/scripts/linux/updater/updater-fixture.py",
+        "capture/desktop/scripts/linux/updater/updater-gui-scenario.sh",
+        "capture/desktop/scripts/linux/updater/updater-gui.py",
+        "capture/desktop/scripts/release/prepare-mac-signing.sh",
+        "capture/desktop/scripts/release/preview_appcast.py",
+        "capture/desktop/scripts/release/release-app.sh",
+        "capture/desktop/scripts/release/setup-sparkle.sh",
+        "capture/desktop/scripts/tests/local_preview_update.py",
+        "capture/desktop/scripts/tests/test_export_audio.py",
+        "capture/desktop/scripts/tests/test_launch_registration.py",
+        "capture/desktop/scripts/tests/test_linux_preview_publication.py",
+        "capture/desktop/scripts/tests/test_preview_appcast.py",
+        "capture/desktop/scripts/tests/test_preview_apple_signing.py",
+        "capture/desktop/scripts/tests/test_preview_release.py",
+        "capture/desktop/scripts/tests/test_preview_sparkle_setup.py",
+        "capture/desktop/scripts/release/verify-preview-sparkle-key.swift",
+        "capture/desktop/scripts/support/virtual-display.swift",
+        "capture/desktop/packaging/linux/dev.kitlangton.apparent.desktop",
+        "capture/desktop/packaging/linux/dev.kitlangton.apparent.png",
     ] {
         println!("cargo:rerun-if-changed={path}");
     }
@@ -207,8 +207,8 @@ fn watch_desktop_tooling() {
 
 fn compile_laser_shader() {
     for (src_rel, name) in [
-        ("src/desktop/native/laser_overlay.metal", "laser_overlay"),
-        ("src/desktop/native/pill/pill.metal", "pill"),
+        ("capture/desktop/native/laser_overlay.metal", "laser_overlay"),
+        ("capture/desktop/native/pill/pill.metal", "pill"),
     ] {
         compile_metal_shader(src_rel, name);
     }
@@ -249,19 +249,19 @@ fn compile_helper() {
     // Sort the merged list by basename to preserve the former helper/*.swift compiler order.
     let owner_sources: &[&[&str]] = &[
         &[
-            "capture/native/Export.swift",
-            "capture/native/LiveTranscribe.swift",
-            "capture/native/Media.swift",
-            "capture/native/Mirror.swift",
-            "capture/native/PlaybackVolume.swift",
-            "capture/native/ScreenProbe.swift",
+            "capture/engine/native/Export.swift",
+            "capture/engine/native/LiveTranscribe.swift",
+            "capture/engine/native/Media.swift",
+            "capture/engine/native/Mirror.swift",
+            "capture/engine/native/PlaybackVolume.swift",
+            "capture/engine/native/ScreenProbe.swift",
         ],
         &[
-            "desktop/native/Onboarding.swift",
-            "desktop/native/OnboardingDemo.swift",
-            "desktop/native/PermissionPanel.swift",
-            "desktop/native/Settings.swift",
-            "desktop/native/ShortcutKeys.swift",
+            "capture/desktop/native/Onboarding.swift",
+            "capture/desktop/native/OnboardingDemo.swift",
+            "capture/desktop/native/PermissionPanel.swift",
+            "capture/desktop/native/Settings.swift",
+            "capture/desktop/native/ShortcutKeys.swift",
         ],
         &["shared/native/main.swift"],
     ];

@@ -17,7 +17,7 @@ legacy site, API service, deployment composition or native capture code.
 - Never fetch account data during SSR, store credentials in browser storage,
   serialize CSRF into HTML/props, or log API bodies. Explicit separate consent,
   credentialed fetch, CSRF and mutation readback must remain intact.
-- Build copies only five approved canonical assets from `../../public/site/public`.
+- Build copies only five approved canonical assets from `../../public/site/public/assets`.
   Runtime/SSR must never import site implementation. Do not add a root page,
   sitemap or discovery link. Integration owns the origin router and 404 behavior.
 - Run the artifact and browser checks after every behavior change. Preserve
