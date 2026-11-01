@@ -69,6 +69,37 @@ class SelectionTests(unittest.TestCase):
                 verification.run_checks(verification.select(["connect/web/package.json"]))
             self.assertEqual(str(failure.exception.filename), str(Path(tmp) / "connect/web"))
 
+    def test_present_browser_package_missing_real_driver_fails(self):
+        real_run = subprocess.run
+        def execute(command, **kwargs):
+            # Isolate installation/compilation, but execute the selected driver
+            # with real Node: absent test coverage must not become a green lane.
+            if command == ["node", "scripts/test-browser.mjs"]:
+                return real_run(command, **kwargs, capture_output=True)
+            return subprocess.CompletedProcess(command, 0)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "connect/web").mkdir(parents=True)
+            with patch.object(verification, "ROOT", root), patch.object(
+                    verification.subprocess, "run", side_effect=execute):
+                with self.assertRaises(subprocess.CalledProcessError) as failure:
+                    verification.run_checks(verification.select(["connect/web/src/SharedLinks.tsx"]))
+                self.assertIn(b"MODULE_NOT_FOUND", failure.exception.stderr)
+
+    def test_shared_links_is_exact_browser_inventory_not_shared_asset_permission(self):
+        selected = verification.select(["connect/web/src/SharedLinks.tsx"])
+        self.assertEqual((selected["root"], selected["engine"], selected["browser"]),
+                         (False, False, True))
+        for path in ["connect/web/src/Other.tsx", "connect/web/src/sharedlinks.tsx",
+                     "scripts/cd/publish_pages.py", "site/public/hosted/source-pond-v4.png",
+                     "site/public/hosted/agent-pond-v4.png", "site/public/hosted/agent-reading-v4.png",
+                     "site/public/HostGrotesk-Variable.ttf", "site/public/apparent-wordmark.svg"]:
+            with self.subTest(path=path):
+                result = verification.select(["connect/web/src/SharedLinks.tsx", path])
+                self.assertTrue(result["root"])
+                self.assertTrue(result["engine"])
+                self.assertTrue(result["browser"])
+
     def test_reviewed_moves_require_complete_exact_source_pairs(self):
         # Real immutable Git blobs, not a caller-supplied mechanical label.
         for name, recipe in verification.MOVES.items():
@@ -192,6 +223,92 @@ class SelectionTests(unittest.TestCase):
                 git("commit", "-qm", "shared input")
                 self.assertTrue(verification.plan(base, "HEAD")["engine"])
                 self.assertEqual(verification.plan(base, "HEAD")["focused"], [])
+
+    def test_real_git_every_recipe_pins_both_trees_paths_modes_and_blobs(self):
+        # Build real trees with the production registry's exact blob IDs.
+        # --missing-ok permits historical blobs absent from shallow checkouts:
+        # diff --no-renames/ls-tree read tree metadata, not source bodies. This
+        # proves routing pins, not source preservation (reviewed separately).
+        # Independent fixed acceptance fixtures catch deletion/drift of either
+        # newly supported pair, not just mutations of a registry-derived tree.
+        current_pairs = {
+            "config-d59796c3-e86f515e": {
+                "blobs": {
+                    "src/handoff.rs": ("da2980adcf8e50b35019b043059d26c1697c8dd7", "7dcdf6b051b10d45d0d2e1afbfac5a5dc12ae393"),
+                    "src/handoff/config_store.rs": (None, "4d960d819900123d099aa6ad4d2a7827e3ffbfdc"),
+                    "src/handoff/test_modules.rs": (None, "9ac7c770ecb3aeb2d86892b5656330cf5292c405"),
+                },
+                "tests": ["handoff::", "hosted::", "settings::"],
+            },
+            "processing-d59796c3-f135448c": {
+                "blobs": {
+                    "src/main.rs": ("b54efd65ae545d971c964b51b77fff7b2d4a3711", "7e8656f9e257d5fae635a47bdc7171c08604fca4"),
+                    "src/bundle_processing.rs": (None, "88240b2b938639cfbdd190ad1209e5f306ac3f33"),
+                },
+                "tests": ["bundle_processing::", "capture::", "recover::", "sketch::"],
+            },
+        }
+        for name, reviewed in {**verification.MOVES, **current_pairs}.items():
+            with self.subTest(recipe=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+                def git(*args, input=None):
+                    return subprocess.check_output(["git", *args], cwd=root, env=env,
+                                                   text=True, input=input).strip()
+                git("init", "-q")
+                git("config", "user.name", "Test")
+                git("config", "user.email", "test@example.invalid")
+                git("read-tree", "--empty")
+                for path, (old, _) in reviewed["blobs"].items():
+                    if old:
+                        git("update-index", "--add", "--cacheinfo", "100644", old, path)
+                def commit():
+                    return git("commit-tree", git("write-tree", "--missing-ok"), "-m", "fixture")
+                base = commit()
+                blobs = reviewed["blobs"]
+                for path, (_, new) in blobs.items():
+                    git("update-index", "--add", "--cacheinfo", "100644", new, path)
+                head = commit()
+                with patch.object(verification, "ROOT", root), patch.dict(os.environ, env, clear=True):
+                    good = verification.plan(base, head)
+                    self.assertTrue(good["root"])
+                    self.assertFalse(good["engine"])
+                    self.assertEqual(good["focused"], sorted(reviewed["tests"]))
+                    def broad(left, right):
+                        result = verification.plan(left, right)
+                        self.assertTrue(result["root"])
+                        self.assertTrue(result["engine"])
+                        self.assertEqual(result["focused"], [])
+                    # Mutate either endpoint independently, including donor
+                    # modes and destinations that must not exist at the base.
+                    for revision, is_base in [(base, True), (head, False)]:
+                        for path, (old, _) in blobs.items():
+                            modes = ["100644", "100755", "120000"] if not is_base or old else ["100644"]
+                            for mode in modes:
+                                git("read-tree", revision)
+                                oid = git("hash-object", "-w", "--stdin", input="altered\n") if mode == "100644" else (old if is_base else blobs[path][1])
+                                git("update-index", "--add", "--cacheinfo", mode, oid, path)
+                                tree = git("write-tree", "--missing-ok")
+                                changed = git("commit-tree", tree, "-m", "mutation")
+                                broad(changed if is_base else base, head if is_base else changed)
+                            if not is_base:
+                                git("read-tree", head)
+                                git("update-index", "--force-remove", path)
+                                changed = commit()
+                                broad(base, changed)
+                    for path in ["Cargo.lock", "build.rs", "src/unknown.rs",
+                                 "tests/test_verification.py", "scripts/cd/publish_pages.py"]:
+                        git("read-tree", head)
+                        oid = git("hash-object", "-w", "--stdin", input="mixed input\n")
+                        git("update-index", "--add", "--cacheinfo", "100644", oid, path)
+                        changed = commit()
+                        broad(base, changed)
+                    broad("missing-history", head)
+                    # A document alongside an exact move remains supported.
+                    git("read-tree", head)
+                    git("update-index", "--add", "--cacheinfo", "100644", oid, "README.md")
+                    documented = commit()
+                    self.assertEqual(verification.plan(base, documented)["focused"], sorted(reviewed["tests"]))
 
 
 if __name__ == "__main__":

@@ -32,6 +32,17 @@ MOVES = {
         },
         "tests": ["handoff::", "hosted::", "settings::"],
     },
+    # d59796c3 -> e86f515e: same three extraction blobs as config above.
+    # Current main already contains the logging fixture repair; do not restore
+    # its historical blob or require a fourth changed path for this pair.
+    "config-current-main": {
+        "blobs": {
+            "src/handoff.rs": ("da2980adcf8e50b35019b043059d26c1697c8dd7", "7dcdf6b051b10d45d0d2e1afbfac5a5dc12ae393"),
+            "src/handoff/config_store.rs": (None, "4d960d819900123d099aa6ad4d2a7827e3ffbfdc"),
+            "src/handoff/test_modules.rs": (None, "9ac7c770ecb3aeb2d86892b5656330cf5292c405"),
+        },
+        "tests": ["handoff::", "hosted::", "settings::"],
+    },
     "recorder": {
         "blobs": {
             "src/capture.rs": ("6d26953bf949d238ace1bf292801e1bc218875a9", "1f607ee1b7e20fb36f0801c18551fa58570165f2"),
@@ -49,17 +60,28 @@ MOVES = {
         },
         "tests": ["bundle_processing::", "capture::", "recover::", "sketch::"],
     },
+    # d59796c3 -> f135448c: inverse of the reviewed extraction reconstructs
+    # current main exactly, including shares CLI cases. The complete extracted
+    # production/test module is unchanged from 84ef8f56.
+    "processing-current-main": {
+        "blobs": {
+            "src/main.rs": ("b54efd65ae545d971c964b51b77fff7b2d4a3711", "7e8656f9e257d5fae635a47bdc7171c08604fca4"),
+            "src/bundle_processing.rs": (None, "88240b2b938639cfbdd190ad1209e5f306ac3f33"),
+        },
+        "tests": ["bundle_processing::", "capture::", "recover::", "sketch::"],
+    },
 }
 
 # Additive independent browser package from #200, inventory checked at c5bb1b78. Root
 # build.rs/Cargo/native inputs do not consume this directory; its build reads
 # the five approved site/public brand assets. Changing those/shared inputs is
-# not this route. Explicit inventory keeps unknown new owners broad.
+# not this route. SharedLinks.tsx closure rechecked at 31281ba5; its existing
+# standalone verifier covers shares routes. Unknown new owners remain broad.
 BROWSER_FILES = {"connect/web/" + path for path in (
     ".gitignore", "AGENTS.md", "README.md", "VERIFICATION.md", "bun.lock",
     "index.html", "package.json", "tsconfig.json", "vite.config.ts",
     "scripts/assets.mjs", "scripts/prerender.mjs", "scripts/test-browser.mjs",
-    "src/Hosted.tsx", "src/api.ts", "src/base.css", "src/entry-server.tsx",
+    "src/Hosted.tsx", "src/SharedLinks.tsx", "src/api.ts", "src/base.css", "src/entry-server.tsx",
     "src/hosted.css", "src/main.tsx", "test/artifact.test.mjs", "test/browser.mjs",
     "test/closure.test.mjs", "test/routes.test.mjs",
 )}
