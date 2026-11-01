@@ -188,7 +188,7 @@ export function validatePublic(files, canonical) {
   for (const [path, bytes] of files) {
     if (!/^(?:index\.html|robots\.txt|sitemap\.xml|apparent-wordmark\.svg|icon\.svg|HostGrotesk-Variable\.ttf|social-preview-v1\.png|Apparent-ghost-demo-v4-lilac(?:-poster\.jpg|\.mp4))$/.test(path)
       && !/^assets\/[^/]+-[\w-]+\.(?:js|css)$/.test(path)
-      && !(/^(?:pond|team|feature-demos)\/.+/.test(path) && canonical.has(path))) throw Error(`Unexpected Public output: ${path}`)
+      && !(/^(?:pond|team|feature-demos)\/.+/.test(path) && canonical.get(`assets/${path}`)?.equals(bytes))) throw Error(`Unexpected Public output: ${path}`)
     if (/\.(?:html|js|css|svg)$/.test(path) && sensitive.test(bytes.toString())) throw Error(`Private Public content: ${path}`)
   }
   resourceGraph(files, ['index.html'])

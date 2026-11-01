@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, readFileSyn
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
-import { composeArtifacts, inventory, routes, approved, resourceGraph, safePath, validatePreservedFiles } from './compose-connect.mjs'
+import { composeArtifacts, inventory, routes, approved, resourceGraph, safePath, validatePreservedFiles, validatePublic } from './compose-connect.mjs'
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'compose-'))
@@ -139,6 +139,22 @@ test('compose independently emitted routes, preloads, import tables, CSS and ide
     for (const route of routes) assert(inventory(f.out).has(`${route}/index.html`))
     assert.equal(inventory(f.out).has('previous.bin'), false)
     assert.deepEqual([...resourceGraph(inventory(f.out), ['connect/index.html'], true)].sort(), ['connect/index.html', 'assets/connect-a.js', 'assets/child-a.js', 'assets/preload-a.js', 'assets/connect-a.css', 'assets/child-a.css', 'HostGrotesk-Variable.ttf', 'hosted/source-pond-v4.png'].sort())
+  } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
+test('accepts only byte-identical public assets relocated under canonical assets/', () => {
+  const f = fixture()
+  try {
+    const path = 'feature-demos/anywhere/index.html'
+    const bytes = Buffer.from('<!doctype html><html><title>illustrative demo</title></html>')
+    f.put(f.canonical, `assets/${path}`, bytes)
+    f.put(f.pub, path, bytes)
+    assert.doesNotThrow(() => validatePublic(inventory(f.pub), inventory(f.canonical)))
+
+    f.put(f.pub, path, Buffer.from(`${bytes} altered`))
+    assert.throws(() => validatePublic(inventory(f.pub), inventory(f.canonical)), /Unexpected Public output/)
+    f.put(f.pub, path, bytes)
+    f.put(f.pub, 'feature-demos/operator/index.html', bytes)
+    assert.throws(() => validatePublic(inventory(f.pub), inventory(f.canonical)), /Unexpected Public output/)
   } finally { rmSync(f.root, { recursive: true, force: true }) }
 })
 for (const [name, mutate, error] of [
