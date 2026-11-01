@@ -140,8 +140,17 @@ export function validateConnect(files, canonical, { syntheticOrigin } = {}) {
     if (/\.(?:html|js|css)$/.test(path)) {
       const text = bytes.toString('utf8')
       if (sensitive.test(text)) throw Error(`Private Connect content: ${path}`)
-      // Match actual URL values, not the API validator's bare loopback host names.
-      for (const m of text.matchAll(/https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])[^\s"'`<>]*/g)) if (!syntheticOrigin || !exactOrigin(m[0]) || m[0] !== syntheticOrigin) throw Error(`Synthetic Connect configuration: ${path}`)
+      // Match complete URLs, not the API validator's bare loopback host names.
+      // Prerendered sign-in links legitimately add a path/query to the labelled
+      // origin; JS configuration remains an exact origin with no URL suffix.
+      for (const [value] of text.matchAll(/https?:\/\/[^\s"'`<>]*/gi)) {
+        let url
+        try { url = new URL(value) } catch { /* A malformed local spelling still refuses below. */ }
+        const local = url && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
+        if (!local && !/^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])/i.test(value)) continue
+        if (!syntheticOrigin || !url || url.origin !== expectedOrigin || url.username || url.password
+          || (path.endsWith('.html') ? value !== url.origin && value !== url.href : !exactOrigin(value))) throw Error(`Synthetic Connect configuration: ${path}`)
+      }
     }
   }
   const js = [...files].filter(([p]) => p.endsWith('.js')).map(([, b]) => b.toString()).join('\n')

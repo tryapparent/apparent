@@ -193,3 +193,22 @@ test('labelled synthetic composition writes only its separate destination and st
 test('reject malformed manifest/resource paths rather than normalizing them into allowed files', () => {
   for (const path of ['../escape', '/root', 'a//b', 'a/./b', 'a\\b', 'a?b', 'a#b', 'a%2fb']) assert.throws(() => safePath(path))
 })
+test('labelled synthetic prerendered sign-in navigation retains its path and query', () => {
+  const f = fixture()
+  try {
+    const origin = 'http://127.0.0.1:18809'
+    const js = readFileSync(join(f.con, 'assets/connect-a.js'), 'utf8')
+    f.put(f.con, 'assets/connect-a.js', js.replace(productionOrigin, origin))
+    const path = 'connect/device/index.html'
+    const html = readFileSync(join(f.con, path), 'utf8')
+    f.put(f.con, path, html + `<a href="${origin}/auth/google/start?returnTo=%2Fconnect%2Fdevice%3Fcode%3D">Continue with Google</a>`)
+    f.run({ syntheticOrigin: origin })
+    validatePreservedFiles(inventory(f.out), inventory(f.con))
+    const before = snapshot(f.out)
+    for (const invalid of [origin + '.attacker.example', origin + '@attacker.example', 'http://user@127.0.0.1:18809', 'http://127.0.0.1:18810']) {
+      f.put(f.con, path, html + `<a href="${invalid}/auth/google/start">Continue</a>`)
+      assert.throws(() => f.run({ syntheticOrigin: origin }), /Synthetic/)
+      assert.deepEqual(snapshot(f.out), before)
+    }
+  } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
