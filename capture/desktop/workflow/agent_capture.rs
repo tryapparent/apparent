@@ -868,9 +868,12 @@ mod tests {
         assert_eq!(unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) }, 0);
         let mut blocked = UnixStream::connect(&path).unwrap();
         blocked.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
-        writeln!(blocked, "{}", serde_json::json!({"storage":"set", "path": selected, "expected":reset["storage"]["revision"], "deadline":storage_clock_ms()+150})).unwrap();
-        std::thread::sleep(Duration::from_millis(80));
-        assert_eq!(call(serde_json::json!({"storage":"read", "deadline":storage_clock_ms()+3000}))["error"], "app_busy");
+        // Use the full admission budget, not a 150 ms scheduling race. The held
+        // lock keeps the admitted writer occupied until we explicitly release it.
+        let blocked_deadline = storage_clock_ms() + 3000;
+        writeln!(blocked, "{}", serde_json::json!({"storage":"set", "path": selected, "expected":reset["storage"]["revision"], "deadline":blocked_deadline})).unwrap();
+        let busy = call(serde_json::json!({"storage":"read", "deadline":storage_clock_ms()+3000}));
+        assert_eq!(busy["error"], "app_busy", "{busy}");
         let mut state = UnixStream::connect(&path).unwrap();
         writeln!(state, "state").unwrap();
         let request = receiver.recv_timeout(Duration::from_secs(1)).unwrap();
@@ -879,7 +882,7 @@ mod tests {
         let mut response = String::new();
         BufReader::new(state).read_line(&mut response).unwrap();
         assert!(response.contains("idle"));
-        std::thread::sleep(Duration::from_millis(160));
+        std::thread::sleep(Duration::from_millis(blocked_deadline.saturating_sub(storage_clock_ms()) + 1));
         drop(lock);
         response.clear();
         BufReader::new(blocked).read_line(&mut response).unwrap();
