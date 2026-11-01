@@ -1,16 +1,45 @@
-# Public Apparent site on Clanker
+# Public Apparent site: Pages; retained Clanker rollback origin
+
+Production publication now uses the `apparent-capture` Cloudflare Pages project
+through main-branch GitHub Actions. See [`pages-deploy.md`](pages-deploy.md).
+The Clanker topology below is retained for rollback only. Do not run its old
+manual publication procedure: `scripts/cd/publish_site.py` refuses production
+publication, and the Actions website job no longer uses SSH or this release tree.
+Never delete or stop the existing Caddy service or release during this migration.
 
 For checked main-branch delivery, activation gates, deployment credentials and
 guarded rollback, see [`../../docs/continuous-delivery.md`](../../docs/continuous-delivery.md).
-Manual publishers must share `.apparent-site-publish.lock` with CD.
+Historical manual publishers shared `.apparent-site-publish.lock` with CD. That
+production path is now retired; do not reactivate it.
 
-`https://app.tryapparent.com/` currently reaches Clanker's `presentations-caddy-1` through Cloudflare. The live Caddyfile is `/opt/presentations/Caddyfile`; the site root is the `apparent-site` symlink under `/opt/presentations/releases/`, mounted in Caddy as `/srv/apparent-site`. This is separate from the Worker described in `site/wrangler.jsonc`. Check the live origin before assuming either route owns the hostname.
+Before the Pages cutover, `https://app.tryapparent.com/` reached Clanker's `presentations-caddy-1` through Cloudflare. The retained Caddyfile is `/opt/presentations/Caddyfile`; the site root is the `apparent-site` symlink under `/opt/presentations/releases/`, mounted in Caddy as `/srv/apparent-site`. This is separate from the Worker described in `site/wrangler.jsonc`. Check live routing before assuming any origin owns the hostname.
+
+## Historical Clanker procedure — reference only, do not execute
 
 Build from the intended commit with `APPARENT_PUBLIC_SITE=1 npm run build`, then `node scripts/package-apparent.mjs` in `site/`. Run the focused Node tests in `site/scripts/`. Publish **only** `site/dist-apparent`, not `site/dist`: the latter has an appcast, feature map, and other files not meant for this public Caddy route. Make a new release directory under `/opt/presentations/releases/` by copying the active site directory first, then overlay `dist-apparent/`. This retains any existing release/update or demo assets absent from the new package. Do not alter `/appcast.xml` or `/releases/` routes as part of a homepage deploy.
 
 The Caddy `@publicApparent` path allowlist must include `/pond/*` for the frog images; a Team release additionally needs `/team/*` for portraits and logos. The package containing `/team/*` does not itself prove Caddy serves it. Do not expose private prototype paths, the feature map, or the entire release directory. Validate any Caddyfile change with `caddy validate`, reload Caddy, and check that the old page is still served. Switch the `apparent-site` symlink atomically to the staged release; keep the old target for rollback. Compare public HTML and required image hashes with the packaged files and test desktop/mobile interactions in a browser. Cloudflare can cache a **pre-deploy 404** on a new image path for four hours; use a new query string or purge the specific cached URL before calling it healthy. The lily uses `?v=1` for this reason.
 
 Rollback: atomically point `apparent-site` at the previous release target; restore the backed-up Caddyfile and reload only if the allowlist change itself caused trouble. Verify the old homepage and any affected update paths after rollback.
+
+## Homepage marker guard
+
+`package-apparent.mjs` uses `package-page-text.mjs` as a parser-only stale-build
+marker guard, not an HTML sanitizer or proof of CSS/layout visibility. Its
+intended content boundary is parsed body text, excluding `script`, `style`,
+`template`, `noscript`, and `iframe` subtrees, any subtree with a `hidden`
+attribute (regardless of its value), and any subtree with a literal inline
+`display: none` declaration (case-insensitive, with optional `!important`).
+Descendants cannot supply markers once their ancestor is excluded. This is a
+conservative exclusion even if a later declaration would override it.
+
+The guard does not evaluate the CSS cascade, CSS escapes or variables, external
+CSS, layout, or dynamic state. Other ways of concealing content remain outside
+its scope; browser visibility still needs browser verification. Normal body
+text across inline elements and decoded entities can supply markers. Extraction
+does not rewrite the packaged HTML. Run `node --test scripts/test-package-text.mjs`
+to check acceptance and rejection through the real packager, including preservation
+of the previous artifact when marker validation rejects a build.
 
 ## Recorded ghost demo
 

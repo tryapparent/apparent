@@ -27,7 +27,23 @@ without canceling a deployment halfway through; each publisher also refuses a
 candidate that is no longer current `main`. A relevant later push supplies the
 replacement; otherwise dispatch the workflow on `main` after reviewing it.
 
-## Website activation (operator step, not performed by this PR)
+## Website activation: Cloudflare Pages
+
+The active website job now publishes only `site/dist-apparent` to the isolated
+`apparent-capture` Pages project, using `scripts/cd/publish_pages.py` and
+`site/wrangler.pages.jsonc`. It does not execute `site/wrangler.jsonc`, deploy the
+hosted Worker, or connect to Clanker. See
+[`../site/docs/pages-deploy.md`](../site/docs/pages-deploy.md) for the current build,
+accepted-homepage reconciliation, video limits, exact hostname cutover and rollback.
+Set `WEBSITE_PAGES_API_TOKEN` in `website-production`; the existing
+`WEBSITE_CD_ENABLED=true` gate enables only Pages. Remove obsolete SSH settings
+when present; they are no longer read. The hosted activation gate is unchanged.
+
+### Historical Clanker protocol (not an active publisher)
+
+The following documents the retained origin and older rollback receipts only.
+Do not activate the SSH publisher: its production `publish` operation now refuses
+the Clanker release root. Keep the infrastructure and prior releases intact.
 
 1. Review the live Caddy topology and allowlist in
    [`../site/docs/clanker-deploy.md`](../site/docs/clanker-deploy.md). The target is

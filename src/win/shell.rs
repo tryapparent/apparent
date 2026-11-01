@@ -108,6 +108,15 @@ pub fn file_description(path: &Path) -> Option<String> {
     let mut data = vec![0_u8; size as usize];
     unsafe { GetFileVersionInfoW(PCWSTR(name.as_ptr()), None, size, data.as_mut_ptr().cast()) }
         .ok()?;
+    // VerQueryValueW returns addresses within `data`, which stays alive through both reads.
+    // Read checked byte ranges from the owner, not potentially null or unaligned u16 pointers.
+    let bytes = |pointer: *const u16, len: usize| {
+        if pointer.is_null() {
+            return None;
+        }
+        let start = (pointer as usize).checked_sub(data.as_ptr() as usize)?;
+        data.get(start..start.checked_add(len)?)
+    };
     // The first language and code page in the translation table.
     let mut translation: *mut u16 = std::ptr::null_mut();
     let mut len = 0_u32;
@@ -120,11 +129,19 @@ pub fn file_description(path: &Path) -> Option<String> {
             &mut len,
         )
     };
-    let (lang, page) = if found.as_bool() && len >= 4 && !translation.is_null() {
-        unsafe { (*translation, *translation.add(1)) }
+    let translation = if found.as_bool() && len >= 4 {
+        bytes(translation, 4)
     } else {
-        (0x0409, 0x04B0)
+        None
     };
+    let (lang, page) = translation
+        .map(|bytes| {
+            (
+                u16::from_le_bytes([bytes[0], bytes[1]]),
+                u16::from_le_bytes([bytes[2], bytes[3]]),
+            )
+        })
+        .unwrap_or((0x0409, 0x04B0));
     let key = wide(&format!(
         r"\StringFileInfo\{lang:04x}{page:04x}\FileDescription"
     ));
@@ -141,7 +158,11 @@ pub fn file_description(path: &Path) -> Option<String> {
     if !found.as_bool() || value.is_null() || chars == 0 {
         return None;
     }
-    let slice = unsafe { std::slice::from_raw_parts(value, chars as usize) };
+    let bytes = bytes(value, (chars as usize).checked_mul(2)?)?;
+    let slice: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+        .collect();
     let end = slice.iter().position(|&c| c == 0).unwrap_or(slice.len());
     let text = String::from_utf16_lossy(&slice[..end]).trim().to_owned();
     (!text.is_empty()).then_some(text)

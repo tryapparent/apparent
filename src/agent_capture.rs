@@ -1135,18 +1135,10 @@ mod tests {
 
     #[test]
     fn competing_launches_cannot_remove_the_winning_control_socket() {
-        // macOS's default temp directory can consume most of sun_path before our filename.
-        // This test creates its own random private child, so a short shared parent is safe.
-        #[cfg(target_os = "macos")]
-        let parent = PathBuf::from("/tmp");
-        #[cfg(not(target_os = "macos"))]
-        let parent = std::env::temp_dir();
-        let dir = parent.join(format!("apparent-agent-control-{}", new_id().unwrap()));
-        std::fs::create_dir(&dir).unwrap();
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let path = dir.join("capture.sock");
-        let stale = UnixListener::bind(&path).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        // Reuse the short private fixture suffix, including with CI's HOME-rooted TMPDIR.
+        // Do not relocate the fixture or change the product's control socket path.
+        let (path, stale) = transport_fixture();
+        let dir = path.parent().unwrap().to_path_buf();
         drop(stale);
 
         // A launcher holding the lock may be between its stale-socket check and bind.

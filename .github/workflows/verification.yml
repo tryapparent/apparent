@@ -1,0 +1,88 @@
+name: Changed-tree verification
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  select:
+    runs-on: ubuntu-24.04
+    outputs:
+      root: ${{ steps.plan.outputs.root }}
+      engine: ${{ steps.plan.outputs.engine }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Selector and hook contracts (no native proof)
+        run: |
+          python3 -m unittest discover -s tests -p 'test_pre_push_guard.py'
+          python3 -m unittest discover -s tests -p 'test_verification.py'
+      - id: plan
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 scripts/verification.py --base "${BASE:-unknown}" --github-output "$GITHUB_OUTPUT"
+
+  rust:
+    needs: select
+    if: needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Linux application dependencies
+        if: runner.os == 'Linux' && needs.select.outputs.root == 'true'
+        run: ./scripts/linux/dependencies.sh
+      - name: Select the macOS 26 SDK required by native helpers
+        if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.0'
+      - name: Install the Metal toolchain
+        if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
+        run: xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            capture/engine -> target
+      - name: Execute the same changed-tree checks (not GUI acceptance)
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # Engine finalizer proofs reject group-writable cache ancestors.
+          verification_tmp="$(mktemp -d "$HOME/.apparent-verification.XXXXXX")"
+          readonly verification_tmp
+          export TMPDIR="$verification_tmp"
+          cleanup() {
+            local status=$?
+            if ! rm -rf -- "$verification_tmp"; then
+              echo '::error::Could not remove the owned verification temporary tree' >&2
+              if [ "$status" -eq 0 ]; then status=1; fi
+            fi
+            exit "$status"
+          }
+          trap cleanup EXIT
+          # Reproduce the CI-sensitive fixtures before the full affected suites.
+          if [ "${{ needs.select.outputs.root }}" = true ]; then
+            cargo test -j 3 --locked settings::tests::the_command_line_row_ -- --test-threads=2
+            cargo test -j 3 --locked agent_capture::tests::competing_launches_cannot_remove_the_winning_control_socket -- --exact
+            if [ "$RUNNER_OS" = macOS ]; then
+              cargo test -j 3 --locked hosted::regression_tests::hosted_security_darwin_acl_grants_fail_closed -- --exact
+            fi
+          fi
+          python3 scripts/verification.py --base "${BASE:-unknown}" --run --online

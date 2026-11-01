@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
+import { chromium } from "playwright-core"
 
 const site = join(dirname(fileURLToPath(import.meta.url)), "..")
 const publicDir = join(site, "dist-apparent")
@@ -33,12 +34,48 @@ test("product names use the wordmark except the lowercase demo heading", () => {
   assert.doesNotMatch(body.replace('<h2>See what <span>apparent</span> captures</h2>', ""), />\s*(?:Apparent|apparent)\b/)
 })
 
-test("the belief headline highlights enjoyable without changing its words", () => {
-  const html = readFileSync(join(publicDir, "index.html"), "utf8")
-  const belief = html.match(/<h2 id="belief">(.*?)<\/h2>/s)?.[1]
-  assert.ok(belief)
-  assert.equal(belief.replace(/<[^>]*>/g, ""), "We believe work should be enjoyable and leave us free for late nights with friends.")
-  assert.match(belief, /class="enjoy-highlight"/)
+test("the belief headline highlights enjoyable without changing its words", async (t) => {
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, headless: true })
+  try {
+    const page = await browser.newPage()
+    const assertHeadline = async (html) => {
+      // Parse inertly: do not execute scripts or load the packaged page's resources.
+      const belief = await page.evaluate((source) => {
+        const document = new DOMParser().parseFromString(source, "text/html")
+        const heading = document.querySelector("h2#belief")
+        return {
+          count: document.querySelectorAll("#belief").length,
+          text: heading?.textContent,
+          highlighted: !!heading?.querySelector(".enjoy-highlight"),
+        }
+      }, html)
+      assert.equal(belief.count, 1, "the belief heading must be unique")
+      assert.equal(belief.text, "We believe work should be enjoyable and leave us free for late nights with friends.")
+      assert.equal(belief.highlighted, true, "the heading must contain the enjoyable highlight")
+    }
+    await t.test("packaged headline", async () => {
+      await assertHeadline(readFileSync(join(publicDir, "index.html"), "utf8"))
+    })
+    const headline = '<h2 id="belief">We believe work should be <span class="enjoy-highlight">enjoyable</span> and leave us free for late nights with friends.</h2>'
+    await t.test("HTML syntax does not alter the text contract", async () => {
+      await assertHeadline(headline.replace('class="enjoy-highlight"', "class='enjoy-highlight' data-note='a > b'").replace("friends.", "frien&#100;s.<!-- not headline text -->"))
+    })
+    for (const [name, html] of [
+      ["changed words", headline.replace("friends.", "colleagues.")],
+      ["missing heading", headline.replaceAll("h2", "div")],
+      ["duplicate heading", headline + headline],
+      ["missing highlight", headline.replace("enjoy-highlight", "other")],
+      ["highlight only in an attribute", headline.replace('class="enjoy-highlight"', "data-note='class=\"enjoy-highlight\"'")],
+      ["embedded script text", headline.replace("enjoyable</span>", "enjoyable<script>unexpected</script></span>")],
+      ["malformed nested markup", headline.replace("enjoyable</span>", "enjoyable<scrip<script>t></span>")],
+    ]) {
+      await t.test(`rejects ${name}`, async () => {
+        await assert.rejects(() => assertHeadline(html), { code: "ERR_ASSERTION" })
+      })
+    }
+  } finally {
+    await browser.close()
+  }
 })
 
 test("the first screen has a full-size reversible frog and one wave button", () => {
