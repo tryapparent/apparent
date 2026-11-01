@@ -42,6 +42,21 @@ done
 // search other processes, use coordinates, or guess which Return commits a picker.
 // Unknown AX shapes fail with bounded diagnostics from this process alone.
 const panelScript = `
+on pickerButtons(rootElement, level, remaining)
+  if remaining < 1 or level > 16 then error "Owned picker AX traversal budget exceeded"
+  set remaining to remaining - 1
+  tell application "System Events"
+    if (role of rootElement as text) is "AXButton" then return {{rootElement}, remaining}
+    set found to {}
+    repeat with childElement in (UI elements of rootElement)
+      set walked to my pickerButtons(contents of childElement, level + 1, remaining)
+      set found to found & (item 1 of walked)
+      set remaining to item 2 of walked
+    end repeat
+  end tell
+  return {found, remaining}
+end pickerButtons
+
 on run argv
   set targetPID to (item 1 of argv) as integer
   set operation to item 3 of argv
@@ -71,13 +86,30 @@ on run argv
         set picker to item 1 of childSheets
         set depth to depth + 1
       end repeat
-      if operation is "diagnose" then return trace
       if depth > 0 and (name of outerWindow as text) is not "Apparent — UI foundation" then error "Picker has unexpected parent: " & trace
-      if not (exists button "Choose" of picker) or not (exists button "Cancel" of picker) then error "Owned native picker not ready: " & trace
       if panelRole is not "AXSheet" and panelRole is not "AXWindow" then error "Unexpected picker role: " & trace
       -- A sheet can have no title. A named picker must expose the shipped title.
-      if panelName is not "" and panelName is not "Choose capture location" then error "Unexpected picker title: " & trace
-      if not (enabled of button "Choose" of picker) then error "Native Choose not enabled: " & trace
+      if operation is not "diagnose" and panelName is not "" and panelName is not "Choose capture location" then error "Unexpected picker title: " & trace
+      -- AppKit groups its controls below the sheet. Never widen the search to
+      -- another window/process, and reject oversized or ambiguous subtrees.
+      set walked to my pickerButtons(picker, 0, 512)
+      set chooseMatches to {}
+      set cancelMatches to {}
+      set trace to trace & "descendant-buttons="
+      repeat with foundButton in (item 1 of walked)
+        set buttonName to name of foundButton
+        if buttonName is not missing value then
+          set trace to trace & (buttonName as text) & "|"
+          if buttonName is "Choose" then set end of chooseMatches to contents of foundButton
+          if buttonName is "Cancel" then set end of cancelMatches to contents of foundButton
+        end if
+      end repeat
+      set trace to trace & linefeed
+      if operation is "diagnose" then return trace
+      if (count of chooseMatches) is not 1 or (count of cancelMatches) is not 1 then error "Owned native picker controls missing or ambiguous: " & trace
+      set chooseButton to item 1 of chooseMatches
+      set cancelButton to item 1 of cancelMatches
+      if not (enabled of chooseButton) then error "Native Choose not enabled: " & trace
       set xy to position of outerWindow
       set wh to size of outerWindow
       if operation is "go" or operation is "choose" or operation is "cancel" then
@@ -91,9 +123,9 @@ on run argv
           keystroke (item 2 of argv)
           key code 36
         else if operation is "choose" then
-          click button "Choose" of picker
+          click chooseButton
         else
-          click button "Cancel" of picker
+          click cancelButton
         end if
       end if
       return trace & "bounds=" & (item 1 of xy) & "," & (item 2 of xy) & "," & (item 1 of wh) & "," & (item 2 of wh)
