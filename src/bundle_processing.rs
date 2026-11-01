@@ -1403,3 +1403,42 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 }
+        assert!(
+            sizes.contains(&(480, 300)),
+            "fallback candidate must survive: {sizes:?}"
+        );
+=======
+            app: None, bundle_id: None, window_title: None, window_id: None,
+            display_id: 1,
+            frame: TargetFrame { x: 0.0, y: 0.0, width: 1280.0, height: 800.0, scale: 1.0 },
+        };
+        let candidate = |t| RgbaFrame::new(t, 480, 300, vec![180; 480 * 300 * 4]);
+        let click = |t| model::InteractionEvent::Click {
+            t, x: 0.1, y: 0.1, button: None, label: None, role: None,
+        };
+        let (_, bundle, summary) = build_bundle_from_parts(
+            &root, target, 10_000, vec![candidate(0), candidate(5_000)],
+            vec![], vec![click(0), click(5_000)], TranscriptData::default(), None, None,
+            SourceExtras {
+                full_frames: Some(Box::new(|times| Ok(vec![RgbaFrame::new(
+                    times[0], 1280, 800, vec![180; 1280 * 800 * 4],
+                )]))),
+                autocrop: Some(Some(autocrop::Settings::default())),
+                ..SourceExtras::default()
+            },
+        ).unwrap();
+        assert!(summary.contains("Image quality:"));
+        assert_eq!(bundle.keyframes.len(), 2, "one decoded and one candidate keyframe");
+        assert!(bundle.autocrop.is_none());
+        let sizes: Vec<_> = bundle.keyframes.iter().map(|key| {
+            let bytes = std::fs::read(root.join(&key.file)).unwrap();
+            let reader = png::Decoder::new(std::io::Cursor::new(bytes)).read_info().unwrap();
+            (reader.info().width, reader.info().height)
+        }).collect();
+        assert!(sizes.contains(&(1280, 800)), "decoded full frame must survive: {sizes:?}");
+        assert!(sizes.contains(&(480, 300)), "fallback candidate must survive: {sizes:?}");
+>>>>>>> 715a8918e58cdc48dfe28e1a829145fbb44d8bc9
+        assert!(root.join("contact-sheet.png").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

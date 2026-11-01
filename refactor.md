@@ -3,7 +3,10 @@
 Status: strategy/tooling accepted on canonical `tryapparent/apparent` main through
 [#239](https://github.com/tryapparent/apparent/pull/239), merged as
 `f1b46d2a62145abae6f93a99d29de9da023e675b` (ancestry and acceptance checked).
-Application migration may now start within the ordered scopes below. The parent
+Current-main reconciliation is pinned to `d59796c35918c98cfc4336a0a71c03fea2d8926c`:
+#241 routing, #243 retired-document deletion and #244 additive browser staging are
+merged ancestors, as is #191 sharing (`1a8f19d3`). Acceptance below is bounded to
+those slices, not production browser adoption or native proof. The parent
 coordinator owns merge and progress updates on main; a worker finishing is not
 completion. No deployment, release or unrelated merge is authorized here.
 
@@ -44,8 +47,9 @@ later explicit decisions. Historical threads, staging plans and passing old logs
 are evidence, not permission to revive their larger scope or claim main adoption.
 
 Main currently remains a Rust binary with GPUI/native dependencies. The Engine
-package is real but unconsumed by production. Connect browser entry isolation is
-real but `site/` still owns its build/package. Existing GUI automation still requires
+package is real but unconsumed by production. Connect browser entry isolation and
+an independent additive browser package are real; `site/` still owns the production
+build/publisher and authenticated implementation. Existing GUI automation still requires
 the running Desktop app. These are supported migration states, not failures to hide.
 
 Move one authoritative implementation and its tests at a time. Existing paths may
@@ -130,13 +134,14 @@ artifact/resource-closure and dev/preview route fixtures, and separate synthetic
 build/fixtures, without Rust. Its current closure reads only the five approved
 `site/public` assets outside the package; changes there or in publisher/service/shared
 inputs still broaden. CI provisions Node/Chrome for that route. This is executable
-routing for the additive package, not a claim it is already on main or that its
-current worker candidate has passed. Unknown new browser paths remain broad.
+routing for the additive package, now merged through #244; historical package
+acceptance is recorded in 5b below. It is not production adoption. Unknown new
+browser paths remain broad.
 
 Do not certify arbitrary `main.rs` edits: that file composes every subsystem. A
 later extraction revision must be source-compared and its exact blobs reviewed
 before replacing the pinned processing pair; the registry is deliberately bounded.
-No checklist step beyond 1 is checked by this routing follow-through. This remains
+Routing #241 alone did not complete any checklist step beyond 1. This remains
 a small selector, not a Rust parser, broad test framework or native harness.
 
 On Clanker run all new heavy builds/tests and hook-backed pushes once through
@@ -156,6 +161,8 @@ PR links use the canonical repository; main ancestry was checked at the pinned b
 - [x] **Staged Engine admission/lease package** — [#220](https://github.com/tryapparent/apparent/pull/220), merge `77dd5bbf`. Independent package/process contract accepted; 22 package tests and retained source-identical Mac package evidence. Root combined Linux evidence reported 668 passed/3 ignored with #222. No production recorder, finalizer or retention caller consumes Engine; no native capture acceptance is implied. See `capture/engine/README.md`.
 - [x] **Connect entry isolation** — [#222](https://github.com/tryapparent/apparent/pull/222), merge `d21115b5`. Canonical/legacy routes, built dependency closure and synthetic packaged/dev/preview auth/consent/browser checks retained. `site/` still owns build/package/publisher; no independent Connect package or live OAuth claim. See `docs/hosted-web.md`.
 - [x] **Recording versus Desktop completion seam** — [#233](https://github.com/tryapparent/apparent/pull/233), implementation `b6c3fd39478c357f6f79b3a5d6e2199bb02707c1`, merge `92b76040`. Linux UI selection 51 passed; full suite 668 passed/3 ignored; build and independent source review passed. Native/GUI/E2E intentionally omitted, not claimed. `src/ui/recording_completion.rs` still uses the crate-root finalizer; whiteboard and GPUI coupling remain. No Engine adoption or standalone Agent.
+- [x] **Bounded verification-routing follow-through** — [#241](https://github.com/tryapparent/apparent/pull/241), tested head `c3f72f7a`, merge `1ca21c67`. Exact source-pair and additive browser rules above are merged, not extraction acceptance. Retained normal-hook evidence reports Linux root build/671 passed/3 ignored, Engine build/22 passed and 15 hook + 13 selector contracts; final-head CI checks passed. The real browser driver receipt at `c5bb1b78` is historical synthetic evidence, not a fresh current-main run.
+- [x] **Retired OpenCode glossary deletion (one C slice)** — [#243](https://github.com/tryapparent/apparent/pull/243), tested head `ea3ddd38`, merge `3b5d715b`. Deleted `CONTEXT.md` and its sole direct guide reference in `docs/routing.md`; no source, supported historical metadata reader, runtime or package input changed. Current-main tracked references are only the intentional campaign example and selector/deletion regression. Retained final normal hook passed 15 guard + 13 selector tests on the exact docs-only rule; CI Rust execution was skipped, not a Rust pass. The earlier broad invocation's Engine trusted-ancestry failure remains a failed historical invocation, not waived or relabelled green. C and the final sweep remain unchecked.
 
 ## Ordered remaining checklist
 
@@ -169,8 +176,8 @@ other pending item becomes complete merely because a worker finishes it.
 - [ ] **2b. Reuse recorder #225.** After 1 and 2a; head `28d83f3d` already contains #221. Accept preserved recorder bodies/test mapping/re-exports, affected compilation and recorder tests; inspect exact candidate difference rather than importing unrelated history. Excludes Engine adoption, native adapter changes and duplicate #204 extraction. #233 is already complete; do not redo it.
 - [ ] **3. Common bundle processing out of main.rs.** After 1; serialize `src/main.rs` ownership, preferably after 2 to avoid wiring collisions. Move current main lines 661–1488 into `src/bundle_processing.rs` with the ten existing artifact tests and direct root re-exports. Recheck ranges/symbols on the actual base. Accept reconstruction, call-site/import review, affected compilation/tests and synthetic manifest/summary/image equivalence when relevant. Demo stays root. Reuse byte-identical production evidence from #201, not its whole donor diff. Excludes publication fixes, UI/completion edits, format changes and Engine packaging.
 - [ ] **4. Useful Desktop coordination seams.** After 3 and the already-merged #233. Extract only cohesive human workflow/presentation state needed by upcoming work; keep exact request receipts before stale-UI guards, current consent before Connect admission, feedback local and clipboard/onboarding in Desktop. Accept focused completion/cancel/stale-result tests, source preservation for moves and compile. Excludes a wholesale #208 split, empty folder taxonomy, renderer replacement and relocating active picker/ink owners' code.
-- [ ] **5a. Independent Connect client.** After 1/2a and active #191 handoff. Own client manifest and fresh config-provider reads/transactions, preserving queue→config lock order, grant generations, revocation and local fallback. Accept independent build without GPUI/native build inputs and existing synthetic transfer/auth/consent/fetch tests plus failure/disable races. A protocol leaf is optional preparation, not client independence; avoid it if a coordinated full-package slice is feasible. No auth/renewal redesign in the mechanical extraction.
-- [ ] **5b. Additive Connect browser package.** Independent of Capture after 1; `connect/web/**` only. #200's four behavior source files are reported byte-identical to pinned main; port relevant package work, not an umbrella. Accept source/route/auth/consent preservation, compile/artifact closure and privacy checks appropriate to build delta. Preserve shared Bun 1.3.10 pin unless a demonstrated need justifies a separate change; staging's 1.4.4 is not authority. This supported temporary staging is not completed production build separation.
+- [ ] **5a. Independent Connect client.** After 1/2a and explicit client path reservation following merged #191 (`1a8f19d3`); an obsolete open-PR block is not a reservation. Own client manifest and fresh config-provider reads/transactions, preserving queue→config lock order, grant generations, revocation and local fallback. Accept independent build without GPUI/native build inputs and existing synthetic transfer/auth/consent/fetch tests plus failure/disable races. A protocol leaf is optional preparation, not client independence; avoid it if a coordinated full-package slice is feasible. No auth/renewal redesign in the mechanical extraction.
+- [x] **5b. Additive Connect browser package (historical merged staging acceptance only).** [#244](https://github.com/tryapparent/apparent/pull/244), reviewed final package `41bf5780a6b62cdffce2876a2df9ecfaf6f32e30`, merge `89a41b877857c5ef29d05db22d90563786d2765f`. Parent accepted independent staging, not 5c. Fresh Git comparison here confirms the complete `connect/web` tree `8c90c1c8ea56d71a3495daf8a4dd8cc25f70fcf1` is identical at reviewed head, merge and pinned current main. At the merge, `Hosted.tsx`, `api.ts`, `hosted.css` and `base.css` exactly match `site/src/hosted` donors. Retained final-head normal-hook evidence reports Bun 1.3.10 frozen install, TypeScript/production build, four artifact/closure + two dev/preview route tests and all 32 synthetic browser scenarios, including raw-failure-body redaction; 15 hook + 13 selector tests passed. This reuses historical execution/review, not a fresh browser run or live OAuth/native/deployment proof. **Current donor drift:** merged #191 changes legacy `Hosted.tsx`, `api.ts` and `hosted.css` and adds `SharedLinks.tsx`; the staged package remains unchanged, while `base.css` still matches. Do not claim current-main behavior parity. Reconcile those contracts in the owner-gated 5c adoption before replacing production donors; production build separation remains incomplete.
 - [ ] **5c. Adopt browser package and remove donors.** After 5b and active Pages owner's clearance. Sole publisher composes independent output while preserving accepted homepage overlay, canonical/legacy routes and query/auth/origin contracts. Accept synthetic route/consent checks, built graph separation, allowlist/privacy/collision rejection and packaging behavior. Delete old authenticated implementation only after production composition consumes the new one. Excludes publisher replacement, deploy, private pitch publication and route redesign.
 - [ ] **6. Checked publication correctness.** After 3; separate behavior PR from moves. Use #210 (successor of #209) as evidence for `coordinate`/`publish_after`/`checked`, porting only dependency-complete work. Whiteboard mutation **and fallback** remain inside the outer publication closure through validation and terminal effects. Accept failed writes/media/cleanup never produce Saved, durability/identity checks, pending transcript/recovery writer coordination and synthetic MP4/MOV plus relevant batched platform proof. Excludes premature Engine success or format redesign.
 - [ ] **7a. Paired shared model/candidate leaves.** After 2b and Engine dependency/build decision. Reassess #214/#215 together; move authoritative types/buffer/tests and delete donors in the same adoption slice. Accept wire/constructor/type-identity parity and package/root compilation/tests. No duplicate long-lived leaves, session adoption or standalone claim.
@@ -191,8 +198,9 @@ continue after a bounded blocker is recorded. Recheck live ownership before assi
 
 | Work | Current limit | Resume condition |
 |---|---|---|
-| #221 then #225 | Open drafts, not main. Older descriptions demand native replay; discovery reports exact inverse reconstruction against `6f043ff4` and preserved reviewed blobs | Strategy merged; reconcile actual candidate/build delta and reuse receipts, then affected compile/focused acceptance |
-| Connect client | #191 owns `src/hosted.rs` and tests | Explicit owner handoff/path reservation; strategy merge alone does not clear it |
+| #221 config / #242 processing | Open drafts, not main; assigned workers are reconciling against current main. Older receipts and exact-pair routing do not prove a newer composition | Workers return exact source/evidence and proposed acceptance text to parent; this worker alone edits `refactor.md`. Parent records acceptance only after merge and required gates |
+| #225 recorder | Open draft includes #221; waits for config reconciliation/merge | After accepted #221, reconcile recorder-only delta, reviewed bodies/test mapping, compile and focused proof; do not replay native work solely for a move |
+| Connect client | #191 merged as `1a8f19d3`; its source changes are now main authority, not an open-PR blocker | Explicit current owner/path reservation and accepted 2a before client extraction; preserve sharing/consent contracts |
 | Browser production adoption | Pages thread owns publisher/composition | Clearance from Pages owner `99ea5290-aecc-4bf0-8aca-3200f62f5e5c`; reserve `scripts/cd/**`, Pages packaging/runtime scripts, functions/lib, wrangler, published-homepage and publisher workflow |
 | Native dependency closure | #185 retained-capability changes and #235 Linux producer | Owner handoff and exact retained capabilities/build inputs agreed; no racing native moves |
 | Other live feature paths | #234 mark text, Mac share-picker, retirement/hosted-sharing and website Pages writers; #237 audio ducking merged while drafting | Explicit exclusive reservation or wait for merge; do not touch their production files here; retain #237's new build inputs in future delta comparisons |
