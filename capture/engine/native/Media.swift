@@ -545,6 +545,10 @@ enum Media {
   /// decodable frame, for keyframe candidates) or exactly at `atMs` (for the keyframes themselves).
   static func frames(movie: URL, outDir: URL, everyMs: Int?, atMs: [Int]?, maxEdge: Int) async throws -> [[String: Any]] {
     let asset = AVURLAsset(url: movie)
+    // ImageGenerator does not identify its chosen track in a multitrack asset.
+    // Only the single-track case can establish the ordinal of these pixels.
+    let videoTracks = try await asset.loadTracks(withMediaType: .video)
+    let sourceTrackKnown = videoTracks.count == 1
     let duration = try await asset.load(.duration).seconds
     let durationMs = Int((duration.isFinite ? duration : 0) * 1000)
     guard durationMs > 0 else { throw HelperError("Movie has no duration") }
@@ -585,10 +589,18 @@ enum Media {
             let reqTime = result.requestedTime.seconds.isFinite
               ? Int((result.requestedTime.seconds * 1000).rounded())
               : sliceReq[min(offset - 1, sliceReq.count - 1)]
-            let actual = (try? result.actualTime).map { Int(($0.seconds * 1000).rounded()) } ?? reqTime
+            let actualTime = try? result.actualTime
+
+            let actual = actualTime.map { Int(($0.seconds * 1000).rounded()) } ?? reqTime
             let file = outDir.appending(path: String(format: "frame-%04d.rgba", curIndex))
             try writeRGBA(image, to: file)
-            local.append((curIndex, ["t": reqTime, "actual": actual, "width": image.width, "height": image.height, "file": file.path]))
+            var record: [String: Any] = ["t": reqTime, "actual": actual, "width": image.width, "height": image.height, "file": file.path]
+            if sourceTrackKnown, let time = actualTime, time.isNumeric,
+               time.epoch == 0, time.value >= 0, time.timescale > 0,
+               !time.flags.contains(.hasBeenRounded) {
+              record["sourceSample"] = ["videoTrack": 0, "pts": ["value": time.value, "timescale": time.timescale]]
+            }
+            local.append((curIndex, record))
           }
           return local
         }

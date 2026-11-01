@@ -1199,13 +1199,13 @@ impl ApparentCoordinator {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     fn agent_request(&mut self, request: crate::capture::desktop::workflow::agent_capture::Request, cx: &mut Context<Self>) {
         use crate::capture::desktop::workflow::agent_capture::{Action, Outcome};
-        // Report an ended sampler, but never discard another session as a side
-        // effect of State, Inspect or a competing Start. Cancellation stays explicit.
-        if matches!(self.active_recording.as_ref().map(|r| &r.source),
-            Some(CaptureSource::Screen { session, .. }) if session.failed_to_start()) {
-            if let Some(id) = &self.agent_capture_id {
-                self.agent_captures.set(&id, "failed", None, Some("start_failed"));
-            }
+        // A terminal source cannot remain a live recording. Preserve its partial
+        // capture through the same finalizer as Finish; never cancel/discard it.
+        // An already-admitted explicit Cancel still wins over automatic partial save.
+        let cancelling = !request.expired() && matches!(&request.action,
+            Some((Action::Cancel, id)) if self.agent_capture_id.as_ref() == Some(id));
+        if !cancelling {
+            self.poll_screen_failure(cx);
         }
         let before = self.agent_state();
         if before.phase == crate::capture::desktop::workflow::agent_capture::Phase::Recording
@@ -2675,6 +2675,7 @@ impl ApparentCoordinator {
     /// The UI loop's tick: advances the springs unless a new capsule window awaits its second
     /// frame (`island_await_frame`).
     pub fn island_tick(&mut self, cx: &mut Context<Self>) {
+        self.poll_screen_failure(cx);
         self.tick_hosted_sharing(cx);
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         if matches!(self.island_phase, IslandPhase::Recording) {
@@ -3386,6 +3387,27 @@ impl ApparentCoordinator {
         self.discard_recording();
     }
 
+    fn poll_screen_failure(&mut self, cx: &mut Context<Self>) {
+        let actions = self.native_pill.as_ref().map(|pill| pill.drain_actions()).unwrap_or_default();
+        self.process_capture_controls(actions, cx);
+    }
+
+    fn process_capture_controls(
+        &mut self,
+        actions: Vec<crate::capture::desktop::native::pill::PillAction>,
+        cx: &mut Context<Self>,
+    ) {
+        // A click already in the native queue predates this failure poll. In
+        // particular, Cancel must discard its source before Finish can own it.
+        for action in actions {
+            self.apply_pill_action(action, cx);
+        }
+        if matches!(self.active_recording.as_ref().map(|r| &r.source),
+            Some(CaptureSource::Screen { session, .. }) if session.terminal_error().is_some()) {
+            self.finish_recording(cx);
+        }
+    }
+
     pub fn finish_recording(&mut self, cx: &mut Context<Self>) {
         self.playback.take();
         apparent_log("finish_recording invoked");
@@ -3396,7 +3418,12 @@ impl ApparentCoordinator {
         let finishing_id = self.agent_capture_id.take();
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         if let Some(id) = &finishing_id {
-            self.agent_captures.set(id, "processing", None, None);
+            if let CaptureSource::Screen { session, .. } = &rec.source
+                && let Some(message) = session.terminal_error() {
+                self.agent_captures.processing_failure(id, &message);
+            } else {
+                self.agent_captures.set(id, "processing", None, None);
+            }
         }
         let feedback_capture = std::mem::take(&mut self.feedback_capture);
         #[cfg(target_os = "linux")]
@@ -6626,11 +6653,129 @@ pub fn run_app(
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn queued_pill_cancel_discards_terminal_capture_before_finalizer_handoff() {
+        use std::sync::{Arc, Mutex, atomic::Ordering};
+        use crate::shared::model::RgbaFrame;
+        use crate::capture::desktop::native::pill::PillAction;
+        use crate::capture::engine::runtime::{ScreenCaptureSession, push_candidate};
+        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("unfinished.json"), b"synthetic acquisition checkpoint").unwrap();
+        let output = Arc::new(Mutex::new(None));
+        let observed = Arc::clone(&output);
+        let capture_dir = root.clone();
+        gpui::Application::headless().run(move |cx| {
+            let (sender, _receiver) = flume::unbounded();
+            let coordinator = cx.new(|_| ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None));
+            coordinator.update(cx, |coord, cx| {
+                let target = TargetInfo {
+                    mode: CaptureMode::Region, app: None, bundle_id: None, window_title: None,
+                    window_id: None, display_id: 0,
+                    frame: crate::shared::model::TargetFrame {
+                        x: 0.0, y: 0.0, width: 64.0, height: 64.0, scale: 1.0,
+                    },
+                };
+                let (ready, wait) = std::sync::mpsc::sync_channel(1);
+                let session = ScreenCaptureSession::start_sampler(
+                    target.clone(), None, Arc::new(Mutex::new(vec![])), move |sampler| {
+                        push_candidate(&sampler.frames, &sampler.real_frame_seen,
+                            RgbaFrame::new(0, 64, 64, vec![255; 64 * 64 * 4]), true, true);
+                        *sampler.terminal_error.lock().unwrap() = Some("synthetic source revoked".into());
+                        ready.send(()).unwrap();
+                        while !sampler.stopping.load(Ordering::Acquire) {
+                            std::thread::park_timeout(Duration::from_millis(2));
+                        }
+                        None
+                    },
+                );
+                wait.recv_timeout(Duration::from_secs(3)).unwrap();
+                assert!(session.has_frames());
+                assert!(session.terminal_error().is_some());
+                assert!(coord.agent_captures.admit("cancelled-take", false, false));
+                coord.agent_capture_id = Some("cancelled-take".into());
+                coord.active_recording = Some(ActiveRecording {
+                    started: Instant::now(), target, bundle_dir: capture_dir.clone(),
+                    source: CaptureSource::Screen { session, audio: None, windows: None },
+                    _metal_overlay: None,
+                });
+                coord.set_island_phase(IslandPhase::Recording);
+                // The production tick and socket preflight both dispatch the drained
+                // native queue through this method before automatic failure handling.
+                coord.process_capture_controls(vec![PillAction::Cancel], cx);
+                *observed.lock().unwrap() = Some((
+                    coord.agent_captures.inspect("cancelled-take"),
+                    coord.active_recording.is_none(), coord.agent_capture_id.is_none(),
+                    coord.completed_dir.is_none(), !capture_dir.exists(),
+                ));
+            });
+            // calloop resets its stop flag when run begins, after this launch
+            // callback. Quit on the first loop turn, not before the loop starts.
+            cx.spawn(async move |cx| { cx.update(|cx| cx.quit()).unwrap(); }).detach();
+        });
+        let (receipt, inactive, no_id, no_completed, discarded) = output.lock().unwrap().take().unwrap();
+        assert_eq!(receipt["status"], "cancelled", "queued Cancel must win: {receipt}");
+        assert!(receipt["bundle_path"].is_null());
+        assert!(inactive && no_id && no_completed && discarded,
+            "Cancel must discard the capture before a finalizer can own it");
+        assert!(!root.exists());
+    }
+
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn deferred_finalizer_success_survives_dismissal_and_new_capture() {
         for processing_b in [false, true] {
             deferred_finalizer_receipt_survives_dismissal_and_new_capture(true, processing_b, false);
+        }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn terminal_partial_result_never_completes_or_overwrites_cancelled_or_new_capture() {
+        use crate::capture::engine::bundle::bundle_processing::AcquisitionError;
+        for stale in [false, true] {
+            for cancelled in [false, true] {
+                let (sender, _receiver) = flume::unbounded();
+                let mut coord = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
+                assert!(coord.agent_captures.admit("old", false, false));
+                coord.agent_captures.processing_failure("old", "source revoked");
+                coord.set_island_phase(IslandPhase::Processing);
+                let generation = coord.capture_generation;
+                if cancelled {
+                    coord.agent_captures.set("old", "cancelled", None, None);
+                }
+                if stale {
+                    coord.set_island_phase(IslandPhase::Dismissing);
+                    assert!(coord.agent_captures.admit("new", false, false));
+                    coord.agent_capture_id = Some("new".into());
+                    coord.set_island_phase(IslandPhase::Recording);
+                    coord.agent_captures.set("new", "recording", None, None);
+                }
+                let state = coord.agent_state();
+                let newer = coord.agent_captures.inspect("new");
+                let path = PathBuf::from("/synthetic/partial.apparent");
+                let mut ui_calls = 0;
+                coord.receive_capture_result(generation, Some("old"), false,
+                    Err(AcquisitionError {
+                        message: "Screen acquisition stopped early: source revoked".into(),
+                        started: true, partial_bundle: Some(path.clone()),
+                    }.into()),
+                    |_| panic!("a terminal partial must not enter completion or automatic handoff"),
+                    |_, result| {
+                        ui_calls += 1;
+                        let error = result.unwrap_err();
+                        assert_eq!(error.downcast_ref::<AcquisitionError>().unwrap().partial_bundle, Some(path.clone()));
+                    });
+                assert_eq!(ui_calls, usize::from(!stale));
+                let old = coord.agent_captures.inspect("old");
+                assert_eq!(old["status"], if cancelled { "cancelled" } else { "failed" });
+                assert_eq!(old["error"], if cancelled { serde_json::Value::Null } else { serde_json::json!("capture_failed") });
+                assert_eq!(old["bundle_path"], if cancelled { serde_json::Value::Null } else { serde_json::json!(path) });
+                assert_eq!(coord.agent_captures.inspect("new"), newer);
+                assert_eq!(coord.agent_state(), state);
+                assert!(coord.completed_dir.is_none());
+            }
         }
     }
 

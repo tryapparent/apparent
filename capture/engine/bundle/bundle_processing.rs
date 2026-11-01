@@ -95,6 +95,7 @@ fn save_finish_trace(bundle_dir: &Path, trace: &FinishTrace) -> Result<()> {
 
 /// Pre-rendered keyframe visuals and encoded PNGs computed while transcription is running.
 pub struct PreparedVisuals {
+    pub source_evidence: std::collections::BTreeMap<usize, crate::capture::engine::annotation::FrameEvidence>,
     pub keyframes: Vec<model::Keyframe>,
     pub autocrop: Option<model::AutocropInfo>,
     pub contact_sheet_png: Vec<u8>,
@@ -118,6 +119,9 @@ pub fn prepare_visuals(
     if selected.is_empty() {
         return None;
     }
+    let source_evidence = selected.iter().filter_map(|(k, f)| {
+        f.source_evidence.as_ref().filter(|e| e.valid()).map(|e| (k.index, e.clone()))
+    }).collect();
     let (mut annotated_frames, mut cropped) = autocrop::annotate_and_crop(
         selected,
         baseline,
@@ -182,6 +186,7 @@ pub fn prepare_visuals(
         _ => (None, None, Vec::new()),
     };
     Some(PreparedVisuals {
+        source_evidence,
         keyframes,
         autocrop,
         contact_sheet_png,
@@ -194,6 +199,7 @@ pub fn prepare_visuals(
 /// What a source other than this Mac's screen adds to a bundle.
 #[derive(Default)]
 pub struct SourceExtras {
+    pub annotation_evidence: crate::capture::engine::annotation::AnnotationEvidence,
     pub source: Option<String>,
     pub interaction_telemetry: Option<model::InteractionTelemetry>,
     pub device: Option<DeviceInfo>,
@@ -281,6 +287,27 @@ fn movie_frames_at_with(
     Ok(frames)
 }
 
+/// A failed acquisition can still leave a useful, explicitly warned partial bundle.
+/// This is not successful recording completion and must not trigger automatic delivery.
+#[derive(Debug)]
+pub struct AcquisitionError {
+    pub message: String,
+    pub partial_bundle: Option<PathBuf>,
+    pub started: bool,
+}
+
+impl std::fmt::Display for AcquisitionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Screen acquisition stopped early: {}", self.message)?;
+        if let Some(path) = &self.partial_bundle {
+            write!(f, " Partial capture saved at {}.", path.display())?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for AcquisitionError {}
+
 /// Core pipeline that turns raw frames, strokes, events, and audio/transcript into a complete `.apparent` bundle on disk.
 #[allow(clippy::too_many_arguments)]
 ///
@@ -302,6 +329,8 @@ pub fn finalize_capture_bundle(
         .unwrap_or_else(std::time::Instant::now);
     let stop_ms = activity.stop_ms;
     let crate::capture::engine::runtime::ScreenRecording {
+        acquisition_error,
+        annotation_evidence,
         frames,
         video: video_path,
         duration_ms,
@@ -311,13 +340,28 @@ pub fn finalize_capture_bundle(
         // The MP4 stream can succeed even when every screenshot fails. Do not turn
         // it into keyframes here: the sampler drops screenshots while a system
         // permission prompt is visible, but the movie may still contain it.
-        recover::mark_unsafe_video(bundle_dir)?;
+        let protection = recover::mark_unsafe_video(bundle_dir);
+        if let Some(message) = acquisition_error {
+            let message = match protection {
+                Ok(()) => message,
+                Err(error) => format!("{message}. Could not mark unsafe raw video: {error:#}"),
+            };
+            return Err(AcquisitionError { message, partial_bundle: None, started: false }.into());
+        }
+        protection?;
         let message = "No screen frames were captured. Choose a screen in the sharing dialog and try again.";
         if let Some(ref video) = video_path {
             anyhow::bail!("{message} The raw video was kept at {}.", video.display());
         }
         anyhow::bail!("{message}");
     }
+    let note = if let Some(error) = &acquisition_error {
+        let warning = format!("Screen acquisition stopped early: {error}. This is a partial capture, not a complete recording.");
+        Some(match note {
+            Some(note) => format!("{warning}\n\n{note}"),
+            None => warning,
+        })
+    } else { note };
     if let Some(ref audio) = recorded_audio {
         let wav_path = bundle_dir.join("audio.wav");
         let _ = std::fs::create_dir_all(bundle_dir);
@@ -336,6 +380,7 @@ pub fn finalize_capture_bundle(
                 .map(|name| name.to_string_lossy().into_owned()),
             video_offset_ms,
             strokes: strokes.clone(),
+            annotation_evidence: annotation_evidence.clone(),
             events: events.clone(),
             interaction_telemetry,
             note: note.clone(),
@@ -374,7 +419,11 @@ pub fn finalize_capture_bundle(
                     .iter()
                     .all(|(k, _)| k.reason == model::KeyframeReason::Mark);
             let times: Vec<u64> = preview.iter().map(|(k, _)| k.t).collect();
-            let decoded = movie_frames_at(movie, &times, video_offset_ms, 0).unwrap_or_default();
+            let mut decoded = movie_frames_at(movie, &times, video_offset_ms, 0).unwrap_or_default();
+            for frame in &mut decoded {
+                frame.source_evidence = frame.media_pts
+                    .and_then(|pts| annotation_evidence.at_video_pts(pts)).cloned();
+            }
             if duration_ms >= 20_000 {
                 let cache = if marks_fill {
                     Vec::new()
@@ -415,6 +464,7 @@ pub fn finalize_capture_bundle(
         note,
         SourceExtras {
             activity,
+            annotation_evidence,
             interaction_telemetry,
             video_offset_ms,
             autocrop: Some(crop_settings),
@@ -432,6 +482,13 @@ pub fn finalize_capture_bundle(
     );
     if built.is_ok() {
         recover::finished(bundle_dir);
+    }
+    if let Some(message) = acquisition_error {
+        let (message, partial_bundle) = match &built {
+            Ok((path, _, _)) => (message, Some(path.clone())),
+            Err(error) => (format!("{message}. Partial capture could not be saved: {error:#}"), None),
+        };
+        return Err(AcquisitionError { message, partial_bundle, started: true }.into());
     }
     built
 }
@@ -477,6 +534,8 @@ pub fn rebuild_screen_bundle_with(
     let mut frames = frames?;
     for frame in &mut frames {
         frame.t_ms += offset;
+        frame.source_evidence = frame.media_pts
+            .and_then(|pts| old.annotation_evidence.at_video_pts(pts)).cloned();
     }
     let (decode, movie) = (media.frames, video.clone());
     let full_frames: Option<FullFrames> = Some(Box::new(move |times: &[u64]| {
@@ -501,6 +560,7 @@ pub fn rebuild_screen_bundle_with(
             interaction_telemetry: old.interaction_telemetry,
             full_frames,
             video_offset_ms: offset,
+            annotation_evidence: old.annotation_evidence,
             autocrop,
             timings: StageTimings {
                 started_at: Some(started_at),
@@ -592,6 +652,7 @@ pub fn build_bundle_from_parts(
     {
         drop(frames);
         let mut prep = extras.prepared.take().unwrap();
+        extras.annotation_evidence.keyframes = prep.source_evidence.clone();
         let keyframes: Vec<model::Keyframe> = selected.into_iter().map(|(kf, _)| kf).collect();
         let selected_at = std::time::Instant::now();
         let autocrop = prep.autocrop.take();
@@ -649,6 +710,18 @@ pub fn build_bundle_from_parts(
                 None => None,
             }
         };
+        let mut selected = selected;
+        extras.annotation_evidence.keyframes.clear();
+        for (key, frame) in &mut selected {
+            // Replacement pixels never inherit the candidate's evidence. Resolve only
+            // a decoder-reported media sample; no PTS means unknown after movie decode.
+            if let Some(pts) = frame.media_pts {
+                frame.source_evidence = extras.annotation_evidence.at_video_pts(pts).cloned();
+            }
+            if let Some(e) = frame.source_evidence.as_ref().filter(|e| e.valid()) {
+                extras.annotation_evidence.keyframes.insert(key.index, e.clone());
+            }
+        }
         let (mut annotated_frames, mut cropped) = autocrop::annotate_and_crop(
             selected,
             baseline.as_ref(),
@@ -725,6 +798,7 @@ pub fn build_bundle_from_parts(
         image_quality_warning: keyframe_warning,
         video: video_rel,
         video_offset_ms: extras.video_offset_ms,
+        annotation_evidence: extras.annotation_evidence,
         audio: audio_rel,
         source: extras.source,
         device: extras.device,
@@ -861,6 +935,88 @@ mod tests {
     use crate::shared::{handoff, ids::make_bundle_id};
 
     #[test]
+    fn replacement_movie_pixels_use_only_their_exact_receipt_and_persist_it() {
+        use crate::capture::engine::annotation::{MediaTime, VideoSample};
+        let root = std::env::temp_dir().join(make_bundle_id());
+        let target: TargetInfo = serde_json::from_value(serde_json::json!({
+            "mode":"display","displayId":1,
+            "frame":{"x":0,"y":0,"width":128,"height":100,"scale":1}
+        })).unwrap();
+        let strokes: Vec<Stroke> = serde_json::from_value(serde_json::json!([
+            {"t0":0,"t1":100,"fw":128,"fh":100,"pts":[2000,4000,0,8000,5000,100]}
+        ])).unwrap();
+        let receipt: crate::capture::engine::annotation::FrameEvidence = serde_json::from_value(serde_json::json!({
+            "version":1,"sourceLifetime":"movie","sourceGeneration":2,"sampleId":"actual-buffer",
+            "capturedAtMs":20,"ordinaryInk":{"state":"represented","strokes":[{"stroke":0,"throughMs":20,"opacity":1.0}]}
+        })).unwrap();
+        let mut source = RgbaFrame::new(20, 128, 100, vec![255; 128 * 100 * 4]);
+        let key: model::Keyframe = serde_json::from_value(serde_json::json!({
+            "index":1,"t":20,"reason":"mark","file":"frames/frame-01.png","event":""
+        })).unwrap();
+        render::annotate_keyframe_marks_in_place(&mut source, &key, &strokes, &[], &[]);
+        let actual = VideoSample { video_track: 0, pts: MediaTime { value: 1, timescale: 30 } };
+        let wrong_track = VideoSample { video_track: 1, ..actual };
+        for (case, pts) in [
+            ("matching", Some(actual)),
+            ("equivalent-time-base", Some(VideoSample { video_track: 0, pts: MediaTime { value: 512, timescale: 15360 } })),
+            ("clipped-preceding", Some(VideoSample::at_ms(33))),
+            ("other-track", Some(wrong_track)),
+            ("missing", None),
+        ] {
+            let mut candidate = RgbaFrame::new(100, 32, 25, vec![128; 32 * 25 * 4]);
+            let mut stale = receipt.clone();
+            stale.source_lifetime = "candidate-not-movie".into();
+            candidate.source_evidence = Some(stale);
+            let mut decoded = source.clone();
+            decoded.t_ms = 100;
+            decoded.media_pts = pts;
+            let full = decoded.clone();
+            let evidence = crate::capture::engine::annotation::AnnotationEvidence {
+                video: vec![crate::capture::engine::annotation::VideoSampleEvidence {
+                    sample: actual,
+                    end: MediaTime { value: 2, timescale: 30 }, frame: receipt.clone(),
+                }], ..Default::default()
+            };
+            let directory = root.join(format!("{case}.apparent"));
+            let (_, bundle, _) = build_bundle_from_parts(
+                &directory, target.clone(), 200, vec![candidate], strokes.clone(), vec![],
+                TranscriptData::default(), None, None, SourceExtras {
+                    annotation_evidence: evidence.clone(), video_offset_ms: 80,
+                    full_frames: Some(Box::new(move |times| Ok(times.iter().map(|&t| {
+                        let mut frame = full.clone(); frame.t_ms = t; frame
+                    }).collect()))), autocrop: Some(None), ..Default::default()
+                },
+            ).unwrap();
+            let (_, loaded) = handoff::load_bundle(&directory).unwrap();
+            assert_eq!(loaded.annotation_evidence, bundle.annotation_evidence);
+            assert_eq!(loaded.video_offset_ms, 80);
+            assert_eq!(loaded.annotation_evidence.video, evidence.video);
+            let saved_key = &bundle.keyframes[0];
+            let mut expected = decoded;
+            if pts == Some(actual) {
+                assert_eq!(loaded.annotation_evidence.keyframes.get(&saved_key.index), Some(&receipt));
+                assert_eq!(loaded.annotation_evidence.keyframes[&saved_key.index].captured_at_ms, 20);
+            } else {
+                assert!(loaded.annotation_evidence.keyframes.is_empty(), "replacement must not inherit candidate identity");
+                render::annotate_keyframe_marks_in_place(&mut expected, saved_key, &strokes, &[], &[]);
+            }
+            render::stamp_keyframe_badge_in_place(&mut expected, saved_key);
+            assert!(std::fs::read(directory.join(&saved_key.file)).unwrap() == render::encode_png(&expected).unwrap(), "wrong composition for {case}");
+            let mut malformed = serde_json::to_value(&loaded).unwrap();
+            malformed["annotationEvidence"] = serde_json::json!({"unsupported":"not clean"});
+            let legacy: model::ApparentBundle = serde_json::from_value(malformed).unwrap();
+            assert!(legacy.annotation_evidence.is_empty());
+            let mut millisecond_only = serde_json::to_value(&loaded).unwrap();
+            millisecond_only["annotationEvidence"] = serde_json::json!({"video":[{
+                "ptsMs":33,"endMs":66,"frame":receipt
+            }]});
+            let legacy: model::ApparentBundle = serde_json::from_value(millisecond_only).unwrap();
+            assert!(legacy.annotation_evidence.is_empty(), "old floored evidence must not acquire exact identity");
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn movie_without_safe_screenshots_is_not_a_bundle() {
         let dir = std::env::temp_dir().join(make_bundle_id());
         std::fs::create_dir(&dir).unwrap();
@@ -880,6 +1036,8 @@ mod tests {
             &dir,
             target,
             crate::capture::engine::runtime::ScreenRecording {
+                acquisition_error: None,
+                annotation_evidence: Default::default(),
                 frames: Vec::new(),
                 video: Some(movie.clone()),
                 duration_ms: 1_000,

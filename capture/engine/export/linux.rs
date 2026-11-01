@@ -8,6 +8,7 @@ use anyhow::{Context, Result, bail, ensure};
 
 use super::{Done, Plan};
 use crate::shared::model::RgbaFrame;
+use crate::capture::engine::annotation::{MediaTime, VideoSample};
 
 /// Export uses FFmpeg, not the GStreamer keyframe decoder. A capture with
 /// candidate-frame fallback can still have an intact, exportable movie.
@@ -111,6 +112,13 @@ fn drain_stderr(child: &mut Child) -> std::thread::JoinHandle<String> {
 
 pub(super) fn run(plan: &Plan<'_>, progress: &mut dyn FnMut(f32)) -> Result<Done> {
     let (probe, embedded_audio) = probe_with_audio(plan.video)?;
+    // The fps filter replaces the presentation clock, not the source identity.
+    // Receipts require explicit selection from decoded source samples instead.
+    let source_pts = if plan.ink.strokes.iter().any(|s| !s.preserve_source.is_empty()) {
+        Some(source_timestamps(plan.video)?)
+    } else {
+        None
+    };
     let source_bytes = (probe.width as usize)
         .checked_mul(probe.height as usize)
         .and_then(|n| n.checked_mul(4))
@@ -123,14 +131,17 @@ pub(super) fn run(plan: &Plan<'_>, progress: &mut dyn FnMut(f32)) -> Result<Done
     // Ceil would request frame 609 from a 608-frame, 30 fps recording.
     let frame_count =
         (((plan.duration_ms as u128 * plan.fps as u128 + 500) / 1000) as usize).max(1);
-    let mut decoder = Command::new("ffmpeg")
-        .args(["-v", "error", "-nostdin", "-i"])
-        .arg(plan.video)
-        .args([
-            "-vf",
-            &format!("fps={}", plan.fps),
-            "-frames:v",
-            &frame_count.to_string(),
+    let mut command = Command::new("ffmpeg");
+    command.args(["-v", "error", "-nostdin", "-i"]).arg(plan.video);
+    // Metadata and source PTS inspect v:0. Disposition or size must not
+    // silently select different pixels beneath those receipts.
+    command.args(["-map", "0:v:0"]);
+    if source_pts.is_some() {
+        command.args(["-fps_mode", "passthrough"]);
+    } else {
+        command.args(["-vf", &format!("fps={}", plan.fps), "-frames:v", &frame_count.to_string()]);
+    }
+    let mut decoder = command.args([
             "-an",
             "-f",
             "rawvideo",
@@ -153,6 +164,7 @@ pub(super) fn run(plan: &Plan<'_>, progress: &mut dyn FnMut(f32)) -> Result<Done
         frame_count,
         source_bytes,
         embedded_audio,
+        source_pts.as_deref(),
         &mut decoder,
         progress,
     );
@@ -170,6 +182,7 @@ fn encode(
     count: usize,
     source_bytes: usize,
     embedded_audio: Option<usize>,
+    source_pts: Option<&[VideoSample]>,
     decoder: &mut Child,
     progress: &mut dyn FnMut(f32),
 ) -> Result<Done> {
@@ -242,6 +255,7 @@ fn encode(
         source_bytes,
         decoder,
         &mut encoder,
+        source_pts,
         progress,
     );
     if result.is_err() {
@@ -259,19 +273,29 @@ fn write_frames(
     source_bytes: usize,
     decoder: &mut Child,
     encoder: &mut Child,
+    source_pts: Option<&[VideoSample]>,
     progress: &mut dyn FnMut(f32),
 ) -> Result<Done> {
     let mut decoder_out = decoder.stdout.take().context("No decoded video stream")?;
     let mut encoder_in = encoder.stdin.take().context("No encoder input")?;
     let mut rgba = vec![0; source_bytes];
+    let mut source_index = 0;
     for i in 0..count {
-        decoder_out
-            .read_exact(&mut rgba)
-            .context("The recording ended before the export timeline")?;
         let ms = i as f64 * 1000.0 / plan.fps as f64;
+        let output_time = MediaTime { value: i as u64, timescale: plan.fps };
+        let wanted = source_pts.map(|pts| pts.partition_point(|t| !t.pts.cmp_exact(output_time).is_gt()).saturating_sub(1));
+        if let Some(wanted) = wanted {
+            while source_index <= wanted {
+                decoder_out.read_exact(&mut rgba).context("The recording ended before its measured source timeline")?;
+                source_index += 1;
+            }
+        } else {
+            decoder_out.read_exact(&mut rgba).context("The recording ended before the export timeline")?;
+        }
         let rect = camera_at(plan, ms);
         let mut output = resample(&rgba, sw, sh, plan.width, plan.height, rect);
-        crate::capture::engine::render::draw_export_annotations(&mut output, ms, rect, (sw, sh), plan.ink);
+        let actual_pts = source_pts.zip(wanted).map(|(pts, index)| pts[index]);
+        crate::capture::engine::render::draw_export_annotations(&mut output, ms, actual_pts, rect, (sw, sh), plan.ink);
         encoder_in
             .write_all(&output.rgba)
             .context("Could not write an export frame")?;
@@ -280,6 +304,8 @@ fn write_frames(
         }
     }
     drop(encoder_in);
+    // Finish the source tail without breaking the decoder's pipe.
+    std::io::copy(&mut decoder_out, &mut std::io::sink())?;
     drop(decoder_out);
     let decoded = decoder
         .wait()
@@ -309,6 +335,30 @@ fn write_frames(
         duration_ms: output.duration_ms,
         bytes,
     })
+}
+
+fn source_timestamps(movie: &Path) -> Result<Vec<VideoSample>> {
+    let output = Command::new("ffprobe")
+        .args(["-v", "error", "-select_streams", "v:0", "-show_frames", "-show_streams", "-show_entries", "stream=time_base:frame=pts", "-of", "json"])
+        .arg(movie).output().context("Could not inspect source sample timestamps")?;
+    ensure!(output.status.success(), "Could not inspect source sample timestamps");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    let time_base = value["streams"][0]["time_base"].as_str()
+        .and_then(|s| s.split_once('/')).context("Missing source time base")?;
+    let numerator: u64 = time_base.0.parse()?;
+    let denominator: u32 = time_base.1.parse()?;
+    ensure!(numerator > 0 && denominator > 0, "Invalid source time base");
+    let pts = value["frames"].as_array().context("Missing source samples")?.iter()
+        .map(|frame| {
+            let ticks = frame["pts"].as_u64().context("Unknown source sample timestamp")?;
+            let value = ticks.checked_mul(numerator).context("Source timestamp overflow")?;
+            let pts = MediaTime { value, timescale: denominator };
+            ensure!(pts.valid(), "Unsupported source sample timestamp");
+            Ok(VideoSample { video_track: 0, pts })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    ensure!(!pts.is_empty() && pts.windows(2).all(|w| w[0].pts.cmp_exact(w[1].pts).is_lt()), "Invalid source sample timeline");
+    Ok(pts)
 }
 
 fn camera_at(plan: &Plan<'_>, ms: f64) -> [f32; 4] {
@@ -348,6 +398,93 @@ fn resample(source: &[u8], sw: u32, sh: u32, ow: u32, oh: u32, rect: [f32; 4]) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn multistream_export_binds_receipts_to_the_first_video_track() {
+        use crate::capture::engine::annotation::{FrameEvidence, OrdinaryInk, RepresentedStroke, VideoSampleEvidence};
+        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
+        std::fs::create_dir_all(&root).unwrap();
+        let movie = root.join("two-tracks.mp4");
+        assert!(Command::new("ffmpeg").args([
+            "-v", "error", "-nostdin", "-f", "lavfi", "-i", "color=black:s=160x100:r=30:d=0.2",
+            "-f", "lavfi", "-i", "color=white:s=160x100:r=30:d=0.2",
+            "-map", "0:v:0", "-map", "1:v:0", "-c:v", "libx264", "-threads", "1",
+            "-disposition:v:0", "0", "-disposition:v:1", "default", "-y",
+        ]).arg(&movie).status().unwrap().success());
+        let original = std::fs::read(&movie).unwrap();
+        let mut bundle: crate::shared::model::ApparentBundle = serde_json::from_value(serde_json::json!({
+            "version":1,"id":"synthetic","createdAtMs":0,"durationMs":200,
+            "target":{"mode":"display","displayId":0,"frame":{"x":0,"y":0,"width":160,"height":100,"scale":1}},
+            "transcript":{"source":"test","text":"","segments":[]},
+            "strokes":[{"t0":0,"t1":0,"fw":160,"fh":100,"pts":[2000,5000,0,8000,5000,0]}],
+            "events":[],"marks":[],"keyframes":[],"contactSheet":"c.png","video":"two-tracks.mp4"
+        })).unwrap();
+        bundle.annotation_evidence.video = (0..6).map(|i| VideoSampleEvidence {
+            sample: VideoSample { video_track: 0, pts: MediaTime { value: i, timescale: 30 } },
+            end: MediaTime { value: i + 1, timescale: 30 },
+            frame: FrameEvidence {
+                version: 1, source_lifetime: "black-track".into(), source_generation: 1,
+                sample_id: i.to_string(), captured_at_ms: i * 1000 / 30,
+                ordinary_ink: OrdinaryInk::Represented { strokes: vec![RepresentedStroke {
+                    stroke: 0, through_ms: 0, opacity: 1.0,
+                }] },
+            },
+        }).collect();
+        let samples = source_timestamps(&movie).unwrap();
+        assert_eq!(samples[1].pts, MediaTime { value: 1, timescale: 30 });
+        assert_ne!(samples[1].pts, VideoSample::at_ms(33).pts);
+        for represented in [true, false] {
+            // A receipt for the other track cannot suppress ink on v:0.
+            if !represented { for receipt in &mut bundle.annotation_evidence.video { receipt.sample.video_track = 1; } }
+            let out = root.join(format!("export-{represented}.mp4"));
+            let options = super::super::Options { out: Some(out.clone()), size: 160, zoom: false,
+                fps: Some(30), audio: super::super::AudioPolicy::Silent, ..Default::default() };
+            super::super::export(&root, &bundle, &options, &mut |_| {}).unwrap();
+            let decoded = Command::new("ffmpeg").args(["-v", "error", "-nostdin", "-i"])
+                .arg(&out).args(["-map", "0:v:0", "-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1"])
+                .output().unwrap();
+            assert!(decoded.status.success());
+            assert!(decoded.stdout[..4].iter().take(3).all(|&v| v < 20), "decoded default white track instead of receipt-bearing black track");
+            for frame in decoded.stdout.chunks_exact(160 * 100 * 4) {
+                let center = (50 * 160 + 80) * 4;
+                assert_eq!(frame[center] > 180, !represented, "receipt state must control replay on every selected fractional sample");
+            }
+        }
+        assert_eq!(std::fs::read(&movie).unwrap(), original);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn fractional_boundary_does_not_accept_a_floored_or_clipped_sample() {
+        use super::super::ink::{InkPlan, InkStroke, Snap};
+        let mut ink = InkPlan::default();
+        ink.strokes.push(InkStroke {
+            preserve_source: vec![VideoSample::at_ms(33)],
+            snaps: vec![Snap { t: 0, poly: vec![0.2, 0.2, 0.8, 0.2, 0.8, 0.8, 0.2, 0.8] }],
+            fade_at: 1000, fade_ms: 500,
+        });
+        let mut frame = RgbaFrame::new(0, 160, 100, vec![0; 160 * 100 * 4]);
+        let before = frame.rgba.clone();
+        crate::capture::engine::render::draw_export_annotations(
+            &mut frame, 100.0, Some(VideoSample { video_track: 0, pts: MediaTime { value: 1, timescale: 30 } }), [0.0, 0.0, 1.0, 1.0], (160, 100), &ink,
+        );
+        assert!(frame.rgba != before, "33 ms is not the exact 33 1/3 ms sample boundary");
+        // Reverse direction: a preceding sample clipped by a 33 ms seek
+        // must not bind the receipt for the actual 1/30 second sample.
+        ink.strokes[0].preserve_source = vec![VideoSample { video_track: 0, pts: MediaTime { value: 1, timescale: 30 } }];
+        for sample in [Some(VideoSample::at_ms(33)), None] {
+            let mut clipped = RgbaFrame::new(0, 160, 100, before.clone());
+            crate::capture::engine::render::draw_export_annotations(
+                &mut clipped, 100.0, sample, [0.0, 0.0, 1.0, 1.0], (160, 100), &ink,
+            );
+            assert!(clipped.rgba != before, "clipped or unknown samples retain compatibility replay");
+        }
+        let mut exact = RgbaFrame::new(0, 160, 100, before.clone());
+        crate::capture::engine::render::draw_export_annotations(
+            &mut exact, 100.0, Some(VideoSample { video_track: 0, pts: MediaTime { value: 512, timescale: 15360 } }), [0.0, 0.0, 1.0, 1.0], (160, 100), &ink,
+        );
+        assert!(exact.rgba == before, "equivalent exact time bases preserve the actual sample");
+    }
+
     #[test]
     fn resampling_crops_in_the_video_coordinate_space() {
         let input = [

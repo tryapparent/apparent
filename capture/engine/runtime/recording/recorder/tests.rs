@@ -63,7 +63,9 @@ fn synthetic_candidate_does_not_make_agent_capture_ready() {
         urgent_snapshot: Arc::new(AtomicBool::new(false)),
         frames,
         real_frame_seen: seen,
+        annotation_evidence: Arc::new(Mutex::new(Default::default())),
         startup_failed: Arc::new(AtomicBool::new(false)),
+        terminal_error: Arc::new(Mutex::new(None)),
         video_offset_ms: Arc::new(AtomicU64::new(0)),
         sampler_thread: None,
         _recording: crate::capture::engine::bundle::retention::Recording::start(),
@@ -97,11 +99,13 @@ fn transient_screenshot_failure_retries_to_readiness_and_finalization() {
         });
         let session = ScreenCaptureSession {
             started_at: Instant::now(),
+            annotation_evidence: Arc::new(Mutex::new(Default::default())),
             stopping,
             urgent_snapshot: Arc::new(AtomicBool::new(false)),
             frames: Arc::new(Mutex::new(CandidateBuffer::new(1 << 20))),
             real_frame_seen: Arc::new(AtomicBool::new(false)),
             startup_failed: Arc::new(AtomicBool::new(false)),
+            terminal_error: Arc::new(Mutex::new(None)),
             video_offset_ms: Arc::new(AtomicU64::new(0)),
             sampler_thread: Some(worker),
             _recording: crate::capture::engine::bundle::retention::Recording::start(),
@@ -162,6 +166,8 @@ fn pending_worker_is_not_failed_and_terminal_signal_does_not_discard_it() {
         startup_failed: Arc::new(AtomicBool::new(false)),
         video_offset_ms: Arc::new(AtomicU64::new(0)),
         sampler_thread: Some(worker),
+        terminal_error: Arc::new(Mutex::new(None)),
+        annotation_evidence: Arc::new(Mutex::new(Default::default())),
         _recording: crate::capture::engine::bundle::retention::Recording::start(),
     };
     assert!(!session.failed_to_start(), "a pending producer is not an error");
@@ -206,7 +212,9 @@ fn screen_stop_joins_worker_before_collecting_its_final_media() {
         frames,
         real_frame_seen: Arc::new(AtomicBool::new(false)),
         video_offset_ms: Arc::new(AtomicU64::new(120)),
+        annotation_evidence: Arc::new(Mutex::new(Default::default())),
         startup_failed: Arc::new(AtomicBool::new(false)),
+        terminal_error: Arc::new(Mutex::new(None)),
         sampler_thread: Some(worker),
         _recording: crate::capture::engine::bundle::retention::Recording::start(),
     };
@@ -277,6 +285,7 @@ fn frames_that_may_show_a_system_prompt_are_dropped_but_never_the_first() {
 #[test]
 fn stopped_capture_without_real_frames_stays_empty() {
     let session = ScreenCaptureSession {
+        annotation_evidence: Arc::new(Mutex::new(Default::default())),
         started_at: Instant::now(),
         stopping: Arc::new(AtomicBool::new(false)),
         urgent_snapshot: Arc::new(AtomicBool::new(false)),
@@ -285,6 +294,7 @@ fn stopped_capture_without_real_frames_stays_empty() {
         video_offset_ms: Arc::new(AtomicU64::new(0)),
         startup_failed: Arc::new(AtomicBool::new(false)),
         sampler_thread: None,
+        terminal_error: Arc::new(Mutex::new(None)),
         _recording: crate::capture::engine::bundle::retention::Recording::start(),
     };
     assert!(session.stop().frames.is_empty());

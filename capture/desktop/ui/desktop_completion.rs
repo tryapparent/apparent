@@ -31,13 +31,16 @@ impl ApparentCoordinator {
         // UI/clipboard/onboarding effects lose ownership when a new capture starts.
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         if let Some(id) = finishing_id {
-            self.agent_captures.finish(
-                id,
-                finalized
-                    .as_ref()
-                    .map(|(dir, _, _)| dir.as_path())
-                    .map_err(|error| format!("{error:#}")),
-            );
+            if let Err(error) = &finalized
+                && let Some(error) = error.downcast_ref::<crate::capture::engine::bundle::bundle_processing::AcquisitionError>() {
+                self.agent_captures.acquisition_failed(id, error);
+            } else {
+                self.agent_captures.finish(
+                    id,
+                    finalized.as_ref().map(|(dir, _, _)| dir.as_path())
+                        .map_err(|error| format!("{error:#}")),
+                );
+            }
         }
         // A saved ordinary capture completes independently of its pill. Hosted
         // admission rechecks current consent; feedback and failed takes stay local.
@@ -70,7 +73,10 @@ impl ApparentCoordinator {
                 crate::capture::desktop::linux::shell::notify("Capture failed", &error.to_string());
                 if let Ok(mut status) = CAPTURE_STATUS.lock() {
                     *status = Some(
-                        if error
+                        if error.downcast_ref::<crate::capture::engine::bundle::bundle_processing::AcquisitionError>()
+                            .is_some_and(|error| error.partial_bundle.is_some()) {
+                            "Capture stopped early — partial saved".into()
+                        } else if error
                             .to_string()
                             .starts_with("No screen frames were captured")
                         {

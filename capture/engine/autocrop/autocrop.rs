@@ -1596,7 +1596,7 @@ pub fn crop_frame(frame: &RgbaFrame, r: Rect) -> RgbaFrame {
         let start = (row as usize * frame.width as usize + x as usize) * 4;
         rgba.extend_from_slice(&frame.rgba[start..start + w as usize * 4]);
     }
-    RgbaFrame::new(frame.t_ms, w, h, rgba)
+    frame.derived(w, h, rgba)
 }
 
 /// Strokes, marks, events and the keyframe moved into the crop's coordinates, so annotating the

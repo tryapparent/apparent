@@ -1000,6 +1000,8 @@ pub(crate) fn run() -> Result<()> {
                             &iter_out,
                             iter_target,
                             crate::capture::engine::runtime::ScreenRecording {
+                                acquisition_error: None,
+                                annotation_evidence: old.annotation_evidence.clone(),
                                 frames: iter_frames,
                                 video: Some(linked),
                                 duration_ms: old.duration_ms,
@@ -1075,6 +1077,7 @@ pub(crate) fn run() -> Result<()> {
                             .file_name()
                             .map(|name| name.to_string_lossy().into_owned()),
                         video_offset_ms: old.video_offset_ms,
+                        annotation_evidence: old.annotation_evidence,
                         strokes: old.strokes,
                         events: old.events,
                         interaction_telemetry: old.interaction_telemetry,

@@ -243,20 +243,58 @@ fn source_launch(source: &Source) -> String {
             format!("ximagesrc use-damage=false show-pointer=true xid={xid}")
         }
         Source::PipeWire { session, crop } => {
-            let mut launch = format!(
+            let launch = format!(
                 "pipewiresrc fd={} path={} do-timestamp=true keepalive-time=500 always-copy=true",
                 session.fd(),
                 session.node
             );
-            if let Some([x, y, w, h]) = crop {
-                // `videocrop` trims from each edge; the stream's size is only known once it
-                // runs, so `crop_edges` fills them in when the caps arrive.
-                let _ = (x, y, w, h);
-                launch.push_str(" ! videoconvert ! videocrop name=crop");
-            }
-            launch
+            desktop_stream_launch(&launch, *crop)
         }
     }
+}
+
+fn desktop_stream_launch(upstream: &str, crop: Option<[u32; 4]>) -> String {
+    // Desktop geometry is in square pixels. Require that at acquisition, before
+    // conversion/crop/scale can interpret a bogus PAR as a different display aspect.
+    // This negotiates or refuses; it does not relabel a fixed nonsquare stream.
+    let mut launch = format!("{upstream} ! video/x-raw,pixel-aspect-ratio=1/1");
+    if crop.is_some() {
+        // `videocrop` trims from each edge; `crop_edges` fills them in once caps arrive.
+        launch.push_str(" ! videoconvert ! videocrop name=crop");
+    }
+    launch
+}
+
+fn recording_pipeline(
+    source: &str,
+    crop: Option<[u32; 4]>,
+    out: (u32, u32),
+    candidate: (u32, u32),
+    movie: Option<&Path>,
+) -> Result<gst::Pipeline> {
+    let encoder = movie.and(encoder());
+    let (w, h) = out;
+    let (cw, ch) = candidate;
+    let mut launch = format!(
+        "{source} ! queue max-size-buffers=4 leaky=downstream ! videoconvert ! videoscale ! video/x-raw,width={w},height={h},pixel-aspect-ratio=1/1 ! tee name=t \
+         t. ! queue max-size-buffers=2 leaky=downstream ! videoconvert ! videoscale ! video/x-raw,format=RGBA,width={cw},height={ch},pixel-aspect-ratio=1/1 ! appsink name=candidates max-buffers=1 drop=true sync=false emit-signals=false"
+    );
+    if let (Some(encoder), Some(movie)) = (encoder, movie) {
+        launch.push_str(&format!(
+            " t. ! queue max-size-time=3000000000 max-size-buffers=0 max-size-bytes=0 ! videorate ! video/x-raw,framerate={FPS}/1 ! videoconvert ! video/x-raw,format=I420 ! {encoder} name=encoder ! h264parse ! mp4mux faststart=true ! filesink name=movie_sink location=\"{}\"",
+            movie.display().to_string().replace('"', "\\\"")
+        ));
+    }
+    let pipeline = gst::parse::launch(&launch)
+        .with_context(|| format!("Could not build the recording pipeline: {launch}"))?
+        .downcast::<gst::Pipeline>()
+        .map_err(|_| anyhow!("Not a pipeline"))?;
+    // Forward child EOS: a stuck candidate branch must not hide a completed MP4.
+    pipeline.set_property("message-forward", true);
+    if let (Some(crop), Some(element)) = (crop, pipeline.by_name("crop")) {
+        crop_edges(&element, crop);
+    }
+    Ok(pipeline)
 }
 
 /// A running recording: GStreamer pushes frames through; Apparent samples the newest one.
@@ -280,38 +318,28 @@ impl Recorder {
     ) -> Result<Self> {
         init()?;
         let encoder = movie.and(encoder());
-        let (w, h) = out;
-        let (cw, ch) = candidate;
-        let mut launch = format!(
-            "{} ! queue max-size-buffers=4 leaky=downstream ! videoconvert ! videoscale ! video/x-raw,width={w},height={h},pixel-aspect-ratio=1/1 ! tee name=t \
-             t. ! queue max-size-buffers=2 leaky=downstream ! videoconvert ! videoscale ! video/x-raw,format=RGBA,width={cw},height={ch},pixel-aspect-ratio=1/1 ! appsink name=candidates max-buffers=1 drop=true sync=false emit-signals=false",
-            source_launch(source)
-        );
-        if let (Some(encoder), Some(movie)) = (encoder, movie) {
-            launch.push_str(&format!(
-                " t. ! queue max-size-time=3000000000 max-size-buffers=0 max-size-bytes=0 ! videorate ! video/x-raw,framerate={FPS}/1 ! videoconvert ! video/x-raw,format=I420 ! {encoder} name=encoder ! h264parse ! mp4mux faststart=true ! filesink name=movie_sink location=\"{}\"",
-                movie.display().to_string().replace('"', "\\\"")
-            ));
-        }
-        let pipeline = gst::parse::launch(&launch)
-            .with_context(|| format!("Could not build the recording pipeline: {launch}"))?
-            .downcast::<gst::Pipeline>()
-            .map_err(|_| anyhow!("Not a pipeline"))?;
-        // The candidate sink can hold back pipeline EOS after the movie sink has finished.
-        // Forward child EOS so finish() can distinguish a completed MP4 from an unfinished one.
-        pipeline.set_property("message-forward", true);
-        if let (Source::PipeWire { crop: Some(crop), .. }, Some(element)) =
-            (source, pipeline.by_name("crop"))
-        {
-            crop_edges(&element, *crop);
-        }
+        let crop = match source {
+            Source::PipeWire { crop, .. } => *crop,
+            _ => None,
+        };
+        let pipeline = recording_pipeline(&source_launch(source), crop, out, candidate, movie)?;
+        Self::start_pipeline(pipeline, out, candidate, encoder.is_some(), started_at)
+    }
+
+    fn start_pipeline(
+        pipeline: gst::Pipeline,
+        out: (u32, u32),
+        candidate: (u32, u32),
+        video: bool,
+        started_at: Instant,
+    ) -> Result<Self> {
         let candidates = pipeline
             .by_name("candidates")
             .context("No candidate sink")?
             .downcast::<gst_app::AppSink>()
             .map_err(|_| anyhow!("Not an appsink"))?;
         let first_frame_ms = Arc::new(AtomicU64::new(u64::MAX));
-        let video = encoder.is_some();
+
         if let Some(sink) = pipeline
             .by_name("encoder")
             .and_then(|e| e.static_pad("sink"))
@@ -383,11 +411,11 @@ impl Recorder {
     }
 
     /// Sends end-of-stream and waits (a few seconds at most) for the movie to be finished.
-    fn finish(self) -> bool {
+    fn finish(self) -> Result<bool> {
         if !self.pipeline.send_event(gst::event::Eos::new()) {
             apparent_log("Movie failed to finish: end of stream was rejected");
             let _ = self.pipeline.set_state(gst::State::Null);
-            return false;
+            return Err(anyhow!("Movie end of stream was rejected"));
         }
         let deadline = Instant::now() + Duration::from_secs(8);
         let movie_sink = self.pipeline.by_name("movie_sink");
@@ -430,19 +458,19 @@ impl Recorder {
             }
         });
         let finished = match message.as_ref().map(|m| m.view()) {
-            Some(gst::MessageView::Eos(_)) => true,
+            Some(gst::MessageView::Eos(_)) => Ok(()),
             Some(gst::MessageView::Error(error)) => {
                 apparent_log(format!("Movie failed to finish: {}", error.error()));
-                false
+                Err(anyhow!("{} ({})", error.error(), error.debug().unwrap_or_default()))
             }
-            _ if movie_finished => true,
+            _ if movie_finished => Ok(()),
             _ => {
                 apparent_log("Movie failed to finish: no end of stream within 8 s");
-                false
+                Err(anyhow!("Movie end of stream did not arrive within 8 s"))
             }
         };
         let _ = self.pipeline.set_state(gst::State::Null);
-        finished && self.video
+        finished.map(|()| self.video)
     }
 }
 
@@ -532,7 +560,28 @@ fn own_window_masks(ids: &[u32], frame: [f64; 4], candidate: (u32, u32)) -> Vec<
 
 /// The recording thread: see `crate::capture::engine::runtime::Sampler`.
 pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
+    run_sampler_with(sampler, |sampler, out, candidate, movie| {
+        super::portal::source_for(&sampler.target, &sampler.stopping).and_then(|source| {
+            Recorder::new(&source, out, candidate, movie, sampler.started_at)
+                .map_err(|error| anyhow!("{error:#}"))
+                // The source (a portal session) lives as long as the recording.
+                .map(|recorder| (recorder, source))
+        })
+    })
+}
+
+fn run_sampler_with(
+    sampler: Sampler,
+    open: impl FnOnce(&Sampler, (u32, u32), (u32, u32), Option<&Path>) -> Result<(Recorder, Source)>,
+) -> Option<PathBuf> {
+    let long_edge = if sampler.target.mode == CaptureMode::Display { 2560.0 } else { 1280.0 };
+    let out = crate::capture::engine::runtime::capture_size(&sampler.target, long_edge);
+    let movie = sampler.video_output_path.as_deref().filter(|_| can_record_video());
+    let edge = if movie.is_some() { CANDIDATE_EDGE } else { CANDIDATE_EDGE_NO_VIDEO };
+    let candidate = crate::capture::engine::runtime::capture_size(&sampler.target, edge);
+    let recorder = open(&sampler, out, candidate, movie);
     let Sampler {
+        annotation_evidence: _, // #229 must bind per-buffer receipts through the movie tee.
         target,
         video_output_path,
         started_at,
@@ -541,28 +590,11 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         frames,
         real_frame_seen,
         startup_failed,
+        terminal_error,
         video_offset_ms,
         excluded_window_ids,
     } = sampler;
-    let long_edge = if target.mode == CaptureMode::Display {
-        2560.0
-    } else {
-        1280.0
-    };
-    let out = crate::capture::engine::runtime::capture_size(&target, long_edge);
-    let movie = video_output_path.as_deref().filter(|_| can_record_video());
-    let edge = if movie.is_some() {
-        CANDIDATE_EDGE
-    } else {
-        CANDIDATE_EDGE_NO_VIDEO
-    };
-    let candidate = crate::capture::engine::runtime::capture_size(&target, edge);
-    let recorder = super::portal::source_for(&target, &stopping).and_then(|source| {
-        Recorder::new(&source, out, candidate, movie, started_at)
-            .map_err(|error| anyhow!("{error:#}"))
-            // The source (a portal session) lives as long as the recording.
-            .map(|recorder| (recorder, source))
-    });
+
     let mut recorder = match recorder {
         Ok(recorder) => {
             apparent_log(format!(
@@ -576,6 +608,7 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         }
         Err(error) => {
             apparent_log(format!("Screen capture failed to start: {error:#}"));
+            *terminal_error.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(format!("{error:#}"));
             startup_failed.store(true, Ordering::Release);
             None
         }
@@ -604,10 +637,15 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
             );
             masks_read = true;
         }
-        if let Some((r, _)) = recorder.as_ref() {
-            if let Some(error) = r.error() {
+        if let Some((r, source)) = recorder.as_ref() {
+            let error = r.error().or_else(|| match source {
+                Source::PipeWire { session, .. } => session.connection_error(),
+                _ => None,
+            });
+            if let Some(error) = error {
                 apparent_log(format!("Recording failed: {error}"));
                 // Publish before native teardown, which need not end the sampler thread.
+                *terminal_error.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(error);
                 startup_failed.store(true, Ordering::Release);
                 if let Some((r, _)) = recorder.take() {
                     let _ = r.pipeline.set_state(gst::State::Null);
@@ -645,13 +683,18 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
     }
     let (recorder, _source) = recorder?;
     let _ = recorder.out;
-    if recorder.finish() {
-        video_output_path
-    } else {
-        if let Some(path) = &video_output_path {
-            let _ = std::fs::remove_file(path);
+    match recorder.finish() {
+        Ok(true) => video_output_path,
+        result => {
+            if let Err(error) = result {
+                *terminal_error.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(format!("{error:#}"));
+                startup_failed.store(true, Ordering::Release);
+            }
+            if let Some(path) = &video_output_path {
+                let _ = std::fs::remove_file(path);
+            }
+            None
         }
-        None
     }
 }
 
@@ -699,7 +742,7 @@ impl VideoReader {
     }
 
     /// The frame on screen at `ms`: the last one at or before it.
-    fn at(&self, ms: u64) -> Result<(u64, u32, u32, Vec<u8>)> {
+    fn at(&self, ms: u64) -> Result<(Option<u64>, u32, u32, Vec<u8>)> {
         let target = ms.min(self.duration_ms.saturating_sub(1));
         self.pipeline.seek_simple(
             gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
@@ -717,7 +760,7 @@ impl VideoReader {
         let t = sample
             .buffer()
             .and_then(gst::BufferRef::pts)
-            .map_or(target, gst::ClockTime::mseconds);
+            .map(gst::ClockTime::mseconds);
         Ok((t, w, h, rgba))
     }
 }
@@ -785,11 +828,16 @@ pub fn frames(movie: &Path, times: FrameTimes, max_edge: u32) -> Result<Vec<Rgba
     for want in requested {
         let (t, w, h, rgba) = video.at(want)?;
         let (w, h, rgba) = shrink_to_edge(w, h, rgba, max_edge);
-        let t = if sampled { t } else { want };
-        if sampled && out.last().is_some_and(|f| f.t_ms == t) {
+        let presentation = if sampled { t.unwrap_or(want) } else { want };
+        if sampled && out.last().is_some_and(|f| f.t_ms == presentation) {
             continue;
         }
-        out.push(RgbaFrame::new(t, w, h, rgba));
+        let mut frame = RgbaFrame::new(presentation, w, h, rgba);
+        // Accurate seeks can clip a preceding buffer's PTS to the seek target;
+        // decodebin also does not establish the selected video-track ordinal.
+        // Keep this timestamp for presentation only, never for a receipt join.
+        frame.media_pts = None;
+        out.push(frame);
     }
     ensure!(!out.is_empty(), "No frames decoded from {}", movie.display());
     Ok(out)
@@ -930,6 +978,28 @@ mod tests {
     }
 
     #[test]
+    fn fractional_seek_clipping_does_not_establish_sample_identity() {
+        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
+        std::fs::create_dir_all(&root).unwrap();
+        let raw = root.join("source.rgba");
+        let movie = root.join("fractional.mp4");
+        let mut pixels = vec![0; 160 * 100 * 4];
+        pixels.extend(vec![255; 5 * 160 * 100 * 4]);
+        std::fs::write(&raw, pixels).unwrap();
+        assert!(std::process::Command::new("ffmpeg")
+            .args(["-v", "error", "-nostdin", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", "160x100", "-r", "30", "-i"])
+            .arg(&raw).args(["-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p", "-y"])
+            .arg(&movie).status().unwrap().success());
+        let decoded = frames(&movie, FrameTimes::At(&[33, 34]), 0).unwrap();
+        assert_eq!(decoded.len(), 2);
+        assert!(decoded[0].rgba[0] < 20, "33 ms still shows the preceding black sample");
+        assert!(decoded[1].rgba[0] > 230, "34 ms shows the next white sample at 33 1/3 ms");
+        assert!(decoded.iter().all(|frame| frame.media_pts.is_none()),
+            "seek-clipped PTS and an unverified track must remain unknown");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn masks_take_the_row_below() {
         // 3x3, each row its own grey; the pill over the top two rows' middle.
         let mut rgba: Vec<u8> = (0..3).flat_map(|y| [y as u8 * 100; 12]).collect();
@@ -948,6 +1018,310 @@ mod tests {
             rect: [100.0, 50.0, 800.0, 600.0],
         });
         assert!(launch.contains("startx=100 starty=50 endx=899 endy=649"), "{launch}");
+    }
+
+    #[test]
+    fn terminal_source_error_after_real_frame_cannot_finalize_as_success() {
+        use crate::capture::engine::runtime::ScreenCaptureSession;
+        use crate::shared::model::{TargetFrame, TargetInfo};
+        init().unwrap();
+        let target = TargetInfo {
+            mode: CaptureMode::Region, app: None, bundle_id: None, window_title: None,
+            window_id: None, display_id: 0,
+            frame: TargetFrame { x: 0.0, y: 0.0, width: 64.0, height: 64.0, scale: 1.0 },
+        };
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let session = ScreenCaptureSession::start_sampler(
+            target.clone(), None, Arc::new(Mutex::new(vec![])), move |sampler| {
+                run_sampler_with(sampler, |sampler, out, candidate, _| {
+                    let source = desktop_stream_launch(
+                        "videotestsrc is-live=true pattern=smpte ! identity name=fault error-after=3", None,
+                    );
+                    let pipeline = recording_pipeline(&source, None, out, candidate, None)?;
+                    // Hold the second source buffer until the real sampler has accepted
+                    // the first. The identity element itself then posts a real bus Error.
+                    let seen = Arc::clone(&sampler.real_frame_seen);
+                    let ordinal = std::sync::atomic::AtomicUsize::new(0);
+                    pipeline.by_name("fault").unwrap().static_pad("sink").unwrap()
+                        .add_probe(gst::PadProbeType::BUFFER, move |_, _| {
+                            if ordinal.fetch_add(1, Ordering::AcqRel) == 1 {
+                                let deadline = Instant::now() + Duration::from_secs(3);
+                                while !seen.load(Ordering::Acquire) && Instant::now() < deadline {
+                                    std::thread::sleep(Duration::from_millis(2));
+                                }
+                            }
+                            gst::PadProbeReturn::Ok
+                        });
+                    let recorder = Recorder::start_pipeline(pipeline.clone(), out, candidate, false, sampler.started_at)?;
+                    sender.send(pipeline).unwrap();
+                    Ok((recorder, Source::Test))
+                })
+            },
+        );
+        let pipeline = receiver.recv_timeout(Duration::from_secs(3)).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while pipeline.current_state() != gst::State::Null && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(pipeline.current_state(), gst::State::Null, "sampler must consume terminal Error and tear down");
+        assert!(session.has_frames(), "failure must occur AFTER an actual accepted frame");
+        assert!(!session.failed_to_start(), "late failure is not a startup refusal");
+        let recording = session.stop();
+        assert!(!recording.frames.is_empty(), "useful candidates must survive teardown");
+        let dir = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
+        std::fs::create_dir(&dir).unwrap();
+        let result = crate::capture::engine::bundle::bundle_processing::finalize_capture_bundle(
+            &dir, target, recording, vec![], vec![], None, None,
+            crate::shared::windows::ActivityLog::default(), None,
+        );
+        // Preserve the failing artifact for source/summary/image inspection.
+        eprintln!("terminal partial artifact: {}", dir.display());
+        let error = result.err().expect("terminal source error after a frame must not become ordinary finalizer success");
+        assert!(error.to_string().contains("Failed after iterations"), "{error:#}");
+        let summary = std::fs::read_to_string(dir.join("summary.md")).unwrap();
+        assert!(summary.contains("Screen acquisition stopped early"), "{summary}");
+        assert!(summary.contains("Failed after iterations"));
+    }
+
+    #[test]
+    fn real_sampler_finish_startup_failure_and_late_failure_publish_distinct_receipts() {
+        use crate::capture::desktop::workflow::agent_capture::Registry;
+        use crate::capture::engine::bundle::bundle_processing::{AcquisitionError, finalize_capture_bundle};
+        use crate::capture::engine::runtime::ScreenCaptureSession;
+        use crate::shared::model::{TargetFrame, TargetInfo};
+        init().unwrap();
+        for (failure, cancelled) in [("none", false), ("startup", false), ("late", false), ("late", true)] {
+            let target = TargetInfo {
+                mode: CaptureMode::Region, app: None, bundle_id: None, window_title: None,
+                window_id: None, display_id: 0,
+                frame: TargetFrame { x: 0.0, y: 0.0, width: 64.0, height: 64.0, scale: 1.0 },
+            };
+            let (tx, rx) = std::sync::mpsc::sync_channel(1);
+            let session = ScreenCaptureSession::start_sampler(
+                target.clone(), None, Arc::new(Mutex::new(vec![])), move |sampler| {
+                    run_sampler_with(sampler, |sampler, out, candidate, _| {
+                        let source = desktop_stream_launch("videotestsrc is-live=true pattern=smpte ! identity name=fault", None);
+                        let pipeline = recording_pipeline(&source, None, out, candidate, None)?;
+                        if failure == "startup" {
+                            pipeline.by_name("fault").unwrap().set_property("error-after", 1_i32);
+                        } else if failure == "late" {
+                            // Arm identity before it starts. Changing error-after
+                            // on an already-running identity does not rearm its counter.
+                            pipeline.by_name("fault").unwrap().set_property("error-after", 3_i32);
+                            let seen = Arc::clone(&sampler.real_frame_seen);
+                            let ordinal = std::sync::atomic::AtomicUsize::new(0);
+                            pipeline.by_name("fault").unwrap().static_pad("sink").unwrap()
+                                .add_probe(gst::PadProbeType::BUFFER, move |_, _| {
+                                    if ordinal.fetch_add(1, Ordering::AcqRel) == 1 {
+                                        let deadline = Instant::now() + Duration::from_secs(3);
+                                        while !seen.load(Ordering::Acquire) && Instant::now() < deadline {
+                                            std::thread::sleep(Duration::from_millis(2));
+                                        }
+                                    }
+                                    gst::PadProbeReturn::Ok
+                                });
+                        }
+                        tx.send(pipeline.clone()).unwrap();
+                        Recorder::start_pipeline(pipeline, out, candidate, false, sampler.started_at)
+                            .map(|recorder| (recorder, Source::Test))
+                    })
+                },
+            );
+            let _pipeline = rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while !session.has_frames() && session.terminal_error().is_none() && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            assert_eq!(session.has_frames(), failure != "startup", "{failure}");
+            if failure == "late" {
+                let deadline = Instant::now() + Duration::from_secs(3);
+                while session.terminal_error().is_none() && Instant::now() < deadline {
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            }
+            assert_eq!(session.failed_to_start(), failure == "startup");
+            assert_eq!(session.terminal_error().is_some(), failure != "none");
+            let mut receipts = Registry::default();
+            assert!(receipts.admit("old", false, false));
+            if let Some(error) = session.terminal_error() {
+                receipts.processing_failure("old", &error);
+                assert_eq!(receipts.inspect("old")["status"], "processing");
+                assert!(receipts.inspect("old")["error"].is_null(), "wait must reach the final artifact outcome");
+                assert!(receipts.inspect("old")["message"].as_str().unwrap().contains("Failed after iterations"));
+            }
+            let recording = session.stop();
+            assert_eq!(recording.acquisition_error.is_some(), failure != "none");
+            let dir = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
+            std::fs::create_dir(&dir).unwrap();
+            let result = finalize_capture_bundle(&dir, target, recording, vec![], vec![], None, None,
+                crate::shared::windows::ActivityLog::default(), None);
+            if cancelled {
+                receipts.set("old", "cancelled", None, None);
+            }
+            assert!(receipts.admit("new", false, false));
+            match result {
+                Ok((path, bundle, _)) => {
+                    assert_eq!(failure, "none");
+                    assert!(!bundle.keyframes.is_empty());
+                    assert!(!std::fs::read_to_string(dir.join("summary.md")).unwrap().contains("Screen acquisition stopped early"));
+                    receipts.finish("old", Ok(&path));
+                    assert_eq!(receipts.inspect("old")["status"], "saved");
+                }
+                Err(error) => {
+                    let error = error.downcast_ref::<AcquisitionError>().expect("typed acquisition outcome");
+                    assert!(error.message.contains("Failed after iterations"), "{error}");
+                    assert_eq!(error.started, failure == "late");
+                    assert_eq!(error.partial_bundle.as_deref(), (failure == "late").then_some(dir.as_path()));
+                    receipts.acquisition_failed("old", error);
+                    let receipt = receipts.inspect("old");
+                    eprintln!("{failure}, cancelled={cancelled}: {receipt}");
+                    assert_eq!(receipt["status"], if cancelled { "cancelled" } else { "failed" });
+                    if !cancelled {
+                        assert_eq!(receipt["error"], if failure == "startup" { "start_failed" } else { "capture_failed" });
+                        assert_eq!(receipt["bundle_path"].as_str(), error.partial_bundle.as_ref().and_then(|p| p.to_str()));
+                        assert!(receipt["message"].as_str().unwrap().contains("Failed after iterations"));
+                        if failure == "late" {
+                            assert!(std::fs::read_to_string(dir.join("summary.md")).unwrap().contains("Screen acquisition stopped early"));
+                        } else {
+                            assert!(!dir.join("apparent.json").exists());
+                        }
+                    }
+                    let terminal = receipts.inspect("old");
+                    receipts.finish("old", Ok(&dir));
+                    receipts.processing_failure("old", "stale error");
+                    assert_eq!(receipts.inspect("old"), terminal, "late completion must not overwrite terminal/cancelled outcome");
+                }
+            }
+            assert_eq!(receipts.inspect("new")["status"], "starting", "old completion must not alter newer capture");
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    // A standard negotiable source models acquisition, not a caps rewrite. The
+    // source generates SMPTE pixels; no desktop capture is a fixture.
+    fn desktop_negotiation(par: &str, crop: Option<[u32; 4]>, refused: bool) {
+        init().unwrap();
+        eprintln!("runtime: {}", gst::version_string());
+        for name in ["videotestsrc", "capsfilter", "videoconvert", "videoscale", "videocrop", "appsink"] {
+            let factory = gst::ElementFactory::find(name).unwrap();
+            let plugin = factory.plugin().unwrap();
+            eprintln!("{name}: {} {} {:?}", plugin.name(), plugin.version(), plugin.filename());
+        }
+        let source = desktop_stream_launch(
+            "videotestsrc name=desktop_source num-buffers=3 pattern=smpte is-live=true ! capsfilter name=offered",
+            crop,
+        );
+        let out = crop.map_or((64, 32), |[_, _, w, h]| (w, h));
+        let pipeline = recording_pipeline(&source, crop, out, out, None).unwrap();
+        // Ordered structures let the producer prefer the extreme PAR without
+        // preventing negotiation of square pixels when the consumer requires it.
+        let caps_for = |par| format!(
+            "video/x-raw,format=BGRA,width=64,height=32,framerate=10/1,pixel-aspect-ratio=(fraction){par}"
+        );
+        let offered: gst::Caps = if par == "negotiable" {
+            format!("{}; {}", caps_for("1/2147483647"), caps_for("1/1"))
+        } else {
+            caps_for(par)
+        }.parse().unwrap();
+        pipeline.by_name("offered").unwrap().set_property("caps", &offered);
+        eprintln!("offered: {offered}; crop: {crop:?}");
+
+        type Planes = Arc<Mutex<Vec<(gst::Caps, Vec<u8>)>>>;
+        fn observe(pad: &gst::Pad) -> Planes {
+            let frames: Planes = Arc::new(Mutex::new(Vec::new()));
+            let observed = Arc::clone(&frames);
+            pad.add_probe(gst::PadProbeType::BUFFER, move |pad, info| {
+                if let Some(gst::PadProbeData::Buffer(buffer)) = info.data.as_ref() {
+                    observed.lock().unwrap().push((
+                        pad.current_caps().unwrap(),
+                        buffer.map_readable().unwrap().to_vec(),
+                    ));
+                }
+                gst::PadProbeReturn::Ok
+            });
+            frames
+        }
+        let ingress = observe(&pipeline.by_name("offered").unwrap().static_pad("src").unwrap());
+        let common = observe(&pipeline.by_name("t").unwrap().static_pad("sink").unwrap());
+        let candidates = pipeline.by_name("candidates").unwrap()
+            .downcast::<gst_app::AppSink>().unwrap();
+        let bus = pipeline.bus().unwrap();
+        pipeline.set_state(gst::State::Playing).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(4);
+        let mut failure = None;
+        let mut eos = false;
+        while Instant::now() < deadline {
+            // Exercise the shipped dropping sink without letting its final sample hold EOS.
+            while candidates.try_pull_sample(gst::ClockTime::ZERO).is_some() {}
+            if let Some(message) = bus.timed_pop_filtered(
+                gst::ClockTime::from_mseconds(10),
+                &[gst::MessageType::Error, gst::MessageType::Eos],
+            ) {
+                match message.view() {
+                    gst::MessageView::Error(error) => {
+                        failure = Some(format!("{} ({})", error.error(), error.debug().unwrap_or_default()));
+                        break;
+                    }
+                    gst::MessageView::Eos(_) => { eos = true; break; }
+                    _ => unreachable!(),
+                }
+            }
+        }
+        pipeline.set_state(gst::State::Null).unwrap();
+        let ingress = ingress.lock().unwrap();
+        let common = common.lock().unwrap();
+        eprintln!("ingress={} common={} eos={eos} error={failure:?}", ingress.len(), common.len());
+        for (label, frames) in [("ingress", &*ingress), ("common", &*common)] {
+            for (ordinal, (caps, _)) in frames.iter().enumerate() {
+                eprintln!("{label}[{ordinal}]: {caps}");
+            }
+        }
+        if refused {
+            let error = failure.expect("fixed nonsquare desktop must fail, not succeed with damaged pixels");
+            assert!(error.contains("not-negotiated"), "{error}");
+            assert!(!eos, "refusal must not report successful EOS");
+            assert!(common.is_empty(), "refused source must publish no common frames");
+            return;
+        }
+        assert!(failure.is_none(), "{failure:?}");
+        assert!(eos, "finite source must reach EOS");
+        assert_eq!(ingress.len(), 3, "count actual source frames");
+        assert_eq!(common.len(), 3, "count actual common-output frames");
+        let [x, y, w, h] = crop.unwrap_or([0, 0, 64, 32]);
+        for ((input_caps, input), (output_caps, output)) in ingress.iter().zip(common.iter()) {
+            let info = gstreamer_video::VideoInfo::from_caps(input_caps).unwrap();
+            assert_eq!(info.par(), gst::Fraction::new(1, 1), "desktop source must negotiate square pixels");
+            let info = gstreamer_video::VideoInfo::from_caps(output_caps).unwrap();
+            assert_eq!((info.width(), info.height()), (w, h));
+            assert_eq!(info.format(), gstreamer_video::VideoFormat::Bgra);
+            assert_eq!(info.par(), gst::Fraction::new(1, 1));
+            let expected: Vec<u8> = (y..y + h).flat_map(|row| {
+                let start = ((row * 64 + x) * 4) as usize;
+                input[start..start + w as usize * 4].iter().copied()
+            }).collect();
+            assert_eq!(output, &expected, "common scale must preserve every selected BGRA byte");
+        }
+    }
+
+    #[test]
+    fn desktop_negotiable_par_preserves_screen_and_region() {
+        for crop in [None, Some([8, 8, 48, 16])] {
+            desktop_negotiation("negotiable", crop, false);
+        }
+    }
+
+    #[test]
+    fn desktop_fixed_extreme_par_is_refused() {
+        for crop in [None, Some([8, 8, 48, 16])] {
+            desktop_negotiation("1/2147483647", crop, true);
+        }
+    }
+
+    #[test]
+    fn desktop_square_par_control_preserves_screen_and_region() {
+        for crop in [None, Some([8, 8, 48, 16])] {
+            desktop_negotiation("1/1", crop, false);
+        }
     }
 
     #[test]
@@ -986,7 +1360,7 @@ mod tests {
         std::thread::sleep(Duration::from_millis(200));
         let started = Instant::now();
         assert!(
-            recorder.finish(),
+            recorder.finish().unwrap(),
             "the movie branch finished but the candidate branch held pipeline EOS"
         );
         assert!(started.elapsed() < Duration::from_secs(2));
@@ -1036,7 +1410,7 @@ mod tests {
         );
         std::thread::sleep(Duration::from_millis(200));
         assert!(
-            !recorder.finish(),
+            recorder.finish().is_err(),
             "an encoder stall cannot finish the movie"
         );
         let _ = std::fs::remove_file(movie);

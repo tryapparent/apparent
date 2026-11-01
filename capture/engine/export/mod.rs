@@ -508,6 +508,81 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn represented_movie_export_uses_actual_samples_with_default_and_static_cameras() {
+        use crate::capture::engine::annotation::{AnnotationEvidence, FrameEvidence, OrdinaryInk, RepresentedStroke, VideoSampleEvidence};
+        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
+        std::fs::create_dir_all(&root).unwrap();
+        let movie = root.join("recording.mp4");
+        let raw = root.join("source.rgba");
+        let mut pixels = Vec::new();
+        let mut evidence = AnnotationEvidence::default();
+        for i in 0..12 {
+            let mut frame = vec![255; 160 * 100 * 4];
+            let opacity = if i >= 9 { 0.3 } else { 1.0 };
+            let end = if i < 7 { 45 } else { 70 };
+            for y in 45..49 {
+                for x in 25..end {
+                    let p = (y * 160 + x) * 4;
+                    frame[p..p + 4].copy_from_slice(&[255, (255.0 - 210.0 * opacity) as u8, (255.0 - 220.0 * opacity) as u8, 255]);
+                }
+            }
+            pixels.extend(frame);
+            evidence.video.push(VideoSampleEvidence {
+                sample: crate::capture::engine::annotation::VideoSample::at_ms(i * 100),
+                end: crate::capture::engine::annotation::VideoSample::at_ms((i + 1) * 100).pts,
+                frame: FrameEvidence {
+                    version: 1, source_lifetime: "encoded-fixture".into(), source_generation: 1,
+                    sample_id: i.to_string(), captured_at_ms: i * 100 + 100,
+                    ordinary_ink: OrdinaryInk::Represented { strokes: vec![RepresentedStroke {
+                        stroke: 0, through_ms: (i * 100 + 100).min(780), opacity,
+                    }] },
+                },
+            });
+        }
+        std::fs::write(&raw, pixels).unwrap();
+        assert!(Command::new("ffmpeg").args(["-v","error","-nostdin","-f","rawvideo","-pix_fmt","rgba","-s","160x100","-r","10","-i"])
+            .arg(&raw).args(["-c:v","libx264","-threads","1","-pix_fmt","yuv444p","-qp","0","-y"])
+            .arg(&movie).status().unwrap().success());
+        let original = std::fs::read(&movie).unwrap();
+        let mut b = bundle();
+        b.video = Some("recording.mp4".into());
+        b.video_offset_ms = 100;
+        b.strokes = serde_json::from_value(serde_json::json!([
+            {"t0":0,"t1":780,"fw":160,"fh":100,"pts":[3000,4000,0,6000,5000,780]}
+        ])).unwrap();
+        b.annotation_evidence = evidence;
+        let decode = |path: &Path| {
+            let output = Command::new("ffmpeg").args(["-v","error","-nostdin","-i"]).arg(path)
+                .args(["-f","rawvideo","-pix_fmt","rgba","pipe:1"]).output().unwrap();
+            assert!(output.status.success());
+            output.stdout
+        };
+        for zoom in [true, false] {
+            let options = Options { out: Some(root.join(format!("represented-{zoom}.mp4"))), size: 160,
+                zoom, fps: Some(10), audio: AudioPolicy::Silent, ..Default::default() };
+            let actual = export(&root, &b, &options, &mut |_| {}).unwrap();
+            let baseline = export(&root, &b, &Options { ink: false,
+                out: Some(root.join(format!("source-only-{zoom}.mp4"))), ..options }, &mut |_| {}).unwrap();
+            assert!(decode(&actual.path) == decode(&baseline.path), "represented source ink changed with zoom={zoom}");
+        }
+        // At 20 fps an output at 350 ms holds the actual 300 ms source sample.
+        // No receipt exists for 350 ms; presentation-time matching would replay ink.
+        let options = Options { out: Some(root.join("held.mp4")), size: 160, zoom: false,
+            fps: Some(20), audio: AudioPolicy::Silent, ..Default::default() };
+        let actual = export(&root, &b, &options, &mut |_| {}).unwrap();
+        let bytes = decode(&actual.path);
+        let frame_bytes = actual.width as usize * actual.height as usize * 4;
+        let held = &bytes[7 * frame_bytes..8 * frame_bytes];
+        assert!(!held.chunks_exact(4).enumerate().any(|(i,p)| i % actual.width as usize > 75 && p[0] > 180 && p[1] < 130), "new output time replayed over cached source pixels");
+        b.annotation_evidence = Default::default();
+        let unknown = export(&root, &b, &Options { out: Some(root.join("unknown.mp4")), ..options }, &mut |_| {}).unwrap();
+        assert!(bytes != decode(&unknown.path), "unknown legacy samples retain compatibility replay");
+        assert_eq!(std::fs::read(&movie).unwrap(), original);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn linux_exports_a_real_movie_with_annotated_pixels_and_audio() {
         match std::process::Command::new("ffmpeg")
             .arg("-version")

@@ -894,6 +894,7 @@ mod tests {
             contact_sheet: "contact-sheet.png".into(),
             video: None,
             video_offset_ms: 0,
+            annotation_evidence: Default::default(),
             audio: None,
             source: None,
             device: None,

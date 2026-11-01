@@ -43,12 +43,27 @@ struct ExportPlan: Decodable {
   }
   struct Stroke: Decodable {
     var snaps: [Snap]
+    var preserveSource: [VideoSample]?
     var fadeAt: Double
     var fadeMs: Double
   }
   struct Snap: Decodable {
     var t: Double
     var poly: [Double]
+  }
+  struct MediaTime: Decodable {
+    var value: Int64
+    var timescale: Int32
+  }
+  struct VideoSample: Decodable {
+    var videoTrack: UInt32
+    var pts: MediaTime
+
+    func matches(_ time: CMTime) -> Bool {
+      videoTrack == 0 && pts.value >= 0 && pts.timescale > 0 && time.isNumeric
+        && time.epoch == 0 && !time.flags.contains(.hasBeenRounded)
+        && CMTimeCompare(CMTime(value: pts.value, timescale: pts.timescale), time) == 0
+    }
   }
   struct Pin: Decodable {
     var x: Double, y: Double
@@ -103,13 +118,14 @@ enum ExportInk {
     return 1 - u * u * (3 - 2 * u)
   }
 
-  static func draw(_ ctx: CGContext, t: Double, view: ExportView, ink: ExportPlan.Ink) {
+  static func draw(_ ctx: CGContext, t: Double, sourceTime: CMTime?, view: ExportView, ink: ExportPlan.Ink) {
     let s = view.scale
     let k = ink.k
     ctx.setLineCap(.round)
     ctx.setLineJoin(.round)
 
     for stroke in ink.strokes {
+      if let pts = sourceTime, stroke.preserveSource?.contains(where: { $0.matches(pts) }) == true { continue }
       guard let first = stroke.snaps.first, t >= first.t else { continue }
       let alpha = fade(t, at: stroke.fadeAt, over: stroke.fadeMs)
       guard alpha > 0.002 else { continue }
@@ -307,7 +323,8 @@ final class ExportFrames: @unchecked Sendable {
   let total: Int
   var tick = 0
   var current: CVPixelBuffer?
-  var pending: (CVPixelBuffer, Double)?
+  var currentSourceTime: CMTime?
+  var pending: (CVPixelBuffer, CMTime)?
   var sourceDone = false
 
   init(plan: ExportPlan, reader: AVAssetReader, output: AVAssetReaderTrackOutput, writerInput: AVAssetWriterInput, adaptor: AVAssetWriterInputPixelBufferAdaptor) {
@@ -328,7 +345,7 @@ final class ExportFrames: @unchecked Sendable {
       return
     }
     guard let buffer = CMSampleBufferGetImageBuffer(sample) else { return advance() }
-    pending = (buffer, CMSampleBufferGetPresentationTimeStamp(sample).seconds * 1000)
+    pending = (buffer, CMSampleBufferGetPresentationTimeStamp(sample))
   }
 
   func cameraRect(at ms: Double) -> [Double] {
@@ -354,11 +371,13 @@ final class ExportFrames: @unchecked Sendable {
         return
       }
       let ms = Double(tick) * 1000 / Double(plan.fps)
-      while let next = pending, next.1 <= ms + 0.5 {
+      let outputTime = CMTime(value: CMTimeValue(tick), timescale: CMTimeScale(plan.fps))
+      while let next = pending, CMTimeCompare(next.1, outputTime) <= 0 {
         current = next.0
+        currentSourceTime = next.1
         advance()
       }
-      if current == nil, let next = pending { current = next.0 }
+      if current == nil, let next = pending { current = next.0; currentSourceTime = next.1 }
       guard let source = current, let pool = adaptor.pixelBufferPool else {
         writerInput.markAsFinished()
         done()
@@ -408,7 +427,7 @@ final class ExportFrames: @unchecked Sendable {
     ctx.translateBy(x: 0, y: oh)
     ctx.scaleBy(x: 1, y: -1)
     ctx.setShouldAntialias(true)
-    ExportInk.draw(ctx, t: ms, view: view, ink: plan.ink)
+    ExportInk.draw(ctx, t: ms, sourceTime: currentSourceTime, view: view, ink: plan.ink)
   }
 }
 

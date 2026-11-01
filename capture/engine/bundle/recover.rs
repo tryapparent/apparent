@@ -47,6 +47,8 @@ pub struct Unfinished {
     pub video: Option<String>,
     #[serde(default)]
     pub video_offset_ms: u64,
+    #[serde(default, deserialize_with = "crate::capture::engine::annotation::deserialize_evidence", skip_serializing_if = "crate::capture::engine::annotation::AnnotationEvidence::is_empty")]
+    pub annotation_evidence: crate::capture::engine::annotation::AnnotationEvidence,
     #[serde(default)]
     pub strokes: Vec<Stroke>,
     #[serde(default)]
@@ -182,6 +184,7 @@ pub fn orphan_recipe(video: &crate::capture::desktop::helper::Probe, audio_ms: O
         duration_ms: audio_ms.unwrap_or(0).max(offset + video.duration_ms),
         video: Some(VIDEO.into()),
         video_offset_ms: offset,
+        annotation_evidence: Default::default(),
         strokes: Vec::new(),
         events: Vec::new(),
         interaction_telemetry: None,

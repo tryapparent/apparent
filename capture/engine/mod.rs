@@ -1,4 +1,5 @@
 pub(crate) mod accessibility;
+pub(crate) mod annotation;
 pub(crate) mod autocrop;
 pub(crate) mod bundle;
 pub(crate) mod export;

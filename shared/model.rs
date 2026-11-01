@@ -82,6 +82,8 @@ pub struct ApparentBundle {
     /// When the video starts on the bundle's clock (ms): video time = bundle time − this.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub video_offset_ms: u64,
+    #[serde(default, deserialize_with = "crate::capture::engine::annotation::deserialize_evidence", skip_serializing_if = "crate::capture::engine::annotation::AnnotationEvidence::is_empty")]
+    pub annotation_evidence: crate::capture::engine::annotation::AnnotationEvidence,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio: Option<String>,
     /// Where the pictures came from when it isn't this Mac's screen (`"iphone"`).
@@ -613,6 +615,10 @@ pub struct Keyframe {
 #[derive(Clone, Debug)]
 pub struct RgbaFrame {
     pub t_ms: u64,
+    /// Source evidence follows the pixels, independently of presentation time.
+    pub source_evidence: Option<crate::capture::engine::annotation::FrameEvidence>,
+    /// Original track and exact PTS, only when the decoder proves both. Never a seek request.
+    pub media_pts: Option<crate::capture::engine::annotation::VideoSample>,
     pub width: u32,
     pub height: u32,
     pub rgba: Vec<u8>,
@@ -624,11 +630,21 @@ impl RgbaFrame {
         debug_assert_eq!(rgba.len(), (width as usize) * (height as usize) * 4);
         Self {
             t_ms,
+            source_evidence: None,
+            media_pts: None,
             width,
             height,
             rgba,
             badge_bottom_left: false,
         }
+    }
+
+    /// Pixel-preserving crop/scale. The source identity and acquisition time do not change.
+    pub fn derived(&self, width: u32, height: u32, rgba: Vec<u8>) -> Self {
+        let mut frame = Self::new(self.t_ms, width, height, rgba);
+        frame.source_evidence = self.source_evidence.clone();
+        frame.media_pts = self.media_pts;
+        frame
     }
 }
 

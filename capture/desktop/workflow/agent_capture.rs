@@ -97,6 +97,9 @@ impl Registry {
 
     /// Only the successful production finalizer can publish a saved path.
     pub fn finish(&mut self, id: &str, result: Result<&std::path::Path, String>) {
+        if matches!(self.inspect(id)["status"].as_str(), Some("cancelled" | "rejected" | "saved" | "failed")) {
+            return;
+        }
         match result {
             Ok(path) => self.set(id, "saved", Some(path), None),
             Err(message) => {
@@ -104,6 +107,24 @@ impl Registry {
                 self.0.get_mut(id).unwrap()["message"] = message.into();
             }
         }
+    }
+
+    pub fn processing_failure(&mut self, id: &str, message: &str) {
+        if matches!(self.inspect(id)["status"].as_str(), Some("cancelled" | "rejected" | "saved" | "failed")) {
+            return;
+        }
+        // Keep --wait polling until the retained partial artifact has its final path.
+        self.set(id, "processing", None, None);
+        self.0.get_mut(id).unwrap()["message"] = message.into();
+    }
+
+    pub fn acquisition_failed(&mut self, id: &str, error: &crate::capture::engine::bundle::bundle_processing::AcquisitionError) {
+        if matches!(self.inspect(id)["status"].as_str(), Some("cancelled" | "rejected" | "saved" | "failed")) {
+            return;
+        }
+        self.set(id, "failed", error.partial_bundle.as_deref(),
+            Some(if error.started { "capture_failed" } else { "start_failed" }));
+        self.0.get_mut(id).unwrap()["message"] = error.to_string().into();
     }
 
     pub fn inspect(&self, id: &str) -> serde_json::Value {
