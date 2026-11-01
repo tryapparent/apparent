@@ -4,13 +4,13 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { inventory, resourceGraph, routes, validateConnect, mergeFiles } from './compose-connect.mjs'
+import { inventory, resourceGraph, routes, validateConnect, validatePreservedFiles } from './compose-connect.mjs'
 const site = resolve(import.meta.dirname, '..')
 const root = resolve(process.env.SITE_ARTIFACT || join(site, 'dist-apparent'))
 const syntheticOrigin = process.env.COMPOSE_SYNTHETIC_ORIGIN
 const files = inventory(root), connect = inventory(join(site, '../connect/web', syntheticOrigin ? 'dist-test' : 'dist'))
 validateConnect(connect, inventory(join(site, 'public')), { syntheticOrigin })
-mergeFiles(files, connect) // No overlay may change any Connect-owned byte.
+validatePreservedFiles(files, connect) // No overlay may remove/change any Connect-owned byte.
 const expected = JSON.parse(readFileSync(join(site, 'published-homepage.sha256.json'), 'utf8'))
 for (const [path, digest] of Object.entries(expected)) assert.equal(createHash('sha256').update(files.get(path)).digest('hex'), digest, `accepted homepage ${path}`)
 const landing = resourceGraph(files, ['index.html'])

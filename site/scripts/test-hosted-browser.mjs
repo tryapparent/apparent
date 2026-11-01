@@ -113,7 +113,7 @@ const server = createServer(async (req, res) => {
   const file = resolve(root, '.' + path)
   if (!file.startsWith(root + '/')) return res.writeHead(403).end()
   try { res.setHeader('Content-Type', ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.ttf': 'font/ttf' })[extname(file)] || 'application/octet-stream'); res.end(await readFile(file)) }
-  catch { res.writeHead(404).end() }
+  catch { res.setHeader('Content-Type', 'text/html'); res.writeHead(404).end(await readFile(`${root}/404.html`)) }
 })
 await new Promise(r => server.listen(Number(process.env.HOSTED_FIXTURE_PORT || 0), '127.0.0.1', r))
 uiOrigin = `http://127.0.0.1:${server.address().port}`

@@ -31,6 +31,9 @@ export function mergeFiles(left, right) {
   }
   return result
 }
+export function validatePreservedFiles(files, expected) {
+  for (const [path, bytes] of expected) if (!files.has(path) || !files.get(path).equals(bytes)) throw Error(`Missing or changed composed input: ${path}`)
+}
 // Include HTML modulepreloads, emitted static/dynamic imports and Vite preload
 // tables (quoted asset filenames), CSS imports and URLs. Navigation is not a fetch.
 export function resourceGraph(files, starts, connect = false) {
@@ -48,6 +51,20 @@ export function resourceGraph(files, starts, connect = false) {
     if (!files.has(target)) throw Error(`Missing resource: ${file} -> ${target}`)
     pending.push(target)
   }
+  function css(file, text) {
+    for (const m of text.matchAll(/url\(\s*["']?([^\s)'"\\]+)["']?\s*\)|@import\s*["']([^"']+)["']/g)) reference(file, m[1] || m[2])
+  }
+  function srcset(file, text) {
+    // URLs consume non-space bytes (including commas in data URLs). A trailing
+    // comma ends a descriptor-free candidate; otherwise skip its descriptors.
+    let rest = text
+    while ((rest = rest.replace(/^[\s,]+/, ''))) {
+      const url = /^\S+/.exec(rest)[0]
+      reference(file, url.replace(/,+$/, ''))
+      rest = rest.slice(url.length)
+      if (!url.endsWith(',')) rest = rest.includes(',') ? rest.slice(rest.indexOf(',') + 1) : ''
+    }
+  }
   while (pending.length) {
     const file = pending.pop()
     if (seen.has(file)) continue
@@ -62,12 +79,16 @@ export function resourceGraph(files, starts, connect = false) {
         const attrs = Object.fromEntries((node.attrs || []).map(a => [a.name, a.value]))
         if (attrs.src) reference(file, attrs.src)
         if (attrs.poster) reference(file, attrs.poster)
+        if (attrs.style) css(file, attrs.style)
+        if (attrs.srcset) srcset(file, attrs.srcset)
+        if (attrs.imagesrcset) srcset(file, attrs.imagesrcset)
+        if (node.tagName === 'style') css(file, (node.childNodes || []).map(child => child.value || '').join(''))
         if (node.tagName === 'link' && /(?:stylesheet|modulepreload|preload|icon)/.test(attrs.rel || '') && attrs.href) reference(file, attrs.href)
         for (const child of node.childNodes || []) visit(child)
       }
       visit(parse(text))
     } else if (file.endsWith('.css')) {
-      for (const m of text.matchAll(/url\(\s*["']?([^\s)'"\\]+)["']?\s*\)|@import\s*["']([^"']+)["']/g)) reference(file, m[1] || m[2])
+      css(file, text)
     } else {
       for (const m of text.matchAll(/(?:\bfrom\s*|\bimport\s*(?:\(\s*)?)["']([^"']+)["']|["']((?:\.?\.?\/|\/)?assets\/[^"'\s]+\.(?:js|css)|\.\/[^"'\s]+\.(?:js|css))["']/g)) reference(file, m[1] || m[2])
     }

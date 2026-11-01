@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, readFileSyn
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
-import { composeArtifacts, inventory, routes, approved, resourceGraph, safePath } from './compose-connect.mjs'
+import { composeArtifacts, inventory, routes, approved, resourceGraph, safePath, validatePreservedFiles } from './compose-connect.mjs'
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'compose-'))
@@ -23,6 +23,28 @@ function fixture() {
   return { root, pub, con, canonical, out, put, run: options => composeArtifacts(pub, con, canonical, out, options) }
 }
 const snapshot = root => [...inventory(root)].sort(([a], [b]) => a.localeCompare(b))
+test('final preservation verification rejects missing unreferenced approved art and differing input bytes', () => {
+  const f = fixture()
+  try {
+    f.run()
+    const expected = inventory(f.con)
+    validatePreservedFiles(inventory(f.out), expected)
+    rmSync(join(f.out, 'hosted/agent-reading-v4.png'))
+    assert.throws(() => validatePreservedFiles(inventory(f.out), expected), /Missing or changed composed input: hosted\/agent-reading-v4.png/)
+    f.put(f.out, 'hosted/agent-reading-v4.png', 'changed')
+    assert.throws(() => validatePreservedFiles(inventory(f.out), expected), /Missing or changed composed input/)
+    validatePreservedFiles(inventory(f.con), expected)
+  } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
+test('follow inline CSS and srcset resources while allowing fragment/data URLs', () => {
+  const f = fixture()
+  try {
+    f.put(f.pub, 'index.html', '<style>i{filter:url(#local)}</style><div style="background:url(data:image/png;base64,abc)"></div><img srcset="data:image/png;base64,abc 1x, /apparent-wordmark.svg 2x">')
+    f.put(f.pub, 'apparent-wordmark.svg', readFileSync(join(f.canonical, 'apparent-wordmark.svg')))
+    f.run()
+    assert(resourceGraph(inventory(f.out), ['index.html']).has('apparent-wordmark.svg'))
+  } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
 test('compose independently emitted routes, preloads, import tables, CSS and identical approved collisions', () => {
   const f = fixture()
   try {
@@ -49,6 +71,11 @@ for (const [name, mutate, error] of [
   ['missing import', f => f.put(f.con, 'assets/child-a.js', 'import "./missing-a.js"'), /Missing resource/],
   ['missing preload table', f => f.put(f.con, 'assets/child-a.js', 'const deps=["assets/missing-a.js"]'), /Missing resource/],
   ['missing CSS URL', f => f.put(f.con, 'assets/child-a.css', 'a{background:url(/missing.png)}'), /Missing resource/],
+  ['missing inline style URL', f => f.put(f.pub, 'index.html', '<style>@font-face{src:url(/missing.ttf)}</style>'), /Missing resource/],
+  ['missing inline style import', f => f.put(f.pub, 'index.html', '<style>@import "/assets/missing-a.css";</style>'), /Missing resource/],
+  ['missing style attribute URL', f => f.put(f.pub, 'index.html', '<div style="background:url(/missing.png)"></div>'), /Missing resource/],
+  ['missing srcset candidate', f => f.put(f.pub, 'index.html', '<img srcset="data:image/png;base64,abc 1x, /missing.png 2x">'), /Missing resource/],
+  ['missing image preload candidate', f => f.put(f.pub, 'index.html', '<link rel="preload" as="image" imagesrcset="/missing.png 2x">'), /Missing resource/],
   ['font service', f => f.put(f.con, 'assets/child-a.css', '@import "https://fonts.bunny.net/css";'), /External Connect|Wrong resource/],
   ['changed approved bytes', f => f.put(f.con, approved[0], 'changed'), /Changed approved/],
   ['malformed path', f => f.put(f.con, 'assets/bad%2f-a.js', 'bad'), /Invalid public path/],
