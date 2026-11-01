@@ -10,6 +10,11 @@ Mobile uses 32px text gutters and an inset scene so both button labels, frogs an
 
 The packager supports a repeat release: it balances the nested study section, replaces old belief stylesheet/module references instead of stacking them, reuses byte-identical immutable assets, and refuses conflicting bytes. `SITE_BASELINE=/absolute/initial-release node scripts/test-belief-packaging.mjs` tests initial and repeat overlays plus conflict refusal. `python scripts/test-belief-publication.py` exercises activation, guarded rollback and publisher contention only in a temporary filesystem.
 
-To activate, `python scripts/activate-belief-release.py EXTERNAL_MANIFEST` requires the active symlink to still resolve to the inventoried baseline, and requires the candidate and baseline inventory hashes to match the manifest. It stages an immutable release, compares the copy, rechecks the baseline, then atomically switches `/opt/presentations/releases/apparent-site`. Activation and rollback hold `/opt/presentations/releases/.apparent-site-publish.lock` from the initial baseline check through the final switch. Every publisher of this site must honor that same flock; do not reuse old one-shot scripts or manually replace the symlink outside the lock. A held lock fails promptly rather than waiting. This is cooperative publication serialization, not a filesystem compare-and-swap against a writer that ignores the protocol.
-
-Keep the previous target. Guarded rollback is `python scripts/activate-belief-release.py EXTERNAL_MANIFEST --rollback`; it refuses if production no longer points at this exact release or either inventoried release changed. A switch receipt is not live verification: fetch the ordinary public URL and hash the HTML and all three named new assets, exercise the real controls and scroll at desktop/mobile widths, and confirm the existing hero/movie/star link remain and Team stays absent **for this historical belief-only release**. The subsequently approved Team restoration belongs to a separate whole-site release; do not use this overlay as its acceptance test. A future whole-site publisher must include these canonical source files and reconcile the movie-demo drift rather than copying an old build.
+The Clanker activator and symlink rollback are retired; their temporary-filesystem
+tests above are historical protocol tests, not production instructions. Do not
+run `activate-belief-release.py` on Clanker or recreate its deleted release link.
+Reconcile any verified overlay into `published-homepage/` and its checksum
+contract, then use main-branch Pages delivery and Pages rollback as documented in
+`pages-deploy.md`. Verify public hashes and desktop/mobile interactions after
+publication. Team absence belongs only to the historical belief-only acceptance;
+do not remove subsequently approved Team content to satisfy that old scenario.

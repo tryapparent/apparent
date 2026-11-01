@@ -5,7 +5,7 @@ import { resolve, join, dirname, relative } from 'node:path'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 const site = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const output = join(site, 'dist-apparent')
+const output = join(site, process.env.COMPOSE_SYNTHETIC_ORIGIN ? 'dist/synthetic-composition' : 'dist-apparent')
 const snapshot = join(site, 'published-homepage')
 const expected = JSON.parse(readFileSync(join(site, 'published-homepage.sha256.json'), 'utf8'))
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')

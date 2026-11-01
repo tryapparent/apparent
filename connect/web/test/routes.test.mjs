@@ -9,7 +9,7 @@ for (const mode of ['dev', 'preview']) test(`${mode}: exact canonical/legacy rou
   const origin = `http://127.0.0.1:${http.address().port}`
 
   try {
-    for (const route of ['connect', 'connect/device', 'hosted', 'hosted/device']) for (const slash of ['', '/']) {
+    for (const route of ['connect', 'connect/device', 'connect/shares', 'hosted', 'hosted/device', 'hosted/shares']) for (const slash of ['', '/']) {
       const path = `/${route}${slash}?code=SYNTHETIC&returnTo=https%3A%2F%2Fevil.example`
       const response = await fetch(origin + path)
       assert.equal(response.status, 200, path)
@@ -18,7 +18,7 @@ for (const mode of ['dev', 'preview']) test(`${mode}: exact canonical/legacy rou
       assert.match(html, /noindex, nofollow/)
       if (mode === 'preview') assert.match(html, /Checking your account/)
     }
-    for (const path of ['/unknown', '/connect/other', '/hosted/device/extra', '/connectivity']) {
+    for (const path of ['/unknown', '/connect/other', '/hosted/device/extra', '/connect/shares/extra', '/hosted/shares/extra', '/connectivity']) {
       assert.equal((await fetch(origin + path)).status, 404, path)
 
     }

@@ -12,4 +12,4 @@ function run(command, args, env = {}) {
 }
 // Separate output keeps the production artifact free of loopback configuration.
 run('npm', ['run', 'build'], { VITE_HOSTED_API_ORIGIN: origin, CONNECT_BUILD_DIR: 'dist-test' })
-run('node', ['test/browser.mjs'], { HOSTED_TEST_API_ORIGIN: origin, CONNECT_ARTIFACT: 'dist-test' })
+run('node', ['test/browser.mjs'], { VITE_HOSTED_API_ORIGIN: origin, HOSTED_TEST_API_ORIGIN: origin, CONNECT_ARTIFACT: 'dist-test' })
