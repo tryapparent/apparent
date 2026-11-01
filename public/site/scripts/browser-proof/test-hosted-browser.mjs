@@ -61,8 +61,14 @@ let scenario = {}, writes = [], calls = [], shareReads = [], approved = false, s
 assert(!(await readFile(`${root}/index.html`, 'utf8')).includes('href="/connect'))
 assert(!(await readFile(`${root}/sitemap.xml`, 'utf8')).includes('/connect'))
 // The packaged artifact must retain the exact approved art and original brand assets.
-for (const asset of ['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png', 'hosted/agent-reading-v4.png', 'HostGrotesk-Variable.ttf', 'apparent-wordmark.svg']) {
-  assert.deepEqual(await readFile(`${root}/${asset}`), await readFile(`public/assets/${asset}`), `packaged ${asset}`)
+for (const [asset, source] of [
+  ['hosted/source-pond-v4.png', 'hosted/source-pond-v4.png'],
+  ['hosted/agent-pond-v4.png', 'hosted/agent-pond-v4.png'],
+  ['hosted/agent-reading-v4.png', 'hosted/agent-reading-v4.png'],
+  ['HostGrotesk-Variable.ttf', 'fonts/HostGrotesk-Variable.ttf'],
+  ['apparent-wordmark.svg', 'brand/apparent-wordmark.svg'],
+]) {
+  assert.deepEqual(await readFile(`${root}/${asset}`), await readFile(`public/assets/${source}`), `packaged ${asset}`)
 }
 let uiOrigin = ''
 const server = createServer(async (req, res) => {
