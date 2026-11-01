@@ -2,6 +2,9 @@ import { StrictMode } from "react"
 import { createRoot, hydrateRoot } from "react-dom/client"
 import { Hosted, isHostedPath } from "./Hosted"
 import "./base.css"
+import { startAnalytics, type AnalyticsConfig } from "../../../shared/analytics/browser.js"
+declare const __APPARENT_ANALYTICS_CONFIG__: AnalyticsConfig
+startAnalytics(__APPARENT_ANALYTICS_CONFIG__)
 
 const root = document.getElementById("root")!
 const path = window.location.pathname

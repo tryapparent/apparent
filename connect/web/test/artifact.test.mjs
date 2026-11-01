@@ -39,7 +39,10 @@ test('runtime and SSR graph cannot import the legacy site implementation', async
   for (const name of await readdir('src')) {
     if (!/\.(tsx?|css)$/.test(name)) continue
     const source = await readFile(`src/${name}`, 'utf8')
-    assert.doesNotMatch(source, /(?:from\s*|import\s*)["'][^"']*(?:site\/|\.\.\/)/)
+    // The explicit shared analytics client is cross-owner code, not the legacy
+    // marketing app. Keep all other parent imports forbidden.
+    const imports = [...source.matchAll(/(?:from\s*|import\s*)["']([^"']+)["']/g)].map(match => match[1])
+    for (const path of imports) if (path !== "../../../shared/analytics/browser.js") assert.doesNotMatch(path, /site\/|\.\.\//)
     assert.doesNotMatch(source, /localStorage|sessionStorage|console\./)
   }
 })

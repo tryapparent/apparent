@@ -104,7 +104,10 @@ test('device preview, CSRF, explicit scope approval, durable poll and revocation
  const approved=await(await f.call('/v1/device/poll',{method:'POST',body:{deviceCode}})).json();
  assert.equal(approved.status,'approved');assert.equal(approved.scope,'read');assert.ok(approved.accessToken.length>=32);
  await f.db.prepare('UPDATE auth_grants SET last_poll=0').run();
- assert.deepEqual(await(await f.call('/v1/device/poll',{method:'POST',body:{deviceCode}})).json(),approved);
+ const {expiresIn,refreshExpiresIn,...replay}=await(await f.call('/v1/device/poll',{method:'POST',body:{deviceCode}})).json();
+ const {expiresIn:previousAccess,refreshExpiresIn:previousRefresh,...original}=approved;
+ assert.deepEqual(replay,original,'poll replay preserves credentials, scope and grant');
+ assert.ok(expiresIn>0&&expiresIn<=previousAccess);assert.ok(refreshExpiresIn>0&&refreshExpiresIn<=previousRefresh);
  assert.equal((await f.call('/v1/captures/'+id(70),{token:approved.accessToken,method:'POST',body:{files:[file()]}})).status,403);
  assert.equal((await f.call('/v1/token/revoke',{token:approved.accessToken,method:'POST'})).status,200);
  assert.equal((await f.call('/v1/account',{token:approved.accessToken})).status,401);

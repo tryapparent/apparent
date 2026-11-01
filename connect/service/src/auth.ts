@@ -1,4 +1,5 @@
 import type {Env,Scope} from './types.ts';
+import {analyticsIdentity} from './analytics.ts';
 import {identity,DEVICE_CODE_GRANT_TYPE} from './identity.ts';
 import {random,hash,json,fail,stmt,body,bounded,session,csrf,usage,slots,rate,envelope,bearer} from './common.ts';
 
@@ -51,7 +52,7 @@ export async function authRoutes(request:Request,env:Env,url:URL) {
  }
  if(p==='/v1/session'&&m==='GET') {
   const s=await session(request,env,false);
-  return json({authenticated:!!s,csrfToken:s?.csrf||null,account:s?{email:s.email,beta:s.beta,quotaBytes:500000000,usedBytes:await usage(env,s.account_id),waitlist:{interestedAtFiveDollars:!!s.interest}}:null,slots:await slots(env)});
+  return json({authenticated:!!s,csrfToken:s?.csrf||null,account:s?{email:s.email,beta:s.beta,quotaBytes:500000000,usedBytes:await usage(env,s.account_id),analyticsId:await analyticsIdentity(env,s.account_id),waitlist:{interestedAtFiveDollars:!!s.interest}}:null,slots:await slots(env)});
  }
  if(p==='/auth/logout'&&m==='POST') {
   const s=await session(request,env);csrf(request,env,s);
