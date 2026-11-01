@@ -1,6 +1,6 @@
 # Connect web (unlinked implementation candidate)
 
-Canonical routes: `https://app.tryapparent.com/connect`, `/connect/device?code=USERCODE`, and `/connect/shares`, including slash/no-slash variants. Legacy `/hosted`, `/hosted/device` and `/hosted/shares` remain rendering aliases. All six are prerendered with a loading state, no account data, `noindex,nofollow`, and no-referrer/no-store metadata. They are absent from the homepage and sitemap. `package-apparent.mjs` includes both directories. No deployment or real sign-in was performed.
+Canonical routes: `https://app.tryapparent.com/connect`, `/connect/device?code=USERCODE`, and `/connect/shares`, including slash/no-slash variants. Legacy `/hosted`, `/hosted/device` and `/hosted/shares` remain rendering aliases. All six are prerendered with a loading state, no account data, `noindex,nofollow`, and no-referrer/no-store metadata. They are absent from the homepage and sitemap. The sole Pages pipeline composes `connect/web/dist` into Public's packaged artifact. This source adoption is not deployment or real sign-in proof.
 
 The setup dialog uses `apparent connect login` and `apparent connect status`.
 It tells users to update Apparent for `connect`; older apps can use `apparent cloud`,
@@ -8,7 +8,7 @@ retained as a compatibility alias. Publishing the website does not update the ap
 
 ## Backend contract and boundaries
 
-The frontend is aligned to `docs/hosted-api.md`; `site/src/hosted/api.ts` isolates the wire contract:
+The frontend is aligned to `docs/hosted-api.md`; `connect/web/src/api.ts` isolates the wire contract:
 
 - `GET /v1/session`: anonymous `{authenticated:false,...}` or authenticated `{authenticated:true,csrfToken,account:{email,beta:'active'|'waitlist',waitlist:{interestedAtFiveDollars:boolean},...},slots:{used,limit:20,remaining}}`. Invalid or missing counts do not render invented availability. An account marked `waitlist` is already on the authenticated waitlist; the form updates its optional interest.
 - `GET /auth/google/start?returnTo=...`: only fixed `/connect` or `/connect/device?code=...` destinations are generated, including from legacy pages. Arbitrary incoming `returnTo` is ignored. Callback processing belongs entirely to the Worker; it also normalizes pre-transition stored `/hosted` paths safely.
@@ -16,7 +16,7 @@ The frontend is aligned to `docs/hosted-api.md`; `site/src/hosted/api.ts` isolat
 - `GET /v1/device?userCode=...`: authenticated preview `{scope:'read'|'upload',status:'pending'|'approved'|'rejected'|'expired'}`. **Requested API improvement: include ISO `expiresAt`** so the screen can show actual expiry and reject a newly expired code locally. Until available, the UI states the documented ten-minute lifetime, handles server `expired` status, and leaves enforcement to the API. Optional `expiresAt` is supported and validated. Preview never approves anything; only an explicit confirmation click does.
 - Upload permission includes add/read/delete of account captures, per backend contract. Agent `read` is a separate read-only credential. Unknown scopes fail closed. No browser endpoint should return device secrets or bearer tokens.
 
-For production builds set `VITE_HOSTED_API_ORIGIN=https://hosted.tryapparent.com`; the canonical browser origin is `https://app.tryapparent.com`. The frontend publisher is now Cloudflare Pages (`site/docs/pages-deploy.md`); the retained Clanker origin is rollback-only. Keep the API, Google callback, host-only cookies and device credentials on hosted. This is credentialed **same-site, cross-origin** access, not cross-site hosting. `VITE_HOSTED_API_ORIGIN` accepts only a deployment-controlled HTTPS origin (loopback HTTP for local tests), without credentials, path, query, or fragment. It is public build configuration, never an OAuth secret. The backend uses the same explicit exact SITE_ORIGIN / optional LEGACY_SITE_ORIGIN allowlist for CORS and CSRF, preserving HttpOnly/Secure/SameSite cookie protections.
+For production builds set `VITE_HOSTED_API_ORIGIN=https://hosted.tryapparent.com`; the canonical browser origin is `https://app.tryapparent.com`. The frontend publisher is Cloudflare Pages (`site/docs/pages-deploy.md`); the former Clanker origin is retired, not a rollback target. Use the Pages deployment rollback procedure. Keep the API, Google callback, host-only cookies and device credentials on hosted. This is credentialed **same-site, cross-origin** access, not cross-site hosting. `VITE_HOSTED_API_ORIGIN` accepts only a deployment-controlled HTTPS origin (loopback HTTP for local tests), without credentials, path, query, or fragment. It is public build configuration, never an OAuth secret. The backend uses the same explicit exact SITE_ORIGIN / optional LEGACY_SITE_ORIGIN allowlist for CORS and CSRF, preserving HttpOnly/Secure/SameSite cookie protections.
 
 Session/CSRF data stays in memory, never localStorage or DOM attributes. The human code is only passed to fixed approval endpoints and the fixed sign-in return route, never treated as a capture permission. There is no token input, private capture browser, web recorder, billing, or browser share-creation control. Capture authorization must be enforced by the API; knowing an ID is not access.
 
@@ -41,22 +41,25 @@ Pending HTML explains bounded manifest checks even without JavaScript. Its exter
 
 ## Browser entry ownership
 
-`site/connect.html` loads `src/hosted/main.tsx`: Hosted/API/local hosted styles,
-then `base.css` for the inherited font, resets and existing `rgb(2, 1, 2)` text
-colour. It does not load App, marketing/demo code, marketing stylesheets or the
-demo font service. The homepage entry loads App and its unchanged three marketing
-stylesheets, not Hosted/API. React may share a vendor chunk. Both entries preserve
-the same StrictMode and hydrate-versus-create-root decision.
+`connect/web` independently builds its browser entry and loading-only SSR. Its
+five behavior/style donors were compared byte-for-byte with main `d59796c3`
+before removal from `site/src/hosted`. StrictMode, hydration, local font, resets,
+V4 art and `rgb(2, 1, 2)` text remain unchanged. Public imports no sibling Connect
+source; `site/connect.html`, Connect-specific Public Vite rewrites/input and Public
+`renderHosted`/prerender generation are retired together with those donors.
 
-Vite builds both HTML inputs. The existing prerender uses the Connect template
-for all four loading-state route documents and removes temporary `dist/connect.html`;
-there is no additional public `/connect.html` route. Exact canonical/legacy paths
-rewrite to the dedicated input in dev and to those generated route documents in
-preview, retaining query strings and slash/no-slash support. Unrelated paths keep
-the existing marketing fallback. `site/` remains the build/package owner and the
-existing publisher remains the deployment owner: this is not an independently
-installable or deployable Connect package. SSR renderers, auth and backend origins
-are unchanged.
+Connect's own dev/preview middleware retains exact canonical/legacy account,
+device and shares paths, query bytes and slash variants. The production composer
+accepts only six HTML documents, their emitted JS/CSS resource closure and five
+approved assets. It rejects differing collisions and private, malformed,
+symlink/nonregular, missing-resource or synthetic-origin inputs before changing
+the destination. The accepted homepage overlay is a separate checksum-bound
+exception; final graph verification follows it. Public's homepage graph has no
+Connect/API code; Connect has no marketing/demo/font-service graph. Pages metadata
+provides no-store/noindex and legacy redirects; `404.html` prevents unknown/private
+paths from acquiring a general SPA fallback. The same existing workflow and
+`scripts/cd/publish_pages.py` remain the sole publisher; no second deployment or
+Worker change is introduced. See `site/docs/pages-deploy.md` for composition.
 
 ## Verification
 
@@ -65,6 +68,9 @@ From `site/`:
 ```sh
 APPARENT_PUBLIC_SITE=1 VITE_HOSTED_API_ORIGIN=https://hosted.tryapparent.com npm run build
 node scripts/package-apparent.mjs
+node scripts/compose-connect.mjs
+node scripts/prepare-pages.mjs
+node scripts/verify-composed.mjs
 node --test scripts/test-brand-favicon.mjs scripts/test-github-stars.mjs scripts/test-latest-download.mjs scripts/test-platform-os.mjs scripts/test-public-homepage.mjs scripts/test-video-demo.mjs
 ```
 
@@ -73,30 +79,45 @@ node --test scripts/test-brand-favicon.mjs scripts/test-github-stars.mjs scripts
 Renderer verifier from the repository root: `node --test hosted/test/share-view.test.mjs`. Genuine initial RED: an importable empty renderer failed all four behavior tests (missing evidence, escaping, status and polling). Management RED: the built old site loaded but timed out waiting for the absent management heading. The updated public build/typecheck/package, synthetic hosted browser suite (26 scenarios), renderer checks, and six-file public-site checks passed locally. Phone recipient/management and desktop denied screenshots were inspected. These are synthetic browser/renderer results, not integrated Worker, playable-media, OAuth, native sender, deployment or platform proof; those remain with the coordinator.
 
 
-For private T3 preview inspection, `HOSTED_FIXTURE_ONLY=1 HOSTED_FIXTURE_PORT=5173 node scripts/test-hosted-browser.mjs` runs the synthetic server only. Do not confuse it with backend integration or use it in production.
+First build `connect/web` independently with frozen Bun 1.3.10 dependencies and
+`VITE_HOSTED_API_ORIGIN=https://hosted.tryapparent.com`. `npm test` there retains
+the package's artifact, dev/preview routing and 62 synthetic browser scenarios.
+The site verifier remains the composed-artifact integration suite, including its
+recipient-renderer and #191 assertions. Do not confuse either with live auth.
 
-To exercise credentialed same-site cross-origin fetches without real accounts, build with `VITE_HOSTED_API_ORIGIN=http://127.0.0.1:18809 APPARENT_PUBLIC_SITE=1 npm run build`, package, then run `HOSTED_TEST_API_ORIGIN=http://127.0.0.1:18809 npm run test:hosted`. Use a free test port. The fixture runs UI and API on separate ports, handles credentialed preflight (including DELETE), and checks account and share-management API requests' host and cookie, plus the revocation Origin and CSRF token. The reconciled suite defines 48 unique scenarios for either mode, including canonical routes, legacy account/device/share-management compatibility, paginated revocation readback, no-JS recipients and invalid progress counters. This is a source inventory, not a fresh passing run; integrated verification belongs to the coordinator. Loopback checks do not establish production subdomain cookie/CORS configuration. Rebuild with the production API origin before deployment; never publish a loopback-configured artifact.
+To exercise credentialed cross-origin fetches without accounts, save Public's
+`dist-apparent` before composition to private scratch, then build only Connect
+with `CONNECT_BUILD_DIR=dist-test` and
+`VITE_HOSTED_API_ORIGIN=http://127.0.0.1:18809`. From `site/`, set
+`COMPOSE_PUBLIC_INPUT` to that saved Public package and
+`COMPOSE_SYNTHETIC_ORIGIN=http://127.0.0.1:18809`, then run the composer,
+Pages preparation and final graph verifier. These commands select only
+`dist/synthetic-composition`; they never overwrite production. Run the site suite with
+`SITE_ARTIFACT=dist/synthetic-composition HOSTED_TEST_API_ORIGIN=http://127.0.0.1:18809`.
+Use a free port. The fixture retains cookie/Origin/CSRF, paginated revocation,
+escaped-title and no-JS recipient checks. This does not establish production
+subdomain cookies, live OAuth or actual edge routing. Never publish test output.
 
-For actual Vite dev and preview middleware proof, repeat the complete loopback
-build/package before each run, then run these from `site/` (set `CHROME_PATH` and
-private `SITE_EVIDENCE` as needed):
+For actual Connect Vite dev and preview middleware proof, keep the separate
+synthetic package above and run these from `site/` (set `CHROME_PATH` and private
+`SITE_EVIDENCE` as needed). Public no longer supplies Connect middleware:
 
 ```sh
-APPARENT_PUBLIC_SITE=1 VITE_HOSTED_API_ORIGIN=http://127.0.0.1:18809 HOSTED_TEST_API_ORIGIN=http://127.0.0.1:18809 HOSTED_TEST_MODE=dev npm run test:hosted
-APPARENT_PUBLIC_SITE=1 VITE_HOSTED_API_ORIGIN=http://127.0.0.1:18809 HOSTED_TEST_API_ORIGIN=http://127.0.0.1:18809 HOSTED_TEST_MODE=preview npm run test:hosted
+SITE_ARTIFACT=dist/synthetic-composition VITE_HOSTED_API_ORIGIN=http://127.0.0.1:18809 HOSTED_TEST_API_ORIGIN=http://127.0.0.1:18809 HOSTED_TEST_MODE=dev npm run test:hosted
+SITE_ARTIFACT=dist/synthetic-composition VITE_HOSTED_API_ORIGIN=http://127.0.0.1:18809 HOSTED_TEST_API_ORIGIN=http://127.0.0.1:18809 HOSTED_TEST_MODE=preview npm run test:hosted
 ```
 
 The verifier starts Vite on an isolated loopback port and closes it afterward.
-Each mode retains all 29 scenarios and adds all eight route/slash combinations,
+Each mode retains all 48 scenarios and all twelve Connect route/slash combinations,
 query preservation, selected device tab, resource requests and homepage ownership.
-Dev/preview also check unrelated paths are not rewritten to Connect. Built graph
+The composed fixture checks unknown/private paths return 404. Built graph
 checks traverse emitted JS/CSS dependencies and modulepreloads, reject marketing
 closure on Connect and Hosted/API closure on landing, and check original assets.
 Computed text colour, geometry, focus, setup commands, consent and mutation readback
-remain assertions. Keep production and synthetic artifacts/evidence separate; save
-production before the loopback rebuild, then rebuild with the production origin
-as the final artifact. Serve the production package with a range-capable HTTP
-server (see `site/docs/clanker-deploy.md`), then run the landing checks:
+remain assertions. Keep production and synthetic artifacts/evidence separate;
+switching test modes must not change the frozen production package. Serve the
+production package with a range-capable HTTP
+server (see `site/docs/pages-deploy.md`), then run the landing checks:
 
 ```sh
 SITE_URL=http://127.0.0.1:PORT CHROME_PATH=/path/to/chrome node --test scripts/test-github-stars-browser.mjs
@@ -113,4 +134,4 @@ Baseline before Connect: public build/typecheck/package, hosted browser fixtures
 
 ## Release prerequisites
 
-The capture frontend publishes from main to Cloudflare Pages; see `site/docs/pages-deploy.md`. Clanker's old Caddy landing remains intact for rollback only. Preserve all six canonical/legacy Connect account/device/share-management documents, the three exact `/hosted/*-v4.png` art paths, hashed `/assets/` modules, original font/wordmark, accepted homepage and retained public assets without broadening the public boundary. Legacy redirects preserve query strings, including device codes; source rendering aliases remain packaged. Keep hosted API/auth and the registered Google callback unchanged. Anonymous capability recipients, including media, manifest, preview, `/share-view.js` and `/share-view.css`, remain on the capability-serving Worker origin, not Pages. Parent owns Worker integration, independent auth review, Google OAuth/private D1/R2 configuration and live deployment. Verify real capability access and revocation, sign-in, cookie/CORS, slot admission, quota, expiry, device approval and logout separately; synthetic browser checks are not live OAuth or full native UI proof, and packaged files do not prove the host serves them. Keep these routes unlinked from the public homepage until beta deployment is verified. No deployment, database migration, provisioning or credential rotation is part of this reconciliation.
+The capture frontend publishes from main to Cloudflare Pages; see `site/docs/pages-deploy.md` for rollback. The old Clanker origin is retired and must not be reactivated. Preserve all six canonical/legacy Connect account/device/share-management documents, the three exact `/hosted/*-v4.png` art paths, hashed `/assets/` modules, original font/wordmark, accepted homepage and retained public assets without broadening the public boundary. Legacy redirects preserve query strings, including device codes; source rendering aliases remain packaged. Keep hosted API/auth and the registered Google callback unchanged. Anonymous capability recipients, including media, manifest, preview, `/share-view.js` and `/share-view.css`, remain on the capability-serving Worker origin, not Pages. Parent owns Worker integration, independent auth review, Google OAuth/private D1/R2 configuration and live deployment. Verify real capability access and revocation, sign-in, cookie/CORS, slot admission, quota, expiry, device approval and logout separately; synthetic browser checks are not live OAuth or full native UI proof, and packaged files do not prove the host serves them. Keep these routes unlinked from the public homepage until beta deployment is verified. No deployment, database migration, provisioning or credential rotation is part of this reconciliation.

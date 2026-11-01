@@ -1,4 +1,4 @@
-"""Activate only an inventoried belief overlay; retain the baseline for rollback."""
+"""Historical overlay protocol for synthetic releases; production uses Pages."""
 import fcntl
 import hashlib
 import json
@@ -19,7 +19,13 @@ def inventory(root):
     return sorted(files, key=lambda f: f['path'])
 
 
+def reject_retired_origin(root):
+    if Path(root).resolve() == Path('/opt/presentations/releases'):
+        raise ValueError('Clanker production activation and rollback are retired; use Pages')
+
+
 def activate(manifest_path, root, rollback=False):
+    reject_retired_origin(root)
     # Every publisher of this symlink must use this same lock, including rollback.
     # Atomic rename alone is not compare-and-swap; this serializes cooperating writers.
     with (root / '.apparent-site-publish.lock').open('a') as lock:
@@ -28,6 +34,7 @@ def activate(manifest_path, root, rollback=False):
 
 
 def activate_locked(manifest_path, root, rollback):
+    reject_retired_origin(root)
     manifest_path = Path(manifest_path).resolve()
     manifest = json.loads(manifest_path.read_text())
     link = root / 'apparent-site'

@@ -113,7 +113,7 @@ const server = createServer(async (req, res) => {
   const file = resolve(root, '.' + path)
   if (!file.startsWith(root + '/')) return res.writeHead(403).end()
   try { res.setHeader('Content-Type', ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.ttf': 'font/ttf' })[extname(file)] || 'application/octet-stream'); res.end(await readFile(file)) }
-  catch { res.writeHead(404).end() }
+  catch { res.setHeader('Content-Type', 'text/html'); res.writeHead(404).end(await readFile(`${root}/404.html`)) }
 })
 await new Promise(r => server.listen(Number(process.env.HOSTED_FIXTURE_PORT || 0), '127.0.0.1', r))
 uiOrigin = `http://127.0.0.1:${server.address().port}`
@@ -127,9 +127,12 @@ assert(['package', 'dev', 'preview'].includes(mode))
 let viteServer
 if (mode !== 'package') {
   const vite = await import('vite')
+  // Public no longer imports Connect. Dev/preview exercise Connect's own server;
+  // the composed homepage still comes from the integration fixture below.
+  const config = { root: resolve('../connect/web'), configFile: resolve('../connect/web/vite.config.ts'), build: { outDir: resolve('../connect/web/dist-test') } }
   viteServer = mode === 'dev'
-    ? await vite.createServer({ server: { host: '127.0.0.1', port: 0 } })
-    : await vite.preview({ preview: { host: '127.0.0.1', port: 0 } })
+    ? await vite.createServer({ ...config, server: { host: '127.0.0.1', port: 0 } })
+    : await vite.preview({ ...config, preview: { host: '127.0.0.1', port: 0 } })
   if (mode === 'dev') await viteServer.listen()
   uiOrigin = `http://127.0.0.1:${viteServer.httpServer.address().port}`
 }
@@ -142,7 +145,7 @@ function assertResources(resources, connect) {
     if (connect) assert.notEqual(resource.hostname, 'fonts.bunny.net', 'Connect must not request the demo font service')
     if (!['script', 'stylesheet'].includes(type)) continue
     if (mode === 'dev') {
-      assert.doesNotMatch(path, connect ? /\/src\/(?:App|main|styles|pond-hero|cta|belief|Belief|pond|footer|github)/ : /\/src\/hosted\//, `wrong dev resource owner: ${url}`)
+      assert.doesNotMatch(path, connect ? /\/src\/(?:App|styles|pond-hero|cta|belief|Belief|pond|footer|github)/ : /\/src\/(?:Hosted|SharedLinks|api)/, `wrong dev resource owner: ${url}`)
     } else {
       const other = connect ? landingGraph : connectGraph
       const own = connect ? connectGraph : landingGraph
@@ -169,12 +172,17 @@ try {
     assertResources(resources, true); assert.deepEqual(errors, [])
     routeResults.push({ route: `/${route}${slash}`, resources }); await page.close()
   }
-  for (const route of mode === 'package' ? ['/'] : ['/', '/connect-unrelated?code=untouched', '/hosted/device/extra']) {
+  for (const route of ['/', '/connect-unrelated?code=untouched', '/hosted/device/extra', '/pitch/', '/.env']) {
     const page = await browser.newPage(), resources = [], errors = []
     page.on('request', r => resources.push({ url: r.url(), type: r.resourceType() }))
     page.on('pageerror', e => errors.push(String(e)))
     await page.route('https://api.github.com/**', r => r.fulfill({ json: { stargazers_count: 2 } }))
-    await page.goto(uiOrigin + route)
+    const response = await page.goto(`http://127.0.0.1:${server.address().port}` + route)
+    if (route !== '/') {
+      assert.equal(response.status(), 404, 'unknown/private paths have no marketing or Connect fallback')
+      assert.equal(await page.locator('.hosted-page, .pond-demo').count(), 0)
+      routeResults.push({ route, status: response.status() }); await page.close(); continue
+    }
     await page.locator('.pond-demo').waitFor()
     assert.equal(await page.locator('.hosted-page').count(), 0)
     assertResources(resources, false); assert.deepEqual(errors, [])

@@ -20,4 +20,9 @@ The packaging baseline must be a real directory, not a symlink; use `readlink -f
 
 Deploy only a scoped overlay: `node scripts/package-footer-release.mjs BASELINE NEW_CANDIDATE EXTERNAL_MANIFEST`. It uses the same markup, footer/shared-CTA CSS and behavior as the source build, replaces the SSR and React footer, and asserts every unrelated HTML byte and pre-existing asset is preserved. Shared CTA CSS intentionally also rounds the hero download; its existing JavaScript still selects the download. It reuses byte-identical immutable files and refuses conflicting ones. `SITE_BASELINE=/absolute/active-release node --test scripts/test-footer-packaging.mjs` covers initial/repeated publication and conflict refusal. Run both browser programs against the packaged overlay as well as the source artifact before publication.
 
-The existing `activate-belief-release.py` provides the common locked activation/guarded rollback protocol; despite its historical filename it validates any same-shape scoped manifest, preserves all old assets, and refuses a changed baseline or candidate. Use it under the required filesystem authority. It holds `/opt/presentations/releases/.apparent-site-publish.lock` across the baseline check and symlink switch. Re-read the active target and verify the public homepage plus every new asset against the manifest after publication. `/pond/*` is already allowed; no Caddy, appcast, installer or unrelated route change is needed. Retain the previous release for guarded rollback.
+Production activation and rollback now use only Pages (`pages-deploy.md`). The
+Clanker activator, serving block and release link are retired; do not recreate
+them. Reconcile the tested overlay into `published-homepage/` and its checksum
+contract before main-branch publication. Verify the canonical homepage and new
+assets against the accepted package afterward. No Caddy, appcast, installer or
+unrelated route change is needed.

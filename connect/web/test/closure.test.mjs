@@ -3,7 +3,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { resolve, posix } from 'node:path'
 import test from 'node:test'
 const root = resolve(process.env.CONNECT_ARTIFACT || 'dist')
-const routes = ['connect', 'connect/device', 'hosted', 'hosted/device']
+const routes = ['connect', 'connect/device', 'connect/shares', 'hosted', 'hosted/device', 'hosted/shares']
 const approved = ['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png', 'hosted/agent-reading-v4.png', 'HostGrotesk-Variable.ttf', 'apparent-wordmark.svg']
 test('exact emitted route/resource closure excludes private and backend output', async () => {
   async function files(dir = '') {
@@ -31,7 +31,8 @@ test('exact emitted route/resource closure excludes private and backend output',
     for (const match of refs) {
       const ref = match[1] || match[2] || match[3]
       if (ref === '/' || /^(?:https?:|data:|#)/.test(ref)) continue
-      const target = ref.startsWith('/') ? ref.slice(1) : posix.normalize(posix.join(posix.dirname(file), ref))
+      let target = ref.startsWith('/') ? ref.slice(1) : posix.normalize(posix.join(posix.dirname(file), ref))
+      if (routes.some(route => target === route || target === `${route}/`)) target = `${target.replace(/\/$/, '')}/index.html`
       assert(all.includes(target), `${file} references missing resource ${target}`)
       if (/\.(?:js|css)$/.test(target)) pending.push(target)
       else visited.add(target)

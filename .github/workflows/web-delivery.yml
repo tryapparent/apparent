@@ -2,10 +2,10 @@ name: Website and Connect — checks & deploy
 
 on:
   pull_request:
-    paths: ['site/**', 'hosted/**', 'assets/brand/**', 'scripts/cd/**', '.github/workflows/web-delivery.yml']
+    paths: ['site/**', 'connect/web/**', 'hosted/**', 'assets/brand/**', 'scripts/cd/**', '.github/workflows/web-delivery.yml']
   push:
     branches: [main]
-    paths: ['site/**', 'hosted/**', 'assets/brand/**', 'scripts/cd/**', '.github/workflows/web-delivery.yml']
+    paths: ['site/**', 'connect/web/**', 'hosted/**', 'assets/brand/**', 'scripts/cd/**', '.github/workflows/web-delivery.yml']
   workflow_dispatch:
 
 permissions:
@@ -44,6 +44,12 @@ jobs:
           bun install --frozen-lockfile
           ./node_modules/.bin/playwright-core install --with-deps chromium
           echo "CHROME_PATH=$(node --input-type=module -e 'import {chromium} from "playwright-core"; console.log(chromium.executablePath())')" >> "$GITHUB_ENV"
+      - name: Independently build and verify Connect browser package
+        working-directory: connect/web
+        env:
+          VITE_HOSTED_API_ORIGIN: https://hosted.tryapparent.com
+          CONNECT_EVIDENCE: ${{ runner.temp }}/connect-package-evidence
+        run: bun install --frozen-lockfile && npm test
       - name: Build and test production website package
         working-directory: site
         env:
@@ -54,11 +60,14 @@ jobs:
           node scripts/package-apparent.mjs
           node --test scripts/test-brand-favicon.mjs scripts/test-github-stars.mjs scripts/test-latest-download.mjs scripts/test-platform-os.mjs scripts/test-public-homepage.mjs scripts/test-video-demo.mjs
           node --test scripts/test-package-text.mjs scripts/test-expected-canonical-packaging.mjs scripts/test-upstream-link-guard.mjs scripts/test-package-feature-grid.mjs scripts/test-og-stage-redirect.mjs scripts/test-og-video-stage-browser.mjs
+          cp -a dist-apparent "$RUNNER_TEMP/public-artifact"
+          node scripts/compose-connect.mjs
       - name: Reconcile accepted live homepage and prepare Pages-only artifact
         working-directory: site
         run: |
-          node --test scripts/test-pages-package.mjs scripts/test-pages-video.mjs scripts/test-pages-video-runtime.mjs
+          node --test scripts/test-compose-connect.mjs scripts/test-pages-package.mjs scripts/test-pages-video.mjs scripts/test-pages-video-runtime.mjs
           node scripts/prepare-pages.mjs
+          node scripts/verify-composed.mjs
           node scripts/prepare-pages-video.mjs
       - uses: actions/upload-artifact@v4
         with:
@@ -74,11 +83,16 @@ jobs:
           APPARENT_PUBLIC_SITE: '1'
           VITE_HOSTED_API_ORIGIN: http://127.0.0.1:18809
           HOSTED_TEST_API_ORIGIN: http://127.0.0.1:18809
+          COMPOSE_SYNTHETIC_ORIGIN: http://127.0.0.1:18809
+          COMPOSE_PUBLIC_INPUT: ${{ runner.temp }}/public-artifact
+          SITE_ARTIFACT: dist/synthetic-composition
           TMPDIR: ${{ runner.temp }}
           SITE_EVIDENCE: ${{ runner.temp }}/connect-evidence
         run: |
-          npm run build
-          node scripts/package-apparent.mjs
+          (cd ../connect/web && CONNECT_BUILD_DIR=dist-test npm run build)
+          node scripts/compose-connect.mjs
+          node scripts/prepare-pages.mjs
+          node scripts/verify-composed.mjs
           npm run test:hosted
       - uses: actions/upload-artifact@v4
         if: failure()

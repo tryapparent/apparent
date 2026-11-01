@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import fcntl
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location('publisher', Path(__file__).with_name('publish_site.py'))
 assert spec is not None and spec.loader is not None and spec.origin is not None
@@ -44,6 +45,22 @@ class PublishTests(unittest.TestCase):
         self.assertEqual((active / 'assets/old.js').read_text(), 'preserve old tabs')
         self.assertEqual(result['sha'], self.sha)
         self.assertEqual(result['previous'], str(self.old))
+
+    def test_retired_origin_rejects_publish_and_rollback_before_any_file_is_opened(self):
+        retired = Path('/opt/presentations/releases')
+        alias = self.root / 'retired-origin-alias'
+        alias.symlink_to(retired, target_is_directory=True)
+        for root in (retired, alias):
+            operations = {
+                'publish': lambda: module.publish(root, self.package, self.sha, str(self.old)),
+                'rollback': lambda: module.rollback(root, self.root / 'missing-receipt.json'),
+            }
+            for name, operation in operations.items():
+                with self.subTest(root=root, operation=name):
+                    with mock.patch.object(Path, 'open', side_effect=AssertionError('Unexpected file access')) as opened:
+                        with self.assertRaisesRegex(ValueError, 'retired'):
+                            operation()
+                        opened.assert_not_called()
 
     def test_stale_commit_or_baseline_cannot_publish(self):
         with self.assertRaises(ValueError):
