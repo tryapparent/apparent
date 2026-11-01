@@ -791,7 +791,10 @@ pub fn frames(movie: &Path, times: FrameTimes, max_edge: u32) -> Result<Vec<Rgba
             continue;
         }
         let mut frame = RgbaFrame::new(presentation, w, h, rgba);
-        frame.media_pts_ms = t;
+        // Accurate seeks can clip a preceding buffer's PTS to the seek target;
+        // decodebin also does not establish the selected video-track ordinal.
+        // Keep this timestamp for presentation only, never for a receipt join.
+        frame.media_pts = None;
         out.push(frame);
     }
     ensure!(!out.is_empty(), "No frames decoded from {}", movie.display());
@@ -930,6 +933,28 @@ mod tests {
         assert_eq!(rgba, vec![255; 2 * 4]);
         let (w, h, _) = shrink_to_edge(4, 2, vec![0; 32], 0);
         assert_eq!((w, h), (4, 2));
+    }
+
+    #[test]
+    fn fractional_seek_clipping_does_not_establish_sample_identity() {
+        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
+        std::fs::create_dir_all(&root).unwrap();
+        let raw = root.join("source.rgba");
+        let movie = root.join("fractional.mp4");
+        let mut pixels = vec![0; 160 * 100 * 4];
+        pixels.extend(vec![255; 5 * 160 * 100 * 4]);
+        std::fs::write(&raw, pixels).unwrap();
+        assert!(std::process::Command::new("ffmpeg")
+            .args(["-v", "error", "-nostdin", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", "160x100", "-r", "30", "-i"])
+            .arg(&raw).args(["-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p", "-y"])
+            .arg(&movie).status().unwrap().success());
+        let decoded = frames(&movie, FrameTimes::At(&[33, 34]), 0).unwrap();
+        assert_eq!(decoded.len(), 2);
+        assert!(decoded[0].rgba[0] < 20, "33 ms still shows the preceding black sample");
+        assert!(decoded[1].rgba[0] > 230, "34 ms shows the next white sample at 33 1/3 ms");
+        assert!(decoded.iter().all(|frame| frame.media_pts.is_none()),
+            "seek-clipped PTS and an unverified track must remain unknown");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

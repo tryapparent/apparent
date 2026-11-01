@@ -42,15 +42,23 @@ underlay, which this contract does not invent. Clicks, pins, laser and unrelated
 content are separate layers and keep their existing behavior.
 
 The bundle/journal `annotationEvidence` stores keyframe receipts by frame index
-and video receipts as `{ptsMs,endMs,frame}`. Native recording adapters append
+and video receipts as `{sample:{videoTrack,pts:{value,timescale}},end:{value,timescale},frame}`.
+`videoTrack` is a zero-based video-track ordinal, not an absolute stream index.
+PTS and end are exact rational seconds (`value / timescale`), with positive
+timescale and nonnegative value within signed CMTime bounds. Native recording adapters append
 video evidence to `Sampler::annotation_evidence` **only after** associating it
 with an encoded sample's actual media-clock PTS. Repeated encoded samples may
-retain one acquisition identity. Decoder PTS (`RgbaFrame::media_pts_ms`) is
+retain one acquisition identity. Decoder sample identity (`RgbaFrame::media_pts`) is
 separate from the seek request and bundle/presentation time. Only an exact
 recorded boundary resolves a receipt: seeking can clip a buffer's PTS inside
-its interval. A gap is unknown. `videoOffsetMs` changes presentation, never
-source identity. Linux receipt-bearing exports explicitly select decoded source
-samples before changing output FPS; macOS export uses the retained sample's PTS.
+its interval; a floored millisecond boundary is not exact. A gap is unknown.
+`videoOffsetMs` changes presentation, never source identity or `capturedAtMs`.
+Linux exports pin probing, decode and receipt association to `0:v:0` and select
+original samples before changing output FPS. GStreamer seek frames stay unknown:
+clipped PTS and decodebin's unverified track cannot prove sample identity.
+macOS export compares retained CMTime directly; ImageGenerator receipts are
+allowed only for a single-video-track asset with exact numeric actualTime.
+Unsupported/old millisecond-only evidence is read as unknown, never upgraded.
 
 **Producer gate remains open.** Current Linux/macOS capture adapters do not yet
 produce validated v1 receipts and therefore retain legacy behavior. This is

@@ -1719,7 +1719,7 @@ mod tests {
         crate::shared::model::RgbaFrame {
             t_ms: 0,
             source_evidence: None,
-            media_pts_ms: None,
+            media_pts: None,
             width: w as u32,
             height: h as u32,
             rgba,

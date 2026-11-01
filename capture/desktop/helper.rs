@@ -305,8 +305,8 @@ pub fn export_audio(movie: &Path, wav: &Path) -> Result<()> {
 struct FrameFile {
     t: u64,
     actual: u64,
-    #[serde(default, rename = "sourcePtsMs")]
-    source_pts_ms: Option<u64>,
+    #[serde(default, rename = "sourceSample")]
+    source_sample: Option<crate::capture::engine::annotation::VideoSample>,
     width: u32,
     height: u32,
     file: PathBuf,
@@ -358,7 +358,7 @@ pub fn frames(movie: &Path, times: FrameTimes, max_edge: u32) -> Result<Vec<Rgba
                     );
                     let t = if sampled { file.actual } else { file.t };
                     let mut frame = RgbaFrame::new(t, file.width, file.height, rgba);
-                    frame.media_pts_ms = file.source_pts_ms;
+                    frame.media_pts = file.source_sample;
                     Ok(frame)
                 })
                 .collect()
@@ -380,7 +380,7 @@ pub fn frames(movie: &Path, times: FrameTimes, max_edge: u32) -> Result<Vec<Rgba
                                     );
                                     let t = if sampled { file.actual } else { file.t };
                                     let mut frame = RgbaFrame::new(t, file.width, file.height, rgba);
-                                    frame.media_pts_ms = file.source_pts_ms;
+                                    frame.media_pts = file.source_sample;
                                     Ok(frame)
                                 })
                                 .collect()

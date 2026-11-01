@@ -384,7 +384,7 @@ pub fn finalize_capture_bundle(
             let times: Vec<u64> = preview.iter().map(|(k, _)| k.t).collect();
             let mut decoded = movie_frames_at(movie, &times, video_offset_ms, 0).unwrap_or_default();
             for frame in &mut decoded {
-                frame.source_evidence = frame.media_pts_ms
+                frame.source_evidence = frame.media_pts
                     .and_then(|pts| annotation_evidence.at_video_pts(pts)).cloned();
             }
             if duration_ms >= 20_000 {
@@ -490,7 +490,7 @@ pub fn rebuild_screen_bundle_with(
     let mut frames = frames?;
     for frame in &mut frames {
         frame.t_ms += offset;
-        frame.source_evidence = frame.media_pts_ms
+        frame.source_evidence = frame.media_pts
             .and_then(|pts| old.annotation_evidence.at_video_pts(pts)).cloned();
     }
     let (decode, movie) = (media.frames, video.clone());
@@ -671,7 +671,7 @@ pub fn build_bundle_from_parts(
         for (key, frame) in &mut selected {
             // Replacement pixels never inherit the candidate's evidence. Resolve only
             // a decoder-reported media sample; no PTS means unknown after movie decode.
-            if let Some(pts) = frame.media_pts_ms {
+            if let Some(pts) = frame.media_pts {
                 frame.source_evidence = extras.annotation_evidence.at_video_pts(pts).cloned();
             }
             if let Some(e) = frame.source_evidence.as_ref().filter(|e| e.valid()) {
@@ -892,6 +892,7 @@ mod tests {
 
     #[test]
     fn replacement_movie_pixels_use_only_their_exact_receipt_and_persist_it() {
+        use crate::capture::engine::annotation::{MediaTime, VideoSample};
         let root = std::env::temp_dir().join(make_bundle_id());
         let target: TargetInfo = serde_json::from_value(serde_json::json!({
             "mode":"display","displayId":1,
@@ -909,18 +910,27 @@ mod tests {
             "index":1,"t":20,"reason":"mark","file":"frames/frame-01.png","event":""
         })).unwrap();
         render::annotate_keyframe_marks_in_place(&mut source, &key, &strokes, &[], &[]);
-        for (case, pts) in [("matching", Some(100)), ("clipped", Some(150)), ("missing", None)] {
+        let actual = VideoSample { video_track: 0, pts: MediaTime { value: 1, timescale: 30 } };
+        let wrong_track = VideoSample { video_track: 1, ..actual };
+        for (case, pts) in [
+            ("matching", Some(actual)),
+            ("equivalent-time-base", Some(VideoSample { video_track: 0, pts: MediaTime { value: 512, timescale: 15360 } })),
+            ("clipped-preceding", Some(VideoSample::at_ms(33))),
+            ("other-track", Some(wrong_track)),
+            ("missing", None),
+        ] {
             let mut candidate = RgbaFrame::new(100, 32, 25, vec![128; 32 * 25 * 4]);
             let mut stale = receipt.clone();
             stale.source_lifetime = "candidate-not-movie".into();
             candidate.source_evidence = Some(stale);
             let mut decoded = source.clone();
             decoded.t_ms = 100;
-            decoded.media_pts_ms = pts;
+            decoded.media_pts = pts;
             let full = decoded.clone();
             let evidence = crate::capture::engine::annotation::AnnotationEvidence {
                 video: vec![crate::capture::engine::annotation::VideoSampleEvidence {
-                    pts_ms: 100, end_ms: 200, frame: receipt.clone(),
+                    sample: actual,
+                    end: MediaTime { value: 2, timescale: 30 }, frame: receipt.clone(),
                 }], ..Default::default()
             };
             let directory = root.join(format!("{case}.apparent"));
@@ -939,8 +949,9 @@ mod tests {
             assert_eq!(loaded.annotation_evidence.video, evidence.video);
             let saved_key = &bundle.keyframes[0];
             let mut expected = decoded;
-            if pts == Some(100) {
+            if pts == Some(actual) {
                 assert_eq!(loaded.annotation_evidence.keyframes.get(&saved_key.index), Some(&receipt));
+                assert_eq!(loaded.annotation_evidence.keyframes[&saved_key.index].captured_at_ms, 20);
             } else {
                 assert!(loaded.annotation_evidence.keyframes.is_empty(), "replacement must not inherit candidate identity");
                 render::annotate_keyframe_marks_in_place(&mut expected, saved_key, &strokes, &[], &[]);
@@ -951,6 +962,12 @@ mod tests {
             malformed["annotationEvidence"] = serde_json::json!({"unsupported":"not clean"});
             let legacy: model::ApparentBundle = serde_json::from_value(malformed).unwrap();
             assert!(legacy.annotation_evidence.is_empty());
+            let mut millisecond_only = serde_json::to_value(&loaded).unwrap();
+            millisecond_only["annotationEvidence"] = serde_json::json!({"video":[{
+                "ptsMs":33,"endMs":66,"frame":receipt
+            }]});
+            let legacy: model::ApparentBundle = serde_json::from_value(millisecond_only).unwrap();
+            assert!(legacy.annotation_evidence.is_empty(), "old floored evidence must not acquire exact identity");
         }
         std::fs::remove_dir_all(root).unwrap();
     }

@@ -528,7 +528,8 @@ mod tests {
             }
             pixels.extend(frame);
             evidence.video.push(VideoSampleEvidence {
-                pts_ms: i * 100, end_ms: (i + 1) * 100,
+                sample: crate::capture::engine::annotation::VideoSample::at_ms(i * 100),
+                end: crate::capture::engine::annotation::VideoSample::at_ms((i + 1) * 100).pts,
                 frame: FrameEvidence {
                     version: 1, source_lifetime: "encoded-fixture".into(), source_generation: 1,
                     sample_id: i.to_string(), captured_at_ms: i * 100 + 100,

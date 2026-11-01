@@ -15,7 +15,7 @@ const MUTED: Color = [150, 150, 150, 255];
 pub(crate) fn draw_export_annotations(
     frame: &mut RgbaFrame,
     ms: f64,
-    source_ms: Option<f64>,
+    source_sample: Option<crate::capture::engine::annotation::VideoSample>,
     camera: [f32; 4],
     source: (u32, u32),
     ink: &crate::capture::engine::export::ink::InkPlan,
@@ -36,8 +36,7 @@ pub(crate) fn draw_export_annotations(
         1.0 - u * u * (3.0 - 2.0 * u)
     };
     for stroke in &ink.strokes {
-        if source_ms.is_some_and(|pts| stroke.preserve_source.iter()
-            .any(|r| r[0] as f64 == pts.floor())) {
+        if source_sample.is_some_and(|sample| stroke.preserve_source.contains(&sample)) {
             continue;
         }
         let Some(first) = stroke.snaps.first() else {

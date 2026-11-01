@@ -85,13 +85,61 @@ pub fn composition(evidence: Option<&FrameEvidence>, stroke: usize) -> Compositi
     }
 }
 
+/// Exact media time. Never round a decoder timestamp to establish sample identity.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaTime {
+    pub value: u64,
+    pub timescale: u32,
+}
+
+impl MediaTime {
+    pub fn valid(self) -> bool {
+        self.timescale > 0 && self.timescale <= i32::MAX as u32 && self.value <= i64::MAX as u64
+    }
+
+    pub fn cmp_exact(self, other: Self) -> std::cmp::Ordering {
+        (self.value as u128 * other.timescale as u128)
+            .cmp(&(other.value as u128 * self.timescale as u128))
+    }
+
+    #[cfg(test)]
+    pub fn milliseconds(self) -> f64 {
+        self.value as f64 * 1000.0 / self.timescale as f64
+    }
+}
+
+impl PartialEq for MediaTime {
+    fn eq(&self, other: &Self) -> bool {
+        self.valid() && other.valid() && self.cmp_exact(*other).is_eq()
+    }
+}
+
+/// Zero-based video-track ordinal plus original, unclipped sample PTS.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct VideoSample {
+    pub video_track: u32,
+    pub pts: MediaTime,
+}
+
+impl VideoSample {
+    #[cfg(test)]
+    pub fn at_ms(ms: u64) -> Self {
+        Self {
+            video_track: 0,
+            pts: MediaTime { value: ms, timescale: 1000 },
+        }
+    }
+}
+
 /// Association made by the encoder with a particular sample's actual presentation interval.
 /// These are media-clock times, not bundle times. A gap remains unknown, never forward-filled.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct VideoSampleEvidence {
-    pub pts_ms: u64,
-    pub end_ms: u64,
+    pub sample: VideoSample,
+    pub end: MediaTime,
     pub frame: FrameEvidence,
 }
 
@@ -111,25 +159,30 @@ impl AnnotationEvidence {
 
     /// Reject the complete ambiguous timeline rather than selecting one overlapping receipt.
     pub fn valid_video(&self) -> bool {
-        self.video.iter().all(|s| s.pts_ms < s.end_ms && s.frame.valid())
-            && self.video.windows(2).all(|p| p[0].end_ms <= p[1].pts_ms)
+        self.video.iter().all(|s| {
+            s.sample.pts.valid() && s.end.valid()
+                && s.sample.pts.cmp_exact(s.end).is_lt() && s.frame.valid()
+        }) && self.video.windows(2).all(|p| {
+            p[0].sample.video_track == p[1].sample.video_track
+                && !p[0].end.cmp_exact(p[1].sample.pts).is_gt()
+        })
     }
 
-    pub fn at_video_pts(&self, pts: u64) -> Option<&FrameEvidence> {
+    pub fn at_video_pts(&self, sample: VideoSample) -> Option<&FrameEvidence> {
         if !self.valid_video() {
             return None;
         }
         // Seek/preroll can clip PTS inside a frame. Require an exact recorded boundary.
-        self.video.iter().find(|s| s.pts_ms == pts).map(|s| &s.frame)
+        self.video.iter().find(|s| s.sample == sample).map(|s| &s.frame)
     }
 
-    pub fn preserved_intervals(&self, stroke: usize, log: &[crate::shared::model::Stroke]) -> Vec<[u64; 2]> {
+    pub fn preserved_samples(&self, stroke: usize, log: &[crate::shared::model::Stroke]) -> Vec<VideoSample> {
         if !self.valid_video() {
             return Vec::new();
         }
         self.video.iter().filter(|s| {
             s.frame.valid_for(log) && composition(Some(&s.frame), stroke) == Composition::PreserveSource
-        }).map(|s| [s.pts_ms, s.end_ms]).collect()
+        }).map(|s| s.sample).collect()
     }
 }
 
@@ -180,15 +233,15 @@ mod tests {
     #[test]
     fn media_intervals_are_explicit_and_ambiguous_records_are_unknown() {
         let mut evidence = AnnotationEvidence { video: vec![VideoSampleEvidence {
-            pts_ms: 100, end_ms: 200, frame: represented(),
+            sample: VideoSample::at_ms(100), end: VideoSample::at_ms(200).pts, frame: represented(),
         }], ..Default::default() };
-        assert!(evidence.at_video_pts(99).is_none());
-        assert!(evidence.at_video_pts(100).is_some());
-        assert!(evidence.at_video_pts(150).is_none(), "a clipped seek PTS is not sample identity");
-        assert!(evidence.at_video_pts(200).is_none());
+        assert!(evidence.at_video_pts(VideoSample::at_ms(99)).is_none());
+        assert!(evidence.at_video_pts(VideoSample::at_ms(100)).is_some());
+        assert!(evidence.at_video_pts(VideoSample::at_ms(150)).is_none(), "a clipped seek PTS is not sample identity");
+        assert!(evidence.at_video_pts(VideoSample::at_ms(200)).is_none());
         evidence.video.push(evidence.video[0].clone());
-        assert!(evidence.at_video_pts(150).is_none());
-        assert!(evidence.preserved_intervals(0, &[]).is_empty());
+        assert!(evidence.at_video_pts(VideoSample::at_ms(150)).is_none());
+        assert!(evidence.preserved_samples(0, &[]).is_empty());
     }
 
     #[test]

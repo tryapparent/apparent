@@ -617,8 +617,8 @@ pub struct RgbaFrame {
     pub t_ms: u64,
     /// Source evidence follows the pixels, independently of presentation time.
     pub source_evidence: Option<crate::capture::engine::annotation::FrameEvidence>,
-    /// Actual decoded media PTS, if the decoder measures it. Never the seek request.
-    pub media_pts_ms: Option<u64>,
+    /// Original track and exact PTS, only when the decoder proves both. Never a seek request.
+    pub media_pts: Option<crate::capture::engine::annotation::VideoSample>,
     pub width: u32,
     pub height: u32,
     pub rgba: Vec<u8>,
@@ -631,7 +631,7 @@ impl RgbaFrame {
         Self {
             t_ms,
             source_evidence: None,
-            media_pts_ms: None,
+            media_pts: None,
             width,
             height,
             rgba,
@@ -643,7 +643,7 @@ impl RgbaFrame {
     pub fn derived(&self, width: u32, height: u32, rgba: Vec<u8>) -> Self {
         let mut frame = Self::new(self.t_ms, width, height, rgba);
         frame.source_evidence = self.source_evidence.clone();
-        frame.media_pts_ms = self.media_pts_ms;
+        frame.media_pts = self.media_pts;
         frame
     }
 }
