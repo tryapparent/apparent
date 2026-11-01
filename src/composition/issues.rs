@@ -254,11 +254,20 @@ mod tests {
         let descendant = std::fs::read_to_string(&descendant_file).unwrap();
         let leader_reserved = std::path::Path::new("/proc").join(leader.trim()).exists();
         let result = runner.join().unwrap();
-        let descendant_state = std::fs::read_to_string(format!("/proc/{}/stat", descendant.trim()));
+        // SIGKILL delivery is asynchronous. Observe actual disposal within a
+        // bounded grace period instead of assuming a scheduler has run it yet.
+        let stopped = || match std::fs::read_to_string(format!("/proc/{}/stat", descendant.trim())) {
+            Ok(state) => state.split(") ").nth(1).is_some_and(|s| s.starts_with('Z') || s.starts_with('X')),
+            Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+        };
+        let cleanup_deadline = Instant::now() + Duration::from_secs(1);
+        while !stopped() && Instant::now() < cleanup_deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let descendant_stopped = stopped();
         std::fs::remove_dir_all(root).unwrap();
         assert!(result.is_err());
         assert!(leader_reserved, "leader was reaped before pipe cleanup, allowing PID reuse");
-        assert!(descendant_state.map(|s| s.split(") ").nth(1).unwrap().starts_with('Z')).unwrap_or(true),
-            "owned descendant survived timeout cleanup");
+        assert!(descendant_stopped, "owned descendant survived timeout cleanup");
     }
 }
