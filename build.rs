@@ -5,6 +5,7 @@ mod build_version;
 
 fn main() {
     build_version::emit();
+    watch_desktop_tooling();
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
         stage_transcribe_shared_objects();
         // cargo binaries and tests resolve the staged libraries beside themselves.
@@ -152,10 +153,62 @@ END
         .expect("compile the Windows resources");
 }
 
+/// Track Desktop-owned build/runtime tools and packaging inputs after their physical move.
+fn watch_desktop_tooling() {
+    for path in [
+        "desktop/scripts/Apparent.entitlements",
+        "desktop/scripts/apparent-restore-clipboard.py",
+        "desktop/scripts/bench-start.ts",
+        "desktop/scripts/build-mac-preview.sh",
+        "desktop/scripts/check-ca-roots.sh",
+        "desktop/scripts/check-permission-panel-dock.sh",
+        "desktop/scripts/install-app-remote.sh",
+        "desktop/scripts/install-app.sh",
+        "desktop/scripts/linux/appimage.sh",
+        "desktop/scripts/linux/build-playback.sh",
+        "desktop/scripts/linux/capture-smoke.py",
+        "desktop/scripts/linux/check-appimage-decoder.sh",
+        "desktop/scripts/linux/check-appimage-encoder.sh",
+        "desktop/scripts/linux/check-cpu-tiers.py",
+        "desktop/scripts/linux/dependencies.sh",
+        "desktop/scripts/linux/gui-vm-reaper.py",
+        "desktop/scripts/linux/gui-vm.py",
+        "desktop/scripts/linux/migrate-scrawl.py",
+        "desktop/scripts/linux/publish-main-preview.py",
+        "desktop/scripts/linux/smoke-cpu.sh",
+        "desktop/scripts/linux/test-capture-smoke.py",
+        "desktop/scripts/linux/test-gui-vm.py",
+        "desktop/scripts/linux/test-native-launch.sh",
+        "desktop/scripts/linux/test-updater-gui.py",
+        "desktop/scripts/linux/test_migrate_scrawl.py",
+        "desktop/scripts/linux/updater-fixture.py",
+        "desktop/scripts/linux/updater-gui-scenario.sh",
+        "desktop/scripts/linux/updater-gui.py",
+        "desktop/scripts/prepare-mac-signing.sh",
+        "desktop/scripts/preview_appcast.py",
+        "desktop/scripts/release-app.sh",
+        "desktop/scripts/setup-sparkle.sh",
+        "desktop/scripts/tests/local_preview_update.py",
+        "desktop/scripts/tests/test_export_audio.py",
+        "desktop/scripts/tests/test_launch_registration.py",
+        "desktop/scripts/tests/test_linux_preview_publication.py",
+        "desktop/scripts/tests/test_preview_appcast.py",
+        "desktop/scripts/tests/test_preview_apple_signing.py",
+        "desktop/scripts/tests/test_preview_release.py",
+        "desktop/scripts/tests/test_preview_sparkle_setup.py",
+        "desktop/scripts/verify-preview-sparkle-key.swift",
+        "desktop/scripts/virtual-display.swift",
+        "desktop/packaging/linux/dev.kitlangton.apparent.desktop",
+        "desktop/packaging/linux/dev.kitlangton.apparent.png",
+    ] {
+        println!("cargo:rerun-if-changed={path}");
+    }
+}
+
 fn compile_laser_shader() {
     for (src_rel, name) in [
-        ("src/laser_overlay.metal", "laser_overlay"),
-        ("src/native/pill/pill.metal", "pill"),
+        ("src/desktop/native/laser_overlay.metal", "laser_overlay"),
+        ("src/desktop/native/pill/pill.metal", "pill"),
     ] {
         compile_metal_shader(src_rel, name);
     }

@@ -7,7 +7,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use super::{MAX_CAPTURE_SCALE, platform};
-use crate::model::{RgbaFrame, TargetInfo};
+use crate::shared::model::{RgbaFrame, TargetInfo};
 
 pub const FRAME_SAMPLE_INTERVAL: Duration = Duration::from_millis(220);
 /// Candidate frames only feed scene diffs and keyframe selection; the keyframes themselves are
@@ -190,7 +190,7 @@ pub struct ScreenCaptureSession {
     startup_failed: Arc<AtomicBool>,
     video_offset_ms: Arc<AtomicU64>,
     sampler_thread: Option<JoinHandle<Option<PathBuf>>>,
-    _recording: crate::retention::Recording,
+    _recording: crate::shared::retention::Recording,
 }
 
 impl ScreenCaptureSession {
@@ -243,7 +243,7 @@ impl ScreenCaptureSession {
             startup_failed,
             video_offset_ms,
             sampler_thread,
-            _recording: crate::retention::Recording::start(),
+            _recording: crate::shared::retention::Recording::start(),
         }
     }
 

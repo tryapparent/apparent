@@ -13,7 +13,7 @@ locked dependencies installed in each package. From the repository root:
 
 ```sh
 (cd connect/web && bun install --frozen-lockfile && VITE_HOSTED_API_ORIGIN=https://hosted.tryapparent.com npm run build)
-cd site
+cd public/site
 APPARENT_PUBLIC_SITE=1 npm run build
 node scripts/package-apparent.mjs
 node scripts/compose-connect.mjs
@@ -110,7 +110,7 @@ header, and ordinary plus cache-bypassed HTML/media bytes at the public hostname
 
 `connect.tryapparent.com` already aliases app in DNS. Preserve its existing
 redirect-only behavior with the two narrowly host-scoped zone Redirect Rules in
-`scripts/cd/connect_redirects.json`, device aliases before the catch-all. Snapshot
+`public/site/scripts/cd/connect_redirects.json`, device aliases before the catch-all. Snapshot
 the zone dynamic-redirect entrypoint first; append only these rules and preserve
 all existing rules byte-for-byte. Its DNS remains unchanged. Pages `_redirects`
 rejects host-specific source URLs, so do not substitute invalid absolute-source

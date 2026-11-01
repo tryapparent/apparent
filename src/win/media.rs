@@ -65,8 +65,8 @@ use crate::capture::{
     CANDIDATE_EDGE, CANDIDATE_EDGE_NO_VIDEO, FRAME_SAMPLE_INTERVAL, Sampler, capture_size,
     apparent_log,
 };
-use crate::helper::{FrameTimes, Probe};
-use crate::model::{CaptureMode, RgbaFrame, TargetInfo};
+use crate::desktop::helper::{FrameTimes, Probe};
+use crate::shared::model::{CaptureMode, RgbaFrame, TargetInfo};
 
 /// Recordings keep at most this many frames a second (screens only send frames on change).
 const MAX_FPS: u32 = 30;
@@ -670,7 +670,7 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
             r.out.0, r.out.1, target.mode
         ));
     }
-    crate::ui::start_metric("sck_ready_ms", started_at);
+    crate::desktop::start_metric("sck_ready_ms", started_at);
     let mut last_sample = Instant::now()
         .checked_sub(FRAME_SAMPLE_INTERVAL)
         .unwrap_or_else(Instant::now);
@@ -711,7 +711,7 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
                 .as_ref()
                 .and_then(|r| r.candidate(t_ms).ok().flatten())
                 .unwrap_or_else(|| {
-                    crate::render::render_synthetic_demo_frame(1280, 800, t_ms, phase)
+                    crate::shared::render::render_synthetic_demo_frame(1280, 800, t_ms, phase)
                 });
             frames
                 .lock()
@@ -1087,7 +1087,7 @@ pub fn frames(movie: &Path, times: FrameTimes, max_edge: u32) -> Result<Vec<Rgba
     Ok(out)
 }
 
-pub fn shrink(_movie: &Path, _out: &Path, _max_edge: u32) -> Result<crate::retention::Shrunk> {
+pub fn shrink(_movie: &Path, _out: &Path, _max_edge: u32) -> Result<crate::shared::retention::Shrunk> {
     bail!("Only cabled-iPhone recordings (macOS) are re-encoded")
 }
 
@@ -1160,7 +1160,7 @@ pub fn export_audio(movie: &Path, wav: &Path) -> Result<()> {
             slice.iter().sum::<f32>() / slice.len().max(1) as f32
         })
         .collect();
-    std::fs::write(wav, crate::audio::encode_wav_16k(&resampled)?)
+    std::fs::write(wav, crate::capture::audio::encode_wav_16k(&resampled)?)
         .with_context(|| format!("Could not write {}", wav.display()))
 }
 

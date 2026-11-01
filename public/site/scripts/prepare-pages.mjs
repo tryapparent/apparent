@@ -40,7 +40,7 @@ for (const path of actual) {
 // A real 404 disables Pages' default SPA fallback on private/unknown paths.
 writeFileSync(join(output, '404.html'), '<!doctype html><html lang="en"><meta name="robots" content="noindex"><title>Not found</title><body>Not found</body></html>\n')
 // Pages rejects host-specific source URLs. The existing connect shortcut uses
-// narrow zone Redirect Rules; see scripts/cd/connect_redirects.json.
+// narrow zone Redirect Rules; see public/site/scripts/cd/connect_redirects.json.
 writeFileSync(join(output, '_redirects'), [
   '/hosted/device /connect/device 302', '/hosted/device/ /connect/device 302',
   '/hosted/shares /connect/shares 302', '/hosted/shares/ /connect/shares 302',

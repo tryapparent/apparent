@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::{CaptureMode, TargetFrame};
+use crate::shared::model::{CaptureMode, TargetFrame};
 
 #[cfg(target_os = "linux")]
 #[test]
@@ -46,7 +46,7 @@ fn synthetic_candidate_does_not_make_agent_capture_ready() {
     push_candidate(
         &frames,
         &seen,
-        crate::render::render_synthetic_demo_frame(1280, 800, 0, 0),
+        crate::shared::render::render_synthetic_demo_frame(1280, 800, 0, 0),
         false,
         false,
     );
@@ -59,7 +59,7 @@ fn synthetic_candidate_does_not_make_agent_capture_ready() {
         startup_failed: Arc::new(AtomicBool::new(false)),
         video_offset_ms: Arc::new(AtomicU64::new(0)),
         sampler_thread: None,
-        _recording: crate::retention::Recording::start(),
+        _recording: crate::shared::retention::Recording::start(),
     };
     assert!(
         !session.has_frames(),
@@ -97,7 +97,7 @@ fn transient_screenshot_failure_retries_to_readiness_and_finalization() {
             startup_failed: Arc::new(AtomicBool::new(false)),
             video_offset_ms: Arc::new(AtomicU64::new(0)),
             sampler_thread: Some(worker),
-            _recording: crate::retention::Recording::start(),
+            _recording: crate::shared::retention::Recording::start(),
         };
         sample_real_candidate(
             &session.frames, &session.real_frame_seen, &session.startup_failed,
@@ -125,9 +125,9 @@ fn transient_screenshot_failure_retries_to_readiness_and_finalization() {
             display_id: 0,
             frame: TargetFrame { x: 0.0, y: 0.0, width: 64.0, height: 64.0, scale: 1.0 },
         };
-        let (saved, bundle, _) = crate::bundle_processing::finalize_capture_bundle(
+        let (saved, bundle, _) = crate::shared::bundle_processing::finalize_capture_bundle(
             &dir, target, recording, vec![], vec![], None, None,
-            crate::windows::ActivityLog::default(), None,
+            crate::shared::windows::ActivityLog::default(), None,
         ).expect("a recovered real sample must allow ordinary finalization");
         assert_eq!(saved, dir);
         assert!(!bundle.keyframes.is_empty());
@@ -155,7 +155,7 @@ fn pending_worker_is_not_failed_and_terminal_signal_does_not_discard_it() {
         startup_failed: Arc::new(AtomicBool::new(false)),
         video_offset_ms: Arc::new(AtomicU64::new(0)),
         sampler_thread: Some(worker),
-        _recording: crate::retention::Recording::start(),
+        _recording: crate::shared::retention::Recording::start(),
     };
     assert!(!session.failed_to_start(), "a pending producer is not an error");
     session.startup_failed.store(true, Ordering::Release);
@@ -201,7 +201,7 @@ fn screen_stop_joins_worker_before_collecting_its_final_media() {
         video_offset_ms: Arc::new(AtomicU64::new(120)),
         startup_failed: Arc::new(AtomicBool::new(false)),
         sampler_thread: Some(worker),
-        _recording: crate::retention::Recording::start(),
+        _recording: crate::shared::retention::Recording::start(),
     };
     let recording = session.stop();
     let frames = recording.frames;
@@ -278,7 +278,7 @@ fn stopped_capture_without_real_frames_stays_empty() {
         video_offset_ms: Arc::new(AtomicU64::new(0)),
         startup_failed: Arc::new(AtomicBool::new(false)),
         sampler_thread: None,
-        _recording: crate::retention::Recording::start(),
+        _recording: crate::shared::retention::Recording::start(),
     };
     assert!(session.stop().frames.is_empty());
 }

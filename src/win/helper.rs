@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, bail};
 use serde::Deserialize;
 
-use crate::model::{RgbaFrame, TranscriptData};
+use crate::shared::model::{RgbaFrame, TranscriptData};
 
 /// There is no helper executable on Windows; its work happens in process.
 pub fn path() -> Result<PathBuf> {
@@ -27,7 +27,7 @@ pub struct PhoneDevice {
 /// What Windows lets Apparent use: the microphone and camera privacy switches. Screen capture,
 /// input monitoring and pasting need no permission.
 pub fn permissions()
--> Result<std::collections::BTreeMap<crate::onboarding::Permission, crate::onboarding::Status>> {
+-> Result<std::collections::BTreeMap<crate::desktop::onboarding::Permission, crate::desktop::onboarding::Status>> {
     Ok(crate::win::privacy::permissions())
 }
 
@@ -58,12 +58,12 @@ pub fn install_speech_model(
     _stop: &dyn Fn() -> bool,
     line: impl FnMut(SpeechModelLine),
 ) -> Result<()> {
-    crate::speech::install(line)
+    crate::shared::speech::install(line)
 }
 
 /// On-device transcription with measured word timings (Parakeet through `transcribe.cpp`).
 pub fn transcribe(audio: &Path) -> Result<TranscriptData> {
-    crate::speech::transcribe(audio)
+    crate::shared::speech::transcribe(audio)
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,7 +86,7 @@ pub fn probe(movie: &Path) -> Result<Probe> {
 }
 
 /// Re-encodes `movie` into `out` as H.264 with its long edge at most `max_edge`.
-pub fn shrink(movie: &Path, out: &Path, max_edge: u32) -> Result<crate::retention::Shrunk> {
+pub fn shrink(movie: &Path, out: &Path, max_edge: u32) -> Result<crate::shared::retention::Shrunk> {
     crate::win::media::shrink(movie, out, max_edge)
 }
 

@@ -22,7 +22,7 @@ use super::{
     ShortcutConfig, ShortcutKind, capture_size, clean_label, hotkey_combos, pick_display,
     poll_clicks, apparent_log, track_shift_ink,
 };
-use crate::model::{CaptureMode, InteractionEvent, RgbaFrame, TargetInfo};
+use crate::shared::model::{CaptureMode, InteractionEvent, RgbaFrame, TargetInfo};
 
 /// Recordings may hold up to twice a frame's size in points (Retina pixels).
 pub const MAX_CAPTURE_SCALE: f64 = 2.0;
@@ -42,8 +42,8 @@ pub fn main_display_id() -> u32 {
 }
 
 /// CGWindowList's windows, front to back, in an autorelease pool.
-pub(super) fn raw_windows_now() -> Vec<crate::windows::RawWindow> {
-    objc2::rc::autoreleasepool(|_| crate::windows::raw_windows())
+pub(super) fn raw_windows_now() -> Vec<crate::shared::windows::RawWindow> {
+    objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows())
 }
 
 /// Whether `pid` runs this Apparent's `apparent-helper` (the iPhone mirror, Settings, onboarding, the
@@ -52,7 +52,7 @@ pub(super) fn is_helper_process(pid: i32) -> bool {
     static HELPER: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
     HELPER
         .get_or_init(|| {
-            let path = crate::helper::path().ok()?;
+            let path = crate::desktop::helper::path().ok()?;
             Some(std::fs::canonicalize(&path).unwrap_or(path))
         })
         .as_ref()
@@ -573,7 +573,7 @@ pub fn pause_shortcuts(telemetry: &SharedCaptureTelemetry, paused: bool) {
 pub fn update_global_shortcut(telemetry: &SharedCaptureTelemetry, config: ShortcutConfig) {
     let (_, paste) = telemetry.shortcuts();
     match set_shortcuts(telemetry, config.clone(), paste) {
-        Ok(()) => crate::settings::save_shortcut(ShortcutKind::Record, &config),
+        Ok(()) => crate::desktop::settings::save_shortcut(ShortcutKind::Record, &config),
         Err(kind) => apparent_log(format!("update_global_shortcut: {kind:?} refused")),
     }
 }
@@ -779,7 +779,7 @@ pub fn discover_target(window_query: Option<&str>) -> TargetInfo {
 /// Like `discover_target`, recording the display under `point` (see `pick_display`).
 pub fn discover_target_at(_window_query: Option<&str>, point: Option<[f64; 2]>) -> TargetInfo {
     let frontmost = frontmost_app_info();
-    let screens = crate::screens::displays();
+    let screens = crate::capture::screens::displays();
     if let Ok(content) = SCShareableContent::get() {
         let displays = content.displays();
         let front_window = frontmost.as_ref().and_then(|(pid, _, _)| {
@@ -817,7 +817,7 @@ pub fn discover_target_at(_window_query: Option<&str>, point: Option<[f64; 2]>) 
                 window_title,
                 window_id: None,
                 display_id: display.display_id(),
-                frame: crate::screens::with_scale(rect, scale),
+                frame: crate::capture::screens::with_scale(rect, scale),
             };
         }
     }
@@ -829,9 +829,9 @@ pub fn discover_target_at(_window_query: Option<&str>, point: Option<[f64; 2]>) 
             let id = unsafe { CGMainDisplayID() };
             let w = (unsafe { CGDisplayPixelsWide(id) } as f64).max(1440.0);
             let h = (unsafe { CGDisplayPixelsHigh(id) } as f64).max(900.0);
-            (id, crate::screens::with_scale([0.0, 0.0, w, h], 2.0))
+            (id, crate::capture::screens::with_scale([0.0, 0.0, w, h], 2.0))
         },
-        |s| (s.id, crate::screens::with_scale(s.frame, s.scale)),
+        |s| (s.id, crate::capture::screens::with_scale(s.frame, s.scale)),
     );
     TargetInfo {
         mode: CaptureMode::Display,
@@ -845,8 +845,8 @@ pub fn discover_target_at(_window_query: Option<&str>, point: Option<[f64; 2]>) 
 }
 
 /// The display a global rect is on (its centre, else most of it) and that display's scale.
-fn display_of(screens: &[crate::screens::Screen], rect: [f64; 4]) -> (u32, f64) {
-    crate::screens::index_for_rect(screens, rect).map_or_else(
+fn display_of(screens: &[crate::capture::screens::Screen], rect: [f64; 4]) -> (u32, f64) {
+    crate::capture::screens::index_for_rect(screens, rect).map_or_else(
         || (unsafe { CGMainDisplayID() }, 2.0),
         |i| (screens[i].id, screens[i].scale),
     )
@@ -867,7 +867,7 @@ fn windows_for_selection(picker: bool) -> Vec<TargetInfo> {
         return Vec::new();
     };
     let our_pid = std::process::id() as i32;
-    let screens = crate::screens::displays();
+    let screens = crate::capture::screens::displays();
 
     content
         .windows()
@@ -897,7 +897,7 @@ fn windows_for_selection(picker: bool) -> Vec<TargetInfo> {
                 window_title: w.title().map(|t| if picker { clean_label(&t) } else { t.trim().to_owned() }).filter(|t| !t.is_empty()),
                 window_id: Some(w.window_id()),
                 display_id,
-                frame: crate::screens::with_scale(rect, scale),
+                frame: crate::capture::screens::with_scale(rect, scale),
             }
         })
         .collect()
@@ -1015,7 +1015,7 @@ pub(super) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         started_at,
         &thread_offset,
     );
-    crate::ui::start_metric("sck_ready_ms", started_at);
+    crate::desktop::start_metric("sck_ready_ms", started_at);
     let shot_edge = if video_path.is_some() {
         CANDIDATE_EDGE
     } else {
@@ -1137,7 +1137,7 @@ fn build_sck_filter_and_config(
             .into_iter()
             .filter(|w| {
                 excluded_window_ids.contains(&w.window_id())
-                    || (!crate::handoff::experiment("movableRecordingControls")
+                    || (!crate::shared::handoff::experiment("movableRecordingControls")
                         && w.owning_application().as_ref().is_some_and(|a| {
                             a.process_id() == std::process::id() as i32
                         })
@@ -1181,7 +1181,7 @@ fn sck_config(target: &TargetInfo, long_edge: f64) -> SCStreamConfiguration {
             target.frame.height,
         ];
         let [x, y, w, h] = if display[2] > 0.0 && display[3] > 0.0 {
-            crate::screens::source_rect(area, display)
+            crate::capture::screens::source_rect(area, display)
         } else {
             area
         };
@@ -1269,7 +1269,7 @@ fn capture_sck_frame(
 /// starts. They're left out of the recording when ScreenCaptureKit lists them, and frames that
 /// could show one are never candidates, so a prompt doesn't become a keyframe.
 struct SystemPrompts {
-    frame: Option<crate::model::TargetFrame>,
+    frame: Option<crate::shared::model::TargetFrame>,
     ids: Vec<u32>,
     /// Which of `ids` the content filter leaves out.
     hidden: Vec<u32>,
@@ -1306,8 +1306,8 @@ impl SystemPrompts {
             return false;
         }
         self.checked = Some(Instant::now());
-        let raw = objc2::rc::autoreleasepool(|_| crate::windows::raw_windows());
-        let ids = crate::windows::system_prompts_over(&raw, frame);
+        let raw = objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows());
+        let ids = crate::shared::windows::system_prompts_over(&raw, frame);
         let appeared = ids.iter().any(|id| !self.ids.contains(id));
         if appeared {
             apparent_log(format!("system prompt over the capture: windows {ids:?}"));
@@ -1848,7 +1848,7 @@ fn ansi_key_char(keycode: u16) -> Option<char> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::TargetFrame;
+    use crate::shared::model::TargetFrame;
 
     #[test]
     fn shortcut_keys_are_named_by_the_layout_not_their_qwerty_position() {
@@ -1979,8 +1979,8 @@ mod tests {
                 (Some(3), [0.7, 0.3])
             ]
         );
-        let shape = crate::sketch::shape_of(&strokes[0]);
-        assert_eq!(shape, crate::model::Shape::Pin);
+        let shape = crate::shared::sketch::shape_of(&strokes[0]);
+        assert_eq!(shape, crate::shared::model::Shape::Pin);
         // Only the ⌘⇧-click is an ordinary click.
         assert!(
             matches!(events[..], [InteractionEvent::Click { x, .. }] if (x - 0.9).abs() < 1e-3),

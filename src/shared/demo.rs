@@ -2,11 +2,11 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-use crate::handoff;
+use crate::shared::handoff;
 use crate::shared::ids::make_bundle_id;
-use crate::model::{ApparentBundle, CaptureMode, InteractionEvent, SCALE, Stroke, TargetFrame, TargetInfo, TranscriptData, TranscriptSegment, WordTiming};
-use crate::render::render_synthetic_demo_frame;
-use crate::bundle_processing::{build_bundle_from_parts, SourceExtras};
+use crate::shared::model::{ApparentBundle, CaptureMode, InteractionEvent, SCALE, Stroke, TargetFrame, TargetInfo, TranscriptData, TranscriptSegment, WordTiming};
+use crate::shared::render::render_synthetic_demo_frame;
+use crate::shared::bundle_processing::{build_bundle_from_parts, SourceExtras};
 
 /// Generates a rich, deterministic multi-frame demo bundle showcasing clicks, circles, arrows, pins, and aligned speech.
 pub(crate) fn generate_demo_bundle(out: Option<PathBuf>) -> Result<(PathBuf, ApparentBundle, String)> {

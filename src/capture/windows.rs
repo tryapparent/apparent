@@ -36,7 +36,7 @@ use super::{
     layout_default_keycode, pick_display, poll_clicks, apparent_log, shortcut_label, shortcut_matches,
     track_shift_ink,
 };
-use crate::model::{CaptureMode, InteractionEvent, TargetFrame, TargetInfo};
+use crate::shared::model::{CaptureMode, InteractionEvent, TargetFrame, TargetInfo};
 use crate::win;
 
 /// Frames are pixels already: a recording keeps at most the screen's own resolution.
@@ -387,8 +387,8 @@ pub fn list_selectable_windows() -> Vec<TargetInfo> {
 }
 
 /// Top-level windows as the window log and click attribution read them.
-pub(super) fn raw_windows_now() -> Vec<crate::windows::RawWindow> {
-    crate::windows::raw_windows()
+pub(super) fn raw_windows_now() -> Vec<crate::shared::windows::RawWindow> {
+    crate::shared::windows::raw_windows()
 }
 
 /// Windows has no `apparent-helper`: every Apparent window is in its own process.
@@ -701,7 +701,7 @@ pub fn pause_shortcuts(telemetry: &SharedCaptureTelemetry, paused: bool) {
 pub fn update_global_shortcut(telemetry: &SharedCaptureTelemetry, config: ShortcutConfig) {
     let (_, paste) = telemetry.shortcuts();
     match set_shortcuts(telemetry, config.clone(), paste) {
-        Ok(()) => crate::settings::save_shortcut(ShortcutKind::Record, &config),
+        Ok(()) => crate::desktop::settings::save_shortcut(ShortcutKind::Record, &config),
         Err(kind) => apparent_log(format!("update_global_shortcut: {kind:?} refused")),
     }
 }

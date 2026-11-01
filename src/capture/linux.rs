@@ -1,12 +1,12 @@
 //! Linux capture: the shortcuts, input, the frontmost app, displays and windows, and the
-//! GStreamer recorder (`crate::linux::media`).
+//! GStreamer recorder (`crate::desktop::linux::media`).
 //!
 //! On X11 the X server answers everything: shortcuts are passive key grabs on the root window,
 //! and the pointer, buttons and keys are polled. On a Wayland session the compositor keeps
 //! other apps' input to itself, so the shortcuts come from the GlobalShortcuts portal (or, on
 //! GNOME without it, custom keybindings that run `apparent shortcut record`, and on Hyprland
 //! runtime binds that do the same), and ⇧, clicks and
-//! Esc from the input devices when the user may read them (`crate::linux::input`). See
+//! Esc from the input devices when the user may read them (`crate::desktop::linux::input`). See
 //! `docs/linux.md`.
 //!
 //! Shortcuts are stored as Windows virtual keys (`VK_S` is `0x53`), as on Windows: a key's name
@@ -32,8 +32,8 @@ use super::{
     layout_default_keycode, pick_display, poll_clicks, apparent_log, shortcut_label,
     shortcut_matches, track_shift_ink,
 };
-use crate::linux::{self, input, x11};
-use crate::model::{CaptureMode, InteractionEvent, TargetFrame, TargetInfo};
+use crate::desktop::linux::{self, input, x11};
+use crate::shared::model::{CaptureMode, InteractionEvent, TargetFrame, TargetInfo};
 
 /// Frames are pixels already: a recording keeps at most the screen's own resolution.
 pub const MAX_CAPTURE_SCALE: f64 = 1.0;
@@ -471,8 +471,8 @@ fn windows_for_selection(picker: bool) -> Vec<TargetInfo> {
 }
 
 /// Top-level windows as the window log and click attribution read them.
-pub(super) fn raw_windows_now() -> Vec<crate::windows::RawWindow> {
-    crate::windows::raw_windows()
+pub(super) fn raw_windows_now() -> Vec<crate::shared::windows::RawWindow> {
+    crate::shared::windows::raw_windows()
 }
 
 /// Linux has no `apparent-helper`: every Apparent window is in its own process.
@@ -987,13 +987,13 @@ pub fn pause_shortcuts(telemetry: &SharedCaptureTelemetry, paused: bool) {
 
 /// The review window's own recorder: sets and saves the record shortcut.
 pub fn update_global_shortcut(telemetry: &SharedCaptureTelemetry, config: ShortcutConfig) {
-    if crate::settings::external_record_owned(ShortcutKind::Record) {
+    if crate::desktop::settings::external_record_owned(ShortcutKind::Record) {
         apparent_log("Record shortcut is managed in Hyprland; change its binding there");
         return;
     }
     let (_, paste) = telemetry.shortcuts();
     match set_shortcuts(telemetry, config.clone(), paste) {
-        Ok(()) => crate::settings::save_shortcut(ShortcutKind::Record, &config),
+        Ok(()) => crate::desktop::settings::save_shortcut(ShortcutKind::Record, &config),
         Err(kind) => apparent_log(format!("update_global_shortcut: {kind:?} refused")),
     }
 }
@@ -1170,7 +1170,7 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
 // MARK: Recording
 
 pub(super) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
-    crate::linux::media::run_sampler(sampler)
+    crate::desktop::linux::media::run_sampler(sampler)
 }
 
 #[cfg(test)]

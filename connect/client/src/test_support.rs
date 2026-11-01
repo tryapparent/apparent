@@ -288,7 +288,7 @@ pub fn hosted_config_cross_process_nested_and_top_level_updates() {
             Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
-                    "hosted::regression_tests::hosted_config_subprocess_writer",
+                    "connect::hosted::hosted_tests::hosted_config_subprocess_writer",
                     "--test-threads=1",
                 ])
                 .env(

@@ -46,7 +46,7 @@ jobs:
           persist-credentials: false
       - name: Linux application dependencies
         if: runner.os == 'Linux' && needs.select.outputs.root == 'true'
-        run: ./scripts/linux/dependencies.sh
+        run: ./desktop/scripts/linux/dependencies.sh
       - name: Select the macOS 26 SDK required by native helpers
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
         uses: maxim-lobanov/setup-xcode@v1

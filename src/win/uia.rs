@@ -18,7 +18,7 @@ use windows::Win32::UI::Accessibility::{
     UIA_TextControlTypeId, UIA_TreeItemControlTypeId,
 };
 
-use crate::ax::{Hit, clip};
+use crate::shared::ax::{Hit, clip};
 
 thread_local! {
     /// One automation object per thread (COM, multithreaded apartment); `None` if it failed.

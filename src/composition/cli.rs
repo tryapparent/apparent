@@ -4,16 +4,29 @@ use std::time::Duration;
 use anyhow::{Context, Result, ensure};
 use clap::{Parser, Subcommand};
 
-use crate::*;
+use crate::agent_proof::context as agent_context;
+use crate::capture::{self, audio, mic, phone};
+use crate::desktop::{agent_capture, helper, launch_instance};
+use crate::desktop as ui;
+#[cfg(target_os = "linux")]
+use crate::desktop::{linux, playback};
+#[cfg(target_os = "macos")]
+use crate::desktop::playback;
+use crate::shared::{autocrop, autocrop_lab, export, handoff, hex, model, recover, retention, speech_model, transcribe, windows};
+use crate::agent_proof::zoom;
+#[cfg(target_os = "linux")]
+use crate::shared::pause_transcribe;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use crate::connect::hosted;
 
-use crate::audio::AudioRecorder;
+use crate::capture::audio::AudioRecorder;
 use crate::capture::{ScreenCaptureSession, discover_target, record_target};
-use crate::model::{CaptureMode, InteractionEvent, Shape, parse_clock_ms};
-use crate::sketch::summary_markdown;
+use crate::shared::model::{CaptureMode, InteractionEvent, Shape, parse_clock_ms};
+use crate::shared::sketch::summary_markdown;
 use crate::shared::clock::now_epoch_ms;
 use crate::shared::ids::make_bundle_id;
 use crate::shared::demo::generate_demo_bundle;
-use crate::bundle_processing::{finalize_capture_bundle, rebuild_screen_bundle};
+use crate::shared::bundle_processing::{finalize_capture_bundle, rebuild_screen_bundle};
 
 #[derive(Parser)]
 #[command(
@@ -26,8 +39,8 @@ struct Cli {
     command: Option<Command>,
 }
 
-fn parse_engine(name: &str) -> Result<crate::transcribe::Engine, String> {
-    crate::transcribe::Engine::parse(name)
+fn parse_engine(name: &str) -> Result<crate::shared::transcribe::Engine, String> {
+    crate::shared::transcribe::Engine::parse(name)
         .ok_or_else(|| "expected `apple`, `hex` or `command`".to_owned())
 }
 
@@ -277,7 +290,7 @@ enum Command {
         live_speed: Option<f64>,
         /// Transcribe with `apple`, `hex` or `command` instead of the configured transcriber.
         #[arg(long, value_parser = parse_engine)]
-        transcriber: Option<crate::transcribe::Engine>,
+        transcriber: Option<crate::shared::transcribe::Engine>,
         /// Turn an experiment on for this run, as `"experiments"` in `config.json` would
         /// (e.g. `agentContext`). Repeatable.
         #[arg(long = "experiment", value_name = "NAME")]
@@ -650,7 +663,7 @@ pub(crate) fn run() -> Result<()> {
         }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Capture { command } => {
-            use crate::agent_capture::Action;
+            use crate::desktop::agent_capture::Action;
             let (action, id, wait, timeout) = match command {
                 CaptureCommand::State => (None, None, false, 4),
                 CaptureCommand::Start { wait, timeout, request_id } =>

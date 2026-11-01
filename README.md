@@ -13,7 +13,7 @@ Press a shortcut (`⌥⇧S`) and Apparent starts recording the screen. Talk, cli
 ## Install
 
 No branded installers, Homebrew cask, or signed update have been published yet. Build from source
-in this checkout; see [macOS packaging](docs/release.md) or [Linux](docs/linux.md). Apparent supports
+in this checkout; see [macOS packaging](desktop/docs/release.md) or [Linux](desktop/docs/linux.md). Apparent supports
 macOS and Linux, not Windows. The Mac build needs an Apple silicon Mac on macOS 15 or later (live
 transcription and Liquid Glass need macOS 26). Linux builds target Ubuntu 24.04+ on x86_64 or ARM64.
 
@@ -30,7 +30,7 @@ welcome tour and Settings › Permissions. If the AppImage reports a missing `li
 install `libfuse2t64` on Ubuntu 24.04 (`libfuse2` on older distributions), or use
 `./Apparent-<version>-linux-x86_64.AppImage --appimage-extract-and-run app`.
 The first launch downloads the speech model (731 MB); captures get their transcript when it
-finishes. See [Linux](docs/linux.md) for desktop-specific limits.
+finishes. See [Linux](desktop/docs/linux.md) for desktop-specific limits.
 
 ## Agents
 
@@ -72,7 +72,7 @@ Installing either skill does not install the app or a media renderer.
 
 ## Apparent Connect (candidate)
 
-[Connect](docs/hosted-client.md) lets a recording computer upload complete captures
+[Connect](connect/docs/hosted-client.md) lets a recording computer upload complete captures
 and an agent fetch them with separate read approval. Uploads are off by default;
 website sign-in alone grants neither permission. Update Apparent to use
 `apparent connect login` and `apparent connect status`. Older apps with this feature
@@ -266,7 +266,7 @@ records, Apparent logs:
   counts.
 
 When the capture finishes, each keyframe gets the slice of the timeline halfway to its neighbours,
-and `src/autocrop.rs` weighs what happened in it: ink, clicks, drags and scrolls first, then where
+and `src/shared/autocrop.rs` weighs what happened in it: ink, clicks, drags and scrolls first, then where
 the cursor rested and what changed on screen (a cursor wandering far from the ink is ignored). The
 crop is then:
 
@@ -309,19 +309,19 @@ The settings were tuned on simulated captures with hand-labelled ideal crops: on
 terminal, two windows side by side, an arrow from one window to another, a tiny badge in a huge
 window, a menu-bar menu, talk-only keyframes, a dragged window, overlapping windows, thirty seconds
 hopping between three windows, a stray cursor, a full-screen app, and a scrolling page.
-`scripts/autocrop-corpus.mjs` renders them with Playwright (from `public/site/node_modules`), `apparent
+`public/site/scripts/autocrop-corpus.mjs` renders them with Playwright (from `public/site/node_modules`), `apparent
 fixture` builds each into a real bundle through the capture pipeline, `apparent autocrop-eval` scores
 the crops (coverage of the ink and clicks, overlap with the ideal, context, legibility in the sheet,
-stability; `--sweep` searches the settings), and `scripts/autocrop-gallery.mjs` renders a gallery to
+stability; `--sweep` searches the settings), and `public/site/scripts/autocrop-gallery.mjs` renders a gallery to
 judge them by eye:
 
 ```sh
-bun scripts/autocrop-corpus.mjs /tmp/corpus
+bun public/site/scripts/autocrop-corpus.mjs /tmp/corpus
 for s in /tmp/corpus/*/scenario.json; do
   apparent fixture "$s" --out "/tmp/bundles/$(basename "$(dirname "$s")").apparent"
 done
 apparent autocrop-eval /tmp/bundles --json /tmp/scores.json   # add --sweep to search
-bun scripts/autocrop-gallery.mjs /tmp/gallery /tmp/bundles --scores /tmp/scores.json
+bun public/site/scripts/autocrop-gallery.mjs /tmp/gallery /tmp/bundles --scores /tmp/scores.json
 ```
 
 `autocrop-eval --export src/autocrop-corpus.json` refreshes the corpus the unit tests score.
@@ -372,7 +372,7 @@ apparent export latest --crop 0.1,0.2,0.6,0.5       # x,y,w,h as fractions, or p
 - **Zoom** (on by default; `--no-zoom` opts out): after a 0.5 s whole-view opening, the camera eases to ~1.5–1.8× toward clicks, drags, marks and laser points,
   holds while activity stays nearby (2.5 s after the last), follows the cursor once it leaves a
   central safe zone, and eases back out. It never starts a zoom while the cursor is travelling fast.
-  The path is a pure function of the bundle (`src/export/camera.rs`, critically damped springs,
+  The path is a pure function of the bundle (`src/shared/export/camera.rs`, critically damped springs,
   no bounce); the renderer only draws each frame's rectangle. Without saved interaction events
   the camera stays still: use the app's recording shortcut for demos, not timed `record --duration`.
 - **Audio**: `audio.wav` starts where the video does (`videoOffsetMs`); a cabled iPhone's movie
@@ -383,7 +383,7 @@ apparent export latest --crop 0.1,0.2,0.6,0.5       # x,y,w,h as fractions, or p
   Mac saves to `~/Movies/Apparent/<name>.mp4`, shows progress beside the menu bar icon,
   and reveals the file in Finder. Linux opens the desktop Save dialog for a local `.mp4`
   destination and shows progress, cancellation and failures in the tray menu; it needs a
-  FileChooser portal backend. See [Linux tray export](docs/export-and-retention.md#linux-tray-export).
+  FileChooser portal backend. See [Linux tray export](capture/docs/export-and-retention.md#linux-tray-export).
   The command works without the flag.
 
 ## Keeping captures small
@@ -564,12 +564,12 @@ then `granted` or `cancelled` with a `reason` (`back`, `settings-closed`, `no-se
 `parent`, `timeout`), and exits. On stdin it takes `cancel`, `back` and `granted`.
 `permission-panel --check P` prints `{"granted":…}` from a fresh process. `permission-panel --plan --settings
 X,Y,W,H --visible X,Y,W,H` prints where the card would dock (`below`, `inside`, `right`, `left` or
-`clamped`); `scripts/check-permission-panel-dock.sh` checks the cases.
+`clamped`); `desktop/scripts/check-permission-panel-dock.sh` checks the cases.
 
 ## Linux
 
 Apparent runs on Linux desktops (GNOME and KDE Plasma, on Wayland or X11) as the same app, from
-the same GPUI code. It ships as an AppImage (`scripts/linux/appimage.sh`; every pull request's CI
+the same GPUI code. It ships as an AppImage (`desktop/scripts/linux/appimage.sh`; every pull request's CI
 run has one) with GStreamer inside, so movies record without extra packages. On Wayland its
 windows run through XWayland.
 
@@ -591,13 +591,13 @@ windows run through XWayland.
   On KDE Wayland, desktop ink hides when Shift is released so clicks reach the app; the bundle keeps it.
 - **Not on Linux:** the cabled iPhone, video export, `agentContext` and Sparkle updates.
 
-See [docs/linux.md](docs/linux.md) for how it works and how to build it.
+See [desktop/docs/linux.md](desktop/docs/linux.md) for how it works and how to build it.
 
 ## Testing
 
 ```sh
 taskpolicy -c utility cargo test -j 3 --offline -- --test-threads=2
-./scripts/install-app.sh
+./desktop/scripts/install-app.sh
 ```
 
 On Linux, run `cargo test`; then run `apparent app` in a desktop session and record with `Alt+Shift+S`.

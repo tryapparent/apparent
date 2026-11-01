@@ -1,5 +1,5 @@
 //! The ink overlay on Windows: a click-through GPUI window over the display being recorded,
-//! drawing `crate::ink_view::OverlayView`. It is left out of the recording
+//! drawing `crate::desktop::ink_view::OverlayView`. It is left out of the recording
 //! (`WDA_EXCLUDEFROMCAPTURE`).
 //!
 //! Also the Win32 window helpers Apparent's other popups use.
@@ -32,8 +32,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{PCSTR, w};
 
 use crate::capture::SharedCaptureTelemetry;
-use crate::ink_view::{OverlayView, Placement};
-use crate::model::RgbaFrame;
+use crate::desktop::ink_view::{OverlayView, Placement};
+use crate::shared::model::RgbaFrame;
 
 /// Leaves a window out of every screen capture (Windows 10 2004 and later).
 /// `APPARENT_SHOW_OWN_WINDOWS=1` keeps them in, for screenshots of Apparent itself.
@@ -182,7 +182,7 @@ impl InkOverlay {
             .and_then(|[x, y, w, h]| super::monitor_at(x + w / 2.0, y + h / 2.0))
             .or_else(super::primary_monitor)
             .ok_or("No display")?;
-        let display_id = crate::ui::gpui_display_for(&monitor, cx).map(|d| d.id());
+        let display_id = crate::desktop::gpui_display_for(&monitor, cx).map(|d| d.id());
         let scale = monitor.scale as f32;
         let bounds = Bounds {
             origin: point(
@@ -216,7 +216,7 @@ impl InkOverlay {
                     // Layered before GPUI's first frame, or DirectComposition never shows it.
                     // Clicks fall through only a window that is both layered and transparent;
                     // alpha 255 keeps GPUI's per-pixel alpha as it is.
-                    if let Some(hwnd) = crate::ui::hwnd_of(window) {
+                    if let Some(hwnd) = crate::desktop::hwnd_of(window) {
                         let style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32;
                         let extra = WS_EX_TRANSPARENT.0
                             | WS_EX_LAYERED.0
@@ -235,7 +235,7 @@ impl InkOverlay {
             )
             .map_err(|error| format!("{error:#}"))?;
         let hwnd = handle
-            .update(cx, |_, window, _| crate::ui::hwnd_of(window))
+            .update(cx, |_, window, _| crate::desktop::hwnd_of(window))
             .ok()
             .flatten()
             .ok_or("The overlay has no window")?;

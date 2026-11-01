@@ -1,6 +1,6 @@
 # Apparent Connect API Worker
 
-Private Cloudflare Worker, D1 metadata and R2 bundle bytes. Public UI is owned by the site. See [`../../docs/hosted-api.md`](../../docs/hosted-api.md) for the shared browser/native contract.
+Private Cloudflare Worker, D1 metadata and R2 bundle bytes. Public UI is owned by the site. See [`../../connect/docs/hosted-api.md`](../../connect/docs/hosted-api.md) for the shared browser/native contract.
 
 ## Local proof (no Cloudflare account or credentials)
 

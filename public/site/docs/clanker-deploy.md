@@ -4,7 +4,7 @@ Production publication now uses the `apparent-capture` Cloudflare Pages project
 through main-branch GitHub Actions. See [`pages-deploy.md`](pages-deploy.md).
 The old capture-site serving block, release symlink and historical release
 directories have been removed after canonical acceptance. Do not recreate them
-or restore the old DNS A record. `scripts/cd/publish_site.py` refuses production
+or restore the old DNS A record. `public/site/scripts/cd/publish_site.py` refuses production
 publication; Actions does not use SSH or the retired release tree. Recovery stays
 inside Pages, not Clanker.
 

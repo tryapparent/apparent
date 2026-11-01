@@ -9,7 +9,7 @@ The app owns cue scheduling, fitting, mixing and final publication.
 From the repository root, run:
 
 ```sh
-python3 scripts/provision-narrator.py
+python3 agent-proof/scripts/provision-narrator.py
 ```
 
 Requires Python 3.10+, Cargo/Rust 1.92+ and the platform's normal native linker.

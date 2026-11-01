@@ -71,7 +71,7 @@ jobs:
         if: env.TAG == ''
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - name: Install build and packaging dependencies
-        run: ./scripts/linux/dependencies.sh
+        run: ./desktop/scripts/linux/dependencies.sh
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -96,7 +96,7 @@ jobs:
           done
       - name: CPU tiers contain only their declared instructions
         if: matrix.arch == 'x86_64'
-        run: python3 scripts/linux/check-cpu-tiers.py target/release
+        run: python3 desktop/scripts/linux/check-cpu-tiers.py target/release
       - name: Package
         id: package
         run: |
@@ -105,7 +105,7 @@ jobs:
             echo "Tag $TAG does not match Cargo.toml $version" >&2
             exit 1
           fi
-          ./scripts/linux/appimage.sh target/release/apparent
+          ./desktop/scripts/linux/appimage.sh target/release/apparent
           name="Apparent-$version-linux-${{ matrix.arch }}.AppImage"
           mkdir -p dist
           cp "target/appimage/Apparent-${{ matrix.arch }}.AppImage" "dist/$name"
@@ -114,11 +114,11 @@ jobs:
       - name: AppImage runs headless without FUSE
         run: APPIMAGE_EXTRACT_AND_RUN=1 "dist/${{ steps.package.outputs.name }}" --help
       - name: Bundled GStreamer decodes an H.264 MP4
-        run: bash scripts/linux/check-appimage-decoder.sh "dist/${{ steps.package.outputs.name }}"
+        run: bash desktop/scripts/linux/check-appimage-decoder.sh "dist/${{ steps.package.outputs.name }}"
       - name: Bundled GStreamer encodes a playable H.264 MP4
-        run: bash scripts/linux/check-appimage-encoder.sh "dist/${{ steps.package.outputs.name }}"
+        run: bash desktop/scripts/linux/check-appimage-encoder.sh "dist/${{ steps.package.outputs.name }}"
       - name: Run two seconds of audio with the packaged CPU backend
-        run: bash scripts/linux/smoke-cpu.sh "dist/${{ steps.package.outputs.name }}" "$SPEECH_TEST"
+        run: bash desktop/scripts/linux/smoke-cpu.sh "dist/${{ steps.package.outputs.name }}" "$SPEECH_TEST"
       - uses: petarpetrovt/setup-sde@v6.0
         if: matrix.arch == 'x86_64'
       - name: Run packaged model on Ice Lake (AVX512-VNNI, no AVX-VNNI)
@@ -131,7 +131,7 @@ jobs:
           test -x "$sde"
           # Pin needs this on Ubuntu 24.04 runners.
           sudo sysctl -w kernel.yama.ptrace_scope=0
-          bash scripts/linux/smoke-cpu.sh "dist/${{ steps.package.outputs.name }}" "$SPEECH_TEST" "$sde" -icl
+          bash desktop/scripts/linux/smoke-cpu.sh "dist/${{ steps.package.outputs.name }}" "$SPEECH_TEST" "$sde" -icl
       - uses: actions/upload-artifact@v5
         with:
           name: ${{ steps.package.outputs.name }}
@@ -165,4 +165,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          APPARENT_VERSION="$version" python3 scripts/linux/publish-main-preview.py
+          APPARENT_VERSION="$version" python3 desktop/scripts/linux/publish-main-preview.py

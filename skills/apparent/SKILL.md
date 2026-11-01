@@ -53,7 +53,7 @@ updated, OS-registered app and `"experiments": {"nativeLaunch": true}`, the exac
 `apparent://open` URL opens the idle app; it never records or sends, and leaves
 active capture work alone. Other URLs/parameters are rejected. Linux registration
 is explicit: `apparent launch-handler install`; `apparent launch-handler status`
-reads the OS selection. See `docs/native-launch.md`. Browser timers cannot confirm
+reads the OS selection. See `desktop/docs/native-launch.md`. Browser timers cannot confirm
 installation or successful opening. Do not change a user's handler to test this.
 
 The Settings controls for recording, shortcuts and retention use `~/.config/apparent/config.json` (`APPARENT_CONFIG` overrides the path). The feature map at `public/site/src/features.json` in the Apparent repository lists config keys, accepted values and platforms. Change only the needed key, preserve other keys, and keep the file private (`0600` on Unix): old configs may contain private values. Never paste or print the whole config. A programmatic edit must preserve valid JSON, rather than replacing the file with a partial object. The UI writes changes there; an explicit `"launchAtLogin": true` or `false` also updates OS registration on app launch or within two seconds while it runs. A disabled OS login item can still need the user's approval. Some values (such as captures folder) are read on demand; shortcuts are registered at app startup or when changed through Settings, so restart Apparent after editing `shortcuts` by hand. Permissions are OS grants, not JSON settings; do not claim to enable them by editing this file. Installing the CLI or the agent skill is an installation action, not an app preference.
@@ -71,7 +71,7 @@ apparent fetch <32hex-id> --out ./capture.apparent --wait 120
 
 Use the server origin in the actual paste, not the example. Let the person approve the read scope at the printed verification URI; do not request or paste bearer tokens, reuse an upload token, or silently expose one through clipboard text. Read login does not enable uploads. `--out` must not exist and its parent must exist. Fetch waits for readiness, validates all allowed files and SHA-256 hashes, and atomically publishes the complete bundle; it never merges into existing output. `--wait` is pending polling time (0–900 seconds), not the full download deadline. If pending/offline/quota/auth fails, report that boundary and keep the local original; never infer image content from the ID alone. After successful fetch, open the sheet and frames visually before acting, as with a local bundle.
 
-Uploader account/queue state is discoverable with `apparent connect status` (`--account` explicitly queries quota). Upload is default off behind `hostedSync` plus `cloud.enabled` and explicit `cloud.uploadConsent` in config.json. Only `apparent connect login --scope upload --consent-upload` opts in; do not do that merely to read a capture. `apparent connect disable` cancels pending uploads; `apparent connect logout` also removes local credentials. `apparent connect retry` retries eligible jobs under their existing IDs; it cannot revive cancelled or expired captures. Explicit `apparent connect upload <bundle>` queues a fresh ID on every invocation, including historical or changed bundles; do not use it as an ordinary retry. Device grants expire after 30 days and require a new device login; browser sign-in alone does not renew them. V1 rejects files above 90,000,000 bytes, never drops media to fit. See `docs/hosted-client.md` for private credential artifacts, retry limits and complete-bundle restrictions.
+Uploader account/queue state is discoverable with `apparent connect status` (`--account` explicitly queries quota). Upload is default off behind `hostedSync` plus `cloud.enabled` and explicit `cloud.uploadConsent` in config.json. Only `apparent connect login --scope upload --consent-upload` opts in; do not do that merely to read a capture. `apparent connect disable` cancels pending uploads; `apparent connect logout` also removes local credentials. `apparent connect retry` retries eligible jobs under their existing IDs; it cannot revive cancelled or expired captures. Explicit `apparent connect upload <bundle>` queues a fresh ID on every invocation, including historical or changed bundles; do not use it as an ordinary retry. Device grants expire after 30 days and require a new device login; browser sign-in alone does not renew them. V1 rejects files above 90,000,000 bytes, never drops media to fit. See `connect/docs/hosted-client.md` for private credential artifacts, retry limits and complete-bundle restrictions.
 
 ### Look closer at a moment
 
@@ -108,7 +108,7 @@ not an app restart. Rejected start IDs remain rejected; use a new ID only for a 
 `capture state` remains a read-only global phase/active-ID view. Keep stdout JSON separate from
 stderr; failures exit nonzero. Never use a shortcut toggle, `latest` or a directory scan to recover
 an owned take. These commands do not control timed `record --duration`, change export audio,
-send to a session or add automatic paste. See `docs/agent-video-workflow.md` in the repository
+send to a session or add automatic paste. See `agent-proof/docs/agent-video-workflow.md` in the repository
 for bounded recovery and video QA. Check installed help before using new flags on an older build.
 
 ```sh

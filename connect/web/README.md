@@ -58,7 +58,7 @@ convenience, not an implementation dependency.
   Google auth and registered callback stay `https://hosted.tryapparent.com`.
   `VITE_HOSTED_API_ORIGIN` is a build override, defaulting to that existing API.
   Deploy topology must retain the exact credentialed CORS/CSRF allowlist and
-  host-only Secure/HttpOnly/SameSite=Lax cookie contract from `docs/hosted-api.md`.
+  host-only Secure/HttpOnly/SameSite=Lax cookie contract from `connect/docs/hosted-api.md`.
 - Five approved assets are copied at build time from canonical `public/site/public`:
   `/hosted/source-pond-v4.png`, `/hosted/agent-pond-v4.png`,
   `/hosted/agent-reading-v4.png`, `/HostGrotesk-Variable.ttf`,

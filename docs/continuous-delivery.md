@@ -30,7 +30,7 @@ replacement; otherwise dispatch the workflow on `main` after reviewing it.
 ## Website activation: Cloudflare Pages
 
 The active website job now publishes only `public/site/dist-apparent` to the isolated
-`apparent-capture` Pages project, using `scripts/cd/publish_pages.py` and
+`apparent-capture` Pages project, using `public/site/scripts/cd/publish_pages.py` and
 `public/site/wrangler.pages.jsonc`. It does not execute `public/site/wrangler.jsonc`, deploy the
 hosted Worker, or connect to Clanker. See
 [`../public/site/docs/pages-deploy.md`](../public/site/docs/pages-deploy.md) for the current build,
@@ -98,6 +98,6 @@ or use a separately reviewed release sequence.
 Run the commands in the checks section from the repository root (the Node commands
 from their package directories). For a no-network deployment wiring check, generate
 configuration using **synthetic** identifiers and run
-`connect/service/node_modules/.bin/wrangler deploy --config wrangler.cd.json --dry-run`.
+`(cd connect/service && node_modules/.bin/wrangler deploy --config wrangler.cd.json --dry-run)`.
 This proves configuration and packaging only, not permissions or deployment. Never
 put real tokens in test fixtures, the generated file, artifacts, or logs.

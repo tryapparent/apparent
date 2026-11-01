@@ -35,14 +35,26 @@ This first dependency-complete slice is an in-crate module extraction, not a pac
 - `src/main.rs` retains root module declarations and now only delegates to `composition::cli::run`; the root `pub use bundle_processing` facade is removed.
 - `src/composition/{mod.rs,cli.rs}` owns the moved CLI parser/dispatch and its existing tests. The helper skill `include_str!` path is corrected for its new location; `Cli`, `Command`, and subcommand types remain private.
 - `src/shared/{mod.rs,clock.rs,ids.rs,demo.rs}` owns the extracted `now_epoch_ms`, `make_bundle_id`, and `generate_demo_bundle` helpers.
-- Direct callers now use the real `shared` and `bundle_processing` modules. The hosted alias regression keeps its behavior through a test-only subprocess adapter rather than exporting CLI types. `docs/native-testing.md` points `CaptureCommand::Start` to `src/composition/cli.rs`.
+- Direct callers now use the real `shared` and `bundle_processing` modules. The hosted alias regression keeps its behavior through a test-only subprocess adapter rather than exporting CLI types. `desktop/docs/native-testing.md` points `CaptureCommand::Start` to `src/composition/cli.rs`.
 - The extraction preserves helper and CLI/test bodies; it does not move other owner implementations, modify native build inputs, or claim platform/native/GUI proof.
 
-The exact currently modified Rust callers are the `src` paths changed in this batch; do not absorb them into another owner move. The public/service/native leaf workers are terminal. **Next disjoint Rust reservation (not executed here):** Capture owner gets `src/capture.rs`→`src/capture/mod.rs`, `src/audio.rs`→`src/capture/audio.rs`, and `src/mic.rs`→`src/capture/mic.rs`; existing `src/capture/{linux.rs,tests_recorder.rs}` stay in place. Keep `mod capture;` in root `src/main.rs`, remove root `mod audio;` and `mod mic;`, declare `mod audio; mod mic;` inside `capture/mod.rs`, and rewrite all external imports to `crate::capture::{audio,mic}::...`. Do not add donor reexports. Keep `src/phone.rs` and `src/screens.rs` separate because of cross-owner/platform callsites. Subsequent non-overlapping reservations: Desktop `src/ui.rs`/`src/ui/**` and onboarding/settings/shortcut adapters; Agent-proof `src/agent_context.rs` plus proof-only interfaces; Connect adapter `src/hosted.rs` plus its tests. Do not edit `src/main.rs`, `src/composition/**`, `src/shared/**`, `src/bundle_processing.rs`, or this batch's rewritten callsites during the Capture move; obtain a direct source/caller/test inventory first.
+The exact currently modified Rust callers are the `src` paths changed in this batch; do not absorb them into another owner move. The public/service/native leaf workers are terminal. **Next disjoint Rust reservation (not executed here):** Capture owner gets `src/capture/mod.rs`→`src/capture/mod.rs`, `src/capture/audio.rs`→`src/capture/audio.rs`, and `src/capture/mic.rs`→`src/capture/mic.rs`; existing `src/capture/{linux.rs,tests_recorder.rs}` stay in place. Keep `mod capture;` in root `src/main.rs`, remove root `mod audio;` and `mod mic;`, declare `mod audio; mod mic;` inside `capture/mod.rs`, and rewrite all external imports to `crate::capture::{audio,mic}::...`. Do not add donor reexports. Keep `src/capture/phone.rs` and `src/capture/screens.rs` separate because of cross-owner/platform callsites. Subsequent non-overlapping reservations: Desktop `src/desktop/mod.rs`/`src/ui/**` and onboarding/settings/shortcut adapters; Agent-proof `src/agent_proof/context.rs` plus proof-only interfaces; Connect adapter `src/connect/hosted.rs` plus its tests. Do not edit `src/main.rs`, `src/composition/**`, `src/shared/**`, `src/shared/bundle_processing.rs`, or this batch's rewritten callsites during the Capture move; obtain a direct source/caller/test inventory first.
+
+## Documentation ownership (implemented in this batch)
+
+Product contracts now live with their owner: Capture `capture/docs/{capture,export-and-retention,keyframes-and-text,iphone-and-routing}.md`; Desktop `desktop/docs/` for Linux, UI/motion, native/testing, settings, release/signing and archival Windows notes; Agent-proof `agent-proof/docs/agent-video-workflow.md`; Connect `connect/docs/` for API/client/web/acceptance; shared routing policy `shared/docs/routing.md`. Root `docs/` remains for repository-wide delivery/governance where `.github/workflows`, `.githooks`, root package composition or contributors are the actual consumers. No `enablement/` product tree is required. The issue-171 plan remains in `docs/plans/` as provenance tied to the extant hosted-sharing feature; it is not a live contract.
+
+## Explicit remaining non-Rust reservations (not moved in this batch)
+
+The original 104 exact non-Rust reservations retain their final paths in the inventory ledger. 58 script/package moves are now physically present with this lane’s external workflow/docs/tooling consumers wired: Desktop scripts/package inputs (44), Public site scripts (10), Agent-proof scripts/tests (3), and Capture benchmark (1). The inventory’s `pending_non_rust_moves` now contains only the 46 still-unresolved paths (assets and native inputs, plus other remaining owner scripts); root `build.rs`/`src/**` remain with the Rust integrator. Do not treat this finite list as authorization to edit additional assets/native inputs. Root verification selector/hooks and their two tests remain root because the hook/workflow invokes the exact `scripts/verification.py` and tests directly; no empty `enablement/` product tree is required.
+
+External tooling integration (this bounded lane): Desktop workflows now invoke `desktop/scripts/**`, Public delivery CI/docs invoke `public/site/scripts/cd/**`, and root changed-tree verification remains at `scripts/verification.py` with its existing broad unknown-path/security gates. Linux updater PR filters now target moved Rust settings/update modules; sibling workflow source filters were audited. Agent-proof and Capture script destinations/callers are resolved in the tooling result; their Rust comment/diagnostic references remain with the Rust integrator. The wider physical campaign remains **integration in progress**.
+
+Asset target correction for the next asset lane (not physically moved here): the four identity assets `assets/brand/{apparent-a.png,apparent-app-icon.svg,apparent-wordmark.png,apparent-wordmark.svg}` belong at `shared/assets/brand/`; `assets/fonts/{HostGrotesk-Variable.ttf,OFL.txt}` belong at `shared/assets/fonts/`. Cross-consumers to update/verify together: Desktop `src/desktop/mod.rs`, `src/desktop/settings.rs`, `src/desktop/settings_window.rs`, `src/desktop/onboarding_window.rs`, `src/desktop/ui/whiteboard.rs` (brand embeds), and Public `public/site/**` asset/package references. Desktop-only application assets remain `desktop/assets/**`. This target correction does not authorize an asset move during the active Rust compilation checkpoint.
 
 ## Exhaustive tracked-path destination ledger
 
-Classification is mechanical and exact: **MOVE iff the final path differs byte-for-byte from the tracked source path; otherwise RETAIN.** There are no DELETE entries in this campaign. Every tracked path at the inventoried base appears exactly once; the inventory stores each old path, final path, owner and disposition. This ledger is the concrete final target, not a conditional/template grouping.
+Classification is mechanical and exact: **MOVE iff the final path differs byte-for-byte from the tracked source path; otherwise RETAIN.** There are no DELETE entries in this campaign. Owner documentation moved into its owner docs tree; repository-wide delivery governance remains in root `docs/`. Every tracked path at the inventoried base appears exactly once; the inventory stores each old path, final path, owner and disposition. This ledger is the concrete final target, not a conditional/template grouping.
 
 | Tracked path | Final path | Disposition | Owner |
 |---|---|---|---|
@@ -63,45 +75,45 @@ Classification is mechanical and exact: **MOVE iff the final path differs byte-f
 | `Cargo.toml` | `Cargo.toml` | RETAIN | shared-infrastructure |
 | `LICENSE` | `LICENSE` | RETAIN | public |
 | `README.md` | `README.md` | RETAIN | public |
-| `assets/AppIcon.icon/Assets/brush.png` | `assets/AppIcon.icon/Assets/brush.png` | RETAIN | desktop |
-| `assets/AppIcon.icon/Assets/glow.svg` | `assets/AppIcon.icon/Assets/glow.svg` | RETAIN | desktop |
-| `assets/AppIcon.icon/icon.json` | `assets/AppIcon.icon/icon.json` | RETAIN | desktop |
-| `assets/Apparent.icns` | `assets/Apparent.icns` | RETAIN | desktop |
-| `assets/Apparent.ico` | `assets/Apparent.ico` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
-| `assets/app-icon.png` | `assets/app-icon.png` | RETAIN | desktop |
-| `assets/brand/apparent-a.png` | `assets/brand/apparent-a.png` | RETAIN | public |
-| `assets/brand/apparent-app-icon.svg` | `assets/brand/apparent-app-icon.svg` | RETAIN | public |
-| `assets/brand/apparent-wordmark.png` | `assets/brand/apparent-wordmark.png` | RETAIN | public |
-| `assets/brand/apparent-wordmark.svg` | `assets/brand/apparent-wordmark.svg` | RETAIN | public |
-| `assets/fonts/HostGrotesk-Variable.ttf` | `assets/fonts/HostGrotesk-Variable.ttf` | RETAIN | public |
-| `assets/fonts/OFL.txt` | `assets/fonts/OFL.txt` | RETAIN | public |
-| `assets/icon.svg` | `assets/icon.svg` | RETAIN | desktop |
-| `assets/icons/area.svg` | `assets/icons/area.svg` | RETAIN | desktop |
-| `assets/icons/arrow-up-right.svg` | `assets/icons/arrow-up-right.svg` | RETAIN | desktop |
-| `assets/icons/check-circle.svg` | `assets/icons/check-circle.svg` | RETAIN | desktop |
-| `assets/icons/check.svg` | `assets/icons/check.svg` | RETAIN | desktop |
-| `assets/icons/chevrons.svg` | `assets/icons/chevrons.svg` | RETAIN | desktop |
-| `assets/icons/click.svg` | `assets/icons/click.svg` | RETAIN | desktop |
-| `assets/icons/drive.svg` | `assets/icons/drive.svg` | RETAIN | desktop |
-| `assets/icons/gear.svg` | `assets/icons/gear.svg` | RETAIN | desktop |
-| `assets/icons/hand.svg` | `assets/icons/hand.svg` | RETAIN | desktop |
-| `assets/icons/info.svg` | `assets/icons/info.svg` | RETAIN | desktop |
-| `assets/icons/iphone.svg` | `assets/icons/iphone.svg` | RETAIN | desktop |
-| `assets/icons/lock.svg` | `assets/icons/lock.svg` | RETAIN | desktop |
-| `assets/icons/mic.svg` | `assets/icons/mic.svg` | RETAIN | desktop |
-| `assets/icons/person.svg` | `assets/icons/person.svg` | RETAIN | desktop |
-| `assets/icons/record.svg` | `assets/icons/record.svg` | RETAIN | desktop |
-| `assets/icons/reopen.svg` | `assets/icons/reopen.svg` | RETAIN | desktop |
-| `assets/icons/reset.svg` | `assets/icons/reset.svg` | RETAIN | desktop |
-| `assets/icons/screen.svg` | `assets/icons/screen.svg` | RETAIN | desktop |
-| `assets/icons/spinner.svg` | `assets/icons/spinner.svg` | RETAIN | desktop |
-| `assets/icons/terminal.svg` | `assets/icons/terminal.svg` | RETAIN | desktop |
-| `assets/icons/window.svg` | `assets/icons/window.svg` | RETAIN | desktop |
-| `assets/icons/x.svg` | `assets/icons/x.svg` | RETAIN | desktop |
-| `assets/menubar-icon@2x.png` | `assets/menubar-icon@2x.png` | RETAIN | desktop |
-| `assets/settings/frog-jump.png` | `assets/settings/frog-jump.png` | RETAIN | desktop |
-| `assets/settings/frog-lounge.png` | `assets/settings/frog-lounge.png` | RETAIN | desktop |
-| `assets/settings/frog-puzzled.png` | `assets/settings/frog-puzzled.png` | RETAIN | desktop |
+| `assets/AppIcon.icon/Assets/brush.png` | `desktop/assets/AppIcon.icon/Assets/brush.png` | MOVE | desktop |
+| `assets/AppIcon.icon/Assets/glow.svg` | `desktop/assets/AppIcon.icon/Assets/glow.svg` | MOVE | desktop |
+| `assets/AppIcon.icon/icon.json` | `desktop/assets/AppIcon.icon/icon.json` | MOVE | desktop |
+| `assets/Apparent.icns` | `desktop/assets/Apparent.icns` | MOVE | desktop |
+| `assets/Apparent.ico` | `desktop/assets/Apparent.ico` | MOVE | desktop (legacy unsupported code; retained, out of scope) |
+| `assets/app-icon.png` | `desktop/assets/app-icon.png` | MOVE | desktop |
+| `assets/brand/apparent-a.png` | `shared/assets/brand/apparent-a.png` | MOVE | shared |
+| `assets/brand/apparent-app-icon.svg` | `shared/assets/brand/apparent-app-icon.svg` | MOVE | shared |
+| `assets/brand/apparent-wordmark.png` | `shared/assets/brand/apparent-wordmark.png` | MOVE | shared |
+| `assets/brand/apparent-wordmark.svg` | `shared/assets/brand/apparent-wordmark.svg` | MOVE | shared |
+| `assets/fonts/HostGrotesk-Variable.ttf` | `shared/assets/fonts/HostGrotesk-Variable.ttf` | MOVE | shared |
+| `assets/fonts/OFL.txt` | `shared/assets/fonts/OFL.txt` | MOVE | shared |
+| `assets/icon.svg` | `desktop/assets/icon.svg` | MOVE | desktop |
+| `assets/icons/area.svg` | `desktop/assets/icons/area.svg` | MOVE | desktop |
+| `assets/icons/arrow-up-right.svg` | `desktop/assets/icons/arrow-up-right.svg` | MOVE | desktop |
+| `assets/icons/check-circle.svg` | `desktop/assets/icons/check-circle.svg` | MOVE | desktop |
+| `assets/icons/check.svg` | `desktop/assets/icons/check.svg` | MOVE | desktop |
+| `assets/icons/chevrons.svg` | `desktop/assets/icons/chevrons.svg` | MOVE | desktop |
+| `assets/icons/click.svg` | `desktop/assets/icons/click.svg` | MOVE | desktop |
+| `assets/icons/drive.svg` | `desktop/assets/icons/drive.svg` | MOVE | desktop |
+| `assets/icons/gear.svg` | `desktop/assets/icons/gear.svg` | MOVE | desktop |
+| `assets/icons/hand.svg` | `desktop/assets/icons/hand.svg` | MOVE | desktop |
+| `assets/icons/info.svg` | `desktop/assets/icons/info.svg` | MOVE | desktop |
+| `assets/icons/iphone.svg` | `desktop/assets/icons/iphone.svg` | MOVE | desktop |
+| `assets/icons/lock.svg` | `desktop/assets/icons/lock.svg` | MOVE | desktop |
+| `assets/icons/mic.svg` | `desktop/assets/icons/mic.svg` | MOVE | desktop |
+| `assets/icons/person.svg` | `desktop/assets/icons/person.svg` | MOVE | desktop |
+| `assets/icons/record.svg` | `desktop/assets/icons/record.svg` | MOVE | desktop |
+| `assets/icons/reopen.svg` | `desktop/assets/icons/reopen.svg` | MOVE | desktop |
+| `assets/icons/reset.svg` | `desktop/assets/icons/reset.svg` | MOVE | desktop |
+| `assets/icons/screen.svg` | `desktop/assets/icons/screen.svg` | MOVE | desktop |
+| `assets/icons/spinner.svg` | `desktop/assets/icons/spinner.svg` | MOVE | desktop |
+| `assets/icons/terminal.svg` | `desktop/assets/icons/terminal.svg` | MOVE | desktop |
+| `assets/icons/window.svg` | `desktop/assets/icons/window.svg` | MOVE | desktop |
+| `assets/icons/x.svg` | `desktop/assets/icons/x.svg` | MOVE | desktop |
+| `assets/menubar-icon@2x.png` | `desktop/assets/menubar-icon@2x.png` | MOVE | desktop |
+| `assets/settings/frog-jump.png` | `desktop/assets/settings/frog-jump.png` | MOVE | desktop |
+| `assets/settings/frog-lounge.png` | `desktop/assets/settings/frog-lounge.png` | MOVE | desktop |
+| `assets/settings/frog-puzzled.png` | `desktop/assets/settings/frog-puzzled.png` | MOVE | desktop |
 | `build.rs` | `build.rs` | RETAIN | shared-infrastructure |
 | `build_version.rs` | `build_version.rs` | RETAIN | shared-infrastructure |
 | `capture/engine/.gitignore` | `capture/engine/.gitignore` | RETAIN | capture |
@@ -147,29 +159,29 @@ Classification is mechanical and exact: **MOVE iff the final path differs byte-f
 | `connect/web/test/routes.test.mjs` | `connect/web/test/routes.test.mjs` | RETAIN | connect |
 | `connect/web/tsconfig.json` | `connect/web/tsconfig.json` | RETAIN | connect |
 | `connect/web/vite.config.ts` | `connect/web/vite.config.ts` | RETAIN | connect |
-| `docs/acceptance/issue-171-sharing.md` | `docs/acceptance/issue-171-sharing.md` | RETAIN | connect |
-| `docs/agent-video-workflow.md` | `docs/agent-video-workflow.md` | RETAIN | agent-proof |
-| `docs/capture.md` | `docs/capture.md` | RETAIN | desktop |
+| `docs/acceptance/issue-171-sharing.md` | `connect/docs/acceptance/issue-171-sharing.md` | MOVE | connect |
+| `docs/agent-video-workflow.md` | `agent-proof/docs/agent-video-workflow.md` | MOVE | agent-proof |
+| `docs/capture.md` | `capture/docs/capture.md` | MOVE | capture |
 | `docs/continuous-delivery.md` | `docs/continuous-delivery.md` | RETAIN | shared-infrastructure |
-| `docs/export-and-retention.md` | `docs/export-and-retention.md` | RETAIN | desktop |
-| `docs/hosted-api.md` | `docs/hosted-api.md` | RETAIN | connect |
-| `docs/hosted-client.md` | `docs/hosted-client.md` | RETAIN | connect |
-| `docs/hosted-web.md` | `docs/hosted-web.md` | RETAIN | connect |
-| `docs/iphone-and-routing.md` | `docs/iphone-and-routing.md` | RETAIN | desktop |
-| `docs/keyframes-and-text.md` | `docs/keyframes-and-text.md` | RETAIN | desktop |
-| `docs/linux-playback.md` | `docs/linux-playback.md` | RETAIN | desktop |
-| `docs/linux-updater-gui-test.md` | `docs/linux-updater-gui-test.md` | RETAIN | shared-infrastructure |
-| `docs/linux.md` | `docs/linux.md` | RETAIN | desktop |
-| `docs/mac-signing.md` | `docs/mac-signing.md` | RETAIN | shared-infrastructure |
-| `docs/motion.md` | `docs/motion.md` | RETAIN | desktop |
-| `docs/native-launch.md` | `docs/native-launch.md` | RETAIN | desktop |
-| `docs/native-testing.md` | `docs/native-testing.md` | RETAIN | desktop |
-| `docs/onboarding-and-settings.md` | `docs/onboarding-and-settings.md` | RETAIN | desktop |
+| `docs/export-and-retention.md` | `capture/docs/export-and-retention.md` | MOVE | capture |
+| `docs/hosted-api.md` | `connect/docs/hosted-api.md` | MOVE | connect |
+| `docs/hosted-client.md` | `connect/docs/hosted-client.md` | MOVE | connect |
+| `docs/hosted-web.md` | `connect/docs/hosted-web.md` | MOVE | connect |
+| `docs/iphone-and-routing.md` | `capture/docs/iphone-and-routing.md` | MOVE | capture |
+| `docs/keyframes-and-text.md` | `capture/docs/keyframes-and-text.md` | MOVE | capture |
+| `docs/linux-playback.md` | `desktop/docs/linux-playback.md` | MOVE | desktop |
+| `docs/linux-updater-gui-test.md` | `desktop/docs/linux-updater-gui-test.md` | MOVE | desktop |
+| `docs/linux.md` | `desktop/docs/linux.md` | MOVE | desktop |
+| `docs/mac-signing.md` | `desktop/docs/mac-signing.md` | MOVE | desktop |
+| `docs/motion.md` | `desktop/docs/motion.md` | MOVE | desktop |
+| `docs/native-launch.md` | `desktop/docs/native-launch.md` | MOVE | desktop |
+| `docs/native-testing.md` | `desktop/docs/native-testing.md` | MOVE | desktop |
+| `docs/onboarding-and-settings.md` | `desktop/docs/onboarding-and-settings.md` | MOVE | desktop |
 | `docs/plans/issue-171-hosted-sharing.md` | `docs/plans/issue-171-hosted-sharing.md` | RETAIN | shared-infrastructure |
-| `docs/recording-capsule-drag.md` | `docs/recording-capsule-drag.md` | RETAIN | desktop |
-| `docs/release.md` | `docs/release.md` | RETAIN | shared-infrastructure |
-| `docs/routing.md` | `docs/routing.md` | RETAIN | shared-infrastructure |
-| `docs/windows.md` | `docs/windows.md` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `docs/recording-capsule-drag.md` | `desktop/docs/recording-capsule-drag.md` | MOVE | desktop |
+| `docs/release.md` | `desktop/docs/release.md` | MOVE | desktop |
+| `docs/routing.md` | `shared/docs/routing.md` | MOVE | shared-infrastructure |
+| `docs/windows.md` | `desktop/docs/legacy-windows.md` | MOVE | desktop (legacy unsupported code; retained, out of scope) |
 | `helper/Export.swift` | `capture/native/Export.swift` | MOVE | capture |
 | `helper/Info.plist` | `shared/native/Info.plist` | MOVE | shared-infrastructure |
 | `helper/LiveTranscribe.swift` | `capture/native/LiveTranscribe.swift` | MOVE | capture |
@@ -218,71 +230,71 @@ Classification is mechanical and exact: **MOVE iff the final path differs byte-f
 | `hosted/test/typescript.test.mjs` | `connect/service/test/typescript.test.mjs` | MOVE | connect |
 | `hosted/tsconfig.json` | `connect/service/tsconfig.json` | MOVE | connect |
 | `hosted/wrangler.toml` | `connect/service/wrangler.toml` | MOVE | connect |
-| `packaging/linux/dev.kitlangton.apparent.desktop` | `packaging/linux/dev.kitlangton.apparent.desktop` | RETAIN | desktop |
-| `packaging/linux/dev.kitlangton.apparent.png` | `packaging/linux/dev.kitlangton.apparent.png` | RETAIN | desktop |
+| `packaging/linux/dev.kitlangton.apparent.desktop` | `desktop/packaging/linux/dev.kitlangton.apparent.desktop` | MOVE | desktop |
+| `packaging/linux/dev.kitlangton.apparent.png` | `desktop/packaging/linux/dev.kitlangton.apparent.png` | MOVE | desktop |
 | `perf/pill/clips.py` | `perf/pill/clips.py` | RETAIN | shared-infrastructure |
 | `perf/pill/motion-lint.config.json` | `perf/pill/motion-lint.config.json` | RETAIN | shared-infrastructure |
 | `perf/pill/record.sh` | `perf/pill/record.sh` | RETAIN | shared-infrastructure |
 | `perf/screen-guard.sh` | `perf/screen-guard.sh` | RETAIN | shared-infrastructure |
 | `refactor.md` | `refactor.md` | RETAIN | shared-infrastructure |
-| `scripts/Apparent.entitlements` | `scripts/Apparent.entitlements` | RETAIN | shared-infrastructure |
-| `scripts/agent-eval.sh` | `scripts/agent-eval.sh` | RETAIN | agent-proof |
-| `scripts/apparent-restore-clipboard.py` | `scripts/apparent-restore-clipboard.py` | RETAIN | shared-infrastructure |
-| `scripts/autocrop-corpus.mjs` | `scripts/autocrop-corpus.mjs` | RETAIN | shared-infrastructure |
-| `scripts/autocrop-gallery.mjs` | `scripts/autocrop-gallery.mjs` | RETAIN | shared-infrastructure |
-| `scripts/bench-processing.ts` | `scripts/bench-processing.ts` | RETAIN | shared-infrastructure |
-| `scripts/bench-start.ts` | `scripts/bench-start.ts` | RETAIN | shared-infrastructure |
-| `scripts/build-mac-preview.sh` | `scripts/build-mac-preview.sh` | RETAIN | shared-infrastructure |
-| `scripts/cd/connect_redirects.json` | `scripts/cd/connect_redirects.json` | RETAIN | shared-infrastructure |
-| `scripts/cd/hosted_config.py` | `scripts/cd/hosted_config.py` | RETAIN | shared-infrastructure |
-| `scripts/cd/publish_pages.py` | `scripts/cd/publish_pages.py` | RETAIN | shared-infrastructure |
-| `scripts/cd/publish_site.py` | `scripts/cd/publish_site.py` | RETAIN | shared-infrastructure |
-| `scripts/cd/test_hosted_delivery.py` | `scripts/cd/test_hosted_delivery.py` | RETAIN | shared-infrastructure |
-| `scripts/cd/test_pages_delivery.py` | `scripts/cd/test_pages_delivery.py` | RETAIN | shared-infrastructure |
-| `scripts/cd/test_publish_site.py` | `scripts/cd/test_publish_site.py` | RETAIN | shared-infrastructure |
-| `scripts/cd/verify_worker.py` | `scripts/cd/verify_worker.py` | RETAIN | shared-infrastructure |
-| `scripts/check-ca-roots.sh` | `scripts/check-ca-roots.sh` | RETAIN | shared-infrastructure |
-| `scripts/check-permission-panel-dock.sh` | `scripts/check-permission-panel-dock.sh` | RETAIN | shared-infrastructure |
+| `scripts/Apparent.entitlements` | `desktop/scripts/Apparent.entitlements` | MOVE | desktop |
+| `scripts/agent-eval.sh` | `agent-proof/scripts/agent-eval.sh` | MOVE | agent-proof |
+| `scripts/apparent-restore-clipboard.py` | `desktop/scripts/apparent-restore-clipboard.py` | MOVE | desktop |
+| `scripts/autocrop-corpus.mjs` | `public/site/scripts/autocrop-corpus.mjs` | MOVE | public |
+| `scripts/autocrop-gallery.mjs` | `public/site/scripts/autocrop-gallery.mjs` | MOVE | public |
+| `scripts/bench-processing.ts` | `capture/scripts/bench-processing.ts` | MOVE | capture |
+| `scripts/bench-start.ts` | `desktop/scripts/bench-start.ts` | MOVE | desktop |
+| `scripts/build-mac-preview.sh` | `desktop/scripts/build-mac-preview.sh` | MOVE | desktop |
+| `scripts/cd/connect_redirects.json` | `public/site/scripts/cd/connect_redirects.json` | MOVE | public |
+| `scripts/cd/hosted_config.py` | `public/site/scripts/cd/hosted_config.py` | MOVE | public |
+| `scripts/cd/publish_pages.py` | `public/site/scripts/cd/publish_pages.py` | MOVE | public |
+| `scripts/cd/publish_site.py` | `public/site/scripts/cd/publish_site.py` | MOVE | public |
+| `scripts/cd/test_hosted_delivery.py` | `public/site/scripts/cd/test_hosted_delivery.py` | MOVE | public |
+| `scripts/cd/test_pages_delivery.py` | `public/site/scripts/cd/test_pages_delivery.py` | MOVE | public |
+| `scripts/cd/test_publish_site.py` | `public/site/scripts/cd/test_publish_site.py` | MOVE | public |
+| `scripts/cd/verify_worker.py` | `public/site/scripts/cd/verify_worker.py` | MOVE | public |
+| `scripts/check-ca-roots.sh` | `desktop/scripts/check-ca-roots.sh` | MOVE | desktop |
+| `scripts/check-permission-panel-dock.sh` | `desktop/scripts/check-permission-panel-dock.sh` | MOVE | desktop |
 | `scripts/check-windows-cpu-tiers.ps1` | `scripts/check-windows-cpu-tiers.ps1` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
-| `scripts/install-app-remote.sh` | `scripts/install-app-remote.sh` | RETAIN | shared-infrastructure |
-| `scripts/install-app.sh` | `scripts/install-app.sh` | RETAIN | shared-infrastructure |
-| `scripts/linux/appimage.sh` | `scripts/linux/appimage.sh` | RETAIN | desktop |
-| `scripts/linux/build-playback.sh` | `scripts/linux/build-playback.sh` | RETAIN | desktop |
-| `scripts/linux/capture-smoke.py` | `scripts/linux/capture-smoke.py` | RETAIN | desktop |
-| `scripts/linux/check-appimage-decoder.sh` | `scripts/linux/check-appimage-decoder.sh` | RETAIN | desktop |
-| `scripts/linux/check-appimage-encoder.sh` | `scripts/linux/check-appimage-encoder.sh` | RETAIN | desktop |
-| `scripts/linux/check-cpu-tiers.py` | `scripts/linux/check-cpu-tiers.py` | RETAIN | desktop |
-| `scripts/linux/dependencies.sh` | `scripts/linux/dependencies.sh` | RETAIN | desktop |
-| `scripts/linux/gui-vm-reaper.py` | `scripts/linux/gui-vm-reaper.py` | RETAIN | desktop |
-| `scripts/linux/gui-vm.py` | `scripts/linux/gui-vm.py` | RETAIN | desktop |
-| `scripts/linux/migrate-scrawl.py` | `scripts/linux/migrate-scrawl.py` | RETAIN | desktop |
-| `scripts/linux/publish-main-preview.py` | `scripts/linux/publish-main-preview.py` | RETAIN | desktop |
-| `scripts/linux/smoke-cpu.sh` | `scripts/linux/smoke-cpu.sh` | RETAIN | desktop |
-| `scripts/linux/test-capture-smoke.py` | `scripts/linux/test-capture-smoke.py` | RETAIN | desktop |
-| `scripts/linux/test-gui-vm.py` | `scripts/linux/test-gui-vm.py` | RETAIN | desktop |
-| `scripts/linux/test-native-launch.sh` | `scripts/linux/test-native-launch.sh` | RETAIN | desktop |
-| `scripts/linux/test-updater-gui.py` | `scripts/linux/test-updater-gui.py` | RETAIN | desktop |
-| `scripts/linux/test_migrate_scrawl.py` | `scripts/linux/test_migrate_scrawl.py` | RETAIN | desktop |
-| `scripts/linux/updater-fixture.py` | `scripts/linux/updater-fixture.py` | RETAIN | desktop |
-| `scripts/linux/updater-gui-scenario.sh` | `scripts/linux/updater-gui-scenario.sh` | RETAIN | desktop |
-| `scripts/linux/updater-gui.py` | `scripts/linux/updater-gui.py` | RETAIN | desktop |
-| `scripts/prepare-mac-signing.sh` | `scripts/prepare-mac-signing.sh` | RETAIN | shared-infrastructure |
-| `scripts/preview_appcast.py` | `scripts/preview_appcast.py` | RETAIN | shared-infrastructure |
-| `scripts/provision-narrator.py` | `scripts/provision-narrator.py` | RETAIN | shared-infrastructure |
-| `scripts/release-app.sh` | `scripts/release-app.sh` | RETAIN | shared-infrastructure |
-| `scripts/setup-sparkle.sh` | `scripts/setup-sparkle.sh` | RETAIN | shared-infrastructure |
-| `scripts/tests/local_preview_update.py` | `scripts/tests/local_preview_update.py` | RETAIN | shared-infrastructure |
-| `scripts/tests/test_export_audio.py` | `scripts/tests/test_export_audio.py` | RETAIN | shared-infrastructure |
-| `scripts/tests/test_launch_registration.py` | `scripts/tests/test_launch_registration.py` | RETAIN | shared-infrastructure |
-| `scripts/tests/test_linux_preview_publication.py` | `scripts/tests/test_linux_preview_publication.py` | RETAIN | shared-infrastructure |
-| `scripts/tests/test_preview_appcast.py` | `scripts/tests/test_preview_appcast.py` | RETAIN | shared-infrastructure |
-| `scripts/tests/test_preview_apple_signing.py` | `scripts/tests/test_preview_apple_signing.py` | RETAIN | shared-infrastructure |
-| `scripts/tests/test_preview_release.py` | `scripts/tests/test_preview_release.py` | RETAIN | shared-infrastructure |
-| `scripts/tests/test_preview_sparkle_setup.py` | `scripts/tests/test_preview_sparkle_setup.py` | RETAIN | shared-infrastructure |
-| `scripts/tests/test_provision_narrator.py` | `scripts/tests/test_provision_narrator.py` | RETAIN | shared-infrastructure |
+| `scripts/install-app-remote.sh` | `desktop/scripts/install-app-remote.sh` | MOVE | desktop |
+| `scripts/install-app.sh` | `desktop/scripts/install-app.sh` | MOVE | desktop |
+| `scripts/linux/appimage.sh` | `desktop/scripts/linux/appimage.sh` | MOVE | desktop |
+| `scripts/linux/build-playback.sh` | `desktop/scripts/linux/build-playback.sh` | MOVE | desktop |
+| `scripts/linux/capture-smoke.py` | `desktop/scripts/linux/capture-smoke.py` | MOVE | desktop |
+| `scripts/linux/check-appimage-decoder.sh` | `desktop/scripts/linux/check-appimage-decoder.sh` | MOVE | desktop |
+| `scripts/linux/check-appimage-encoder.sh` | `desktop/scripts/linux/check-appimage-encoder.sh` | MOVE | desktop |
+| `scripts/linux/check-cpu-tiers.py` | `desktop/scripts/linux/check-cpu-tiers.py` | MOVE | desktop |
+| `scripts/linux/dependencies.sh` | `desktop/scripts/linux/dependencies.sh` | MOVE | desktop |
+| `scripts/linux/gui-vm-reaper.py` | `desktop/scripts/linux/gui-vm-reaper.py` | MOVE | desktop |
+| `scripts/linux/gui-vm.py` | `desktop/scripts/linux/gui-vm.py` | MOVE | desktop |
+| `scripts/linux/migrate-scrawl.py` | `desktop/scripts/linux/migrate-scrawl.py` | MOVE | desktop |
+| `scripts/linux/publish-main-preview.py` | `desktop/scripts/linux/publish-main-preview.py` | MOVE | desktop |
+| `scripts/linux/smoke-cpu.sh` | `desktop/scripts/linux/smoke-cpu.sh` | MOVE | desktop |
+| `scripts/linux/test-capture-smoke.py` | `desktop/scripts/linux/test-capture-smoke.py` | MOVE | desktop |
+| `scripts/linux/test-gui-vm.py` | `desktop/scripts/linux/test-gui-vm.py` | MOVE | desktop |
+| `scripts/linux/test-native-launch.sh` | `desktop/scripts/linux/test-native-launch.sh` | MOVE | desktop |
+| `scripts/linux/test-updater-gui.py` | `desktop/scripts/linux/test-updater-gui.py` | MOVE | desktop |
+| `scripts/linux/test_migrate_scrawl.py` | `desktop/scripts/linux/test_migrate_scrawl.py` | MOVE | desktop |
+| `scripts/linux/updater-fixture.py` | `desktop/scripts/linux/updater-fixture.py` | MOVE | desktop |
+| `scripts/linux/updater-gui-scenario.sh` | `desktop/scripts/linux/updater-gui-scenario.sh` | MOVE | desktop |
+| `scripts/linux/updater-gui.py` | `desktop/scripts/linux/updater-gui.py` | MOVE | desktop |
+| `scripts/prepare-mac-signing.sh` | `desktop/scripts/prepare-mac-signing.sh` | MOVE | desktop |
+| `scripts/preview_appcast.py` | `desktop/scripts/preview_appcast.py` | MOVE | desktop |
+| `scripts/provision-narrator.py` | `agent-proof/scripts/provision-narrator.py` | MOVE | agent-proof |
+| `scripts/release-app.sh` | `desktop/scripts/release-app.sh` | MOVE | desktop |
+| `scripts/setup-sparkle.sh` | `desktop/scripts/setup-sparkle.sh` | MOVE | desktop |
+| `scripts/tests/local_preview_update.py` | `desktop/scripts/tests/local_preview_update.py` | MOVE | desktop |
+| `scripts/tests/test_export_audio.py` | `desktop/scripts/tests/test_export_audio.py` | MOVE | desktop |
+| `scripts/tests/test_launch_registration.py` | `desktop/scripts/tests/test_launch_registration.py` | MOVE | desktop |
+| `scripts/tests/test_linux_preview_publication.py` | `desktop/scripts/tests/test_linux_preview_publication.py` | MOVE | desktop |
+| `scripts/tests/test_preview_appcast.py` | `desktop/scripts/tests/test_preview_appcast.py` | MOVE | desktop |
+| `scripts/tests/test_preview_apple_signing.py` | `desktop/scripts/tests/test_preview_apple_signing.py` | MOVE | desktop |
+| `scripts/tests/test_preview_release.py` | `desktop/scripts/tests/test_preview_release.py` | MOVE | desktop |
+| `scripts/tests/test_preview_sparkle_setup.py` | `desktop/scripts/tests/test_preview_sparkle_setup.py` | MOVE | desktop |
+| `scripts/tests/test_provision_narrator.py` | `agent-proof/scripts/tests/test_provision_narrator.py` | MOVE | agent-proof |
 | `scripts/verification.py` | `scripts/verification.py` | RETAIN | shared-infrastructure |
-| `scripts/verify-preview-sparkle-key.swift` | `scripts/verify-preview-sparkle-key.swift` | RETAIN | shared-infrastructure |
-| `scripts/virtual-display.swift` | `scripts/virtual-display.swift` | RETAIN | shared-infrastructure |
+| `scripts/verify-preview-sparkle-key.swift` | `desktop/scripts/verify-preview-sparkle-key.swift` | MOVE | desktop |
+| `scripts/virtual-display.swift` | `desktop/scripts/virtual-display.swift` | MOVE | desktop |
 | `site/.gitignore` | `public/site/.gitignore` | MOVE | public |
 | `site/.wrangler/.metadata_never_index` | `public/site/.wrangler/.metadata_never_index` | MOVE | public |
 | `site/bun.lock` | `public/site/bun.lock` | MOVE | public |
@@ -580,13 +592,13 @@ Classification is mechanical and exact: **MOVE iff the final path differs byte-f
 | `src/linux/mod.rs` | `src/desktop/linux/mod.rs` | MOVE | desktop |
 | `src/linux/overlay.rs` | `src/desktop/linux/overlay.rs` | MOVE | desktop |
 | `src/linux/playback.rs` | `src/desktop/linux/playback.rs` | MOVE | desktop |
-| `src/linux/playback/audio-plugin.h` | `src/linux/playback/audio-plugin.h` | RETAIN | desktop |
-| `src/linux/playback/helper.c` | `src/linux/playback/helper.c` | RETAIN | desktop |
-| `src/linux/playback/lease.h` | `src/linux/playback/lease.h` | RETAIN | desktop |
-| `src/linux/playback/plugin.c` | `src/linux/playback/plugin.c` | RETAIN | desktop |
-| `src/linux/playback/policy.lua` | `src/linux/playback/policy.lua` | RETAIN | desktop |
-| `src/linux/playback/test_native.c` | `src/linux/playback/test_native.c` | RETAIN | desktop |
-| `src/linux/playback/test_policy.py` | `src/linux/playback/test_policy.py` | RETAIN | desktop |
+| `src/linux/playback/audio-plugin.h` | `src/desktop/linux/playback/audio-plugin.h` | MOVE | desktop |
+| `src/linux/playback/helper.c` | `src/desktop/linux/playback/helper.c` | MOVE | desktop |
+| `src/linux/playback/lease.h` | `src/desktop/linux/playback/lease.h` | MOVE | desktop |
+| `src/linux/playback/plugin.c` | `src/desktop/linux/playback/plugin.c` | MOVE | desktop |
+| `src/linux/playback/policy.lua` | `src/desktop/linux/playback/policy.lua` | MOVE | desktop |
+| `src/linux/playback/test_native.c` | `src/desktop/linux/playback/test_native.c` | MOVE | desktop |
+| `src/linux/playback/test_policy.py` | `src/desktop/linux/playback/test_policy.py` | MOVE | desktop |
 | `src/linux/portal.rs` | `src/desktop/linux/portal.rs` | MOVE | desktop |
 | `src/linux/privacy.rs` | `src/desktop/linux/privacy.rs` | MOVE | desktop |
 | `src/linux/shell.rs` | `src/desktop/linux/shell.rs` | MOVE | desktop |
@@ -681,11 +693,11 @@ Classification is mechanical and exact: **MOVE iff the final path differs byte-f
 | `video/src/lib.rs` | `video/src/lib.rs` | RETAIN | shared-infrastructure |
 | `video/src/main.rs` | `video/src/main.rs` | RETAIN | shared-infrastructure |
 
-Ledger invariant: 634 unique tracked inputs, 389 physical moves, 245 retained paths; no duplicate final paths or deletes. A physical move is not complete until all imports, build/runtime/package inputs and focused verification are wired and read back. The three reserved leaf lanes must hand off their precise patches before shared docs/integration records are finalized.
+Ledger invariant after the documentation-owner batch: 634 unique inventoried inputs, 514 final physical moves (21 owner-doc moves implemented; 104 exact non-Rust moves reserved but pending), 120 retained paths; no duplicate final paths or deletes. These are inventory destinations; future non-Rust moves listed in the integration handoff remain pending. A physical move is not complete until all imports, build/runtime/package inputs and focused verification are wired and read back. The four terminal Rust leaf workers have handed off; cross-owner wiring remains with the separately assigned integrator.
 
 ## Integrated external wiring (owned follow-up)
 
-The site and service move handoffs are integrated in this batch: website build/package/publish inputs now root at `public/site/**`; the Worker package and generated Wrangler config use `connect/service/**`; `connect/web/**` approved-assets/docs references point into `public/site/public/**`. Rust feature-map/watch fixtures and `src/onboarding.rs` compile-time native inputs point at the current destinations. CI gates and deployment identities/routes remain unchanged; selector unknown-path behavior still broadens. The private inventory records the handoff-resolved native paths. Public owner reports 237 moved files, 132 checks and artifact verification; service owner reports 35 moved files and 71 tests; native owner reports 13 source hashes and preserved sorted compiler ordering. Those are retained owner receipts, not reruns here. Mac native compilation is still pending.
+The site and service move handoffs are integrated in this batch: website build/package/publish inputs now root at `public/site/**`; the Worker package and generated Wrangler config use `connect/service/**`; `connect/web/**` approved-assets/docs references point into `public/site/public/**`. Rust feature-map/watch fixtures and `src/desktop/onboarding.rs` compile-time native inputs point at the current destinations. CI gates and deployment identities/routes remain unchanged; selector unknown-path behavior still broadens. The private inventory records the handoff-resolved native paths. Public owner reports 237 moved files, 132 checks and artifact verification; service owner reports 35 moved files and 71 tests; native owner reports 13 source hashes and preserved sorted compiler ordering. Those are retained owner receipts, not reruns here. Mac native compilation is still pending.
 
 ## Verification policy for this campaign
 
@@ -851,11 +863,11 @@ Checked boxes below certify only the named merged slice, not the complete target
 PR links use the canonical repository; main ancestry was checked at the pinned base.
 
 - [x] **Staged Engine admission/lease package** — [#220](https://github.com/tryapparent/apparent/pull/220), merge `77dd5bbf`. Independent package/process contract accepted; 22 package tests and retained source-identical Mac package evidence. Root combined Linux evidence reported 668 passed/3 ignored with #222. No production recorder, finalizer or retention caller consumes Engine; no native capture acceptance is implied. See `capture/engine/README.md`.
-- [x] **Connect entry isolation** — [#222](https://github.com/tryapparent/apparent/pull/222), merge `d21115b5`. Canonical/legacy routes, built dependency closure and synthetic packaged/dev/preview auth/consent/browser checks retained. `site/` still owns build/package/publisher; no independent Connect package or live OAuth claim. See `docs/hosted-web.md`.
-- [x] **Recording versus Desktop completion seam** — [#233](https://github.com/tryapparent/apparent/pull/233), implementation `b6c3fd39478c357f6f79b3a5d6e2199bb02707c1`, merge `92b76040`. Linux UI selection 51 passed; full suite 668 passed/3 ignored; build and independent source review passed. Native/GUI/E2E intentionally omitted, not claimed. `src/ui/recording_completion.rs` still uses the crate-root finalizer; whiteboard and GPUI coupling remain. No Engine adoption or standalone Agent.
+- [x] **Connect entry isolation** — [#222](https://github.com/tryapparent/apparent/pull/222), merge `d21115b5`. Canonical/legacy routes, built dependency closure and synthetic packaged/dev/preview auth/consent/browser checks retained. `site/` still owns build/package/publisher; no independent Connect package or live OAuth claim. See `connect/docs/hosted-web.md`.
+- [x] **Recording versus Desktop completion seam** — [#233](https://github.com/tryapparent/apparent/pull/233), implementation `b6c3fd39478c357f6f79b3a5d6e2199bb02707c1`, merge `92b76040`. Linux UI selection 51 passed; full suite 668 passed/3 ignored; build and independent source review passed. Native/GUI/E2E intentionally omitted, not claimed. `src/desktop/ui/recording_completion.rs` still uses the crate-root finalizer; whiteboard and GPUI coupling remain. No Engine adoption or standalone Agent.
 - [x] **Bounded verification-routing follow-through** — [#241](https://github.com/tryapparent/apparent/pull/241), tested head `c3f72f7a`, merge `1ca21c67`. Exact source-pair and additive browser rules above are merged, not extraction acceptance. Retained normal-hook evidence reports Linux root build/671 passed/3 ignored, Engine build/22 passed and 15 hook + 13 selector contracts; final-head CI checks passed. The real browser driver receipt at `c5bb1b78` is historical synthetic evidence, not a fresh current-main run.
 - [x] **Current source-pair/inventory repair** — [#246](https://github.com/tryapparent/apparent/pull/246), tested `e73bb366455a3156daa3f5b423e26fdb103cf894`, merge `76792fa186cf1f3ad88348596ac360f119de6706`. Parent inspected the terminal independent Luna review: no findings. Parent normal-hook proof: root build/683 passed/3 ignored, full Engine suite, 15 hook + 16 selector contracts. Retained final CI [41281996167](https://github.com/tryapparent/apparent/actions/runs/41281996167) passed Ubuntu 683/Mac 607 root tests (3 ignored each), with Engine checks. No new Rust CodeQL analysis was configured for this run; earlier #242/#245 Rust analyses remain historical evidence only. This accepts selector repair, not config, browser adoption or native behavior.
-- [x] **Retired OpenCode glossary deletion (one C slice)** — [#243](https://github.com/tryapparent/apparent/pull/243), tested head `ea3ddd38`, merge `3b5d715b`. Deleted `CONTEXT.md` and its sole direct guide reference in `docs/routing.md`; no source, supported historical metadata reader, runtime or package input changed. Current-main tracked references are only the intentional campaign example and selector/deletion regression. Retained final normal hook passed 15 guard + 13 selector tests on the exact docs-only rule; CI Rust execution was skipped, not a Rust pass. The earlier broad invocation's Engine trusted-ancestry failure remains a failed historical invocation, not waived or relabelled green. C and the final sweep remain unchecked.
+- [x] **Retired OpenCode glossary deletion (one C slice)** — [#243](https://github.com/tryapparent/apparent/pull/243), tested head `ea3ddd38`, merge `3b5d715b`. Deleted `CONTEXT.md` and its sole direct guide reference in `shared/docs/routing.md`; no source, supported historical metadata reader, runtime or package input changed. Current-main tracked references are only the intentional campaign example and selector/deletion regression. Retained final normal hook passed 15 guard + 13 selector tests on the exact docs-only rule; CI Rust execution was skipped, not a Rust pass. The earlier broad invocation's Engine trusted-ancestry failure remains a failed historical invocation, not waived or relabelled green. C and the final sweep remain unchecked.
 
 ## Ordered remaining checklist
 
@@ -929,10 +941,10 @@ reconstruction of current heads #221 `1ea0d146`/#225 `28d83f3d` against current 
 Read those logs and compare all changed inputs before carrying that evidence to a new
 candidate. This document does not claim a fresh native capture, Mac compile or install.
 
-Relevant contracts: `capture/engine/README.md`, `docs/capture.md`,
-`docs/keyframes-and-text.md`, `docs/hosted-{api,client,web}.md`,
-`docs/export-and-retention.md`, `docs/linux.md`, `docs/agent-video-workflow.md` and
-`docs/onboarding-and-settings.md`; read the matching guide before each implementation.
+Relevant contracts: `capture/engine/README.md`, `capture/docs/capture.md`,
+`capture/docs/keyframes-and-text.md`, `docs/hosted-{api,client,web}.md`,
+`capture/docs/export-and-retention.md`, `desktop/docs/linux.md`, `agent-proof/docs/agent-video-workflow.md` and
+`desktop/docs/onboarding-and-settings.md`; read the matching guide before each implementation.
 No private capture directory exists on this implementation host at the checked default
 Mac/Linux locations. No private bundle, recording, transcript or secret is committed.
 Strategy verification results belong in its PR/handoff; unchecked steps above remain
