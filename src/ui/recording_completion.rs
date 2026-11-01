@@ -25,9 +25,8 @@ pub(super) fn finalize(
             windows,
         } => (session, audio, windows),
         CaptureSource::Phone(session) => {
-            let finalized = session
-                .stop()
-                .and_then(|recording| {
+            let finalized = complete_bundle(&bundle_dir, &final_whiteboard, || {
+                session.stop().and_then(|recording| {
                     crate::phone::finalize_live_capture(
                         &bundle_dir,
                         recording,
@@ -36,11 +35,7 @@ pub(super) fn finalize(
                         None,
                     )
                 })
-                .map(|(dir, bundle, summary)| {
-                    let (bundle, summary) =
-                        whiteboard::finish_handoff(&dir, bundle, summary, &final_whiteboard);
-                    (dir, bundle, summary)
-                });
+            });
             if let Err(error) = &finalized {
                 apparent_log(format!("iPhone capture failed: {error:#}"));
             }
@@ -69,21 +64,46 @@ pub(super) fn finalize(
     activity.stop_started = Some(stop_started);
     activity.stop_ms = Some(stop_started.elapsed().as_millis() as u64);
     let duration_ms = recording.duration_ms;
-    let finalized = crate::finalize_capture_bundle(
-        &bundle_dir,
-        target,
-        recording,
-        strokes,
-        events,
-        recorded_audio,
-        None,
-        activity,
-        None,
-    )
-    .map(|(dir, bundle, summary)| {
-        let (bundle, summary) =
-            whiteboard::finish_handoff(&dir, bundle, summary, &final_whiteboard);
-        (dir, bundle, summary)
+    let finalized = complete_bundle(&bundle_dir, &final_whiteboard, || {
+        crate::finalize_capture_bundle(
+            &bundle_dir,
+            target,
+            recording,
+            strokes,
+            events,
+            recorded_audio,
+            None,
+            activity,
+            None,
+        )
     });
     (finalized, duration_ms)
 }
+
+/// Both recording sources must finish optional drawing mutations and validate
+/// the surviving capture before Desktop can see any successful result.
+fn complete_bundle(
+    path: &std::path::Path,
+    board: &whiteboard::Board,
+    build: impl FnOnce() -> CaptureResult,
+) -> CaptureResult {
+    complete_bundle_with(path, build, |dir, bundle, summary| {
+        whiteboard::finish_handoff(dir, bundle, summary, board)
+    })
+}
+
+fn complete_bundle_with(
+    path: &std::path::Path,
+    build: impl FnOnce() -> CaptureResult,
+    finish: impl FnOnce(&std::path::Path, ApparentBundle, String) -> (ApparentBundle, String),
+) -> CaptureResult {
+    crate::bundle_processing::publication::publish_after(path, || {
+        let (dir, bundle, summary) = build()?;
+        let (bundle, summary) = finish(&dir, bundle, summary);
+        Ok((dir, bundle, summary))
+    })
+}
+
+#[cfg(test)]
+#[path = "../bundle_processing/publication/completion_tests.rs"]
+mod publication_tests;
