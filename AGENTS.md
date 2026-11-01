@@ -44,6 +44,18 @@ Apparent is the human-to-agent half of a feedback loop: the agent builds, the hu
 - Tests never post to a real OpenCode session. Legacy `routing::Hooks` tests keep outside steps isolated.
 - **Capture recovery:** Apparent no longer sends captures to OpenCode. Preserve any session metadata in older bundles, but do not treat it as permission to forward anything. Use `apparent copy <bundle>` for clipboard handoff. Ask before any separate outbound delivery to a person, organization, or session.
 
+## Architecture and ownership map
+
+This is the **target ownership boundary**, not a claim that every item has already moved or that a standalone `capture/engine` package is adopted by production. Treat the historical `refactor.md` campaign ledger as migration history, not authority to override this target.
+
+- `capture/engine` owns capture lifecycle, recording and processing, and `.apparent` bundle production. It must not own interface UI or workflow policy.
+- `capture/desktop` owns human-facing controls, settings, annotation, and handoff.
+- `capture/agent` owns agent requests, capture inspection, and proof-video workflows. Existing Rust modules may remain under the ordinary `src/capture/agent/` module tree; do not use path shims to mimic a filesystem move.
+- Dependencies point inward: `capture/desktop` → `capture/engine`; `capture/agent` → `capture/engine`; `capture/engine` depends on neither interface UI nor workflow policy. Capture-internal common code stays under `capture`.
+- `connect` owns sharing and recipient viewing; `public` owns discovery and marketing; `shared` is only for genuinely cross-stream code; `enablement` owns repository engineering mechanisms such as verification hooks, CI selectors, and their tests. These boundaries do not imply that every current file is already in its target location.
+
+For repo-owned source, assets, docs, and tooling, target no more than 10 immediate files and 10 immediate subdirectories in any directory. Exclude generated output, dependency trees, build caches, and Git internals from the count. Include hidden repo-owned files. Conventional tool-required files/directories (for example root Cargo manifests, `.github`, `.githooks`, and `.cargo`) can conflict with a flat count: preserve required tooling and explicitly record a bounded exception rather than hide, delete, or misclassify it. This is a target constraint, not a claim that the current tree already conforms.
+
 ## Subsystem map
 
 Read the matching owner-local `*/docs/` file before changing a subsystem. Each one holds that area's invariants, CLI tools and test commands; cross-owner governance remains in root `docs/`.
