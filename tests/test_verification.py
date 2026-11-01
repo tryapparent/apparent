@@ -57,6 +57,18 @@ class SelectionTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue(verification.select(["connect/web/src/api.ts", path])["root"])
 
+    def test_selected_absent_browser_package_fails_closed(self):
+        real_run = subprocess.run
+        def execute(command, **kwargs):
+            if command[0] in ("python3", "sh"):
+                return subprocess.CompletedProcess(command, 0)
+            return real_run(command, **kwargs)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(verification, "ROOT", Path(tmp)), patch.object(
+                verification.subprocess, "run", side_effect=execute):
+            with self.assertRaises(FileNotFoundError) as failure:
+                verification.run_checks(verification.select(["connect/web/package.json"]))
+            self.assertEqual(str(failure.exception.filename), str(Path(tmp) / "connect/web"))
+
     def test_reviewed_moves_require_complete_exact_source_pairs(self):
         # Real immutable Git blobs, not a caller-supplied mechanical label.
         for name, recipe in verification.MOVES.items():
