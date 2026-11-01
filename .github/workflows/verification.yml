@@ -82,7 +82,7 @@ jobs:
             cargo test -j 3 --locked settings::tests::the_command_line_row_ -- --test-threads=2
             cargo test -j 3 --locked agent_capture::tests::competing_launches_cannot_remove_the_winning_control_socket -- --exact
             if [ "$RUNNER_OS" = macOS ]; then
-              cargo test -j 3 --locked hosted::tests::hosted_security_darwin_acl_grants_fail_closed -- --exact
+              cargo test -j 3 --locked hosted::regression_tests::hosted_security_darwin_acl_grants_fail_closed -- --exact
             fi
           fi
           python3 scripts/verification.py --base "${BASE:-unknown}" --run --online
