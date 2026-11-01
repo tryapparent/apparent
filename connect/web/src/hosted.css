@@ -50,6 +50,8 @@
 .hosted-check input { width: 19px; height: 19px; margin: 2px 0; flex-shrink: 0; accent-color: var(--carbon); }
 .hosted-quiet { font-size: 14px; color: #605b63; }
 .hosted-error { text-align: left; border-left: 3px solid #9f342a; padding-left: 16px; }
+.hosted-session-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.hosted-session-actions > button { min-height: 44px; }
 .hosted-permission { text-align: left; }
 .hosted-permission > .hosted-primary { display: flex; margin: 20px auto 0; }
 .hosted-dialog { background: var(--paper); color: var(--carbon); border: 1px solid var(--carbon); padding: 30px; width: 480px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 32px); overflow: auto; }
