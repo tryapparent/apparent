@@ -121,7 +121,6 @@ fn run_gh(command: &mut Command, timeout: Duration) -> Result<std::process::Outp
     ensure!(flags >= 0 && unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } >= 0,
         "could not make GitHub output nonblocking");
     let mut stdout = Vec::new();
-    let mut status = None;
     let mut eof = false;
     loop {
         ensure!(Instant::now() < deadline, "GitHub CLI exceeded its deadline");
@@ -139,12 +138,13 @@ fn run_gh(command: &mut Command, timeout: Duration) -> Result<std::process::Outp
                 Err(error) => return Err(error.into()),
             }
         }
-        if status.is_none() {
-            status = child.0.try_wait()?;
-        }
-        if let Some(status) = status.filter(|_| eof) {
-            ensure!(Instant::now() < deadline, "GitHub CLI exceeded its deadline");
+        // Do not reap while a pipe is open: the unreaped leader reserves its
+        // PID/PGID until timeout cleanup can no longer signal that group.
+        if eof && let Some(status) = child.0.try_wait()? {
             child.1 = true;
+            // Disarm cleanup before any fallible work after reaping. The PID
+            // is no longer ours once try_wait returns an exit status.
+            ensure!(Instant::now() < deadline, "GitHub CLI exceeded its deadline");
             return Ok(std::process::Output { status, stdout, stderr: Vec::new() });
         }
         std::thread::sleep(Duration::from_millis(5));
@@ -230,5 +230,35 @@ mod tests {
         assert!(output.status.success());
         assert_eq!(output.stdout, b"ok");
         assert!(output.stderr.is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn gh_reserves_leader_pid_until_pipe_cleanup_and_kills_descendants() {
+        use std::time::Instant;
+        let root = std::env::temp_dir().join(format!("issue-pid-{}", crate::shared::ids::make_bundle_id()));
+        std::fs::create_dir(&root).unwrap();
+        let leader_file = root.join("leader");
+        let descendant_file = root.join("descendant");
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 10 & echo $! > \"$2\"; echo $$ > \"$1\"; exit 0", "fixture"])
+            .arg(&leader_file).arg(&descendant_file);
+        let runner = std::thread::spawn(move || run_gh(&mut command, Duration::from_secs(1)));
+        let deadline = Instant::now() + Duration::from_millis(800);
+        while !leader_file.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        // Let the command exit and the runner poll while its descendant holds stdout.
+        std::thread::sleep(Duration::from_millis(50));
+        let leader = std::fs::read_to_string(&leader_file).unwrap();
+        let descendant = std::fs::read_to_string(&descendant_file).unwrap();
+        let leader_reserved = std::path::Path::new("/proc").join(leader.trim()).exists();
+        let result = runner.join().unwrap();
+        let descendant_state = std::fs::read_to_string(format!("/proc/{}/stat", descendant.trim()));
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(result.is_err());
+        assert!(leader_reserved, "leader was reaped before pipe cleanup, allowing PID reuse");
+        assert!(descendant_state.map(|s| s.split(") ").nth(1).unwrap().starts_with('Z')).unwrap_or(true),
+            "owned descendant survived timeout cleanup");
     }
 }
