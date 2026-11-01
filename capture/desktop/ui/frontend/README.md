@@ -138,11 +138,20 @@ file; unknown fixture keys and an existing-file sentinel survived. Electron
 blocked. The guest, disk overlay and expiry timer were cleaned up. This proves
 that Linux Settings roundtrip, not capture output or Mac behavior.
 
-The guest's GTK portal chooser opened at 2510×2002 on a 1280×800 display, clipping
-the pointer-accessible Choose control. Keyboard selection and Cancel worked;
-pointer-use/layout acceptance remains open. Mac compilation, actual-clock
-integration and native picker/readback still need their own evidence. Keep the
-experiment off until those gates are closed; no new paid Mac session is implied.
+The first guest inherited `GDK_SCALE=2` from its Omarchy monitor config despite
+its scale-1 display, making the GTK portal chooser 2510×2002. Matching the
+disposable guest's GTK scale to its display enabled real pointer Choose/Cancel.
+A separate 1920×1080, scale-1 run verified the entire native dialog fits, actual
+pointer selection/Cancel, renderer Change/Reset, Rust persistence and visible
+readback. The app, persistent VM template and host settings were not changed.
+The guest and expiry were cleaned up after the successful runs.
+
+On 1280×800 the scale-1 GTK dialog still requests 1255×1001, even when given a
+smaller GTK geometry preference. This remains a small-display desktop/toolkit
+limitation, not an app-side size fix; do not mutate users' GTK settings to hide
+it. Mac compilation and synthetic Electron smoke passed CI on the initial slice
+commit. Actual-clock and native Mac evidence remain pending their explicit CI
+runs. Keep the experiment off until the applicable native gates are closed.
 
 For an actual Electron/libuv → Rust clock and persistence regression (no GUI or
 host config writes), after installing the frontend Electron binary, run from
@@ -156,6 +165,17 @@ APPARENT_STORAGE_TEST_ELECTRON="$PWD/capture/desktop/ui/frontend/node_modules/el
 ```
 
 The default Rust suite ignores this dependency-bearing integration test; an
-ignored case is not a pass. The explicit run uses the real Rust listener and
+ignored case is not a pass. Root CI explicitly runs it after the existing
+Rust checks on Linux and macOS, using those same jobs rather than a paid Mac
+rental. The explicit run uses the real Rust listener and
 shipped JS transport, actual hrtime deadlines, synthetic file-backed activation,
 set/readback/conflict/expired/reset and malformed-config refusal.
+
+The existing Mac root job also builds an isolated app with the repository
+installer (`APPARENT_NO_LAUNCH=1`) and explicitly runs
+`tests/mac-storage-native.cjs`. That CI-only probe uses the shipped renderer,
+installed Rust GUI and native parented picker. System Events input is restricted
+to the owned Electron PID; it checks the runner's existing automation permission
+and fails rather than granting or resetting TCC. Synthetic reports and owned
+window images are retained for seven days, including failures. A Linux skip or
+an unexecuted CI definition is not native Mac proof. No Mac rental is required.
