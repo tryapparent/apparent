@@ -39,66 +39,19 @@ Set `WEBSITE_PAGES_API_TOKEN` in `website-production`; the existing
 `WEBSITE_CD_ENABLED=true` gate enables only Pages. Remove obsolete SSH settings
 when present; they are no longer read. The hosted activation gate is unchanged.
 
-### Historical Clanker protocol (not an active publisher)
+### Retired Clanker capture-site origin
 
-The following documents the retained origin and older rollback receipts only.
-Do not activate the SSH publisher: its production `publish` operation now refuses
-the Clanker release root. Keep the infrastructure and prior releases intact.
+After canonical Pages acceptance, the capture site's Caddy serving block,
+release symlink and historical release directories were removed. Do not restore
+the old DNS A record, configure website SSH credentials, recreate that release
+tree or run historical overlay activators. Production `publish_site.py` already
+rejects this root; its temporary-filesystem tests are not a deployment procedure.
+Use only the Pages rollback in `site/docs/pages-deploy.md`.
 
-1. Review the live Caddy topology and allowlist in
-   [`../site/docs/clanker-deploy.md`](../site/docs/clanker-deploy.md). The target is
-   Clanker's existing `/opt/presentations/releases/apparent-site` symlink, **not**
-   `site/wrangler.jsonc`, Pages, or a wholesale `dist` upload. Reconcile any
-   approved live-only homepage changes into source before enabling whole-page CD.
-2. Create a dedicated unprivileged SSH deployment user with access only to its
-   staging directory and the site's release tree. It must not have Docker, sudo,
-   other presentations, backend secrets, or Caddy-configuration privileges. The
-   release tree must be readable by Caddy and writable by this publisher. Do not
-   make it world-writable. Use a deployment-specific key, never a personal key.
-   GitHub-hosted runners must be able to reach this SSH endpoint; do not widen a
-   private endpoint merely to satisfy this workflow. If needed, arrange an
-   approved private-network connection first.
-3. Configure the `website-production` environment. Restrict deployment branches
-   to `main`; use required reviewers if desired. Set environment variables
-   `WEBSITE_SSH_HOST`, `WEBSITE_SSH_USER`, and environment secrets
-   `WEBSITE_SSH_KEY`, `WEBSITE_KNOWN_HOSTS`. Pin the host key from a trusted channel;
-   the workflow does not trust a fresh `ssh-keyscan` result.
-4. Before activation, explicitly verify that Caddy permits the canonical and
-   legacy account/device routes, their three approved `/hosted/*-v4.png` art paths,
-   and the website's existing public assets. Do not expose the feature map,
-   prototypes, release directory, or every pathname. CD never edits Caddy or
-   native update/release routes.
-5. Set repository variable `WEBSITE_CD_ENABLED=true`, then dispatch on `main`.
-   Verify the actual runner, uploaded receipt, ordinary public routes, and
-   desktop/mobile behavior before declaring delivery operational.
-
-The publisher stages a fresh copy of the active release, overlays only the public
-package, preserves all other bytes (including installers, appcasts, and old hashed
-assets), and refuses same-name/different-byte `assets/` collisions. It holds the
-existing `.apparent-site-publish.lock` from baseline capture through staging,
-current-main checks, atomic switch and public byte checks. Every other publisher
-and rollback must use this lock too. It does not protect against hostile same-UID
-writers or publishers that ignore the protocol. Packages and baseline releases
-must have no symlinks or special files; staging must be private to the deployment
-account. No input tar archive is extracted remotely.
-
-A failed public byte check restores the old symlink only if this candidate is
-still active, and fails the job. A full inventory/rollback receipt stays outside
-the served tree at `releases/.apparent-site-cd-*.json`; only revision and target
-paths enter the Actions receipt. Failed stages and old releases are retained for
-inspection. Do not garbage-collect them without checking the active link and
-rollback receipts. Successful incoming upload directories are deleted; failed
-uploads may need operator cleanup under the dedicated user's `.cache/apparent-cd`.
-
-Guarded manual rollback, as the deployment user, with the retained reviewed script:
-
-```sh
-python3 scripts/cd/publish_site.py rollback /opt/presentations/releases/.apparent-site-cd-<release>.json
-```
-
-It checks both inventories and refuses to overwrite any later deployment. Verify
-public bytes afterward. Disable `WEBSITE_CD_ENABLED` before a manual repair if
-necessary; disablement does not cancel an already running production job.
+The proxy is shared. Its container, volumes, unrelated sites and separate
+document-product poller/deploy-control services remain in place. They must not
+be removed as capture-site cleanup. The website publication lock remains as an
+inert coordination inode; there is no active capture website behind it.
 
 ## Hosted activation (separate operator gate)
 
