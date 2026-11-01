@@ -65,7 +65,10 @@ fn publication_rejects_corrupt_prepared_png_before_success() {
 #[test]
 fn publication_checks_wav_persistence_before_transcription_or_manifest() {
     let root = std::env::temp_dir().join(crate::make_bundle_id());
-    std::fs::create_dir_all(root.join("audio.wav")).unwrap();
+    publication::Directory::open(&root, true)
+        .unwrap()
+        .child("audio.wav", true)
+        .unwrap();
     let recorded =
         audio::recorded_audio_from_wav(audio::encode_wav_16k(&[0.0; 16]).unwrap()).unwrap();
     let result = finalize_capture_bundle(
@@ -84,7 +87,7 @@ fn publication_checks_wav_persistence_before_transcription_or_manifest() {
         windows::ActivityLog::default(),
         None,
     );
-    assert!(result.is_err());
+    assert!(format!("{:#}", result.unwrap_err()).contains("Could not persist captured audio"));
     assert!(
         !root.join("apparent.json").exists(),
         "WAV write failure must stop before manifest publication"
@@ -96,9 +99,9 @@ fn publication_checks_wav_persistence_before_transcription_or_manifest() {
 fn publication_screen_wrapper_checks_journal_and_keeps_required_audio() {
     for collide in [true, false] {
         let root = std::env::temp_dir().join(crate::make_bundle_id());
-        std::fs::create_dir_all(&root).unwrap();
+        let directory = publication::Directory::open(&root, true).unwrap();
         if collide {
-            std::fs::create_dir(root.join(recover::UNFINISHED)).unwrap();
+            directory.child(recover::UNFINISHED, true).unwrap();
         }
         let mut target = target();
         target.frame.x = 0.12345678901234567;
@@ -121,7 +124,9 @@ fn publication_screen_wrapper_checks_journal_and_keeps_required_audio() {
             None,
         );
         if collide {
-            assert!(result.is_err());
+            assert!(
+                format!("{:#}", result.unwrap_err()).contains("Could not persist recovery journal")
+            );
             assert!(!root.join("apparent.json").exists());
         } else {
             let (_, bundle, summary) = result.unwrap();
@@ -141,16 +146,17 @@ fn publication_rejects_external_and_symlinked_movies_before_decoder_callback() {
         atomic::{AtomicBool, Ordering},
     };
     let outside = std::env::temp_dir().join(crate::make_bundle_id());
-    std::fs::create_dir_all(&outside).unwrap();
+    let outside_dir = publication::Directory::open(&outside, true).unwrap();
     let source = outside.join("recording.mp4");
-    std::fs::write(
-        &source,
-        include_bytes!("../../tests/fixtures/publication/tiny.mp4"),
-    )
-    .unwrap();
+    outside_dir
+        .write(
+            "recording.mp4",
+            include_bytes!("../../tests/fixtures/publication/tiny.mp4"),
+        )
+        .unwrap();
     for linked in [false, true] {
         let root = std::env::temp_dir().join(crate::make_bundle_id());
-        std::fs::create_dir_all(&root).unwrap();
+        publication::Directory::open(&root, true).unwrap();
         let video = if linked {
             let path = root.join("recording.mp4");
             std::os::unix::fs::symlink(&source, &path).unwrap();

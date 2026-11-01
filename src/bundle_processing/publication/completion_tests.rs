@@ -195,7 +195,10 @@ fn completion_marker_cleanup_failure_cannot_admit_an_intermediate_inner_success(
         &fixture.0,
         || fixture.build(),
         |dir, bundle, summary| {
-            std::fs::create_dir(dir.join(crate::recover::RECOVERING)).unwrap();
+            publication::Directory::open(dir, false)
+                .unwrap()
+                .child(crate::recover::RECOVERING, true)
+                .unwrap();
             (bundle, summary)
         },
     );

@@ -2,6 +2,7 @@
 //! a source artifact: publication requires one link per persisted file.
 use super::{Directory, fs, preflight_sources};
 use anyhow::{Context, Result, ensure};
+use std::os::unix::fs::DirBuilderExt;
 use std::path::{Component, Path, PathBuf};
 
 fn resolved(path: &Path) -> Result<PathBuf> {
@@ -55,7 +56,9 @@ pub(crate) fn stage(source: &Path, video: &Path, output: &Path) -> Result<(PathB
         .parent()
         .context("benchmark output has no parent")?;
     Directory::open(parent, true)?;
-    std::fs::create_dir(&output_path)?;
+    std::fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&output_path)?;
     let destination = Directory::open(&output_path, true)?;
     let mut copied = destination.leaf(leaf, true)?;
     std::io::copy(&mut &input, &mut copied)?;
