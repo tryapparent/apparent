@@ -1,5 +1,8 @@
 //! Exercise the public upload command's output boundary in an isolated process.
 use super::*;
+use serde_json::json;
+use std::fs;
+use std::os::unix::fs::DirBuilderExt;
 use std::os::unix::fs::PermissionsExt;
 
 const CHILD: &str = "APPARENT_TEST_HOSTED_LOGGING";
@@ -15,7 +18,7 @@ fn hosted_upload_logging_child() {
     // Establish fixture sensitivity at the unchanged, pre-redaction boundary.
     // A generic earlier trust failure must not make the output test pass.
     let raw = crate::handoff::resolve_bundle_dir(&bundle)
-        .and_then(|bundle| Client::default().enqueue_explicit(&bundle));
+        .and_then(|bundle| client().enqueue_explicit(&bundle));
     let error = match raw {
         Err(error) => error,
         Ok(_) => panic!("logging fixture unexpectedly admitted a capture"),
@@ -33,10 +36,10 @@ fn hosted_upload_logging_child() {
 #[test]
 fn hosted_upload_logging_omits_sensitive_paths_and_error_contents() {
     // Like Fixture::new, normalize temporary aliases before private-state checks.
-    let root = std::env::temp_dir()
-        .canonicalize()
-        .unwrap()
-        .join(format!("hosted-logging-{}", random_id().unwrap()));
+    let root = std::env::temp_dir().canonicalize().unwrap().join(format!(
+        "hosted-logging-{}",
+        apparent_connect_client::test_support::fixture_id()
+    ));
     fs::DirBuilder::new().mode(0o700).create(&root).unwrap();
     struct Cleanup(PathBuf);
     impl Drop for Cleanup {
@@ -92,6 +95,10 @@ fn hosted_upload_logging_omits_sensitive_paths_and_error_contents() {
         );
         let stdout = String::from_utf8(output.stdout).unwrap();
         let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(
+            stdout.contains("1 passed"),
+            "exact subprocess selected no test"
+        );
         assert!(!stdout.contains(SENTINEL), "sensitive stdout");
         assert!(!stderr.contains(SENTINEL), "sensitive stderr");
         assert!(

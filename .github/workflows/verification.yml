@@ -63,6 +63,7 @@ jobs:
           workspaces: |
             . -> target
             capture/engine -> target
+            connect/client -> connect/client/target
       - uses: actions/setup-node@v4
         if: needs.select.outputs.browser == 'true'
         with:
@@ -74,6 +75,11 @@ jobs:
       - uses: browser-actions/setup-chrome@v1
         if: needs.select.outputs.browser == 'true'
         id: chrome
+      - name: Verify the independent Connect client package
+        if: needs.select.outputs.root == 'true'
+        run: |
+          cargo build --manifest-path connect/client/Cargo.toml --locked
+          cargo test --manifest-path connect/client/Cargo.toml --locked -- --test-threads=2
       - name: Execute the same changed-tree checks (not GUI acceptance)
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
