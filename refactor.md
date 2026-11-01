@@ -102,20 +102,41 @@ current delta and retained proof before acceptance; do not relabel old native wo
 
 `./.githooks/pre-push` retains clean exact-HEAD, hidden-index and final-tree guards.
 `scripts/verification.py` selects from the complete main-merge-base delta, not the last
-commit or last push. Missing history, an empty/unknown delta, shared/build/security/
-lifecycle paths and selector/hook/CI edits broaden to root plus Engine build/tests.
+commit or last push. Missing history, an empty/unknown delta, changed shared/build/
+security/lifecycle behavior and selector/hook/CI edits broaden to root plus Engine build/tests.
 Document-only changes run hook/selector contracts without Cargo. Engine-test-only
 changes build/test Engine without the root app. Rename/delete selection includes
 both donor and destination. `.github/workflows/verification.yml` uses the same selector
 on PR base/main-before deltas, on macOS and Linux, with no secrets or publication.
 Existing website/Connect, updater and release workflows remain intact.
 
-The initial selector intentionally does not guess that arbitrary Rust code is
-mechanical or claim that future packages already exist. Unknown/new owners safely
-broaden. Add reviewed focused rules with deterministic tests when a slice's closure
-is known; do not use flags, labels, commit messages or hook bypasses as proof. The
-current conservative fallback may still run a broad suite for an unrecognized move.
-This is a small routing script, not a new verification framework or native harness.
+The follow-through selector recognizes the exact reviewed config #221 (`1ea0d146`)
+and recorder #225 (`28d83f3d`), plus processing `84ef8f56`, source pairs using complete Git blob identities and
+regular-file modes, including donor bodies, destination imports/re-exports and tests.
+Only those complete deltas (alone, combined or with narrow docs/package tests) select
+root compilation plus existing owning test sets: handoff/hosted/Settings for config,
+capture/agent_capture for recorder. The pinned config fixture repair is included.
+Processing runs bundle_processing/capture/recover/sketch; its complete production
+block and all ten artifact test bodies were compared byte-for-byte to `f1b46d2a`.
+Each filter must execute passing tests; a zero-match run fails. Any altered body,
+missing test, mode change, shared/native/build change or unknown extra path restores
+full root/Engine checks. These are source-pair gates, not commit-message, label,
+environment or user-selected bypasses. New donor bytes require review, not a guessed
+"mechanical" classification.
+
+The known `connect/web` package inventory from #200 selects its independent frozen
+Bun 1.3.10 install, production build, artifact fixtures and separate synthetic browser
+build/fixtures, without Rust. Its current closure reads only the five approved
+`site/public` assets outside the package; changes there or in publisher/service/shared
+inputs still broaden. CI provisions Node/Chrome for that route. This is executable
+routing for the additive package, not a claim it is already on main or that its
+current worker candidate has passed. Unknown new browser paths remain broad.
+
+Do not certify arbitrary `main.rs` edits: that file composes every subsystem. A
+later extraction revision must be source-compared and its exact blobs reviewed
+before replacing the pinned processing pair; the registry is deliberately bounded.
+No checklist step beyond 1 is checked by this routing follow-through. This remains
+a small selector, not a Rust parser, broad test framework or native harness.
 
 On Clanker run all new heavy builds/tests and hook-backed pushes once through
 `/home/simon/.local/bin/t3-build`; never nest it. Lightweight selector/shell fixtures
