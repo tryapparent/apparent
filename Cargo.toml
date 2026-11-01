@@ -6,6 +6,7 @@ default-run = "apparent"
 license = "MIT"
 
 [dependencies]
+apparent-capture-engine = { path = "capture/engine" }
 apparent-connect-client = { path = "connect/client" }
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
