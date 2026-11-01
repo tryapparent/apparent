@@ -4,10 +4,10 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 struct Sandbox(PathBuf);
 impl Sandbox {
     fn new() -> Self {
-        let base = std::env::var_os("TMPDIR")
-            .map(PathBuf::from)
-            .expect("tests require an explicit private TMPDIR");
-        let base = std::fs::canonicalize(base).unwrap();
+        // Honor an explicit TMPDIR, but also work in native test environments
+        // that leave it unset. Resolve Darwin's /var and /tmp aliases before
+        // the storage layer deliberately refuses symlinked path components.
+        let base = std::fs::canonicalize(std::env::temp_dir()).unwrap();
         let path = base.join(format!("apparent-tracing-test-{}", ident().unwrap()));
         std::fs::create_dir(&path).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
