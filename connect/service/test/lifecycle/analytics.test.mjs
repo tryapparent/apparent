@@ -72,6 +72,27 @@ test('account pilot consent: withdrawal purges pending events, blocks retries an
   assert.deepEqual(f.provider.bodies.at(-1).batch.map(e=>e.event),['connect_upload_completed']);
  }finally{await f.close();}
 });
+test('account pilot consent: account deletion purges only its consent and queue without authorizing a recreated account',async()=>{
+ const f=await setup();try{
+  await f.db.exec('UPDATE analytics_control SET enabled=1');
+  const removed=digest('deleted pilot account'),peer=digest('retained pilot account');
+  const create=account=>f.db.prepare('INSERT INTO accounts(id,email,beta,created_at) VALUES(?,?,?,?)').bind(account,'synthetic@example.com','active',Date.now()).run();
+  for(const account of [removed,peer]){await enroll(f,account);await create(account);}
+  f.provider.status=503;await sweep(f);
+  const before=await queued(f),peerRows=before.filter(row=>row.account_id===peer);
+  assert.equal(before.filter(row=>row.account_id===removed).length,2,'signup and storage were actually queued');
+  await f.db.prepare('DELETE FROM accounts WHERE id=?').bind(removed).run();
+  assert.equal(await f.db.prepare('SELECT account_id FROM analytics_consent WHERE account_id=?').bind(removed).first(),null);
+  assert.ok(await f.db.prepare('SELECT account_id FROM analytics_consent WHERE account_id=?').bind(peer).first());
+  assert.deepEqual(await queued(f),peerRows,'deletion preserves the other account and its queue');
+  await create(removed);
+  assert.deepEqual(await queued(f),peerRows,'a recreated account must obtain fresh opt-in');
+  f.provider.status=200;await sweep(f);
+  assert.ok(f.provider.bodies.at(-1).batch.length>0);
+  assert.ok(f.provider.bodies.at(-1).batch.every(event=>event.properties.distinct_id==='account:'+peer));
+  assert.deepEqual(await queued(f),[]);
+ }finally{await f.close();}
+});
 test('account pilot consent: invalid and future choices do not authorize collection',async()=>{
  const f=await setup();try{
   await f.db.exec('UPDATE analytics_control SET enabled=1');
