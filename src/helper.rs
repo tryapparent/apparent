@@ -1,4 +1,4 @@
-//! `apparent-helper`, the Swift executable shipped beside `apparent` (see `helper/main.swift`).
+//! `apparent-helper`, the Swift executable shipped beside `apparent` (see `shared/native/main.swift`).
 //!
 //! It owns the Apple frameworks that are Swift-only or absent from the objc2 bindings Apparent
 //! uses: SpeechAnalyzer transcription, CoreMediaIO/AVFoundation iPhone capture with a live
@@ -319,7 +319,7 @@ pub enum FrameTimes<'a> {
 
 /// Decodes movie frames into memory; `max_edge` 0 keeps native size.
 pub fn frames(movie: &Path, times: FrameTimes, max_edge: u32) -> Result<Vec<RgbaFrame>> {
-    let dir = std::env::temp_dir().join(format!("apparent-frames-{}", crate::make_bundle_id()));
+    let dir = std::env::temp_dir().join(format!("apparent-frames-{}", crate::shared::ids::make_bundle_id()));
     let (flag, value, sampled) = match times {
         FrameTimes::Every(ms) => ("--every", ms.max(1).to_string(), true),
         FrameTimes::At(times) => {

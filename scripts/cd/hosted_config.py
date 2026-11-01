@@ -35,5 +35,5 @@ def config(env):
 
 
 if __name__ == '__main__':
-    # Kept inside hosted/ so Wrangler resolves entrypoint/migrations correctly.
-    Path('hosted/wrangler.cd.json').write_text(json.dumps(config(os.environ), indent=2) + '\n')
+    # Kept inside connect/service/ so Wrangler resolves entrypoint/migrations correctly.
+    Path('connect/service/wrangler.cd.json').write_text(json.dumps(config(os.environ), indent=2) + '\n')

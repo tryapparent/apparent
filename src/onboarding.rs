@@ -1654,9 +1654,9 @@ mod tests {
             include_str!("onboarding.rs"),
             include_str!("settings.rs"),
             include_str!("ui.rs"),
-            include_str!("../helper/Onboarding.swift"),
-            include_str!("../helper/Settings.swift"),
-            include_str!("../helper/PermissionPanel.swift"),
+            include_str!("../desktop/native/Onboarding.swift"),
+            include_str!("../desktop/native/Settings.swift"),
+            include_str!("../desktop/native/PermissionPanel.swift"),
         ];
         let calls = [
             concat!("CGRequest", "ListenEventAccess"),

@@ -575,7 +575,7 @@ mod tests {
 
     #[test]
     fn hung_updated_image_fails_preflight_without_waiting_for_it() {
-        let dir = std::env::temp_dir().join(format!("apparent-preflight-{}", crate::make_bundle_id()));
+        let dir = std::env::temp_dir().join(format!("apparent-preflight-{}", crate::shared::ids::make_bundle_id()));
         fs::create_dir(&dir).unwrap();
         let image = dir.join("hung.AppImage");
         fs::write(&image, b"#!/bin/sh\nexec sleep 5\n").unwrap();
@@ -591,7 +591,7 @@ mod tests {
 
     #[test]
     fn failed_post_exit_launch_recovers_the_previous_image() {
-        let dir = std::env::temp_dir().join(format!("apparent-relaunch-{}", crate::make_bundle_id()));
+        let dir = std::env::temp_dir().join(format!("apparent-relaunch-{}", crate::shared::ids::make_bundle_id()));
         fs::create_dir(&dir).unwrap();
         let image = dir.join("new.AppImage");
         let backup = dir.join("previous.AppImage");
@@ -671,7 +671,7 @@ mod tests {
 
     #[test]
     fn update_identity_reads_its_sidecar() {
-        let dir = std::env::temp_dir().join(crate::make_bundle_id());
+        let dir = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
         fs::create_dir(&dir).unwrap();
         let image = dir.join("Apparent.AppImage");
         fs::write(image.with_extension("AppImage.apparent-update.json"), br#"{"channel":"main","id":"new"}"#).unwrap();
@@ -681,7 +681,7 @@ mod tests {
 
     #[test]
     fn bad_download_cannot_replace_the_image_and_exchange_preserves_the_previous_one() {
-        let dir = std::env::temp_dir().join(format!("apparent-update-test-{}", crate::make_bundle_id()));
+        let dir = std::env::temp_dir().join(format!("apparent-update-test-{}", crate::shared::ids::make_bundle_id()));
         fs::create_dir(&dir).unwrap();
         let image = dir.join("Apparent.AppImage");
         let stage = dir.join("download");
@@ -708,7 +708,7 @@ mod tests {
 
     #[test]
     fn channel_command_preserves_other_config_and_rejects_invalid_choices() {
-        let dir = std::env::temp_dir().join(crate::make_bundle_id());
+        let dir = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
         fs::create_dir(&dir).unwrap();
         let path = dir.join("config.json");
         fs::write(&path, br#"{"ingestToken":"private","autoSend":false}"#).unwrap();
@@ -725,7 +725,7 @@ mod tests {
 
     #[test]
     fn config_records_the_running_version_without_touching_preferences() {
-        let dir = std::env::temp_dir().join(crate::make_bundle_id());
+        let dir = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
         fs::create_dir(&dir).unwrap();
         let path = dir.join("config.json");
         fs::write(&path, br#"{"updateChannel":"main","ingestToken":"private"}"#).unwrap();
@@ -741,7 +741,7 @@ mod tests {
 
     #[test]
     fn status_only_reports_a_live_process_with_the_recorded_start_time() {
-        let dir = std::env::temp_dir().join(crate::make_bundle_id());
+        let dir = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
         fs::create_dir(&dir).unwrap();
         let path = dir.join("config.json");
         let pid = std::process::id();

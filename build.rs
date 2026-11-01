@@ -192,18 +192,36 @@ fn compile_metal_shader(src_rel: &str, name: &str) {
 /// `apparent` binary, where `helper::path` and `scripts/install-app.sh` look for it.
 fn compile_helper() {
     let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let helper_dir = manifest_dir.join("helper");
-    println!("cargo:rerun-if-changed={}", helper_dir.display());
-    let mut sources: Vec<PathBuf> = std::fs::read_dir(&helper_dir)
-        .expect("helper/ is missing")
-        .filter_map(|entry| entry.ok().map(|e| e.path()))
-        .filter(|path| path.extension().is_some_and(|ext| ext == "swift"))
+    // Keep owner-native input lists explicit: new files must not silently enter the helper build.
+    // Sort the merged list by basename to preserve the former helper/*.swift compiler order.
+    let owner_sources: &[&[&str]] = &[
+        &[
+            "capture/native/Export.swift",
+            "capture/native/LiveTranscribe.swift",
+            "capture/native/Media.swift",
+            "capture/native/Mirror.swift",
+            "capture/native/PlaybackVolume.swift",
+            "capture/native/ScreenProbe.swift",
+        ],
+        &[
+            "desktop/native/Onboarding.swift",
+            "desktop/native/OnboardingDemo.swift",
+            "desktop/native/PermissionPanel.swift",
+            "desktop/native/Settings.swift",
+            "desktop/native/ShortcutKeys.swift",
+        ],
+        &["shared/native/main.swift"],
+    ];
+    let mut sources: Vec<PathBuf> = owner_sources
+        .iter()
+        .flat_map(|group| group.iter())
+        .map(|source| manifest_dir.join(source))
         .collect();
-    sources.sort();
+    sources.sort_by(|left, right| left.file_name().cmp(&right.file_name()));
     for source in &sources {
         println!("cargo:rerun-if-changed={}", source.display());
     }
-    let plist = helper_dir.join("Info.plist");
+    let plist = manifest_dir.join("shared/native/Info.plist");
     println!("cargo:rerun-if-changed={}", plist.display());
     println!("cargo:rerun-if-env-changed=APPARENT_HELPER_BUNDLE_ID");
     println!("cargo:rerun-if-env-changed=APPARENT_PREVIEW_BUILD");

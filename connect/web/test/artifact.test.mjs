@@ -25,7 +25,7 @@ test('independent artifact publishes all private loading routes and nothing else
 })
 test('only approved public assets are copied without changing their URLs or bytes', async () => {
   for (const asset of ['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png', 'hosted/agent-reading-v4.png', 'HostGrotesk-Variable.ttf', 'apparent-wordmark.svg']) {
-    assert.deepEqual(await readFile(`${root}/${asset}`), await readFile(`${process.env.CONNECT_ASSET_SOURCE || '../../site/public'}/${asset}`))
+    assert.deepEqual(await readFile(`${root}/${asset}`), await readFile(`${process.env.CONNECT_ASSET_SOURCE || '../../public/site/public'}/${asset}`))
   }
 })
 test('runtime and SSR graph cannot import the legacy site implementation', async () => {

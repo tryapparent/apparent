@@ -1902,7 +1902,7 @@ pub fn extract_frames_range(
         let step_ms = (1_000 / u64::from(fps)).max(1);
         let times: Vec<u64> = (from_ms..=to_ms).step_by(step_ms as usize).collect();
         if !times.is_empty()
-            && let Ok(decoded) = crate::movie_frames_at(&video, &times, offset_ms, 0)
+            && let Ok(decoded) = crate::bundle_processing::movie_frames_at(&video, &times, offset_ms, 0)
             && !decoded.is_empty()
         {
             fs::create_dir_all(&output_dir)?;

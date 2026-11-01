@@ -1,5 +1,5 @@
 //! The welcome window in GPUI, drawn from `onboarding::Flow::view()` like the SwiftUI window in
-//! `helper/Onboarding.swift` (same screens, copy, sizes and palette), and driven by the same JSON
+//! `desktop/native/Onboarding.swift` (same screens, copy, sizes and palette), and driven by the same JSON
 //! messages: `state`, `request`, `open-settings`, `hide`, `show` and `close`. Its buttons report
 //! the same actions (`continue`, `back`, `later`, `close`, `grant:<permission>`).
 //!

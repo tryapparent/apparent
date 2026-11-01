@@ -35,7 +35,7 @@ Never substitute `dist-test` for `dist`; it embeds a loopback API origin.
 For a standalone checkout, copy only this package to a directory outside the
 repository and supply `CONNECT_ASSET_SOURCE=/absolute/approved-assets` containing
 the five files below. Run the same frozen install, `npm run typecheck`, and
-`npm test` there. No `site/node_modules`, site source, root manifest, native helper
+`npm test` there. No `public/site/node_modules`, site source, root manifest, native helper
 or backend implementation is required. The default asset source is only a build
 convenience, not an implementation dependency.
 
@@ -59,7 +59,7 @@ convenience, not an implementation dependency.
   `VITE_HOSTED_API_ORIGIN` is a build override, defaulting to that existing API.
   Deploy topology must retain the exact credentialed CORS/CSRF allowlist and
   host-only Secure/HttpOnly/SameSite=Lax cookie contract from `docs/hosted-api.md`.
-- Five approved assets are copied at build time from canonical `site/public`:
+- Five approved assets are copied at build time from canonical `public/site/public`:
   `/hosted/source-pond-v4.png`, `/hosted/agent-pond-v4.png`,
   `/hosted/agent-reading-v4.png`, `/HostGrotesk-Variable.ttf`,
   `/apparent-wordmark.svg`. Original URLs and bytes are checked. No other site
@@ -74,12 +74,12 @@ convenience, not an implementation dependency.
 
 The duplicate is intentional **migration staging**, not two permanent owners.
 This is checklist **5b** only. Production adoption **5c** remains blocked on Pages
-owner `99ea5290-aecc-4bf0-8aca-3200f62f5e5c` clearance. `site/` still owns the live
+owner `99ea5290-aecc-4bf0-8aca-3200f62f5e5c` clearance. `public/site/` still owns the live
 build and publisher; production build separation is not complete.
 Integration must wire builds/artifact composition, route aliases, deployment and
 CI; exercise the exact composed artifact against the same browser contracts;
 verify live OAuth/callback/CORS/cookie behavior in separately authorized staging;
-then remove `site/src/hosted` and its route/SSR/prerender wiring. Preserve approved
+then remove `public/site/src/hosted` and its route/SSR/prerender wiring. Preserve approved
 visuals and explicit consent. Update the feature map/docs in that integration
 change, not this exclusive-ownership slice. Roll back by restoring legacy route
 composition; no API, cookie, schema or native credential migration is required.

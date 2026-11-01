@@ -74,7 +74,7 @@ MOVES = {
 
 # Additive independent browser package from #200, inventory checked at c5bb1b78. Root
 # build.rs/Cargo/native inputs do not consume this directory; its build reads
-# the five approved site/public brand assets. Changing those/shared inputs is
+# the five approved public/site/public brand assets. Changing those/shared inputs is
 # not this route. SharedLinks.tsx closure rechecked at 31281ba5; its existing
 # standalone verifier covers shares routes. Unknown new owners remain broad.
 BROWSER_FILES = {"connect/web/" + path for path in (

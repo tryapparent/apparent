@@ -2,10 +2,10 @@ name: Website and Connect — checks & deploy
 
 on:
   pull_request:
-    paths: ['site/**', 'connect/web/**', 'hosted/**', 'assets/brand/**', 'scripts/cd/**', '.github/workflows/web-delivery.yml']
+    paths: ['public/site/**', 'connect/web/**', 'connect/service/**', 'assets/brand/**', 'scripts/cd/**', '.github/workflows/web-delivery.yml']
   push:
     branches: [main]
-    paths: ['site/**', 'connect/web/**', 'hosted/**', 'assets/brand/**', 'scripts/cd/**', '.github/workflows/web-delivery.yml']
+    paths: ['public/site/**', 'connect/web/**', 'connect/service/**', 'assets/brand/**', 'scripts/cd/**', '.github/workflows/web-delivery.yml']
   workflow_dispatch:
 
 permissions:
@@ -29,17 +29,17 @@ jobs:
         with:
           node-version: '22.23.0'
           cache: npm
-          cache-dependency-path: hosted/package-lock.json
+          cache-dependency-path: connect/service/package-lock.json
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.3.10'
       - name: Test publication contracts
         run: python3 -m unittest discover -s scripts/cd -p 'test_*.py'
       - name: Verify Worker in local workerd with synthetic accounts
-        working-directory: hosted
+        working-directory: connect/service
         run: npm ci && npm test
       - name: Install locked website dependencies and browser
-        working-directory: site
+        working-directory: public/site
         run: |
           bun install --frozen-lockfile
           ./node_modules/.bin/playwright-core install --with-deps chromium
@@ -51,7 +51,7 @@ jobs:
           CONNECT_EVIDENCE: ${{ runner.temp }}/connect-package-evidence
         run: bun install --frozen-lockfile && npm test
       - name: Build and test production website package
-        working-directory: site
+        working-directory: public/site
         env:
           APPARENT_PUBLIC_SITE: '1'
           VITE_HOSTED_API_ORIGIN: https://hosted.tryapparent.com
@@ -63,7 +63,7 @@ jobs:
           cp -a dist-apparent "$RUNNER_TEMP/public-artifact"
           node scripts/compose-connect.mjs
       - name: Reconcile accepted live homepage and prepare Pages-only artifact
-        working-directory: site
+        working-directory: public/site
         run: |
           node --test scripts/test-compose-connect.mjs scripts/test-pages-package.mjs scripts/test-pages-video.mjs scripts/test-pages-video-runtime.mjs
           node scripts/prepare-pages.mjs
@@ -72,13 +72,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: website-${{ github.sha }}
-          path: site/dist-apparent/
+          path: public/site/dist-apparent/
           if-no-files-found: error
           # The checked public demos use .local-media; do not drop their assets.
           include-hidden-files: true
           retention-days: 7
       - name: Verify Connect browser behavior across credentialed origins
-        working-directory: site
+        working-directory: public/site
         env:
           APPARENT_PUBLIC_SITE: '1'
           VITE_HOSTED_API_ORIGIN: http://127.0.0.1:18809
@@ -89,7 +89,7 @@ jobs:
           TMPDIR: ${{ runner.temp }}
           SITE_EVIDENCE: ${{ runner.temp }}/connect-evidence
         run: |
-          (cd ../connect/web && CONNECT_BUILD_DIR=dist-test npm run build)
+          (cd ../../connect/web && CONNECT_BUILD_DIR=dist-test npm run build)
           node scripts/compose-connect.mjs
           node scripts/prepare-pages.mjs
           node scripts/verify-composed.mjs
@@ -117,14 +117,14 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: website-${{ github.sha }}
-          path: site/dist-apparent
+          path: public/site/dist-apparent
       - uses: actions/setup-node@v4
         with:
           node-version: '22.23.0'
           cache: npm
-          cache-dependency-path: hosted/package-lock.json
+          cache-dependency-path: connect/service/package-lock.json
       - run: npm ci
-        working-directory: hosted
+        working-directory: connect/service
       - name: Publish checked main to Cloudflare Pages (never Clanker or the Worker)
         env:
           WEBSITE_PAGES_API_TOKEN: ${{ secrets.WEBSITE_PAGES_API_TOKEN }}
@@ -158,9 +158,9 @@ jobs:
         with:
           node-version: '22.23.0'
           cache: npm
-          cache-dependency-path: hosted/package-lock.json
+          cache-dependency-path: connect/service/package-lock.json
       - run: npm ci && npm run build
-        working-directory: hosted
+        working-directory: connect/service
       - name: Render approved resource bindings (never apply migrations)
         run: python3 scripts/cd/hosted_config.py
       - name: Deploy current checked main and read back version and anonymous CORS
@@ -170,13 +170,13 @@ jobs:
           set -euo pipefail
           test -n "$CLOUDFLARE_API_TOKEN"
           test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$GITHUB_SHA"
-          cd hosted
+          cd connect/service
           ./node_modules/.bin/wrangler deploy --config wrangler.cd.json --tag "$GITHUB_SHA" --message "GitHub Actions $GITHUB_RUN_ID commit $GITHUB_SHA" --strict --no-autoconfig
-          cd ..
-          python3 scripts/cd/verify_worker.py "$GITHUB_SHA" > hosted-receipt.json
+          cd ../..
+          python3 scripts/cd/verify_worker.py "$GITHUB_SHA" > connect-service-receipt.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: hosted-deployment-receipt
-          path: hosted-receipt.json
+          path: connect-service-receipt.json
           if-no-files-found: ignore

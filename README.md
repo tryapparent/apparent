@@ -309,7 +309,7 @@ The settings were tuned on simulated captures with hand-labelled ideal crops: on
 terminal, two windows side by side, an arrow from one window to another, a tiny badge in a huge
 window, a menu-bar menu, talk-only keyframes, a dragged window, overlapping windows, thirty seconds
 hopping between three windows, a stray cursor, a full-screen app, and a scrolling page.
-`scripts/autocrop-corpus.mjs` renders them with Playwright (from `site/node_modules`), `apparent
+`scripts/autocrop-corpus.mjs` renders them with Playwright (from `public/site/node_modules`), `apparent
 fixture` builds each into a real bundle through the capture pipeline, `apparent autocrop-eval` scores
 the crops (coverage of the ink and clicks, overlap with the ideal, context, legibility in the sheet,
 stability; `--sweep` searches the settings), and `scripts/autocrop-gallery.mjs` renders a gallery to
@@ -541,7 +541,7 @@ usual; the log says which (`Live transcription: …`). Hex and iPhone recordings
 
 ## Helper
 
-`apparent-helper` is a small Swift executable built by `build.rs` from `helper/` and shipped inside
+`apparent-helper` is a small Swift executable built by `build.rs` from explicit owner-native source groups and shipped inside
 `Apparent.app` next to `apparent`. It owns the Swift-only or unbound Apple frameworks: SpeechAnalyzer,
 CoreMediaIO/AVFoundation iPhone capture with the mirror window, AVFoundation movie decoding, and the
 SwiftUI welcome window (`onboarding`).
@@ -616,7 +616,7 @@ MIT. See [LICENSE](LICENSE).
 
 ### THIRD_PARTY
 
-`helper/PermissionPanel.swift` adapts code and tuning from two MIT-licensed projects:
+`capture/native/ and desktop/native/PermissionPanel.swift` adapts code and tuning from two MIT-licensed projects:
 
 - [AskForPermission](https://github.com/riko2chen/AskForPermission), Copyright (c) 2026 Riko: the
   flight along a quadratic Bézier, waiting for the System Settings window to settle, following it

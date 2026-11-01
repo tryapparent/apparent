@@ -239,7 +239,7 @@ mod tests {
             let dir = std::env::temp_dir().join(format!(
                 "apparent-cli-{name}-{}-{}",
                 std::process::id(),
-                crate::now_epoch_ms()
+                crate::shared::clock::now_epoch_ms()
             ));
             std::fs::create_dir_all(&dir).unwrap();
             Self(std::fs::canonicalize(dir).unwrap())

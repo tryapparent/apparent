@@ -119,7 +119,7 @@ impl PhoneSession {
         device_id: Option<&str>,
         telemetry: Option<Arc<SharedCaptureTelemetry>>,
     ) -> Result<Self> {
-        let session_epoch_ms = crate::now_epoch_ms();
+        let session_epoch_ms = crate::shared::clock::now_epoch_ms();
         let recording = movie.map(|_| crate::retention::Recording::start());
         let mut command = Command::new(helper::path()?);
         command.arg("mirror");
@@ -265,7 +265,7 @@ impl PhoneSession {
     /// Transitions an open preview session into active movie recording.
     pub fn begin_recording(&mut self, movie: &Path) {
         self.started_at = Instant::now();
-        self.session_epoch_ms = crate::now_epoch_ms();
+        self.session_epoch_ms = crate::shared::clock::now_epoch_ms();
         self.busy
             .get_or_insert_with(crate::retention::Recording::start);
         {
@@ -524,7 +524,7 @@ pub fn build_movie_bundle(
                                 .iter()
                                 .all(|(k, _)| k.reason == crate::model::KeyframeReason::Mark)
                         {
-                            let prep = crate::prepare_visuals(
+                            let prep = crate::bundle_processing::prepare_visuals(
                                 preview,
                                 raw_frames.first(),
                                 None,
@@ -576,20 +576,20 @@ pub fn build_movie_bundle(
     }
     ensure!(!frames.is_empty(), "No frames could be decoded");
     let movie = capture.movie.clone();
-    let extras = crate::SourceExtras {
+    let extras = crate::bundle_processing::SourceExtras {
         source: Some("iphone".into()),
         device: Some(capture.device),
         context: capture.context,
         context_changes: capture.context_changes,
         screens: capture.screens,
         flags: capture.flags,
-        full_frames: (!already_full).then(|| -> crate::FullFrames {
+        full_frames: (!already_full).then(|| -> crate::bundle_processing::FullFrames {
             Box::new(move |times: &[u64]| -> Result<Vec<RgbaFrame>> {
                 helper::frames(&movie, FrameTimes::At(times), PHONE_FRAME_EDGE)
             })
         }),
         prepared,
-        timings: crate::StageTimings {
+        timings: crate::bundle_processing::StageTimings {
             started_at: Some(started_at),
             audio_ms: Some(audio_ms),
             candidates_ms: Some(candidates_ms),
@@ -598,7 +598,7 @@ pub fn build_movie_bundle(
         },
         ..Default::default()
     };
-    crate::build_bundle_from_parts(
+    crate::bundle_processing::build_bundle_from_parts(
         bundle_dir,
         capture.target,
         probe.duration_ms,

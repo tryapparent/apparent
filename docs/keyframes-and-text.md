@@ -72,7 +72,7 @@ inspectable config; provisioning is separate and export does not download models
 See [export audio](export-and-retention.md#explicit-export-audio) for the versioned
 timed script, integrity pins, limits, provenance and failure/recovery contract.
 
-## Experiment `liveTranscribe` (`src/live_transcribe.rs`, `helper/LiveTranscribe.swift`)
+## Experiment `liveTranscribe` (`src/live_transcribe.rs`, `capture/native/LiveTranscribe.swift`)
 
 Off by default (see Experiments in `AGENTS.md`). With it on and Apple Speech the transcriber, `AudioRecorder::start` also starts `apparent-helper transcribe-stream` (one SpeechAnalyzer, finalized results only; it never downloads a model, so one that isn't installed fails at once) and a thread that feeds it the recorder's 16 kHz buffer as `audio::pcm16` every 160 ms. `RecordedAudio.live` carries it to `transcribe::transcribe`, which sends the samples it hasn't had from the finished WAV, closes its input and waits up to 6 s for the tail; the helper must report exactly the WAV's sample count. Word times are therefore the WAV's own, and match one SpeechAnalyzer pass over `audio.wav` word for word and millisecond for millisecond (the batch path splits recordings over 22 s at silences and transcribes the pieces in parallel, so long recordings can differ from it at the cuts). Any failure is logged (`Live transcription failed, …`) and the WAV is transcribed as before; Hex, iPhone and imported recordings never stream. `apparent reprocess B --out O --bench 1 --live-speed 1` replays a bundle's audio into it in real time and logs `Live transcription: N words, … tail N ms` and the finish timings.
 

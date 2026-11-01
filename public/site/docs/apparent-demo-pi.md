@@ -1,0 +1,9 @@
+# Archived Apparent Pi demo cut
+
+The former landing page video, `public/apparent-demo-pi.mp4` (21.3 s, 1200×720 H.264, **no audio stream**), and its poster are no longer included in the public site. The video was a browser recording of the interactive demo directly beneath it, not a live Pi session. The interactive Mac and iPhone modes remain the site's sole demonstration and use narration files, `public/apparent-narration-{mac,iphone}.mp3`; their word onsets and caption text are in `src/demo/script.ts`.
+
+The narration was generated locally with Piper’s `en_GB-cori-medium` voice. The voice’s [model card](https://huggingface.co/rhasspy/piper-voices/raw/main/en/en_GB/cori/medium/MODEL_CARD) identifies the source dataset as public-domain LibriVox recordings. Mac lines: “The live badge overlaps the title.” / “And the buttons sit too low. Move the badge and align the row.” iPhone lines: “The live pill covers the phone’s title.” / “And the bottom action bar is clipped. Please make both visible.” Each first line starts 1.1 s after capture begins; the second starts at 5.4 s. The two 10 s tracks were encoded with FFmpeg and are distinct from the previous ElevenLabs narration.
+
+The screen recording was made with T3 Code’s collaborative browser recording of the local production build. The interactive demo was played from t=0; the browser capture was cropped to its 1200×720 stage and trimmed to 21.3 s. The recording hid only the interactive player’s sound hint and replay overlay. The first cut mixed in the new Mac narration 3.6 s into the video; Simon rejected the voice, so the MP4 was remuxed with `-map 0:v:0 -c:v copy -an` to remove its audio stream without re-encoding the picture.
+
+Build with `APPARENT_PUBLIC_SITE=1 bun run build && node scripts/package-apparent.mjs` from `public/site/`. The allowlisted `dist-apparent` artifact omits the retired video and poster, previous narration, Apparent releases, the update feed, and the feature map.

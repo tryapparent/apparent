@@ -137,7 +137,7 @@ impl ApparentCoordinator {
             );
         }
         self.completed_dir = Some(dir.clone());
-        self.last_local_capture_ms = crate::now_epoch_ms();
+        self.last_local_capture_ms = crate::shared::clock::now_epoch_ms();
         if feedback_capture {
             // No automatic clipboard write: the completed pill must not claim
             // that this private capture was copied.

@@ -15,7 +15,8 @@ use crate::model::{
     Stroke, TargetInfo, TranscriptData, keyframe_budget,
 };
 use crate::sketch::{marks_of, summary_markdown};
-use crate::{audio, autocrop, capture, helper, model, now_epoch_ms, recover, render, speech_model, transcribe, windows};
+use crate::{audio, autocrop, capture, helper, model, recover, render, speech_model, transcribe, windows};
+use crate::shared::clock::now_epoch_ms;
 
 /// Matches full-resolution decoded frames back to selected keyframes by timestamp (within 250ms),
 /// so a single frame decode failure only leaves that one keyframe at candidate resolution.
@@ -850,7 +851,8 @@ pub fn build_bundle_from_parts(
 mod tests {
     use super::*;
     use crate::model::TargetFrame;
-    use crate::{generate_demo_bundle, handoff, make_bundle_id, sketch};
+    use crate::{handoff, sketch};
+    use crate::shared::{demo::generate_demo_bundle, ids::make_bundle_id};
 
     #[test]
     fn movie_without_safe_screenshots_is_not_a_bundle() {

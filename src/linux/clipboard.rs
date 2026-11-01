@@ -352,7 +352,7 @@ mod tests {
 
     #[test]
     fn unavailable_helper_is_detected_before_the_clipboard_is_touched() {
-        let root = std::env::temp_dir().join(crate::make_bundle_id());
+        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
         std::fs::create_dir(&root).unwrap();
         let helper = root.join("helper.py");
         assert!(!helper_ready(&helper, std::ffi::OsStr::new("wayland-0")));

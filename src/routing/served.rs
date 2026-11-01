@@ -554,7 +554,7 @@ mod tests {
 
     fn temp(name: &str) -> PathBuf {
         let dir =
-            std::env::temp_dir().join(format!("apparent-served-{name}-{}", crate::make_bundle_id()));
+            std::env::temp_dir().join(format!("apparent-served-{name}-{}", crate::shared::ids::make_bundle_id()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }

@@ -29,11 +29,11 @@ replacement; otherwise dispatch the workflow on `main` after reviewing it.
 
 ## Website activation: Cloudflare Pages
 
-The active website job now publishes only `site/dist-apparent` to the isolated
+The active website job now publishes only `public/site/dist-apparent` to the isolated
 `apparent-capture` Pages project, using `scripts/cd/publish_pages.py` and
-`site/wrangler.pages.jsonc`. It does not execute `site/wrangler.jsonc`, deploy the
+`public/site/wrangler.pages.jsonc`. It does not execute `public/site/wrangler.jsonc`, deploy the
 hosted Worker, or connect to Clanker. See
-[`../site/docs/pages-deploy.md`](../site/docs/pages-deploy.md) for the current build,
+[`../public/site/docs/pages-deploy.md`](../public/site/docs/pages-deploy.md) for the current build,
 accepted-homepage reconciliation, video limits, exact hostname cutover and rollback.
 Set `WEBSITE_PAGES_API_TOKEN` in `website-production`; the existing
 `WEBSITE_CD_ENABLED=true` gate enables only Pages. Remove obsolete SSH settings
@@ -46,7 +46,7 @@ release symlink and historical release directories were removed. Do not restore
 the old DNS A record, configure website SSH credentials, recreate that release
 tree or run historical overlay activators. Production `publish_site.py` already
 rejects this root; its temporary-filesystem tests are not a deployment procedure.
-Use only the Pages rollback in `site/docs/pages-deploy.md`.
+Use only the Pages rollback in `public/site/docs/pages-deploy.md`.
 
 The proxy is shared. Its container, volumes, unrelated sites and separate
 document-product poller/deploy-control services remain in place. They must not
@@ -55,7 +55,7 @@ inert coordination inode; there is no active capture website behind it.
 
 ## Hosted activation (separate operator gate)
 
-Complete [`../hosted/README.md`](../hosted/README.md)'s deployment prerequisites
+Complete [`../connect/service/README.md`](../connect/service/README.md)'s deployment prerequisites
 first: approved Free-plan configuration and CPU proof, existing private Standard
 R2 bucket, initialized D1/ledger, live Google/cookie/device/cron proof and security
 review. A green local workerd suite is not those proofs. Do not activate this job
@@ -75,7 +75,7 @@ The existing Worker's `GOOGLE_CLIENT_SECRET` and `TOKEN_ENCRYPTION_KEY` stay in
 Cloudflare. They are never supplied to Actions or rotated by CD. Restrict the token
 as far as Cloudflare permits and review its actual access before activation.
 `hosted_config.py` validates the required public identifiers and writes an ignored
-`hosted/wrangler.cd.json` next to the existing entrypoint. The fixed production
+`connect/service/wrangler.cd.json` next to the existing entrypoint. The fixed production
 origins retain hosted API/auth/callback and legacy transition CORS; the UI stays
 on app. Observability, workers.dev and preview URLs remain off. No CPU override,
 resource creation command, database migration or ledger initializer is run.
@@ -98,6 +98,6 @@ or use a separately reviewed release sequence.
 Run the commands in the checks section from the repository root (the Node commands
 from their package directories). For a no-network deployment wiring check, generate
 configuration using **synthetic** identifiers and run
-`hosted/node_modules/.bin/wrangler deploy --config hosted/wrangler.cd.json --dry-run`.
+`connect/service/node_modules/.bin/wrangler deploy --config wrangler.cd.json --dry-run`.
 This proves configuration and packaging only, not permissions or deployment. Never
 put real tokens in test fixtures, the generated file, artifacts, or logs.

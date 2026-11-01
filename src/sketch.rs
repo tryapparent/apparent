@@ -2148,7 +2148,7 @@ mod tests {
         // Audio but no speech model yet: the summary says so instead of staying quiet.
         let audio_dir = std::env::temp_dir().join(format!(
             "apparent-summary-audio-{}-{}",
-            std::process::id(), crate::now_epoch_ms()
+            std::process::id(), crate::shared::clock::now_epoch_ms()
         ));
         std::fs::create_dir_all(&audio_dir).unwrap();
         std::fs::write(audio_dir.join("audio.wav"), crate::audio::encode_wav_16k(&[0.0; 1280]).unwrap()).unwrap();

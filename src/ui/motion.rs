@@ -577,7 +577,7 @@ pub(crate) fn trace_open(launch: &str, display: [f32; 2]) {
         let mut out = std::io::BufWriter::new(file);
         let header = serde_json::json!({
             "type": "header", "launch": launch, "width": display[0], "height": display[1],
-            "hz": 60, "scale": 2, "wall": crate::now_epoch_ms() as f64 / 1000.0,
+            "hz": 60, "scale": 2, "wall": crate::shared::clock::now_epoch_ms() as f64 / 1000.0,
             "platform": "gpui", "units": "pt", "clock": "wall",
         });
         let _ = writeln!(out, "{header}");

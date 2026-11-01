@@ -563,7 +563,7 @@ mod tests {
 
     #[test]
     fn recordings_go_to_their_addressed_session_not_the_viewed_one() {
-        let dir = std::env::temp_dir().join(format!("apparent-dest-{}", crate::make_bundle_id()));
+        let dir = std::env::temp_dir().join(format!("apparent-dest-{}", crate::shared::ids::make_bundle_id()));
         fs::create_dir_all(&dir).unwrap();
         fs::write(
             dir.join("timeline.json"),

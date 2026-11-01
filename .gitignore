@@ -1,6 +1,6 @@
 /target
 /dist
-/site/public/releases
+/public/site/public/releases
 /.DS_Store
 /.build
 /.swiftpm

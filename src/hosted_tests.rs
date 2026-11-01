@@ -222,15 +222,7 @@ fn hosted_no_historical_scan_private_credentials_and_explicit_read_required() {
 }
 #[test]
 fn hosted_connect_alias_command_subprocess() {
-    use clap::Parser;
-    let Some(name) = std::env::var_os("APPARENT_TEST_CONNECT_ALIAS") else {
-        return;
-    };
-    let cli = crate::Cli::try_parse_from(["apparent", name.to_str().unwrap(), "disable"]).unwrap();
-    let Some(crate::Command::Connect { command: parsed }) = cli.command else {
-        panic!("not a hosted command");
-    };
-    command(parsed).unwrap();
+    crate::composition::cli::hosted_connect_alias_command_subprocess().unwrap();
 }
 
 #[test]

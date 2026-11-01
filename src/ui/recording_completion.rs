@@ -69,7 +69,7 @@ pub(super) fn finalize(
     activity.stop_started = Some(stop_started);
     activity.stop_ms = Some(stop_started.elapsed().as_millis() as u64);
     let duration_ms = recording.duration_ms;
-    let finalized = crate::finalize_capture_bundle(
+    let finalized = crate::bundle_processing::finalize_capture_bundle(
         &bundle_dir,
         target,
         recording,

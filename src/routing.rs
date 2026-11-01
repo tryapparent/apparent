@@ -674,8 +674,8 @@ mod tests {
 
     #[test]
     fn project_root_walks_up_to_git() {
-        let base = std::env::temp_dir().join(format!("apparent-root-{}", crate::make_bundle_id()));
-        let site = base.join("repo/site/src");
+        let base = std::env::temp_dir().join(format!("apparent-root-{}", crate::shared::ids::make_bundle_id()));
+        let site = base.join("repo/public/site/src");
         std::fs::create_dir_all(&site).unwrap();
         std::fs::create_dir_all(base.join("repo/.git")).unwrap();
         assert_eq!(project_root(&site), (base.join("repo"), true));
@@ -864,7 +864,7 @@ mod tests {
     #[test]
     fn destination_is_recorded_and_preferred_by_send() {
         let dir =
-            std::env::temp_dir().join(format!("apparent-route-{}.apparent", crate::make_bundle_id()));
+            std::env::temp_dir().join(format!("apparent-route-{}.apparent", crate::shared::ids::make_bundle_id()));
         std::fs::create_dir_all(&dir).unwrap();
         let mut bundle: ApparentBundle = serde_json::from_value(serde_json::json!({
             "version": 1, "id": "t", "createdAtMs": 0, "durationMs": 1_000,

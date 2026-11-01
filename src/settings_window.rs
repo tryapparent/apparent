@@ -1,5 +1,5 @@
 //! The Settings window in GPUI, drawn from `settings::View` like the SwiftUI window in
-//! `helper/Settings.swift` (same panes, rows, copy, sizes and palette) and driven by the same
+//! `desktop/native/Settings.swift` (same panes, rows, copy, sizes and palette) and driven by the same
 //! messages: `state`, `show`, `request`, `open-settings` and `close`. What it reports are
 //! `settings::Action`s, as the helper's JSON lines parse into.
 //!

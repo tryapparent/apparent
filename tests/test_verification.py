@@ -28,9 +28,9 @@ class SelectionTests(unittest.TestCase):
     def test_unknown_shared_build_security_lifecycle_and_tooling_broaden(self):
         for path in ["new-owner/foo.rs", "Cargo.toml", "Cargo.lock", "build.rs",
                      "assets/icon.png", "src/ui/recording_completion.rs", "src/handoff.rs",
-                     "capture/engine/src/session.rs", "helper/Media.swift",
+                     "capture/engine/src/session.rs", "desktop/native/Settings.swift",
                      "scripts/verification.py", ".githooks/pre-push",
-                     ".github/workflows/verification.yml", "site/package.json", "hosted/src/auth.ts"]:
+                     ".github/workflows/verification.yml", "public/site/package.json", "connect/service/src/auth.ts"]:
             with self.subTest(path=path):
                 result = verification.select([path])
                 self.assertTrue(result["root"])
@@ -53,7 +53,7 @@ class SelectionTests(unittest.TestCase):
         self.assertFalse(result["root"])
         self.assertFalse(result["engine"])
         self.assertTrue(result["browser"])
-        for path in ["connect/web/unknown.rs", "hosted/src/auth.ts", "build.rs"]:
+        for path in ["connect/web/unknown.rs", "connect/service/src/auth.ts", "build.rs"]:
             with self.subTest(path=path):
                 self.assertTrue(verification.select(["connect/web/src/api.ts", path])["root"])
 
@@ -91,9 +91,9 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual((selected["root"], selected["engine"], selected["browser"]),
                          (False, False, True))
         for path in ["connect/web/src/Other.tsx", "connect/web/src/sharedlinks.tsx",
-                     "scripts/cd/publish_pages.py", "site/public/hosted/source-pond-v4.png",
-                     "site/public/hosted/agent-pond-v4.png", "site/public/hosted/agent-reading-v4.png",
-                     "site/public/HostGrotesk-Variable.ttf", "site/public/apparent-wordmark.svg"]:
+                     "scripts/cd/publish_pages.py", "public/site/public/hosted/source-pond-v4.png",
+                     "public/site/public/hosted/agent-pond-v4.png", "public/site/public/hosted/agent-reading-v4.png",
+                     "public/site/public/HostGrotesk-Variable.ttf", "public/site/public/apparent-wordmark.svg"]:
             with self.subTest(path=path):
                 result = verification.select(["connect/web/src/SharedLinks.tsx", path])
                 self.assertTrue(result["root"])

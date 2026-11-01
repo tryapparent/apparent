@@ -61,7 +61,7 @@ pub(crate) fn update_config_in(
     #[cfg(test)]
     config_write_hook("snapshot", path);
     edit(&mut config)?;
-    let tmp = std::ffi::CString::new(format!(".config-{}.tmp", crate::make_bundle_id()))?;
+    let tmp = std::ffi::CString::new(format!(".config-{}.tmp", crate::shared::ids::make_bundle_id()))?;
     let mut body = serde_json::to_vec_pretty(&config)?;
     body.push(b'\n');
     let result = (|| -> Result<()> {

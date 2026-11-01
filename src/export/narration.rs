@@ -139,7 +139,7 @@ fn synthesize(script: &Script, path: &Path, duration: u64, cache: &Path) -> Resu
     );
     // An exclusive private directory outside the bundle; all cue files disappear on failure too.
     let directory =
-        std::env::temp_dir().join(format!("apparent-narration-{}", crate::make_bundle_id()));
+        std::env::temp_dir().join(format!("apparent-narration-{}", crate::shared::ids::make_bundle_id()));
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
@@ -266,7 +266,7 @@ mod tests {
                 std::thread::sleep(Duration::from_millis(10));
             }
         };
-        let root = std::env::temp_dir().join(format!("narrator-input-{}", crate::make_bundle_id()));
+        let root = std::env::temp_dir().join(format!("narrator-input-{}", crate::shared::ids::make_bundle_id()));
         fs::create_dir(&root).unwrap();
         let fifo = root.join("script.fifo");
         assert!(
@@ -293,7 +293,7 @@ mod tests {
     #[test]
     fn timed_renderer_places_samples_without_modifying_inputs_and_rejects_overrun() {
         use std::os::unix::fs::PermissionsExt;
-        let root = std::env::temp_dir().join(format!("narrator-test-{}", crate::make_bundle_id()));
+        let root = std::env::temp_dir().join(format!("narrator-test-{}", crate::shared::ids::make_bundle_id()));
         fs::create_dir_all(root.join("voices")).unwrap();
         fs::write(
             root.join("model.onnx"),

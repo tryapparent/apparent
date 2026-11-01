@@ -1,62 +1,702 @@
-# Apparent incremental architecture campaign
+# Apparent physical source-organization campaign
 
-Status: bounded architecture target and final acceptance ledger. Published `main` and
-`origin/main` are `de9358170b53b9ddc99e0c6d6ba1712fae598b74` (Connect adoption and
-finite owner-local rules). The normal hook and CI pass; all four outcome streams are
-open for ordinary owner-local development. Connect was announced open separately.
-No deployment, release, native capture, GUI session, live OAuth, or playable demo
-acceptance is implied.
+Status: **integration in progress** from `ba9de38097ec76454b57e095a1254d330b62eb1f` (single existing Rust application crate; no new Rust crate, standalone Agent runtime, or Engine production adoption). This section supersedes the prior completed-boundary milestone and every conflicting target/proposal below it. The older material remains historical evidence only; it is not current authorization, scope, or a migration queue. The complete per-path contract is in the private inventory at `/home/simon/.hermes/plans/apparent-structure-inventory.json`.
 
-## Current bounded ownership and acceptance (authoritative)
+## Authoritative target and scope
 
-The finite target is reached: reconcile current-main #221/#250 and #248, accept the
-four bounded outcomes on the exact published tree, retain the shared contracts, and
-name remaining contained debt. This supersedes older unchecked staging lists and the
-prior broad campaign finishline below; those lists are historical evidence, not live
-work queues or blockers. No additional extraction, feature, or test campaign is needed.
+Keep one root `Cargo.toml`/`Cargo.lock` Rust application package and root composition entrypoint. Organize Rust owners as ordinary modules beneath `src/{capture,desktop,agent_proof,connect,shared,composition}`; use normal `mod` declarations and nested `mod.rs`, never `#[path]` relocation shims. The already-existing top-level `capture/engine` and `connect/client` packages remain at those exact paths; this campaign neither adopts nor creates packages for them. Existing user behavior and external identities stay unchanged.
 
-| Outcome | Owner boundary and evidence | Status |
-|---|---|---|
-| Shared recorder | `src/capture/recorder.rs` with `src/capture/tests_recorder.rs`; root composition, platform adapters, telemetry, finalization and GUI/CLI receipts are shared-contract work. Existing capture/recorder regressions and #250 exact-source preservation/review evidence support the seam. | Open. #250 is current; #225 obsolete. No standalone Engine or native-capture claim. |
-| Desktop completion | `src/ui/recording_completion.rs` owns completion/finalization behavior; `src/ui.rs` retains GPUI coordination and shared receipt/generation checks. Existing current-finalizer, stale-A/B, and stale-practice regressions plus bounded #233 evidence support the boundary. | Open. Not a wholesale UI split or fresh GUI/native proof. |
-| Agent-created proof video | Agent request policy in `src/handoff.rs` and workflow in `docs/agent-video-workflow.md`, using shared capture/export. Prompt tests and shared receipt regressions support the seam. | Open. Shared admission/receipt/readiness/finalizer changes require coordination. No standalone Agent install or delivered-playable claim. |
-| Connect | `connect/client/**` is the independent client; `src/hosted.rs` adapter and hosted tests remain; config-provider contract is preserved. #248 composition is already on main. | Open. Package CI passes on macOS and Linux; no live OAuth, deploy, or release claim. |
+The physical final tree has these anchors (all paths not shown here are enumerated, without omission, in the exhaustive 634-row ledger below):
 
-The shared-capture/Desktop/Agent boundary assessment at
-`/home/simon/.hermes/plans/apparent-boundary-acceptance.md` found current seams and
-regressions sufficient; no source extraction is justified. Connect source review
-`/home/simon/.hermes/plans/apparent-connect-review.md` was `APPROVE_SOURCE` on exact
-matching donor inputs, with one nonblocking test-coverage suggestion. Existing source,
-contract, and test evidence is retained at its stated revision and scope; it is not
-fresh native or GUI proof.
+```text
+Cargo.toml / Cargo.lock / build.rs     # one root app package; build.rs is a single integration point
+src/main.rs                             # thin root entrypoint + root module declarations
+src/composition/{mod.rs,cli.rs}        # command-line parsing and application dispatch
+src/shared/{mod.rs,clock.rs,ids.rs,demo.rs}
+src/capture/mod.rs                      # capture owner module, with existing capture submodules
+src/desktop/mod.rs                      # GPUI/Desktop owner module; native inputs under owner-native paths
+src/agent_proof/                        # request/evidence owner modules; no standalone runtime/package
+src/connect/                             # in-crate adapter modules; existing connect/client package stays at root
+capture/engine/                          # existing package, unchanged ownership and path
+connect/client/                          # existing package, unchanged ownership and path
+capture/native/, desktop/native/, shared/native/ # explicit owner-native helper inputs
+public/site/                             # existing public site, moved by its reserved lane with complete wiring
+connect/service/                         # existing hosted service, moved by its reserved lane with complete wiring
+```
 
-Final verification for published `de9358170b53b9ddc99e0c6d6ba1712fae598b74`:
-normal verifier passed on the original `d90d105..de93581` baseline after the diagnosed
-Engine temp-ancestor issue was repaired. The original push did not invoke the hook:
-`core.hooksPath` was unset; the parent later corrected it and ran the exact normal
-verifier successfully. Details and the initial failure are retained in the private
-evidence ledger.
-The passing normal verifier ran root build/tests (684 passed, 3 ignored), Engine build/tests
-(23 passed), 15 hook-contract tests and 16 selector tests. CI run
-[41290870849](https://github.com/tryapparent/apparent/actions/runs/41290870849)
-passed both macOS 26 and Ubuntu 24.04 Rust jobs, selector, and four analysis
-check-runs; the independent Connect package build/test passed on both OS jobs. Local
-full-verifier log: `/srv/clanker-hermes/cache/scratch/apparent-de93581-verification.log`.
-The exact remote `main` readback matches that SHA. No donor deletion was required by
-this finite boundary assessment; no repository-wide sweep was part of acceptance.
+The native handoff now assigns helper inputs to `capture/native/**`, `desktop/native/**`, and `shared/native/**`; `build.rs` explicitly selects owner-specific source groups sorted by the original basename order. The native source/build lane is frozen after source preservation and Linux build-script metadata checks; Mac native compilation remains a gate. Public site and hosted service physical moves are complete at `public/site/**` and `connect/service/**`. I own their external wiring, root tooling/CI and documentation, plus `connect/web/**` path references only; leaf source/destination content remains owner-frozen.
 
-Temporary campaign-only integration/writer reservations have ended. Future changes
-belong to their accountable owners; changes to genuinely shared contracts are
-coordinated by affected owners. Keep changes bounded to relevant mechanisms, callers,
-and tests; verify consumers before deleting donors; preserve external contracts and
-avoid duplicate behavior or ideal-architecture blockers.
+Do not add or adopt standalone Agent/Engine executables, relocate all source owners in one batch, or alter behavior. No deletion/Windows retirement is included; legacy unsupported code remains unless a separately bounded, verified retirement is authorized.
 
-Contained debt, not an acceptance blocker: production-wide Engine/session ownership,
-standalone Engine packaging, universal archive coordination, a publication rewrite,
-and clean-machine standalone Agent installation. Preserve existing safeguards and
-revisit only for a concrete owner change or reproduced invariant failure.
+## Implemented first slice and reservation boundary
 
-The remaining text is historical campaign evidence, not current pending work.
+This first dependency-complete slice is an in-crate module extraction, not a package cut:
+
+- `src/main.rs` retains root module declarations and now only delegates to `composition::cli::run`; the root `pub use bundle_processing` facade is removed.
+- `src/composition/{mod.rs,cli.rs}` owns the moved CLI parser/dispatch and its existing tests. The helper skill `include_str!` path is corrected for its new location; `Cli`, `Command`, and subcommand types remain private.
+- `src/shared/{mod.rs,clock.rs,ids.rs,demo.rs}` owns the extracted `now_epoch_ms`, `make_bundle_id`, and `generate_demo_bundle` helpers.
+- Direct callers now use the real `shared` and `bundle_processing` modules. The hosted alias regression keeps its behavior through a test-only subprocess adapter rather than exporting CLI types. `docs/native-testing.md` points `CaptureCommand::Start` to `src/composition/cli.rs`.
+- The extraction preserves helper and CLI/test bodies; it does not move other owner implementations, modify native build inputs, or claim platform/native/GUI proof.
+
+The exact currently modified Rust callers are the `src` paths changed in this batch; do not absorb them into another owner move. The public/service/native leaf workers are terminal. **Next disjoint Rust reservation (not executed here):** Capture owner gets `src/capture.rs`→`src/capture/mod.rs`, `src/audio.rs`→`src/capture/audio.rs`, and `src/mic.rs`→`src/capture/mic.rs`; existing `src/capture/{linux.rs,tests_recorder.rs}` stay in place. Keep `mod capture;` in root `src/main.rs`, remove root `mod audio;` and `mod mic;`, declare `mod audio; mod mic;` inside `capture/mod.rs`, and rewrite all external imports to `crate::capture::{audio,mic}::...`. Do not add donor reexports. Keep `src/phone.rs` and `src/screens.rs` separate because of cross-owner/platform callsites. Subsequent non-overlapping reservations: Desktop `src/ui.rs`/`src/ui/**` and onboarding/settings/shortcut adapters; Agent-proof `src/agent_context.rs` plus proof-only interfaces; Connect adapter `src/hosted.rs` plus its tests. Do not edit `src/main.rs`, `src/composition/**`, `src/shared/**`, `src/bundle_processing.rs`, or this batch's rewritten callsites during the Capture move; obtain a direct source/caller/test inventory first.
+
+## Exhaustive tracked-path destination ledger
+
+Classification is mechanical and exact: **MOVE iff the final path differs byte-for-byte from the tracked source path; otherwise RETAIN.** There are no DELETE entries in this campaign. Every tracked path at the inventoried base appears exactly once; the inventory stores each old path, final path, owner and disposition. This ledger is the concrete final target, not a conditional/template grouping.
+
+| Tracked path | Final path | Disposition | Owner |
+|---|---|---|---|
+| `.cargo/config.toml` | `.cargo/config.toml` | RETAIN | shared-infrastructure |
+| `.gitattributes` | `.gitattributes` | RETAIN | shared-infrastructure |
+| `.githooks/pre-push` | `.githooks/pre-push` | RETAIN | shared-infrastructure |
+| `.github/ISSUE_TEMPLATE/bug_report.yml` | `.github/ISSUE_TEMPLATE/bug_report.yml` | RETAIN | shared-infrastructure |
+| `.github/workflows/linux-updater-harness.yml` | `.github/workflows/linux-updater-harness.yml` | RETAIN | shared-infrastructure |
+| `.github/workflows/release-linux.yml` | `.github/workflows/release-linux.yml` | RETAIN | shared-infrastructure |
+| `.github/workflows/release-mac-preview.yml` | `.github/workflows/release-mac-preview.yml` | RETAIN | shared-infrastructure |
+| `.github/workflows/release-windows.yml` | `.github/workflows/release-windows.yml` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `.github/workflows/verification.yml` | `.github/workflows/verification.yml` | RETAIN | shared-infrastructure |
+| `.github/workflows/web-delivery.yml` | `.github/workflows/web-delivery.yml` | RETAIN | shared-infrastructure |
+| `.gitignore` | `.gitignore` | RETAIN | shared-infrastructure |
+| `AGENTS.md` | `AGENTS.md` | RETAIN | shared-infrastructure |
+| `CONTRIBUTING.md` | `CONTRIBUTING.md` | RETAIN | shared-infrastructure |
+| `Cargo.lock` | `Cargo.lock` | RETAIN | shared-infrastructure |
+| `Cargo.toml` | `Cargo.toml` | RETAIN | shared-infrastructure |
+| `LICENSE` | `LICENSE` | RETAIN | public |
+| `README.md` | `README.md` | RETAIN | public |
+| `assets/AppIcon.icon/Assets/brush.png` | `assets/AppIcon.icon/Assets/brush.png` | RETAIN | desktop |
+| `assets/AppIcon.icon/Assets/glow.svg` | `assets/AppIcon.icon/Assets/glow.svg` | RETAIN | desktop |
+| `assets/AppIcon.icon/icon.json` | `assets/AppIcon.icon/icon.json` | RETAIN | desktop |
+| `assets/Apparent.icns` | `assets/Apparent.icns` | RETAIN | desktop |
+| `assets/Apparent.ico` | `assets/Apparent.ico` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `assets/app-icon.png` | `assets/app-icon.png` | RETAIN | desktop |
+| `assets/brand/apparent-a.png` | `assets/brand/apparent-a.png` | RETAIN | public |
+| `assets/brand/apparent-app-icon.svg` | `assets/brand/apparent-app-icon.svg` | RETAIN | public |
+| `assets/brand/apparent-wordmark.png` | `assets/brand/apparent-wordmark.png` | RETAIN | public |
+| `assets/brand/apparent-wordmark.svg` | `assets/brand/apparent-wordmark.svg` | RETAIN | public |
+| `assets/fonts/HostGrotesk-Variable.ttf` | `assets/fonts/HostGrotesk-Variable.ttf` | RETAIN | public |
+| `assets/fonts/OFL.txt` | `assets/fonts/OFL.txt` | RETAIN | public |
+| `assets/icon.svg` | `assets/icon.svg` | RETAIN | desktop |
+| `assets/icons/area.svg` | `assets/icons/area.svg` | RETAIN | desktop |
+| `assets/icons/arrow-up-right.svg` | `assets/icons/arrow-up-right.svg` | RETAIN | desktop |
+| `assets/icons/check-circle.svg` | `assets/icons/check-circle.svg` | RETAIN | desktop |
+| `assets/icons/check.svg` | `assets/icons/check.svg` | RETAIN | desktop |
+| `assets/icons/chevrons.svg` | `assets/icons/chevrons.svg` | RETAIN | desktop |
+| `assets/icons/click.svg` | `assets/icons/click.svg` | RETAIN | desktop |
+| `assets/icons/drive.svg` | `assets/icons/drive.svg` | RETAIN | desktop |
+| `assets/icons/gear.svg` | `assets/icons/gear.svg` | RETAIN | desktop |
+| `assets/icons/hand.svg` | `assets/icons/hand.svg` | RETAIN | desktop |
+| `assets/icons/info.svg` | `assets/icons/info.svg` | RETAIN | desktop |
+| `assets/icons/iphone.svg` | `assets/icons/iphone.svg` | RETAIN | desktop |
+| `assets/icons/lock.svg` | `assets/icons/lock.svg` | RETAIN | desktop |
+| `assets/icons/mic.svg` | `assets/icons/mic.svg` | RETAIN | desktop |
+| `assets/icons/person.svg` | `assets/icons/person.svg` | RETAIN | desktop |
+| `assets/icons/record.svg` | `assets/icons/record.svg` | RETAIN | desktop |
+| `assets/icons/reopen.svg` | `assets/icons/reopen.svg` | RETAIN | desktop |
+| `assets/icons/reset.svg` | `assets/icons/reset.svg` | RETAIN | desktop |
+| `assets/icons/screen.svg` | `assets/icons/screen.svg` | RETAIN | desktop |
+| `assets/icons/spinner.svg` | `assets/icons/spinner.svg` | RETAIN | desktop |
+| `assets/icons/terminal.svg` | `assets/icons/terminal.svg` | RETAIN | desktop |
+| `assets/icons/window.svg` | `assets/icons/window.svg` | RETAIN | desktop |
+| `assets/icons/x.svg` | `assets/icons/x.svg` | RETAIN | desktop |
+| `assets/menubar-icon@2x.png` | `assets/menubar-icon@2x.png` | RETAIN | desktop |
+| `assets/settings/frog-jump.png` | `assets/settings/frog-jump.png` | RETAIN | desktop |
+| `assets/settings/frog-lounge.png` | `assets/settings/frog-lounge.png` | RETAIN | desktop |
+| `assets/settings/frog-puzzled.png` | `assets/settings/frog-puzzled.png` | RETAIN | desktop |
+| `build.rs` | `build.rs` | RETAIN | shared-infrastructure |
+| `build_version.rs` | `build_version.rs` | RETAIN | shared-infrastructure |
+| `capture/engine/.gitignore` | `capture/engine/.gitignore` | RETAIN | capture |
+| `capture/engine/Cargo.lock` | `capture/engine/Cargo.lock` | RETAIN | capture |
+| `capture/engine/Cargo.toml` | `capture/engine/Cargo.toml` | RETAIN | capture |
+| `capture/engine/README.md` | `capture/engine/README.md` | RETAIN | capture |
+| `capture/engine/src/finalizer.rs` | `capture/engine/src/finalizer.rs` | RETAIN | capture |
+| `capture/engine/src/identity.rs` | `capture/engine/src/identity.rs` | RETAIN | capture |
+| `capture/engine/src/lease.rs` | `capture/engine/src/lease.rs` | RETAIN | capture |
+| `capture/engine/src/lib.rs` | `capture/engine/src/lib.rs` | RETAIN | capture |
+| `capture/engine/src/locking.rs` | `capture/engine/src/locking.rs` | RETAIN | capture |
+| `capture/engine/src/receipt.rs` | `capture/engine/src/receipt.rs` | RETAIN | capture |
+| `capture/engine/src/secure.rs` | `capture/engine/src/secure.rs` | RETAIN | capture |
+| `capture/engine/src/session.rs` | `capture/engine/src/session.rs` | RETAIN | capture |
+| `capture/engine/tests/bootstrap.rs` | `capture/engine/tests/bootstrap.rs` | RETAIN | capture |
+| `capture/engine/tests/finalizer.rs` | `capture/engine/tests/finalizer.rs` | RETAIN | capture |
+| `capture/engine/tests/process.rs` | `capture/engine/tests/process.rs` | RETAIN | capture |
+| `capture/engine/tests/review_regressions.rs` | `capture/engine/tests/review_regressions.rs` | RETAIN | capture |
+| `connect/client/.gitignore` | `connect/client/.gitignore` | RETAIN | connect |
+| `connect/client/Cargo.lock` | `connect/client/Cargo.lock` | RETAIN | connect |
+| `connect/client/Cargo.toml` | `connect/client/Cargo.toml` | RETAIN | connect |
+| `connect/client/src/lib.rs` | `connect/client/src/lib.rs` | RETAIN | connect |
+| `connect/client/src/test_support.rs` | `connect/client/src/test_support.rs` | RETAIN | connect |
+| `connect/web/.gitignore` | `connect/web/.gitignore` | RETAIN | connect |
+| `connect/web/AGENTS.md` | `connect/web/AGENTS.md` | RETAIN | connect |
+| `connect/web/README.md` | `connect/web/README.md` | RETAIN | connect |
+| `connect/web/bun.lock` | `connect/web/bun.lock` | RETAIN | connect |
+| `connect/web/index.html` | `connect/web/index.html` | RETAIN | connect |
+| `connect/web/package.json` | `connect/web/package.json` | RETAIN | connect |
+| `connect/web/scripts/assets.mjs` | `connect/web/scripts/assets.mjs` | RETAIN | connect |
+| `connect/web/scripts/prerender.mjs` | `connect/web/scripts/prerender.mjs` | RETAIN | connect |
+| `connect/web/scripts/test-browser.mjs` | `connect/web/scripts/test-browser.mjs` | RETAIN | connect |
+| `connect/web/src/Hosted.tsx` | `connect/web/src/Hosted.tsx` | RETAIN | connect |
+| `connect/web/src/SharedLinks.tsx` | `connect/web/src/SharedLinks.tsx` | RETAIN | connect |
+| `connect/web/src/api.ts` | `connect/web/src/api.ts` | RETAIN | connect |
+| `connect/web/src/base.css` | `connect/web/src/base.css` | RETAIN | connect |
+| `connect/web/src/entry-server.tsx` | `connect/web/src/entry-server.tsx` | RETAIN | connect |
+| `connect/web/src/hosted.css` | `connect/web/src/hosted.css` | RETAIN | connect |
+| `connect/web/src/main.tsx` | `connect/web/src/main.tsx` | RETAIN | connect |
+| `connect/web/test/artifact.test.mjs` | `connect/web/test/artifact.test.mjs` | RETAIN | connect |
+| `connect/web/test/browser.mjs` | `connect/web/test/browser.mjs` | RETAIN | connect |
+| `connect/web/test/closure.test.mjs` | `connect/web/test/closure.test.mjs` | RETAIN | connect |
+| `connect/web/test/routes.test.mjs` | `connect/web/test/routes.test.mjs` | RETAIN | connect |
+| `connect/web/tsconfig.json` | `connect/web/tsconfig.json` | RETAIN | connect |
+| `connect/web/vite.config.ts` | `connect/web/vite.config.ts` | RETAIN | connect |
+| `docs/acceptance/issue-171-sharing.md` | `docs/acceptance/issue-171-sharing.md` | RETAIN | connect |
+| `docs/agent-video-workflow.md` | `docs/agent-video-workflow.md` | RETAIN | agent-proof |
+| `docs/capture.md` | `docs/capture.md` | RETAIN | desktop |
+| `docs/continuous-delivery.md` | `docs/continuous-delivery.md` | RETAIN | shared-infrastructure |
+| `docs/export-and-retention.md` | `docs/export-and-retention.md` | RETAIN | desktop |
+| `docs/hosted-api.md` | `docs/hosted-api.md` | RETAIN | connect |
+| `docs/hosted-client.md` | `docs/hosted-client.md` | RETAIN | connect |
+| `docs/hosted-web.md` | `docs/hosted-web.md` | RETAIN | connect |
+| `docs/iphone-and-routing.md` | `docs/iphone-and-routing.md` | RETAIN | desktop |
+| `docs/keyframes-and-text.md` | `docs/keyframes-and-text.md` | RETAIN | desktop |
+| `docs/linux-playback.md` | `docs/linux-playback.md` | RETAIN | desktop |
+| `docs/linux-updater-gui-test.md` | `docs/linux-updater-gui-test.md` | RETAIN | shared-infrastructure |
+| `docs/linux.md` | `docs/linux.md` | RETAIN | desktop |
+| `docs/mac-signing.md` | `docs/mac-signing.md` | RETAIN | shared-infrastructure |
+| `docs/motion.md` | `docs/motion.md` | RETAIN | desktop |
+| `docs/native-launch.md` | `docs/native-launch.md` | RETAIN | desktop |
+| `docs/native-testing.md` | `docs/native-testing.md` | RETAIN | desktop |
+| `docs/onboarding-and-settings.md` | `docs/onboarding-and-settings.md` | RETAIN | desktop |
+| `docs/plans/issue-171-hosted-sharing.md` | `docs/plans/issue-171-hosted-sharing.md` | RETAIN | shared-infrastructure |
+| `docs/recording-capsule-drag.md` | `docs/recording-capsule-drag.md` | RETAIN | desktop |
+| `docs/release.md` | `docs/release.md` | RETAIN | shared-infrastructure |
+| `docs/routing.md` | `docs/routing.md` | RETAIN | shared-infrastructure |
+| `docs/windows.md` | `docs/windows.md` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `helper/Export.swift` | `capture/native/Export.swift` | MOVE | capture |
+| `helper/Info.plist` | `shared/native/Info.plist` | MOVE | shared-infrastructure |
+| `helper/LiveTranscribe.swift` | `capture/native/LiveTranscribe.swift` | MOVE | capture |
+| `helper/Media.swift` | `capture/native/Media.swift` | MOVE | capture |
+| `helper/Mirror.swift` | `capture/native/Mirror.swift` | MOVE | capture |
+| `helper/Onboarding.swift` | `desktop/native/Onboarding.swift` | MOVE | desktop |
+| `helper/OnboardingDemo.swift` | `desktop/native/OnboardingDemo.swift` | MOVE | desktop |
+| `helper/PermissionPanel.swift` | `desktop/native/PermissionPanel.swift` | MOVE | desktop |
+| `helper/PlaybackVolume.swift` | `capture/native/PlaybackVolume.swift` | MOVE | capture |
+| `helper/ScreenProbe.swift` | `capture/native/ScreenProbe.swift` | MOVE | capture |
+| `helper/Settings.swift` | `desktop/native/Settings.swift` | MOVE | desktop |
+| `helper/ShortcutKeys.swift` | `desktop/native/ShortcutKeys.swift` | MOVE | desktop |
+| `helper/main.swift` | `shared/native/main.swift` | MOVE | shared-infrastructure |
+| `hosted/.gitignore` | `connect/service/.gitignore` | MOVE | connect |
+| `hosted/README.md` | `connect/service/README.md` | MOVE | connect |
+| `hosted/migrations/0001.sql` | `connect/service/migrations/0001.sql` | MOVE | connect |
+| `hosted/migrations/0002.sql` | `connect/service/migrations/0002.sql` | MOVE | connect |
+| `hosted/migrations/0003.sql` | `connect/service/migrations/0003.sql` | MOVE | connect |
+| `hosted/package-lock.json` | `connect/service/package-lock.json` | MOVE | connect |
+| `hosted/package.json` | `connect/service/package.json` | MOVE | connect |
+| `hosted/src/auth.ts` | `connect/service/src/auth.ts` | MOVE | connect |
+| `hosted/src/captures.ts` | `connect/service/src/captures.ts` | MOVE | connect |
+| `hosted/src/common.ts` | `connect/service/src/common.ts` | MOVE | connect |
+| `hosted/src/share-view.ts` | `connect/service/src/share-view.ts` | MOVE | connect |
+| `hosted/src/shares.ts` | `connect/service/src/shares.ts` | MOVE | connect |
+| `hosted/src/storage.ts` | `connect/service/src/storage.ts` | MOVE | connect |
+| `hosted/src/types.ts` | `connect/service/src/types.ts` | MOVE | connect |
+| `hosted/src/worker.ts` | `connect/service/src/worker.ts` | MOVE | connect |
+| `hosted/test/api.test.mjs` | `connect/service/test/api.test.mjs` | MOVE | connect |
+| `hosted/test/budget-safety.test.mjs` | `connect/service/test/budget-safety.test.mjs` | MOVE | connect |
+| `hosted/test/budgets.test.mjs` | `connect/service/test/budgets.test.mjs` | MOVE | connect |
+| `hosted/test/checksums.test.mjs` | `connect/service/test/checksums.test.mjs` | MOVE | connect |
+| `hosted/test/eviction.test.mjs` | `connect/service/test/eviction.test.mjs` | MOVE | connect |
+| `hosted/test/helpers.mjs` | `connect/service/test/helpers.mjs` | MOVE | connect |
+| `hosted/test/lifecycle.test.mjs` | `connect/service/test/lifecycle.test.mjs` | MOVE | connect |
+| `hosted/test/oauth.test.mjs` | `connect/service/test/oauth.test.mjs` | MOVE | connect |
+| `hosted/test/security.test.mjs` | `connect/service/test/security.test.mjs` | MOVE | connect |
+| `hosted/test/share-races.test.mjs` | `connect/service/test/share-races.test.mjs` | MOVE | connect |
+| `hosted/test/share-view.test.mjs` | `connect/service/test/share-view.test.mjs` | MOVE | connect |
+| `hosted/test/shares.test.mjs` | `connect/service/test/shares.test.mjs` | MOVE | connect |
+| `hosted/test/spending-races.test.mjs` | `connect/service/test/spending-races.test.mjs` | MOVE | connect |
+| `hosted/test/spending.test.mjs` | `connect/service/test/spending.test.mjs` | MOVE | connect |
+| `hosted/test/stream-failure.test.mjs` | `connect/service/test/stream-failure.test.mjs` | MOVE | connect |
+| `hosted/test/streaming.test.mjs` | `connect/service/test/streaming.test.mjs` | MOVE | connect |
+| `hosted/test/types/contracts.ts` | `connect/service/test/types/contracts.ts` | MOVE | connect |
+| `hosted/test/typescript.test.mjs` | `connect/service/test/typescript.test.mjs` | MOVE | connect |
+| `hosted/tsconfig.json` | `connect/service/tsconfig.json` | MOVE | connect |
+| `hosted/wrangler.toml` | `connect/service/wrangler.toml` | MOVE | connect |
+| `packaging/linux/dev.kitlangton.apparent.desktop` | `packaging/linux/dev.kitlangton.apparent.desktop` | RETAIN | desktop |
+| `packaging/linux/dev.kitlangton.apparent.png` | `packaging/linux/dev.kitlangton.apparent.png` | RETAIN | desktop |
+| `perf/pill/clips.py` | `perf/pill/clips.py` | RETAIN | shared-infrastructure |
+| `perf/pill/motion-lint.config.json` | `perf/pill/motion-lint.config.json` | RETAIN | shared-infrastructure |
+| `perf/pill/record.sh` | `perf/pill/record.sh` | RETAIN | shared-infrastructure |
+| `perf/screen-guard.sh` | `perf/screen-guard.sh` | RETAIN | shared-infrastructure |
+| `refactor.md` | `refactor.md` | RETAIN | shared-infrastructure |
+| `scripts/Apparent.entitlements` | `scripts/Apparent.entitlements` | RETAIN | shared-infrastructure |
+| `scripts/agent-eval.sh` | `scripts/agent-eval.sh` | RETAIN | agent-proof |
+| `scripts/apparent-restore-clipboard.py` | `scripts/apparent-restore-clipboard.py` | RETAIN | shared-infrastructure |
+| `scripts/autocrop-corpus.mjs` | `scripts/autocrop-corpus.mjs` | RETAIN | shared-infrastructure |
+| `scripts/autocrop-gallery.mjs` | `scripts/autocrop-gallery.mjs` | RETAIN | shared-infrastructure |
+| `scripts/bench-processing.ts` | `scripts/bench-processing.ts` | RETAIN | shared-infrastructure |
+| `scripts/bench-start.ts` | `scripts/bench-start.ts` | RETAIN | shared-infrastructure |
+| `scripts/build-mac-preview.sh` | `scripts/build-mac-preview.sh` | RETAIN | shared-infrastructure |
+| `scripts/cd/connect_redirects.json` | `scripts/cd/connect_redirects.json` | RETAIN | shared-infrastructure |
+| `scripts/cd/hosted_config.py` | `scripts/cd/hosted_config.py` | RETAIN | shared-infrastructure |
+| `scripts/cd/publish_pages.py` | `scripts/cd/publish_pages.py` | RETAIN | shared-infrastructure |
+| `scripts/cd/publish_site.py` | `scripts/cd/publish_site.py` | RETAIN | shared-infrastructure |
+| `scripts/cd/test_hosted_delivery.py` | `scripts/cd/test_hosted_delivery.py` | RETAIN | shared-infrastructure |
+| `scripts/cd/test_pages_delivery.py` | `scripts/cd/test_pages_delivery.py` | RETAIN | shared-infrastructure |
+| `scripts/cd/test_publish_site.py` | `scripts/cd/test_publish_site.py` | RETAIN | shared-infrastructure |
+| `scripts/cd/verify_worker.py` | `scripts/cd/verify_worker.py` | RETAIN | shared-infrastructure |
+| `scripts/check-ca-roots.sh` | `scripts/check-ca-roots.sh` | RETAIN | shared-infrastructure |
+| `scripts/check-permission-panel-dock.sh` | `scripts/check-permission-panel-dock.sh` | RETAIN | shared-infrastructure |
+| `scripts/check-windows-cpu-tiers.ps1` | `scripts/check-windows-cpu-tiers.ps1` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `scripts/install-app-remote.sh` | `scripts/install-app-remote.sh` | RETAIN | shared-infrastructure |
+| `scripts/install-app.sh` | `scripts/install-app.sh` | RETAIN | shared-infrastructure |
+| `scripts/linux/appimage.sh` | `scripts/linux/appimage.sh` | RETAIN | desktop |
+| `scripts/linux/build-playback.sh` | `scripts/linux/build-playback.sh` | RETAIN | desktop |
+| `scripts/linux/capture-smoke.py` | `scripts/linux/capture-smoke.py` | RETAIN | desktop |
+| `scripts/linux/check-appimage-decoder.sh` | `scripts/linux/check-appimage-decoder.sh` | RETAIN | desktop |
+| `scripts/linux/check-appimage-encoder.sh` | `scripts/linux/check-appimage-encoder.sh` | RETAIN | desktop |
+| `scripts/linux/check-cpu-tiers.py` | `scripts/linux/check-cpu-tiers.py` | RETAIN | desktop |
+| `scripts/linux/dependencies.sh` | `scripts/linux/dependencies.sh` | RETAIN | desktop |
+| `scripts/linux/gui-vm-reaper.py` | `scripts/linux/gui-vm-reaper.py` | RETAIN | desktop |
+| `scripts/linux/gui-vm.py` | `scripts/linux/gui-vm.py` | RETAIN | desktop |
+| `scripts/linux/migrate-scrawl.py` | `scripts/linux/migrate-scrawl.py` | RETAIN | desktop |
+| `scripts/linux/publish-main-preview.py` | `scripts/linux/publish-main-preview.py` | RETAIN | desktop |
+| `scripts/linux/smoke-cpu.sh` | `scripts/linux/smoke-cpu.sh` | RETAIN | desktop |
+| `scripts/linux/test-capture-smoke.py` | `scripts/linux/test-capture-smoke.py` | RETAIN | desktop |
+| `scripts/linux/test-gui-vm.py` | `scripts/linux/test-gui-vm.py` | RETAIN | desktop |
+| `scripts/linux/test-native-launch.sh` | `scripts/linux/test-native-launch.sh` | RETAIN | desktop |
+| `scripts/linux/test-updater-gui.py` | `scripts/linux/test-updater-gui.py` | RETAIN | desktop |
+| `scripts/linux/test_migrate_scrawl.py` | `scripts/linux/test_migrate_scrawl.py` | RETAIN | desktop |
+| `scripts/linux/updater-fixture.py` | `scripts/linux/updater-fixture.py` | RETAIN | desktop |
+| `scripts/linux/updater-gui-scenario.sh` | `scripts/linux/updater-gui-scenario.sh` | RETAIN | desktop |
+| `scripts/linux/updater-gui.py` | `scripts/linux/updater-gui.py` | RETAIN | desktop |
+| `scripts/prepare-mac-signing.sh` | `scripts/prepare-mac-signing.sh` | RETAIN | shared-infrastructure |
+| `scripts/preview_appcast.py` | `scripts/preview_appcast.py` | RETAIN | shared-infrastructure |
+| `scripts/provision-narrator.py` | `scripts/provision-narrator.py` | RETAIN | shared-infrastructure |
+| `scripts/release-app.sh` | `scripts/release-app.sh` | RETAIN | shared-infrastructure |
+| `scripts/setup-sparkle.sh` | `scripts/setup-sparkle.sh` | RETAIN | shared-infrastructure |
+| `scripts/tests/local_preview_update.py` | `scripts/tests/local_preview_update.py` | RETAIN | shared-infrastructure |
+| `scripts/tests/test_export_audio.py` | `scripts/tests/test_export_audio.py` | RETAIN | shared-infrastructure |
+| `scripts/tests/test_launch_registration.py` | `scripts/tests/test_launch_registration.py` | RETAIN | shared-infrastructure |
+| `scripts/tests/test_linux_preview_publication.py` | `scripts/tests/test_linux_preview_publication.py` | RETAIN | shared-infrastructure |
+| `scripts/tests/test_preview_appcast.py` | `scripts/tests/test_preview_appcast.py` | RETAIN | shared-infrastructure |
+| `scripts/tests/test_preview_apple_signing.py` | `scripts/tests/test_preview_apple_signing.py` | RETAIN | shared-infrastructure |
+| `scripts/tests/test_preview_release.py` | `scripts/tests/test_preview_release.py` | RETAIN | shared-infrastructure |
+| `scripts/tests/test_preview_sparkle_setup.py` | `scripts/tests/test_preview_sparkle_setup.py` | RETAIN | shared-infrastructure |
+| `scripts/tests/test_provision_narrator.py` | `scripts/tests/test_provision_narrator.py` | RETAIN | shared-infrastructure |
+| `scripts/verification.py` | `scripts/verification.py` | RETAIN | shared-infrastructure |
+| `scripts/verify-preview-sparkle-key.swift` | `scripts/verify-preview-sparkle-key.swift` | RETAIN | shared-infrastructure |
+| `scripts/virtual-display.swift` | `scripts/virtual-display.swift` | RETAIN | shared-infrastructure |
+| `site/.gitignore` | `public/site/.gitignore` | MOVE | public |
+| `site/.wrangler/.metadata_never_index` | `public/site/.wrangler/.metadata_never_index` | MOVE | public |
+| `site/bun.lock` | `public/site/bun.lock` | MOVE | public |
+| `site/docs/apparent-demo-pi.md` | `public/site/docs/apparent-demo-pi.md` | MOVE | public |
+| `site/docs/belief-release.md` | `public/site/docs/belief-release.md` | MOVE | public |
+| `site/docs/clanker-deploy.md` | `public/site/docs/clanker-deploy.md` | MOVE | public |
+| `site/docs/feature-grid.md` | `public/site/docs/feature-grid.md` | MOVE | public |
+| `site/docs/footer-release.md` | `public/site/docs/footer-release.md` | MOVE | public |
+| `site/docs/hosted-design.md` | `public/site/docs/hosted-design.md` | MOVE | public |
+| `site/docs/pages-deploy.md` | `public/site/docs/pages-deploy.md` | MOVE | public |
+| `site/docs/social-preview.md` | `public/site/docs/social-preview.md` | MOVE | public |
+| `site/functions/Apparent-ghost-demo-v4-lilac.mp4.js` | `public/site/functions/Apparent-ghost-demo-v4-lilac.mp4.js` | MOVE | public |
+| `site/index.html` | `public/site/index.html` | MOVE | public |
+| `site/lib/pages-video-metadata.js` | `public/site/lib/pages-video-metadata.js` | MOVE | public |
+| `site/package.json` | `public/site/package.json` | MOVE | public |
+| `site/public/Apparent-ghost-demo-v4-lilac-poster.jpg` | `public/site/public/Apparent-ghost-demo-v4-lilac-poster.jpg` | MOVE | public |
+| `site/public/Apparent-ghost-demo-v4-lilac.mp4` | `public/site/public/Apparent-ghost-demo-v4-lilac.mp4` | MOVE | public |
+| `site/public/HostGrotesk-Variable.ttf` | `public/site/public/HostGrotesk-Variable.ttf` | MOVE | public |
+| `site/public/app-icon-64.png` | `public/site/public/app-icon-64.png` | MOVE | public |
+| `site/public/app-icon.png` | `public/site/public/app-icon.png` | MOVE | public |
+| `site/public/apparent-demo-pi-poster.jpg` | `public/site/public/apparent-demo-pi-poster.jpg` | MOVE | public |
+| `site/public/apparent-demo-pi.mp4` | `public/site/public/apparent-demo-pi.mp4` | MOVE | public |
+| `site/public/apparent-narration-iphone.mp3` | `public/site/public/apparent-narration-iphone.mp3` | MOVE | public |
+| `site/public/apparent-narration-mac.mp3` | `public/site/public/apparent-narration-mac.mp3` | MOVE | public |
+| `site/public/apparent-wordmark.svg` | `public/site/public/apparent-wordmark.svg` | MOVE | public |
+| `site/public/appcast.xml` | `public/site/public/appcast.xml` | MOVE | public |
+| `site/public/apple-touch-icon.png` | `public/site/public/apple-touch-icon.png` | MOVE | public |
+| `site/public/favicon.ico` | `public/site/public/favicon.ico` | MOVE | public |
+| `site/public/feature-demos/anywhere/index.html` | `public/site/public/feature-demos/anywhere/index.html` | MOVE | public |
+| `site/public/feature-demos/handoff/index.html` | `public/site/public/feature-demos/handoff/index.html` | MOVE | public |
+| `site/public/feature-demos/how-it-works/.local-media/ghost-after-aligned.png` | `public/site/public/feature-demos/how-it-works/.local-media/ghost-after-aligned.png` | MOVE | public |
+| `site/public/feature-demos/how-it-works/.local-media/ghost-before-aligned.png` | `public/site/public/feature-demos/how-it-works/.local-media/ghost-before-aligned.png` | MOVE | public |
+| `site/public/feature-demos/how-it-works/.local-media/whiteboard-start.jpg` | `public/site/public/feature-demos/how-it-works/.local-media/whiteboard-start.jpg` | MOVE | public |
+| `site/public/feature-demos/how-it-works/.local-media/whiteboard.mp4` | `public/site/public/feature-demos/how-it-works/.local-media/whiteboard.mp4` | MOVE | public |
+| `site/public/feature-demos/how-it-works/index.html` | `public/site/public/feature-demos/how-it-works/index.html` | MOVE | public |
+| `site/public/feature-demos/timeline/index.html` | `public/site/public/feature-demos/timeline/index.html` | MOVE | public |
+| `site/public/hosted/agent-pond-v4.png` | `public/site/public/hosted/agent-pond-v4.png` | MOVE | public |
+| `site/public/hosted/agent-reading-v4.png` | `public/site/public/hosted/agent-reading-v4.png` | MOVE | public |
+| `site/public/hosted/source-pond-v4.png` | `public/site/public/hosted/source-pond-v4.png` | MOVE | public |
+| `site/public/icon-192.png` | `public/site/public/icon-192.png` | MOVE | public |
+| `site/public/icon-512.png` | `public/site/public/icon-512.png` | MOVE | public |
+| `site/public/icon.svg` | `public/site/public/icon.svg` | MOVE | public |
+| `site/public/menubar-icon@2x.png` | `public/site/public/menubar-icon@2x.png` | MOVE | public |
+| `site/public/narration-iphone.mp3` | `public/site/public/narration-iphone.mp3` | MOVE | public |
+| `site/public/narration.mp3` | `public/site/public/narration.mp3` | MOVE | public |
+| `site/public/og.mp4` | `public/site/public/og.mp4` | MOVE | public |
+| `site/public/og.png` | `public/site/public/og.png` | MOVE | public |
+| `site/public/pond/belief/hug.png` | `public/site/public/pond/belief/hug.png` | MOVE | public |
+| `site/public/pond/belief/jump-air.png` | `public/site/public/pond/belief/jump-air.png` | MOVE | public |
+| `site/public/pond/belief/jump-rest.png` | `public/site/public/pond/belief/jump-rest.png` | MOVE | public |
+| `site/public/pond/belief/lily-clean.png` | `public/site/public/pond/belief/lily-clean.png` | MOVE | public |
+| `site/public/pond/belief/pair-left.png` | `public/site/public/pond/belief/pair-left.png` | MOVE | public |
+| `site/public/pond/belief/pair-right.png` | `public/site/public/pond/belief/pair-right.png` | MOVE | public |
+| `site/public/pond/footer-theatre.webp` | `public/site/public/pond/footer-theatre.webp` | MOVE | public |
+| `site/public/pond/frog-air-cohesive.png` | `public/site/public/pond/frog-air-cohesive.png` | MOVE | public |
+| `site/public/pond/frog-lounge-cohesive.png` | `public/site/public/pond/frog-lounge-cohesive.png` | MOVE | public |
+| `site/public/pond/frog-rest-cohesive.png` | `public/site/public/pond/frog-rest-cohesive.png` | MOVE | public |
+| `site/public/pond/frog-wave-cohesive.png` | `public/site/public/pond/frog-wave-cohesive.png` | MOVE | public |
+| `site/public/pond/lily-clean.png` | `public/site/public/pond/lily-clean.png` | MOVE | public |
+| `site/public/robots.txt` | `public/site/public/robots.txt` | MOVE | public |
+| `site/public/site.webmanifest` | `public/site/public/site.webmanifest` | MOVE | public |
+| `site/public/sitemap.xml` | `public/site/public/sitemap.xml` | MOVE | public |
+| `site/public/social-preview-v1.png` | `public/site/public/social-preview-v1.png` | MOVE | public |
+| `site/public/team/code-wordmark.svg` | `public/site/public/team/code-wordmark.svg` | MOVE | public |
+| `site/public/team/hpi-engine.svg` | `public/site/public/team/hpi-engine.svg` | MOVE | public |
+| `site/public/team/imago.png` | `public/site/public/team/imago.png` | MOVE | public |
+| `site/public/team/olivia.png` | `public/site/public/team/olivia.png` | MOVE | public |
+| `site/public/team/openclaw.svg` | `public/site/public/team/openclaw.svg` | MOVE | public |
+| `site/public/team/plug-and-play.png` | `public/site/public/team/plug-and-play.png` | MOVE | public |
+| `site/public/team/simon.png` | `public/site/public/team/simon.png` | MOVE | public |
+| `site/public/team/start-berlin.png` | `public/site/public/team/start-berlin.png` | MOVE | public |
+| `site/published-homepage.sha256.json` | `public/site/published-homepage.sha256.json` | MOVE | public |
+| `site/published-homepage/apparent-demo-pi-poster.jpg` | `public/site/published-homepage/apparent-demo-pi-poster.jpg` | MOVE | public |
+| `site/published-homepage/apparent-demo-pi.mp4` | `public/site/published-homepage/apparent-demo-pi.mp4` | MOVE | public |
+| `site/published-homepage/apparent-narration-mac.mp3` | `public/site/published-homepage/apparent-narration-mac.mp3` | MOVE | public |
+| `site/published-homepage/assets/approved-homepage-2a6286bad570af53.css` | `public/site/published-homepage/assets/approved-homepage-2a6286bad570af53.css` | MOVE | public |
+| `site/published-homepage/assets/approved-homepage-6084dce1d273a9e1.js` | `public/site/published-homepage/assets/approved-homepage-6084dce1d273a9e1.js` | MOVE | public |
+| `site/published-homepage/assets/approved-homepage-a9c35538a7afb605.css` | `public/site/published-homepage/assets/approved-homepage-a9c35538a7afb605.css` | MOVE | public |
+| `site/published-homepage/assets/approved-homepage/olivia-dog-cutout.png` | `public/site/published-homepage/assets/approved-homepage/olivia-dog-cutout.png` | MOVE | public |
+| `site/published-homepage/assets/approved-homepage/simon-cutout.png` | `public/site/published-homepage/assets/approved-homepage/simon-cutout.png` | MOVE | public |
+| `site/published-homepage/assets/belief-009aebee421497d1.css` | `public/site/published-homepage/assets/belief-009aebee421497d1.css` | MOVE | public |
+| `site/published-homepage/assets/belief-00faa7821b5a63b3.css` | `public/site/published-homepage/assets/belief-00faa7821b5a63b3.css` | MOVE | public |
+| `site/published-homepage/assets/belief-e64a867c8be55ea3.js` | `public/site/published-homepage/assets/belief-e64a867c8be55ea3.js` | MOVE | public |
+| `site/published-homepage/assets/brand-selection-96d56e0fb005975e.css` | `public/site/published-homepage/assets/brand-selection-96d56e0fb005975e.css` | MOVE | public |
+| `site/published-homepage/assets/feature-grid-overlay-2210f1341833ef4d.js` | `public/site/published-homepage/assets/feature-grid-overlay-2210f1341833ef4d.js` | MOVE | public |
+| `site/published-homepage/assets/feature-grid-overlay-2675e8b93ae89dba.css` | `public/site/published-homepage/assets/feature-grid-overlay-2675e8b93ae89dba.css` | MOVE | public |
+| `site/published-homepage/assets/feature-grid-overlay-778c14c8999e73a4.js` | `public/site/published-homepage/assets/feature-grid-overlay-778c14c8999e73a4.js` | MOVE | public |
+| `site/published-homepage/assets/feature-grid-overlay-eee6c19284c4a593.css` | `public/site/published-homepage/assets/feature-grid-overlay-eee6c19284c4a593.css` | MOVE | public |
+| `site/published-homepage/assets/footer-83b82a238a00dcfa.css` | `public/site/published-homepage/assets/footer-83b82a238a00dcfa.css` | MOVE | public |
+| `site/published-homepage/assets/footer-c3f2f7237f4c7b43.js` | `public/site/published-homepage/assets/footer-c3f2f7237f4c7b43.js` | MOVE | public |
+| `site/published-homepage/assets/gpu-fx-B3EpXVJz.js` | `public/site/published-homepage/assets/gpu-fx-B3EpXVJz.js` | MOVE | public |
+| `site/published-homepage/assets/gpu-fx-BaaaOVIX.js` | `public/site/published-homepage/assets/gpu-fx-BaaaOVIX.js` | MOVE | public |
+| `site/published-homepage/assets/gpu-fx-CFfuFSu8.js` | `public/site/published-homepage/assets/gpu-fx-CFfuFSu8.js` | MOVE | public |
+| `site/published-homepage/assets/gpu-fx-CS8qZKnC.js` | `public/site/published-homepage/assets/gpu-fx-CS8qZKnC.js` | MOVE | public |
+| `site/published-homepage/assets/gpu-fx-CrjP7FD_.js` | `public/site/published-homepage/assets/gpu-fx-CrjP7FD_.js` | MOVE | public |
+| `site/published-homepage/assets/gpu-fx-D7Mv7mxN.js` | `public/site/published-homepage/assets/gpu-fx-D7Mv7mxN.js` | MOVE | public |
+| `site/published-homepage/assets/index-34700c5c8ab2cf56.js` | `public/site/published-homepage/assets/index-34700c5c8ab2cf56.js` | MOVE | public |
+| `site/published-homepage/assets/index-538cc7536d6e57cf.js` | `public/site/published-homepage/assets/index-538cc7536d6e57cf.js` | MOVE | public |
+| `site/published-homepage/assets/index-698f60bd9494b4da.js` | `public/site/published-homepage/assets/index-698f60bd9494b4da.js` | MOVE | public |
+| `site/published-homepage/assets/index-8pgPj-1Q.css` | `public/site/published-homepage/assets/index-8pgPj-1Q.css` | MOVE | public |
+| `site/published-homepage/assets/index-B0xlmBkz.js` | `public/site/published-homepage/assets/index-B0xlmBkz.js` | MOVE | public |
+| `site/published-homepage/assets/index-BDbPKiAI.js` | `public/site/published-homepage/assets/index-BDbPKiAI.js` | MOVE | public |
+| `site/published-homepage/assets/index-BJe9m6k_.css` | `public/site/published-homepage/assets/index-BJe9m6k_.css` | MOVE | public |
+| `site/published-homepage/assets/index-BhX-Tny9.js` | `public/site/published-homepage/assets/index-BhX-Tny9.js` | MOVE | public |
+| `site/published-homepage/assets/index-CEA7bWJ6.js` | `public/site/published-homepage/assets/index-CEA7bWJ6.js` | MOVE | public |
+| `site/published-homepage/assets/index-Cggw_Ws7.js` | `public/site/published-homepage/assets/index-Cggw_Ws7.js` | MOVE | public |
+| `site/published-homepage/assets/index-ChbF_rdn.css` | `public/site/published-homepage/assets/index-ChbF_rdn.css` | MOVE | public |
+| `site/published-homepage/assets/index-Clv9Exu0.css` | `public/site/published-homepage/assets/index-Clv9Exu0.css` | MOVE | public |
+| `site/published-homepage/assets/index-D-jL6J8D.css` | `public/site/published-homepage/assets/index-D-jL6J8D.css` | MOVE | public |
+| `site/published-homepage/assets/index-D2cPC4Ch.css` | `public/site/published-homepage/assets/index-D2cPC4Ch.css` | MOVE | public |
+| `site/published-homepage/assets/index-DQGXji3Z.js` | `public/site/published-homepage/assets/index-DQGXji3Z.js` | MOVE | public |
+| `site/published-homepage/assets/index-DQxqAHDc.css` | `public/site/published-homepage/assets/index-DQxqAHDc.css` | MOVE | public |
+| `site/published-homepage/assets/index-D_l_kdZG.js` | `public/site/published-homepage/assets/index-D_l_kdZG.js` | MOVE | public |
+| `site/published-homepage/assets/index-DeXkKkRp.css` | `public/site/published-homepage/assets/index-DeXkKkRp.css` | MOVE | public |
+| `site/published-homepage/assets/index-DebZEPv6.js` | `public/site/published-homepage/assets/index-DebZEPv6.js` | MOVE | public |
+| `site/published-homepage/assets/index-DvqYEFD3.js` | `public/site/published-homepage/assets/index-DvqYEFD3.js` | MOVE | public |
+| `site/published-homepage/assets/index-_OItVayx.css` | `public/site/published-homepage/assets/index-_OItVayx.css` | MOVE | public |
+| `site/published-homepage/assets/index-cqD0szi5.js` | `public/site/published-homepage/assets/index-cqD0szi5.js` | MOVE | public |
+| `site/published-homepage/assets/index-e53eeecce16b9bf0.js` | `public/site/published-homepage/assets/index-e53eeecce16b9bf0.js` | MOVE | public |
+| `site/published-homepage/assets/index-no-team-094eee28482a4057.js` | `public/site/published-homepage/assets/index-no-team-094eee28482a4057.js` | MOVE | public |
+| `site/published-homepage/assets/index-no-team-def1098d3e09c029.js` | `public/site/published-homepage/assets/index-no-team-def1098d3e09c029.js` | MOVE | public |
+| `site/published-homepage/assets/index-thsY-TFv.js` | `public/site/published-homepage/assets/index-thsY-TFv.js` | MOVE | public |
+| `site/published-homepage/assets/index-two-click-28e65a0d17ac785d.js` | `public/site/published-homepage/assets/index-two-click-28e65a0d17ac785d.js` | MOVE | public |
+| `site/published-homepage/assets/try-button-346d06ceb54f7665.css` | `public/site/published-homepage/assets/try-button-346d06ceb54f7665.css` | MOVE | public |
+| `site/published-homepage/index.html` | `public/site/published-homepage/index.html` | MOVE | public |
+| `site/scripts/activate-belief-release.py` | `public/site/scripts/activate-belief-release.py` | MOVE | public |
+| `site/scripts/agent-files.ts` | `public/site/scripts/agent-files.ts` | MOVE | public |
+| `site/scripts/compose-connect.mjs` | `public/site/scripts/compose-connect.mjs` | MOVE | public site (Connect route composition preserved) |
+| `site/scripts/expected-homepage-canonical.mjs` | `public/site/scripts/expected-homepage-canonical.mjs` | MOVE | public |
+| `site/scripts/feature-audit.ts` | `public/site/scripts/feature-audit.ts` | MOVE | public |
+| `site/scripts/generate-social-preview.mjs` | `public/site/scripts/generate-social-preview.mjs` | MOVE | public |
+| `site/scripts/motion/README.md` | `public/site/scripts/motion/README.md` | MOVE | public |
+| `site/scripts/motion/capture.ts` | `public/site/scripts/motion/capture.ts` | MOVE | public |
+| `site/scripts/motion/clips.sh` | `public/site/scripts/motion/clips.sh` | MOVE | public |
+| `site/scripts/motion/detect.ts` | `public/site/scripts/motion/detect.ts` | MOVE | public |
+| `site/scripts/motion/hitches.ts` | `public/site/scripts/motion/hitches.ts` | MOVE | public |
+| `site/scripts/og-video/apparent-fix.js` | `public/site/scripts/og-video/apparent-fix.js` | MOVE | public |
+| `site/scripts/og-video/apparent-lasso.js` | `public/site/scripts/og-video/apparent-lasso.js` | MOVE | public |
+| `site/scripts/og-video/apparent-pile.js` | `public/site/scripts/og-video/apparent-pile.js` | MOVE | public |
+| `site/scripts/og-video/capture.mjs` | `public/site/scripts/og-video/capture.mjs` | MOVE | public |
+| `site/scripts/og-video/common.js` | `public/site/scripts/og-video/common.js` | MOVE | public |
+| `site/scripts/og-video/stage.html` | `public/site/scripts/og-video/stage.html` | MOVE | public |
+| `site/scripts/package-apparent.mjs` | `public/site/scripts/package-apparent.mjs` | MOVE | public |
+| `site/scripts/package-belief-release.mjs` | `public/site/scripts/package-belief-release.mjs` | MOVE | public |
+| `site/scripts/package-feature-grid.mjs` | `public/site/scripts/package-feature-grid.mjs` | MOVE | public |
+| `site/scripts/package-footer-release.mjs` | `public/site/scripts/package-footer-release.mjs` | MOVE | public |
+| `site/scripts/package-page-text.mjs` | `public/site/scripts/package-page-text.mjs` | MOVE | public |
+| `site/scripts/prepare-pages-video.mjs` | `public/site/scripts/prepare-pages-video.mjs` | MOVE | public |
+| `site/scripts/prepare-pages.mjs` | `public/site/scripts/prepare-pages.mjs` | MOVE | public |
+| `site/scripts/prerender.ts` | `public/site/scripts/prerender.ts` | MOVE | public |
+| `site/scripts/test-belief-packaging.mjs` | `public/site/scripts/test-belief-packaging.mjs` | MOVE | public |
+| `site/scripts/test-belief-pond.mjs` | `public/site/scripts/test-belief-pond.mjs` | MOVE | public |
+| `site/scripts/test-belief-publication.py` | `public/site/scripts/test-belief-publication.py` | MOVE | public |
+| `site/scripts/test-brand-favicon.mjs` | `public/site/scripts/test-brand-favicon.mjs` | MOVE | public |
+| `site/scripts/test-brand-selection-browser.mjs` | `public/site/scripts/test-brand-selection-browser.mjs` | MOVE | public |
+| `site/scripts/test-compose-connect.mjs` | `public/site/scripts/test-compose-connect.mjs` | MOVE | public |
+| `site/scripts/test-expected-canonical-packaging.mjs` | `public/site/scripts/test-expected-canonical-packaging.mjs` | MOVE | public |
+| `site/scripts/test-feature-grid.mjs` | `public/site/scripts/test-feature-grid.mjs` | MOVE | public |
+| `site/scripts/test-footer-browser.mjs` | `public/site/scripts/test-footer-browser.mjs` | MOVE | public |
+| `site/scripts/test-footer-packaging.mjs` | `public/site/scripts/test-footer-packaging.mjs` | MOVE | public |
+| `site/scripts/test-github-stars-browser.mjs` | `public/site/scripts/test-github-stars-browser.mjs` | MOVE | public |
+| `site/scripts/test-github-stars.mjs` | `public/site/scripts/test-github-stars.mjs` | MOVE | public |
+| `site/scripts/test-hosted-browser.mjs` | `public/site/scripts/test-hosted-browser.mjs` | MOVE | public site (Connect route composition preserved) |
+| `site/scripts/test-latest-download.mjs` | `public/site/scripts/test-latest-download.mjs` | MOVE | public |
+| `site/scripts/test-og-stage-redirect.mjs` | `public/site/scripts/test-og-stage-redirect.mjs` | MOVE | public |
+| `site/scripts/test-og-video-stage-browser.mjs` | `public/site/scripts/test-og-video-stage-browser.mjs` | MOVE | public |
+| `site/scripts/test-package-feature-grid.mjs` | `public/site/scripts/test-package-feature-grid.mjs` | MOVE | public |
+| `site/scripts/test-package-text.mjs` | `public/site/scripts/test-package-text.mjs` | MOVE | public |
+| `site/scripts/test-pages-package.mjs` | `public/site/scripts/test-pages-package.mjs` | MOVE | public |
+| `site/scripts/test-pages-video-runtime.mjs` | `public/site/scripts/test-pages-video-runtime.mjs` | MOVE | public |
+| `site/scripts/test-pages-video.mjs` | `public/site/scripts/test-pages-video.mjs` | MOVE | public |
+| `site/scripts/test-platform-os.mjs` | `public/site/scripts/test-platform-os.mjs` | MOVE | public |
+| `site/scripts/test-public-homepage.mjs` | `public/site/scripts/test-public-homepage.mjs` | MOVE | public |
+| `site/scripts/test-social-preview.mjs` | `public/site/scripts/test-social-preview.mjs` | MOVE | public |
+| `site/scripts/test-try-button-browser.mjs` | `public/site/scripts/test-try-button-browser.mjs` | MOVE | public |
+| `site/scripts/test-upstream-link-guard.mjs` | `public/site/scripts/test-upstream-link-guard.mjs` | MOVE | public |
+| `site/scripts/test-video-demo.mjs` | `public/site/scripts/test-video-demo.mjs` | MOVE | public |
+| `site/scripts/upstream-link-guard.mjs` | `public/site/scripts/upstream-link-guard.mjs` | MOVE | public |
+| `site/scripts/verify-composed.mjs` | `public/site/scripts/verify-composed.mjs` | MOVE | public |
+| `site/scripts/verify-page-density-browser.mjs` | `public/site/scripts/verify-page-density-browser.mjs` | MOVE | public |
+| `site/scripts/verify-video-demo-browser.mjs` | `public/site/scripts/verify-video-demo-browser.mjs` | MOVE | public |
+| `site/src/App.tsx` | `public/site/src/App.tsx` | MOVE | public |
+| `site/src/BeliefPond.tsx` | `public/site/src/BeliefPond.tsx` | MOVE | public |
+| `site/src/Brush3D.tsx` | `public/site/src/Brush3D.tsx` | MOVE | public |
+| `site/src/Copy.tsx` | `public/site/src/Copy.tsx` | MOVE | public |
+| `site/src/Download.tsx` | `public/site/src/Download.tsx` | MOVE | public |
+| `site/src/Footer.tsx` | `public/site/src/Footer.tsx` | MOVE | public |
+| `site/src/FrogPond.tsx` | `public/site/src/FrogPond.tsx` | MOVE | public |
+| `site/src/GithubStars.tsx` | `public/site/src/GithubStars.tsx` | MOVE | public |
+| `site/src/IPhone.tsx` | `public/site/src/IPhone.tsx` | MOVE | public |
+| `site/src/LatestDownload.tsx` | `public/site/src/LatestDownload.tsx` | MOVE | public |
+| `site/src/Team.tsx` | `public/site/src/Team.tsx` | MOVE | public |
+| `site/src/appcast.ts` | `public/site/src/appcast.ts` | MOVE | public |
+| `site/src/belief/behavior.ts` | `public/site/src/belief/behavior.ts` | MOVE | public |
+| `site/src/belief/belief.css` | `public/site/src/belief/belief.css` | MOVE | public |
+| `site/src/belief/markup.ts` | `public/site/src/belief/markup.ts` | MOVE | public |
+| `site/src/brush-paths.ts` | `public/site/src/brush-paths.ts` | MOVE | public |
+| `site/src/cta.css` | `public/site/src/cta.css` | MOVE | public |
+| `site/src/demo/Demo.tsx` | `public/site/src/demo/Demo.tsx` | MOVE | public |
+| `site/src/demo/VideoDemo.tsx` | `public/site/src/demo/VideoDemo.tsx` | MOVE | public |
+| `site/src/demo/apps.tsx` | `public/site/src/demo/apps.tsx` | MOVE | public |
+| `site/src/demo/gpu-fx.tsx` | `public/site/src/demo/gpu-fx.tsx` | MOVE | public |
+| `site/src/demo/ink.tsx` | `public/site/src/demo/ink.tsx` | MOVE | public |
+| `site/src/demo/measure.ts` | `public/site/src/demo/measure.ts` | MOVE | public |
+| `site/src/demo/motion.ts` | `public/site/src/demo/motion.ts` | MOVE | public |
+| `site/src/demo/script.ts` | `public/site/src/demo/script.ts` | MOVE | public |
+| `site/src/demo/sfx.ts` | `public/site/src/demo/sfx.ts` | MOVE | public |
+| `site/src/demo/stage-parts.tsx` | `public/site/src/demo/stage-parts.tsx` | MOVE | public |
+| `site/src/demo/terminal.tsx` | `public/site/src/demo/terminal.tsx` | MOVE | public |
+| `site/src/demo/video-demo.css` | `public/site/src/demo/video-demo.css` | MOVE | public |
+| `site/src/entry-server.tsx` | `public/site/src/entry-server.tsx` | MOVE | public |
+| `site/src/features.json` | `public/site/src/features.json` | MOVE | public |
+| `site/src/features.ts` | `public/site/src/features.ts` | MOVE | public |
+| `site/src/features/FeatureGrid.tsx` | `public/site/src/features/FeatureGrid.tsx` | MOVE | public |
+| `site/src/features/feature-grid.css` | `public/site/src/features/feature-grid.css` | MOVE | public |
+| `site/src/features/homepage-revision.css` | `public/site/src/features/homepage-revision.css` | MOVE | public |
+| `site/src/features/homepage-revision.js` | `public/site/src/features/homepage-revision.js` | MOVE | public |
+| `site/src/features/overlay-entry.tsx` | `public/site/src/features/overlay-entry.tsx` | MOVE | public |
+| `site/src/footer/behavior.ts` | `public/site/src/footer/behavior.ts` | MOVE | public |
+| `site/src/footer/footer.css` | `public/site/src/footer/footer.css` | MOVE | public |
+| `site/src/footer/markup.ts` | `public/site/src/footer/markup.ts` | MOVE | public |
+| `site/src/idle.ts` | `public/site/src/idle.ts` | MOVE | public |
+| `site/src/latest-download.ts` | `public/site/src/latest-download.ts` | MOVE | public |
+| `site/src/main.tsx` | `public/site/src/main.tsx` | MOVE | public |
+| `site/src/map/FeatureMap.tsx` | `public/site/src/map/FeatureMap.tsx` | MOVE | public |
+| `site/src/map/map.css` | `public/site/src/map/map.css` | MOVE | public |
+| `site/src/map/page.tsx` | `public/site/src/map/page.tsx` | MOVE | public |
+| `site/src/platform.ts` | `public/site/src/platform.ts` | MOVE | public |
+| `site/src/pond-hero.css` | `public/site/src/pond-hero.css` | MOVE | public |
+| `site/src/release.ts` | `public/site/src/release.ts` | MOVE | public |
+| `site/src/styles.css` | `public/site/src/styles.css` | MOVE | public |
+| `site/tsconfig.json` | `public/site/tsconfig.json` | MOVE | public |
+| `site/vite.config.ts` | `public/site/vite.config.ts` | MOVE | public |
+| `site/vite.feature-grid.config.ts` | `public/site/vite.feature-grid.config.ts` | MOVE | public |
+| `site/worker.ts` | `public/site/worker.ts` | MOVE | public |
+| `site/wrangler.jsonc` | `public/site/wrangler.jsonc` | MOVE | public |
+| `site/wrangler.pages.jsonc` | `public/site/wrangler.pages.jsonc` | MOVE | public |
+| `skills/apparent/SKILL.md` | `skills/apparent/SKILL.md` | RETAIN | agent-proof |
+| `skills/make-it-apparent/SKILL.md` | `skills/make-it-apparent/SKILL.md` | RETAIN | agent-proof |
+| `skills/make-it-apparent/references/solution-survey.md` | `skills/make-it-apparent/references/solution-survey.md` | RETAIN | agent-proof |
+| `src/agent_capture.rs` | `src/desktop/agent_capture.rs` | MOVE | agent-proof |
+| `src/agent_context.rs` | `src/agent_proof/context.rs` | MOVE | agent-proof |
+| `src/audio.rs` | `src/capture/audio.rs` | MOVE | capture |
+| `src/autocrop-corpus.json` | `src/autocrop-corpus.json` | RETAIN | shared Rust module |
+| `src/autocrop-playground.html` | `src/autocrop-playground.html` | RETAIN | shared Rust module |
+| `src/autocrop.rs` | `src/shared/autocrop.rs` | MOVE | shared Rust module |
+| `src/autocrop_lab.rs` | `src/shared/autocrop_lab.rs` | MOVE | shared Rust module |
+| `src/ax.rs` | `src/shared/ax.rs` | MOVE | shared Rust module |
+| `src/ax_other.rs` | `src/shared/ax_other.rs` | MOVE | shared Rust module |
+| `src/bundle_processing.rs` | `src/shared/bundle_processing.rs` | MOVE | shared Rust module |
+| `src/capture.rs` | `src/capture/mod.rs` | MOVE | capture |
+| `src/capture/linux.rs` | `src/capture/linux.rs` | RETAIN | capture |
+| `src/capture/macos.rs` | `src/capture/macos.rs` | RETAIN | capture |
+| `src/capture/recorder.rs` | `src/capture/recorder.rs` | RETAIN | capture |
+| `src/capture/tests_recorder.rs` | `src/capture/tests_recorder.rs` | RETAIN | capture |
+| `src/capture/windows.rs` | `src/capture/windows.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `src/command_line.rs` | `src/composition/command_line.rs` | MOVE | desktop |
+| `src/command_transcriber.rs` | `src/shared/command_transcriber.rs` | MOVE | shared Rust module |
+| `src/export/camera.rs` | `src/shared/export/camera.rs` | MOVE | shared Rust module |
+| `src/export/crop.rs` | `src/shared/export/crop.rs` | MOVE | shared Rust module |
+| `src/export/ink.rs` | `src/shared/export/ink.rs` | MOVE | shared Rust module |
+| `src/export/linux.rs` | `src/shared/export/linux.rs` | MOVE | shared Rust module |
+| `src/export/mod.rs` | `src/shared/export/mod.rs` | MOVE | shared Rust module |
+| `src/export/narration.rs` | `src/shared/export/narration.rs` | MOVE | shared Rust module |
+| `src/feature_map.rs` | `src/shared/feature_map.rs` | MOVE | shared Rust module |
+| `src/handoff.rs` | `src/shared/handoff.rs` | MOVE | desktop |
+| `src/handoff/config_store.rs` | `src/shared/handoff/config_store.rs` | MOVE | shared Rust module |
+| `src/handoff/test_modules.rs` | `src/shared/handoff/test_modules.rs` | MOVE | shared Rust module |
+| `src/helper.rs` | `src/desktop/helper.rs` | MOVE | desktop |
+| `src/hex.rs` | `src/shared/hex.rs` | MOVE | shared Rust module |
+| `src/hosted.rs` | `src/connect/hosted.rs` | MOVE | connect |
+| `src/hosted_logging_tests.rs` | `src/connect/hosted_logging_tests.rs` | MOVE | connect |
+| `src/hosted_tests.rs` | `src/connect/hosted_tests.rs` | MOVE | connect |
+| `src/icons.rs` | `src/desktop/icons.rs` | MOVE | desktop |
+| `src/inbox.rs` | `src/desktop/inbox.rs` | MOVE | desktop |
+| `src/ingest_http.rs` | `src/shared/ingest_http.rs` | MOVE | shared Rust module |
+| `src/ink_view.rs` | `src/desktop/ink_view.rs` | MOVE | desktop |
+| `src/keyframes.rs` | `src/shared/keyframes.rs` | MOVE | shared Rust module |
+| `src/laser_overlay.metal` | `src/desktop/native/laser_overlay.metal` | MOVE | shared Rust module |
+| `src/laser_overlay.rs` | `src/desktop/native/laser_overlay.rs` | MOVE | shared Rust module |
+| `src/launch_instance.rs` | `src/desktop/launch_instance.rs` | MOVE | desktop |
+| `src/launch_url.rs` | `src/desktop/launch_url.rs` | MOVE | desktop |
+| `src/linux/appearance.rs` | `src/desktop/linux/appearance.rs` | MOVE | desktop |
+| `src/linux/atspi.rs` | `src/desktop/linux/atspi.rs` | MOVE | desktop |
+| `src/linux/auto_paste.rs` | `src/desktop/linux/auto_paste.rs` | MOVE | desktop |
+| `src/linux/clipboard.rs` | `src/desktop/linux/clipboard.rs` | MOVE | desktop |
+| `src/linux/helper.rs` | `src/desktop/linux/helper.rs` | MOVE | desktop |
+| `src/linux/hyprland.rs` | `src/desktop/linux/hyprland.rs` | MOVE | desktop |
+| `src/linux/input.rs` | `src/desktop/linux/input.rs` | MOVE | desktop |
+| `src/linux/ipc.rs` | `src/desktop/linux/ipc.rs` | MOVE | desktop |
+| `src/linux/launch_handler.rs` | `src/desktop/linux/launch_handler.rs` | MOVE | desktop |
+| `src/linux/login.rs` | `src/desktop/linux/login.rs` | MOVE | desktop |
+| `src/linux/media.rs` | `src/desktop/linux/media.rs` | MOVE | desktop |
+| `src/linux/microphone.rs` | `src/desktop/linux/microphone.rs` | MOVE | desktop |
+| `src/linux/mod.rs` | `src/desktop/linux/mod.rs` | MOVE | desktop |
+| `src/linux/overlay.rs` | `src/desktop/linux/overlay.rs` | MOVE | desktop |
+| `src/linux/playback.rs` | `src/desktop/linux/playback.rs` | MOVE | desktop |
+| `src/linux/playback/audio-plugin.h` | `src/linux/playback/audio-plugin.h` | RETAIN | desktop |
+| `src/linux/playback/helper.c` | `src/linux/playback/helper.c` | RETAIN | desktop |
+| `src/linux/playback/lease.h` | `src/linux/playback/lease.h` | RETAIN | desktop |
+| `src/linux/playback/plugin.c` | `src/linux/playback/plugin.c` | RETAIN | desktop |
+| `src/linux/playback/policy.lua` | `src/linux/playback/policy.lua` | RETAIN | desktop |
+| `src/linux/playback/test_native.c` | `src/linux/playback/test_native.c` | RETAIN | desktop |
+| `src/linux/playback/test_policy.py` | `src/linux/playback/test_policy.py` | RETAIN | desktop |
+| `src/linux/portal.rs` | `src/desktop/linux/portal.rs` | MOVE | desktop |
+| `src/linux/privacy.rs` | `src/desktop/linux/privacy.rs` | MOVE | desktop |
+| `src/linux/shell.rs` | `src/desktop/linux/shell.rs` | MOVE | desktop |
+| `src/linux/shortcuts.rs` | `src/desktop/linux/shortcuts.rs` | MOVE | desktop |
+| `src/linux/update.rs` | `src/desktop/linux/update.rs` | MOVE | desktop |
+| `src/linux/x11.rs` | `src/desktop/linux/x11.rs` | MOVE | desktop |
+| `src/live_transcribe.rs` | `src/shared/live_transcribe.rs` | MOVE | shared Rust module |
+| `src/live_word_probe.rs` | `src/shared/live_word_probe.rs` | MOVE | shared Rust module |
+| `src/live_word_warning.rs` | `src/shared/live_word_warning.rs` | MOVE | shared Rust module |
+| `src/main.rs` | `src/main.rs` | RETAIN | desktop |
+| `src/mic.rs` | `src/capture/mic.rs` | MOVE | capture |
+| `src/model.rs` | `src/shared/model.rs` | MOVE | shared Rust module |
+| `src/native/mod.rs` | `src/desktop/native/mod.rs` | MOVE | desktop |
+| `src/native/pill/atlas.rs` | `src/desktop/native/pill/atlas.rs` | MOVE | desktop |
+| `src/native/pill/mod.rs` | `src/desktop/native/pill/mod.rs` | MOVE | desktop |
+| `src/native/pill/model.rs` | `src/desktop/native/pill/model.rs` | MOVE | desktop |
+| `src/native/pill/other.rs` | `src/desktop/native/pill/other.rs` | MOVE | desktop |
+| `src/native/pill/pill.metal` | `src/desktop/native/pill/pill.metal` | MOVE | desktop |
+| `src/native/pill/types.rs` | `src/desktop/native/pill/types.rs` | MOVE | desktop |
+| `src/onboarding.rs` | `src/desktop/onboarding.rs` | MOVE | desktop |
+| `src/onboarding_window.rs` | `src/desktop/onboarding_window.rs` | MOVE | desktop |
+| `src/page.rs` | `src/desktop/page.rs` | MOVE | desktop |
+| `src/pause_transcribe.rs` | `src/shared/pause_transcribe.rs` | MOVE | shared Rust module |
+| `src/phone.rs` | `src/capture/phone.rs` | MOVE | capture |
+| `src/playback.rs` | `src/shared/playback.rs` | MOVE | shared Rust module |
+| `src/recover.rs` | `src/shared/recover.rs` | MOVE | shared Rust module |
+| `src/render.rs` | `src/shared/render.rs` | MOVE | shared Rust module |
+| `src/retention.rs` | `src/shared/retention.rs` | MOVE | shared Rust module |
+| `src/routing.rs` | `src/shared/routing.rs` | MOVE | shared Rust module |
+| `src/routing/fixtures/artifact-hex-motion.json` | `src/routing/fixtures/artifact-hex-motion.json` | RETAIN | shared Rust module |
+| `src/routing/fixtures/artifact-hex-shout2.json` | `src/routing/fixtures/artifact-hex-shout2.json` | RETAIN | shared Rust module |
+| `src/routing/fixtures/artifact-lot.json` | `src/routing/fixtures/artifact-lot.json` | RETAIN | shared Rust module |
+| `src/routing/fixtures/artifact-server-onboarding.json` | `src/routing/fixtures/artifact-server-onboarding.json` | RETAIN | shared Rust module |
+| `src/routing/fixtures/dev-site-knobs.json` | `src/routing/fixtures/dev-site-knobs.json` | RETAIN | shared Rust module |
+| `src/routing/fixtures/device-hub-ios-2.json` | `src/routing/fixtures/device-hub-ios-2.json` | RETAIN | shared Rust module |
+| `src/routing/fixtures/device-hub-ios.json` | `src/routing/fixtures/device-hub-ios.json` | RETAIN | shared Rust module |
+| `src/routing/fixtures/opencode-interface.json` | `src/routing/fixtures/opencode-interface.json` | RETAIN | shared Rust module |
+| `src/routing/look.rs` | `src/desktop/routing/look.rs` | MOVE | shared Rust module |
+| `src/routing/served.rs` | `src/desktop/routing/served.rs` | MOVE | shared Rust module |
+| `src/routing/smart.rs` | `src/desktop/routing/smart.rs` | MOVE | shared Rust module |
+| `src/screens.rs` | `src/capture/screens.rs` | MOVE | capture |
+| `src/sdk.js` | `src/sdk.js` | RETAIN | shared Rust module |
+| `src/settings.rs` | `src/desktop/settings.rs` | MOVE | desktop |
+| `src/settings_window.rs` | `src/desktop/settings_window.rs` | MOVE | desktop |
+| `src/shortcut.rs` | `src/desktop/shortcut.rs` | MOVE | desktop |
+| `src/sketch.rs` | `src/shared/sketch.rs` | MOVE | shared Rust module |
+| `src/sparkle.rs` | `src/shared/sparkle.rs` | MOVE | shared Rust module |
+| `src/speech.rs` | `src/shared/speech.rs` | MOVE | shared Rust module |
+| `src/speech_model.rs` | `src/shared/speech_model.rs` | MOVE | shared Rust module |
+| `src/transcribe.rs` | `src/shared/transcribe.rs` | MOVE | shared Rust module |
+| `src/ui.rs` | `src/desktop/mod.rs` | MOVE | desktop |
+| `src/ui/desktop_completion.rs` | `src/desktop/ui/desktop_completion.rs` | MOVE | desktop |
+| `src/ui/lab.rs` | `src/desktop/ui/lab.rs` | MOVE | desktop |
+| `src/ui/linux.rs` | `src/desktop/ui/linux.rs` | MOVE | desktop |
+| `src/ui/macos.rs` | `src/desktop/ui/macos.rs` | MOVE | desktop |
+| `src/ui/motion.rs` | `src/desktop/ui/motion.rs` | MOVE | desktop |
+| `src/ui/pill_theme.rs` | `src/desktop/ui/pill_theme.rs` | MOVE | desktop |
+| `src/ui/recording_completion.rs` | `src/desktop/ui/recording_completion.rs` | MOVE | desktop |
+| `src/ui/whiteboard.rs` | `src/desktop/ui/whiteboard.rs` | MOVE | desktop |
+| `src/ui/windows.rs` | `src/desktop/ui/windows.rs` | MOVE | desktop (legacy unsupported code; retained, out of scope) |
+| `src/warm_recognizer.rs` | `src/shared/warm_recognizer.rs` | MOVE | shared Rust module |
+| `src/web.rs` | `src/desktop/web.rs` | MOVE | desktop |
+| `src/win/clipboard.rs` | `src/win/clipboard.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `src/win/command_line.rs` | `src/win/command_line.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `src/win/helper.rs` | `src/win/helper.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `src/win/login.rs` | `src/win/login.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `src/win/media.rs` | `src/win/media.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `src/win/mod.rs` | `src/win/mod.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `src/win/overlay.rs` | `src/win/overlay.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `src/win/playback.rs` | `src/win/playback.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `src/win/privacy.rs` | `src/win/privacy.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `src/win/shell.rs` | `src/win/shell.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `src/win/uia.rs` | `src/win/uia.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `src/windows.rs` | `src/shared/windows.rs` | MOVE | shared Rust module |
+| `src/zoom.rs` | `src/agent_proof/zoom.rs` | MOVE | agent-proof |
+| `tests/test_pre_push_guard.py` | `tests/test_pre_push_guard.py` | RETAIN | shared-infrastructure |
+| `tests/test_verification.py` | `tests/test_verification.py` | RETAIN | shared-infrastructure |
+| `tools/narrator/Cargo.lock` | `tools/narrator/Cargo.lock` | RETAIN | agent-proof |
+| `tools/narrator/Cargo.toml` | `tools/narrator/Cargo.toml` | RETAIN | agent-proof |
+| `tools/narrator/README.md` | `tools/narrator/README.md` | RETAIN | agent-proof |
+| `tools/narrator/src/lib.rs` | `tools/narrator/src/lib.rs` | RETAIN | agent-proof |
+| `tools/narrator/src/main.rs` | `tools/narrator/src/main.rs` | RETAIN | agent-proof |
+| `tools/narrator/tests/protocol.rs` | `tools/narrator/tests/protocol.rs` | RETAIN | agent-proof |
+| `video/.gitignore` | `video/.gitignore` | RETAIN | shared-infrastructure |
+| `video/Cargo.toml` | `video/Cargo.toml` | RETAIN | shared-infrastructure |
+| `video/media/DMSans-Medium.ttf` | `video/media/DMSans-Medium.ttf` | RETAIN | shared-infrastructure |
+| `video/media/Inter-Bold.ttf` | `video/media/Inter-Bold.ttf` | RETAIN | shared-infrastructure |
+| `video/media/JetBrainsMono-Regular.ttf` | `video/media/JetBrainsMono-Regular.ttf` | RETAIN | shared-infrastructure |
+| `video/media/app_icon.png` | `video/media/app_icon.png` | RETAIN | shared-infrastructure |
+| `video/media/contact_sheet.png` | `video/media/contact_sheet.png` | RETAIN | shared-infrastructure |
+| `video/media/soundtrack.wav` | `video/media/soundtrack.wav` | RETAIN | shared-infrastructure |
+| `video/src/lib.rs` | `video/src/lib.rs` | RETAIN | shared-infrastructure |
+| `video/src/main.rs` | `video/src/main.rs` | RETAIN | shared-infrastructure |
+
+Ledger invariant: 634 unique tracked inputs, 389 physical moves, 245 retained paths; no duplicate final paths or deletes. A physical move is not complete until all imports, build/runtime/package inputs and focused verification are wired and read back. The three reserved leaf lanes must hand off their precise patches before shared docs/integration records are finalized.
+
+## Integrated external wiring (owned follow-up)
+
+The site and service move handoffs are integrated in this batch: website build/package/publish inputs now root at `public/site/**`; the Worker package and generated Wrangler config use `connect/service/**`; `connect/web/**` approved-assets/docs references point into `public/site/public/**`. Rust feature-map/watch fixtures and `src/onboarding.rs` compile-time native inputs point at the current destinations. CI gates and deployment identities/routes remain unchanged; selector unknown-path behavior still broadens. The private inventory records the handoff-resolved native paths. Public owner reports 237 moved files, 132 checks and artifact verification; service owner reports 35 moved files and 71 tests; native owner reports 13 source hashes and preserved sorted compiler ordering. Those are retained owner receipts, not reruns here. Mac native compilation is still pending.
+
+## Verification policy for this campaign
+
+Preservation proof and `git diff --check` apply to each physical slice. Current first-slice build and focused CLI, bundle-processing, and feature-map tests ran through `t3-build`; their exact logs are retained under `/srv/clanker-hermes/cache/scratch/apparent-first-slice-*.log`. The leaf lanes are terminal and native inputs are frozen. This batch runs only inexpensive Python selector/path tests before the integrated Linux root compilation through `t3-build`; no broad Rust tests or deployment are included. The parent normal verifier and Mac native compilation remain integration gates. No commit or push is part of this handoff.
+
+---
+
+## Historical target and campaign evidence (superseded; not live work)
+
+The following text records the earlier package-boundary proposal and prior milestone. It is retained for provenance only. Where it conflicts with the authoritative target above—including extra crates, standalone Agent/Engine adoption, different temporary module locations, or owner maps—the target above wins.
+
 ## Target and dependency rules
 
 Optimize for ordinary features and recovery staying with one accountable owner,

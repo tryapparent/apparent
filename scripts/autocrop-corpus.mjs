@@ -13,7 +13,7 @@
 //   for s in <out-dir>/*/scenario.json; do apparent fixture $s --out ${s%/scenario.json}.apparent; done
 //   apparent autocrop-eval <out-dir>
 //
-// Playwright comes from any node_modules that has it (this repo's site/ does).
+// Playwright comes from any node_modules that has it (this repo's public/site/ does).
 
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -555,9 +555,9 @@ def('scrolling-page', 'Scrolling a long docs page in a big browser window, then 
 // ---------------------------------------------------------------------------------------------
 async function loadPlaywright() {
   try { return await import('playwright'); } catch {}
-  const dir = new URL('../site/node_modules/playwright/index.mjs', import.meta.url).pathname;
+  const dir = new URL('../public/site/node_modules/playwright/index.mjs', import.meta.url).pathname;
   if (existsSync(dir)) return await import(dir);
-  throw new Error('Playwright not found: install it, or run from a checkout with site/node_modules');
+  throw new Error('Playwright not found: install it, or run from a checkout with public/site/node_modules');
 }
 
 const clampPt = ([x, y]) => [Math.max(0, Math.min(SW - 1, x)), Math.max(0, Math.min(SH - 1, y))];

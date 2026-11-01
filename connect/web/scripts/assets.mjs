@@ -1,7 +1,7 @@
 // Explicit approved copies only. Never import any site implementation or marketing assets.
 import { copyFile, mkdir, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
-export const assetSource = resolve(process.env.CONNECT_ASSET_SOURCE || '../../site/public')
+export const assetSource = resolve(process.env.CONNECT_ASSET_SOURCE || '../../public/site/public')
 const publicDir = new URL('../public/', import.meta.url)
 await rm(publicDir, { recursive: true, force: true })
 await mkdir(new URL('hosted/', publicDir), { recursive: true })

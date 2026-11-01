@@ -38,8 +38,8 @@ class PagesDeliveryTests(unittest.TestCase):
             headers = {'Content-Type': 'video/mp4'}
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / 'site/public').mkdir(parents=True)
-            (root / 'site/public/Apparent-ghost-demo-v4-lilac.mp4').write_bytes(b'checked movie')
+            (root / 'public/site/public').mkdir(parents=True)
+            (root / 'public/site/public/Apparent-ghost-demo-v4-lilac.mp4').write_bytes(b'checked movie')
             for name in ['index.html', 'connect/index.html', 'connect/device/index.html', 'connect/shares/index.html']:
                 (root / name).parent.mkdir(parents=True, exist_ok=True)
                 (root / name).write_bytes(name.encode())
@@ -67,12 +67,12 @@ class PagesDeliveryTests(unittest.TestCase):
     def test_main_stages_only_public_inputs_and_selects_pages_not_worker(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name, data in [('site/dist-apparent/404.html', 'not found'),
-                               ('site/dist-apparent/_routes.json', '{}'),
-                               ('site/functions/movie.js', 'function source'),
-                               ('site/lib/metadata.js', 'fixed metadata'),
-                               ('site/wrangler.pages.jsonc', '{"name":"apparent-capture"}'),
-                               ('site/wrangler.jsonc', 'unrelated Worker'),
+            for name, data in [('public/site/dist-apparent/404.html', 'not found'),
+                               ('public/site/dist-apparent/_routes.json', '{}'),
+                               ('public/site/functions/movie.js', 'function source'),
+                               ('public/site/lib/metadata.js', 'fixed metadata'),
+                               ('public/site/wrangler.pages.jsonc', '{"name":"apparent-capture"}'),
+                               ('public/site/wrangler.jsonc', 'unrelated Worker'),
                                ('.env', 'private sentinel')]:
                 (root / name).parent.mkdir(parents=True, exist_ok=True)
                 (root / name).write_text(data)
@@ -87,7 +87,7 @@ class PagesDeliveryTests(unittest.TestCase):
                 pages.main()
                 current.assert_called_once_with('a' * 40)
                 upload.assert_called_once()
-                (root / 'site/dist-apparent/private-link').symlink_to(root, target_is_directory=True)
+                (root / 'public/site/dist-apparent/private-link').symlink_to(root, target_is_directory=True)
                 upload.reset_mock()
                 with self.assertRaisesRegex(ValueError, 'symlink'):
                     pages.main()

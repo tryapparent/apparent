@@ -437,7 +437,7 @@ fn publish_artifacts(
 ) -> anyhow::Result<()> {
     use anyhow::Context;
 
-    let stage = dir.join(format!(".whiteboard-{}", crate::make_bundle_id()));
+    let stage = dir.join(format!(".whiteboard-{}", crate::shared::ids::make_bundle_id()));
     std::fs::create_dir(&stage)?;
     let mut rollback_failed = false;
     let result = (|| -> anyhow::Result<()> {
@@ -600,8 +600,8 @@ mod tests {
 
     #[test]
     fn finished_whiteboard_is_a_legible_handoff_frame_and_text() {
-        let root = std::env::temp_dir().join(crate::make_bundle_id());
-        let (dir, mut bundle, _) = crate::generate_demo_bundle(Some(root.join("demo.apparent"))).unwrap();
+        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
+        let (dir, mut bundle, _) = crate::shared::demo::generate_demo_bundle(Some(root.join("demo.apparent"))).unwrap();
         let sheet_before = std::fs::read(dir.join("contact-sheet.png")).unwrap();
         let full_dir = dir.join("frames-full");
         std::fs::create_dir(&full_dir).unwrap();
@@ -646,8 +646,8 @@ mod tests {
 
     #[test]
     fn empty_or_cleared_paper_does_not_add_a_handoff_tile() {
-        let root = std::env::temp_dir().join(crate::make_bundle_id());
-        let (dir, mut bundle, _) = crate::generate_demo_bundle(Some(root.join("demo.apparent"))).unwrap();
+        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
+        let (dir, mut bundle, _) = crate::shared::demo::generate_demo_bundle(Some(root.join("demo.apparent"))).unwrap();
         let before = std::fs::read(dir.join("contact-sheet.png")).unwrap();
         let keys = bundle.keyframes.len();
         let mut board = Board::default();
@@ -662,9 +662,9 @@ mod tests {
 
     #[test]
     fn failed_paper_publish_keeps_the_original_capture_and_clipboard_text() {
-        let root = std::env::temp_dir().join(crate::make_bundle_id());
+        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
         let (dir, bundle, summary) =
-            crate::generate_demo_bundle(Some(root.join("demo.apparent"))).unwrap();
+            crate::shared::demo::generate_demo_bundle(Some(root.join("demo.apparent"))).unwrap();
         let manifest = std::fs::read(dir.join("apparent.json")).unwrap();
         let sheet = std::fs::read(dir.join("contact-sheet.png")).unwrap();
         let text = std::fs::read(dir.join("summary.md")).unwrap();

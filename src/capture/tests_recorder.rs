@@ -118,14 +118,14 @@ fn transient_screenshot_failure_retries_to_readiness_and_finalization() {
         assert!(!session.failed_to_start());
         let recording = session.stop();
         assert_eq!(recording.frames.len(), 1);
-        let dir = std::env::temp_dir().join(crate::make_bundle_id());
+        let dir = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
         let target = TargetInfo {
             mode: CaptureMode::Region,
             app: None, bundle_id: None, window_title: None, window_id: None,
             display_id: 0,
             frame: TargetFrame { x: 0.0, y: 0.0, width: 64.0, height: 64.0, scale: 1.0 },
         };
-        let (saved, bundle, _) = crate::finalize_capture_bundle(
+        let (saved, bundle, _) = crate::bundle_processing::finalize_capture_bundle(
             &dir, target, recording, vec![], vec![], None, None,
             crate::windows::ActivityLog::default(), None,
         ).expect("a recovered real sample must allow ordinary finalization");
@@ -177,7 +177,7 @@ fn screen_stop_joins_worker_before_collecting_its_final_media() {
     let frames = Arc::new(Mutex::new(CandidateBuffer::new(1 << 20)));
     let worker_stopping = Arc::clone(&stopping);
     let worker_frames = Arc::clone(&frames);
-    let path = std::env::temp_dir().join(crate::make_bundle_id());
+    let path = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
     let worker_path = path.clone();
     let worker = thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(2);

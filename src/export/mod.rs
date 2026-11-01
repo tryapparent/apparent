@@ -1,6 +1,6 @@
 //! `apparent export`: a bundle's recording as one shareable `.mp4` (H.264 or HEVC, AAC audio).
 //!
-//! Rust decides everything about the picture and the helper (`helper/Export.swift`) renders it:
+//! Rust decides everything about the picture and the helper (`capture/native/Export.swift`) renders it:
 //!
 //! - `crop`: the part of the recording kept (`--crop`, default the whole recording);
 //! - `camera`: unless `--no-zoom`, a camera rectangle per frame from the bundle's events, so the
@@ -345,7 +345,7 @@ pub fn export(
     let partial = out.with_file_name(format!(
         ".{}.{}.partial.mp4",
         out.file_name().unwrap_or_default().to_string_lossy(),
-        crate::make_bundle_id()
+        crate::shared::ids::make_bundle_id()
     ));
     let plan = Plan {
         video: &video,
@@ -379,7 +379,7 @@ pub fn export(
     #[cfg(not(target_os = "linux"))]
     let result = {
         let plan_path =
-            std::env::temp_dir().join(format!("apparent-export-{}.json", crate::make_bundle_id()));
+            std::env::temp_dir().join(format!("apparent-export-{}.json", crate::shared::ids::make_bundle_id()));
         std::fs::write(&plan_path, serde_json::to_vec(&plan)?)?;
         let result = run_helper(&plan_path, options.background, progress);
         let _ = std::fs::remove_file(&plan_path);
@@ -521,7 +521,7 @@ mod tests {
             other => panic!("FFmpeg is installed but cannot start: {other:?}"),
         }
         let root =
-            std::env::temp_dir().join(format!("apparent-export-test-{}", crate::make_bundle_id()));
+            std::env::temp_dir().join(format!("apparent-export-test-{}", crate::shared::ids::make_bundle_id()));
         std::fs::create_dir_all(&root).unwrap();
         let movie = root.join("recording.mp4");
         let made = Command::new("ffmpeg")
@@ -747,7 +747,7 @@ mod tests {
             return;
         }
         let root =
-            std::env::temp_dir().join(format!("apparent-export-tail-{}", crate::make_bundle_id()));
+            std::env::temp_dir().join(format!("apparent-export-tail-{}", crate::shared::ids::make_bundle_id()));
         std::fs::create_dir_all(&root).unwrap();
         let movie = root.join("recording.mp4");
         let encoded = Command::new("ffmpeg")

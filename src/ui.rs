@@ -3020,7 +3020,7 @@ impl ApparentCoordinator {
         self.selection_drag = None;
         self.hovered_window = None;
         self.animated_window_rect = None;
-        let id = crate::make_bundle_id();
+        let id = crate::shared::ids::make_bundle_id();
         let root = std::env::var_os("APPARENT_BENCH_START")
             .map(PathBuf::from)
             .unwrap_or_else(crate::handoff::default_captures_dir);
@@ -3215,7 +3215,7 @@ impl ApparentCoordinator {
         self.hovered_window = None;
         self.animated_window_rect = None;
         let bundle_dir = crate::handoff::default_captures_dir()
-            .join(format!("{}.apparent", crate::make_bundle_id()));
+            .join(format!("{}.apparent", crate::shared::ids::make_bundle_id()));
         let _ = std::fs::create_dir_all(&bundle_dir);
         let movie_path = bundle_dir.join("recording.mov");
         let existing_preview = self.iphone_preview.take();
@@ -5139,7 +5139,7 @@ impl Render for BundleReviewWindow {
                         .child(
                             action_button("empty-demo", "Load Demo Bundle", false).on_click(
                                 move |_, _, cx| {
-                                    if let Ok((dir, bundle, _)) = crate::generate_demo_bundle(None)
+                                    if let Ok((dir, bundle, _)) = crate::shared::demo::generate_demo_bundle(None)
                                     {
                                         c_demo.update(cx, |coord, cx| {
                                             coord.set_review_bundle(

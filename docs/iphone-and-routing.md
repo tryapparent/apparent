@@ -2,7 +2,7 @@
 
 Read this before changing `src/phone.rs`, `src/routing.rs`, `src/web.rs`, `src/sdk.js` or the helper's phone capture.
 
-## iPhone sources (`src/phone.rs`, `helper/`)
+## iPhone sources (`src/phone.rs`, `capture/native/ and desktop/native/`)
 
 - `apparent-helper` (Swift, built by `build.rs` into `target/<profile>/`, copied and signed into `Apparent.app/Contents/MacOS` by `install-app.sh`) does SpeechAnalyzer, CoreMediaIO/AVFoundation phone capture with the mirror window, and movie decoding. Swift was chosen over objc2 bindings because SpeechAnalyzer has no Objective-C surface and `objc2-av-foundation` is not in the lockfile.
 - Picker discovery (`apparent-helper devices`) reads the USB registry only: it is instant and never touches AVFoundation, so opening the picker can't raise a camera prompt or hang. The first time iPhone is chosen without Camera, Apparent closes the picker and opens the onboarding window's Camera row instead of starting the mirror (whose prompt would land under the picker).

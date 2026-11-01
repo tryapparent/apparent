@@ -52,7 +52,7 @@ def verify(sha, package):
                 raise ValueError('Missing Connect privacy headers')
         if hashlib.sha256(body).digest() != hashlib.sha256((package / path).read_bytes()).digest():
             raise ValueError('Pages served different bytes: ' + path)
-    movie = ROOT / 'site/public/Apparent-ghost-demo-v4-lilac.mp4'
+    movie = ROOT / 'public/site/public/Apparent-ghost-demo-v4-lilac.mp4'
     expected = hashlib.sha256(movie.read_bytes()).digest()
     actual = hashlib.sha256()
     request = Request(origin + '/' + movie.name, headers={'Cache-Control': 'no-cache', 'User-Agent': 'Apparent-CD/1.0'})
@@ -83,7 +83,7 @@ def main():
     sha = os.environ['GITHUB_SHA']
     if not re.fullmatch('[0-9a-f]{40}', sha) or os.environ.get('GITHUB_REF') != 'refs/heads/main':
         raise ValueError('Only exact main revisions may publish')
-    package = ROOT / 'site' / 'dist-apparent'
+    package = ROOT / 'public' / 'site' / 'dist-apparent'
     if not (package / '404.html').is_file() or not (package / '_routes.json').is_file():
         raise ValueError('Missing privacy/routing preparation')
     if package.is_symlink() or any(p.is_symlink() or (p.is_file() and p.stat().st_size > 25 * 1024 * 1024) for p in package.rglob('*')):
@@ -95,11 +95,11 @@ def main():
     with tempfile.TemporaryDirectory(prefix='apparent-pages-') as directory:
         stage = Path(directory)
         shutil.copytree(package, stage / 'dist-apparent')
-        shutil.copytree(ROOT / 'site/functions', stage / 'functions')
-        shutil.copytree(ROOT / 'site/lib', stage / 'lib')
-        shutil.copyfile(ROOT / 'site/wrangler.pages.jsonc', stage / 'wrangler.jsonc')
+        shutil.copytree(ROOT / 'public/site/functions', stage / 'functions')
+        shutil.copytree(ROOT / 'public/site/lib', stage / 'lib')
+        shutil.copyfile(ROOT / 'public/site/wrangler.pages.jsonc', stage / 'wrangler.jsonc')
         current_main(sha)
-        subprocess.run([str(ROOT / 'hosted/node_modules/.bin/wrangler'), 'pages', 'deploy',
+        subprocess.run([str(ROOT / 'connect/service/node_modules/.bin/wrangler'), 'pages', 'deploy',
                         '--project-name', PROJECT, '--branch', 'main', '--commit-hash', sha,
                         '--commit-dirty=false'], cwd=stage, env=env, check=True)
     receipt = verify_ready(sha, package)

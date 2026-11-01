@@ -55,7 +55,7 @@ commit. Windows is not a supported release target. Do not dispatch the retained 
 or publish a Windows zip.
 
 1. **Version:** bump `version` in `Cargo.toml` and `Cargo.lock` in a `release/<version>` PR, and in the
-   same PR change every `"status": "main"` in `site/src/features.json` to `"stable@<version>"`.
+   same PR change every `"status": "main"` in `public/site/src/features.json` to `"stable@<version>"`.
    No push or PR runs CI automatically. Test the change locally before merging.
 2. **Mac build** (Studio, from that commit): `APPARENT_BUILD_NUMBER=<n> APPARENT_SPARKLE_DIR=~/.local/share/apparent-release/sparkle-2.9.4 ./scripts/release-app.sh`.
    The build number goes up by one every release (Sparkle compares it, not the version). The script
@@ -71,11 +71,11 @@ or publish a Windows zip.
    reads the ed25519 key from the login keychain, which only a GUI-session job can, and runs
    `generate_appcast` over that folder, which holds every earlier zip so it can make deltas. Its log is
    `~/.local/share/apparent-release/appcast.log` and ends with `exit=0`. Copy `updates/appcast.xml` into
-   `site/public/appcast.xml` in a PR and check the new item's `edSignature` against the app's
+   `public/site/public/appcast.xml` in a PR and check the new item's `edSignature` against the app's
    `SUPublicEDKey`. For a dry run, run `appcast.sh <folder> <log>` as a one-off launchd job on a copy
    of the folder.
 5. **Site** (the Pro's checkout, where `wrangler` is signed in): fast-forward to `main`, copy the DMG,
-   Sparkle zip and the new `Apparent<n>-*.delta` files into `site/public/releases/` (also as
+   Sparkle zip and the new `Apparent<n>-*.delta` files into `public/site/public/releases/` (also as
    `Apparent-latest-*`), then `bun run build && bunx wrangler@latest deploy`.
 6. **Homebrew:** a PR to `kitlangton/homebrew-tap` bumping `version` and `sha256` in `Casks/apparent.rb`.
 

@@ -11,7 +11,7 @@ OCR, simulated picker clicks or acknowledgement protocol.
 ## Source-backed limits
 
 At baseline `6f043ff4ab4f4bdfa7e180c97ef7c37a397ff2ef`,
-`CaptureCommand::Start` (`src/main.rs`) has no target/window option. The GUI's
+`CaptureCommand::Start` (`src/composition/cli.rs`) has no target/window option. The GUI's
 `agent_request` calls `record_screen_now` (`src/ui.rs`). Do not add `--window`
 to this command or substitute the separate timed `record --window` recorder:
 that would test a different path. On Omarchy/Hyprland the normal screen path

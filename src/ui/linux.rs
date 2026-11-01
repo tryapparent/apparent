@@ -654,7 +654,7 @@ impl ksni::Tray for ApparentTray {
         }
         let inbox = crate::inbox::Inbox::load_default();
         if inbox.len() > 0 {
-            let now = crate::now_epoch_ms();
+            let now = crate::shared::clock::now_epoch_ms();
             items.push(
                 ksni::menu::StandardItem {
                     label: "From iPhone".into(),

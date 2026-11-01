@@ -461,7 +461,7 @@ fn trash_media(bundle: &Path, items: &[PathBuf], days: u32, trasher: Trasher) ->
         moved.push(file.to_string_lossy().into_owned());
     }
     let note = serde_json::json!({
-        "cleanedAtMs": crate::now_epoch_ms(),
+        "cleanedAtMs": crate::shared::clock::now_epoch_ms(),
         "afterDays": days,
         "trashed": moved,
     });
@@ -836,7 +836,7 @@ mod tests {
             let dir = std::env::temp_dir().join(format!(
                 "apparent-retention-{tag}-{}-{}",
                 std::process::id(),
-                crate::make_bundle_id()
+                crate::shared::ids::make_bundle_id()
             ));
             std::fs::create_dir_all(&dir).unwrap();
             Self(dir)

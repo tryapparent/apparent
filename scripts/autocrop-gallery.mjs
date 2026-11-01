@@ -25,7 +25,7 @@ const bundles = inputs.flatMap((p) => {
 
 async function loadPlaywright() {
   try { return await import('playwright'); } catch {}
-  const dir = new URL('../site/node_modules/playwright/index.mjs', import.meta.url).pathname;
+  const dir = new URL('../public/site/node_modules/playwright/index.mjs', import.meta.url).pathname;
   if (existsSync(dir)) return await import(dir);
   throw new Error('Playwright not found');
 }
