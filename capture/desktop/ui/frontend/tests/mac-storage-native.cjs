@@ -42,21 +42,6 @@ done
 // search other processes, use coordinates, or guess which Return commits a picker.
 // Unknown AX shapes fail with bounded diagnostics from this process alone.
 const panelScript = `
-on pickerButtons(rootElement, level, remaining)
-  if remaining < 1 or level > 16 then error "Owned picker AX traversal budget exceeded"
-  set remaining to remaining - 1
-  tell application "System Events"
-    if (role of rootElement as text) is "AXButton" then return {{rootElement}, remaining}
-    set found to {}
-    repeat with childElement in (UI elements of rootElement)
-      set walked to my pickerButtons(contents of childElement, level + 1, remaining)
-      set found to found & (item 1 of walked)
-      set remaining to item 2 of walked
-    end repeat
-  end tell
-  return {found, remaining}
-end pickerButtons
-
 on run argv
   set targetPID to (item 1 of argv) as integer
   set operation to item 3 of argv
@@ -111,13 +96,22 @@ on run argv
       if panelRole is not "AXSheet" and panelRole is not "AXWindow" then error "Unexpected picker role: " & trace
       -- A sheet can have no title. A named picker must expose the shipped title.
       if panelName is not "" and panelName is not "Choose capture location" then error "Unexpected picker title: " & trace
-      -- AppKit groups its controls below the sheet. Never widen the search to
-      -- another window/process, and reject oversized or ambiguous subtrees.
-      set walked to my pickerButtons(picker, 0, 512)
+      -- Observed macOS 26 NSOpenPanel: one AXSplitGroup immediately under the
+      -- sheet, with the footer buttons directly under that group. Do not walk
+      -- the file-browser descendants (which can expose an entire volume).
+      set controls to picker
+      if (count of buttons of controls) is 0 then
+        set containers to UI elements of picker
+        if (count of containers) is not 1 then error "Unsupported picker control containers: " & trace
+        set controls to item 1 of containers
+        if (role of controls as text) is not "AXSplitGroup" then error "Unsupported picker control container role: " & trace
+      end if
       set chooseMatches to {}
       set cancelMatches to {}
-      set trace to trace & "descendant-buttons="
-      repeat with foundButton in (item 1 of walked)
+      set trace to trace & "footer-buttons="
+      set footerButtons to buttons of controls
+      if (count of footerButtons) > 16 then error "Oversized picker footer: " & trace
+      repeat with foundButton in footerButtons
         set buttonName to name of foundButton
         if buttonName is not missing value then
           set trace to trace & (buttonName as text) & "|"
