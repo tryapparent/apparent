@@ -61,14 +61,16 @@ let scenario = {}, writes = [], calls = [], shareReads = [], approved = false, s
 assert(!(await readFile(`${root}/index.html`, 'utf8')).includes('href="/connect'))
 assert(!(await readFile(`${root}/sitemap.xml`, 'utf8')).includes('/connect'))
 // The packaged artifact must retain the exact approved art and original brand assets.
-for (const [asset, source] of [
-  ['hosted/source-pond-v4.png', 'hosted/source-pond-v4.png'],
-  ['hosted/agent-pond-v4.png', 'hosted/agent-pond-v4.png'],
-  ['hosted/agent-reading-v4.png', 'hosted/agent-reading-v4.png'],
-  ['HostGrotesk-Variable.ttf', 'fonts/HostGrotesk-Variable.ttf'],
-  ['apparent-wordmark.svg', 'brand/apparent-wordmark.svg'],
-]) {
-  assert.deepEqual(await readFile(`${root}/${asset}`), await readFile(`public/assets/${source}`), `packaged ${asset}`)
+// Public source groups these five served paths under assets/{hosted,fonts,brand}.
+const approvedAssets = new Map([
+  ['hosted/source-pond-v4.png', 'assets/hosted/source-pond-v4.png'],
+  ['hosted/agent-pond-v4.png', 'assets/hosted/agent-pond-v4.png'],
+  ['hosted/agent-reading-v4.png', 'assets/hosted/agent-reading-v4.png'],
+  ['HostGrotesk-Variable.ttf', 'assets/fonts/HostGrotesk-Variable.ttf'],
+  ['apparent-wordmark.svg', 'assets/brand/apparent-wordmark.svg'],
+])
+for (const [asset, source] of approvedAssets) {
+  assert.deepEqual(await readFile(`${root}/${asset}`), await readFile(`public/${source}`), `packaged ${asset}`)
 }
 let uiOrigin = ''
 const server = createServer(async (req, res) => {

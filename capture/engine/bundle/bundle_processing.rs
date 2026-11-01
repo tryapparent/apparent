@@ -1152,8 +1152,13 @@ mod tests {
             frame: TargetFrame { x: 0.0, y: 0.0, width: 1280.0, height: 800.0, scale: 1.0 },
         };
         let candidate = RgbaFrame::new(0, 320, 200, vec![128; 320 * 200 * 4]);
+        // Successful decode still permits tight crops for deliberate input.
+        // A resting cursor alone, without window metadata, must retain the screen.
+        let click = model::InteractionEvent::Click {
+            t: 0, x: 0.5, y: 0.5, button: None, label: None, role: None,
+        };
         let (_, bundle, _) = build_bundle_from_parts(
-            &root, target, 1_000, vec![candidate], vec![], vec![],
+            &root, target, 1_000, vec![candidate], vec![], vec![click],
             TranscriptData::default(), None, None,
             SourceExtras {
                 full_frames: Some(Box::new(|times| Ok(times.iter().map(|&t| {
