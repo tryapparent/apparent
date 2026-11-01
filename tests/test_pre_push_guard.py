@@ -116,6 +116,29 @@ class PrePushGuardTests(unittest.TestCase):
             "-c utility cargo test --manifest-path capture/engine/Cargo.toml -j 3 --offline -- --test-threads=2",
         ])
 
+    def test_browser_only_push_runs_existing_package_checks_not_rust(self):
+        run("git", "update-ref", "refs/remotes/origin/main", self.head, cwd=self.repo)
+        browser = self.repo / "connect/web"
+        browser.mkdir(parents=True)
+        (browser / "package.json").write_text('{}\n')
+        run("git", "add", ".", cwd=self.repo)
+        run("git", "commit", "-qm", "independent browser", cwd=self.repo)
+        self.head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
+        for tool in ("bun", "node"):
+            stub = self.bin / tool
+            stub.write_text(f'#!/bin/sh\nprintf "%s\\n" "{tool} $*" >> "$COMMAND_LOG"\nexit "${{MOCK_STATUS:-0}}"\n')
+            stub.chmod(0o755)
+        result = self.push()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.log.read_text().splitlines(), [
+            "bun install --frozen-lockfile", "bun run build",
+            "node --test test/artifact.test.mjs test/closure.test.mjs test/routes.test.mjs",
+            "node scripts/test-browser.mjs",
+        ])
+        result = self.push(env=dict(self.env, MOCK_STATUS="1"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("verification failed", result.stderr)
+
     def test_ci_online_mode_uses_locked_and_propagates_failure(self):
         args = ("python3", "scripts/verification.py", "--base", "unknown", "--run", "--online")
         result = run(*args, cwd=self.repo, env=self.env)
