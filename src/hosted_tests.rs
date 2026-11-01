@@ -172,12 +172,11 @@ fn hosted_config_and_queue_locks_are_not_network_held() {
     clear_hook();
     result.unwrap();
     assert!(checked.load(Ordering::SeqCst));
+    let jobs = f.client.jobs().unwrap();
     assert!(
-        f.client
-            .jobs()
-            .unwrap()
-            .iter()
-            .any(|job| job.id == id && job.status == "ready")
+        jobs.iter().any(|job| job.id == id && job.status == "ready"),
+        "upload did not become ready: jobs={jobs:?}; requests={:?}",
+        server.state.lock().unwrap().request_routes
     );
 }
 
@@ -516,6 +515,7 @@ impl Drop for Fixture {
 
 #[derive(Default)]
 struct State {
+    request_routes: Vec<String>,
     list_routes: Vec<String>,
     progress: Vec<String>,
     shares: usize,
@@ -617,6 +617,7 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
     let body = &bytes[end..end + length];
     let mut s = state.lock().unwrap();
     s.requests += 1;
+    s.request_routes.push(format!("{method} {route}"));
     let mut status = 200;
     let result: Vec<u8> = if route == "/v1/device/start" {
         json!({"deviceCode":"synthetic-device-secret", "userCode":"TEST-CODE", "verificationUri":format!("{origin}/hosted/device?code=TEST-CODE"), "expiresIn":5,"interval":1}).to_string().into_bytes()
@@ -895,7 +896,13 @@ fn hosted_sharing_reserves_before_media_reuses_url_and_resumes_queue() {
     assert_eq!(f.client.jobs().unwrap().len(), 1);
     let restarted = Client::at(f.client.config.clone());
     restarted.process_once().unwrap();
-    assert_eq!(restarted.jobs().unwrap()[0].status, "ready");
+    let jobs = restarted.jobs().unwrap();
+    assert_eq!(
+        jobs[0].status,
+        "ready",
+        "upload did not resume: jobs={jobs:?}; requests={:?}",
+        server.state.lock().unwrap().request_routes
+    );
     assert_eq!(restarted.jobs().unwrap()[0].id, id);
     assert_eq!(restarted.share(&bundle).unwrap(), url);
     let another = f.root.join("another.apparent");
