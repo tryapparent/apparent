@@ -76,7 +76,7 @@ export async function flushAnalytics(env: Env) {
    if(!current.length)return;
    const response=await fetch(env.POSTHOG_HOST+'/batch/',{method:'POST',redirect:'manual',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:env.POSTHOG_PROJECT_TOKEN,batch:current}),signal:AbortSignal.timeout(5000)});
    if(!response.ok)return;
-   const result=await response.json() as {status?:number};if(result.status!==1)return;
+   const result=await response.json() as {status?:number|string};if(result.status!==1&&result.status!=='Ok')return;
   }
   // A failed send/ambiguous acknowledgement leaves rows for retry with the same
   // UUID and timestamp. Exclusions never go to the analytics provider.

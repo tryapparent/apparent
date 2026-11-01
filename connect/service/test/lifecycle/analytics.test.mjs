@@ -5,12 +5,12 @@ import {build} from 'esbuild';
 import {fixture,digest,id,file} from '../helpers.mjs';
 const settings={POSTHOG_ENABLED:'true',POSTHOG_PROJECT_TOKEN:'phc_synthetic',POSTHOG_HOST:'https://eu.i.posthog.com',POSTHOG_ENVIRONMENT:'synthetic'};
 async function setup(bindings={},legacy=false,runtime={}) {
- const provider={status:200,bodies:[]};
+ const provider={status:200,ack:{status:'Ok'},bodies:[]};
  const f=await fixture({...settings,...bindings},{...runtime,outboundService:async request=>{
   assert.equal(request.url,'https://eu.i.posthog.com/batch/');
   provider.bodies.push(await request.json());
   if(provider.beforeResponse)await provider.beforeResponse();
-  return Response.json({status:1},{status:provider.status});
+  return Response.json(provider.ack,{status:provider.status});
  }});
  await f.db.exec((await readFile('migrations/0004.sql','utf8')).replaceAll('\n',' '));
  if(!legacy)await f.db.exec((await readFile('migrations/0005.sql','utf8')).replaceAll('\n',' '));
@@ -211,6 +211,18 @@ test('optional analytics: atomic distinct accounts, concurrent/idempotent comple
  assert.equal(snapshot.properties.retained_bytes,Buffer.byteLength('private evidence'));assert.equal(snapshot.properties.retained_recordings,1);
  const serialized=JSON.stringify(sent);for(const secret of ['private evidence','a second private recording',a.token,a.cookie,'@example.com','summary.md',id(1),'https://api.example'])assert.ok(!serialized.includes(secret),secret);
  await sweep(f);assert.deepEqual(await queued(f),[]);assert.equal(f.provider.bodies.length,1);
+ }finally{await f.close();}
+});
+test('provider acknowledgement: observed Ok and legacy numeric success drain the queue; ambiguous bodies do not',async()=>{
+ const f=await setup();try{
+  await f.db.exec('UPDATE analytics_control SET enabled=1');
+  const account=digest('provider acknowledgement');await enroll(f,account);await f.identity(account);
+  for(const ack of [{},{status:0},{status:'ok'},{status:'success'},{status:'Error'},null]){
+   f.provider.ack=ack;await sweep(f);assert.equal((await queued(f)).length,2,'ambiguous acknowledgement must retain signup and snapshot');
+  }
+  f.provider.ack={status:'Ok'};await sweep(f);assert.deepEqual(await queued(f),[],'observed PostHog batch acknowledgement drains the outbox');
+  await f.db.exec('UPDATE analytics_control SET snapshot_day=-1');
+  f.provider.ack={status:1};await sweep(f);assert.deepEqual(await queued(f),[],'legacy numeric success remains accepted');
  }finally{await f.close();}
 });
 test('provider failures preserve identical event identity; retries, deletion and expired reservations do not inflate storage',async()=>{
