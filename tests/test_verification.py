@@ -110,6 +110,34 @@ class SelectionTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 verification.run_checks(selection)
 
+    def test_retired_context_deletion_is_document_only_not_unknown_markdown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+            def git(*args):
+                return subprocess.check_output(["git", *args], cwd=root, env=env, text=True).strip()
+            git("init", "-q")
+            git("config", "user.name", "Test")
+            git("config", "user.email", "test@example.invalid")
+            (root / "CONTEXT.md").write_text("Retired glossary\n")
+            (root / "docs").mkdir()
+            (root / "docs/routing.md").write_text("See CONTEXT.md\n")
+            git("add", ".")
+            git("commit", "-qm", "base")
+            base = git("rev-parse", "HEAD")
+            git("rm", "CONTEXT.md")
+            (root / "docs/routing.md").write_text("Historical routing\n")
+            git("add", ".")
+            git("commit", "-qm", "delete retired glossary")
+            with patch.object(verification, "ROOT", root), patch.dict(os.environ, env, clear=True):
+                result = verification.plan(base, "HEAD")
+            self.assertEqual(result["paths"], ["CONTEXT.md", "docs/routing.md"])
+            self.assertFalse(result["root"])
+            self.assertFalse(result["engine"])
+            self.assertFalse(result["browser"])
+            self.assertTrue(verification.select(["UNKNOWN.md"])["engine"])
+            self.assertTrue(verification.select([*result["paths"], "build.rs"])["engine"])
+
     def test_real_rename_and_delete_include_old_owner(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

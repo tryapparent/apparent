@@ -13,7 +13,7 @@ import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCS = {"AGENTS.md", "README.md", "refactor.md"}
+DOCS = {"AGENTS.md", "README.md", "refactor.md", "CONTEXT.md"}
 
 # Exact reviewed extraction pairs, not an arbitrary Rust/mechanical classifier.
 # f1b46d2a donors -> #221 1ea0d146 / #225 28d83f3d preserved bodies,
