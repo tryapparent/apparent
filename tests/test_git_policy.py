@@ -3,7 +3,9 @@ import os
 import importlib.util
 from pathlib import Path
 import shutil
+import signal
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -94,6 +96,65 @@ class PolicyTests(unittest.TestCase):
         original = (self.root / "Cargo.toml").read_text()
         self.write("Cargo.toml", original + '\n[build-dependencies]\nagent={path="capture/agent"}\n')
         self.assertIn("not a supported Engine contract", self.policy("staged").stderr)
+
+    def test_root_resolution_overrides_require_review(self):
+        original = (self.root / "Cargo.toml").read_text()
+        for tail in ['\n[workspace]\n', '\n[patch.crates-io]\n', '\n[replace]\n',
+                     '\n[workspace]\nmembers=["capture/engine"]\n'
+                     '[patch.crates-io]\nserde={git="https://example.invalid/serde"}\n']:
+            with self.subTest(tail=tail):
+                self.write("Cargo.toml", original + tail)
+                tree = self.git("write-tree")
+                for args in [("staged",), ("tree", "--revision", tree)]:
+                    result = self.policy(*args)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("root Cargo resolution", result.stderr)
+
+    def test_engine_explicit_targets_require_review(self):
+        original = (self.root / "capture/engine/Cargo.toml").read_text()
+        for target in ("example", "test", "bench"):
+            with self.subTest(target=target):
+                self.write("capture/engine/Cargo.toml", original +
+                           f'\n[[{target}]]\nname="escape"\npath="../../src/main.rs"\n')
+                result = self.policy("staged")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Engine package/build roots changed", result.stderr)
+
+    def test_nonregular_entries_skip_syntax_but_not_path_policy(self):
+        link = self.root / "ordinary.json"
+        link.symlink_to("missing target, not JSON")
+        self.git("add", "ordinary.json")
+        self.git("update-index", "--add", "--cacheinfo", "160000", self.git("rev-parse", "HEAD"), "submodule.py")
+        before = self.git("write-tree")
+        result = self.policy("staged")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.git("write-tree"), before)
+        self.assertEqual(os.readlink(link), "missing target, not JSON")
+        (self.root / ".env").symlink_to("ordinary.json")
+        self.git("add", ".env")
+        self.assertIn("contents not read", self.policy("staged").stderr)
+        self.git("rm", "--cached", ".env")
+        configured = self.root / "capture/engine/src/lib.rs"
+        configured.unlink()
+        configured.symlink_to("missing.rs")
+        self.git("add", "capture/engine/src/lib.rs")
+        self.assertIn("missing configured path", self.policy("staged").stderr)
+
+    def test_old_python_reports_prerequisite_before_tomllib_import(self):
+        result = run(self.root, sys.executable, "-c", '''
+import builtins, runpy, sys
+original = builtins.__import__
+def guarded(name, *args, **kwargs):
+    if name == "tomllib":
+        raise AssertionError("tomllib imported before version check")
+    return original(name, *args, **kwargs)
+builtins.__import__ = guarded
+sys.version_info = (3, 10, 0)
+runpy.run_path("scripts/git_policy.py", run_name="__main__")
+''')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Python 3.11+ required", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
 
     def test_forbidden_browser_edges_with_normalization_and_reexports(self):
         cases = {
@@ -207,6 +268,47 @@ class PolicyTests(unittest.TestCase):
                 ["sh", "-c", '(sleep 0.5; touch "$1") & wait', "fixture", str(receipt)], cwd=self.root)
         time.sleep(0.6)
         self.assertFalse(receipt.exists(), "a formatter descendant survived its policy deadline")
+
+    def test_exited_leader_still_cleans_owned_descendant(self):
+        spec = importlib.util.spec_from_file_location("git_policy", ROOT / "scripts/git_policy.py")
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        receipt = self.root / "escaped"
+        module.Runner(seconds=2).run(
+            ["sh", "-c", '(sleep 0.5; touch "$1") </dev/null >/dev/null 2>&1 & exit 0',
+             "fixture", str(receipt)], cwd=self.root)
+        time.sleep(0.6)
+        self.assertFalse(receipt.exists(), "a descendant survived its exited leader")
+
+    def test_sigterm_cancels_runner_and_owned_descendants(self):
+        ready, receipt = self.root / "ready", self.root / "escaped"
+        self.write("example.rs", "fn main() {}\n")
+        tools = Path(self.tmp.name) / "tools"
+        tools.mkdir()
+        formatter = tools / "rustfmt"
+        formatter.write_text('#!/bin/sh\n(touch "$READY"; sleep 0.5; touch "$RECEIPT") & wait\n')
+        formatter.chmod(0o755)
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env.update(PATH=str(tools) + os.pathsep + env["PATH"], READY=str(ready), RECEIPT=str(receipt),
+                   PYTHONDONTWRITEBYTECODE="1")
+        process = subprocess.Popen([sys.executable, "scripts/git_policy.py", "staged"],
+                                   cwd=self.root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            deadline = time.monotonic() + 3
+            while not ready.exists() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(ready.exists(), "fixture did not reach the running tool")
+            process.send_signal(signal.SIGTERM)
+            out, err = process.communicate(timeout=3)
+            self.assertEqual(process.returncode, 1, (out, err))
+            self.assertIn(b"policy interrupted", err)
+            time.sleep(0.6)
+            self.assertFalse(receipt.exists(), "a descendant survived policy SIGTERM")
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=3)
 
 
 if __name__ == "__main__":

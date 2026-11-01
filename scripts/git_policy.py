@@ -11,6 +11,10 @@ import subprocess
 import sys
 import tempfile
 import time
+
+if sys.version_info < (3, 11):
+    sys.exit("git policy: Python 3.11+ required; see docs/git-hooks.md")
+
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -135,7 +139,7 @@ def architecture_checks(view):
         raise PolicyError("new/missing Cargo package needs an explicit architecture policy review")
     engine = tomllib.loads(view.read("capture/engine/Cargo.toml").decode())
     if (engine.get("package", {}).get("name") != "apparent-capture-engine"
-            or any(k in engine for k in ("workspace", "lib", "bin", "patch", "replace"))
+            or any(k in engine for k in ("workspace", "lib", "bin", "example", "test", "bench", "patch", "replace"))
             or any(k in engine.get("package", {}) for k in ("build", "links"))):
         raise PolicyError("Engine package/build roots changed; review ownership before extending policy")
     for table in dependency_tables(engine):
@@ -156,6 +160,9 @@ def architecture_checks(view):
             if re.search(r'\binclude(?:_str|_bytes)?\s*!|#\s*\[\s*path\s*=', text):
                 raise PolicyError(f"Engine source inclusion needs explicit review: {path}")
     root_manifest = tomllib.loads(view.read("Cargo.toml").decode())
+    # Workspace-wide overrides can replace even Engine's admitted registry crates.
+    if any(k in root_manifest for k in ("workspace", "patch", "replace")):
+        raise PolicyError("root Cargo resolution changed; explicit architecture policy review required")
     for table in dependency_tables(root_manifest):
         for alias, spec in table.items():
             if isinstance(spec, dict) and "path" in spec:
@@ -208,6 +215,13 @@ def staged_checks(view):
             raise PolicyError(f"credential path must not be staged: {path} (contents not read)")
     unsupported = set()
     for path in filter(None, changed):
+        mode = view.entries[path][0]
+        if mode in {"120000", "160000"}:
+            # Link targets/commit IDs are not regular source bytes. Path privacy
+            # was checked above; configured architecture paths still use read().
+            continue
+        if mode not in {"100644", "100755"}:
+            raise PolicyError(f"unsupported staged file mode {mode}: {path}")
         data = view.read(path)
         if b"\0" in data:
             continue

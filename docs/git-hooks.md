@@ -53,6 +53,8 @@ traversal. Run your formatter explicitly, then stage the intended hunks. JSON an
 Python get syntax validation only; shell gets `sh -n` / Bash `-n` only. There is no
 configured Python/JS/TS/CSS/HTML/Markdown/YAML/Swift formatter in this slice. The
 command reports this rather than calling syntax or whitespace checks formatting.
+Ordinary symlinks and gitlinks receive path privacy checks, not regular-file
+formatting/syntax checks. Configured architecture files must still be regular.
 
 All policy operations share a 45-second deadline. Timeout or interruption fails
 closed, kills the owned tool process group and cleans temporary formatting files.
@@ -69,7 +71,8 @@ facts that exist today:
 - **Engine:** parse its actual Cargo TOML, including target/dev/build dependency
   tables and renamed package dependencies. Only the reviewed registry packages
   `libc`, `serde`, `serde_json` are admitted. Path/git/workspace/custom-registry
-  dependencies, changed build/library roots and `build.rs` require review. A
+  dependencies, explicit library/binary/example/test/bench targets, changed build
+  roots and `build.rs` require review. A
   conservative textual guard rejects explicit `include!`, `include_str!`,
   `include_bytes!` and `#[path=…]` escape hatches in Engine production Rust. It is
   **not a Rust parser** and may flag comments. Ordinary Rust module resolution and
@@ -82,6 +85,8 @@ facts that exist today:
   the future contracts. New packages fail closed until their real contracts have
   a reviewed rule. The manifest inventory includes the existing independent
   `tools/narrator` and `video` utilities, not fictional product packages.
+  Root `workspace`, `patch` and `replace` tables fail closed pending explicit
+  review: they can replace Engine's otherwise admitted registry dependencies.
 - **Browser owners:** screen normalized relative string references in actual
   `site/src`, `site/src/hosted`, `connect/web/src` and `hosted/src` sources. Public
   cannot reference authenticated browser/backend owners; Connect cannot reference
