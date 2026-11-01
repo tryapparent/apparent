@@ -108,15 +108,15 @@ SITE_ARTIFACT=dist/synthetic-composition VITE_HOSTED_API_ORIGIN=http://127.0.0.1
 ```
 
 The verifier starts Vite on an isolated loopback port and closes it afterward.
-Each mode retains all 29 scenarios and adds all eight route/slash combinations,
+Each mode retains all 48 scenarios and all twelve Connect route/slash combinations,
 query preservation, selected device tab, resource requests and homepage ownership.
 The composed fixture checks unknown/private paths return 404. Built graph
 checks traverse emitted JS/CSS dependencies and modulepreloads, reject marketing
 closure on Connect and Hosted/API closure on landing, and check original assets.
 Computed text colour, geometry, focus, setup commands, consent and mutation readback
-remain assertions. Keep production and synthetic artifacts/evidence separate; save
-production before the loopback rebuild, then rebuild with the production origin
-as the final artifact. Serve the production package with a range-capable HTTP
+remain assertions. Keep production and synthetic artifacts/evidence separate;
+switching test modes must not change the frozen production package. Serve the
+production package with a range-capable HTTP
 server (see `site/docs/pages-deploy.md`), then run the landing checks:
 
 ```sh
