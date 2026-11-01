@@ -947,10 +947,21 @@
       "status": "main",
       "platforms": ["mac", "linux"],
       "added": "2026-10-22",
-      "note": "The Change… button is Mac only; elsewhere set capturesDir.",
+      "note": "In installed native Settings, Change… is Mac only; elsewhere set capturesDir. The separate default-off Electron experiment below adds a Linux picker, not native Settings parity.",
       "pr": 86,
       "docs": ["README.md#settings"],
       "config": [{ "key": "capturesDir", "value": "\"~/Apparent\"", "does": "Where captures are written" }]
+    },
+    {
+      "id": "electron-capture-location",
+      "group": "storage",
+      "name": "Experimental Electron capture location",
+      "says": "An opt-in development window shows effective and saved capture locations, with a parented folder picker and Reset. Rust validates and saves the preference; existing recordings are not moved.",
+      "status": "experiment:electronCaptureLocation",
+      "platforms": ["mac", "linux"],
+      "note": "Off by default; not the installed Settings replacement. A disposable Linux run verified real controls, native chooser, Rust persistence and visible readback, but its oversized GTK chooser still needs pointer/layout acceptance. Mac compilation/native Storage proof remains pending; earlier foundation bridge proof does not cover this slice.",
+      "config": [{ "key": "electronCaptureLocation", "value": "experiment; false by default", "does": "Enable the captures-only Storage bridge in the running Rust app" }],
+      "docs": ["capture/desktop/ui/frontend/README.md"]
     },
 
     {

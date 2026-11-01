@@ -36,9 +36,11 @@ changes the Rust config directory. One absolute 3.5-second deadline bounds a
 read. Reads occur only on open/renderer reload or manual refresh, with one
 in-flight read and a one-second cooldown. There is no background polling.
 
-The sandboxed, isolated preload exposes only `readRuntimeState()` with no inputs.
+The sandboxed, isolated preload exposes `readRuntimeState()` and the three
+zero-argument capture-location methods below.
 The main process rejects other windows/frames, nonlocal URLs and arguments.
 There is no generic IPC, shell, filesystem, Settings or capture command API.
+Only the captures-only requests described below may save a preference.
 Navigation, popups, webviews, network connections and permission requests are
 blocked. Electron keeps its own Chromium profile in `apparent-ui-foundation`,
 separate from the installed application's identity/config. These constraints do
@@ -51,6 +53,9 @@ tokens live in `shared/ui`; Connect adoption is a later slice. After editing
 shared sources, rerun `npm ci`; builds reject a stale installed snapshot.
 
 ## Checks
+
+Run Electron smoke files sequentially: Electron's lazy binary installation is
+shared by both tests and concurrent first launches can race during extraction.
 
 ```sh
 npm test                    # real Unix-socket fixtures; no GUI or Rust launch
@@ -82,3 +87,75 @@ with the repository installer, and passed the native smoke with a live
 fixture, not a failed recording. The guest and queue ticket were cleaned up.
 These are shell/bridge checks, not capture, overlay, permission, updater,
 physical-device or performance acceptance.
+
+## Experimental Storage card
+
+This separate slice is off by default. Set
+`"experiments": {"electronCaptureLocation": true}` in the **Rust app's**
+`~/.config/apparent/config.json`, preserving other keys, then open or refresh the
+Electron window. File edits apply on the next request; there is no renderer or
+environment flag that enables this experiment. The installed native Settings,
+launcher and pill are unchanged. Browser preview has no Storage bridge.
+
+`readCaptureLocation()`, `changeCaptureLocation()` and `resetCaptureLocation()`
+accept no path, revision, dialog options or other arguments. Main reads the
+revision from Rust before opening its parented native folder dialog. Cancel,
+reload, navigation and closing the window discard an unfinished selection.
+Change and Reset are single-flight. A timeout never retries a mutation: refresh
+to establish its actual outcome before trying again.
+
+The same-user socket accepts strict JSON `{storage:"read",deadline}`,
+`{storage:"set",path,expected,deadline}` and `{storage:"reset",expected,deadline}`
+frames with a trailing newline. `deadline` is same-host monotonic milliseconds;
+Rust caps admission at three seconds and rechecks it after acquiring the config
+lock. Storage uses libuv's clock: `CLOCK_MONOTONIC` on Linux,
+`CLOCK_MONOTONIC_RAW` on macOS. The legacy Rust-client clock is unchanged.
+`expected` is an opaque 16-hex stale-edit fingerprint of **only** the raw
+`capturesDir` value, not a security token or portable content digest.
+Other config edits survive; a changed capture preference refuses the stale save.
+One worker handles Storage without blocking the GUI or queuing config writers.
+Legacy state/start/inspect/stop/cancel requests keep their existing contract.
+
+Rust validates paths, preserves unknown config keys, removes the saved key on
+Reset, and returns authoritative saved/effective/display paths and source
+(`environment`, `configured`, `builtin`, `fallback`). Revisions remain in main;
+raw config and diagnostics never reach the renderer. An environment override
+still wins over the saved preference. An unusable saved folder falls back to
+the built-in folder. Existing bundles keep their recorded directory; nothing
+is relocated. Subsequent captures resolve the new preference. Existing
+background retention/transcript workers retain their startup directory until
+the Rust app restarts; this slice does not change their lifecycle.
+
+Rust config/socket tests and synthetic Electron tests are not native picker or
+capture proof. The earlier Linux/macOS foundation results above do **not**
+establish changed Storage behavior.
+
+A separate disposable Omarchy run on the repaired Storage candidate exercised
+the real Change and Reset buttons, real portal folder chooser, Rust config
+write/readback and visible effective-location updates. Cancel preserved the
+file; unknown fixture keys and an existing-file sentinel survived. Electron
+45.2.1 and the rebuilt Rust GUI ran in a private HOME with outbound networking
+blocked. The guest, disk overlay and expiry timer were cleaned up. This proves
+that Linux Settings roundtrip, not capture output or Mac behavior.
+
+The guest's GTK portal chooser opened at 2510×2002 on a 1280×800 display, clipping
+the pointer-accessible Choose control. Keyboard selection and Cancel worked;
+pointer-use/layout acceptance remains open. Mac compilation, actual-clock
+integration and native picker/readback still need their own evidence. Keep the
+experiment off until those gates are closed; no new paid Mac session is implied.
+
+For an actual Electron/libuv → Rust clock and persistence regression (no GUI or
+host config writes), after installing the frontend Electron binary, run from
+the repository root:
+
+```sh
+APPARENT_STORAGE_TEST_ELECTRON="$PWD/capture/desktop/ui/frontend/node_modules/electron/dist/electron" \
+  cargo test --offline storage_electron_rust_roundtrip -- --ignored --nocapture
+# On macOS the executable is dist/Electron.app/Contents/MacOS/Electron.
+# On Clanker wrap this command once with /home/simon/.local/bin/t3-build.
+```
+
+The default Rust suite ignores this dependency-bearing integration test; an
+ignored case is not a pass. The explicit run uses the real Rust listener and
+shipped JS transport, actual hrtime deadlines, synthetic file-backed activation,
+set/readback/conflict/expired/reset and malformed-config refusal.
