@@ -62,7 +62,8 @@ assert(!(await readFile(`${root}/index.html`, 'utf8')).includes('href="/connect'
 assert(!(await readFile(`${root}/sitemap.xml`, 'utf8')).includes('/connect'))
 // The packaged artifact must retain the exact approved art and original brand assets.
 for (const asset of ['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png', 'hosted/agent-reading-v4.png', 'HostGrotesk-Variable.ttf', 'apparent-wordmark.svg']) {
-  assert.deepEqual(await readFile(`${root}/${asset}`), await readFile(`public/assets/${asset}`), `packaged ${asset}`)
+  const source = asset.startsWith('hosted/') ? asset : asset.endsWith('.ttf') ? `fonts/${asset}` : `brand/${asset}`
+  assert.deepEqual(await readFile(`${root}/${asset}`), await readFile(`public/assets/${source}`), `packaged ${asset}`)
 }
 let uiOrigin = ''
 const server = createServer(async (req, res) => {
@@ -245,7 +246,7 @@ try {
       await details.focus(); await page.keyboard.press('Enter')
       assert.equal(await page.locator('.hosted-details').getAttribute('open'), '')
       await page.locator('.hosted-details .hosted-limits > summary').click()
-      assert.match(await page.locator('.hosted-details').innerText(), /500,000,000[\s\S]*90,000,000[\s\S]*20 accounts[\s\S]*30 days/)
+      assert.match(await page.locator('.hosted-details').innerText(), /500,000,000[\s\S]*90,000,000[\s\S]*20 accounts[\s\S]*renew each approved device connection automatically/)
       await page.getByRole('button', { name: 'Review access', exact: true }).click()
       if (!test.anonymous) {
         assert.equal(await page.getByRole('dialog').locator('pre code').innerText(), `apparent connect login --server ${apiOrigin || 'https://YOUR-HOSTED-API-ORIGIN'} --scope read --no-browser`)

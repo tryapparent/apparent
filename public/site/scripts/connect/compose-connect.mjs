@@ -170,7 +170,10 @@ export function validateConnect(files, canonical, { syntheticOrigin } = {}) {
     const html = files.get(path)?.toString() || ''
     if (!/Checking your account/.test(html) || !/name="robots" content="noindex, nofollow"/.test(html) || !/http-equiv="Cache-Control" content="no-store"/.test(html) || !/name="referrer" content="no-referrer"/.test(html) || /csrfToken|accessToken|application\/ld\+json|rel="canonical"/.test(html)) throw Error(`Invalid Connect loading document: ${path}`)
   }
-  for (const path of approved) if (!files.has(path) || !files.get(path).equals(canonical.get(path))) throw Error(`Changed approved asset: ${path}`)
+  for (const path of approved) {
+    const source = path.startsWith('hosted/') ? `assets/${path}` : path.endsWith('.ttf') ? `assets/fonts/${path}` : `assets/brand/${path}`
+    if (!files.has(path) || !canonical.get(source)?.equals(files.get(path))) throw Error(`Changed approved asset: ${path}`)
+  }
   const graph = resourceGraph(files, docs, true)
   for (const path of approved) graph.add(path)
   if (graph.size !== files.size) throw Error('Unreferenced Connect output')
