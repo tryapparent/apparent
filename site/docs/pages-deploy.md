@@ -8,12 +8,17 @@ project `tryapparent-website`, the hosted API Worker, or `site/wrangler.jsonc`.
 
 ## Public artifact and accepted design
 
-From `site/`, with locked dependencies installed:
+Build the two owners independently with Bun 1.3.10 and Node 22.23.0, with
+locked dependencies installed in each package. From the repository root:
 
 ```sh
-APPARENT_PUBLIC_SITE=1 VITE_HOSTED_API_ORIGIN=https://hosted.tryapparent.com npm run build
+(cd connect/web && bun install --frozen-lockfile && VITE_HOSTED_API_ORIGIN=https://hosted.tryapparent.com npm run build)
+cd site
+APPARENT_PUBLIC_SITE=1 npm run build
 node scripts/package-apparent.mjs
+node scripts/compose-connect.mjs
 node scripts/prepare-pages.mjs
+node scripts/verify-composed.mjs
 node scripts/prepare-pages-video.mjs
 ```
 
@@ -35,8 +40,15 @@ accepted HTML and retained public assets into `published-homepage/`, bound to
 The homepage HTML SHA-256 was
 `91630e87b68f16641fbae22d8ad64261cb6ef317774ab6407bf395359c469ea8`.
 This is now an explicit, source-controlled public homepage input, not an ongoing
-read from Clanker. Fresh builds provide current Connect HTML/modules; the accepted
-homepage and retained assets overlay those builds. Do not assume editing `src/App`
+read from Clanker. Public builds no authenticated source. `compose-connect.mjs`
+validates Public's packaged output and the independent `connect/web/dist` before
+changing its destination: exact six route documents, emitted resource closure and
+five canonical assets only; identical collisions pass and differing bytes refuse.
+Symlinks, nonregular files, private/unexpected paths, missing resources and loopback
+configuration refuse without changing the prior destination. The accepted homepage
+is the sole deliberate differing-byte overlay, bound to the unchanged checksum
+inventory. `verify-composed.mjs` checks its hashes and both final resource graphs
+before existing metadata/video publication. Do not assume editing `src/App`
 alone changes the published homepage. For an intentional homepage change, reconcile
 it into the accepted public input and update the checksum contract in the same PR;
 verify desktop/mobile behavior before publication. A future source-only rewrite
@@ -63,6 +75,13 @@ that run's revision-named artifact, checks current main, deploys with the exact
 commit hash and reads back the production deployment plus root/Connect bytes.
 Publication is serialized without canceling an in-flight job. The `hosted` job and
 its activation gate are unchanged and must remain disabled for this website task.
+
+The synthetic integration build uses `connect/web/dist-test` and writes only
+`site/dist/synthetic-composition`. `COMPOSE_SYNTHETIC_ORIGIN` must name its labelled
+loopback API, and `COMPOSE_PUBLIC_INPUT` points at the saved Public package before
+composition. Production composition has no synthetic-origin exception. Never upload
+either test directory. Package fixtures cover the independent owner; the retained
+site browser suite covers the composed routes and #191 sharing interactions.
 
 Configure `website-production` for `main` only, with secret
 `WEBSITE_PAGES_API_TOKEN` (Pages edit for the existing account), then set repository

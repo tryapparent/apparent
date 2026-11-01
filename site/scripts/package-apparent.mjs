@@ -8,6 +8,7 @@ import { packagePageText } from "./package-page-text.mjs"
 import { hasUpstreamLinks } from "./upstream-link-guard.mjs"
 import { hasExpectedHomepageCanonical } from "./expected-homepage-canonical.mjs"
 
+
 const site = join(dirname(fileURLToPath(import.meta.url)), "..")
 const dist = join(site, "dist")
 const out = join(site, "dist-apparent")
@@ -22,7 +23,7 @@ if (!hasExpectedHomepageCanonical(html) || !text.includes("Visual feedback gets 
 rmSync(out, { recursive: true, force: true })
 mkdirSync(out, { recursive: true })
 for (const name of [
-  "index.html", "connect", "hosted", "assets", "pond", "team", "feature-demos", "apparent-wordmark.svg", "icon.svg", "HostGrotesk-Variable.ttf",
+  "index.html", "assets", "pond", "team", "feature-demos", "apparent-wordmark.svg", "icon.svg", "HostGrotesk-Variable.ttf",
   "social-preview-v1.png",
   "Apparent-ghost-demo-v4-lilac.mp4", "Apparent-ghost-demo-v4-lilac-poster.jpg",
 ]) {
