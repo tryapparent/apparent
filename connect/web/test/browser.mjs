@@ -31,7 +31,7 @@ const server = createServer(async (req, res) => {
     calls.push({ host: req.headers.host, cookie: req.headers.cookie })
     res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store')
     if (scenario.loading && url.pathname === '/v1/session') await new Promise(r => setTimeout(r, 650))
-    if (scenario.unavailable) return res.writeHead(503).end('{}')
+    if (scenario.unavailable) return res.writeHead(503).end('{"error":{"message":"synthetic-provider-secret"}}')
     if (req.method === 'POST') {
       const chunks = []; for await (const chunk of req) chunks.push(chunk)
       const body = JSON.parse(Buffer.concat(chunks).toString())
@@ -176,6 +176,7 @@ try {
     assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0)
     assert(!(await page.content()).includes('must-not-render'))
     assert(!(await page.content()).includes('synthetic-csrf'))
+    assert(!(await page.content()).includes('synthetic-provider-secret'), 'raw provider failure bodies never reach the UI')
     assert.deepEqual(errors, [])
     await page.screenshot({ path: `${evidence}/${test.name}.png`, fullPage: true })
     if (test.name === 'empty-account') {

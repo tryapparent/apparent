@@ -3,6 +3,10 @@
 Independent React/Vite browser + loading-only SSR package. It owns account and
 waitlist screens, Google sign-in entry, scope-specific device consent and readback.
 The existing combined website is unchanged and remains operational.
+Package scaffolding and browser fixtures selectively reuse staging #200 head
+`6123548ed5616683725a6723337fa147ab3418d9`; current main source, not staging,
+is the behavior authority. The lock was regenerated with Bun 1.3.10 because the
+staging lock's newer format is not readable by the shared pinned toolchain.
 
 ## Build and recovery
 
