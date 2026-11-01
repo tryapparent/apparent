@@ -38,7 +38,7 @@ class PagesDeliveryTests(unittest.TestCase):
             headers = {'Content-Type': 'video/mp4'}
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / 'public/site/public/assets').mkdir(parents=True)
+            (root / 'public/site/public/assets/media').mkdir(parents=True, exist_ok=True)
             (root / 'public/site/public/assets/media/Apparent-ghost-demo-v4-lilac.mp4').write_bytes(b'checked movie')
             for name in ['index.html', 'connect/index.html', 'connect/device/index.html', 'connect/shares/index.html']:
                 (root / name).parent.mkdir(parents=True, exist_ok=True)
