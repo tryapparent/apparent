@@ -69,3 +69,19 @@
   .hosted-dialog { padding: 27px 20px; }
 }
 @media (max-width: 360px) { .hosted-scene { height: 130px; } .hosted-main { padding: 20px 14px; } }
+
+/* Real sharing controls extend V4 without changing its account composition. */
+.hosted-identity { flex-wrap: wrap; }
+.hosted-manage-link, .hosted-account-link { text-decoration: underline; text-underline-offset: 4px; }
+.hosted-manage-link { margin-left: auto; }
+.hosted-account-link { margin-left: auto; }
+.hosted-page > .pond-nav { max-width: 720px; margin: 0 auto 18px; padding: 0; gap: 16px; flex-wrap: wrap; }
+.hosted-main > [aria-label="Shared links"] { text-align: left; margin-top: 24px; }
+.hosted-eyebrow { color: #605b63; font-size: 14px; }
+.hosted-intro { font-size: 18px; }
+.hosted-shares { list-style: none; padding: 0; margin: 0; }
+.hosted-shares li { border-top: 1px solid var(--rule); padding: 24px 0; overflow-wrap: anywhere; }
+.hosted-shares h2 { overflow-wrap: anywhere; font-size: 24px; font-weight: 550; line-height: 1.25; letter-spacing: -.5px; }
+.hosted-share-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.hosted-share-actions a { text-decoration: underline; text-underline-offset: 4px; }
+@media (max-width: 550px) { .hosted-identity p { flex-basis: 100%; } .hosted-manage-link { margin-left: 0; margin-right: auto; } }

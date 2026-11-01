@@ -4,7 +4,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import test from 'node:test'
 const root = resolve(process.env.CONNECT_ARTIFACT || 'dist')
-const routes = ['connect', 'connect/device', 'hosted', 'hosted/device']
+const routes = ['connect', 'connect/device', 'connect/shares', 'hosted', 'hosted/device', 'hosted/shares']
 test('independent artifact publishes all private loading routes and nothing else', async () => {
   let entries = []
   try { entries = await readdir(root) } catch { /* Assert the product boundary below. */ }
@@ -14,7 +14,10 @@ test('independent artifact publishes all private loading routes and nothing else
     const html = await readFile(`${root}/${route}/index.html`, 'utf8')
     assert.match(html, /Checking your account/)
     assert.match(html, /name="robots" content="noindex, nofollow"/)
-    assert.match(html, /<title>Connect(?: a device)? — Apparent<\/title>/)
+    assert.match(html, route.endsWith('/shares') ? /<title>Manage shared links — Apparent<\/title>/ : /<title>Connect(?: a device)? — Apparent<\/title>/)
+    assert.match(html, /name="referrer" content="no-referrer"/)
+    assert.match(html, /http-equiv="Cache-Control" content="no-store"/)
+    if (route.endsWith('/shares')) assert.match(html, /href="\/connect\/"/)
     assert.doesNotMatch(html, /canonical|sitemap|application\/ld\+json|csrfToken|accessToken|verified@example/)
     assert.match(html, /\/assets\/[^" ]+\.js/)
     assert.match(html, /\/assets\/[^" ]+\.css/)

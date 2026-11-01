@@ -3,7 +3,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { resolve, posix } from 'node:path'
 import test from 'node:test'
 const root = resolve(process.env.CONNECT_ARTIFACT || 'dist')
-const routes = ['connect', 'connect/device', 'hosted', 'hosted/device']
+const routes = ['connect', 'connect/device', 'connect/shares', 'hosted', 'hosted/device', 'hosted/shares']
 const approved = ['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png', 'hosted/agent-reading-v4.png', 'HostGrotesk-Variable.ttf', 'apparent-wordmark.svg']
 test('exact emitted route/resource closure excludes private and backend output', async () => {
   async function files(dir = '') {
