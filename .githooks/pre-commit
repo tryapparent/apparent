@@ -1,0 +1,5 @@
+#!/bin/sh
+# Read the real index, never execute code exported from its candidate tree.
+set -eu
+export PYTHONDONTWRITEBYTECODE=1
+exec python3 scripts/git_policy.py staged

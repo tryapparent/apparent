@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from test_git_policy import copy_policy
 
 
 HOOK = Path(__file__).resolve().parents[1] / ".githooks" / "pre-push"
@@ -36,9 +37,10 @@ class PrePushGuardTests(unittest.TestCase):
         # The driver runs tests as well as Cargo. Keep this fixture finite:
         # copying the real hook tests here would recursively invoke itself.
         fixture_test = "import unittest\nclass Fixture(unittest.TestCase):\n    def test_fixture(self):\n        self.assertTrue(True)\n"
-        for name in ("test_fixture_push.py", "test_verification.py"):
+        for name in ("test_fixture_push.py", "test_verification.py", "test_git_policy.py"):
             (self.repo / "tests" / name).write_text(fixture_test)
         shutil.copy2(SELECTOR, self.repo / "scripts" / "verification.py")
+        copy_policy(self.repo)
         run("git", "add", ".", cwd=self.repo)
         run("git", "commit", "-qm", "original", cwd=self.repo)
         self.head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
@@ -77,6 +79,17 @@ class PrePushGuardTests(unittest.TestCase):
         result = self.push(env=dict(self.env, MOCK_STATUS="1"))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("failed", result.stderr)
+
+    def test_policy_failure_rejects_tree_before_any_cargo_lane(self):
+        manifest = self.repo / "capture/engine/Cargo.toml"
+        manifest.write_text(manifest.read_text() + '\n[target.\'cfg(unix)\'.dependencies]\ngpui="1"\n')
+        run("git", "add", ".", cwd=self.repo)
+        run("git", "commit", "-qm", "forbidden dependency", cwd=self.repo)
+        self.head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
+        result = self.push()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Engine dependency gpui", result.stderr)
+        self.assertFalse(self.log.exists())
 
     def test_document_only_push_avoids_cargo(self):
         run("git", "update-ref", "refs/remotes/origin/main", self.head, cwd=self.repo)
@@ -119,7 +132,7 @@ class PrePushGuardTests(unittest.TestCase):
     def test_browser_only_push_runs_existing_package_checks_not_rust(self):
         run("git", "update-ref", "refs/remotes/origin/main", self.head, cwd=self.repo)
         browser = self.repo / "connect/web"
-        browser.mkdir(parents=True)
+        browser.mkdir(parents=True, exist_ok=True)
         (browser / "package.json").write_text('{}\n')
         run("git", "add", ".", cwd=self.repo)
         run("git", "commit", "-qm", "independent browser", cwd=self.repo)

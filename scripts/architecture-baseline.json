@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "browser_edges": ["site/src/entry-server.tsx -> site/src/hosted/Hosted"],
+  "reason": "Current site SSR composes Public and authenticated donors. This exact edge is not permission for Public runtime imports. Remove with 5c browser adoption; built closure tests still own runtime separation."
+}

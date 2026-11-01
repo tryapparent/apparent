@@ -151,7 +151,13 @@ def tree_entry(revision, path):
     return (mode, oid) if kind == "blob" else (mode, kind)
 
 
-def run_checks(selection, offline=True):
+def run_checks(selection, offline=True, revision="HEAD"):
+    # Independent of lane selection; CI has no staged delta. Inspect the exact
+    # candidate tree, not the index or an inferred owner/package future.
+    subprocess.run(["python3", "scripts/git_policy.py", "tree", "--revision", revision],
+                   cwd=ROOT, check=True)
+    subprocess.run(["python3", "-m", "unittest", "discover", "-s", "tests",
+                    "-p", "test_git_policy.py"], cwd=ROOT, check=True)
     subprocess.run(["python3", "-m", "unittest", "discover", "-s", "tests",
                     "-p", "test_*push*.py"], cwd=ROOT, check=True)
     subprocess.run(["python3", "-m", "unittest", "discover", "-s", "tests",
@@ -204,7 +210,7 @@ def main():
             for key in ("root", "engine", "browser"):
                 output.write(f"{key}={str(selection[key]).lower()}\n")
     if args.run:
-        run_checks(selection, offline=not args.online)
+        run_checks(selection, offline=not args.online, revision=args.head)
 
 
 if __name__ == "__main__":

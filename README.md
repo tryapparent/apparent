@@ -595,6 +595,10 @@ See [docs/linux.md](docs/linux.md) for how it works and how to build it.
 
 ## Testing
 
+For explicit hook setup, staged-byte checks and hook diagnostics, see
+[Git hooks](docs/git-hooks.md). Setup is shared across linked worktrees; the fast
+pre-commit check never formats or stages files, and does not replace push/CI tests.
+
 ```sh
 taskpolicy -c utility cargo test -j 3 --offline -- --test-threads=2
 ./scripts/install-app.sh
