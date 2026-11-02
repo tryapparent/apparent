@@ -145,7 +145,7 @@ class PreviewReleaseTest(unittest.TestCase):
         self.assertIn("workflow_dispatch:", workflow)
         self.assertNotIn("  push:", workflow)
         self.assertIn("github.ref == 'refs/heads/main'", workflow)
-        self.assertIn("macos-26", workflow)
+        self.assertIn("runs-on: macos-latest", workflow)
         self.assertIn("github.run_number", workflow)
         self.assertIn("github.run_attempt", workflow)
         self.assertIn("--prerelease", workflow)
