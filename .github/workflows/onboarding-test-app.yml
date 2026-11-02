@@ -26,7 +26,15 @@ concurrency:
 jobs:
   package:
     if: github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/preview/onboarding-attached'
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            arch: Apple-Silicon
+          - runner: macos-15-intel
+            arch: Intel
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     env:
       CARGO_BUILD_JOBS: 3
@@ -39,8 +47,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          key: onboarding-test-app
+          key: onboarding-test-app-${{ matrix.arch }}
           cache-on-failure: true
+      - name: Select the macOS 26 SDK on Intel
+        if: matrix.arch == 'Intel'
+        run: |
+          test -d /Applications/Xcode_26.3.app/Contents/Developer
+          echo 'DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer' >> "$GITHUB_ENV"
       - name: Prepare native compiler and locked dependencies
         run: |
           xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
@@ -67,7 +80,7 @@ jobs:
           } > "$RUNNER_TEMP/onboarding-test-output/BUILD-INFO.txt"
       - uses: actions/upload-artifact@v4
         with:
-          name: Apparent-Onboarding-Test
+          name: Apparent-Onboarding-Test-${{ matrix.arch }}
           path: |
             ${{ runner.temp }}/onboarding-test-output/Apparent-Onboarding-Test.zip
             ${{ runner.temp }}/onboarding-test-output/SHA256SUMS
