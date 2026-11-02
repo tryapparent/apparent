@@ -383,7 +383,7 @@ apparent export latest --crop 0.1,0.2,0.6,0.5       # x,y,w,h as fractions, or p
   uses its own audio track. `--no-ink` and `--no-clicks` leave the annotations out, `--fps` sets the
   rate (default 60 for a 60 fps recording).
 - **Menu**: with **Video export** on in Settings › Recording (`"videoExport": true` in
-  `~/.config/apparent/config.json`, default off), the menu shows **Export Last Capture as Video…**.
+  `~/.config/apparent/config.json`, default on), the menu shows **Export Last Capture as Video…**.
   Mac saves to `~/Movies/Apparent/<name>.mp4`, shows progress beside the menu bar icon,
   and reveals the file in Finder. Linux opens the desktop Save dialog for a local `.mp4`
   destination and shows progress, cancellation and failures in the tray menu; it needs a
