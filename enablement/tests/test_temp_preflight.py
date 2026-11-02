@@ -83,6 +83,14 @@ class TempPreflightTests(unittest.TestCase):
             self.check(longer)
         self.assertEqual(list(longer.iterdir()), [])
 
+    def test_pr_contracts_include_preflight_tests_without_environment_admission(self):
+        with patch.dict(os.environ, TMPDIR='/missing-preflight-fixture'), patch.object(verification.subprocess, 'run') as run:
+            verification.run_pr_checks()
+        patterns = [call.args[0][-1] for call in run.call_args_list]
+        self.assertEqual(patterns, ['test_*push*.py', 'test_verification.py',
+                                    'test_release_gate.py', 'test_temp_preflight.py'])
+        self.assertTrue(all(call.kwargs['check'] for call in run.call_args_list))
+
     def test_rejection_precedes_all_subprocesses(self):
         with patch.dict(os.environ, TMPDIR='/missing-preflight-fixture'), patch.object(verification.subprocess, 'run') as run:
             with self.assertRaisesRegex(RuntimeError, 'TMPDIR preflight'):

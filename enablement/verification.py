@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Conservative changed-tree verification shared by pre-push and Actions.
 
-No user-selected fast mode: only reviewed path rules can narrow the default.
+PR pushes run contract checks; main CI runs full platform verification before CD.
+Explicit local --run retains conservative changed-tree checks.
 Both sides of renames/deletions are included. Missing history broadens checks.
 """
 import argparse
@@ -192,6 +193,13 @@ def check_temp_environment():
         reject(f"socket fixture needs {size} pathname bytes; platform permits {limit}")
 
 
+def run_pr_checks():
+    for pattern in ("test_*push*.py", "test_verification.py", "test_release_gate.py",
+                    "test_temp_preflight.py"):
+        subprocess.run(["python3", "-m", "unittest", "discover", "-s", "enablement/tests",
+                        "-p", pattern], cwd=ROOT, check=True)
+
+
 def run_checks(selection, offline=True):
     if selection["root"] or selection["engine"]:
         check_temp_environment()
@@ -240,6 +248,7 @@ def main():
     parser.add_argument("--preflight", action="store_true", help="Check temporary environment only; no builds or mutations")
     parser.add_argument("--head", default="HEAD")
     parser.add_argument("--run", action="store_true")
+    parser.add_argument("--pr", action="store_true", help="Hook/CI: cheap PR contract checks")
     parser.add_argument("--online", action="store_true", help="CI: use locked graph instead of offline cache")
     parser.add_argument("--github-output", type=Path)
     args = parser.parse_args()
@@ -253,6 +262,8 @@ def main():
         with args.github_output.open("a") as output:
             for key in ("root", "engine", "browser"):
                 output.write(f"{key}={str(selection[key]).lower()}\n")
+    if args.pr:
+        run_pr_checks()
     if args.run:
         run_checks(selection, offline=not args.online)
 
