@@ -258,3 +258,20 @@ test('stdin accepts fragmented lines and rejects oversized individual lines',()=
     assert.equal(replay[1].step, 'done');
   });
 }
+
+{
+  const {EventEmitter} = require('node:events');
+  const {parentWriter} = require('../electron/onboarding-protocol.cjs');
+  test('onboarding closes once when its parent pipe fails during shutdown', () => {
+    const stream = new EventEmitter();
+    let exits = 0;
+    let writes = 0;
+    stream.write = () => { writes += 1; stream.emit('error', Object.assign(new Error('closed parent'), {code:'EPIPE'})); };
+    const send = parentWriter(stream, () => { exits += 1; });
+    assert.doesNotThrow(() => send({action:'close'}));
+    send({action:'close'});
+    stream.emit('error', new Error('late stream error'));
+    assert.equal(exits, 1);
+    assert.equal(writes, 1);
+  });
+}

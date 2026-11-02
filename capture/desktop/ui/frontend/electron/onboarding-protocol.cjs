@@ -7,4 +7,10 @@ function parseAction(value) {
  throw Error('Forbidden onboarding command');
 }
 function lines(consume) {let buffer='';return chunk=>{buffer+=chunk;let end;while((end=buffer.indexOf('\n'))>=0){if(end>65536)throw Error('Oversized onboarding line');const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{consume(JSON.parse(line))}catch(e){if(e instanceof SyntaxError)continue;throw e}}if(buffer.length>65536)throw Error('Oversized onboarding line')}}
-module.exports={parseAction,lines};
+function parentWriter(stream, onClosed) {
+ let closed=false;
+ const close=()=>{if(!closed){closed=true;onClosed();}};
+ stream.on('error',close);
+ return value=>{if(closed)return;try{stream.write(JSON.stringify(value)+'\n');}catch{close();}};
+}
+module.exports={parseAction,lines,parentWriter};
