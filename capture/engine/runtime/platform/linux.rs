@@ -475,6 +475,19 @@ pub(crate) fn raw_windows_now() -> Vec<crate::shared::windows::RawWindow> {
     crate::shared::windows::raw_windows()
 }
 
+/// X11 omits override-redirect surfaces from the managed list, including the
+/// separate Electron child. Include only that active capture-owned PID.
+pub(crate) fn input_windows(child: u32) -> Vec<crate::shared::windows::RawWindow> {
+    let mut windows = raw_windows_now();
+    if child > 0 {
+        windows.extend(crate::capture::desktop::linux::x11::floating_windows_for_pid(child).into_iter().map(|w| crate::shared::windows::RawWindow {
+            id: w.hwnd as u32, pid: w.pid as i32, owner: String::new(), title: w.title,
+            bounds: w.rect, layer: 3, alpha: 1.0,
+        }));
+    }
+    windows
+}
+
 /// Linux has no `apparent-helper`: every Apparent window is in its own process.
 pub(crate) fn is_helper_process(_pid: i32) -> bool {
     false

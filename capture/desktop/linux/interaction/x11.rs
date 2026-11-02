@@ -470,10 +470,14 @@ pub fn top_level_windows() -> Vec<WindowInfo> {
 /// Apparent's own floating windows (override-redirect, so not in the window manager's list),
 /// front to back.
 pub fn own_floating_windows() -> Vec<WindowInfo> {
+    floating_windows_for_pid(std::process::id())
+}
+
+/// Visible override-redirect surfaces belonging to one explicitly owned process.
+pub fn floating_windows_for_pid(pid: u32) -> Vec<WindowInfo> {
     let Some(x) = x() else {
         return Vec::new();
     };
-    let pid = std::process::id();
     let Some(tree) = x
         .conn
         .query_tree(x.root)

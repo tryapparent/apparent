@@ -46,7 +46,9 @@ export function CaptureNotes() {
     await command({ action: 'dismiss' });
   }
   if (!state) return <div className="notes-unavailable" role="status">Connecting notes…</div>;
-  return <main className={`capture-notes ${state.dark ? 'dark' : ''}`} onKeyDown={e => {
+  return <main className={`capture-notes ${state.dark ? 'dark' : ''}`} onPointerDown={e => {
+    if (!badge && e.target === e.currentTarget) void dismiss();
+  }} onKeyDown={e => {
     if (e.key === 'Escape' && !e.nativeEvent.isComposing) { e.preventDefault(); void dismiss(); }
   }}>
     {badge ? <Button variant="ghost" className="note-count" aria-label={`${state.notes.length} saved notes. Open notes`} onClick={() => void command({ action: 'list' })}>

@@ -58,6 +58,9 @@ test('shipped Electron note UI focuses, saves, counts, edits, recovers drafts an
   await expect.poll(() => messages.some(m => m.action === 'dismiss')).toBe(true);
   state.mode = 'badge'; state.drafts[0].text = 'Draft correction'; send();
   state.mode = 'editor'; send(); await expect(field).toHaveValue('Draft correction');
+  const dismissals = messages.filter(m => m.action === 'dismiss').length;
+  await popup.locator('main').click({ position: { x: 10, y: 210 } });
+  await expect.poll(() => messages.filter(m => m.action === 'dismiss').length).toBe(dismissals + 1);
   await field.press('Enter');
   state.error = 'Could not save this note. Your text is kept; try again.'; send();
   await expect(popup.getByRole('alert')).toBeVisible(); await expect(field).toHaveValue('Draft correction');

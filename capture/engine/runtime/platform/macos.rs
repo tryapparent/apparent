@@ -47,6 +47,10 @@ pub(crate) fn raw_windows_now() -> Vec<crate::shared::windows::RawWindow> {
     objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows())
 }
 
+pub(crate) fn input_windows(_child: u32) -> Vec<crate::shared::windows::RawWindow> {
+    raw_windows_now()
+}
+
 /// Whether `pid` runs this Apparent's `apparent-helper` (the iPhone mirror, Settings, onboarding, the
 /// permission panel), going by its executable, so a helper started by another helper counts too.
 pub(crate) fn is_helper_process(pid: i32) -> bool {

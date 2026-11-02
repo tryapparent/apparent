@@ -1027,7 +1027,7 @@ impl SharedCaptureTelemetry {
     /// the capsule or another Apparent surface is still an outside click.
     fn on_capture_input_ui(&self, x: f64, y: f64) -> bool {
         if self.notes_editing.load(Ordering::Acquire) {
-            self.notes_window_in(&platform::raw_windows_now(), x, y)
+            self.notes_window_in(&platform::input_windows(self.note_ui_pid.load(Ordering::Acquire) as u32), x, y)
         } else {
             self.on_apparent_window(x, y)
         }
@@ -1036,7 +1036,19 @@ impl SharedCaptureTelemetry {
     fn notes_window_in(&self, windows: &[crate::shared::windows::RawWindow], x: f64, y: f64) -> bool {
         let pid = self.note_ui_pid.load(Ordering::Acquire);
         let passthrough = self.passthrough_window_ids.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        pid > 0 && crate::shared::windows::owned_window_at(windows, x, y, &passthrough, |owner| u64::try_from(owner).ok() == Some(pid))
+        #[cfg(target_os = "linux")]
+        {
+            // Hyprland raises pinned surfaces in its own scene without updating X11's
+            // root stacking list. Notes are always-on-top; hit their visible child
+            // rects directly rather than mistaking the capsule beneath for the target.
+            windows.iter().any(|w| {
+                let [wx, wy, width, height] = w.bounds;
+                pid > 0 && u64::try_from(w.pid).ok() == Some(pid) && w.alpha > 0.01 && !passthrough.contains(&w.id)
+                    && x >= wx && x <= wx + width && y >= wy && y <= wy + height
+            })
+        }
+        #[cfg(target_os = "macos")]
+        { pid > 0 && crate::shared::windows::owned_window_at(windows, x, y, &passthrough, |owner| u64::try_from(owner).ok() == Some(pid)) }
     }
 
     fn on_apparent_window(&self, x: f64, y: f64) -> bool {
@@ -1052,7 +1064,7 @@ impl SharedCaptureTelemetry {
             return on;
         }
         let on = self.apparent_window_in(
-            &platform::raw_windows_now(),
+            &platform::input_windows(self.note_ui_pid.load(Ordering::Acquire) as u32),
             x,
             y,
             platform::is_helper_process,
@@ -1068,6 +1080,7 @@ impl SharedCaptureTelemetry {
         y: f64,
         is_helper: impl Fn(i32) -> bool,
     ) -> bool {
+        if self.notes_window_in(windows, x, y) { return true; }
         let passthrough = self
             .passthrough_window_ids
             .lock()
@@ -1445,7 +1458,10 @@ mod tests {
         telemetry.note_ui_pid.store(app as u64, Ordering::Release);
         assert!(at(1000.0, 900.0), "the separate Electron note UI is owned");
         assert!(telemetry.notes_window_in(&windows, 1000.0, 900.0), "notes clicks stay inside");
-        assert!(!telemetry.notes_window_in(&windows, 300.0, 300.0), "other Apparent windows dismiss notes");
+        let notes_and_capsule = [window(10, own, [800.0, 0.0, 500.0, 100.0]), window(11, app, [1000.0, 30.0, 150.0, 44.0])];
+        assert!(!telemetry.notes_window_in(&notes_and_capsule, 850.0, 50.0), "capsule outside notes dismisses");
+        #[cfg(target_os = "linux")]
+        assert!(telemetry.notes_window_in(&notes_and_capsule, 1050.0, 50.0), "pinned notes remain inside despite stale X11 stacking");
         telemetry.note_ui_pid.store(0, Ordering::Release);
         assert!(!at(1000.0, 900.0), "closing notes releases that process identity");
         telemetry.set_capture_source_pid(0);

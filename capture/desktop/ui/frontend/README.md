@@ -394,7 +394,7 @@ A private inherited pipe carries click-time anchors and bounded note commands.
 Only trusted local main frames can submit draft/save/edit/delete/dismiss/list;
 no renderer paths, window IDs, IPC names, shell or network commands are accepted.
 Rust writes saved notes to `notes.json` before acknowledging/counting them;
-unsent drafts stay in the capture's Rust session. Enter with no text closes the
+unsent drafts stay in the capture's Rust session rather than note metadata/summary. Linux display video still includes the visible popup and its text. Enter with no text closes the
 field and retains the pin. Escape keeps the in-capture draft; Shift+Enter adds
 a newline. Capture completion closes this capture-local surface. Restarting or
 ending a capture does not promise recovery of unsubmitted drafts.

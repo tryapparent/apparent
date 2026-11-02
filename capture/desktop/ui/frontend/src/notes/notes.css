@@ -6,6 +6,7 @@
 }
 body:has(.capture-notes), body:has(.notes-unavailable) { background: transparent; }
 .capture-notes {
+  min-height: 100vh; box-sizing: border-box;
   --color-background: #f5f0e8; --color-foreground: #020102;
   --color-primary: #7a58c7; --color-primary-foreground: #f5f0e8;
   --color-accent: #e7e0ee; --color-accent-foreground: #020102;
