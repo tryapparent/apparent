@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } = require('electron');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -11,6 +11,10 @@ app.setName(settings ? 'Apparent Settings' : 'Apparent UI Foundation');
 app.setPath('userData', path.join(app.getPath('appData'), settings ? 'apparent-settings' : 'apparent-ui-foundation'));
 
 app.whenReady().then(() => {
+  if (settings) {
+    Menu.setApplicationMenu(null);
+    if (process.platform === 'darwin') app.setActivationPolicy('accessory');
+  }
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, reply) => reply(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
   const window = new BrowserWindow({
