@@ -76,7 +76,7 @@ function App() {
         </Tabs>
       </section>
       <footer className="border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground">
-        React + shadcn/ui + Tailwind, hosted by Electron. No capture commands or permission prompts. Only the capture-location and technical-error cards can save their own preferences.
+        React + shadcn/ui + Tailwind, hosted by Electron. No capture commands or permission prompts. Only the Storage and technical-error cards can save their own preferences.
       </footer>
     </main>
   );

@@ -12,6 +12,10 @@ declare global {
       resetCaptureLocation: () => Promise<CaptureLocation>;
       readErrorReporting: () => Promise<ErrorReporting>;
       setErrorReporting: (enabled: boolean) => Promise<ErrorReporting>;
+      readRetention: () => Promise<RetentionResult>;
+      saveRetention: (preset: string) => Promise<RetentionResult>;
+      resetRetention: () => Promise<RetentionResult>;
+      readCaptureUsage: () => Promise<UsageResult>;
     };
   }
 }
@@ -27,3 +31,8 @@ export type CaptureLocation =
 
 export type ErrorReporting = { status: 'connected'; enabled: boolean } |
   { status: 'disconnected' | 'incompatible' } | { status: 'error'; code: string };
+type Unavailable = Exclude<CaptureLocation, { status: 'connected' }>;
+export type RetentionResult = Unavailable | { status: 'connected'; custom: boolean;
+  retention: { preset: string | null; options: { id: string; label: string }[]; note: string } };
+export type UsageResult = Unavailable | { status: 'connected';
+  usage: { effectivePath: string; displayPath: string; formatted: string } };
