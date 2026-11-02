@@ -350,7 +350,18 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     await page.getByText('Connected · idle', { exact: true }).waitFor({ timeout: budget(10000) });
     const reporting = page.getByRole('region', { name: 'Send technical error reports', exact: true });
     const reportingToggle = reporting.getByRole('checkbox', { name: 'Send technical error reports', exact: true });
+    // Preserve the actual IPC result and rendered state if initial readback fails.
+    // The normal desktop viewport can end above this card after Storage expands.
+    try {
     await expect(reportingToggle).toBeChecked({ timeout: budget() });
+    } catch (error) {
+      report.errorReportingInitialFailure = {
+        rendered: await reporting.innerText({ timeout: budget() }),
+        readback: await within(page.evaluate(() => window.apparent.readErrorReporting()), budget(), 'Failed initial reporting read'),
+      };
+      await page.screenshot({ path: path.join(output, 'error-reporting-initial-failure.png'), timeout: budget(), fullPage: true });
+      throw error;
+    }
     report.errorReporting = { defaultOn: true, rustBeforeRestart: report.rust.pid };
     await reportingToggle.click({ timeout: budget() });
     await expect(reportingToggle).not.toBeChecked({ timeout: budget() });
