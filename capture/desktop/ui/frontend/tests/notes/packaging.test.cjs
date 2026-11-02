@@ -1,0 +1,24 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+test('popup packaging requires notes and includes a present independent share entry', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'apparent-popup-entries-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const root = path.join(dir, 'source'), out = path.join(dir, 'package');
+  const { stagePopupEntries } = await import('../../scripts/popup-entries.mjs');
+  await assert.rejects(stagePopupEntries(root, out), { code: 'ENOENT' });
+  await fs.mkdir(path.join(root, 'electron/notes'), { recursive: true });
+  await fs.writeFile(path.join(root, 'electron/notes/main.cjs'), 'notes entry');
+  await stagePopupEntries(root, out);
+  assert.equal(await fs.readFile(path.join(out, 'electron/notes/main.cjs'), 'utf8'), 'notes entry');
+  await fs.mkdir(path.join(root, 'electron/share'));
+  await assert.rejects(stagePopupEntries(root, out), { code: 'ENOENT' });
+  await fs.writeFile(path.join(root, 'electron/share/main.cjs'), 'share entry');
+  await fs.writeFile(path.join(root, 'electron/share/preload.cjs'), 'separate protocol');
+  await stagePopupEntries(root, out);
+  assert.equal(await fs.readFile(path.join(out, 'electron/share/main.cjs'), 'utf8'), 'share entry');
+  assert.equal(await fs.readFile(path.join(out, 'electron/share/preload.cjs'), 'utf8'), 'separate protocol');
+  await assert.rejects(fs.stat(path.join(out, 'runtime')), { code: 'ENOENT' });
+});

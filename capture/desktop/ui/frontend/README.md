@@ -421,3 +421,12 @@ The old pin/drawing path is retained, while no legacy note editor exists to
 remove. A rollback reverts this slice and keeps already saved note events
 readable. Native focus, positioning, Shift input and real output acceptance on
 both platforms remain distinct from synthetic Electron/pipe tests.
+
+The shared Rust resolver is `capture::desktop::workflow::electron::resolve() -> Result<Resources>`;
+`Resources { executable, root }` supplies paths only. Surface owners launch their own
+entry and own protocol, child cleanup and native acceptance. Installed paths remain
+`Contents/Resources/note-ui` on Mac and `usr/lib/apparent/note-ui` in Linux AppImages.
+`package-notes.mjs` stages the required `electron/notes/` and includes `electron/share/`
+when its `main.cjs` exists, alongside the same `dist/` and single `runtime/`. The absent
+share consumer adds no entry or routing. A share owner must verify its installed route
+on both platforms before enabling it; resolver availability alone is not that proof.

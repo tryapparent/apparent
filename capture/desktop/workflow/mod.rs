@@ -13,3 +13,5 @@ pub(crate) mod page;
 pub(crate) mod shutdown;
 mod storage_preferences;
 pub(crate) mod notes;
+
+pub(crate) mod electron;
