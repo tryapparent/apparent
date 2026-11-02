@@ -748,64 +748,22 @@ pub fn accept_pointer(id: u32) {
     set_class(id);
 }
 
-/// Apparent's own windows, including KWin's frame → wrapper → client nesting.
-fn own_gpui_windows(x: &X) -> Vec<Window> {
-    let pid = std::process::id();
-    let children = |window: Window| -> Vec<Window> {
-        x.conn
-            .query_tree(window)
-            .ok()
-            .and_then(|c| c.reply().ok())
-            .map(|tree| tree.children)
-            .unwrap_or_default()
-    };
-    let mut found = Vec::new();
-    let mut level = children(x.root);
-    for _ in 0..3 {
-        let mut next = Vec::new();
-        for id in level {
-            if x.property32(id, "_NET_WM_PID").first() == Some(&pid) {
-                found.push(id);
-            } else {
-                next.extend(children(id));
-            }
-        }
-        level = next;
-    }
-    found
+/// The toolkit's actual X11 resource, never an inferred PID/title/order match.
+/// A handle is not a capture role: process/object epochs and revocation remain
+/// the clean-source enrollment owner's responsibility.
+pub fn window_id(window: &gpui::Window) -> Option<u32> {
+    let handle = raw_window_handle::HasWindowHandle::window_handle(window).ok()?;
+    raw_x11_window_id(handle.as_raw())
 }
 
-/// GPUI windows' X11 ids, by GPUI window id.
-static GPUI_WINDOWS: Mutex<Option<HashMap<u64, Window>>> = Mutex::new(None);
-
-/// The X11 window id of a GPUI window. GPUI 0.2.2 doesn't hand out its X11 window's handle, so
-/// the first time a window is asked about (right after it opens), it's the newest window of
-/// this process not yet known. Called from the window's build callback, that is the window
-/// just made.
-pub fn window_id(window: &gpui::Window) -> Option<u32> {
-    let key = window.window_handle().window_id().as_u64();
-    let x = x()?;
-    let mut slot = GPUI_WINDOWS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let known = slot.get_or_insert_with(HashMap::new);
-    if let Some(&id) = known.get(&key) {
-        return Some(id);
+fn raw_x11_window_id(handle: raw_window_handle::RawWindowHandle) -> Option<u32> {
+    match handle {
+        raw_window_handle::RawWindowHandle::Xcb(handle) => Some(handle.window.get()),
+        raw_window_handle::RawWindowHandle::Xlib(handle) => {
+            u32::try_from(handle.window).ok().filter(|id| *id != 0)
+        }
+        _ => None,
     }
-    // Forget windows that have closed.
-    known.retain(|_, id| {
-        x.conn
-            .get_window_attributes(*id)
-            .ok()
-            .and_then(|c| c.reply().ok())
-            .is_some()
-    });
-    let fresh = own_gpui_windows(x)
-        .into_iter()
-        .filter(|id| !known.values().any(|v| v == id))
-        .max()?;
-    known.insert(key, fresh);
-    Some(fresh)
 }
 
 /// Sets a window's `WM_CLASS`, so docks and the window switcher match it to `apparent.desktop`.
@@ -896,6 +854,32 @@ pub fn capture_rect(rect: [f64; 4]) -> anyhow::Result<crate::shared::model::Rgba
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn raw_x11_handle_conversion_rejects_invalid_ids() {
+        use raw_window_handle::{RawWindowHandle, XcbWindowHandle, XlibWindowHandle};
+        let xid = std::num::NonZeroU32::new(0x400011).unwrap();
+        assert_eq!(
+            raw_x11_window_id(RawWindowHandle::Xcb(XcbWindowHandle::new(xid))),
+            Some(xid.get())
+        );
+        assert_eq!(
+            raw_x11_window_id(RawWindowHandle::Xlib(XlibWindowHandle::new(17))),
+            Some(17)
+        );
+        assert_eq!(
+            raw_x11_window_id(RawWindowHandle::Xlib(XlibWindowHandle::new(0))),
+            None
+        );
+        if std::mem::size_of::<std::ffi::c_ulong>() > std::mem::size_of::<u32>() {
+            assert_eq!(
+                raw_x11_window_id(RawWindowHandle::Xlib(XlibWindowHandle::new(
+                    std::ffi::c_ulong::MAX
+                ))),
+                None
+            );
+        }
+    }
 
     #[test]
     fn work_areas_are_clipped_to_their_display() {

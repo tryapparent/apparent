@@ -19,7 +19,7 @@ change user volume or routing and has no live effectiveness indicator.
 
 GPUI is built with its `x11` feature only, and `linux::prepare_process` (the first thing `main` does) hides `WAYLAND_DISPLAY` from it, so on Wayland every Apparent window is an XWayland window (`APPARENT_NATIVE_WAYLAND=1` opts out, for experiments). That keeps one window model on both: Apparent's floating windows (pill, picker, ink overlay) are override-redirect X windows it places itself in global pixels (`linux::x11::float`, `place`), with an empty input shape to let clicks through (`set_click_through`). `float` waits for the window manager to finish mapping and then unmanaging the window before it takes it over; otherwise GNOME on Wayland keeps drawing it at its old frame's offset.
 
-GPUI 0.2.2's X11 window panics on `HasWindowHandle`, so `x11::window_id` finds a GPUI window's X id itself (the newest `_NET_WM_PID` window it hasn't seen, cached per `WindowId`).
+The pinned GPUI 0.2.2 dependency includes a repository-owned correction to its otherwise panicking X11 `HasWindowHandle` implementation (see [dependency provenance](../../native/vendor/README.md)). `x11::window_id` reads the actual toolkit window's XID through that trait; it never selects a window by PID, title or creation order. This association alone does not establish compositor exclusion authority or a native mapping epoch.
 
 Global coordinates are root-window pixels; X11 has one scale for the screen (`x11::ui_scale`), so `MAX_CAPTURE_SCALE` is 1.
 
