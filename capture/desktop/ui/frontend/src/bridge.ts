@@ -34,6 +34,8 @@ declare global {
       saveRetention: (preset: string) => Promise<RetentionResult>;
       resetRetention: () => Promise<RetentionResult>;
       readCaptureUsage: () => Promise<UsageResult>;
+      navigateSettings: (pane: string) => Promise<void>;
+      showCaptureFolder: () => Promise<void>;
     };
   }
 }

@@ -97,6 +97,13 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+if [[ "$NOTARIZE" == true ]]; then
+  python3 "$ROOT/capture/desktop/scripts/packaging/stage-settings.py" "$app/Contents/Resources/settings" \
+    --sign "$APPARENT_APPLE_SIGNING_IDENTITY" --keychain "$APPARENT_APPLE_SIGNING_DIR/signing.keychain-db"
+else
+  python3 "$ROOT/capture/desktop/scripts/packaging/stage-settings.py" "$app/Contents/Resources/settings" --sign -
+fi
+
 plutil -lint "$app/Contents/Info.plist"
 notes_identity="-"
 if [[ "$NOTARIZE" == true ]]; then notes_identity="$APPARENT_APPLE_SIGNING_IDENTITY"; fi
