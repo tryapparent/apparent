@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@apparent/ui/tabs';
 import type { RuntimeState } from './bridge';
 import { Storage } from './storage';
 import { ErrorReporting } from './error-reporting';
+import { CaptureReference } from './reference';
 import './style.css';
 
 // Visual fixtures only. These do not model or control real recording state.
@@ -55,6 +56,7 @@ function App() {
           </> : <><strong>Unable to read state</strong><p className="mt-1 text-muted-foreground">{runtime.message}</p></>}
         </div>
       </section>
+      <CaptureReference />
       <Storage />
       <ErrorReporting />
       <section aria-labelledby="preview-title" className="space-y-4">
@@ -76,7 +78,7 @@ function App() {
         </Tabs>
       </section>
       <footer className="border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground">
-        React + shadcn/ui + Tailwind, hosted by Electron. No capture commands or permission prompts. Only the Storage and technical-error cards can save their own preferences.
+        React + shadcn/ui + Tailwind, hosted by Electron. No recording commands or permission prompts. Copy ID changes only the clipboard; Storage and technical-error controls save their own preferences.
       </footer>
     </main>
   );
