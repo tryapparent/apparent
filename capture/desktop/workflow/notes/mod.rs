@@ -138,6 +138,8 @@ impl Session {
         telemetry
             .note_ui_pid
             .store(u64::from(note_pid), Ordering::Release);
+        #[cfg(target_os = "linux")]
+        crate::capture::desktop::platform::register_note_surfaces(note_pid);
         let output = child.stdout.take().unwrap();
         let (sender, receiver) = flume::bounded(64);
         let reader = sender.clone();
@@ -290,6 +292,7 @@ impl Session {
                                         note_pid,
                                         rect,
                                         wants_focus,
+                                        own_windows.first() == Some(&id),
                                     );
                                 }
                             }
@@ -355,6 +358,8 @@ impl Session {
             let _ = telemetry
                 .ui_sender
                 .try_send(LiveOverlayEvent::RequestSnapshot);
+            #[cfg(target_os = "linux")]
+            crate::capture::desktop::platform::clear_note_surfaces(note_pid);
             let _ = telemetry.note_ui_pid.compare_exchange(
                 u64::from(note_pid),
                 0,

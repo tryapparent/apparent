@@ -406,13 +406,25 @@ pub fn pill_title(xid: u32) -> String {
     format!("Apparent Recording Controls {xid:x}")
 }
 
+pub fn note_title(xid: u32) -> String { format!("Apparent notes {xid:x}") }
+
+pub fn pin_note(xid: u32, pid: u32) -> Result<()> {
+    if let Some(command) = owned_pin_command(&request("j/clients")?, pid, &note_title(xid), syntax()?)? {
+        run(&command)?;
+    }
+    Ok(())
+}
+
 fn pill_pin_command(clients: &str, pid: u32, xid: u32, syntax: Syntax) -> Result<Option<String>> {
+    owned_pin_command(clients, pid, &pill_title(xid), syntax)
+}
+
+fn owned_pin_command(clients: &str, pid: u32, title: &str, syntax: Syntax) -> Result<Option<String>> {
     let clients: Vec<serde_json::Value> = serde_json::from_str(clients)?;
-    let title = pill_title(xid);
     let mut matching = clients.iter().filter(|client| {
         client["pid"].as_u64() == Some(u64::from(pid))
             && client["xwayland"].as_bool() == Some(true)
-            && client["title"].as_str() == Some(title.as_str())
+            && client["title"].as_str() == Some(title)
     });
     let pill = matching.next().context("Recording pill not mapped in Hyprland yet")?;
     anyhow::ensure!(matching.next().is_none(), "Recording pill identity is ambiguous");

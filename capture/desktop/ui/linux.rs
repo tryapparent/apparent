@@ -232,6 +232,7 @@ pub(crate) fn set_app_icon(window: &Window) {
 pub(in crate::capture::desktop) fn raise_window(window: &mut Window) {
     if let Some(id) = x11::window_id(window) {
         x11::raise(id);
+        raise_note_surfaces();
     }
 }
 
@@ -460,7 +461,7 @@ impl PillChrome {
                                 linux::hyprland::pin_pill(id)
                             }).await;
                             match result {
-                                Ok(()) => { last_error = None; break; }
+                                Ok(()) => { raise_note_surfaces(); last_error = None; break; }
                                 Err(error) => last_error = Some(error),
                             }
                             cx.background_executor().timer(Duration::from_millis(120)).await;
@@ -488,6 +489,7 @@ impl PillChrome {
     pub(in crate::capture::desktop) fn raise(&self) {
         if let Some(id) = self.id {
             x11::raise(id);
+            raise_note_surfaces();
         }
     }
 
@@ -905,11 +907,79 @@ pub(in crate::capture::desktop) fn note_badge_anchor(width: f32, y: f32) -> Opti
         rect[1] + f64::from(y), f64::from(width), f64::from(super::super::ISLAND_H)])
 }
 
-/// The Electron UI shares the existing native overlay route so its counter can sit above
-/// the override-redirect capsule. Validate the exact child and XID before adapting it.
-pub(in crate::capture::desktop) fn place_note_surface(id: u32, pid: u32, rect: [i32; 4], focus: bool) {
+#[derive(Clone, Copy, Default)]
+struct NoteSurface { id: u32, generation: u64, worker: bool }
+#[derive(Clone, Copy, Default)]
+struct NoteSurfaces { pid: u32, slots: [NoteSurface; 2] }
+static NOTE_SURFACES: std::sync::Mutex<NoteSurfaces> = std::sync::Mutex::new(NoteSurfaces {
+    pid: 0, slots: [NoteSurface { id: 0, generation: 0, worker: false }; 2],
+});
+
+pub(in crate::capture::desktop) fn register_note_surfaces(pid: u32) {
+    *NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = NoteSurfaces { pid, ..Default::default() };
+}
+pub(in crate::capture::desktop) fn clear_note_surfaces(pid: u32) {
+    let mut state = NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if state.pid == pid { *state = NoteSurfaces::default(); }
+}
+fn raise_note_surfaces() {
+    let state = *NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    for surface in state.slots {
+        if surface.id != 0 && x11::window_info(surface.id as isize).is_some_and(|w| w.pid == state.pid && w.on_screen()) { x11::raise(surface.id); }
+    }
+}
+
+fn pin_note_surface(id: u32, pid: u32, index: usize) {
+    let mut failures = 0;
+    loop {
+        let generation = {
+            let state = NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            if state.pid != pid || state.slots[index].id != id { return; }
+            state.slots[index].generation
+        };
+        let visible = x11::window_info(id as isize).is_some_and(|w| w.pid == pid && w.on_screen());
+        let result = if visible { linux::hyprland::pin_note(id, pid) } else { Ok(()) };
+        if result.is_ok() { raise_note_surfaces(); } else { failures += 1; }
+        let retry = {
+            let mut state = NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            if state.pid != pid || state.slots[index].id != id { return; }
+            let slot = &mut state.slots[index];
+            if slot.generation != generation { failures = 0; true }
+            else if visible && result.is_err() && failures < 8 { true }
+            else { slot.worker = false; false }
+        };
+        if !retry {
+            if let Err(error) = result { crate::capture::engine::runtime::apparent_log(format!("Notes pinning failed: {error:#}")); }
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(120));
+    }
+}
+
+/// Native placement and pinning use only the active capture's child PID and registered XIDs.
+/// One worker per surface coalesces remaps: legacy Hyprland pin is a toggle, so two
+/// concurrent read-unpinned/dispatch-pin operations could otherwise undo each other.
+pub(in crate::capture::desktop) fn place_note_surface(id: u32, pid: u32, rect: [i32; 4], focus: bool, popup: bool) {
+    let index = usize::from(popup);
+    let first = {
+        let state = NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.pid != pid { return; }
+        state.slots[index].id != id
+    };
     if !x11::window_info(id as isize).is_some_and(|window| window.pid == pid) { return; }
+    x11::set_title(id, &linux::hyprland::note_title(id));
     x11::accept_pointer(id);
-    x11::float(id, rect.map(f64::from));
+    if first { x11::float(id, rect.map(f64::from)); } else { x11::place(id, rect.map(f64::from)); }
+    let start_worker = {
+        let mut state = NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.pid != pid { return; }
+        let slot = &mut state.slots[index];
+        slot.id = id; slot.generation = slot.generation.wrapping_add(1);
+        let start = !slot.worker && linux::hyprland::running();
+        slot.worker |= start;
+        start
+    };
+    raise_note_surfaces();
     if focus { x11::focus(id); }
+    if start_worker { std::thread::spawn(move || pin_note_surface(id, pid, index)); }
 }
