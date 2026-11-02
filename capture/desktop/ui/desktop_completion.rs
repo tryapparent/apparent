@@ -167,6 +167,7 @@ impl ApparentCoordinator {
                 }
             });
         }
+        if let Some(session)=self.onboarding.as_mut(){session.observe_practice(false,0,true,Some(clipboard_ready));}
         self.set_island_phase(IslandPhase::Completed {
             finished_at: Instant::now(),
             frame_count,

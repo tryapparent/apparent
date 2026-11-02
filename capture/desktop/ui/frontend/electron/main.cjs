@@ -1,3 +1,4 @@
+if (process.argv.includes('--native-onboarding')) { require('./onboarding.cjs'); } else {
 const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron');
 const os = require('node:os');
 const path = require('node:path');
@@ -209,3 +210,5 @@ app.whenReady().then(() => {
   void window.loadURL(page);
 });
 app.on('window-all-closed', () => app.quit());
+
+}

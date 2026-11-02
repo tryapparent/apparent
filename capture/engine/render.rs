@@ -54,7 +54,7 @@ pub(crate) fn draw_export_annotations(
             .chunks_exact(2)
             .map(|p| map(p[0], p[1]))
             .collect();
-        polygon(frame, &pts, opacity(RED, alpha));
+        polygon(frame, &pts, opacity(stroke.color, alpha));
     }
     for pin in &ink.pins {
         if ms < pin.t as f64 {
@@ -554,7 +554,7 @@ pub fn annotate_keyframe_marks_in_place(
                     ..Default::default()
                 },
             );
-            polygon(frame, &outline, RED);
+            polygon(frame, &outline, stroke.rgba());
         }
     }
     for stroke in strokes.iter().filter(|s| s.laser) {
@@ -2148,6 +2148,7 @@ mod tests {
     fn active_ink_paints_red_but_future_ink_is_hidden() {
         let base = solid(320, 200, [20, 20, 20, 255]);
         let stroke = Stroke {
+            color: None,
             t0: 3500,
             t1: 3900,
             fw: 320,
@@ -2168,7 +2169,12 @@ mod tests {
             red > 80,
             "Expected opaque red stroke pixels below the badge, got {red}"
         );
+        let coloured = Stroke { color:Some([59,121,189]),..stroke.clone() };
+        let coloured_frame=render_annotated_keyframe(&base,&key(1),&[coloured],&[],&[]);
+        assert!(coloured_frame.rgba.chunks_exact(4).skip(100*320).filter(|p|*p==[59,121,189,255]).count()>80,
+            "saved ink colour must survive keyframe rendering");
         let future = Stroke {
+            color: None,
             t0: 5000,
             t1: 5400,
             ..stroke
@@ -2183,6 +2189,7 @@ mod tests {
         let base = solid(320, 200, [20, 20, 20, 255]);
         // Three strokes across the lower half, drawn long before the keyframe.
         let stroke = |y: i32| Stroke {
+            color: None,
             t0: 100,
             t1: 300,
             fw: 320,

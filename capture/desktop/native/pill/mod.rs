@@ -494,6 +494,12 @@ impl NativePill {
         })
     }
 
+    pub fn coach_anchor(&self)->Option<[f32;4]> {
+        let st=self.shared.state.lock().ok()?;
+        let [x,y,w,h]=st.model.frame().shape.rect();
+        Some([st.screen_origin_top_left[0]+x,st.screen_origin_top_left[1]+y,w,h])
+    }
+
     pub fn window_number(&self) -> u32 {
         self.window_num
     }

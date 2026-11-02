@@ -928,6 +928,7 @@ enum Transport {
     Helper {
         child: std::process::Child,
         stdin: Option<std::process::ChildStdin>,
+        adapter: Option<(std::process::Child, Option<std::process::ChildStdin>)>,
     },
     InProcess(Option<flume::Sender<serde_json::Value>>),
 }
@@ -963,6 +964,14 @@ pub struct Session {
     saved_shortcut_chosen: bool,
     saved_first_capture_completed: bool,
     clock: std::time::Instant,
+    practice: Option<super::practice::Practice>,
+    shortcut_label: String,
+    anchor: Option<[f32;4]>,
+    practice_completed: bool,
+    editor: Option<crate::capture::desktop::settings::ShortcutView>,
+    pen_picker: bool,
+    pen_selected: bool,
+    pen_error: bool,
 }
 
 impl Session {
@@ -979,6 +988,10 @@ impl Session {
             saved_shortcut_chosen: false,
             saved_first_capture_completed: false,
             clock: std::time::Instant::now(),
+            practice: None,
+            shortcut_label: String::new(),
+            anchor: None,
+            practice_completed:false,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
         }
     }
 
@@ -991,7 +1004,8 @@ impl Session {
         #[cfg(not(target_os = "macos"))]
         use std::sync::atomic::Ordering;
 
-        let transport = if cfg!(not(target_os = "macos")) {
+        let shell = std::env::var_os("APPARENT_ONBOARDING_SHELL").is_some();
+        let transport = if !shell && cfg!(not(target_os = "macos")) {
             let (sender, receiver) = flume::unbounded();
             let window_events = events.clone();
             crate::capture::desktop::settings::onboarding_window::request_open(
@@ -1026,7 +1040,7 @@ impl Session {
                 .with_auto_relaunch(allowed)
                 .with_tutorial(progress.tutorial)
                 .with_first_capture(
-                    crate::shared::handoff::experiment("onboardingFirstCapture"),
+                    shell || crate::shared::handoff::experiment("onboardingFirstCapture"),
                     progress.shortcut_chosen,
                     progress.first_capture_completed,
                 ),
@@ -1038,6 +1052,10 @@ impl Session {
             saved_shortcut_chosen: progress.shortcut_chosen,
             saved_first_capture_completed: progress.first_capture_completed,
             clock: std::time::Instant::now(),
+            practice: shell.then(super::practice::Practice::default),
+            shortcut_label: shortcut.to_owned(),
+            anchor: None,
+            practice_completed:false,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
         };
         session.sync();
         Ok(session)
@@ -1050,7 +1068,8 @@ impl Session {
         use std::io::BufRead;
         use std::process::{Command, Stdio};
 
-        let mut command = Command::new(crate::capture::desktop::helper::path()?);
+        let program=if cfg!(target_os="macos") || std::env::var_os("APPARENT_ONBOARDING_SHELL").is_none() {crate::capture::desktop::helper::path()?} else {std::path::PathBuf::from(std::env::var_os("APPARENT_ONBOARDING_SHELL").unwrap())};
+        let mut command = Command::new(program);
         command
             .args(["onboarding", "--shortcut", shortcut, "--paste"])
             .arg(crate::capture::desktop::settings::paste_label())
@@ -1061,11 +1080,30 @@ impl Session {
         if Path::new(dev_icon).is_file() {
             command.args(["--icon", dev_icon]);
         }
+        let mut adapter = None;
+        let mut command = if let Some(shell) = std::env::var_os("APPARENT_ONBOARDING_SHELL") {
+            #[cfg(target_os="macos")]
+            {
+                command.arg("--adapter");
+                let mut child = command.spawn()?;
+                let pipe = child.stdin.take();
+                if let Some(stdout) = child.stdout.take() { Self::read_actions(stdout, events.clone()); }
+                adapter = Some((child, pipe));
+            }
+            let mut renderer = Command::new(shell);
+            renderer.arg("--native-onboarding").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit());
+            renderer
+        } else { command };
         let mut child = command.spawn()?;
         let stdin = child.stdin.take();
-        let stdout = child.stdout.take();
+        if let Some(stdout) = child.stdout.take() { Self::read_actions(stdout, events); }
+        Ok(Transport::Helper { child, stdin, adapter })
+    }
 
+    fn read_actions(stdout: std::process::ChildStdout, events: impl Fn(Event)+Send+Sync+Clone+'static) {
+        use std::io::BufRead;
         std::thread::spawn(move || {
+            let stdout = Some(stdout);
             if let Some(stdout) = stdout {
                 for line in std::io::BufReader::new(stdout)
                     .lines()
@@ -1078,6 +1116,20 @@ impl Session {
                         continue;
                     };
                     let action = action.to_owned();
+                    #[cfg(target_os="linux")]
+                    if action=="shortcut-key" {
+                        if let (Some(key),Some(modifiers))=(value["key"].as_str(),value["modifiers"].as_u64()) {
+                            if key.len()<=32 && modifiers & !0x1b00 == 0 {
+                                if let Some(key_code)=crate::capture::desktop::settings::settings_window::key_code(key) {
+                                    events(Event::Shortcut(crate::capture::desktop::settings::Action::Shortcut {
+                                        kind:crate::capture::engine::runtime::ShortcutKind::Record,
+                                        pressed:crate::capture::desktop::settings::Pressed {key_code,modifiers:modifiers as u32,key:key.to_owned(),reserved:false},
+                                    }));
+                                }
+                            }
+                        }
+                        continue;
+                    }
                     if matches!(
                         action.as_str(),
                         "shortcut" | "cancel-shortcut" | "reset-shortcut"
@@ -1100,7 +1152,6 @@ impl Session {
             }
             events(Event::Exited);
         });
-        Ok(Transport::Helper { child, stdin })
     }
 
     pub fn mode(&self) -> Mode {
@@ -1120,7 +1171,26 @@ impl Session {
     /// Feeds the flow and carries out what the window can do itself. Returns what needs the
     /// app: `Close` or `Relaunch`.
     pub fn input(&mut self, input: Input) -> Effect {
+        if self.practice.is_some() && self.flow.step()==Step::TryIt {
+            match &input {
+                Input::CaptureStarted => {
+                    self.practice_completed=false;
+                    self.practice=Some(super::practice::Practice::default());
+                },
+                Input::CaptureEnded { completed:true } => {
+                    self.practice_completed=self.flow.practice_recording;
+                    // A finished capture owns no live shortcut/hidden state. Coaching
+                    // keeps its own eligibility until the person finishes the lesson.
+                    self.flow.on(Input::CaptureEnded{completed:false});
+                    self.sync();return Effect::None;
+                },
+                Input::CaptureEnded { completed:false } => self.practice.as_mut().unwrap().cancelled(),
+                _=>{},
+            }
+        }
+        let started=matches!(input,Input::CaptureStarted);
         let effect = self.flow.on(input);
+        if started && self.flow.practice_recording {if let Some(p)=self.practice.as_mut(){p.started();}}
         // The in-process window feeds the flow on every refresh: log only what changed.
         static LAST: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
         let line = format!("onboarding: {:?} -> {effect:?}", self.flow.step());
@@ -1183,6 +1253,26 @@ impl Session {
 
     /// An action string from the helper as an `Input`.
     pub fn action(&mut self, action: &str) -> Effect {
+        if self.practice.is_some() && self.flow.step()==Step::Welcome {
+            if action=="continue" && !self.pen_picker {self.pen_picker=true;self.sync();return Effect::None;}
+            if let Some(name)=action.strip_prefix("pen:") {
+                if self.pen_picker {self.pen_error=crate::shared::handoff::pen::save(name).is_err();self.pen_selected=!self.pen_error;self.sync();}
+                return Effect::None;
+            }
+            if action=="continue" && !self.pen_selected {return Effect::None;}
+        }
+
+        if action.starts_with("practice-") {
+            if let Some(practice)=self.practice.as_mut() {
+                if practice.action(action) && action=="practice-finish" && self.practice_completed {
+                    self.flow.first_capture_completed=true;
+                    self.flow.step=Step::Done;
+                    self.sync();
+                    return self.input(Input::Continue);
+                }
+            }
+            self.sync();return Effect::None;
+        }
         let input = match action {
             "continue" => Input::Continue,
             "back" => Input::Back,
@@ -1215,12 +1305,31 @@ impl Session {
 
     /// Keep every step's displayed Record keys in sync with the active shortcut.
     pub fn shortcut_changed(&mut self, label: &str) {
+        self.shortcut_label=label.to_owned();
         self.send(&serde_json::json!({"type": "shortcut", "label": label}));
     }
 
     pub fn shortcut_editor(&mut self, editor: &crate::capture::desktop::settings::ShortcutView) {
+        self.editor=Some(editor.clone());
         self.send(&serde_json::json!({"type": "shortcut-editor", "shortcut": editor}));
+        self.sync();
     }
+
+    pub fn observe_practice(&mut self, board:bool, screen:usize, processing:bool, saved:Option<bool>) {
+        if self.flow.step()!=Step::TryIt {return;}
+        if let Some(practice)=self.practice.as_mut() {
+            practice.observe_ink(board,screen);
+            if processing {practice.processing();}
+            if let Some(copied)=saved {practice.saved(copied);}
+        }
+        self.sync();
+    }
+    pub fn practice_anchor(&mut self,anchor:Option<[f32;4]>) {self.anchor=anchor;}
+    pub fn practice_active(&self)->bool {self.practice.is_some() && self.flow.step()==Step::TryIt}
+    pub fn practice_locating(&self)->bool {self.practice.as_ref().is_some_and(|p|p.stage==super::practice::Stage::Locate)}
+    pub fn practice_screen_stage(&self)->bool {self.practice.as_ref().is_some_and(|p|p.stage==super::practice::Stage::ScreenInk)}
+    pub fn practice_whiteboard(&mut self) {if let Some(p)=self.practice.as_mut(){p.whiteboard();}self.sync();}
+    pub fn practice_latest(&mut self) {if let Some(p)=self.practice.as_mut(){p.opened_latest();}self.sync();}
 
     pub fn editing_shortcut(&self) -> bool {
         self.flow.step() == Step::Shortcut && self.flow.shortcut_editing
@@ -1233,6 +1342,13 @@ impl Session {
         }
         let mut view = serde_json::to_value(self.flow.view()).unwrap_or_default();
         view["type"] = "state".into();
+        if let Some(practice)=self.practice.as_ref() {view["practice"]=serde_json::json!(practice.stage);}
+        view["shortcut"]=self.shortcut_label.clone().into();
+        view["platform"]=std::env::consts::OS.into();
+        view["shortcutEditor"]=serde_json::json!(self.editor);
+        view["anchor"]=serde_json::json!(self.anchor);
+        view["penPicker"]=self.pen_picker.into();view["penSelected"]=self.pen_selected.into();view["penError"]=self.pen_error.into();
+        view["penRgb"]=serde_json::json!(crate::shared::handoff::pen::rgb());
         view["speech"] = serde_json::to_value(crate::capture::engine::runtime::audio::transcription::speech_model::current()).unwrap_or_default();
         let text = view.to_string();
         if text != self.last_view {
@@ -1267,7 +1383,12 @@ impl Session {
     fn send(&mut self, message: &serde_json::Value) {
         use std::io::Write;
         match &mut self.transport {
-            Transport::Helper { stdin, .. } => {
+            Transport::Helper { stdin, adapter, .. } => {
+                if let Some((_, Some(pipe)))=adapter {let _=writeln!(pipe,"{message}").and_then(|()|pipe.flush());}
+                #[cfg(target_os="linux")]
+                if std::env::var_os("APPARENT_ONBOARDING_SHELL").is_some() && matches!(message["type"].as_str(),Some("request"|"open-settings")) {
+                    if let Ok(permission)=serde_json::from_value(message["permission"].clone()) {crate::capture::desktop::linux::privacy::open_settings(permission);}
+                }
                 if let Some(pipe) = stdin.as_mut()
                     && writeln!(pipe, "{message}")
                         .and_then(|()| pipe.flush())
@@ -1294,8 +1415,10 @@ impl Drop for Session {
             .store(false, std::sync::atomic::Ordering::Release);
         self.send(&serde_json::json!({"type": "close"}));
         match &mut self.transport {
-            Transport::Helper { child, stdin } => {
+            Transport::Helper { child, stdin, adapter } => {
+                if let Some((helper,pipe))=adapter { *pipe=None;let _=helper.kill();let _=helper.wait(); }
                 *stdin = None;
+                let _ = child.kill();
                 let _ = child.wait();
             }
             Transport::InProcess(sender) => *sender = None,
@@ -1363,6 +1486,30 @@ pub fn relaunch() {
 
 #[cfg(test)]
 mod tests {
+
+    fn coached_session()->Session {
+        let mut session=Session::for_test(Flow::tour(Step::TryIt,Some(grants(&Permission::REQUIRED))).with_first_capture(true,true,false));
+        session.practice=Some(super::super::practice::Practice::default());session
+    }
+    #[test]
+    fn coaching_finishes_after_completion_pill_dismissal() {
+        let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.observe_practice(true,1,false,None);
+        s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
+        assert!(!s.flow.practice_recording);assert!(!s.flow.hidden);
+        s.input(Input::CaptureEnded{completed:false}); // normal 25-second pill dismissal
+        s.action("practice-paste");s.action("practice-pasted");s.practice_latest();
+        assert_eq!(s.action("practice-finish"),Effect::Close);assert!(s.flow.first_capture_completed);
+    }
+    #[test]
+    fn menu_retry_cannot_inherit_completed_shortcut_attempt() {
+        let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
+        s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
+        s.input(Input::CaptureStarted); // menu start, without ShortcutTriggered
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.observe_practice(true,1,true,Some(true));
+        s.input(Input::CaptureEnded{completed:true});s.action("practice-paste");s.action("practice-pasted");s.practice_latest();
+        assert_eq!(s.action("practice-finish"),Effect::None);assert!(!s.flow.first_capture_completed);
+    }
     #[test]
     fn first_capture_close_resumes_until_success_without_trapping_the_user() {
         let mut progress = Progress::default();

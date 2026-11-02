@@ -981,6 +981,7 @@ impl SharedCaptureTelemetry {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let number = strokes.iter().filter(|s| s.pin.is_some()).count() as u32 + 1;
         strokes.push(Stroke {
+            color: Some(crate::shared::handoff::pen::rgb()),
             t0,
             t1: t_ms,
             fw,
@@ -1246,6 +1247,7 @@ fn track_shift_ink(
             telemetry.window_log_request.store(true, Ordering::Release);
         }
         let stroke = guard.get_or_insert_with(|| Stroke {
+            color: Some(crate::shared::handoff::pen::rgb()),
             t0: t_ms,
             t1: t_ms,
             fw,
@@ -1726,6 +1728,7 @@ mod tests {
     fn a_shift_click_mid_drawing_drops_no_pin() {
         let telemetry = session(1000.0, 1000.0);
         let ink = |pts: &[(i32, i32, i32)]| Stroke {
+            color: Some(crate::shared::handoff::pen::rgb()),
             t0: 0,
             t1: 0,
             fw: 1000,

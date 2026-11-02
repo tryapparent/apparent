@@ -378,6 +378,8 @@ pub struct WordTiming {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Stroke {
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub color: Option<[u8;3]>,
     pub t0: u64,
     pub t1: u64,
     pub fw: u32,
@@ -393,6 +395,7 @@ pub struct Stroke {
 }
 
 impl Stroke {
+    pub fn rgba(&self)->[u8;4] {let [r,g,b]=self.color.unwrap_or([255,59,48]);[r,g,b,255]}
     /// Moves the stroke `ms` earlier onto a clock that started at `ms`, shifting point `dt_ms`
     /// by any clipped prefix and dropping points before `ms`. Returns `false` if the stroke
     /// ended before `ms` or has no remaining points.
@@ -634,6 +637,17 @@ impl RgbaFrame {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn stroke_colours_round_trip_without_changing_legacy_captures() {
+        let legacy=serde_json::json!({"t0":0,"t1":10,"fw":100,"fh":100,"pts":[10,20,0,30,40,10]});
+        let stroke:super::Stroke=serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(stroke.rgba(),[255,59,48,255]);
+        assert_eq!(serde_json::to_value(&stroke).unwrap(),legacy);
+        let mut coloured=stroke;coloured.color=Some([59,121,189]);
+        let decoded:super::Stroke=serde_json::from_value(serde_json::to_value(&coloured).unwrap()).unwrap();
+        assert_eq!(decoded.rgba(),[59,121,189,255]);
+    }
+
     use super::*;
 
     fn span(t0: u64, t1: u64, name: &str) -> ScreenSpan {
@@ -707,6 +721,7 @@ mod tests {
     #[test]
     fn stroke_and_event_rebase_shift_dt_and_drop_pre_offset_items() {
         let mut before = Stroke {
+            color: None,
             t0: 100,
             t1: 400,
             fw: 100,
@@ -719,6 +734,7 @@ mod tests {
         assert!(!before.rebase(500));
 
         let mut spanning = Stroke {
+            color: None,
             t0: 300,
             t1: 700,
             fw: 100,
@@ -734,6 +750,7 @@ mod tests {
         assert_eq!(spanning.pts, vec![30, 40, 0, 50, 60, 200]);
 
         let mut after = Stroke {
+            color: None,
             t0: 800,
             t1: 1_000,
             fw: 100,

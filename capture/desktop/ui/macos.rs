@@ -739,6 +739,17 @@ thread_local! {
     static STATUS_BAR: RefCell<Option<StatusBarController>> = const { RefCell::new(None) };
 }
 
+/// The owned status-item window, in the same global top-left coordinates as capture.
+pub(in crate::capture::desktop) fn status_bar_anchor()->Option<[f32;4]> {
+    let mtm=MainThreadMarker::new()?;
+    STATUS_BAR.with(|bar| {
+        let bar=bar.borrow();let button=bar.as_ref()?._item.button()?;
+        let frame=button.window()?.frame();
+        let primary_h=objc2_app_kit::NSScreen::screens(mtm).firstObject()?.frame().size.height;
+        Some([frame.origin.x as f32,(primary_h-frame.origin.y-frame.size.height) as f32,frame.size.width as f32,frame.size.height as f32])
+    })
+}
+
 pub(in crate::capture::desktop) fn install_status_bar() -> Option<flume::Receiver<MenuAction>> {
     let mtm = MainThreadMarker::new()?;
     let (sender, receiver) = flume::bounded(16);

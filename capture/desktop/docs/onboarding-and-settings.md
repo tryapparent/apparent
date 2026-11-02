@@ -226,3 +226,33 @@ Render every pane (dark, light, each shortcut state: held, listening, partial, r
 ## Lower other audio while recording (`capture/desktop/playback.rs`, `capture/engine/native/PlaybackVolume.swift`)
 
 Off by default. General › Lower other audio while recording (`"lowerPlayback": true`) ramps the default output device's volume over one second to `playbackLevel` percent of what it was (Lower to, default 20%; 0 mutes) from the moment the shortcut is pressed or a recording starts, Mac or cabled iPhone, and back when it finishes, is cancelled or the picker closes without recording. `apparent-helper playback-volume --server`, started at launch while the setting is on, does the CoreAudio work and takes `start N` / `stop` lines on stdin. It reads every writable output channel's volume scalar before writing any (the master volume only when the channels have none), so balance and silent channels come back as they were; it never touches the mute flag or any input device. It restores when told to stop, when Apparent exits or crashes (stdin closes) and at once on SIGTERM, SIGINT or SIGHUP; it leaves the volume alone if someone changed it during the recording, and a device switched to mid-recording isn't lowered (the original device is restored). Fixed-volume outputs are left unchanged. Linux does nothing. `apparent-helper playback-volume --self-test` runs the ramp tests on fake devices; `--inspect` prints the current device's volume controls without changing them.
+
+## Separate onboarding test app
+
+`capture/desktop/scripts/packaging/build-onboarding-test.sh` builds the private
+macOS installer with a separately identified `Apparent Onboarding Test.app`.
+Set `APPARENT_TEST_OUTPUT` to a fresh absolute directory. The installer refuses
+existing destinations and offers a different folder; the app is ad-hoc signed,
+not a notarized release. It has no updater or registered `apparent:` URL handler.
+
+Its bundle environment sets `APPARENT_TEST_INSTANCE=1`. At startup Rust selects
+only Apparent-specific config, captures, control sockets and Electron profile
+under `~/Library/Application Support/apparent-onboarding-test`; it never changes
+HOME or platform-wide directories. Login startup defaults off. The test binding
+is Control–Option–Shift–9 and paste shortcut is disabled until configured.
+
+This app routes onboarding through the shared Electron/React renderer using
+`APPARENT_ONBOARDING_SHELL`. Rust owns permission gates, saved pen colour and
+capture milestones. The macOS helper provides OS permission dialogs and the
+existing native shortcut editor; it does not display a competing setup window.
+The installed everyday app keeps its existing routing. Rollback is to quit this
+separate test app; removing the old setup implementation requires accepted
+macOS and isolated Linux proof plus verified packaging/callers.
+
+The practice coach follows actual recording, Whiteboard and ink events. Copied
+requires successful clipboard writing. Paste is a person's explicit confirmation,
+never a monitored keypress or proof of delivery to an agent. Setup has no typing
+opt-in or typing shortcut page; the recording shortcut remains. `penColor`
+accepts coral, purple, blue or green, is loaded at startup and applies immediately
+when saved by setup. Older bundles without stroke colour keep their red ink.
+Native platform and package verification remain required before release.

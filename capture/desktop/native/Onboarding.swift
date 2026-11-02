@@ -929,6 +929,7 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     let app = NSApplication.shared
     let delegate = Onboarding(model: model)
+    delegate.adapterOnly = arguments.contains("--adapter")
     app.setActivationPolicy(.accessory)
     app.delegate = delegate
     withExtendedLifetime(delegate) { app.run() }
@@ -944,6 +945,7 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
   }
 
   let model: OnboardingModel
+  var adapterOnly = false
   var window: NSWindow?
   private var shortcutMonitor: Any?
   private lazy var keys = HelperWindowKeys(
@@ -1054,6 +1056,13 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
           switch type {
           case "state":
             guard let state else { return }
+            if self.adapterOnly && !(state.step == "shortcut" && state.shortcutEditing) {
+              self.listenForShortcut(false)
+              self.model.shortcutEditor = nil
+              self.model.state = state
+              self.window?.orderOut(nil)
+              return
+            }
             if state.step != "shortcut" || !state.shortcutEditing {
               self.listenForShortcut(false)
               self.model.shortcutEditor = nil
@@ -1066,6 +1075,7 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
               self.present()
             } else {
               self.apply(state)
+              if self.adapterOnly { self.present() }
             }
           // The user has moved on to another row: answering an earlier question mustn't pull
           // this window over the System Settings pane they're working in.
@@ -1089,7 +1099,7 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
               self.listenForShortcut(editor.recording && active)
             }
           case "hide": self.window?.orderOut(nil)
-          case "show": self.present()
+          case "show": if !self.adapterOnly { self.present() }
           case "close":
             self.keys.handBack()
             exit(0)

@@ -146,8 +146,7 @@ pub fn new_id() -> Result<String> {
 }
 
 fn socket_path(create: bool) -> Result<PathBuf> {
-    let home = std::env::var_os("HOME").context("HOME is not set")?;
-    let dir = PathBuf::from(home).join(".config/apparent/agent-control");
+    let dir = super::test_instance::control_directory("agent-control")?;
     if create {
         std::fs::create_dir_all(&dir)?;
     }

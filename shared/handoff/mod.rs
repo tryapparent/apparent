@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::shared::model::ApparentBundle;
 
 mod config_store;
+pub(crate) mod pen;
 pub(crate) mod capture_location;
 pub use config_store::{default_config_path, set_config_value_in};
 pub(crate) use config_store::{update_config_in, update_config_allowed_in};
@@ -792,6 +793,8 @@ fn opencode_binary() -> Result<PathBuf> {
 #[derive(Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
+    #[serde(default)]
+    pub pen_color: Option<String>,
     /// Hosted sync preference; credentials are separate private artifacts, not settings.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[serde(default)]

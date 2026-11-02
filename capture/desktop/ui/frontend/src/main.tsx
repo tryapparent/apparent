@@ -8,6 +8,7 @@ import { ErrorReporting } from './error-reporting';
 import { ConnectSettingsCard } from './connect-settings';
 import { CaptureReference } from './reference';
 import './style.css';
+import { NativeOnboarding } from './onboarding';
 
 // Visual fixtures only. These do not model or control real recording state.
 const examples = [
@@ -86,4 +87,4 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>);
+createRoot(document.getElementById('root')!).render(<StrictMode>{new URLSearchParams(location.search).has('nativeOnboarding') ? <NativeOnboarding /> : <App />}</StrictMode>);

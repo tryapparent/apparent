@@ -1494,6 +1494,7 @@ mod tests {
 
     fn stroke(points: &[[f32; 2]], t: u64) -> Stroke {
         Stroke {
+            color: None,
             t0: t,
             t1: t + 100,
             fw: 1000,
@@ -1601,6 +1602,7 @@ mod tests {
     /// tip and a barb below.
     fn real_stroke(pts: &[i32], t: u64) -> Stroke {
         Stroke {
+            color: None,
             fw: 1728,
             fh: 1117,
             pts: pts.to_vec(),
@@ -1660,6 +1662,7 @@ mod tests {
     fn real_hooked_underlines_are_not_arrows() {
         for pts in REAL_HOOKED_UNDERLINES {
             let stroke = Stroke {
+                color: None,
                 fw: 2560,
                 fh: 1440,
                 pts: pts.to_vec(),

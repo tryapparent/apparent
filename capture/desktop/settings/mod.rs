@@ -6,3 +6,5 @@ pub(crate) mod settings_window;
 pub(crate) mod shortcut;
 
 pub(crate) use settings::*;
+
+pub(crate) mod practice;
