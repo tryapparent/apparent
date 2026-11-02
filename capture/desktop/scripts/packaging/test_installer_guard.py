@@ -50,12 +50,18 @@ case "$name" in
       done
     fi ;;
   security) exit 1 ;;
+  node)
+    case "$1" in
+      */package-notes.mjs) mkdir -p "$2/runtime/Electron.app" ;;
+      */sign-notes.mjs) test -d "$2" ;;
+      *) exit 90 ;;
+    esac ;;
   taskpolicy|cargo|git|codesign|open|sleep|pgrep|pkill|ditto) : ;;
   *) exit 90 ;;
 esac
 '''
             for name in ("ps", "ssh", "launchctl", "security", "taskpolicy", "cargo", "git",
-                         "codesign", "open", "sleep", "pgrep", "pkill", "ditto"):
+                         "codesign", "open", "sleep", "pgrep", "pkill", "ditto", "node"):
                 tool = tools / name
                 tool.write_text(mock)
                 tool.chmod(0o755)
@@ -74,8 +80,8 @@ esac
             for name in ("install-app.sh", "install-app-remote.sh"):
                 source = (SCRIPTS / name).read_text()
                 # Redirect fixed native paths into this disposable synthetic fixture.
-                source = source.replace("/usr/bin/ditto", str(tools / "ditto"))
                 source = source.replace("/tmp/", str(root) + "/")
+                source = source.replace("/usr/bin/ditto", str(tools / "ditto"))
                 (packaging / name).write_text(source)
             env = dict(os.environ, HOME=str(home), PATH=str(tools) + ":" + os.environ["PATH"],
                        MOCK_LOG=str(log), MOCK_PROCESSES=str(processes),
@@ -92,6 +98,7 @@ esac
                 self.assertEqual(executable.read_text(), "old app")
                 self.assertFalse((app / "Contents/Info.plist").exists())
                 self.assertNotIn("ditto ", calls)
+                self.assertNotIn("node ", calls)
                 self.assertNotIn("open ", calls)
                 self.assertIn("retry", result.stderr)
                 if running:
@@ -103,6 +110,9 @@ esac
                     self.assertIn("ditto ", calls)
                 else:
                     self.assertEqual(executable.read_text(), "synthetic new asset")
+                    self.assertIn("package-notes.mjs", calls)
+                    self.assertIn("sign-notes.mjs", calls)
+                    self.assertLess(calls.index("package-notes.mjs"), calls.index("sign-notes.mjs"))
                 self.assertEqual("open " in calls, remote or not no_launch)
 
     def test_destination_processes_refuse_before_replacement(self):
