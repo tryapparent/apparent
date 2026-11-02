@@ -569,6 +569,8 @@ pub struct SharedCaptureTelemetry {
     /// The `apparent-helper` whose window is what's being recorded (the iPhone mirror): its clicks
     /// count, unlike those on other helper windows (Settings, onboarding). 0 when none.
     capture_source_pid: AtomicI32,
+    #[cfg(target_os = "macos")]
+    dock_bounds: Mutex<Option<[f64; 4]>>,
     /// The last `on_apparent_window` answer (when, where, what), reused for a burst of scrolls.
     apparent_hit: Mutex<Option<(Instant, f64, f64, bool)>>,
     /// macOS's key event tap (`CFMachPortRef`), made once Accessibility is on (`check_key_tap`).
@@ -633,6 +635,8 @@ impl SharedCaptureTelemetry {
             ui_sender,
             passthrough_window_ids: Mutex::new(Vec::new()),
             capture_source_pid: AtomicI32::new(0),
+            #[cfg(target_os = "macos")]
+            dock_bounds: Mutex::new(None),
             apparent_hit: Mutex::new(None),
             tap_port: AtomicU64::new(0),
             tap_run_loop: AtomicU64::new(0),
@@ -750,6 +754,10 @@ impl SharedCaptureTelemetry {
     }
 
     pub fn reset_for_session(&self, frame: TargetFrame) {
+        // Session admission runs on the UI thread; NSScreen is unavailable to
+        // the background input poller. Cache its reserved Dock strip here.
+        #[cfg(target_os = "macos")]
+        { *self.dock_bounds.lock().unwrap() = crate::shared::windows::dock_rect(frame); }
         self.selecting.store(false, Ordering::Release);
         *self
             .picker_rect
@@ -1039,6 +1047,14 @@ impl SharedCaptureTelemetry {
         y: f64,
         is_helper: impl Fn(i32) -> bool,
     ) -> bool {
+        #[cfg(target_os = "macos")]
+        let adjusted = {
+            let mut raw = windows.to_vec();
+            crate::shared::windows::constrain_dock(&mut raw, *self.dock_bounds.lock().unwrap());
+            raw
+        };
+        #[cfg(target_os = "macos")]
+        let windows = adjusted.as_slice();
         let passthrough = self
             .passthrough_window_ids
             .lock()

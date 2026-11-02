@@ -270,6 +270,19 @@ pub fn owned_window_at(
         .is_some_and(|w| ours(w.pid))
 }
 
+/// CGWindowList reports a full-display Dock window, including where it does
+/// not receive input. Use the same visible strip as the window log before hit testing.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(crate) fn constrain_dock(raw: &mut Vec<RawWindow>, dock: Option<[f64; 4]>) {
+    raw.retain_mut(|window| {
+        if window.layer == 20 && window.owner == "Dock" {
+            let Some(bounds) = dock else { return false };
+            window.bounds = bounds;
+        }
+        true
+    });
+}
+
 /// Reads the on-screen window list (front to back) from the window server.
 #[cfg(target_os = "macos")]
 pub fn raw_windows() -> Vec<RawWindow> {
@@ -545,10 +558,9 @@ pub fn dock_rect(frame: TargetFrame) -> Option<[f64; 4]> {
     };
     let screen = screens.iter().find(|s| {
         let [x, y, w, h] = flip(s.frame());
-        (x - frame.x).abs() < 1.0
-            && (y - frame.y).abs() < 1.0
-            && (w - frame.width).abs() < 1.0
-            && (h - frame.height).abs() < 1.0
+        // Area captures also need their containing display's Dock geometry.
+        let (cx, cy) = (frame.x + frame.width / 2.0, frame.y + frame.height / 2.0);
+        cx >= x && cx < x + w && cy >= y && cy < y + h
     })?;
     let [fx, fy, fw, fh] = flip(screen.frame());
     let [vx, vy, vw, vh] = flip(screen.visibleFrame());
@@ -751,6 +763,27 @@ mod tests {
             owned_window_at(&raw, 400.0, 500.0, &[], ours),
             "an overlay that takes clicks"
         );
+    }
+
+    #[test]
+    fn full_display_dock_bounds_do_not_cover_settings_hit_tests() {
+        let window = |id, pid, owner: &str, bounds, layer| RawWindow {
+            id, pid, owner: owner.into(), title: String::new(), bounds, layer, alpha: 1.0,
+        };
+        let raw = vec![
+            window(6, 415, "Dock", [0.0, 0.0, 1440.0, 900.0], 20),
+            window(84, 12404, "Electron", [260.0, 56.0, 920.0, 760.0], 0),
+        ];
+        let ours = |pid| pid == 12404;
+        assert!(!owned_window_at(&raw, 1050.0, 687.0, &[], ours), "observed pre-fix Dock obstruction");
+        let mut visible = raw.clone();
+        constrain_dock(&mut visible, Some([0.0, 816.0, 1440.0, 84.0]));
+        assert!(owned_window_at(&visible, 1050.0, 687.0, &[], ours));
+        assert!(!owned_window_at(&visible, 1300.0, 700.0, &[], ours));
+        assert!(!owned_window_at(&visible, 1000.0, 850.0, &[], ours), "real Dock clicks remain external");
+        let mut hidden = raw;
+        constrain_dock(&mut hidden, None);
+        assert!(owned_window_at(&hidden, 1050.0, 687.0, &[], ours));
     }
 
     #[test]
