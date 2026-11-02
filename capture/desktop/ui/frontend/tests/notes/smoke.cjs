@@ -21,7 +21,13 @@ test('shipped Electron note UI focuses, saves, counts, edits, recovers drafts an
   let pending = '';
   child.stdout.on('data', chunk => {
     pending += chunk.toString(); const lines = pending.split('\n'); pending = lines.pop();
-    for (const line of lines) { try { messages.push(JSON.parse(line)); } catch {} }
+    for (const line of lines) { try {
+      const value = JSON.parse(line); messages.push(value);
+      // Production Rust publishes each accepted draft back to the renderer.
+      if (value.action === 'draft' && state?.mode === 'editor' && state.current === value.pin) {
+        state = { ...state, drafts: state.drafts.map(n => n.pin === value.pin ? { ...n, text: value.text } : n) }; send();
+      }
+    } catch {} }
   });
   browser = await chromium.connectOverCDP(await endpoint);
   const context = browser.contexts()[0];
@@ -37,7 +43,7 @@ test('shipped Electron note UI focuses, saves, counts, edits, recovers drafts an
   await expect(field).toBeFocused();
   assert.deepEqual(await popup.evaluate(() => ({ require: typeof window.require, process: typeof window.process, keys: Object.keys(window.captureNotes).sort() })),
     { require: 'undefined', process: 'undefined', keys: ['command', 'onSnapshot'] });
-  await field.fill('Smaller button'); await field.press('Shift+Enter'); await field.press('x');
+  await field.pressSequentially('Smaller button', { delay: 20 }); await expect(field).toBeFocused(); await field.press('Shift+Enter'); await field.press('x');
   await expect(field).toHaveValue('Smaller button\nx');
   await field.press('Enter');
   await expect.poll(() => messages.find(m => m.action === 'save')?.text).toBe('Smaller button\nx');
