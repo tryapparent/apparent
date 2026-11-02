@@ -4,6 +4,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('apparent', Object.freeze({
   pickerUpdaterPreference: (...args) => ipcRenderer.invoke('apparent:picker-updater-preference', ...args),
   readRuntimeState: () => ipcRenderer.invoke('apparent:read-runtime-state'),
+  readCaptureReference: () => ipcRenderer.invoke('apparent:read-capture-reference'),
+  copyCaptureReference: () => ipcRenderer.invoke('apparent:copy-capture-reference'),
   readCaptureLocation: () => ipcRenderer.invoke('apparent:read-capture-location'),
   changeCaptureLocation: () => ipcRenderer.invoke('apparent:change-capture-location'),
   resetCaptureLocation: () => ipcRenderer.invoke('apparent:reset-capture-location'),

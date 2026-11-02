@@ -4,6 +4,7 @@ import { Button } from '@apparent/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@apparent/ui/tabs';
 import type { RuntimeState, PreferenceResult } from './bridge';
 import { Storage } from './storage';
+import { CaptureReference } from './reference';
 import './style.css';
 
 // Visual fixtures only. These do not model or control real recording state.
@@ -88,6 +89,7 @@ function App() {
           </> : <><strong>Unable to read state</strong><p className="mt-1 text-muted-foreground">{runtime.message}</p></>}
         </div>
       </section>
+      <CaptureReference />
       <Storage />
       <PickerUpdaterPreferences />
       <section aria-labelledby="preview-title" className="space-y-4">
@@ -109,7 +111,7 @@ function App() {
         </Tabs>
       </section>
       <footer className="border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground">
-        React + shadcn/ui + Tailwind, hosted by Electron. No capture commands or permission prompts. The opt-in Settings controls save Storage, picker and updater preferences.
+        React + shadcn/ui + Tailwind, hosted by Electron. No recording commands or permission prompts. Copy ID changes only the clipboard; opt-in Settings controls save Storage, picker and updater preferences.
       </footer>
     </main>
   );
