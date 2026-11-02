@@ -46,7 +46,11 @@ test('shipped Electron note UI focuses, saves, counts, edits, recovers drafts an
   await expect(badge.getByRole('button', { name: '1 saved notes. Open notes' })).toBeVisible();
   await badge.getByRole('button').click();
   await expect.poll(() => messages.some(m => m.action === 'list')).toBe(true);
-  state.mode = 'list'; send();
+  state.mode = 'list'; state.badgeRect = [450, 36, 380, 40]; send();
+  if (process.platform === 'linux') {
+    await expect.poll(() => messages.some(m => m.action === 'surface' && JSON.stringify(m.rect) === '[836,36,150,44]')).toBe(true);
+    await expect.poll(() => messages.some(m => m.action === 'surface' && m.rect[3] === 350)).toBe(true);
+  }
   await popup.getByRole('button', { name: /Smaller button/ }).click();
   await expect.poll(() => messages.some(m => m.action === 'edit' && m.pin === 1)).toBe(true);
   state.mode = 'editor'; send();

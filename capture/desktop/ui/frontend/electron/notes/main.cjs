@@ -39,9 +39,11 @@ app.whenReady().then(() => {
   const area = display.workArea;
   badge.setPosition(Math.min(area.x + area.width - 156, Math.round(frame[0] + frame[2] / 2 + 150)), area.y + 12);
   const placed = new Map();
-  function placeSurface(win, focus, force = false) {
+  // Rust owns Linux placement. Chromium can report stale bounds after an XWayland
+  // override-redirect remap; send the requested rect rather than undoing the move.
+  function placeSurface(win, focus, force = false, bounds = win.getBounds()) {
     if (process.platform !== 'linux') return;
-    const { x, y, width, height } = win.getBounds();
+    const { x, y, width, height } = bounds;
     const rect = [x, y, width, height];
     const key = JSON.stringify(rect);
     if (!force && !focus && placed.get(win) === key) return;
@@ -60,7 +62,10 @@ app.whenReady().then(() => {
   ipcMain.handle('notes:ready', (event) => { validate(event); publish(); });
   ipcMain.handle('notes:finish-ready', event => { validate(event); if (event.sender !== popup.webContents || !finishing || finished) return; finished = true; send({ action: 'finished' }); });
   popup.on('blur', () => setTimeout(() => {
-    if (!finishing && popup.isVisible() && ![popup, badge].includes(BrowserWindow.getFocusedWindow())) send({ action: 'outside' });
+    const pointer = screen.getCursorScreenPoint();
+    const bounds = popup.getBounds();
+    const inside = pointer.x >= bounds.x && pointer.x < bounds.x + bounds.width && pointer.y >= bounds.y && pointer.y < bounds.y + bounds.height;
+    if (!finishing && popup.isVisible() && !inside && ![popup, badge].includes(BrowserWindow.getFocusedWindow())) send({ action: 'outside' });
   }, 100));
   ipcMain.handle('notes:command', (event, value) => {
     validate(event);
@@ -81,10 +86,12 @@ app.whenReady().then(() => {
       if (finishing) return;
       if (!validSnapshot(state)) return app.quit();
       const previous = latest; latest = state;
+      let requestedBadge;
       if (state.badgeRect) {
         const rect = state.badgeRect;
         const work = screen.getDisplayNearestPoint({ x: Math.round(rect[0] + rect[2] / 2), y: Math.round(rect[1] + rect[3] / 2) }).workArea;
         const bounds = badgeBounds(rect, work);
+        requestedBadge = { ...bounds, width: 150, height: 44 };
         badge.setPosition(bounds.x, bounds.y);
       }
       const point = { x: Math.round(state.position[0]), y: Math.round(state.position[1]) };
@@ -96,10 +103,10 @@ app.whenReady().then(() => {
         if (opening) popup.show();
         const focus = !previous || previous.mode !== state.mode || previous.current !== state.current;
         if (focus) popup.focus();
-        placeSurface(popup, focus, opening);
+        placeSurface(popup, focus, opening, bounds);
       } else { popup.hide(); if (previous && previous.mode !== 'badge') send({ action: 'hidden' }); }
       const openingBadge = !badge.isVisible();
-      badge.showInactive(); placeSurface(badge, false, openingBadge); publish();
+      badge.showInactive(); placeSurface(badge, false, openingBadge, requestedBadge); publish();
     } catch { app.quit(); }
   });
   lines.on('close', () => app.quit());
