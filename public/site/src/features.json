@@ -22,6 +22,20 @@
   ],
   "features": [
     {
+      "id": "desktop-error-reporting",
+      "group": "settings",
+      "name": "Technical error reports",
+      "says": "A small General setting controls default-on, content-free desktop failure reports. Requires a packaged EU PostHog project token; live ingestion and macOS/Linux GUI acceptance remain pending. Reports contain a static failure category, app build, OS/architecture and source call site, not recordings, logs or raw error text. No session replay or persistent user identity.",
+      "status": "branch:t3/error-tracking-posthog",
+      "added": "2026-11-02",
+      "platforms": ["mac", "linux"],
+      "config": [
+        { "key": "errorReporting", "value": "true", "does": "Set false to stop admitting technical error reports without restarting" },
+        { "key": "errorReportingGeneration", "value": "private revision", "does": "Rotated by Settings to invalidate queued reports; never transmitted" }
+      ],
+      "docs": ["capture/desktop/docs/onboarding-and-settings.md"]
+    },
+    {
       "id": "site-feature-grid",
       "group": "install",
       "name": "Animated homepage feature explanations",
