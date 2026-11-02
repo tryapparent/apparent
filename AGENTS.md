@@ -11,6 +11,14 @@ Apparent records screen, voice, cursor, clicks and ink so a human can point, tal
 - Keep changes owner-local and bounded. Move a legacy mechanism with its callers/tests, preserve contracts and verify consumers before removing donors. Coordinate real cross-owner contract changes; routine owner work need not wait for an integrator.
 - Delete verified dead implementations and obsolete tests/references rather than copying them into an archive. Establish requiredness from consumers, build/runtime/package inputs, supported compatibility/data readers and owner reservations—not merely deployment. Preserve active/uncommitted work, private captures, credentials and evidence. See `enablement/refactor.md` for campaign gates.
 
+## Desktop UI direction
+
+Electron is the selected desktop UI shell, prioritizing a shared macOS/Linux experience and fewer rendering differences. This is the target direction, not a claim that migration is implemented. Keep capture and processing in Rust, independent of UI animations and responsiveness; measure pill responsiveness and resource contention on both platforms. Native adapters may still be needed for OS integration; the exact overlay boundary remains to be established.
+
+Desktop is a fast capture-and-handoff tool, not a workspace: no desktop review screen; most conventional UI belongs in infrequently opened Settings. The Loom-like recording-sharing workspace for coworkers and their agents belongs in web/Connect. Reuse UI components where useful without embedding that workspace in Desktop. Shared UI does not replace platform checks for permissions, capture, focus, overlays and packaging.
+
+Minimize both stop-to-paste and stop-to-watch delays. Connect links are expected to be the common handoff and may be copied before upload/processing completes; a recipient-facing “Preparing recording” state is acceptable. Keep “link copied” distinct from “ready to watch”; never present the former as proof of the latter. This direction does not authorize an unscoped migration or release.
+
 ## Ownership and layout
 
 The accepted ownership target is Engine, Desktop and Agent under `capture/`, with `connect`, `public`, `shared` and `enablement` as separate owners. Their dependency direction is architectural: Desktop and Agent may depend on Engine; Engine depends on neither. Keep capture-internal shared mechanisms in `capture`. One root Rust application package uses ordinary modules; no path shims, extra crates or services to simulate ownership.
@@ -51,7 +59,7 @@ At assignment start, identify the requested artifact, checks/platform proof, and
 
 ## Product gates and operations
 
-User-visible changes to handoff/output ship behind an off-by-default experiment until Kit enables it for everyone; bug fixes ship normally. Config is `~/.config/apparent/config.json`, the code checks `shared::handoff::experiment("<name>")`, tests use `shared::handoff::enable_experiment`, and `apparent reprocess`/`inspect` accept `--experiment <name>`. Invalid config values are skipped/logged and a bad key drops only that key. Current flags and output contract: `capture/engine/docs/keyframes-and-text.md`.
+New user-facing features, including handoff/output changes, ship enabled by default; do not add an off-by-default experiment unless explicitly requested. Preserve consent, permission and safety gates. This policy does not itself enable existing experiments. Config is `~/.config/apparent/config.json`, the code checks `shared::handoff::experiment("<name>")`, tests use `shared::handoff::enable_experiment`, and `apparent reprocess`/`inspect` accept `--experiment <name>`. Invalid config values are skipped/logged and a bad key drops only that key. Current flags and output contract: `capture/engine/docs/keyframes-and-text.md`.
 
 Keep `public/site/src/features.json` accurate in the same PR when adding/removing/renaming a user-facing feature or changing its status. It records status, platforms, shortcuts, config keys and docs; release changes `main` entries to `stable@<version>`. `cargo test feature_map` checks code/config entries. Release procedures: `capture/desktop/docs/release.md`.
 
