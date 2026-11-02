@@ -226,3 +226,35 @@ test('bounded action contract',()=>{assert.deepEqual(parseAction('use-current-sh
 test('stdin accepts fragmented lines and rejects oversized individual lines',()=>{const received=[];const feed=lines(v=>received.push(v));feed('{"type":');feed('"state"}\ninvalid\n{"type":"show"}\n');assert.equal(received.length,2);assert.throws(()=>feed('x'.repeat(65537)));const many=lines(()=>{});many('{}\n'.repeat(30000))});
 
 }
+
+{
+  const vm = require('node:vm');
+  const fs = require('node:fs');
+  test('onboarding replays parent messages received before React subscribes', () => {
+    let receive;
+    let bridge;
+    const electron = {
+      ipcRenderer: { on: (_channel, listener) => { receive = listener; }, invoke: () => Promise.resolve() },
+      contextBridge: { exposeInMainWorld: (_name, value) => { bridge = value; } },
+    };
+    vm.runInNewContext(fs.readFileSync(require.resolve('../electron/onboarding-preload.cjs'), 'utf8'), {
+      require: name => { assert.equal(name, 'electron'); return electron; },
+    });
+    receive({}, { type: 'shortcut', label: 'Alt+Shift+S' });
+    receive({}, { type: 'state', step: 'try-it' });
+    const messages = [];
+    const unsubscribe = bridge.subscribe(value => messages.push(value));
+    assert.equal(messages[0].label, 'Alt+Shift+S');
+    assert.equal(messages[1].step, 'try-it');
+    receive({}, { type: 'shortcut', label: 'Ctrl+Alt+K' });
+    assert.equal(messages.at(-1).label, 'Ctrl+Alt+K');
+    unsubscribe();
+    receive({}, { type: 'state', step: 'done' });
+    assert.equal(messages.length, 3);
+    const replay = [];
+    bridge.subscribe(value => replay.push(value));
+    assert.equal(replay.length, 2);
+    assert.equal(replay[0].label, 'Ctrl+Alt+K');
+    assert.equal(replay[1].step, 'done');
+  });
+}
