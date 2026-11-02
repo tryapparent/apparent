@@ -836,7 +836,6 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn quiet_speedup_is_a_copy_and_preserves_explicit_realtime_and_marked_evidence() {
         let root = std::env::temp_dir().join(format!("apparent-paced-{}",crate::shared::ids::make_bundle_id()));
