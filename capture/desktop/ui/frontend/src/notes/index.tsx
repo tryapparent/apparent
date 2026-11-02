@@ -46,7 +46,7 @@ export function CaptureNotes() {
     await command({ action: 'dismiss' });
   }
   if (!state) return <div className="notes-unavailable" role="status">Connecting notes…</div>;
-  return <main className={`capture-notes ${state.dark ? 'dark' : ''}`} onPointerDown={e => {
+  return <main className={`capture-notes ${state.dark ? 'dark' : ''}`} onClick={e => {
     if (!badge && e.target === e.currentTarget) void dismiss();
   }} onKeyDown={e => {
     if (e.key === 'Escape' && !e.nativeEvent.isComposing) { e.preventDefault(); void dismiss(); }

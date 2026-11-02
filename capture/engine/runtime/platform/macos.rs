@@ -1465,7 +1465,7 @@ fn mouse_event(
     event: EventRef,
     on_apparent: impl Fn(f64, f64) -> bool,
 ) {
-    if !telemetry.active.load(Ordering::Acquire) {
+    if !telemetry.active.load(Ordering::Acquire) || telemetry.notes_editing.load(Ordering::Acquire) {
         return;
     }
     let event_type = unsafe { CGEventGetType(event) };
@@ -1477,9 +1477,7 @@ fn mouse_event(
     match event_type {
         // A ⇧-press is never a click: a ⇧-click drops a pin, a ⇧-drag is ink (the poller's).
         EVENT_LEFT_MOUSE_DOWN | EVENT_RIGHT_MOUSE_DOWN if !on_apparent(loc.x, loc.y) => {
-            if telemetry.notes_editing.load(Ordering::Acquire) {
-                let _ = telemetry.ui_sender.try_send(LiveOverlayEvent::NoteOutside);
-            } else if !pure_shift {
+            if !pure_shift {
                 telemetry.pointer_down(t_ms, loc.x, loc.y);
             } else if event_type == EVENT_LEFT_MOUSE_DOWN {
                 telemetry.shift_down(t_ms, loc.x, loc.y);

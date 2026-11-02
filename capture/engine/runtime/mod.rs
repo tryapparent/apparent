@@ -1200,13 +1200,15 @@ fn poll_clicks(
     on_apparent: impl Fn(f64, f64) -> bool,
 ) {
     let was = std::mem::replace(prev, now);
-    if telemetry.mouse_live.load(Ordering::Acquire) { return; }
+    // The Mac global monitor excludes our own app windows. Poll notes outside
+    // clicks regardless of monitor availability; the monitor skips editing input.
     if telemetry.notes_editing.load(Ordering::Acquire) {
         if now.iter().zip(&was).any(|(&down, &before)| down && !before) && !on_apparent(x, y) {
             let _ = telemetry.ui_sender.try_send(LiveOverlayEvent::NoteOutside);
         }
         return;
     }
+    if telemetry.mouse_live.load(Ordering::Acquire) { return; }
     for (button, (&down, &before)) in now.iter().zip(&was).enumerate() {
         let left = button == 0;
         if down && !before && !on_apparent(x, y) {
@@ -1476,6 +1478,8 @@ mod tests {
         let (sender, receiver) = flume::unbounded();
         let telemetry = SharedCaptureTelemetry::new(sender);
         telemetry.notes_editing.store(true, Ordering::Release);
+        // A live global monitor does not receive clicks on the native capsule.
+        telemetry.mouse_live.store(true, Ordering::Release);
         let mut prev = [false; 2];
         // Typing and clicks inside the editor never become captured input.
         poll_clicks(&telemetry, &mut prev, [true, false], (20.0, 20.0), false, |_, _| true);
