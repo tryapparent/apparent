@@ -87,7 +87,10 @@ fn publication_checks_wav_persistence_before_transcription_or_manifest() {
         windows::ActivityLog::default(),
         None,
     );
-    assert!(result.is_err(), "an occupied audio path must fail before transcription");
+    assert!(
+        result.is_err(),
+        "an occupied audio path must fail before transcription"
+    );
     assert!(
         !root.join("apparent.json").exists(),
         "WAV write failure must stop before manifest publication"
@@ -104,7 +107,15 @@ fn publication_screen_wrapper_checks_journal_and_keeps_required_audio() {
             directory.child(recover::UNFINISHED, true).unwrap();
         }
         let stored = audio::encode_wav_16k(&[0.125; 160]).unwrap();
-        if !collide { publication::write(&root, "audio.wav", &stored).unwrap(); }
+        if !collide {
+            publication::write(&root, "audio.wav", &stored).unwrap();
+        }
+        publication::write(
+            &root,
+            crate::capture::engine::runtime::audio::persistence::RECORDING,
+            b"saved audio recipe",
+        )
+        .unwrap();
         let mut target = target();
         target.frame.x = 0.12345678901234567;
         // Valid, empty captured WAV avoids any native/network transcriber call.
@@ -134,6 +145,11 @@ fn publication_screen_wrapper_checks_journal_and_keeps_required_audio() {
             let (_, bundle, summary) = result.unwrap();
             assert_eq!(bundle.audio.as_deref(), Some("audio.wav"));
             assert_eq!(std::fs::read(root.join("audio.wav")).unwrap(), stored);
+            assert!(
+                !root
+                    .join(crate::capture::engine::runtime::audio::persistence::RECORDING)
+                    .exists()
+            );
             assert!(!root.join(recover::UNFINISHED).exists());
             assert!(!root.join(publication::IN_PROGRESS).exists());
             publication::checked(&root, &bundle, &summary).unwrap();
@@ -154,7 +170,10 @@ fn publication_rejects_external_and_symlinked_movies_before_decoder_callback() {
     outside_dir
         .write(
             "recording.mp4",
-            include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/capture/engine/bundle/bundle_processing/publication/fixtures/tiny.mp4")),
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/capture/engine/bundle/bundle_processing/publication/fixtures/tiny.mp4"
+            )),
         )
         .unwrap();
     for linked in [false, true] {

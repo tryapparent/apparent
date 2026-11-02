@@ -13,6 +13,7 @@ pub(super) fn finish(
         crate::capture::engine::bundle::recover::UNFINISHED,
         crate::capture::engine::bundle::recover::RECOVERING,
         crate::capture::engine::bundle::recover::UNSAFE_VIDEO,
+        crate::capture::engine::runtime::audio::persistence::RECORDING,
         IN_PROGRESS,
     ] {
         // Open every marker before unlinking any: a directory/symlink collision
@@ -58,11 +59,20 @@ mod tests {
     use super::*;
     #[test]
     fn durability_failure_restores_journal_and_in_progress_marker() {
-        let path = std::env::temp_dir().join(format!("{}.apparent", crate::shared::ids::make_bundle_id()));
+        let path =
+            std::env::temp_dir().join(format!("{}.apparent", crate::shared::ids::make_bundle_id()));
         let root = Directory::open(&path, true).unwrap();
-        root.write(crate::capture::engine::bundle::recover::UNFINISHED, b"recipe must survive")
-            .unwrap();
+        root.write(
+            crate::capture::engine::bundle::recover::UNFINISHED,
+            b"recipe must survive",
+        )
+        .unwrap();
         root.write(IN_PROGRESS, b"pending").unwrap();
+        root.write(
+            crate::capture::engine::runtime::audio::persistence::RECORDING,
+            b"saved audio recipe",
+        )
+        .unwrap();
         let parent = Directory::open_sync_parent(path.parent().unwrap()).unwrap();
         let moved = path.with_extension("moved");
         assert!(
@@ -78,6 +88,25 @@ mod tests {
             b"recipe must survive"
         );
         assert!(moved.join(IN_PROGRESS).is_file());
+        assert_eq!(
+            std::fs::read(
+                moved.join(crate::capture::engine::runtime::audio::persistence::RECORDING)
+            )
+            .unwrap(),
+            b"saved audio recipe"
+        );
         std::fs::remove_dir_all(moved).unwrap();
+    }
+    #[test]
+    fn successful_barrier_cleans_audio_recovery_journal() {
+        let path =
+            std::env::temp_dir().join(format!("{}.apparent", crate::shared::ids::make_bundle_id()));
+        let root = Directory::open(&path, true).unwrap();
+        let marker = crate::capture::engine::runtime::audio::persistence::RECORDING;
+        root.write(marker, b"saved audio recipe").unwrap();
+        let parent = Directory::open_sync_parent(path.parent().unwrap()).unwrap();
+        finish(&root, &parent, || Ok(())).unwrap();
+        assert!(!path.join(marker).exists());
+        std::fs::remove_dir_all(path).unwrap();
     }
 }
