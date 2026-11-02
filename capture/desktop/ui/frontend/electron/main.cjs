@@ -3,7 +3,7 @@ const os = require('node:os');
 const {PublicShare} = require('./public-share.cjs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { readRuntimeState, captureLocation, errorReporting, captureReference, storagePreference } = require('./runtime.cjs');
+const { readRuntimeState, captureLocation, errorReporting, captureReference, storagePreference, microphoneEnabled } = require('./runtime.cjs');
 const { ConnectSettings, actions } = require('./connect.cjs');
 
 // Deliberately separate from the installed application's profile and identity.
@@ -83,6 +83,16 @@ app.whenReady().then(() => {
     return { status: 'connected', storage };
   };
   let reportingMutation = false;
+  let microphoneMutation = false;
+  ipcMain.handle('apparent:read-microphone-enabled', (event, ...args) => { validate(event, args); return microphoneEnabled(os.homedir()); });
+  ipcMain.handle('apparent:set-microphone-enabled', async (event, enabled, ...args) => {
+    validate(event, args);
+    if (typeof enabled !== 'boolean') throw new Error('Forbidden microphone preference');
+    if (microphoneMutation) return { status: 'error', code: 'app_busy' };
+    microphoneMutation = true;
+    try { return await microphoneEnabled(os.homedir(), enabled); }
+    finally { microphoneMutation = false; }
+  });
   ipcMain.handle('apparent:read-error-reporting', async (event, ...args) => {
     validate(event, args);
     return errorReporting(os.homedir());

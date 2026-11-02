@@ -1107,7 +1107,7 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
                     continue;
                 }
             }
-            if !active {
+            if !active || telemetry.notes_editing.load(Ordering::Acquire) {
                 continue;
             }
             if vk == KEY_Z && mods.ctrl && !mods.alt && !mods.shift && !mods.super_key {
@@ -1132,6 +1132,7 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
             mods.shift && !mods.super_key && !mods.ctrl && !mods.alt && !await_shift_release;
         // Wayland: XWayland only sees the pointer over X11 windows, so the overlay takes it
         // while ⇧ is held (`linux::overlay::take_pointer`).
+        pure_shift &= !telemetry.notes_editing.load(Ordering::Acquire);
         if from_devices() && pure_shift != pointer_taken {
             linux::overlay::take_pointer(pure_shift);
             pointer_taken = pure_shift;

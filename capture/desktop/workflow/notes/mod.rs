@@ -1,0 +1,343 @@
+//! The notes-only Electron surface. Its private pipe exposes no shell or filesystem commands.
+pub(crate) mod audio;
+use crate::capture::engine::runtime::recording::notes::Store;
+use crate::capture::engine::runtime::{LiveOverlayEvent, SharedCaptureTelemetry};
+use anyhow::{Context, Result, ensure};
+use serde::Deserialize;
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::{Arc, atomic::Ordering};
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "action", rename_all = "camelCase", deny_unknown_fields)]
+pub enum CommandMessage {
+    Ready,
+    Hidden,
+    Outside,
+    Finished,
+    Draft { pin: u32, text: String },
+    Save { pin: u32, text: String },
+    Delete { pin: u32 },
+    Edit { pin: u32 },
+    Dismiss,
+    List,
+    Windows { ids: Vec<u32> },
+}
+#[derive(Clone, Debug)]
+pub struct Anchor {
+    pub pin: u32,
+    pub t: u64,
+    pub x: f32,
+    pub y: f32,
+    pub screen_x: f64,
+    pub screen_y: f64,
+    pub focus: u64,
+    pub owner: u32,
+}
+#[derive(Debug)]
+enum Message {
+    Open(Anchor),
+    Action(CommandMessage),
+    Stop,
+    BadgePosition([i32; 2]),
+    Finish(flume::Sender<std::result::Result<(), String>>),
+}
+pub struct Session {
+    sender: flume::Sender<Message>,
+    stopping: Arc<std::sync::atomic::AtomicBool>,
+    finishing: bool,
+    badge_position: Option<[i32; 2]>,
+}
+
+fn resources() -> Result<(PathBuf, PathBuf)> {
+    let exe = std::env::current_exe()?;
+    let installed = exe.parent().context("Missing app directory")?;
+    #[cfg(target_os = "macos")]
+    let root = installed.join("../Resources/note-ui");
+    #[cfg(target_os = "linux")]
+    let root = installed.join("../lib/apparent/note-ui");
+    // Development uses the same built entry, never a network-loaded renderer.
+    let root = if root.join("electron/notes/main.cjs").is_file() {
+        root
+    } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("capture/desktop/ui/frontend")
+    };
+    #[cfg(target_os = "macos")]
+    let binary = root.join("runtime/Electron.app/Contents/MacOS/Electron");
+    #[cfg(target_os = "linux")]
+    let binary = root.join("runtime/electron");
+    let binary = if binary.is_file() {
+        binary
+    } else {
+        #[cfg(target_os = "macos")]
+        let relative = "node_modules/electron/dist/Electron.app/Contents/MacOS/Electron";
+        #[cfg(target_os = "linux")]
+        let relative = "node_modules/electron/dist/electron";
+        root.join(relative)
+    };
+    ensure!(
+        binary.is_file() && root.join("dist/index.html").is_file(),
+        "Notes UI is missing; rebuild the packaged Electron frontend"
+    );
+    Ok((binary, root))
+}
+impl Session {
+    pub fn start(
+        directory: &Path,
+        telemetry: Arc<SharedCaptureTelemetry>,
+        frame: crate::shared::model::TargetFrame,
+    ) -> Result<Self> {
+        let (binary, root) = resources()?;
+        use std::os::unix::fs::OpenOptionsExt;
+        let errors = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(directory.join("notes-ui.log"))?;
+        let mut command = Command::new(binary);
+        // The existing Linux overlay mechanics use XWayland global coordinates and XIDs.
+        // GPUI intentionally hides WAYLAND_DISPLAY; Electron must use that same X11 route.
+        #[cfg(target_os = "linux")]
+        command.arg("--ozone-platform=x11");
+        let mut child = command
+            .arg(root.join("electron/notes/main.cjs"))
+            .arg(format!(
+                "--capture-frame={},{},{},{}",
+                frame.x, frame.y, frame.width, frame.height
+            ))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::from(errors))
+            .spawn()
+            .context("Could not open notes UI")?;
+        let mut input = child.stdin.take().unwrap();
+        let output = child.stdout.take().unwrap();
+        let (sender, receiver) = flume::bounded(64);
+        let reader = sender.clone();
+        std::thread::spawn(move || {
+            let mut stream = BufReader::new(output);
+            loop {
+                let mut line = Vec::new();
+                match std::io::Read::take(&mut stream, 32_769).read_until(b'\n', &mut line) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) if line.len() > 32_768 || !line.ends_with(b"\n") => break,
+                    _ => {
+                        if let Ok(action) = serde_json::from_slice(&line) {
+                            if reader.send(Message::Action(action)).is_err() {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+            let _ = reader.send(Message::Stop);
+        });
+        let mut store = Store::new(directory);
+        let stopping = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stopped = Arc::clone(&stopping);
+        std::thread::spawn(move || {
+            let mut current = None;
+            let mut focus = 0;
+            let mut owner = 0;
+            let mut position = [frame.x + frame.width / 2.0, frame.y + 80.0];
+            let mut mode = "badge";
+            let mut ready = false;
+            let mut own_windows = Vec::new();
+            let mut completion: Option<flume::Sender<std::result::Result<(), String>>> = None;
+            let mut finish_deadline = None;
+            let mut drained = false;
+            let mut badge_position = None;
+            let mut failed_writes = std::collections::BTreeSet::new();
+            loop {
+                let message = match receiver.recv_timeout(std::time::Duration::from_millis(100)) {
+                    Ok(message) => message,
+                    Err(flume::RecvTimeoutError::Timeout)
+                        if !stopped.load(Ordering::Acquire)
+                            && finish_deadline.is_none_or(|d| std::time::Instant::now() < d) =>
+                    {
+                        continue;
+                    }
+                    Err(_) => break,
+                };
+                if stopped.load(Ordering::Acquire) || matches!(message, Message::Stop) {
+                    break;
+                }
+                let write_pin = match &message {
+                    Message::Action(
+                        CommandMessage::Save { pin, .. } | CommandMessage::Delete { pin },
+                    ) => Some(*pin),
+                    _ => None,
+                };
+                let result: Result<()> = (|| {
+                    match message {
+                        Message::Stop => return Ok(()),
+                        Message::BadgePosition(point) => badge_position = Some(point),
+                        Message::Finish(reply) => {
+                            completion = Some(reply);
+                            finish_deadline =
+                                Some(std::time::Instant::now() + std::time::Duration::from_secs(6));
+                            writeln!(input, "{{\"finishing\":true}}")?;
+                            input.flush()?;
+                        }
+                        Message::Open(a) => {
+                            store.open(a.pin, a.t, a.x, a.y)?;
+                            owner = a.owner;
+                            focus = a.focus;
+                            current = Some(a.pin);
+                            position = [a.screen_x, a.screen_y];
+                            mode = "editor";
+                        }
+                        Message::Action(action) => match action {
+                            CommandMessage::Ready => ready = true,
+                            CommandMessage::Finished => {
+                                ensure!(completion.is_some(), "Unexpected finish receipt");
+                                drained = true;
+                            }
+                            CommandMessage::Outside => {
+                                store.dismiss();
+                                focus = 0;
+                                owner = 0;
+                                mode = "badge";
+                            }
+                            CommandMessage::Hidden => {
+                                if mode == "badge" {
+                                    let _ = telemetry
+                                        .ui_sender
+                                        .try_send(LiveOverlayEvent::NoteClosed { focus, owner });
+                                }
+                            }
+                            CommandMessage::Draft { pin, text } => {
+                                ensure!(current == Some(pin), "Stale note");
+                                store.draft(pin, text)?;
+                            }
+                            CommandMessage::Save { pin, text } => {
+                                ensure!(current == Some(pin), "Stale note");
+                                store.save(pin, text)?;
+                                mode = "badge";
+                            }
+                            CommandMessage::Delete { pin } => {
+                                store.delete(pin)?;
+                                mode = "list";
+                            }
+                            CommandMessage::Edit { pin } => {
+                                ensure!(
+                                    store.drafts().iter().any(|n| n.pin == pin),
+                                    "Unknown note"
+                                );
+                                current = Some(pin);
+                                mode = "editor";
+                            }
+                            CommandMessage::Dismiss => {
+                                store.dismiss();
+                                mode = "badge";
+                            }
+                            CommandMessage::List => mode = "list",
+                            CommandMessage::Windows { ids } => {
+                                ensure!(ids.len() <= 2, "Invalid notes windows");
+                                own_windows = ids.clone();
+                                telemetry
+                                    .excluded_window_ids
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                    .extend(ids);
+                            }
+                        },
+                    }
+                    Ok(())
+                })();
+                if let Some(pin) = write_pin {
+                    if result.is_ok() {
+                        failed_writes.remove(&pin);
+                    } else {
+                        failed_writes.insert(pin);
+                    }
+                }
+                if drained {
+                    break;
+                }
+                telemetry
+                    .notes_editing
+                    .store(mode != "badge", Ordering::Release);
+                if ready {
+                    let snapshot = serde_json::json!({ "mode": mode, "current": current, "position": position, "badgePosition": badge_position,
+                        "notes": store.notes(), "drafts": store.drafts(), "error": result.err().map(|_| "Could not save this note. Your text is kept; try again.") });
+                    if writeln!(input, "{snapshot}")
+                        .and_then(|_| input.flush())
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            }
+            if let Some(reply) = completion {
+                let _ = reply.send(if drained && failed_writes.is_empty() {
+                    Ok(())
+                } else {
+                    Err("Notes did not finish saving; recording assets were retained.".into())
+                });
+            }
+            if !stopped.load(Ordering::Acquire) && !drained {
+                let _ = telemetry
+                    .ui_sender
+                    .try_send(LiveOverlayEvent::NotesUnavailable);
+            }
+            telemetry.notes_editing.store(false, Ordering::Release);
+            drop(input); // EOF asks Electron to close its windows and ephemeral profile.
+            let cutoff = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            while child.try_wait().ok().flatten().is_none() && std::time::Instant::now() < cutoff {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            let _ = child.kill();
+            let _ = child.wait();
+            telemetry
+                .excluded_window_ids
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .retain(|id| !own_windows.contains(id));
+            let _ = telemetry
+                .ui_sender
+                .try_send(LiveOverlayEvent::RequestSnapshot);
+        });
+        Ok(Self {
+            sender,
+            stopping,
+            finishing: false,
+            badge_position: None,
+        })
+    }
+    pub fn position_badge(&mut self, point: [f64; 2]) {
+        let point = point.map(|v| v.round() as i32);
+        if self.badge_position != Some(point)
+            && self.sender.try_send(Message::BadgePosition(point)).is_ok()
+        {
+            self.badge_position = Some(point);
+        }
+    }
+
+    pub fn finish(mut self) -> flume::Receiver<std::result::Result<(), String>> {
+        let (reply, result) = flume::bounded(1);
+        self.finishing = true;
+        let sender = self.sender.clone();
+        // A full draft queue must not block the GUI thread. The child barrier orders
+        // accepted renderer commands before Finished on the same private stdout pipe.
+        std::thread::spawn(move || {
+            let _ = sender.send(Message::Finish(reply));
+        });
+        result
+    }
+    pub fn open(&self, anchor: Anchor) {
+        let _ = self.sender.try_send(Message::Open(anchor));
+    }
+}
+impl Drop for Session {
+    fn drop(&mut self) {
+        if self.finishing {
+            return;
+        }
+        self.stopping.store(true, Ordering::Release);
+        let _ = self.sender.try_send(Message::Stop);
+    }
+}

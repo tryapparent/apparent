@@ -117,6 +117,9 @@ pub enum LiveOverlayEvent {
     PasteLatestShortcut,
     UndoStroke,
     RequestSnapshot,
+    Note { pin: u32, t: u64, x: f32, y: f32, screen_x: f64, screen_y: f64 },
+    NoteClosed { focus: u64, owner: u32 },
+    NotesUnavailable,
     /// The iPhone mirror ended on its own (unplugged, never found, or access denied).
     PhoneEnded,
     /// The welcome window: a button, fresh permission states, or the helper exiting.
@@ -543,6 +546,9 @@ pub struct SharedCaptureTelemetry {
     pub active: AtomicBool,
     pub selecting: AtomicBool,
     pub shift_held: AtomicBool,
+    /// The focused note editor owns input; suppress annotation ink while typing.
+    pub notes_editing: AtomicBool,
+    next_note_pin: AtomicU64,
     pub capture_mode: AtomicU64,
     /// The record shortcut (`crate::settings` loads and saves it).
     pub shortcut: Mutex<ShortcutConfig>,
@@ -609,6 +615,8 @@ impl SharedCaptureTelemetry {
             active: AtomicBool::new(false),
             selecting: AtomicBool::new(false),
             shift_held: AtomicBool::new(false),
+            notes_editing: AtomicBool::new(false),
+            next_note_pin: AtomicU64::new(0),
             capture_mode: AtomicU64::new(0),
             shortcut: Mutex::new(shortcuts.record),
             paste_shortcut: Mutex::new(shortcuts.paste),
@@ -791,6 +799,7 @@ impl SharedCaptureTelemetry {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clear();
+        self.next_note_pin.store(0, Ordering::Release);
         self.shift_held.store(false, Ordering::Release);
         self.window_log_request.store(false, Ordering::Release);
         let agent_context = crate::shared::handoff::experiment(crate::shared::handoff::AGENT_CONTEXT);
@@ -849,7 +858,7 @@ impl SharedCaptureTelemetry {
 
     /// A mouse button went down at a global point.
     fn pointer_down(&self, t_ms: u64, screen_x: f64, screen_y: f64) {
-        if !self.contains_screen_point(screen_x, screen_y) {
+        if self.notes_editing.load(Ordering::Acquire) || !self.contains_screen_point(screen_x, screen_y) {
             return;
         }
         #[cfg(target_os = "macos")]
@@ -925,7 +934,7 @@ impl SharedCaptureTelemetry {
 
     /// The left button went down with only ⇧ held: a pin if it comes up as a click (`shift_up`).
     fn shift_down(&self, t_ms: u64, screen_x: f64, screen_y: f64) {
-        if !self.contains_screen_point(screen_x, screen_y) {
+        if self.notes_editing.load(Ordering::Acquire) || !self.contains_screen_point(screen_x, screen_y) {
             return;
         }
         let frame = *self
@@ -979,7 +988,7 @@ impl SharedCaptureTelemetry {
             .strokes
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let number = strokes.iter().filter(|s| s.pin.is_some()).count() as u32 + 1;
+        let number = self.next_note_pin.fetch_add(1, Ordering::AcqRel) as u32 + 1;
         strokes.push(Stroke {
             t0,
             t1: t_ms,
@@ -995,6 +1004,7 @@ impl SharedCaptureTelemetry {
             ],
         });
         drop(strokes);
+        let _ = self.ui_sender.try_send(LiveOverlayEvent::Note { pin: number, t: t0, x: nx, y: ny, screen_x: x0, screen_y: y0 });
         self.window_log_request.store(true, Ordering::Release);
         let _ = self.ui_sender.try_send(LiveOverlayEvent::RequestSnapshot);
         true
@@ -1157,7 +1167,7 @@ fn poll_clicks(
     on_apparent: impl Fn(f64, f64) -> bool,
 ) {
     let was = std::mem::replace(prev, now);
-    if telemetry.mouse_live.load(Ordering::Acquire) {
+    if telemetry.notes_editing.load(Ordering::Acquire) || telemetry.mouse_live.load(Ordering::Acquire) {
         return;
     }
     for (button, (&down, &before)) in now.iter().zip(&was).enumerate() {
@@ -1231,7 +1241,7 @@ fn track_shift_ink(
     pure_shift: bool,
     prev_shift_ink: bool,
 ) {
-    let inside_target = telemetry.contains_screen_point(x, y);
+    let inside_target = !telemetry.notes_editing.load(Ordering::Acquire) && telemetry.contains_screen_point(x, y);
     if pure_shift && inside_target {
         telemetry.shift_held.store(true, Ordering::Release);
         let t_ms = telemetry.elapsed_ms();

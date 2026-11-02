@@ -412,6 +412,7 @@ pub(in crate::capture::desktop) fn place_hud_pill(point: [f64; 2]) {
 /// its springs, and the window never takes focus from the app being recorded.
 pub(in crate::capture::desktop) struct PillChrome {
     id: Option<u32>,
+    input_rect: Option<[i16; 4]>,
 }
 
 impl Drop for PillChrome {
@@ -474,7 +475,7 @@ impl PillChrome {
                 }).detach();
             }
         }
-        Self { id }
+        Self { id, input_rect: None }
     }
 
     pub(in crate::capture::desktop) fn window_number(&self) -> Option<u32> {
@@ -509,15 +510,25 @@ impl PillChrome {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::capture::desktop) fn apply(
         &mut self,
-        _pill_width: f32,
-        _pill_height: f32,
-        _scale: f32,
-        _y_offset: f32,
+        pill_width: f32,
+        pill_height: f32,
+        scale: f32,
+        y_offset: f32,
         _opacity: f32,
         _is_completed: bool,
         _blur_radius: f32,
         _content_shrink: f32,
     ) {
+        let scale = scale.clamp(0.5, 1.15);
+        let width = pill_width * scale;
+        let height = pill_height * scale;
+        let rect = [((PILL_WINDOW_W - width) / 2.0).floor() as i16,
+            ((PILL_WINDOW_H - height) / 2.0 + y_offset).floor() as i16,
+            width.ceil() as i16, height.ceil() as i16];
+        if self.input_rect != Some(rect) {
+            if let Some(id) = self.id { x11::set_input_rect(id, rect); }
+            self.input_rect = Some(rect);
+        }
     }
 }
 
@@ -673,6 +684,7 @@ impl ksni::Tray for ApparentTray {
         }
         items.push(self.item(record_title(), MenuAction::ToggleCapture));
         items.push(self.item("Choose What to Record…", MenuAction::ChooseTarget));
+        items.push(ksni::menu::CheckmarkItem { label: "Microphone for next capture".into(), checked: crate::capture::engine::runtime::audio::mic::enabled(), activate: Box::new(|tray: &mut Self| { let _ = tray.actions.try_send(MenuAction::ToggleMicrophone); }), ..Default::default() }.into());
         items.push(ksni::MenuItem::Separator);
         items.push(self.item("Open Latest Capture", MenuAction::OpenLatest));
         if crate::shared::handoff::video_export() {
@@ -876,4 +888,30 @@ mod export_menu_tests {
             );
         }
     }
+}
+
+/// High bit distinguishes a compositor address from an X11 ID; neither comes from JS.
+pub(in crate::capture::desktop) fn note_focus() -> (u64, u32) {
+    if crate::capture::desktop::linux::hyprland::running() {
+        if let Ok(window) = crate::capture::desktop::linux::hyprland::focused_window() {
+            if let Ok(address) = u64::from_str_radix(window.address.trim_start_matches("0x"), 16) {
+                if address > 0 && address < (1 << 63) { return (address | (1 << 63), window.pid); }
+            }
+        }
+    }
+    crate::capture::desktop::linux::x11::active_window().map_or((0, 0), |w| (w.hwnd as u64, w.pid))
+}
+pub(in crate::capture::desktop) fn restore_note_focus(token: u64, owner: u32) {
+    if token & (1 << 63) != 0 {
+        let _ = crate::capture::desktop::linux::hyprland::restore_note_focus(token & !(1 << 63), owner);
+    } else if token != 0 && crate::capture::desktop::linux::x11::window_info(token as isize).is_some_and(|w| w.pid == owner) {
+        crate::capture::desktop::linux::x11::activate(token as isize);
+    }
+}
+
+/// The Electron counter follows the same native recording panel, including user drags.
+pub(in crate::capture::desktop) fn note_badge_anchor(width: f32, y: f32) -> Option<[f64; 2]> {
+    let rect = x11::geometry(own_window(&PILL_WINDOW)?)?;
+    Some([rect[0] + rect[2] / 2.0 + f64::from(width) / 2.0 + 6.0,
+        rect[1] + f64::from(y)])
 }

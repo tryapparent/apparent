@@ -34,6 +34,8 @@ cp -f "${REPO_DIR}/shared/assets/brand/apparent-wordmark.png" "${APP_BUNDLE}/Con
 cp -f "${REPO_DIR}/shared/assets/brand/apparent-a.png" "${APP_BUNDLE}/Contents/Resources/apparent-a.png"
 cp -f "${REPO_DIR}/shared/assets/brand/connect-frogs.png" "${APP_BUNDLE}/Contents/Resources/connect-frogs.png"
 
+node "${REPO_DIR}/capture/desktop/ui/frontend/scripts/package-notes.mjs" "${APP_BUNDLE}/Contents/Resources/note-ui"
+
 /usr/bin/ditto "${SPARKLE_DIR}/Sparkle.framework" "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
 
 cat > "${APP_BUNDLE}/Contents/Info.plist" <<PLIST
@@ -111,6 +113,7 @@ if [[ "${IDENTITY}" == "-" ]]; then
 fi
 
 SPARKLE_VER="${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework/Versions/B"
+node "${REPO_DIR}/capture/desktop/ui/frontend/scripts/sign-notes.mjs" "${APP_BUNDLE}/Contents/Resources/note-ui/runtime/Electron.app" "${IDENTITY}"
 "${SIGN[@]}" "${SPARKLE_VER}/XPCServices/Installer.xpc"
 "${SIGN[@]}" --preserve-metadata=entitlements "${SPARKLE_VER}/XPCServices/Downloader.xpc"
 "${SIGN[@]}" "${SPARKLE_VER}/Autoupdate"

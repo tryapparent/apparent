@@ -1624,7 +1624,7 @@ unsafe extern "C" fn key_tap_callback(
     if keycode == KEY_ESCAPE && !cmd && !ctrl {
         telemetry.escape_pressed.store(true, Ordering::Release);
     }
-    if !telemetry.active.load(Ordering::Acquire) {
+    if !telemetry.active.load(Ordering::Acquire) || telemetry.notes_editing.load(Ordering::Acquire) {
         return event;
     }
 

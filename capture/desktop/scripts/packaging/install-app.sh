@@ -46,6 +46,8 @@ cp -f "${REPO_DIR}/shared/assets/brand/apparent-wordmark.png" "${RESOURCES_DIR}/
 cp -f "${REPO_DIR}/shared/assets/brand/apparent-a.png" "${RESOURCES_DIR}/apparent-a.png"
 cp -f "${REPO_DIR}/shared/assets/brand/connect-frogs.png" "${RESOURCES_DIR}/connect-frogs.png"
 
+node "${REPO_DIR}/capture/desktop/ui/frontend/scripts/package-notes.mjs" "${RESOURCES_DIR}/note-ui"
+
 if [[ -n "${SPARKLE_DIR}" && -d "${SPARKLE_DIR}/Sparkle.framework" ]]; then
   rm -rf "${FRAMEWORKS_DIR}/Sparkle.framework"
   /usr/bin/ditto "${SPARKLE_DIR}/Sparkle.framework" "${FRAMEWORKS_DIR}/Sparkle.framework"
@@ -125,6 +127,7 @@ if [[ -d "${FRAMEWORKS_DIR}/Sparkle.framework/Versions/B" ]]; then
   codesign --force --sign "${IDENTITY}" "${SPARKLE_VER}/Updater.app"
   codesign --force --sign "${IDENTITY}" "${FRAMEWORKS_DIR}/Sparkle.framework"
 fi
+node "${REPO_DIR}/capture/desktop/ui/frontend/scripts/sign-notes.mjs" "${RESOURCES_DIR}/note-ui/runtime/Electron.app" "${IDENTITY}"
 codesign --force --sign "${IDENTITY}" --identifier "dev.kitlangton.apparent.helper" "${MACOS_DIR}/apparent-helper"
 codesign --force --sign "${IDENTITY}" --identifier "dev.kitlangton.apparent" "${APP_DIR}"
 

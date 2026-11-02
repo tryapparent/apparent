@@ -821,3 +821,14 @@ mod tests {
         ));
     }
 }
+
+/// Return to the exact window behind a note, only while its process still owns it.
+pub fn restore_note_focus(address: u64, pid: u32) -> Result<()> {
+    let target = format!("0x{address:x}");
+    let clients: Vec<serde_json::Value> = serde_json::from_str(&request("j/clients")?)?;
+    anyhow::ensure!(clients.iter().any(|w| w["address"].as_str() == Some(&target) && w["pid"].as_u64() == Some(u64::from(pid))), "Note target no longer exists");
+    match syntax()? {
+        Syntax::Lua => run(&format!("eval hl.dispatch(hl.dsp.focus({{ window = \"address:{target}\" }}))")),
+        Syntax::Hyprlang => run(&format!("dispatch focuswindow address:{target}")),
+    }
+}
