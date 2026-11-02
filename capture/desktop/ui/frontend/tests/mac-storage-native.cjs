@@ -389,6 +389,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     assert.equal(report.change.location.storage.savedPath, selected);
     assert.equal(report.change.location.storage.effectivePath, selected);
     await page.screenshot({ path: path.join(output, 'storage-saved.png'), timeout: budget() });
+    report.retention = await require('./native-retention.cjs')(page, { config, captures: selected, output });
     const beforeCancel = await fs.readFile(config);
     const beforeCancelStat = await fs.stat(config, { bigint: true });
     await change.click({ timeout: budget() });
