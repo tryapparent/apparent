@@ -2,6 +2,14 @@
 use std::{path::PathBuf, process::{Command, Stdio}, sync::Arc};
 use super::settings::{Action, Event, Transport};
 
+/// Unique across Settings sessions too: late events from a closed session must
+/// never match the first window of a newly opened session.
+pub(super) fn generation() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
 pub(super) fn assets() -> Option<(PathBuf, PathBuf)> {
     let executable = std::env::current_exe().ok()?;
     let parent = executable.parent()?;

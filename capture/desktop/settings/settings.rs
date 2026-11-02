@@ -1770,6 +1770,16 @@ pub enum Event {
     Exited,
 }
 
+impl Event {
+    pub(super) fn for_presentation(self, current: u64) -> Option<Self> {
+        match self {
+            Self::Presentation { generation, event } if generation == current => Some(*event),
+            Self::Presentation { .. } => None,
+            event => Some(event),
+        }
+    }
+}
+
 /// Where the window runs: the SwiftUI helper on macOS, a GPUI window in this process on Windows
 /// (`settings_window`). Both take the same JSON messages and report the same `Action`s.
 pub(super) enum Transport {
@@ -1802,7 +1812,7 @@ impl Session {
         use std::sync::atomic::{AtomicBool, Ordering};
 
         let events: std::sync::Arc<dyn Fn(Event) + Send + Sync> = std::sync::Arc::new(events);
-        let generation = 1;
+        let generation = super::presentation::generation();
         let (transport, storage) = Self::open_presentation(pane, generation, &events, true)?;
 
         let polling = std::sync::Arc::new(AtomicBool::new(true));
@@ -1940,11 +1950,7 @@ impl Session {
     /// `Close`); the rest is done here.
     /// Filter retired windows before coordinator safety/permission checks too.
     pub fn current_event(&self, event: Event) -> Option<Event> {
-        match event {
-            Event::Presentation { generation, event } if generation == self.generation => Some(*event),
-            Event::Presentation { .. } => None,
-            event => Some(event),
-        }
+        event.for_presentation(self.generation)
     }
 
     pub fn event(&mut self, event: Event, host: &mut dyn Host) -> Effect {
@@ -1995,7 +2001,7 @@ impl Session {
             Event::Exited if self.storage => {
                 // EOF without a normal Close means Electron crashed or failed to
                 // launch. Keep Settings usable without touching saved policy.
-                let generation = self.generation + 1;
+                let generation = super::presentation::generation();
                 if let Ok((transport, storage)) = Self::open_presentation(Some(Pane::Storage), generation, &self.events, false) {
                     self.generation = generation;
                     self.storage = storage;
@@ -2091,7 +2097,7 @@ impl Session {
         if let Some(pane) = pane {
             let storage = pane == Pane::Storage && crate::shared::handoff::experiment("electronCaptureLocation");
             if storage != self.storage {
-                let generation = self.generation + 1;
+                let generation = super::presentation::generation();
                 match Self::open_presentation(Some(pane), generation, &self.events, true) {
                     Ok((transport, storage)) => {
                         self.send(&serde_json::json!({"type": "close"}));
@@ -2164,6 +2170,26 @@ impl Drop for Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retired_windows_cannot_close_or_restart_a_reopened_settings_session() {
+        let old_session = super::super::presentation::generation();
+        let old_storage = super::super::presentation::generation();
+        let reopened_session = super::super::presentation::generation();
+        let reopened_storage = super::super::presentation::generation();
+        for retired in [old_session, old_storage] {
+            for current in [reopened_session, reopened_storage] {
+                for event in [Event::Exited, Event::Action(Action::Close), Event::Action(Action::UpdateNow)] {
+                    assert!(Event::Presentation { generation: retired, event: Box::new(event) }
+                        .for_presentation(current).is_none());
+                }
+            }
+        }
+        assert!(matches!(Event::Presentation { generation: reopened_storage,
+            event: Box::new(Event::Action(Action::Close)) }.for_presentation(reopened_storage),
+            Some(Event::Action(Action::Close))));
+        assert!(matches!(Event::Tick.for_presentation(reopened_storage), Some(Event::Tick)));
+    }
 
     // Key codes: macOS `kVK_*` (ANSI), Windows virtual keys.
     /// Windows and Linux store virtual keys.
