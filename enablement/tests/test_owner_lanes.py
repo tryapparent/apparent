@@ -73,6 +73,70 @@ class OwnerTests(unittest.TestCase):
             self.assertEqual([call.args[0][1] for call in run.call_args_list], ['build', 'test'])
             self.assertTrue(all('connect/client/Cargo.toml' in call.args[0] for call in run.call_args_list))
 
+    def test_linux_integration_commands_and_environment(self):
+        for online in (False, True):
+            with self.subTest(online=online), patch.object(lanes.sys, 'platform', 'linux'), \
+                    patch.object(lanes.legacy, 'check_temp_environment') as preflight, \
+                    patch.object(lanes.os, 'access', return_value=True), \
+                    patch.dict(os.environ, {'T3_BUILD_JOBS': '2', 'ELECTRON_OVERRIDE_DIST_PATH': '/fixture'}), \
+                    patch.object(lanes.subprocess, 'run') as run:
+                run.return_value.stdout = '/fixture/electron\n'
+                lanes.run_lane('desktop-ui-integration', online)
+                preflight.assert_called_once_with()
+                commands = [call.args[0] for call in run.call_args_list]
+                self.assertEqual(commands[:3], [
+                    ['npm', 'ci', '--no-audit', '--no-fund'] + ([] if online else ['--offline']),
+                    ['npm', 'test'], ['xvfb-run', '-a', 'npm', 'run', 'test:electron']])
+                self.assertEqual(commands[3], ['node', '-p', "require('electron')"])
+                self.assertEqual(commands[4], ['cargo', 'test', '-j', '2',
+                    '--locked' if online else '--offline', '_electron_rust_roundtrip',
+                    '--', '--ignored', '--nocapture', '--test-threads=1'])
+                for call in run.call_args_list[:4]:
+                    self.assertEqual(call.kwargs['cwd'], lanes.ROOT / 'capture/desktop/ui/frontend')
+                rust = run.call_args_list[4].kwargs
+                self.assertEqual(rust['cwd'], lanes.ROOT)
+                for key in ('APPARENT_STORAGE_TEST_ELECTRON', 'APPARENT_CONNECT_TEST_ELECTRON'):
+                    self.assertEqual(rust['env'][key], '/fixture/electron')
+                self.assertTrue(all(call.kwargs['check'] for call in run.call_args_list))
+        self.assertNotIn('desktop-ui-integration', lanes.LANES)
+
+    def test_offline_requires_external_electron_before_install(self):
+        for dist in ('', 'relative', str(lanes.ROOT / 'capture/desktop/ui/frontend/node_modules/electron/dist')):
+            with self.subTest(dist=dist), patch.object(lanes.sys, 'platform', 'linux'), \
+                    patch.object(lanes.legacy, 'check_temp_environment'), \
+                    patch.dict(os.environ, {'ELECTRON_OVERRIDE_DIST_PATH': dist}), \
+                    patch.object(lanes.os, 'access', return_value=True), \
+                    patch.object(lanes.subprocess, 'run') as run:
+                with self.assertRaisesRegex(ValueError, 'external Linux Electron dist'):
+                    lanes.run_lane('desktop-ui-integration')
+                run.assert_not_called()
+
+    def test_desktop_ui_stays_frontend_only(self):
+        with patch.object(lanes.sys, 'platform', 'linux'), patch.object(lanes.subprocess, 'run') as run:
+            lanes.run_lane('desktop-ui')
+            self.assertEqual([call.args[0] for call in run.call_args_list], [
+                ['npm', 'ci', '--no-audit', '--no-fund'], ['npm', 'test'],
+                ['xvfb-run', '-a', 'npm', 'run', 'test:electron']])
+
+    def test_integration_fails_closed(self):
+        with patch.object(lanes.sys, 'platform', 'darwin'), patch.object(lanes.subprocess, 'run') as run:
+            with self.assertRaises(ValueError):
+                lanes.run_lane('desktop-ui-integration')
+            run.assert_not_called()
+        with patch.object(lanes.sys, 'platform', 'linux'), \
+                patch.object(lanes.legacy, 'check_temp_environment'), \
+                patch.object(lanes.subprocess, 'run') as run:
+            run.side_effect = subprocess.CalledProcessError(7, 'npm')
+            with self.assertRaises(subprocess.CalledProcessError):
+                lanes.run_lane('desktop-ui-integration', online=True)
+            self.assertEqual(run.call_count, 1)
+            run.side_effect = None
+            run.reset_mock()
+            run.return_value.stdout = 'relative/electron\n'
+            with self.assertRaises(ValueError):
+                lanes.run_lane('desktop-ui-integration', online=True)
+            self.assertEqual(run.call_count, 4)
+
     @unittest.skipUnless(shutil.which('node'), 'Public entrypoint requires Node')
     def test_public_entrypoint_environment_and_failure_propagation(self):
         node = shutil.which('node')
