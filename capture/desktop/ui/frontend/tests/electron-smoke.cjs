@@ -13,6 +13,7 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   const requests = [];
   let reply = '{"state":{"phase":"idle","capture_id":null}}\n';
   let reportingEnabled = true;
+  let reportingReads = 0;
   let server;
   const application = await electron.launch({
     args: [path.join(__dirname, '..')],
@@ -56,6 +57,10 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
     requests.push(data.toString());
     const request = data.toString().startsWith('{') ? JSON.parse(data.toString()) : null;
     if (request?.errorReporting) {
+      if (request.errorReporting === 'read' && ++reportingReads === 1) {
+        socket.end('{"error":"app_busy"}\n');
+        return;
+      }
       if (request.errorReporting === 'set') reportingEnabled = request.enabled;
       socket.end(JSON.stringify({ errorReporting: { enabled: reportingEnabled } }) + '\n');
     } else socket.end(reply);
@@ -71,6 +76,7 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   await reporting.getByRole('button', { name: 'Refresh reporting setting' }).click();
   const toggle = reporting.getByRole('checkbox', { name: 'Send technical error reports' });
   await expect(toggle).toBeChecked();
+  assert.equal(reportingReads, 2, 'one busy read is retried without another human action');
   await toggle.click();
   await expect(toggle).not.toBeChecked();
   assert.equal(reportingEnabled, false);
