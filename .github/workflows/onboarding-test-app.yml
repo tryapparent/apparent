@@ -30,8 +30,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-latest
+          - runner: macos-15-intel
             arch: Apple-Silicon
+            target: aarch64-apple-darwin
           - runner: macos-15-intel
             arch: Intel
     runs-on: ${{ matrix.runner }}
@@ -45,12 +46,13 @@ jobs:
         with:
           node-version: '24'
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
       - uses: Swatinem/rust-cache@v2
         with:
           key: onboarding-test-app-${{ matrix.arch }}
           cache-on-failure: true
       - name: Select the macOS 26 SDK on Intel
-        if: matrix.arch == 'Intel'
         run: |
           test -d /Applications/Xcode_26.3.app/Contents/Developer
           echo 'DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer' >> "$GITHUB_ENV"
@@ -62,6 +64,7 @@ jobs:
         env:
           CARGO_NET_OFFLINE: 'true'
           APPARENT_TEST_OUTPUT: ${{ runner.temp }}/onboarding-test-output
+          APPARENT_TEST_TARGET: ${{ matrix.target }}
         run: bash capture/desktop/scripts/packaging/build-onboarding-test.sh
       - name: Verify installer and practice state
         env:
@@ -72,10 +75,19 @@ jobs:
           cargo test -j 3 --offline settings::practice -- --test-threads=2
           cargo test -j 3 --offline coaching_finishes_after_completion_pill_dismissal -- --test-threads=2
           cargo test -j 3 --offline menu_retry_cannot_inherit_completed_shortcut_attempt -- --test-threads=2
+          expected_arch=x86_64
+          if [ '${{ matrix.arch }}' = Apple-Silicon ]; then expected_arch=arm64; fi
+          app="$RUNNER_TEMP/onboarding-test-output/Apparent Onboarding Test.app"
+          installer="$RUNNER_TEMP/onboarding-test-output/Install Apparent Onboarding Test.app"
+          for binary in "$app/Contents/MacOS/apparent" "$app/Contents/MacOS/apparent-helper" "$app/Contents/Resources/Apparent Test UI.app/Contents/MacOS/Electron" "$installer/Contents/MacOS/LocalInstaller"; do
+            test "$(lipo -archs "$binary")" = "$expected_arch"
+          done
           (cd "$RUNNER_TEMP/onboarding-test-output" && shasum -a 256 Apparent-Onboarding-Test.zip > SHA256SUMS)
           {
             git rev-parse HEAD
+            echo 'Build host:'
             uname -m
+            echo 'App architecture: ${{ matrix.arch }}'
             sw_vers
           } > "$RUNNER_TEMP/onboarding-test-output/BUILD-INFO.txt"
       - uses: actions/upload-artifact@v4

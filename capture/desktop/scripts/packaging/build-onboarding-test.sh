@@ -6,6 +6,22 @@ repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 out=${APPARENT_TEST_OUTPUT:?Set APPARENT_TEST_OUTPUT to a fresh absolute output directory}
 [[ $out == /* && ! -e $out ]] || { echo 'Output must be a fresh absolute path.' >&2; exit 1; }
 cd "$repo"
+installer_target=(-target "$(uname -m)-apple-macos15.0")
+electron_arch=""
+case "${APPARENT_TEST_TARGET:-${CARGO_BUILD_TARGET:-}}" in
+  "") ;;
+  aarch64-apple-darwin)
+    export CARGO_BUILD_TARGET=aarch64-apple-darwin
+    electron_arch=arm64
+    installer_target=(-target arm64-apple-macos15.0)
+    ;;
+  x86_64-apple-darwin)
+    export CARGO_BUILD_TARGET=x86_64-apple-darwin
+    electron_arch=x64
+    installer_target=(-target x86_64-apple-macos15.0)
+    ;;
+  *) echo 'Unsupported onboarding test target.' >&2; exit 1 ;;
+esac
 # Use the repository build/install entry point, with no launch and a private stage.
 # Its production updater is removed before the test bundle is signed or launched.
 mkdir -p "$out"
@@ -14,7 +30,13 @@ app="$out/Apparent Onboarding Test.app"
 resources="$app/Contents/Resources"
 frontend=capture/desktop/ui/frontend
 npm ci --prefix "$frontend" --no-audit --no-fund
-node "$frontend/node_modules/electron/install.js"
+if [[ -n "$electron_arch" ]]; then
+  # npm's build tools run on the host; only the packaged Electron runtime is cross-targeted.
+  rm -rf -- "$frontend/node_modules/electron/dist"
+  npm_config_arch="$electron_arch" node "$frontend/node_modules/electron/install.js"
+else
+  node "$frontend/node_modules/electron/install.js"
+fi
 npm run build --prefix "$frontend"
 mkdir -p "$resources/onboarding/electron"
 cp -R "$frontend/dist" "$resources/onboarding/dist"
@@ -52,7 +74,7 @@ codesign --force --sign - --deep --identifier dev.apparent.onboarding-test "$app
 codesign --verify --deep --strict "$app"
 installer="$out/Install Apparent Onboarding Test.app"
 mkdir -p "$installer/Contents/MacOS" "$installer/Contents/Resources" "$installer/Contents/SharedSupport"
-xcrun swiftc -parse-as-library capture/desktop/native/installer/LocalInstaller.swift -o "$installer/Contents/MacOS/LocalInstaller"
+xcrun swiftc "${installer_target[@]}" -parse-as-library capture/desktop/native/installer/LocalInstaller.swift -o "$installer/Contents/MacOS/LocalInstaller"
 cp capture/desktop/assets/app-icon.png "$installer/Contents/Resources/app-icon.png"
 cp public/site/public/assets/pond/frog-rest-cohesive.png "$installer/Contents/Resources/frog-jump.png"
 ditto "$app" "$installer/Contents/SharedSupport/Apparent Onboarding Test.app"
