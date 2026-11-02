@@ -1,6 +1,26 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {setTimeout as delay} from 'node:timers/promises';
 import {fixture,id,file,digest} from '../helpers.mjs';
+
+test('identity refuses missing or weak configured secrets instead of library development defaults',async()=>{
+ for(const secret of ['', 'short']){
+  const f=await fixture({BETTER_AUTH_SECRET:secret});try{
+   const response=await f.call('/auth/google/start');assert.equal(response.status,503);assert.equal((await response.json()).error.code,'auth_unavailable');
+   assert.equal((await f.db.prepare('SELECT count(*) n FROM auth_verification').first()).n,0);
+  }finally{await f.close();}
+ }
+});
+
+test('private Better Auth management and alternate identity routes stay unreachable',async()=>{
+ const f=await fixture();try{
+ const a=await f.identity('private-management'),before=(await f.db.prepare('SELECT count(*) n FROM oauthClient').first()).n;
+ for(const path of ['/auth/oauth2/register','/auth/oauth2/token','/auth/get-session','/auth/device/token','/auth/sign-up/email','/auth/callback/google']){
+  for(const method of ['GET','POST'])assert.equal((await f.call(path,{...a,method,...method==='POST'?{body:{}}:{}})).status,404);
+ }
+ assert.equal((await f.db.prepare('SELECT count(*) n FROM oauthClient').first()).n,before);
+ }finally{await f.close();}
+});
 
 test('capture reservation/upload/complete/download, retries, scopes and isolation',async()=>{
  const f=await fixture(); try {
@@ -81,15 +101,41 @@ test('device preview, CSRF, explicit scope approval, durable poll and revocation
  assert.equal((await f.call('/v1/device/approve',{cookie:a.cookie,method:'POST',body:{userCode}})).status,403);
  assert.equal((await f.call('/v1/device/approve',{...a,origin:'https://evil.example',method:'POST',body:{userCode}})).status,403);
  assert.equal((await f.call('/v1/device/approve',{...a,method:'POST',body:{userCode}})).status,200);
- await f.db.prepare('UPDATE devices SET last_poll=0').run();
+ await f.db.prepare('UPDATE auth_grants SET last_poll=0').run();await f.db.prepare('UPDATE auth_device SET lastPolledAt=NULL').run();
+ const approvedStarted=Date.now();
  const approved=await(await f.call('/v1/device/poll',{method:'POST',body:{deviceCode}})).json();
- assert.equal(approved.status,'approved');assert.equal(approved.scope,'read');assert.match(approved.accessToken,/^[a-f0-9]{64}$/);
- await f.db.prepare('UPDATE devices SET last_poll=0').run();
- assert.deepEqual(await(await f.call('/v1/device/poll',{method:'POST',body:{deviceCode}})).json(),approved);
+ const approvedEnded=Date.now();
+ assert.equal(approved.status,'approved');assert.equal(approved.scope,'read');assert.ok(approved.accessToken.length>=32);
+ // Force a complete remaining-lifetime second to elapse, not a lucky same-tick retry.
+ const boundary=approvedEnded+1000,waitDeadline=performance.now()+5000;
+ while(Date.now()<boundary){assert.ok(performance.now()<waitDeadline,'local clock did not cross the second boundary');await delay(Math.min(1000,boundary-Date.now()));}
+ await f.db.prepare('UPDATE auth_grants SET last_poll=0').run();
+ const retryStarted=Date.now();assert.ok(retryStarted>=boundary);
+ const retry=await(await f.call('/v1/device/poll',{method:'POST',body:{deviceCode}})).json(),retryEnded=Date.now();
+ const {expiresIn:accessBefore,refreshExpiresIn:refreshBefore,...approvedIdentity}=approved;
+ const {expiresIn:accessAfter,refreshExpiresIn:refreshAfter,...retryIdentity}=retry;
+ assert.deepEqual(retryIdentity,approvedIdentity,'a durable poll must preserve every non-countdown field');
+ const accessExpiry=await f.db.prepare('SELECT expiresAt FROM oauthAccessToken WHERE token=?').bind(digest(approved.accessToken)).first();
+ const refreshExpiry=await f.db.prepare('SELECT expiresAt FROM oauthRefreshToken WHERE token=?').bind(digest(approved.refreshToken)).first();
+ for(const [key,expiry,maximum,before,after] of [
+  ['expiresIn',Date.parse(accessExpiry.expiresAt),3600,accessBefore,accessAfter],
+  ['refreshExpiresIn',Date.parse(refreshExpiry.expiresAt),30*86400,refreshBefore,refreshAfter],
+ ]){
+  assert.ok(Number.isFinite(expiry),key+' persisted expiry must be valid');
+  for(const [value,started,ended] of [[before,approvedStarted,approvedEnded],[after,retryStarted,retryEnded]]){
+   assert.ok(ended>=started,'local request clock must not move backwards');
+   assert.ok(Number.isSafeInteger(value)&&value>0&&value<=maximum,key+' must be bounded remaining seconds');
+   // Local workerd shares this host clock. issued() floors milliseconds to seconds;
+   // its Date.now() must lie inside this dispatch/JSON-read interval. No slack added.
+   assert.ok(value>=Math.max(0,Math.floor((expiry-ended)/1000)),key+' below observed expiry bound');
+   assert.ok(value<=Math.max(0,Math.floor((expiry-started)/1000)),key+' above observed expiry bound');
+  }
+  assert.ok(after<before,key+' must decrease after at least one complete second');
+ }
  assert.equal((await f.call('/v1/captures/'+id(70),{token:approved.accessToken,method:'POST',body:{files:[file()]}})).status,403);
  assert.equal((await f.call('/v1/token/revoke',{token:approved.accessToken,method:'POST'})).status,200);
  assert.equal((await f.call('/v1/account',{token:approved.accessToken})).status,401);
- await f.db.prepare('UPDATE devices SET last_poll=0').run();
+ await f.db.prepare('UPDATE auth_grants SET last_poll=0').run();
  assert.deepEqual(await(await f.call('/v1/device/poll',{method:'POST',body:{deviceCode}})).json(),{status:'rejected'});
  const session=await(await f.call('/v1/session',{cookie:a.cookie})).json();assert.equal(session.csrfToken,a.csrf);assert.equal(session.account.beta,'active');assert.equal(session.slots.limit,20);
  assert.equal((await f.call('/auth/logout',{...a,method:'POST'})).status,200);
