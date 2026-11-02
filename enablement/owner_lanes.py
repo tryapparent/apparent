@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -118,9 +119,18 @@ def run_lane(lane, online=False):
             raise ValueError('Electron package did not resolve an absolute executable')
         env = dict(os.environ, APPARENT_STORAGE_TEST_ELECTRON=electron,
                    APPARENT_CONNECT_TEST_ELECTRON=electron)
-        subprocess.run(['cargo', 'test', '-j', jobs, mode, '_electron_rust_roundtrip',
-                        '--', '--ignored', '--nocapture', '--test-threads=1'],
-                       cwd=ROOT, env=env, check=True)
+        try:
+            result = subprocess.run(['cargo', 'test', '-j', jobs, mode, '_electron_rust_roundtrip',
+                                     '--', '--ignored', '--test-threads=1'],
+                                    cwd=ROOT, env=env, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as error:
+            print(error.stdout or '', end='')
+            print(error.stderr or '', end='', file=sys.stderr)
+            raise
+        print(result.stdout, end='')
+        for name in ('connect_settings_electron_rust_roundtrip', 'storage_electron_rust_roundtrip'):
+            if not re.search(r'^test .*::' + name + r' \.\.\. ok$', result.stdout, re.MULTILINE):
+                raise RuntimeError(f'Required Rust bridge test did not pass: {name}')
     elif lane in ('capture', 'engine-staged', 'connect-web'):
         legacy.run_checks({'root': lane == 'capture', 'engine': lane == 'engine-staged',
                            'browser': lane == 'connect-web', 'focused': []}, offline=not online)

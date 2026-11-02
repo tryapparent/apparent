@@ -214,14 +214,16 @@ For a Linux integration checkpoint before Mac access, run from the repository ro
 
 ```sh
 (
-export TMPDIR="$(mktemp -d /tmp/apparent-ui.XXXXXXXX)"
+TMPDIR="$(mktemp -d /tmp/apparent-ui.XXXXXXXX)" || exit 1
+export TMPDIR
 python3 enablement/owner_lanes.py --lane desktop-ui-integration --run --online
 # Preserve this private directory if fixtures need diagnosis.
 )
 ```
 
-On Clanker, prefix that command **once** with
-`/home/simon/.local/bin/t3-build --`; do not wrap an already admitted invocation.
+On Clanker, replace the Python command inside the subshell with
+`/home/simon/.local/bin/t3-build -- python3 enablement/owner_lanes.py --lane desktop-ui-integration --run --online`.
+Use the runner once; do not wrap an already admitted invocation.
 The lane honors the runner's `T3_BUILD_JOBS` and runs npm unit tests, the existing
 sequential Electron smoke script (including TypeScript/build) under Xvfb, then
 both ignored `_electron_rust_roundtrip` Rust tests, with the absolute Electron

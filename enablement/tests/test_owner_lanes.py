@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import owner_lanes as lanes
@@ -80,7 +81,10 @@ class OwnerTests(unittest.TestCase):
                     patch.object(lanes.os, 'access', return_value=True), \
                     patch.dict(os.environ, {'T3_BUILD_JOBS': '2', 'ELECTRON_OVERRIDE_DIST_PATH': '/fixture'}), \
                     patch.object(lanes.subprocess, 'run') as run:
-                run.return_value.stdout = '/fixture/electron\n'
+                run.side_effect = lambda args, **kwargs: SimpleNamespace(stdout=(
+                    'test fixture::connect_settings_electron_rust_roundtrip ... ok\n'
+                    'test fixture::storage_electron_rust_roundtrip ... ok\n'
+                    if args[0] == 'cargo' else '/fixture/electron\n'))
                 lanes.run_lane('desktop-ui-integration', online)
                 preflight.assert_called_once_with()
                 commands = [call.args[0] for call in run.call_args_list]
@@ -90,7 +94,7 @@ class OwnerTests(unittest.TestCase):
                 self.assertEqual(commands[3], ['node', '-p', "require('electron')"])
                 self.assertEqual(commands[4], ['cargo', 'test', '-j', '2',
                     '--locked' if online else '--offline', '_electron_rust_roundtrip',
-                    '--', '--ignored', '--nocapture', '--test-threads=1'])
+                    '--', '--ignored', '--test-threads=1'])
                 for call in run.call_args_list[:4]:
                     self.assertEqual(call.kwargs['cwd'], lanes.ROOT / 'capture/desktop/ui/frontend')
                 rust = run.call_args_list[4].kwargs
@@ -99,6 +103,16 @@ class OwnerTests(unittest.TestCase):
                     self.assertEqual(rust['env'][key], '/fixture/electron')
                 self.assertTrue(all(call.kwargs['check'] for call in run.call_args_list))
         self.assertNotIn('desktop-ui-integration', lanes.LANES)
+
+    def test_integration_rejects_zero_rust_tests(self):
+        with patch.object(lanes.sys, 'platform', 'linux'), \
+                patch.object(lanes.legacy, 'check_temp_environment'), \
+                patch.object(lanes.os, 'access', return_value=True), \
+                patch.object(lanes.subprocess, 'run') as run:
+            run.side_effect = lambda args, **kwargs: SimpleNamespace(stdout=(
+                'test result: ok. 0 passed\n' if args[0] == 'cargo' else '/fixture/electron\n'))
+            with self.assertRaisesRegex(RuntimeError, 'Required Rust bridge test'):
+                lanes.run_lane('desktop-ui-integration', online=True)
 
     def test_offline_requires_external_electron_before_install(self):
         for dist in ('', 'relative', str(lanes.ROOT / 'capture/desktop/ui/frontend/node_modules/electron/dist')):
