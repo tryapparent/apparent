@@ -428,10 +428,10 @@ pub fn place_note(xid: u32, pid: u32, rect: [i32; 4], focus: bool) -> Result<()>
     anyhow::ensure!(address.starts_with("0x") && address.len() > 2 && address[2..].bytes().all(|b| b.is_ascii_hexdigit()), "Invalid notes address");
     let [x,y,width,height] = rect;
     match syntax()? {
-        Syntax::Lua => run(&format!("eval local w = hl.get_windows({{ title = '{title}' }})[1]; assert(w and w.address == '{address}', 'Notes surface changed'); hl.dispatch(hl.dsp.window.move({{ window = w, x = {x}, y = {y}, relative = false }})); hl.dispatch(hl.dsp.window.resize({{ window = w, x = {width}, y = {height}, relative = false }})); {}", if focus { "hl.dispatch(hl.dsp.focus({ window = w }))" } else { "" })),
+        Syntax::Lua => run(&format!("eval local w = hl.get_windows({{ title = '{title}' }})[1]; assert(w and w.address == '{address}', 'Notes surface changed'); hl.dispatch(hl.dsp.window.resize({{ window = w, x = {width}, y = {height}, relative = false }})); hl.dispatch(hl.dsp.window.move({{ window = w, x = {x}, y = {y}, relative = false }})); {}", if focus { "hl.dispatch(hl.dsp.focus({ window = w }))" } else { "" })),
         Syntax::Hyprlang => {
-            run(&format!("dispatch movewindowpixel exact {x} {y},address:{address}"))?;
             run(&format!("dispatch resizewindowpixel exact {width} {height},address:{address}"))?;
+            run(&format!("dispatch movewindowpixel exact {x} {y},address:{address}"))?;
             if focus { run(&format!("dispatch focuswindow address:{address}"))?; }
             Ok(())
         }
