@@ -1,0 +1,1 @@
+const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('onboarding',{action:a=>ipcRenderer.invoke('onboarding:action',a),subscribe:fn=>{const listener=(_e,v)=>fn(v);ipcRenderer.on('onboarding:view',listener);return()=>ipcRenderer.removeListener('onboarding:view',listener)}});
