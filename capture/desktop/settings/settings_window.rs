@@ -2336,6 +2336,12 @@ impl Render for SettingsWindow {
                     if event.keystroke.modifiers.shift { window.focus_prev(); } else { window.focus_next(); }
                     cx.stop_propagation(); return;
                 }
+                // GPUI clicks focused controls on key-up. Preserve the menu until
+                // then so its account trigger cannot reopen it after activation.
+                if matches!(event.keystroke.key.as_str(), "enter" | "space")
+                    && view.menu.as_ref().is_some_and(|menu| menu.key == "connect") {
+                    cx.stop_propagation(); return;
+                }
                 if !matches!(event.keystroke.key.as_str(), "enter" | "space")
                     && view.connect_key(event.keystroke.key.as_str(), window, cx) { cx.stop_propagation(); return; }
                 if view.menu.take().is_some() {
