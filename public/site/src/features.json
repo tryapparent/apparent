@@ -1165,7 +1165,7 @@
       "status": "main",
       "platforms": ["mac", "linux"],
       "added": "2026-10-18",
-      "config": [{ "key": "videoExport", "value": "boolean; true by default", "does": "Show Export Last Capture as Video… (Settings › Recording › Experimental)" }],
+      "config": [{ "key": "videoExport", "value": "boolean; true by default", "does": "Show Export Last Capture as Video…; on by default (the existing Recording section is still labelled Experimental)" }],
       "docs": ["README.md#export-as-video", "capture/engine/docs/export-and-retention.md#linux-tray-export", "capture/desktop/docs/linux/linux.md"]
     },
 

@@ -191,7 +191,7 @@ granted and each on-demand sheet: `target/debug/apparent-helper onboarding --ren
   (`⌥⇧S`) and Paste last capture (`⌥⇧V`, which can be turned off).
 - **Recording**: the microphone, with its input level, the transcriber (Apple Speech with its
   language, Hex while it runs, with its model and language, or Command when it's configured) and,
-  under Experimental, Video export.
+  Video export (on by default; its existing Settings section is still labelled Experimental).
 - **Storage**: how long recordings are kept, where new captures go (Change…/Reset on macOS, `"capturesDir"` in
   `~/.config/apparent/config.json` everywhere; captures already made stay put, and an unusable folder falls back to the built-in one), how much space they take, and Show in Finder.
 - **Permissions**: the onboarding checklist, so a permission can be turned on later.
