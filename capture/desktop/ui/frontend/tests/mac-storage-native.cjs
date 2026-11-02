@@ -9,6 +9,7 @@ const { createHash } = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { _electron: electron, expect } = require('@playwright/test');
+const { readRuntimeState } = require('../electron/runtime.cjs');
 const run = promisify(execFile);
 const root = path.join(__dirname, '..');
 const permissionSource = 'https://github.com/actions/runner-images/blob/main/images/macos/scripts/build/configure-tccdb-macos.sh';
@@ -327,6 +328,14 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       assert.ok(actual.includes(await fs.realpath(executable)), 'Owned Rust PID does not map the installed executable');
       Object.assign(report.rust, { pid, parentAndGroupVerified: true, mappedExecutableVerified: true });
     }, 'Installed Rust socket readiness', 15000);
+    // A killed backend can leave a socket inode behind. PID mapping and lstat
+    // alone do not prove the replacement has bound it or started its UI loop.
+    await poll(async () => {
+      assert.equal(backend.exitCode, null, 'Installed Rust GUI exited during control readiness');
+      const state = await readRuntimeState(home, budget(3000));
+      assert.deepEqual(state, { status: 'connected', phase: 'idle' });
+      report.rust.controlReadiness = state;
+    }, 'Installed Rust live control readiness', 15000);
     };
     await startRust();
     application = await electron.launch({ args: [root], env, timeout: budget(15000) });
@@ -472,6 +481,15 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     report.error = { message: error.message, stack: error.stack,
       subprocess: error.cause && { code: error.cause.code, signal: error.cause.signal,
         killed: error.cause.killed, stderr: error.cause.stderr } };
+    if (page && Date.now() < deadline) {
+      try {
+        report.errorReportingFailure = {
+          rendered: await page.getByRole('region', { name: 'Send technical error reports', exact: true }).innerText({ timeout: budget(2000) }),
+          readback: await within(page.evaluate(() => window.apparent.readErrorReporting()), budget(), 'Failed reporting readback'),
+        };
+        await page.screenshot({ path: path.join(output, 'error-reporting-failure.png'), timeout: budget(), fullPage: true });
+      } catch (diagnosticError) { report.errorReportingFailureUnavailable = diagnosticError.message; }
+    }
     if (electronChild && Date.now() < deadline) {
       try { report.failureAX = await panel('diagnose'); } catch (axError) { report.failureAXError = axError.message; }
       // Read-only evidence from the exact live owned window, even when its native
