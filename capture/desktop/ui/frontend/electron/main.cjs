@@ -1,8 +1,9 @@
 const { app, BrowserWindow, dialog, ipcMain, session } = require('electron');
+const crypto = require('node:crypto');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { readRuntimeState, captureLocation } = require('./runtime.cjs');
+const { readRuntimeSnapshot, controlCapture, captureLocation } = require('./runtime.cjs');
 
 // Deliberately separate from the installed application's profile and identity.
 app.setName('Apparent UI Foundation');
@@ -28,6 +29,9 @@ app.whenReady().then(() => {
   let pending;
   let lastRead = 0;
   let lastResult = { status: 'disconnected' };
+  let observedPhase;
+  let observedCaptureId = null;
+  let captureMutation = false;
   const validate = (event, args) => {
     if (window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame ||
         event.senderFrame.url !== page || args.length !== 0) throw new Error('Forbidden bridge request');
@@ -89,13 +93,62 @@ app.whenReady().then(() => {
     // One bounded request, only on load or manual refresh; no recording-time polling.
     if (pending) return pending;
     if (Date.now() - lastRead < 1000) return lastResult;
-    pending = readRuntimeState(os.homedir()).then((result) => {
-      lastResult = result;
+    pending = readRuntimeSnapshot(os.homedir()).then((snapshot) => {
+      observedPhase = snapshot.status === 'connected' ? snapshot.phase : undefined;
+      observedCaptureId = snapshot.status === 'connected' ? snapshot.captureId : null;
+      lastResult = snapshot.status === 'connected' ? { status: 'connected', phase: snapshot.phase } : snapshot;
       lastRead = Date.now();
-      return result;
+      return lastResult;
     }).finally(() => { pending = undefined; });
     return pending;
   });
+  for (const action of ['start', 'finish', 'cancel']) {
+    ipcMain.handle(`apparent:${action}-capture`, async (event, ...args) => {
+      validate(event, args);
+      if (captureMutation) return { status: 'error', code: 'app_busy' };
+      captureMutation = true;
+      const token = generation;
+      try {
+        const before = await readRuntimeSnapshot(os.homedir());
+        if (token !== generation) return { status: 'cancelled' };
+        if (before.status !== 'connected') {
+          observedPhase = undefined;
+          observedCaptureId = null;
+          lastRead = 0;
+          return { status: 'error', code: before.status === 'disconnected' ? 'disconnected' : 'bridge_failed' };
+        }
+        if (before.phase !== observedPhase || before.captureId !== observedCaptureId) {
+          observedPhase = before.phase;
+          observedCaptureId = before.captureId;
+          lastRead = 0;
+          return { status: 'error', code: 'stale_capture' };
+        }
+        let id;
+        let operation;
+        if (action === 'start') {
+          if (before.phase !== 'idle' || before.captureId !== null) return { status: 'error', code: 'app_busy' };
+          id = crypto.randomBytes(16).toString('hex');
+          operation = 'start';
+        } else {
+          if (!before.captureId || (action === 'finish' && before.phase !== 'recording') ||
+              (action === 'cancel' && !['starting', 'recording'].includes(before.phase))) {
+            return { status: 'error', code: 'stale_capture' };
+          }
+          id = before.captureId;
+          operation = action === 'finish' ? 'stop' : 'cancel';
+        }
+        const result = await controlCapture(os.homedir(), operation, id);
+        if (action === 'start' || before.captureId === id) observedCaptureId = id;
+        if (result.status === 'connected') observedPhase = result.phase;
+        lastRead = 0;
+        return token === generation ? result : { status: 'cancelled' };
+      } catch {
+        return { status: 'error', code: 'bridge_failed' };
+      } finally {
+        captureMutation = false;
+      }
+    });
+  }
   void window.loadURL(page);
 });
 app.on('window-all-closed', () => app.quit());

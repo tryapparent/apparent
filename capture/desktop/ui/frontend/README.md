@@ -14,20 +14,24 @@ npm start
 
 Open the current Rust Apparent app separately, under the same user and HOME,
 then click **Refresh state**. The window never launches Rust itself. With no app,
-it shows **Not connected**. `npm run preview` serves the built synthetic UI on
-loopback; browser preview has no Rust bridge. It deliberately uses production
-assets and CSP rather than a less-restricted Electron development server.
+it shows **Not connected**. Once connected, the development window also offers
+explicit Start, Finish and Cancel capture actions; the Rust GUI remains the
+authority for permissions, policy, capture and processing. `npm run preview`
+serves the built synthetic UI on loopback; browser preview has no Rust bridge.
+It deliberately uses production assets and CSP rather than a less-restricted
+Electron development server.
 
 ## Narrow contract
 
 The existing producer is `capture/desktop/workflow/agent_capture.rs` and the
 `None` action in `App::agent_request` in `capture/desktop/mod.rs`. The Electron
 main process connects to `$HOME/.config/apparent/agent-control/capture.sock`,
-sends exactly `state\n`, reads a bounded newline-delimited JSON reply, validates
-`state.phase`, and returns only `{ status: 'connected', phase }`. Capture IDs
-and other backend fields never reach the renderer. This observes the **running
-Rust GUI**, not package metadata or a synthetic backend. It does not make Rust
-independent of the current GUI lifecycle.
+sends bounded newline-delimited requests to the running Rust GUI, validates
+`state.phase`, and returns only `{ status: 'connected', phase }` to the renderer.
+The main process privately retains the opaque capture ID for identity checks;
+capture IDs and other backend fields never reach the renderer. This observes and
+controls the **running Rust GUI**, not package metadata or a synthetic backend.
+It does not make Rust independent of the current GUI lifecycle.
 
 Missing/stale sockets are disconnected; unsafe permissions, invalid replies,
 unknown phases and timeouts are errors. The control directory and socket must
@@ -36,10 +40,20 @@ changes the Rust config directory. One absolute 3.5-second deadline bounds a
 read. Reads occur only on open/renderer reload or manual refresh, with one
 in-flight read and a one-second cooldown. There is no background polling.
 
-The sandboxed, isolated preload exposes `readRuntimeState()` and the three
+Before a control action, the main process rereads state and rejects a changed
+phase or capture ID. Start generates its own 32-hex ID and sends `start <id>`;
+the Rust server supplies its bounded admission deadline. Finish and Cancel send
+only the observed capture's `stop <id>` or `cancel <id>`. If a mutation is not
+confirmed, the main process inspects that ID once and never retries the mutation.
+After a stale or uncertain result, controls stay disabled until the user reviews
+the state and refreshes. The renderer receives only the mapped phase/status and
+a sanitized result code.
+
+The sandboxed, isolated preload exposes `readRuntimeState()`, zero-argument
+`startCapture()`, `finishCapture()` and `cancelCapture()`, and the three
 zero-argument capture-location methods below.
 The main process rejects other windows/frames, nonlocal URLs and arguments.
-There is no generic IPC, shell, filesystem, Settings or capture command API.
+There is no generic IPC, shell, filesystem, Settings or raw capture command API.
 Only the captures-only requests described below may save a preference.
 Navigation, popups, webviews, network connections and permission requests are
 blocked. Electron keeps its own Chromium profile in `apparent-ui-foundation`,
@@ -65,7 +79,8 @@ npm run test:electron       # real Electron, synthetic socket; needs a display
 xvfb-run -a npm run test:electron
 ```
 
-The Electron smoke checks controls/keyboard use, disconnected/error/reconnect,
+The Electron smoke checks synthetic Start/Finish/Cancel actions, ID privacy,
+stale-capture rejection, controls/keyboard use, disconnected/error/reconnect,
 renderer reload, minimum-width layout, sandbox/Node isolation, navigation/network
 refusal and rejection of a second renderer. It is not native platform acceptance.
 `tests/native-smoke.cjs` is a disposable-guest-only Electron entrypoint. The
@@ -87,6 +102,24 @@ with the repository installer, and passed the native smoke with a live
 fixture, not a failed recording. The guest and queue ticket were cleaned up.
 These are shell/bridge checks, not capture, overlay, permission, updater,
 physical-device or performance acceptance.
+
+## Capture controls
+
+Capture actions are explicit button clicks in this opt-in development window;
+the window cannot launch Rust. Main generates the opaque ID for Start and keeps
+it private. Before Finish or Cancel, main reads Rust state again and rejects the
+request if the current phase or ID differs from the state last shown. A stale
+window therefore cannot finish a replacement capture. If a request times out,
+the client inspects that same ID once and never resends the mutation. Rust sets
+the three-second admission deadline on receipt, using its own monotonic clock;
+the renderer cannot supply IDs or deadlines. The normal Rust permission and
+capture paths remain authoritative.
+
+Routing stays opt-in through `npm start`; the installed Rust presentation,
+Settings, launcher and pill are unchanged. Do not switch installed routing as
+part of this slice. Rollback is simply to stop launching the Electron preview;
+remove this development control panel only after an accepted replacement is
+actually routed in the installed app.
 
 ## Experimental Storage card
 
@@ -115,6 +148,9 @@ lock. Storage uses libuv's clock: `CLOCK_MONOTONIC` on Linux,
 Other config edits survive; a changed capture preference refuses the stale save.
 One worker handles Storage without blocking the GUI or queuing config writers.
 Legacy state/start/inspect/stop/cancel requests keep their existing contract.
+For capture controls, omitting the optional wire deadline requests a server-owned
+three-second admission bound; explicit client deadlines remain accepted and
+capped as before.
 
 Rust validates paths, preserves unknown config keys, removes the saved key on
 Reset, and returns authoritative saved/effective/display paths and source

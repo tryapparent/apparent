@@ -323,7 +323,7 @@ fn parse_capture_request(line: &str) -> Option<(Option<(Action, String)>, u64)> 
         return None;
     }
     let action = match parts[0] {
-        "start" if parts.len() == 3 => Action::Start,
+        "start" if matches!(parts.len(), 2 | 3) => Action::Start,
         "inspect" => Action::Inspect,
         "stop" => Action::Stop,
         "cancel" => Action::Cancel,
@@ -1241,6 +1241,16 @@ mod tests {
     }
 
     #[test]
+    fn start_without_wire_deadline_gets_a_server_owned_bound() {
+        let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let before = clock_ms();
+        let (action, deadline) = parse_capture_request(&format!("start {id}")).unwrap();
+        let after = clock_ms();
+        assert_eq!(action, Some((Action::Start, id.into())));
+        assert!((before..=after + 3000).contains(&deadline));
+    }
+
+    #[test]
     fn expired_wire_start_keeps_its_deadline_and_never_admits() {
         let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         let (action, deadline_ms) = parse_capture_request(&format!("start {id} 0")).unwrap();
@@ -1255,7 +1265,7 @@ mod tests {
         assert!(!registry.admit(id, false, request.expired()));
         assert!(!registry.admit(id, false, false));
         for invalid in [
-            format!("start {id}"),
+            format!("start {id} bad extra"),
             format!("start {id} bad"),
             format!("stop {id} 0 extra"),
             "start bad 1".into(),

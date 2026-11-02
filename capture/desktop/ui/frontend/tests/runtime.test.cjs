@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
-const { readRuntimeState, captureLocation } = require('../electron/runtime.cjs');
+const { readRuntimeState, captureLocation, controlCapture } = require('../electron/runtime.cjs');
 
 async function fixture(t, reply, { mode = 0o700 } = {}) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'ui-'));
@@ -19,7 +19,8 @@ async function fixture(t, reply, { mode = 0o700 } = {}) {
     socket.on('error', () => {});
     socket.once('data', (request) => {
       requests.push(request.toString());
-      if (reply !== null) socket.end(reply);
+      if (typeof reply === 'function') reply(request.toString(), socket);
+      else if (reply !== null) socket.end(reply);
     });
   });
   const address = path.join(directory, 'capture.sock');
@@ -34,7 +35,7 @@ async function fixture(t, reply, { mode = 0o700 } = {}) {
 }
 
 test('reads only state and strips capture identity and unexpected data', async (t) => {
-  const f = await fixture(t, '{"state":{"phase":"recording","capture_id":"private-id"},"secret":"hidden"}\n');
+  const f = await fixture(t, `{"state":{"phase":"recording","capture_id":"${'a'.repeat(32)}"},"secret":"hidden"}\n`);
   assert.deepEqual(await readRuntimeState(f.home), { status: 'connected', phase: 'recording' });
   assert.deepEqual(f.requests, ['state\n']);
 });
@@ -75,6 +76,31 @@ test('absolute deadline bounds an unresponsive server', async (t) => {
   assert.equal((await readRuntimeState(f.home, 50)).status, 'error');
   assert.ok(performance.now() - before < 1000);
   assert.deepEqual(f.requests, ['state\n']);
+});
+
+test('capture controls bind one explicit action to its opaque ID', async (t) => {
+  const id = 'a'.repeat(32);
+  const f = await fixture(t, JSON.stringify({ capture_id: id, status: 'processing', outcome: 'stopping', state: { phase: 'processing' } }) + '\n');
+  assert.deepEqual(await controlCapture(f.home, 'stop', id), { status: 'connected', phase: 'processing' });
+  assert.equal(f.requests[0].trim(), `stop ${id}`);
+});
+
+test('unknown control outcome is inspected once and the mutation is never retried', async (t) => {
+  const id = 'b'.repeat(32);
+  const f = await fixture(t, (request, socket) => {
+    if (request.startsWith('inspect ')) socket.end(JSON.stringify({ capture_id: id, status: 'recording', state: { phase: 'recording' } }) + '\n');
+  });
+  assert.deepEqual(await controlCapture(f.home, 'stop', id, 50), { status: 'connected', phase: 'recording' });
+  assert.equal(f.requests.length, 2);
+  assert.equal(f.requests[0].trim(), `stop ${id}`);
+  assert.equal(f.requests[1].trim(), `inspect ${id}`);
+});
+
+test('capture control refuses invalid IDs and actions before socket I/O', async (t) => {
+  const f = await fixture(t, '{}\n');
+  await assert.rejects(controlCapture(f.home, 'stop', 'not-an-id'), /Invalid capture ID/);
+  await assert.rejects(controlCapture(f.home, 'launch', 'c'.repeat(32)), /Invalid capture action/);
+  assert.deepEqual(f.requests, []);
 });
 
 const snapshot = { savedPath: '/saved', effectivePath: '/override', displayPath: '/override',

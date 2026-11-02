@@ -7,6 +7,9 @@ declare global {
   interface Window {
     apparent?: {
       readRuntimeState: () => Promise<RuntimeState>;
+      startCapture: () => Promise<CaptureControlResult>;
+      finishCapture: () => Promise<CaptureControlResult>;
+      cancelCapture: () => Promise<CaptureControlResult>;
       readCaptureLocation: () => Promise<CaptureLocation>;
       changeCaptureLocation: () => Promise<CaptureLocation>;
       resetCaptureLocation: () => Promise<CaptureLocation>;
@@ -21,4 +24,8 @@ export type LocationSnapshot = {
 export type CaptureLocation =
   | { status: 'connected'; storage: LocationSnapshot }
   | { status: 'disabled' | 'disconnected' | 'incompatible' | 'cancelled' }
+  | { status: 'error'; code: string };
+export type CaptureControlResult =
+  | { status: 'connected'; phase: Extract<RuntimeState, { status: 'connected' }>['phase'] }
+  | { status: 'cancelled' }
   | { status: 'error'; code: string };

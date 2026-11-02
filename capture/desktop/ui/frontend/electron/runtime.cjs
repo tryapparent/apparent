@@ -7,6 +7,9 @@ const phases = new Set(['idle', 'selecting', 'starting', 'recording', 'processin
 const failure = { status: 'error', message: 'The Rust app did not return a valid state. Retry when it is responsive.' };
 const codes = new Set(['invalid_request', 'invalid_path', 'conflict', 'admission_expired', 'config_write_failed',
   'config_read_failed', 'app_busy', 'app_unresponsive', 'feature_disabled']);
+const captureStatuses = new Set(['starting', 'recording', 'processing', 'saved', 'cancelled', 'rejected', 'failed', 'unknown']);
+const capturePhases = { starting: 'starting', recording: 'recording', processing: 'processing', saved: 'completed',
+  cancelled: 'completed', rejected: 'completed', failed: 'completed', unknown: 'completed' };
 const text = (value) => typeof value === 'string' && Buffer.byteLength(value) <= 4096 && !value.includes('\0');
 
 async function exchange(home, request, decode, maxBytes, timeoutMs, timeoutResult) {
@@ -56,9 +59,36 @@ async function exchange(home, request, decode, maxBytes, timeoutMs, timeoutResul
   finally { clearTimeout(timer); }
 }
 
-function readRuntimeState(home, timeoutMs = 3500) {
-  return exchange(home, 'state\n', (value) => !value?.error && phases.has(value?.state?.phase)
-    ? { status: 'connected', phase: value.state.phase } : failure, 4096, timeoutMs, failure);
+function readRuntimeSnapshot(home, timeoutMs = 3500) {
+  return exchange(home, 'state\n', (value) => {
+    const state = value?.state;
+    if (value?.error || !state || !phases.has(state.phase) ||
+        !(state.capture_id === null || /^[a-f0-9]{32}$/.test(state.capture_id))) return failure;
+    return { status: 'connected', phase: state.phase, captureId: state.capture_id };
+  }, 4096, timeoutMs, failure);
+}
+
+async function readRuntimeState(home, timeoutMs = 3500) {
+  const snapshot = await readRuntimeSnapshot(home, timeoutMs);
+  return snapshot.status === 'connected' ? { status: snapshot.status, phase: snapshot.phase } : snapshot;
+}
+
+function decodeCapture(value, id) {
+  if (value?.error) return { status: 'error', code: codes.has(value.error) ? value.error : 'control_failed' };
+  if (value?.capture_id !== id || !captureStatuses.has(value?.status)) return { status: 'error', code: 'invalid_response' };
+  const phase = phases.has(value?.state?.phase) ? value.state.phase : capturePhases[value.status];
+  return phase ? { status: 'connected', phase } : { status: 'error', code: 'invalid_response' };
+}
+
+async function controlCapture(home, action, id, timeoutMs = 3500) {
+  if (!['start', 'stop', 'cancel'].includes(action)) throw new Error('Invalid capture action');
+  if (!/^[a-f0-9]{32}$/.test(id)) throw new Error('Invalid capture ID');
+  const send = (verb) => exchange(home, `${verb} ${id}\n`, (value) => decodeCapture(value, id), 4096,
+    timeoutMs, { status: 'error', code: 'outcome_unknown' });
+  const result = await send(action);
+  // A timeout has an unknown outcome. Inspect this same ID once; never replay the mutation.
+  if (result.status === 'error' && ['outcome_unknown', 'app_unresponsive'].includes(result.code)) return send('inspect');
+  return result;
 }
 
 function decodeStorage(value) {
@@ -92,4 +122,4 @@ function captureLocation(home, operation = 'read', fields = {}, timeoutMs = 3500
     { status: 'error', code: operation === 'read' ? 'timeout' : 'outcome_unknown' });
 }
 
-module.exports = { readRuntimeState, captureLocation };
+module.exports = { readRuntimeState, readRuntimeSnapshot, controlCapture, captureLocation };
