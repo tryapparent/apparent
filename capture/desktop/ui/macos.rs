@@ -817,7 +817,7 @@ pub(in crate::capture::desktop) fn install_status_bar() -> Option<flume::Receive
         item.setTag(RECORD_MENU_TAG);
     }
     add("Choose What to Record…", sel!(chooseTarget:));
-    add("Microphone for next capture", sel!(toggleMicrophone:));
+    add("Microphone for next screen capture", sel!(toggleMicrophone:));
     if let Some(item) = menu.itemAtIndex(menu.numberOfItems() - 1) { item.setTag(MICROPHONE_MENU_TAG); }
     menu.addItem(&NSMenuItem::separatorItem(mtm));
     add("Open Latest Capture", sel!(openLatest:));

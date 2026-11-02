@@ -675,7 +675,7 @@ impl ksni::Tray for ApparentTray {
         }
         items.push(self.item(record_title(), MenuAction::ToggleCapture));
         items.push(self.item("Choose What to Record…", MenuAction::ChooseTarget));
-        items.push(ksni::menu::CheckmarkItem { label: "Microphone for next capture".into(), checked: crate::capture::engine::runtime::audio::mic::enabled(), activate: Box::new(|tray: &mut Self| { let _ = tray.actions.try_send(MenuAction::ToggleMicrophone); }), ..Default::default() }.into());
+        items.push(ksni::menu::CheckmarkItem { label: "Microphone for next screen capture".into(), checked: crate::capture::engine::runtime::audio::mic::enabled(), activate: Box::new(|tray: &mut Self| { let _ = tray.actions.try_send(MenuAction::ToggleMicrophone); }), ..Default::default() }.into());
         items.push(ksni::MenuItem::Separator);
         items.push(self.item("Open Latest Capture", MenuAction::OpenLatest));
         if crate::shared::handoff::video_export() {

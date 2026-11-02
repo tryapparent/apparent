@@ -18,8 +18,8 @@ export function RecordingMicrophone() {
       <Button variant="outline" disabled={busy} onClick={() => void request()}>Refresh microphone setting</Button></div>
     <label className="flex items-center gap-3 text-sm font-medium"><input type="checkbox" aria-label="Record microphone" disabled={busy || state.status !== 'connected'}
       checked={state.status === 'connected' && state.enabled} onChange={e => void request(e.target.checked)} />Record microphone</label>
-    <p className="text-sm text-muted-foreground">Applies to your next capture and stays saved. Turn off for silent feedback; Shift-click to type a note. Active recordings keep their microphone state.</p>
-    {state.status === 'connected' ? <p role="status" className="text-sm">Microphone {state.enabled ? 'on' : 'off'} for your next capture.</p> :
+    <p className="text-sm text-muted-foreground">Applies to your next screen capture and stays saved. Turn off for silent feedback; Shift-click to type a note. Active recordings keep their microphone state.</p>
+    {state.status === 'connected' ? <p role="status" className="text-sm">Microphone {state.enabled ? 'on' : 'off'} for your next screen capture.</p> :
       <p role="status" className="text-sm">{state.status === 'error' ? 'Could not confirm the setting. Refresh before trying again.' : 'Connect to the running Apparent app to change this setting.'}</p>}
   </section>;
 }
