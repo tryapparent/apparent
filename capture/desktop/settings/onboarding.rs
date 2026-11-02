@@ -392,7 +392,7 @@ impl Flow {
     }
 
     pub(crate) fn local_practice(&self) -> bool {
-        self.first_capture_required && (self.practice_recording || self.shortcut_pending)
+        self.practice_recording || self.shortcut_pending
     }
 
     pub fn tutorial(&self) -> Option<Tutorial> {
@@ -426,7 +426,8 @@ impl Flow {
                 Effect::None
             }
             Input::ShortcutTriggered => {
-                self.shortcut_pending = self.step == Step::TryIt && self.shortcut_chosen;
+                self.shortcut_pending = self.step == Step::TryIt
+                    && (!self.first_capture_required || self.shortcut_chosen);
                 Effect::None
             }
             Input::Continue => self.primary(),
@@ -2366,6 +2367,21 @@ mod tests {
 #[cfg(test)]
 mod local_practice_tests {
     use super::*;
+
+    #[test]
+    fn optional_practice_stays_local_with_or_without_explicit_shortcut_choice() {
+        for chosen in [false, true] {
+            let mut flow = Flow::tour(Step::TryIt, None).with_first_capture(false, chosen, false);
+            assert!(!flow.local_practice());
+            flow.on(Input::ShortcutTriggered);
+            assert!(flow.local_practice(), "opting out must not enable practice uploads");
+            flow.on(Input::CaptureStarted);
+            flow.on(Input::Closed);
+            assert!(flow.local_practice(), "closing the tour must not change practice policy");
+            flow.on(Input::CaptureEnded { completed: true });
+            assert!(!flow.local_practice());
+        }
+    }
 
     #[test]
     fn practice_policy_follows_shortcut_attempt_and_survives_processing() {
