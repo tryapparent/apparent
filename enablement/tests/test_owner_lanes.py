@@ -48,14 +48,16 @@ class OwnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             def git(*args):
-                return subprocess.check_output(['git', *args], cwd=root, text=True).strip()
+                env = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
+                return subprocess.check_output(['git', *args], cwd=root, env=env, text=True).strip()
             git('init', '-q'); git('config', 'user.email', 'synthetic@example.invalid')
             git('config', 'user.name', 'Synthetic')
             path = root / 'public/site/src/marketing.tsx'
             path.parent.mkdir(parents=True); path.write_text('first')
             git('add', '.'); git('commit', '-qm', 'base'); base = git('rev-parse', 'HEAD')
             path.write_text('second'); git('commit', '-qam', 'marketing')
-            with patch.object(lanes, 'ROOT', root):
+            clean_env = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
+            with patch.object(lanes, 'ROOT', root), patch.dict(os.environ, clean_env, clear=True):
                 self.assertEqual(lanes.plan(base, 'HEAD')['selected'], ['public-site'])
                 path.rename(path.with_name('renamed.tsx'))
                 git('add', '-A'); git('commit', '-qm', 'rename')
