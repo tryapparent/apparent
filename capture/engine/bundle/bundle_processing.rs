@@ -1323,7 +1323,15 @@ mod tests {
             1_000,
             vec![candidate],
             vec![],
-            vec![],
+            // A stationary cursor alone intentionally cannot trigger a tight crop.
+            vec![InteractionEvent::Click {
+                t: 0,
+                x: 0.5,
+                y: 0.5,
+                button: None,
+                label: None,
+                role: None,
+            }],
             TranscriptData::default(),
             None,
             None,
