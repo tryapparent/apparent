@@ -41,3 +41,4 @@
 
 .settings-content button[class*="border-input"] { background: var(--color-muted); color: var(--color-foreground); border-color: var(--color-input); }
 .settings-content button:hover { background: var(--color-accent); color: var(--color-accent-foreground); }
+.apparent-connect-workflow { font-family: 'Connect Host Grotesk', var(--font-sans); }
