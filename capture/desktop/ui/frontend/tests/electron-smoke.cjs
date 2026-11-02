@@ -32,7 +32,9 @@ test('Electron preview, explicit capture controls and isolation', { timeout: 450
   await page.getByText('Not connected', { exact: true }).waitFor();
   assert.deepEqual(await page.evaluate(() => ({
     keys: Object.keys(window.apparent), require: typeof window.require, process: typeof window.process,
-  })), { keys: ['readRuntimeState', 'startCapture', 'finishCapture', 'cancelCapture', 'readCaptureLocation', 'changeCaptureLocation', 'resetCaptureLocation'], require: 'undefined', process: 'undefined' });
+  })), { keys: ['readRuntimeState', 'startCapture', 'finishCapture', 'cancelCapture', 'readCaptureLocation',
+    'changeCaptureLocation', 'resetCaptureLocation', 'readRetention', 'saveRetention', 'resetRetention',
+    'readCaptureUsage'], require: 'undefined', process: 'undefined' });
   assert.equal(await application.evaluate(({ BrowserWindow }) => {
     const options = BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences();
     return options.contextIsolation && options.sandbox && !options.nodeIntegration && options.webSecurity;
@@ -173,7 +175,11 @@ test('Electron preview, explicit capture controls and isolation', { timeout: 450
   assert.ok(requests.every((request) => request.trim() === 'state' ||
     (request.charCodeAt(request.length - 1) === 10 &&
       /^(start|stop|cancel|inspect) [a-f0-9]{32}$/.test(request.trimEnd())) ||
-    JSON.parse(request).storage === 'read'));
+    (() => {
+      const storage = JSON.parse(request);
+      return ['read', 'retention', 'usage'].includes(storage.storage) &&
+        Object.keys(storage).every((key) => ['storage', 'deadline'].includes(key));
+    })()));
   assert.deepEqual(errors, []);
   const screenshot = path.join(os.tmpdir(), `apparent-foundation-${process.pid}.png`);
   await page.screenshot({ path: screenshot, fullPage: true });

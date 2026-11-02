@@ -14,4 +14,13 @@ contextBridge.exposeInMainWorld('apparent', Object.freeze({
   readCaptureLocation: invokeNoArgs('apparent:read-capture-location'),
   changeCaptureLocation: invokeNoArgs('apparent:change-capture-location'),
   resetCaptureLocation: invokeNoArgs('apparent:reset-capture-location'),
+  readRetention: invokeNoArgs('apparent:read-retention'),
+  saveRetention: (...args) => {
+    if (args.length !== 1 || !['week', 'month', 'forever'].includes(args[0])) {
+      return Promise.reject(new TypeError('Invalid retention preset'));
+    }
+    return ipcRenderer.invoke('apparent:save-retention', args[0]);
+  },
+  resetRetention: invokeNoArgs('apparent:reset-retention'),
+  readCaptureUsage: invokeNoArgs('apparent:read-capture-usage'),
 }));

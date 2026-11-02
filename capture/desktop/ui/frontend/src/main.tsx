@@ -120,7 +120,7 @@ function App() {
         </Tabs>
       </section>
       <footer className="border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground">
-        React + shadcn/ui + Tailwind, hosted by Electron. Explicit capture actions use the running Rust app; policy and permissions stay there. Only the opt-in capture-location card can save a preference.
+        React + shadcn/ui + Tailwind, hosted by Electron. Explicit capture actions use the running Rust app; policy and permissions stay there. Opt-in capture-location and Storage controls save preferences through the Rust bridge.
       </footer>
     </main>
   );
