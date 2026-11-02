@@ -1,11 +1,18 @@
 const {parseAction,lines}=require('./onboarding-protocol.cjs');
-const {app,BrowserWindow,ipcMain,session}=require('electron');
+const {app,BrowserWindow,ipcMain,session,nativeTheme,Menu}=require('electron');
 const path=require('node:path');
+const followWindowTheme=require('@apparent/ui/window-theme');
+nativeTheme.themeSource='system';
+app.setName('Apparent Onboarding');
+app.setPath('userData',path.join(app.getPath('appData'),'apparent-onboarding'));
 const {pathToFileURL}=require('node:url');
 app.whenReady().then(()=>{
+ Menu.setApplicationMenu(null);
+ if(process.platform==='darwin')app.setActivationPolicy('accessory');
  session.defaultSession.setPermissionRequestHandler((a,b,reply)=>reply(false));
  session.defaultSession.setPermissionCheckHandler(()=>false);
- const w=new BrowserWindow({width:620,height:660,webPreferences:{preload:path.join(__dirname,'onboarding-preload.cjs'),sandbox:true,contextIsolation:true,nodeIntegration:false}});
+ const w=new BrowserWindow({width:620,height:660,backgroundColor:followWindowTheme.backgroundColor(nativeTheme),webPreferences:{preload:path.join(__dirname,'onboarding-preload.cjs'),sandbox:true,contextIsolation:true,nodeIntegration:false}});
+ followWindowTheme(nativeTheme,w);
  const page=pathToFileURL(path.join(__dirname,'../dist/onboarding.html')).href;
  w.webContents.setWindowOpenHandler(()=>({action:'deny'}));
  w.webContents.on('will-navigate',e=>e.preventDefault());
