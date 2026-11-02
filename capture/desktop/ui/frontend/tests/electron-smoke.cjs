@@ -15,6 +15,7 @@ test('Electron preview, explicit capture controls and isolation', { timeout: 450
   let dynamicState = false;
   let phase = 'idle';
   let activeId = null;
+  let wrongCaptureReply = false;
   let server;
   const application = await electron.launch({
     args: [path.join(__dirname, '..')],
@@ -72,6 +73,12 @@ test('Electron preview, explicit capture controls and isolation', { timeout: 450
     if (request.charCodeAt(request.length - 1) !== 10 || extra.length ||
         !['start', 'stop', 'cancel', 'inspect'].includes(action) || !/^[a-f0-9]{32}$/.test(id)) {
       return socket.end(JSON.stringify({ error: 'invalid_request' }) + String.fromCharCode(10));
+    }
+    if (wrongCaptureReply && action === 'stop') {
+      wrongCaptureReply = false;
+      activeId = 'e'.repeat(32);
+      return socket.end(JSON.stringify({ capture_id: activeId, status: 'processing',
+        outcome: 'stopping', state: { phase: 'processing', capture_id: activeId } }) + '\n');
     }
     dynamicState = true;
     activeId = id;
@@ -133,6 +140,22 @@ test('Electron preview, explicit capture controls and isolation', { timeout: 450
   await finishButton.click();
   await page.getByText('Connected · processing', { exact: true }).waitFor();
   assert.ok(requests.some((request) => request.trim() === `stop ${'b'.repeat(32)}`));
+
+  // An invalid mutation reply must also lock the newly observed capture.
+  activeId = 'd'.repeat(32);
+  phase = 'recording';
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  await page.getByRole('button', { name: 'Refresh state' }).click();
+  await page.getByText('Connected · recording', { exact: true }).waitFor();
+  wrongCaptureReply = true;
+  const stopsBeforeInvalid = requests.filter((request) => request.startsWith('stop ')).length;
+  await finishButton.click();
+  await page.getByText('Review the state, then press Refresh state to enable capture controls.', { exact: true }).waitFor();
+  await page.getByText('Connected · recording', { exact: true }).waitFor();
+  await expect(finishButton).toBeDisabled();
+  assert.equal(requests.filter((request) => request.startsWith('stop ')).length, stopsBeforeInvalid + 1);
+  await page.getByRole('button', { name: 'Refresh state' }).click();
+  await expect(finishButton).toBeEnabled();
 
   dynamicState = false;
   reply = '{"error":"app_busy"}\n';

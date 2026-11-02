@@ -48,7 +48,7 @@ function App() {
     setCaptureMessage('Sending the explicit request to the running Rust app…');
     try {
       const result = await window.apparent[action]();
-      if (result.status === 'error' && ['stale_capture', 'outcome_unknown', 'app_unresponsive', 'bridge_failed', 'control_failed'].includes(result.code)) {
+      if (result.status === 'error' && ['stale_capture', 'outcome_unknown', 'app_unresponsive', 'bridge_failed', 'control_failed', 'invalid_response'].includes(result.code)) {
         setCaptureNeedsReview(true);
       }
       setCaptureMessage(result.status === 'connected'
