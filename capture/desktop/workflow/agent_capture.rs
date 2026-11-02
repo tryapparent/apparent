@@ -137,6 +137,26 @@ pub fn decide(state: &State, action: Action, id: &str) -> Outcome {
     }
 }
 
+/// Format the coordinator's post-action receipt, not an admission prediction.
+pub fn response(
+    outcome: Outcome,
+    mut receipt: serde_json::Value,
+    state: State,
+) -> serde_json::Value {
+    receipt["outcome"] = serde_json::json!(outcome);
+    receipt["state"] = serde_json::json!(state);
+    if outcome == Outcome::Cancelled && receipt["status"] != "cancelled" {
+        // Admission permits a cancellation attempt. A failed durable marker
+        // leaves the capture active; never acknowledge that attempt as cancelled.
+        receipt["outcome"] = serde_json::json!(Outcome::NotReady);
+        receipt["error"] = serde_json::json!("cancellation_failed");
+    }
+    if outcome == Outcome::AlreadyEnded && receipt["status"] == "unknown" {
+        receipt["error"] = serde_json::Value::Null;
+    }
+    receipt
+}
+
 pub fn new_id() -> Result<String> {
     let mut bytes = [0u8; 16];
     std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
@@ -1270,12 +1290,51 @@ mod tests {
     }
 
     #[test]
-    fn response_phase_and_outcome_are_machine_readable() {
-        let response = serde_json::json!({
-            "state": State { phase: Phase::Starting, capture_id: Some("id".into()) },
-            "outcome": Outcome::NotReady,
-        });
-        assert_eq!(response["state"]["phase"], "starting");
-        assert_eq!(response["outcome"], "not_ready");
+    fn cancel_response_refuses_failed_persistence_and_preserves_active_owner() {
+        use crate::capture::engine::bundle::recover;
+        for (phase, status) in [
+            (Phase::Starting, "starting"),
+            (Phase::Recording, "recording"),
+        ] {
+            let dir = std::env::temp_dir().join(format!("ac-cancel-{}", new_id().unwrap()));
+            std::fs::create_dir(&dir).unwrap();
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let marker = dir.join(recover::CANCELLED);
+            std::fs::create_dir(&marker).unwrap();
+            let mut registry = Registry::default();
+            registry.set("capture-a", status, None, None);
+            let current = State {
+                phase,
+                capture_id: Some("capture-a".into()),
+            };
+            let admitted = registry.decide(&current, Action::Cancel, "capture-a");
+            assert_eq!(admitted, Outcome::Cancelled);
+            // A real publication failure leaves the recording and receipt intact.
+            assert!(recover::cancel(&dir).is_err());
+            let refused = response(admitted, registry.inspect("capture-a"), current.clone());
+            assert_eq!(refused["error"], "cancellation_failed");
+            assert_eq!(refused["outcome"], "not_ready");
+            assert_eq!(refused["status"], status);
+            assert_eq!(refused["capture_id"], "capture-a");
+            assert_eq!(refused["state"]["capture_id"], "capture-a");
+            assert_eq!(refused["state"]["phase"], status);
+
+            std::fs::remove_dir(&marker).unwrap();
+            recover::cancel(&dir).unwrap();
+            registry.set("capture-a", "cancelled", None, None);
+            let cancelled = response(
+                admitted,
+                registry.inspect("capture-a"),
+                State {
+                    phase: Phase::Idle,
+                    capture_id: None,
+                },
+            );
+            assert_eq!(cancelled["outcome"], "cancelled");
+            assert_eq!(cancelled["status"], "cancelled");
+            assert!(cancelled["error"].is_null());
+            assert_eq!(cancelled["state"]["phase"], "idle");
+            std::fs::remove_dir_all(dir).unwrap();
+        }
     }
 }
