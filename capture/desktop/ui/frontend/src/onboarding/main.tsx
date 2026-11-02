@@ -13,7 +13,7 @@ function Onboarding(){
  useEffect(()=>window.onboarding.subscribe(v=>{if(v.type==='state')setView(v);if(v.type==='shortcut'&&v.label)setShortcut(v.label);if(v.type==='shortcut-editor')setEditor(v.shortcut)}),[]);
  const act=(a:Action)=>{setError('');void window.onboarding.action(a).catch(()=>setError('This action could not be sent. Please try again.'))};
  const editing=view.shortcutEditing||editor?.recording;
- return <main style={{padding:40,maxWidth:620,margin:'auto'}}><p>Apparent · {(view.index??0)+1} / {view.count??6}</p><h1>{titles[view.step??'welcome']??'Apparent'}</h1>
+ return <main style={{padding:40,maxWidth:620,margin:'auto'}}><p>{view.step==='done'?'Apparent · Setup complete':`Apparent · ${(view.index??0)+1} / ${view.count??6}`}</p><h1>{titles[view.step??'welcome']??'Apparent'}</h1>
  {view.step==='welcome'&&<p>Give your agent the context you can see. Record your screen, explain aloud and point to what matters.</p>}
  {view.step==='how-it-works'&&<ol><li>Press your shortcut to record.</li><li>Talk, point and draw to explain your idea.</li><li>Press the shortcut again, then hand the capture to your agent.</li></ol>}
  {view.step==='permissions'&&<p>Apparent checks permission with your operating system. Return here after changing a permission in Settings.</p>}
