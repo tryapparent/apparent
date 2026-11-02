@@ -23,7 +23,7 @@ Smooth activity zoom is enabled in both CLI and menu exports. The default crop i
 CLI exports automatically speed up confirmed long quiet holds at 4×. Use
 `--no-speedup` to keep recorded timing. Menu export timing is unchanged.
 Speedup requires FFmpeg on PATH on both macOS and Linux (H.264/AAC encoders;
-HEVC needs libx265; acceleration needs the drawtext filter); the Mac base renderer continues to use AVFoundation.
+HEVC needs libx265); the Mac base renderer continues to use AVFoundation.
 The source movie, audio and bundle metadata are never changed.
 
 Detection decodes full source frames with FFmpeg freezedetect at -60 dB,

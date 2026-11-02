@@ -158,6 +158,28 @@ pub(super) fn analyze(
     Ok(intervals)
 }
 
+// A fixed vector 4x badge keeps export independent of fonts and optional drawtext builds.
+fn badge_filter(enabled: &str) -> String {
+    let mut filters = vec![format!(
+        "drawbox=x=iw-48:y=10:w=38:h=27:color=black@0.7:t=fill:enable='{enabled}'"
+    )];
+    for (row, pixels) in ["1010000", "1010101", "1110010", "0010101", "0010000"]
+        .iter()
+        .enumerate()
+    {
+        for (column, pixel) in pixels.bytes().enumerate() {
+            if pixel == b'1' {
+                filters.push(format!(
+                    "drawbox=x=iw-40+{}:y={}:w=3:h=3:color=white:t=fill:enable='{enabled}'",
+                    column * 3,
+                    16 + row * 3
+                ));
+            }
+        }
+    }
+    filters.join(",")
+}
+
 pub(super) fn retime(
     movie: &Path,
     intervals: &[Interval],
@@ -206,7 +228,11 @@ pub(super) fn retime(
             }
         }
         // One continuous source->output map avoids rounding a frame duration at every join.
-        filters.push(format!("[0:v]setpts='PTS-STARTPTS-({})/TB',drawtext=text='4x':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.7:boxborderw=6:x=w-tw-16:y=16:enable='{}'[v]",savings.join("+"),badge_times.join("+")));
+        filters.push(format!(
+            "[0:v]setpts='PTS-STARTPTS-({})/TB',{}[v]",
+            savings.join("+"),
+            badge_filter(&badge_times.join("+"))
+        ));
         if audio {
             filters.push(format!("{inputs}concat=n={}:v=0:a=1[a]", spans.len()));
         }
