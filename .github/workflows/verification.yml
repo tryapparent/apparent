@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# Coalesce main verification to the newest tree. Publication has separate locks.
+concurrency:
+  group: changed-tree-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   select:
     runs-on: ubuntu-24.04
@@ -25,15 +30,26 @@ jobs:
         run: |
           python3 -m unittest discover -s enablement/tests -p 'test_pre_push_guard.py'
           python3 -m unittest discover -s enablement/tests -p 'test_verification.py'
+      - name: Validate workflow syntax and job dependencies
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -shellcheck= -pyflakes= .github/workflows/verification.yml .github/workflows/release-linux.yml .github/workflows/release-mac-preview.yml .github/workflows/web-delivery.yml
+      - name: Release admission contracts
+        run: python3 -m unittest discover -s enablement/tests -p 'test_release_gate.py'
       - id: plan
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: python3 enablement/verification.py --base "${BASE:-unknown}" --github-output "$GITHUB_OUTPUT"
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            # Full tree: a cancelled earlier main run must not hide its delta.
+            BASE=$(git hash-object -t tree /dev/null)
+          fi
+          python3 enablement/verification.py --base "${BASE:-unknown}" --github-output "$GITHUB_OUTPUT"
 
   desktop-ui:
     needs: select
-    # Frontend/shared UI changes currently select the conservative root gate.
-    if: needs.select.outputs.root == 'true'
+    # Every main candidate runs both matrices; PRs run only select.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
       matrix:
@@ -68,7 +84,7 @@ jobs:
 
   rust:
     needs: select
-    if: needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true' || needs.select.outputs.browser == 'true'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
       matrix:
@@ -145,7 +161,8 @@ jobs:
               cargo test -j 3 --locked connect::hosted::hosted_tests::hosted_security_darwin_acl_grants_fail_closed -- --exact
             fi
           fi
-          python3 enablement/verification.py --base "${BASE:-unknown}" --run --online
+          BASE=$(git hash-object -t tree /dev/null)
+          python3 enablement/verification.py --base "$BASE" --run --online
       - name: Actual Electron to Rust Storage integration (not native GUI proof)
         if: needs.select.outputs.root == 'true'
         shell: bash
@@ -182,6 +199,56 @@ jobs:
           npm --prefix capture/desktop/ui/frontend run build
           APPARENT_STORAGE_NATIVE_APP_DIR="$APPARENT_APP_DIR" \
             node --test capture/desktop/ui/frontend/tests/mac-storage-native.cjs
+      - name: Native GPUI Copy capture ID against the same installed App
+        if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
+        timeout-minutes: 4
+        shell: bash
+        env:
+          APPARENT_COPY_ID_NATIVE_CI: '1'
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          app="$HOME/Applications/Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.app"
+          evidence="$RUNNER_TEMP/apparent-copy-id-native"
+          test ! -e "$evidence"
+          # Keep compiler diagnostics even when native compilation fails. The
+          # fixture itself creates its fresh private evidence subdirectory.
+          mkdir -m 700 "$evidence"
+          swiftc capture/desktop/scripts/native/copy-capture-id.swift \
+            -o "$evidence/copy-capture-id" > "$evidence/compile.log" 2>&1
+          "$evidence/copy-capture-id" "$app" "$evidence/run"
+      - name: Native Electron selected-reference control against the installed Rust App
+        if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
+        timeout-minutes: 4
+        shell: bash
+        env:
+          APPARENT_REFERENCE_OUTPUT: ${{ runner.temp }}/apparent-reference-electron
+        run: |
+          export APPARENT_REFERENCE_BINARY="$HOME/Applications/Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.app/Contents/MacOS/apparent"
+          node --test capture/desktop/ui/frontend/tests/reference-native.cjs
+      - name: Retain synthetic Electron reference evidence, including failures
+        if: always() && runner.os == 'macOS' && needs.select.outputs.root == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-reference-electron-native
+          path: |
+            ${{ runner.temp }}/apparent-reference-electron/*.json
+            ${{ runner.temp }}/apparent-reference-electron/*.png
+            ${{ runner.temp }}/apparent-reference-electron/*.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain synthetic native Copy capture ID evidence, including failures
+        if: always() && runner.os == 'macOS' && needs.select.outputs.root == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-copy-capture-id-native
+          path: |
+            ${{ runner.temp }}/apparent-copy-id-native/**/*.json
+            ${{ runner.temp }}/apparent-copy-id-native/**/*.png
+            ${{ runner.temp }}/apparent-copy-id-native/**/*.log
+            ${{ runner.temp }}/apparent-copy-id-native/compile.log
+          if-no-files-found: error
+          retention-days: 7
       - name: Retain synthetic Mac Storage evidence, including failures
         if: always() && runner.os == 'macOS' && needs.select.outputs.root == 'true'
         uses: actions/upload-artifact@v4
@@ -193,3 +260,11 @@ jobs:
             ${{ runner.temp }}/apparent-storage-native/*.log
           if-no-files-found: error
           retention-days: 7
+
+  release-ready:
+    name: Release verification
+    needs: [select, desktop-ui, rust]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "Both platform matrices passed for $GITHUB_SHA"
