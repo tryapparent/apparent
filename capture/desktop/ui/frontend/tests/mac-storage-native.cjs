@@ -9,7 +9,7 @@ const { createHash } = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { _electron: electron, expect } = require('@playwright/test');
-const { readRuntimeState } = require('../electron/runtime.cjs');
+const { agents, readRuntimeState } = require('../electron/runtime.cjs');
 const run = promisify(execFile);
 const root = path.join(__dirname, '..');
 const permissionSource = 'https://github.com/actions/runner-images/blob/main/images/macos/scripts/build/configure-tccdb-macos.sh';
@@ -225,8 +225,211 @@ async function stopOwned(child, label, group = false) {
   return result;
 }
 
+const skill = 'bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent';
+
+// Bounded traversal of one verified process/window. No global UI search, coordinates,
+// TCC edits, injected renderer code, or generic production automation endpoint.
+const agentsAX = `on run argv
+  tell application "System Events"
+    tell (first application process whose unix id is (item 1 of argv as integer))
+      if item 2 of argv is "open" then
+        set frontmost to true
+        if not frontmost then error "Owned Rust app lost focus"
+        keystroke "," using command down
+        return "opened"
+      end if
+      if (count of windows) is not 1 then error "Expected exactly one owned Settings window"
+      set w to window 1
+      if item 2 of argv is "close" then
+        set frontmost to true
+        if not frontmost then error "Owned Settings lost focus"
+        keystroke "w" using command down
+        return "closed"
+      end if
+      set pending to {w}
+      set matches to {}
+      set trace to ""
+      set visited to 0
+      repeat while (count of pending) > 0
+        set el to item 1 of pending
+        set pending to rest of pending
+        set visited to visited + 1
+        if visited > 350 then error "Owned AX tree exceeds bound"
+        set r to role of el as text
+        set labelText to ""
+        repeat with attr in {"AXTitle", "AXDescription", "AXValue"}
+          try
+            set v to value of attribute (contents of attr) of el
+            if v is not missing value then set labelText to labelText & "|" & (v as text)
+          end try
+        end repeat
+        set trace to trace & r & labelText & linefeed
+        if r is item 3 of argv and labelText contains ("|" & item 4 of argv) then set end of matches to el
+        set children to UI elements of el
+        if (count of children) > 100 then error "Owned AX child bound exceeded"
+        set pending to pending & children
+      end repeat
+      if item 2 of argv is "inspect" then return trace
+      if (count of matches) is not 1 then error "Missing or ambiguous owned AX control: " & trace
+      set control to item 1 of matches
+      if item 2 of argv is "value" then return (value of attribute "AXValue" of control) as text
+      if not enabled of control then error "Owned AX control disabled"
+      set frontmost to true
+      if not frontmost then error "Owned Settings lost focus"
+      if item 2 of argv is "space" then
+        set value of attribute "AXFocused" of control to true
+        if not (value of attribute "AXFocused" of control) then error "Checkbox did not take focus"
+        key code 49
+      else
+        perform action "AXPress" of control
+      end if
+      return trace
+    end tell
+  end tell
+end run`;
+
+async function installedAgents({ home, config, appDir, report, osa, run, env, budget, poll, startRust, stopRust, rustPID }) {
+  const evidence = report.agents = { passed: false, cli: { status: 'UNRUN' } };
+  const executable = await fs.realpath(path.join(appDir, 'Contents/MacOS/apparent'));
+  const helper = await fs.realpath(path.join(appDir, 'Contents/MacOS/apparent-helper'));
+  const packaged = await fs.realpath(path.join(appDir, 'Contents/Resources/settings/runtime/Electron.app/Contents/MacOS/Electron'));
+  const invoke = (pid, op, role = '', name = '') => osa(agentsAX, [String(pid), op, role, name]);
+  // Discover only direct children of our live Rust PID; verify their mapped text
+  // before any AX access. Renderer/helper grandchildren are never selected by name.
+  const child = async target => poll(async () => {
+    const { stdout } = await run('/bin/ps', ['-axo', 'pid=,ppid='], { env, timeout: budget(), maxBuffer: 262144 });
+    const candidates = stdout.trim().split('\n').map(s => s.trim().split(/\s+/).map(Number)).filter(([, p]) => p === rustPID());
+    const found = [];
+    for (const [pid] of candidates) {
+      const mapped = await run('/usr/sbin/lsof', ['-nP', '-a', '-p', String(pid), '-d', 'txt', '-Fn'], { env, timeout: budget(), maxBuffer: 131072 });
+      const files = mapped.stdout.split('\n').filter(s => s.startsWith('n/')).map(s => s.slice(1));
+      if ((await Promise.all(files.map(p => fs.realpath(p).catch(() => p)))).includes(target)) found.push(pid);
+    }
+    assert.equal(found.length, 1, 'Expected one mapped owned presentation child');
+    return found[0];
+  }, 'Owned installed Settings child');
+  const read = async () => {
+    const result = await agents(home, 'read', undefined, budget(3000));
+    assert.equal(result.status, 'connected');
+    return result.agents;
+  };
+  const open = async () => {
+    await invoke(rustPID(), 'open');
+    const native = await child(helper);
+    await poll(() => invoke(native, 'press', 'AXButton', 'Agents'), 'Native Agents navigation');
+    const pid = await child(packaged);
+    const tree = await poll(async () => {
+      const tree = await invoke(pid, 'inspect');
+      assert.ok(tree.includes('Apparent Settings — Agents'));
+      for (const label of ['General', 'Recording', 'Storage', 'Permissions', 'Agents', 'About', skill, 'Ask agents for a demo video']) assert.ok(tree.includes(label), `Missing visible ${label}`);
+      return tree;
+    }, 'Installed Agents visible content');
+    evidence.windows ??= [];
+    evidence.windows.push({ pid, nativePID: native, mappedExecutable: packaged, tree });
+    return pid;
+  };
+  const before = JSON.parse(await fs.readFile(config, 'utf8'));
+  let pid = await open();
+  const demo = async enabled => {
+    await invoke(pid, 'space', 'AXCheckBox', 'Ask agents for a demo video');
+    await poll(async () => {
+      assert.equal((await read()).agentDemoVideo, enabled);
+      const saved = JSON.parse(await fs.readFile(config, 'utf8'));
+      assert.equal(saved.experiments.agentDemoVideo, enabled);
+      const expected = structuredClone(before);
+      expected.experiments.agentDemoVideo = enabled;
+      assert.deepEqual(saved, expected, 'Demo mutation changed unrelated config');
+      assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), enabled ? '1' : '0');
+      return saved;
+    }, 'Space toggle authoritative readback');
+  };
+  assert.equal((await read()).agentDemoVideo, true);
+  await demo(false);
+  evidence.restart = await stopRust();
+  await startRust();
+  pid = await open();
+  assert.equal((await read()).agentDemoVideo, false);
+  assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), '0');
+  await demo(true);
+  evidence.keyboardAndRestart = true;
+
+  // Mirror Places::system's selection without changing PATH or system directories.
+  // Refuse every existing candidate, including stale/managed/foreign symlinks.
+  const candidates = ['/opt/homebrew/bin', '/usr/local/bin', path.join(home, '.local/bin')];
+  const links = [...candidates, path.join(home, 'bin')].map(p => path.join(p, 'apparent'));
+  let link, foreign, foreignIdentity;
+  try {
+    for (const p of links) {
+      const st = await fs.lstat(p).catch(e => { if (e.code !== 'ENOENT') throw e; });
+      if (st) throw new Error(`Existing command at ${p}; CLI mutation UNRUN`);
+    }
+    for (const dir of candidates) {
+      try { await fs.access(dir, fs.constants.W_OK); link = path.join(dir, 'apparent'); break; }
+      catch (e) { if (dir === candidates.at(-1) && e.code === 'ENOENT') link = path.join(dir, 'apparent'); }
+    }
+    assert.ok(link, 'No safe writable installation candidate');
+    assert.equal((await read()).cli, 'missing');
+    await invoke(pid, 'press', 'AXButton', 'Install command-line tool');
+    await poll(async () => {
+      assert.equal((await read()).cli, 'installed');
+      assert.equal(await fs.readlink(link), executable);
+    }, 'Product CLI install');
+    await invoke(pid, 'press', 'AXButton', 'Uninstall command-line tool');
+    await poll(async () => {
+      assert.equal((await read()).cli, 'missing');
+      await assert.rejects(fs.lstat(link), { code: 'ENOENT' });
+    }, 'Product CLI uninstall');
+    foreign = await fs.open(link, 'wx', 0o600);
+    foreignIdentity = await foreign.stat();
+    await foreign.writeFile('synthetic foreign command; never execute\n');
+    const identity = foreignIdentity = await foreign.stat();
+    await invoke(pid, 'press', 'AXButton', 'Refresh Agents settings');
+    await poll(async () => assert.equal((await read()).cli, 'taken'), 'Foreign command refusal');
+    await poll(async () => {
+      const tree = await invoke(pid, 'inspect');
+      assert.ok(tree.includes('Another program owns this command. Apparent will leave it alone.'));
+    }, 'Visible foreign command refusal');
+    // AXPress must refuse disabled controls, just as a real user cannot activate them.
+    await assert.rejects(invoke(pid, 'press', 'AXButton', 'Install command-line tool'), /disabled/);
+    const current = await fs.lstat(link);
+    assert.equal(current.ino, identity.ino);
+    assert.equal(await fs.readFile(link, 'utf8'), 'synthetic foreign command; never execute\n');
+    await fs.unlink(link);
+    await foreign.close(); foreign = null;
+    evidence.cli = { status: 'PASS', link, installedTarget: executable, foreignPreserved: true };
+  } catch (error) {
+    if (!link) evidence.cli = { status: 'UNRUN', reason: error.message };
+    else throw error;
+  } finally {
+    if (foreign) {
+      const current = await fs.lstat(link);
+      if (current.isFile() && foreignIdentity && current.ino === foreignIdentity.ino && current.dev === foreignIdentity.dev &&
+          await fs.readFile(link, 'utf8') === 'synthetic foreign command; never execute\n') await fs.unlink(link);
+      await foreign.close();
+    }
+    // Never sweep a path or remove a foreign/replaced file after failure.
+    if (link) {
+      const st = await fs.lstat(link).catch(e => { if (e.code !== 'ENOENT') throw e; });
+      if (st?.isSymbolicLink() && await fs.readlink(link) === executable) await fs.unlink(link);
+    }
+  }
+  await invoke(pid, 'press', 'AXButton', 'General');
+  const native = await child(helper);
+  await poll(() => invoke(native, 'press', 'AXButton', 'Agents'), 'Navigate back to Agents');
+  pid = await child(packaged);
+  assert.equal((await read()).agentDemoVideo, true);
+  await invoke(pid, 'close');
+  await poll(async () => {
+    await assert.rejects(run('/bin/kill', ['-0', String(pid)], { env, timeout: budget() }));
+    assert.deepEqual(await readRuntimeState(home, budget(3000)), { status: 'connected', phase: 'idle' });
+  }, 'Closing Settings preserves live daemon');
+  evidence.navigationAndClose = true;
+  evidence.passed = evidence.cli.status === 'PASS';
+  assert.ok(evidence.passed, `Installed Agents acceptance incomplete: ${evidence.cli.reason}`);
+}
+
 test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Reset', {
-  timeout: 120000,
+  timeout: 180000,
   skip: process.platform !== 'darwin' ? 'Native macOS CI only; Linux is not native proof' : false,
 }, async () => {
   assert.equal(process.env.CI, 'true', 'Refuse a personal Mac');
@@ -255,11 +458,11 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
   const report = { passed: false, platform: process.platform, os: os.release(), arch: process.arch,
     driver: { pid: process.pid, node: process.version }, permissionSource,
     source: { entry: 'electron/main.cjs', preload: 'electron/preload.cjs', renderer: 'dist/index.html' },
-    scope: 'Native Storage only; no recording, audio, permission or TCC changes', cleanup: {} };
-  const deadline = Date.now() + 95000;
+    scope: 'Storage/reporting and installed Agents; no recording, audio, permission or TCC changes', cleanup: {} };
+  const deadline = Date.now() + 150000;
   const budget = (cap = 5000) => {
     const remaining = deadline - Date.now();
-    assert.ok(remaining > 0, 'Native Storage overall deadline exceeded');
+    assert.ok(remaining > 0, 'Native Settings overall deadline exceeded');
     return Math.min(cap, remaining);
   };
   let home, backend, application, electronChild, page, logHandle, failure;
@@ -300,7 +503,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     })).stdout.trim();
     assert.match(report.source.commit, /^[0-9a-f]{40}$/);
     report.source.sha256 = {};
-    for (const file of ['electron/main.cjs', 'electron/preload.cjs', 'electron/runtime.cjs', 'src/storage.tsx', 'dist/index.html']) {
+    for (const file of ['electron/main.cjs', 'electron/preload.cjs', 'electron/runtime.cjs', 'src/storage.tsx', 'dist/index.html', 'electron/preloads/agents.cjs', 'src/agents/page.tsx', 'dist/settings.html']) {
       report.source.sha256[file] = createHash('sha256').update(await fs.readFile(path.join(root, file))).digest('hex');
     }
     home = await fs.mkdtemp(path.join(runner, 'sn-'));
@@ -523,6 +726,13 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     assert.equal(report.reset.location.storage.effectivePath, builtin);
     await page.screenshot({ path: path.join(output, 'storage-reset.png'), timeout: budget() });
     assert.deepEqual(rendererErrors, []);
+    // Finish the existing dev Storage presentation before exercising Rust-owned
+    // installed Settings. Packaged Agents is never launched independently.
+    await within(application.close(), budget(), 'Close Storage fixture');
+    application = null;
+    await installedAgents({ home, config, appDir, report, osa, run, env, budget, poll,
+      startRust, stopRust: () => stopOwned(backend, 'rust Agents restart', true),
+      rustPID: () => report.rust.pid });
     report.passed = true;
   } catch (error) {
     failure = error;

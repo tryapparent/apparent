@@ -1012,7 +1012,7 @@ impl SettingsWindow {
                     view.act(Action::CancelShortcut);
                 }
                 view.menu = None;
-                if pane == Pane::Storage {
+                if pane == Pane::Storage || pane == Pane::Agents {
                     view.act(Action::Navigate { pane });
                     return;
                 }

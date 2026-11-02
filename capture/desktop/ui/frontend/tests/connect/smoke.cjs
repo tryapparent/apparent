@@ -49,7 +49,7 @@ test(`${mode} Connect shipped Electron IPC, consent presentation, browser action
         const request = JSON.parse(line);
         if (request.microphone === 'read') { socket.end('{"microphone":{"enabled":true}}\n'); continue; }
         if (request.errorReporting === 'read') { socket.end('{"errorReporting":{"enabled":true}}\n'); continue; }
-        if (request.storage || request.reference) { socket.end('{"error":"feature_disabled"}\n'); continue; }
+        if (request.storage || request.reference || request.agents) { socket.end('{"error":"feature_disabled"}\n'); continue; }
         connect = true; requests.push(request);
         if (request.connect === 'settings') stage = 'initial';
         if (request.command === 'connect') stage = 'consent';

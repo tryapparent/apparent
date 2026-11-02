@@ -523,3 +523,104 @@ or `usr/share/apparent/settings/runtime`; popup packaging adds no second runtime
 when its `main.cjs` exists, alongside the same `dist/` and single `runtime/`. The absent
 share consumer adds no entry or routing. A share owner must verify its installed route
 on both platforms before enabling it; resolver availability alone is not that proof.
+
+## Agents replacement slice
+
+`AgentsSettings` in `src/agents/page.tsx` is the reusable Agents page body for the
+installed shared Settings foundation. It is available by default with no new
+activation flag. Only the installed Agents window exposes or accepts these
+four narrow methods; the development window has no Agents controls or methods:
+`readAgents()`, `installCli()`, `uninstallCli()`, `setAgentDemoVideo(boolean)`.
+No renderer-supplied paths, commands, config keys or deadlines are accepted.
+The command is displayed for selection, never executed by Electron.
+
+Rust reuses `composition/command_line.rs` for OS paths and link policy and the
+existing serialized config transaction for `experiments.agentDemoVideo`.
+Unrelated config and nested flags survive. This existing preference defaults on;
+file edits apply on the next read and the existing handoff consumer's next read.
+CLI status excludes paths and distinguishes unavailable development binaries,
+foreign programs, stale links, missing links and Homebrew-managed installation.
+Homebrew-managed uninstall is refused. A created command may require the user to
+add its directory to PATH; installed status does not prove shell discovery.
+
+All operations use the authenticated same-user socket and shared rendezvous
+worker, strict tagged requests, three-second monotonic admission, and bounded
+response sizes. Demo writes recheck expiry under the config lock and before
+publication. Main admits one Agents request at a time and discards stale replies
+after navigation/close. No mutation retries; errors require explicit readback.
+CLI syscalls already admitted can finish after a client timeout.
+The existing explicit `storage_electron_rust_roundtrip` also checks the real
+Agents read/demo write/readback and canonical command contract.
+
+Installed routing now uses the shared page; see the routing section below for
+failure fallback, explicit rollback and native deletion scope. Keep native Agents
+until exact installed macOS and isolated Linux CLI, foreign-program, persistence,
+keyboard/error and skill-command acceptance passes. Parent independent review
+and platform gates remain.
+No Mac rental is authorized for this non-issue work; an approved existing Mac
+runner or other approved Mac access is required. No native acceptance is claimed
+from socket fixtures, builds or the prior Storage evidence.
+
+### Installed Agents routing (#376)
+
+Agents navigation now opens the shared Settings shell and reusable Agents page by
+default on macOS and Linux. Rust owns policy, config transactions and CLI OS
+operations; the renderer receives only the four Agents calls and sidebar
+navigation. Storage cannot call Agents; Agents cannot call Storage, Connect,
+sharing, reporting, runtime, clipboard or filesystem handlers. The existing
+packaged assets, UI-process ownership, generation and private parent pipe are
+shared with Storage. Other pages still use native Settings.
+
+Missing assets, launch errors and renderer crashes reopen native Agents. Until
+platform acceptance, explicit operational rollback is to restore the previous
+accepted application package (no config or experiment changes). The retained
+native Agents implementations are in settings_window.rs and native/Settings.swift;
+remove only their Agents bodies, CLI/demo action/view presentation consumers and
+obsolete presentation tests after exact installed macOS and isolated Linux proof
+(including navigation, restart persistence, foreign CLI preservation and close).
+Keep Rust policy/socket contracts and other native pages. Parent owns final
+removal and platform acceptance; development-window evidence is insufficient.
+
+The existing `tests/mac-storage-native.cjs` lifecycle now also runs its bounded installed Agents checks after Storage/reporting. It opens Settings
+with Command-comma on the verified installed Rust PID, selects native Agents,
+and inspects only its mapped packaged Electron child. It checks the visible
+sidebar/title/canonical skill command, real focused Space toggles, authoritative
+Rust/config readback with unrelated keys preserved, Rust restart/reopen,
+navigation away/back, and window close with the daemon still idle and reachable.
+No separate Electron Agents launch, debug port, renderer config write or new
+workflow is used. The total fixture timeout is 180 seconds (150-second action
+budget plus cleanup); existing Storage/reporting assertions and evidence remain.
+
+CLI acceptance checks all Rust Mac candidates (`/opt/homebrew/bin`,
+`/usr/local/bin`, private `~/.local/bin`, plus `~/bin`) before mutation. Any
+existing command leaves CLI explicitly `UNRUN` and the overall fixture fails
+incomplete. On the disposable GitHub runner only, an absent writable candidate
+gets real UI install/status/uninstall, then an exclusively created synthetic
+foreign file to check disabled Install and preservation. Cleanup removes only a
+symlink with the exact installed executable target or the exact synthetic file
+identified by device/inode/content; it never replaces an existing program.
+This proves UI refusal, not a forced forbidden IPC mutation.
+
+Source preparation is **not Mac acceptance**. Before executing, the parent must
+supply the approved existing platform CI dependency (#366), the installed frozen
+candidate with packaged Settings assets, an interactive GitHub-hosted macOS
+session and existing System Events Accessibility/AppleEvents permission. No TCC
+grant/reset or Mac allocation is part of this test. Unknown AX roles/tree shapes,
+missing focus, native navigation shortcuts or packaged child mapping fail closed
+with owned-window diagnostics; their actual compatibility remains unrun until
+Darwin execution. The root job already provides the guard/output/app variables:
+
+```sh
+cd capture/desktop/ui/frontend
+node --check tests/mac-storage-native.cjs
+node --test tests/mac-storage-native.cjs
+# Existing focused shipped Electron regression (Linux needs an isolated X display):
+xvfb-run -a node --test tests/retention-smoke.cjs
+```
+
+For actual Mac proof use that same `node --test tests/mac-storage-native.cjs`
+invocation in the existing job after its owned app installation; retain
+`mac-storage-native.json` (`agents` included), Rust log and existing images with
+the job's evidence handling. A non-Mac skip, syntax check or Electron regression
+cannot certify Darwin compilation, AX/input, installed routing or native parity.
+Native Agents removal, merge and CI acceptance remain the parent's gates.

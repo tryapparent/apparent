@@ -4,12 +4,14 @@ const os = require('node:os');
 const {PublicShare} = require('./public-share.cjs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { drawing, readRuntimeState, captureLocation, errorReporting, captureReference, storagePreference, microphoneEnabled } = require('./runtime.cjs');
+const { agents, drawing, readRuntimeState, captureLocation, errorReporting, captureReference, storagePreference, microphoneEnabled } = require('./runtime.cjs');
 const { ConnectSettings, actions } = require('./connect.cjs');
 const followWindowTheme = require('@apparent/ui/window-theme');
 nativeTheme.themeSource = 'system';
 const connectSettings = process.argv.includes('--settings-connect');
-const settings = connectSettings || process.argv.includes('--settings-storage');
+const agentsSettings = process.argv.includes('--settings-agents') && !connectSettings;
+const storageSettings = process.argv.includes('--settings-storage') && !connectSettings && !agentsSettings;
+const settings = connectSettings || agentsSettings || storageSettings;
 const initialConnectAction = process.argv.find(value => value.startsWith('--connect-action='))?.slice('--connect-action='.length);
 
 // Deliberately separate from the installed application's profile and identity.
@@ -25,10 +27,10 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionCheckHandler(() => false);
   const window = new BrowserWindow({
     width: 920, height: 760, minWidth: 640, minHeight: 620,
-    title: connectSettings ? 'Apparent Settings — Connect' : settings ? 'Apparent Settings — Storage' : 'Apparent — UI foundation',
+    title: settings ? `Apparent Settings — ${connectSettings ? 'Connect' : agentsSettings ? 'Agents' : 'Storage'}` : 'Apparent — UI foundation',
     backgroundColor: followWindowTheme.backgroundColor(nativeTheme),
     webPreferences: {
-      preload: path.join(__dirname, connectSettings ? 'preloads/connect.cjs' : settings ? 'preloads/storage.cjs' : 'preload.cjs'),
+      preload: path.join(__dirname, connectSettings ? 'preloads/connect.cjs' : agentsSettings ? 'preloads/agents.cjs' : storageSettings ? 'preloads/storage.cjs' : 'preload.cjs'),
       contextIsolation: true, nodeIntegration: false, sandbox: true,
       webSecurity: true, spellcheck: false,
     },
@@ -36,9 +38,7 @@ app.whenReady().then(() => {
   followWindowTheme(nativeTheme, window);
   window.removeMenu();
   const pageUrl = pathToFileURL(path.join(__dirname, settings ? '../dist/settings.html' : '../dist/index.html'));
-  if (connectSettings) {
-    pageUrl.searchParams.set('surface', 'connect');
-  }
+  if (connectSettings || agentsSettings) pageUrl.searchParams.set('surface', connectSettings ? 'connect' : 'agents');
   const page = pageUrl.href;
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event) => event.preventDefault());
@@ -52,11 +52,11 @@ app.whenReady().then(() => {
   };
   let drawingRevision;
   const validateStorage = (event, args) => {
-    if (connectSettings) throw new Error('Unavailable in Connect Settings');
+    if (connectSettings || agentsSettings) throw new Error('Unavailable outside Storage Settings');
     validate(event, args);
   };
   const validateConnect = (event, args) => {
-    if (settings && !connectSettings) throw new Error('Unavailable in Storage Settings');
+    if (settings && !connectSettings) throw new Error('Unavailable outside Connect Settings');
     validate(event, args);
   };
   const validateFoundation = (event, args) => {
@@ -65,12 +65,12 @@ app.whenReady().then(() => {
   };
   ipcMain.handle('apparent:navigate-settings', (event, ...args) => {
     validate(event, []);
-    if (!settings || args.length !== 1 || !['general', 'recording', 'permissions', 'agents', 'about', ...(connectSettings ? ['storage'] : [])].includes(args[0])) throw new Error('Forbidden Settings page');
+    if (!settings || args.length !== 1 || !['general', 'recording', 'storage', 'permissions', 'agents', 'about'].filter(pane => connectSettings || pane !== (agentsSettings ? 'agents' : 'storage')).includes(args[0])) throw new Error('Forbidden Settings page');
     process.stdout.write(`${JSON.stringify({ action: 'navigate', pane: args[0] })}\n`);
   });
   ipcMain.handle('apparent:show-capture-folder', (event, ...args) => {
-    validateStorage(event, args);
-    if (!settings) throw new Error('Unavailable outside Settings');
+    validate(event, args);
+    if (!storageSettings) throw new Error('Unavailable outside Storage Settings');
     process.stdout.write(`${JSON.stringify({ action: 'show-captures' })}\n`);
   });
   if (settings) {
@@ -145,6 +145,21 @@ app.whenReady().then(() => {
     const { revision: _revision, ...storage } = result.storage;
     return { status: 'connected', storage };
   };
+  let agentsPending = false;
+  for (const operation of ['read', 'install', 'uninstall', 'demo']) {
+    ipcMain.handle(`apparent:agents-${operation}`, async (event, ...args) => {
+      if (!agentsSettings) throw new Error('Unavailable outside Agents Settings');
+      validate(event, operation === 'demo' ? args.slice(1) : args);
+      if (operation === 'demo' && (args.length !== 1 || typeof args[0] !== 'boolean')) throw new Error('Forbidden bridge request');
+      if (agentsPending) return { status: 'error', code: 'app_busy' };
+      agentsPending = true;
+      const token = generation;
+      try {
+        const result = await agents(os.homedir(), operation, args[0]);
+        return token === generation ? result : { status: 'disconnected' };
+      } finally { agentsPending = false; }
+    });
+  }
   let reportingMutation = false;
   let microphoneMutation = false;
   ipcMain.handle('apparent:read-microphone-enabled', (event, ...args) => { validateFoundation(event, args); return microphoneEnabled(os.homedir()); });

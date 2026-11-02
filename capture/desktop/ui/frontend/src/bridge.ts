@@ -10,6 +10,11 @@ declare global {
       undoDrawing: () => Promise<Drawing>;
       readMicrophoneEnabled: () => Promise<ErrorReporting>;
       setMicrophoneEnabled: (enabled: boolean) => Promise<ErrorReporting>;
+
+      readAgents: () => Promise<AgentsResult>;
+      installCli: () => Promise<AgentsResult>;
+      uninstallCli: () => Promise<AgentsResult>;
+      setAgentDemoVideo: (enabled: boolean) => Promise<AgentsResult>;
       readRuntimeState: () => Promise<RuntimeState>;
       readCaptureReference: () => Promise<CaptureReference>;
       copyCaptureReference: () => Promise<CaptureReference>;
@@ -81,3 +86,8 @@ export type UsageResult = Unavailable | { status: 'connected';
 export type Drawing = { status: "connected"; active: boolean; strokes: number } | { status: "disconnected" | "cancelled" } | { status: "error"; code: string };
 
 export type PublicShareResult = { status:'connected'; state:'preparing'|'prepared'|'copied'|'failed'|'cancelled'|'expired' } | {status:'error';code:string} | {status:'cancelled'};
+
+export type AgentsResult = { status: 'connected'; agents: {
+  cli: 'unavailable' | 'installed' | 'managed' | 'missing' | 'stale' | 'taken' | 'nowhere';
+  canInstall: boolean; canUninstall: boolean; agentDemoVideo: boolean; skillCommand: string;
+} } | { status: 'disconnected' } | { status: 'error'; code: string };

@@ -288,3 +288,16 @@ test('stdin accepts fragmented lines and rejects oversized individual lines',()=
     assert.equal(writes, 1);
   });
 }
+test('Agents projects status, uses bounded deadlines and never retries ambiguous writes', async t => {
+  const { agents } = require('../electron/runtime.cjs');
+  const view = { cli: 'taken', canInstall: false, canUninstall: false, agentDemoVideo: true, skillCommand: 'canonical fixture' };
+  const f = await fixture(t, JSON.stringify({ agents: { ...view, privatePath: '/private' } }) + '\n');
+  assert.deepEqual(await agents(f.home), { status: 'connected', agents: view });
+  assert.equal(JSON.parse(f.requests[0]).agents, 'read');
+  assert.ok(Number.isSafeInteger(JSON.parse(f.requests[0]).deadline));
+  assert.throws(() => agents(f.home, 'shell'));
+  assert.throws(() => agents(f.home, 'demo', 'yes'));
+  const slow = await fixture(t, null);
+  assert.deepEqual(await agents(slow.home, 'install', undefined, 30), { status: 'error', code: 'outcome_unknown' });
+  assert.equal(slow.requests.length, 1);
+});

@@ -202,3 +202,72 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   await expect.poll(() => emitted.join('')).toContain('"action":"navigate","pane":"general"');
   t.diagnostic('Retention and installed Settings presentation assertions completed');
 });
+
+test('Installed Agents owns only Agents and navigation capabilities', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'ui-agents-installed-'));
+  let agentInstalled = false;
+  let agentDemo = true;
+  let agentBusy = true;
+  let agentRejectInstall = true;
+  const directory = path.join(home, '.config/apparent/agent-control');
+  await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+  const requests = [];
+  const server = net.createServer(socket => socket.once('data', data => {
+    requests.push(data.toString());
+    const request = JSON.parse(data);
+    if (request?.agents) {
+      if (agentBusy || (request.agents === 'install' && agentRejectInstall)) {
+        agentBusy = false;
+        agentRejectInstall = request.agents !== 'install';
+        return socket.end('{"error":"app_busy"}\n');
+      }
+      if (request.agents === 'install') agentInstalled = true;
+      if (request.agents === 'uninstall') agentInstalled = false;
+      if (request.agents === 'demo') agentDemo = request.enabled;
+      socket.end(JSON.stringify({agents: {cli: agentInstalled ? 'installed' : 'missing', canInstall: !agentInstalled,
+        canUninstall: agentInstalled, agentDemoVideo: agentDemo, skillCommand: 'canonical fixture command'}}) + '\n');
+    }
+  }));
+  const address = path.join(directory, 'capture.sock');
+  await new Promise(resolve => server.listen(address, resolve));
+  await fs.chmod(address, 0o600);
+  const app = await electron.launch({ args: [path.join(__dirname, '..'), '--settings-agents'], env: { ...process.env, HOME: home } });
+  t.after(async () => { await app.close(); await new Promise(resolve => server.close(resolve)); await fs.rm(home, { recursive: true, force: true }); });
+  const page = await app.firstWindow();
+  await expect(page.getByRole('heading', { name: 'Agents', exact: true, level: 1 })).toBeVisible();
+  await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle()))
+    .toBe('Apparent Settings — Agents');
+  assert.equal(await page.getByRole('button', { name: 'Agents', exact: true }).getAttribute('aria-current'), 'page');
+  assert.deepEqual(await page.evaluate(() => Object.keys(window.apparent).sort()), ['readAgents', 'installCli', 'uninstallCli', 'setAgentDemoVideo', 'navigateSettings'].sort());
+  const agents = page.getByRole('region', { name: 'Agents', exact: true });
+  await expect(agents.getByText('Could not confirm the saved state. Refresh before trying again.', { exact: true })).toBeVisible();
+  await agents.getByRole('button', { name: 'Refresh Agents settings' }).click();
+  await agents.getByRole('button', { name: 'Install command-line tool', exact: true }).click();
+  await expect(agents.getByText('Could not confirm the saved state. Refresh before trying again.', { exact: true })).toBeVisible();
+  assert.equal(requests.filter(r => r.startsWith('{') && JSON.parse(r).agents === 'install').length, 1);
+  await agents.getByRole('button', { name: 'Refresh Agents settings' }).click();
+  await agents.getByRole('button', { name: 'Install command-line tool', exact: true }).click();
+  await expect(agents.getByText('The command-line tool is installed.', { exact: true })).toBeVisible();
+  await agents.getByRole('button', { name: 'Uninstall command-line tool', exact: true }).click();
+  await expect(agents.getByText('The command-line tool is not installed.', { exact: true })).toBeVisible();
+  await agents.getByRole('checkbox').click();
+  await expect(agents.getByRole('checkbox')).not.toBeChecked();
+  await expect(agents.getByText('canonical fixture command', {exact:true})).toBeVisible();
+  await page.evaluate(() => window.apparent.navigateSettings('general'));
+  assert.equal(await app.evaluate(async ({ ipcMain, BrowserWindow }) => {
+    const sender = BrowserWindow.getAllWindows()[0].webContents;
+    const event = { sender, senderFrame: sender.mainFrame };
+    const allowed = new Set(['agents-read', 'agents-install', 'agents-uninstall', 'agents-demo', 'navigate-settings']);
+    for (const [channel, handler] of ipcMain._invokeHandlers) {
+      if (!channel.startsWith('apparent:') || allowed.has(channel.slice(9))) continue;
+      try { await handler(event); return channel; } catch {}
+    }
+    for (const [channel, args] of [['agents-read', [true]], ['agents-demo', ['yes']], ['navigate-settings', ['agents']], ['navigate-settings', ['storage', 'extra']]]) {
+      try { await ipcMain._invokeHandlers.get(`apparent:${channel}`)(event, ...args); return channel; } catch {}
+    }
+    for (const channel of allowed) {
+      try { await ipcMain._invokeHandlers.get(`apparent:${channel}`)({ sender, senderFrame: { url: sender.getURL() } }); return channel; } catch {}
+    }
+    return true;
+  }), true);
+});

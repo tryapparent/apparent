@@ -1,4 +1,5 @@
 //! Local, same-user control of the running GUI. Never launches an app or sends a capture.
+mod agents;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
@@ -341,6 +342,7 @@ enum Wire {
     Storage(Storage),
     ErrorReporting(ErrorReportingRequest),
     Microphone(super::notes::audio::Request),
+    Agents(agents::Request),
     Connect(u64),
 }
 
@@ -350,6 +352,7 @@ enum SettingsRequest {
     Storage(Storage),
     ErrorReporting(ErrorReportingRequest),
     Microphone(super::notes::audio::Request),
+    Agents(agents::Request),
 }
 
 impl SettingsRequest {
@@ -358,6 +361,7 @@ impl SettingsRequest {
             Self::Storage(request) => request.execute(config, deadline),
             Self::ErrorReporting(request) => request.execute(config, deadline),
             Self::Microphone(request) => request.execute(config, deadline),
+            Self::Agents(request) => request.execute(config, deadline),
         }
     }
 }
@@ -406,6 +410,9 @@ fn parse_request(line: &str) -> Option<Wire> {
         }
 
         if let Ok(request) = serde_json::from_str::<super::notes::audio::Request>(line) { return Some(Wire::Microphone(request)); }
+        if let Ok(request) = serde_json::from_str::<agents::Request>(line) {
+            return Some(Wire::Agents(request));
+        }
         if let Ok(request) = serde_json::from_str::<ErrorReportingRequest>(line) {
             return Some(Wire::ErrorReporting(request));
         }
@@ -600,6 +607,14 @@ fn listen_at_config(path: PathBuf, config_path: PathBuf) -> Result<flume::Receiv
                             Wire::Microphone(request) => {
                                 let deadline = request.deadline().min(storage_clock_ms() + 3000);
                                 match storage_tx.try_send((SettingsRequest::Microphone(request), deadline, stream)) {
+                                    Ok(()) => {},
+                                    Err(std::sync::mpsc::TrySendError::Full((_, _, mut stream)) | std::sync::mpsc::TrySendError::Disconnected((_, _, mut stream))) => { let _ = writeln!(stream, "{{\"error\":\"app_busy\"}}"); }
+                                }
+                                continue;
+                            }
+                            Wire::Agents(request) => {
+                                let deadline = request.deadline().min(storage_clock_ms() + 3000);
+                                match storage_tx.try_send((SettingsRequest::Agents(request), deadline, stream)) {
                                     Ok(()) => {},
                                     Err(std::sync::mpsc::TrySendError::Full((_, _, mut stream)) | std::sync::mpsc::TrySendError::Disconnected((_, _, mut stream))) => { let _ = writeln!(stream, "{{\"error\":\"app_busy\"}}"); }
                                 }

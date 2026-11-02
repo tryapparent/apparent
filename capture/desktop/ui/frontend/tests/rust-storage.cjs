@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const net = require('node:net');
 const path = require('node:path');
-const { captureLocation, errorReporting, storagePreference } = require('../electron/runtime.cjs');
+const { agents, captureLocation, errorReporting, storagePreference } = require('../electron/runtime.cjs');
 const [home, config] = process.argv.slice(2);
 async function main() {
   const selected = path.join(home, 'selected é captures');
@@ -22,6 +22,14 @@ async function main() {
   assert.deepEqual(await errorReporting(home), { status: 'connected', enabled: false });
   assert.deepEqual(await errorReporting(home, true), { status: 'connected', enabled: true });
   assert.notEqual(JSON.parse(await fs.readFile(config, 'utf8')).errorReportingGeneration, revoked.errorReportingGeneration);
+  const agentState = await agents(home);
+  assert.equal(agentState.status, 'connected');
+  assert.equal(agentState.agents.agentDemoVideo, true);
+  assert.equal(agentState.agents.skillCommand, 'bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent');
+  assert.equal((await agents(home, 'demo', false)).agents.agentDemoVideo, false);
+  assert.equal((await agents(home)).agents.agentDemoVideo, false);
+  assert.equal(JSON.parse(await fs.readFile(config, 'utf8')).privateFixture, 'keep');
+  assert.equal((await agents(home, 'demo', true)).agents.agentDemoVideo, true);
   const first = await captureLocation(home);
   assert.equal(first.status, 'connected');
   assert.equal(first.storage.source, 'builtin');

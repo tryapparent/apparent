@@ -1,3 +1,3 @@
 // Installed entrypoint contains Settings only; development fixtures are not packaged.
-process.argv.push('--settings-storage');
+if (!process.argv.includes('--settings-agents')) process.argv.push('--settings-storage');
 require('./main.cjs');

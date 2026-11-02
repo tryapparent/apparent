@@ -100,6 +100,13 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   await expect(page.getByRole('button', { name: 'Undo last mark', exact: true })).toBeDisabled();
   assert.equal(requests.filter(r => r.includes('"drawing":"undo"')).length, 1);
 
+  assert.equal(await application.evaluate(async ({ ipcMain, BrowserWindow }) => {
+    const sender = BrowserWindow.getAllWindows()[0].webContents;
+    for (const [operation, args] of [['read', []], ['install', []], ['uninstall', []], ['demo', [false]]]) {
+      try { await ipcMain._invokeHandlers.get(`apparent:agents-${operation}`)({ sender, senderFrame: sender.mainFrame }, ...args); return false; } catch {}
+    }
+    return true;
+  }), true);
   const reporting = page.getByRole('region', { name: 'Send technical error reports', exact: true });
   await reporting.getByRole('button', { name: 'Refresh reporting setting' }).click();
   const toggle = reporting.getByRole('checkbox', { name: 'Send technical error reports' });

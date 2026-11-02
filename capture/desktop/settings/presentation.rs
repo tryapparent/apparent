@@ -1,4 +1,4 @@
-//! Installed Storage presentation. Policy and settings persistence stay in Rust.
+//! Installed shared Settings presentation. Policy and settings persistence stay in Rust.
 use std::{path::PathBuf, process::{Command, Stdio}, sync::Arc};
 use super::settings::{Action, Event, Transport};
 
@@ -34,21 +34,22 @@ pub(super) fn assets() -> Option<(PathBuf, PathBuf)> {
     None
 }
 
-pub(super) fn open(events: Arc<dyn Fn(Event) + Send + Sync>) -> anyhow::Result<Transport> {
-    open_mode(events, None)
+pub(super) fn open(pane: super::settings::Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyhow::Result<Transport> {
+    open_mode(pane, events, None)
 }
 
 pub(super) fn open_connect(events: Arc<dyn Fn(Event) + Send + Sync>, command: super::connect::Command) -> anyhow::Result<Transport> {
-    open_mode(events, Some(command))
+    open_mode(super::settings::Pane::General, events, Some(command))
 }
 
-fn open_mode(events: Arc<dyn Fn(Event) + Send + Sync>, connect: Option<super::connect::Command>) -> anyhow::Result<Transport> {
+fn open_mode(pane: super::settings::Pane, events: Arc<dyn Fn(Event) + Send + Sync>, connect: Option<super::connect::Command>) -> anyhow::Result<Transport> {
     use std::io::BufRead;
     let (app, runtime) = assets().ok_or_else(|| anyhow::anyhow!("Packaged Settings unavailable"))?;
-    anyhow::ensure!(connect.is_none() || app.join("electron/connect-preload.cjs").is_file(), "Packaged Connect Settings unavailable");
+    anyhow::ensure!(connect.is_none() || app.join("electron/preloads/connect.cjs").is_file(), "Packaged Connect Settings unavailable");
     let mut process = Command::new(runtime);
     prepare_electron_environment(&mut process);
-    process.arg(app).arg(if connect.is_some() { "--settings-connect" } else { "--settings-storage" }).arg("--settings-parent");
+    let mode = if connect.is_some() { "--settings-connect" } else if pane == super::settings::Pane::Agents { "--settings-agents" } else { "--settings-storage" };
+    process.arg(app).arg(mode).arg("--settings-parent");
     if let Some(command) = connect {
         let command = serde_json::to_value(command)?;
         process.arg(format!("--connect-action={}", command.as_str().unwrap()));
@@ -64,7 +65,7 @@ fn open_mode(events: Arc<dyn Fn(Event) + Send + Sync>, connect: Option<super::co
                 // it cannot invoke other native Settings actions through this pipe.
                 if let Ok(action) = serde_json::from_str::<Action>(&line)
                     && (matches!(action, Action::Navigate { .. } | Action::Close)
-                        || connect.is_none() && matches!(action, Action::ShowCaptures))
+                        || (connect.is_none() && pane == super::settings::Pane::Storage && matches!(action, Action::ShowCaptures)))
                 {
                     events(Event::Action(action));
                 }
