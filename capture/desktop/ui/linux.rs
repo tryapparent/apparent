@@ -412,7 +412,6 @@ pub(in crate::capture::desktop) fn place_hud_pill(point: [f64; 2]) {
 /// its springs, and the window never takes focus from the app being recorded.
 pub(in crate::capture::desktop) struct PillChrome {
     id: Option<u32>,
-    input_rect: Option<[i16; 4]>,
 }
 
 impl Drop for PillChrome {
@@ -475,7 +474,7 @@ impl PillChrome {
                 }).detach();
             }
         }
-        Self { id, input_rect: None }
+        Self { id }
     }
 
     pub(in crate::capture::desktop) fn window_number(&self) -> Option<u32> {
@@ -510,25 +509,15 @@ impl PillChrome {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::capture::desktop) fn apply(
         &mut self,
-        pill_width: f32,
-        pill_height: f32,
-        scale: f32,
-        y_offset: f32,
+        _pill_width: f32,
+        _pill_height: f32,
+        _scale: f32,
+        _y_offset: f32,
         _opacity: f32,
         _is_completed: bool,
         _blur_radius: f32,
         _content_shrink: f32,
     ) {
-        let scale = scale.clamp(0.5, 1.15);
-        let width = pill_width * scale;
-        let height = pill_height * scale;
-        let rect = [((PILL_WINDOW_W - width) / 2.0).floor() as i16,
-            ((PILL_WINDOW_H - height) / 2.0 + y_offset).floor() as i16,
-            width.ceil() as i16, height.ceil() as i16];
-        if self.input_rect != Some(rect) {
-            if let Some(id) = self.id { x11::set_input_rect(id, rect); }
-            self.input_rect = Some(rect);
-        }
     }
 }
 
@@ -914,4 +903,13 @@ pub(in crate::capture::desktop) fn note_badge_anchor(width: f32, y: f32) -> Opti
     let rect = x11::geometry(own_window(&PILL_WINDOW)?)?;
     Some([rect[0] + rect[2] / 2.0 - f64::from(width) / 2.0,
         rect[1] + f64::from(y), f64::from(width), f64::from(super::super::ISLAND_H)])
+}
+
+/// The Electron UI shares the existing native overlay route so its counter can sit above
+/// the override-redirect capsule. Validate the exact child and XID before adapting it.
+pub(in crate::capture::desktop) fn place_note_surface(id: u32, pid: u32, rect: [i32; 4], focus: bool) {
+    if !x11::window_info(id as isize).is_some_and(|window| window.pid == pid) { return; }
+    x11::accept_pointer(id);
+    x11::float(id, rect.map(f64::from));
+    if focus { x11::focus(id); }
 }

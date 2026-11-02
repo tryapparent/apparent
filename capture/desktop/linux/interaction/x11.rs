@@ -722,19 +722,6 @@ pub fn set_click_through(id: u32, through: bool) {
     x.flush();
 }
 
-/// Transparent capsule margins must pass clicks to neighboring Electron controls.
-pub fn set_input_rect(id: u32, rect: [i16; 4]) {
-    use x11rb::protocol::xproto::Rectangle;
-    let Some(x) = x().filter(|x| x.xfixes) else { return };
-    let Ok(region) = x.conn.generate_id() else { return };
-    let [left, top, width, height] = rect;
-    let shape = Rectangle { x: left, y: top, width: width.max(1) as u16, height: height.max(1) as u16 };
-    let _ = x.conn.xfixes_create_region(region, &[shape]);
-    let _ = x.conn.xfixes_set_window_shape_region(id, SK::INPUT, 0, 0, region);
-    let _ = x.conn.xfixes_destroy_region(region);
-    x.flush();
-}
-
 /// Lets a window of Apparent's take clicks on Hyprland, where a click on the pill or the picker
 /// otherwise lands on the app below it, for two reasons. Omarchy's `windows.lua` gives
 /// `no_focus` to floating XWayland windows with an empty class and title, which Hyprland's hit

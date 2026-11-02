@@ -4,7 +4,7 @@ const { validCommand, validSnapshot, popupBounds, badgeBounds } = require('../..
 test('notes bridge accepts only bounded note actions, never renderer paths or window commands', () => {
   assert.equal(validCommand({ action: 'save', pin: 1, text: 'Change this\nnot that' }), true);
   for (const message of [{ action: 'save', pin: 1, text: 'x', path: '/tmp/private' },
-    { action: 'windows', ids: [9] }, { action: 'ready' }, { action: 'open', pin: 1 },
+    { action: 'windows', ids: [9] }, { action: 'surface', id: 9, rect: [0,0,10,10], focus: true }, { action: 'ready' }, { action: 'open', pin: 1 },
     { action: 'save', pin: 1, text: 'é'.repeat(4097) }, { action: 'delete', pin: -1 }]) {
     assert.ok(!validCommand(message));
   }

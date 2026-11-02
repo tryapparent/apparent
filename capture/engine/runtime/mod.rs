@@ -548,6 +548,7 @@ pub struct SharedCaptureTelemetry {
     pub shift_held: AtomicBool,
     /// The focused note editor owns input; suppress annotation ink while typing.
     pub notes_editing: AtomicBool,
+    pub note_ui_pid: AtomicU64,
     next_note_pin: AtomicU64,
     pub capture_mode: AtomicU64,
     /// The record shortcut (`crate::settings` loads and saves it).
@@ -616,6 +617,7 @@ impl SharedCaptureTelemetry {
             selecting: AtomicBool::new(false),
             shift_held: AtomicBool::new(false),
             notes_editing: AtomicBool::new(false),
+            note_ui_pid: AtomicU64::new(0),
             next_note_pin: AtomicU64::new(0),
             capture_mode: AtomicU64::new(0),
             shortcut: Mutex::new(shortcuts.record),
@@ -1056,8 +1058,9 @@ impl SharedCaptureTelemetry {
             .clone();
         let own = std::process::id() as i32;
         let source = self.capture_source_pid.load(Ordering::Acquire);
+        let note_pid = self.note_ui_pid.load(Ordering::Acquire);
         crate::shared::windows::owned_window_at(windows, x, y, &passthrough, |pid| {
-            pid == own || (pid != source && is_helper(pid))
+            pid == own || (note_pid > 0 && u64::try_from(pid).ok() == Some(note_pid)) || (pid != source && is_helper(pid))
         })
     }
 
@@ -1418,6 +1421,10 @@ mod tests {
         assert!(at(300.0, 300.0), "Settings");
         assert!(!at(1400.0, 400.0), "the iPhone mirror");
         assert!(!at(1000.0, 900.0), "the app under the ink overlay");
+        telemetry.note_ui_pid.store(app as u64, Ordering::Release);
+        assert!(at(1000.0, 900.0), "the separate Electron note UI is owned");
+        telemetry.note_ui_pid.store(0, Ordering::Release);
+        assert!(!at(1000.0, 900.0), "closing notes releases that process identity");
         telemetry.set_capture_source_pid(0);
         assert!(at(1400.0, 400.0), "a helper that isn't the source");
     }

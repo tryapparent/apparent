@@ -38,6 +38,16 @@ app.whenReady().then(() => {
   const display = screen.getDisplayNearestPoint({ x: Math.round(frame[0] + frame[2] / 2), y: Math.round(frame[1] + frame[3] / 2) });
   const area = display.workArea;
   badge.setPosition(Math.min(area.x + area.width - 156, Math.round(frame[0] + frame[2] / 2 + 150)), area.y + 12);
+  const placed = new Map();
+  function placeSurface(win, focus, force = false) {
+    if (process.platform !== 'linux') return;
+    const { x, y, width, height } = win.getBounds();
+    const rect = [x, y, width, height];
+    const key = JSON.stringify(rect);
+    if (!force && !focus && placed.get(win) === key) return;
+    placed.set(win, key);
+    send({ action: 'surface', id: win.getNativeWindowHandle().readUInt32LE(0), rect, focus });
+  }
   function validate(event) {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (![popup, badge].includes(win) || event.senderFrame !== event.sender.mainFrame ||
@@ -49,9 +59,9 @@ app.whenReady().then(() => {
   }
   ipcMain.handle('notes:ready', (event) => { validate(event); publish(); });
   ipcMain.handle('notes:finish-ready', event => { validate(event); if (event.sender !== popup.webContents || !finishing || finished) return; finished = true; send({ action: 'finished' }); });
-  popup.on('blur', () => setImmediate(() => {
+  popup.on('blur', () => setTimeout(() => {
     if (!finishing && popup.isVisible() && ![popup, badge].includes(BrowserWindow.getFocusedWindow())) send({ action: 'outside' });
-  }));
+  }, 100));
   ipcMain.handle('notes:command', (event, value) => {
     validate(event);
     if (finished || !validCommand(value)) throw new Error('Invalid notes command');
@@ -82,10 +92,14 @@ app.whenReady().then(() => {
         const work = screen.getDisplayNearestPoint(point).workArea;
         const bounds = popupBounds(point, work, state.mode === 'list' ? 350 : 220);
         popup.setBounds(bounds);
-        if (!popup.isVisible()) popup.show();
-        if (!previous || previous.mode !== state.mode || previous.current !== state.current) popup.focus();
+        const opening = !popup.isVisible();
+        if (opening) popup.show();
+        const focus = !previous || previous.mode !== state.mode || previous.current !== state.current;
+        if (focus) popup.focus();
+        placeSurface(popup, focus, opening);
       } else { popup.hide(); if (previous && previous.mode !== 'badge') send({ action: 'hidden' }); }
-      badge.showInactive(); publish();
+      const openingBadge = !badge.isVisible();
+      badge.showInactive(); placeSurface(badge, false, openingBadge); publish();
     } catch { app.quit(); }
   });
   lines.on('close', () => app.quit());

@@ -16,13 +16,30 @@ pub enum CommandMessage {
     Hidden,
     Outside,
     Finished,
-    Draft { pin: u32, text: String },
-    Save { pin: u32, text: String },
-    Delete { pin: u32 },
-    Edit { pin: u32 },
+    Draft {
+        pin: u32,
+        text: String,
+    },
+    Save {
+        pin: u32,
+        text: String,
+    },
+    Delete {
+        pin: u32,
+    },
+    Edit {
+        pin: u32,
+    },
     Dismiss,
     List,
-    Windows { ids: Vec<u32> },
+    Windows {
+        ids: Vec<u32>,
+    },
+    Surface {
+        id: u32,
+        rect: [i32; 4],
+        focus: bool,
+    },
 }
 #[derive(Clone, Debug)]
 pub struct Anchor {
@@ -117,6 +134,10 @@ impl Session {
             let _ = child.wait();
             return Err(error);
         }
+        let note_pid = child.id();
+        telemetry
+            .note_ui_pid
+            .store(u64::from(note_pid), Ordering::Release);
         let output = child.stdout.take().unwrap();
         let (sender, receiver) = flume::bounded(64);
         let reader = sender.clone();
@@ -247,6 +268,31 @@ impl Session {
                                 mode = "badge";
                             }
                             CommandMessage::List => mode = "list",
+                            CommandMessage::Surface {
+                                id,
+                                rect,
+                                focus: wants_focus,
+                            } => {
+                                ensure!(
+                                    own_windows.contains(&id)
+                                        && rect[2] > 0
+                                        && rect[3] > 0
+                                        && rect[2] <= 8192
+                                        && rect[3] <= 8192,
+                                    "Invalid notes surface"
+                                );
+                                if completion.is_none()
+                                    && (mode != "badge" || own_windows.first() != Some(&id))
+                                {
+                                    #[cfg(target_os = "linux")]
+                                    crate::capture::desktop::platform::place_note_surface(
+                                        id,
+                                        note_pid,
+                                        rect,
+                                        wants_focus,
+                                    );
+                                }
+                            }
                             CommandMessage::Windows { ids } => {
                                 ensure!(ids.len() <= 2, "Invalid notes windows");
                                 own_windows = ids.clone();
@@ -309,6 +355,12 @@ impl Session {
             let _ = telemetry
                 .ui_sender
                 .try_send(LiveOverlayEvent::RequestSnapshot);
+            let _ = telemetry.note_ui_pid.compare_exchange(
+                u64::from(note_pid),
+                0,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            );
             if let Some(reply) = completion {
                 let _ = reply.send(if drained && failed_writes.is_empty() {
                     Ok(())

@@ -407,6 +407,14 @@ so intentional silence does not masquerade as an audio failure. Config writes
 use Rust's existing atomic writer and preserve unrelated keys. No setting edit
 interrupts active audio.
 
+On Linux, Electron uses X11/XWayland, matching the existing overlay adapters.
+Trusted main-process surface geometry goes through the same native floating-window
+adapter, with each XID checked against this capture's Electron child PID. This keeps
+the count clickable above the capsule on Hyprland; its compositor does not honor
+the capsule's X11 input shape for this overlap. Renderer commands cannot place
+windows. Capture telemetry treats this child as owned UI, so counter/editor clicks
+are not user feedback events.
+
 Notes route solely to this Electron surface. Closing it leaves capture and
 existing drawing running; a lost notes renderer must not claim a saved note.
 The old pin/drawing path is retained, while no legacy note editor exists to
