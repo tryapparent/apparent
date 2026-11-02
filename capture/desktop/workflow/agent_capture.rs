@@ -137,6 +137,26 @@ pub fn decide(state: &State, action: Action, id: &str) -> Outcome {
     }
 }
 
+/// Format the coordinator's post-action receipt, not an admission prediction.
+pub fn response(
+    outcome: Outcome,
+    mut receipt: serde_json::Value,
+    state: State,
+) -> serde_json::Value {
+    receipt["outcome"] = serde_json::json!(outcome);
+    receipt["state"] = serde_json::json!(state);
+    if outcome == Outcome::Cancelled && receipt["status"] != "cancelled" {
+        // Admission permits a cancellation attempt. A failed durable marker
+        // leaves the capture active; never acknowledge that attempt as cancelled.
+        receipt["outcome"] = serde_json::json!(Outcome::NotReady);
+        receipt["error"] = serde_json::json!("cancellation_failed");
+    }
+    if outcome == Outcome::AlreadyEnded && receipt["status"] == "unknown" {
+        receipt["error"] = serde_json::Value::Null;
+    }
+    receipt
+}
+
 pub fn new_id() -> Result<String> {
     let mut bytes = [0u8; 16];
     std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
@@ -253,6 +273,15 @@ pub fn listen() -> Result<flume::Receiver<Request>> {
     listen_at(path)
 }
 
+fn configure_request_stream(stream: &UnixStream) -> std::io::Result<()> {
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(3)))?;
+    // Darwin accept inherits the listener's nonblocking flag; Linux does not.
+    // Install bounded I/O first, then normalize only the accepted peer so an
+    // early read waits for its first bytes instead of rejecting a valid request.
+    stream.set_nonblocking(false)
+}
+
 fn listen_at(path: PathBuf) -> Result<flume::Receiver<Request>> {
     // Hold this advisory lock for the listener's whole lifetime. Without it, two launches
     // recovering the same stale socket can unlink each other's freshly bound listener.
@@ -302,8 +331,9 @@ fn listen_at(path: PathBuf) -> Result<flume::Receiver<Request>> {
                 if same_user(&stream).is_err() {
                     continue;
                 }
-                let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
-                let _ = stream.set_write_timeout(Some(Duration::from_secs(3)));
+                if configure_request_stream(&stream).is_err() {
+                    continue;
+                }
                 let mut line = String::new();
                 let response = if BufReader::new(&stream)
                     .take(256)
@@ -722,6 +752,34 @@ mod tests {
         let listener = UnixListener::bind(&path).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
         (path, listener)
+    }
+
+    #[test]
+    fn accepted_request_stream_waits_for_first_bytes_with_bounded_io() {
+        let (reader, mut writer) = UnixStream::pair().unwrap();
+        // Exercise the inherited nonblocking state even on Linux, whose accept
+        // normally clears it. The production helper must normalize the peer.
+        reader.set_nonblocking(true).unwrap();
+        configure_request_stream(&reader).unwrap();
+        let flags = unsafe { libc::fcntl(reader.as_raw_fd(), libc::F_GETFL) };
+        assert!(flags >= 0);
+        assert_eq!(flags & libc::O_NONBLOCK, 0);
+        assert_eq!(reader.read_timeout().unwrap(), Some(Duration::from_secs(3)));
+        assert_eq!(
+            reader.write_timeout().unwrap(),
+            Some(Duration::from_secs(3))
+        );
+        same_user(&reader).unwrap();
+        let worker = std::thread::spawn(move || {
+            let mut line = String::new();
+            let read = BufReader::new(reader).read_line(&mut line);
+            (read, line)
+        });
+        // A valid peer may send its first bytes after the server accepts it.
+        writeln!(writer, "state").unwrap();
+        let (read, line) = worker.join().unwrap();
+        assert_eq!(read.unwrap(), 6);
+        assert_eq!(line, "state\n");
     }
 
     #[cfg(target_os = "linux")]
@@ -1270,12 +1328,51 @@ mod tests {
     }
 
     #[test]
-    fn response_phase_and_outcome_are_machine_readable() {
-        let response = serde_json::json!({
-            "state": State { phase: Phase::Starting, capture_id: Some("id".into()) },
-            "outcome": Outcome::NotReady,
-        });
-        assert_eq!(response["state"]["phase"], "starting");
-        assert_eq!(response["outcome"], "not_ready");
+    fn cancel_response_refuses_failed_persistence_and_preserves_active_owner() {
+        use crate::capture::engine::bundle::recover;
+        for (phase, status) in [
+            (Phase::Starting, "starting"),
+            (Phase::Recording, "recording"),
+        ] {
+            let dir = std::env::temp_dir().join(format!("ac-cancel-{}", new_id().unwrap()));
+            std::fs::create_dir(&dir).unwrap();
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let marker = dir.join(recover::CANCELLED);
+            std::fs::create_dir(&marker).unwrap();
+            let mut registry = Registry::default();
+            registry.set("capture-a", status, None, None);
+            let current = State {
+                phase,
+                capture_id: Some("capture-a".into()),
+            };
+            let admitted = registry.decide(&current, Action::Cancel, "capture-a");
+            assert_eq!(admitted, Outcome::Cancelled);
+            // A real publication failure leaves the recording and receipt intact.
+            assert!(recover::cancel(&dir).is_err());
+            let refused = response(admitted, registry.inspect("capture-a"), current.clone());
+            assert_eq!(refused["error"], "cancellation_failed");
+            assert_eq!(refused["outcome"], "not_ready");
+            assert_eq!(refused["status"], status);
+            assert_eq!(refused["capture_id"], "capture-a");
+            assert_eq!(refused["state"]["capture_id"], "capture-a");
+            assert_eq!(refused["state"]["phase"], status);
+
+            std::fs::remove_dir(&marker).unwrap();
+            recover::cancel(&dir).unwrap();
+            registry.set("capture-a", "cancelled", None, None);
+            let cancelled = response(
+                admitted,
+                registry.inspect("capture-a"),
+                State {
+                    phase: Phase::Idle,
+                    capture_id: None,
+                },
+            );
+            assert_eq!(cancelled["outcome"], "cancelled");
+            assert_eq!(cancelled["status"], "cancelled");
+            assert!(cancelled["error"].is_null());
+            assert_eq!(cancelled["state"]["phase"], "idle");
+            std::fs::remove_dir_all(dir).unwrap();
+        }
     }
 }

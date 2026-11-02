@@ -113,6 +113,9 @@ readiness wait times out. Inspect the owned ID or explicitly cancel it.
 `apparent capture cancel <capture_id>` discards it even while pending. A mismatched ID or a stop
 while still starting fails without acting. An ended ID returns `already_ended` when no other
 capture is active, and a retained terminal result remains retrievable even during a newer capture.
+If the cancellation marker cannot be persisted, Cancel fails with `cancellation_failed` and
+`outcome: "not_ready"`; the same capture remains active and discoverable. Inspect that owned ID,
+repair the storage problem and retry cancellation rather than assuming the recording stopped.
 Retries do not toggle, start, or alter a newer capture. These commands control the GUI, not a separate
 blocking `record --duration` process. They require a running app and return errors if its control
 socket cannot answer. Neither sends a capture to a chat; finishing uses the ordinary local bundle
@@ -136,7 +139,7 @@ also include `outcome` and global `state` in their initial reply. Do not rely on
 waited reply: it may be the final read-only receipt. Transport/timeout errors may lack `status`
 and `bundle_path`, but carry the owned ID and recovery text. The bounded wait is 1–3600 seconds.
 Useful errors include `occupied`, `admission_expired`, `start_failed`, `unknown_capture`,
-`finalization_failed`, `cancelled`, `timeout`, `control_unavailable`, `app_busy`, `app_unresponsive`
+`finalization_failed`, `cancellation_failed`, `cancelled`, `timeout`, `control_unavailable`, `app_busy`, `app_unresponsive`
 and `invalid_response`; `outcome: "wrong_capture"` or `"not_ready"` also fails. After disconnect
 or timeout, inspect/retry the same ID before deciding on a new take.
 

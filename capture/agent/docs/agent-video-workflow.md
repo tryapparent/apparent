@@ -42,6 +42,15 @@ Disclose CLI stop rather than a visible Finish click, injected input where used,
 
 ## Compare trials without inventing a benchmark
 
+Use Apparent's opt-in [workflow tracing](video-tracing.md) to retain one workflow ID,
+timed command attempts, friction/recovery notes and hash-indexed evidence across
+agent handoffs. Start before preparation; keep failed takes in the same workflow.
+Preserve selected source/final evidence explicitly with `artifact --keep` rather
+than assuming scratch references survive. Enable the `videoTracing` experiment,
+start with `apparent trace start`, and attach authoring commands with `--trace ID`
+or `APPARENT_TRACE`. Apparent records its own command attempts; notes cover external
+tools, browser actions and visual QA. It does not intercept every agent tool call.
+
 Keep a private ledger of attempted action, observed result, elapsed time, retry and evidence path. Separate setup/readiness failures, missed gestures and false-red controller exits from confirmed product defects. For workflow-only retests, retain app and runner hashes and keep those bytes fixed.
 
 Measure meaningful-action-to-stop request, planned readable hold, stop acceptance and saved/ended verification separately. Replacing OCR with CLI control is a deliberate workflow change, not a like-for-like Finish-button benchmark. Different cache state, reused speech, capture lengths or environment setup prevent a controlled total-time claim.

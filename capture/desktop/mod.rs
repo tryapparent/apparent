@@ -1286,14 +1286,12 @@ impl ApparentCoordinator {
         }
         let response = match outcome {
             Some(outcome) => {
-                let mut response = self.agent_captures.inspect(&request.action.as_ref().unwrap().1);
                 // Preserve non-wait Stop/Cancel's existing outcome semantics.
-                response["outcome"] = serde_json::json!(outcome);
-                response["state"] = serde_json::json!(self.agent_state());
-                if outcome == Outcome::AlreadyEnded && response["status"] == "unknown" {
-                    response["error"] = serde_json::Value::Null;
-                }
-                response
+                crate::capture::desktop::workflow::agent_capture::response(
+                    outcome,
+                    self.agent_captures.inspect(&request.action.as_ref().unwrap().1),
+                    self.agent_state(),
+                )
             },
             None => serde_json::json!({"state": before}),
         };

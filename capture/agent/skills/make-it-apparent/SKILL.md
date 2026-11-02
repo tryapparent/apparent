@@ -15,6 +15,24 @@ For a generic request when implementation is unfinished or live capture is block
 
 The capture instructions below apply to scenes claiming live behavior, not as prerequisites for conceptual explanation. Keep raw evidence unchanged and private, inspect the entire final video and never commit generated media. A recording is not a substitute for tests. A screen-share of the coding session is not a demonstration of a finished result.
 
+## Trace the workflow locally
+
+Check installed `apparent trace --help` and whether the `videoTracing` experiment
+is enabled. When available, start one trace with `apparent trace start` before
+preparation and retain its ID across retries and handoffs. Follow
+[workflow tracing](../../docs/video-tracing.md): attach authoring commands with
+`--trace ID` (or scoped `APPARENT_TRACE`), record friction/recovery notes for
+external tools and MCP actions, and index exact skill/script, source bundle,
+cues, QA and final movie. Apparent records its executable hash and its own command
+timings automatically; it does not time agent thinking or intercept external tools.
+Use `apparent trace artifact ... --keep` for selected evidence that must survive
+scratch cleanup. Record observed cause separately from suspicion; never reconstruct
+historical timings. Verify retained hashes before ending the trace. This does not
+replace visual QA or capture ownership. Keep data private; never log secrets or
+publish traces. If the installed version lacks the feature or it is disabled,
+retain the private ledger normally; do not install a separate tracing utility or
+silently enable the experiment on someone else's machine.
+
 ## Explain the cause, not the tool log
 
 Before drafting, ask: **What does this viewer already know, and where must I pick them up?** Use the conversation and available context. Restore the immediate project context one local step before the unfamiliar mechanism; do not reteach familiar technical basics. If the evidence is thin, add one relevant bridge instead of asking the viewer to choose a level.
