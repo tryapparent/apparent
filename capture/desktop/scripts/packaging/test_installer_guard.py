@@ -25,6 +25,9 @@ class InstallerGuardTests(unittest.TestCase):
             executable = app / "Contents/MacOS/apparent"
             executable.parent.mkdir(parents=True)
             executable.write_text("old app")
+            legacy_runtime = app / "Contents/Resources/note-ui/runtime/legacy-marker"
+            legacy_runtime.parent.mkdir(parents=True)
+            legacy_runtime.write_text("old generated runtime")
             processes = root / "processes"
             # comm is executable identity, not argv: unrelated CLIs must survive.
             unrelated = [
@@ -47,13 +50,13 @@ case "$name" in
       for file in "$MOCK_TMP"/*.plist; do
         bash -n "${file%.plist}.sh"
         printf 'STAGE-EXIT=0\\n' > "${file%.plist}.log"
+        mkdir -p "$MOCK_TMP/ApparentStage.app/Contents/Resources/settings/runtime"
       done
     fi ;;
   security) exit 1 ;;
   node)
     case "$1" in
-      */package-notes.mjs) mkdir -p "$2/runtime/Electron.app" ;;
-      */sign-notes.mjs) test -d "$2" ;;
+      */package-notes.mjs) mkdir -p "$2/dist" ;;
       *) exit 90 ;;
     esac ;;
   taskpolicy|cargo|git|codesign|open|sleep|pgrep|pkill|ditto) : ;;
@@ -100,6 +103,7 @@ esac
                 self.assertNotIn("stage-settings", calls, "Never stage Settings into a running app")
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(executable.read_text(), "old app")
+                self.assertTrue(legacy_runtime.exists(), "A refused install must preserve the old runtime")
                 self.assertFalse((app / "Contents/Info.plist").exists())
                 self.assertNotIn("ditto ", calls)
                 self.assertNotIn("node ", calls)
@@ -112,17 +116,19 @@ esac
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 if remote:
                     self.assertIn("ditto ", calls)
+                    self.assertFalse(legacy_runtime.exists(), "ditto must not retain the obsolete popup runtime")
                 else:
                     self.assertEqual(executable.read_text(), "synthetic new asset")
                     self.assertIn("package-notes.mjs", calls)
-                    self.assertIn("sign-notes.mjs", calls)
-                    self.assertLess(calls.index("package-notes.mjs"), calls.index("sign-notes.mjs"))
+                    self.assertIn("stage-settings", calls)
                 self.assertEqual("open " in calls, remote or not no_launch)
 
     def test_destination_processes_refuse_before_replacement(self):
         for remote in (False, True):
             for running in ("Contents/MacOS/apparent", "Contents/MacOS/apparent-helper",
-                            "Contents/Frameworks/Sparkle.framework/Autoupdate"):
+                            "Contents/Frameworks/Sparkle.framework/Autoupdate",
+                            "Contents/Resources/note-ui/runtime/Electron.app/Contents/MacOS/Electron",
+                            "Contents/Resources/settings/runtime/Electron.app/Contents/MacOS/Electron"):
                 for no_launch in (False, True):
                     with self.subTest(remote=remote, running=running, no_launch=no_launch):
                         self.run_installer(remote, running, no_launch=no_launch)

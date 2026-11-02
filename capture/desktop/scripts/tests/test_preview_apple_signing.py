@@ -20,6 +20,7 @@ class AppleSigningTest(unittest.TestCase):
         (root / "capture/desktop/scripts/packaging/stage-settings.py").write_text(
             "import os, sys\nfrom pathlib import Path\n"
             "p = Path(sys.argv[1]) / 'app/dist/settings.html'\np.parent.mkdir(parents=True)\np.write_text('synthetic Settings')\n"
+            "r = Path(sys.argv[1]) / 'runtime/Electron.app/Contents/MacOS/Electron'\nr.parent.mkdir(parents=True)\nr.write_text('synthetic shared runtime')\n"
             "with Path(os.environ['TRACE']).open('a') as f: f.write('stage-settings ' + ' '.join(sys.argv[1:]) + '\\n')\n")
         (root / "bin").mkdir()
         (root / "sparkle/Sparkle.framework/Versions/B/XPCServices").mkdir(parents=True)
@@ -30,8 +31,7 @@ class AppleSigningTest(unittest.TestCase):
             "cargo": 'mkdir -p target/release; touch target/release/apparent target/release/apparent-helper',
             "node": '''printf 'node %s\\n' "$*" >> "$TRACE"
 case "$1" in
-  */package-notes.mjs) mkdir -p "$2/runtime/Electron.app/Contents/MacOS"; printf synthetic > "$2/runtime/Electron.app/Contents/MacOS/Electron" ;;
-  */sign-notes.mjs) test -f "$2/Contents/MacOS/Electron"; test "$3" = "$APPARENT_APPLE_SIGNING_IDENTITY" ;;
+  */package-notes.mjs) mkdir -p "$2/dist"; printf synthetic > "$2/dist/index.html" ;;
   *) exit 1 ;;
 esac''',
             "plutil": 'exit 0',
@@ -86,7 +86,7 @@ if [ "$1" = notarytool ] && [ "${REJECT_NOTARY:-0}" = 1 ]; then exit 1; fi''',
             self.assertEqual(result.returncode, 0, result.stderr)
             trace = (root / "trace").read_text()
             self.assertIn("--options runtime --timestamp", trace)
-            self.assertLess(trace.index("sign-notes.mjs"), trace.index("codesign --force"))
+            self.assertLess(trace.index("stage-settings "), trace.index("codesign --force"))
             self.assertNotIn("--sign - ", trace)
             app_staple = trace.index("stapler staple " + str(root / "dist/Apparent Preview.app"))
             self.assertLess(app_staple, trace.index("hdiutil create"))

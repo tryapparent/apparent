@@ -105,9 +105,6 @@ else
 fi
 
 plutil -lint "$app/Contents/Info.plist"
-notes_identity="-"
-if [[ "$NOTARIZE" == true ]]; then notes_identity="$APPARENT_APPLE_SIGNING_IDENTITY"; fi
-node capture/desktop/ui/frontend/scripts/sign-notes.mjs "$app/Contents/Resources/note-ui/runtime/Electron.app" "$notes_identity"
 sparkle="$app/Contents/Frameworks/Sparkle.framework/Versions/B"
 "${SIGN[@]}" "$sparkle/XPCServices/Installer.xpc"
 "${SIGN[@]}" --preserve-metadata=entitlements "$sparkle/XPCServices/Downloader.xpc"

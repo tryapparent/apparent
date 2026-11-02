@@ -3,19 +3,32 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-test('packaged framework links remain relative after the build source is removed', async t => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'apparent-runtime-'));
+test('popup assets replace old output without shipping another runtime and refuse symlink destinations', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'apparent-popup-assets-'));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const source = path.join(dir, 'source'), out = path.join(dir, 'installed');
-  await fs.mkdir(path.join(source, 'Versions/A'), { recursive: true });
-  await fs.writeFile(path.join(source, 'Versions/A/Framework'), 'runtime');
-  await fs.symlink('A', path.join(source, 'Versions/Current'));
-  await fs.symlink('Versions/Current/Framework', path.join(source, 'Framework'));
-  const { stageRuntime } = await import('../../scripts/popup-entries.mjs');
-  await stageRuntime(source, out);
-  await fs.rm(source, { recursive: true });
-  assert.equal(await fs.readlink(path.join(out, 'Framework')), 'Versions/Current/Framework');
-  assert.equal(await fs.readFile(path.join(out, 'Framework'), 'utf8'), 'runtime');
+  await fs.mkdir(path.join(source, 'electron/notes'), { recursive: true });
+  await fs.mkdir(path.join(source, 'dist'));
+  await fs.writeFile(path.join(source, 'electron/notes/main.cjs'), 'notes');
+  await fs.writeFile(path.join(source, 'dist/index.html'), 'renderer');
+  const { stagePopupAssets } = await import('../../scripts/popup-entries.mjs');
+  for (const unsafe of [source, dir, path.join(source, 'nested/output')]) {
+    await assert.rejects(stagePopupAssets(source, unsafe), /overlap/);
+    assert.equal(await fs.readFile(path.join(source, 'dist/index.html'), 'utf8'), 'renderer');
+  }
+  const alias = path.join(dir, 'source-alias');
+  await fs.symlink(source, alias);
+  await assert.rejects(stagePopupAssets(source, path.join(alias, 'nested/output')), /overlap/);
+  await fs.mkdir(path.join(out, 'runtime'), { recursive: true });
+  await fs.writeFile(path.join(out, 'runtime/old-electron'), 'obsolete generated runtime');
+  await stagePopupAssets(source, out);
+  assert.equal(await fs.readFile(path.join(out, 'dist/index.html'), 'utf8'), 'renderer');
+  assert.equal(await fs.readFile(path.join(out, 'electron/notes/main.cjs'), 'utf8'), 'notes');
+  await assert.rejects(fs.stat(path.join(out, 'runtime')), { code: 'ENOENT' });
+  const link = path.join(dir, 'link');
+  await fs.symlink(source, link);
+  await assert.rejects(stagePopupAssets(source, link), /Unsafe|overlap/);
+  assert.equal(await fs.readFile(path.join(source, 'dist/index.html'), 'utf8'), 'renderer');
 });
 test('popup packaging requires notes and includes a present independent share entry', async t => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'apparent-popup-entries-'));

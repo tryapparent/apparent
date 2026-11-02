@@ -115,7 +115,6 @@ fi
 python3 "${REPO_DIR}/capture/desktop/scripts/packaging/stage-settings.py" "${APP_BUNDLE}/Contents/Resources/settings" --sign "${IDENTITY}"
 
 SPARKLE_VER="${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework/Versions/B"
-node "${REPO_DIR}/capture/desktop/ui/frontend/scripts/sign-notes.mjs" "${APP_BUNDLE}/Contents/Resources/note-ui/runtime/Electron.app" "${IDENTITY}"
 "${SIGN[@]}" "${SPARKLE_VER}/XPCServices/Installer.xpc"
 "${SIGN[@]}" --preserve-metadata=entitlements "${SPARKLE_VER}/XPCServices/Downloader.xpc"
 "${SIGN[@]}" "${SPARKLE_VER}/Autoupdate"

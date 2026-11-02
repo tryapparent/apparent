@@ -8,6 +8,7 @@ const { pathToFileURL } = require('node:url');
 const readline = require('node:readline');
 const { validCommand, validSnapshot, popupBounds, badgeBounds } = require('./protocol.cjs');
 app.setName('Apparent Notes');
+nativeTheme.themeSource = 'system';
 app.setPath('userData', profile);
 // Production Rust deletes its owned profile after reaping this process. Standalone
 // renderer tests own their fallback; cleanup errors must never open an error dialog.
@@ -73,7 +74,7 @@ app.whenReady().then(() => {
   }
   function publish() {
     if (!latest) return;
-    for (const win of [popup, badge]) win.webContents.send('notes:snapshot', { ...latest, dark: nativeTheme.shouldUseDarkColors });
+    for (const win of [popup, badge]) win.webContents.send('notes:snapshot', latest);
   }
   ipcMain.handle('notes:ready', (event) => { validate(event); publish(); });
   ipcMain.handle('notes:finish-ready', event => { validate(event); if (event.sender !== popup.webContents || !finishing || finished) return; finished = true; send({ action: 'finished' }); });
@@ -121,7 +122,6 @@ app.whenReady().then(() => {
     } catch { app.quit(); }
   });
   lines.on('close', () => app.quit());
-  nativeTheme.on('updated', publish);
   Promise.all([popup.webContents.executeJavaScript('document.readyState'), badge.webContents.executeJavaScript('document.readyState')]).then(() => {
     const ids = [popup, badge].map(w => Number(w.getMediaSourceId().split(':')[1])).filter(n => Number.isInteger(n) && n > 0);
     send({ action: 'windows', ids }); send({ action: 'ready' });

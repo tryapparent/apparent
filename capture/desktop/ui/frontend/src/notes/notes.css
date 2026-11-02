@@ -7,23 +7,12 @@
 body:has(.capture-notes), body:has(.notes-unavailable) { background: transparent; }
 .capture-notes {
   min-height: 100vh; box-sizing: border-box;
-  --color-background: #f5f0e8; --color-foreground: #020102;
-  --color-primary: #7a58c7; --color-primary-foreground: #f5f0e8;
-  --color-accent: #e7e0ee; --color-accent-foreground: #020102;
-  --color-muted-foreground: #645a69; --color-ring: #7a58c7;
-  --color-border: #dedbd4;
   color: var(--color-foreground); font-family: 'Host Grotesk', system-ui, sans-serif;
   padding: 7px;
 }
-.capture-notes.dark {
-  --color-background: #020102; --color-foreground: #f5f0e8;
-  --color-primary: #b7a5d8; --color-primary-foreground: #020102;
-  --color-accent: #302a36; --color-accent-foreground: #f5f0e8;
-  --color-muted-foreground: #aaa0ad; --color-border: #514656;
-}
 .note-popup, .note-list, .note-count {
   background: var(--color-background); color: var(--color-foreground);
-  border-radius: 14px; box-shadow: 0 2px 9px #02010220;
+  border-radius: 14px; box-shadow: 0 2px 9px color-mix(in srgb, var(--color-shadow) 20%, transparent);
 }
 .note-popup { padding: 15px; }
 .note-popup textarea {

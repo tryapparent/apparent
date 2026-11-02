@@ -414,13 +414,17 @@ so intentional silence does not masquerade as an audio failure. Config writes
 use Rust's existing atomic writer and preserve unrelated keys. No setting edit
 interrupts active audio.
 
-On Linux, Electron uses X11/XWayland, matching the existing overlay adapters.
-Trusted main-process surface geometry goes through the same native floating-window
-adapter, with each XID checked against this capture's Electron child PID. This keeps
-the count clickable above the capsule on Hyprland; its compositor does not honor
-the capsule's X11 input shape for this overlap. Renderer commands cannot place
-windows. Capture telemetry treats this child as owned UI, so counter/editor clicks
-are not user feedback events.
+On Linux, Electron uses X11/XWayland. Rust checks each XID against this capture's
+child PID and prepares it while hidden; Electron alone shows and hides it. The
+compositor's visible pinned order can diverge from X11's input stack after focus
+returns to the recorded app. The notes worker checks that stack at most every
+100 ms and raises its visible surfaces only when needed. Renderer commands cannot
+place windows. Counter/editor clicks are excluded from capture telemetry.
+
+Rust owns the private Chromium profile and removes it after reaping Electron,
+before the Finish receipt. Deleting it in Electron's `quit` event races Chromium's
+last writes and can open an error dialog. Notes use the shared system-appearance
+tokens while keeping the window background transparent.
 
 Notes route solely to this Electron surface. Closing it leaves capture and
 existing drawing running; a lost notes renderer must not claim a saved note.
@@ -431,8 +435,10 @@ both platforms remain distinct from synthetic Electron/pipe tests.
 
 The shared Rust resolver is `capture::desktop::workflow::electron::resolve() -> Result<Resources>`;
 `Resources { executable, root }` supplies paths only. Surface owners launch their own
-entry and own protocol, child cleanup and native acceptance. Installed paths remain
+entry and own protocol, child cleanup and native acceptance. Assets remain in
 `Contents/Resources/note-ui` on Mac and `usr/lib/apparent/note-ui` in Linux AppImages.
+The executable is the existing Settings runtime at `Contents/Resources/settings/runtime`
+or `usr/share/apparent/settings/runtime`; popup packaging adds no second runtime.
 `package-notes.mjs` stages the required `electron/notes/` and includes `electron/share/`
 when its `main.cjs` exists, alongside the same `dist/` and single `runtime/`. The absent
 share consumer adds no entry or routing. A share owner must verify its installed route

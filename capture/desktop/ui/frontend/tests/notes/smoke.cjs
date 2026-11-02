@@ -45,6 +45,14 @@ test('shipped Electron note UI focuses, saves, counts, edits, recovers drafts an
   send();
   const field = popup.getByRole('textbox', { name: 'Note text' });
   await expect(field).toBeFocused();
+  const { backgroundColor } = require('@apparent/ui/window-theme');
+  for (const mode of ['light', 'dark', 'light']) {
+    await popup.emulateMedia({ colorScheme: mode });
+    const hex = backgroundColor({ shouldUseDarkColors: mode === 'dark' });
+    const rgb = hex.slice(1).match(/../g).map(value => parseInt(value, 16));
+    await expect(popup.locator('.note-popup')).toHaveCSS('background-color', `rgb(${rgb.join(', ')})`);
+    await expect(popup.locator('body')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  }
   assert.deepEqual(await popup.evaluate(() => ({ require: typeof window.require, process: typeof window.process, keys: Object.keys(window.captureNotes).sort() })),
     { require: 'undefined', process: 'undefined', keys: ['command', 'onSnapshot'] });
   await field.pressSequentially('Smaller button', { delay: 20 }); await expect(field).toBeFocused(); await field.press('Shift+Enter'); await field.press('x');

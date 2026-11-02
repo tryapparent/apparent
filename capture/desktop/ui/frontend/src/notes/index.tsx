@@ -4,7 +4,7 @@ import './notes.css';
 
 type Note = { pin: number; t: number; x: number; y: number; text: string };
 type Snapshot = { mode: 'badge' | 'editor' | 'list'; current: number | null;
-  notes: Note[]; drafts: Note[]; dark: boolean; error: string | null };
+  notes: Note[]; drafts: Note[]; error: string | null };
 type Command = { action: 'save' | 'draft'; pin: number; text: string } |
   { action: 'edit' | 'delete'; pin: number } | { action: 'dismiss' | 'list' };
 declare global {
@@ -46,7 +46,7 @@ export function CaptureNotes() {
     await command({ action: 'dismiss' });
   }
   if (!state) return <div className="notes-unavailable" role="status">Connecting notes…</div>;
-  return <main className={`capture-notes ${state.dark ? 'dark' : ''}`} onClick={e => {
+  return <main className="capture-notes" onClick={e => {
     if (!badge && e.target === e.currentTarget) void dismiss();
   }} onKeyDown={e => {
     if (e.key === 'Escape' && !e.nativeEvent.isComposing) { e.preventDefault(); void dismiss(); }

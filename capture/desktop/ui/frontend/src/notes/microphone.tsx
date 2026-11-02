@@ -13,7 +13,7 @@ export function RecordingMicrophone() {
     finally { setBusy(false); }
   }
   useEffect(() => { void request(); }, []);
-  return <section aria-labelledby="recording-microphone-title" className="space-y-3 rounded-xl border border-border bg-white p-6">
+  return <section aria-labelledby="recording-microphone-title" className="space-y-3 rounded-xl border border-border bg-surface p-6">
     <div className="flex items-center justify-between gap-4"><h2 id="recording-microphone-title" className="text-lg font-semibold">Recording microphone</h2>
       <Button variant="outline" disabled={busy} onClick={() => void request()}>Refresh microphone setting</Button></div>
     <label className="flex items-center gap-3 text-sm font-medium"><input type="checkbox" aria-label="Record microphone" disabled={busy || state.status !== 'connected'}

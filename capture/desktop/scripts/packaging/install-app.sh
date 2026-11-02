@@ -129,7 +129,6 @@ if [[ -d "${FRAMEWORKS_DIR}/Sparkle.framework/Versions/B" ]]; then
   codesign --force --sign "${IDENTITY}" "${SPARKLE_VER}/Updater.app"
   codesign --force --sign "${IDENTITY}" "${FRAMEWORKS_DIR}/Sparkle.framework"
 fi
-node "${REPO_DIR}/capture/desktop/ui/frontend/scripts/sign-notes.mjs" "${RESOURCES_DIR}/note-ui/runtime/Electron.app" "${IDENTITY}"
 codesign --force --sign "${IDENTITY}" --identifier "dev.kitlangton.apparent.helper" "${MACOS_DIR}/apparent-helper"
 codesign --force --sign "${IDENTITY}" --identifier "dev.kitlangton.apparent" "${APP_DIR}"
 
