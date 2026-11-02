@@ -45,3 +45,40 @@ Their license files are retained alongside the scripts.
 Verification: the complete flow passed browser interaction checks from both
 loopback and the generated standalone file with external requests blocked.
 These checks cover the preview, not native integration.
+
+## Proposed desktop practice tour
+
+The accepted setup screens remain unchanged. Step 8 now rehearses the requested
+on-screen coaching: chosen shortcut → recording controls → Whiteboard → drawing
+→ hold Shift and draw on the screen → stop → preparing → highlighted Copied
+→ practice agent paste → menu-bar icon → Open Latest Capture.
+Append `#practice` to the built preview URL to jump straight to this section.
+All desktop windows, menu controls and recording state are simulated in-browser.
+The drawn strokes are real canvas interactions, retained in the simulated result.
+
+For native implementation, advance only on authoritative app state: a successful
+recording start after permission admission; Whiteboard actually opening; a real
+stroke; recording ending; finalization completing; then the actual menu opening
+and capture selection. A shortcut press alone is not a successful recording.
+Keep preparation distinct from ready, preserve Back/Try later, and stop coaching
+if the recording fails or is cancelled. Place a small coach beside the target,
+with a pointer, without a full-screen dimmer or a layer that intercepts the user's
+workspace. Reposition against live pill/window/menu bounds and display work area;
+the fixed positions in this prototype are illustrative. Do not add a Dock icon.
+Open the capture through the existing OS folder/preview flow rather than adding
+a desktop review workspace. No native integration or routing is activated here.
+
+The latest design adds a frog guide using the original embedded resting/jumping
+artwork. It peeks over the smaller speech bubble and hops between guide targets;
+reduced motion removes both hopping and coach entrance animations. The menu
+lesson waits until after the practice paste. Clipboard access and external agent
+messages are never invoked: Meta/Ctrl+V is handled only in the practice composer.
+Native implementation must wait for confirmed copy/paste outcomes, retain a
+clear preparing state, and never infer successful delivery from a copied status.
+
+Coach copy uses direct action headings (Open Whiteboard, Draw on your screen,
+Paste your capture) and consistent control names. The frog carries the playful
+tone. Speech bubbles use readable body contrast, a restrained type scale, clear
+keycaps, visible keyboard focus and larger action targets. Setup screens before
+practice remain the accepted attached design. Finishing the tour returns to the
+existing completed handoff summary rather than repeating the paste lesson.
