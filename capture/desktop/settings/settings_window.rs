@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, Div, FocusHandle, FontWeight, Hsla,
-    Image, ImageFormat, InteractiveElement, IntoElement, KeyDownEvent, ModifiersChangedEvent,
+    Image, ImageFormat, InteractiveElement, IntoElement, KeyDownEvent, KeyUpEvent, ModifiersChangedEvent,
     MouseButton, ParentElement, Pixels, Point, Render, Rgba, SharedString, Stateful,
     StatefulInteractiveElement, Styled, Window, WindowBackgroundAppearance, WindowBounds,
     WindowControlArea, WindowKind, WindowOptions, div, img, linear_color_stop, linear_gradient,
@@ -1091,8 +1091,7 @@ impl SettingsWindow {
             )
     }
 
-    fn connect_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        let key = event.keystroke.key.as_str();
+    fn connect_key(&mut self, key: &str, window: &mut Window, cx: &mut Context<Self>) -> bool {
         if let Some(menu) = self.menu.as_mut().filter(|m| m.key == "connect") {
             match key {
                 "escape" => { self.menu = None; window.focus(&self.connect_focus); }
@@ -1119,15 +1118,6 @@ impl SettingsWindow {
                 _ => return false,
             }
             cx.notify(); return true;
-        }
-        if matches!(key, "enter" | "space") && self.connect_focus.is_focused(window) {
-            if let Some(connect) = self.state.as_ref().and_then(|s| s.connect.as_ref()).filter(|c| c.presentation.account_menu) {
-                let options = connect.presentation.buttons.iter().filter(|b| connect.presentation.menu_actions.contains(&b.command))
-                    .map(|b| (serde_json::to_value(b.command).unwrap().as_str().unwrap().to_owned(), b.title.clone(), b.enabled)).collect();
-                self.menu = Some(Menu { key: "connect", options, selected: None,
-                    at: point(window.viewport_size().width - px(28.0), px(76.0)) });
-                cx.notify(); return true;
-            }
         }
         false
     }
@@ -1164,11 +1154,6 @@ impl SettingsWindow {
                 .when(self.connect_action_focus[index].is_focused(window), |d| d.border_2().border_color(rgb(0x020102)))
                 .child(item.title.clone())
                 .when(item.enabled, |d| d.tab_index(0).cursor_pointer()
-                    .on_key_down(cx.listener(move |view, event: &KeyDownEvent, _, cx| {
-                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                            cx.stop_propagation(); view.act(Action::Connect { command });
-                        } else { cx.propagate(); }
-                    }))
                     .on_click(cx.listener(move |view, _, window, _| {
                         window.focus(&view.connect_action_focus[index]); view.act(Action::Connect { command });
                     }))));
@@ -2351,11 +2336,20 @@ impl Render for SettingsWindow {
                     if event.keystroke.modifiers.shift { window.focus_prev(); } else { window.focus_next(); }
                     cx.stop_propagation(); return;
                 }
-                if view.connect_key(event, window, cx) { cx.stop_propagation(); return; }
+                if !matches!(event.keystroke.key.as_str(), "enter" | "space")
+                    && view.connect_key(event.keystroke.key.as_str(), window, cx) { cx.stop_propagation(); return; }
                 if view.menu.take().is_some() {
                     cx.notify();
                 }
                 view.key_down(event, window, cx);
+            }))
+            .capture_key_up(cx.listener(|view, event: &KeyUpEvent, window, cx| {
+                if matches!(event.keystroke.key.as_str(), "enter" | "space")
+                    && view.menu.as_ref().is_some_and(|menu| menu.key == "connect")
+                    && view.connect_key(event.keystroke.key.as_str(), window, cx) {
+                    window.prevent_default();
+                    cx.stop_propagation();
+                }
             }))
             .on_modifiers_changed(cx.listener(|view, event: &ModifiersChangedEvent, _, cx| {
                 if view.recording().is_some() {
