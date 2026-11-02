@@ -2403,14 +2403,21 @@ mod adapter_regressions {
 /// Runs on the transport reader, never on the GUI thread. Missing native evidence rejects.
 #[cfg(target_os = "macos")]
 fn native_shortcut_reserved(key: u32, modifiers: u32) -> bool {
-    use std::{io::Read, process::{Command, Stdio}, time::{Duration, Instant}};
+    use std::{process::Command, time::Duration};
     if key > 127 || modifiers & !0x1b00 != 0 { return true; }
     let Ok(path) = crate::capture::desktop::helper::path() else { return true; };
-    let Ok(mut child) = Command::new(path).args(["onboarding", "--validate-shortcut", &key.to_string(), &modifiers.to_string()])
-        .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() else { return true; };
+    let mut command = Command::new(path);
+    command.args(["onboarding", "--validate-shortcut", &key.to_string(), &modifiers.to_string()]);
+    query_shortcut_reservation(&mut command, Duration::from_secs(2))
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn query_shortcut_reservation(command: &mut std::process::Command, timeout: std::time::Duration) -> bool {
+    use std::{io::Read, process::Stdio, time::{Duration, Instant}};
+    let Ok(mut child) = command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() else { return true; };
     let stdout = child.stdout.take();
     let mut child = crate::capture::ui_process::UiChild::new(child);
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
             Ok(Some(status)) if status.success() => break,
@@ -2436,4 +2443,21 @@ fn shortcut_native_projection_fails_closed() {
     for bytes in [b"true".as_slice(), b"", b"null", b"{}", b"false true", b"{\"reserved\":false}"] {
         assert!(shortcut_reservation_projection(bytes));
     }
+}
+
+#[cfg(all(test, unix))]
+#[test]
+fn shortcut_native_process_failures_reject_without_accepting_renderer_claims() {
+    use std::{process::Command, time::Duration};
+    let query = |script: &str| {
+        let mut command = Command::new("sh");
+        command.args(["-c", script]);
+        query_shortcut_reservation(&mut command, Duration::from_millis(100))
+    };
+    assert!(!query("printf false"));
+    assert!(query("printf true"));
+    assert!(query("printf false; exit 1"));
+    assert!(query("printf invalid"));
+    assert!(query("exec sleep 2"));
+    assert!(query_shortcut_reservation(&mut Command::new("/nonexistent/apparent-test-helper"), Duration::from_millis(100)));
 }
