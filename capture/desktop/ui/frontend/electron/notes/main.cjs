@@ -15,14 +15,16 @@ let latest, popup, badge;
 let finishing = false, finished = false;
 const send = (value) => process.stdout.write(JSON.stringify(value) + '\n');
 app.whenReady().then(() => {
+  if (process.platform === 'darwin') app.setActivationPolicy('accessory');
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, reply) => reply(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
   const page = pathToFileURL(path.join(__dirname, '../../dist/index.html')).href;
   function window(surface, width, height) {
-    const win = new BrowserWindow({ width, height, show: false, frame: false, transparent: true,
+    const win = new BrowserWindow({ title: 'Apparent notes', width, height, show: false, frame: false, transparent: true,
       resizable: false, skipTaskbar: true, alwaysOnTop: true, hasShadow: false,
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true,
         nodeIntegration: false, sandbox: true, spellcheck: false, webSecurity: true } });
+    win.webContents.on('page-title-updated', event => event.preventDefault());
     win.removeMenu(); win.setAlwaysOnTop(true, 'floating');
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
