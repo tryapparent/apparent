@@ -956,6 +956,10 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
   }
 
   func applicationDidFinishLaunching(_: Notification) {
+    if CommandLine.arguments.contains("--permissions-only") {
+      readCommands()
+      return
+    }
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 620, height: 500),
       styleMask: [.titled, .closable, .fullSizeContentView],
@@ -1051,6 +1055,10 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let permission = object["permission"] as? String ?? ""
         let state = type == "state" ? try? JSONDecoder().decode(OnboardingState.self, from: data) : nil
         DispatchQueue.main.async {
+          if CommandLine.arguments.contains("--permissions-only"),
+             !["request", "open-settings", "close-guide", "close"].contains(type) { return }
+          if ["request", "open-settings", "close-guide"].contains(type),
+             !["screen-recording", "microphone", "camera", "accessibility", "speech-recognition"].contains(permission) { return }
           switch type {
           case "state":
             guard let state else { return }
@@ -1069,6 +1077,8 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
           // The user has moved on to another row: answering an earlier question mustn't pull
           // this window over the System Settings pane they're working in.
+          case "close-guide":
+            Permissions.closeGuide(permission)
           case "request":
             self.followUp?.invalidate()
             Permissions.request(permission)
@@ -1091,13 +1101,19 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
           case "hide": self.window?.orderOut(nil)
           case "show": self.present()
           case "close":
+            for panel in Permissions.panels.values { PermissionPanel.tell(panel, "cancel") }
+            Permissions.panels.removeAll()
             self.keys.handBack()
             exit(0)
           default: break
           }
         }
       }
-      exit(0)
+      DispatchQueue.main.async {
+        for panel in Permissions.panels.values { PermissionPanel.tell(panel, "cancel") }
+        Permissions.panels.removeAll()
+        exit(0)
+      }
     }
   }
 

@@ -219,3 +219,10 @@ test('closing public-share window rejects late start receipt and never delivers'
  assert.deepEqual(await pending,{status:'cancelled'});
  assert.ok(!f.requests.some(r=>JSON.parse(r).publicShare==='deliver'));
 });
+
+{
+const {test}=require('node:test');const assert=require('node:assert/strict');const {parseAction,lines}=require('../electron/onboarding-protocol.cjs');
+test('bounded action contract',()=>{assert.deepEqual(parseAction('use-current-shortcut'),{action:'use-current-shortcut'});assert.deepEqual(parseAction('grant:microphone'),{action:'grant',permission:'microphone'});for(const value of ['start-capture','grant:other',null,{},['continue']])assert.throws(()=>parseAction(value));const value={action:'shortcut',kind:'record',keyCode:15,modifiers:6144,key:'r',reserved:false};assert.deepEqual(parseAction(value),value);for(const changed of [{extra:true},{keyCode:'15'},{reserved:true},{modifiers:1},{kind:'other'}])assert.throws(()=>parseAction({...value,...changed}))});
+test('stdin accepts fragmented lines and rejects oversized individual lines',()=>{const received=[];const feed=lines(v=>received.push(v));feed('{"type":');feed('"state"}\ninvalid\n{"type":"show"}\n');assert.equal(received.length,2);assert.throws(()=>feed('x'.repeat(65537)));const many=lines(()=>{});many('{}\n'.repeat(30000))});
+
+}

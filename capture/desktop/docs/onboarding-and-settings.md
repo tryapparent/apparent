@@ -261,3 +261,12 @@ Render every pane (dark, light, each shortcut state: held, listening, partial, r
 ## Lower other audio while recording (`capture/desktop/playback.rs`, `capture/engine/native/PlaybackVolume.swift`)
 
 Off by default. General › Lower other audio while recording (`"lowerPlayback": true`) ramps the default output device's volume over one second to `playbackLevel` percent of what it was (Lower to, default 20%; 0 mutes) from the moment the shortcut is pressed or a recording starts, Mac or cabled iPhone, and back when it finishes, is cancelled or the picker closes without recording. `apparent-helper playback-volume --server`, started at launch while the setting is on, does the CoreAudio work and takes `start N` / `stop` lines on stdin. It reads every writable output channel's volume scalar before writing any (the master volume only when the channels have none), so balance and silent channels come back as they were; it never touches the mute flag or any input device. It restores when told to stop, when Apparent exits or crashes (stdin closes) and at once on SIGTERM, SIGINT or SIGHUP; it leaves the volume alone if someone changed it during the recording, and a device switched to mid-recording isn't lowered (the original device is restored). Fixed-volume outputs are left unchanged. Linux does nothing. `apparent-helper playback-volume --self-test` runs the ramp tests on fake devices; `--inspect` prints the current device's volume controls without changing them.
+
+Electron onboarding permission effects stay in Rust: Linux uses its privacy
+adapter; macOS keeps an installed `apparent-helper onboarding --permissions-only`
+process alive for AVFoundation/Speech consent and permission guidance panels.
+That mode never creates the onboarding window, admits only fixed permission
+identifiers/actions, closes granted guides, and cleans up guides on pipe closure.
+The Electron pipe carries presentation only. Native fallback remains available;
+its presentation can be removed only after Mac permission/media and isolated
+Linux acceptance. The current onboarding experiment default is unchanged.
