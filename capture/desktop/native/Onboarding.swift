@@ -956,6 +956,15 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
   }
 
   func applicationDidFinishLaunching(_: Notification) {
+    if let index = CommandLine.arguments.firstIndex(of: "--validate-shortcut") {
+      let args = CommandLine.arguments
+      guard args.count == index + 3,
+            let key = Int(args[index + 1]), (0...127).contains(key),
+            let modifiers = Int(args[index + 2]), modifiers >= 0,
+            modifiers & ~0x1b00 == 0 else { exit(1) }
+      print(ShortcutKeys.reserved(keyCode: key, modifiers: modifiers) ? "true" : "false")
+      exit(0)
+    }
     if CommandLine.arguments.contains("--permissions-only") {
       readCommands()
       return

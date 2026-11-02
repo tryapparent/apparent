@@ -1126,7 +1126,11 @@ impl Session {
                         if action == "reset-shortcut" && value.get("kind").is_none() {
                             value["kind"] = "record".into();
                         }
-                        if let Ok(action) = serde_json::from_value(value) {
+                        if let Ok(mut action) = serde_json::from_value(value) {
+                            #[cfg(target_os = "macos")]
+                            if let super::settings::Action::Shortcut { pressed, .. } = &mut action {
+                                pressed.reserved = native_shortcut_reserved(pressed.key_code, pressed.modifiers);
+                            }
                             events(Event::Shortcut(action));
                         }
                         continue;
@@ -1355,6 +1359,16 @@ impl Session {
         crate::capture::desktop::linux::privacy::open_settings(permission);
         #[cfg(target_os = "macos")]
         {
+            let adapter_dead = match self.permission_adapter.as_mut() {
+                Some(Transport::Helper { child, stdin }) => stdin.is_none() || !matches!(child.try_wait(), Ok(None)),
+                Some(_) => true,
+                None => false,
+            };
+            if adapter_dead {
+                if let Some(adapter) = self.permission_adapter.take() { retire_transport(adapter); }
+                if self.restore_native() { self.permission_action(action, permission); }
+                return;
+            }
             if self.permission_adapter.is_none() {
                 let Ok(path) = crate::capture::desktop::helper::path() else {
                     if self.restore_native() { self.permission_action(action, permission); }
@@ -1371,7 +1385,10 @@ impl Session {
             if let Some(Transport::Helper { stdin: Some(pipe), .. }) = self.permission_adapter.as_mut() {
                 use std::io::Write;
                 let message = serde_json::json!({"type": action, "permission": permission});
-                let _ = writeln!(pipe, "{message}").and_then(|()| pipe.flush());
+                if writeln!(pipe, "{message}").and_then(|()| pipe.flush()).is_err() {
+                    if let Some(adapter) = self.permission_adapter.take() { retire_transport(adapter); }
+                    if self.restore_native() { self.permission_action(action, permission); }
+                }
             }
         }
     }
@@ -2380,5 +2397,43 @@ mod adapter_regressions {
         assert!(messages.iter().any(|v| v["type"] == "state"));
         assert!(messages.iter().any(|v| v["label"] == "Test shortcut"));
         assert!(!session.restore_native());
+    }
+}
+
+/// Runs on the transport reader, never on the GUI thread. Missing native evidence rejects.
+#[cfg(target_os = "macos")]
+fn native_shortcut_reserved(key: u32, modifiers: u32) -> bool {
+    use std::{io::Read, process::{Command, Stdio}, time::{Duration, Instant}};
+    if key > 127 || modifiers & !0x1b00 != 0 { return true; }
+    let Ok(path) = crate::capture::desktop::helper::path() else { return true; };
+    let Ok(mut child) = Command::new(path).args(["onboarding", "--validate-shortcut", &key.to_string(), &modifiers.to_string()])
+        .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() else { return true; };
+    let stdout = child.stdout.take();
+    let mut child = crate::capture::ui_process::UiChild::new(child);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => break,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
+            _ => { let _ = child.kill(); let _ = child.wait(); return true; }
+        }
+    }
+    let mut bytes = Vec::new();
+    let Some(stdout) = stdout else { return true; };
+    if stdout.take(33).read_to_end(&mut bytes).is_err() { return true; }
+    shortcut_reservation_projection(&bytes)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn shortcut_reservation_projection(bytes: &[u8]) -> bool {
+    if bytes.len() > 32 { return true; }
+    serde_json::from_slice::<bool>(bytes).unwrap_or(true)
+}
+
+#[test]
+fn shortcut_native_projection_fails_closed() {
+    assert!(!shortcut_reservation_projection(b"false\n"));
+    for bytes in [b"true".as_slice(), b"", b"null", b"{}", b"false true", b"{\"reserved\":false}"] {
+        assert!(shortcut_reservation_projection(bytes));
     }
 }
