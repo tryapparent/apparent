@@ -256,3 +256,13 @@ opt-in or typing shortcut page; the recording shortcut remains. `penColor`
 accepts coral, purple, blue or green, is loaded at startup and applies immediately
 when saved by setup. Older bundles without stroke colour keep their red ink.
 Native platform and package verification remain required before release.
+
+The test installer exits after a successful launch. Test recording controls say
+**Test board** and the paper window says **Apparent Test Whiteboard**. The coach
+uses only this process’s typed Whiteboard window to reconcile open/close events
+and place itself beside the canvas; its label can be dragged if space is tight.
+Native permission guides are dismissed on grant and when leaving permissions,
+including the shared renderer route. The screen-recording drag card prefers the
+lower Settings content column, with an opaque surface and an upward instruction;
+its placement is geometric, not a semantic lookup of Settings sections. Exact
+audio-only coverage across Settings layouts requires live macOS verification.

@@ -357,7 +357,7 @@ fn recording_trail_widths(window: &Window, chips: bool, iphone: bool) -> Vec<f32
     } else {
         let mut widths = vec![chip_width(window, "Cancel", FontWeight::MEDIUM)];
         if whiteboard_enabled() {
-            widths.push(chip_width(window, "Whiteboard", FontWeight::MEDIUM));
+            widths.push(chip_width(window, if whiteboard::title() == "Apparent Test Whiteboard" { "Test board" } else { "Whiteboard" }, FontWeight::MEDIUM));
         }
         widths.push(chip_width(window, "Finish", FontWeight::SEMIBOLD));
         widths
@@ -1533,6 +1533,8 @@ impl ApparentCoordinator {
         #[cfg(not(target_os="macos"))]
         let anchor=None;
         if let Some(session)=self.onboarding.as_mut(){session.practice_anchor(anchor);}
+        let board_frame=whiteboard::frame(cx);
+        if let Some(session)=self.onboarding.as_mut(){session.practice_board(board_frame);}
         let board=self.whiteboard.borrow().strokes.iter().any(|s|s.len()>3);
         let screen=self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|s|!s.laser && s.pts.len()>9).count();
         let processing=self.is_processing();
@@ -4528,7 +4530,7 @@ impl HudPillWindow {
         let group = group.when(whiteboard_enabled(), |group| {
             let c_board = self.coordinator.clone();
             group.child(
-                pill_chip("hud-whiteboard", "Whiteboard", theme)
+                pill_chip("hud-whiteboard", if whiteboard::title() == "Apparent Test Whiteboard" { "Test board" } else { "Whiteboard" }, theme)
                     .opacity(alpha(1))
                     .when(interactive, |d| {
                         d.on_click(move |_, _, cx| {

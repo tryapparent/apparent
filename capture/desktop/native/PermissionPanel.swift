@@ -234,13 +234,8 @@ enum PermissionPanel {
 
   enum Dock: String { case below, inside, right, left, clamped }
 
-  /// Where the card docks for a Settings window on a screen, both in AppKit coordinates
-  /// (`visible` is the screen's `visibleFrame`, without the menu bar and Dock). In order:
-  /// - below the window, its app row under the Privacy list's column, if all of it fits;
-  /// - inside the window's empty lower area (the lowest 30% of these panes holds no rows or
-  ///   toggles), on the list's column and 20 pt above its bottom edge, as Codex does;
-  /// - beside it, right then left;
-  /// - else the below position pushed onto the screen.
+  /// Screen recording keeps its opaque drag card inside the lower Settings content column,
+  /// directing the drop upward. Other permission panes retain the outside docking policy.
   static func dock(settings: NSRect, visible: NSRect, layout: Layout) -> (frame: NSRect, dock: Dock) {
     let size = layout.cardSize
     let fits = { (r: NSRect) in
@@ -253,7 +248,7 @@ enum PermissionPanel {
     let gap = layout.dockGap
 
     let below = NSRect(x: clampX(column), y: settings.minY - gap - size.height, width: size.width, height: size.height)
-    if fits(below) { return (below, .below) }
+    if !layout.screenRecording && fits(below) { return (below, .below) }
 
     let insideY = max(settings.minY + layout.insideBottom, visible.minY + 8)
     let inside = NSRect(x: column, y: insideY, width: size.width, height: size.height)
@@ -283,7 +278,7 @@ enum PermissionPanel {
     guard let settings = option("--settings", in: arguments).flatMap(parseRect),
           let visible = option("--visible", in: arguments).flatMap(parseRect)
     else { fail("permission-panel --plan needs --settings X,Y,W,H --visible X,Y,W,H") }
-    let plan = dock(settings: settings, visible: visible, layout: Layout(settingsWidth: settings.width))
+    let plan = dock(settings: settings, visible: visible, layout: Layout(settingsWidth: settings.width, screenRecording: arguments.contains("--screen-recording")))
     let f = plan.frame
     emit(["dock": plan.dock.rawValue, "frame": [f.minX, f.minY, f.width, f.height].map { Double($0) }])
     exit(0)
@@ -291,6 +286,7 @@ enum PermissionPanel {
 
   /// Card metrics. The app row matches the Privacy list's column in the Settings window.
   struct Layout: Equatable {
+    var screenRecording = false
     var rowWidth: CGFloat
     let instructionHeight: CGFloat = 28
     /// Less above the instruction than below the row: line height already pads the text.
@@ -308,7 +304,8 @@ enum PermissionPanel {
     let icon: CGFloat = 26
     let iconLeading: CGFloat = 10
 
-    init(settingsWidth: CGFloat) {
+    init(settingsWidth: CGFloat, screenRecording: Bool = false) {
+      self.screenRecording = screenRecording
       let column = settingsWidth - PermissionPanel.settingsListLeading - PermissionPanel.settingsListTrailing
       rowWidth = max(320, min(column, 640))
     }
@@ -398,10 +395,10 @@ extension PermissionPanel {
     }
 
     private var dragText: Text {
-      Text("Drag ").foregroundStyle(.secondary)
+      Text(kind == .screenRecording ? "Drag up to Screen Recording: " : "Drag ").foregroundStyle(.secondary)
         + Text(appName).foregroundStyle(.primary).fontWeight(.medium)
-        + Text(" to the list above to allow ").foregroundStyle(.secondary)
-        + Text(kind.title).foregroundStyle(.primary).fontWeight(.medium)
+        + Text(kind == .screenRecording ? "" : " to the list above to allow ").foregroundStyle(.secondary)
+        + Text(kind == .screenRecording ? "" : kind.title).foregroundStyle(.primary).fontWeight(.medium)
     }
 
     private var appRow: some View {
@@ -543,7 +540,7 @@ extension PermissionPanel {
   final class Frost: NSView {
     override var wantsUpdateLayer: Bool { true }
     override func updateLayer() {
-      layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.62).cgColor
+      layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
     }
   }
 
@@ -806,7 +803,7 @@ extension PermissionPanel {
     private func dock(_ id: CGWindowID, _ frame: CGRect) {
       settingsID = id
       settingsFrame = frame
-      layout = Layout(settingsWidth: frame.width)
+      layout = Layout(settingsWidth: frame.width, screenRecording: kind == .screenRecording)
       let target = dockFrame(settingsQuartz: frame, layout: layout)
       buildPanel(at: target)
       if reduceMotion || sourceQuartz == nil {
@@ -962,7 +959,14 @@ extension PermissionPanel {
           || front?.processIdentifier == ProcessInfo.processInfo.processIdentifier
           || front.map(isApparent) ?? false
           || panelModel.dragging
-        let alpha: CGFloat = ours ? 1 : 0
+        let settingsPrompt = SettingsWindow.windows().contains { info in
+          guard let id = info[kCGWindowNumber as String] as? CGWindowID, id != self.settingsID,
+                let bounds = info[kCGWindowBounds as String] as? NSDictionary,
+                let rect = CGRect(dictionaryRepresentation: bounds), let main = self.settingsFrame
+          else { return false }
+          return rect.width > 180 && rect.height > 100 && rect.intersects(main)
+        }
+        let alpha: CGFloat = ours && !settingsPrompt ? 1 : 0
         if panel.alphaValue != alpha, !isFading {
           isFading = true
           NSAnimationContext.runAnimationGroup { context in

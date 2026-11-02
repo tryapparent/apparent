@@ -60,7 +60,10 @@ func installCandidate(source: URL, folder: URL) throws -> URL {
     let options = NSWorkspace.OpenConfiguration()
     options.createsNewApplicationInstance = true
     NSWorkspace.shared.openApplication(at: installed, configuration: options) { _, error in
-      if let error { DispatchQueue.main.async { self.message = error.localizedDescription } }
+      DispatchQueue.main.async {
+        if let error { self.message = error.localizedDescription }
+        else { NSApp.terminate(nil) }
+      }
     }
   }
 }

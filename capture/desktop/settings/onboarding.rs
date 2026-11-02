@@ -967,6 +967,7 @@ pub struct Session {
     practice: Option<super::practice::Practice>,
     shortcut_label: String,
     anchor: Option<[f32;4]>,
+    practice_board: Option<[f32;4]>,
     practice_completed: bool,
     editor: Option<crate::capture::desktop::settings::ShortcutView>,
     pen_picker: bool,
@@ -991,6 +992,7 @@ impl Session {
             practice: None,
             shortcut_label: String::new(),
             anchor: None,
+            practice_board: None,
             practice_completed:false,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
         }
     }
@@ -1055,6 +1057,7 @@ impl Session {
             practice: shell.then(super::practice::Practice::default),
             shortcut_label: shortcut.to_owned(),
             anchor: None,
+            practice_board: None,
             practice_completed:false,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
         };
         session.sync();
@@ -1325,6 +1328,10 @@ impl Session {
         self.sync();
     }
     pub fn practice_anchor(&mut self,anchor:Option<[f32;4]>) {self.anchor=anchor;}
+    pub fn practice_board(&mut self, frame: Option<[f32;4]>) {
+        self.practice_board=frame;
+        if let Some(p)=self.practice.as_mut() { p.whiteboard_visible(frame.is_some()); }
+    }
     pub fn practice_active(&self)->bool {self.practice.is_some() && self.flow.step()==Step::TryIt}
     pub fn practice_locating(&self)->bool {self.practice.as_ref().is_some_and(|p|p.stage==super::practice::Stage::Locate)}
     pub fn practice_screen_stage(&self)->bool {self.practice.as_ref().is_some_and(|p|p.stage==super::practice::Stage::ScreenInk)}
@@ -1347,6 +1354,8 @@ impl Session {
         view["platform"]=std::env::consts::OS.into();
         view["shortcutEditor"]=serde_json::json!(self.editor);
         view["anchor"]=serde_json::json!(self.anchor);
+        view["practiceBoard"]=serde_json::json!(self.practice_board);
+        view["testInstance"]=(std::env::var_os("APPARENT_TEST_INSTANCE").as_deref()==Some(std::ffi::OsStr::new("1"))).into();
         view["penPicker"]=self.pen_picker.into();view["penSelected"]=self.pen_selected.into();view["penError"]=self.pen_error.into();
         view["penRgb"]=serde_json::json!(crate::shared::handoff::pen::rgb());
         view["speech"] = serde_json::to_value(crate::capture::engine::runtime::audio::transcription::speech_model::current()).unwrap_or_default();

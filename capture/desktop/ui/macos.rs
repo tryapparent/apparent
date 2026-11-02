@@ -869,7 +869,7 @@ fn find_picker_ns_window() -> Option<Retained<NSWindow>> {
         if win.ignoresMouseEvents() {
             continue;
         }
-        if win.title().to_string() == "Apparent Whiteboard" {
+        if win.title().to_string() == super::whiteboard::title() {
             continue;
         }
         let size = win.frame().size;

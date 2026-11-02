@@ -84,6 +84,12 @@ enum Permissions {
     }
   }
 
+  static func closeAllGuides() {
+    let owned = panels
+    panels.removeAll()
+    for panel in owned.values { PermissionPanel.tell(panel, "cancel") }
+  }
+
   static func closeGuide(_ permission: String) {
     if let panel = panels.removeValue(forKey: permission) { PermissionPanel.tell(panel, "granted") }
   }
@@ -1056,6 +1062,9 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
           switch type {
           case "state":
             guard let state else { return }
+            // Adapter mode still owns permission guides even when React owns the page.
+            for row in state.rows where row.granted { Permissions.closeGuide(row.permission) }
+            if state.step != "permissions" { Permissions.closeAllGuides() }
             if self.adapterOnly && !(state.step == "shortcut" && state.shortcutEditing) {
               self.listenForShortcut(false)
               self.model.shortcutEditor = nil
@@ -1101,6 +1110,7 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
           case "hide": self.window?.orderOut(nil)
           case "show": if !self.adapterOnly { self.present() }
           case "close":
+            Permissions.closeAllGuides()
             self.keys.handBack()
             exit(0)
           default: break

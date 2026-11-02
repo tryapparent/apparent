@@ -18,6 +18,9 @@ use super::super::platform;
 
 pub(in crate::capture::desktop) const PAPER_WIDTH: f32 = 1600.0;
 pub(in crate::capture::desktop) const PAPER_HEIGHT: f32 = 1100.0;
+pub(in crate::capture::desktop) fn title() -> &'static str {
+    if std::env::var_os("APPARENT_TEST_INSTANCE").as_deref() == Some(std::ffi::OsStr::new("1")) { "Apparent Test Whiteboard" } else { "Apparent Whiteboard" }
+}
 const TOOLBAR_HEIGHT: f32 = 64.0;
 const LILAC: u32 = 0xb7a5d8;
 
@@ -192,7 +195,7 @@ impl Render for WhiteboardWindow {
                                 .size(px(28.0))
                                 .flex_none(),
                             )
-                            .child(div().text_size(px(16.0)).font_weight(FontWeight::MEDIUM).child("Whiteboard")),
+                            .child(div().text_size(px(16.0)).font_weight(FontWeight::MEDIUM).child(if title() == "Apparent Test Whiteboard" { "Test Whiteboard" } else { "Whiteboard" })),
                     )
                     .child(
                         toolbar_button("whiteboard-undo", "Undo", false)
@@ -275,7 +278,7 @@ pub(in crate::capture::desktop) fn open(coord: &Entity<ApparentCoordinator>, cx:
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: Some(gpui::TitlebarOptions {
-                title: Some("Apparent Whiteboard".into()),
+                title: Some(title().into()),
                 ..Default::default()
             }),
             app_id: Some("dev.kitlangton.apparent".into()),
@@ -313,6 +316,17 @@ pub(in crate::capture::desktop) fn finish_snapshot(board: &Rc<RefCell<Board>>, c
     let snapshot = board.borrow().clone();
     close();
     snapshot
+}
+
+pub(in crate::capture::desktop) fn frame(cx: &mut App) -> Option<[f32;4]> {
+    for handle in cx.windows() {
+        if handle.downcast::<WhiteboardWindow>().is_some() {
+            if let Ok(bounds) = handle.update(cx, |_, window, _| window.bounds()) {
+                return Some([bounds.origin.x.into(), bounds.origin.y.into(), bounds.size.width.into(), bounds.size.height.into()]);
+            }
+        }
+    }
+    None
 }
 
 pub(in crate::capture::desktop) fn close(cx: &mut App) {

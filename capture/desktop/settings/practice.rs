@@ -9,6 +9,10 @@ impl Default for Practice { fn default()->Self { Self{stage:Stage::Start,board_i
 impl Practice {
     pub fn started(&mut self) { if matches!(self.stage,Stage::Start|Stage::Retry|Stage::CopyFailed) {*self=Self::default();self.stage=Stage::Whiteboard;} }
     pub fn whiteboard(&mut self) { if self.stage==Stage::Whiteboard {self.stage=Stage::BoardInk;} }
+    pub fn whiteboard_visible(&mut self, visible: bool) {
+        if visible { self.whiteboard(); }
+        else if self.stage == Stage::BoardInk { self.stage=Stage::Whiteboard; }
+    }
     pub fn observe_ink(&mut self,board:bool,screen:usize) {
         if self.stage==Stage::BoardInk && board {self.board_ink=true;self.screen_baseline=screen;self.stage=Stage::ScreenInk;return;}
         if self.stage==Stage::ScreenInk && screen>self.screen_baseline {self.screen_ink=true;self.stage=Stage::Stop;}
@@ -37,6 +41,15 @@ impl Practice {
         let mut p=Practice::default();assert!(!p.action("practice-pasted"));p.started();p.observe_ink(true,1);assert_eq!(p.stage,Stage::Whiteboard);
         p.whiteboard();p.observe_ink(true,0);assert_eq!(p.stage,Stage::ScreenInk);p.observe_ink(true,1);assert_eq!(p.stage,Stage::Stop);
         p.processing();p.saved(true);assert_eq!(p.stage,Stage::Copied);assert!(!p.action("practice-finish"));assert!(p.action("practice-paste"));assert!(p.action("practice-pasted"));p.opened_latest();assert_eq!(p.stage,Stage::Complete);assert!(p.action("practice-finish"));
+    }
+    #[test] fn owned_board_visibility_reconciles_open_and_close_without_skipping_ink() {
+        let mut p=Practice::default();
+        p.whiteboard_visible(true);assert_eq!(p.stage,Stage::Start);
+        p.started();p.whiteboard_visible(false);assert_eq!(p.stage,Stage::Whiteboard);
+        p.whiteboard_visible(true);assert_eq!(p.stage,Stage::BoardInk);
+        p.whiteboard_visible(false);assert_eq!(p.stage,Stage::Whiteboard);
+        p.whiteboard_visible(true);p.observe_ink(true,0);assert_eq!(p.stage,Stage::ScreenInk);
+        p.whiteboard_visible(false);assert_eq!(p.stage,Stage::ScreenInk);
     }
     #[test] fn failed_copy_and_early_stop_never_claim_copied() {
         let mut p=Practice::default();p.started();p.processing();p.saved(true);assert_eq!(p.stage,Stage::Retry);
