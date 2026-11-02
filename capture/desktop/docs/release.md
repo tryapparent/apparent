@@ -8,7 +8,7 @@ Mac publication first requires successful Linux/shared and Mac main verification
 of the exact commit. Linux publication requires its Linux/shared receipt and does
 not wait for queued Mac runners.
 It is dispatched manually from `tryapparent/apparent`'s `main`: **Actions → Mac preview release →
-Run workflow → main**. It builds on `macos-26`, assigns version `0.<workflow run>.<attempt>` and
+Run workflow → main**. It builds on `macos-latest`, assigns version `0.<workflow run>.<attempt>` and
 tag `preview-mac-<run>-<attempt>`, and creates a GitHub prerelease with the DMG, its SHA-256 and
 a Sparkle ZIP. A re-run gets a new attempt number; existing tags are never overwritten. The
 first install uses the release DMG: drag `Apparent Preview.app` into `/Applications`

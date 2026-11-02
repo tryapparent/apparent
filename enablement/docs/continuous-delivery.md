@@ -12,6 +12,9 @@ coalescing superseded runs within its own platform. Both call the same reusable
 Electron and applicable native checks. Each checks the entire tree, not just the
 latest push delta: changes from a cancelled earlier run cannot escape verification.
 Each caller's `verify / Release verification` job is its platform receipt.
+Mac verification and preview publication use `macos-latest`, following GitHub's
+stable Mac image. The required Xcode/macOS SDK remains selected explicitly; an
+image change must still pass the same checks before Mac publication.
 
 Linux and web delivery trigger only after successful `Linux verification`.
 Their admission job reads trusted-main code and requires that exact commit's

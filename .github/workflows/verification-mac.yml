@@ -17,4 +17,4 @@ jobs:
   verify:
     uses: ./.github/workflows/verification-platform.yml
     with:
-      runner: macos-26
+      runner: macos-latest

@@ -16,7 +16,7 @@ concurrency:
 jobs:
   preview:
     if: github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main'
-    runs-on: macos-26
+    runs-on: macos-latest
     timeout-minutes: 90
     env:
       APPARENT_PREVIEW_NOTARIZE: ${{ vars.MAC_APPLE_SIGNING_ENABLED || 'false' }}
