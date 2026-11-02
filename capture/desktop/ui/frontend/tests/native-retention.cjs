@@ -17,14 +17,19 @@ module.exports = async function verifyRetention(page, { config, captures, output
   await usage.click();
   await expect(page.getByText(/1 MB in captures/)).toBeVisible();
   await expect(select).toHaveValue('week');
-  await select.focus();
-  // Actual keyboard events, not setting DOM state or bypassing the renderer.
-
-  // Use the native select's first option then two steps: disabled Custom, week, month.
-  await page.keyboard.press('Home');
-  await page.keyboard.press('ArrowDown');
-  if (await select.inputValue() === 'week') await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Enter');
+  if (process.platform === 'darwin') {
+    // CDP keyboard events leave the macOS native select popup open. Exercise
+    // the real select/change handler without claiming native keyboard proof.
+    await select.selectOption('month');
+  } else {
+    await select.focus();
+    // Actual keyboard events, not setting DOM state or bypassing the renderer.
+    // First option then two steps: disabled Custom, week, month.
+    await page.keyboard.press('Home');
+    await page.keyboard.press('ArrowDown');
+    if (await select.inputValue() === 'week') await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+  }
   await expect(select).toHaveValue('month');
   await save.click();
   await expect(usage).toBeEnabled();
@@ -42,7 +47,8 @@ module.exports = async function verifyRetention(page, { config, captures, output
   assert.equal(Object.hasOwn(raw, 'retention'), false);
   const beforeFailure = await fs.readFile(config);
   // Genuine writer failure on a private config directory; never personal state.
-  await select.focus(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
+  if (process.platform === 'darwin') await select.selectOption('forever');
+  else { await select.focus(); await page.keyboard.press('End'); await page.keyboard.press('Enter'); }
   await expect(select).toHaveValue('forever');
   try {
     await fs.chmod(path.dirname(config), 0o500);
@@ -71,5 +77,5 @@ module.exports = async function verifyRetention(page, { config, captures, output
   await page.screenshot({ path: path.join(output, 'retention-reset.png'), fullPage: true });
   return { backend: 'real Rust GUI', renderer: 'shipped Electron production assets', data: 'synthetic owned files',
     save: true, reset: true, readback: true, failedWrite: true, usage: true, usageError: true,
-    recovery: true, unknownConfigAndCapturePreserved: true, keyboard: true };
+    recovery: true, unknownConfigAndCapturePreserved: true, keyboard: process.platform !== 'darwin' };
 };
