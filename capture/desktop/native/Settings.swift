@@ -1024,7 +1024,7 @@ struct SettingsView: View {
       .frame(height: 92)
       Rectangle().fill(SettingsTheme(scheme).groupLine).frame(height: 1)
       switch pane {
-      case .general: ScrollView { general }
+      case .general: ScrollView { general }.id(state.connect?.presentation?.headline)
       case .recording: recording
       case .storage: storage
       case .permissions: permissions
