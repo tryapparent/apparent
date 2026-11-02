@@ -3,6 +3,20 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+test('packaged framework links remain relative after the build source is removed', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'apparent-runtime-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const source = path.join(dir, 'source'), out = path.join(dir, 'installed');
+  await fs.mkdir(path.join(source, 'Versions/A'), { recursive: true });
+  await fs.writeFile(path.join(source, 'Versions/A/Framework'), 'runtime');
+  await fs.symlink('A', path.join(source, 'Versions/Current'));
+  await fs.symlink('Versions/Current/Framework', path.join(source, 'Framework'));
+  const { stageRuntime } = await import('../../scripts/popup-entries.mjs');
+  await stageRuntime(source, out);
+  await fs.rm(source, { recursive: true });
+  assert.equal(await fs.readlink(path.join(out, 'Framework')), 'Versions/Current/Framework');
+  assert.equal(await fs.readFile(path.join(out, 'Framework'), 'utf8'), 'runtime');
+});
 test('popup packaging requires notes and includes a present independent share entry', async t => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'apparent-popup-entries-'));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
