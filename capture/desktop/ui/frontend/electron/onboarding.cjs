@@ -52,7 +52,11 @@ function present(v){
   if(!window||window.isDestroyed())return;
   if(v.shortcutEditing){window.hide();return;}
   const coach=v.step==='try-it';
-  window.setAlwaysOnTop(coach,'floating');window.setSize(coach?380:760,coach?350:720,false);
+  window.setAlwaysOnTop(coach,'floating');
+  // Fixed windows retain their old min/max size on X11. Update those limits too.
+  const width=coach?380:760,height=coach?350:720;
+  window.setMaximumSize(0,0);window.setMinimumSize(width,height);window.setMaximumSize(width,height);
+  window.setSize(width,height,false);
   window.setVisibleOnAllWorkspaces(coach,{visibleOnFullScreen:coach});
   const focal=v.practiceBoard||v.anchor;
   const target=focal?screen.getDisplayMatching({x:Math.round(focal[0]),y:Math.round(focal[1]),width:Math.max(1,Math.round(focal[2])),height:Math.max(1,Math.round(focal[3]))}):screen.getDisplayNearestPoint(screen.getCursorScreenPoint());

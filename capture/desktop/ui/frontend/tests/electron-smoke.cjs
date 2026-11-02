@@ -144,3 +144,52 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
     } finally { other.destroy(); }
   }, path.join(__dirname, '..')), true);
 });
+
+// Rust state is synthetic; the main/preload/renderer and OS window resizing are real.
+test('onboarding fixed window shrinks to coach and restores setup', { timeout: 30000 }, async (t) => {
+  const { spawn } = require('node:child_process');
+  const { chromium } = require('@playwright/test');
+  const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'onboarding-window-'));
+  const child = spawn(require('electron'), [path.join(__dirname, '..'), '--native-onboarding', '--remote-debugging-port=0', ...(process.platform === 'linux' ? ['--no-sandbox'] : [])], {
+    env: { ...process.env, APPARENT_UI_PROFILE: profile }, stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let browser;
+  t.after(async () => {
+    if (child.exitCode === null) {
+      const exited = new Promise(resolve => child.once('exit', resolve));
+      child.stdin.end('{"type":"close"}\n');
+      const timer = setTimeout(() => child.kill(), 3000);
+      await exited; clearTimeout(timer);
+    }
+    await browser?.close();
+    await fs.rm(profile, { recursive: true, force: true });
+  });
+  const endpoint = await new Promise((resolve, reject) => {
+    let log = '';
+    const timer = setTimeout(() => reject(Error('No Electron debugger endpoint')), 10000);
+    child.once('error', reject);
+    child.once('exit', () => { clearTimeout(timer); reject(Error('Electron exited before connection')); });
+    child.stderr.on('data', bytes => {
+      log += bytes;
+      const match = log.match(/DevTools listening on (ws:\/\/[^\s]+)/);
+      if (match) { clearTimeout(timer); resolve(match[1]); }
+    });
+  });
+  browser = await chromium.connectOverCDP(endpoint);
+  const page = browser.contexts()[0].pages()[0];
+  const send = patch => child.stdin.write(JSON.stringify({ type:'state', step:'welcome', rows:[], ready:true,
+    index:0, count:5, testInstance:true, shortcut:'⌃⌥⇧9', ...patch })+'\n');
+  send({ penPicker:true });
+  await expect(page.getByRole('heading', { name:'Pick your pen.', exact:true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
+  send({ step:'try-it', practice:'whiteboard', anchor:[300,30,320,50] });
+  await expect(page.getByRole('heading', { name:'Open Test board.', exact:true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(380);
+  assert.equal(await page.evaluate(() => {
+    const rect=document.querySelector('main').getBoundingClientRect();
+    return rect.left>=0 && rect.right<=innerWidth && rect.bottom<=innerHeight;
+  }), true);
+  send({ step:'permissions' });
+  await expect(page.getByRole('heading', { name:'One permission at a time.', exact:true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
+});
