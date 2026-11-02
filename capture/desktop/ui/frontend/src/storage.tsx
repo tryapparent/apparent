@@ -16,7 +16,7 @@ const errors: Record<string, string> = {
 export function Storage({ settings = false }: { settings?: boolean }) {
   const [result, setResult] = useState<CaptureLocation>({ status: 'disabled' });
   const [snapshot, setSnapshot] = useState<LocationSnapshot>();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(true);
   const order = useRef(0);
   async function request(operation: 'read' | 'change' | 'reset') {
     const token = ++order.current;
@@ -60,7 +60,7 @@ export function Storage({ settings = false }: { settings?: boolean }) {
       </>}
       {result.status === 'disconnected' && <p>Not connected to Rust. Open the current Apparent app and refresh. This window never starts it.</p>}
       {result.status === 'incompatible' && <p>This Rust backend does not support capture location. Update it before using this card.</p>}
-      {result.status === 'disabled' && <p>Storage is disabled in your configuration. Close this window and reopen Settings to use the fallback.</p>}
+      {!busy && result.status === 'disabled' && <p>Storage is disabled in your configuration. Close this window and reopen Settings to use the fallback.</p>}
       {result.status === 'error' && <p>{errors[result.code] ?? 'Unable to read capture location. Refresh when the Rust app is responsive.'}</p>}
     </div>
     <p className="text-sm text-muted-foreground">New captures use this location. Existing captures stay where they are. Nothing is moved.</p>

@@ -19,6 +19,7 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   let usageError = false;
   let releaseUsage;
   let holdUsage = true;
+  let releaseLocation;
   const requests = [];
   const clients = new Set();
   const policy = () => ({ revision, custom, retention: { preset, note: 'Rust policy note',
@@ -31,7 +32,11 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
       const send = value => socket.end(JSON.stringify(value) + '\n');
       if (r.reference || r.connect) return send({ error: 'feature_disabled' });
       if (r.storage === 'retention' && initialRetentionBusy) return send({ error: 'app_busy' });
-      if (r.storage === 'read') return send({ storage: { savedPath: '/captures', effectivePath: '/captures', displayPath: '/captures', source: 'configured', custom: true, revision } });
+      if (r.storage === 'read') {
+        const reply = () => send({ storage: { savedPath: '/captures', effectivePath: '/captures', displayPath: '/captures', source: 'configured', custom: true, revision } });
+        if (!releaseLocation) { releaseLocation = reply; return; }
+        return reply();
+      }
       if (r.storage === 'usage') {
         if (usageError) return send({ error: 'usage_unavailable', message: 'private failure' });
         const reply = { usage: { effectivePath: '/captures', displayPath: '/captures', formatted: '12 MB', secret: 'hidden' } };
@@ -68,6 +73,10 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   });
   const page = await app.firstWindow();
   t.diagnostic('Retention window opened');
+  await expect.poll(() => typeof releaseLocation).toBe('function');
+  await expect(page.getByText('Waiting for capture location…')).toBeVisible();
+  assert.equal(await page.getByText('Storage is disabled in your configuration.', { exact: false }).count(), 0);
+  releaseLocation();
   await expect(page.getByText('Calculating folder usage…')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Refresh usage', exact: true })).toBeDisabled();
   releaseUsage(); releaseUsage = undefined;
