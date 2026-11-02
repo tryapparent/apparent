@@ -6,8 +6,8 @@ const notice = `## Measurement coverage\n\nProduction collection and consent cov
 export function usageDashboardPlan() {
  const actionEvents = ['connect_account_created','connect_device_connected','connect_upload_completed'];
  const metrics = [
-  {name:'Website/Connect pageview visitors (rolling 30 days)', days:30, events:['$pageview'], description:'Distinct browser identities with a recorded pageview. Not authenticated accounts, unique humans or capture-app users.'},
-  ...[1,7,30].map(days=>({name:`Connect accounts with recorded actions (rolling ${days} ${days===1?'day':'days'})`,days,events:actionEvents,description:'Distinct pseudonymous account identities with an account-created, device-connected or upload-completed event. Excludes login-only activity, system snapshots and browser visits. Limited to opted-in collection coverage.'})),
+  {name:'Pageview visitors · 30 days', days:30, events:['$pageview'], description:'Distinct browser identities with a recorded pageview. Not authenticated accounts, unique humans or capture-app users.'},
+  ...[1,7,30].map(days=>({name:`Connect action accounts · ${days===1?'24h':days+' days'}`,days,events:actionEvents,description:'Distinct pseudonymous account identities with an account-created, device-connected or upload-completed event. Excludes login-only activity, system snapshots and browser visits. Limited to opted-in collection coverage.'})),
  ];
  return {
   dashboard:{name:'Apparent visitors and Connect actions',description:'Pageview visitors and accounts with recorded Connect actions, with explicit collection coverage. Does not measure all signed-in users.',is_shared:false},

@@ -8,6 +8,7 @@ test('separate private dashboard discloses missing coverage and login limitation
  assert.match(plan.notice.body,/does not mean there are no signed-in accounts/);
  assert.match(plan.notice.body,/Login alone is not instrumented/);
  assert.equal(plan.insights.length,4);
+ assert.deepEqual(plan.insights.map(i=>i.name),['Pageview visitors · 30 days','Connect action accounts · 24h','Connect action accounts · 7 days','Connect action accounts · 30 days']);
  assert.equal(plan.notice.type,'text');
  assert.ok(plan.insights.every(i=>i.query.kind==='DataVisualizationNode'&&i.query.display==='BoldNumber')); 
  assert.ok(plan.insights.every(i=>!i.name.includes('Active users')));
