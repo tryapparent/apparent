@@ -75,7 +75,51 @@ module.exports = async function verifyRetention(page, { config, captures, output
   const after = JSON.parse(await fs.readFile(config, 'utf8'));
   for (const key of Object.keys(original)) assert.deepEqual(after[key], original[key], `Unrelated ${key} changed`);
   await page.screenshot({ path: path.join(output, 'retention-reset.png'), fullPage: true });
+  const preferenceRefresh = page.getByRole('button', { name: 'Refresh preferences', exact: true });
+  await preferenceRefresh.click();
+  const pickerMode = page.getByLabel('Picker mode', { exact: true });
+  const checks = page.getByLabel('Automatic update checks', { exact: true });
+  const downloads = page.getByLabel('Automatic update downloads', { exact: true });
+  await expect(pickerMode).toBeEnabled();
+  await pickerMode.selectOption('screen');
+  await expect(pickerMode).toBeEnabled();
+  assert.equal(JSON.parse(await fs.readFile(config, 'utf8')).lastCaptureMode, 'screen');
+  await checks.selectOption('false'); await expect(checks).toBeEnabled();
+  await downloads.selectOption('false'); await expect(downloads).toBeEnabled();
+  const savedPreferences = JSON.parse(await fs.readFile(config, 'utf8'));
+  assert.equal(savedPreferences.automaticUpdateChecks, false);
+  assert.equal(savedPreferences.automaticUpdateDownloads, false);
+  for (const key of Object.keys(original)) assert.deepEqual(savedPreferences[key], original[key], `Preference edit changed unrelated ${key}`);
+  await page.screenshot({ path: path.join(output, 'picker-updater-saved.png'), fullPage: true });
+  const beforePreferenceFailure = await fs.readFile(config);
+  try {
+    await fs.chmod(path.dirname(config), 0o500);
+    await downloads.selectOption('true');
+    await expect(page.getByText('Could not confirm preferences. Refresh before trying again.')).toBeVisible();
+    assert.deepEqual(await fs.readFile(config), beforePreferenceFailure);
+    await page.screenshot({ path: path.join(output, 'picker-updater-write-error.png'), fullPage: true });
+  } finally { await fs.chmod(path.dirname(config), 0o700); }
+  await preferenceRefresh.click(); await expect(downloads).toHaveValue('false');
+  await checks.selectOption('default'); await expect(checks).toBeEnabled();
+  await downloads.selectOption('default'); await expect(downloads).toBeEnabled();
+  const resetPreferences = JSON.parse(await fs.readFile(config, 'utf8'));
+  assert.equal(Object.hasOwn(resetPreferences, 'automaticUpdateChecks'), false);
+  assert.equal(Object.hasOwn(resetPreferences, 'automaticUpdateDownloads'), false);
+  // Direct edits are an explicit supported input, in this owned synthetic config.
+  resetPreferences.lastCaptureMode = 'window';
+  await fs.writeFile(config, JSON.stringify(resetPreferences));
+  await preferenceRefresh.click(); await expect(pickerMode).toHaveValue('area');
+  await expect(page.getByText('The saved picker mode is unavailable.', { exact: false })).toBeVisible();
+  assert.equal(JSON.parse(await fs.readFile(config, 'utf8')).lastCaptureMode, 'window');
+  // Restore only these synthetic test keys so the enclosing Storage checks retain
+  // their original config contract; no real-user config is opened by this fixture.
+  for (const key of ['lastCaptureMode','automaticUpdateChecks','automaticUpdateDownloads']) {
+    if (Object.hasOwn(original,key)) resetPreferences[key] = original[key]; else delete resetPreferences[key];
+  }
+  await fs.writeFile(config, JSON.stringify(resetPreferences));
+  await preferenceRefresh.click(); await expect(pickerMode).toBeEnabled();
   return { backend: 'real Rust GUI', renderer: 'shipped Electron production assets', data: 'synthetic owned files',
     save: true, reset: true, readback: true, failedWrite: true, usage: true, usageError: true,
+    pickerUpdaterNativeControls: true, pickerUpdaterFailedWrite: true, unavailableModePreserved: true,
     recovery: true, unknownConfigAndCapturePreserved: true, keyboard: process.platform !== 'darwin' };
 };
