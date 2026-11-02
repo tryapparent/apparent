@@ -283,6 +283,13 @@ pub(crate) fn constrain_dock(raw: &mut Vec<RawWindow>, dock: Option<[f64; 4]>) {
     });
 }
 
+/// The system cursor is visual and never receives input. Keep other Window
+/// Server surfaces and other processes at this level in the hit-test stack.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(crate) fn remove_system_cursor(raw: &mut Vec<RawWindow>, cursor_level: i32) {
+    raw.retain(|window| window.owner != "Window Server" || window.layer != cursor_level);
+}
+
 /// Reads the on-screen window list (front to back) from the window server.
 #[cfg(target_os = "macos")]
 pub fn raw_windows() -> Vec<RawWindow> {
@@ -772,7 +779,7 @@ mod tests {
         };
         let raw = vec![
             window(6, 415, "Dock", [0.0, 0.0, 1440.0, 900.0], 20),
-            window(84, 12404, "Electron", [260.0, 56.0, 920.0, 760.0], 0),
+            window(84, 12404, "Electron", [260.0, 56.0, 920.0, 844.0], 0),
         ];
         let ours = |pid| pid == 12404;
         assert!(!owned_window_at(&raw, 1050.0, 687.0, &[], ours), "observed pre-fix Dock obstruction");
@@ -784,6 +791,34 @@ mod tests {
         let mut hidden = raw;
         constrain_dock(&mut hidden, None);
         assert!(owned_window_at(&hidden, 1050.0, 687.0, &[], ours));
+    }
+
+    #[test]
+    fn system_cursor_does_not_receive_clicks_above_settings() {
+        let window = |id, pid, owner: &str, bounds, layer| RawWindow {
+            id, pid, owner: owner.into(), title: String::new(), bounds, layer, alpha: 1.0,
+        };
+        let cursor_level = 2147483630; // observed CG cursor level in the retained native trace
+        let raw = vec![
+            window(3, 204, "Window Server", [1037.0, 679.0, 32.0, 32.0], cursor_level),
+            window(110, 17186, "Apparent", [0.0, 0.0, 1440.0, 900.0], 26),
+            window(6, 415, "Dock", [0.0, 0.0, 1440.0, 900.0], 20),
+            window(109, 17227, "Electron", [260.0, 56.0, 920.0, 844.0], 0),
+        ];
+        let ours = |pid| pid == 17227;
+        let mut adjusted = raw;
+        constrain_dock(&mut adjusted, Some([0.0, 816.0, 1440.0, 84.0]));
+        assert!(!owned_window_at(&adjusted, 1050.0, 687.0, &[110], ours), "Dock repair alone still hits the cursor");
+        remove_system_cursor(&mut adjusted, cursor_level);
+        assert!(owned_window_at(&adjusted, 1050.0, 687.0, &[110], ours));
+        assert!(!owned_window_at(&adjusted, 1300.0, 700.0, &[110], ours));
+        assert!(!owned_window_at(&adjusted, 1000.0, 850.0, &[110], ours));
+        for (owner, layer) in [("Window Server", cursor_level - 1), ("Other app", cursor_level)] {
+            let mut covered = adjusted.clone();
+            covered.insert(0, window(4, 205, owner, [1037.0, 679.0, 32.0, 32.0], layer));
+            remove_system_cursor(&mut covered, cursor_level);
+            assert!(!owned_window_at(&covered, 1050.0, 687.0, &[110], ours));
+        }
     }
 
     #[test]

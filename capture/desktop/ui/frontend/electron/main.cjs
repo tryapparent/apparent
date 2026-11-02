@@ -191,7 +191,7 @@ app.whenReady().then(() => {
   }
   for (const action of ['start','read','cancel']) {
     ipcMain.handle(`apparent:${action}-public-share`, async (event,...args) => {
-      validate(event,args);
+      validateFoundation(event,args);
       return publicShare.request(action, reference?.status==='connected'?reference.id:null);
     });
   }
