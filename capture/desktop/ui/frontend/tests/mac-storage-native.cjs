@@ -467,3 +467,99 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
   console.log(`Native Storage evidence: ${reportPath}`);
   if (failure) throw failure;
 });
+
+test('installed Sparkle reconciles JSON overrides, package defaults and stale framework preferences', {
+  timeout: 100000,
+  skip: process.platform !== 'darwin' ? 'Native macOS CI only' : false,
+}, async () => {
+  assert.equal(process.env.CI, 'true');
+  assert.equal(process.env.GITHUB_ACTIONS, 'true');
+  assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
+  assert.equal(process.env.APPARENT_STORAGE_NATIVE_CI, '1');
+  const appDir = process.env.APPARENT_STORAGE_NATIVE_APP_DIR;
+  const output = process.env.APPARENT_STORAGE_NATIVE_OUTPUT;
+  assert.ok(appDir && path.isAbsolute(appDir) && output && path.isAbsolute(output));
+  const info = path.join(appDir, 'Contents/Info.plist');
+  const executable = path.join(appDir, 'Contents/MacOS/apparent');
+  const plist = async (key, fallback) => {
+    try { return (await run('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, info], { timeout: 3000 })).stdout.trim(); }
+    catch { return fallback; }
+  };
+  const domain = await plist('CFBundleIdentifier');
+  assert.match(domain, /^[A-Za-z0-9.-]+$/);
+  const packageChecks = (await plist('SUEnableAutomaticChecks', 'true')) === 'true';
+  const packageDownloads = (await plist('SUAutomaticallyUpdate', 'false')) === 'true';
+  const packageAllows = (await plist('SUAllowsAutomaticUpdates', 'true')) === 'true';
+  const report = { passed: false, cases: [], scope: 'Installed Sparkle startup/getters; no recording or TCC changes' };
+  for (const override of [false, true, null]) {
+    const home = await fs.mkdtemp(path.join(await fs.realpath(process.env.RUNNER_TEMP), 'sp-'));
+    await fs.chmod(home, 0o700);
+    const env = { ...process.env, HOME: home, CFFIXED_USER_HOME: home, XDG_CONFIG_HOME: path.join(home, '.config'),
+      TMPDIR: home, TMP: home, TEMP: home, APPARENT_CONFIG: path.join(home, 'config.json'), APPARENT_CAPTURES_DIR: path.join(home, 'captures') };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const config = { onboarding: { seen: true }, syntheticSecret: 'preserve', future: { preserve: true } };
+    if (override !== null) Object.assign(config, { automaticUpdateChecks: override, automaticUpdateDownloads: override });
+    await fs.writeFile(env.APPARENT_CONFIG, JSON.stringify(config), { mode: 0o600 });
+    const defaults = (...args) => run('/usr/bin/defaults', args, { env, timeout: 4000, maxBuffer: 65536 });
+    let backend, log, originalDefaults, missingDomain = false, defaultsChanged = false;
+    try {
+      try { originalDefaults = (await defaults('export', domain, '-')).stdout; }
+      catch (exportError) {
+        try { await defaults('read', domain); }
+        catch (readError) {
+          missingDomain = readError.code === 1 && /Domain[\s\S]*(?:does not exist|not found)/i.test(`${readError.stdout}\n${readError.stderr}`);
+        }
+        if (!missingDomain) throw exportError;
+      }
+      defaultsChanged = true;
+      for (const [key, type, value] of [
+        ['SUEnableAutomaticChecks', '-bool', 'true'], ['SUAutomaticallyUpdate', '-bool', 'true'],
+        ['SUSendProfileInfo', '-bool', 'true'], ['SUScheduledCheckInterval', '-float', '0'],
+        ['SUFeedURL', '-string', 'https://invalid.example/SYNTHETIC-feed.xml'],
+        ['PreferenceUnknownSibling', '-string', 'SYNTHETIC-PRESERVE'],
+      ]) await defaults('write', domain, key, type, value);
+      const label = override === null ? 'package' : String(override);
+      const logfile = path.join(output, `sparkle-policy-${label}.log`);
+      log = await fs.open(logfile, 'wx', 0o600);
+      const pidFile = path.join(home, 'rust.pid');
+      await fs.writeFile(pidFile, '', { mode: 0o600, flag: 'wx' });
+      backend = spawn('/bin/bash', ['-c', rustSupervisor, 'sparkle-policy-supervisor', pidFile, executable, 'app'],
+        { env, detached: true, stdio: ['pipe', log.fd, log.fd] });
+      let match;
+      const until = Date.now() + 10000;
+      while (!match && Date.now() < until) {
+        const text = await fs.readFile(logfile, 'utf8');
+        match = text.match(/Sparkle policy: checks=(true|false), downloads=(true|false) \(requested=(true|false)\), interval=([0-9.]+), systemProfile=(true|false)/);
+        if (!match) await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      assert.ok(match, 'Installed app must report actual Sparkle getters');
+      const requested = override ?? packageDownloads;
+      assert.equal(match[1], String(override ?? packageChecks));
+      assert.equal(match[2], String(requested && packageAllows));
+      assert.equal(match[3], String(requested));
+      assert.equal(Number(match[4]), 86400);
+      assert.equal(match[5], 'false');
+      const cleanup = await stopOwned(backend, `Sparkle ${label}`, true); backend = undefined;
+      await assert.rejects(defaults('read', domain, 'SUFeedURL'), 'Stale feed override must be removed');
+      assert.equal((await defaults('read', domain, 'PreferenceUnknownSibling')).stdout.trim(), 'SYNTHETIC-PRESERVE');
+      assert.deepEqual(JSON.parse(await fs.readFile(env.APPARENT_CONFIG, 'utf8')), config);
+      report.cases.push({ override, checks: match[1] === 'true', downloads: match[2] === 'true', requested,
+        staleFeedRemoved: true, unrelatedDefaultsPreserved: true, configPreserved: true, cleanup });
+    } finally {
+      if (backend) await stopOwned(backend, 'Sparkle failed case', true);
+      await log?.close();
+      if (defaultsChanged && originalDefaults !== undefined) {
+        const snapshot = path.join(home, 'original-defaults.plist');
+        await fs.writeFile(snapshot, originalDefaults, { mode: 0o600 });
+        await defaults('import', domain, snapshot);
+      } else if (defaultsChanged && missingDomain) {
+        // A separate read confirmed absence before any fixture write.
+        await defaults('delete', domain).catch(error => { if (error.code !== 1) throw error; });
+      }
+      await fs.rm(home, { recursive: true, force: true });
+      await fs.writeFile(path.join(output, 'sparkle-policy-native.json'), JSON.stringify(report, null, 2));
+    }
+  }
+  report.passed = true;
+  await fs.writeFile(path.join(output, 'sparkle-policy-native.json'), JSON.stringify(report, null, 2));
+});

@@ -215,6 +215,19 @@ fn scan_directory(
 mod tests {
     use super::*;
     #[test]
+    fn picker_preference_projects_legacy_only_when_canonical_key_is_absent() {
+        let dir = std::env::temp_dir().join(format!("legacy-picker-{}", crate::shared::ids::make_bundle_id()));
+        std::fs::create_dir(&dir).unwrap();
+        let legacy = dir.join("last-mode");
+        std::fs::write(&legacy, "screen\n").unwrap();
+        assert_eq!(picker_preference(&serde_json::json!({}), Some(&legacy)), ("screen", false));
+        assert_eq!(picker_preference(&serde_json::json!({"lastCaptureMode":"area"}), Some(&legacy)), ("area", false));
+        assert_eq!(picker_preference(&serde_json::json!({"lastCaptureMode":"window"}), Some(&legacy)), ("area", true));
+        assert_eq!(std::fs::read_to_string(legacy).unwrap(), "screen\n");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn retired_window_preference_reports_area_fallback_without_rewriting_config() {
         let dir = std::env::temp_dir().join(format!("old-window-{}", crate::shared::ids::make_bundle_id()));
         std::fs::create_dir(&dir).unwrap();
@@ -235,7 +248,7 @@ mod tests {
         std::fs::create_dir(&dir).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
         let config = dir.join("config.json");
-        std::fs::write(&config, r#"{"secret":"keep","shortcuts":{"future":42}}"#).unwrap();
+        std::fs::write(&config, r#"{"lastCaptureMode":"area","secret":"keep","shortcuts":{"future":42}}"#).unwrap();
         let first = read_preferences(&config).unwrap();
         let revision = first["revision"].as_str().unwrap();
         crate::shared::handoff::set_config_value_in(&config, "sibling", true.into()).unwrap();
@@ -306,13 +319,25 @@ pub(super) fn valid_preference(key: &str, value: &serde_json::Value) -> bool {
     }
 }
 
+fn picker_preference(raw: &serde_json::Value, legacy: Option<&Path>) -> (&'static str, bool) {
+    use crate::capture::desktop::SelectionMode;
+    if let Some(value) = raw.get("lastCaptureMode") {
+        let mode = value.as_str().filter(|_| valid_preference("lastCaptureMode", value))
+            .and_then(SelectionMode::from_key).unwrap_or(SelectionMode::Area);
+        return (mode.key(), !valid_preference("lastCaptureMode", value));
+    }
+    let mode = legacy.and_then(|path| std::fs::read_to_string(path).ok())
+        .as_deref().and_then(SelectionMode::from_key).unwrap_or(SelectionMode::Area);
+    (mode.key(), false)
+}
+
 pub(super) fn read_preferences(config: &Path) -> Result<serde_json::Value, &'static str> {
     let raw = capture_location::read_raw(config).map_err(|_| "config_read_failed")?;
     let policy = crate::shared::handoff::load_config_from(config);
-    let mode = raw["lastCaptureMode"].as_str().filter(|mode| valid_preference("lastCaptureMode", &serde_json::json!(mode))).unwrap_or("area");
+    let (mode, unavailable) = picker_preference(&raw, crate::capture::desktop::SelectionMode::last_used_path().as_deref());
     Ok(serde_json::json!({"revision":preference_revision(&raw), "preferences":{
         "lastCaptureMode":mode,
-        "savedModeUnavailable":raw.get("lastCaptureMode").is_some_and(|value| !valid_preference("lastCaptureMode", value)),
+        "savedModeUnavailable":unavailable,
         "automaticUpdateChecks":policy.automatic_update_checks,
         "automaticUpdateDownloads":policy.automatic_update_downloads,
     }}))
