@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import tarfile
 import tempfile
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -92,6 +94,26 @@ class CacheTests(unittest.TestCase):
         with self.assertRaises(tarfile.TarError):
             cache.import_cache(self.dest, self.archive, self.lock)
         self.assertFalse(self.dest.exists())
+
+    def test_fifo_archive_is_rejected_without_blocking(self):
+        os.mkfifo(self.archive)
+        result = subprocess.run(
+            [sys.executable, str(ROOT / 'capture/desktop/scripts/mac/cache.py'),
+             'import', '--cargo-home', str(self.dest), '--archive',
+             str(self.archive), '--lock', str(self.lock)],
+            capture_output=True, text=True, timeout=2)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('cache rejected:', result.stderr)
+        self.assertFalse(self.dest.exists())
+
+    def test_nonregular_archive_paths_are_rejected(self):
+        self.archive.mkdir()
+        with self.assertRaisesRegex(ValueError, 'unsafe'):
+            cache.import_cache(self.dest, self.archive, self.lock)
+        self.archive.rmdir()
+        self.archive.symlink_to(self.root / 'missing')
+        with self.assertRaisesRegex(ValueError, 'unsafe'):
+            cache.import_cache(self.dest, self.archive, self.lock)
 
 
 if __name__ == '__main__':

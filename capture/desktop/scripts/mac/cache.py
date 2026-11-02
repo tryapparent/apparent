@@ -5,6 +5,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import stat
 import sys
 import tarfile
 import tempfile
@@ -68,9 +69,11 @@ def export_cache(home, archive, lock):
 
 def import_cache(home, archive, lock):
     """Validate everything before publishing a fresh dedicated Cargo home."""
-    if not archive.exists():
+    try:
+        metadata = archive.lstat()
+    except FileNotFoundError:
         return False
-    if archive.is_symlink() or archive.stat().st_size > LIMIT + COUNT * 1024:
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > LIMIT + COUNT * 1024:
         raise ValueError('unsafe or oversized archive')
     if home.exists() or home.is_symlink():
         raise ValueError('destination must be a new dedicated Cargo home')
