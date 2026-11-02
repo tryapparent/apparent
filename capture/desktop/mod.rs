@@ -6799,6 +6799,7 @@ pub fn run_app(
                                 if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some("Typed notes unavailable · recording continues".into()); }
                             }
                             LiveOverlayEvent::NoteClosed { focus, owner } => platform::restore_note_focus(focus, owner),
+                            LiveOverlayEvent::NoteOutside => { if let Some(ui) = coord.note_ui.as_ref() { ui.outside(); } },
                             LiveOverlayEvent::Note { pin, t, x, y, screen_x, screen_y } => {
                                 coord.request_immediate_frame();
                                 let (focus, owner) = platform::note_focus();

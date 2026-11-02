@@ -61,12 +61,6 @@ app.whenReady().then(() => {
   }
   ipcMain.handle('notes:ready', (event) => { validate(event); publish(); });
   ipcMain.handle('notes:finish-ready', event => { validate(event); if (event.sender !== popup.webContents || !finishing || finished) return; finished = true; send({ action: 'finished' }); });
-  popup.on('blur', () => setTimeout(() => {
-    const pointer = screen.getCursorScreenPoint();
-    const bounds = popup.getBounds();
-    const inside = pointer.x >= bounds.x && pointer.x < bounds.x + bounds.width && pointer.y >= bounds.y && pointer.y < bounds.y + bounds.height;
-    if (!finishing && popup.isVisible() && !inside && ![popup, badge].includes(BrowserWindow.getFocusedWindow())) send({ action: 'outside' });
-  }, 100));
   ipcMain.handle('notes:command', (event, value) => {
     validate(event);
     if (finished || !validCommand(value)) throw new Error('Invalid notes command');

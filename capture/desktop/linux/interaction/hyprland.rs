@@ -415,6 +415,29 @@ pub fn pin_note(xid: u32, pid: u32) -> Result<()> {
     Ok(())
 }
 
+/// X11 geometry can diverge from Hyprland's scene for override-redirect Electron
+/// windows. Reconcile the exact registered child surface in the compositor too.
+pub fn place_note(xid: u32, pid: u32, rect: [i32; 4], focus: bool) -> Result<()> {
+    pin_note(xid, pid)?;
+    let clients: Vec<serde_json::Value> = serde_json::from_str(&request("j/clients")?)?;
+    let title = note_title(xid);
+    let mut owned = clients.iter().filter(|w| w["pid"].as_u64() == Some(u64::from(pid)) && w["title"].as_str() == Some(&title) && w["xwayland"].as_bool() == Some(true));
+    let window = owned.next().context("Notes surface not mapped")?;
+    anyhow::ensure!(owned.next().is_none(), "Ambiguous notes surface");
+    let address = window["address"].as_str().context("Notes surface has no address")?;
+    anyhow::ensure!(address.starts_with("0x") && address.len() > 2 && address[2..].bytes().all(|b| b.is_ascii_hexdigit()), "Invalid notes address");
+    let [x,y,width,height] = rect;
+    match syntax()? {
+        Syntax::Lua => run(&format!("eval local w = hl.get_windows({{ title = '{title}' }})[1]; assert(w and w.address == '{address}', 'Notes surface changed'); hl.dispatch(hl.dsp.window.move({{ window = w, x = {x}, y = {y}, relative = false }})); hl.dispatch(hl.dsp.window.resize({{ window = w, x = {width}, y = {height}, relative = false }})); {}", if focus { "hl.dispatch(hl.dsp.focus({ window = w }))" } else { "" })),
+        Syntax::Hyprlang => {
+            run(&format!("dispatch movewindowpixel exact {x} {y},address:{address}"))?;
+            run(&format!("dispatch resizewindowpixel exact {width} {height},address:{address}"))?;
+            if focus { run(&format!("dispatch focuswindow address:{address}"))?; }
+            Ok(())
+        }
+    }
+}
+
 fn pill_pin_command(clients: &str, pid: u32, xid: u32, syntax: Syntax) -> Result<Option<String>> {
     owned_pin_command(clients, pid, &pill_title(xid), syntax)
 }

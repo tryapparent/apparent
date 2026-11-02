@@ -119,6 +119,7 @@ pub enum LiveOverlayEvent {
     RequestSnapshot,
     Note { pin: u32, t: u64, x: f32, y: f32, screen_x: f64, screen_y: f64 },
     NoteClosed { focus: u64, owner: u32 },
+    NoteOutside,
     NotesUnavailable,
     /// The iPhone mirror ended on its own (unplugged, never found, or access denied).
     PhoneEnded,
@@ -1022,6 +1023,22 @@ impl SharedCaptureTelemetry {
     /// Whether the topmost window at a global point is Apparent's own or a `apparent-helper`'s other
     /// than the capture source (ignoring the click-through ink overlay). Asked once per press, and
     /// for scrolls, which come in bursts at one point, at most every 250 ms.
+    /// While editing, only the two notes-child windows count as inside. A click on
+    /// the capsule or another Apparent surface is still an outside click.
+    fn on_capture_input_ui(&self, x: f64, y: f64) -> bool {
+        if self.notes_editing.load(Ordering::Acquire) {
+            self.notes_window_in(&platform::raw_windows_now(), x, y)
+        } else {
+            self.on_apparent_window(x, y)
+        }
+    }
+
+    fn notes_window_in(&self, windows: &[crate::shared::windows::RawWindow], x: f64, y: f64) -> bool {
+        let pid = self.note_ui_pid.load(Ordering::Acquire);
+        let passthrough = self.passthrough_window_ids.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        pid > 0 && crate::shared::windows::owned_window_at(windows, x, y, &passthrough, |owner| u64::try_from(owner).ok() == Some(pid))
+    }
+
     fn on_apparent_window(&self, x: f64, y: f64) -> bool {
         let mut hit = self
             .apparent_hit
@@ -1170,7 +1187,11 @@ fn poll_clicks(
     on_apparent: impl Fn(f64, f64) -> bool,
 ) {
     let was = std::mem::replace(prev, now);
-    if telemetry.notes_editing.load(Ordering::Acquire) || telemetry.mouse_live.load(Ordering::Acquire) {
+    if telemetry.mouse_live.load(Ordering::Acquire) { return; }
+    if telemetry.notes_editing.load(Ordering::Acquire) {
+        if now.iter().zip(&was).any(|(&down, &before)| down && !before) && !on_apparent(x, y) {
+            let _ = telemetry.ui_sender.try_send(LiveOverlayEvent::NoteOutside);
+        }
         return;
     }
     for (button, (&down, &before)) in now.iter().zip(&was).enumerate() {
@@ -1423,6 +1444,8 @@ mod tests {
         assert!(!at(1000.0, 900.0), "the app under the ink overlay");
         telemetry.note_ui_pid.store(app as u64, Ordering::Release);
         assert!(at(1000.0, 900.0), "the separate Electron note UI is owned");
+        assert!(telemetry.notes_window_in(&windows, 1000.0, 900.0), "notes clicks stay inside");
+        assert!(!telemetry.notes_window_in(&windows, 300.0, 300.0), "other Apparent windows dismiss notes");
         telemetry.note_ui_pid.store(0, Ordering::Release);
         assert!(!at(1000.0, 900.0), "closing notes releases that process identity");
         telemetry.set_capture_source_pid(0);
@@ -1432,6 +1455,25 @@ mod tests {
     /// Kit's Screen capture on the Pro: the old listen-only event tap was off (no Input
     /// Monitoring), so his clicks on OpenCode's composer never reached the bundle. Clicks now
     /// come from the mouse monitor; polled button state stands in if it couldn't be installed.
+    #[test]
+    fn note_editor_dismisses_only_on_an_actual_external_button_press() {
+        let (sender, receiver) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        telemetry.notes_editing.store(true, Ordering::Release);
+        let mut prev = [false; 2];
+        // Typing and clicks inside the editor never become captured input.
+        poll_clicks(&telemetry, &mut prev, [true, false], (20.0, 20.0), false, |_, _| true);
+        poll_clicks(&telemetry, &mut prev, [false, false], (20.0, 20.0), false, |_, _| true);
+        assert!(receiver.try_recv().is_err());
+        // An external Shift-click dismisses once on press; its release adds no pin.
+        poll_clicks(&telemetry, &mut prev, [true, false], (500.0, 500.0), true, |_, _| false);
+        assert!(matches!(receiver.try_recv(), Ok(LiveOverlayEvent::NoteOutside)));
+        poll_clicks(&telemetry, &mut prev, [true, false], (500.0, 500.0), true, |_, _| false);
+        poll_clicks(&telemetry, &mut prev, [false, false], (500.0, 500.0), true, |_, _| false);
+        assert!(receiver.try_recv().is_err());
+        assert!(telemetry.events.lock().unwrap().is_empty());
+    }
+
     #[test]
     fn clicks_are_recorded_from_polled_buttons_while_the_mouse_monitor_is_missing() {
         let (sender, _receiver) = flume::unbounded();

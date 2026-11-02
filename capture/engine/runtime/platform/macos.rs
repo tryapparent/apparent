@@ -1443,7 +1443,7 @@ fn install_mouse_monitor(telemetry: Arc<SharedCaptureTelemetry>) -> bool {
         let cg: *mut OpaqueCgEvent = unsafe { msg_send![event, CGEvent] };
         if !cg.is_null() {
             mouse_event(&telemetry, cg.cast(), |x, y| {
-                telemetry.on_apparent_window(x, y)
+                telemetry.on_capture_input_ui(x, y)
             });
         }
     });
@@ -1473,7 +1473,9 @@ fn mouse_event(
     match event_type {
         // A ⇧-press is never a click: a ⇧-click drops a pin, a ⇧-drag is ink (the poller's).
         EVENT_LEFT_MOUSE_DOWN | EVENT_RIGHT_MOUSE_DOWN if !on_apparent(loc.x, loc.y) => {
-            if !pure_shift {
+            if telemetry.notes_editing.load(Ordering::Acquire) {
+                let _ = telemetry.ui_sender.try_send(LiveOverlayEvent::NoteOutside);
+            } else if !pure_shift {
                 telemetry.pointer_down(t_ms, loc.x, loc.y);
             } else if event_type == EVENT_LEFT_MOUSE_DOWN {
                 telemetry.shift_down(t_ms, loc.x, loc.y);
@@ -1780,7 +1782,7 @@ fn run_global_hid_poller(telemetry: Arc<SharedCaptureTelemetry>) {
             buttons,
             (loc.x, loc.y),
             shift && !cmd && !ctrl && !alt,
-            |x, y| telemetry.on_apparent_window(x, y),
+            |x, y| telemetry.on_capture_input_ui(x, y),
         );
 
         let pure_shift = shift && !cmd && !ctrl && !alt && !await_shift_release;

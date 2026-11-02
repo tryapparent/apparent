@@ -59,7 +59,7 @@
         {
           "key": "microphoneEnabled",
           "value": "true",
-          "does": "Set false for intentional silent captures; applies to the next capture without changing the selected microphone device"
+          "does": "Set false for intentional silent captures; applies to the next screen capture without changing the selected microphone device"
         }
       ],
       "note": "Enabled by default. Rust persists notes before acknowledgement. The notes-only Electron surface does not replace the picker, native drawing or the complete recording capsule. Native platform acceptance is required before release.",

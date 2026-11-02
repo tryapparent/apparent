@@ -908,11 +908,11 @@ pub(in crate::capture::desktop) fn note_badge_anchor(width: f32, y: f32) -> Opti
 }
 
 #[derive(Clone, Copy, Default)]
-struct NoteSurface { id: u32, generation: u64, worker: bool }
+struct NoteSurface { id: u32, generation: u64, worker: bool, rect: [i32; 4], focus: bool }
 #[derive(Clone, Copy, Default)]
 struct NoteSurfaces { pid: u32, slots: [NoteSurface; 2] }
 static NOTE_SURFACES: std::sync::Mutex<NoteSurfaces> = std::sync::Mutex::new(NoteSurfaces {
-    pid: 0, slots: [NoteSurface { id: 0, generation: 0, worker: false }; 2],
+    pid: 0, slots: [NoteSurface { id: 0, generation: 0, worker: false, rect: [0; 4], focus: false }; 2],
 });
 
 pub(in crate::capture::desktop) fn register_note_surfaces(pid: u32) {
@@ -932,13 +932,14 @@ fn raise_note_surfaces() {
 fn pin_note_surface(id: u32, pid: u32, index: usize) {
     let mut failures = 0;
     loop {
-        let generation = {
+        let (generation, rect, focus) = {
             let state = NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             if state.pid != pid || state.slots[index].id != id { return; }
-            state.slots[index].generation
+            let slot = state.slots[index];
+            (slot.generation, slot.rect, slot.focus)
         };
         let visible = x11::window_info(id as isize).is_some_and(|w| w.pid == pid && w.on_screen());
-        let result = if visible { linux::hyprland::pin_note(id, pid) } else { Ok(()) };
+        let result = if visible { linux::hyprland::place_note(id, pid, rect, focus) } else { Ok(()) };
         if result.is_ok() { raise_note_surfaces(); } else { failures += 1; }
         let retry = {
             let mut state = NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -974,7 +975,7 @@ pub(in crate::capture::desktop) fn place_note_surface(id: u32, pid: u32, rect: [
         let mut state = NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if state.pid != pid { return; }
         let slot = &mut state.slots[index];
-        slot.id = id; slot.generation = slot.generation.wrapping_add(1);
+        slot.id = id; slot.rect = rect; slot.focus = focus; slot.generation = slot.generation.wrapping_add(1);
         let start = !slot.worker && linux::hyprland::running();
         slot.worker |= start;
         start

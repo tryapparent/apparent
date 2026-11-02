@@ -381,6 +381,10 @@ impl Session {
             badge_position: None,
         })
     }
+    pub fn outside(&self) {
+        let _ = self.sender.try_send(Message::Action(CommandMessage::Outside));
+    }
+
     pub fn position_badge(&mut self, point: [f64; 4]) {
         let point = point.map(|v| v.round() as i32);
         if self.badge_position != Some(point)

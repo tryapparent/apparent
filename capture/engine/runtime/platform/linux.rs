@@ -1159,7 +1159,7 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
             buttons,
             (x, y),
             mods.shift && !mods.super_key && !mods.ctrl && !mods.alt,
-            |x, y| telemetry.on_apparent_window(x, y),
+            |x, y| telemetry.on_capture_input_ui(x, y),
         );
 
         // Hold Shift + move the pointer inside the capture target = draw a persistent stroke.
