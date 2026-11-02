@@ -14,6 +14,9 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   let reply = '{"state":{"phase":"idle","capture_id":null}}\n';
   let reportingEnabled = true;
   let reportingReads = 0;
+  let reportingAlwaysBusy = false;
+  let reportingWrites = 0;
+  let rejectReportingWrite = true;
   let server;
   const application = await electron.launch({
     args: [path.join(__dirname, '..')],
@@ -58,11 +61,15 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
     requests.push(data.toString());
     const request = data.toString().startsWith('{') ? JSON.parse(data.toString()) : null;
     if (request?.errorReporting) {
-      if (request.errorReporting === 'read' && ++reportingReads === 1) {
+      if (request.errorReporting === 'read' && (++reportingReads <= 3 || reportingAlwaysBusy)) {
         socket.end('{"error":"app_busy"}\n');
         return;
       }
-      if (request.errorReporting === 'set') reportingEnabled = request.enabled;
+      if (request.errorReporting === 'set') {
+        reportingWrites += 1;
+        if (rejectReportingWrite) return socket.end('{"error":"app_busy"}\n');
+        reportingEnabled = request.enabled;
+      }
       socket.end(JSON.stringify({ errorReporting: { enabled: reportingEnabled } }) + '\n');
     } else socket.end(reply);
   }));
@@ -77,10 +84,23 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   await reporting.getByRole('button', { name: 'Refresh reporting setting' }).click();
   const toggle = reporting.getByRole('checkbox', { name: 'Send technical error reports' });
   await expect(toggle).toBeChecked();
-  assert.equal(reportingReads, 2, 'one busy read is retried without another human action');
+  assert.equal(reportingReads, 4, 'repeated busy reads recover without another human action');
+  await toggle.click();
+  await expect(reporting.getByText('Rust is handling another settings request. Refresh shortly.')).toBeVisible();
+  assert.equal(reportingWrites, 1, 'a rejected save must never be repeated');
+  rejectReportingWrite = false;
+  await reporting.getByRole('button', { name: 'Refresh reporting setting' }).click();
+  await expect(toggle).toBeChecked();
   await toggle.click();
   await expect(toggle).not.toBeChecked();
   assert.equal(reportingEnabled, false);
+  const beforeBusy = reportingReads;
+  reportingAlwaysBusy = true;
+  await reporting.getByRole('button', { name: 'Refresh reporting setting' }).click();
+  await expect(reporting.getByText('Rust is handling another settings request. Refresh shortly.')).toBeVisible();
+  await expect(reporting.getByRole('button', { name: 'Refresh reporting setting' })).toBeEnabled();
+  assert.equal(reportingReads - beforeBusy, 6, 'persistent contention stops after the bounded read attempts');
+  reportingAlwaysBusy = false;
   assert.equal(await page.evaluate(async () => {
     try { await window.apparent.setErrorReporting('false'); return false; } catch { return true; }
   }), true);

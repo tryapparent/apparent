@@ -25,9 +25,11 @@ export function ErrorReporting() {
       let next = !bridge ? { status: 'disconnected' as const } : enabled === undefined
         ? await bridge.readErrorReporting() : await bridge.setErrorReporting(enabled);
       // The single Rust settings worker may reject simultaneous mount reads.
-      // Retry only a read rejected as busy, once; never repeat a mutation.
-      if (bridge && enabled === undefined && next.status === 'error' && next.code === 'app_busy') {
-        await new Promise(resolve => setTimeout(resolve, 100));
+      // Allow a bounded startup burst (2.3 seconds total backoff). Only retry
+      // reads explicitly rejected as busy; never repeat a mutation or timeout.
+      for (const delay of [100, 200, 400, 800, 800]) {
+        if (!bridge || enabled !== undefined || next.status !== 'error' || next.code !== 'app_busy') break;
+        await new Promise(resolve => setTimeout(resolve, delay));
         if (token !== order.current) return;
         next = await bridge.readErrorReporting();
       }
