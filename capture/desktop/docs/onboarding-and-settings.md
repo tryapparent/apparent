@@ -5,6 +5,11 @@ Read this before changing `capture/desktop/settings/onboarding.rs`, `capture/des
 ## Technical error reporting
 
 General has one small **Send technical error reports** switch, on by default.
+The opt-in Electron Settings surface mirrors its readback and toggle through the
+same-user control socket; Rust remains authoritative. The existing native Settings
+presentations and installed routing remain in place until the Electron slice is
+accepted. Rollback is simply to stop opening the development Electron window;
+remove the old native presentation only with the accepted Settings routing switch.
 `errorReporting: false` in `~/.config/apparent/config.json` disables it without a
 restart. Corrupt/unreadable config fails closed for reporting. The shared config
 writer preserves unrelated keys and rotates private `errorReportingGeneration`

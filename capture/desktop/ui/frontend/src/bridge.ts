@@ -10,6 +10,8 @@ declare global {
       readCaptureLocation: () => Promise<CaptureLocation>;
       changeCaptureLocation: () => Promise<CaptureLocation>;
       resetCaptureLocation: () => Promise<CaptureLocation>;
+      readErrorReporting: () => Promise<ErrorReporting>;
+      setErrorReporting: (enabled: boolean) => Promise<ErrorReporting>;
     };
   }
 }
@@ -22,3 +24,6 @@ export type CaptureLocation =
   | { status: 'connected'; storage: LocationSnapshot }
   | { status: 'disabled' | 'disconnected' | 'incompatible' | 'cancelled' }
   | { status: 'error'; code: string };
+
+export type ErrorReporting = { status: 'connected'; enabled: boolean } |
+  { status: 'disconnected' | 'incompatible' } | { status: 'error'; code: string };

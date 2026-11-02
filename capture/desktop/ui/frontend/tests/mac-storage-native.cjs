@@ -297,6 +297,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     logHandle = await fs.open(path.join(output, 'rust-storage-native.log'), 'wx', 0o600);
     const pidFile = path.join(home, 'rust.pid');
     await fs.writeFile(pidFile, '', { mode: 0o600, flag: 'wx' });
+    const startRust = async () => {
     backend = spawn('/bin/bash', ['-c', rustSupervisor, 'storage-native-supervisor', pidFile, executable, 'app'], {
       env, detached: true, stdio: ['pipe', logHandle.fd, logHandle.fd],
     });
@@ -326,6 +327,8 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       assert.ok(actual.includes(await fs.realpath(executable)), 'Owned Rust PID does not map the installed executable');
       Object.assign(report.rust, { pid, parentAndGroupVerified: true, mappedExecutableVerified: true });
     }, 'Installed Rust socket readiness', 15000);
+    };
+    await startRust();
     application = await electron.launch({ args: [root], env, timeout: budget(15000) });
     electronChild = application.process();
     // launch() attaches to the main process before app.whenReady() creates a window.
@@ -345,6 +348,38 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     const rendererErrors = [];
     page.on('pageerror', error => rendererErrors.push(error.message));
     await page.getByText('Connected · idle', { exact: true }).waitFor({ timeout: budget(10000) });
+    const reporting = page.getByRole('region', { name: 'Send technical error reports', exact: true });
+    const reportingToggle = reporting.getByRole('checkbox', { name: 'Send technical error reports', exact: true });
+    await expect(reportingToggle).toBeChecked({ timeout: budget() });
+    report.errorReporting = { defaultOn: true, rustBeforeRestart: report.rust.pid };
+    await reportingToggle.click({ timeout: budget() });
+    await expect(reportingToggle).not.toBeChecked({ timeout: budget() });
+    await expect(reportingToggle).toBeEnabled({ timeout: budget() });
+    assert.equal(JSON.parse(await fs.readFile(config, 'utf8')).errorReporting, false);
+    assert.deepEqual(await within(page.evaluate(() => window.apparent.readErrorReporting()), budget(), 'Reporting read'),
+      { status: 'connected', enabled: false });
+    await page.screenshot({ path: path.join(output, 'error-reporting-off.png'), timeout: budget(), fullPage: true });
+    report.errorReporting.stoppedRust = await stopOwned(backend, 'rust reporting restart', true);
+    await startRust();
+    report.errorReporting.rustAfterRestart = report.rust.pid;
+    assert.notEqual(report.errorReporting.rustBeforeRestart, report.errorReporting.rustAfterRestart);
+    await page.reload({ timeout: budget() });
+    await expect(reportingToggle).not.toBeChecked({ timeout: budget() });
+    await expect(reportingToggle).toBeEnabled({ timeout: budget() });
+    assert.deepEqual(await within(page.evaluate(() => window.apparent.readErrorReporting()), budget(), 'Restarted reporting read'),
+      { status: 'connected', enabled: false });
+    report.errorReporting.reopenAndRustRestartPersisted = true;
+    await reportingToggle.click({ timeout: budget() });
+    await expect(reportingToggle).toBeChecked({ timeout: budget() });
+    await expect(reportingToggle).toBeEnabled({ timeout: budget() });
+    assert.equal(JSON.parse(await fs.readFile(config, 'utf8')).errorReporting, true);
+    await reportingToggle.click({ timeout: budget() });
+    await expect(reportingToggle).not.toBeChecked({ timeout: budget() });
+    await expect(reportingToggle).toBeEnabled({ timeout: budget() });
+    assert.equal(JSON.parse(await fs.readFile(config, 'utf8')).errorReporting, false);
+    assert.deepEqual(JSON.parse(await fs.readFile(config, 'utf8')).storageNativeFixture, unknown);
+    report.errorReporting.explicitOnOffAndUnknownKeysVerified = true;
+    await page.screenshot({ path: path.join(output, 'error-reporting-restarted.png'), timeout: budget(), fullPage: true });
     const card = page.getByRole('region', { name: 'Capture location', exact: true });
     const change = card.getByRole('button', { name: 'Change…', exact: true });
     const reset = card.getByRole('button', { name: 'Reset', exact: true });

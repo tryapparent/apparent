@@ -45,7 +45,7 @@ struct Consent {
 
 /// A missing file/key defaults on; corrupt, unreadable, oversized, symlinked or
 /// wrongly typed config fails closed. Do not use the forgiving general loader.
-fn consent_in(path: &Path) -> Option<Consent> {
+fn reporting_config_in(path: &Path) -> Option<Value> {
     use std::os::unix::fs::OpenOptionsExt;
     let file = std::fs::OpenOptions::new()
         .read(true)
@@ -67,6 +67,11 @@ fn consent_in(path: &Path) -> Option<Consent> {
         Err(_) => return None,
     };
     value.as_object()?;
+    Some(value)
+}
+
+fn consent_in(path: &Path) -> Option<Consent> {
+    let value = reporting_config_in(path)?;
     match value.get("errorReporting") {
         None | Some(Value::Bool(true)) => {}
         _ => return None,
@@ -84,13 +89,47 @@ pub(crate) fn enabled_in(path: &Path) -> bool {
 }
 
 pub(crate) fn set_enabled_in(path: &Path, on: bool) -> anyhow::Result<()> {
-    crate::shared::handoff::update_config_in(path, |config| {
+    set_enabled_admitted_in(path, on, || true).map_err(anyhow::Error::msg)
+}
+
+fn set_enabled_admitted_in(path: &Path, on: bool, admit: impl FnOnce() -> bool) -> Result<(), &'static str> {
+    let mut expired = false;
+    let result = crate::shared::handoff::update_config_in(path, |config| {
+        // This check runs against the fresh config after acquiring its flock.
+        if !admit() {
+            expired = true;
+            anyhow::bail!("expired");
+        }
         config["errorReporting"] = json!(on);
         // Rotate on EVERY explicit change, so disable/re-enable cannot revive a
         // queued report, even if another process makes both edits between reads.
         config["errorReportingGeneration"] = json!(crate::shared::ids::make_bundle_id());
         Ok(())
-    })
+    });
+    result.map_err(|_| if expired { "admission_expired" } else { "config_write_failed" })
+}
+
+fn read_enabled_in(path: &Path) -> Result<bool, &'static str> {
+    let config = reporting_config_in(path).ok_or("config_read_failed")?;
+    if config.get("errorReportingGeneration").is_some_and(|v| !v.as_str().is_some_and(|s| s.len() <= 128)) {
+        return Err("config_read_failed");
+    }
+    match config.get("errorReporting") {
+        None | Some(Value::Bool(true)) => Ok(true),
+        Some(Value::Bool(false)) => Ok(false),
+        _ => Err("config_read_failed"),
+    }
+}
+
+pub(crate) fn error_reporting_bridge_in(path: &Path, operation: &str, enabled: Option<bool>, admit: impl FnOnce() -> bool) -> Result<bool, &'static str> {
+    match (operation, enabled) {
+        ("read", None) => read_enabled_in(path),
+        ("set", Some(value)) => {
+            set_enabled_admitted_in(path, value, admit)?;
+            read_enabled_in(path)
+        }
+        _ => Err("invalid_request"),
+    }
 }
 
 #[derive(Clone)]

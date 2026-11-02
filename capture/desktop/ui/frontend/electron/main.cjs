@@ -2,7 +2,7 @@ const { app, BrowserWindow, dialog, ipcMain, session } = require('electron');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { readRuntimeState, captureLocation } = require('./runtime.cjs');
+const { readRuntimeState, captureLocation, errorReporting } = require('./runtime.cjs');
 
 // Deliberately separate from the installed application's profile and identity.
 app.setName('Apparent UI Foundation');
@@ -45,6 +45,19 @@ app.whenReady().then(() => {
     const { revision: _revision, ...storage } = result.storage;
     return { status: 'connected', storage };
   };
+  let reportingMutation = false;
+  ipcMain.handle('apparent:read-error-reporting', async (event, ...args) => {
+    validate(event, args);
+    return errorReporting(os.homedir());
+  });
+  ipcMain.handle('apparent:set-error-reporting', async (event, enabled, ...args) => {
+    validate(event, args);
+    if (args.length || typeof enabled !== 'boolean') throw new Error('Forbidden bridge request');
+    if (reportingMutation) return { status: 'error', code: 'app_busy' };
+    reportingMutation = true;
+    try { return await errorReporting(os.homedir(), enabled); }
+    finally { reportingMutation = false; }
+  });
   ipcMain.handle('apparent:read-capture-location', async (event, ...args) => {
     validate(event, args);
     const version = storageVersion;

@@ -6,4 +6,6 @@ contextBridge.exposeInMainWorld('apparent', Object.freeze({
   readCaptureLocation: () => ipcRenderer.invoke('apparent:read-capture-location'),
   changeCaptureLocation: () => ipcRenderer.invoke('apparent:change-capture-location'),
   resetCaptureLocation: () => ipcRenderer.invoke('apparent:reset-capture-location'),
+  readErrorReporting: () => ipcRenderer.invoke('apparent:read-error-reporting'),
+  setErrorReporting: (enabled) => ipcRenderer.invoke('apparent:set-error-reporting', enabled),
 }));

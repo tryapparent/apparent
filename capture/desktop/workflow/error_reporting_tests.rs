@@ -53,6 +53,28 @@ fn consent_defaults_on_but_corrupt_or_unreadable_config_never_enables_reporting(
 }
 
 #[test]
+fn narrow_settings_bridge_reads_default_and_persists_explicit_changes_without_dropping_keys() {
+    let scratch = Scratch::new();
+    let path = scratch.config();
+    assert_eq!(error_reporting_bridge_in(&path, "read", None, || true), Ok(true));
+    std::fs::write(&path, r#"{"sentinel":"keep"}"#).unwrap();
+    assert_eq!(error_reporting_bridge_in(&path, "set", Some(false), || true), Ok(false));
+    let saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(saved["sentinel"], "keep");
+    assert_eq!(saved["errorReporting"], false);
+    assert_eq!(error_reporting_bridge_in(&path, "read", None, || true), Ok(false));
+    assert_eq!(error_reporting_bridge_in(&path, "set", Some(true), || true), Ok(true));
+    assert_eq!(error_reporting_bridge_in(&path, "unknown", None, || true), Err("invalid_request"));
+    let before = std::fs::read(&path).unwrap();
+    assert_eq!(error_reporting_bridge_in(&path, "set", Some(false), || false), Err("admission_expired"));
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    std::fs::write(&path, "malformed").unwrap();
+    assert_eq!(error_reporting_bridge_in(&path, "read", None, || true), Err("config_read_failed"));
+    assert_eq!(error_reporting_bridge_in(&path, "set", Some(true), || true), Err("config_write_failed"));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "malformed");
+}
+
+#[test]
 fn disable_reenable_rotates_consent_and_preserves_unrelated_preferences() {
     use std::os::unix::fs::PermissionsExt;
     let scratch = Scratch::new();
