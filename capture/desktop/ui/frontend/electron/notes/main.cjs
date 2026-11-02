@@ -2,13 +2,21 @@
 const { app, BrowserWindow, ipcMain, screen, session, nativeTheme } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
-const profile = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'apparent-note-ui-')); 
+const suppliedProfile = process.argv.find(v => v.startsWith('--notes-profile='))?.slice('--notes-profile='.length);
+const profile = suppliedProfile || fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'apparent-note-ui-'));
 const { pathToFileURL } = require('node:url');
 const readline = require('node:readline');
 const { validCommand, validSnapshot, popupBounds, badgeBounds } = require('./protocol.cjs');
 app.setName('Apparent Notes');
 app.setPath('userData', profile);
-app.on('quit', () => fs.rmSync(profile, { recursive: true, force: true }));
+// Production Rust deletes its owned profile after reaping this process. Standalone
+// renderer tests own their fallback; cleanup errors must never open an error dialog.
+app.on('quit', () => {
+  if (!suppliedProfile) {
+    try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 25 }); }
+    catch { process.stderr.write('Could not clean standalone notes UI profile\n'); }
+  }
+});
 const frame = process.argv.find(v => v.startsWith('--capture-frame='))?.slice('--capture-frame='.length).split(',').map(Number);
 if (!frame || frame.length !== 4 || !frame.every(Number.isFinite)) app.exit(1);
 let latest, popup, badge;

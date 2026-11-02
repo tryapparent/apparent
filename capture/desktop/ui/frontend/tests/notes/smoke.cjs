@@ -7,10 +7,14 @@ const os = require('node:os');
 
 test('shipped Electron note UI focuses, saves, counts, edits, recovers drafts and isolates bridge', { timeout: 45000 }, async t => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'apparent-notes-ui-'));
+  const profile = path.join(home, 'owned-profile');
+  await fs.mkdir(profile, { mode: 0o700 });
   const child = require('node:child_process').spawn(require('electron'),
-    ['--no-sandbox', '--remote-debugging-port=0', path.resolve(__dirname, '../../electron/notes/main.cjs'), '--capture-frame=0,0,1280,800'],
+    ['--no-sandbox', '--remote-debugging-port=0', path.resolve(__dirname, '../../electron/notes/main.cjs'), '--capture-frame=0,0,1280,800', '--notes-profile=' + profile],
     { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(home, 'config') } });
   let browser;
+  let errors = '';
+  child.stderr.on('data', chunk => { errors += chunk.toString(); });
   t.after(async () => { await browser?.close(); child.kill(); await new Promise(resolve => child.exitCode !== null ? resolve() : child.once('exit', resolve)); await fs.rm(home, { recursive: true, force: true }); });
   const endpoint = new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Notes runtime did not become ready')), 10000);
@@ -78,5 +82,12 @@ test('shipped Electron note UI focuses, saves, counts, edits, recovers drafts an
   const finish = messages.findIndex(m => m.action === 'finished');
   assert.ok(messages.findIndex(m => m.action === 'save' && m.text === 'Final correction') < finish);
   await assert.rejects(popup.evaluate(() => window.captureNotes.command({ action: 'save', pin: 1, text: 'Too late' })));
-
+  const exited = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Notes did not exit after EOF')), 5000);
+    child.once('exit', code => { clearTimeout(timer); resolve(code); });
+  });
+  child.stdin.end();
+  assert.equal(await exited, 0);
+  assert.equal((await fs.stat(profile)).isDirectory(), true, 'the parent owns profile cleanup after reaping');
+  assert.doesNotMatch(errors, /Uncaught Exception|ENOTEMPTY/);
 });

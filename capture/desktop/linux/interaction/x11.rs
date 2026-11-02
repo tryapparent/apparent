@@ -685,6 +685,17 @@ pub fn raise(id: u32) {
     }
 }
 
+/// Keep X input stacking aligned with the compositor's visible floating surfaces.
+/// Focusing a recorded app can otherwise raise it above an override-redirect UI.
+pub fn raise_group(ids: &[u32]) {
+    if ids.is_empty() { return; }
+    let Some(x) = x() else { return; };
+    if x.conn.query_tree(x.root).ok().and_then(|c| c.reply().ok())
+        .is_some_and(|tree| tree.children.ends_with(ids)) { return; }
+    for &id in ids { raise_on(x, id); }
+    x.flush();
+}
+
 pub fn set_visible(id: u32, visible: bool) {
     if let Some(x) = x() {
         if visible {
@@ -948,6 +959,18 @@ mod tests {
             assert!(!matches!(event, x11rb::protocol::Event::UnmapNotify(_)), "moving must not unmap the compositor surface");
         }
         assert_eq!(geometry(id), Some([200.0, 350.0, 350.0, 250.0]));
+        let ordinary = x.conn.generate_id().unwrap();
+        x.conn.create_window(x11rb::COPY_DEPTH_FROM_PARENT, ordinary, x.root,
+            0, 0, 800, 700, 0, WindowClass::INPUT_OUTPUT, x11rb::COPY_FROM_PARENT,
+            &CreateWindowAux::new()).unwrap().check().unwrap();
+        x.conn.map_window(ordinary).unwrap().check().unwrap();
+        x.conn.warp_pointer(x11rb::NONE, x.root, 0, 0, 0, 0, 250, 370).unwrap().check().unwrap();
+        assert_eq!(x.conn.query_pointer(x.root).unwrap().reply().unwrap().child, ordinary,
+            "a newly focused app intercepts input when X stacking is stale");
+        raise_group(&[id]);
+        assert_eq!(x.conn.query_pointer(x.root).unwrap().reply().unwrap().child, id,
+            "reconciliation restores native pointer delivery to the visible note");
+        x.conn.destroy_window(ordinary).unwrap().check().unwrap();
         x.conn.unmap_window(id).unwrap().check().unwrap();
         place_without_remap(id, [100.0, 200.0, 332.0, 220.0]);
         assert_eq!(x.conn.get_window_attributes(id).unwrap().reply().unwrap().map_state, MapState::UNMAPPED, "native placement must not reopen a dismissed editor");

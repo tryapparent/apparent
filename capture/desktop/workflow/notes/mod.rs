@@ -67,6 +67,37 @@ pub struct Session {
     badge_position: Option<[i32; 4]>,
 }
 
+// Chromium can still write its profile during Electron's `quit` event. Rust owns
+// the directory so cleanup happens after the child has actually been reaped.
+struct Profile(std::path::PathBuf);
+impl Profile {
+    fn create() -> Result<Self> {
+        use std::os::unix::fs::DirBuilderExt;
+        // Keep Chromium's Unix socket below macOS's path limit in its long TMPDIR.
+        let nonce = super::agent_capture::new_id()?;
+        let path = std::env::temp_dir().join(format!("an-{}", &nonce[..16]));
+        std::fs::DirBuilder::new().mode(0o700).create(&path)?;
+        Ok(Self(path))
+    }
+}
+impl Drop for Profile {
+    fn drop(&mut self) {
+        for attempt in 0..5 {
+            match std::fs::remove_dir_all(&self.0) {
+                Ok(()) => return,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+                Err(error) if error.raw_os_error() == Some(libc::ENOTEMPTY) && attempt < 4 => {
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+                Err(error) => {
+                    crate::capture::engine::runtime::apparent_log(format!("Could not clean notes UI profile: {error}"));
+                    return;
+                }
+            }
+        }
+    }
+}
+
 impl Session {
     pub fn start(
         directory: &Path,
@@ -75,6 +106,7 @@ impl Session {
     ) -> Result<Self> {
         let resources = super::electron::resolve()?;
         let (binary, root) = (resources.executable, resources.root);
+        let profile = Profile::create()?;
         use std::os::unix::fs::OpenOptionsExt;
         let errors = std::fs::OpenOptions::new()
             .write(true)
@@ -88,6 +120,7 @@ impl Session {
         command.arg("--ozone-platform=x11");
         let mut child = command
             .arg(root.join("electron/notes/main.cjs"))
+            .arg(format!("--notes-profile={}", profile.0.to_str().context("Invalid notes profile path")?))
             .arg(format!(
                 "--capture-frame={},{},{},{}",
                 frame.x, frame.y, frame.width, frame.height
@@ -148,8 +181,20 @@ impl Session {
             let mut drained = false;
             let mut badge_position = None;
             let mut failed_writes = std::collections::BTreeSet::new();
+            #[cfg(target_os = "linux")]
+            let mut stack_checked_at = std::time::Instant::now();
             loop {
-                let message = match receiver.recv_timeout(std::time::Duration::from_millis(100)) {
+                let timeout = std::time::Duration::from_millis(100);
+                #[cfg(target_os = "linux")]
+                let timeout = {
+                    // Draft traffic must not multiply synchronous X server queries.
+                    if stack_checked_at.elapsed() >= timeout {
+                        crate::capture::desktop::platform::maintain_note_surfaces(note_pid);
+                        stack_checked_at = std::time::Instant::now();
+                    }
+                    timeout.saturating_sub(stack_checked_at.elapsed())
+                };
+                let message = match receiver.recv_timeout(timeout) {
                     Ok(message) => message,
                     Err(flume::RecvTimeoutError::Timeout)
                         if !stopped.load(Ordering::Acquire)
@@ -318,13 +363,14 @@ impl Session {
                     .try_send(LiveOverlayEvent::NotesUnavailable);
             }
             telemetry.notes_editing.store(false, Ordering::Release);
-            drop(input); // EOF asks Electron to close its windows and ephemeral profile.
+            drop(input); // EOF asks Electron to close its windows.
             let cutoff = std::time::Instant::now() + std::time::Duration::from_secs(2);
             while child.try_wait().ok().flatten().is_none() && std::time::Instant::now() < cutoff {
                 std::thread::sleep(std::time::Duration::from_millis(20));
             }
             let _ = child.kill();
             let _ = child.wait();
+            drop(profile);
             telemetry
                 .excluded_window_ids
                 .lock()
@@ -435,6 +481,19 @@ fn write_message(
 #[cfg(test)]
 mod transport_tests {
     use super::*;
+    #[test]
+    fn profile_is_private_and_cleaned_after_the_child_finishes_writing() {
+        use std::os::unix::fs::PermissionsExt;
+        let profile = Profile::create().unwrap();
+        let path = profile.0.clone();
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o700);
+        let mut child = Command::new("sh").args(["-c", "printf late > \"$1/cache\"", "profile-writer"])
+            .arg(&path).spawn().unwrap();
+        assert!(child.wait().unwrap().success());
+        assert_eq!(std::fs::read(path.join("cache")).unwrap(), b"late");
+        drop(profile);
+        assert!(!path.exists());
+    }
     #[test]
     fn stopped_reader_times_out_and_child_can_be_reaped() {
         let mut child = Command::new("sleep")

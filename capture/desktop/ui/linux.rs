@@ -898,6 +898,7 @@ pub(in crate::capture::desktop) fn restore_note_focus(token: u64, owner: u32) {
     } else if token != 0 && crate::capture::desktop::linux::x11::window_info(token as isize).is_some_and(|w| w.pid == owner) {
         crate::capture::desktop::linux::x11::activate(token as isize);
     }
+    raise_note_surfaces();
 }
 
 /// The Electron counter follows the same native recording panel, including user drags.
@@ -924,9 +925,15 @@ pub(in crate::capture::desktop) fn clear_note_surfaces(pid: u32) {
 }
 fn raise_note_surfaces() {
     let state = *NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    for surface in state.slots {
-        if surface.id != 0 && x11::window_info(surface.id as isize).is_some_and(|w| w.pid == state.pid && w.on_screen()) { x11::raise(surface.id); }
-    }
+    let ids: Vec<_> = state.slots.iter().filter(|surface| surface.id != 0 &&
+        x11::window_info(surface.id as isize).is_some_and(|w| w.pid == state.pid && w.on_screen()))
+        .map(|surface| surface.id).collect();
+    x11::raise_group(&ids);
+}
+
+pub(in crate::capture::desktop) fn maintain_note_surfaces(pid: u32) {
+    let owned = NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pid == pid;
+    if owned { raise_note_surfaces(); }
 }
 
 fn pin_note_surface(id: u32, pid: u32, index: usize) {
