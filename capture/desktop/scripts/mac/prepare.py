@@ -79,7 +79,7 @@ def main():
         with os.fdopen(fd, 'w') as stream:
             json.dump(receipt, stream, indent=2)
             stream.write('\n')
-    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+    except (ValueError, OSError, SyntaxError, subprocess.CalledProcessError) as error:
         parser.exit(1, f'prepare: {error}\n')
 
 

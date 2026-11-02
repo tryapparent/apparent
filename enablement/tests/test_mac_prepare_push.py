@@ -50,6 +50,22 @@ class PreparationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale candidate'):
             prepare.prepare(self.repo, '0' * 40)
 
+    def test_cli_rejects_invalid_python_without_traceback_or_receipt(self):
+        (self.repo / prepare.ENTRY).write_text('def broken(:\n')
+        self.git('add', prepare.ENTRY)
+        self.git('commit', '-qm', 'invalid scenario syntax')
+        head = self.git('rev-parse', 'HEAD').strip()
+        output = self.base / 'invalid.json'
+        result = subprocess.run(
+            ['python3', str(SCRIPT), '--repo', str(self.repo), '--candidate',
+             head, '--receipt', str(output)],
+            capture_output=True, text=True, env=self.env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('prepare: ', result.stderr)
+        self.assertIn('invalid syntax', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+        self.assertFalse(output.exists())
+
     def test_missing_swift_fixture_in_committed_packet(self):
         self.git('rm', prepare.INPUTS[1])
         self.git('commit', '-qm', 'incomplete packet')
