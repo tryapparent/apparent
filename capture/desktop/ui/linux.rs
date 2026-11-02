@@ -910,8 +910,8 @@ pub(in crate::capture::desktop) fn restore_note_focus(token: u64, owner: u32) {
 }
 
 /// The Electron counter follows the same native recording panel, including user drags.
-pub(in crate::capture::desktop) fn note_badge_anchor(width: f32, y: f32) -> Option<[f64; 2]> {
+pub(in crate::capture::desktop) fn note_badge_anchor(width: f32, y: f32) -> Option<[f64; 4]> {
     let rect = x11::geometry(own_window(&PILL_WINDOW)?)?;
-    Some([rect[0] + rect[2] / 2.0 + f64::from(width) / 2.0 + 6.0,
-        rect[1] + f64::from(y)])
+    Some([rect[0] + rect[2] / 2.0 - f64::from(width) / 2.0,
+        rect[1] + f64::from(y), f64::from(width), f64::from(super::super::ISLAND_H)])
 }

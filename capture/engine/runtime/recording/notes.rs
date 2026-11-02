@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 
 pub const MAX_TEXT_BYTES: usize = 8_192;
 const MAX_NOTES: usize = 100;
+// JSON can escape one input byte as six bytes (e.g. a control character).
+const MAX_SAVED_BYTES: usize = MAX_NOTES * MAX_TEXT_BYTES * 6 + 65_536;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -151,18 +153,20 @@ pub fn read(directory: &Path) -> Result<Vec<Note>> {
     use std::os::unix::fs::OpenOptionsExt;
     let data = match std::fs::OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(&path)
     {
         Ok(file) => {
+            ensure!(file.metadata()?.is_file(), "Notes must be a regular file");
             let mut data = Vec::new();
-            file.take(1_048_577).read_to_end(&mut data)?;
+            file.take((MAX_SAVED_BYTES + 1) as u64)
+                .read_to_end(&mut data)?;
             data
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(e.into()),
     };
-    ensure!(data.len() <= 1_048_576, "Notes file is too large");
+    ensure!(data.len() <= MAX_SAVED_BYTES, "Notes file is too large");
     let saved: Saved = serde_json::from_slice(&data)?;
     ensure!(
         saved.version == 1 && saved.notes.len() <= MAX_NOTES,
@@ -196,6 +200,32 @@ mod tests {
         ));
         std::fs::create_dir(&p).unwrap();
         p
+    }
+    #[test]
+    fn accepted_escaped_notes_round_trip_at_full_capacity() {
+        let directory = dir();
+        let mut store = Store::new(&directory);
+        for pin in 1..=MAX_NOTES as u32 {
+            store.open(pin, u64::from(pin), 0.5, 0.5).unwrap();
+            store.save(pin, "\u{1}".repeat(MAX_TEXT_BYTES)).unwrap();
+        }
+        assert_eq!(read(&directory).unwrap(), store.notes());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn note_reader_rejects_fifo_without_waiting_for_a_writer() {
+        use std::os::unix::ffi::OsStrExt;
+        let directory = dir();
+        let path =
+            std::ffi::CString::new(directory.join("notes.json").as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        assert!(
+            read(&directory)
+                .unwrap_err()
+                .to_string()
+                .contains("regular file")
+        );
+        std::fs::remove_dir_all(directory).unwrap();
     }
     #[test]
     fn empty_and_deleted_pins_do_not_exhaust_note_capacity() {

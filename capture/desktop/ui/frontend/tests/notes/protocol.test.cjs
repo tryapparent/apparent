@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { validCommand, validSnapshot, popupBounds } = require('../../electron/notes/protocol.cjs');
+const { validCommand, validSnapshot, popupBounds, badgeBounds } = require('../../electron/notes/protocol.cjs');
 test('notes bridge accepts only bounded note actions, never renderer paths or window commands', () => {
   assert.equal(validCommand({ action: 'save', pin: 1, text: 'Change this\nnot that' }), true);
   for (const message of [{ action: 'save', pin: 1, text: 'x', path: '/tmp/private' },
@@ -21,4 +21,11 @@ test('popup stays inside work areas including negative display coordinates and s
     { x: -332, y: 580, width: 332, height: 220 });
   assert.deepEqual(popupBounds({ x: 300, y: 300 }, { x: 0, y: 0, width: 240, height: 180 }, 350),
     { x: 0, y: 0, width: 240, height: 180 });
+});
+
+test('counter falls left or below instead of covering the capsule at a display edge', () => {
+  const area = { x: -1280, y: 0, width: 1280, height: 800 };
+  assert.deepEqual(badgeBounds([-1000, 40, 350, 40], area), { x: -644, y: 40 });
+  assert.deepEqual(badgeBounds([-370, 40, 350, 40], area), { x: -526, y: 40 });
+  assert.deepEqual(badgeBounds([-1270, 40, 1260, 40], area), { x: -715, y: 86 });
 });

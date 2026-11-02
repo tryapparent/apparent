@@ -39,6 +39,10 @@ class PreviewReleaseTest(unittest.TestCase):
                 'printf "test" > target/release/apparent\n'
                 'printf "test" > target/release/apparent-helper\n'
             )
+            (root / "bin/node").write_text('#!/bin/sh\nset -eu\ncase "$1" in\n'
+                '*/package-notes.mjs) mkdir -p "$2/runtime/Electron.app/Contents/MacOS"; printf synthetic > "$2/runtime/Electron.app/Contents/MacOS/Electron" ;;\n'
+                '*/sign-notes.mjs) test -f "$2/Contents/MacOS/Electron"; test "$3" = "-" ;;\n'
+                '*) exit 1 ;;\nesac\n')
             (root / "bin/plutil").write_text('#!/bin/sh\nexit 0\n')
             (root / "bin/codesign").write_text('#!/bin/sh\nexit 0\n')
             (root / "bin/hdiutil").write_text(
@@ -72,6 +76,7 @@ class PreviewReleaseTest(unittest.TestCase):
                     (root / "dist/Apparent Preview.app/Contents/Resources" / Path(asset).name).read_bytes(),
                     (root / ("capture/desktop" if asset == "Apparent.icns" else "shared") / "assets" / asset).read_bytes(),
                 )
+            self.assertTrue((root / "dist/Apparent Preview.app/Contents/Resources/note-ui/runtime/Electron.app/Contents/MacOS/Electron").is_file())
             self.assertTrue((root / "dist/Apparent-Preview-0.123.2-arm64.dmg.sha256").is_file())
             self.assertTrue((root / "dist/Apparent-Preview-0.123.2-arm64.zip").is_file())
             self.assertTrue((root / "dist/preview-staging/Applications").is_symlink())

@@ -24,6 +24,12 @@ class AppleSigningTest(unittest.TestCase):
         setup.chmod(0o755)
         tools = {
             "cargo": 'mkdir -p target/release; touch target/release/apparent target/release/apparent-helper',
+            "node": '''printf 'node %s\\n' "$*" >> "$TRACE"
+case "$1" in
+  */package-notes.mjs) mkdir -p "$2/runtime/Electron.app/Contents/MacOS"; printf synthetic > "$2/runtime/Electron.app/Contents/MacOS/Electron" ;;
+  */sign-notes.mjs) test -f "$2/Contents/MacOS/Electron"; test "$3" = "$APPARENT_APPLE_SIGNING_IDENTITY" ;;
+  *) exit 1 ;;
+esac''',
             "plutil": 'exit 0',
             "codesign": '''printf 'codesign %s\\n' "$*" >> "$TRACE"
 if [ "$1" = -dv ]; then
@@ -76,6 +82,7 @@ if [ "$1" = notarytool ] && [ "${REJECT_NOTARY:-0}" = 1 ]; then exit 1; fi''',
             self.assertEqual(result.returncode, 0, result.stderr)
             trace = (root / "trace").read_text()
             self.assertIn("--options runtime --timestamp", trace)
+            self.assertLess(trace.index("sign-notes.mjs"), trace.index("codesign --force"))
             self.assertNotIn("--sign - ", trace)
             app_staple = trace.index("stapler staple " + str(root / "dist/Apparent Preview.app"))
             self.assertLess(app_staple, trace.index("hdiutil create"))

@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const profile = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'apparent-note-ui-')); 
 const { pathToFileURL } = require('node:url');
 const readline = require('node:readline');
-const { validCommand, validSnapshot, popupBounds } = require('./protocol.cjs');
+const { validCommand, validSnapshot, popupBounds, badgeBounds } = require('./protocol.cjs');
 app.setName('Apparent Notes');
 app.setPath('userData', profile);
 app.on('quit', () => fs.rmSync(profile, { recursive: true, force: true }));
@@ -57,7 +57,7 @@ app.whenReady().then(() => {
   });
   const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
   lines.on('line', line => {
-    if (Buffer.byteLength(line) > 2_097_152) return app.quit();
+    if (Buffer.byteLength(line) > 10_485_760) return app.quit();
     try {
       const state = JSON.parse(line);
       if (state.finishing === true && Object.keys(state).length === 1) {
@@ -69,11 +69,11 @@ app.whenReady().then(() => {
       if (finishing) return;
       if (!validSnapshot(state)) return app.quit();
       const previous = latest; latest = state;
-      if (state.badgePosition) {
-        const p = { x: state.badgePosition[0], y: state.badgePosition[1] };
-        const a = screen.getDisplayNearestPoint(p).workArea;
-        badge.setPosition(Math.round(Math.max(a.x, Math.min(p.x, a.x + a.width - 150))),
-          Math.round(Math.max(a.y, Math.min(p.y, a.y + a.height - 44))));
+      if (state.badgeRect) {
+        const rect = state.badgeRect;
+        const work = screen.getDisplayNearestPoint({ x: Math.round(rect[0] + rect[2] / 2), y: Math.round(rect[1] + rect[3] / 2) }).workArea;
+        const bounds = badgeBounds(rect, work);
+        badge.setPosition(bounds.x, bounds.y);
       }
       const point = { x: Math.round(state.position[0]), y: Math.round(state.position[1]) };
       if (state.mode !== 'badge') {

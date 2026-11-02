@@ -40,14 +40,14 @@ enum Message {
     Open(Anchor),
     Action(CommandMessage),
     Stop,
-    BadgePosition([i32; 2]),
+    BadgePosition([i32; 4]),
     Finish(flume::Sender<std::result::Result<(), String>>),
 }
 pub struct Session {
     sender: flume::Sender<Message>,
     stopping: Arc<std::sync::atomic::AtomicBool>,
     finishing: bool,
-    badge_position: Option<[i32; 2]>,
+    badge_position: Option<[i32; 4]>,
 }
 
 fn resources() -> Result<(PathBuf, PathBuf)> {
@@ -112,6 +112,11 @@ impl Session {
             .spawn()
             .context("Could not open notes UI")?;
         let mut input = child.stdin.take().unwrap();
+        if let Err(error) = nonblocking(&input) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
         let output = child.stdout.take().unwrap();
         let (sender, receiver) = flume::bounded(64);
         let reader = sender.clone();
@@ -119,9 +124,9 @@ impl Session {
             let mut stream = BufReader::new(output);
             loop {
                 let mut line = Vec::new();
-                match std::io::Read::take(&mut stream, 32_769).read_until(b'\n', &mut line) {
+                match std::io::Read::take(&mut stream, 65_537).read_until(b'\n', &mut line) {
                     Ok(0) | Err(_) => break,
-                    Ok(_) if line.len() > 32_768 || !line.ends_with(b"\n") => break,
+                    Ok(_) if line.len() > 65_536 || !line.ends_with(b"\n") => break,
                     _ => {
                         if let Ok(action) = serde_json::from_slice(&line) {
                             if reader.send(Message::Action(action)).is_err() {
@@ -162,7 +167,10 @@ impl Session {
                     }
                     Err(_) => break,
                 };
-                if stopped.load(Ordering::Acquire) || matches!(message, Message::Stop) {
+                if stopped.load(Ordering::Acquire)
+                    || matches!(message, Message::Stop)
+                    || finish_deadline.is_some_and(|d| std::time::Instant::now() >= d)
+                {
                     break;
                 }
                 let write_pin = match &message {
@@ -179,8 +187,12 @@ impl Session {
                             completion = Some(reply);
                             finish_deadline =
                                 Some(std::time::Instant::now() + std::time::Duration::from_secs(6));
-                            writeln!(input, "{{\"finishing\":true}}")?;
-                            input.flush()?;
+                            write_message(
+                                &mut input,
+                                &serde_json::json!({"finishing": true}),
+                                &stopped,
+                                std::time::Duration::from_secs(2),
+                            )?;
                         }
                         Message::Open(a) => {
                             store.open(a.pin, a.t, a.x, a.y)?;
@@ -262,11 +274,15 @@ impl Session {
                     .notes_editing
                     .store(mode != "badge", Ordering::Release);
                 if ready {
-                    let snapshot = serde_json::json!({ "mode": mode, "current": current, "position": position, "badgePosition": badge_position,
+                    let snapshot = serde_json::json!({ "mode": mode, "current": current, "position": position, "badgeRect": badge_position,
                         "notes": store.notes(), "drafts": store.drafts(), "error": result.err().map(|_| "Could not save this note. Your text is kept; try again.") });
-                    if writeln!(input, "{snapshot}")
-                        .and_then(|_| input.flush())
-                        .is_err()
+                    if write_message(
+                        &mut input,
+                        &snapshot,
+                        &stopped,
+                        std::time::Duration::from_secs(2),
+                    )
+                    .is_err()
                     {
                         break;
                     }
@@ -308,7 +324,7 @@ impl Session {
             badge_position: None,
         })
     }
-    pub fn position_badge(&mut self, point: [f64; 2]) {
+    pub fn position_badge(&mut self, point: [f64; 4]) {
         let point = point.map(|v| v.round() as i32);
         if self.badge_position != Some(point)
             && self.sender.try_send(Message::BadgePosition(point)).is_ok()
@@ -339,5 +355,71 @@ impl Drop for Session {
         }
         self.stopping.store(true, Ordering::Release);
         let _ = self.sender.try_send(Message::Stop);
+    }
+}
+
+// A stopped renderer must not strand the actor inside a full OS pipe, preventing cleanup.
+fn nonblocking(pipe: &std::process::ChildStdin) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    let fd = pipe.as_raw_fd();
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    ensure!(
+        flags >= 0 && unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } >= 0,
+        "Could not bound notes transport"
+    );
+    Ok(())
+}
+fn write_message(
+    input: &mut std::process::ChildStdin,
+    value: &serde_json::Value,
+    stopping: &std::sync::atomic::AtomicBool,
+    timeout: std::time::Duration,
+) -> Result<()> {
+    let mut data = serde_json::to_vec(value)?;
+    data.push(b'\n');
+    let deadline = std::time::Instant::now() + timeout;
+    let mut remaining = data.as_slice();
+    while !remaining.is_empty() {
+        ensure!(
+            !stopping.load(Ordering::Acquire) && std::time::Instant::now() < deadline,
+            "Notes transport stopped reading"
+        );
+        match input.write(remaining) {
+            Ok(0) => anyhow::bail!("Notes transport closed"),
+            Ok(n) => remaining = &remaining[n..],
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(std::time::Duration::from_millis(5))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
+}
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+    #[test]
+    fn stopped_reader_times_out_and_child_can_be_reaped() {
+        let mut child = Command::new("sleep")
+            .arg("30")
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut input = child.stdin.take().unwrap();
+        let setup = nonblocking(&input);
+        let start = std::time::Instant::now();
+        let result = setup.and_then(|_| {
+            write_message(
+                &mut input,
+                &serde_json::json!({"snapshot":"x".repeat(2 * 1024 * 1024)}),
+                &std::sync::atomic::AtomicBool::new(false),
+                std::time::Duration::from_millis(30),
+            )
+        });
+        let _ = child.kill();
+        child.wait().unwrap();
+        assert!(result.is_err());
+        assert!(start.elapsed() < std::time::Duration::from_secs(2));
     }
 }
