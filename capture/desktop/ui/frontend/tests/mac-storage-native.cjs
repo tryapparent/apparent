@@ -261,8 +261,10 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     return { runtime, location };
   };
   try {
-    report.source.commit = (await run('/usr/bin/git', ['rev-parse', 'HEAD'], {
-      cwd: root, timeout: budget(), maxBuffer: 4096,
+    // Use the Git selected by the runner, as checkout does. Apple's /usr/bin/git
+    // shim can exceed the default five-second action budget on a cold runner.
+    report.source.commit = (await run('git', ['rev-parse', 'HEAD'], {
+      cwd: root, timeout: budget(15000), maxBuffer: 4096,
     })).stdout.trim();
     report.source.sha256 = {};
     for (const file of ['electron/main.cjs', 'electron/preload.cjs', 'electron/runtime.cjs', 'src/storage.tsx', 'dist/index.html']) {
