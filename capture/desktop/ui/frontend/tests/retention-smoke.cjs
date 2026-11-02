@@ -53,6 +53,11 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   await expect(page.getByRole('button', { name: 'Refresh usage', exact: true })).toBeDisabled();
   releaseUsage(); releaseUsage = undefined;
   await expect(page.getByText('12 MB in captures')).toBeVisible();
+  const card = page.getByRole('region', { name: 'Capture location', exact: true });
+  // Regression for native Mac's old ambiguous locator: usage legitimately
+  // repeats the folder, so the location readback must be independently scoped.
+  await expect(card.getByText('/captures', { exact: true })).toHaveCount(2);
+  await expect(card.locator(':scope > [role="status"]').getByText('/captures', { exact: true })).toBeVisible();
   const select = page.getByLabel('Keep recordings');
   await select.selectOption('month');
   await page.getByRole('button', { name: 'Save retention', exact: true }).click();
