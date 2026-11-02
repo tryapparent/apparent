@@ -191,7 +191,7 @@ granted and each on-demand sheet: `target/debug/apparent-helper onboarding --ren
   (`⌥⇧S`) and Paste last capture (`⌥⇧V`, which can be turned off).
 - **Recording**: the microphone, with its input level, the transcriber (Apple Speech with its
   language, Hex while it runs, with its model and language, or Command when it's configured) and,
-  under Experimental, Video export.
+  Video export (on by default; its existing Settings section is still labelled Experimental).
 - **Storage**: how long recordings are kept, where new captures go (Change…/Reset on macOS, `"capturesDir"` in
   `~/.config/apparent/config.json` everywhere; captures already made stay put, and an unusable folder falls back to the built-in one), how much space they take, and Show in Finder.
 - **Permissions**: the onboarding checklist, so a permission can be turned on later.
@@ -383,7 +383,7 @@ apparent export latest --crop 0.1,0.2,0.6,0.5       # x,y,w,h as fractions, or p
   uses its own audio track. `--no-ink` and `--no-clicks` leave the annotations out, `--fps` sets the
   rate (default 60 for a 60 fps recording).
 - **Menu**: with **Video export** on in Settings › Recording (`"videoExport": true` in
-  `~/.config/apparent/config.json`, default off), the menu shows **Export Last Capture as Video…**.
+  `~/.config/apparent/config.json`, default on), the menu shows **Export Last Capture as Video…**.
   Mac saves to `~/Movies/Apparent/<name>.mp4`, shows progress beside the menu bar icon,
   and reveals the file in Finder. Linux opens the desktop Save dialog for a local `.mp4`
   destination and shows progress, cancellation and failures in the tray menu; it needs a
@@ -535,13 +535,15 @@ shows **Command** once it is set; editing it stays in the file):
 { "experiments": { "liveTranscribe": true } }
 ```
 
-With this in `~/.config/apparent/config.json`, a Mac recording transcribed by Apple Speech streams the
-microphone to `apparent-helper transcribe-stream` as it records, so finishing only waits for the last
-words (tens of milliseconds) instead of transcribing the whole recording. The streamed samples are
-exactly the ones `audio.wav` holds, so word times are on the same clock. If the stream fails, the
-speech model isn't installed yet, or it takes too long, the recording is transcribed afterwards as
-usual; the log says which (`Live transcription: …`). Hex and iPhone recordings are unaffected.
+Off by default. When enabled, a Mac recording using Apple Speech streams the microphone to one
+continuous recognizer, using the preferred SpeechTranscriber or the existing DictationTranscriber
+fallback. Apple chooses when results become final and may defer them until EOF. Samples and word
+times use the saved WAV's source clock; batch word-for-word or timing identity is not promised.
+If live recognition fails, loses samples or exceeds its helper I/O deadline, Apparent transcribes
+the complete saved WAV. Hex and imported recordings keep their existing paths.
 `apparent reprocess <bundle> --out … --bench 1 --live-speed 1` replays a bundle's audio through it.
+See the [live transcription contract](capture/engine/docs/keyframes-and-text.md#experiment-livetranscribe-captureengineruntimeaudiotranscriptionlive_transcribers-captureenginenativelivetranscribeswift)
+for buffering, completion and deadline limits.
 
 ## Helper
 
