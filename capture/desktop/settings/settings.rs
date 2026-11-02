@@ -1780,11 +1780,11 @@ impl Event {
     }
 }
 
-/// Where the window runs: the SwiftUI helper on macOS, a GPUI window in this process on Windows
-/// (`settings_window`). Both take the same JSON messages and report the same `Action`s.
+/// Native or Electron presentation. Separate children register their exact live
+/// process with capture's own-window exclusion; all use the same bounded actions.
 pub(super) enum Transport {
     Helper {
-        child: std::process::Child,
+        child: crate::capture::ui_process::UiChild,
         stdin: Option<std::process::ChildStdin>,
     },
     InProcess(Option<flume::Sender<serde_json::Value>>),
@@ -1943,7 +1943,7 @@ impl Session {
             }
             events(Event::Exited);
         });
-        Ok(Transport::Helper { child, stdin })
+        Ok(Transport::Helper { child: crate::capture::ui_process::UiChild::new(child), stdin })
     }
 
     /// Feeds an event in, redraws, and returns what the app must do (`Relaunch`, `Tour`,

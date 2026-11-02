@@ -1007,7 +1007,7 @@ impl SharedCaptureTelemetry {
             .store(i32::try_from(pid).unwrap_or(0), Ordering::Release);
     }
 
-    /// Whether the topmost window at a global point is Apparent's own or a `apparent-helper`'s other
+    /// Whether the topmost window at a global point is Apparent's own or a registered UI child's other
     /// than the capture source (ignoring the click-through ink overlay). Asked once per press, and
     /// for scrolls, which come in bursts at one point, at most every 250 ms.
     fn on_apparent_window(&self, x: f64, y: f64) -> bool {
@@ -1047,7 +1047,7 @@ impl SharedCaptureTelemetry {
         let own = std::process::id() as i32;
         let source = self.capture_source_pid.load(Ordering::Acquire);
         crate::shared::windows::owned_window_at(windows, x, y, &passthrough, |pid| {
-            pid == own || (pid != source && is_helper(pid))
+            pid == own || (pid != source && (crate::capture::ui_process::owns(pid) || is_helper(pid)))
         })
     }
 
@@ -1410,6 +1410,39 @@ mod tests {
         assert!(!at(1000.0, 900.0), "the app under the ink overlay");
         telemetry.set_capture_source_pid(0);
         assert!(at(1400.0, 400.0), "a helper that isn't the source");
+    }
+
+    #[test]
+    fn separate_settings_window_is_owned_only_while_its_exact_child_is_alive() {
+        use crate::capture::ui_process::UiChild;
+        let (sender, _receiver) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        let spawn = || std::process::Command::new("sh").args(["-c", "exec sleep 30"]).spawn().unwrap();
+        let raw = spawn();
+        let pid = raw.id() as i32;
+        let windows = [crate::shared::windows::RawWindow {
+            id: 42, pid, owner: "Electron".into(), title: "Apparent Settings".into(),
+            bounds: [0.0, 0.0, 600.0, 400.0], layer: 0, alpha: 1.0,
+        }];
+        let at = || telemetry.apparent_window_in(&windows, 100.0, 100.0, |_| false);
+        assert!(!at(), "an unregistered Electron process is not ours");
+        let mut child = UiChild::new(raw);
+        assert!(at(), "the separate Settings window excludes presses and scrolls");
+        telemetry.set_capture_source_pid(pid as u32);
+        assert!(!at(), "explicit capture sources retain their interaction telemetry");
+        telemetry.set_capture_source_pid(0);
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(!at(), "a reaped PID is not owned even before its registration is dropped");
+        let next = spawn();
+        let next_pid = next.id() as i32;
+        let mut next = UiChild::new(next);
+        drop(child);
+        assert!(crate::capture::ui_process::owns(next_pid), "old cleanup cannot retire a new session");
+        next.kill().unwrap();
+        next.wait().unwrap();
+        drop(next);
+        assert!(!crate::capture::ui_process::owns(next_pid));
     }
 
     /// Kit's Screen capture on the Pro: the old listen-only event tap was off (no Input
