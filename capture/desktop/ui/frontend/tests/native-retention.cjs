@@ -76,11 +76,19 @@ module.exports = async function verifyRetention(page, { config, captures, output
   for (const key of Object.keys(original)) assert.deepEqual(after[key], original[key], `Unrelated ${key} changed`);
   await page.screenshot({ path: path.join(output, 'retention-reset.png'), fullPage: true });
   const preferenceRefresh = page.getByRole('button', { name: 'Refresh preferences', exact: true });
+  const fixtureHome = path.dirname(path.dirname(path.dirname(config)));
+  const legacyMode = process.platform === 'darwin'
+    ? path.join(fixtureHome, 'Library/Application Support/apparent/last-mode')
+    : path.join(fixtureHome, '.local/share/apparent/last-mode');
+  await fs.mkdir(path.dirname(legacyMode), { recursive: true, mode: 0o700 });
+  await fs.writeFile(legacyMode, 'screen\n', { mode: 0o600, flag: 'wx' });
   await preferenceRefresh.click();
   const pickerMode = page.getByLabel('Picker mode', { exact: true });
   const checks = page.getByLabel('Automatic update checks', { exact: true });
   const downloads = page.getByLabel('Automatic update downloads', { exact: true });
   await expect(pickerMode).toBeEnabled();
+  if (!Object.hasOwn(original, 'lastCaptureMode')) await expect(pickerMode).toHaveValue('screen');
+  assert.equal(await fs.readFile(legacyMode, 'utf8'), 'screen\n');
   await pickerMode.selectOption('screen');
   await expect(pickerMode).toBeEnabled();
   assert.equal(JSON.parse(await fs.readFile(config, 'utf8')).lastCaptureMode, 'screen');
@@ -117,9 +125,10 @@ module.exports = async function verifyRetention(page, { config, captures, output
     if (Object.hasOwn(original,key)) resetPreferences[key] = original[key]; else delete resetPreferences[key];
   }
   await fs.writeFile(config, JSON.stringify(resetPreferences));
+  await fs.rm(legacyMode);
   await preferenceRefresh.click(); await expect(pickerMode).toBeEnabled();
   return { backend: 'real Rust GUI', renderer: 'shipped Electron production assets', data: 'synthetic owned files',
     save: true, reset: true, readback: true, failedWrite: true, usage: true, usageError: true,
-    pickerUpdaterNativeControls: true, pickerUpdaterFailedWrite: true, unavailableModePreserved: true,
+    pickerUpdaterNativeControls: true, pickerUpdaterFailedWrite: true, unavailableModePreserved: true, legacyModeProjected: true,
     recovery: true, unknownConfigAndCapturePreserved: true, keyboard: process.platform !== 'darwin' };
 };
