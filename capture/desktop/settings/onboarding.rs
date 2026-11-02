@@ -960,6 +960,7 @@ pub fn poll_grants(
 pub struct Session {
     flow: Flow,
     fallback: Option<Box<dyn Fn() -> anyhow::Result<Transport>>>,
+    fallback_pending: bool,
     transport: Transport,
     permission_adapter: Option<Transport>,
     polling: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -980,6 +981,7 @@ impl Session {
         Self {
             flow,
             fallback: None,
+            fallback_pending: false,
             transport: Transport::InProcess(None),
             permission_adapter: None,
             polling: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -1060,6 +1062,7 @@ impl Session {
             transport,
             permission_adapter: None,
             fallback,
+            fallback_pending: false,
             polling,
             last_view: String::new(),
             shortcut_label: String::new(),
@@ -1149,6 +1152,15 @@ impl Session {
     }
 
     pub fn restore_native(&mut self) -> bool {
+        if self.fallback.is_some() && self.flow.hidden {
+            // A replacement native window may map before a queued hide reaches it.
+            // Defer creating any replacement until capture completion reveals the flow.
+            self.fallback_pending = true;
+            let old = std::mem::replace(&mut self.transport, Transport::InProcess(None));
+            retire_transport(old);
+            return true;
+        }
+        self.fallback_pending = false;
         let Some(fallback) = self.fallback.take() else { return false; };
         if let Some(adapter) = self.permission_adapter.take() { retire_transport(adapter); }
         let old = std::mem::replace(&mut self.transport, Transport::InProcess(None));
@@ -1275,6 +1287,7 @@ impl Session {
     }
 
     pub fn show(&mut self) {
+        if self.fallback_pending && !self.flow.hidden { self.restore_native(); }
         self.send(&serde_json::json!({"type": "show"}));
     }
 
@@ -1351,6 +1364,7 @@ impl Session {
     // Electron owns presentation; the installed helper retains consent attribution and
     // the lifetime of asynchronous native prompts. Never send it a presentation state.
     fn permission_action(&mut self, action: &str, permission: Permission) {
+        if self.fallback_pending { return; }
         if self.fallback.is_none() {
             self.send(&serde_json::json!({"type": action, "permission": permission}));
             return;
@@ -2384,7 +2398,7 @@ mod adapter_regressions {
         assert_eq!(line.len(), 65_537);
     }
     #[test]
-    fn fallback_restores_hidden_after_state_and_cached_shortcut() {
+    fn hidden_fallback_waits_until_capture_ends_before_creating_native_window() {
         let mut flow = Flow::tour(Step::TryIt, None);
         flow.hidden = true;
         let mut session = Session::for_test(flow);
@@ -2392,8 +2406,13 @@ mod adapter_regressions {
         let (tx, rx) = flume::unbounded();
         session.fallback = Some(Box::new(move || Ok(Transport::InProcess(Some(tx.clone())))));
         assert!(session.restore_native());
+        assert!(rx.try_recv().is_err(), "no replacement transport is created while hidden");
+        assert!(session.fallback_pending);
+        assert!(session.fallback.is_some());
+        session.input(Input::CaptureEnded { completed: false });
         let messages: Vec<_> = rx.try_iter().collect();
-        assert_eq!(messages.last().unwrap()["type"], "hide");
+        assert_eq!(messages.last().unwrap()["type"], "show");
+        assert!(messages.iter().any(|v| v["type"] == "show"));
         assert!(messages.iter().any(|v| v["type"] == "state"));
         assert!(messages.iter().any(|v| v["label"] == "Test shortcut"));
         assert!(!session.restore_native());
