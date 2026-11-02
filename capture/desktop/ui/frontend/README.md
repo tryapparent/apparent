@@ -111,6 +111,17 @@ directory write/usage failures and file preservation. The existing Mac CI probe
 calls it; only an executed, inspected run proves the Mac gate. Prior #277
 native evidence does not cover these additional controls.
 
+An isolated Omarchy run on `29cf0819` passed the unchanged native retention
+helper against the frozen Rust GUI and shipped Electron 45.2.1. Inspected images
+showed Month (30-day media/90-day bundles), reset to Week, genuine private-config
+write refusal, usage failure without a stale total, and recovery to the measured
+1 MB synthetic folder. Unrelated config and the synthetic file survived; Rust,
+Electron, owned VM/overlay/firmware/sockets and expiry were cleaned up. This is
+Linux Settings proof only, not timed Trash/cleanup, capture permissions or Mac.
+No recording/bundle was produced; that guest reports a missing H.264 decoder,
+and its walkthrough capture/export path was not exercised. Private evidence is
+retained outside the repository; the PR records candidate identity and gates.
+
 ## Checks
 
 Run Electron smoke files sequentially: Electron's lazy binary installation is
