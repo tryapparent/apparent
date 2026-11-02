@@ -9,6 +9,12 @@ on:
 permissions:
   contents: read
 
+# Only supersede checks for the same PR. Pushes and manual runs keep their
+# own group so a newer run cannot discard a main-branch verification.
+concurrency:
+  group: changed-tree-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   select:
     runs-on: ubuntu-24.04
