@@ -288,13 +288,6 @@ impl Session {
                     }
                 }
             }
-            if let Some(reply) = completion {
-                let _ = reply.send(if drained && failed_writes.is_empty() {
-                    Ok(())
-                } else {
-                    Err("Notes did not finish saving; recording assets were retained.".into())
-                });
-            }
             if !stopped.load(Ordering::Acquire) && !drained {
                 let _ = telemetry
                     .ui_sender
@@ -316,6 +309,13 @@ impl Session {
             let _ = telemetry
                 .ui_sender
                 .try_send(LiveOverlayEvent::RequestSnapshot);
+            if let Some(reply) = completion {
+                let _ = reply.send(if drained && failed_writes.is_empty() {
+                    Ok(())
+                } else {
+                    Err("Notes did not finish saving; recording assets were retained.".into())
+                });
+            }
         });
         Ok(Self {
             sender,
