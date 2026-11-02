@@ -14,6 +14,14 @@ declare global {
       resetCaptureLocation: () => Promise<CaptureLocation>;
       readErrorReporting: () => Promise<ErrorReporting>;
       setErrorReporting: (enabled: boolean) => Promise<ErrorReporting>;
+      readConnectSettings: () => Promise<ConnectSettings>;
+      connectSettings: () => Promise<ConnectSettings>;
+      allowConnectUploads: () => Promise<ConnectSettings>;
+      cancelConnectSettings: () => Promise<ConnectSettings>;
+      checkConnectConnection: () => Promise<ConnectSettings>;
+      disableConnectUploads: () => Promise<ConnectSettings>;
+      disconnectConnectSettings: () => Promise<ConnectSettings>;
+      openConnectBrowser: () => Promise<ConnectSettings>;
       readRetention: () => Promise<RetentionResult>;
       saveRetention: (preset: string) => Promise<RetentionResult>;
       resetRetention: () => Promise<RetentionResult>;
@@ -38,6 +46,16 @@ export type CaptureLocation =
 
 export type ErrorReporting = { status: 'connected'; enabled: boolean } |
   { status: 'disconnected' | 'incompatible' } | { status: 'error'; code: string };
+export type ConnectAction = 'connect' | 'allow' | 'cancel' | 'check' | 'disable' | 'disconnect' | 'open-browser';
+export type ConnectView = {
+  title: string; status: string; detail: string; server: string | null;
+  verificationUri: string | null; userCode: string | null;
+  buttons: { command: ConnectAction; title: string; enabled: boolean }[]; note: string;
+};
+export type ConnectSettings =
+  | { status: 'connected'; view: ConnectView }
+  | { status: 'disabled' | 'disconnected' | 'cancelled' }
+  | { status: 'error' };
 type Unavailable = Exclude<CaptureLocation, { status: 'connected' }>;
 export type RetentionResult = Unavailable | { status: 'connected'; custom: boolean;
   retention: { preset: string | null; options: { id: string; label: string }[]; note: string } };

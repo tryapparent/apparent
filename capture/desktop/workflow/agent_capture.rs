@@ -225,7 +225,7 @@ impl Request {
 
 /// libuv hrtime uses mach_continuous_time on macOS. Keep Storage separate from
 /// the legacy Rust-client CLOCK_MONOTONIC timeline.
-fn storage_clock_ms() -> u64 {
+pub(super) fn storage_clock_ms() -> u64 {
     #[cfg(target_os = "macos")]
     {
         let mut time: libc::timespec = unsafe { std::mem::zeroed() };
@@ -317,6 +317,7 @@ enum Wire {
     Capture(Option<(Action, String)>, u64),
     Storage(Storage),
     ErrorReporting(ErrorReportingRequest),
+    Connect(u64),
 }
 
 // A single rendezvous worker handles the two bounded Settings contracts. A
@@ -361,6 +362,9 @@ impl ErrorReportingRequest {
 }
 
 fn parse_request(line: &str) -> Option<Wire> {
+    if let Some(deadline) = super::connect_settings::opening_deadline(line) {
+        return Some(Wire::Connect(deadline.min(storage_clock_ms() + 3000)));
+    }
     if line.starts_with('{') {
         if let Ok(request) = serde_json::from_str::<ErrorReportingRequest>(line) {
             return Some(Wire::ErrorReporting(request));
@@ -460,6 +464,15 @@ fn listen_at_config(path: PathBuf, config_path: PathBuf) -> Result<flume::Receiv
     // Rendezvous channel: one persistent worker, no queued/accumulating blocked writers.
     // The listener and GUI remain free while this worker waits on the existing flock.
     let (storage_tx, storage_rx) = std::sync::mpsc::sync_channel::<(SettingsRequest, u64, UnixStream)>(0);
+    let (connect_tx, connect_rx) = std::sync::mpsc::sync_channel::<(u64, UnixStream)>(0);
+    let connect_config = config_path.clone();
+    std::thread::Builder::new()
+        .name("apparent-connect-settings".into())
+        .spawn(move || {
+            while let Ok((deadline, stream)) = connect_rx.recv() {
+                super::connect_settings::serve(stream, deadline, &connect_config);
+            }
+        })?;
     std::thread::Builder::new().name("apparent-storage-control".into()).spawn(move || {
         while let Ok((request, deadline, mut stream)) = storage_rx.recv() {
             let response = request.execute(&config_path, deadline);
@@ -493,6 +506,20 @@ fn listen_at_config(path: PathBuf, config_path: PathBuf) -> Result<flume::Receiv
                 let response = if valid_frame {
                     if let Some(wire) = parse_request(line.trim()) {
                         let (action, deadline_ms) = match wire {
+                            Wire::Connect(deadline) => {
+                                if line.len() > 4096 {
+                                    let _ = writeln!(stream, "{{\"error\":\"invalid_request\"}}");
+                                    continue;
+                                }
+                                match connect_tx.try_send((deadline, stream)) {
+                                    Ok(()) => {}
+                                    Err(std::sync::mpsc::TrySendError::Full((_, mut stream))
+                                        | std::sync::mpsc::TrySendError::Disconnected((_, mut stream))) => {
+                                        let _ = writeln!(stream, "{{\"error\":\"app_busy\"}}");
+                                    }
+                                }
+                                continue;
+                            }
                             Wire::Capture(action, deadline) => (action, deadline),
                             Wire::Storage(request) => {
                                 let deadline = request.deadline().min(storage_clock_ms() + 3000);
@@ -1173,6 +1200,34 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    #[ignore = "needs the frontend Electron binary; see frontend/README.md"]
+    fn connect_settings_electron_rust_roundtrip() {
+        let electron = std::env::var_os("APPARENT_CONNECT_TEST_ELECTRON")
+            .expect("Set APPARENT_CONNECT_TEST_ELECTRON to the frontend Electron executable");
+        let home = std::env::temp_dir().join(format!("ce-{}", &new_id().unwrap()[..8]));
+        let directory = home.join(".config/apparent/agent-control");
+        std::fs::create_dir_all(&directory).unwrap();
+        // The production client correctly refuses a group-writable state parent.
+        // Do not inherit the host's umask for this disposable fixture HOME.
+        std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let config = home.join("config.json");
+        let path = directory.join("capture.sock");
+        let receiver = listen_at_config(path.clone(), config.clone()).unwrap();
+        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("capture/desktop/ui/frontend/tests/rust-connect.cjs");
+        let output = std::process::Command::new(electron)
+            .env("ELECTRON_RUN_AS_NODE", "1")
+            .arg(script).arg(&home).arg(&config).output().unwrap();
+        drop(receiver);
+        for _ in 0..50 { if !path.exists() { break; } std::thread::sleep(Duration::from_millis(20)); }
+        assert!(!path.exists(), "Owned listener did not clean up");
+        if output.status.success() { std::fs::remove_dir_all(&home).unwrap(); }
+        assert!(output.status.success(), "Electron fixture retained at {}: {}{}", home.display(), String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        println!("{}", String::from_utf8_lossy(&output.stdout));
+    }
 
     #[test]
     #[ignore = "needs the frontend Electron binary; see frontend/README.md"]

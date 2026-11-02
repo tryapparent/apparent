@@ -388,5 +388,4 @@ fn send(endpoint: &str, body: &Value) -> std::io::Result<bool> {
 }
 
 #[cfg(test)]
-#[path = "error_reporting_tests.rs"]
 mod tests;
