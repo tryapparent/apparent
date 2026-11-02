@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
-const { readRuntimeState, captureLocation, storagePreference } = require('../electron/runtime.cjs');
+const { readRuntimeState, captureLocation, storagePreference, pickerUpdaterPreference } = require('../electron/runtime.cjs');
 
 async function fixture(t, reply, { mode = 0o700 } = {}) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'ui-'));
@@ -129,4 +129,16 @@ for (const [reply, expected] of [
 ]) test(`storage validates response ${JSON.stringify(reply).slice(0, 60)}`, async (t) => {
   const f = await fixture(t, JSON.stringify(reply) + '\n');
   assert.deepEqual(await captureLocation(f.home), expected);
+});
+
+test('picker/updater bridge projects preferences and bounds edits', async t => {
+  const f = await fixture(t, JSON.stringify({revision:'aaaaaaaaaaaaaaaa', preferences:{lastCaptureMode:'screen',savedModeUnavailable:false,automaticUpdateChecks:false,automaticUpdateDownloads:null,secret:'hidden'},secret:'hidden'})+'\n');
+  const result = await pickerUpdaterPreference(f.home);
+  assert.deepEqual(result, {status:'connected',revision:'aaaaaaaaaaaaaaaa',preferences:{lastCaptureMode:'screen',savedModeUnavailable:false,automaticUpdateChecks:false,automaticUpdateDownloads:null}});
+  await pickerUpdaterPreference(f.home, 'savepreference', {key:'automaticUpdateChecks',value:null,expected:result.revision});
+  const edit = JSON.parse(f.requests[1]);
+  assert.equal(edit.key, 'automaticUpdateChecks');
+  assert.equal(edit.value, null);
+  assert.throws(() => pickerUpdaterPreference(f.home, 'savepreference', {key:'secret',value:true,expected:result.revision}));
+  assert.throws(() => pickerUpdaterPreference(f.home, 'savepreference', {key:'automaticUpdateChecks',value:'yes',expected:result.revision}));
 });

@@ -28,6 +28,12 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
       if (data.toString() === 'state\n') return socket.end('{"state":{"phase":"idle"}}\n');
       const r = JSON.parse(data); requests.push(r);
       const send = value => socket.end(JSON.stringify(value) + '\n');
+      if (r.storage === 'preferences' || r.storage === 'savepreference') {
+        if (r.storage === 'savepreference' && failure) return send({error:failure});
+        if (!server.preferences) server.preferences = {lastCaptureMode:'area',savedModeUnavailable:false,automaticUpdateChecks:null,automaticUpdateDownloads:null};
+        if (r.storage === 'savepreference') { assert.equal(r.expected, revision); server.preferences[r.key] = r.value; revision = 'd'.repeat(16); }
+        return send({revision, preferences:server.preferences});
+      }
       if (r.storage === 'read') return send({ storage: { savedPath: '/captures', effectivePath: '/captures', displayPath: '/captures', source: 'configured', custom: true, revision } });
       if (r.storage === 'usage') {
         if (usageError) return send({ error: 'usage_unavailable', message: 'private failure' });
@@ -135,5 +141,25 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   }
   assert.ok(requests.some(r => r.storage === 'resetretention'));
   assert.equal((await page.locator('body').innerText()).includes('private failure'), false);
-  t.diagnostic('Retention assertions completed');
+  failure = undefined;
+  await page.getByRole('button', {name:'Refresh preferences',exact:true}).click();
+  await expect(page.getByLabel('Picker mode', {exact:true})).toHaveValue('area');
+  await page.getByLabel('Picker mode', {exact:true}).selectOption('screen');
+  await expect(page.getByLabel('Picker mode', {exact:true})).toHaveValue('screen');
+  await page.getByLabel('Automatic update checks', {exact:true}).selectOption('false');
+  await expect(page.getByLabel('Automatic update checks', {exact:true})).toHaveValue('false');
+  failure = 'conflict';
+  await page.getByLabel('Automatic update downloads', {exact:true}).selectOption('true');
+  await expect(page.getByText('Could not confirm preferences. Refresh before trying again.')).toBeVisible();
+  failure = undefined;
+  await page.getByRole('button', {name:'Refresh preferences',exact:true}).click();
+  await expect(page.getByLabel('Automatic update downloads', {exact:true})).toHaveValue('default');
+  assert.equal(await app.evaluate(async ({ipcMain,BrowserWindow}) => {
+    const sender = BrowserWindow.getAllWindows()[0].webContents;
+    const handler = ipcMain._invokeHandlers.get('apparent:picker-updater-preference');
+    try { await handler({sender,senderFrame:{url:sender.getURL()}}, 'automaticUpdateChecks',false); return false; } catch {}
+    try { await handler({sender,senderFrame:sender.mainFrame}, 'secret',false); return false; } catch {}
+    return true;
+  }), true);
+  t.diagnostic('Retention and preference assertions completed');
 });

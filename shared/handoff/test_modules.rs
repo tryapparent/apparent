@@ -6,6 +6,21 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     #[test]
+    fn automatic_update_policy_defaults_and_invalid_fields_are_independent() {
+        for value in [serde_json::json!({}), serde_json::json!({"automaticUpdateChecks":null,"automaticUpdateDownloads":null}), serde_json::json!({"automaticUpdateChecks":"bad","automaticUpdateDownloads":42})] {
+            let config = super::config_from_value(value);
+            assert!(config.automatic_update_checks(true));
+            assert!(!config.automatic_update_checks(false));
+            assert!(config.automatic_update_downloads(true));
+            assert!(!config.automatic_update_downloads(false));
+        }
+        let config = super::config_from_value(serde_json::json!({"automaticUpdateChecks":false,"automaticUpdateDownloads":true,"videoExport":true}));
+        assert!(!config.automatic_update_checks(true));
+        assert!(config.automatic_update_downloads(false));
+        assert_eq!(config.video_export, Some(true));
+    }
+
+    #[test]
     fn image_offer_is_opt_in_and_falls_back_to_text_if_unavailable() {
         use std::cell::RefCell;
         let calls = RefCell::new(Vec::new());

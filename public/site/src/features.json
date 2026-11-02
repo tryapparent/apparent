@@ -172,6 +172,7 @@
         { "keys": "Space", "does": "Picker: toggle Area and Screen" },
         { "keys": "⏎", "does": "Picker: record the selection" }
       ],
+      "config": [{ "key": "lastCaptureMode", "value": "area | screen | iphone", "does": "Persist the picker selection; read at startup with legacy fallback only when absent" }],
       "docs": ["README.md#capture-controls"]
     },
     {
@@ -1144,6 +1145,10 @@
       "status": "stable@0.3.4",
       "platforms": ["mac"],
       "note": "Mac previews use a separate Sparkle key/feed. Developer ID/notarization preparation is opt-in and awaits real-credential verification; see mac-developer-id. Linux AppImages have their own updater.",
+      "config": [
+        { "key": "automaticUpdateChecks", "value": "true | false", "does": "Override package check policy at restart" },
+        { "key": "automaticUpdateDownloads", "value": "true | false", "does": "Override package download policy at restart; package restrictions still apply" }
+      ],
       "docs": ["capture/desktop/docs/release.md"]
     },
     {
@@ -1166,6 +1171,8 @@
       "added": "2026-10-28",
       "platforms": ["linux"],
       "config": [
+        { "key": "automaticUpdateChecks", "value": "true | false", "does": "Override automatic update checks; Linux reads per check, macOS on restart; absent uses package default" },
+        { "key": "automaticUpdateDownloads", "value": "true | false", "does": "Override automatic downloads; manual checks remain available and package restrictions still apply" },
         { "key": "updateChannel", "value": "\"stable\" | \"main\"", "does": "Choose the Linux release channel" },
         { "key": "running", "value": "{ version, revision, pid, startTicks, executable, updateId, updateChannel }", "does": "Last launched process identity; verify liveness with apparent update status" }
       ],

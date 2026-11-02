@@ -2,7 +2,7 @@ const { app, BrowserWindow, dialog, ipcMain, session } = require('electron');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { readRuntimeState, captureLocation, storagePreference } = require('./runtime.cjs');
+const { readRuntimeState, captureLocation, storagePreference, pickerUpdaterPreference } = require('./runtime.cjs');
 
 // Deliberately separate from the installed application's profile and identity.
 app.setName('Apparent UI Foundation');
@@ -37,7 +37,7 @@ app.whenReady().then(() => {
   let storageVersion = 0;
   let retentionRevision;
   let retentionRead;
-  const invalidate = () => { generation += 1; storageVersion += 1; retentionRevision = undefined; };
+  const invalidate = () => { generation += 1; storageVersion += 1; retentionRevision = undefined; preferenceRevision = undefined; };
   window.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) invalidate(); });
   window.webContents.on('will-navigate', invalidate);
   window.webContents.on('render-process-gone', invalidate);
@@ -47,6 +47,26 @@ app.whenReady().then(() => {
     const { revision: _revision, ...storage } = result.storage;
     return { status: 'connected', storage };
   };
+  let preferenceRevision;
+  ipcMain.handle('apparent:picker-updater-preference', async (event, ...args) => {
+    const edit = args.length === 2;
+    validate(event, edit ? [] : args);
+    if (edit && (!['lastCaptureMode', 'automaticUpdateChecks', 'automaticUpdateDownloads'].includes(args[0]) ||
+        (args[0] === 'lastCaptureMode' ? !['area', 'screen', ...(process.platform === 'darwin' ? ['iphone'] : [])].includes(args[1]) : !(args[1] === null || typeof args[1] === 'boolean')))) throw new Error('Invalid preference');
+    if (mutation) return { status: 'error', code: 'app_busy' };
+    if (edit && !preferenceRevision) return { status: 'error', code: 'refresh_required' };
+    const token = generation;
+    mutation = true;
+    try {
+      const result = await pickerUpdaterPreference(os.homedir(), edit ? 'savepreference' : 'preferences',
+        edit ? { key: args[0], value: args[1], expected: preferenceRevision } : {});
+      if (token !== generation) return { status: 'cancelled' };
+      preferenceRevision = result.status === 'connected' ? result.revision : undefined;
+      if (result.status !== 'connected') return result;
+      return { status: 'connected', preferences: result.preferences, iphone: process.platform === 'darwin' };
+    } catch { preferenceRevision = undefined; return { status: 'error', code: 'bridge_failed' }; }
+    finally { mutation = false; }
+  });
   ipcMain.handle('apparent:read-capture-location', async (event, ...args) => {
     validate(event, args);
     const version = storageVersion;

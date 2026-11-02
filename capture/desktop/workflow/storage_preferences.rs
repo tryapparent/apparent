@@ -215,6 +215,45 @@ fn scan_directory(
 mod tests {
     use super::*;
     #[test]
+    fn retired_window_preference_reports_area_fallback_without_rewriting_config() {
+        let dir = std::env::temp_dir().join(format!("old-window-{}", crate::shared::ids::make_bundle_id()));
+        std::fs::create_dir(&dir).unwrap();
+        let config = dir.join("config.json");
+        let bytes = r#"{"lastCaptureMode":"window"}"#;
+        std::fs::write(&config, bytes).unwrap();
+        let result = read_preferences(&config).unwrap();
+        assert_eq!(result["preferences"]["lastCaptureMode"], "area");
+        assert_eq!(result["preferences"]["savedModeUnavailable"], true);
+        assert_eq!(std::fs::read_to_string(config).unwrap(), bytes);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn picker_updater_edits_preserve_siblings_reject_stale_and_expired_writes() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("preference-{}", crate::shared::ids::make_bundle_id()));
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let config = dir.join("config.json");
+        std::fs::write(&config, r#"{"secret":"keep","shortcuts":{"future":42}}"#).unwrap();
+        let first = read_preferences(&config).unwrap();
+        let revision = first["revision"].as_str().unwrap();
+        crate::shared::handoff::set_config_value_in(&config, "sibling", true.into()).unwrap();
+        let saved = save_preference(&config, "automaticUpdateChecks", &false.into(), revision, || true).unwrap();
+        assert_eq!(saved["preferences"]["automaticUpdateChecks"], false);
+        assert_eq!(save_preference(&config, "lastCaptureMode", &"screen".into(), revision, || true), Err("conflict"));
+        assert_eq!(save_preference(&config, "lastCaptureMode", &"screen".into(), saved["revision"].as_str().unwrap(), || false), Err("admission_expired"));
+        assert_eq!(save_preference(&config, "secret", &true.into(), revision, || true), Err("invalid_request"));
+        let reset = save_preference(&config, "automaticUpdateChecks", &serde_json::Value::Null, saved["revision"].as_str().unwrap(), || true).unwrap();
+        assert!(reset["preferences"]["automaticUpdateChecks"].is_null());
+        let raw = capture_location::read_raw(&config).unwrap();
+        assert_eq!(raw["secret"], "keep");
+        assert_eq!(raw["shortcuts"]["future"], 42);
+        assert_eq!(raw["sibling"], true);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn usage_pins_directories_and_never_follows_replaced_paths_or_child_links() {
         let root =
             std::env::temp_dir().join(format!("usage-{}", crate::shared::ids::make_bundle_id()));
@@ -248,4 +287,46 @@ mod tests {
         assert!(denied.is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
+}
+
+fn preference_revision(raw: &serde_json::Value) -> String {
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    for key in ["lastCaptureMode", "automaticUpdateChecks", "automaticUpdateDownloads"] {
+        raw[key].to_string().hash(&mut hash);
+    }
+    format!("{:016x}", hash.finish())
+}
+
+pub(super) fn valid_preference(key: &str, value: &serde_json::Value) -> bool {
+    match key {
+        "lastCaptureMode" => matches!(value.as_str(), Some("area" | "screen")) ||
+            (cfg!(target_os = "macos") && value == "iphone"),
+        "automaticUpdateChecks" | "automaticUpdateDownloads" => value.is_boolean() || value.is_null(),
+        _ => false,
+    }
+}
+
+pub(super) fn read_preferences(config: &Path) -> Result<serde_json::Value, &'static str> {
+    let raw = capture_location::read_raw(config).map_err(|_| "config_read_failed")?;
+    let policy = crate::shared::handoff::load_config_from(config);
+    let mode = raw["lastCaptureMode"].as_str().filter(|mode| valid_preference("lastCaptureMode", &serde_json::json!(mode))).unwrap_or("area");
+    Ok(serde_json::json!({"revision":preference_revision(&raw), "preferences":{
+        "lastCaptureMode":mode,
+        "savedModeUnavailable":raw.get("lastCaptureMode").is_some_and(|value| !valid_preference("lastCaptureMode", value)),
+        "automaticUpdateChecks":policy.automatic_update_checks,
+        "automaticUpdateDownloads":policy.automatic_update_downloads,
+    }}))
+}
+
+pub(super) fn save_preference(config: &Path, key: &str, value: &serde_json::Value, expected: &str, admit: impl FnOnce() -> bool) -> Result<serde_json::Value, &'static str> {
+    if !valid_preference(key, value) { return Err("invalid_request"); }
+    let mut refusal = "config_write_failed";
+    update_config_in(config, |raw| {
+        if !admit() { refusal = "admission_expired"; anyhow::bail!("expired"); }
+        if preference_revision(raw) != expected { refusal = "conflict"; anyhow::bail!("conflict"); }
+        if value.is_null() { raw.as_object_mut().unwrap().remove(key); }
+        else { raw[key] = value.clone(); }
+        Ok(())
+    }).map_err(|_| refusal)?;
+    read_preferences(config)
 }

@@ -259,3 +259,25 @@ to the owned Electron PID; it checks the runner's existing automation permission
 and fails rather than granting or resetting TCC. Synthetic reports and owned
 window images are retained for seven days, including failures. A Linux skip or
 an unexecuted CI definition is not native Mac proof. No Mac rental is required.
+
+## Picker and updater preferences (#181)
+
+The existing Electron Settings bridge also exposes saved picker mode and optional
+boolean automatic-update overrides. It uses the same `electronCaptureLocation`
+routing gate; this change does not activate that gate or replace installed Settings.
+Refresh establishes a Rust revision; each edit checks that revision under the config
+lock and preserves other settings. Resetting an updater override removes only its key.
+Errors require refresh, and a lost response is not proof that a write failed.
+Picker mode applies on next app launch; Linux update policy applies on the next
+check and before automatic installation, macOS policy on restart. Manual update
+checks stay in installed Settings. Package defaults and download restrictions remain
+authoritative. Renderer input cannot invoke a generic config write.
+
+Rollback is closing this optional Electron window and using installed Settings.
+Keep that path until both platform GUI flows, stale/failing saves, picker restart
+and updater reconciliation have passed on the accepted candidate. This document
+records the routing and removal condition, not a native acceptance claim.
+
+Unavailable stored picker values (including the temporarily retired Window mode)
+are preserved on read. The panel explicitly reports the Area fallback; selecting
+a supported mode replaces the saved value. This does not re-enable Window capture.

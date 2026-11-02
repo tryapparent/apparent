@@ -699,16 +699,47 @@ impl SelectionMode {
 
     /// The mode the last recording used; the picker opens on it.
     fn load_last_used() -> Self {
-        Self::last_used_path()
+        Self::load_last_used_in(
+            &crate::shared::handoff::default_config_path(),
+            Self::last_used_path().as_deref(),
+        )
+    }
+
+    fn load_last_used_in(config_path: &std::path::Path, legacy: Option<&std::path::Path>) -> Self {
+        if let Ok(bytes) = std::fs::read(config_path) {
+            let Ok(config) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+                return Self::Area;
+            };
+            if let Some(value) = config.get("lastCaptureMode") {
+                return value.as_str().and_then(Self::from_key).unwrap_or(Self::Area);
+            }
+        }
+        legacy
             .and_then(|path| std::fs::read_to_string(path).ok())
             .and_then(|text| Self::from_key(&text))
             .unwrap_or(Self::Area)
     }
 
     fn save_last_used(self) {
-        if let Some(path) = Self::last_used_path() {
-            let _ = std::fs::write(path, self.key());
+        if let Err(error) = self.save_last_used_in(
+            &crate::shared::handoff::default_config_path(),
+            Self::last_used_path().as_deref(),
+        ) {
+            apparent_log(format!("Saving picker mode failed: {error:#}"));
         }
+    }
+
+    fn save_last_used_in(self, config: &std::path::Path, legacy: Option<&std::path::Path>) -> anyhow::Result<()> {
+        crate::shared::handoff::set_config_value_in(config, "lastCaptureMode", self.key().into())?;
+        if let Some(path) = legacy {
+            // Keep old installations readable until the canonical preference was saved.
+            if let Err(error) = std::fs::remove_file(path)
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                apparent_log(format!("Removing legacy picker mode failed: {error}"));
+            }
+        }
+        Ok(())
     }
 
     /// Modes shown in the HUD, in order; iPhone only while one is cabled.
@@ -6733,6 +6764,46 @@ mod tests {
     use super::*;
 
     #[cfg(target_os = "linux")]
+    #[test]
+    fn picker_mode_config_overrides_legacy_sidecar() {
+        let dir = std::env::temp_dir().join(format!("apparent-picker-{}", crate::shared::ids::make_bundle_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let config = dir.join("config.json");
+        let legacy = dir.join("last-mode");
+        std::fs::write(&legacy, "area").unwrap();
+        assert_eq!(SelectionMode::load_last_used_in(&config, Some(&legacy)), SelectionMode::Area);
+        std::fs::write(&config, r#"{"lastCaptureMode":"screen","unknown":{"dummySecret":"test-only"}}"#).unwrap();
+        assert_eq!(SelectionMode::load_last_used_in(&config, Some(&legacy)), SelectionMode::Screen);
+        SelectionMode::Area.save_last_used_in(&config, Some(&legacy)).unwrap();
+        assert!(!legacy.exists());
+        let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&config).unwrap()).unwrap();
+        assert_eq!(saved["lastCaptureMode"], "area");
+        assert_eq!(saved["unknown"]["dummySecret"], "test-only");
+        std::fs::write(&config, r#"{"lastCaptureMode":"invalid"}"#).unwrap();
+        assert_eq!(SelectionMode::load_last_used_in(&config, Some(&legacy)), SelectionMode::Area);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn failed_picker_mode_save_preserves_legacy_and_invalid_config() {
+        let dir = std::env::temp_dir().join(format!("apparent-picker-failure-{}", crate::shared::ids::make_bundle_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let config = dir.join("config.json");
+        let legacy = dir.join("last-mode");
+        std::fs::write(&legacy, "window").unwrap();
+        for bytes in [b"{invalid".as_slice(), b"[]".as_slice()] {
+            std::fs::write(&config, bytes).unwrap();
+            assert!(SelectionMode::Screen.save_last_used_in(&config, Some(&legacy)).is_err());
+            assert_eq!(std::fs::read(&config).unwrap(), bytes);
+            assert_eq!(std::fs::read(&legacy).unwrap(), b"window");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn update_restart_waits_for_capture_admission_and_processing() {
         use crate::capture::desktop::settings::{Action, Event};

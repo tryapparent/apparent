@@ -803,6 +803,11 @@ pub struct Config {
     pub agent_opencode: Option<String>,
     #[serde(default)]
     pub update_channel: Option<String>,
+    /// Automatic policy overrides; manual update checks remain available.
+    #[serde(default)]
+    pub automatic_update_checks: Option<bool>,
+    #[serde(default)]
+    pub automatic_update_downloads: Option<bool>,
     /// `false` turns Screen-capture auto-crop off; an object overrides its settings.
     #[serde(default)]
     pub autocrop: Option<serde_json::Value>,
@@ -858,6 +863,13 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn automatic_update_checks(&self, package_default: bool) -> bool {
+        self.automatic_update_checks.unwrap_or(package_default)
+    }
+    pub fn automatic_update_downloads(&self, package_default: bool) -> bool {
+        self.automatic_update_downloads.unwrap_or(package_default)
+    }
+
     pub fn warm_recognizer_enabled(&self) -> bool {
         self.warm_recognizer.unwrap_or(true)
     }

@@ -2,7 +2,7 @@ import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Button } from '@apparent/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@apparent/ui/tabs';
-import type { RuntimeState } from './bridge';
+import type { RuntimeState, PreferenceResult } from './bridge';
 import { Storage } from './storage';
 import './style.css';
 
@@ -16,6 +16,40 @@ const examples = [
   { id: 'permission', title: 'Screen access unavailable', detail: 'Permission handling stays in the current app. This window cannot request access.' },
   { id: 'error', title: 'The handoff needs attention', detail: 'A synthetic error for reviewing layout and copy. No real capture has failed.' },
 ] as const;
+
+function PickerUpdaterPreferences() {
+  const [result, setResult] = useState<PreferenceResult>({ status: 'disconnected' });
+  const [pending, setPending] = useState(false);
+  async function request(key?: string, value?: boolean | string | null) {
+    setPending(true);
+    try { setResult(await (key === undefined ? window.apparent?.pickerUpdaterPreference() : window.apparent?.pickerUpdaterPreference(key, value)) ?? { status: 'disconnected' }); }
+    catch { setResult({ status: 'error', code: 'bridge_failed' }); }
+    finally { setPending(false); }
+  }
+  // No automatic saves; a refresh first establishes the backend's stale-edit revision.
+  return <section aria-labelledby="preferences-title" className="space-y-4 rounded-xl border border-border bg-white p-6">
+    <h2 id="preferences-title" className="text-lg font-semibold">Picker and updates</h2>
+    <Button variant="outline" disabled={pending} onClick={() => void request()}>Refresh preferences</Button>
+    <div role="status" aria-live="polite">{pending ? 'Saving or reading preferences…' : result.status === 'connected' ? 'Preferences loaded' : result.status === 'disabled' ? 'This window’s Settings bridge is not enabled.' : result.status === 'error' ? 'Could not confirm preferences. Refresh before trying again.' : 'Open Apparent and refresh preferences.'}</div>
+    {result.status === 'connected' && <>
+      {result.preferences.savedModeUnavailable && <p>The saved picker mode is unavailable. Apparent will use Area; choosing a mode replaces the saved value.</p>}
+      <label className="flex items-center justify-between gap-4">Picker mode on next app launch
+        <select aria-label="Picker mode" disabled={pending} value={result.preferences.lastCaptureMode} onChange={e => void request('lastCaptureMode', e.target.value)}>
+          <option value="area">Area</option><option value="screen">Screen</option>{result.iphone && <option value="iphone">iPhone</option>}
+        </select>
+      </label>
+      {(['automaticUpdateChecks', 'automaticUpdateDownloads'] as const).map(key => <label key={key} className="flex items-center justify-between gap-4">
+        {key === 'automaticUpdateChecks' ? 'Automatic update checks' : 'Automatic update downloads'}
+        <select aria-label={key === 'automaticUpdateChecks' ? 'Automatic update checks' : 'Automatic update downloads'} disabled={pending}
+          value={result.preferences[key] === null ? 'default' : String(result.preferences[key])}
+          onChange={e => void request(key, e.target.value === 'default' ? null : e.target.value === 'true')}>
+          <option value="default">Package default</option><option value="true">On</option><option value="false">Off</option>
+        </select>
+      </label>)}
+      <p className="text-sm text-muted-foreground">Update policy applies at the next Linux automatic check or after restarting on macOS. Package restrictions still apply. Manual update checks remain available in installed Settings.</p>
+    </>}
+  </section>;
+}
 
 function App() {
   const [runtime, setRuntime] = useState<RuntimeState>({ status: 'disconnected' });
@@ -55,6 +89,7 @@ function App() {
         </div>
       </section>
       <Storage />
+      <PickerUpdaterPreferences />
       <section aria-labelledby="preview-title" className="space-y-4">
         <div className="flex items-baseline justify-between gap-4">
           <h2 id="preview-title" className="text-lg font-semibold">State previews</h2>
@@ -74,7 +109,7 @@ function App() {
         </Tabs>
       </section>
       <footer className="border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground">
-        React + shadcn/ui + Tailwind, hosted by Electron. No capture commands or permission prompts. Only the opt-in Storage controls can save location and retention preferences.
+        React + shadcn/ui + Tailwind, hosted by Electron. No capture commands or permission prompts. The opt-in Settings controls save Storage, picker and updater preferences.
       </footer>
     </main>
   );

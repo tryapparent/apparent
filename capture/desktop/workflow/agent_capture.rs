@@ -244,6 +244,8 @@ enum Storage {
     SaveRetention { preset: String, expected: String, deadline: u64 },
     ResetRetention { expected: String, deadline: u64 },
     Usage { deadline: u64 },
+    Preferences { deadline: u64 },
+    SavePreference { key: String, value: serde_json::Value, expected: String, deadline: u64 },
 }
 
 impl Storage {
@@ -251,7 +253,8 @@ impl Storage {
         match self {
             Self::Read { deadline } | Self::Set { deadline, .. } | Self::Reset { deadline, .. }
             | Self::Retention { deadline } | Self::SaveRetention { deadline, .. }
-            | Self::ResetRetention { deadline, .. } | Self::Usage { deadline } => *deadline,
+            | Self::ResetRetention { deadline, .. } | Self::Usage { deadline }
+            | Self::Preferences { deadline } | Self::SavePreference { deadline, .. } => *deadline,
         }
     }
 
@@ -265,6 +268,8 @@ impl Storage {
             Err(_) => return serde_json::json!({"error":"config_read_failed"}),
         }
         let preferences = match self {
+            Self::Preferences { .. } => Some(super::storage_preferences::read_preferences(config)),
+            Self::SavePreference { key, value, expected, .. } => Some(super::storage_preferences::save_preference(config, key, value, expected, || storage_clock_ms() < deadline)),
             Self::Retention { .. } => Some(super::storage_preferences::read(config)),
             Self::SaveRetention { preset, expected, .. } => Some(super::storage_preferences::save(config, Some(preset), expected, || storage_clock_ms() < deadline)),
             Self::ResetRetention { expected, .. } => Some(super::storage_preferences::save(config, None, expected, || storage_clock_ms() < deadline)),
@@ -297,6 +302,7 @@ fn parse_request(line: &str) -> Option<Wire> {
     if line.starts_with('{') {
         let storage: Storage = serde_json::from_str(line).ok()?;
         match &storage {
+            Storage::SavePreference { key, value, expected, .. } if !valid_revision(expected) || !super::storage_preferences::valid_preference(key, value) => return None,
             Storage::Set { path, expected, .. } if path.is_empty() || path.len() > 4096 || path.contains('\0') || !std::path::Path::new(path).is_absolute() || !valid_revision(expected) => return None,
             Storage::Reset { expected, .. } if !valid_revision(expected) => return None,
             Storage::SaveRetention { preset, expected, .. } if !["week", "month", "forever"].contains(&preset.as_str()) || !valid_revision(expected) => return None,

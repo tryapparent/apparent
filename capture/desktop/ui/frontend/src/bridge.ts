@@ -6,6 +6,7 @@ export type RuntimeState =
 declare global {
   interface Window {
     apparent?: {
+      pickerUpdaterPreference: (key?: string, value?: boolean | string | null) => Promise<PreferenceResult>;
       readRuntimeState: () => Promise<RuntimeState>;
       readCaptureLocation: () => Promise<CaptureLocation>;
       changeCaptureLocation: () => Promise<CaptureLocation>;
@@ -32,3 +33,7 @@ export type RetentionResult = Unavailable | { status: 'connected'; custom: boole
   retention: { preset: string | null; options: { id: string; label: string }[]; note: string } };
 export type UsageResult = Unavailable | { status: 'connected';
   usage: { effectivePath: string; displayPath: string; formatted: string } };
+
+export type PreferenceResult = { status: 'connected'; iphone: boolean; preferences: {
+  lastCaptureMode: string; savedModeUnavailable: boolean; automaticUpdateChecks: boolean | null; automaticUpdateDownloads: boolean | null;
+} } | { status: 'disabled' | 'disconnected' | 'incompatible' | 'cancelled' | 'error'; code?: string };

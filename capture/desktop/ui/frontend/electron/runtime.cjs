@@ -123,3 +123,24 @@ function storagePreference(home, operation, fields = {}, timeoutMs = 3500) {
 }
 
 module.exports = { readRuntimeState, captureLocation, storagePreference };
+
+function pickerUpdaterPreference(home, operation = 'preferences', fields = {}, timeoutMs = 3500) {
+  if (!['preferences', 'savepreference'].includes(operation)) throw new Error('Invalid operation');
+  const request = { storage: operation, deadline: Number(process.hrtime.bigint() / 1000000n) + Math.min(timeoutMs, 3000) };
+  if (operation === 'savepreference') {
+    if (!['lastCaptureMode', 'automaticUpdateChecks', 'automaticUpdateDownloads'].includes(fields.key) ||
+        !/^[a-f0-9]{16}$/.test(fields.expected) ||
+        (fields.key === 'lastCaptureMode' ? !['area', 'screen', ...(process.platform === 'darwin' ? ['iphone'] : [])].includes(fields.value) : !(fields.value === null || typeof fields.value === 'boolean'))) throw new Error('Invalid preference');
+    Object.assign(request, { key: fields.key, value: fields.value, expected: fields.expected });
+  }
+  return exchange(home, JSON.stringify(request) + '\n', value => {
+    if (value?.error) return decodeStorage(value);
+    const p = value?.preferences;
+    if (!p || typeof p.savedModeUnavailable !== 'boolean' || !['area', 'screen', 'iphone'].includes(p.lastCaptureMode) ||
+        ![p.automaticUpdateChecks, p.automaticUpdateDownloads].every(v => v === null || typeof v === 'boolean') ||
+        !/^[a-f0-9]{16}$/.test(value.revision)) return { status: 'error', code: 'invalid_response' };
+    return { status: 'connected', revision: value.revision, preferences: {
+      lastCaptureMode: p.lastCaptureMode, savedModeUnavailable: p.savedModeUnavailable, automaticUpdateChecks: p.automaticUpdateChecks, automaticUpdateDownloads: p.automaticUpdateDownloads } };
+  }, 16384, timeoutMs, { status: 'error', code: operation === 'preferences' ? 'timeout' : 'outcome_unknown' });
+}
+module.exports.pickerUpdaterPreference = pickerUpdaterPreference;

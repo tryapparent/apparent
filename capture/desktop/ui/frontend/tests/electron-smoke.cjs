@@ -28,7 +28,7 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   await page.getByText('Not connected', { exact: true }).waitFor();
   assert.deepEqual(await page.evaluate(() => ({
     keys: Object.keys(window.apparent), require: typeof window.require, process: typeof window.process,
-  })), { keys: ['readRuntimeState', 'readCaptureLocation', 'changeCaptureLocation', 'resetCaptureLocation',
+  })), { keys: ['pickerUpdaterPreference', 'readRuntimeState', 'readCaptureLocation', 'changeCaptureLocation', 'resetCaptureLocation',
     'readRetention', 'saveRetention', 'resetRetention', 'readCaptureUsage'], require: 'undefined', process: 'undefined' });
   assert.equal(await application.evaluate(({ BrowserWindow }) => {
     const options = BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences();
