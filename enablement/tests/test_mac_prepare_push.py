@@ -1,10 +1,12 @@
 """Host-safe packet regressions, included by the existing cheap *push* route."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / 'capture/desktop/scripts/mac/prepare.py'
@@ -20,6 +22,10 @@ class PreparationTests(unittest.TestCase):
         self.base = Path(self.tmp.name)
         self.repo = self.base / 'repo'
         self.repo.mkdir()
+        self.env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+        context = patch.dict(os.environ, self.env, clear=True)
+        context.start()
+        self.addCleanup(context.stop)
         self.git('init', '-q')
         self.git('config', 'user.email', 'synthetic@example.invalid')
         self.git('config', 'user.name', 'Synthetic fixture')
@@ -32,7 +38,7 @@ class PreparationTests(unittest.TestCase):
         self.head = self.git('rev-parse', 'HEAD').strip()
 
     def git(self, *args):
-        return subprocess.check_output(['git', '-C', str(self.repo), *args], text=True)
+        return subprocess.check_output(['git', '-C', str(self.repo), *args], text=True, env=self.env)
 
     def test_real_input_closure_and_unrun_gates(self):
         receipt = prepare.prepare(self.repo, self.head)
@@ -63,10 +69,10 @@ class PreparationTests(unittest.TestCase):
         output = self.base / 'receipt.json'
         command = ['python3', str(SCRIPT), '--repo', str(self.repo), '--candidate',
                    self.head, '--receipt', str(output)]
-        subprocess.run(command, check=True)
+        subprocess.run(command, check=True, env=self.env)
         self.assertEqual(output.stat().st_mode & 0o777, 0o600)
         self.assertEqual(json.loads(output.read_text())['status'], 'PREPARED_ONLY')
-        self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+        self.assertNotEqual(subprocess.run(command, capture_output=True, env=self.env).returncode, 0)
         self.base.chmod(0o755)
         self.assertNotEqual(subprocess.run(command[:-1] + [str(self.base / 'other')],
-                                           capture_output=True).returncode, 0)
+                                           capture_output=True, env=self.env).returncode, 0)
