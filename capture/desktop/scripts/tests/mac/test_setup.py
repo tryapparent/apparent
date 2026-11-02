@@ -68,6 +68,32 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(env['FIXTURE'], 'unchanged')
         self.assertIn('/.cargo/bin', env['PATH'])
         self.assertIn('/opt/node@22/bin', env['PATH'])
+        self.assertIn('/opt/rustup/bin', env['PATH'])
+        self.assertEqual(env['TOOLCHAINS'], os.environ.get('TOOLCHAINS', 'MetalToolchain'))
+
+    def test_missing_rustup_is_installed_before_toolchain(self):
+        calls = []
+        def which(tool, **kwargs):
+            return None if tool == 'rustup' else '/fixture/' + tool
+        def probe(argv, env, **kwargs):
+            calls.append((argv, kwargs))
+            return 'fixture version'
+        with patch.object(mac.sys, 'platform', 'darwin'), patch.object(mac.shutil, 'which', side_effect=which), patch.object(mac, 'run', side_effect=probe):
+            mac.provision({'PATH': '/fixture'}, '22')
+        self.assertEqual(calls[0], (['brew', 'install', 'node@22', 'ffmpeg', 'rustup'], {'timeout': 600}))
+        self.assertEqual(calls[1][0][:3], ['rustup', 'toolchain', 'install'])
+        self.assertFalse(any('-downloadComponent' in argv for argv, _ in calls))
+
+    def test_missing_metal_download_has_installation_deadline(self):
+        calls = []
+        def probe(argv, env, **kwargs):
+            calls.append((argv, kwargs))
+            if argv[0] == 'xcrun':
+                raise RuntimeError('component missing')
+            return 'fixture version'
+        with patch.object(mac.sys, 'platform', 'darwin'), patch.object(mac.shutil, 'which', return_value='/fixture/tool'), patch.object(mac, 'run', side_effect=probe):
+            mac.provision({'PATH': '/fixture'}, '22')
+        self.assertEqual(calls[-1], (['xcodebuild', '-downloadComponent', 'MetalToolchain'], {'timeout': 600}))
 
 
 tempfile_original = tempfile.TemporaryDirectory

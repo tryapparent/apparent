@@ -17,6 +17,7 @@ from verification import check_temp_environment
 def environment():
     env = os.environ.copy()
     env.setdefault('RUSTUP_TOOLCHAIN', 'stable')
+    env.setdefault('TOOLCHAINS', 'MetalToolchain')
     # Match the Desktop CI Node major, rather than the vendor image default.
     workflow = (ROOT / '.github/workflows/verification-platform.yml').read_text()
     major = re.search(r"node-version: ['\"](\d+)['\"]", workflow)
@@ -24,16 +25,17 @@ def environment():
         raise RuntimeError('Cannot determine Desktop CI Node major')
     paths = [str(Path.home() / '.cargo/bin')]
     for prefix in ('/opt/homebrew', '/usr/local'):
-        paths += [f'{prefix}/opt/node@{major[1]}/bin', f'{prefix}/bin']
+        paths += [f'{prefix}/opt/node@{major[1]}/bin',
+                  f'{prefix}/opt/rustup/bin', f'{prefix}/bin']
     env['PATH'] = os.pathsep.join(paths + [env.get('PATH', '')])
     return env, major[1]
 
 
-def run(argv, env):
+def run(argv, env, timeout=120):
     try:
         return subprocess.run(argv, env=env, check=True, text=True,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              timeout=120).stdout.strip()
+                              timeout=timeout).stdout.strip()
     except (OSError, subprocess.SubprocessError) as error:
         detail = getattr(error, 'stderr', '') or str(error)
         raise RuntimeError(f'{argv[0]} prerequisite failed: {detail}') from error
@@ -68,14 +70,21 @@ def provision(env, major):
     # No bootstrap shell downloads, sudo, shell-profile writes or Xcode selection.
     if sys.platform != 'darwin':
         raise RuntimeError('Provisioning requires Darwin')
-    for tool in ('brew', 'rustup', 'xcodebuild'):
+    for tool in ('brew', 'xcodebuild'):
         if not shutil.which(tool, path=env['PATH']):
             raise RuntimeError(f'Preinstall {tool} using its official installer in the disposable image')
-    run(['brew', 'install', f'node@{major}', 'ffmpeg'], env)
-    run(['rustup', 'toolchain', 'install', 'stable', '--component', 'rustfmt'], env)
+    packages = [f'node@{major}', 'ffmpeg']
+    if not shutil.which('rustup', path=env['PATH']):
+        packages.append('rustup')
+    run(['brew', 'install', *packages], env, timeout=600)
+    run(['rustup', 'toolchain', 'install', 'stable', '--component', 'rustfmt'], env, timeout=600)
     # Explicit per-process toolchain, without changing rustup defaults/overrides.
     env['RUSTUP_TOOLCHAIN'] = 'stable'
-    run(['xcodebuild', '-downloadComponent', 'MetalToolchain'], env)
+    # Avoid downloading an already usable component on every provision.
+    try:
+        run(['xcrun', '--sdk', 'macosx', 'metal', '--version'], env)
+    except RuntimeError:
+        run(['xcodebuild', '-downloadComponent', 'MetalToolchain'], env, timeout=600)
 
 
 def main():
