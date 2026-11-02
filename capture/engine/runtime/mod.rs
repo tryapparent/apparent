@@ -1056,7 +1056,11 @@ impl SharedCaptureTelemetry {
             })
         }
         #[cfg(target_os = "macos")]
-        { pid > 0 && crate::shared::windows::owned_window_at(windows, x, y, &passthrough, |owner| u64::try_from(owner).ok() == Some(pid)) }
+        {
+            let mut windows = windows.to_vec();
+            crate::shared::windows::constrain_dock(&mut windows, *self.dock_bounds.lock().unwrap());
+            pid > 0 && crate::shared::windows::owned_window_at(&windows, x, y, &passthrough, |owner| u64::try_from(owner).ok() == Some(pid))
+        }
     }
 
     fn on_apparent_window(&self, x: f64, y: f64) -> bool {
@@ -1443,6 +1447,21 @@ pub fn write_bundle_artifacts(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn notes_hit_testing_limits_the_dock_to_its_visible_strip() {
+        let (sender, _receiver) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        telemetry.note_ui_pid.store(700, Ordering::Release);
+        *telemetry.dock_bounds.lock().unwrap() = Some([0.0, 816.0, 1440.0, 84.0]);
+        let windows = [
+            crate::shared::windows::RawWindow { id: 1, pid: 600, owner: "Dock".into(), title: String::new(), bounds: [0.0, 0.0, 1440.0, 900.0], layer: 20, alpha: 1.0 },
+            crate::shared::windows::RawWindow { id: 2, pid: 700, owner: "Apparent Notes".into(), title: String::new(), bounds: [100.0, 100.0, 332.0, 220.0], layer: 3, alpha: 1.0 },
+        ];
+        assert!(telemetry.notes_window_in(&windows, 200.0, 200.0));
+        assert!(!telemetry.notes_window_in(&windows, 200.0, 850.0));
+    }
 
     /// Clicks on `apparent-helper`'s windows (the SwiftUI capsule, Settings, onboarding) are
     /// Apparent's own, except on the iPhone mirror, which is what's being recorded.

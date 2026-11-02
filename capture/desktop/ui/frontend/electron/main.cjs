@@ -120,9 +120,9 @@ app.whenReady().then(() => {
   };
   let reportingMutation = false;
   let microphoneMutation = false;
-  ipcMain.handle('apparent:read-microphone-enabled', (event, ...args) => { validate(event, args); return microphoneEnabled(os.homedir()); });
+  ipcMain.handle('apparent:read-microphone-enabled', (event, ...args) => { validateFoundation(event, args); return microphoneEnabled(os.homedir()); });
   ipcMain.handle('apparent:set-microphone-enabled', async (event, enabled, ...args) => {
-    validate(event, args);
+    validateFoundation(event, args);
     if (typeof enabled !== 'boolean') throw new Error('Forbidden microphone preference');
     if (microphoneMutation) return { status: 'error', code: 'app_busy' };
     microphoneMutation = true;

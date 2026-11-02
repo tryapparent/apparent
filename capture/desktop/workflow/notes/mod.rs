@@ -267,6 +267,12 @@ impl Session {
                             }
                             CommandMessage::Windows { ids } => {
                                 ensure!(ids.len() <= 2, "Invalid notes windows");
+                                // This message precedes Ready on the same pipe: native
+                                // setup completes while both Electron windows are hidden.
+                                #[cfg(target_os = "linux")]
+                                for &id in &ids {
+                                    ensure!(crate::capture::desktop::platform::prepare_note_surface(id, note_pid), "Could not prepare notes surface");
+                                }
                                 own_windows = ids.clone();
                                 telemetry
                                     .excluded_window_ids

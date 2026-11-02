@@ -940,13 +940,13 @@ fn pin_note_surface(id: u32, pid: u32, index: usize) {
         };
         let visible = x11::window_info(id as isize).is_some_and(|w| w.pid == pid && w.on_screen());
         let result = if visible { linux::hyprland::place_note(id, pid, rect, focus) } else { Ok(()) };
-        if result.is_ok() { raise_note_surfaces(); } else { failures += 1; }
+        if visible && result.is_ok() { raise_note_surfaces(); } else { failures += 1; }
         let retry = {
             let mut state = NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             if state.pid != pid || state.slots[index].id != id { return; }
             let slot = &mut state.slots[index];
             if slot.generation != generation { failures = 0; true }
-            else if visible && result.is_err() && failures < 8 { true }
+            else if (!visible || result.is_err()) && failures < 8 { true }
             else { slot.worker = false; false }
         };
         if !retry {
@@ -960,17 +960,23 @@ fn pin_note_surface(id: u32, pid: u32, index: usize) {
 /// Native placement and pinning use only the active capture's child PID and registered XIDs.
 /// One worker per surface coalesces remaps: legacy Hyprland pin is a toggle, so two
 /// concurrent read-unpinned/dispatch-pin operations could otherwise undo each other.
+pub(in crate::capture::desktop) fn prepare_note_surface(id: u32, pid: u32) -> bool {
+    if !x11::window_info(id as isize).is_some_and(|window| window.pid == pid) { return false; }
+    x11::set_title(id, &linux::hyprland::note_title(id));
+    x11::accept_pointer(id);
+    x11::prepare_floating(id)
+}
+
 pub(in crate::capture::desktop) fn place_note_surface(id: u32, pid: u32, rect: [i32; 4], focus: bool, popup: bool) {
     let index = usize::from(popup);
-    let first = {
+    {
         let state = NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if state.pid != pid { return; }
-        state.slots[index].id != id
-    };
+    }
     if !x11::window_info(id as isize).is_some_and(|window| window.pid == pid) { return; }
     x11::set_title(id, &linux::hyprland::note_title(id));
     x11::accept_pointer(id);
-    if first { x11::float(id, rect.map(f64::from)); } else { x11::place(id, rect.map(f64::from)); }
+    x11::place_without_remap(id, rect.map(f64::from));
     let start_worker = {
         let mut state = NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if state.pid != pid { return; }
