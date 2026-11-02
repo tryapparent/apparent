@@ -1,8 +1,8 @@
 # Onboarding preview branch
 
-This branch preserves the supplied ten-step onboarding design: download, frog
+This branch preserves the supplied onboarding design: download, frog
 installer, welcome, pen colour, recording shortcut, screen access, accessibility,
-typing, practice and handoff. The crossed-out welcome note is removed; the outer
+practice and handoff. The crossed-out welcome note is removed; the outer
 preview disclosure describes the simulated native actions.
 
 ## Try it before main
@@ -82,3 +82,7 @@ tone. Speech bubbles use readable body contrast, a restrained type scale, clear
 keycaps, visible keyboard focus and larger action targets. Setup screens before
 practice remain the accepted attached design. Finishing the tour returns to the
 existing completed handoff summary rather than repeating the paste lesson.
+
+Typing opt-in and text-annotation shortcut pages are removed. Accessibility now
+continues directly to capture practice; saved previews at the removed page
+resume at practice. The recording shortcut page remains.
