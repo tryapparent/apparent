@@ -47,8 +47,24 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   const address = path.join(directory, 'capture.sock');
   await new Promise(resolve => server.listen(address, resolve)); await fs.chmod(address, 0o600);
   const app = await electron.launch({ args: [path.join(__dirname, '..')], env: { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(home, 'config') } });
-  t.after(async () => { for (const c of clients) c.destroy(); await app.close(); await new Promise(resolve => server.close(resolve)); await fs.rm(home, { recursive: true, force: true }); });
+  t.after(async () => {
+    for (const c of clients) c.destroy();
+    let timer;
+    try {
+      await Promise.race([app.close(), new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          app.process().kill('SIGKILL');
+          reject(new Error('Retention smoke Electron cleanup exceeded 5 seconds'));
+        }, 5000);
+      })]);
+    } finally {
+      clearTimeout(timer);
+      await new Promise(resolve => server.close(resolve));
+      await fs.rm(home, { recursive: true, force: true });
+    }
+  });
   const page = await app.firstWindow();
+  t.diagnostic('Retention window opened');
   await expect(page.getByText('Calculating folder usage…')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Refresh usage', exact: true })).toBeDisabled();
   releaseUsage(); releaseUsage = undefined;
@@ -63,6 +79,7 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   await page.getByRole('button', { name: 'Save retention', exact: true }).click();
   await expect(select).toHaveValue('month');
   assert.equal(preset, 'month');
+  t.diagnostic('Retention saved');
   await page.getByRole('button', { name: 'Refresh retention', exact: true }).click();
   await expect(select).toHaveValue('month');
   await expect(page.getByRole('button', { name: 'Reset retention', exact: true })).toBeEnabled();
@@ -91,6 +108,7 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   await expect(select).toHaveValue('month');
   releaseUsage(); releaseUsage = undefined;
   assert.deepEqual(await page.evaluate(() => window.oldUsage), { status: 'cancelled' });
+  t.diagnostic('Stale usage cancelled');
   const safe = await page.evaluate(() => window.apparent.readRetention());
   assert.equal(safe.revision, undefined); assert.equal(safe.secret, undefined); assert.equal(safe.retention.options[0].secret, undefined);
   assert.equal(await page.evaluate(() => window.apparent.saveRetention('arbitrary').then(() => false, () => true)), true);
@@ -108,6 +126,9 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(640, 760));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await select.focus(); await expect(select).toBeFocused(); await page.keyboard.press('ArrowDown');
+  // macOS opens a native popup here; dismiss it before closing Electron.
+  await page.keyboard.press('Escape');
   assert.ok(requests.some(r => r.storage === 'resetretention'));
   assert.equal((await page.locator('body').innerText()).includes('private failure'), false);
+  t.diagnostic('Retention assertions completed');
 });
