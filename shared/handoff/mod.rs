@@ -817,7 +817,7 @@ pub struct Config {
     /// site's OpenCode session (`routing`).
     #[serde(default)]
     pub auto_send: Option<bool>,
-    /// Feature flag: shows **Export Last Capture as Video…** in the menu (default off).
+    /// Feature flag: shows **Export Last Capture as Video…** in the menu (default on).
     #[serde(default)]
     pub video_export: Option<bool>,
     /// `"apple"` (default), `"hex"` or `"command"`: which engine transcribes recordings
@@ -870,6 +870,9 @@ impl Config {
     }
     pub fn automatic_update_downloads(&self, package_default: bool) -> bool {
         self.automatic_update_downloads.unwrap_or(package_default)
+    }
+    pub fn video_export_enabled(&self) -> bool {
+        self.video_export.unwrap_or(true)
     }
 
     pub fn warm_recognizer_enabled(&self) -> bool {
@@ -992,7 +995,11 @@ pub(crate) fn experiment_enabled_in(config: &Config, name: &str) -> bool {
         .experiments
         .get(name)
         .copied()
-        .unwrap_or(name == AGENT_DEMO_VIDEO || name == "copyCaptureId" || name == "connectSettings")
+        .unwrap_or(matches!(
+            name,
+            AGENT_DEMO_VIDEO | "copyCaptureId" | "connectSettings" | "nativeLaunch"
+                | "movableRecordingControls" | "exportNarration"
+        ))
 }
 
 pub fn load_config_from(path: &Path) -> Config {
@@ -1078,10 +1085,10 @@ pub fn auto_send() -> bool {
     config().auto_send.unwrap_or(true)
 }
 
-/// Whether the menu offers video export (`videoExport`, default off). `apparent export` works
+/// Whether the menu offers video export (`videoExport`, default on). `apparent export` works
 /// either way.
 pub fn video_export() -> bool {
-    config().video_export.unwrap_or(false)
+    config().video_export_enabled()
 }
 
 /// The configured transcriber name (`transcriber`) as written, unvalidated.
