@@ -1,11 +1,34 @@
 # Website and Connect continuous delivery
 
-`.github/workflows/web-delivery.yml` checks website/Connect/hosted changes on PRs,
-relevant pushes to `main`, and manual dispatch. It never publishes from PRs or
-non-`main` dispatches. The two production jobs have independent activation gates
-and GitHub environments. **Both are off until their repository variable is exactly
-`true`.** This change prepares delivery; it does not merge, provision, migrate,
-change a plan, or activate production.
+PRs run the inexpensive selector, push-hook and release-admission contracts. Feature
+pushes run those same contracts locally; they do not rebuild the application.
+Use `python3 enablement/verification.py --base <base> --run` for explicit affected
+local checks. Dirty-tree, hidden-index and exact-HEAD push guards remain enforced.
+
+`Changed-tree verification` runs the full Linux/macOS matrices on `main`, with one
+concurrency group that cancels superseded verification. It checks the entire tree,
+not just the latest push delta: changes from a cancelled earlier run cannot escape
+verification. Its final `Release verification` job is the publication receipt.
+
+Linux and web delivery start after a successful main verification. Their admission
+job reads trusted-main code and checks the exact upstream run/attempt, repository,
+commit and every required matrix job through `enablement/release_gate.py`. A PR
+success, skipped native job, cancelled/failed run or historical selector-only run
+cannot authorize publication. Automatic stale candidates are skipped before builds.
+Every downstream checkout and website artifact uses the admitted SHA, including
+when `workflow_run`'s default SHA points at a newer main commit. Publication locks
+are separate from cancellable verification; a new push never cancels publication.
+
+Manual/tag Linux and manual Mac preview publication require successful full main
+verification of their exact candidate too. Linux `verify_only` still permits
+isolated branch packaging without publication. Main verification failures leave the
+last published version available; fix or revert main and let the next run verify it.
+CodeQL managed setup is disabled by Simon's explicit instruction; it is not a
+release gate.
+
+`.github/workflows/web-delivery.yml` retains the existing independent website and
+hosted production environments and activation variables. This policy does not
+enable a disabled publisher, provision resources or apply migrations.
 
 ## Checks and artifact identity
 
@@ -101,3 +124,43 @@ configuration using **synthetic** identifiers and run
 `(cd connect/service && node_modules/.bin/wrangler deploy --config wrangler.cd.json --dry-run)`.
 This proves configuration and packaging only, not permissions or deployment. Never
 put real tokens in test fixtures, the generated file, artifacts, or logs.
+
+## Rust verification environment
+
+Before explicit local verification (or a direct main push) starts subprocesses
+for Rust checks, the verifier
+checks the caller's Unix `TMPDIR` (or `/tmp` when unset). Run the same read-only
+check before direct expensive commands:
+
+```sh
+python3 enablement/verification.py --base unknown --preflight
+```
+
+Supply a short absolute, user-owned mode-0700 temporary root. Ancestors must be
+root/current-user owned and not group/world writable, except root-owned sticky
+ancestors supported by the Engine. Symlinks are rejected without following them.
+The check diagnoses rather than replaces `TMPDIR`, repairs permissions or deletes
+anything. For an isolated run, create a fresh directory with
+`tempfile.TemporaryDirectory(prefix='.av-', dir=Path.home())`, explicitly pass it
+as child `TMPDIR`, and keep its context alive until all foreground checks exit.
+Retain ownership/cleanup receipts outside that tree for long-running work.
+
+The pathname budget models ordinary `agent_capture` socket fixtures: Linux
+`apparent-owner-<32 hex>/capture.sock`, macOS `ac-<32 hex>/s` (owner fixtures use
+`/tmp` there). It counts filesystem bytes, including separators, with space for
+NUL. This is a deterministic prerequisite, not a writability/bind guarantee,
+fixture completeness check or native proof. Ignored Electron/native scenarios
+must check their own longer HOME-derived socket paths. Keep hostile/sticky and
+symlink production tests enabled; a friendly preflight environment does not
+replace those assertions.
+
+The CI workflow has separate setup and focused Cargo steps before this verifier;
+those steps are not covered by this verifier entry-point guard. Feature pushes
+and PR CI run its regression tests as part of the cheap contracts; they do not
+require a Rust test environment when no Rust suite is selected. Before any native
+allocation, inspect the exact candidate and real scenario entry point offline:
+verify fixture files/schema, selectors against current controls, required guest
+capabilities and the existing canonical repository/issue budget ledger plus
+allocation/cleanup receipts. Missing receipts are not zero spend. Follow the
+native owner's existing preflight and shared queue; this command grants no
+allocation authority and establishes no GUI acceptance.
