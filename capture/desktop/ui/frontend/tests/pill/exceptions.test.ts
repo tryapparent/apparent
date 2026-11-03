@@ -10,7 +10,9 @@ const { _electron: electron, expect } = require('@playwright/test');
 
 test('sandboxed renderer main-world throws and rejections reach the private socket',
   { skip: !process.env.DISPLAY && process.platform === 'linux', timeout: 20000 }, async t => {
-  const home = await mkdtemp(path.join(tmpdir(), 'exception-'));
+  // Darwin's per-user TMPDIR can exceed the Unix socket path limit.
+  const home = await mkdtemp(path.join(process.platform === 'darwin' ? '/tmp' : tmpdir(), 'exception-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
   const directory = path.join(home, '.config/apparent/agent-control');
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const received: Record<string, unknown>[] = [];
@@ -22,9 +24,14 @@ test('sandboxed renderer main-world throws and rejections reach the private sock
     });
   });
   const address = path.join(directory, 'capture.sock');
-  await new Promise<void>(resolve => server.listen(address, resolve));
+  // Register cleanup before setup can fail, including chmod after listen.
+  t.after(() => { server.close(); });
+  assert.ok(Buffer.byteLength(address) <= 103, 'fixture socket path exceeds portable limit');
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(address, () => { server.removeListener('error', reject); resolve(); });
+  });
   await chmod(address, 0o600);
-  t.after(async () => { server.close(); await rm(home, { recursive: true, force: true }); });
   const application = await electron.launch({
     args: [path.resolve('electron/main.cjs'), '--no-sandbox'],
     env: { ...process.env, APPARENT_DESKTOP_REPORTING: '1', HOME: home, XDG_CONFIG_HOME: path.join(home, 'config') },
