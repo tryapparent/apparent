@@ -58,6 +58,8 @@ jobs:
           echo 'DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer' >> "$GITHUB_ENV"
       - name: Verify installer before the native build
         run: |
+          rustc --edition 2024 --test build.rs -o "$RUNNER_TEMP/build-identity-check"
+          "$RUNNER_TEMP/build-identity-check" helper_bundle_ids_admit_only_regular_preview_or_a_test_build
           xcrun swiftc -D INSTALLER_TEST -parse-as-library capture/desktop/native/OnboardingBrand.swift capture/desktop/native/installer/LocalInstaller.swift -o "$RUNNER_TEMP/installer-check"
           "$RUNNER_TEMP/installer-check"
       - name: Prepare native compiler and locked dependencies
@@ -74,6 +76,8 @@ jobs:
         env:
           CARGO_NET_OFFLINE: 'true'
         run: |
+          cargo test -j 3 --offline workflow::test_instance -- --test-threads=1
+          cargo test -j 3 --offline preview_relaunch_requests_the_exact_bundle -- --test-threads=1
           cargo test -j 3 --offline settings::practice -- --test-threads=2
           cargo test -j 3 --offline shared_pen_setup_skips_retired_intro -- --test-threads=2
           cargo test -j 3 --offline replay_rejects_queued_events_from_the_retired_transport -- --test-threads=2

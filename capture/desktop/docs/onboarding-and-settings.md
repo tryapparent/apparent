@@ -344,8 +344,16 @@ installer animation proof.
 `capture/desktop/scripts/packaging/build-onboarding-test.sh` wraps the same installed
 frontend/runtime in a private ad-hoc signed Mac installer. Set `APPARENT_TEST_OUTPUT`
 to a fresh absolute directory. It has no updater or `apparent:` URL handler.
-`APPARENT_TEST_INSTANCE=1` selects only Apparent config/captures/sockets/profile
-under `~/Library/Application Support/apparent-onboarding-test`; HOME and OS-owned
+`APPARENT_TEST_INSTANCE=1` and the packaged `APPARENT_TEST_BUILD` select only Apparent
+config/captures/sockets/profile under
+`~/.apparent-test/<12-character-build-id>` on both platforms. The compact root
+keeps both launch and agent-control Unix sockets within the macOS path limit. Each build has its own macOS bundle,
+helper and UI identifiers, so LaunchServices/TCC and the single-instance socket
+cannot resolve to an older preview. Restart explicitly opens this test bundle;
+repeat launches of the same build still share one GUI owner and resume its saved
+state. New builds start fresh and require their own OS permission grants. Preview 8 is
+labelled **apparent preview 8** in macOS so its entry is distinct from older tests. Existing
+previews, their data and real app permissions are preserved. HOME and OS-owned
 paths are unchanged. Login defaults off; Record starts as Control–Option–Shift–9.
 
 The installer chooses a fresh build-specific location if the destination exists;

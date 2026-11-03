@@ -1674,31 +1674,15 @@ const AFTER_EXIT: &str = "pid=$1; shift; i=0; \
     while kill -0 \"$pid\" 2>/dev/null && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; ";
 
 /// Starts Apparent again once this copy has quit (after a Screen Recording grant). The app is
-/// opened without `-n`: if macOS's own "Quit & Reopen" already started a new copy, `open` only
+/// Regular apps open without `-n`: if macOS's own "Quit & Reopen" already started a new copy, `open` only
 /// brings that one forward, so there are never two.
 #[cfg(not(windows))]
 pub fn relaunch() {
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
-    let bundle = exe
-        .ancestors()
-        .find(|p| p.extension().is_some_and(|ext| ext == "app"));
-    let pid = std::process::id().to_string();
-    let mut command = std::process::Command::new("/bin/sh");
-    match bundle {
-        Some(app) => command
-            .arg("-c")
-            .arg(format!("{AFTER_EXIT}exec /usr/bin/open \"$1\""))
-            .args(["apparent-relaunch", &pid])
-            .arg(app),
-        None => command
-            .arg("-c")
-            .arg(format!("{AFTER_EXIT}exec \"$@\""))
-            .args(["apparent-relaunch", &pid])
-            .arg(&exe)
-            .args(std::env::args_os().skip(1)),
-    };
+    let mut command = relaunch_command(&exe, std::env::args_os().skip(1), std::process::id(),
+        std::env::var_os("APPARENT_TEST_INSTANCE").as_deref()==Some(std::ffi::OsStr::new("1")));
     let _ = command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -1706,8 +1690,44 @@ pub fn relaunch() {
         .spawn();
 }
 
+#[cfg(not(windows))]
+fn relaunch_command(exe: &Path, args: impl IntoIterator<Item=std::ffi::OsString>, pid: u32, test_instance: bool) -> std::process::Command {
+    let bundle=exe.ancestors().find(|p|p.extension().is_some_and(|ext|ext=="app"));
+    let mut command=std::process::Command::new("/bin/sh");
+    match bundle {
+        Some(app) => {
+            // Preview builds have separate identifiers/state. Force this exact bundle to
+            // launch; a same-build duplicate still joins that build's single GUI owner.
+            let open=if test_instance { "exec /usr/bin/open -n \"$1\"" } else { "exec /usr/bin/open \"$1\"" };
+            command.arg("-c").arg(format!("{AFTER_EXIT}{open}"))
+                .args(["apparent-relaunch", &pid.to_string()]).arg(app);
+        }
+        None => { command.arg("-c").arg(format!("{AFTER_EXIT}exec \"$@\""))
+            .args(["apparent-relaunch", &pid.to_string()]).arg(exe).args(args); }
+    }
+    command
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn preview_relaunch_requests_the_exact_bundle_without_changing_regular_launches() {
+        use std::ffi::OsString;
+        let exe=Path::new("/Applications/Preview's $name.app/Contents/MacOS/apparent");
+        for test in [false,true] {
+            let command=relaunch_command(exe,Vec::<OsString>::new(),123,test);
+            let args:Vec<_>=command.get_args().map(|x|x.to_string_lossy().into_owned()).collect();
+            assert_eq!(args.len(),5);
+            assert_eq!(args[0],"-c");
+            assert_eq!(args[1],format!("{AFTER_EXIT}exec /usr/bin/open {}\"$1\"",if test {"-n "} else {""}));
+            assert_eq!(&args[2..],&["apparent-relaunch","123","/Applications/Preview's $name.app"]);
+        }
+        let command=relaunch_command(Path::new("/tmp/app target/apparent"),[OsString::from("app")],321,true);
+        let args:Vec<_>=command.get_args().map(|x|x.to_string_lossy().into_owned()).collect();
+        assert_eq!(args[1],format!("{AFTER_EXIT}exec \"$@\""));
+        assert_eq!(&args[2..],&["apparent-relaunch","321","/tmp/app target/apparent","app"]);
+    }
 
     fn coached_session()->Session {
         let mut session=Session::for_test(Flow::tour(Step::TryIt,Some(grants(&Permission::REQUIRED))).with_first_capture(true,true,false));

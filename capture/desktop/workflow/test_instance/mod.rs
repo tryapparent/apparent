@@ -5,10 +5,16 @@ use std::os::unix::fs::{MetadataExt,PermissionsExt};
 
 pub fn initialize()->Result<()> {
     if std::env::var_os("APPARENT_TEST_INSTANCE").as_deref()!=Some(std::ffi::OsStr::new("1")){return Ok(());}
+    let build=std::env::var("APPARENT_TEST_BUILD").context("The test app is missing its build identity")?;
+    ensure!(build.len()==40&&build.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b)),"Invalid test app build identity");
     let home=dirs::home_dir().context("Could not locate the test app's user directory")?;
-    let root=if cfg!(target_os="macos"){home.join("Library/Application Support/apparent-onboarding-test")}else{home.join(".local/share/apparent-onboarding-test")};
-    if root.exists(){let m=std::fs::symlink_metadata(&root)?;ensure!(m.is_dir()&&!m.file_type().is_symlink()&&m.uid()==unsafe{libc::geteuid()},"Unsafe onboarding test directory");}
-    std::fs::create_dir_all(&root)?;std::fs::set_permissions(&root,std::fs::Permissions::from_mode(0o700))?;
+    // Keep both Unix socket paths short enough on macOS, including longer user names.
+    let base=home.join(".apparent-test");
+    let root=base.join(&build[..12]);
+    for directory in [&base,&root] {
+        if directory.exists(){let m=std::fs::symlink_metadata(directory)?;ensure!(m.is_dir()&&!m.file_type().is_symlink()&&m.uid()==unsafe{libc::geteuid()},"Unsafe onboarding test directory");}
+        std::fs::create_dir_all(directory)?;std::fs::set_permissions(directory,std::fs::Permissions::from_mode(0o700))?;
+    }
     let config=root.join("config.json");
     if !config.exists(){
         crate::shared::handoff::set_config_value_in(&config,"launchAtLogin",false.into())?;
@@ -36,3 +42,6 @@ pub fn control_directory(kind:&str)->Result<std::path::PathBuf> {
     }
     Ok(std::path::PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?).join(".config/apparent").join(kind))
 }
+
+#[cfg(test)]
+mod tests;

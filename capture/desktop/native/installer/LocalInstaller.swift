@@ -24,9 +24,9 @@ func installCandidate(source: URL, folder: URL) throws -> URL {
   guard source.pathExtension == "app",
     let data = try? Data(contentsOf: source.appendingPathComponent("Contents/Info.plist")),
     let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-    info["CFBundleIdentifier"] as? String == candidateID,
     let build = info["ApparentTestBuildID"] as? String,
     build.count == 40, build.allSatisfy({ "0123456789abcdef".contains($0) }),
+    info["CFBundleIdentifier"] as? String == candidateID + ".build-" + String(build.prefix(12)),
     fm.isExecutableFile(atPath: source.appendingPathComponent("Contents/MacOS/apparent").path)
   else { throw InstallError.invalidCandidate }
   var target = folder.appendingPathComponent(candidateName)
@@ -70,7 +70,7 @@ struct FrogHop: GeometryEffect {
 func hasOlderTest(installed: URL, running: [(id: String?, path: URL?)]) -> Bool {
   let current = installed.resolvingSymlinksInPath().standardizedFileURL.path
   return running.contains { app in
-    guard app.id == candidateID || app.id == candidateID + ".ui" else { return false }
+    guard let id = app.id, id == candidateID || id == candidateID + ".ui" || id.hasPrefix(candidateID + ".build-") else { return false }
     guard let path = app.path?.resolvingSymlinksInPath().standardizedFileURL.path else { return true }
     return path != current && !path.hasPrefix(current + "/")
   }
@@ -91,7 +91,7 @@ func hasOlderTest(installed: URL, running: [(id: String?, path: URL?)]) -> Bool 
     DispatchQueue.global(qos: .userInitiated).async {
       do {
         let target = try installCandidate(source: source, folder: folder)
-        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, animationDuration - Date().timeIntervalSince(began))) { self.installed = target; self.busy = false; self.message = "Preview 7 is installed and ready to open." }
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, animationDuration - Date().timeIntervalSince(began))) { self.installed = target; self.busy = false; self.message = "Preview 8 is installed and ready to open." }
       } catch {
         DispatchQueue.main.asyncAfter(deadline: .now() + max(0, animationDuration - Date().timeIntervalSince(began))) { self.busy = false; self.message = error.localizedDescription }
       }
@@ -107,15 +107,16 @@ func hasOlderTest(installed: URL, running: [(id: String?, path: URL?)]) -> Bool 
     guard let installed else { return }
     let previous = hasOlderTest(installed: installed, running: NSWorkspace.shared.runningApplications.map { (id: $0.bundleIdentifier, path: $0.bundleURL) })
     guard !previous else {
-      message = "Quit the previous onboarding test from its menu, then click Open again."
+      message = "An older preview is running. Finish any recording, quit that preview from its menu, then click Open again."
       return
     }
     let options = NSWorkspace.OpenConfiguration()
     options.createsNewApplicationInstance = true
-    NSWorkspace.shared.openApplication(at: installed, configuration: options) { _, error in
+    NSWorkspace.shared.openApplication(at: installed, configuration: options) { running, error in
       DispatchQueue.main.async {
         if let error { self.message = error.localizedDescription }
-        else { NSApp.terminate(nil) }
+        else if let runningID = running?.bundleIdentifier, let expectedID = Bundle(url: installed)?.bundleIdentifier, runningID == expectedID { NSApp.terminate(nil) }
+        else { self.message = "macOS opened a different preview. Quit that preview, then try Open again." }
       }
     }
   }
@@ -166,7 +167,7 @@ struct InstallerView: View {
       HStack {
         Button("Choose location…") { model.chooseFolder(animationDuration: reduceMotion ? 0 : 1.05) }.buttonStyle(OnboardingBrand.ActionStyle()).disabled(model.busy || model.installed != nil)
         Spacer()
-        Button("Open preview 7") { model.open() }.buttonStyle(OnboardingBrand.ActionStyle(primary: true)).disabled(model.installed == nil)
+        Button("Open preview 8") { model.open() }.buttonStyle(OnboardingBrand.ActionStyle(primary: true)).disabled(model.installed == nil)
       }
     }.padding(32).frame(width: 720).font(OnboardingBrand.font(18))
       .foregroundStyle(OnboardingBrand.foreground).background(OnboardingBrand.background)
@@ -184,7 +185,7 @@ struct InstallerView: View {
 @main struct LocalInstaller: App {
   init() { OnboardingBrand.loadFont() }
   var body: some Scene {
-    WindowGroup("Install apparent · preview 7") { InstallerView() }.windowResizability(.contentSize)
+    WindowGroup("Install apparent · preview 8") { InstallerView() }.windowResizability(.contentSize)
   }
 }
 
@@ -205,7 +206,7 @@ struct InstallerView: View {
     let source = root.appendingPathComponent("Candidate.app")
     let macos = source.appendingPathComponent("Contents/MacOS")
     try fm.createDirectory(at: macos, withIntermediateDirectories: true)
-    let plist = try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": candidateID, "CFBundleExecutable": "apparent", "ApparentTestBuildID": String(repeating: "a", count: 40)], format: .xml, options: 0)
+    let plist = try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": candidateID + ".build-" + String(repeating: "a", count: 12), "CFBundleExecutable": "apparent", "ApparentTestBuildID": String(repeating: "a", count: 40)], format: .xml, options: 0)
     try plist.write(to: source.appendingPathComponent("Contents/Info.plist"))
     let executable = macos.appendingPathComponent("apparent")
     try Data("#!/bin/sh\nexit 0\n".utf8).write(to: executable)
@@ -236,6 +237,8 @@ struct InstallerView: View {
     let afterLink = try fm.subpathsOfDirectory(atPath: source.path).sorted()
     precondition(beforeLink == afterLink)
     precondition(hasOlderTest(installed: second, running: [(candidateID, installed)]))
+    precondition(hasOlderTest(installed: second, running: [(candidateID + ".build-" + String(repeating: "b", count: 12), installed)]))
+    precondition(!hasOlderTest(installed: second, running: [(candidateID + ".build-" + String(repeating: "a", count: 12) + ".ui", second.appendingPathComponent("Contents/Resources/settings/runtime/Electron.app"))]))
     precondition(!hasOlderTest(installed: second, running: [(candidateID, second)]))
     precondition(!hasOlderTest(installed: second, running: [("dev.kitlangton.apparent", installed)]))
     precondition(hasOlderTest(installed: second, running: [(candidateID + ".ui", installed.appendingPathComponent("Contents/Resources/UI.app"))]))

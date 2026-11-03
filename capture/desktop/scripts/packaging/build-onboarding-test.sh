@@ -6,6 +6,9 @@ repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 out=${APPARENT_TEST_OUTPUT:?Set APPARENT_TEST_OUTPUT to a fresh absolute output directory}
 [[ $out == /* && ! -e $out ]] || { echo 'Output must be a fresh absolute path.' >&2; exit 1; }
 cd "$repo"
+build=$(git rev-parse HEAD)
+test_id="dev.apparent.onboarding-test.build-${build:0:12}"
+export APPARENT_HELPER_BUNDLE_ID="$test_id.helper"
 installer_target=(-target "$(uname -m)-apple-macos15.0")
 electron_arch=""
 case "${APPARENT_TEST_TARGET:-${CARGO_BUILD_TARGET:-}}" in
@@ -40,19 +43,19 @@ chmod 755 "$resources/onboarding-shell"
 python3 - "$app" "$(git rev-parse HEAD)" <<'PY'
 import pathlib,plistlib,sys,shutil
 app=pathlib.Path(sys.argv[1]);info=app/'Contents/Info.plist'
-p=plistlib.loads(info.read_bytes());p.update(CFBundleIdentifier='dev.apparent.onboarding-test',CFBundleName='Apparent Onboarding Test',CFBundleDisplayName='Apparent Onboarding Test',LSEnvironment={'APPARENT_TEST_INSTANCE':'1'},ApparentTestBuildID=sys.argv[2],ApparentTestPreview=7)
+p=plistlib.loads(info.read_bytes());p.update(CFBundleIdentifier='dev.apparent.onboarding-test.build-'+sys.argv[2][:12],CFBundleName='apparent preview 8',CFBundleDisplayName='apparent preview 8',LSEnvironment={'APPARENT_TEST_INSTANCE':'1','APPARENT_TEST_BUILD':sys.argv[2]},ApparentTestBuildID=sys.argv[2],ApparentTestPreview=8)
 for k in list(p):
  if k.startswith('SU') or k in ['CFBundleURLTypes']:p.pop(k,None)
 info.write_bytes(plistlib.dumps(p))
 framework=app/'Contents/Frameworks/Sparkle.framework'
 if framework.exists():shutil.rmtree(framework)
-ui=app/'Contents/Resources/settings/runtime/Electron.app/Contents/Info.plist';p=plistlib.loads(ui.read_bytes());p.update(CFBundleIdentifier='dev.apparent.onboarding-test.ui',CFBundleName='Apparent Test UI',CFBundleDisplayName='Apparent Test UI',LSUIElement=True);ui.write_bytes(plistlib.dumps(p))
+ui=app/'Contents/Resources/settings/runtime/Electron.app/Contents/Info.plist';p=plistlib.loads(ui.read_bytes());p.update(CFBundleIdentifier='dev.apparent.onboarding-test.build-'+sys.argv[2][:12]+'.ui',CFBundleName='apparent preview 8 UI',CFBundleDisplayName='apparent preview 8 UI',LSUIElement=True);ui.write_bytes(plistlib.dumps(p))
 PY
 # Strip only this owned copy, before signing; never mutate the build cache.
 strip -S "$app/Contents/MacOS/apparent" "$app/Contents/MacOS/apparent-helper"
-codesign --force --sign - --identifier dev.apparent.onboarding-test.helper "$app/Contents/MacOS/apparent-helper"
+codesign --force --sign - --identifier "$test_id.helper" "$app/Contents/MacOS/apparent-helper"
 codesign --force --sign - --deep "$resources/settings/runtime/Electron.app"
-codesign --force --sign - --deep --identifier dev.apparent.onboarding-test "$app"
+codesign --force --sign - --deep --identifier "$test_id" "$app"
 codesign --verify --deep --strict "$app"
 installer="$out/Install Apparent Onboarding Test.app"
 mkdir -p "$installer/Contents/MacOS" "$installer/Contents/Resources" "$installer/Contents/SharedSupport"
