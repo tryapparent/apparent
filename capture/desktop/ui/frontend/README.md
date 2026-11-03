@@ -772,9 +772,13 @@ owns cache refresh. Both jobs use the trusted producer's setup action pinned to
 Rust 1.99.1, retaining its CARGO_HOME, CARGO_INCREMENTAL and CARGO_TERM_COLOR
 environment. They verify the expected compiler and log all installed toolchains,
 because both environment and compiler inventory affect the cache fingerprint.
-The consumer's full producer/toolchain comparison remains mandatory. A new
-fingerprint needs a successful trusted-main cache save before relying on reuse;
-no variables, installed toolchains or fingerprints are removed to force a hit.
+Both jobs use the shared hosted-Mac cache preparation action: it validates the
+complete allowlisted inventory before removing only the known unused stable1.98
+alias, retains selected1.99.1 and same-version aliases, and rejects unexpected
+states. Fingerprints still describe the actual admitted environment; the
+consumer's complete toolchain comparison remains mandatory. Fresh proof awaits
+a successful compatible trusted-producer receipt. Completion-time accounting
+fails workflows above600 seconds; existing job and step caps remain.
 
 Metal preparation overlaps Rust installation/cache restore in the builder, with
 a 120-second subprocess limit and atomic status. Cargo starts only after success.

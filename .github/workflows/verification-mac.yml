@@ -113,6 +113,8 @@ jobs:
           rustc -vV
           cargo -V
           rustup toolchain list --quiet
+      - uses: ./.github/actions/mac-rust-cache
+        timeout-minutes: 1
       - uses: Swatinem/rust-cache@v2
         timeout-minutes: 3
         with:
@@ -202,6 +204,8 @@ jobs:
           rustc -vV
           cargo -V
           rustup toolchain list --quiet
+      - uses: ./.github/actions/mac-rust-cache
+        timeout-minutes: 1
       - uses: actions/setup-node@v4
         timeout-minutes: 2
         with:
