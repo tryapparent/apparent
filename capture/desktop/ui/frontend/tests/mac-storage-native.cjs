@@ -266,7 +266,14 @@ const agentsAX = `on run argv
       set w to window 1
       if item 2 of argv is "close" then
         set frontmost to true
+        -- Activation is asynchronous. Observe readiness without resending it or
+        -- retrying the close key; stay inside the enclosing 3.5-second budget.
+        repeat 16 times
+          if frontmost then exit repeat
+          delay 0.05
+        end repeat
         if not frontmost then error "Owned Settings lost focus"
+        if (count of windows) is not 1 then error "Owned Settings window changed before close"
         keystroke "w" using command down
         return "closed"
       end if
@@ -351,6 +358,13 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
       catch (error) { state[`${field}Error`] = error.message; }
     }
     return state;
+  };
+  const close = async () => {
+    try { await invoke(pid, 'close'); }
+    catch (error) {
+      evidence.closeFailure = await snapshot('agents-close-failure');
+      throw error;
+    }
   };
   const visible = async (pid, label) => poll(async () => {
     const tree = await invoke(pid, 'inspect');
@@ -518,14 +532,14 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
       assert.ok(tree.includes(skill), 'Returned Agents page has no canonical command');
     }, 'Visible Agents after General navigation');
     assert.equal((await read()).agentDemoVideo, true);
-    await invoke(pid, 'close');
+    await close();
     await poll(async () => {
       await assert.rejects(run('/bin/kill', ['-0', String(pid)], { env, timeout: budget() }));
       assert.deepEqual(await readRuntimeState(home, budget(3000)), { status: 'connected', phase: 'idle' });
     }, 'Closing Settings preserves live daemon');
     evidence.navigationAndClose = true;
   } else {
-    await invoke(pid, 'close');
+    await close();
     await poll(async () => {
       await assert.rejects(run('/bin/kill', ['-0', String(pid)], { env, timeout: budget() }));
       assert.deepEqual(await readRuntimeState(home, budget(3000)), { status: 'connected', phase: 'idle' });
@@ -585,7 +599,7 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
   fallbackPID = await nativeFailure('agents-unavailable-crash');
   recovery.crash = true;
   pid = await reopen(fallbackPID);
-  await invoke(pid, 'close');
+  await close();
   await poll(async () => {
     await assert.rejects(run('/bin/kill', ['-0', String(pid)], { env, timeout: budget() }));
     assert.deepEqual(await readRuntimeState(home, budget(3000)), { status: 'connected', phase: 'idle' });

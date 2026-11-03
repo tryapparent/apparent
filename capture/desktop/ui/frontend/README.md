@@ -730,7 +730,10 @@ The native reader verifies the Rust-owned packaged PID/executable and unique
 window. Since pill and Settings share the runtime, the fixture also checks the
 exact parent-bound Agents mode. It requests Electron accessibility once per new
 process (Electron's two-second debounce restarts on repeated requests), then
-reads without resending. Space requires confirmed checkbox and foreground-window
+reads without resending. Ordinary close requests activation once, waits at most
+800 ms for read-only foreground confirmation, then sends Command-W once; failure
+retains owned state/AX diagnostics and any available owned-window image.
+Space requires confirmed checkbox and foreground-window
 focus; a bounded read-only focus wait stays inside the original helper deadline.
 The paired native key events target that verified PID, not global HID routing;
 this proves Settings control behavior, not global capture shortcuts.
