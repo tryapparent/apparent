@@ -288,7 +288,8 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
         env, timeout: budget(3500), killSignal: 'SIGKILL', maxBuffer: 32768,
       });
       if (stderr.includes('owned-Electron AXManualAccessibility=success')) {
-        (evidence.accessibilityRequests ??= {})[pid] = true;
+        evidence.accessibilityRequests ??= {};
+        evidence.accessibilityRequests[pid] = (evidence.accessibilityRequests[pid] ?? 0) + 1;
       }
       return stdout.trim();
     }
@@ -327,6 +328,11 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     });
     (evidence.screenshots ??= []).push({ name: `${name}.png`, ...window });
   };
+  const prepareReader = async pid => {
+    await poll(() => invoke(pid, 'window'), 'Owned packaged Settings window');
+    await invoke(pid, 'request-accessibility');
+    assert.equal(evidence.accessibilityRequests[pid], 1, 'Request accessibility once per new Electron process');
+  };
   const open = async () => {
     await invoke(rustPID(), 'open');
     evidence.openSettings = await poll(() => invoke(rustPID(), 'settings'), 'Owned status-menu Settings action');
@@ -336,6 +342,7 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
       window: await poll(() => invoke(native, 'window'), 'Owned native Settings window') });
     await poll(() => invoke(native, 'press', 'AXButton', 'Agents'), 'Native Agents navigation');
     const pid = await child(packaged);
+    await prepareReader(pid);
     let tree;
     try {
       tree = await poll(async () => {
@@ -451,6 +458,12 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
   const native = await child(helper);
   await poll(() => invoke(native, 'press', 'AXButton', 'Agents'), 'Navigate back to Agents');
   pid = await child(packaged);
+  await prepareReader(pid);
+  await poll(async () => {
+    const tree = await invoke(pid, 'inspect');
+    evidence.lastVisibleTree = tree;
+    assert.ok(tree.includes(skill), 'Returned Agents page has no canonical command');
+  }, 'Visible Agents after General navigation');
   assert.equal((await read()).agentDemoVideo, true);
   await invoke(pid, 'close');
   await poll(async () => {

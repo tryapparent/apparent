@@ -670,3 +670,9 @@ The Agents preload is authored in TypeScript (`electron/preloads/agents.cts`).
 The frontend build emits the ignored `agents.cjs` at the unchanged runtime path;
 packaging copies the generated preload and excludes its TypeScript source.
 The same sandbox, typed operation names and main-process capability guards apply.
+
+Electron 45 debounces the native assistive-client request for two quiet seconds.
+The fixture sends `AXManualAccessibility` once for each newly opened packaged
+Electron process, after its owned window is ready. Readiness polls and later
+control reads never resend it; repeated writes would keep resetting activation.
+The receipt counts accepted requests per process and retains the returned tree.

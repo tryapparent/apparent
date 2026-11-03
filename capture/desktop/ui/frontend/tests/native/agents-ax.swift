@@ -40,10 +40,10 @@ func main() throws {
         throw Failure(description: "Missing owned process identity")
     }
     let op = args[2], requestedRole = args[3], label = args[4]
-    try require(["window", "inspect", "press", "value", "space"].contains(op), "Unsupported operation")
+    try require(["window", "inspect", "press", "value", "space", "request-accessibility"].contains(op), "Unsupported operation")
     let allowed = ["Agents", "General", "Refresh Agents settings", "Install command-line tool",
                    "Uninstall command-line tool", "Ask agents for a demo video"]
-    if op != "window" && op != "inspect" {
+    if !["window", "inspect", "request-accessibility"].contains(op) {
         try require(allowed.contains(label) && [kAXButtonRole, kAXCheckBoxRole].contains(requestedRole), "Unsupported Settings control")
         try require((op == "press" && requestedRole == kAXButtonRole) ||
                     (["space", "value"].contains(op) && requestedRole == kAXCheckBoxRole), "Unsupported control action")
@@ -59,14 +59,19 @@ func main() throws {
     }
     try require(allowedExecutables.contains(executable), "PID does not map to the installed fixture")
     let app = AXUIElementCreateApplication(pid)
-    if executable == allowedExecutables[1] {
+    if op == "request-accessibility" {
+        try require(executable == allowedExecutables[1], "Only the owned Electron process accepts this request")
         // Electron 45's documented third-party assistive-client handshake:
         // https://github.com/electron/electron/blob/v45.2.1/docs/tutorial/accessibility.md#macos
         // This is scoped to our verified Electron process, never TCC/system state.
         _ = AXUIElementSetMessagingTimeout(app, 0.25)
-        try require(AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue) == .success,
-                    "Owned Electron accessibility request failed")
+        // Request once per new process: electron_application.mm debounces
+        // activation for two quiet seconds; repeated writes postpone it.
+        let result = AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        try require(result == .success, "Owned Electron accessibility request failed: \(result.rawValue)")
         FileHandle.standardError.write(Data("owned-Electron AXManualAccessibility=success\n".utf8))
+        print("requested")
+        return
     }
     let windows = try children(app, key: kAXWindowsAttribute)
     try require(windows.count == 1, "Expected exactly one owned Settings window")
