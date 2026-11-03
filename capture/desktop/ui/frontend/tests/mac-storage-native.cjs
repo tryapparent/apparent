@@ -317,7 +317,33 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     const candidates = stdout.trim().split('\n').map(s => s.trim().split(/\s+/).map(Number)).filter(([, p]) => p === rustPID());
     const found = [];
     for (const [pid] of candidates) {
-      const mapped = await run('/usr/sbin/lsof', ['-nP', '-a', '-p', String(pid), '-d', 'txt', '-Fn'], { env, timeout: budget(), maxBuffer: 131072 });
+      let mapped;
+      try {
+        mapped = await run('/usr/sbin/lsof', ['-nP', '-a', '-p', String(pid), '-d', 'txt', '-Fn'], { env, timeout: budget(), maxBuffer: 131072 });
+      } catch (error) {
+        // Navigation retires the old helper asynchronously. A snapshot can still
+        // include its PID after it has lost all mapped text. Never skip a live
+        // mapping error: confirm absence or zombie state with a fresh read.
+        if (error.code !== 1 || error.signal || error.stderr?.trim() || error.stdout?.trim()) throw error;
+        let state;
+        try {
+          state = await run('/bin/ps', ['-p', String(pid), '-o', 'ppid=,stat='], { env, timeout: budget(), maxBuffer: 4096 });
+        } catch (stateError) {
+          if (stateError.code === 1 && !stateError.signal && !stateError.stdout?.trim() && !stateError.stderr?.trim()) {
+            (evidence.retiredChildren ??= []).push({ pid, state: 'absent' });
+            continue;
+          }
+          evidence.childMappingFailure = { pid, stateError: stateError.message };
+          throw error;
+        }
+        const fields = state.stdout.trim().split(/\s+/);
+        if (fields.length === 2 && fields[0] === String(rustPID()) && fields[1].startsWith('Z')) {
+          (evidence.retiredChildren ??= []).push({ pid, state: fields[1] });
+          continue;
+        }
+        evidence.childMappingFailure = { pid, state: state.stdout.trim() };
+        throw error;
+      }
       const files = mapped.stdout.split('\n').filter(s => s.startsWith('n/')).map(s => s.slice(1));
       if (!(await Promise.all(files.map(p => fs.realpath(p).catch(() => p)))).includes(target)) continue;
       if (modeSuffix) {

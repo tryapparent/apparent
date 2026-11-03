@@ -730,7 +730,10 @@ process discovery alone is not window readiness.
 
 The native reader verifies the Rust-owned packaged PID/executable and unique
 window. Since pill and Settings share the runtime, the fixture also checks the
-exact parent-bound Agents mode. It requests Electron accessibility once per new
+exact parent-bound Agents mode. A failed mapping read may ignore a retiring child
+only after a fresh process check confirms absence or a Rust-owned zombie; live or
+unknown mapping failures still fail closed and retain diagnostics.
+It requests Electron accessibility once per new
 process (Electron's two-second debounce restarts on repeated requests), then
 reads without resending. Ordinary close requests activation once, waits at most
 800 ms for read-only foreground confirmation, then sends Command-W once; failure
