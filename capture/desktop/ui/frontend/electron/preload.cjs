@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 // No generic invoke/send, paths, revisions or dialog options from the renderer.
 contextBridge.exposeInMainWorld('apparent', Object.freeze({
+  readMicrophoneEnabled: () => ipcRenderer.invoke('apparent:read-microphone-enabled'),
+  setMicrophoneEnabled: (enabled) => ipcRenderer.invoke('apparent:set-microphone-enabled', enabled),
   readRuntimeState: () => ipcRenderer.invoke('apparent:read-runtime-state'),
   readCaptureReference: () => ipcRenderer.invoke('apparent:read-capture-reference'),
   copyCaptureReference: () => ipcRenderer.invoke('apparent:copy-capture-reference'),
@@ -20,9 +22,14 @@ contextBridge.exposeInMainWorld('apparent', Object.freeze({
   checkConnectConnection: () => ipcRenderer.invoke('apparent:connect-check'),
   disableConnectUploads: () => ipcRenderer.invoke('apparent:connect-disable'),
   disconnectConnectSettings: () => ipcRenderer.invoke('apparent:connect-disconnect'),
+  requestDisableConnectUploads: () => ipcRenderer.invoke('apparent:connect-request-disable'),
+  requestDisconnectConnectSettings: () => ipcRenderer.invoke('apparent:connect-request-disconnect'),
+  openConnectSharedLinks: () => ipcRenderer.invoke('apparent:connect-open-shared-links'),
   openConnectBrowser: () => ipcRenderer.invoke('apparent:connect-open-browser'),
   readRetention: () => ipcRenderer.invoke('apparent:read-retention'),
   saveRetention: (preset) => ipcRenderer.invoke('apparent:save-retention', preset),
   resetRetention: () => ipcRenderer.invoke('apparent:reset-retention'),
   readCaptureUsage: () => ipcRenderer.invoke('apparent:read-capture-usage'),
+  navigateSettings: (pane) => ipcRenderer.invoke('apparent:navigate-settings', pane),
+  showCaptureFolder: () => ipcRenderer.invoke('apparent:show-capture-folder'),
 }));

@@ -11,6 +11,9 @@ coalescing superseded runs within its own platform. Both call the same reusable
 `verification-platform.yml`, preserving the full Rust, Engine/client, browser,
 Electron and applicable native checks. Each checks the entire tree, not just the
 latest push delta: changes from a cancelled earlier run cannot escape verification.
+Explicit `workflow_dispatch` on a feature branch runs the same full test jobs.
+Feature dispatch does not emit the main-only `Release verification` receipt and
+cannot authorize publication; automatic execution remains main-only.
 Each caller's `verify / Release verification` job is its platform receipt.
 General Mac verification uses `macos-15-intel` so it does not depend on the
 standard Apple Silicon runner pool. The required Xcode/macOS SDK remains selected
@@ -220,3 +223,21 @@ verifier identity; compare against successful compatible proof covering the full
 candidate, including cancelled-run changes. Missing or incompatible proof must
 rerun. Validate shadow decisions against full execution and investigate omissions.
 Dependency caches are not test receipts; no speedup is claimed here.
+
+## Commit integration checkpoint
+
+With `core.hooksPath=.githooks`, `post-commit` refreshes `origin/main` with a
+five-second, noninteractive fetch on feature branches. When HEAD does not contain
+that main commit, it prints `INTEGRATION REQUIRED` and the exact fetched SHA.
+The owning agent should finish running operations, preserve any remaining
+uncommitted work, rebase onto that SHA, inspect incoming changes and rerun affected
+checks before starting the next work section. This is an advisory checkpoint,
+not an enforced merge gate or an automatic rebase. A partial commit remains a
+partial commit: the hook never stashes, stages, rewrites, pushes or changes files.
+
+Detached checkouts, main, and in-progress rebase/merge/cherry-pick/revert/bisect
+operations skip the checkpoint. A failed or timed-out fetch reports unknown
+freshness without failing the successful commit. No background worker is started;
+other worktrees are untouched. Existing worktrees acquire the hook when they
+integrate this change; frozen evidence checkouts need not be updated. Local hook
+checks do not replace current-main integration and review before merge.

@@ -86,14 +86,16 @@ Onboarding follows the system's light or dark appearance. The macOS window and i
 
 Rows for draggable lists (`Permission::draggable`: Screen Recording, Accessibility) go straight to `OpenSettings`, which launches `apparent-helper permission-panel` (`capture/desktop/native/PermissionPanel.swift`) from the row's button: the card flies to just below System Settings (inside its empty lower area when the screen has no room; `PermissionPanel.dock`, checked by `capture/desktop/scripts/support/check-permission-panel-dock.sh`), drags the `Apparent.app` that contains the helper, reads grants from a fresh `--check` process (never trusts the drop), and is told `granted` when the row turns on. Preview it with `permission-panel --permission screen-recording --preview`; never `tccutil reset` Kit's real grants to test it.
 
-### First-capture experiment
+### First-capture onboarding
 
-Enable `"experiments": {"onboardingFirstCapture": true}` before opening the tour
-(restart the app or replay onboarding from Settings). It is off by default.
+First-capture onboarding is enabled by default. Set
+`"experiments": {"onboardingFirstCapture": false}` to opt out, then restart the app
+or reopen the tour. The opt-out restores optional shortcut choice and practice.
 Existing users who already finished setup are not forced through it again.
 
-On Shortcut, Continue stays disabled until a valid Record combination has been
-entered in the inline recorder. Invalid, cancelled or reset choices do not count.
+On Shortcut, explicitly confirm the current Record combination or enter a valid
+combination in the inline recorder before continuing. Invalid, cancelled or reset
+choices alone do not count; confirm the default after resetting.
 A verified desktop-owned Linux binding instead offers **Use desktop shortcut**;
 Apparent cannot rewrite that compositor setting. The next page asks the user to
 try giving feedback on onboarding: start with the chosen shortcut, talk and point,
@@ -101,7 +103,7 @@ then press it again to finish. This is a local practice capture, not feedback se
 to the team. Menu-started captures and cancelled or failed attempts do not finish
 the tour. A successful bundle completion advances to Done.
 
-Closing or choosing Try later is allowed, but leaves the experimental setup
+Closing or choosing Try later is allowed, but leaves the first-capture setup
 unfinished so it resumes on the next launch. `onboarding.shortcutChosen` and
 `onboarding.firstCaptureCompleted` persist those milestones beside `resume`;
 `seen` becomes true only after a successful practice capture. The default flow
@@ -111,7 +113,7 @@ and permission-repair windows retain their existing behavior.
 
 ### Apparent Connect (experiment)
 
-**General → Apparent Connect** appears by default below Launch at login on
+**General → Connect** appears by default above Launch at login on
 macOS and Linux. Opening it does not sign in, grant upload consent or enable
 uploads. To hide the controls, set `"connectSettings": false` in the existing
 `experiments` object in `~/.config/apparent/config.json`, then close and reopen
@@ -119,8 +121,8 @@ Settings. It adds no onboarding step and does not require `hostedSharing`. Witho
 `https://hosted.tryapparent.com`; an existing valid custom origin is preserved.
 
 **Sign in to Connect… → Allow and continue → Open browser** explains the full
-upload scope before starting device authorization. Match the public code and
-approve in the browser, then return to Settings. Website sign-in/approval is not
+upload scope before starting device authorization. The browser link carries the public code automatically; approve there, then return
+to Settings. Settings does not ask users to match a code that the browser does not show. Website sign-in/approval is not
 local success: **Uploads on** requires fresh local credentials, upload consent,
 and enabled upload gates. Read-only credentials remain **uploads off**. New
 captures may upload privately; existing captures are not scanned, and account
@@ -140,6 +142,23 @@ do not delete the client's pending revocation files. Failed state writes are not
 presented as successful sign-out.
 Native renderers only display the shared controller's view and emit commands;
 raw errors, tokens and device secrets never enter its presentation contract.
+
+Connect uses the accepted Paper card and the shared frog artwork, without a separate
+section heading. The invitation reads “Help others see what you mean.”; successful
+local activation becomes a compact confirmation. The top-right A opens connection
+controls, not an asserted account identity: the current Desktop contract has no
+verified email. Disable and disconnect first show a local confirmation; declining
+it does not revoke or cancel anything. Confirmed commands retain the existing
+revocation and pending-login cancellation semantics. Shared-link management is
+available only through its existing feature gate and validated credential site.
+
+Rust supplies typed presentation and action placement to GPUI, SwiftUI and Electron;
+renderers do not infer success from status copy or browser approval. Success uses
+#146B43, progress #7A58C7, preventive caution #FFBE2E with Carbon, and failures and
+destructive actions #B42318. Each status has a label plus icon/bar; disabled controls
+use Carbon at 45%, while explanations stay readable. The source for the reused art
+is Public’s approved `assets/pond/belief/hug.png`; the runtime copy is owned by
+`shared/assets/brand/connect-frogs.png` and packaged locally, never fetched from the site.
 
 The opt-in Electron development window also presents this bounded workflow using
 the same Rust controller and client, not a second auth implementation. Launch
@@ -171,11 +190,15 @@ Both shortcuts (`ShortcutKind::Record` ⌥⇧S, `Paste` ⌥⇧V) live under `"sh
 
 On Omarchy, Hyprland's `code:201` is the Copilot key. At launch Apparent reads the exact `o.bind("SUPER + SHIFT + code:201", "Apparent: record", "…/apparent shortcut record")` definition from `$XDG_CONFIG_HOME/hypr/bindings.lua` (or `~/.config/hypr/bindings.lua`) and checks that a matching, uniquely described binding is live in `hyprctl binds -j` and its command is executable. This external system shortcut takes precedence over Apparent's saved record preference and default: Settings and Review show only Super+Shift+Copilot for Record, mark it as managed in Hyprland, and do not install a second Alt+Shift+S binding. Any old Apparent-described Alt+Shift+S binding in the live compositor is removed at launch. Change the binding in Hyprland, reload it, then restart Apparent. If the definition or live binding is missing or ambiguous, Apparent uses its saved shortcut or default instead; a description or an empty key in `hyprctl binds` alone is not proof of the Copilot key. An Apparent-owned Copilot shortcut can still be stored as `"shortcuts": {"record": {"keyCode": 201, "modifiers": 768, "label": "Super+Shift+Copilot"}}` (768 is Super + Shift in Apparent's stored modifier format).
 
+Recording without speech: `microphoneEnabled` in `~/.config/apparent/config.json` defaults to `true`. The app menu’s **Microphone for next capture** and the Electron Recording control persist the same preference, preserving the selected input. A capture freezes that preference at permission admission: switching it during recording applies to the next capture. With it off, microphone permission is not required, no input is opened and no no-audio warning is emitted. The other capture permissions still apply. A capture-local `microphone-off` marker preserves that intent through recovery; bundle context records `microphoneCapture: "off"`.
+
+Shift-click opens an Electron note near the click on release; Shift-drag still draws. Enter/Attach saves, Shift+Enter inserts a newline, and empty Enter closes without saving or erasing a saved note. Escape or clicking outside closes while keeping a draft for this capture. The counter follows the recording capsule, opens the compact notes list, and counts only durable saves. Notes can be edited or deleted from the list. Finish waits for already submitted saves; a failed receipt retains recording assets for recovery. Drafts are not exported as note metadata or summary text. Linux display video includes the popup while visible, including text not yet attached. This notes surface uses Electron by default; the existing capture controls and platform input adapters remain in use. Packaging includes its runtime. Removing this routing requires restoring an accepted notes surface, not silently dropping typed feedback. See the frontend README for routing and native acceptance gates.
+
 Recording › Microphone (`capture/engine/runtime/audio/mic.rs`): `"microphone": {"id","name"}` holds an input id in `~/.config/apparent/config.json`; the name only labels a missing device. Absent = System default. Mac uses CoreAudio UIDs (also `AVCaptureDevice.uniqueID`). Linux with a PulseAudio-compatible server (including PipeWire) and `pactl` lists source names as `pulse:<name>`; `capture/desktop/linux/microphone.rs` opens the chosen source with GStreamer's `pulsesrc`, converting it to 16 kHz mono samples for the same capture buffer and Settings meter. A new capture waits for its first sample before accepting the source; a disconnected or unopenable choice falls back to the Pulse default shown in Settings, then to CPAL only if that default cannot open. It never changes the system default. Linux without a working Pulse server / `pactl` falls back to CPAL's available inputs; this may expose only the shared `default` or `pipewire` device, so distinct microphones cannot be selected there. Windows is unsupported; retained code is not a parity target. `mic::Watch` re-lists inputs while Settings is open: CoreAudio listeners on Mac, one-second checks elsewhere. `AudioRecorder` opens the chosen input on its worker thread, otherwise the current system default; a disconnected or unopenable choice remains saved but does not stop a new capture (`mic::Pick` explains the fallback in Settings and `note_pick` logs once). An error partway through a capture keeps samples heard so far. Mac's helper `MicMeter` uses AVCaptureSession; Linux GPUI Settings starts a separate input stream, stops it when leaving Recording, and expires stale level readings after 300 ms. The meter shows input samples, not recognized words or speaker identity; #16 owns no-transcript messaging. `apparent mic list|set <id|default>|watch` reports and changes the same saved selection.
 
-Storage › Location (`CapturesDirView`): Change… opens the helper's folder picker and sends `set capturesDir` with an absolute path; Reset sends `""`, which removes the key. `handoff::default_captures_dir` reads it on every call (`APPARENT_CAPTURES_DIR` wins, then `"capturesDir"`, then `builtin_captures_dir`; `~` expands, a relative path is logged and skipped; tests never read the config). New captures and fresh CLI/size lookups use the new location; already-running retention/transcript workers keep their startup directory until the Rust app restarts. Captures already made aren't moved. The separate default-off Electron Storage slice and its proof limits are documented in `capture/desktop/ui/frontend/README.md`. A folder that can't be created or written falls back to the built-in one (logged once). State kept beside the captures (`inbox.json`, `last-mode`, legacy `config.json`) stays under `builtin_captures_dir`'s parent. The legacy config path stays under `builtin_captures_dir`.
+Storage › Location (`CapturesDirView`): Change… opens the helper's folder picker and sends `set capturesDir` with an absolute path; Reset sends `""`, which removes the key. `handoff::default_captures_dir` reads it on every call (`APPARENT_CAPTURES_DIR` wins, then `"capturesDir"`, then `builtin_captures_dir`; `~` expands, a relative path is logged and skipped; tests never read the config). New captures and fresh CLI/size lookups use the new location; already-running retention/transcript workers keep their startup directory until the Rust app restarts. Captures already made aren't moved. The default Electron Storage route, native fallback and its proof limits are documented in `capture/desktop/ui/frontend/README.md`. A folder that can't be created or written falls back to the built-in one (logged once). State kept beside the captures (`inbox.json`, `last-mode`, legacy `config.json`) stays under `builtin_captures_dir`'s parent. The legacy config path stays under `builtin_captures_dir`.
 
-Storage › Retention and folder usage also appear in the separate **default-off** Electron window under the existing `electronCaptureLocation` gate. Rust supplies the policy/options/note, saves through the existing config transaction and measures the effective folder; the renderer never reads files. Saving/resetting schedules the existing retention worker for about five seconds later (deferred while recording); file edits are read on the next pass, normally hourly. Running workers keep their startup folder until restart. The installed Settings presentation remains available pending explicit replacement acceptance. Activation, rollback, failed/stale results, usage scan limits and the exact old-UI removal condition are in `capture/desktop/ui/frontend/README.md#storage-retention-and-usage-291`.
+Storage now opens the branded Electron Settings page by default; other Settings pages keep their native presentation. Set `experiments.electronCaptureLocation=false` and reopen Settings to use native Storage. Missing packaged assets or an Electron crash also restore native Storage. Rust supplies the policy/options/note, saves through the existing config transaction and measures the effective folder; the renderer never reads files. Saving/resetting schedules the existing retention worker for about five seconds later (deferred while recording); file edits are read on the next pass, normally hourly. Running workers keep their startup folder until restart. The native Storage presentation remains the opt-out and failure fallback. Activation, rollback, failed/stale results, usage scan limits and the exact old-UI removal condition are in `capture/desktop/ui/frontend/README.md#storage-retention-and-usage-291`.
 
 Recording › Language shows under Transcription while it's Apple Speech: Automatic, then the helper's supported `locales` by name. It writes `appleLocale` (Automatic removes the key) and returns `Effect::SpeechModel`, which restarts the model check for the new language (see `capture/engine/docs/keyframes-and-text.md`).
 
@@ -244,3 +267,16 @@ Render every pane (dark, light, each shortcut state: held, listening, partial, r
 ## Lower other audio while recording (`capture/desktop/playback.rs`, `capture/engine/native/PlaybackVolume.swift`)
 
 Off by default. General › Lower other audio while recording (`"lowerPlayback": true`) ramps the default output device's volume over one second to `playbackLevel` percent of what it was (Lower to, default 20%; 0 mutes) from the moment the shortcut is pressed or a recording starts, Mac or cabled iPhone, and back when it finishes, is cancelled or the picker closes without recording. `apparent-helper playback-volume --server`, started at launch while the setting is on, does the CoreAudio work and takes `start N` / `stop` lines on stdin. It reads every writable output channel's volume scalar before writing any (the master volume only when the channels have none), so balance and silent channels come back as they were; it never touches the mute flag or any input device. It restores when told to stop, when Apparent exits or crashes (stdin closes) and at once on SIGTERM, SIGINT or SIGHUP; it leaves the volume alone if someone changed it during the recording, and a device switched to mid-recording isn't lowered (the original device is restored). Fixed-volume outputs are left unchanged. Linux does nothing. `apparent-helper playback-volume --self-test` runs the ramp tests on fake devices; `--inspect` prints the current device's volume controls without changing them.
+
+Electron onboarding permission effects stay in Rust: Linux uses its privacy
+adapter; macOS keeps an installed `apparent-helper onboarding --permissions-only`
+process alive for AVFoundation/Speech consent and permission guidance panels.
+That mode never creates the onboarding window, admits only fixed permission
+identifiers/actions, closes granted guides, and cleans up guides on pipe closure.
+The Electron pipe carries presentation only. Native fallback remains available;
+its presentation can be removed only after Mac permission/media and isolated
+Linux acceptance. Packaged assets route this workflow to Electron; missing assets, spawn failure
+or a renderer crash restore the native presentation. During capture, construction
+of a crashed presentation’s native replacement waits until capture ends. The
+first-capture opt-out changes the workflow requirements; it does not select a
+second competing onboarding surface.
