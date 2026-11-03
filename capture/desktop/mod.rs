@@ -304,6 +304,7 @@ fn bundle_audio_issue(
     dir: &std::path::Path,
     bundle: &ApparentBundle,
 ) -> Option<CompletedAudioIssue> {
+    if bundle.context.get("microphoneCapture").is_some_and(|v| v == "off") { return None; }
     completed_audio_issue(
         bundle.source.as_deref(),
         &bundle.transcript,
@@ -530,6 +531,7 @@ fn island_content_width(
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum MenuAction {
     ToggleCapture,
+    ToggleMicrophone,
     ChooseTarget,
     OpenLatest,
     OpenInbox(PathBuf),
@@ -823,10 +825,12 @@ struct ActiveRecording {
     bundle_dir: PathBuf,
     source: CaptureSource,
     _metal_overlay: Option<LaserOverlay>,
+    microphone_enabled: bool,
 }
 
 impl ActiveRecording {
     fn mic_warning(&self) -> Option<InputWarning> {
+        if !self.microphone_enabled { return None; }
         match &self.source {
             CaptureSource::Screen {
                 audio: Some(audio), ..
@@ -848,16 +852,21 @@ impl ActiveRecording {
 /// Shared coordinator owned by the GPUI app.
 pub struct ApparentCoordinator {
     telemetry: Arc<SharedCaptureTelemetry>,
+    note_ui: Option<workflow::notes::Session>,
+    admitted_microphone: Option<bool>,
     whiteboard: Rc<RefCell<whiteboard::Board>>,
     active_recording: Option<ActiveRecording>,
     /// Identifies the recording whose finalization may update the current UI.
     capture_generation: u64,
+    capture_local_practice: bool,
     /// Media workers outlive their capsule and still own unfinished bundles.
     pending_finalizers: usize,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     agent_capture_id: Option<String>,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     agent_captures: crate::capture::desktop::workflow::agent_capture::Registry,
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    public_share: crate::capture::desktop::workflow::public_sharing::Controller,
     #[cfg(target_os = "linux")]
     agent_finishing: bool,
     last_live_no_words: bool,
@@ -972,14 +981,19 @@ impl ApparentCoordinator {
         crate::capture::desktop::playback::warm_up();
         Self {
             telemetry,
+            note_ui: None,
+            admitted_microphone: None,
             whiteboard: Rc::new(RefCell::new(whiteboard::Board::default())),
             active_recording: None,
             capture_generation: 0,
+            capture_local_practice: false,
             pending_finalizers: 0,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             agent_capture_id: None,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             agent_captures: crate::capture::desktop::workflow::agent_capture::Registry::default(),
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            public_share: crate::capture::desktop::workflow::public_sharing::Controller::default(),
             #[cfg(target_os = "linux")]
             agent_finishing: false,
             last_live_no_words: false,
@@ -1224,6 +1238,44 @@ impl ApparentCoordinator {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     fn agent_request(&mut self, request: crate::capture::desktop::workflow::agent_capture::Request, cx: &mut Context<Self>) {
         use crate::capture::desktop::workflow::agent_capture::{Action, Outcome};
+        if let Some((action @ (Action::PublicShareStart | Action::PublicShareRead | Action::PublicShareDeliver | Action::PublicShareCancel), value)) = &request.action {
+            let selected = self.review_bundle.as_ref().and_then(|(path, _)| {
+                path.file_name().and_then(|name| name.to_str()).map(|name| (path, name.to_owned()))
+            });
+            let response = if request.expired() {
+                serde_json::json!({"error":"admission_expired"})
+            } else {
+                match action {
+                    Action::PublicShareStart => match selected {
+                        Some((path, name)) if name == *value && !self.is_recording() && !self.is_processing() && !self.is_selecting() => {
+                            match self.public_share.start(name, path.clone(), self.capture_generation) {
+                                Ok(operation) => serde_json::json!({"publicShare":{"operation":operation,"state":"preparing"}}),
+                                Err(code) => serde_json::json!({"error":code}),
+                            }
+                        }
+                        _ => serde_json::json!({"error":"conflict"}),
+                    },
+                    Action::PublicShareRead => match selected {
+                        Some((path, name)) => match self.public_share.read(value, &name, path, self.capture_generation) {
+                            Ok(state) => serde_json::json!({"publicShare":{"state":state}}),
+                            Err(code) => serde_json::json!({"error":code}),
+                        },
+                        None => { self.public_share.cancel(value); serde_json::json!({"error":"no_selection"}) }
+                    },
+                    Action::PublicShareDeliver => match selected {
+                        Some((path, name)) => match self.public_share.deliver(value, &name, path, self.capture_generation, crate::shared::handoff::copy_string_to_clipboard) {
+                            Ok(state) => serde_json::json!({"publicShare":{"state":state}}),
+                            Err(code) => serde_json::json!({"error":code}),
+                        },
+                        None => { self.public_share.cancel(value); serde_json::json!({"error":"no_selection"}) }
+                    },
+                    Action::PublicShareCancel => { self.public_share.cancel(value); serde_json::json!({"publicShare":{"state":"cancelled"}}) },
+                    _ => unreachable!(),
+                }
+            };
+            let _ = request.reply.send(response.to_string());
+            return;
+        }
         if let Some((action @ (Action::ReferenceRead | Action::ReferenceCopy), expected)) = &request.action {
             let enabled = crate::shared::handoff::experiment("copyCaptureId");
             let response = capture_reference_response(
@@ -1343,6 +1395,9 @@ impl ApparentCoordinator {
 
     fn settings_event(&mut self, event: crate::capture::desktop::settings::Event, cx: &mut Context<Self>) {
         use crate::capture::desktop::settings::{Effect, Event};
+        let Some(event) = self.settings.as_ref().and_then(|session| session.current_event(event)) else {
+            return;
+        };
         #[cfg(target_os = "linux")]
         if self.defer_update_restart(&event) {
             // Check before Session spawns its relaunch helper. Capture admission
@@ -1465,11 +1520,12 @@ impl ApparentCoordinator {
     }
 
     /// Required permissions that keep a capture from starting now.
-    fn missing_to_record(&mut self) -> Vec<crate::capture::desktop::settings::onboarding::Permission> {
+    fn missing_to_record(&mut self, microphone: bool) -> Vec<crate::capture::desktop::settings::onboarding::Permission> {
         use crate::capture::desktop::settings::onboarding::{Permission, missing_to_record};
         let screen = crate::capture::engine::runtime::screen_capture_usable(false);
         let accessibility = crate::capture::engine::runtime::accessibility_granted();
-        let missing = missing_to_record(self.grants.as_ref(), screen, accessibility);
+        let mut missing = missing_to_record(self.grants.as_ref(), screen, accessibility);
+        if !microphone { missing.retain(|p| *p != Permission::Microphone); }
         // The last read may be old; read again before standing in the way.
         if missing.contains(&Permission::Microphone)
             && let Some(fresh) = crate::capture::desktop::settings::onboarding::read_grants()
@@ -1486,8 +1542,10 @@ impl ApparentCoordinator {
         if self.lab {
             return true;
         }
-        let missing = self.missing_to_record();
+        let microphone = crate::capture::engine::runtime::audio::mic::enabled();
+        let missing = self.missing_to_record(microphone);
         if missing.is_empty() {
+            self.admitted_microphone = Some(microphone);
             return true;
         }
         apparent_log(format!(
@@ -1570,9 +1628,12 @@ impl ApparentCoordinator {
                     .as_mut()
                     .map_or(Effect::None, |session| session.grants(grants))
             }
-            Event::Action(action) if action == "use-desktop-shortcut" => {
+            Event::Action(action) if matches!(action.as_str(), "use-desktop-shortcut" | "use-current-shortcut") => {
                 let host = crate::capture::desktop::settings::AppHost { telemetry: &self.telemetry };
-                if self.onboarding_editor.record_shortcut(&host).externally_managed
+                let editor = self.onboarding_editor.record_shortcut(&host);
+                let accepted = !editor.recording && editor.error.is_none()
+                    && (action == "use-current-shortcut" || editor.externally_managed);
+                if accepted
                     && let Some(session) = self.onboarding.as_mut()
                 {
                     session.input(crate::capture::desktop::settings::onboarding::Input::ShortcutChosen);
@@ -1587,7 +1648,8 @@ impl ApparentCoordinator {
                 if self
                     .onboarding
                     .as_ref()
-                    .is_some_and(|session| session.editing_shortcut())
+                    .is_some_and(|session| session.editing_shortcut() ||
+                        (session.choosing_shortcut() && matches!(action, crate::capture::desktop::settings::Action::ResetShortcut { .. })))
                     && matches!(
                         action,
                         crate::capture::desktop::settings::Action::Shortcut {
@@ -1615,6 +1677,10 @@ impl ApparentCoordinator {
                 Effect::None
             }
             Event::Exited => {
+                if self.onboarding.as_mut().is_some_and(|session| session.restore_native()) {
+                    self.sync_onboarding_editor();
+                    return;
+                }
                 if let Some(session) = self.onboarding.as_ref() {
                     session.leave(true);
                 }
@@ -1719,7 +1785,7 @@ impl ApparentCoordinator {
         if !self.shortcut.is_pending() && activity == crate::capture::desktop::settings::shortcut::Activity::Free {
             // No picker or overlay before the permissions are on: they sit above
             // macOS's permission prompts and take the clicks meant for them.
-            let missing = self.missing_to_record();
+            let missing = self.missing_to_record(crate::capture::engine::runtime::audio::mic::enabled());
             if !self.gate.press(missing) {
                 apparent_log("Shortcut held back: a required permission is off");
                 return;
@@ -1920,6 +1986,7 @@ impl ApparentCoordinator {
             self.agent_captures.set(&id, "cancelled", None, None);
         }
         let rec = self.active_recording.take()?;
+        self.note_ui = None;
         let _ = self.telemetry.finish_session();
         match rec.source {
             CaptureSource::Screen { session, audio, .. } => {
@@ -1951,6 +2018,7 @@ impl ApparentCoordinator {
     }
 
     pub fn set_review_bundle(&mut self, bundle: (PathBuf, ApparentBundle), status: Option<String>) {
+        self.public_share.cancel_all();
         self.review_audio_issue = bundle_audio_issue(&bundle.0, &bundle.1);
         self.review_bundle = Some(bundle);
         self.review_status = status;
@@ -2244,6 +2312,9 @@ impl ApparentCoordinator {
     /// while the outer shell springs its width smoothly (`stiffness: 400, damping: 30` equivalent).
     fn set_island_phase(&mut self, phase: IslandPhase) {
         use crate::capture::desktop::settings::onboarding::Input;
+        if matches!(phase, IslandPhase::Selecting { .. } | IslandPhase::Processing | IslandPhase::Recording | IslandPhase::Hidden | IslandPhase::Dismissing) {
+            self.public_share.cancel_all();
+        }
         if matches!(phase, IslandPhase::Recording | IslandPhase::Hidden | IslandPhase::Dismissing) {
             if let Some((_, _, active)) = self.share_pending.take() {
                 active.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -2255,6 +2326,9 @@ impl ApparentCoordinator {
             // Their finalized bundles remain on disk; stale results must not copy to
             // the clipboard, replace the current review, or finish a newer practice.
             self.capture_generation = self.capture_generation.wrapping_add(1);
+        }
+        if matches!(phase, IslandPhase::Recording) && !matches!(self.island_phase, IslandPhase::Recording) {
+            self.capture_local_practice = self.onboarding.as_ref().is_some_and(|session| session.local_practice());
         }
         let capture = match (self.island_phase, phase) {
             (IslandPhase::Recording, IslandPhase::Recording) => None,
@@ -2751,6 +2825,12 @@ impl ApparentCoordinator {
         if matches!(self.island_phase, IslandPhase::Recording) {
             platform::tick_pill_drag();
         }
+        if self.note_ui.is_some() {
+            let anchor = self.native_pill.as_ref().and_then(|p| p.note_badge_anchor());
+            #[cfg(target_os = "linux")]
+            let anchor = anchor.or_else(|| platform::note_badge_anchor(self.island_width * self.island_scale, self.island_y + (PILL_WINDOW_H - ISLAND_H * self.island_scale) / 2.0));
+            if let (Some(ui), Some(point)) = (self.note_ui.as_mut(), anchor) { ui.position_badge(point); }
+        }
         let live_no_words = self.recording_has_no_words();
         if live_no_words != self.last_live_no_words {
             self.last_live_no_words = live_no_words;
@@ -3215,7 +3295,15 @@ impl ApparentCoordinator {
         start_metric("metal_open_ms", stage);
         let stage = Instant::now();
         self.publish_capture_busy();
-        let audio_recorder = match AudioRecorder::start(&bundle_dir) {
+        let microphone_enabled = self.admitted_microphone.take().unwrap_or_else(crate::capture::engine::runtime::audio::mic::enabled);
+        if !microphone_enabled {
+            // Durable admission intent survives orphan recovery; it is not inferred from an empty WAV.
+            if let Err(error) = std::fs::write(bundle_dir.join("microphone-off"), b"") {
+                apparent_log(format!("Could not preserve silent capture intent: {error}"));
+                self.cancel_recording(cx); return;
+            }
+        }
+        let audio_recorder = if !microphone_enabled { None } else { match AudioRecorder::start(&bundle_dir) {
             Ok(recorder) => Some(recorder),
             Err(error) => {
                 let message = format!("Capture refused: narration could not be saved: {error:#}");
@@ -3225,7 +3313,7 @@ impl ApparentCoordinator {
                 if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some(message); }
                 return;
             }
-        };
+        }};
         start_metric("audio_start_ms", stage);
         let stage = Instant::now();
         let screen_session = match ScreenCaptureSession::start(
@@ -3267,7 +3355,15 @@ impl ApparentCoordinator {
                 windows: window_log,
             },
             _metal_overlay: metal_overlay,
+            microphone_enabled,
         });
+        match workflow::notes::Session::start(&self.active_recording.as_ref().unwrap().bundle_dir, Arc::clone(&self.telemetry), self.active_recording.as_ref().unwrap().target.frame) {
+            Ok(session) => self.note_ui = Some(session),
+            Err(error) => {
+                apparent_log(format!("Notes UI unavailable: {error:#}"));
+                if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some("Typed notes unavailable · recording continues".into()); }
+            },
+        }
         self.present_recording_island(cx);
         start_metric("recording_start_ms", started);
     }
@@ -3308,6 +3404,7 @@ impl ApparentCoordinator {
             started: Instant::now(),
             target,
             bundle_dir: PathBuf::new(),
+            microphone_enabled: false,
             source: CaptureSource::Lab,
             _metal_overlay: None,
         });
@@ -3430,6 +3527,7 @@ impl ApparentCoordinator {
             bundle_dir,
             source: CaptureSource::Phone(session),
             _metal_overlay: metal_overlay,
+            microphone_enabled: true,
         });
         self.present_recording_island(cx);
     }
@@ -3495,6 +3593,7 @@ impl ApparentCoordinator {
             && matches!(&rec.source, CaptureSource::Screen { .. });
         #[cfg(not(target_os = "linux"))]
         let auto_active = false;
+        let notes_finished = self.note_ui.take().map(workflow::notes::Session::finish);
         let (events, strokes) = self.telemetry.finish_session();
         let bundle_dir = rec.bundle_dir;
         let target = rec.target;
@@ -3505,6 +3604,8 @@ impl ApparentCoordinator {
         drop(rec._metal_overlay);
         self.set_island_phase(IslandPhase::Processing);
         let generation = self.capture_generation;
+        // Freeze practice policy with the worker, independent of window/UI lifetime.
+        let local_practice = self.capture_local_practice;
         self.completed_note = None;
         cx.notify();
         if matches!(source, CaptureSource::Lab) {
@@ -3540,7 +3641,7 @@ impl ApparentCoordinator {
                 .spawn(async move {
 
                     recording_completion::finalize(
-                        source, target, bundle_dir, events, strokes, final_whiteboard,
+                        source, target, bundle_dir, events, strokes, final_whiteboard, notes_finished,
                     )
                 })
                 .await;
@@ -3560,7 +3661,9 @@ impl ApparentCoordinator {
                         #[cfg(any(target_os = "macos", target_os = "linux"))]
                         finishing_id.as_deref(),
                         finalized,
-                        desktop_completion::connect_completed,
+                        |dir| {
+                            if !local_practice { desktop_completion::connect_completed(dir); }
+                        },
                         |coord, finalized| {
                             coord.present_capture_result(
                                 finalized, duration_ms, auto_active, cx,
@@ -6641,6 +6744,12 @@ pub fn run_app(
                     if let Some(ref rx) = menu_rx {
                         while let Ok(action) = rx.try_recv() {
                             match action {
+                                MenuAction::ToggleMicrophone => {
+                                    let enabled = !crate::capture::engine::runtime::audio::mic::enabled();
+                                    if let Err(error) = crate::shared::handoff::set_config_value_in(&crate::shared::handoff::default_config_path(), "microphoneEnabled", serde_json::json!(enabled)) {
+                                        apparent_log(format!("Microphone preference was not saved: {error:#}"));
+                                    }
+                                }
                                 MenuAction::ToggleCapture => {
                                     loop_coord.update(cx, |coord, cx| coord.record_or_finish(cx));
                                 }
@@ -6704,6 +6813,17 @@ pub fn run_app(
                             }
                             LiveOverlayEvent::UndoStroke => {
                                 coord.undo_stroke(cx);
+                            }
+                            LiveOverlayEvent::NotesUnavailable => {
+                                apparent_log("Typed notes UI exited; recording continues. See this capture's notes-ui.log.");
+                                if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some("Typed notes unavailable · recording continues".into()); }
+                            }
+                            LiveOverlayEvent::NoteClosed { focus, owner } => platform::restore_note_focus(focus, owner),
+                            LiveOverlayEvent::NoteOutside => { if let Some(ui) = coord.note_ui.as_ref() { ui.outside(); } },
+                            LiveOverlayEvent::Note { pin, t, x, y, screen_x, screen_y } => {
+                                coord.request_immediate_frame();
+                                let (focus, owner) = platform::note_focus();
+                                if let Some(ui) = &coord.note_ui { ui.open(workflow::notes::Anchor { pin, t, x, y, screen_x, screen_y, focus, owner }); }
                             }
                             LiveOverlayEvent::RequestSnapshot => {
                                 coord.request_immediate_frame();

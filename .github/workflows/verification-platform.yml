@@ -25,9 +25,12 @@ jobs:
       - name: Selector and hook contracts (no native proof)
         run: |
           python3 -m unittest discover -s enablement/tests -p 'test_pre_push_guard.py'
+          python3 -m unittest discover -s enablement/tests -p 'test_commit_push_checkpoint.py'
           python3 -m unittest discover -s enablement/tests -p 'test_verification.py'
           python3 -m unittest discover -s enablement/tests -p 'test_temp_preflight.py'
           python3 -m unittest discover -s enablement/tests -p 'test_owner_lanes.py'
+          python3 -m unittest discover -s capture/desktop/scripts/tests/mac -p 'test_*.py'
+          python3 -m unittest discover -s capture/desktop/scripts/packaging -p 'test*.py'
       - name: Validate workflow syntax and job dependencies
         uses: docker://rhysd/actionlint:1.7.12
         with:
@@ -51,7 +54,7 @@ jobs:
   desktop-ui:
     needs: select
     # Each caller verifies one platform independently.
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     name: desktop-ui (${{ inputs.runner }})
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 15
@@ -68,6 +71,8 @@ jobs:
           cache: npm
           cache-dependency-path: capture/desktop/ui/frontend/package-lock.json
       - run: npm ci --no-audit --no-fund
+      - name: Prepare Electron before timed renderer tests
+        run: node node_modules/electron/install.js
       - name: Linux Electron dependencies
         if: runner.os == 'Linux'
         run: npx --no-install playwright install-deps chromium
@@ -83,7 +88,7 @@ jobs:
 
   rust:
     needs: select
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     name: rust (${{ inputs.runner }})
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 60

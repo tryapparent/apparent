@@ -19,7 +19,8 @@ async function fixture(t, reply, { mode = 0o700 } = {}) {
     socket.on('error', () => {});
     socket.once('data', (request) => {
       requests.push(request.toString());
-      if (reply !== null) socket.end(reply);
+      if (typeof reply === 'function') reply(socket,request);
+      else if (reply !== null) socket.end(reply);
     });
   });
   const address = path.join(directory, 'capture.sock');
@@ -186,3 +187,91 @@ for (const [reply, expected] of [
   const f = await fixture(t, JSON.stringify(reply) + '\n');
   assert.deepEqual(await captureLocation(f.home), expected);
 });
+
+const {PublicShare} = require('../electron/public-share.cjs');
+test('public share requires observed selection, retains operation in main and delivers once',async t=>{
+ const operation='a'.repeat(32);
+ const f=await fixture(t,(socket,raw)=>{
+  const r=JSON.parse(raw);assert.ok(Number.isSafeInteger(r.deadline));
+  socket.end(JSON.stringify({publicShare:r.publicShare==='start'?{operation,state:'preparing'}:{state:r.publicShare==='read'?'prepared':r.publicShare==='deliver'?'copied':'cancelled'}})+'\n');
+ });
+ const owner=new PublicShare(f.home);
+ assert.equal((await owner.request('start',null)).code,'refresh_required');
+ assert.equal(f.requests.length,0);
+ assert.deepEqual(await owner.request('start','selected.apparent'),{status:'connected',state:'preparing'});
+ assert.deepEqual(await owner.request('read'),{status:'connected',state:'copied'});
+ assert.equal((await owner.request('read')).code,'no_operation');
+ const requests=f.requests.map(r=>JSON.parse(r));
+ assert.equal(requests[0].expected,'selected.apparent');assert.equal(requests[0].disclosed,true);
+ assert.equal(requests.filter(r=>r.publicShare==='deliver').length,1);
+ assert.equal(requests[1].operation,operation);
+});
+test('closing public-share window rejects late start receipt and never delivers',async t=>{
+ let started;
+ const arrived=new Promise(r=>started=r);
+ let release;
+ const f=await fixture(t,(socket,raw)=>{
+  if(JSON.parse(raw).publicShare==='start'){release=()=>socket.end(JSON.stringify({publicShare:{operation:'b'.repeat(32),state:'preparing'}})+'\n');started();}
+  else socket.end('{"publicShare":{"state":"cancelled"}}\n');
+ });
+ const owner=new PublicShare(f.home), pending=owner.request('start','selected.apparent');
+ await arrived;owner.close();release();
+ assert.deepEqual(await pending,{status:'cancelled'});
+ assert.ok(!f.requests.some(r=>JSON.parse(r).publicShare==='deliver'));
+});
+
+{
+const {test}=require('node:test');const assert=require('node:assert/strict');const {parseAction,lines}=require('../electron/onboarding-protocol.cjs');
+test('bounded action contract',()=>{assert.deepEqual(parseAction('use-current-shortcut'),{action:'use-current-shortcut'});assert.deepEqual(parseAction('grant:microphone'),{action:'grant',permission:'microphone'});for(const value of ['start-capture','grant:other',null,{},['continue']])assert.throws(()=>parseAction(value));const value={action:'shortcut',kind:'record',keyCode:15,modifiers:6144,key:'r',reserved:false};assert.deepEqual(parseAction(value),value);for(const changed of [{extra:true},{keyCode:'15'},{reserved:true},{modifiers:1},{kind:'other'}])assert.throws(()=>parseAction({...value,...changed}))});
+test('stdin accepts fragmented lines and rejects oversized individual lines',()=>{const received=[];const feed=lines(v=>received.push(v));feed('{"type":');feed('"state"}\ninvalid\n{"type":"show"}\n');assert.equal(received.length,2);assert.throws(()=>feed('x'.repeat(65537)));const many=lines(()=>{});many('{}\n'.repeat(30000))});
+
+}
+
+{
+  const vm = require('node:vm');
+  const fs = require('node:fs');
+  test('onboarding replays parent messages received before React subscribes', () => {
+    let receive;
+    let bridge;
+    const electron = {
+      ipcRenderer: { on: (_channel, listener) => { receive = listener; }, invoke: () => Promise.resolve() },
+      contextBridge: { exposeInMainWorld: (_name, value) => { bridge = value; } },
+    };
+    vm.runInNewContext(fs.readFileSync(require.resolve('../electron/onboarding-preload.cjs'), 'utf8'), {
+      require: name => { assert.equal(name, 'electron'); return electron; },
+    });
+    receive({}, { type: 'shortcut', label: 'Alt+Shift+S' });
+    receive({}, { type: 'state', step: 'try-it' });
+    const messages = [];
+    const unsubscribe = bridge.subscribe(value => messages.push(value));
+    assert.equal(messages[0].label, 'Alt+Shift+S');
+    assert.equal(messages[1].step, 'try-it');
+    receive({}, { type: 'shortcut', label: 'Ctrl+Alt+K' });
+    assert.equal(messages.at(-1).label, 'Ctrl+Alt+K');
+    unsubscribe();
+    receive({}, { type: 'state', step: 'done' });
+    assert.equal(messages.length, 3);
+    const replay = [];
+    bridge.subscribe(value => replay.push(value));
+    assert.equal(replay.length, 2);
+    assert.equal(replay[0].label, 'Ctrl+Alt+K');
+    assert.equal(replay[1].step, 'done');
+  });
+}
+
+{
+  const {EventEmitter} = require('node:events');
+  const {parentWriter} = require('../electron/onboarding-protocol.cjs');
+  test('onboarding closes once when its parent pipe fails during shutdown', () => {
+    const stream = new EventEmitter();
+    let exits = 0;
+    let writes = 0;
+    stream.write = () => { writes += 1; stream.emit('error', Object.assign(new Error('closed parent'), {code:'EPIPE'})); };
+    const send = parentWriter(stream, () => { exits += 1; });
+    assert.doesNotThrow(() => send({action:'close'}));
+    send({action:'close'});
+    stream.emit('error', new Error('late stream error'));
+    assert.equal(exits, 1);
+    assert.equal(writes, 1);
+  });
+}
