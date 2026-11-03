@@ -66,6 +66,9 @@ unhandled rejections, plus renderer error/unhandledrejection events, send fixed
 categories through the same-user Rust socket and the same consent/queue limits.
 Main failures exit with status 1 after at most 600 ms of best-effort enqueue;
 renderer reporting does not cancel the browser event. No exception payload is read.
+Only release Rust launches with an installed reporter enable these hooks; ordinary
+Electron development/test launches and debug Rust builds do not send them.
+Preload initialization exceptions and native renderer crashes remain outside coverage.
 These reports identify the runtime/category, not the original JavaScript stack.
 A missing Rust process, socket contention or exhausted queue can lose the report.
 This does not add native crash, handled fallback or Connect/CLI reporting. This is a synthetic call-site frame,

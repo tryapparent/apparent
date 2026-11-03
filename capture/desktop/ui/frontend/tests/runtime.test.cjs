@@ -286,6 +286,18 @@ test('unhandled reports send only fixed codes and bounded deadlines', async t =>
   assert.equal(typeof request.deadline, 'number');
 });
 
+test('ordinary development hosts do not install exception hooks', () => {
+  const { spawnSync } = require('node:child_process');
+  const script = `
+    delete process.env.APPARENT_DESKTOP_REPORTING;
+    const { EventEmitter } = require('node:events');
+    const app = new EventEmitter();
+    require(${JSON.stringify(require.resolve('../electron/runtime.cjs'))}).installExceptionReporting({app});
+    if (process.listenerCount('uncaughtException') || process.listenerCount('unhandledRejection') || app.eventNames().length) process.exit(1);
+  `;
+  assert.equal(spawnSync(process.execPath, ['-e', script]).status, 0);
+});
+
 for (const kind of ['main_exception', 'main_rejection']) {
   test(`real unhandled ${kind} reports then exits unsuccessfully`, async t => {
     const f = await fixture(t, '{"accepted":true}\n');
