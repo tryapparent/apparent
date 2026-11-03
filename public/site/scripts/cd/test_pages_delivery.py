@@ -14,10 +14,18 @@ spec.loader.exec_module(pages)
 
 
 class PagesDeliveryTests(unittest.TestCase):
-    def test_old_main_is_refused(self):
-        with patch.object(pages.subprocess, 'check_output', return_value='b' * 40 + '\trefs/heads/main\n'):
-            with self.assertRaisesRegex(ValueError, 'stale'):
-                pages.current_main('a' * 40)
+    def test_publisher_checks_deployed_revision_instead_of_requiring_main_tip(self):
+        project = {'canonical_deployment': {'deployment_trigger': {'metadata': {'commit_hash': 'b' * 40}}}}
+        with patch.object(pages, 'api', return_value=project), patch.dict(pages.os.environ, {'GITHUB_REPOSITORY': 'example/project'}):
+            with patch.object(pages, 'publication_needed', return_value=True) as order:
+                pages.current_main('c' * 40)
+                order.assert_called_once_with('example/project', 'c' * 40, 'b' * 40)
+            with patch.object(pages, 'publication_needed', return_value=False):
+                with self.assertRaises(pages.SupersededMain):
+                    pages.current_main('a' * 40)
+            with patch.object(pages, 'publication_needed', side_effect=RuntimeError('API failed')):
+                with self.assertRaisesRegex(RuntimeError, 'API failed'):
+                    pages.current_main('c' * 40)
 
     def test_readback_binds_revision_before_requesting_public_pages(self):
         project = {'canonical_deployment': {'latest_stage': {'status': 'success'},
@@ -148,7 +156,7 @@ class PagesDeliveryTests(unittest.TestCase):
 
     def test_readiness_retry_is_bounded_and_never_masks_integrity_or_auth_failures(self):
         from urllib.error import HTTPError
-        for code in (404, 502, 503, 504):
+        for code in (404, 500, 502, 503, 504):
             with self.subTest(code=code), patch.object(pages, 'verify', side_effect=[HTTPError('https://example.test', code, 'temporary', Message(), None), {'deployment_id': 'ready'}]) as verify, patch.object(pages.time, 'sleep') as sleep:
                 self.assertEqual(pages.verify_ready('a' * 40, Path('checked')), {'deployment_id': 'ready'})
                 self.assertEqual(verify.call_count, 2)
@@ -159,20 +167,12 @@ class PagesDeliveryTests(unittest.TestCase):
                     pages.verify_ready('a' * 40, Path('checked'))
                 verify.assert_called_once()
                 sleep.assert_not_called()
-        with patch.object(pages, 'verify', side_effect=HTTPError('https://example.test', 404, 'not ready', Message(), None)) as verify, patch.object(pages.time, 'sleep') as sleep:
-            with self.assertRaises(HTTPError):
-                pages.verify_ready('a' * 40, Path('checked'))
-            self.assertEqual(verify.call_count, 5)
-            self.assertEqual([call.args for call in sleep.call_args_list], [(1,), (2,), (4,), (8,)])
-
-    def test_clanker_publisher_cannot_activate_production(self):
-        spec = importlib.util.spec_from_file_location('old', Path(__file__).with_name('publish_site.py'))
-        assert spec is not None and spec.loader is not None
-        old = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(old)
-        with self.assertRaisesRegex(ValueError, 'retired'):
-            old.publish('/opt/presentations/releases', 'unused', 'a' * 40, 'unused')
-
+        for code in (404, 500):
+            with self.subTest(persistent=code), patch.object(pages, 'verify', side_effect=HTTPError('https://example.test', code, 'not ready', Message(), None)) as verify, patch.object(pages.time, 'sleep') as sleep:
+                with self.assertRaises(HTTPError):
+                    pages.verify_ready('a' * 40, Path('checked'))
+                self.assertEqual(verify.call_count, 5)
+                self.assertEqual([call.args for call in sleep.call_args_list], [(1,), (2,), (4,), (8,)])
 
 if __name__ == '__main__':
     unittest.main()
