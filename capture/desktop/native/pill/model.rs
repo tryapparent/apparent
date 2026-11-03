@@ -14,10 +14,6 @@
 //!   across `Recording (chips) -> Selecting`) travel on a `0.24 s` zero-bounce spring with up to
 //!   `4 pt` blur in transit that clears before landing.
 
-pub fn whiteboard_label() -> &'static str {
-    if std::env::var_os("APPARENT_TEST_INSTANCE").as_deref() == Some(std::ffi::OsStr::new("1")) { "Test board" } else { "Whiteboard" }
-}
-
 use crate::capture::engine::runtime::audio::audio::InputWarning;
 use crate::capture::desktop::SelectionMode;
 
@@ -428,7 +424,7 @@ impl ElemId {
         )
     }
 
-    pub fn accessibility_label(self) -> &'static str {
+    pub const fn accessibility_label(self) -> &'static str {
         match self {
             Self::Lead => "Recording timer",
             Self::DividerLead | Self::DividerClose | Self::DividerWarning => "",
@@ -440,7 +436,7 @@ impl ElemId {
             Self::Record => "Record",
             Self::Close | Self::Cancel => "Cancel",
             Self::Finish => "Finish",
-            Self::Whiteboard => whiteboard_label(),
+            Self::Whiteboard => "Whiteboard",
             Self::Processing => "Processing",
             Self::DoneLead => "Completed",
             Self::Paste => "Paste",

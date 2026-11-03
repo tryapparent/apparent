@@ -1479,7 +1479,7 @@ fn emit_elem_prims(
         ElemId::Cancel | ElemId::Whiteboard | ElemId::Inspect => {
             let label = match elem.id {
                 ElemId::Cancel => "Cancel",
-                ElemId::Whiteboard => model::whiteboard_label(),
+                ElemId::Whiteboard => "Whiteboard",
                 _ => "Inspect",
             };
             if is_glass {

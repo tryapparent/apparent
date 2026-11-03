@@ -7,7 +7,7 @@ const phases = new Set(['start','whiteboard','board-ink','screen-ink','stop','pr
 function project(v) {
   if(v?.type!=='state'||!steps.has(v.step)||!Array.isArray(v.rows)||v.rows.length>5||typeof v.ready!=='boolean')return null;
   const rows=[];
-  for(const r of v.rows){if(!['screen-recording','microphone','accessibility','speech-recognition','camera'].includes(r.permission)||!['granted','denied','not-determined'].includes(r.status))return null;rows.push({permission:r.permission,status:r.status,required:r.required===true,reopening:r.reopening===true,relaunch:r.relaunch===true});}
+  for(const r of v.rows){if(!r||typeof r!=='object'||!['screen-recording','microphone','accessibility','speech-recognition','camera'].includes(r.permission)||!['granted','denied','not-determined'].includes(r.status))return null;rows.push({permission:r.permission,status:r.status,required:r.required===true,reopening:r.reopening===true,relaunch:r.relaunch===true});}
   return {step:v.step,ready:v.ready,fix:v.fix===true,rows,index:v.index,count:v.count,shortcut:typeof v.shortcut==='string'?v.shortcut.slice(0,80):'',shortcutEditing:v.shortcutEditing===true,shortcutChosen:v.shortcutChosen===true,
     penPicker:v.penPicker===true,penSelected:v.penSelected===true,penError:v.penError===true,penRgb:Array.isArray(v.penRgb)&&v.penRgb.length===3&&v.penRgb.every(n=>Number.isInteger(n)&&n>=0&&n<=255)?v.penRgb:[255,59,48],
     testInstance:v.testInstance===true,practice:phases.has(v.practice)?v.practice:null,firstCaptureRequired:v.firstCaptureRequired===true,
@@ -27,12 +27,37 @@ function coachPosition(area,anchor,board,phase){
   const position=options.find(p=>!overlaps(p,board)&&!overlaps(p,anchor))||options[0];
   return {x:position[0],y:position[1],arrow:Math.max(45,Math.min(width-45,x+w/2-position[0])),pointsUp:!board&&['whiteboard','stop','copied','locate'].includes(phase)};
 }
-module.exports={project,actions,coachPosition};
+// A renderer has no useful lifetime after its Rust parent disconnects.
+// Keep the error listener installed while closing: write callbacks/errors can arrive later.
+function parentChannel(output,onLost){
+  let connected=true;
+  const lost=error=>{if(!connected)return;connected=false;onLost(error)};
+  output.on('error',lost);
+  return {
+    send(action){
+      if(!connected)return false;
+      try{output.write(JSON.stringify({action})+'\n',error=>{if(error)lost(error)});return true;}
+      catch(error){lost(error);return false;}
+    },
+    close(){connected=false},
+  };
+}
+module.exports={project,actions,coachPosition,parentChannel};
 if(!process.versions.electron) return;
 const { app, BrowserWindow, ipcMain, screen, session } = require('electron');
 app.setName('Apparent Onboarding Test');
 if(process.env.APPARENT_UI_PROFILE)app.setPath('userData',process.env.APPARENT_UI_PROFILE);
-let window,state=null,buffer='',page,lastPlacement='';
+let window,state=null,buffer='',page,lastPlacement='',closing=false;
+const channel=parentChannel(process.stdout,error=>{
+  const expected=['EPIPE','ECONNRESET','ERR_STREAM_DESTROYED','ERR_STREAM_WRITE_AFTER_END'].includes(error?.code);
+  if(!expected)console.error('Onboarding parent channel failed:',error);
+  shutdown(expected?0:1);
+});
+function shutdown(code=0){
+  if(closing)return;
+  closing=true;channel.close();
+  if(code)app.exit(code);else app.quit();
+}
 app.whenReady().then(()=>{
   app.dock?.hide();session.defaultSession.setPermissionRequestHandler((_w,_p,cb)=>cb(false));
   session.defaultSession.setPermissionCheckHandler(()=>false);
@@ -41,15 +66,32 @@ app.whenReady().then(()=>{
   window.webContents.setWindowOpenHandler(()=>({action:'deny'}));window.webContents.on('will-navigate',e=>e.preventDefault());window.webContents.on('will-attach-webview',e=>e.preventDefault());
   const valid=e=>!window.isDestroyed()&&e.sender===window.webContents&&e.senderFrame===window.webContents.mainFrame&&e.senderFrame.url===page;
   ipcMain.handle('onboarding:state',(e,...args)=>{if(!valid(e)||args.length)throw Error('Forbidden state request');return state});
-  ipcMain.handle('onboarding:action',(e,...args)=>{if(!valid(e)||args.length!==1||!actions.has(args[0]))throw Error('Forbidden onboarding action');process.stdout.write(JSON.stringify({action:args[0]})+'\n');return true});
+  ipcMain.handle('onboarding:action',(e,...args)=>{if(!valid(e)||args.length!==1||!actions.has(args[0]))throw Error('Forbidden onboarding action');return channel.send(args[0])});
   window.webContents.on('did-finish-load',()=>{if(state)present(state)});
-  window.on('closed',()=>{process.stdout.write('{"action":"close"}\n');app.quit()});
+  window.on('closed',()=>{if(!closing)channel.send('close');shutdown()});
   void window.loadURL(page);
-  process.stdin.setEncoding('utf8');process.stdin.on('data',chunk=>{buffer+=chunk;if(buffer.length>131072){app.quit();return;}let end;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{const v=JSON.parse(line);if(v.type==='close'){app.quit();return;}if(v.type==='hide'){if(state?.step!=='try-it')window.hide();continue;}if(v.type==='show'){if(state)present(state);continue;}const next=project(v);if(next){state=next;present(next);}}catch{app.quit();return;}}});
-  process.stdin.on('end',()=>app.quit());process.stdin.resume();
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data',chunk=>{
+    if(closing)return;
+    buffer+=chunk;
+    if(buffer.length>131072){shutdown(1);return;}
+    let end;
+    while((end=buffer.indexOf('\n'))>=0){
+      const line=buffer.slice(0,end);buffer=buffer.slice(end+1);
+      let v;
+      try{v=JSON.parse(line)}catch{console.error('Invalid onboarding parent message');shutdown(1);return;}
+      if(!v||typeof v!=='object'||Array.isArray(v)){shutdown(1);return;}
+      if(v.type==='close'){shutdown();return;}
+      if(v.type==='hide'){if(state?.step!=='try-it')window.hide();continue;}
+      if(v.type==='show'){if(state)present(state);continue;}
+      const next=project(v);
+      if(next){state=next;present(next);}
+    }
+  });
+  process.stdin.on('end',()=>shutdown());process.stdin.on('error',error=>{console.error('Onboarding input failed:',error);shutdown(1)});process.stdin.resume();
 });
 function present(v){
-  if(!window||window.isDestroyed())return;
+  if(closing||!window||window.isDestroyed())return;
   if(v.shortcutEditing){window.hide();return;}
   const coach=v.step==='try-it';
   window.setAlwaysOnTop(coach,'floating');

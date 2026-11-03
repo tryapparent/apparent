@@ -257,8 +257,9 @@ accepts coral, purple, blue or green, is loaded at startup and applies immediate
 when saved by setup. Older bundles without stroke colour keep their red ink.
 Native platform and package verification remain required before release.
 
-The test installer exits after a successful launch. Test recording controls say
-**Test board** and the paper window says **Apparent Test Whiteboard**. The coach
+The test installer exits after a successful launch. Recording controls and prompts
+say **Whiteboard**, including in previews. The separate bundle identity and private
+config/capture paths still isolate it from everyday Apparent. The coach
 uses only this process’s typed Whiteboard window to reconcile open/close events
 and place itself beside the canvas; its label can be dragged if space is tight.
 Native permission guides are dismissed on grant and when leaving permissions,
@@ -286,3 +287,10 @@ frog moves on a complete arc and landing bounce; copy completion cannot cut it
 short. Opening a preview refuses an older running onboarding test or its UI, so
 launch forwarding cannot silently show that older version. Ordinary Apparent is
 not stopped or replaced. Native animation/launch proof is still a separate gate.
+
+Preview 5 keeps setup copy short: We need three things, then the permission rows;
+the shortcut page keeps its heading, saved keys and Change shortcut control.
+The Electron parent channel stops writing before parent-driven window shutdown.
+EOF or a broken output pipe closes that obsolete renderer quietly; other channel
+failures exit nonzero and remain visible in diagnostics. No global exception
+handler suppresses unrelated JavaScript errors.

@@ -357,7 +357,7 @@ fn recording_trail_widths(window: &Window, chips: bool, iphone: bool) -> Vec<f32
     } else {
         let mut widths = vec![chip_width(window, "Cancel", FontWeight::MEDIUM)];
         if whiteboard_enabled() {
-            widths.push(chip_width(window, if whiteboard::title() == "Apparent Test Whiteboard" { "Test board" } else { "Whiteboard" }, FontWeight::MEDIUM));
+            widths.push(chip_width(window, "Whiteboard", FontWeight::MEDIUM));
         }
         widths.push(chip_width(window, "Finish", FontWeight::SEMIBOLD));
         widths
@@ -4532,7 +4532,7 @@ impl HudPillWindow {
         let group = group.when(whiteboard_enabled(), |group| {
             let c_board = self.coordinator.clone();
             group.child(
-                pill_chip("hud-whiteboard", if whiteboard::title() == "Apparent Test Whiteboard" { "Test board" } else { "Whiteboard" }, theme)
+                pill_chip("hud-whiteboard", "Whiteboard", theme)
                     .opacity(alpha(1))
                     .when(interactive, |d| {
                         d.on_click(move |_, _, cx| {

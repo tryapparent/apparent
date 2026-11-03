@@ -181,6 +181,7 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 3
   const send = patch => child.stdin.write(JSON.stringify({ type:'state', step:'welcome', rows:[], ready:true,
     index:0, count:5, testInstance:true, shortcut:'⌃⌥⇧9', ...patch })+'\n');
   let output='';child.stdout.on('data',bytes=>output+=bytes);
+  await page.emulateMedia({reducedMotion:'no-preference'});
   send({ penPicker:true });
   await expect(page.getByRole('heading', { name:'Pick your pen.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
@@ -206,7 +207,7 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 3
   await expect.poll(()=>output).toContain('"action":"continue"');
   assert.equal(output.match(/"action":"continue"/g)?.length,1);
   send({ step:'try-it', practice:'whiteboard', anchor:[300,30,320,50] });
-  await expect(page.getByRole('heading', { name:'Open Test board.', exact:true })).toBeVisible();
+  await expect(page.getByRole('heading', { name:'Open Whiteboard.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(380);
   assert.equal(await page.evaluate(() => {
     const rect=document.querySelector('main').getBoundingClientRect();
@@ -217,12 +218,65 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 3
   await expect(page.getByText('Find the Apparent icon in your menu bar. Click it, then choose Open Latest Capture.', { exact:true })).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveAttribute('data-arrow','true');
   send({ step:'permissions' });
-  await expect(page.getByRole('heading', { name:'One permission at a time.', exact:true })).toBeVisible();
+  await expect(page.getByRole('heading', { name:'We need three things.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
+  assert.equal(await page.locator('.native-setup section > p').count(),0);
+  send({step:'shortcut',shortcutChosen:true});
+  await expect(page.getByRole('heading',{name:'Start and stop with your shortcut.',exact:true})).toBeVisible();
+  assert.equal(await page.locator('.native-setup section > p').count(),0);
+  await expect(page.getByRole('button',{name:'Change shortcut',exact:true})).toBeVisible();
   await page.emulateMedia({reducedMotion:'reduce'});
   send({penPicker:true,penSelected:true,penRgb:[59,121,189]});
   await expect(page.getByRole('heading',{name:'Pick your pen.',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'That’s my pen',exact:true}).click();
   await expect.poll(()=>output.match(/"action":"continue"/g)?.length).toBe(2);
   await expect(page.locator('.native-pond-frog')).toHaveCSS('animation-name','none');
+});
+
+// Replace only the default error dialog with a failing receipt. The real renderer,
+// stdin/stdout pipes, shutdown handlers and profile are exercised unchanged.
+test('onboarding survives a closed parent pipe and reopens the same profile', { timeout:30000 }, async t => {
+  const { spawn }=require('node:child_process');
+  const { chromium }=require('@playwright/test');
+  const profile=await fs.mkdtemp(path.join(os.tmpdir(),'onboarding-parent-'));
+  const wrapper=path.join(profile,'entry.cjs');
+  await fs.writeFile(wrapper,`const {app}=require('electron');\nprocess.on('uncaughtException',error=>{process.stderr.write('UNHANDLED_ONBOARDING:'+error.stack+'\\n');app.exit(42)});\nrequire(${JSON.stringify(path.resolve(__dirname,'../electron/onboarding.cjs'))});\n`);
+  const children=[],browsers=[];
+  t.after(async()=>{
+    for(const child of children)if(child.exitCode===null&&child.signalCode===null){
+      await new Promise((resolve,reject)=>{
+        const timer=setTimeout(()=>{child.kill('SIGKILL');reject(Error('Owned Electron child did not exit during cleanup'));},3000);
+        child.once('exit',()=>{clearTimeout(timer);resolve();});
+        child.kill();
+      });
+    }
+    for(const browser of browsers)await browser.close();
+    await fs.rm(profile,{recursive:true,force:true});
+  });
+  for(const reason of ['stdin ended','close command','action after broken output']){
+    const child=spawn(require('electron'),[wrapper,'--remote-debugging-port=0',...(process.platform==='linux'?['--no-sandbox']:[])],{env:{...process.env,APPARENT_UI_PROFILE:profile},stdio:['pipe','pipe','pipe']});
+    children.push(child);let stderr='';child.stderr.on('data',bytes=>stderr+=bytes);
+    const exit=new Promise(resolve=>child.once('exit',(code,signal)=>resolve({code,signal})));
+    const endpoint=await new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(Error('No debugger endpoint: '+stderr)),10000);
+      child.once('exit',()=>{clearTimeout(timer);reject(Error('Early exit: '+stderr));});
+      child.stderr.on('data',()=>{const match=stderr.match(/DevTools listening on (ws:\/\/[^\s]+)/);if(match){clearTimeout(timer);resolve(match[1]);}});
+    });
+    const browser=await chromium.connectOverCDP(endpoint);browsers.push(browser);
+    const context=browser.contexts()[0],page=context.pages()[0]||await context.waitForEvent('page');
+    child.stdin.write(JSON.stringify({type:'state',step:'permissions',ready:false,rows:[],index:1,count:4})+'\n');
+    await expect(page.locator('.native-permissions')).toBeVisible();
+    // The Rust parent can disappear during macOS Quit & Reopen. Its output
+    // consumer is gone before Electron's window-close event is delivered.
+    child.stdout.destroy();
+    if(reason==='stdin ended')child.stdin.end();
+    else if(reason==='close command')child.stdin.write('{"type":"close"}\n');
+    else await page.getByRole('button',{name:'Back',exact:true}).click().catch(error=>{if(!/closed|Target/.test(error.message))throw error;});
+    let timer;
+    const result=await Promise.race([exit,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Shutdown stalled: '+stderr)),5000)})]);
+    clearTimeout(timer);
+    assert.equal(result.code,0,reason+': '+stderr);
+    assert.ok(!stderr.includes('UNHANDLED_ONBOARDING'),stderr);
+    await browser.close();
+  }
 });

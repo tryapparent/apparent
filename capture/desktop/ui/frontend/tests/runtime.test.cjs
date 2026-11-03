@@ -201,3 +201,17 @@ test('onboarding coach avoids its board and pill on offset displays, preserves i
   assert.deepEqual(project(state).practiceBoard,[0,0,700,600]);
   assert.equal(project({...state,practiceBoard:[0,0,-1,600]}).practiceBoard,undefined);
 });
+
+test('onboarding output failure retires the channel once and preserves its error', async () => {
+  const { Writable }=require('node:stream');
+  const { parentChannel }=require('../electron/onboarding.cjs');
+  for(const code of ['EPIPE','EIO']){
+    const error=Object.assign(new Error(code),{code}),failures=[];
+    const output=new Writable({write(_bytes,_encoding,callback){callback(error)}});
+    const channel=parentChannel(output,failure=>failures.push(failure));
+    channel.send('continue');
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.deepEqual(failures,[error]);
+    assert.equal(channel.send('close'),false);
+  }
+});

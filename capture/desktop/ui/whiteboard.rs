@@ -18,9 +18,7 @@ use super::super::platform;
 
 pub(in crate::capture::desktop) const PAPER_WIDTH: f32 = 1600.0;
 pub(in crate::capture::desktop) const PAPER_HEIGHT: f32 = 1100.0;
-pub(in crate::capture::desktop) fn title() -> &'static str {
-    if std::env::var_os("APPARENT_TEST_INSTANCE").as_deref() == Some(std::ffi::OsStr::new("1")) { "Apparent Test Whiteboard" } else { "Apparent Whiteboard" }
-}
+pub(in crate::capture::desktop) const fn title() -> &'static str { "Apparent Whiteboard" }
 const TOOLBAR_HEIGHT: f32 = 64.0;
 const LILAC: u32 = 0xb7a5d8;
 
@@ -195,7 +193,7 @@ impl Render for WhiteboardWindow {
                                 .size(px(28.0))
                                 .flex_none(),
                             )
-                            .child(div().text_size(px(16.0)).font_weight(FontWeight::MEDIUM).child(if title() == "Apparent Test Whiteboard" { "Test Whiteboard" } else { "Whiteboard" })),
+                            .child(div().text_size(px(16.0)).font_weight(FontWeight::MEDIUM).child("Whiteboard")),
                     )
                     .child(
                         toolbar_button("whiteboard-undo", "Undo", false)

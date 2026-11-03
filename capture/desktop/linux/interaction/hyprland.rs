@@ -460,11 +460,11 @@ pub fn float_whiteboard() -> Result<()> {
                 ""
             };
             run(&format!(
-                "eval local w = hl.get_windows({{ title = '{}'  }})[1]; \
+                "eval local w; for _, candidate in ipairs(hl.get_windows({{ title = '{}' }})) do if candidate.address == '{}' then w = candidate; break end end; \
                  assert(w and w.address == '{}', 'Whiteboard window changed'); \
                  {}hl.dispatch(hl.dsp.window.float({{ action = 'set', window = w }})); \
                  hl.dispatch(hl.dsp.window.resize({{ x = 560, y = 460, window = w }}))",
-                crate::capture::desktop::ui::whiteboard::title(), address, unset_fullscreen
+                crate::capture::desktop::ui::whiteboard::title(), address, address, unset_fullscreen
             ))?;
         }
         Syntax::Hyprlang => {

@@ -96,6 +96,10 @@ jobs:
             echo 'App architecture: ${{ matrix.arch }}'
             sw_vers
           } > "$RUNNER_TEMP/onboarding-test-output/BUILD-INFO.txt"
+      - name: Verify the onboarding window and parent disconnect on macOS
+        if: matrix.arch == 'Intel'
+        working-directory: capture/desktop/ui/frontend
+        run: node --test --test-name-pattern='closed parent pipe|onboarding fixed window' tests/electron-smoke.cjs
       - uses: actions/upload-artifact@v4
         with:
           name: Apparent-Onboarding-Test-${{ matrix.arch }}
