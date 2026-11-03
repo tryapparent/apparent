@@ -20,7 +20,7 @@ permissions:
 # Finish running Mac work; coalesce only pending Linux-verified candidates.
 # Failed Linux completions and manual diagnostics cannot evict a good pending run.
 concurrency:
-  group: verification-macos-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success' && github.run_id || 'eligible' }}
+  group: verification-macos-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'workflow_run' && (github.event.workflow_run.conclusion != 'success' || github.event.workflow_run.event != 'push' || github.event.workflow_run.head_repository.full_name != github.repository) && github.run_id || 'eligible' }}
   cancel-in-progress: false
 
 jobs:

@@ -29,7 +29,7 @@ permissions:
 
 concurrency:
   # Verification cannot replace the pending publisher behind a running Main build.
-  group: release-linux-${{ github.ref }}-${{ inputs.tag }}-${{ inputs.verify_only == true && 'verify-only' || 'publish' }}
+  group: release-linux-${{ github.ref }}-${{ inputs.tag }}-${{ inputs.verify_only == true && 'verify-only' || 'publish' }}-${{ github.event_name == 'workflow_run' && (github.event.workflow_run.conclusion != 'success' || github.event.workflow_run.event != 'push' || github.event.workflow_run.head_repository.full_name != github.repository) && github.run_id || 'eligible' }}
   # Finish the running build/publication; GitHub coalesces to the latest pending run.
   cancel-in-progress: false
 

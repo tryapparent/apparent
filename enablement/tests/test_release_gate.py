@@ -238,6 +238,34 @@ class PublicationProgressTests(unittest.TestCase):
         with self.assertRaises(ValueError): gate.mac_feed_revision('example/project', '<rss/>', fetch)
         with self.assertRaises(ValueError): gate.mac_feed_revision('other/project', previous, fetch)
 
+    def test_ineligible_completions_cannot_evict_good_pending_candidates(self):
+        root = Path(__file__).resolve().parents[2]
+        for name in ('verification-mac.yml', 'web-delivery.yml', 'release-linux.yml'):
+            workflow = (root / '.github/workflows' / name).read_text()
+            group = workflow.split('\nconcurrency:\n')[1].split('  group: ')[1].splitlines()[0]
+            def key(**overrides):
+                values = {'github.event_name': 'workflow_run', 'github.ref': 'refs/heads/main',
+                          'github.event.workflow_run.conclusion': 'success',
+                          'github.event.workflow_run.event': 'push',
+                          'github.event.workflow_run.head_repository.full_name': 'example/project',
+                          'github.repository': 'example/project', 'github.run_id': 123,
+                          'inputs.tag': '', 'inputs.verify_only': False}
+                values.update(overrides)
+                def evaluate(match):
+                    expression = match[1]
+                    for field in sorted(values, key=len, reverse=True):
+                        expression = expression.replace(field, repr(values[field]))
+                    expression = expression.replace('&&', ' and ').replace('||', ' or ').replace('true', 'True')
+                    return str(eval(expression, {'__builtins__': {}}))
+                return re.sub(r'\$\{\{(.*?)\}\}', evaluate, group)
+            with self.subTest(workflow=name):
+                good = key()
+                self.assertEqual(good, key(**{'github.run_id': 124}))
+                for field, value in [('github.event.workflow_run.conclusion', 'failure'),
+                                     ('github.event.workflow_run.event', 'workflow_dispatch'),
+                                     ('github.event.workflow_run.head_repository.full_name', 'fork/project')]:
+                    self.assertNotEqual(good, key(**{field: value}))
+
     def test_workflow_scheduling_keeps_running_work_and_matching_candidates(self):
         root = Path(__file__).resolve().parents[2]
         linux = (root / gate.WORKFLOWS['linux']).read_text()
@@ -246,7 +274,8 @@ class PublicationProgressTests(unittest.TestCase):
             concurrency = workflow.split('\nconcurrency:\n')[1].split('\njobs:')[0]
             self.assertIn('cancel-in-progress: false', concurrency)
             self.assertIn('github.event_name', concurrency)
-        self.assertIn("github.event.workflow_run.conclusion != 'success' && github.run_id", mac)
+        self.assertIn("github.event.workflow_run.conclusion != 'success'", mac)
+        self.assertIn("github.event.workflow_run.event != 'push'", mac)
         self.assertIn('workflows: [Linux verification]', mac)
         self.assertNotIn('  push:', mac)
         self.assertIn('revision: ${{ needs.admit.outputs.sha }}', mac)

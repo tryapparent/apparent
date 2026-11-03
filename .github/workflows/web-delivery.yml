@@ -13,7 +13,7 @@ permissions:
 # Never cancel a deployment halfway through publication. Every publisher also
 # checks ancestry against the deployed revision while this lock is held.
 concurrency:
-  group: web-delivery-production
+  group: web-delivery-production-${{ github.event_name == 'workflow_run' && (github.event.workflow_run.conclusion != 'success' || github.event.workflow_run.event != 'push' || github.event.workflow_run.head_repository.full_name != github.repository) && github.run_id || 'eligible' }}
   cancel-in-progress: false
 
 jobs:

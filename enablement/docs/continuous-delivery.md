@@ -110,10 +110,10 @@ the served tree; publication uses `--no-bundle` and verifies the downloaded byte
 The source-built homepage is never replaced by a committed deployment snapshot.
 Website artifacts are retained for 90 days, with Pages deployment IDs and receipts
 supporting rollback without rebuilding. Production runs are serialized
-without canceling a deployment halfway through; each publisher also refuses a
-candidate that is no longer current `main`. Pages treats a revision superseded
-after admission as a successful skip, without uploading or issuing a deployment
-receipt; remote lookup, upload and readback errors still fail the job. A relevant
+without canceling a deployment halfway through. Publishers admit verified main
+ancestors but refuse to replace an equal or newer deployed revision. Pages treats
+such a superseded revision as a successful skip, without uploading or issuing a
+deployment receipt; remote lookup, upload and readback errors still fail the job. A relevant
 later push supplies the replacement; otherwise dispatch the workflow on `main` after reviewing it.
 
 ## Website activation: Cloudflare Pages
