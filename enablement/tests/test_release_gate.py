@@ -74,12 +74,13 @@ class AdmissionTests(unittest.TestCase):
         self.assertIn('shared-key: rust', build)
         self.assertIn('save-if: false', build)
         self.assertNotIn('brew install ffmpeg', build)
-        self.assertNotIn('dtolnay/rust-toolchain', build + native)
         for section in (build, native):
-            self.assertIn('rustup toolchain install 1.99.1 --profile minimal --no-self-update', section)
-            self.assertIn('rustup default 1.99.1', section)
+            self.assertIn('uses: dtolnay/rust-toolchain@stable', section)
+            self.assertIn('toolchain: 1.99.1', section)
+            self.assertIn('rustup toolchain list --quiet', section)
         self.assertIn("CARGO_INCREMENTAL: '0'", build)
-        self.assertLess(build.index('Begin bounded Metal preparation'), build.index('rustup toolchain install'))
+        self.assertLess(build.index('Begin bounded Metal preparation'), build.index('uses: dtolnay/rust-toolchain@stable'))
+        self.assertLess(build.index('rustup toolchain list --quiet'), build.index('uses: Swatinem/rust-cache@v2'))
         self.assertLess(build.index('metal.py --await'), build.index('taskpolicy -c utility cargo build'))
         self.assertNotIn('swiftc -typecheck', native)
         fixture = (root / 'capture/desktop/ui/frontend/tests/mac-storage-native.cjs').read_text()
@@ -580,7 +581,7 @@ class SettingsMetalPreparationTests(unittest.TestCase):
         import time
         workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/verification-mac.yml').read_text()
         section = workflow.split('      - name: Begin bounded Metal preparation', 1)[1]
-        script = textwrap.dedent(section.split('        run: |\n', 1)[1].split('      - name:', 1)[0])
+        script = textwrap.dedent(section.split('        run: |\n', 1)[1].split('      - ', 1)[0])
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             tool = root / 'xcrun'

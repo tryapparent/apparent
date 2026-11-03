@@ -101,14 +101,18 @@ jobs:
           umask 077
           mkdir -m 700 "$RUNNER_TEMP/settings-build"
           python3 enablement/verification/focused/metal.py "$RUNNER_TEMP/settings-build/metal.status" > "$RUNNER_TEMP/settings-build/metal.log" 2>&1 &
-      - name: Select the cache-compatible Rust toolchain
+      - uses: dtolnay/rust-toolchain@stable
         timeout-minutes: 2
+        with:
+          # Match the trusted main producer, including its Cargo environment.
+          toolchain: 1.99.1
+      - name: Verify compiler and installed inventory
+        timeout-minutes: 1
         run: |
-          rustup toolchain install 1.99.1 --profile minimal --no-self-update
-          rustup default 1.99.1
           test "$(rustc -V)" = 'rustc 1.99.1 (58cf8f9c3 2026-10-13)'
           rustc -vV
           cargo -V
+          rustup toolchain list --quiet
       - uses: Swatinem/rust-cache@v2
         timeout-minutes: 3
         with:
@@ -186,14 +190,18 @@ jobs:
         timeout-minutes: 1
         with:
           xcode-version: '26.0'
-      - name: Select the cache-compatible Rust toolchain
+      - uses: dtolnay/rust-toolchain@stable
         timeout-minutes: 2
+        with:
+          # Match the trusted main producer, including its Cargo environment.
+          toolchain: 1.99.1
+      - name: Verify compiler and installed inventory
+        timeout-minutes: 1
         run: |
-          rustup toolchain install 1.99.1 --profile minimal --no-self-update
-          rustup default 1.99.1
           test "$(rustc -V)" = 'rustc 1.99.1 (58cf8f9c3 2026-10-13)'
           rustc -vV
           cargo -V
+          rustup toolchain list --quiet
       - uses: actions/setup-node@v4
         timeout-minutes: 2
         with:

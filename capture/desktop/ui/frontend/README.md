@@ -768,9 +768,13 @@ A timeout requires owner-local optimization and a successful rerun; it does not
 authorize a larger budget or less acceptance.
 
 Focused Settings restores the shared Rust cache without republishing it; main
-owns cache refresh. Both jobs install/select Rust 1.99.1 and check its expected
-compiler identity, because hosted `stable` can be older than the warmed cache.
-The consumer's full producer/toolchain comparison remains mandatory.
+owns cache refresh. Both jobs use the trusted producer's setup action pinned to
+Rust 1.99.1, retaining its CARGO_HOME, CARGO_INCREMENTAL and CARGO_TERM_COLOR
+environment. They verify the expected compiler and log all installed toolchains,
+because both environment and compiler inventory affect the cache fingerprint.
+The consumer's full producer/toolchain comparison remains mandatory. A new
+fingerprint needs a successful trusted-main cache save before relying on reuse;
+no variables, installed toolchains or fingerprints are removed to force a hit.
 
 Metal preparation overlaps Rust installation/cache restore in the builder, with
 a 120-second subprocess limit and atomic status. Cargo starts only after success.
