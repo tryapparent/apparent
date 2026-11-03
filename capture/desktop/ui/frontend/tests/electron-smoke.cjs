@@ -189,6 +189,10 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 3
     const rect=document.querySelector('main').getBoundingClientRect();
     return rect.left>=0 && rect.right<=innerWidth && rect.bottom<=innerHeight;
   }), true);
+  send({ step:'try-it', practice:'locate', anchor:[900,0,24,24] });
+  await expect(page.getByRole('heading', { name:'Apparent lives here.', exact:true })).toBeVisible();
+  await expect(page.getByText('Find the Apparent icon in your menu bar. Click it, then choose Open Latest Capture.', { exact:true })).toBeVisible();
+  await expect(page.locator('.native-coach')).toHaveAttribute('data-arrow','true');
   send({ step:'permissions' });
   await expect(page.getByRole('heading', { name:'One permission at a time.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);

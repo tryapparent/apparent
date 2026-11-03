@@ -883,6 +883,26 @@ pub enum Event {
     /// The inline recorder uses the same actions and validation as Settings.
     Shortcut(crate::capture::desktop::settings::Action),
     Exited,
+    /// Reader callbacks belong to the session that created their transport.
+    Session { source: u64, event: Box<Event> },
+}
+
+impl Event {
+    pub fn for_current_session(self, active: Option<u64>) -> Option<Self> {
+        match self {
+            Self::Session { source, event } if Some(source) == active => match *event {
+                Self::Session { .. } => None,
+                event => Some(event),
+            },
+            Self::Session { .. } => None,
+            event => Some(event), // App-wide launch and OS grant notifications.
+        }
+    }
+}
+
+fn next_session_source() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Reads what's granted now from a fresh helper, except Accessibility: the separately
@@ -955,6 +975,7 @@ pub fn poll_grants(
 /// The open welcome window: the `Flow` and the window drawing it. On macOS the app
 /// supplies permission updates even while this window is closed; other platforms poll here.
 pub struct Session {
+    source: u64,
     flow: Flow,
     transport: Transport,
     polling: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -980,6 +1001,7 @@ impl Session {
     #[cfg(test)]
     pub(crate) fn for_test(flow: Flow) -> Self {
         Self {
+            source: next_session_source(),
             flow,
             transport: Transport::InProcess(None),
             polling: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -1006,6 +1028,8 @@ impl Session {
         #[cfg(not(target_os = "macos"))]
         use std::sync::atomic::Ordering;
 
+        let source = next_session_source();
+        let events = Self::scope_events(source, events);
         let shell = std::env::var_os("APPARENT_ONBOARDING_SHELL").is_some();
         let transport = if !shell && cfg!(not(target_os = "macos")) {
             let (sender, receiver) = flume::unbounded();
@@ -1038,6 +1062,7 @@ impl Session {
         let progress = Progress::load();
         let allowed = relaunch_allowed(&progress, unix_ms());
         let mut session = Self {
+            source,
             flow: flow
                 .with_auto_relaunch(allowed)
                 .with_tutorial(progress.tutorial)
@@ -1062,6 +1087,14 @@ impl Session {
         };
         session.sync();
         Ok(session)
+    }
+
+    pub fn source(&self) -> u64 { self.source }
+
+    fn scope_events(source: u64, events: impl Fn(Event) + Send + Sync + Clone + 'static)
+        -> impl Fn(Event) + Send + Sync + Clone + 'static
+    {
+        move |event| events(Event::Session { source, event: Box::new(event) })
     }
 
     fn spawn_helper(
@@ -1500,6 +1533,41 @@ mod tests {
         let mut session=Session::for_test(Flow::tour(Step::TryIt,Some(grants(&Permission::REQUIRED))).with_first_capture(true,true,false));
         session.practice=Some(super::super::practice::Practice::default());session
     }
+    #[test]
+    fn replay_rejects_queued_events_from_the_retired_transport() {
+        let old=coached_session();
+        let (sender,receiver)=flume::unbounded();
+        let emit=Session::scope_events(old.source(),move |event| {sender.send(event).unwrap();});
+        // The old stream may queue actions before closing, and Exited after it closes.
+        emit(Event::Action("continue".into()));
+        drop(old);
+        let replacement=coached_session();
+        emit(Event::Exited);
+        for event in receiver.try_iter() {
+            assert!(event.for_current_session(Some(replacement.source())).is_none());
+        }
+        let (sender,receiver)=flume::unbounded();
+        let emit=Session::scope_events(replacement.source(),move |event| {sender.send(event).unwrap();});
+        emit(Event::Action("continue".into()));
+        emit(Event::Exited);
+        assert!(matches!(receiver.recv().unwrap().for_current_session(Some(replacement.source())),Some(Event::Action(_))));
+        assert!(matches!(receiver.recv().unwrap().for_current_session(Some(replacement.source())),Some(Event::Exited)));
+        assert!(matches!(Event::Launch(grants(&Permission::REQUIRED)).for_current_session(None),Some(Event::Launch(_))));
+    }
+
+    #[test]
+    fn menu_bar_lesson_remains_after_paste_and_requires_opening_own_capture() {
+        let mut s=coached_session();
+        s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.observe_practice(true,1,true,Some(true));
+        s.input(Input::CaptureEnded{completed:true});
+        assert!(!s.practice_locating());
+        s.action("practice-paste");assert!(!s.practice_locating());
+        s.action("practice-pasted");assert!(s.practice_locating());
+        assert_eq!(s.action("practice-finish"),Effect::None);
+        s.practice_latest();assert_eq!(s.action("practice-finish"),Effect::Close);
+    }
+
     #[test]
     fn coaching_finishes_after_completion_pill_dismissal() {
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);

@@ -26,7 +26,7 @@ export function NativeOnboarding(){
       preparing:{title:'Preparing your capture…',text:'Recording has stopped. Your marks and context are being brought together.'},
       copied:{title:'Copied. Try pasting it.',text:'Your capture is on the clipboard. Open the agent you use and paste it there.',button:'Show paste instructions',action:'practice-paste'},
       paste:{title:'Paste your capture.',text:'Press ⌘ V in your agent. After checking that the capture appeared, confirm below.',button:'I’ve pasted it',action:'practice-pasted'},
-      locate:{title:'Find Apparent here.',text:'Click Apparent in the menu bar, then choose Open Latest Capture.'},
+      locate:{title:'Apparent lives here.',text:'Find the Apparent icon in your menu bar. Click it, then choose Open Latest Capture.'},
       complete:{title:'Ready for your next idea.',text:'You can record, draw, paste, and find your captures. Nice first hop.',button:'Finish setup',action:'practice-finish'},
       retry:{title:'Try another capture.',text:`Press ${state.shortcut}, open Whiteboard, then try both drawing steps. Your previous capture was kept.`},
       'copy-failed':{title:'Saved, but not copied.',text:'The capture is saved. Open it from Apparent’s menu; setup has not marked the paste lesson complete.'},

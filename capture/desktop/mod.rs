@@ -1566,7 +1566,9 @@ impl ApparentCoordinator {
 
     fn onboarding_event(&mut self, event: crate::capture::desktop::settings::onboarding::Event, cx: &mut Context<Self>) {
         use crate::capture::desktop::settings::onboarding::{Effect, Event, Progress};
+        let Some(event)=event.for_current_session(self.onboarding.as_ref().map(|session|session.source())) else {return;};
         let effect = match event {
+            Event::Session { .. } => Effect::None,
             Event::Launch(grants) => {
                 self.note_grants(&grants);
                 let mut progress = Progress::load();

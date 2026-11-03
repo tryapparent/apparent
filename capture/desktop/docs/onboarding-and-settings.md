@@ -266,3 +266,10 @@ including the shared renderer route. The screen-recording drag card prefers the
 lower Settings content column, with an opaque surface and an upward instruction;
 its placement is geometric, not a semantic lookup of Settings sections. Exact
 audio-only coverage across Settings layouts requires live macOS verification.
+
+Replaying the welcome tour replaces the prior session. Renderer, native adapter
+and session poller callbacks carry their source session ID; queued events from a
+retired session cannot dismiss or advance its replacement. App-wide launch and
+permission notifications retain their existing route. The **Apparent lives here**
+coach remains after the manual paste confirmation, anchored to this app’s menu-bar
+icon on macOS; opening its latest capture completes that lesson.
