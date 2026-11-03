@@ -1,6 +1,6 @@
 # Encrypted Connect handoff — issue #189 candidate
 
-This owner-local implementation is an **off-by-default candidate**, not deployed encryption or a completed security audit. Local `.apparent` bundles remain ordinary. `experiments.hostedEncryption=true` selects encryption on each endpoint before its existing Connect approval. No production setting, account access, real recording or migration is enabled by this change.
+Endpoint encryption is available by default with private Connect; availability is not a completed security audit. Local `.apparent` bundles remain ordinary. An explicit `experiments.hostedEncryption=false` opts out. Encrypted transfer requires an endpoint enrolled through its existing explicit Connect approval; changing the flag does not enroll a key or grant upload consent. No production setting, account access, real recording or migration is enabled by this change.
 
 ## Accepted journey and trust boundary
 
