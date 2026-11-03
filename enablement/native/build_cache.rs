@@ -5,10 +5,12 @@ use std::os::unix::fs::PermissionsExt;
 #[cfg(test)]
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
+    collections::BTreeSet,
     fs,
     io::Write,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::OnceLock,
     time::Instant,
 };
 
@@ -26,6 +28,16 @@ pub fn add_file(record: &mut Vec<u8>, label: &str, path: &Path) -> std::io::Resu
 
 /// Return compiler/tool identity bytes, or None so callers can safely bypass reuse.
 pub fn apple_toolchain_identity() -> Option<Vec<u8>> {
+    // The selected SDK cannot change during one build-script execution. Hash it
+    // once for the Swift helper and both shaders, without persisting a weaker
+    // timestamp-only SDK cache across executions.
+    static IDENTITY: OnceLock<Option<Vec<u8>>> = OnceLock::new();
+    IDENTITY
+        .get_or_init(|| timed("Apple toolchain fingerprint", discover_apple_toolchain))
+        .clone()
+}
+
+fn discover_apple_toolchain() -> Option<Vec<u8>> {
     let dev = command_output("xcode-select", &["-p"])?;
     let xcode = command_output("xcodebuild", &["-version"])?;
     let sdk_path = command_output("xcrun", &["--sdk", "macosx", "--show-sdk-path"])?;
@@ -60,23 +72,13 @@ pub fn apple_toolchain_identity() -> Option<Vec<u8>> {
         sdks.push(sdk);
     }
     for sdk in sdks {
-        let mut found = false;
-        for name in ["SDKSettings.json", "SDKSettings.plist"] {
-            let path = sdk.join(name);
-            if path.is_file() {
-                println!("cargo:rerun-if-changed={}", path.display());
-                add_field(
-                    &mut record,
-                    b"sdk-metadata-path",
-                    path.as_os_str().as_encoded_bytes(),
-                );
-                add_file(&mut record, name, &path).ok()?;
-                found = true;
-            }
-        }
-        if !found {
-            return None;
-        }
+        println!("cargo:rerun-if-changed={}", sdk.display());
+        add_field(&mut record, b"sdk-path", sdk.as_os_str().as_encoded_bytes());
+        add_field(
+            &mut record,
+            b"sdk-tree-sha256",
+            tree_digest(&sdk).ok()?.as_bytes(),
+        );
     }
     for (name, value) in [
         ("developer-dir", dev.trim()),
@@ -187,6 +189,71 @@ pub fn add_compiler_env(record: &mut Vec<u8>) {
 
 /// Uses the fixed macOS system tool instead of introducing a build dependency.
 pub fn digest(bytes: Vec<u8>) -> std::io::Result<String> {
+    digest_stream(|input| input.write_all(&bytes))
+}
+
+// Stream SDK bytes rather than holding an SDK in memory or starting one hash
+// process per header/module. Escaping symlinks and special files disable reuse.
+fn tree_digest(path: &Path) -> std::io::Result<String> {
+    let root = fs::canonicalize(path)?;
+    digest_stream(|input| write_tree(&root, &root, &mut BTreeSet::new(), input))
+}
+
+fn write_tree(
+    path: &Path,
+    root: &Path,
+    seen: &mut BTreeSet<PathBuf>,
+    input: &mut dyn Write,
+) -> std::io::Result<()> {
+    fn field(input: &mut dyn Write, value: &[u8]) -> std::io::Result<()> {
+        input.write_all(&(value.len() as u64).to_be_bytes())?;
+        input.write_all(value)
+    }
+    field(
+        input,
+        path.strip_prefix(root)
+            .map_err(std::io::Error::other)?
+            .as_os_str()
+            .as_encoded_bytes(),
+    )?;
+    let resolved = fs::canonicalize(path)?;
+    if !resolved.starts_with(root) {
+        return Err(std::io::Error::other("SDK symlink escapes SDK root"));
+    }
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() {
+        input.write_all(b"L")?;
+        field(input, fs::read_link(path)?.as_os_str().as_encoded_bytes())?;
+        return write_tree(&resolved, root, seen, input);
+    }
+    if !seen.insert(resolved) {
+        return input.write_all(b"R");
+    }
+    if metadata.is_dir() {
+        input.write_all(b"D")?;
+        let mut children = fs::read_dir(path)?
+            .map(|entry| entry.map(|entry| entry.path()))
+            .collect::<std::io::Result<Vec<_>>>()?;
+        children.sort();
+        input.write_all(&(children.len() as u64).to_be_bytes())?;
+        for child in children {
+            write_tree(&child, root, seen, input)?;
+        }
+    } else if metadata.is_file() {
+        input.write_all(b"F")?;
+        input.write_all(&metadata.len().to_be_bytes())?;
+        if std::io::copy(&mut fs::File::open(path)?, input)? != metadata.len() {
+            return Err(std::io::Error::other("SDK file changed while hashing"));
+        }
+    } else {
+        return Err(std::io::Error::other("unsupported SDK file type"));
+    }
+    Ok(())
+}
+
+fn digest_stream(
+    write: impl FnOnce(&mut dyn Write) -> std::io::Result<()>,
+) -> std::io::Result<String> {
     let mut child = Command::new("/usr/bin/shasum")
         .args(["-a", "256"])
         .env_clear()
@@ -196,7 +263,7 @@ pub fn digest(bytes: Vec<u8>) -> std::io::Result<String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()?;
-    let written = child.stdin.take().unwrap().write_all(&bytes);
+    let written = write(&mut child.stdin.take().unwrap());
     let output = child.wait_with_output()?;
     written?;
     if !output.status.success() {
@@ -347,6 +414,30 @@ mod tests {
         let mut b = Vec::new();
         add_field(&mut b, b"a", b"bc");
         assert_ne!(a, b);
+    }
+    #[test]
+    fn sdk_content_and_internal_links_are_fingerprinted_and_escaping_links_fail() {
+        let root = temp();
+        let sdk = root.join("sdk");
+        fs::create_dir_all(&sdk).unwrap();
+        fs::write(sdk.join("SDKSettings.json"), b"unchanged").unwrap();
+        fs::write(sdk.join("header.h"), b"before").unwrap();
+        let first = tree_digest(&sdk).unwrap();
+        assert_eq!(first, tree_digest(&sdk).unwrap());
+        fs::write(sdk.join("header.h"), b"edited").unwrap();
+        assert_ne!(first, tree_digest(&sdk).unwrap());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            symlink("header.h", sdk.join("alias.h")).unwrap();
+            let linked = tree_digest(&sdk).unwrap();
+            fs::write(sdk.join("header.h"), b"latest").unwrap();
+            assert_ne!(linked, tree_digest(&sdk).unwrap());
+            fs::write(root.join("outside"), b"outside").unwrap();
+            symlink("../outside", sdk.join("escape.h")).unwrap();
+            assert!(tree_digest(&sdk).is_err());
+        }
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn hit_corruption_missing_and_failed_build_behavior() {

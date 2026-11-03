@@ -6,7 +6,10 @@
 Reuse stays inside the current Cargo `OUT_DIR`; it is separate from executable
 artifact admission and Rust dependency caches. The key covers actual native
 source/plist bytes, compiler recipe, target and environment, and selected Apple
-toolchain identity. A receipt is reusable only while its output hashes match.
+toolchain identity, including streamed SDK content hashes. SDK hashing runs once
+per build-script process; it does not trust a persistent timestamp-only SDK hash.
+SDK links escaping their root disable reuse. Actual hashing overhead must be
+included in the Darwin timing result. A receipt is reusable only while its output hashes match.
 On each build-script execution, missing, corrupt or mismatched output rebuilds; failed identity discovery runs
 the normal compiler path without admitting a cache entry. Root Git revision and
 dirty labels continue to be calculated on every build-script invocation.
