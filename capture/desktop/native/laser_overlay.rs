@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 use std::mem::size_of;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use core_graphics_types::geometry::CGSize;
@@ -21,7 +21,9 @@ use objc2_foundation::{NSPoint, NSRect};
 use objc2_quartz_core::CALayer;
 
 use crate::capture::engine::runtime::SharedCaptureTelemetry;
-use crate::capture::engine::sketch::{pin_pulse, slice_laser_window, smooth_ink_points, smooth_laser_points};
+use crate::capture::engine::sketch::{
+    pin_pulse, slice_laser_window, smooth_ink_points, smooth_laser_points,
+};
 
 const TAIL_DURATION_SEC: f32 = 0.42;
 const MAX_SEGMENTS: usize = 16_384;
@@ -89,6 +91,8 @@ impl LaserUniforms {
 }
 
 pub struct MetalLaserOverlay {
+    desktop: Vec<MetalLaserOverlay>,
+    telemetry: Arc<SharedCaptureTelemetry>,
     window: Retained<NSPanel>,
     display_link: CVDisplayLink,
     display_link_context: *const SharedMetalOverlay,
@@ -105,7 +109,10 @@ fn pick_screen(
     let screens = crate::capture::engine::runtime::screens::current();
     let index = on
         .and_then(|r| crate::capture::engine::runtime::screens::index_for_rect(&screens, r))
-        .or_else(|| crate::capture::engine::runtime::screens::pointer().and_then(|p| crate::capture::engine::runtime::screens::index_at(&screens, p)))
+        .or_else(|| {
+            crate::capture::engine::runtime::screens::pointer()
+                .and_then(|p| crate::capture::engine::runtime::screens::index_at(&screens, p))
+        })
         .or(if screens.is_empty() { None } else { Some(0) })?;
     let screen = screens[index];
     let primary_h = NSScreen::screens(mtm).firstObject()?.frame().size.height;
@@ -123,6 +130,14 @@ impl MetalLaserOverlay {
         telemetry: Arc<SharedCaptureTelemetry>,
         on: Option<[f64; 4]>,
     ) -> Result<Self, String> {
+        Self::open_kind(telemetry, on, false)
+    }
+
+    fn open_kind(
+        telemetry: Arc<SharedCaptureTelemetry>,
+        on: Option<[f64; 4]>,
+        ink_only: bool,
+    ) -> Result<Self, String> {
         let mtm = MainThreadMarker::new().ok_or("Metal overlay requires the main thread")?;
         let (screen, frame) =
             pick_screen(mtm, on).ok_or("No screen available for Metal overlay")?;
@@ -130,13 +145,14 @@ impl MetalLaserOverlay {
         let [ox, oy, _, _] = screen.frame;
 
         let shared = Arc::new(SharedMetalOverlay::new(
-            telemetry,
+            Arc::clone(&telemetry),
             [ox as f32, oy as f32],
             frame.size.width as f32,
             frame.size.height as f32,
             scale,
         )?);
 
+        shared.ink_only.store(ink_only, Ordering::Release);
         let window = NSPanel::initWithContentRect_styleMask_backing_defer(
             mtm.alloc(),
             frame,
@@ -192,6 +208,8 @@ impl MetalLaserOverlay {
         let _ = display_link.start();
 
         Ok(Self {
+            desktop: Vec::new(),
+            telemetry,
             window,
             display_link,
             display_link_context,
@@ -199,8 +217,28 @@ impl MetalLaserOverlay {
         })
     }
 
+    /// Keep one scale-correct, click-through panel on each display during capture.
+    pub fn cover_desktop(&mut self) -> Result<Vec<u32>, String> {
+        let mut overlays = Vec::new();
+        for screen in crate::capture::engine::runtime::screens::current() {
+            if !same_rect(screen.frame, self.screen) {
+                let overlay =
+                    Self::open_kind(Arc::clone(&self.telemetry), Some(screen.frame), true)?;
+                overlays.push(overlay);
+            }
+        }
+        let ids = overlays.iter().map(Self::window_number).collect();
+        self.desktop = overlays;
+        Ok(ids)
+    }
+
     pub fn window_number(&self) -> u32 {
         self.window.windowNumber().max(0) as u32
+    }
+
+    /// The picker owns only the original panel; other displays need no ink layer.
+    pub fn prepare_picker(&mut self) {
+        self.desktop.clear();
     }
 
     /// The screen it covers, global points.
@@ -270,6 +308,7 @@ extern "C" fn display_link_callback(
 }
 
 struct SharedMetalOverlay {
+    ink_only: AtomicBool,
     telemetry: Arc<SharedCaptureTelemetry>,
     renderer: Mutex<MetalLaserRenderer>,
 }
@@ -316,6 +355,7 @@ impl SharedMetalOverlay {
         let pipelines = OverlayPipelines::new(&device)?;
 
         Ok(Self {
+            ink_only: AtomicBool::new(false),
             telemetry,
             renderer: Mutex::new(MetalLaserRenderer {
                 command_queue: device.new_command_queue(),
@@ -432,6 +472,12 @@ impl SharedMetalOverlay {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
+        let desktop_ink = self
+            .telemetry
+            .desktop_ink
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
         let active_laser = self
             .telemetry
             .active_laser
@@ -445,8 +491,12 @@ impl SharedMetalOverlay {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
 
-        let mut strokes: Vec<(crate::shared::model::Stroke, bool)> =
-            committed_strokes.into_iter().map(|s| (s, false)).collect();
+        let mut strokes: Vec<(crate::shared::model::Stroke, bool)> = committed_strokes
+            .into_iter()
+            .filter(|s| s.laser || s.pin.is_some())
+            .chain(desktop_ink)
+            .map(|s| (s, false))
+            .collect();
         if let Some(laser) = active_laser {
             strokes.push((laser, true));
         }
@@ -558,13 +608,18 @@ impl SharedMetalOverlay {
             } else {
                 segments.len().min(MAX_SEGMENTS)
             };
+            let ink_only = self.ink_only.load(Ordering::Acquire);
             let uniforms = LaserUniforms {
                 resolution: [
                     renderer.width * renderer.scale,
                     renderer.height * renderer.scale,
                 ],
                 scale: renderer.scale,
-                now_sec,
+                now_sec: if ink_only {
+                    now_sec.max(SETTLED_SEC)
+                } else {
+                    now_sec
+                },
                 tail_duration: picker_fade,
                 tip_active: if is_active && shift_held { 1.0 } else { 0.0 },
                 tip_pos: pointer,
@@ -574,12 +629,16 @@ impl SharedMetalOverlay {
                 } else {
                     pins.len().min(MAX_PINS) as u32
                 },
-                constrain_rect: if is_constrained { 1.0 } else { 0.0 },
-                _pad1: mode_code,
+                constrain_rect: if is_constrained && !ink_only {
+                    1.0
+                } else {
+                    0.0
+                },
+                _pad1: if ink_only { 0.0 } else { mode_code },
                 target_rect: [tx, ty, tw, th],
                 glow: [
                     f32::from(u8::from(
-                        is_active && self.telemetry.start_glow.load(Ordering::Acquire),
+                        is_active && !ink_only && self.telemetry.start_glow.load(Ordering::Acquire),
                     )),
                     0.0,
                     0.0,
@@ -881,7 +940,8 @@ mod tests {
         descriptor.set_width(w);
         descriptor.set_height(h);
         descriptor.set_usage(metal::MTLTextureUsage::RenderTarget);
-        descriptor.set_storage_mode(metal::MTLStorageMode::Shared);
+        // Keep the device default: Shared textures are unavailable on Intel GPUs.
+        // Managed textures need an explicit GPU-to-CPU copy before readback.
         let texture = device.new_texture(&descriptor);
         let pass = RenderPassDescriptor::new();
         let attachment = pass.color_attachments().object_at(0).unwrap();
@@ -892,8 +952,18 @@ mod tests {
         let queue = device.new_command_queue();
         let cmd = queue.new_command_buffer();
         encode_overlay(cmd, pass, &device, pipeline, uniforms, segments, pins);
+        if texture.storage_mode() == metal::MTLStorageMode::Managed {
+            let blit = cmd.new_blit_command_encoder();
+            blit.synchronize_resource(&texture);
+            blit.end_encoding();
+        }
         cmd.commit();
         cmd.wait_until_completed();
+        assert_eq!(
+            cmd.status(),
+            metal::MTLCommandBufferStatus::Completed,
+            "offscreen rendering command failed before pixel readback"
+        );
         let mut pixels = vec![0u8; (w * h * 4) as usize];
         texture.get_bytes(
             pixels.as_mut_ptr().cast(),
@@ -960,7 +1030,15 @@ mod tests {
         let (size, scale) = (80_u64, 2.0_f32);
         let points = size as f32 / scale;
         let centre = points / 2.0;
-        for age in [0, 40, 90, 150, 220, 300, crate::capture::engine::sketch::PIN_PULSE_MS] {
+        for age in [
+            0,
+            40,
+            90,
+            150,
+            220,
+            300,
+            crate::capture::engine::sketch::PIN_PULSE_MS,
+        ] {
             let pin = pin_pulse(age).map_or(PinMarker::default(), |(radius, alpha)| PinMarker {
                 pos: [centre, centre],
                 radius,
@@ -978,12 +1056,9 @@ mod tests {
                 tile_size: TILE_PT,
                 ..Default::default()
             };
-            let Some(pixels) = render_offscreen(
-                Shader::Picked,
-                &uniforms,
-                &[PathSegment::default()],
-                &[pin],
-            ) else {
+            let Some(pixels) =
+                render_offscreen(Shader::Picked, &uniforms, &[PathSegment::default()], &[pin])
+            else {
                 return;
             };
             let max_alpha = pixels.chunks_exact(4).map(|p| p[3]).max().unwrap_or(0);
@@ -1109,7 +1184,10 @@ mod tests {
         let scribble: Vec<[f32; 2]> = (0..2_400)
             .map(|i| {
                 let t = i as f32 * 0.05;
-                [1028.0 + 600.0 * (t * 1.3).sin(), 600.0 + 330.0 * (t * 1.7).cos()]
+                [
+                    1028.0 + 600.0 * (t * 1.3).sin(),
+                    600.0 + 330.0 * (t * 1.7).cos(),
+                ]
             })
             .collect();
         let queue = device.new_command_queue();
@@ -1443,7 +1521,11 @@ mod tests {
                 ..base
             };
             let pins = [pin.unwrap_or_default()];
-            (ShownFrame::new(uniforms, &[PathSegment::default()], &pins), uniforms, pins)
+            (
+                ShownFrame::new(uniforms, &[PathSegment::default()], &pins),
+                uniforms,
+                pins,
+            )
         };
         let refresh_ms = 8;
         let mut shown = frame_at(0).0;

@@ -935,7 +935,6 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     let app = NSApplication.shared
     let delegate = Onboarding(model: model)
-    delegate.adapterOnly = arguments.contains("--adapter")
     app.setActivationPolicy(.accessory)
     app.delegate = delegate
     withExtendedLifetime(delegate) { app.run() }
@@ -951,7 +950,6 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
   }
 
   let model: OnboardingModel
-  var adapterOnly = false
   var window: NSWindow?
   private var shortcutMonitor: Any?
   private lazy var keys = HelperWindowKeys(
@@ -964,6 +962,19 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
   }
 
   func applicationDidFinishLaunching(_: Notification) {
+    if let index = CommandLine.arguments.firstIndex(of: "--validate-shortcut") {
+      let args = CommandLine.arguments
+      guard args.count == index + 3,
+            let key = Int(args[index + 1]), (0...127).contains(key),
+            let modifiers = Int(args[index + 2]), modifiers >= 0,
+            modifiers & ~0x1b00 == 0 else { exit(1) }
+      print(ShortcutKeys.reserved(keyCode: key, modifiers: modifiers) ? "true" : "false")
+      exit(0)
+    }
+    if CommandLine.arguments.contains("--permissions-only") {
+      readCommands()
+      return
+    }
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 620, height: 500),
       styleMask: [.titled, .closable, .fullSizeContentView],
@@ -1059,19 +1070,16 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let permission = object["permission"] as? String ?? ""
         let state = type == "state" ? try? JSONDecoder().decode(OnboardingState.self, from: data) : nil
         DispatchQueue.main.async {
+          if CommandLine.arguments.contains("--permissions-only"),
+             !["request", "open-settings", "close-guide", "cancel-guides", "close"].contains(type) { return }
+          if ["request", "open-settings", "close-guide"].contains(type),
+             !["screen-recording", "microphone", "camera", "accessibility", "speech-recognition"].contains(permission) { return }
           switch type {
           case "state":
             guard let state else { return }
-            // Adapter mode still owns permission guides even when React owns the page.
+            // Native fallback owns its permission guide lifetime.
             for row in state.rows where row.granted { Permissions.closeGuide(row.permission) }
             if state.step != "permissions" { Permissions.closeAllGuides() }
-            if self.adapterOnly && !(state.step == "shortcut" && state.shortcutEditing) {
-              self.listenForShortcut(false)
-              self.model.shortcutEditor = nil
-              self.model.state = state
-              self.window?.orderOut(nil)
-              return
-            }
             if state.step != "shortcut" || !state.shortcutEditing {
               self.listenForShortcut(false)
               self.model.shortcutEditor = nil
@@ -1084,10 +1092,13 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
               self.present()
             } else {
               self.apply(state)
-              if self.adapterOnly { self.present() }
             }
           // The user has moved on to another row: answering an earlier question mustn't pull
           // this window over the System Settings pane they're working in.
+          case "cancel-guides":
+            Permissions.closeAllGuides()
+          case "close-guide":
+            Permissions.closeGuide(permission)
           case "request":
             self.followUp?.invalidate()
             Permissions.request(permission)
@@ -1108,7 +1119,7 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
               self.listenForShortcut(editor.recording && active)
             }
           case "hide": self.window?.orderOut(nil)
-          case "show": if !self.adapterOnly { self.present() }
+          case "show": self.present()
           case "close":
             Permissions.closeAllGuides()
             self.keys.handBack()
@@ -1117,7 +1128,11 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
           }
         }
       }
-      exit(0)
+      DispatchQueue.main.async {
+        for panel in Permissions.panels.values { PermissionPanel.tell(panel, "cancel") }
+        Permissions.panels.removeAll()
+        exit(0)
+      }
     }
   }
 

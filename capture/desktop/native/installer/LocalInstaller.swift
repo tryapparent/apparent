@@ -90,7 +90,7 @@ func hasOlderTest(installed: URL, running: [(id: String?, path: URL?)]) -> Bool 
     DispatchQueue.global(qos: .userInitiated).async {
       do {
         let target = try installCandidate(source: source, folder: folder)
-        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, animationDuration - Date().timeIntervalSince(began))) { self.installed = target; self.busy = false; self.message = "Preview 5 is installed and ready to open." }
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, animationDuration - Date().timeIntervalSince(began))) { self.installed = target; self.busy = false; self.message = "Preview 6 is installed and ready to open." }
       } catch {
         DispatchQueue.main.asyncAfter(deadline: .now() + max(0, animationDuration - Date().timeIntervalSince(began))) { self.busy = false; self.message = error.localizedDescription }
       }
@@ -165,7 +165,7 @@ struct InstallerView: View {
       HStack {
         Button("Choose location…") { model.chooseFolder(animationDuration: reduceMotion ? 0 : 1.05) }.disabled(model.busy || model.installed != nil)
         Spacer()
-        Button("Open preview 5") { model.open() }.buttonStyle(.borderedProminent).disabled(model.installed == nil)
+        Button("Open preview 6") { model.open() }.buttonStyle(.borderedProminent).disabled(model.installed == nil)
       }
     }.padding(36).frame(width: 650).background(Color(red: 0.98, green: 0.975, blue: 0.965))
       .tint(Color(red: 0.48, green: 0.35, blue: 0.70))
@@ -181,7 +181,7 @@ struct InstallerView: View {
 #if !INSTALLER_TEST
 @main struct LocalInstaller: App {
   var body: some Scene {
-    WindowGroup("Install Apparent · preview 5") { InstallerView() }.windowResizability(.contentSize)
+    WindowGroup("Install Apparent · preview 6") { InstallerView() }.windowResizability(.contentSize)
   }
 }
 

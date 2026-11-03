@@ -19,7 +19,8 @@ async function fixture(t, reply, { mode = 0o700 } = {}) {
     socket.on('error', () => {});
     socket.once('data', (request) => {
       requests.push(request.toString());
-      if (reply !== null) socket.end(reply);
+      if (typeof reply === 'function') reply(socket,request);
+      else if (reply !== null) socket.end(reply);
     });
   });
   const address = path.join(directory, 'capture.sock');
@@ -214,4 +215,115 @@ test('onboarding output failure retires the channel once and preserves its error
     assert.deepEqual(failures,[error]);
     assert.equal(channel.send('close'),false);
   }
+});
+test('drawing undo binds recording identity and strips unexpected state', async (t) => {
+  const { drawing } = require('../electron/runtime.cjs');
+  const f = await fixture(t, '{"drawing":{"revision":"0123456789abcdef","strokes":2,"private":"hidden"}}\n');
+  assert.deepEqual(await drawing(f.home, 'undo', '0123456789abcdef'), { status: 'connected', revision: '0123456789abcdef', strokes: 2 });
+  const request = JSON.parse(f.requests[0]);
+  assert.equal(request.drawing, 'undo');
+  assert.equal(request.expected, '0123456789abcdef');
+  assert.ok(request.deadline > 0);
+  await assert.rejects(async () => drawing(f.home, 'undo', 'wrong'));
+  const stale = await fixture(t, '{"error":"conflict"}\n');
+  assert.deepEqual(await drawing(stale.home, 'undo', '0123456789abcdef'), { status: 'error', code: 'conflict' });
+});
+
+const {PublicShare} = require('../electron/public-share.cjs');
+test('public share requires observed selection, retains operation in main and delivers once',async t=>{
+ const operation='a'.repeat(32);
+ const f=await fixture(t,(socket,raw)=>{
+  const r=JSON.parse(raw);assert.ok(Number.isSafeInteger(r.deadline));
+  socket.end(JSON.stringify({publicShare:r.publicShare==='start'?{operation,state:'preparing'}:{state:r.publicShare==='read'?'prepared':r.publicShare==='deliver'?'copied':'cancelled'}})+'\n');
+ });
+ const owner=new PublicShare(f.home);
+ assert.equal((await owner.request('start',null)).code,'refresh_required');
+ assert.equal(f.requests.length,0);
+ assert.deepEqual(await owner.request('start','selected.apparent'),{status:'connected',state:'preparing'});
+ assert.deepEqual(await owner.request('read'),{status:'connected',state:'copied'});
+ assert.equal((await owner.request('read')).code,'no_operation');
+ const requests=f.requests.map(r=>JSON.parse(r));
+ assert.equal(requests[0].expected,'selected.apparent');assert.equal(requests[0].disclosed,true);
+ assert.equal(requests.filter(r=>r.publicShare==='deliver').length,1);
+ assert.equal(requests[1].operation,operation);
+});
+test('closing public-share window rejects late start receipt and never delivers',async t=>{
+ let started;
+ const arrived=new Promise(r=>started=r);
+ let release;
+ const f=await fixture(t,(socket,raw)=>{
+  if(JSON.parse(raw).publicShare==='start'){release=()=>socket.end(JSON.stringify({publicShare:{operation:'b'.repeat(32),state:'preparing'}})+'\n');started();}
+  else socket.end('{"publicShare":{"state":"cancelled"}}\n');
+ });
+ const owner=new PublicShare(f.home), pending=owner.request('start','selected.apparent');
+ await arrived;owner.close();release();
+ assert.deepEqual(await pending,{status:'cancelled'});
+ assert.ok(!f.requests.some(r=>JSON.parse(r).publicShare==='deliver'));
+});
+
+{
+const {test}=require('node:test');const assert=require('node:assert/strict');const {parseAction,lines}=require('../electron/onboarding-protocol.cjs');
+test('bounded action contract',()=>{assert.deepEqual(parseAction('use-current-shortcut'),{action:'use-current-shortcut'});assert.deepEqual(parseAction('grant:microphone'),{action:'grant',permission:'microphone'});for(const value of ['start-capture','grant:other',null,{},['continue']])assert.throws(()=>parseAction(value));const value={action:'shortcut',kind:'record',keyCode:15,modifiers:6144,key:'r',reserved:false};assert.deepEqual(parseAction(value),value);for(const changed of [{extra:true},{keyCode:'15'},{reserved:true},{modifiers:1},{kind:'other'}])assert.throws(()=>parseAction({...value,...changed}))});
+test('stdin accepts fragmented lines and rejects oversized individual lines',()=>{const received=[];const feed=lines(v=>received.push(v));feed('{"type":');feed('"state"}\ninvalid\n{"type":"show"}\n');assert.equal(received.length,2);assert.throws(()=>feed('x'.repeat(65537)));const many=lines(()=>{});many('{}\n'.repeat(30000))});
+
+}
+
+{
+  const vm = require('node:vm');
+  const fs = require('node:fs');
+  test('onboarding subscribes and reads current parent state without exposing filesystem access', async () => {
+    let receive,bridge;
+    const current={step:'permissions',shortcut:'Alt+Shift+S'};
+    const electron={ipcRenderer:{on:(_channel,listener)=>{receive=listener},removeListener:()=>{receive=null},invoke:channel=>{assert.equal(channel,'onboarding:state');return Promise.resolve(current)}},contextBridge:{exposeInMainWorld:(name,value)=>{assert.equal(name,'nativeOnboarding');bridge=value}}};
+    vm.runInNewContext(fs.readFileSync(require.resolve('../electron/onboarding-preload.cjs'),'utf8'),{require:name=>{assert.equal(name,'electron');return electron}});
+    assert.deepEqual(Object.keys(bridge).sort(),['action','onState','readState']);
+    assert.equal(await bridge.readState(),current);
+    const messages=[];const off=bridge.onState(value=>messages.push(value));
+    receive({}, {step:'shortcut'});assert.equal(messages[0].step,'shortcut');off();assert.equal(receive,null);
+  });
+}
+
+{
+  const {EventEmitter} = require('node:events');
+  const {parentWriter} = require('../electron/onboarding-protocol.cjs');
+  test('onboarding closes once when its parent pipe fails during shutdown', () => {
+    const stream = new EventEmitter();
+    let exits = 0;
+    let writes = 0;
+    stream.write = () => { writes += 1; stream.emit('error', Object.assign(new Error('closed parent'), {code:'EPIPE'})); };
+    const send = parentWriter(stream, () => { exits += 1; });
+    assert.doesNotThrow(() => send({action:'close'}));
+    send({action:'close'});
+    stream.emit('error', new Error('late stream error'));
+    assert.equal(exits, 1);
+    assert.equal(writes, 1);
+  });
+}
+
+// Exercise shipped main's window policy with native method receipts. A permission
+// refresh must render without stealing focus back from System Settings.
+test('permission refresh keeps setup unfocused and avoids repeating native geometry calls',()=>{
+ const vm=require('node:vm'),fs=require('node:fs'),{EventEmitter}=require('node:events');
+ const stdin=new EventEmitter();stdin.setEncoding=stdin.resume=()=>{};
+ const stdout=new EventEmitter();stdout.write=()=>true;
+ const calls=[];let window;
+ class Window extends EventEmitter {
+  constructor(){super();window=this;this.visible=false;this.webContents=new EventEmitter();this.webContents.setWindowOpenHandler=()=>{};this.webContents.send=()=>calls.push('state');}
+  removeMenu(){} loadURL(){} isDestroyed(){return false} isVisible(){return this.visible}
+  show(){this.visible=true;calls.push('show')} showInactive(){this.visible=true;calls.push('showInactive')} hide(){this.visible=false}
+  setAlwaysOnTop(){calls.push('top')} setVisibleOnAllWorkspaces(){calls.push('spaces')}
+  setMaximumSize(){calls.push('max')} setMinimumSize(){calls.push('min')} setSize(){calls.push('size')}
+  setPosition(){calls.push('position')} getBounds(){return{x:0,y:0,width:760,height:720}}
+ }
+ const area={x:0,y:0,width:1440,height:900};
+ const electron={app:{setName(){},getPath(){return'/tmp'},setPath(){},whenReady(){return{then:fn=>fn()}},dock:{hide(){}},quit(){}},BrowserWindow:Window,ipcMain:{handle(){}},screen:{getCursorScreenPoint:()=>({x:0,y:0}),getDisplayNearestPoint:()=>({workArea:area})},session:{defaultSession:{setPermissionRequestHandler(){},setPermissionCheckHandler(){}}}};
+ vm.runInNewContext('(function(){'+fs.readFileSync(require.resolve('../electron/onboarding.cjs'),'utf8')+'})()',{require:name=>name==='electron'?electron:require('node:module').createRequire(require.resolve('../electron/onboarding.cjs'))(name),__dirname:path.resolve(__dirname,'../electron'),module:{exports:{}},process:{versions:{electron:'fixture'},env:{},argv:[],stdin,stdout},console});
+ const send=status=>stdin.emit('data',JSON.stringify({type:'state',step:'permissions',rows:[{permission:'microphone',status,required:true}],ready:false})+'\n');
+ send('not-determined');const initial=calls.slice();send('granted');
+ assert.equal(calls.filter(x=>x==='state').length,2);
+ assert.equal(calls.filter(x=>x==='show').length,1,'permission refresh must not reactivate setup over OS prompts');
+ assert.equal(calls.filter(x=>x==='size').length,1,'same mode must not resize its native window again');
+ assert.equal(calls.filter(x=>x==='position').length,1,'same mode must preserve a user-moved window');
+ stdin.emit('data','{"type":"show"}\n');
+ assert.equal(calls.filter(x=>x==='show').length,2,'explicit parent show may reactivate setup');
 });

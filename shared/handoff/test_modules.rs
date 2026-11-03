@@ -742,7 +742,7 @@ mod tests {
         let fixture = Fixture::new();
         let path = fixture.0.join("config.json");
         let config = load_config_from(&path);
-        for name in ["nativeLaunch", "movableRecordingControls", "exportNarration"] {
+        for name in ["nativeLaunch", "movableRecordingControls", "exportNarration", "onboardingFirstCapture"] {
             assert!(experiment_enabled_in(&config, name), "{name}");
             set_experiment_in(&path, name, false).unwrap();
             assert!(!experiment_enabled_in(&load_config_from(&path), name), "{name}");
@@ -862,6 +862,22 @@ mod tests {
     }
 
     #[test]
+    fn storage_defaults_on_without_changing_retention_and_preserves_opt_out() {
+        let fixture = Fixture::new();
+        let path = fixture.0.join("config.json");
+        assert!(experiment_enabled_in(&load_config_from(&path), "electronCaptureLocation"));
+        fs::write(&path, r#"{"retention":{"mediaDays":null,"bundleDays":null},"secret":"keep","experiments":{"other":true}}"#).unwrap();
+        set_experiment_in(&path, "electronCaptureLocation", false).unwrap();
+        let config = load_config_from(&path);
+        assert!(!experiment_enabled_in(&config, "electronCaptureLocation"));
+        let raw: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(raw["secret"], "keep");
+        assert!(raw["retention"]["mediaDays"].is_null());
+        assert!(raw["retention"]["bundleDays"].is_null());
+        assert_eq!(raw["experiments"]["other"], true);
+    }
+
+    #[test]
     fn connect_settings_defaults_on_without_enabling_uploads_and_preserves_opt_out() {
         let fixture = Fixture::new();
         let path = fixture.0.join("config.json");
@@ -905,21 +921,53 @@ mod tests {
     }
 
     #[test]
-    fn demo_video_request_is_only_added_to_enabled_copy_text() {
+    fn clipboard_templates_put_access_first_and_transcript_last() {
         let fixture = Fixture::new();
-        let directory = fixture.bundle("demo-video", 100);
-        let (_, bundle) = load_bundle(&directory).unwrap();
-        let original = clipboard_summary_with_demo_video(&bundle, &directory, false);
-        assert!(original.contains("apparent"));
-        assert!(!original.contains(DEMO_VIDEO_REQUEST));
-        let enabled = clipboard_summary_with_demo_video(&bundle, &directory, true);
-        assert!(enabled.starts_with(&original));
-        assert!(enabled.contains("complex visible changes"));
-        assert!(enabled.contains("Use make-it-apparent"));
-        assert!(enabled.contains("Share verified video proof"));
-        assert!(enabled.contains("explain why you can't"));
-        assert!(DEMO_VIDEO_REQUEST.len() <= 120);
-        assert_eq!(enabled.matches(DEMO_VIDEO_REQUEST).count(), 1);
+        let directory = fixture.bundle("a path's capture", 100);
+        let (_, mut bundle) = load_bundle(&directory).unwrap();
+        bundle.keyframes[0].said = Some("Please change this control".into());
+        bundle.keyframes.last_mut().unwrap().said = Some("This is the last instruction".into());
+        bundle.note = Some("Keep this note".into());
+        bundle.image_quality_warning = Some("Keep this warning".into());
+        bundle.autocrop = Some(crate::shared::model::AutocropInfo {
+            label: "the activity".into(),
+            full_frames: "frames-full".into(),
+            ..Default::default()
+        });
+        let archive = crate::capture::engine::sketch::summary_markdown(&bundle, &directory);
+        let commands = "apparent fetch 0123456789abcdef0123456789abcdef --out ./0123456789abcdef0123456789abcdef.apparent --wait 120\napparent inspect ./0123456789abcdef0123456789abcdef.apparent\n";
+        for hosted in [None, Some(commands)] {
+            for video in [false, true] {
+                let prompt = clipboard_summary_with_access(&bundle, &directory, video, hosted);
+                assert!(prompt.starts_with(hosted.unwrap_or("apparent inspect ")));
+                assert!(prompt.ends_with("“This is the last instruction”\n"));
+                assert!(prompt.find(CLI_INSTALL).unwrap() < prompt.find("[apparent ").unwrap());
+                assert_eq!(prompt.contains(DEMO_VIDEO_REQUEST), video);
+                if video {
+                    assert!(
+                        prompt.find(DEMO_VIDEO_REQUEST).unwrap()
+                            < prompt.find("[apparent ").unwrap()
+                    );
+                }
+                assert!(prompt.contains("Keep this note") && prompt.contains("Keep this warning"));
+                assert!(prompt.contains("#0 (0:00) “Please change this control”"));
+                assert!(!prompt.contains("connect login") && !prompt.contains("Cropped to:"));
+                assert!(!prompt.contains(crate::capture::engine::sketch::LOOK_AT_IMAGES));
+                assert_eq!(
+                    prompt.contains("Uncropped images are in frames-full/"),
+                    hosted.is_none()
+                );
+                if hosted.is_some() {
+                    assert!(prompt.contains("[apparent 0:07]"));
+                    assert!(!prompt.contains(&directory.to_string_lossy().to_string()));
+                } else {
+                    assert!(prompt.contains(&shell_quote(&directory.to_string_lossy())));
+                }
+            }
+        }
+        assert!(archive.contains("Cropped to: the activity"));
+        assert!(archive.contains(&directory.to_string_lossy().to_string()));
+        assert!(!archive.contains(CLI_INSTALL) && !archive.contains(DEMO_VIDEO_REQUEST));
     }
 
     #[test]

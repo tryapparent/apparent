@@ -17,13 +17,16 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   let reportingAlwaysBusy = false;
   let reportingWrites = 0;
   let rejectReportingWrite = true;
+  let publicFailure=false;
   let server;
   const application = await electron.launch({
     args: [path.join(__dirname, '..')],
+    ...(process.env.PUBLIC_SHARE_VIDEO ? {recordVideo:{dir:process.env.PUBLIC_SHARE_VIDEO,size:{width:920,height:760}}}:{}),
     env: { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(home, 'config') },
   });
   t.after(async () => {
     await application.close();
+    if(process.env.PUBLIC_SHARE_VIDEO && page.video()) await page.video().saveAs(path.join(process.env.PUBLIC_SHARE_VIDEO,'sender-electron.webm'));
     if (server) await new Promise((resolve) => server.close(resolve));
     await fs.rm(home, { recursive: true, force: true });
   });
@@ -33,9 +36,10 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   await page.getByText('Not connected', { exact: true }).waitFor();
   assert.deepEqual(await page.evaluate(() => ({
     keys: Object.keys(window.apparent), require: typeof window.require, process: typeof window.process,
-  })), { keys: ['readRuntimeState', 'readCaptureReference', 'copyCaptureReference', 'readCaptureLocation', 'changeCaptureLocation', 'resetCaptureLocation',
+  })), { keys: ['readDrawing', 'undoDrawing', 'readMicrophoneEnabled', 'setMicrophoneEnabled', 'readRuntimeState', 'readCaptureReference', 'copyCaptureReference', 'startPublicShare', 'readPublicShare', 'cancelPublicShare', 'readCaptureLocation', 'changeCaptureLocation', 'resetCaptureLocation',
     'readErrorReporting', 'setErrorReporting', 'readConnectSettings', 'connectSettings', 'allowConnectUploads', 'cancelConnectSettings', 'checkConnectConnection',
-    'disableConnectUploads', 'disconnectConnectSettings', 'openConnectBrowser', 'readRetention', 'saveRetention', 'resetRetention', 'readCaptureUsage'], require: 'undefined', process: 'undefined' });
+    'disableConnectUploads', 'disconnectConnectSettings', 'requestDisableConnectUploads', 'requestDisconnectConnectSettings', 'openConnectSharedLinks',
+    'openConnectBrowser', 'readRetention', 'saveRetention', 'resetRetention', 'readCaptureUsage', 'navigateSettings', 'showCaptureFolder'], require: 'undefined', process: 'undefined' });
   assert.equal(await application.evaluate(({ BrowserWindow }) => {
     const options = BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences();
     return options.contextIsolation && options.sandbox && !options.nodeIntegration && options.webSecurity;
@@ -61,7 +65,15 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   server = net.createServer((socket) => socket.once('data', (data) => {
     requests.push(data.toString());
     const request = data.toString().startsWith('{') ? JSON.parse(data.toString()) : null;
-    if (request?.errorReporting) {
+    if (request?.drawing) {
+      if (request.drawing === 'undo') assert.equal(request.expected, '0123456789abcdef');
+      socket.end(JSON.stringify({ drawing: { revision: '0123456789abcdef', strokes: request.drawing === 'undo' ? 0 : 1 } }) + '\n');
+    } else if (request?.reference) {
+      socket.end('{"reference":{"id":"synthetic.apparent","copied":false}}\n');
+    } else if(request?.publicShare) {
+      if(request.publicShare==='deliver' && publicFailure) socket.end('{"error":"clipboard_failed"}\n');
+      else socket.end(JSON.stringify({publicShare:request.publicShare==='start'?{operation:'a'.repeat(32),state:'preparing'}:{state:request.publicShare==='read'?'prepared':request.publicShare==='deliver'?'copied':'cancelled'}})+'\n');
+    } else if (request?.errorReporting) {
       if (request.errorReporting === 'read' && (++reportingReads <= 3 || reportingAlwaysBusy)) {
         socket.end('{"error":"app_busy"}\n');
         return;
@@ -81,6 +93,13 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   await new Promise((resolve) => setTimeout(resolve, 1100));
   await page.getByRole('button', { name: 'Refresh state' }).click();
   await page.getByText('Connected · idle', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Refresh drawing', exact: true }).click();
+  await page.getByText('1 marks · screen recording active', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Undo last mark', exact: true }).click();
+  await page.getByText('0 marks · screen recording active', { exact: true }).waitFor();
+  await expect(page.getByRole('button', { name: 'Undo last mark', exact: true })).toBeDisabled();
+  assert.equal(requests.filter(r => r.includes('"drawing":"undo"')).length, 1);
+
   const reporting = page.getByRole('region', { name: 'Send technical error reports', exact: true });
   await reporting.getByRole('button', { name: 'Refresh reporting setting' }).click();
   const toggle = reporting.getByRole('checkbox', { name: 'Send technical error reports' });
@@ -115,12 +134,28 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   await page.getByText('Connected · processing', { exact: true }).waitFor();
   assert.equal(await page.getByText('private', { exact: true }).count(), 0);
   assert.ok(requests.length >= 3);
-  assert.ok(requests.every((request) => request === 'state\n' || JSON.parse(request).storage === 'read' || JSON.parse(request).reference === 'read' || JSON.parse(request).connect === 'settings' ||
+  assert.ok(requests.every((request) => request === 'state\n' || ['read', 'undo'].includes(JSON.parse(request).drawing) || JSON.parse(request).microphone === 'read' || JSON.parse(request).storage === 'read' || JSON.parse(request).reference === 'read' || JSON.parse(request).connect === 'settings' ||
     ['read', 'set'].includes(JSON.parse(request).errorReporting)));
   assert.deepEqual(errors, []);
   const screenshot = path.join(os.tmpdir(), `apparent-foundation-${process.pid}.png`);
   await page.screenshot({ path: screenshot, fullPage: true });
   console.log(`Synthetic Electron screenshot: ${screenshot}`);
+
+  await page.getByRole('button',{name:'Refresh capture reference',exact:true}).click();
+  await page.getByText('synthetic.apparent',{exact:true}).waitFor();
+  const beforeShare=requests.filter(r=>r.includes('"publicShare"')).length;
+  await page.getByRole('button',{name:'Copy public link',exact:true}).click();
+  await expect(page.getByText('Anyone with this link can view this capture. Shared captures are not end-to-end encrypted.',{exact:true})).toBeVisible();
+  assert.equal(requests.filter(r=>r.includes('"publicShare"')).length,beforeShare);
+  if(process.env.PUBLIC_SHARE_VIDEO) await page.waitForTimeout(1500);
+  await page.getByRole('button',{name:'Create and copy public link',exact:true}).click();
+  await page.getByText('Link copied · upload may still be preparing. Open the link to check readiness.',{exact:true}).waitFor();
+  if(process.env.PUBLIC_SHARE_VIDEO) {await page.screenshot({path:path.join(process.env.PUBLIC_SHARE_VIDEO,'sender-copied.png')});await page.waitForTimeout(1500);}
+  assert.equal(requests.filter(r=>r.includes('"publicShare":"deliver"')).length,1);
+  publicFailure=true;
+  await page.getByRole('button',{name:'Copy public link',exact:true}).click();
+  await page.getByRole('button',{name:'Create and copy public link',exact:true}).click();
+  await page.getByText('Public link was not confirmed copied. Check your clipboard and refresh before trying again. Local Paste remains available.',{exact:true}).waitFor();
 
   // Do this after interaction checks: Playwright tracks even a cancelled Electron
   // navigation as pending; the actual webContents URL remains authoritative.
@@ -140,17 +175,17 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
     } });
     try {
       await other.loadFile(root + '/dist/index.html');
-      return await other.webContents.executeJavaScript(`Promise.all(['readRuntimeState', 'readCaptureReference', 'copyCaptureReference'].map(k => window.apparent[k]().then(() => false, () => true))).then(r => r.every(Boolean))`);
+      return await other.webContents.executeJavaScript(`Promise.all(['readRuntimeState', 'readCaptureReference', 'copyCaptureReference', 'startPublicShare', 'readPublicShare', 'cancelPublicShare'].map(k => window.apparent[k]().then(() => false, () => true))).then(r => r.every(Boolean))`);
     } finally { other.destroy(); }
   }, path.join(__dirname, '..')), true);
 });
 
 // Rust state is synthetic; the main/preload/renderer and OS window resizing are real.
-test('onboarding fixed window shrinks to coach and restores setup', { timeout: 30000 }, async (t) => {
+for(const mode of ['--native-onboarding','--onboarding'])test(`onboarding fixed window shrinks to coach and restores setup ${mode}`, { timeout: 30000 }, async (t) => {
   const { spawn } = require('node:child_process');
   const { chromium } = require('@playwright/test');
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'onboarding-window-'));
-  const child = spawn(require('electron'), [path.join(__dirname, '..'), '--native-onboarding', '--remote-debugging-port=0', ...(process.platform === 'linux' ? ['--no-sandbox'] : [])], {
+  const child = spawn(require('electron'), [path.join(__dirname, '..'), mode, '--remote-debugging-port=0', ...(process.platform === 'linux' ? ['--no-sandbox'] : [])], {
     env: { ...process.env, APPARENT_UI_PROFILE: profile }, stdio: ['pipe', 'pipe', 'pipe'],
   });
   let browser;
@@ -225,6 +260,16 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 3
   await expect(page.getByRole('heading',{name:'Start and stop with your shortcut.',exact:true})).toBeVisible();
   assert.equal(await page.locator('.native-setup section > p').count(),0);
   await expect(page.getByRole('button',{name:'Change shortcut',exact:true})).toBeVisible();
+  send({step:'shortcut',shortcutChosen:false,platform:'macos',shortcutEditor:{recording:false,externallyManaged:false}});
+  await page.getByRole('button',{name:'Use this shortcut',exact:true}).click();
+  await expect.poll(()=>output).toContain('use-current-shortcut');
+  send({step:'shortcut',shortcutEditor:{recording:true,externallyManaged:false}});
+  await page.getByRole('group',{name:'Shortcut recorder'}).press('Control+Alt+k');
+  await expect.poll(()=>output).toContain('"keyCode":40');
+  await expect.poll(()=>output).toContain('"modifiers":6144');
+  await page.getByRole('group',{name:'Shortcut recorder'}).evaluate(element=>element.dispatchEvent(new KeyboardEvent('keydown',{key:'ß',code:'KeyS',altKey:true,bubbles:true})));
+  await expect.poll(()=>output).toContain('"keyCode":1,"modifiers":2048,"key":"s"');
+
   await page.emulateMedia({reducedMotion:'reduce'});
   send({penPicker:true,penSelected:true,penRgb:[59,121,189]});
   await expect(page.getByRole('heading',{name:'Pick your pen.',exact:true})).toBeVisible();

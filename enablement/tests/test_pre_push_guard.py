@@ -37,9 +37,15 @@ class PrePushGuardTests(unittest.TestCase):
         # copying the real hook tests here would recursively invoke itself.
         fixture_test = "import unittest\nclass Fixture(unittest.TestCase):\n    def test_fixture(self):\n        self.assertTrue(True)\n"
         for name in ("test_fixture_push.py", "test_verification.py", "test_release_gate.py",
-                     "test_temp_preflight.py"):
+                     "test_temp_preflight.py", "test_owner_lanes.py"):
             (self.repo / "enablement" / "tests" / name).write_text(fixture_test)
         shutil.copy2(SELECTOR, self.repo / "enablement" / "verification.py")
+        # The real verifier now runs the shared frontend color guard. Preserve
+        # its actual dependency closure in this disposable hook repository.
+        theme = self.repo / "shared/ui/scripts"
+        theme.mkdir(parents=True)
+        for name in ("check-theme.py", "legacy-colors.json"):
+            shutil.copy2(SELECTOR.parents[1] / "shared/ui/scripts" / name, theme / name)
         run("git", "add", ".", cwd=self.repo)
         run("git", "commit", "-qm", "original", cwd=self.repo)
         self.head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()

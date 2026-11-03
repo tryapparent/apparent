@@ -18,14 +18,14 @@ use crate::shared::model::{
 
 pub(crate) use platform::*;
 
+#[cfg(any(target_os = "macos", test))]
+#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
+pub(crate) use recording::recorder::sample_real_candidate;
 pub use recording::recorder::{
     CANDIDATE_BUDGET_BYTES, CANDIDATE_EDGE, CandidateBuffer, FRAME_SAMPLE_INTERVAL,
     ScreenCaptureSession, ScreenRecording, capture_size,
 };
 pub(crate) use recording::recorder::{CANDIDATE_EDGE_NO_VIDEO, Sampler, push_candidate};
-#[cfg(any(target_os = "macos", test))]
-#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
-pub(crate) use recording::recorder::sample_real_candidate;
 
 /// Resolve a CLI recording target before creating a bundle or starting any recorder.
 pub fn record_target(
@@ -61,6 +61,100 @@ mod record_target_tests {
     use super::*;
 
     #[test]
+    fn desktop_ink_crosses_target_and_only_visible_segments_are_saved() {
+        let (sender, _) = flume::unbounded();
+        let t = SharedCaptureTelemetry::new(sender);
+        t.reset_for_session(TargetFrame {
+            x: -100.0,
+            y: -50.0,
+            width: 100.0,
+            height: 100.0,
+            scale: 2.0,
+        });
+        for x in [-150.0, -75.0, 50.0] {
+            track_shift_ink(&t, (x, 0.0), true, true);
+        }
+        let live = t.live_ink.lock().unwrap().clone().unwrap();
+        assert!(live.pts[0] < 0);
+        assert!(live.pts[live.pts.len() - 3] > SCALE);
+        track_shift_ink(&t, (50.0, 0.0), false, true);
+        assert!(!t.shift_held.load(Ordering::Acquire));
+        assert_eq!(t.desktop_ink.lock().unwrap().len(), 1);
+        let (_, saved) = t.finish_session();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].pts[0], 0);
+        assert_eq!(saved[0].pts[saved[0].pts.len() - 3], SCALE);
+        assert!(t.desktop_ink.lock().unwrap().is_empty());
+        assert_eq!(t.target_frame.lock().unwrap().x, -100.0);
+    }
+
+    #[test]
+    fn notes_stay_on_selected_source_and_editor_suppresses_desktop_ink() {
+        let (sender, receiver) = flume::unbounded();
+        let t = SharedCaptureTelemetry::new(sender);
+        let frame = TargetFrame { x: -1280.0, y: -100.0, width: 1280.0, height: 800.0, scale: 2.0 };
+        t.reset_for_session(frame);
+        t.shift_down(10, 200.0, 200.0);
+        assert!(!t.shift_up(20, 200.0, 200.0));
+        t.shift_down(30, -640.0, 300.0);
+        assert!(t.shift_up(40, -640.0, 300.0));
+        assert!(receiver.try_iter().any(|e| matches!(e, LiveOverlayEvent::Note { pin: 1, x: 0.5, y: 0.5, .. })));
+        t.notes_editing.store(true, Ordering::Release);
+        track_shift_ink(&t, (-500.0, 300.0), true, true);
+        track_shift_ink(&t, (500.0, 300.0), true, true);
+        assert!(t.live_ink.lock().unwrap().is_none());
+        t.reset_for_session(frame);
+        t.shift_down(50, -640.0, 300.0);
+        t.reset_for_session(TargetFrame { x: 0.0, ..frame });
+        assert!(!t.shift_up(60, -640.0, 300.0));
+        assert!(t.strokes.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn clipping_splits_outside_detours_without_phantom_edge_marks() {
+        let s = SCALE;
+        let stroke = Stroke {
+            color: None,
+            t0: 100,
+            t1: 150,
+            fw: 1000,
+            fh: 1000,
+            on: None,
+            pin: None,
+            laser: false,
+            pts: vec![
+                s / 2,
+                s / 4,
+                0,
+                2 * s,
+                s / 4,
+                10,
+                2 * s,
+                3 * s / 4,
+                20,
+                s / 2,
+                3 * s / 4,
+                30,
+            ],
+        };
+        let parts = clip_recording_ink(&stroke);
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].pts[4], s / 4);
+        assert_eq!(parts[1].pts[1], 3 * s / 4);
+        assert!(parts[1].t0 > parts[0].t1);
+        let mut tail = stroke.clone();
+        tail.pts = vec![-s, s/2, 0, 1, s/2, 100];
+        assert_eq!(clip_recording_ink(&tail).len(), 1, "a real stroke retains even a sub-6pt visible tail");
+        let mut outside = stroke.clone();
+        outside.pts = vec![-s, 0, 0, -s, s, 10];
+        assert!(clip_recording_ink(&outside).is_empty());
+        outside.pts = vec![-s, s / 2, 0, 2 * s, s / 2, 30];
+        let crossing = clip_recording_ink(&outside);
+        assert_eq!(crossing[0].t0, 110);
+        assert_eq!(crossing[0].pts, vec![0, s / 2, 0, s, s / 2, 10]);
+    }
+
+    #[test]
     fn window_recording_is_disabled_before_target_lookup_or_display_fallback() {
         for query in ["Project", "", "   "] {
             let result = resolve_record_target(
@@ -80,7 +174,13 @@ mod record_target_tests {
             window_title: Some(title.into()),
             window_id: (mode == CaptureMode::Window).then_some(42),
             display_id: 0,
-            frame: TargetFrame { x: 0.0, y: 0.0, width: 800.0, height: 600.0, scale: 1.0 },
+            frame: TargetFrame {
+                x: 0.0,
+                y: 0.0,
+                width: 800.0,
+                height: 600.0,
+                scale: 1.0,
+            },
         }
     }
 
@@ -117,6 +217,10 @@ pub enum LiveOverlayEvent {
     PasteLatestShortcut,
     UndoStroke,
     RequestSnapshot,
+    Note { pin: u32, t: u64, x: f32, y: f32, screen_x: f64, screen_y: f64 },
+    NoteClosed { focus: u64, owner: u32 },
+    NoteOutside,
+    NotesUnavailable,
     /// The iPhone mirror ended on its own (unplugged, never found, or access denied).
     PhoneEnded,
     /// The welcome window: a button, fresh permission states, or the helper exiting.
@@ -540,9 +644,15 @@ pub fn region_target(
 
 /// Shared state collected by the global input monitor during an active capture session.
 pub struct SharedCaptureTelemetry {
+    /// Unclipped desktop ink, never serialized into the recording bundle.
+    pub desktop_ink: Mutex<Vec<Stroke>>,
     pub active: AtomicBool,
     pub selecting: AtomicBool,
     pub shift_held: AtomicBool,
+    /// The focused note editor owns input; suppress annotation ink while typing.
+    pub notes_editing: AtomicBool,
+    pub note_ui_pid: AtomicU64,
+    next_note_pin: AtomicU64,
     pub capture_mode: AtomicU64,
     /// The record shortcut (`crate::settings` loads and saves it).
     pub shortcut: Mutex<ShortcutConfig>,
@@ -569,6 +679,8 @@ pub struct SharedCaptureTelemetry {
     /// The `apparent-helper` whose window is what's being recorded (the iPhone mirror): its clicks
     /// count, unlike those on other helper windows (Settings, onboarding). 0 when none.
     capture_source_pid: AtomicI32,
+    #[cfg(target_os = "macos")]
+    dock_bounds: Mutex<Option<[f64; 4]>>,
     /// The last `on_apparent_window` answer (when, where, what), reused for a burst of scrolls.
     apparent_hit: Mutex<Option<(Instant, f64, f64, bool)>>,
     /// macOS's key event tap (`CFMachPortRef`), made once Accessibility is on (`check_key_tap`).
@@ -609,6 +721,9 @@ impl SharedCaptureTelemetry {
             active: AtomicBool::new(false),
             selecting: AtomicBool::new(false),
             shift_held: AtomicBool::new(false),
+            notes_editing: AtomicBool::new(false),
+            note_ui_pid: AtomicU64::new(0),
+            next_note_pin: AtomicU64::new(0),
             capture_mode: AtomicU64::new(0),
             shortcut: Mutex::new(shortcuts.record),
             paste_shortcut: Mutex::new(shortcuts.paste),
@@ -626,6 +741,7 @@ impl SharedCaptureTelemetry {
             pointer_screen: Mutex::new([0.0, 0.0]),
             events: Mutex::new(Vec::new()),
             strokes: Mutex::new(Vec::new()),
+            desktop_ink: Mutex::new(Vec::new()),
             active_laser: Mutex::new(None),
             live_ink: Mutex::new(None),
             excluded_window_ids: Arc::new(Mutex::new(Vec::new())),
@@ -633,6 +749,8 @@ impl SharedCaptureTelemetry {
             ui_sender,
             passthrough_window_ids: Mutex::new(Vec::new()),
             capture_source_pid: AtomicI32::new(0),
+            #[cfg(target_os = "macos")]
+            dock_bounds: Mutex::new(None),
             apparent_hit: Mutex::new(None),
             tap_port: AtomicU64::new(0),
             tap_run_loop: AtomicU64::new(0),
@@ -750,6 +868,10 @@ impl SharedCaptureTelemetry {
     }
 
     pub fn reset_for_session(&self, frame: TargetFrame) {
+        // Session admission runs on the UI thread; NSScreen is unavailable to
+        // the background input poller. Cache its reserved Dock strip here.
+        #[cfg(target_os = "macos")]
+        { *self.dock_bounds.lock().unwrap() = crate::shared::windows::dock_rect(frame); }
         self.selecting.store(false, Ordering::Release);
         *self
             .picker_rect
@@ -764,6 +886,10 @@ impl SharedCaptureTelemetry {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = frame;
         self.events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        self.desktop_ink
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clear();
@@ -791,6 +917,7 @@ impl SharedCaptureTelemetry {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clear();
+        self.next_note_pin.store(0, Ordering::Release);
         self.shift_held.store(false, Ordering::Release);
         self.window_log_request.store(false, Ordering::Release);
         let agent_context = crate::shared::handoff::experiment(crate::shared::handoff::AGENT_CONTEXT);
@@ -849,7 +976,7 @@ impl SharedCaptureTelemetry {
 
     /// A mouse button went down at a global point.
     fn pointer_down(&self, t_ms: u64, screen_x: f64, screen_y: f64) {
-        if !self.contains_screen_point(screen_x, screen_y) {
+        if self.notes_editing.load(Ordering::Acquire) || !self.contains_screen_point(screen_x, screen_y) {
             return;
         }
         #[cfg(target_os = "macos")]
@@ -871,7 +998,11 @@ impl SharedCaptureTelemetry {
             .unwrap_or_else(std::sync::PoisonError::into_inner) =
             Some((t_ms, nx, ny, None, start_frame));
         if self.probing() {
-            crate::capture::engine::accessibility::ax::Prober::shared().probe(crate::capture::engine::accessibility::ax::Target::Pointer(t_ms), screen_x, screen_y);
+            crate::capture::engine::accessibility::ax::Prober::shared().probe(
+                crate::capture::engine::accessibility::ax::Target::Pointer(t_ms),
+                screen_x,
+                screen_y,
+            );
         }
     }
 
@@ -925,7 +1056,7 @@ impl SharedCaptureTelemetry {
 
     /// The left button went down with only ⇧ held: a pin if it comes up as a click (`shift_up`).
     fn shift_down(&self, t_ms: u64, screen_x: f64, screen_y: f64) {
-        if !self.contains_screen_point(screen_x, screen_y) {
+        if self.notes_editing.load(Ordering::Acquire) || !self.contains_screen_point(screen_x, screen_y) {
             return;
         }
         let frame = *self
@@ -979,7 +1110,7 @@ impl SharedCaptureTelemetry {
             .strokes
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let number = strokes.iter().filter(|s| s.pin.is_some()).count() as u32 + 1;
+        let number = self.next_note_pin.fetch_add(1, Ordering::AcqRel) as u32 + 1;
         strokes.push(Stroke {
             color: Some(crate::shared::handoff::pen::rgb()),
             t0,
@@ -996,6 +1127,7 @@ impl SharedCaptureTelemetry {
             ],
         });
         drop(strokes);
+        let _ = self.ui_sender.try_send(LiveOverlayEvent::Note { pin: number, t: t0, x: nx, y: ny, screen_x: x0, screen_y: y0 });
         self.window_log_request.store(true, Ordering::Release);
         let _ = self.ui_sender.try_send(LiveOverlayEvent::RequestSnapshot);
         true
@@ -1008,9 +1140,41 @@ impl SharedCaptureTelemetry {
             .store(i32::try_from(pid).unwrap_or(0), Ordering::Release);
     }
 
-    /// Whether the topmost window at a global point is Apparent's own or a `apparent-helper`'s other
+    /// Whether the topmost window at a global point is Apparent's own or a registered UI child's other
     /// than the capture source (ignoring the click-through ink overlay). Asked once per press, and
     /// for scrolls, which come in bursts at one point, at most every 250 ms.
+    /// While editing, only the two notes-child windows count as inside. A click on
+    /// the capsule or another Apparent surface is still an outside click.
+    fn on_capture_input_ui(&self, x: f64, y: f64) -> bool {
+        if self.notes_editing.load(Ordering::Acquire) {
+            self.notes_window_in(&platform::input_windows(self.note_ui_pid.load(Ordering::Acquire) as u32), x, y)
+        } else {
+            self.on_apparent_window(x, y)
+        }
+    }
+
+    fn notes_window_in(&self, windows: &[crate::shared::windows::RawWindow], x: f64, y: f64) -> bool {
+        let pid = self.note_ui_pid.load(Ordering::Acquire);
+        let passthrough = self.passthrough_window_ids.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        #[cfg(target_os = "linux")]
+        {
+            // Hyprland raises pinned surfaces in its own scene without updating X11's
+            // root stacking list. Notes are always-on-top; hit their visible child
+            // rects directly rather than mistaking the capsule beneath for the target.
+            windows.iter().any(|w| {
+                let [wx, wy, width, height] = w.bounds;
+                pid > 0 && u64::try_from(w.pid).ok() == Some(pid) && w.alpha > 0.01 && !passthrough.contains(&w.id)
+                    && x >= wx && x <= wx + width && y >= wy && y <= wy + height
+            })
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let mut windows = windows.to_vec();
+            crate::shared::windows::constrain_dock(&mut windows, *self.dock_bounds.lock().unwrap());
+            pid > 0 && crate::shared::windows::owned_window_at(&windows, x, y, &passthrough, |owner| u64::try_from(owner).ok() == Some(pid))
+        }
+    }
+
     fn on_apparent_window(&self, x: f64, y: f64) -> bool {
         let mut hit = self
             .apparent_hit
@@ -1024,7 +1188,7 @@ impl SharedCaptureTelemetry {
             return on;
         }
         let on = self.apparent_window_in(
-            &platform::raw_windows_now(),
+            &platform::input_windows(self.note_ui_pid.load(Ordering::Acquire) as u32),
             x,
             y,
             platform::is_helper_process,
@@ -1040,6 +1204,15 @@ impl SharedCaptureTelemetry {
         y: f64,
         is_helper: impl Fn(i32) -> bool,
     ) -> bool {
+        if self.notes_window_in(windows, x, y) { return true; }
+        #[cfg(target_os = "macos")]
+        let adjusted = {
+            let mut raw = windows.to_vec();
+            crate::shared::windows::constrain_dock(&mut raw, *self.dock_bounds.lock().unwrap());
+            raw
+        };
+        #[cfg(target_os = "macos")]
+        let windows = adjusted.as_slice();
         let passthrough = self
             .passthrough_window_ids
             .lock()
@@ -1047,8 +1220,10 @@ impl SharedCaptureTelemetry {
             .clone();
         let own = std::process::id() as i32;
         let source = self.capture_source_pid.load(Ordering::Acquire);
+        let note_pid = self.note_ui_pid.load(Ordering::Acquire);
         crate::shared::windows::owned_window_at(windows, x, y, &passthrough, |pid| {
-            pid == own || (pid != source && is_helper(pid))
+            pid == own || (note_pid > 0 && u64::try_from(pid).ok() == Some(note_pid))
+                || (pid != source && (crate::capture::ui_process::owns(pid) || is_helper(pid)))
         })
     }
 
@@ -1113,13 +1288,18 @@ impl SharedCaptureTelemetry {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
-            && ink.pts.len() >= 3
+            && is_real_ink(&ink)
         {
             self.strokes
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .push(ink);
+                .extend(recording_ink(self, &ink));
         }
+        self.desktop_ink
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        self.shift_held.store(false, Ordering::Release);
         let mut events = std::mem::take(
             &mut *self
                 .events
@@ -1139,7 +1319,12 @@ impl SharedCaptureTelemetry {
                 let end = crate::shared::clock::now_epoch_ms();
                 let start = end.saturating_sub(self.elapsed_ms());
                 let page = crate::capture::desktop::workflow::page::between(start, end);
-                crate::capture::desktop::workflow::page::apply(&page, start, &mut events, &mut strokes);
+                crate::capture::desktop::workflow::page::apply(
+                    &page,
+                    start,
+                    &mut events,
+                    &mut strokes,
+                );
             }
         }
         (events, strokes)
@@ -1158,9 +1343,15 @@ fn poll_clicks(
     on_apparent: impl Fn(f64, f64) -> bool,
 ) {
     let was = std::mem::replace(prev, now);
-    if telemetry.mouse_live.load(Ordering::Acquire) {
+    // The Mac global monitor excludes our own app windows. Poll notes outside
+    // clicks regardless of monitor availability; the monitor skips editing input.
+    if telemetry.notes_editing.load(Ordering::Acquire) {
+        if now.iter().zip(&was).any(|(&down, &before)| down && !before) && !on_apparent(x, y) {
+            let _ = telemetry.ui_sender.try_send(LiveOverlayEvent::NoteOutside);
+        }
         return;
     }
+    if telemetry.mouse_live.load(Ordering::Acquire) { return; }
     for (button, (&down, &before)) in now.iter().zip(&was).enumerate() {
         let left = button == 0;
         if down && !before && !on_apparent(x, y) {
@@ -1223,8 +1414,94 @@ fn same_target_frame(a: TargetFrame, b: TargetFrame) -> bool {
         && (a.height - b.height).abs() <= 0.5
 }
 
-/// One poll of the Shift ink: holding Shift alone and moving the cursor inside the capture
-/// target draws a persistent stroke; letting go of Shift commits it. `pure_shift` is Shift
+/// XWayland output order need not match the compositor layout. Never interpolate
+/// between samples on different outputs: that can invent a desktop-wide segment.
+/// Retain one desktop gesture for Undo; only its painted/recorded parts are split.
+pub(crate) fn ink_output_parts(stroke: &Stroke, frame: TargetFrame, outputs: &[[f64; 4]]) -> Vec<Stroke> {
+    let output = |p: &[i32]| {
+        let x = frame.x + p[0] as f64 / SCALE as f64 * frame.width;
+        let y = frame.y + p[1] as f64 / SCALE as f64 * frame.height;
+        outputs.iter().position(|r| screens::contains(*r, [x, y]))
+    };
+    let mut result = Vec::new();
+    let mut start = 0;
+    let points: Vec<_> = stroke.pts.chunks_exact(3).collect();
+    for i in 1..=points.len() {
+        if i == points.len() || output(points[i - 1]) != output(points[i]) {
+            let mut part = stroke.clone();
+            part.pts = stroke.pts[start * 3..i * 3].to_vec();
+            result.push(part);
+            start = i;
+        }
+    }
+    result
+}
+
+fn recording_ink(telemetry: &SharedCaptureTelemetry, stroke: &Stroke) -> Vec<Stroke> {
+    #[cfg(target_os = "linux")]
+    {
+        let frame = *telemetry.target_frame.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let outputs: Vec<_> = screens::current().iter().map(|s| s.frame).collect();
+        return ink_output_parts(stroke, frame, &outputs).iter().flat_map(clip_recording_ink).collect();
+    }
+    #[cfg(not(target_os = "linux"))]
+    { let _ = telemetry; clip_recording_ink(stroke) }
+}
+
+/// Clip each segment to the recording rectangle. Split on excursions so an outside
+/// detour never becomes a fictitious line along the edge or across the picture.
+fn clip_recording_ink(stroke: &Stroke) -> Vec<Stroke> {
+    let mut result: Vec<Stroke> = Vec::new();
+    let mut connected = false;
+    for pair in stroke.pts.chunks_exact(3).collect::<Vec<_>>().windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let mut enter = 0.0_f64;
+        let mut exit = 1.0_f64;
+        let mut visible = true;
+        for axis in 0..2 {
+            let start = a[axis] as f64;
+            let delta = b[axis] as f64 - start;
+            if delta == 0.0 {
+                visible &= (0.0..=SCALE as f64).contains(&start);
+            } else {
+                let t0 = -start / delta;
+                let t1 = (SCALE as f64 - start) / delta;
+                enter = enter.max(t0.min(t1));
+                exit = exit.min(t0.max(t1));
+            }
+        }
+        if !visible || enter >= exit {
+            connected = false;
+            continue;
+        }
+        let point = |t: f64| -> [i32; 3] {
+            std::array::from_fn(|i| (a[i] as f64 + (b[i] as f64 - a[i] as f64) * t).round() as i32)
+        };
+        let start = point(enter);
+        let end = point(exit);
+        if !connected || enter > 0.0 {
+            let mut part = stroke.clone();
+            part.pts.clear();
+            result.push(part);
+        }
+        let part = result.last_mut().unwrap();
+        if part.pts.is_empty() {
+            part.pts.extend(start);
+        }
+        part.pts.extend(end);
+        part.t1 = stroke.t0.saturating_add(end[2].max(0) as u64);
+        connected = exit == 1.0;
+    }
+    for part in &mut result {
+        let offset = part.pts[2];
+        part.t0 = part.t0.saturating_add(offset.max(0) as u64);
+        for point in part.pts.chunks_exact_mut(3) { point[2] -= offset; }
+    }
+    result
+}
+
+/// One poll of desktop Shift ink, using unclamped capture-relative coordinates.
+/// Only clipped segments enter the recording; letting go of Shift commits it. `pure_shift` is Shift
 /// without other modifiers (and not left over from a chord such as the capture shortcut).
 fn track_shift_ink(
     telemetry: &SharedCaptureTelemetry,
@@ -1232,11 +1509,21 @@ fn track_shift_ink(
     pure_shift: bool,
     prev_shift_ink: bool,
 ) {
-    let inside_target = telemetry.contains_screen_point(x, y);
-    if pure_shift && inside_target {
+    if pure_shift && !telemetry.notes_editing.load(Ordering::Acquire) && x.is_finite() && y.is_finite() {
         telemetry.shift_held.store(true, Ordering::Release);
         let t_ms = telemetry.elapsed_ms();
-        let (nx, ny, fw, fh) = telemetry.normalize_point(x, y);
+        let frame = *telemetry
+            .target_frame
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (nx, ny) = (
+            ((x - frame.x) / frame.width.max(1.0)) as f32,
+            ((y - frame.y) / frame.height.max(1.0)) as f32,
+        );
+        let (fw, fh) = (
+            frame.width.round().max(1.0) as u32,
+            frame.height.round().max(1.0) as u32,
+        );
         let sx = (nx * SCALE as f32).round() as i32;
         let sy = (ny * SCALE as f32).round() as i32;
         let mut guard = telemetry
@@ -1277,17 +1564,30 @@ fn track_shift_ink(
             // Ignore stationary Shift taps (e.g. typing a capital letter without moving the mouse).
             && is_real_ink(&stroke)
         {
-            if telemetry.probing() {
+            let recorded = recording_ink(telemetry, &stroke);
+            if telemetry.probing() && recorded.len() == 1 {
+                let stroke = &recorded[0];
                 let frame = *telemetry
                     .target_frame
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some((x, y)) = crate::capture::engine::accessibility::ax::stroke_probe_point(&stroke, frame) {
-                    crate::capture::engine::accessibility::ax::Prober::shared().probe(crate::capture::engine::accessibility::ax::Target::Stroke(stroke.t0), x, y);
+                if let Some((x, y)) =
+                    crate::capture::engine::accessibility::ax::stroke_probe_point(&stroke, frame)
+                {
+                    crate::capture::engine::accessibility::ax::Prober::shared().probe(
+                        crate::capture::engine::accessibility::ax::Target::Stroke(stroke.t0),
+                        x,
+                        y,
+                    );
                 }
             }
             telemetry
                 .strokes
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .extend(recorded);
+            telemetry
+                .desktop_ink
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push(stroke);
@@ -1360,7 +1660,10 @@ pub fn write_bundle_artifacts(
                 })
             })
             .collect();
-        crate::capture::engine::render::save_png(contact_sheet, &out_dir.join(&bundle.contact_sheet))?;
+        crate::capture::engine::render::save_png(
+            contact_sheet,
+            &out_dir.join(&bundle.contact_sheet),
+        )?;
         for worker in workers {
             worker
                 .join()
@@ -1380,8 +1683,38 @@ pub fn write_bundle_artifacts(
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn notes_hit_testing_limits_the_dock_to_its_visible_strip() {
+        let (sender, _receiver) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        telemetry.note_ui_pid.store(700, Ordering::Release);
+        *telemetry.dock_bounds.lock().unwrap() = Some([0.0, 816.0, 1440.0, 84.0]);
+        let windows = [
+            crate::shared::windows::RawWindow { id: 1, pid: 600, owner: "Dock".into(), title: String::new(), bounds: [0.0, 0.0, 1440.0, 900.0], layer: 20, alpha: 1.0 },
+            crate::shared::windows::RawWindow { id: 2, pid: 700, owner: "Apparent Notes".into(), title: String::new(), bounds: [100.0, 100.0, 332.0, 220.0], layer: 3, alpha: 1.0 },
+        ];
+        assert!(telemetry.notes_window_in(&windows, 200.0, 200.0));
+        assert!(!telemetry.notes_window_in(&windows, 200.0, 850.0));
+    }
+
     /// Clicks on `apparent-helper`'s windows (the SwiftUI capsule, Settings, onboarding) are
     /// Apparent's own, except on the iPhone mirror, which is what's being recorded.
+    #[test]
+    fn inverted_mixed_scale_outputs_never_bridge_x_space_jump() {
+        let frame = TargetFrame { x: 0.0, y: 0.0, width: 1280.0, height: 800.0, scale: 1.0 };
+        // Hyprland left output -1280..0 maps to X 1280..2560; the right
+        // output 0..1024 at scale 1.25 maps to X 0..1280.
+        let stroke = Stroke { color: None, t0: 10, t1: 50, fw: 1280, fh: 800, on: None, pin: None, laser: false,
+            pts: [ [2500.0,420.0], [2550.0,420.0], [10.0,525.0], [50.0,525.0] ].into_iter().enumerate().flat_map(|(i,p)|
+                [(p[0] / 1280.0 * SCALE as f64) as i32, (p[1] / 800.0 * SCALE as f64) as i32, i as i32 * 10]).collect() };
+        let parts = ink_output_parts(&stroke, frame, &[[0.0,0.0,1280.0,800.0],[1280.0,0.0,1280.0,800.0]]);
+        assert_eq!(parts.len(), 2);
+        let saved: Vec<_> = parts.iter().flat_map(clip_recording_ink).collect();
+        assert_eq!(saved.len(), 1);
+        assert!(saved[0].normalized_points().iter().all(|p| p[0] < 0.05), "no phantom full-width crossing");
+    }
+
     #[test]
     fn helper_windows_are_apparent_s_except_the_capture_source() {
         let (sender, _receiver) = flume::unbounded();
@@ -1410,13 +1743,76 @@ mod tests {
         assert!(at(300.0, 300.0), "Settings");
         assert!(!at(1400.0, 400.0), "the iPhone mirror");
         assert!(!at(1000.0, 900.0), "the app under the ink overlay");
+        telemetry.note_ui_pid.store(app as u64, Ordering::Release);
+        assert!(at(1000.0, 900.0), "the separate Electron note UI is owned");
+        assert!(telemetry.notes_window_in(&windows, 1000.0, 900.0), "notes clicks stay inside");
+        let notes_and_capsule = [window(10, own, [800.0, 0.0, 500.0, 100.0]), window(11, app, [1000.0, 30.0, 150.0, 44.0])];
+        assert!(!telemetry.notes_window_in(&notes_and_capsule, 850.0, 50.0), "capsule outside notes dismisses");
+        #[cfg(target_os = "linux")]
+        assert!(telemetry.notes_window_in(&notes_and_capsule, 1050.0, 50.0), "pinned notes remain inside despite stale X11 stacking");
+        telemetry.note_ui_pid.store(0, Ordering::Release);
+        assert!(!at(1000.0, 900.0), "closing notes releases that process identity");
         telemetry.set_capture_source_pid(0);
         assert!(at(1400.0, 400.0), "a helper that isn't the source");
+    }
+
+    #[test]
+    fn separate_settings_window_is_owned_only_while_its_exact_child_is_alive() {
+        use crate::capture::ui_process::UiChild;
+        let (sender, _receiver) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        let spawn = || std::process::Command::new("sh").args(["-c", "exec sleep 30"]).spawn().unwrap();
+        let raw = spawn();
+        let pid = raw.id() as i32;
+        let windows = [crate::shared::windows::RawWindow {
+            id: 42, pid, owner: "Electron".into(), title: "Apparent Settings".into(),
+            bounds: [0.0, 0.0, 600.0, 400.0], layer: 0, alpha: 1.0,
+        }];
+        let at = || telemetry.apparent_window_in(&windows, 100.0, 100.0, |_| false);
+        assert!(!at(), "an unregistered Electron process is not ours");
+        let mut child = UiChild::new(raw);
+        assert!(at(), "the separate Settings window excludes presses and scrolls");
+        telemetry.set_capture_source_pid(pid as u32);
+        assert!(!at(), "explicit capture sources retain their interaction telemetry");
+        telemetry.set_capture_source_pid(0);
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(!at(), "a reaped PID is not owned even before its registration is dropped");
+        let next = spawn();
+        let next_pid = next.id() as i32;
+        let mut next = UiChild::new(next);
+        drop(child);
+        assert!(crate::capture::ui_process::owns(next_pid), "old cleanup cannot retire a new session");
+        next.kill().unwrap();
+        next.wait().unwrap();
+        drop(next);
+        assert!(!crate::capture::ui_process::owns(next_pid));
     }
 
     /// Kit's Screen capture on the Pro: the old listen-only event tap was off (no Input
     /// Monitoring), so his clicks on OpenCode's composer never reached the bundle. Clicks now
     /// come from the mouse monitor; polled button state stands in if it couldn't be installed.
+    #[test]
+    fn note_editor_dismisses_only_on_an_actual_external_button_press() {
+        let (sender, receiver) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        telemetry.notes_editing.store(true, Ordering::Release);
+        // A live global monitor does not receive clicks on the native capsule.
+        telemetry.mouse_live.store(true, Ordering::Release);
+        let mut prev = [false; 2];
+        // Typing and clicks inside the editor never become captured input.
+        poll_clicks(&telemetry, &mut prev, [true, false], (20.0, 20.0), false, |_, _| true);
+        poll_clicks(&telemetry, &mut prev, [false, false], (20.0, 20.0), false, |_, _| true);
+        assert!(receiver.try_recv().is_err());
+        // An external Shift-click dismisses once on press; its release adds no pin.
+        poll_clicks(&telemetry, &mut prev, [true, false], (500.0, 500.0), true, |_, _| false);
+        assert!(matches!(receiver.try_recv(), Ok(LiveOverlayEvent::NoteOutside)));
+        poll_clicks(&telemetry, &mut prev, [true, false], (500.0, 500.0), true, |_, _| false);
+        poll_clicks(&telemetry, &mut prev, [false, false], (500.0, 500.0), true, |_, _| false);
+        assert!(receiver.try_recv().is_err());
+        assert!(telemetry.events.lock().unwrap().is_empty());
+    }
+
     #[test]
     fn clicks_are_recorded_from_polled_buttons_while_the_mouse_monitor_is_missing() {
         let (sender, _receiver) = flume::unbounded();
@@ -1685,12 +2081,18 @@ mod tests {
             );
         }
         // In recording pixels: the left 1x display's centre is (960, 540).
-        let frame = crate::capture::engine::runtime::screens::with_scale([-1920.0, 37.0, 1920.0, 1080.0], 1.0);
+        let frame = crate::capture::engine::runtime::screens::with_scale(
+            [-1920.0, 37.0, 1920.0, 1080.0],
+            1.0,
+        );
         telemetry.reset_for_session(frame);
         let (nx, ny, _, _) = telemetry.normalize_point(-960.0, 577.0);
         assert_eq!((nx * 1920.0, ny * 1080.0), (960.0, 540.0));
         // Above 2x: (640, -360) is a quarter in → (640, 1080) px of 2560×1440.
-        let frame = crate::capture::engine::runtime::screens::with_scale([0.0, -1440.0, 2560.0, 1440.0], 2.0);
+        let frame = crate::capture::engine::runtime::screens::with_scale(
+            [0.0, -1440.0, 2560.0, 1440.0],
+            2.0,
+        );
         telemetry.reset_for_session(frame);
         let (nx, ny, _, _) = telemetry.normalize_point(640.0, -360.0);
         assert_eq!((nx * 2560.0, ny * 1440.0), (640.0, 1080.0));
@@ -1828,7 +2230,10 @@ mod tests {
 
         // A 1x external display is recorded at its own pixels, never upscaled.
         let external = |mode, width, height| TargetInfo {
-            frame: crate::capture::engine::runtime::screens::with_scale([-1920.0, 37.0, width, height], 1.0),
+            frame: crate::capture::engine::runtime::screens::with_scale(
+                [-1920.0, 37.0, width, height],
+                1.0,
+            ),
             ..target(mode, width, height)
         };
         let screen = external(CaptureMode::Display, 1920.0, 1080.0);
@@ -1838,7 +2243,10 @@ mod tests {
         assert_eq!(capture_size(&region, 1280.0), (480, 320));
         // A 2x one above the laptop keeps the 2560 px long edge.
         let above = TargetInfo {
-            frame: crate::capture::engine::runtime::screens::with_scale([0.0, -1440.0, 2560.0, 1440.0], 2.0),
+            frame: crate::capture::engine::runtime::screens::with_scale(
+                [0.0, -1440.0, 2560.0, 1440.0],
+                2.0,
+            ),
             ..target(CaptureMode::Display, 2560.0, 1440.0)
         };
         assert_eq!(capture_size(&above, 2560.0), (2560, 1440));

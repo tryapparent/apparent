@@ -44,7 +44,19 @@ pub fn main_display_id() -> u32 {
 
 /// CGWindowList's windows, front to back, in an autorelease pool.
 pub(crate) fn raw_windows_now() -> Vec<crate::shared::windows::RawWindow> {
-    objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows())
+    objc2::rc::autoreleasepool(|_| {
+        let mut raw = crate::shared::windows::raw_windows();
+        // kCGCursorWindowLevelKey, from CGWindowLevel.h. Query the actual level
+        // instead of baking the Window Server's observed numeric layer into policy.
+        const CURSOR_WINDOW_LEVEL_KEY: i32 = 19;
+        let cursor_level = unsafe { CGWindowLevelForKey(CURSOR_WINDOW_LEVEL_KEY) };
+        crate::shared::windows::remove_system_cursor(&mut raw, cursor_level);
+        raw
+    })
+}
+
+pub(crate) fn input_windows(_child: u32) -> Vec<crate::shared::windows::RawWindow> {
+    raw_windows_now()
 }
 
 /// Whether `pid` runs this Apparent's `apparent-helper` (the iPhone mirror, Settings, onboarding, the
@@ -220,6 +232,7 @@ unsafe extern "C" {
     fn CGEventGetLocation(event: EventRef) -> CGPoint;
     fn CGEventGetIntegerValueField(event: EventRef, field: u32) -> i64;
     fn CGMainDisplayID() -> u32;
+    fn CGWindowLevelForKey(key: i32) -> i32;
     fn CGDisplayPixelsWide(display: u32) -> usize;
     fn CGDisplayPixelsHigh(display: u32) -> usize;
     fn CGPreflightScreenCaptureAccess() -> bool;
@@ -1443,7 +1456,7 @@ fn install_mouse_monitor(telemetry: Arc<SharedCaptureTelemetry>) -> bool {
         let cg: *mut OpaqueCgEvent = unsafe { msg_send![event, CGEvent] };
         if !cg.is_null() {
             mouse_event(&telemetry, cg.cast(), |x, y| {
-                telemetry.on_apparent_window(x, y)
+                telemetry.on_capture_input_ui(x, y)
             });
         }
     });
@@ -1461,7 +1474,7 @@ fn mouse_event(
     event: EventRef,
     on_apparent: impl Fn(f64, f64) -> bool,
 ) {
-    if !telemetry.active.load(Ordering::Acquire) {
+    if !telemetry.active.load(Ordering::Acquire) || telemetry.notes_editing.load(Ordering::Acquire) {
         return;
     }
     let event_type = unsafe { CGEventGetType(event) };
@@ -1624,7 +1637,7 @@ unsafe extern "C" fn key_tap_callback(
     if keycode == KEY_ESCAPE && !cmd && !ctrl {
         telemetry.escape_pressed.store(true, Ordering::Release);
     }
-    if !telemetry.active.load(Ordering::Acquire) {
+    if !telemetry.active.load(Ordering::Acquire) || telemetry.notes_editing.load(Ordering::Acquire) {
         return event;
     }
 
@@ -1780,7 +1793,7 @@ fn run_global_hid_poller(telemetry: Arc<SharedCaptureTelemetry>) {
             buttons,
             (loc.x, loc.y),
             shift && !cmd && !ctrl && !alt,
-            |x, y| telemetry.on_apparent_window(x, y),
+            |x, y| telemetry.on_capture_input_ui(x, y),
         );
 
         let pure_shift = shift && !cmd && !ctrl && !alt && !await_shift_release;

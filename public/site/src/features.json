@@ -25,12 +25,75 @@
       "id": "onboarding-pen-colour",
       "group": "settings",
       "name": "Onboarding pen colour",
-      "says": "The separate onboarding test app saves a pen colour for whiteboard and screen drawings, keyframes and exports.",
+      "says": "Shared onboarding saves a pen colour for whiteboard and screen drawings, keyframes and exports.",
       "status": "main",
       "platforms": ["mac", "linux"],
-      "note": "Native test candidate; not installed routing. Legacy captures retain their existing red ink. Config is read at startup; the centred onboarding picker applies saved changes immediately, previews them in a puddle and animates its frog on confirmation. The shared tour skips the retired explanation page. Native platform gates remain required.",
+      "note": "Packaged macOS/Linux onboarding uses the shared Electron renderer with native fallback. Legacy captures retain their existing red ink. Config is read at startup; the centred picker previews the saved colour in a puddle and animates its frog on confirmation. The shared tour skips the retired explanation page. Native permission/capture acceptance remains required before release.",
       "config": [{"key":"penColor","value":"coral | purple | blue | green","does":"Pen colour; absent keeps legacy red"}],
       "docs": ["capture/desktop/docs/onboarding-and-settings.md"]
+    },
+    {
+      "id": "shared-system-appearance",
+      "added": "2026-11-02",
+      "group": "platforms",
+      "name": "System light and dark appearance",
+      "says": "Frontend surfaces share one semantic theme and follow system light/dark appearance while open: Electron frontend, Connect account and recording recipient pages, and public pages. Native legacy surfaces and captured media keep their existing rendering. Browser checks cover Chromium and Firefox; native platform acceptance remains separate.",
+      "status": "main",
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "docs": [
+        "shared/ui/README.md#system-appearance-contract"
+      ]
+    },
+    {
+      "id": "adaptive-mac-menu-bar-icon",
+      "added": "2026-11-02",
+      "group": "platforms",
+      "name": "Adaptive Mac menu bar icon",
+      "says": "The Mac menu bar keeps the Apparent a in purple: Lilac on Carbon in system Dark mode, darker purple on Paper in system Light mode. It follows live system appearance changes without restarting, including in full-screen apps. The app icon and Linux tray are unchanged.",
+      "status": "main",
+      "platforms": ["mac"],
+      "docs": ["capture/desktop/docs/onboarding-and-settings.md#mac-menu-bar-icon"]
+    },
+    {
+      "id": "typed-capture-notes",
+      "group": "record",
+      "name": "Shift-click typed notes",
+      "says": "Shift-click opens a compact Electron note field. Enter or Attach saves text; empty Enter keeps the pin. Escape retains an in-capture draft. A saved-note counter offers editing and deletion. Typed notes retain click-time anchors in the bundle and handoff.",
+      "status": "main",
+      "added": "2026-11-02",
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Shift-click",
+          "does": "Type a note at the clicked point"
+        },
+        {
+          "keys": "Enter",
+          "does": "Save a note or dismiss an empty field"
+        },
+        {
+          "keys": "Shift+Enter",
+          "does": "Insert a newline in a note"
+        }
+      ],
+      "config": [
+        {
+          "key": "microphoneEnabled",
+          "value": "true",
+          "does": "Set false for intentional silent captures; applies to the next screen capture without changing the selected microphone device"
+        }
+      ],
+      "note": "Enabled by default. Rust persists notes before acknowledgement. The notes-only Electron surface does not replace the picker, native drawing or the complete recording capsule. Linux display video includes the visible popup, including drafts; unsaved text is excluded from note metadata and summary. Native platform acceptance is required before release.",
+      "docs": [
+        "capture/engine/docs/keyframes-and-text.md",
+        "capture/desktop/ui/frontend/README.md"
+      ]
     },
     {
       "id": "desktop-error-reporting",
@@ -76,11 +139,11 @@
       "id": "hosted-sync",
       "group": "delivery",
       "name": "Connect complete-bundle handoff",
-      "says": "Explicit upload login queues new GUI captures without waiting for the network. Clipboard text includes a non-secret ID and remote fetch instruction while pending. A separate read login retrieves and validates the complete bundle; failures preserve the local original.",
+      "says": "Explicit upload login queues new GUI captures without waiting for the network. Clipboard text starts with fetch and inspect commands plus a one-line CLI installation fallback, with timestamped words and marks last. Hosted prompts omit local paths and repeated login instructions; unavailable hosted admission keeps local inspection instructions. A separate read login retrieves and validates the complete bundle; failures preserve the local original.",
       "status": "experiment:hostedSync",
       "added": "2026-10-30",
       "platforms": ["mac", "linux"],
-      "note": "Default off; CLI sign-in or General Settings through the default-on connectSettings controls. Update Apparent for apparent connect; older apps use apparent cloud, retained as a compatibility alias. Connect browser routes at app.tryapparent.com/connect and /connect/device retain /hosted aliases; API, Google callback, host-only sessions and device credentials stay at hosted.tryapparent.com. The V4 web UI provides account sign-in, independent scope review and verified device approval; website approval does not prove local upload settings or CLI credentials. Native capsule proof remains deferred; Settings connection and recovery controls are available by default, with explicit upload consent still required. Candidate requires native capture/paste proof on each OS and deployed account approval. V1 rejects files above 90,000,000 bytes rather than omitting media. No automatic historical uploads. Explicit apparent connect upload creates a fresh ID; apparent connect retry keeps existing IDs. Better Auth migration candidate renews device credentials while renewal remains valid, preserving queued IDs and consent; revoked or expired renewal needs approval again. Existing credentials require one new login after updating. Service login does not establish encryption trust. Migration, live OAuth and both native platform gates remain required before release.",
+      "note": "Default off; CLI sign-in or General Settings through the default-on connectSettings controls. Update Apparent for apparent connect; older apps use apparent cloud, retained as a compatibility alias. Connect browser routes at app.tryapparent.com/connect and /connect/device retain /hosted aliases; API, Google callback, host-only sessions and device credentials stay at hosted.tryapparent.com. The V4 web UI provides account sign-in, independent scope review and verified device approval; website approval does not prove local upload settings or CLI credentials. Native capsule proof remains deferred; Settings connection and recovery controls are available by default, with explicit upload consent still required. Candidate requires native capture/paste proof on each OS and deployed account approval. V1 rejects files above 90,000,000 bytes rather than omitting media. Local queue status retains the rejected asset name, exact size and limit across restart; no automatic retry can fix an unchanged oversized file. No automatic historical uploads. Explicit apparent connect upload creates a fresh ID; apparent connect retry keeps existing IDs. Better Auth migration candidate renews device credentials while renewal remains valid, preserving queued IDs and consent; revoked or expired renewal needs approval again. Existing credentials require one new login after updating. Service login does not establish encryption trust. Migration, live OAuth and both native platform gates remain required before release.",
       "config": [
         { "key": "cloud.enabled", "value": "boolean; false by default", "does": "Enable the automatic upload queue only with experiment and consent" },
         { "key": "cloud.uploadConsent", "value": "boolean; false by default", "does": "Record explicit permission to share capture contents" },
@@ -104,11 +167,11 @@
       "id": "connect-settings",
       "group": "delivery",
       "name": "Connect account controls in General Settings",
-      "says": "Optional General Settings sign-in explains upload consent, opens browser device approval and verifies local activation. Cancel, disable uploads and disconnect preserve local capture; account connection does not create public links.",
+      "says": "General Settings uses a benefit-led Connect card above Launch at login, with explicit upload consent, browser approval and verified local activation. Account controls include upload disable/re-enable, connection checks and confirmed disconnect; functional colors distinguish success, progress, caution and failure. Cancel, disable uploads and disconnect preserve local capture; account connection does not create public links.",
       "status": "experiment:connectSettings",
       "added": "2026-11-02",
       "platforms": ["mac", "linux"],
-      "note": "Default on; experiments.connectSettings=false hides these controls. Visibility does not sign in or enable uploads. Independent of hostedSharing; no onboarding step. Native Settings reads the experiment on open. Reopen the Electron window to show a newly enabled card; an open Electron stream observes disabling at its next request or client predicate, or within 500 ms while idle, and cancels pending sign-in. The opt-in Electron General card reuses the Rust controller/client over a window-owned socket; reload/close also cancels pending sign-in. Installed native Settings remain the rollback; routing is unchanged. Uses the configured API or hosted.tryapparent.com, not a CLI setup prerequisite. Website approval alone is not local activation. Electron transport checks, actual-Rust integration, native platform proof and live account approval are distinct gates; this entry is not proof of them.",
+      "note": "Default on; experiments.connectSettings=false hides these controls. Visibility does not sign in or enable uploads. Independent of hostedSharing; no onboarding step. Native Settings reads the experiment on open. Reopen the Electron window to show a newly enabled card; an open Electron stream observes disabling at its next request or client predicate, or within 500 ms while idle, and cancels pending sign-in. Installed General connection actions open the shared Electron Connect view when packaged assets are available, using a Connect-only preload and the existing Rust controller socket. Reload/close cancels pending sign-in and never replays the opening action. Navigation returns to the existing Settings pages; missing assets or a failed Electron window retain the native fallback. General/Connect opening no longer measures capture history; native fallback size measurement follows an explicit Storage visit. macOS and isolated Linux acceptance of this routing remains required before release. Uses the configured API or hosted.tryapparent.com, not a CLI setup prerequisite. Website approval alone is not local activation. Electron transport checks, actual-Rust integration, native platform proof and live account approval are distinct gates; this entry is not proof of them.",
       "docs": ["capture/desktop/docs/onboarding-and-settings.md", "connect/docs/hosted-client.md"]
     },
     {
@@ -133,7 +196,7 @@
       "status": "experiment:hostedSharing",
       "added": "2026-10-31",
       "platforms": ["mac", "linux"],
-      "note": "Default off. Native candidate only: Linux GUI, macOS native pill/Swift Settings, onboarding cancellation, foreground clipboard gating and end-to-end real-feature walkthrough still require platform proof. A configured hosted API and explicit upload consent are required. Deployment also needs SHARING_ENABLED=true; it defaults off. No production deployment is implied.",
+      "note": "Default off. Native candidate only: Linux GUI, macOS native pill/Swift Settings, onboarding cancellation, foreground clipboard gating and end-to-end real-feature walkthrough still require platform proof. A configured hosted API and explicit upload consent are required. Deployment also needs SHARING_ENABLED=true; it defaults off. No production deployment is implied. The Electron selected-capture candidate adds explicit non-E2E public-copy confirmation with Rust-owned background preparation and foreground clipboard delivery; installed capsule routing and native acceptance remain unchanged.",
       "docs": ["capture/engine/docs/keyframes-and-text.md", "connect/docs/hosted-client.md", "connect/docs/hosted-api.md"]
     },
     {
@@ -180,16 +243,6 @@
       "docs": ["public/site/docs/belief-release.md"]
     },
     {
-      "id": "feedback-issue",
-      "group": "delivery",
-      "name": "Give Feedback…",
-      "says": "Start a capture from the menu, review it locally, then open a GitHub feedback form. No capture data is added to the URL or uploaded automatically.",
-      "status": "experiment:feedbackIssue",
-      "added": "2026-10-29",
-      "platforms": ["mac", "linux"],
-      "docs": ["capture/engine/docs/capture.md"]
-    },
-    {
       "id": "linux-h264-decoder-check",
       "group": "settings",
       "name": "H.264 decoder setup warning",
@@ -212,6 +265,7 @@
     },
     {
       "id": "switch-chips",
+      "added": "2026-10-22",
       "group": "start",
       "name": "Switch target as it starts",
       "says": "The capsule opens onto Area · Screen · iPhone for 3.5 s; a chip restarts the capture on that target.",
@@ -222,6 +276,7 @@
     },
     {
       "id": "picker",
+      "added": "2026-10-22",
       "group": "start",
       "name": "Choose What to Record…",
       "says": "The menu's picker opens on the pointer's display: drag an area, or pick Screen or iPhone.",
@@ -299,7 +354,7 @@
       "says": "Hold ⇧ and move to draw red ink over any app; it fades after release and is redrawn on the keyframes.",
       "status": "stable@0.3.4",
       "platforms": ["mac", "linux"],
-      "note": "On Wayland the Linux preview needs the input group for ink outside its own windows.",
+      "note": "Desktop ink can cross displays without expanding the recording source; bundle marks are clipped to the selected recording. Linux uses a spanning overlay and macOS uses per-display panels. The Electron development window offers live drawing status and Undo last mark through the Rust controller; native input and overlays remain authoritative. Installed routing is unchanged. Native cross-display acceptance remains pending in issue #355. On Wayland the Linux preview needs the input group for ink outside its own windows.",
       "shortcuts": [{ "keys": "⇧ + move", "does": "Draw" }],
       "docs": ["README.md#capture-controls"]
     },
@@ -644,6 +699,7 @@
     },
     {
       "id": "recover",
+      "added": "2026-10-22",
       "group": "finish",
       "name": "Recover unbuilt captures",
       "says": "Saved capture assets can be recovered after the app exits unexpectedly. An interrupted recording recovers saved narration only, without reconstructing privacy-excluded screenshots.",
@@ -894,6 +950,7 @@
     },
     {
       "id": "electron-ui-foundation",
+      "added": "2026-11-01",
       "group": "settings",
       "name": "Opt-in Electron UI foundation",
       "says": "Development-only React/shadcn/Tailwind window with synthetic previews and read-only state from the running Rust app. Does not replace the installed app or recording controls.",
@@ -1018,6 +1075,7 @@
     },
     {
       "id": "electron-error-reporting",
+      "added": "2026-11-02",
       "group": "settings",
       "name": "Technical error reporting setting",
       "says": "The opt-in Electron Settings surface shows and changes the default-on, content-free technical error reporting preference through Rust.",
@@ -1029,14 +1087,26 @@
     },
     {
       "id": "electron-capture-location",
+      "added": "2026-11-01",
       "group": "storage",
-      "name": "Experimental Electron capture location",
-      "says": "An opt-in development window shows effective and saved capture locations, with a parented folder picker and Reset. It also presents Rust-owned retention preferences and on-demand logical capture-folder usage. Rust validates and saves preferences; existing recordings are not moved by this migration.",
-      "status": "experiment:electronCaptureLocation",
-      "platforms": ["mac", "linux"],
-      "note": "Off by default; not the installed Settings replacement. Earlier location-only proof: disposable Linux verified actual controls, pointer selection/Cancel, Rust persistence and visible readback at 1920×1080 with matching GTK/display scale. The GTK chooser can still overflow a 1280×800 desktop; the app does not change global GTK settings. GitHub-hosted macos-26/arm64 CI run 41354248911 verified real parented Choose/Cancel/Reset against the installed Rust GUI, visible readback, config/sentinel preservation and cleanup; images were inspected. Explicit Electron-to-Rust integration passed on both platforms. Those prior results do not cover the added retention/usage controls; their exact-candidate proof and remaining gates belong to #291. This is Settings-only proof, not capture, permission or performance acceptance.",
-      "config": [{ "key": "electronCaptureLocation", "value": "experiment; false by default", "does": "Enable the location, retention and usage Storage bridge in the running Rust app" }],
-      "docs": ["capture/desktop/ui/frontend/README.md"]
+      "name": "Storage Settings in Electron",
+      "says": "Storage Settings uses shared React controls for capture location, retention and on-demand folder usage. Rust validates and saves preferences; existing captures are not moved.",
+      "status": "main",
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "note": "Default on; experiments.electronCaptureLocation=false restores native Storage on reopen. Missing packaged assets or an Electron crash also use native Storage. Other Settings pages retain native presentation. Existing worker timing and usage-scan limits are unchanged. Candidate installed routing and platform acceptance are tracked in #291; prior foundation evidence does not prove this routing change.",
+      "config": [
+        {
+          "key": "experiments.electronCaptureLocation",
+          "value": "true by default; false opts out",
+          "does": "Use Electron Storage Settings and admit its Rust bridge; false restores native Storage"
+        }
+      ],
+      "docs": [
+        "capture/desktop/ui/frontend/README.md"
+      ]
     },
 
     {
@@ -1282,11 +1352,12 @@
       "id": "onboarding-first-capture",
       "group": "install",
       "name": "Choose and try your Record shortcut",
-      "says": "Onboarding requires an explicit shortcut choice and a successful shortcut-started recording before it can finish. Closing leaves setup unfinished for the next launch.",
-      "status": "experiment:onboardingFirstCapture",
+      "says": "Onboarding requires an explicit shortcut choice and a successful shortcut-started recording before it can finish. The shared coach guides Whiteboard and screen drawing, copying, manual paste confirmation and finding Open Latest Capture. Closing leaves setup unfinished for the next launch.",
+      "status": "main",
       "added": "2026-10-31",
       "platforms": ["mac", "linux"],
-      "note": "Default off. Desktop-owned Linux shortcuts must be explicitly accepted rather than edited. Native Mac and Linux interaction proof is required before promotion.",
+      "note": "Enabled by default; experiments.onboardingFirstCapture=false restores optional practice. Desktop-owned Linux shortcuts must be explicitly accepted rather than edited. Existing completed users are not forced through setup again.",
+      "config": [{ "key": "experiments.onboardingFirstCapture", "value": "false", "does": "Restore optional shortcut choice and practice on the next tour open" }],
       "docs": ["capture/desktop/docs/onboarding-and-settings.md"]
     },
     {

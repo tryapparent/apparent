@@ -11,10 +11,18 @@ coalescing superseded runs within its own platform. Both call the same reusable
 `verification-platform.yml`, preserving the full Rust, Engine/client, browser,
 Electron and applicable native checks. Each checks the entire tree, not just the
 latest push delta: changes from a cancelled earlier run cannot escape verification.
+Full verification is main-only, including explicit `workflow_dispatch`; a dispatch
+on another ref skips the reusable workflow before allocating its runners. PRs use
+focused checks, independent review, current-base integration checks and required
+native/platform proof before merge. Do not dispatch or wait for full branch CI as
+a merge gate. After merge, full verification of the exact main commit gates
+publication; a failed platform leaves its last verified release available.
 Each caller's `verify / Release verification` job is its platform receipt.
-Mac verification and preview publication use `macos-latest`, following GitHub's
-stable Mac image. The required Xcode/macOS SDK remains selected explicitly; an
-image change must still pass the same checks before Mac publication.
+General Mac verification uses `macos-15-intel` so it does not depend on the
+standard Apple Silicon runner pool. The required Xcode/macOS SDK remains selected
+explicitly. Preview publication stays on `macos-latest` for arm64 packaging; Intel
+CI is not Apple Silicon runtime proof. An image change must still pass the same
+checks before Mac publication.
 
 Linux and web delivery trigger only after successful `Linux verification`.
 Their admission job reads trusted-main code and requires that exact commit's
@@ -43,6 +51,36 @@ release gate.
 hosted production environments and activation variables. This policy does not
 enable a disabled publisher, provision resources or apply migrations.
 
+## Local commit signing
+
+Activate the versioned hooks in each clone with `git config --local core.hooksPath
+.githooks`. This common-repository setting also applies to linked worktrees;
+cloning or pulling does not activate hooks automatically. Keep the existing
+pre-commit directory-width check and pre-push verification enabled.
+
+`.githooks/reference-transaction` requires `git verify-commit` to accept every
+new commit introduced by a local branch or detached HEAD update. It runs before
+refs move, so unsigned initial commits, ordinary commits, amendments, merges,
+and batched updates fail even with `--no-gpg-sign`, `commit.gpgsign=false` or
+`--no-verify`. It imposes no author/committer identity restriction. Commits
+already reachable from local refs/HEAD are excluded: existing history, fetched
+commits, branch switches, resets, remote-tracking refs, tags and deletions are
+not revalidated. This is local creation policy, not a historical or push audit.
+
+Set `commit.gpgsign=true`, choose `user.signingkey` and `gpg.format`, and configure
+verification trust. SSH signing requires `gpg.ssh.allowedSignersFile` containing
+the trusted public signing keys; GPG uses the local keyring. A signature that
+cannot be verified fails closed. GitHub's Verified badge separately requires
+registering the signing public key with GitHub; local verification does not
+prove registration. No private keys belong in this repository.
+
+Local hooks are bypassable by changing `core.hooksPath`, changing the hook or
+using another clone. For activation across worktrees before the source change
+lands, a pinned copy of the tested hook set can live under the Git common
+directory with `core.hooksPath` pointing there. Restore the previous hooks path
+to roll that installation back; switch to `.githooks` after all active worktrees
+contain the new hook. Server-side policy is separate.
+
 ## Checks and artifact identity
 
 The credential-free verification job runs:
@@ -60,8 +98,10 @@ is saved **before** a separate loopback-configured browser build. The loopback
 package is never uploaded for deployment. Artifact download is scoped to the
 same workflow run and named with its event SHA. Production runs are serialized
 without canceling a deployment halfway through; each publisher also refuses a
-candidate that is no longer current `main`. A relevant later push supplies the
-replacement; otherwise dispatch the workflow on `main` after reviewing it.
+candidate that is no longer current `main`. Pages treats a revision superseded
+after admission as a successful skip, without uploading or issuing a deployment
+receipt; remote lookup, upload and readback errors still fail the job. A relevant
+later push supplies the replacement; otherwise dispatch the workflow on `main` after reviewing it.
 
 ## Website activation: Cloudflare Pages
 
@@ -177,3 +217,60 @@ capabilities and the existing canonical repository/issue budget ledger plus
 allocation/cleanup receipts. Missing receipts are not zero spend. Follow the
 native owner's existing preflight and shared queue; this command grants no
 allocation authority and establishes no GUI acceptance.
+
+## Advisory owner lanes
+
+`python3 enablement/owner_lanes.py --base origin/main --head HEAD` prints a
+versioned JSON proposal over the complete merge-base delta. `--json <path>` saves
+it; `--summary <path>` appends an input/reason summary. Main CI retains this report
+as `owner-plan-<runner>` and in the selector job summary. Its `HEAD^` comparison is
+advisory only: cancelled-run coverage still comes from unchanged empty-tree full
+verification. `executed: false` means the report supplies no successful-test proof.
+
+Explicit manual entrypoints use `--lane <name> --run` (and `--online` for locked
+Cargo dependencies). Lanes are `capture` (whole root build/test), `engine-staged`
+(staged Engine package, not production Engine), `connect-client` (independent
+Cargo build/test), `connect-web` (existing package build/browser fixtures),
+`connect-service` (build and real synthetic workerd tests), `public-site`
+(standalone build/package and website/publication contracts), and `desktop-ui`
+(JS and synthetic Electron smoke). Use the existing web workflow for complete
+composed-site and cross-origin acceptance, and platform workflow for real Rust
+bridge/native checks. Entrypoints require the same toolchains, browser and system
+dependencies as those workflows; they do not install OS dependencies or grant
+native acceptance. Run heavy local commands through the existing build runner.
+
+Client edits also select Capture: root tests intentionally reuse client scenarios
+with the real AppConfig provider. Renderer edits select Capture for Rust bridge
+integration. Shared UI feeds Desktop and service recipient UI. Connect web feeds
+Public composition and consumes five explicit Public assets. Service API changes
+include root/browser consumers. Production Engine/Desktop/Agent remain root
+modules with reverse dependencies; no lane claims their isolation. Shared,
+unclassified, newly added, deleted, renamed or type-changed inputs and missing
+history select every lane. Manifests and lockfiles follow their owner's consumers;
+root build, packaging and verification inputs remain broad.
+
+No report output controls execution, hooks, release admission or publishers.
+Before enabling skipping in a separate issue, establish each suite's complete
+input closure including toolchain/platform, native/build/packaging contracts and
+verifier identity; compare against successful compatible proof covering the full
+candidate, including cancelled-run changes. Missing or incompatible proof must
+rerun. Validate shadow decisions against full execution and investigate omissions.
+Dependency caches are not test receipts; no speedup is claimed here.
+
+## Commit integration checkpoint
+
+With `core.hooksPath=.githooks`, `post-commit` refreshes `origin/main` with a
+five-second, noninteractive fetch on feature branches. When HEAD does not contain
+that main commit, it prints `INTEGRATION REQUIRED` and the exact fetched SHA.
+The owning agent should finish running operations, preserve any remaining
+uncommitted work, rebase onto that SHA, inspect incoming changes and rerun affected
+checks before starting the next work section. This is an advisory checkpoint,
+not an enforced merge gate or an automatic rebase. A partial commit remains a
+partial commit: the hook never stashes, stages, rewrites, pushes or changes files.
+
+Detached checkouts, main, and in-progress rebase/merge/cherry-pick/revert/bisect
+operations skip the checkpoint. A failed or timed-out fetch reports unknown
+freshness without failing the successful commit. No background worker is started;
+other worktrees are untouched. Existing worktrees acquire the hook when they
+integrate this change; frozen evidence checkouts need not be updated. Local hook
+checks do not replace current-main integration and review before merge.

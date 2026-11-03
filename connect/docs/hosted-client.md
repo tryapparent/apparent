@@ -136,7 +136,7 @@ Local `status` does not make network requests. `readAuth` and `uploadAuth` expos
 
 One private per-scope advisory renewal lock serializes processes. It is never acquired while holding queue/config locks; the existing order remains **worker → queue → config**. No queue/config lock spans refresh network waits. A response is synced privately before publication; the journal records its completed state. Restart recovers a completed response without another rotation. Publication checks caller/job authorization, then rereads the exact credential and disable-cancellation epoch under the queue lock, so a late response cannot replace a new login/logout or cross a completed disable. Disable can let an in-flight rotation finish into its private journal, but cannot publish it for a cancelled job; a later independently authorized account operation can recover it without restoring uploads. The private `hosted/cancellation` marker is runtime cancellation state, not a preference or encryption key. A crash before a completed response is durably marked requires the server's bounded refresh-replay protection; after that window, reapproval can be necessary. Authentication does not establish encryption trust (#189).
 
-Completion publishes a random 32-lowercase-hex ID to the disk queue before clipboard construction. Clipboard text includes the ID, current status and remote fetch command even while upload is pending. It includes no bearer token. Hashing, media staging, network requests and retries run outside capture completion/paste. Network, auth, quota and upload errors leave the original capture and local clipboard handoff usable. Queue errors fall back to local-only handoff. `apparent connect status` is local JSON with queue path, status, attempts, next retry and sanitized error codes; `--account` explicitly queries account quota.
+Completion publishes a random 32-lowercase-hex ID to the disk queue before clipboard construction. Clipboard text starts with `apparent fetch <id> --out ./<id>.apparent --wait 120` and `apparent inspect ./<id>.apparent`, even while upload is pending. A one-line README Agents link handles a missing CLI and leads to the maintained installation guide; image-inspection and the configured video-proof request precede the duration header and timestamped words/marks, which remain last for paste recognition. The prompt omits repeated login instructions, server lines and sender-local paths. The receiving CLI uses its configured server; configure a custom origin separately when required. Sign-in alone does not select this format: a retained, active private hosted job must exist. Without one, the prompt uses a shell-quoted local inspect path and local image/crop guidance. Archived summaries and bundle assets remain unchanged. It includes no bearer token. Hashing, media staging, network requests and retries run outside capture completion/paste. Network, auth, quota and upload errors leave the original capture and local clipboard handoff usable. Queue errors fall back to local-only handoff. `apparent connect status` is local JSON with queue path, status, attempts, next retry and sanitized error codes; `--account` explicitly queries account quota.
 
 ## Fetch on an agent's computer
 
@@ -186,7 +186,27 @@ The allowlist exactly matches the API: summary, metadata, contact sheets includi
 
 The server quota is **500,000,000 bytes per account**. Separately, v1 accepts at most 512 files and **90,000,000 bytes per file**, with a 128KiB manifest request. `file_too_large` is reported in queue status; the capture stays local. There is no multipart/chunk protocol and the client never drops a large recording/audio asset to fit. Real larger recordings therefore need a future coordinated protocol change. Server retention is seven days after reservation, with incomplete reservations reclaimed after 24 hours; a tombstoned ID requires a fresh explicit `apparent connect upload`, not a retry of that ID.
 
+When local staging rejects an oversized asset, the private durable job and local
+`apparent connect status` queue entry also carry
+`sizeFailure: {path, size, limit}`. Sizes are exact bytes; `path` is an allowlisted
+bundle-relative asset name, never the source directory or credential path. The
+same typed reason survives encryption staging context and process restart. Size
+failures stop automatic retries before reservation or media transfer. Explicit
+CLI retry clears the previous details and checks the files again; unchanged
+oversized files fail again. Older jobs without details remain readable and retain
+their original error code. Successful recovery clears the details. This is local
+diagnostic state, not a server response, telemetry payload or implemented pocket UI.
+
 ## Verification
+
+`encrypted_settings_future_capture_restart_retry_and_disconnect` exercises one
+continuous synthetic client lifecycle: Settings upload approval, repeated local
+reads and an empty startup worker without history discovery or network requests,
+a future capture interrupted during transfer, a new client retrying the same ID
+and manifest, byte-identical complete-bundle fetch, and durable disable/disconnect.
+A later upload approval cannot revive the cancelled future job. This uses the
+production Rust client and curl against the loopback approval/storage fixture;
+it is not live Google, deployed Worker, Electron routing or native platform proof.
 
 `cargo test -j 3 --offline hosted_ -- --test-threads=2` exercises the production curl subprocess against an isolated loopback HTTP server, synthetic device auth, complete bundle upload/fetch, restart queue recovery, pending pointers, quota/disable/logout, pending/transport deadlines, corruption, path and symlink rejection and v1 bounds. Tests use private synthetic config/bundle directories, not the user's credentials/captures. Native capture/paste and macOS tooling still require platform proof; a Linux build is not GUI proof.
 

@@ -28,48 +28,30 @@ mkdir -p "$out"
 APPARENT_APP_DIR="$out/Apparent Onboarding Test.app" APPARENT_NO_LAUNCH=1 bash capture/desktop/scripts/packaging/install-app.sh
 app="$out/Apparent Onboarding Test.app"
 resources="$app/Contents/Resources"
-frontend=capture/desktop/ui/frontend
-npm ci --prefix "$frontend" --no-audit --no-fund
-if [[ -n "$electron_arch" ]]; then
-  # npm's build tools run on the host; only the packaged Electron runtime is cross-targeted.
-  rm -rf -- "$frontend/node_modules/electron/dist"
-  npm_config_arch="$electron_arch" node "$frontend/node_modules/electron/install.js"
-else
-  node "$frontend/node_modules/electron/install.js"
-fi
-npm run build --prefix "$frontend"
-mkdir -p "$resources/onboarding/electron"
-cp -R "$frontend/dist" "$resources/onboarding/dist"
-cp "$frontend"/electron/onboarding{,-preload}.cjs "$resources/onboarding/electron/"
-cat > "$resources/onboarding/package.json" <<'JSON'
-{"name":"apparent-onboarding-test-ui","version":"0.0.0","main":"electron/entry.cjs"}
-JSON
-cat > "$resources/onboarding/electron/entry.cjs" <<'JS'
-require('./onboarding.cjs');
-JS
-ditto "$frontend/node_modules/electron/dist/Electron.app" "$resources/Apparent Test UI.app"
+# Exercise the same packaged frontend/runtime as the regular app. Only identity,
+# private user paths and the installer differ; no second Electron runtime is copied.
 cat > "$resources/onboarding-shell" <<'SH'
 #!/bin/sh
 set -eu
 resources=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-exec "$resources/Apparent Test UI.app/Contents/MacOS/Electron" "$resources/onboarding" "$@"
+exec "$resources/settings/runtime/Electron.app/Contents/MacOS/Electron" "$resources/settings/app" --onboarding
 SH
 chmod 755 "$resources/onboarding-shell"
 python3 - "$app" "$(git rev-parse HEAD)" <<'PY'
 import pathlib,plistlib,sys,shutil
 app=pathlib.Path(sys.argv[1]);info=app/'Contents/Info.plist'
-p=plistlib.loads(info.read_bytes());p.update(CFBundleIdentifier='dev.apparent.onboarding-test',CFBundleName='Apparent Onboarding Test',CFBundleDisplayName='Apparent Onboarding Test',LSEnvironment={'APPARENT_TEST_INSTANCE':'1'},ApparentTestBuildID=sys.argv[2],ApparentTestPreview=5)
+p=plistlib.loads(info.read_bytes());p.update(CFBundleIdentifier='dev.apparent.onboarding-test',CFBundleName='Apparent Onboarding Test',CFBundleDisplayName='Apparent Onboarding Test',LSEnvironment={'APPARENT_TEST_INSTANCE':'1'},ApparentTestBuildID=sys.argv[2],ApparentTestPreview=6)
 for k in list(p):
  if k.startswith('SU') or k in ['CFBundleURLTypes']:p.pop(k,None)
 info.write_bytes(plistlib.dumps(p))
 framework=app/'Contents/Frameworks/Sparkle.framework'
 if framework.exists():shutil.rmtree(framework)
-ui=app/'Contents/Resources/Apparent Test UI.app/Contents/Info.plist';p=plistlib.loads(ui.read_bytes());p.update(CFBundleIdentifier='dev.apparent.onboarding-test.ui',CFBundleName='Apparent Test UI',CFBundleDisplayName='Apparent Test UI',LSUIElement=True);ui.write_bytes(plistlib.dumps(p))
+ui=app/'Contents/Resources/settings/runtime/Electron.app/Contents/Info.plist';p=plistlib.loads(ui.read_bytes());p.update(CFBundleIdentifier='dev.apparent.onboarding-test.ui',CFBundleName='Apparent Test UI',CFBundleDisplayName='Apparent Test UI',LSUIElement=True);ui.write_bytes(plistlib.dumps(p))
 PY
 # Strip only this owned copy, before signing; never mutate the build cache.
 strip -S "$app/Contents/MacOS/apparent" "$app/Contents/MacOS/apparent-helper"
 codesign --force --sign - --identifier dev.apparent.onboarding-test.helper "$app/Contents/MacOS/apparent-helper"
-codesign --force --sign - --deep "$resources/Apparent Test UI.app"
+codesign --force --sign - --deep "$resources/settings/runtime/Electron.app"
 codesign --force --sign - --deep --identifier dev.apparent.onboarding-test "$app"
 codesign --verify --deep --strict "$app"
 installer="$out/Install Apparent Onboarding Test.app"

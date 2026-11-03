@@ -1,5 +1,6 @@
 """Exact-commit, per-platform publication admission using synthetic GitHub APIs."""
 import copy
+import re
 import importlib.util
 from pathlib import Path
 import subprocess
@@ -51,6 +52,39 @@ class AdmissionTests(unittest.TestCase):
         for platform, number in [('linux', '42'), ('macos', '84')]:
             self.assertEqual(self.admit(platform, number), self.sha)
             self.assertEqual(self.admit(platform), self.sha)
+
+    def test_full_verification_is_main_only_even_for_manual_dispatch(self):
+        root = Path(__file__).resolve().parents[2]
+        for caller in ('verification.yml', 'verification-mac.yml'):
+            text = (root / '.github/workflows' / caller).read_text()
+            verify = text.split('  verify:\n', 1)[1]
+            self.assertIn("if: github.ref == 'refs/heads/main'\n", verify)
+            self.assertIn('uses: ./.github/workflows/verification-platform.yml', verify)
+        workflow = (root / '.github/workflows/verification-platform.yml').read_text()
+        for job in ('desktop-ui', 'rust'):
+            section = re.search(r'^  ' + job + r':\n(.*?)(?=^  [a-z]|\Z)', workflow, re.M | re.S)[1]
+            self.assertIn("if: github.ref == 'refs/heads/main'\n", section)
+            self.assertNotIn('workflow_dispatch', section.split('    steps:', 1)[0])
+        receipt = workflow.split('  release-ready:\n', 1)[1]
+        self.assertIn("if: github.ref == 'refs/heads/main'\n", receipt)
+        self.assertNotIn('workflow_dispatch', receipt)
+        for platform in self.runs:
+            self.runs[platform].update(event='workflow_dispatch', head_branch='feature')
+        for platform in self.runs:
+            with self.assertRaises(ValueError):
+                self.admit(platform)
+
+    def test_intel_mac_receipt_matches_workflow_and_is_required(self):
+        workflow = Path(__file__).resolve().parents[2] / gate.WORKFLOWS['macos']
+        self.assertIn('runner: macos-15-intel', workflow.read_text())
+        names = ['verify / select', 'verify / desktop-ui (macos-15-intel)',
+                 'verify / rust (macos-15-intel)', 'verify / Release verification']
+        self.jobs['macos'] = [dict(name=name, status='completed', conclusion='success')
+                              for name in names]
+        self.assertEqual(self.admit('macos'), self.sha)
+        for job in self.jobs['macos']:
+            job['name'] = job['name'].replace('macos-15-intel', 'macos-latest')
+        with self.assertRaises(ValueError): self.admit('macos')
 
     def test_linux_checks_can_publish_without_a_mac_receipt(self):
         self.runs['macos'].update(status='queued', conclusion=None)
@@ -143,6 +177,47 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(gate.admit(self.repo, self.sha, '84', fetch, platform='macos'), self.sha)
         with self.assertRaises(ValueError):
             gate.pages('jobs', lambda _: dict(total_count=1, workflow_runs=[]))
+
+
+class MacPreviewAdmissionWorkflowTests(unittest.TestCase):
+    def setUp(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / '.github/workflows/release-mac-preview.yml').read_text()
+        self.admission, self.preview = workflow.split('  preview:\n', 1)
+        self.guard = "github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main'"
+        self.command = 'python3 enablement/release_gate.py --platform macos --sha "$GITHUB_SHA"'
+
+    def test_mac_allocation_requires_successful_ubuntu_admission(self):
+        self.assertIn('  admit:\n', self.admission)
+        self.assertIn('    runs-on: ubuntu-24.04\n', self.admission)
+        # needs plus the normal success() condition skips allocation on failure,
+        # cancellation or skipped admission. No always()/failure() override.
+        header = self.preview.split('    steps:\n', 1)[0]
+        self.assertIn('    needs: admit\n', header)
+        self.assertIn('    if: ' + self.guard + '\n', header)
+        self.assertEqual(header.count('    if:'), 1)
+        self.assertNotIn('continue-on-error:', self.admission)
+        self.assertNotIn('continue-on-error:', header)
+        self.assertIn('    runs-on: macos-latest\n', header)
+
+    def test_admission_uses_read_only_trusted_main_and_exact_candidate(self):
+        job = self.admission.split('  admit:\n', 1)[1]
+        self.assertIn('    if: ' + self.guard + '\n', job)
+        self.assertIn('    permissions:\n      contents: read\n      actions: read\n', job)
+        self.assertIn('          ref: main\n', job)
+        self.assertIn('          persist-credentials: false\n', job)
+        self.assertIn('          GH_TOKEN: ${{ github.token }}\n', job)
+        self.assertIn('        run: ' + self.command + '\n', job)
+        self.assertNotIn('secrets.', job)
+        self.assertNotIn('continue-on-error:', job)
+
+    def test_mac_rechecks_receipts_before_credentials_or_build(self):
+        steps = self.preview.split('    steps:\n', 1)[1]
+        recheck = steps.index('        run: ' + self.command + '\n')
+        self.assertLess(steps.index('uses: actions/checkout@'), recheck)
+        for action in ('Prepare Developer ID credentials', 'dtolnay/rust-toolchain@',
+                       'Build and verify the preview app', 'Sign the Sparkle archive'):
+            self.assertLess(recheck, steps.index(action))
 
 
 if __name__ == '__main__': unittest.main()

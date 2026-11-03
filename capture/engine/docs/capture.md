@@ -1,9 +1,5 @@
 # Capture: shortcuts, Mac recording, displays
 
-## Give Feedback (experiment)
-
-Set `"experiments": {"feedbackIssue": true}` in `~/.config/apparent/config.json` and restart Apparent. The menu's **Give Feedback…** starts a screen capture on the pointer's display. Finish it normally; Apparent opens the local capture review. **Open GitHub issue…** opens the public feedback form in your browser. It does not create or submit an issue. Describe the problem there; optionally attach only screenshots or video that you have reviewed for private information. No transcript, recording, or local path goes into the browser URL or gets uploaded by Apparent. The regular **Copy** button copies the local handoff to your clipboard; review its contents before pasting them into a public issue.
-
 Read this before changing `capture/desktop/settings/shortcut.rs`, `capture/engine/runtime/mod.rs`, `capture/engine/runtime/screens.rs` or the picker and capsule placement in `capture/desktop/mod.rs`.
 
 ## Shortcuts (`capture/desktop/settings/shortcut.rs`, `is_capture_shortcut` in `capture/engine/runtime/mod.rs`)
@@ -150,3 +146,25 @@ and Mac before release.
 ## Capture history
 
 In **Open Latest Capture**, the review window shows Newer and Older buttons and a position in the capture history. It reads completed `.apparent` bundles from the configured captures directory in reverse creation order, skips cancelled or invalid manifests, and loads images for the selected capture only. The first and last entries have no button past the end. The review window's Copy and Show in Files act on the capture currently open, not the newest one.
+
+### Desktop ink across displays
+
+During a screen/area recording, Shift ink uses desktop coordinates without
+changing the selected source or portal consent. Linux uses one desktop-spanning
+input/ink window so Shift pointer ownership continues at display boundaries;
+macOS keeps a click-through Metal panel at each connected display's own scale.
+The picker still uses its original single-display overlay. Phone capture keeps
+its mirror overlay. Displays connected after recording starts are not yet
+reconciled on macOS.
+
+Live and committed desktop ink stay in runtime telemetry. Bundle strokes contain
+only segments clipped to the recording rectangle, split at off-target detours;
+wholly off-target strokes are omitted. Releasing Shift commits both views, and
+finish/reset clears desktop-only state. Undo removes the corresponding recorded
+segments together. This preserves the existing bundle coordinate contract.
+
+Routing remains through the installed Rust/native input and overlay adapters.
+The Electron foundation currently has no recording or live-ink bridge; this
+change does not switch its routing. An Electron replacement still requires the
+same Rust clipping policy and accepted Linux/macOS overlay/input proof before
+removing native surfaces. No Electron workflow acceptance is claimed here.

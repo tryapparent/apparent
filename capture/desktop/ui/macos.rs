@@ -11,11 +11,12 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, NSObjectProtocol, Sel};
 use objc2::{AnyThread, DefinedClass, MainThreadOnly, msg_send, sel};
 use objc2_app_kit::{
-    NSApplication, NSCellImagePosition, NSColor, NSImage, NSMenu, NSMenuDelegate, NSMenuItem,
+    NSAppearanceCustomization, NSApplication, NSCellImagePosition, NSColor, NSImage, NSMenu,
+    NSMenuDelegate, NSMenuItem,
     NSStatusBar, NSStatusItem, NSStatusWindowLevel, NSWindow, NSWindowButton,
     NSWindowCollectionBehavior, NSWindowStyleMask,
 };
-use objc2_foundation::{MainThreadMarker, NSData, NSObject, NSSize, NSString};
+use objc2_foundation::{MainThreadMarker, NSArray, NSData, NSObject, NSSize, NSString};
 use screencapturekit::prelude::*;
 use screencapturekit::screenshot_manager::{CGImageExt, SCScreenshotManager};
 
@@ -535,6 +536,21 @@ objc2::define_class!(
     unsafe impl NSObjectProtocol for ApparentMenuTarget {}
 
     impl ApparentMenuTarget {
+        #[unsafe(method(observeValueForKeyPath:ofObject:change:context:))]
+        fn menu_bar_appearance_changed(
+            &self,
+            _key_path: &NSString,
+            _object: &AnyObject,
+            _change: &AnyObject,
+            _context: *mut std::ffi::c_void,
+        ) {
+            STATUS_BAR.with(|slot| {
+                if let Some(controller) = slot.borrow().as_ref() {
+                    refresh_status_bar_icon(&controller._item, self.mtm());
+                }
+            });
+        }
+
         #[unsafe(method(toggleCapture:))]
         fn toggle_capture(&self, _sender: &AnyObject) {
             let _ = self.ivars().sender.try_send(MenuAction::ToggleCapture);
@@ -545,10 +561,8 @@ objc2::define_class!(
             let _ = self.ivars().sender.try_send(MenuAction::ChooseTarget);
         }
 
-        #[unsafe(method(giveFeedback:))]
-        fn give_feedback(&self, _sender: &AnyObject) {
-            let _ = self.ivars().sender.try_send(MenuAction::GiveFeedback);
-        }
+        #[unsafe(method(toggleMicrophone:))]
+        fn toggle_microphone(&self, _sender: &AnyObject) { let _ = self.ivars().sender.try_send(MenuAction::ToggleMicrophone); }
 
         #[unsafe(method(openLatest:))]
         fn open_latest(&self, _sender: &AnyObject) {
@@ -591,14 +605,12 @@ objc2::define_class!(
         #[unsafe(method(menuNeedsUpdate:))]
         fn menu_needs_update(&self, menu: &NSMenu) {
             rebuild_inbox_menu_items(menu, self);
+            if let Some(item) = menu.itemWithTag(MICROPHONE_MENU_TAG) { item.setState(if crate::capture::engine::runtime::audio::mic::enabled() { 1 } else { 0 }); }
             if let Some(item) = menu.itemWithTag(RECORD_MENU_TAG) {
                 item.setTitle(&NSString::from_str(&record_menu_title()));
             }
             if let Some(item) = menu.itemWithTag(EXPORT_VIDEO_MENU_TAG) {
                 item.setHidden(!crate::shared::handoff::video_export());
-            }
-            if let Some(item) = menu.itemWithTag(FEEDBACK_MENU_TAG) {
-                item.setHidden(!crate::shared::handoff::experiment("feedbackIssue"));
             }
         }
     }
@@ -610,7 +622,7 @@ const INBOX_MENU_TAG: isize = 0x5c4a;
 const EXPORT_VIDEO_MENU_TAG: isize = 0x5c4e;
 /// Tag on **Record Screen**, whose title carries the record shortcut.
 const RECORD_MENU_TAG: isize = 0x5c4d;
-const FEEDBACK_MENU_TAG: isize = 0x5c4f;
+const MICROPHONE_MENU_TAG: isize = 0x5c50;
 
 /// "Record Screen" with the record shortcut as it is now (Settings can change it).
 fn record_menu_title() -> String {
@@ -733,6 +745,48 @@ struct StatusBarController {
     _item: Retained<NSStatusItem>,
     _menu: Retained<NSMenu>,
     _target: Retained<ApparentMenuTarget>,
+    _appearance_app: Retained<NSApplication>,
+}
+
+impl Drop for StatusBarController {
+    fn drop(&mut self) {
+        unsafe {
+            let _: () = msg_send![&*self._appearance_app, removeObserver: &*self._target,
+                forKeyPath: &*NSString::from_str("effectiveAppearance")];
+        }
+    }
+}
+
+fn refresh_status_bar_icon(item: &NSStatusItem, mtm: MainThreadMarker) {
+    let Some(button) = item.button(mtm) else {
+        return;
+    };
+    // Full-screen menu bars can stay dark even while the system is light.
+    // Follow the application's inherited system appearance so the two brand
+    // variants switch with Light/Dark mode in either window context.
+    let names = NSArray::from_retained_slice(&[
+        NSString::from_str("NSAppearanceNameAqua"),
+        NSString::from_str("NSAppearanceNameDarkAqua"),
+    ]);
+    let appearance_app = NSApplication::sharedApplication(mtm);
+    let appearance = appearance_app.effectiveAppearance();
+    let best: Option<Retained<NSString>> = unsafe {
+        msg_send![&*appearance, bestMatchFromAppearancesWithNames: &*names]
+    };
+    let dark = best.is_some_and(|name| name.to_string() == "NSAppearanceNameDarkAqua");
+    let bytes: &[u8] = if dark {
+        include_bytes!("../../../capture/desktop/assets/menubar-icon@2x.png")
+    } else {
+        include_bytes!("../../../capture/desktop/assets/menubar-light@2x.png")
+    };
+    if let Some(image) = NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(bytes)) {
+        image.setSize(NSSize::new(18.0, 18.0));
+        // Preserve the purple glyph and its contrasting background.
+        image.setTemplate(false);
+        button.setImage(Some(&image));
+    } else {
+        button.setTitle(&NSString::from_str("✎"));
+    }
 }
 
 thread_local! {
@@ -774,11 +828,8 @@ pub(in crate::capture::desktop) fn install_status_bar() -> Option<flume::Receive
         item.setTag(RECORD_MENU_TAG);
     }
     add("Choose What to Record…", sel!(chooseTarget:));
-    add("Give Feedback…", sel!(giveFeedback:));
-    if let Some(item) = menu.itemAtIndex(menu.numberOfItems() - 1) {
-        item.setTag(FEEDBACK_MENU_TAG);
-        item.setHidden(!crate::shared::handoff::experiment("feedbackIssue"));
-    }
+    add("Microphone for next screen capture", sel!(toggleMicrophone:));
+    if let Some(item) = menu.itemAtIndex(menu.numberOfItems() - 1) { item.setTag(MICROPHONE_MENU_TAG); }
     menu.addItem(&NSMenuItem::separatorItem(mtm));
     add("Open Latest Capture", sel!(openLatest:));
     add("Export Last Capture as Video…", sel!(exportVideo:));
@@ -800,17 +851,12 @@ pub(in crate::capture::desktop) fn install_status_bar() -> Option<flume::Receive
     menu.setDelegate(Some(objc2::runtime::ProtocolObject::from_ref(&*target)));
 
     let item = NSStatusBar::systemStatusBar().statusItemWithLength(-1.0);
-    if let Some(button) = item.button(mtm) {
-        let mb_bytes = include_bytes!("../../../capture/desktop/assets/menubar-icon@2x.png");
-        let mb_data = NSData::with_bytes(mb_bytes);
-        if let Some(img) = NSImage::initWithData(NSImage::alloc(), &mb_data) {
-            img.setSize(NSSize::new(18.0, 18.0));
-            // Keep both approved brand colors in the menu bar icon.
-            img.setTemplate(false);
-            button.setImage(Some(&img));
-        } else {
-            button.setTitle(&NSString::from_str("✎"));
-        }
+    refresh_status_bar_icon(&item, mtm);
+    let appearance_app = NSApplication::sharedApplication(mtm);
+    unsafe {
+        let _: () = msg_send![&*appearance_app, addObserver: &*target,
+            forKeyPath: &*NSString::from_str("effectiveAppearance"),
+            options: 0usize, context: std::ptr::null_mut::<std::ffi::c_void>()];
     }
     let app_bytes = include_bytes!("../../../capture/desktop/assets/app-icon.png");
     let app_data = NSData::with_bytes(app_bytes);
@@ -826,6 +872,7 @@ pub(in crate::capture::desktop) fn install_status_bar() -> Option<flume::Receive
             _item: item,
             _menu: menu,
             _target: target,
+            _appearance_app: appearance_app,
         });
     });
     Some(receiver)
@@ -1402,5 +1449,19 @@ mod tests {
             content_layer.setFilters(None);
         }
         CATransaction::commit();
+    }
+}
+
+/// The app behind a note, retained before Electron takes keyboard focus.
+pub(in crate::capture::desktop) fn note_focus() -> (u64, u32) {
+    let pid = crate::capture::engine::runtime::frontmost_external_pid().unwrap_or(0).max(0) as u32;
+    (u64::from(pid), pid)
+}
+pub(in crate::capture::desktop) fn restore_note_focus(token: u64, owner: u32) {
+    use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
+    if token > 0 && token <= i32::MAX as u64 && token == u64::from(owner) {
+        if let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(token as i32) {
+            let _ = app.activateWithOptions(NSApplicationActivationOptions::empty());
+        }
     }
 }

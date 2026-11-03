@@ -304,6 +304,7 @@ fn bundle_audio_issue(
     dir: &std::path::Path,
     bundle: &ApparentBundle,
 ) -> Option<CompletedAudioIssue> {
+    if bundle.context.get("microphoneCapture").is_some_and(|v| v == "off") { return None; }
     completed_audio_issue(
         bundle.source.as_deref(),
         &bundle.transcript,
@@ -530,7 +531,7 @@ fn island_content_width(
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum MenuAction {
     ToggleCapture,
-    GiveFeedback,
+    ToggleMicrophone,
     ChooseTarget,
     OpenLatest,
     OpenInbox(PathBuf),
@@ -538,11 +539,6 @@ enum MenuAction {
     Settings,
     CheckForUpdates,
     Quit,
-}
-
-/// A public issue form, never a URL containing a capture, transcript or local path.
-fn feedback_issue_url() -> String {
-    "https://github.com/tryapparent/apparent/issues/new?template=bug_report.yml".into()
 }
 
 /// Text beside the menu bar icon while a video export runs (`None` goes back to the inbox count).
@@ -829,10 +825,12 @@ struct ActiveRecording {
     bundle_dir: PathBuf,
     source: CaptureSource,
     _metal_overlay: Option<LaserOverlay>,
+    microphone_enabled: bool,
 }
 
 impl ActiveRecording {
     fn mic_warning(&self) -> Option<InputWarning> {
+        if !self.microphone_enabled { return None; }
         match &self.source {
             CaptureSource::Screen {
                 audio: Some(audio), ..
@@ -854,16 +852,21 @@ impl ActiveRecording {
 /// Shared coordinator owned by the GPUI app.
 pub struct ApparentCoordinator {
     telemetry: Arc<SharedCaptureTelemetry>,
+    note_ui: Option<workflow::notes::Session>,
+    admitted_microphone: Option<bool>,
     whiteboard: Rc<RefCell<whiteboard::Board>>,
     active_recording: Option<ActiveRecording>,
     /// Identifies the recording whose finalization may update the current UI.
     capture_generation: u64,
+    capture_local_practice: bool,
     /// Media workers outlive their capsule and still own unfinished bundles.
     pending_finalizers: usize,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     agent_capture_id: Option<String>,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     agent_captures: crate::capture::desktop::workflow::agent_capture::Registry,
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    public_share: crate::capture::desktop::workflow::public_sharing::Controller,
     #[cfg(target_os = "linux")]
     agent_finishing: bool,
     last_live_no_words: bool,
@@ -924,8 +927,6 @@ pub struct ApparentCoordinator {
     /// Read the WAV once when selecting a bundle, never on the capsule's animation tick.
     review_audio_issue: Option<CompletedAudioIssue>,
     review_status: Option<String>,
-    feedback_capture: bool,
-    review_feedback: bool,
     selected_tab: ReviewTab,
     selected_keyframe: usize,
     /// A cabled iPhone, refreshed each time the picker opens.
@@ -980,14 +981,19 @@ impl ApparentCoordinator {
         crate::capture::desktop::playback::warm_up();
         Self {
             telemetry,
+            note_ui: None,
+            admitted_microphone: None,
             whiteboard: Rc::new(RefCell::new(whiteboard::Board::default())),
             active_recording: None,
             capture_generation: 0,
+            capture_local_practice: false,
             pending_finalizers: 0,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             agent_capture_id: None,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             agent_captures: crate::capture::desktop::workflow::agent_capture::Registry::default(),
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            public_share: crate::capture::desktop::workflow::public_sharing::Controller::default(),
             #[cfg(target_os = "linux")]
             agent_finishing: false,
             last_live_no_words: false,
@@ -1034,8 +1040,6 @@ impl ApparentCoordinator {
                 .and_then(|(dir, bundle)| bundle_audio_issue(dir, bundle)),
             review_bundle: initial_bundle,
             review_status: None,
-            feedback_capture: false,
-            review_feedback: false,
             selected_tab: ReviewTab::Keyframes,
             selected_keyframe: 0,
             iphone: None,
@@ -1234,6 +1238,44 @@ impl ApparentCoordinator {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     fn agent_request(&mut self, request: crate::capture::desktop::workflow::agent_capture::Request, cx: &mut Context<Self>) {
         use crate::capture::desktop::workflow::agent_capture::{Action, Outcome};
+        if let Some((action @ (Action::PublicShareStart | Action::PublicShareRead | Action::PublicShareDeliver | Action::PublicShareCancel), value)) = &request.action {
+            let selected = self.review_bundle.as_ref().and_then(|(path, _)| {
+                path.file_name().and_then(|name| name.to_str()).map(|name| (path, name.to_owned()))
+            });
+            let response = if request.expired() {
+                serde_json::json!({"error":"admission_expired"})
+            } else {
+                match action {
+                    Action::PublicShareStart => match selected {
+                        Some((path, name)) if name == *value && !self.is_recording() && !self.is_processing() && !self.is_selecting() => {
+                            match self.public_share.start(name, path.clone(), self.capture_generation) {
+                                Ok(operation) => serde_json::json!({"publicShare":{"operation":operation,"state":"preparing"}}),
+                                Err(code) => serde_json::json!({"error":code}),
+                            }
+                        }
+                        _ => serde_json::json!({"error":"conflict"}),
+                    },
+                    Action::PublicShareRead => match selected {
+                        Some((path, name)) => match self.public_share.read(value, &name, path, self.capture_generation) {
+                            Ok(state) => serde_json::json!({"publicShare":{"state":state}}),
+                            Err(code) => serde_json::json!({"error":code}),
+                        },
+                        None => { self.public_share.cancel(value); serde_json::json!({"error":"no_selection"}) }
+                    },
+                    Action::PublicShareDeliver => match selected {
+                        Some((path, name)) => match self.public_share.deliver(value, &name, path, self.capture_generation, crate::shared::handoff::copy_string_to_clipboard) {
+                            Ok(state) => serde_json::json!({"publicShare":{"state":state}}),
+                            Err(code) => serde_json::json!({"error":code}),
+                        },
+                        None => { self.public_share.cancel(value); serde_json::json!({"error":"no_selection"}) }
+                    },
+                    Action::PublicShareCancel => { self.public_share.cancel(value); serde_json::json!({"publicShare":{"state":"cancelled"}}) },
+                    _ => unreachable!(),
+                }
+            };
+            let _ = request.reply.send(response.to_string());
+            return;
+        }
         if let Some((action @ (Action::ReferenceRead | Action::ReferenceCopy), expected)) = &request.action {
             let enabled = crate::shared::handoff::experiment("copyCaptureId");
             let response = capture_reference_response(
@@ -1244,6 +1286,32 @@ impl ApparentCoordinator {
                 crate::shared::handoff::copy_string_to_clipboard,
             );
             let _ = request.reply.send(response.to_string());
+            return;
+        }
+        if let Some((action @ (Action::DrawingRead | Action::DrawingUndo), expected)) = &request.action {
+            use std::hash::{Hash, Hasher};
+            let revision = self.active_recording.as_ref().filter(|r|
+                matches!(&r.source, CaptureSource::Screen { session, .. } if session.has_frames())
+            ).map(|r| {
+                let mut hash = std::collections::hash_map::DefaultHasher::new();
+                r.started.hash(&mut hash);
+                format!("{:016x}", hash.finish())
+            });
+            if let Err(error) = crate::capture::desktop::workflow::agent_capture::drawing_admission(
+                revision.as_deref(), (*action == Action::DrawingUndo).then_some(expected.as_str()), request.expired(),
+            ) {
+                let _ = request.reply.send(serde_json::json!({"error":error}).to_string());
+                return;
+            }
+            if *action == Action::DrawingUndo { self.undo_stroke(cx); }
+            let count = {
+                let strokes = self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                let desktop = self.telemetry.desktop_ink.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                desktop.len() + strokes.iter().filter(|s| !s.laser && s.pin.is_some()).count()
+            };
+            let _ = request.reply.send(serde_json::json!({"drawing":{
+                "revision":revision, "strokes":if revision.is_some() { count } else { 0 }
+            }}).to_string());
             return;
         }
         // Report an ended sampler, but never discard another session as a side
@@ -1353,6 +1421,9 @@ impl ApparentCoordinator {
 
     fn settings_event(&mut self, event: crate::capture::desktop::settings::Event, cx: &mut Context<Self>) {
         use crate::capture::desktop::settings::{Effect, Event};
+        let Some(event) = self.settings.as_ref().and_then(|session| session.current_event(event)) else {
+            return;
+        };
         #[cfg(target_os = "linux")]
         if self.defer_update_restart(&event) {
             // Check before Session spawns its relaunch helper. Capture admission
@@ -1475,11 +1546,12 @@ impl ApparentCoordinator {
     }
 
     /// Required permissions that keep a capture from starting now.
-    fn missing_to_record(&mut self) -> Vec<crate::capture::desktop::settings::onboarding::Permission> {
+    fn missing_to_record(&mut self, microphone: bool) -> Vec<crate::capture::desktop::settings::onboarding::Permission> {
         use crate::capture::desktop::settings::onboarding::{Permission, missing_to_record};
         let screen = crate::capture::engine::runtime::screen_capture_usable(false);
         let accessibility = crate::capture::engine::runtime::accessibility_granted();
-        let missing = missing_to_record(self.grants.as_ref(), screen, accessibility);
+        let mut missing = missing_to_record(self.grants.as_ref(), screen, accessibility);
+        if !microphone { missing.retain(|p| *p != Permission::Microphone); }
         // The last read may be old; read again before standing in the way.
         if missing.contains(&Permission::Microphone)
             && let Some(fresh) = crate::capture::desktop::settings::onboarding::read_grants()
@@ -1496,8 +1568,10 @@ impl ApparentCoordinator {
         if self.lab {
             return true;
         }
-        let missing = self.missing_to_record();
+        let microphone = crate::capture::engine::runtime::audio::mic::enabled();
+        let missing = self.missing_to_record(microphone);
         if missing.is_empty() {
+            self.admitted_microphone = Some(microphone);
             return true;
         }
         apparent_log(format!(
@@ -1567,8 +1641,9 @@ impl ApparentCoordinator {
     fn onboarding_event(&mut self, event: crate::capture::desktop::settings::onboarding::Event, cx: &mut Context<Self>) {
         use crate::capture::desktop::settings::onboarding::{Effect, Event, Progress};
         let Some(event)=event.for_current_session(self.onboarding.as_ref().map(|session|session.source())) else {return;};
+        let Some(event)=event.for_current_transport(self.onboarding.as_ref().map(|session|session.transport_generation())) else {return;};
         let effect = match event {
-            Event::Session { .. } => Effect::None,
+            Event::Session { .. } | Event::Transport { .. } => Effect::None,
             Event::Launch(grants) => {
                 self.note_grants(&grants);
                 let mut progress = Progress::load();
@@ -1599,9 +1674,12 @@ impl ApparentCoordinator {
                     .as_mut()
                     .map_or(Effect::None, |session| session.grants(grants))
             }
-            Event::Action(action) if action == "use-desktop-shortcut" => {
+            Event::Action(action) if matches!(action.as_str(), "use-desktop-shortcut" | "use-current-shortcut") => {
                 let host = crate::capture::desktop::settings::AppHost { telemetry: &self.telemetry };
-                if self.onboarding_editor.record_shortcut(&host).externally_managed
+                let editor = self.onboarding_editor.record_shortcut(&host);
+                let accepted = !editor.recording && editor.error.is_none()
+                    && (action == "use-current-shortcut" || editor.externally_managed);
+                if accepted
                     && let Some(session) = self.onboarding.as_mut()
                 {
                     session.input(crate::capture::desktop::settings::onboarding::Input::ShortcutChosen);
@@ -1616,7 +1694,8 @@ impl ApparentCoordinator {
                 if self
                     .onboarding
                     .as_ref()
-                    .is_some_and(|session| session.editing_shortcut())
+                    .is_some_and(|session| session.editing_shortcut() ||
+                        (session.choosing_shortcut() && matches!(action, crate::capture::desktop::settings::Action::ResetShortcut { .. })))
                     && matches!(
                         action,
                         crate::capture::desktop::settings::Action::Shortcut {
@@ -1644,6 +1723,10 @@ impl ApparentCoordinator {
                 Effect::None
             }
             Event::Exited => {
+                if self.onboarding.as_mut().is_some_and(|session| session.restore_native()) {
+                    self.sync_onboarding_editor();
+                    return;
+                }
                 if let Some(session) = self.onboarding.as_ref() {
                     session.leave(true);
                 }
@@ -1748,7 +1831,7 @@ impl ApparentCoordinator {
         if !self.shortcut.is_pending() && activity == crate::capture::desktop::settings::shortcut::Activity::Free {
             // No picker or overlay before the permissions are on: they sit above
             // macOS's permission prompts and take the clicks meant for them.
-            let missing = self.missing_to_record();
+            let missing = self.missing_to_record(crate::capture::engine::runtime::audio::mic::enabled());
             if !self.gate.press(missing) {
                 apparent_log("Shortcut held back: a required permission is off");
                 return;
@@ -1819,18 +1902,8 @@ impl ApparentCoordinator {
         }
     }
 
-    /// The feedback entry point records immediately, then opens a local review.
-    pub fn record_feedback(&mut self, cx: &mut Context<Self>) {
-        if self.is_recording() || self.is_selecting() || self.is_processing() {
-            return;
-        }
-        self.record_screen_now(cx);
-        self.feedback_capture = self.is_recording();
-    }
-
     /// Records the display under the cursor straight away (no picker), auto-cropped.
     pub fn record_screen_now(&mut self, cx: &mut Context<Self>) {
-        self.feedback_capture = false;
         let target = if self.lab {
             lab::target()
         } else {
@@ -1934,6 +2007,10 @@ impl ApparentCoordinator {
         // The recording's overlay becomes the picker's (moved if the picker opens on another
         // display), so the border never swaps windows (as the picker → recording path does).
         self.picker_metal_overlay = overlay;
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        if let Some(overlay) = self.picker_metal_overlay.as_mut() {
+            overlay.prepare_picker();
+        }
         self.open_picker(Some(mode), cx);
         if self.is_selecting() && chips_shown && !self.reduced_motion {
             // The chips showed Screen; the picker shows `mode`.
@@ -1959,6 +2036,7 @@ impl ApparentCoordinator {
             self.agent_captures.set(&id, "cancelled", None, None);
         }
         let rec = self.active_recording.take()?;
+        self.note_ui = None;
         let _ = self.telemetry.finish_session();
         match rec.source {
             CaptureSource::Screen { session, audio, .. } => {
@@ -1990,10 +2068,10 @@ impl ApparentCoordinator {
     }
 
     pub fn set_review_bundle(&mut self, bundle: (PathBuf, ApparentBundle), status: Option<String>) {
+        self.public_share.cancel_all();
         self.review_audio_issue = bundle_audio_issue(&bundle.0, &bundle.1);
         self.review_bundle = Some(bundle);
         self.review_status = status;
-        self.review_feedback = false;
         self.selected_tab = ReviewTab::Keyframes;
         self.selected_keyframe = 0;
     }
@@ -2263,8 +2341,20 @@ impl ApparentCoordinator {
             .strokes
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(idx) = strokes.iter().rposition(|s| !s.laser) {
-            strokes.remove(idx);
+        let mut desktop = self.telemetry.desktop_ink.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let latest = strokes.iter().rposition(|s| !s.laser && s.pin.is_some());
+        if desktop.last().is_some_and(|ink| latest.is_none_or(|i| ink.t0 >= strokes[i].t0)) {
+            let ink = desktop.pop().unwrap();
+            strokes.retain(|s| s.laser || s.pin.is_some() || !(ink.t0..=ink.t1).contains(&s.t0));
+        } else if let Some(idx) = latest {
+            if let Some(ui) = &self.note_ui {
+                // Remove the mark only after durable note deletion. A failed or
+                // timed-out receipt leaves its anchor available for recovery.
+                if ui.undo(strokes[idx].pin.unwrap()) { strokes.remove(idx); }
+            } else {
+                strokes.remove(idx);
+            }
         }
         drop(strokes);
         cx.notify();
@@ -2284,6 +2374,9 @@ impl ApparentCoordinator {
     /// while the outer shell springs its width smoothly (`stiffness: 400, damping: 30` equivalent).
     fn set_island_phase(&mut self, phase: IslandPhase) {
         use crate::capture::desktop::settings::onboarding::Input;
+        if matches!(phase, IslandPhase::Selecting { .. } | IslandPhase::Processing | IslandPhase::Recording | IslandPhase::Hidden | IslandPhase::Dismissing) {
+            self.public_share.cancel_all();
+        }
         if matches!(phase, IslandPhase::Recording | IslandPhase::Hidden | IslandPhase::Dismissing) {
             if let Some((_, _, active)) = self.share_pending.take() {
                 active.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -2295,6 +2388,9 @@ impl ApparentCoordinator {
             // Their finalized bundles remain on disk; stale results must not copy to
             // the clipboard, replace the current review, or finish a newer practice.
             self.capture_generation = self.capture_generation.wrapping_add(1);
+        }
+        if matches!(phase, IslandPhase::Recording) && !matches!(self.island_phase, IslandPhase::Recording) {
+            self.capture_local_practice = self.onboarding.as_ref().is_some_and(|session| session.local_practice());
         }
         let capture = match (self.island_phase, phase) {
             (IslandPhase::Recording, IslandPhase::Recording) => None,
@@ -2791,6 +2887,12 @@ impl ApparentCoordinator {
         if matches!(self.island_phase, IslandPhase::Recording) {
             platform::tick_pill_drag();
         }
+        if self.note_ui.is_some() {
+            let anchor = self.native_pill.as_ref().and_then(|p| p.note_badge_anchor());
+            #[cfg(target_os = "linux")]
+            let anchor = anchor.or_else(|| platform::note_badge_anchor(self.island_width * self.island_scale, self.island_y + (PILL_WINDOW_H - ISLAND_H * self.island_scale) / 2.0));
+            if let (Some(ui), Some(point)) = (self.note_ui.as_mut(), anchor) { ui.position_badge(point); }
+        }
         let live_no_words = self.recording_has_no_words();
         if live_no_words != self.last_live_no_words {
             self.last_live_no_words = live_no_words;
@@ -2960,7 +3062,6 @@ impl ApparentCoordinator {
     /// The menu bar's picker, opening on the mode the last recording used.
     pub fn begin_target_selection(&mut self, cx: &mut Context<Self>) {
         if self.ready_to_record() {
-            self.feedback_capture = false;
             self.open_picker(None, cx);
         }
     }
@@ -3235,7 +3336,7 @@ impl ApparentCoordinator {
                 .push(overlay.window_number());
             overlay
         });
-        let metal_overlay = metal_overlay.or_else(|| {
+        let mut metal_overlay = metal_overlay.or_else(|| {
             let ov = platform::open_overlay(Arc::clone(&self.telemetry), Some(target_rect), cx)
                 .map_err(|error| apparent_log(format!("Metal overlay failed: {error}")))
                 .ok();
@@ -3253,10 +3354,43 @@ impl ApparentCoordinator {
             }
             ov
         });
+        #[cfg(target_os = "macos")]
+        if target.mode != CaptureMode::Device {
+            if let Some(overlay) = metal_overlay.as_mut() {
+                match overlay.cover_desktop() {
+                    Ok(ids) => {
+                        self.telemetry.excluded_window_ids.lock().unwrap_or_else(std::sync::PoisonError::into_inner).extend(ids.iter().copied());
+                        self.telemetry.passthrough_window_ids.lock().unwrap_or_else(std::sync::PoisonError::into_inner).extend(ids);
+                    }
+                    Err(error) => apparent_log(format!("Desktop ink overlays failed: {error}")),
+                }
+            }
+        }
+        #[cfg(target_os = "linux")]
+        if target.mode != CaptureMode::Device {
+            if let Some(overlay) = metal_overlay.as_mut() {
+                overlay.move_to(target_rect);
+                match overlay.cover_desktop(cx) {
+                    Ok(ids) => {
+                        self.telemetry.excluded_window_ids.lock().unwrap_or_else(std::sync::PoisonError::into_inner).extend(ids.iter().copied());
+                        self.telemetry.passthrough_window_ids.lock().unwrap_or_else(std::sync::PoisonError::into_inner).extend(ids);
+                    }
+                    Err(error) => apparent_log(format!("Desktop ink overlays failed: {error}")),
+                }
+            }
+        }
         start_metric("metal_open_ms", stage);
         let stage = Instant::now();
         self.publish_capture_busy();
-        let audio_recorder = match AudioRecorder::start(&bundle_dir) {
+        let microphone_enabled = self.admitted_microphone.take().unwrap_or_else(crate::capture::engine::runtime::audio::mic::enabled);
+        if !microphone_enabled {
+            // Durable admission intent survives orphan recovery; it is not inferred from an empty WAV.
+            if let Err(error) = std::fs::write(bundle_dir.join("microphone-off"), b"") {
+                apparent_log(format!("Could not preserve silent capture intent: {error}"));
+                self.cancel_recording(cx); return;
+            }
+        }
+        let audio_recorder = if !microphone_enabled { None } else { match AudioRecorder::start(&bundle_dir) {
             Ok(recorder) => Some(recorder),
             Err(error) => {
                 let message = format!("Capture refused: narration could not be saved: {error:#}");
@@ -3266,7 +3400,7 @@ impl ApparentCoordinator {
                 if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some(message); }
                 return;
             }
-        };
+        }};
         start_metric("audio_start_ms", stage);
         let stage = Instant::now();
         let screen_session = match ScreenCaptureSession::start(
@@ -3308,7 +3442,15 @@ impl ApparentCoordinator {
                 windows: window_log,
             },
             _metal_overlay: metal_overlay,
+            microphone_enabled,
         });
+        match workflow::notes::Session::start(&self.active_recording.as_ref().unwrap().bundle_dir, Arc::clone(&self.telemetry), self.active_recording.as_ref().unwrap().target.frame) {
+            Ok(session) => self.note_ui = Some(session),
+            Err(error) => {
+                apparent_log(format!("Notes UI unavailable: {error:#}"));
+                if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some("Typed notes unavailable · recording continues".into()); }
+            },
+        }
         self.present_recording_island(cx);
         start_metric("recording_start_ms", started);
     }
@@ -3349,6 +3491,7 @@ impl ApparentCoordinator {
             started: Instant::now(),
             target,
             bundle_dir: PathBuf::new(),
+            microphone_enabled: false,
             source: CaptureSource::Lab,
             _metal_overlay: None,
         });
@@ -3471,6 +3614,7 @@ impl ApparentCoordinator {
             bundle_dir,
             source: CaptureSource::Phone(session),
             _metal_overlay: metal_overlay,
+            microphone_enabled: true,
         });
         self.present_recording_island(cx);
     }
@@ -3512,7 +3656,6 @@ impl ApparentCoordinator {
         }
         self.playback.take();
         apparent_log("cancel_recording invoked");
-        self.feedback_capture = false;
         self.discard_recording();
     }
 
@@ -3528,17 +3671,16 @@ impl ApparentCoordinator {
         if let Some(id) = &finishing_id {
             self.agent_captures.set(id, "processing", None, None);
         }
-        let feedback_capture = std::mem::take(&mut self.feedback_capture);
         #[cfg(target_os = "linux")]
         let auto_active = !std::mem::take(&mut self.agent_finishing)
             && crate::shared::handoff::experiment(crate::capture::desktop::linux::auto_paste::EXPERIMENT)
             && crate::capture::desktop::linux::hyprland::running()
             && crate::capture::desktop::linux::wayland_session()
             && !self.lab
-            && !feedback_capture
             && matches!(&rec.source, CaptureSource::Screen { .. });
         #[cfg(not(target_os = "linux"))]
         let auto_active = false;
+        let notes_finished = self.note_ui.take().map(workflow::notes::Session::finish);
         let (events, strokes) = self.telemetry.finish_session();
         let bundle_dir = rec.bundle_dir;
         let target = rec.target;
@@ -3549,6 +3691,8 @@ impl ApparentCoordinator {
         drop(rec._metal_overlay);
         self.set_island_phase(IslandPhase::Processing);
         let generation = self.capture_generation;
+        // Freeze practice policy with the worker, independent of window/UI lifetime.
+        let local_practice = self.capture_local_practice;
         self.completed_note = None;
         cx.notify();
         if matches!(source, CaptureSource::Lab) {
@@ -3584,7 +3728,7 @@ impl ApparentCoordinator {
                 .spawn(async move {
 
                     recording_completion::finalize(
-                        source, target, bundle_dir, events, strokes, final_whiteboard,
+                        source, target, bundle_dir, events, strokes, final_whiteboard, notes_finished,
                     )
                 })
                 .await;
@@ -3603,12 +3747,13 @@ impl ApparentCoordinator {
                         generation,
                         #[cfg(any(target_os = "macos", target_os = "linux"))]
                         finishing_id.as_deref(),
-                        feedback_capture,
                         finalized,
-                        desktop_completion::connect_completed,
+                        |dir| {
+                            if !local_practice { desktop_completion::connect_completed(dir); }
+                        },
                         |coord, finalized| {
                             coord.present_capture_result(
-                                finalized, duration_ms, feedback_capture, auto_active, &entity, cx,
+                                finalized, duration_ms, auto_active, cx,
                             );
                         },
                     );
@@ -5131,12 +5276,10 @@ fn capture_reference_response(
 fn review_notice(
     history_error: Option<&str>,
     status: Option<&str>,
-    feedback: bool,
 ) -> Option<String> {
     status
         .filter(|message| {
-            feedback
-                || message.starts_with("Could not open capture:")
+            message.starts_with("Could not open capture:")
                 || *message == "Capture ID copied"
                 || message.starts_with("Could not copy capture ID:")
         })
@@ -5306,7 +5449,6 @@ impl Render for BundleReviewWindow {
         let state = coord_read.review_bundle.clone();
         let audio_issue = coord_read.review_audio_issue;
         let status = coord_read.review_status.clone();
-        let feedback = coord_read.review_feedback;
         let tab = coord_read.selected_tab;
         let selected_kf = coord_read.selected_keyframe;
         let shortcut_label = coord_read.shortcut_label();
@@ -5433,7 +5575,7 @@ impl Render for BundleReviewWindow {
             .map(|kf| kf.said.as_deref())
             .collect::<Vec<_>>();
         let review_notice =
-            review_notice(self.history_error.as_deref(), status.as_deref(), feedback);
+            review_notice(self.history_error.as_deref(), status.as_deref());
         let no_words = audio_issue == Some(CompletedAudioIssue::NoWords);
         let no_audio = audio_issue == Some(CompletedAudioIssue::NoAudio);
         let missing_reason = if audio_issue == Some(CompletedAudioIssue::TranscriptionUnavailable) {
@@ -5469,7 +5611,6 @@ impl Render for BundleReviewWindow {
             crate::capture::desktop::settings::external_record_owned(crate::capture::engine::runtime::ShortcutKind::Record);
         let c_copy = self.coordinator.clone();
         let c_copy_id = self.coordinator.clone();
-        let c_feedback = self.coordinator.clone();
         let c_send = self.coordinator.clone();
         let c_tab_sheet = self.coordinator.clone();
         let c_tab_frames = self.coordinator.clone();
@@ -5668,20 +5809,7 @@ impl Render for BundleReviewWindow {
                                         cx.notify();
                                     });
                                 }),
-                            )
-                            .when(feedback, |actions| actions.child(
-                                action_button("btn-github-issue", "Open GitHub issue…", false)
-                                    .on_click(move |_, _, cx| {
-                                        let result = crate::shared::handoff::open_path(std::path::Path::new(&feedback_issue_url()));
-                                        c_feedback.update(cx, |coord, cx| {
-                                            coord.review_status = Some(match result {
-                                                Ok(()) => "Asked your browser to open GitHub. Attach only media you choose to share.".into(),
-                                                Err(error) => format!("Could not open GitHub: {error}"),
-                                            });
-                                            cx.notify();
-                                        });
-                                    }),
-                            )),
+                            ),
                     )
                     .children(platform::caption_buttons()),
             )
@@ -6703,14 +6831,14 @@ pub fn run_app(
                     if let Some(ref rx) = menu_rx {
                         while let Ok(action) = rx.try_recv() {
                             match action {
+                                MenuAction::ToggleMicrophone => {
+                                    let enabled = !crate::capture::engine::runtime::audio::mic::enabled();
+                                    if let Err(error) = crate::shared::handoff::set_config_value_in(&crate::shared::handoff::default_config_path(), "microphoneEnabled", serde_json::json!(enabled)) {
+                                        apparent_log(format!("Microphone preference was not saved: {error:#}"));
+                                    }
+                                }
                                 MenuAction::ToggleCapture => {
                                     loop_coord.update(cx, |coord, cx| coord.record_or_finish(cx));
-                                }
-                                MenuAction::GiveFeedback => {
-                                    if crate::shared::handoff::experiment("feedbackIssue") {
-                                        loop_coord
-                                            .update(cx, |coord, cx| coord.record_feedback(cx));
-                                    }
                                 }
                                 MenuAction::ChooseTarget => {
                                     loop_coord.update(cx, |coord, cx| {
@@ -6773,6 +6901,17 @@ pub fn run_app(
                             }
                             LiveOverlayEvent::UndoStroke => {
                                 coord.undo_stroke(cx);
+                            }
+                            LiveOverlayEvent::NotesUnavailable => {
+                                apparent_log("Typed notes UI exited; recording continues. See this capture's notes-ui.log.");
+                                if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some("Typed notes unavailable · recording continues".into()); }
+                            }
+                            LiveOverlayEvent::NoteClosed { focus, owner } => platform::restore_note_focus(focus, owner),
+                            LiveOverlayEvent::NoteOutside => { if let Some(ui) = coord.note_ui.as_ref() { ui.outside(); } },
+                            LiveOverlayEvent::Note { pin, t, x, y, screen_x, screen_y } => {
+                                coord.request_immediate_frame();
+                                let (focus, owner) = platform::note_focus();
+                                if let Some(ui) = &coord.note_ui { ui.open(workflow::notes::Anchor { pin, t, x, y, screen_x, screen_y, focus, owner }); }
                             }
                             LiveOverlayEvent::RequestSnapshot => {
                                 coord.request_immediate_frame();
@@ -6874,7 +7013,7 @@ mod tests {
             coord.capture_finalizer_finished();
             coord.receive_capture_result(generation,
                 #[cfg(any(target_os = "macos", target_os = "linux"))]
-                None, false, Err(anyhow::anyhow!("deferred finalizer failed")),
+                None, Err(anyhow::anyhow!("deferred finalizer failed")),
                 |_| panic!("failed finalizer must not publish"),
                 |_, _| panic!("dismissed finalizer must not regain UI ownership"));
             assert_eq!(coord.pending_finalizers, remaining);
@@ -6902,7 +7041,7 @@ mod tests {
     #[test]
     fn deferred_finalizer_success_survives_dismissal_and_new_capture() {
         for processing_b in [false, true] {
-            deferred_finalizer_receipt_survives_dismissal_and_new_capture(true, processing_b, false);
+            deferred_finalizer_receipt_survives_dismissal_and_new_capture(true, processing_b);
         }
     }
 
@@ -6910,22 +7049,12 @@ mod tests {
     #[test]
     fn deferred_finalizer_failure_survives_dismissal_and_new_capture() {
         for processing_b in [false, true] {
-            deferred_finalizer_receipt_survives_dismissal_and_new_capture(false, processing_b, false);
+            deferred_finalizer_receipt_survives_dismissal_and_new_capture(false, processing_b);
         }
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    #[test]
-    fn deferred_feedback_finalizer_stays_local_after_dismissal() {
-        for succeeded in [false, true] {
-            for processing_b in [false, true] {
-                deferred_finalizer_receipt_survives_dismissal_and_new_capture(succeeded, processing_b, true);
-            }
-        }
-    }
-
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    fn deferred_finalizer_receipt_survives_dismissal_and_new_capture(succeeded: bool, processing_b: bool, feedback: bool) {
+    fn deferred_finalizer_receipt_survives_dismissal_and_new_capture(succeeded: bool, processing_b: bool) {
         use crate::capture::desktop::settings::onboarding::{Effect, Flow, Grants, Input, Permission, Session, Status, Step};
         let (sender, _receiver) = flume::unbounded();
         let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
@@ -6986,12 +7115,12 @@ mod tests {
         let review_b = coordinator.review_bundle.clone();
 
         let mut completed = Vec::new();
-        coordinator.receive_capture_result(generation_a, Some(&finishing_id), feedback, deferred, |dir| {
+        coordinator.receive_capture_result(generation_a, Some(&finishing_id), deferred, |dir| {
             completed.push(dir.to_path_buf());
         }, |_, _| {
             panic!("stale A must not enter UI/clipboard/onboarding effects");
         });
-        assert_eq!(completed, if succeeded && !feedback { vec![exact_path.clone()] } else { vec![] });
+        assert_eq!(completed, if succeeded { vec![exact_path.clone()] } else { vec![] });
         let receipt_a = coordinator.agent_captures.inspect("a");
         if succeeded {
             assert_eq!(receipt_a, serde_json::json!({
@@ -7015,36 +7144,34 @@ mod tests {
     #[test]
     fn current_finalizer_completes_once_before_ui_for_agent_and_manual_captures() {
         for owned in [false, true] {
-            for feedback in [false, true] {
-                let (sender, _receiver) = flume::unbounded();
-                let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
-                coordinator.set_island_phase(IslandPhase::Processing);
-                let generation = coordinator.capture_generation;
-                if owned {
-                    assert!(coordinator.agent_captures.admit("a", false, false));
-                    coordinator.agent_captures.set("a", "processing", None, None);
-                }
-                let bundle = serde_json::from_value(serde_json::json!({
-                    "version": 1, "id": "a", "createdAtMs": 0, "durationMs": 1000,
-                    "target": {"mode": "display", "displayId": 0,
-                        "frame": {"x": 0.0, "y": 0.0, "width": 640.0, "height": 480.0, "scale": 1.0}},
-                    "transcript": {"source": "test", "text": "", "segments": []},
-                    "strokes": [], "marks": [], "events": [], "keyframes": [], "contactSheet": "c.png"
-                })).unwrap();
-                let path = PathBuf::from("/synthetic/current-exact.apparent");
-                let effects = std::cell::RefCell::new(Vec::new());
-                coordinator.receive_capture_result(generation, owned.then_some("a"), feedback,
-                    Ok((path.clone(), bundle, String::new())),
-                    |dir| { assert_eq!(dir, path); effects.borrow_mut().push("completed"); },
-                    |coord, result| {
-                        assert_eq!(result.unwrap().0, path);
-                        if owned {
-                            assert_eq!(coord.agent_captures.inspect("a")["status"], "saved");
-                        }
-                        effects.borrow_mut().push("ui");
-                    });
-                assert_eq!(*effects.borrow(), if feedback { vec!["ui"] } else { vec!["completed", "ui"] });
+            let (sender, _receiver) = flume::unbounded();
+            let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
+            coordinator.set_island_phase(IslandPhase::Processing);
+            let generation = coordinator.capture_generation;
+            if owned {
+                assert!(coordinator.agent_captures.admit("a", false, false));
+                coordinator.agent_captures.set("a", "processing", None, None);
             }
+            let bundle = serde_json::from_value(serde_json::json!({
+                "version": 1, "id": "a", "createdAtMs": 0, "durationMs": 1000,
+                "target": {"mode": "display", "displayId": 0,
+                    "frame": {"x": 0.0, "y": 0.0, "width": 640.0, "height": 480.0, "scale": 1.0}},
+                "transcript": {"source": "test", "text": "", "segments": []},
+                "strokes": [], "marks": [], "events": [], "keyframes": [], "contactSheet": "c.png"
+            })).unwrap();
+            let path = PathBuf::from("/synthetic/current-exact.apparent");
+            let effects = std::cell::RefCell::new(Vec::new());
+            coordinator.receive_capture_result(generation, owned.then_some("a"),
+                Ok((path.clone(), bundle, String::new())),
+                |dir| { assert_eq!(dir, path); effects.borrow_mut().push("completed"); },
+                |coord, result| {
+                    assert_eq!(result.unwrap().0, path);
+                    if owned {
+                        assert_eq!(coord.agent_captures.inspect("a")["status"], "saved");
+                    }
+                    effects.borrow_mut().push("ui");
+                });
+            assert_eq!(*effects.borrow(), vec!["completed", "ui"]);
         }
     }
 
@@ -7157,13 +7284,6 @@ mod tests {
         assert_eq!(coordinator.agent_state().capture_id, None);
     }
 
-    #[test]
-    fn feedback_issue_url_opens_a_public_template_without_capture_data() {
-        assert_eq!(
-            feedback_issue_url(),
-            "https://github.com/tryapparent/apparent/issues/new?template=bug_report.yml"
-        );
-    }
 
     #[test]
     fn capture_failure_status_survives_inbox_changes() {
@@ -7308,10 +7428,10 @@ mod tests {
     }
 
     #[test]
-    fn review_copy_id_feedback_is_visible_without_feedback_mode() {
+    fn review_copy_id_status_is_visible() {
         for status in ["Capture ID copied", "Could not copy capture ID: clipboard unavailable"] {
-            assert_eq!(review_notice(None, Some(status), false).as_deref(), Some(status));
-            assert_eq!(review_notice(Some("scan failed"), Some(status), false).as_deref(), Some(status));
+            assert_eq!(review_notice(None, Some(status)).as_deref(), Some(status));
+            assert_eq!(review_notice(Some("scan failed"), Some(status)).as_deref(), Some(status));
         }
     }
 
@@ -7321,29 +7441,15 @@ mod tests {
             review_notice(
                 Some("scan failed"),
                 Some("Could not open capture: removed"),
-                false,
             ),
             Some("Could not open capture: removed".to_owned())
         );
         assert_eq!(
-            review_notice(Some("scan failed"), Some("Ready"), false),
+            review_notice(Some("scan failed"), Some("Ready")),
             Some("Could not read captures: scan failed".to_owned())
         );
     }
 
-    #[test]
-    fn feedback_review_displays_privacy_notice_and_browser_errors() {
-        let warning = "Review before sharing publicly. Nothing is uploaded automatically.";
-        assert_eq!(
-            review_notice(None, Some(warning), true).as_deref(),
-            Some(warning)
-        );
-        let error = "Could not open GitHub: browser unavailable";
-        assert_eq!(
-            review_notice(None, Some(error), true).as_deref(),
-            Some(error)
-        );
-    }
 
     #[test]
     fn review_workspace_gives_words_reading_room_without_cropping_the_stage() {
@@ -7720,13 +7826,6 @@ mod tests {
             "Sent to APPARENT · No words"
         );
         assert_eq!(completed_status_label(0, None, None), "Copied");
-        assert_eq!(
-            completed_status_label(
-                0,
-                Some("Saved · review"),
-                Some(CompletedAudioIssue::NoAudio)
-            ),
-            "Saved · review · No audio"
-        );
+
     }
 }

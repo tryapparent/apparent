@@ -35,8 +35,14 @@ pub enum Action {
     Inspect,
     Stop,
     Cancel,
+    DrawingRead,
+    DrawingUndo,
     ReferenceRead,
     ReferenceCopy,
+    PublicShareStart,
+    PublicShareRead,
+    PublicShareDeliver,
+    PublicShareCancel,
 }
 
 /// Small in-process receipts, not capture history on disk. Media stays in the bundle.
@@ -312,10 +318,28 @@ impl Reference {
     }
 }
 
+#[derive(serde::Deserialize, Debug)]
+#[serde(tag = "drawing", rename_all = "lowercase", deny_unknown_fields)]
+enum Drawing {
+    Read { deadline: u64 },
+    Undo { expected: String, deadline: u64 },
+}
+
+
+pub(crate) fn drawing_admission(current: Option<&str>, expected: Option<&str>, expired: bool) -> Result<(), &'static str> {
+    if expired { return Err("admission_expired"); }
+    if let Some(expected) = expected {
+        if current != Some(expected) { return Err("conflict"); }
+    }
+    Ok(())
+}
+
 enum Wire {
     Capture(Option<(Action, String)>, u64),
+    PublicShare(Action, String, u64),
     Storage(Storage),
     ErrorReporting(ErrorReportingRequest),
+    Microphone(super::notes::audio::Request),
     Connect(u64),
 }
 
@@ -324,6 +348,7 @@ enum Wire {
 enum SettingsRequest {
     Storage(Storage),
     ErrorReporting(ErrorReportingRequest),
+    Microphone(super::notes::audio::Request),
 }
 
 impl SettingsRequest {
@@ -331,6 +356,7 @@ impl SettingsRequest {
         match self {
             Self::Storage(request) => request.execute(config, deadline),
             Self::ErrorReporting(request) => request.execute(config, deadline),
+            Self::Microphone(request) => request.execute(config, deadline),
         }
     }
 }
@@ -365,6 +391,20 @@ fn parse_request(line: &str) -> Option<Wire> {
         return Some(Wire::Connect(deadline.min(storage_clock_ms() + 3000)));
     }
     if line.starts_with('{') {
+        if let Ok(drawing) = serde_json::from_str::<Drawing>(line) {
+            let (action, expected, deadline) = match drawing {
+                Drawing::Read { deadline } => (Action::DrawingRead, String::new(), deadline),
+                Drawing::Undo { expected, deadline } if valid_revision(&expected) => (Action::DrawingUndo, expected, deadline),
+                _ => return None,
+            };
+            let remaining = deadline.saturating_sub(storage_clock_ms()).min(3000);
+            return Some(Wire::Capture(Some((action, expected)), clock_ms() + remaining));
+        }
+        if let Ok(request) = serde_json::from_str::<PublicShareRequest>(line) {
+            return request.admission();
+        }
+
+        if let Ok(request) = serde_json::from_str::<super::notes::audio::Request>(line) { return Some(Wire::Microphone(request)); }
         if let Ok(request) = serde_json::from_str::<ErrorReportingRequest>(line) {
             return Some(Wire::ErrorReporting(request));
         }
@@ -384,6 +424,33 @@ fn parse_request(line: &str) -> Option<Wire> {
     } else {
         if line.len() > 255 { return None; }
         parse_capture_request(line).map(|(action, deadline)| Wire::Capture(action, deadline))
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "publicShare", rename_all = "camelCase", deny_unknown_fields)]
+enum PublicShareRequest {
+    Start { expected: String, disclosed: bool, deadline: u64 },
+    Read { operation: String, deadline: u64 },
+    Deliver { operation: String, deadline: u64 },
+    Cancel { operation: String, deadline: u64 },
+}
+
+impl PublicShareRequest {
+    fn admission(self) -> Option<Wire> {
+        let (action, value, deadline) = match self {
+            Self::Start { expected, disclosed: true, deadline }
+                if !expected.is_empty() && expected.len() <= 4096 && !expected.contains(['\0', '/']) =>
+                    (Action::PublicShareStart, expected, deadline),
+            Self::Start { .. } => return None,
+            Self::Read { operation, deadline } => (Action::PublicShareRead, operation, deadline),
+            Self::Deliver { operation, deadline } => (Action::PublicShareDeliver, operation, deadline),
+            Self::Cancel { operation, deadline } => (Action::PublicShareCancel, operation, deadline),
+        };
+        if matches!(action, Action::PublicShareRead | Action::PublicShareDeliver | Action::PublicShareCancel)
+            && (value.len() != 32 || !value.bytes().all(|b| b.is_ascii_hexdigit())) { return None; }
+        let remaining = deadline.saturating_sub(storage_clock_ms()).min(3000);
+        Some(Wire::PublicShare(action, value, clock_ms() + remaining))
     }
 }
 
@@ -520,9 +587,18 @@ fn listen_at_config(path: PathBuf, config_path: PathBuf) -> Result<flume::Receiv
                                 continue;
                             }
                             Wire::Capture(action, deadline) => (action, deadline),
+                            Wire::PublicShare(action, value, deadline) => (Some((action, value)), deadline),
                             Wire::Storage(request) => {
                                 let deadline = request.deadline().min(storage_clock_ms() + 3000);
                                 match storage_tx.try_send((SettingsRequest::Storage(request), deadline, stream)) {
+                                    Ok(()) => {},
+                                    Err(std::sync::mpsc::TrySendError::Full((_, _, mut stream)) | std::sync::mpsc::TrySendError::Disconnected((_, _, mut stream))) => { let _ = writeln!(stream, "{{\"error\":\"app_busy\"}}"); }
+                                }
+                                continue;
+                            }
+                            Wire::Microphone(request) => {
+                                let deadline = request.deadline().min(storage_clock_ms() + 3000);
+                                match storage_tx.try_send((SettingsRequest::Microphone(request), deadline, stream)) {
                                     Ok(()) => {},
                                     Err(std::sync::mpsc::TrySendError::Full((_, _, mut stream)) | std::sync::mpsc::TrySendError::Disconnected((_, _, mut stream))) => { let _ = writeln!(stream, "{{\"error\":\"app_busy\"}}"); }
                                 }
@@ -819,7 +895,7 @@ fn command_at(
                 Action::Inspect => "inspect",
                 Action::Stop => "stop",
                 Action::Cancel => "cancel",
-                Action::ReferenceRead | Action::ReferenceCopy => bail!("Reference actions require the typed GUI protocol"),
+                Action::DrawingRead | Action::DrawingUndo | Action::ReferenceRead | Action::ReferenceCopy | Action::PublicShareStart | Action::PublicShareRead | Action::PublicShareDeliver | Action::PublicShareCancel => bail!("Typed GUI actions require the GUI protocol"),
             }
         ),
     };
@@ -939,6 +1015,27 @@ fn execute_with(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn drawing_admission_blocks_stale_idle_and_expired_mutations() {
+        assert_eq!(super::drawing_admission(Some("new"), Some("old"), false), Err("conflict"));
+        assert_eq!(super::drawing_admission(None, Some("old"), false), Err("conflict"));
+        assert_eq!(super::drawing_admission(Some("new"), Some("new"), true), Err("admission_expired"));
+        assert_eq!(super::drawing_admission(Some("new"), Some("new"), false), Ok(()));
+        assert_eq!(super::drawing_admission(None, None, false), Ok(()));
+    }
+
+    #[test]
+    fn drawing_contract_rejects_unbound_undo_and_extra_fields() {
+        assert!(super::parse_request(r#"{"drawing":"read","deadline":1}"#).is_some());
+        assert!(super::parse_request(r#"{"drawing":"undo","expected":"0123456789abcdef","deadline":1}"#).is_some());
+        for invalid in [
+            r#"{"drawing":"undo","deadline":1}"#,
+            r#"{"drawing":"undo","expected":"invalid","deadline":1}"#,
+            r#"{"drawing":"read","deadline":1,"expected":"0123456789abcdef"}"#,
+            r#"{"drawing":"read","deadline":1,"path":"private"}"#,
+        ] { assert!(super::parse_request(invalid).is_none()); }
+    }
+
+    #[test]
     fn capture_reference_policy_checks_selection_before_any_clipboard_write() {
         use super::super::super::capture_reference_response as reply;
         let directory = std::path::Path::new("/private/captures/older capture — test.apparent");
@@ -964,6 +1061,20 @@ mod tests {
         let failed = reply(Some(directory), Some("older capture — test.apparent"), true, false,
             |_| anyhow::bail!("private backend detail"));
         assert_eq!(failed, serde_json::json!({"error":"clipboard_failed"}));
+    }
+
+    #[test]
+    fn public_share_wire_requires_disclosure_and_translates_clock_budget() {
+        let deadline = storage_clock_ms() + 20_000;
+        let valid=serde_json::json!({"publicShare":"start","expected":"saved.apparent","disclosed":true,"deadline":deadline});
+        let Some(Wire::PublicShare(Action::PublicShareStart,_,until))=parse_request(&valid.to_string()) else {panic!("not admitted")};
+        assert!(until>=clock_ms() && until<=clock_ms()+3000);
+        for value in [
+            serde_json::json!({"publicShare":"start","expected":"saved.apparent","disclosed":false,"deadline":deadline}),
+            serde_json::json!({"publicShare":"start","expected":"/private/path","disclosed":true,"deadline":deadline}),
+            serde_json::json!({"publicShare":"deliver","operation":"invalid","deadline":deadline}),
+            serde_json::json!({"publicShare":"read","operation":"a".repeat(32),"deadline":deadline,"extra":true})
+        ] {assert!(parse_request(&value.to_string()).is_none());}
     }
 
     #[test]
@@ -1004,6 +1115,8 @@ mod tests {
             request.execute(&config, storage_clock_ms() + 3000)
         };
         let read = || call(serde_json::json!({"storage":"retention","deadline":storage_clock_ms()+3000}));
+        assert!(read().get("error").is_none(), "Storage is available by default");
+        std::fs::write(&config, r#"{"experiments":{"electronCaptureLocation":false}}"#).unwrap();
         assert_eq!(read()["error"], "feature_disabled");
         std::fs::write(&config, serde_json::json!({"experiments":{"electronCaptureLocation":true}, "capturesDir":captures,
             "secret":"keep", "unknown":{"nested":true}, "retention":{"mediaDays":2,"bundleDays":null,"future":"keep"}}).to_string()).unwrap();
@@ -1061,6 +1174,8 @@ mod tests {
         let config = path.parent().unwrap().join("config.json");
         let request = Storage::Read { deadline: storage_clock_ms() + 3000 };
         let read = || request.execute(&config, storage_clock_ms() + 3000);
+        assert!(read().get("error").is_none(), "Storage is available by default");
+        std::fs::write(&config, r#"{"experiments":{"electronCaptureLocation":false}}"#).unwrap();
         assert_eq!(read()["error"], "feature_disabled");
         std::fs::write(&config, r#"{"experiments":{"electronCaptureLocation":true}}"#).unwrap();
         assert!(read().get("storage").is_some());

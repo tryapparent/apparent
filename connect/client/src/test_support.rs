@@ -1331,14 +1331,13 @@ pub fn hosted_roundtrip_pending_pointer_restart_complete_and_no_overwrite() {
     let bundle = f.bundle();
     let id = f.client.enqueue(&bundle).unwrap();
     let pointer = f.client.pointer(&bundle).unwrap();
-    assert!(
-        pointer.contains("pending")
-            && pointer.contains(&id)
-            && pointer.contains("--scope read")
-            && pointer.contains("apparent connect login --server")
-            && !pointer.contains("apparent cloud")
-            && !pointer.contains("secret")
+    assert_eq!(
+        pointer,
+        format!(
+            "apparent fetch {id} --out ./{id}.apparent --wait 120\napparent inspect ./{id}.apparent\n"
+        )
     );
+    assert!(!pointer.contains("login") && !pointer.contains("secret"));
     assert_eq!(server.state.lock().unwrap().requests, 0);
     let restarted = Client::new(f.client.provider.clone());
     restarted.process_once().unwrap();
@@ -1616,6 +1615,27 @@ pub fn hosted_transport_network_timeout_and_cancellation() {
 pub fn hosted_paths_symlinks_oversize_and_unknown_assets() {
     let f = Fixture::new();
     let bundle = f.bundle();
+    let publication_lock = bundle.join(".publication.lock");
+    OpenOptions::new().write(true).create_new(true).mode(0o600)
+        .open(&publication_lock).unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
+    let files = snapshot(&bundle, &stage.0).expect("completed publication lock is not evidence");
+    assert!(!files.iter().any(|file| file.path == ".publication.lock"));
+    assert!(!stage.0.join(".publication.lock").exists());
+    fs::write(&publication_lock, b"unexpected content").unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
+    assert!(snapshot(&bundle, &stage.0).is_err());
+    fs::remove_file(&publication_lock).unwrap();
+    let outside_lock = f.root.join("outside-lock");
+    fs::write(&outside_lock, b"").unwrap();
+    std::os::unix::fs::symlink(&outside_lock, &publication_lock).unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
+    assert!(snapshot(&bundle, &stage.0).is_err());
+    fs::remove_file(&publication_lock).unwrap();
+    fs::hard_link(&outside_lock, &publication_lock).unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
+    assert!(snapshot(&bundle, &stage.0).is_err());
+    fs::remove_file(&publication_lock).unwrap();
     let stage = Scratch::new(&f.client.state).unwrap();
     fs::write(bundle.join("unexpected.svg"), b"asset").unwrap();
     assert!(
@@ -1639,6 +1659,50 @@ pub fn hosted_paths_symlinks_oversize_and_unknown_assets() {
             .to_string()
             .contains("file_too_large")
     );
+}
+
+#[cfg_attr(test, test)]
+pub fn hosted_oversized_upload_retains_actionable_details_across_restart() {
+    for asset in ["recording.mov", "audio.wav"] {
+        let f = Fixture::new();
+        let server = Server::new("");
+        f.authorize(&server.url);
+        let bundle = f.bundle();
+        File::create(bundle.join(asset)).unwrap().set_len(MAX_FILE_BYTES + 1).unwrap();
+        let id = f.client.enqueue(&bundle).unwrap();
+        f.client.process_once().unwrap();
+        let restarted = Client::new(provider(f.client.config.clone()));
+        restarted.process_once().unwrap();
+        let status = restarted.status(false).unwrap();
+        let job = &status["queue"][0];
+        assert_eq!(job["id"], id);
+        assert_eq!(job["status"], "failed");
+        assert_eq!(job["error"], "file_too_large");
+        assert_eq!(job["attempts"], 1, "permanent size failure must not retry automatically");
+        assert_eq!(job["sizeFailure"], json!({"path":asset,"size":MAX_FILE_BYTES+1,"limit":MAX_FILE_BYTES}));
+        assert_eq!(server.state.lock().unwrap().requests, 0, "reject before reservation or upload");
+        assert_eq!(fs::metadata(bundle.join(asset)).unwrap().len(), MAX_FILE_BYTES + 1);
+        assert!(!status.to_string().contains("synthetic-upload-secret"));
+
+        // An older durable job has no structured details; retain its stable code.
+        let path = restarted.state.join(format!("{id}.job"));
+        let current: Value = serde_json::from_slice(&read_private(&path, JSON_LIMIT).unwrap()).unwrap();
+        let mut legacy = current.clone();
+        legacy.as_object_mut().unwrap().remove("sizeFailure");
+        atomic_json(&path, &legacy).unwrap();
+        assert_eq!(restarted.status(false).unwrap()["queue"][0]["error"], "file_too_large");
+        assert!(restarted.status(false).unwrap()["queue"][0]["sizeFailure"].is_null());
+
+        // Explicit recovery clears stale details before attempting changed bytes.
+        atomic_json(&path, &current).unwrap();
+        fs::write(bundle.join(asset), b"small replacement").unwrap();
+        restarted.retry().unwrap();
+        assert!(restarted.status(false).unwrap()["queue"][0]["sizeFailure"].is_null());
+        restarted.process_once().unwrap();
+        let recovered = restarted.status(false).unwrap();
+        assert_eq!(recovered["queue"][0]["status"], "ready");
+        assert!(recovered["queue"][0]["sizeFailure"].is_null());
+    }
 }
 
 #[cfg_attr(test, test)]

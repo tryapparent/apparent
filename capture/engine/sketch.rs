@@ -657,6 +657,7 @@ pub fn describe_event(event: &InteractionEvent) -> String {
             _ => format!("pointed at ({})", at([*x, *y])),
         },
         InteractionEvent::Key { shortcut, .. } => format!("pressed {shortcut}"),
+        InteractionEvent::Note { pin, text, .. } => format!("typed note on pin {pin}: {text}"),
         InteractionEvent::AppEvent { label, .. } => format!("app: {label}"),
         InteractionEvent::AppChange {
             app, window_title, ..
@@ -742,6 +743,30 @@ pub(crate) fn summary_markdown_with_visual_policy(
     bundle_dir: &std::path::Path,
     agent_context: bool,
 ) -> String {
+    summary_markdown_formatted(bundle, bundle_dir, agent_context, None)
+}
+
+/// Clipboard transport instructions are supplied by Handoff; archived summaries keep
+/// their full local inspection context. Words, marks, notes and warnings stay semantic.
+pub(crate) fn clipboard_markdown(
+    bundle: &ApparentBundle,
+    bundle_dir: &std::path::Path,
+    hosted: bool,
+) -> String {
+    summary_markdown_formatted(
+        bundle,
+        bundle_dir,
+        crate::shared::handoff::experiment(crate::shared::handoff::AGENT_CONTEXT),
+        Some(hosted),
+    )
+}
+
+fn summary_markdown_formatted(
+    bundle: &ApparentBundle,
+    bundle_dir: &std::path::Path,
+    agent_context: bool,
+    clipboard_hosted: Option<bool>,
+) -> String {
     let mut target = bundle
         .target
         .app
@@ -772,12 +797,22 @@ pub(crate) fn summary_markdown_with_visual_policy(
             }
         }
     }
-    let mut out = format!(
-        "[apparent {} · {target} · {}]\n",
-        format_clock(bundle.duration_ms),
-        bundle_dir.display()
-    );
-    if let Some(dest) = &bundle.destination {
+    let mut out = match clipboard_hosted {
+        Some(true) => format!("[apparent {}]\n", format_clock(bundle.duration_ms)),
+        Some(false) => format!(
+            "[apparent {} · {}]\n",
+            format_clock(bundle.duration_ms),
+            bundle_dir.display()
+        ),
+        None => format!(
+            "[apparent {} · {target} · {}]\n",
+            format_clock(bundle.duration_ms),
+            bundle_dir.display()
+        ),
+    };
+    if clipboard_hosted.is_none()
+        && let Some(dest) = &bundle.destination
+    {
         let title = if dest.title.is_empty() {
             &dest.session
         } else {
@@ -789,8 +824,12 @@ pub(crate) fn summary_markdown_with_visual_policy(
         }
         out.push('\n');
     }
-    if !bundle.keyframes.is_empty() {
-        out.push_str(if bundle.has_screen_click() { LOOK_AT_IMAGES } else { OPTIONAL_IMAGES });
+    if clipboard_hosted.is_none() && !bundle.keyframes.is_empty() {
+        out.push_str(if bundle.has_screen_click() {
+            LOOK_AT_IMAGES
+        } else {
+            OPTIONAL_IMAGES
+        });
         out.push('\n');
     }
     // The screen at the start and the app's own values, on one line.
@@ -814,22 +853,33 @@ pub(crate) fn summary_markdown_with_visual_policy(
     {
         out.push_str(&format!("Note: {}\n", note.trim()));
     }
+    for event in &bundle.events {
+        if let InteractionEvent::Note { t, pin, text, .. } = event {
+            let frame = bundle.marks.iter().find(|m| m.pin == Some(*pin)).and_then(|m| m.frame.as_deref());
+            out.push_str(&format!("Typed note · pin {pin} · {}{}:\n", format_clock(*t), frame.map(|f| format!(" · {f}")).unwrap_or_default()));
+            for line in text.lines() { out.push_str(&format!("    {line}\n")); }
+        }
+    }
     if bundle.interaction_telemetry == Some(crate::shared::model::InteractionTelemetry::VideoOnly) {
         out.push_str("Interaction context: timed CLI video only; clicks and Shift ink were not collected. A visible click in the video will not appear in events, marks or click keyframes. Use the app's recording shortcut for interaction context.\n");
     }
     if let Some(warning) = &bundle.image_quality_warning {
         out.push_str(&format!("Image quality: {warning}\n"));
     }
-    if let Some(crop) = &bundle.autocrop {
+    if clipboard_hosted.is_none()
+        && let Some(crop) = &bundle.autocrop
+    {
         out.push_str(&format!(
             "Cropped to: {} (full frames in {}/)\n",
             crop.label, crop.full_frames
         ));
     }
-    if bundle.source.as_deref() != Some("iphone") {
+    if bundle.source.as_deref() != Some("iphone") && !bundle.context.get("microphoneCapture").is_some_and(|v| v == "off") {
         if !bundle.has_microphone_samples(bundle_dir) {
             out.push_str("No microphone audio was saved. Check the microphone and try again.\n");
-        } else if bundle.transcript.text.trim().is_empty() && (bundle.transcript.missing.is_some() || bundle.transcript.source == "none") {
+        } else if bundle.transcript.text.trim().is_empty()
+            && (bundle.transcript.missing.is_some() || bundle.transcript.source == "none")
+        {
             if let Some(missing) = &bundle.transcript.missing {
                 out.push_str(&format!("No transcript: {}\n", missing.reason));
             } else {

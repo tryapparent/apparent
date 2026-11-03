@@ -2,7 +2,7 @@ name: Onboarding test app
 
 on:
   push:
-    branches: [preview/onboarding-attached]
+    branches: [preview/onboarding-attached, codex/onboarding-integration]
     paths:
       - '.github/workflows/onboarding-test-app.yml'
       - 'capture/desktop/**'
@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   package:
-    if: github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/preview/onboarding-attached'
+    if: github.repository == 'tryapparent/apparent' && (github.ref == 'refs/heads/preview/onboarding-attached' || github.ref == 'refs/heads/codex/onboarding-integration')
     strategy:
       fail-fast: false
       matrix:
@@ -85,7 +85,7 @@ jobs:
           if [ '${{ matrix.arch }}' = Apple-Silicon ]; then expected_arch=arm64; fi
           app="$RUNNER_TEMP/onboarding-test-output/Apparent Onboarding Test.app"
           installer="$RUNNER_TEMP/onboarding-test-output/Install Apparent Onboarding Test.app"
-          for binary in "$app/Contents/MacOS/apparent" "$app/Contents/MacOS/apparent-helper" "$app/Contents/Resources/Apparent Test UI.app/Contents/MacOS/Electron" "$installer/Contents/MacOS/LocalInstaller"; do
+          for binary in "$app/Contents/MacOS/apparent" "$app/Contents/MacOS/apparent-helper" "$app/Contents/Resources/settings/runtime/Electron.app/Contents/MacOS/Electron" "$installer/Contents/MacOS/LocalInstaller"; do
             test "$(lipo -archs "$binary")" = "$expected_arch"
           done
           (cd "$RUNNER_TEMP/onboarding-test-output" && shasum -a 256 Apparent-Onboarding-Test.zip > SHA256SUMS)

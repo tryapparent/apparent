@@ -25,6 +25,9 @@ class InstallerGuardTests(unittest.TestCase):
             executable = app / "Contents/MacOS/apparent"
             executable.parent.mkdir(parents=True)
             executable.write_text("old app")
+            legacy_runtime = app / "Contents/Resources/note-ui/runtime/legacy-marker"
+            legacy_runtime.parent.mkdir(parents=True)
+            legacy_runtime.write_text("old generated runtime")
             processes = root / "processes"
             # comm is executable identity, not argv: unrelated CLIs must survive.
             unrelated = [
@@ -47,15 +50,21 @@ case "$name" in
       for file in "$MOCK_TMP"/*.plist; do
         bash -n "${file%.plist}.sh"
         printf 'STAGE-EXIT=0\\n' > "${file%.plist}.log"
+        mkdir -p "$MOCK_TMP/ApparentStage.app/Contents/Resources/settings/runtime"
       done
     fi ;;
   security) exit 1 ;;
+  node)
+    case "$1" in
+      */package-notes.mjs) mkdir -p "$2/dist" ;;
+      *) exit 90 ;;
+    esac ;;
   taskpolicy|cargo|git|codesign|open|sleep|pgrep|pkill|ditto) : ;;
   *) exit 90 ;;
 esac
 '''
             for name in ("ps", "ssh", "launchctl", "security", "taskpolicy", "cargo", "git",
-                         "codesign", "open", "sleep", "pgrep", "pkill", "ditto"):
+                         "codesign", "open", "sleep", "pgrep", "pkill", "ditto", "node"):
                 tool = tools / name
                 tool.write_text(mock)
                 tool.chmod(0o755)
@@ -63,7 +72,7 @@ esac
                              "capture/desktop/assets/Apparent.icns",
                              "shared/assets/fonts/HostGrotesk-Variable.ttf",
                              "shared/assets/brand/apparent-wordmark.png",
-                             "shared/assets/brand/apparent-a.png"):
+                             "shared/assets/brand/apparent-a.png", "shared/assets/brand/connect-frogs.png"):
                 asset = repo / relative
                 asset.parent.mkdir(parents=True, exist_ok=True)
                 asset.write_text("synthetic new asset")
@@ -74,9 +83,12 @@ esac
             for name in ("install-app.sh", "install-app-remote.sh"):
                 source = (SCRIPTS / name).read_text()
                 # Redirect fixed native paths into this disposable synthetic fixture.
-                source = source.replace("/usr/bin/ditto", str(tools / "ditto"))
                 source = source.replace("/tmp/", str(root) + "/")
+                source = source.replace("/usr/bin/ditto", str(tools / "ditto"))
                 (packaging / name).write_text(source)
+            (packaging / "stage-settings.py").write_text(
+                "import os\nfrom pathlib import Path\n"
+                "with Path(os.environ['MOCK_LOG']).open('a') as log: log.write('stage-settings\\n')\n")
             env = dict(os.environ, HOME=str(home), PATH=str(tools) + ":" + os.environ["PATH"],
                        MOCK_LOG=str(log), MOCK_PROCESSES=str(processes),
                        MOCK_PS_STATUS=str(ps_status), MOCK_TMP=str(root),
@@ -88,10 +100,13 @@ esac
             self.assertNotIn("pkill ", calls, result.stderr)
             refused = running is not None or ps_status != 0
             if refused:
+                self.assertNotIn("stage-settings", calls, "Never stage Settings into a running app")
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(executable.read_text(), "old app")
+                self.assertTrue(legacy_runtime.exists(), "A refused install must preserve the old runtime")
                 self.assertFalse((app / "Contents/Info.plist").exists())
                 self.assertNotIn("ditto ", calls)
+                self.assertNotIn("node ", calls)
                 self.assertNotIn("open ", calls)
                 self.assertIn("retry", result.stderr)
                 if running:
@@ -101,14 +116,19 @@ esac
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 if remote:
                     self.assertIn("ditto ", calls)
+                    self.assertFalse(legacy_runtime.exists(), "ditto must not retain the obsolete popup runtime")
                 else:
                     self.assertEqual(executable.read_text(), "synthetic new asset")
+                    self.assertIn("package-notes.mjs", calls)
+                    self.assertIn("stage-settings", calls)
                 self.assertEqual("open " in calls, remote or not no_launch)
 
     def test_destination_processes_refuse_before_replacement(self):
         for remote in (False, True):
             for running in ("Contents/MacOS/apparent", "Contents/MacOS/apparent-helper",
-                            "Contents/Frameworks/Sparkle.framework/Autoupdate"):
+                            "Contents/Frameworks/Sparkle.framework/Autoupdate",
+                            "Contents/Resources/note-ui/runtime/Electron.app/Contents/MacOS/Electron",
+                            "Contents/Resources/settings/runtime/Electron.app/Contents/MacOS/Electron"):
                 for no_launch in (False, True):
                     with self.subTest(remote=remote, running=running, no_launch=no_launch):
                         self.run_installer(remote, running, no_launch=no_launch)

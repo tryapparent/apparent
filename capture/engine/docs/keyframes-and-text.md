@@ -14,6 +14,25 @@ live effectiveness indicator or automatic installer. See [setup and limits](../.
 - **Images (`frames/*.png` and `contact-sheet.png`)**: Keep images purely visual. Each keyframe shows the screenshot, active red tldraw stroke(s) for that moment, a subtle click mark (thin translucent ring and small dot, no fill, so the clicked thing stays readable; phone swipes are a thin translucent trail), and the keyframe's number alone (no `#`, no time; `summary.md` pairs each `[#N · M:SS]` with its words) in bold black on a small white rounded square with a thin dark ring, inset 5 px from the top-left corner and dodging to bottom-left when top-left has ink, a click or the cursor. The chip never moves over the top-right action controls in a captured app. The chip is drawn at one size on every contact-sheet tile, about 24 px with its ring: blind reading tests found 20 px failed when the sheet was shown at half size, a bare digit was read as screenshot text, and `#6` was read as `8`. `contact-sheet.png` packs frames in time order (left→right, top→bottom) into aspect-ratio-justified rows separated by tight 6 px gutters on a dark canvas (no card borders or rounded frame masks, capped at 1600 px long edge / ~1.56 MP) with no rasterized transcript headers or caption boxes.
 - **Text (`summary.md` & Clipboard)**: Put the transcript, `[#N · M:SS]` keyframe index, and absolute file paths (`Contact sheet:`, `frames/frame-XX.png`, `Video:`, `Bundle:`) in plain text (`NSPasteboardTypeString`) without repeating the transcript multiple times, so `⌘V` pastes cleanly into any terminal (Ghostty / OpenCode TUI) or GUI composer (OpenCode Desktop).
 
+## Checked completion
+
+Screen and phone completion keep construction and the optional final whiteboard append
+under one Engine publication lease. Desktop admits Saved, clipboard handoff, Connect
+and phone retention only after the outer result validates the persisted manifest,
+summary and surviving media and completes the durability barrier. An append failure
+may use the intact original bundle only after revalidation; an unfinished whiteboard
+stage blocks admission. Failed publication retains recovery and pending-transcription
+work. A later transcript update restores the previous manifest and summary on failure.
+Existing incremental WAV files remain authoritative and are never replaced by the
+in-memory recording at Stop.
+
+This changes the shared completion contract without changing installed Desktop routing
+or introducing another completion surface. The existing UI receives only the checked
+outer result. Publication checks structure and sample extents for MP4/MOV; native
+capture and playback verification remain separate requirements.
+
+Clipboard handoffs put access instructions first and the duration header with timestamped words/marks last, so the end of a paste identifies the request. A retained Connect job supplies fetch/inspect commands without sender-local paths or repeated login instructions; otherwise a shell-quoted local inspect command and local image/crop guidance remain. Both include a one-line CLI installation link and preserve the video-proof opt-out. Notes, capture warnings and semantic timeline entries remain in the prompt. `summary.md` and `apparent inspect` retain the full archived format. The shared Rust formatter serves existing copy/paste callers; no UI routing or capture consent changes. See [Connect client](../../../connect/docs/hosted-client.md).
+
 ## Transcription (`capture/engine/runtime/audio/transcription/transcribe.rs`, `shared/hex.rs`, `capture/engine/runtime/audio/transcription/command_transcriber.rs`)
 
 Apple SpeechAnalyzer by default (measured word times). `"transcriber": "hex"` + `"hexModel"` in `~/.config/apparent/config.json` (Settings › Recording, `apparent hex status`, `--transcriber` on `reprocess`/`import`) uses Hex's local API v2 (discovery file `local-api.json`, bearer token, never logged) only when Hex answers `/health` and has a ready model (`installed && verified`; Apparent never downloads). Hex gives text only, so each speech island (`audio::speech_islands`, clips merged to ≤ 24) is transcribed on its own and its words are spread over it by length: `source: "hex:<model>"`, `estimated: true`, which `keyframes.rs` reads to skip spoken cues. Any Hex failure falls back to Apple for that recording; Hex absent falls back silently (logged once). `"transcriber": "command"` (`capture/engine/runtime/audio/transcription/command_transcriber.rs`) runs the argv in `"transcribeCommand"` (no shell, own process group, wall-clock limit, 8 MiB stdout cap) and reads one versioned JSON transcript: `source: "command:<name>"`; any failure means Apple for that recording (Hex never tried; a missing or malformed command is logged once, like Hex being away), and nothing the program says or is given reaches the log. It gets no language from Apparent: `appleLocale` is Apple's, and the user's argv carries the model's. Its keys are read on their own (`Program::load_from`), never through `handoff::Config`. Settings reads `hex::cached_status` (a background poller), never the network.
@@ -256,3 +275,25 @@ Off by default; Linux Hyprland Wayland only. The guarded `handoff::run_draft_han
 Off by default; currently **fails closed on Linux**. When enabled, a finished capture saves the bundle and copies the text summary, but does not dispatch image or text paste keystrokes. The paper says “Saved · paste manually” and points to `contact-sheet.png`: attach it in the intended unsent composer, then use Ctrl+V for the summary. Apparent never sends the draft. The prior window-only trial could paste into another T3 thread within the same window. A window address is not a stable draft/editor identity, and a paste keystroke is not an image attachment receipt. Automatic handoff must wait for a receiver that can verify the capture-start and finish target, writable composer, accepted attachment, and visible text without duplicate insertions. The explicit user-directed `apparent paste` command remains available, but it cannot prove receiver acceptance either. Ordinary Ctrl+V and Omarchy Super+V are unchanged.
 
 To compare a summary experiment on real captures, `capture/agent/scripts/agent-eval.sh [--experiment NAME] [--out DIR] [bundle…]` reprocesses each bundle with and without it (Kit's own `experiments` removed from the baseline's config) and writes `before.md`, `after.md`, both contact sheets and frames per bundle, and an `index.md`, by default to `~/code/home/artifacts/apparent-context/`. Both summaries come from the baseline run's transcript. What a capture recorded live (Accessibility lookups, page events) is kept as recorded, so those only show on captures made with the experiment on.
+
+## Typed capture notes
+
+During screen capture, Shift-click opens a compact Electron text field at the
+point; Shift drawing is unchanged. Enter or Attach saves; empty Enter keeps
+only the pin. Escape preserves the in-capture draft. The count reflects durable
+saved notes; its compact list edits/deletes them. Unsubmitted drafts are not
+handoff content and do not survive ending/restarting the capture.
+
+Rust stores submitted text plus the pin's original timestamp and normalized
+position in `notes.json`. Finalization/recovery includes it as typed `note`
+events in `apparent.json` and an explicit Typed note section in `summary.md`,
+with the pin's keyframe link where available. Reprocessing replaces these
+events from the local notes file rather than duplicating them. The note's
+clock/anchor never moves to the time typing or editing finished. Text stays
+semantic; popup controls are not rasterized captions.
+
+`microphoneEnabled: false` allows intentional silent captures without a
+microphone grant; set it from the menu or Electron Recording control. Its
+value is sampled at admission, and file edits apply at the next capture. The
+selected microphone and all unrelated config keys remain intact. The saved
+`context.microphoneCapture=off` distinguishes this choice from an audio error.
