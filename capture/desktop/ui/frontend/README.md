@@ -725,6 +725,8 @@ It builds/installs a frozen canonical `Apparent.app` beneath a unique run-owned
 parent, uses existing hosted Accessibility/AppleEvents permission, and never
 resets TCC, changes product flags, allocates a Mac or starts an Apparent capture.
 Recovery probes alter only that job's exact installed HTML inode and restore it.
+They await the helper's unique visible window before the single Agents press;
+process discovery alone is not window readiness.
 
 The native reader verifies the Rust-owned packaged PID/executable and unique
 window. Since pill and Settings share the runtime, the fixture also checks the

@@ -581,6 +581,8 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     await invoke(rustPID(), 'open');
     await poll(() => invoke(rustPID(), 'settings'), 'Owned Settings recovery menu');
     const nativePID = await child(helper);
+    // A mapped helper process can precede its first window, as on initial open.
+    recovery.nativeWindow = JSON.parse(await poll(() => invoke(nativePID, 'window'), 'Owned missing-assets Settings window'));
     await invoke(nativePID, 'press', 'AXButton', 'Agents');
     fallbackPID = await nativeFailure('agents-unavailable-assets');
     recovery.missingAssets = true;
