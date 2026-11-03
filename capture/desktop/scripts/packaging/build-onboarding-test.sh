@@ -40,7 +40,7 @@ chmod 755 "$resources/onboarding-shell"
 python3 - "$app" "$(git rev-parse HEAD)" <<'PY'
 import pathlib,plistlib,sys,shutil
 app=pathlib.Path(sys.argv[1]);info=app/'Contents/Info.plist'
-p=plistlib.loads(info.read_bytes());p.update(CFBundleIdentifier='dev.apparent.onboarding-test',CFBundleName='Apparent Onboarding Test',CFBundleDisplayName='Apparent Onboarding Test',LSEnvironment={'APPARENT_TEST_INSTANCE':'1'},ApparentTestBuildID=sys.argv[2],ApparentTestPreview=6)
+p=plistlib.loads(info.read_bytes());p.update(CFBundleIdentifier='dev.apparent.onboarding-test',CFBundleName='Apparent Onboarding Test',CFBundleDisplayName='Apparent Onboarding Test',LSEnvironment={'APPARENT_TEST_INSTANCE':'1'},ApparentTestBuildID=sys.argv[2],ApparentTestPreview=7)
 for k in list(p):
  if k.startswith('SU') or k in ['CFBundleURLTypes']:p.pop(k,None)
 info.write_bytes(plistlib.dumps(p))
@@ -56,7 +56,8 @@ codesign --force --sign - --deep --identifier dev.apparent.onboarding-test "$app
 codesign --verify --deep --strict "$app"
 installer="$out/Install Apparent Onboarding Test.app"
 mkdir -p "$installer/Contents/MacOS" "$installer/Contents/Resources" "$installer/Contents/SharedSupport"
-xcrun swiftc "${installer_target[@]}" -parse-as-library capture/desktop/native/installer/LocalInstaller.swift -o "$installer/Contents/MacOS/LocalInstaller"
+xcrun swiftc "${installer_target[@]}" -parse-as-library capture/desktop/native/OnboardingBrand.swift capture/desktop/native/installer/LocalInstaller.swift -o "$installer/Contents/MacOS/LocalInstaller"
+cp shared/assets/fonts/HostGrotesk-Variable.ttf "$installer/Contents/Resources/HostGrotesk-Variable.ttf"
 cp capture/desktop/assets/app-icon.png "$installer/Contents/Resources/app-icon.png"
 cp public/site/public/assets/pond/frog-rest-cohesive.png "$installer/Contents/Resources/frog-jump.png"
 ditto "$app" "$installer/Contents/SharedSupport/Apparent Onboarding Test.app"

@@ -193,8 +193,8 @@ test('onboarding coach avoids its board and pill on offset displays, preserves i
   for (const area of [{x:0,y:25,width:1440,height:875},{x:-1920,y:40,width:1920,height:1040}]) {
     const board=[area.x+260,area.y+160,760,590], anchor=[area.x+500,area.y+15,320,50];
     const p=coachPosition(area,anchor,board,'board-ink');
-    assert.ok(p.x>=area.x && p.y>=area.y && p.x+380<=area.x+area.width && p.y+350<=area.y+area.height);
-    for(const [x,y,w,h] of [board,anchor]) assert.ok(p.x+380<=x || p.x>=x+w || p.y+350<=y || p.y>=y+h);
+    assert.ok(p.x>=area.x && p.y>=area.y && p.x+380<=area.x+area.width && p.y+440<=area.y+area.height);
+    for(const [x,y,w,h] of [board,anchor]) assert.ok(p.x+380<=x || p.x>=x+w || p.y+440<=y || p.y>=y+h);
     assert.equal(p.pointsUp,false);
   }
   const state={type:'state',step:'try-it',rows:[],ready:true,testInstance:true,practiceBoard:[0,0,700,600]};

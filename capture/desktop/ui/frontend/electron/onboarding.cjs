@@ -18,7 +18,7 @@ function project(v) {
 }
 // Screen coordinates supplied by this process's typed Whiteboard window only.
 function coachPosition(area,anchor,board,phase){
-  const width=380,height=350,gap=18;
+  const width=380,height=440,gap=24;
   const clamp=([x,y])=>[Math.round(Math.max(area.x,Math.min(area.x+area.width-width,x))),Math.round(Math.max(area.y,Math.min(area.y+area.height-height,y)))];
   const [x,y,w,h]=anchor||[area.x+area.width/2-150,area.y+35,300,50];
   const candidates=[[x+w/2-width/2,y+h+gap]];
@@ -47,7 +47,7 @@ function parentChannel(output,onLost){
 module.exports={project,actions,coachPosition,parentChannel};
 if(!process.versions.electron) return;
 const { app, BrowserWindow, ipcMain, screen, session } = require('electron');
-app.setName(process.env.APPARENT_TEST_INSTANCE==='1'?'Apparent Onboarding Test':'Apparent Onboarding');
+app.setName(process.env.APPARENT_TEST_INSTANCE==='1'?'apparent onboarding preview':'apparent onboarding');
 app.setPath('userData',path.join(app.getPath('appData'),'apparent-onboarding'));
 if(process.env.APPARENT_UI_PROFILE)app.setPath('userData',process.env.APPARENT_UI_PROFILE);
 let window,state=null,buffer='',page,lastPlacement='',lastMode=null,closing=false;
@@ -96,7 +96,7 @@ app.whenReady().then(()=>{
 function present(v,activate=false){
   if(closing||!window||window.isDestroyed())return;
   const coach=v.step==='try-it';
-  const width=coach?380:760,height=coach?350:720;
+  const width=coach?380:760,height=coach?440:720;
   if(lastMode!==coach){
     window.setAlwaysOnTop(coach,'floating');
     // X11 fixed-size constraints must change together, only when the mode changes.

@@ -2,6 +2,14 @@
 :root {
   color-scheme: light;
   --font-sans: system-ui, sans-serif;
+  /* Approved brand masters. Surfaces opt into these roles without restyling siblings. */
+  --apparent-paper: #f5f0e8;
+  --apparent-stock: #e7e0ee;
+  --apparent-carbon: #020102;
+  --apparent-lilac: #b7a5d8;
+  --apparent-signal: #7a58c7;
+  --apparent-confirmed: #146b43;
+  --apparent-failed: #b42318;
   --apparent-background: #f5f0e8;
   --apparent-foreground: #19161d;
   --apparent-surface: #faf9f6;

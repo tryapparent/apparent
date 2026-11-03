@@ -90,7 +90,7 @@ func hasOlderTest(installed: URL, running: [(id: String?, path: URL?)]) -> Bool 
     DispatchQueue.global(qos: .userInitiated).async {
       do {
         let target = try installCandidate(source: source, folder: folder)
-        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, animationDuration - Date().timeIntervalSince(began))) { self.installed = target; self.busy = false; self.message = "Preview 6 is installed and ready to open." }
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, animationDuration - Date().timeIntervalSince(began))) { self.installed = target; self.busy = false; self.message = "Preview 7 is installed and ready to open." }
       } catch {
         DispatchQueue.main.asyncAfter(deadline: .now() + max(0, animationDuration - Date().timeIntervalSince(began))) { self.busy = false; self.message = error.localizedDescription }
       }
@@ -129,9 +129,9 @@ struct InstallerView: View {
     NSImage(contentsOf: Bundle.main.resourceURL!.appendingPathComponent(name)) ?? NSImage()
   }
   var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
-      Text("Add apparent to Applications.").font(.system(size: 30, weight: .medium))
-      Text("Click the frog, or drag the app to Applications.").foregroundStyle(.secondary)
+    VStack(alignment: .leading, spacing: 24) {
+      Text("Add apparent to Applications.").font(OnboardingBrand.font(36, weight: 700))
+      Text("Click the frog, or drag the app to Applications.").foregroundStyle(OnboardingBrand.foreground)
       HStack(spacing: 40) {
         Button { install() } label: {
           VStack(spacing: 8) {
@@ -140,15 +140,15 @@ struct InstallerView: View {
               Image(nsImage: image("frog-jump.png")).resizable().scaledToFit().frame(width: 100, height: 75).offset(y: -60)
                 .modifier(FrogHop(progress: hopProgress))
             }
-            Text("apparent · local test").font(.system(size: 12))
+            Text("apparent · local test").font(OnboardingBrand.font(16))
           }
           .frame(width: 150)
         }.buttonStyle(.plain).disabled(model.busy || model.installed != nil)
         .onDrag { NSItemProvider(object: model.source as NSURL) }
-        Image(systemName: "arrow.right").font(.system(size: 26)).foregroundStyle(.tertiary).frame(width: 32)
-        VStack(spacing: 10) {
-          Image(systemName: "folder.fill").font(.system(size: 78)).foregroundStyle(Color.purple.opacity(0.35))
-          Text("Applications").font(.system(size: 13))
+        Image(systemName: "arrow.right").font(.system(size: 18)).foregroundStyle(OnboardingBrand.foreground).frame(width: 32)
+        VStack(spacing: 16) {
+          Image(systemName: "folder.fill").font(.system(size: 78)).foregroundStyle(OnboardingBrand.lilac)
+          Text("Applications").font(OnboardingBrand.font(16))
         }.frame(width: 150).onDrop(of: [.fileURL], isTargeted: nil) { providers in
           guard !model.busy, model.installed == nil, providers.count == 1 else { return false }
           providers[0].loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
@@ -159,16 +159,17 @@ struct InstallerView: View {
           }
           return true
         }
-      }.frame(maxWidth: .infinity).padding(.top, 75).padding(.bottom, 40)
+      }.frame(maxWidth: .infinity).padding(.top, 80).padding(.bottom, 32)
       Text(model.message.isEmpty ? "Previous previews are kept. A location is chosen automatically." : model.message)
-        .font(.system(size: 12)).foregroundStyle(.secondary).frame(minHeight: 30)
+        .font(OnboardingBrand.font(16)).foregroundStyle(OnboardingBrand.foreground).frame(minHeight: 48)
       HStack {
-        Button("Choose location…") { model.chooseFolder(animationDuration: reduceMotion ? 0 : 1.05) }.disabled(model.busy || model.installed != nil)
+        Button("Choose location…") { model.chooseFolder(animationDuration: reduceMotion ? 0 : 1.05) }.buttonStyle(OnboardingBrand.ActionStyle()).disabled(model.busy || model.installed != nil)
         Spacer()
-        Button("Open preview 6") { model.open() }.buttonStyle(.borderedProminent).disabled(model.installed == nil)
+        Button("Open preview 7") { model.open() }.buttonStyle(OnboardingBrand.ActionStyle(primary: true)).disabled(model.installed == nil)
       }
-    }.padding(36).frame(width: 650).background(Color(red: 0.98, green: 0.975, blue: 0.965))
-      .tint(Color(red: 0.48, green: 0.35, blue: 0.70))
+    }.padding(32).frame(width: 720).font(OnboardingBrand.font(18))
+      .foregroundStyle(OnboardingBrand.foreground).background(OnboardingBrand.background)
+      .tint(OnboardingBrand.signal)
       .onChange(of: model.hopSerial) { _, _ in
         var instant = Transaction(); instant.disablesAnimations = true
         withTransaction(instant) { hopProgress = 0 }
@@ -180,14 +181,17 @@ struct InstallerView: View {
 }
 #if !INSTALLER_TEST
 @main struct LocalInstaller: App {
+  init() { OnboardingBrand.loadFont() }
   var body: some Scene {
-    WindowGroup("Install Apparent · preview 6") { InstallerView() }.windowResizability(.contentSize)
+    WindowGroup("Install apparent · preview 7") { InstallerView() }.windowResizability(.contentSize)
   }
 }
 
 #else
 @main struct InstallerChecks {
   static func main() throws {
+    OnboardingBrand.loadFont()
+    precondition(NSFont(name: "HostGrotesk_400wght", size: 18) != nil)
     let fm = FileManager.default
     let root = fm.temporaryDirectory.appendingPathComponent("apparent-installer-" + UUID().uuidString)
     try fm.createDirectory(at: root, withIntermediateDirectories: true)

@@ -221,6 +221,17 @@ for(const mode of ['--native-onboarding','--onboarding'])test(`onboarding fixed 
   await expect(page.getByRole('heading', { name:'Pick your pen.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
   assert.deepEqual(await page.locator('.native-pencils button').allTextContents(),['','','','']);
+  await page.evaluate(()=>document.fonts.ready);
+  await expect(page.locator('.native-setup')).toHaveCSS('font-family', '"Host Grotesk", system-ui, sans-serif');
+  await expect(page.getByRole('heading',{name:'Pick your pen.',exact:true})).toHaveCSS('font-size','36px');
+  await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toHaveCSS('font-size','18px');
+  for(const scheme of ['light','dark','light']){
+    await page.emulateMedia({colorScheme:scheme});
+    await expect(page.locator('.native-setup')).toHaveCSS('background-color',scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)');
+    await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toHaveCSS('background-color','rgb(122, 88, 199)');
+    await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toHaveCSS('color','rgb(245, 240, 232)');
+  }
+
   await page.getByRole('button',{name:'purple pen',exact:true}).click();
   await expect.poll(()=>output).toContain('pen:purple');
   send({penPicker:true,penSelected:true,penRgb:[122,88,199]});
@@ -232,8 +243,8 @@ for(const mode of ['--native-onboarding','--onboarding'])test(`onboarding fixed 
   });
   assert.ok(Math.abs(centres[0]-centres[2])<2&&Math.abs(centres[1]-centres[2])<2);
   const before=await page.locator('.native-pond-frog').boundingBox();
-  await page.getByRole('button',{name:'That’s my pen',exact:true}).click();
-  await expect(page.getByRole('button',{name:'That’s my pen',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'Use this pen',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toBeDisabled();
   const minimum=await page.evaluate(()=>new Promise(resolve=>{
     const frog=document.querySelector('.native-pond-frog');let min=frog.getBoundingClientRect().y;const began=performance.now();
     function sample(){min=Math.min(min,frog.getBoundingClientRect().y);if(performance.now()-began<1000)requestAnimationFrame(sample);else resolve(min)}requestAnimationFrame(sample);
@@ -249,9 +260,29 @@ for(const mode of ['--native-onboarding','--onboarding'])test(`onboarding fixed 
     return rect.left>=0 && rect.right<=innerWidth && rect.bottom<=innerHeight;
   }), true);
   send({ step:'try-it', practice:'locate', anchor:[900,0,24,24] });
-  await expect(page.getByRole('heading', { name:'Apparent lives here.', exact:true })).toBeVisible();
-  await expect(page.getByText('Find the Apparent icon in your menu bar. Click it, then choose Open Latest Capture.', { exact:true })).toBeVisible();
+  await expect(page.getByRole('heading', { name:'apparent lives here.', exact:true })).toBeVisible();
+  await expect(page.getByText('Find the apparent icon in your menu bar. Click it, then choose Open Latest Capture.', { exact:true })).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveAttribute('data-arrow','true');
+  for(const phase of ['start','whiteboard','board-ink','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
+    send({step:'try-it',practice:phase});
+    await expect(page.locator('.native-coach')).toHaveAttribute('data-stage',phase);
+    const layout=await page.locator('.native-coach').evaluate(card=>{
+      const content=card.querySelector('.native-coach-content'),rect=card.getBoundingClientRect();
+      const buttons=[...card.querySelectorAll('button')].map(button=>({font:parseFloat(getComputedStyle(button).fontSize),radius:getComputedStyle(button).borderRadius,...(()=>{const r=button.getBoundingClientRect();return{width:r.width,height:r.height}})()}));
+      return{bottom:rect.bottom,viewport:innerHeight,horizontal:content.scrollWidth>content.clientWidth,scroll:content.scrollHeight>content.clientHeight,buttons};
+    });
+    assert.ok(layout.bottom<=layout.viewport,phase+' coach is clipped');
+    assert.equal(layout.horizontal,false,phase+' content overflows horizontally');
+    assert.equal(layout.scroll,false,phase+' needs scrolling at normal text size');
+    for(const button of layout.buttons){assert.ok(button.font>=18&&button.width>=44&&button.height>=44,phase+' button violates brand minimum');assert.equal(button.radius,'0px');}
+  }
+  await page.evaluate(()=>document.documentElement.style.fontSize='200%');
+  await expect(page.locator('.native-coach p')).toHaveCSS('font-size','36px');
+  assert.equal(await page.locator('.native-coach-content').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
+  await page.getByRole('button',{name:'Try later',exact:true}).scrollIntoViewIfNeeded();
+  await expect(page.getByRole('button',{name:'Try later',exact:true})).toBeInViewport();
+  await page.evaluate(()=>document.documentElement.style.fontSize='');
+
   send({ step:'permissions' });
   await expect(page.getByRole('heading', { name:'We need three things.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
@@ -269,13 +300,22 @@ for(const mode of ['--native-onboarding','--onboarding'])test(`onboarding fixed 
   await expect.poll(()=>output).toContain('"modifiers":6144');
   await page.getByRole('group',{name:'Shortcut recorder'}).evaluate(element=>element.dispatchEvent(new KeyboardEvent('keydown',{key:'ß',code:'KeyS',altKey:true,bubbles:true})));
   await expect.poll(()=>output).toContain('"keyCode":1,"modifiers":2048,"key":"s"');
+  await page.getByRole('group',{name:'Shortcut recorder'}).press('Tab');
+  await expect(page.getByRole('button',{name:'Cancel',exact:true})).toBeFocused();
+  await page.getByRole('button',{name:'Cancel',exact:true}).press('Enter');
+  await expect.poll(()=>output).toContain('cancel-shortcut');
+
 
   await page.emulateMedia({reducedMotion:'reduce'});
   send({penPicker:true,penSelected:true,penRgb:[59,121,189]});
   await expect(page.getByRole('heading',{name:'Pick your pen.',exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'That’s my pen',exact:true}).click();
+  await page.getByRole('button',{name:'Use this pen',exact:true}).click();
   await expect.poll(()=>output.match(/"action":"continue"/g)?.length).toBe(2);
   await expect(page.locator('.native-pond-frog')).toHaveCSS('animation-name','none');
+  await page.setViewportSize({width:320,height:720});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'pen picker must reflow at 320 CSS pixels');
+  await page.setViewportSize({width:760,height:720});
+
 });
 
 // Replace only the default error dialog with a failing receipt. The real renderer,

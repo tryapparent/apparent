@@ -63,6 +63,7 @@ enum PermissionPanel {
     guard let raw = option("--permission", in: arguments), let kind = Kind(rawValue: raw) else {
       fail("permission-panel needs --permission screen-recording|accessibility")
     }
+    OnboardingBrand.loadFont()
     let source = option("--from", in: arguments).flatMap(parseRect)
     let app = NSApplication.shared
     let controller = Controller(
@@ -300,7 +301,7 @@ enum PermissionPanel {
     /// Inside the window: this far above its bottom edge.
     let insideBottom: CGFloat = 20
     let radius: CGFloat = 18
-    let rowRadius: CGFloat = 9
+    let rowRadius: CGFloat = 0
     let icon: CGFloat = 26
     let iconLeading: CGFloat = 10
 
@@ -350,17 +351,20 @@ extension PermissionPanel {
           .frame(width: layout.rowWidth, height: layout.rowHeight)
           .offset(x: layout.gutter, y: layout.rowY)
         BackButton(action: { model.onBack() })
-          .frame(width: 28, height: 28)
-          .offset(x: (layout.gutter - 28) / 2 + 1, y: layout.rowY + (layout.rowHeight - 28) / 2)
+          .frame(width: 44, height: 44)
+          .offset(x: (layout.gutter - 44) / 2 + 1, y: layout.rowY + (layout.rowHeight - 44) / 2)
           .opacity(model.phase == .granted ? 0 : 1)
       }
       .frame(width: layout.cardSize.width, height: layout.cardSize.height, alignment: .topLeading)
+      .font(OnboardingBrand.font(18))
+      .foregroundStyle(OnboardingBrand.foreground)
+      .tint(OnboardingBrand.signal)
       .scaleEffect(model.contentScale)
       .blur(radius: model.contentBlur)
       .opacity(model.contentOpacity)
       .animation(.spring(duration: 0.3, bounce: 0), value: model.phase)
-      .animation(.spring(duration: 0.25, bounce: 0), value: model.hovering)
-      .animation(.spring(duration: 0.25, bounce: 0), value: model.dragging)
+      .animation(.easeOut(duration: 0.16), value: model.hovering)
+      .animation(.easeOut(duration: 0.16), value: model.dragging)
     }
 
     private var instruction: some View {
@@ -368,12 +372,12 @@ extension PermissionPanel {
         ZStack {
           Image(systemName: "arrow.up")
             .font(.system(size: 18, weight: .bold))
-            .foregroundStyle(Color.accentColor.gradient)
+            .foregroundStyle(OnboardingBrand.signal)
             .opacity(model.phase == .granted ? 0 : 1)
             .scaleEffect(model.phase == .granted ? 0.6 : 1)
           Image(systemName: "checkmark.circle.fill")
-            .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(.white, Color.green)
+            .font(.system(size: 18, weight: .medium))
+            .foregroundStyle(Color(nsColor: OnboardingBrand.paper), OnboardingBrand.success)
             .opacity(model.phase == .granted ? 1 : 0)
             .scaleEffect(model.phase == .granted ? 1 : 0.6)
         }
@@ -383,22 +387,19 @@ extension PermissionPanel {
         ZStack(alignment: .leading) {
           dragText.opacity(model.phase == .granted ? 0 : 1)
             .blur(radius: model.phase == .granted ? 3 : 0)
-          (Text(appName).foregroundStyle(.primary).fontWeight(.medium) + Text(" is allowed").foregroundStyle(.secondary))
+          Text("Access enabled.").foregroundStyle(OnboardingBrand.foreground)
             .opacity(model.phase == .granted ? 1 : 0)
             .blur(radius: model.phase == .granted ? 0 : 3)
         }
-        .font(.system(size: 13))
+        .font(OnboardingBrand.font(18))
         .lineLimit(1)
-        .minimumScaleFactor(0.85)
         Spacer(minLength: 0)
       }
     }
 
     private var dragText: Text {
-      Text(kind == .screenRecording ? "Drag up to Screen Recording: " : "Drag ").foregroundStyle(.secondary)
-        + Text(appName).foregroundStyle(.primary).fontWeight(.medium)
-        + Text(kind == .screenRecording ? "" : " to the list above to allow ").foregroundStyle(.secondary)
-        + Text(kind == .screenRecording ? "" : kind.title).foregroundStyle(.primary).fontWeight(.medium)
+      Text(kind == .screenRecording ? "Drag up to Screen Recording." : "Drag into this list.")
+        .foregroundStyle(OnboardingBrand.foreground)
     }
 
     private var appRow: some View {
@@ -412,14 +413,14 @@ extension PermissionPanel {
           .padding(.leading, layout.iconLeading)
           .padding(.trailing, layout.textLeading - layout.iconLeading - layout.icon)
         Text(appName)
-          .font(.system(size: 13))
-          .foregroundStyle(.primary)
+          .font(OnboardingBrand.font(18))
+          .foregroundStyle(model.hovering && !lifted ? Color(nsColor: OnboardingBrand.carbon) : OnboardingBrand.foreground)
         Spacer(minLength: 0)
       }
       .opacity(lifted ? 0.28 : 1)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background(shape.fill(Color.primary.opacity(model.hovering && !lifted ? 0.1 : 0.065)))
-      .overlay(shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+      .background(shape.fill(model.hovering && !lifted ? OnboardingBrand.lilac : OnboardingBrand.background))
+      .overlay(shape.strokeBorder(OnboardingBrand.foreground, lineWidth: 1))
       .overlay {
         if interactive {
           DragHost(make: dragView)
@@ -436,16 +437,17 @@ extension PermissionPanel {
     var body: some View {
       Button(action: action) {
         Image(systemName: "chevron.left")
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(hovering ? Color.primary : Color.secondary)
-          .frame(width: 28, height: 28)
-          .background(Circle().fill(Color.primary.opacity(hovering ? 0.12 : 0.07)))
-          .contentShape(Circle())
+          .font(.system(size: 18, weight: .medium))
+          .foregroundStyle(OnboardingBrand.foreground)
+          .frame(width: 44, height: 44)
+          .background(Rectangle().fill(OnboardingBrand.background))
+          .overlay(Rectangle().stroke(hovering ? OnboardingBrand.signal : OnboardingBrand.foreground, lineWidth: 1))
+          .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
       .help("Back")
       .onHover { hovering = $0 }
-      .animation(.spring(duration: 0.25, bounce: 0), value: hovering)
+      .animation(.easeOut(duration: 0.16), value: hovering)
     }
   }
 
@@ -511,15 +513,15 @@ extension PermissionPanel {
       let icon = icon
       return NSImage(size: size, flipped: false) { rect in
         appearance.performAsCurrentDrawingAppearance {
-          let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 9, yRadius: 9)
-          NSColor.windowBackgroundColor.blended(withFraction: 0.06, of: .labelColor)?.withAlphaComponent(0.96).setFill()
+          let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 0, yRadius: 0)
+          OnboardingBrand.backgroundNS.setFill()
           path.fill()
-          NSColor.labelColor.withAlphaComponent(0.12).setStroke()
+          OnboardingBrand.foregroundNS.setStroke()
           path.lineWidth = 1
           path.stroke()
           icon.draw(in: NSRect(x: 10, y: (size.height - 26) / 2, width: 26, height: 26))
-          let font = NSFont.systemFont(ofSize: 13)
-          let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.labelColor]
+          let font = NSFont(name: "HostGrotesk_500wght", size: 18) ?? NSFont.systemFont(ofSize: 18)
+          let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: OnboardingBrand.foregroundNS]
           let textHeight = (name as NSString).size(withAttributes: attributes).height
           (name as NSString).draw(at: NSPoint(x: 46, y: (size.height - textHeight) / 2), withAttributes: attributes)
         }
@@ -540,7 +542,9 @@ extension PermissionPanel {
   final class Frost: NSView {
     override var wantsUpdateLayer: Bool { true }
     override func updateLayer() {
-      layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+      effectiveAppearance.performAsCurrentDrawingAppearance {
+        layer?.backgroundColor = OnboardingBrand.backgroundNS.cgColor
+      }
     }
   }
 

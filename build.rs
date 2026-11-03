@@ -259,6 +259,7 @@ fn compile_helper() {
         ],
         &[
             "capture/desktop/native/Onboarding.swift",
+            "capture/desktop/native/OnboardingBrand.swift",
             "capture/desktop/native/OnboardingDemo.swift",
             "capture/desktop/native/PermissionPanel.swift",
             "capture/desktop/native/Settings.swift",

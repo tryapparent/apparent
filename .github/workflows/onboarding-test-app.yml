@@ -58,7 +58,7 @@ jobs:
           echo 'DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer' >> "$GITHUB_ENV"
       - name: Verify installer before the native build
         run: |
-          xcrun swiftc -D INSTALLER_TEST -parse-as-library capture/desktop/native/installer/LocalInstaller.swift -o "$RUNNER_TEMP/installer-check"
+          xcrun swiftc -D INSTALLER_TEST -parse-as-library capture/desktop/native/OnboardingBrand.swift capture/desktop/native/installer/LocalInstaller.swift -o "$RUNNER_TEMP/installer-check"
           "$RUNNER_TEMP/installer-check"
       - name: Prepare native compiler and locked dependencies
         run: |

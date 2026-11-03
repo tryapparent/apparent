@@ -294,7 +294,7 @@ Back. No typing opt-in or typing shortcut is added. The centred pen picker uses
 accessible colour names, a puddle reflecting the saved colour and a frog hop on
 confirmation; reduced motion advances without an animated delay. `penColor`
 accepts coral, purple, blue or green; legacy captures without colour retain red.
-The page chrome follows shared system appearance tokens; pigment stays constant.
+The onboarding chrome uses the brand Paper/Carbon appearance roles; pigment stays constant.
 
 The shortcut recorder uses Rust's Settings validation/persistence, including Mac
 reserved-key checks. Mac Option glyphs are decoded from their physical key code.
@@ -326,6 +326,18 @@ an Electron window replaced inside the same session. Retiring children does not
 wait on the capture/UI thread. EOF/broken parent output closes obsolete Electron
 cleanly; unexpected channel errors remain failures, without global exception
 suppression. Permission-grant/relaunch proof remains separate from renderer tests.
+
+### Onboarding brand mapping
+
+Setup, coaching, the permission drag guide and the separate test installer use
+Host Grotesk, the brand Paper/Stock/Carbon/Lilac/Signal palette and the 36/18/16
+text scale. Actions have square controls with a minimum 44-point target; grouped
+content uses one-pixel rules. The shared renderer reflows at 320 CSS pixels and
+keeps coach actions reachable at 200% text size. Existing Settings colours are
+unchanged. User-approved exceptions retain the frogs, colour puddle, popup
+silhouettes and their motion; permission placement still follows System Settings
+geometry. Renderer checks do not establish native permission-grant/relaunch or
+installer animation proof.
 
 ### Separate onboarding test app
 
