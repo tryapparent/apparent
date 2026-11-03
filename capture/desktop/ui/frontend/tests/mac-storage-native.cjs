@@ -270,18 +270,18 @@ const agentsAX = `on run argv
         set pending to pending & children
       end repeat
       if item 2 of argv is "inspect" then return trace
-      if (count of matches) is not 1 then error "Missing or ambiguous owned AX control: " & trace
-      set control to item 1 of matches
-      if item 2 of argv is "value" then return (value of attribute "AXValue" of control) as text
-      if not enabled of control then error "Owned AX control disabled"
+      if (count of matches) is not 1 then error "Missing or ambiguous owned AX matchedElement: " & trace
+      set matchedElement to item 1 of matches
+      if item 2 of argv is "value" then return (value of attribute "AXValue" of matchedElement) as text
+      if not enabled of matchedElement then error "Owned AX matchedElement disabled"
       set frontmost to true
       if not frontmost then error "Owned Settings lost focus"
       if item 2 of argv is "space" then
-        set value of attribute "AXFocused" of control to true
-        if not (value of attribute "AXFocused" of control) then error "Checkbox did not take focus"
+        set value of attribute "AXFocused" of matchedElement to true
+        if not (value of attribute "AXFocused" of matchedElement) then error "Checkbox did not take focus"
         key code 49
       else
-        perform action "AXPress" of control
+        perform action "AXPress" of matchedElement
       end if
       return trace
     end tell
@@ -493,6 +493,17 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     return { runtime, location };
   };
   try {
+    // Compile every native script before opening the app. JavaScript syntax
+    // checks cannot detect AppleScript dictionary terms used as variable names.
+    report.scriptCompilation = {};
+    for (const [name, script] of [['agents', agentsAX], ['picker', panelScript]]) {
+      const compiled = path.join(output, `${name}-ax.scpt`);
+      await run('/usr/bin/osacompile', ['-o', compiled, '-e', script], {
+        timeout: budget(5000), killSignal: 'SIGKILL', maxBuffer: 32768,
+      });
+      assert.ok((await fs.stat(compiled)).size > 0);
+      report.scriptCompilation[name] = true;
+    }
     // Apple's Git may cold-start its developer-tool shim on a fresh runner.
     // Provenance is still required, within the existing overall test deadline;
     // it should not spend the much shorter per-control interaction budget.
