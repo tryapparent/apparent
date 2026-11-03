@@ -735,8 +735,9 @@ only after a fresh process check confirms absence or a Rust-owned zombie; live o
 unknown mapping failures still fail closed and retain diagnostics.
 It requests Electron accessibility once per new
 process (Electron's two-second debounce restarts on repeated requests), then
-reads without resending. Ordinary close requests activation once, waits at most
-800 ms for read-only foreground confirmation, then sends Command-W once; failure
+reads without resending. Ordinary close presses the verified window's standard
+AX close button once, after checking its PID, role/subrole, enabled state and
+deadline. Window-disappearance and Rust-idle assertions decide success; failure
 retains owned state/AX diagnostics and any available owned-window image.
 Space requires confirmed checkbox and foreground-window
 focus; a bounded read-only focus wait stays inside the original helper deadline.
@@ -766,27 +767,21 @@ back to rebuilding after admission failure. A build alone is not native proof.
 A timeout requires owner-local optimization and a successful rerun; it does not
 authorize a larger budget or less acceptance.
 
-The focused Agents fixture closes the verified window through its standard AX
-close button, once, after checking the button PID, role/subrole and enabled state.
-It does not require global foreground activation or retry a close action. Existing
-window-disappearance and Rust-idle assertions still determine whether close worked.
-Darwin execution of this replacement close probe remains pending.
+Focused Settings restores the shared Rust cache without republishing it; main
+owns cache refresh. Both jobs install/select Rust 1.99.1 and check its expected
+compiler identity, because hosted `stable` can be older than the warmed cache.
+The consumer's full producer/toolchain comparison remains mandatory.
 
-Focused Settings restores the shared Rust cache without republishing it; main owns
-cache refresh. Both jobs select an already-installed stable toolchain and fail if
-it is missing; artifact admission still compares the full producer/consumer
-identities. This avoids redundant channel refreshes, not compiler verification.
-The builder prepares Metal, but does not install unused FFmpeg tools for these
-Settings-only scenarios. The native fixture compiles its AX reader once before
-app launch; that compilation replaces the duplicate standalone typecheck and
-stays inside the existing fixture and workflow deadlines. None of these setup
-optimizations changes product code, skips a native assertion or admits an
-incomplete producer job. Actual combined runtime remains an execution gate.
+Metal preparation overlaps Rust installation/cache restore in the builder, with
+a 120-second subprocess limit and atomic status. Cargo starts only after success.
+The native job prepares compiler/Node concurrently, then uses bounded read-only
+GitHub metadata to discover the immutable ID after same-attempt producer success.
+Failed or cancelled producers stop before installation; the unchanged consumer
+independently rechecks all artifact admission conditions. Running readiness waits
+and background preparation count in the workflow's execution union.
 
-The native job prepares its installed compiler/Node environment concurrently with
-`settings-build`. A bounded read-only GitHub API wait discovers the immutable
-artifact ID only after that exact run attempt's producer job succeeds; failed or
-cancelled producers stop before installation. The existing consumer independently
-rechecks the candidate, successful producer, ID/digest and complete manifest.
-Running readiness waits still count in the workflow execution union; no workload
-is excluded and neither job nor workflow budgets increase.
+The builder does not provision FFmpeg tools unused by these Settings scenarios.
+The native fixture compiles its AX reader once before app launch, inside the
+existing fixture and workflow deadlines. These setup optimizations skip no native
+assertion or package check. Darwin close/recovery and actual combined runtime
+remain acceptance gates; no build or source review establishes them.

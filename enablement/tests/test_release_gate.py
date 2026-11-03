@@ -76,9 +76,11 @@ class AdmissionTests(unittest.TestCase):
         self.assertNotIn('brew install ffmpeg', build)
         self.assertNotIn('dtolnay/rust-toolchain', build + native)
         for section in (build, native):
-            self.assertIn('rustup run stable rustc -vV', section)
-            self.assertIn('rustup default stable', section)
+            self.assertIn('rustup toolchain install 1.99.1 --profile minimal --no-self-update', section)
+            self.assertIn('rustup default 1.99.1', section)
         self.assertIn("CARGO_INCREMENTAL: '0'", build)
+        self.assertLess(build.index('Begin bounded Metal preparation'), build.index('rustup toolchain install'))
+        self.assertLess(build.index('metal.py --await'), build.index('taskpolicy -c utility cargo build'))
         self.assertNotIn('swiftc -typecheck', native)
         fixture = (root / 'capture/desktop/ui/frontend/tests/mac-storage-native.cjs').read_text()
         self.assertIn("await run('/usr/bin/swiftc', [path.join(__dirname, 'native/agents-ax.swift'), '-o', axTool]", fixture)
@@ -506,3 +508,100 @@ class MacPreviewAdmissionWorkflowTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class SettingsMetalPreparationTests(unittest.TestCase):
+    def module(self):
+        import importlib.util
+        source = Path(__file__).resolve().parents[2] / 'enablement/verification/focused/metal.py'
+        spec = importlib.util.spec_from_file_location('settings_metal', source)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_preparation_requires_success_and_does_not_retry_timed_out_tools(self):
+        import tempfile
+        module = self.module()
+        for codes, expected in [([0], 0), ([1, 0], 0), ([1, 2], 2), ([124], 124)]:
+            calls = []
+            responses = iter(codes)
+            def run(arguments, deadline):
+                calls.append((arguments, deadline))
+                return next(responses)
+            with tempfile.TemporaryDirectory() as directory:
+                status = Path(directory) / 'metal.status'
+                self.assertEqual(module.prepare(status, run), expected)
+                self.assertEqual(len(calls), len(codes))
+                self.assertEqual(calls[0][0], ['xcrun', '--sdk', 'macosx', 'metal', '--version'])
+                if len(calls) == 2:
+                    self.assertEqual(calls[1][0], ['xcodebuild', '-downloadComponent', 'MetalToolchain'])
+                    self.assertEqual(calls[0][1], calls[1][1])
+                if expected == 0:
+                    module.await_ready(status, seconds=0)
+                else:
+                    with self.assertRaisesRegex(RuntimeError, 'failed'):
+                        module.await_ready(status, seconds=0)
+                self.assertFalse(status.with_suffix('.pending').exists())
+                original = status.read_bytes()
+                with self.assertRaisesRegex(RuntimeError, 'not fresh'):
+                    module.prepare(status, run)
+                self.assertEqual(status.read_bytes(), original)
+                self.assertEqual(len(calls), len(codes))
+
+    def test_missing_or_symlink_status_does_not_admit_compilation(self):
+        import tempfile
+        module = self.module()
+        with tempfile.TemporaryDirectory() as directory:
+            status = Path(directory) / 'metal.status'
+            with self.assertRaisesRegex(RuntimeError, 'did not finish'):
+                module.await_ready(status, seconds=0)
+            target = Path(directory) / 'other'
+            target.write_text('{"exit": 0}')
+            status.symlink_to(target)
+            with self.assertRaisesRegex(RuntimeError, 'failed'):
+                module.await_ready(status, seconds=0)
+            status.unlink()
+            for malformed in ['{"exit": false}', '{"exit": 0, "extra": 1}', '{}']:
+                status.write_text(malformed)
+                with self.assertRaisesRegex(RuntimeError, 'failed'):
+                    module.await_ready(status, seconds=0)
+
+    def test_timed_out_owned_command_is_killed_and_reaped(self):
+        import sys
+        import time
+        self.assertEqual(self.module().command(['/nonexistent-apparent-fixture-tool'], time.monotonic() + 1), 127)
+        self.assertEqual(self.module().command([sys.executable, '-c', 'import time; time.sleep(30)'], time.monotonic() + 0.1), 124)
+
+    def test_actual_workflow_background_step_finishes_only_preparation_before_the_gate(self):
+        import os
+        import subprocess
+        import tempfile
+        import textwrap
+        import time
+        workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/verification-mac.yml').read_text()
+        section = workflow.split('      - name: Begin bounded Metal preparation', 1)[1]
+        script = textwrap.dedent(section.split('        run: |\n', 1)[1].split('      - name:', 1)[0])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tool = root / 'xcrun'
+            tool.write_text('#!/usr/bin/python3\nimport os,time,sys\nfrom pathlib import Path\np=Path(os.environ["METAL_FIXTURE_GATE"])\np.with_suffix(".started").touch()\nd=time.monotonic()+5\nwhile not p.exists() and time.monotonic()<d: time.sleep(.01)\nsys.exit(0 if p.exists() else 1)\n')
+            tool.chmod(0o700)
+            gate = root / 'release'
+            env = {**os.environ, 'PATH': str(root) + os.pathsep + os.environ['PATH'],
+                   'RUNNER_TEMP': directory, 'METAL_FIXTURE_GATE': str(gate)}
+            try:
+                result = subprocess.run(['/bin/bash', '-e', '-o', 'pipefail', '-c', script],
+                                        cwd=Path(__file__).resolve().parents[2], env=env,
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                deadline = time.monotonic() + 2
+                while not gate.with_suffix('.started').exists() and time.monotonic() < deadline:
+                    time.sleep(.01)
+                self.assertTrue(gate.with_suffix('.started').exists())
+                status = root / 'settings-build/metal.status'
+                self.assertFalse(status.exists(), 'The cache/Rust phase can overlap this owned preparation')
+            finally:
+                gate.touch()
+                status = root / 'settings-build/metal.status'
+                self.module().await_ready(status, seconds=5)
+            self.assertEqual(status.read_text(), '{"exit": 0}')

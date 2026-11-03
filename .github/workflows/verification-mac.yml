@@ -95,12 +95,18 @@ jobs:
         timeout-minutes: 1
         with:
           xcode-version: '26.0'
-      - name: Select the installed stable Rust toolchain
+      - name: Begin bounded Metal preparation alongside Rust and cache setup
         timeout-minutes: 1
         run: |
-          installed_rust="$(rustup run stable rustc -vV)"
-          rustup default stable
-          test "$(rustc -vV)" = "$installed_rust"
+          umask 077
+          mkdir -m 700 "$RUNNER_TEMP/settings-build"
+          python3 enablement/verification/focused/metal.py "$RUNNER_TEMP/settings-build/metal.status" > "$RUNNER_TEMP/settings-build/metal.log" 2>&1 &
+      - name: Select the cache-compatible Rust toolchain
+        timeout-minutes: 2
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --no-self-update
+          rustup default 1.99.1
+          test "$(rustc -V)" = 'rustc 1.99.1 (58cf8f9c3 2026-10-13)'
           rustc -vV
           cargo -V
       - uses: Swatinem/rust-cache@v2
@@ -118,17 +124,17 @@ jobs:
         timeout-minutes: 2
         with:
           node-version: '22'
-      - name: Prepare native build toolchain
+      - name: Require completed Metal preparation before compilation
         timeout-minutes: 3
         run: |
-          xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
+          python3 enablement/verification/focused/metal.py --await "$RUNNER_TEMP/settings-build/metal.status"
+          cat "$RUNNER_TEMP/settings-build/metal.log"
       - name: Build the exact Settings candidate once
         timeout-minutes: 8
         shell: bash
         run: |
           set -euo pipefail
           umask 022
-          mkdir -m 700 "$RUNNER_TEMP/settings-build"
           settings_build_tmp="$(mktemp -d "$HOME/.apparent-settings-build.XXXXXX")"
           readonly settings_build_tmp
           trap 'rm -rf -- "$settings_build_tmp"' EXIT
@@ -180,12 +186,12 @@ jobs:
         timeout-minutes: 1
         with:
           xcode-version: '26.0'
-      - name: Select the installed stable Rust toolchain
-        timeout-minutes: 1
+      - name: Select the cache-compatible Rust toolchain
+        timeout-minutes: 2
         run: |
-          installed_rust="$(rustup run stable rustc -vV)"
-          rustup default stable
-          test "$(rustc -vV)" = "$installed_rust"
+          rustup toolchain install 1.99.1 --profile minimal --no-self-update
+          rustup default 1.99.1
+          test "$(rustc -V)" = 'rustc 1.99.1 (58cf8f9c3 2026-10-13)'
           rustc -vV
           cargo -V
       - uses: actions/setup-node@v4
