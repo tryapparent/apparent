@@ -68,8 +68,12 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(section.count('Apparent-Settings-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app'), 2)
         self.assertIn('shared-key: rust', section)
         self.assertIn('cache-on-failure: true', section)
-        for workspace in ('. -> target', 'capture/engine -> target', 'connect/client -> target'):
+        self.assertIn('timeout-minutes: 10', section)
+        self.assertNotIn('timeout-minutes: 30', section)
+        self.assertIn('If exceeded, optimize the tests.', section)
+        for workspace in ('. -> target', 'capture/engine -> target'):
             self.assertIn(workspace, section)
+        self.assertNotIn('connect/client -> target', section)
         for forbidden in ('verification-platform.yml', 'verification.py', 'owner_lanes.py', 'cargo test', 'release-ready', 'release_gate.py', 'secrets.'):
             self.assertNotIn(forbidden, section)
 

@@ -750,3 +750,6 @@ Failures retain authoritative state, AX data and owned-window images when
 available; CLI cleanup removes only the exact installed symlink or identified
 synthetic file. The focused job shares main's fingerprinted Rust cache inputs
 and saves completed compilation on unrelated native-test failure.
+Its complete job, including setup/build/evidence cleanup, has the repository's
+10-minute execution limit. A timeout requires owner-local optimization and a
+successful rerun; it does not authorize a larger budget or less acceptance.
