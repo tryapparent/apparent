@@ -6,3 +6,8 @@ contextBridge.exposeInMainWorld('apparent', Object.freeze({
   setAgentDemoVideo: (enabled: boolean) => ipcRenderer.invoke('apparent:agents-demo', enabled),
   navigateSettings: (pane: string) => ipcRenderer.invoke('apparent:navigate-settings', pane),
 }));
+
+contextBridge.exposeInMainWorld('apparentExceptions', Object.freeze({
+  exception: () => ipcRenderer.send('apparent:unhandled', 'renderer_exception'),
+  rejection: () => ipcRenderer.send('apparent:unhandled', 'renderer_rejection'),
+}));

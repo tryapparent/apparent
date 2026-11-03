@@ -258,6 +258,7 @@ test('Installed Agents owns only Agents and navigation capabilities', { timeout:
     .toBe('Apparent Settings — Agents');
   assert.equal(await page.getByRole('button', { name: 'Agents', exact: true }).getAttribute('aria-current'), 'page');
   assert.deepEqual(await page.evaluate(() => Object.keys(window.apparent).sort()), ['readAgents', 'installCli', 'uninstallCli', 'setAgentDemoVideo', 'navigateSettings'].sort());
+  assert.deepEqual(await page.evaluate(() => Object.keys(window.apparentExceptions).sort()), ['exception', 'rejection']);
   const agents = page.getByRole('region', { name: 'Agents', exact: true });
   await expect(agents.getByText('Could not confirm the saved state. Refresh before trying again.', { exact: true })).toBeVisible();
   await agents.getByRole('button', { name: 'Refresh Agents settings' }).click();
