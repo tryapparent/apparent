@@ -74,6 +74,8 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '26.0'
+      - name: Typecheck the focused AX reader before the Rust build
+        run: xcrun swiftc -typecheck capture/desktop/ui/frontend/tests/native/agents-ax.swift
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

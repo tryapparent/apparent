@@ -264,87 +264,31 @@ const agentsAX = `on run argv
       end if
       if (count of windows) is not 1 then error "Expected exactly one owned Settings window"
       set w to window 1
-      if item 2 of argv is "window" then
-        set directChildren to UI elements of w
-        if (count of directChildren) > 16 then error "Unsupported owned window children"
-        return "window=" & (name of w as text) & ";role=" & (role of w as text) & ";child-roles=" & (role of every UI element of w as text)
-      end if
       if item 2 of argv is "close" then
         set frontmost to true
         if not frontmost then error "Owned Settings lost focus"
         keystroke "w" using command down
         return "closed"
       end if
-      set pending to {w}
-      set matches to {}
-      set trace to ""
-      set visited to 0
-      repeat while (count of pending) > 0
-        set el to item 1 of pending
-        set pending to rest of pending
-        set visited to visited + 1
-        if visited > 350 then error "Owned AX tree exceeds bound"
-        set r to role of el as text
-        set labelText to ""
-        -- Avoid three cross-process attribute reads for every layout group.
-        -- Selection still inspects the complete bounded scope for uniqueness.
-        set requestedAttributes to {}
-        if r is item 3 of argv or item 2 of argv is "inspect" then
-          if r is "AXStaticText" then
-            set requestedAttributes to {"AXValue"}
-          else if r is "AXWindow" then
-            set requestedAttributes to {"AXTitle"}
-          else if r is "AXButton" then
-            set requestedAttributes to {"AXTitle", "AXDescription"}
-          else if r is "AXCheckBox" then
-            set requestedAttributes to {"AXTitle", "AXDescription", "AXValue"}
-          end if
-        end if
-        repeat with attr in requestedAttributes
-          try
-            set v to value of attribute (contents of attr) of el
-            if v is not missing value then set labelText to labelText & "|" & (v as text)
-          end try
-        end repeat
-        set rowText to r & labelText
-        set trace to trace & rowText & linefeed
-        if (length of trace) > 20000 then error "Owned AX trace exceeds bound"
-        -- Preserve partial evidence even if a later AX call hits its deadline.
-        log ("owned-AX " & visited & " " & rowText)
-        if r is item 3 of argv and labelText contains ("|" & item 4 of argv) then set end of matches to el
-        if r is not in {"AXStaticText", "AXImage", "AXCheckBox", "AXTextField", "AXSlider"} then
-          set children to UI elements of el
-          if (count of children) > 100 then error "Owned AX child bound exceeded"
-          set pending to pending & children
-        end if
-      end repeat
-      if item 2 of argv is "inspect" then return trace
-      if (count of matches) is not 1 then error "Missing or ambiguous owned AX matchedElement: " & trace
-      set matchedElement to item 1 of matches
-      if item 2 of argv is "value" then return (value of attribute "AXValue" of matchedElement) as text
-      if not enabled of matchedElement then error "Owned AX matchedElement disabled"
-      set frontmost to true
-      if not frontmost then error "Owned Settings lost focus"
-      if item 2 of argv is "space" then
-        set value of attribute "AXFocused" of matchedElement to true
-        if not (value of attribute "AXFocused" of matchedElement) then error "Checkbox did not take focus"
-        key code 49
-      else
-        perform action "AXPress" of matchedElement
-      end if
-      return trace
+      error "Unsupported owned menu/close operation"
     end tell
   end tell
 end run`;
 
-async function installedAgents({ home, config, appDir, report, osa, run, env, budget, poll, startRust, stopRust, rustPID }) {
+async function installedAgents({ home, config, appDir, axTool, report, osa, run, env, budget, poll, startRust, stopRust, rustPID }) {
   const evidence = report.agents = { passed: false, cli: { status: 'UNRUN' } };
   const executable = await fs.realpath(path.join(appDir, 'Contents/MacOS/apparent'));
   const helper = await fs.realpath(path.join(appDir, 'Contents/MacOS/apparent-helper'));
   const packaged = await fs.realpath(path.join(appDir, 'Contents/Resources/settings/runtime/Electron.app/Contents/MacOS/Electron'));
   const invoke = async (pid, op, role = '', name = '') => {
     const started = Date.now();
-    try { return await osa(agentsAX, [String(pid), op, role, name]); }
+    try {
+      if (['open', 'settings', 'close'].includes(op)) return await osa(agentsAX, [String(pid), op, role, name]);
+      const { stdout } = await run(axTool, [String(pid), op, role, name], {
+        env, timeout: budget(3500), killSignal: 'SIGKILL', maxBuffer: 32768,
+      });
+      return stdout.trim();
+    }
     catch (error) {
       evidence.lastAXFailure = { pid, op, role, name, elapsedMs: Date.now() - started,
         stdout: error.stdout, stderr: error.stderr, signal: error.signal };
@@ -544,6 +488,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     });
     return stdout.trim();
   };
+  const axTool = path.join(output, 'agents-ax');
   const panel = (operation) => osa(panelScript, [String(electronChild.pid), home, operation]);
   const snapshot = async () => {
     const runtime = await within(page.evaluate(() => window.apparent.readRuntimeState()), budget(), 'Runtime read');
@@ -565,6 +510,11 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       assert.ok((await fs.stat(compiled)).size > 0);
       report.scriptCompilation[name] = true;
     }
+    await run('/usr/bin/swiftc', [path.join(__dirname, 'native/agents-ax.swift'), '-o', axTool], {
+      timeout: budget(15000), killSignal: 'SIGKILL', maxBuffer: 32768,
+    });
+    report.nativeAXReader = { source: 'tests/native/agents-ax.swift',
+      sha256: createHash('sha256').update(await fs.readFile(axTool)).digest('hex') };
     // Apple's Git may cold-start its developer-tool shim on a fresh runner.
     // Provenance is still required, within the existing overall test deadline;
     // it should not spend the much shorter per-control interaction budget.
@@ -802,7 +752,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     // installed Settings. Packaged Agents is never launched independently.
     await within(application.close(), budget(), 'Close Storage fixture');
     application = null;
-    await installedAgents({ home, config, appDir, report, osa, run, env, budget, poll,
+    await installedAgents({ home, config, appDir, axTool, report, osa, run, env, budget, poll,
       startRust, stopRust: () => stopOwned(backend, 'rust Agents restart', true),
       rustPID: () => report.rust.pid });
     report.passed = true;

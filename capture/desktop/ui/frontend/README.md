@@ -642,3 +642,12 @@ fingerprints. Cache-on-failure preserves completed dependency compilation after
 a native fixture failure. Native AX evidence includes the verified helper window
 and bounded partial traversal output; a timeout is not proof that a control is
 absent, and never waives the native acceptance gate.
+
+The focused job typechecks the test-only Swift AX reader before building Rust.
+The fixture compiles its own hashed reader under the private evidence directory;
+it directly reads the verified helper/Electron window and performs only the
+listed Settings actions. The status-menu/close AppleScript remains separate.
+This removes per-node System Events round trips while retaining the original
+3.5-second call and whole-fixture deadlines, bounded traversal and uniqueness,
+executable/PID checks, focused Space input and authoritative Rust/config readback.
+Darwin compilation and execution remain required; Linux checks cannot prove them.
