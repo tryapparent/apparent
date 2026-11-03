@@ -330,6 +330,19 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     });
     (evidence.screenshots ??= []).push({ name: `${name}.png`, ...window });
   };
+  const snapshot = async name => {
+    const state = { pid };
+    for (const [field, inspect] of Object.entries({
+      rust: read,
+      config: async () => JSON.parse(await fs.readFile(config, 'utf8')),
+      tree: () => invoke(pid, 'inspect'),
+      screenshot: () => shot(pid, name),
+    })) {
+      try { state[field] = await inspect(); }
+      catch (error) { state[`${field}Error`] = error.message; }
+    }
+    return state;
+  };
   const prepareReader = async pid => {
     await poll(() => invoke(pid, 'window'), 'Owned packaged Settings window');
     await invoke(pid, 'request-accessibility');
@@ -379,16 +392,7 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
         return saved;
       }, 'Space toggle authoritative readback');
     } catch (error) {
-      const failure = evidence.toggleFailure = { expected: enabled, pid };
-      for (const [name, inspect] of Object.entries({
-        rust: read,
-        config: async () => JSON.parse(await fs.readFile(config, 'utf8')),
-        tree: () => invoke(pid, 'inspect'),
-        screenshot: () => shot(pid, `agents-${enabled}-failure`),
-      })) {
-        try { failure[name] = await inspect(); }
-        catch (diagnosticError) { failure[`${name}Error`] = diagnosticError.message; }
-      }
+      evidence.toggleFailure = { expected: enabled, ...await snapshot(`agents-${enabled}-failure`) };
       throw error;
     }
   };
@@ -424,17 +428,20 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
       catch (e) { if (dir === candidates.at(-1) && e.code === 'ENOENT') link = path.join(dir, 'apparent'); }
     }
     assert.ok(link, 'No safe writable installation candidate');
+    evidence.cli = { status: 'RUNNING', phase: 'install', link, installedTarget: executable };
     assert.equal((await read()).cli, 'missing');
     await invoke(pid, 'press', 'AXButton', 'Install command-line tool');
     await poll(async () => {
       assert.equal((await read()).cli, 'installed');
       assert.equal(await fs.readlink(link), executable);
     }, 'Product CLI install');
+    evidence.cli.phase = 'uninstall';
     await invoke(pid, 'press', 'AXButton', 'Uninstall command-line tool');
     await poll(async () => {
       assert.equal((await read()).cli, 'missing');
       await assert.rejects(fs.lstat(link), { code: 'ENOENT' });
     }, 'Product CLI uninstall');
+    evidence.cli.phase = 'foreign-refusal';
     foreign = await fs.open(link, 'wx', 0o600);
     foreignIdentity = await foreign.stat();
     await foreign.writeFile('synthetic foreign command; never execute\n');
@@ -456,7 +463,16 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     evidence.cli = { status: 'PASS', link, installedTarget: executable, foreignPreserved: true };
   } catch (error) {
     if (!link) evidence.cli = { status: 'UNRUN', reason: error.message };
-    else throw error;
+    else {
+      evidence.cli = { ...evidence.cli, status: 'FAIL', reason: error.message,
+        failure: await snapshot('agents-cli-failure') };
+      try {
+        const st = await fs.lstat(link);
+        evidence.cli.linkAtFailure = { symlink: st.isSymbolicLink(), inode: st.ino,
+          target: st.isSymbolicLink() ? await fs.readlink(link) : undefined };
+      } catch (diagnosticError) { evidence.cli.linkError = diagnosticError.message; }
+      throw error;
+    }
   } finally {
     if (foreign) {
       const current = await fs.lstat(link);
@@ -509,6 +525,7 @@ test(`real installed Mac Rust + shipped Electron ${nativeSurface === 'agents' ? 
   const appDir = process.env.APPARENT_STORAGE_NATIVE_APP_DIR;
   assert.ok(output && path.isAbsolute(output), 'Private evidence output directory required');
   assert.ok(appDir && path.isAbsolute(appDir), 'Already installed owned .app required');
+  assert.equal(path.basename(appDir), 'Apparent.app', 'CLI ownership proof requires the canonical installed app basename');
   const executable = path.join(appDir, 'Contents/MacOS/apparent');
   const helperExecutable = path.join(appDir, 'Contents/MacOS/apparent-helper');
   assert.ok((await fs.stat(executable)).isFile());

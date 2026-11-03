@@ -60,6 +60,9 @@ class AdmissionTests(unittest.TestCase):
         self.assertIn("github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'", section)
         self.assertIn('node --test capture/desktop/ui/frontend/tests/mac-storage-native.cjs', section)
         self.assertIn('APPARENT_SETTINGS_NATIVE_SURFACE: agents', section)
+        # CLI uninstall recognizes the canonical bundle basename; isolate the
+        # parent directory rather than changing the installed app's name.
+        self.assertEqual(section.count('Apparent-Settings-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app'), 2)
         self.assertIn('shared-key: rust', section)
         self.assertIn('cache-on-failure: true', section)
         for workspace in ('. -> target', 'capture/engine -> target', 'connect/client -> target'):

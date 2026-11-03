@@ -96,7 +96,7 @@ jobs:
         run: |
           umask 077
           cargo build -j 3 --locked
-          export APPARENT_APP_DIR="$HOME/Applications/Apparent-Settings-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.app"
+          export APPARENT_APP_DIR="$HOME/Applications/Apparent-Settings-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app"
           test ! -e "$APPARENT_APP_DIR"
           APPARENT_NO_LAUNCH=1 bash capture/desktop/scripts/packaging/install-app.sh
           codesign --verify --deep --strict "$APPARENT_APP_DIR"
@@ -109,7 +109,7 @@ jobs:
         run: |
           test "$GITHUB_ACTIONS" = true
           test "$RUNNER_ENVIRONMENT" = github-hosted
-          export APPARENT_STORAGE_NATIVE_APP_DIR="$HOME/Applications/Apparent-Settings-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.app"
+          export APPARENT_STORAGE_NATIVE_APP_DIR="$HOME/Applications/Apparent-Settings-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app"
           node --test capture/desktop/ui/frontend/tests/mac-storage-native.cjs
       - name: Retain owned native evidence, including failures
         if: always()

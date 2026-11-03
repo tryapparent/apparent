@@ -689,3 +689,9 @@ The input receipt includes the pre-input value, event/session modifier flags,
 and confirmation that the app's focused window and focused UI element match the
 owned checkbox. Space is suppressed on a target mismatch. These diagnostics
 do not retry input or turn an accepted event post into a successful mutation.
+
+The focused Mac job installs a canonical `Apparent.app` beneath a unique
+run-owned parent directory. CLI ownership/uninstall recognizes that basename;
+renaming the bundle would test an unsupported fixture layout. CLI failures
+retain the current phase, selected link metadata, authoritative state, AX tree
+and owned-window image before ownership-aware cleanup.
