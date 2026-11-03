@@ -276,7 +276,9 @@ const agentsAX = `on run argv
 end run`;
 
 async function installedAgents({ home, config, appDir, axTool, report, osa, run, env, budget, poll, startRust, stopRust, rustPID }) {
-  const evidence = report.agents = { passed: false, cli: { status: 'UNRUN' } };
+  const recoveryOnly = nativeSurface === 'agents-recovery';
+  const evidence = report.agents = { passed: false, coverage: recoveryOnly ? 'native-recovery-only' : 'full',
+    cli: { status: 'UNRUN', reason: recoveryOnly ? 'Outside this focused native seam; assessed from prior evidence' : undefined } };
   const executable = await fs.realpath(path.join(appDir, 'Contents/MacOS/apparent'));
   const helper = await fs.realpath(path.join(appDir, 'Contents/MacOS/apparent-helper'));
   const packaged = await fs.realpath(path.join(appDir, 'Contents/Resources/settings/runtime/Electron.app/Contents/MacOS/Electron'));
@@ -390,143 +392,211 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     return pid;
   };
   let pid = await open();
-  const before = JSON.parse(await fs.readFile(config, 'utf8'));
-  const demo = async enabled => {
+  if (!recoveryOnly) {
+    const before = JSON.parse(await fs.readFile(config, 'utf8'));
+    const demo = async enabled => {
+      try {
+        await invoke(pid, 'space', 'AXCheckBox', 'Ask agents for a demo video');
+        // Native action acceptance precedes renderer/IPC completion. Observe the
+        // UI first so this driver's backend reads cannot steal worker admission.
+        await visible(pid, 'The command-line tool is not installed.');
+        await poll(async () => {
+          assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), enabled ? '1' : '0');
+        }, 'Visible saved checkbox state');
+        await poll(async () => {
+          assert.equal((await read()).agentDemoVideo, enabled);
+          const saved = JSON.parse(await fs.readFile(config, 'utf8'));
+          assert.equal(saved.experiments.agentDemoVideo, enabled);
+          const expected = structuredClone(before);
+          expected.experiments.agentDemoVideo = enabled;
+          assert.deepEqual(saved, expected, 'Demo mutation changed unrelated config');
+          assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), enabled ? '1' : '0');
+          return saved;
+        }, 'Space toggle authoritative readback');
+      } catch (error) {
+        evidence.toggleFailure = { expected: enabled, ...await snapshot(`agents-${enabled}-failure`) };
+        throw error;
+      }
+    };
+    assert.equal((await read()).agentDemoVideo, true);
+    await demo(false);
+    await shot(pid, 'agents-false');
+    evidence.restart = await stopRust();
+    await startRust();
+    pid = await open();
+    assert.equal((await read()).agentDemoVideo, false);
+    assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), '0');
+    await demo(true);
+    await shot(pid, 'agents-true');
+    evidence.trueRestart = await stopRust();
+    await startRust();
+    pid = await open();
+    assert.equal((await read()).agentDemoVideo, true);
+    assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), '1');
+    evidence.keyboardAndRestart = true;
+
+    // Mirror Places::system's selection without changing PATH or system directories.
+    // Refuse every existing candidate, including stale/managed/foreign symlinks.
+    const candidates = ['/opt/homebrew/bin', '/usr/local/bin', path.join(home, '.local/bin')];
+    const links = [...candidates, path.join(home, 'bin')].map(p => path.join(p, 'apparent'));
+    let link, foreign, foreignIdentity;
     try {
-      await invoke(pid, 'space', 'AXCheckBox', 'Ask agents for a demo video');
-      // Native action acceptance precedes renderer/IPC completion. Observe the
-      // UI first so this driver's backend reads cannot steal worker admission.
+      for (const p of links) {
+        const st = await fs.lstat(p).catch(e => { if (e.code !== 'ENOENT') throw e; });
+        if (st) throw new Error(`Existing command at ${p}; CLI mutation UNRUN`);
+      }
+      for (const dir of candidates) {
+        try { await fs.access(dir, fs.constants.W_OK); link = path.join(dir, 'apparent'); break; }
+        catch (e) { if (dir === candidates.at(-1) && e.code === 'ENOENT') link = path.join(dir, 'apparent'); }
+      }
+      assert.ok(link, 'No safe writable installation candidate');
+      evidence.cli = { status: 'RUNNING', phase: 'install', link, installedTarget: executable };
+      assert.equal((await read()).cli, 'missing');
+      await invoke(pid, 'press', 'AXButton', 'Install command-line tool');
+      await visible(pid, 'The command-line tool is installed.');
+      await poll(async () => {
+        assert.equal((await read()).cli, 'installed');
+        assert.equal(await fs.readlink(link), executable);
+      }, 'Product CLI install');
+      evidence.cli.phase = 'uninstall';
+      await invoke(pid, 'press', 'AXButton', 'Uninstall command-line tool');
       await visible(pid, 'The command-line tool is not installed.');
       await poll(async () => {
-        assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), enabled ? '1' : '0');
-      }, 'Visible saved checkbox state');
-      await poll(async () => {
-        assert.equal((await read()).agentDemoVideo, enabled);
-        const saved = JSON.parse(await fs.readFile(config, 'utf8'));
-        assert.equal(saved.experiments.agentDemoVideo, enabled);
-        const expected = structuredClone(before);
-        expected.experiments.agentDemoVideo = enabled;
-        assert.deepEqual(saved, expected, 'Demo mutation changed unrelated config');
-        assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), enabled ? '1' : '0');
-        return saved;
-      }, 'Space toggle authoritative readback');
-    } catch (error) {
-      evidence.toggleFailure = { expected: enabled, ...await snapshot(`agents-${enabled}-failure`) };
-      throw error;
-    }
-  };
-  assert.equal((await read()).agentDemoVideo, true);
-  await demo(false);
-  await shot(pid, 'agents-false');
-  evidence.restart = await stopRust();
-  await startRust();
-  pid = await open();
-  assert.equal((await read()).agentDemoVideo, false);
-  assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), '0');
-  await demo(true);
-  await shot(pid, 'agents-true');
-  evidence.trueRestart = await stopRust();
-  await startRust();
-  pid = await open();
-  assert.equal((await read()).agentDemoVideo, true);
-  assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), '1');
-  evidence.keyboardAndRestart = true;
-
-  // Mirror Places::system's selection without changing PATH or system directories.
-  // Refuse every existing candidate, including stale/managed/foreign symlinks.
-  const candidates = ['/opt/homebrew/bin', '/usr/local/bin', path.join(home, '.local/bin')];
-  const links = [...candidates, path.join(home, 'bin')].map(p => path.join(p, 'apparent'));
-  let link, foreign, foreignIdentity;
-  try {
-    for (const p of links) {
-      const st = await fs.lstat(p).catch(e => { if (e.code !== 'ENOENT') throw e; });
-      if (st) throw new Error(`Existing command at ${p}; CLI mutation UNRUN`);
-    }
-    for (const dir of candidates) {
-      try { await fs.access(dir, fs.constants.W_OK); link = path.join(dir, 'apparent'); break; }
-      catch (e) { if (dir === candidates.at(-1) && e.code === 'ENOENT') link = path.join(dir, 'apparent'); }
-    }
-    assert.ok(link, 'No safe writable installation candidate');
-    evidence.cli = { status: 'RUNNING', phase: 'install', link, installedTarget: executable };
-    assert.equal((await read()).cli, 'missing');
-    await invoke(pid, 'press', 'AXButton', 'Install command-line tool');
-    await visible(pid, 'The command-line tool is installed.');
-    await poll(async () => {
-      assert.equal((await read()).cli, 'installed');
-      assert.equal(await fs.readlink(link), executable);
-    }, 'Product CLI install');
-    evidence.cli.phase = 'uninstall';
-    await invoke(pid, 'press', 'AXButton', 'Uninstall command-line tool');
-    await visible(pid, 'The command-line tool is not installed.');
-    await poll(async () => {
-      assert.equal((await read()).cli, 'missing');
-      await assert.rejects(fs.lstat(link), { code: 'ENOENT' });
-    }, 'Product CLI uninstall');
-    evidence.cli.phase = 'foreign-refusal';
-    foreign = await fs.open(link, 'wx', 0o600);
-    foreignIdentity = await foreign.stat();
-    await foreign.writeFile('synthetic foreign command; never execute\n');
-    const identity = foreignIdentity = await foreign.stat();
-    await invoke(pid, 'press', 'AXButton', 'Refresh Agents settings');
-    await visible(pid, 'Another program owns this command. Apparent will leave it alone.');
-    await poll(async () => assert.equal((await read()).cli, 'taken'), 'Foreign command refusal');
-    // AXPress must refuse disabled controls, just as a real user cannot activate them.
-    await assert.rejects(invoke(pid, 'press', 'AXButton', 'Install command-line tool'), /disabled/);
-    await shot(pid, 'agents-restarted-foreign-preserved');
-    const current = await fs.lstat(link);
-    assert.equal(current.ino, identity.ino);
-    assert.equal(await fs.readFile(link, 'utf8'), 'synthetic foreign command; never execute\n');
-    await fs.unlink(link);
-    await foreign.close(); foreign = null;
-    evidence.cli = { status: 'PASS', link, installedTarget: executable, foreignPreserved: true };
-  } catch (error) {
-    if (!link) evidence.cli = { status: 'UNRUN', reason: error.message };
-    else {
-      evidence.cli = { ...evidence.cli, status: 'FAIL', reason: error.message,
-        failure: await snapshot('agents-cli-failure') };
-      try {
-        const st = await fs.lstat(link);
-        evidence.cli.linkAtFailure = { symlink: st.isSymbolicLink(), inode: st.ino,
-          target: st.isSymbolicLink() ? await fs.readlink(link) : undefined };
-      } catch (diagnosticError) { evidence.cli.linkError = diagnosticError.message; }
-      throw error;
-    }
-  } finally {
-    if (foreign) {
+        assert.equal((await read()).cli, 'missing');
+        await assert.rejects(fs.lstat(link), { code: 'ENOENT' });
+      }, 'Product CLI uninstall');
+      evidence.cli.phase = 'foreign-refusal';
+      foreign = await fs.open(link, 'wx', 0o600);
+      foreignIdentity = await foreign.stat();
+      await foreign.writeFile('synthetic foreign command; never execute\n');
+      const identity = foreignIdentity = await foreign.stat();
+      await invoke(pid, 'press', 'AXButton', 'Refresh Agents settings');
+      await visible(pid, 'Another program owns this command. Apparent will leave it alone.');
+      await poll(async () => assert.equal((await read()).cli, 'taken'), 'Foreign command refusal');
+      // AXPress must refuse disabled controls, just as a real user cannot activate them.
+      await assert.rejects(invoke(pid, 'press', 'AXButton', 'Install command-line tool'), /disabled/);
+      await shot(pid, 'agents-restarted-foreign-preserved');
       const current = await fs.lstat(link);
-      if (current.isFile() && foreignIdentity && current.ino === foreignIdentity.ino && current.dev === foreignIdentity.dev &&
-          await fs.readFile(link, 'utf8') === 'synthetic foreign command; never execute\n') await fs.unlink(link);
-      await foreign.close();
+      assert.equal(current.ino, identity.ino);
+      assert.equal(await fs.readFile(link, 'utf8'), 'synthetic foreign command; never execute\n');
+      await fs.unlink(link);
+      await foreign.close(); foreign = null;
+      evidence.cli = { status: 'PASS', link, installedTarget: executable, foreignPreserved: true };
+    } catch (error) {
+      if (!link) evidence.cli = { status: 'UNRUN', reason: error.message };
+      else {
+        evidence.cli = { ...evidence.cli, status: 'FAIL', reason: error.message,
+          failure: await snapshot('agents-cli-failure') };
+        try {
+          const st = await fs.lstat(link);
+          evidence.cli.linkAtFailure = { symlink: st.isSymbolicLink(), inode: st.ino,
+            target: st.isSymbolicLink() ? await fs.readlink(link) : undefined };
+        } catch (diagnosticError) { evidence.cli.linkError = diagnosticError.message; }
+        throw error;
+      }
+    } finally {
+      if (foreign) {
+        const current = await fs.lstat(link);
+        if (current.isFile() && foreignIdentity && current.ino === foreignIdentity.ino && current.dev === foreignIdentity.dev &&
+            await fs.readFile(link, 'utf8') === 'synthetic foreign command; never execute\n') await fs.unlink(link);
+        await foreign.close();
+      }
+      // Never sweep a path or remove a foreign/replaced file after failure.
+      if (link) {
+        const st = await fs.lstat(link).catch(e => { if (e.code !== 'ENOENT') throw e; });
+        if (st?.isSymbolicLink() && await fs.readlink(link) === executable) await fs.unlink(link);
+      }
     }
-    // Never sweep a path or remove a foreign/replaced file after failure.
-    if (link) {
-      const st = await fs.lstat(link).catch(e => { if (e.code !== 'ENOENT') throw e; });
-      if (st?.isSymbolicLink() && await fs.readlink(link) === executable) await fs.unlink(link);
-    }
+    await invoke(pid, 'press', 'AXButton', 'General');
+    const native = await child(helper);
+    await poll(() => invoke(native, 'press', 'AXButton', 'Agents'), 'Navigate back to Agents');
+    pid = await child(packaged, '--settings-agents --settings-parent');
+    await prepareReader(pid);
+    await poll(async () => {
+      const tree = await invoke(pid, 'inspect');
+      evidence.lastVisibleTree = tree;
+      assert.ok(tree.includes(skill), 'Returned Agents page has no canonical command');
+    }, 'Visible Agents after General navigation');
+    assert.equal((await read()).agentDemoVideo, true);
+    await invoke(pid, 'close');
+    await poll(async () => {
+      await assert.rejects(run('/bin/kill', ['-0', String(pid)], { env, timeout: budget() }));
+      assert.deepEqual(await readRuntimeState(home, budget(3000)), { status: 'connected', phase: 'idle' });
+    }, 'Closing Settings preserves live daemon');
+    evidence.navigationAndClose = true;
+  } else {
+    await invoke(pid, 'close');
+    await poll(async () => {
+      await assert.rejects(run('/bin/kill', ['-0', String(pid)], { env, timeout: budget() }));
+      assert.deepEqual(await readRuntimeState(home, budget(3000)), { status: 'connected', phase: 'idle' });
+    }, 'Current package startup/close smoke');
+    evidence.packageSmoke = true;
   }
-  await invoke(pid, 'press', 'AXButton', 'General');
-  const native = await child(helper);
-  await poll(() => invoke(native, 'press', 'AXButton', 'Agents'), 'Navigate back to Agents');
-  pid = await child(packaged, '--settings-agents --settings-parent');
-  await prepareReader(pid);
-  await poll(async () => {
-    const tree = await invoke(pid, 'inspect');
-    evidence.lastVisibleTree = tree;
-    assert.ok(tree.includes(skill), 'Returned Agents page has no canonical command');
-  }, 'Visible Agents after General navigation');
-  assert.equal((await read()).agentDemoVideo, true);
+
+  // Retired native forms provide recovery guidance, never a second implementation.
+  const unavailable = 'Agents Settings could not open. Choose Agents to try again, or reinstall Apparent.';
+  const recovery = evidence.recovery = { missingAssets: false, crash: false, reopened: false };
+  const nativeFailure = async name => {
+    const nativePID = await child(helper);
+    const tree = await visible(nativePID, unavailable);
+    assert.ok(!tree.includes('AXCheckBox') && !tree.includes(skill), 'Retired native Agents controls reappeared');
+    await shot(nativePID, name);
+    assert.equal((await read()).agentDemoVideo, true);
+    assert.deepEqual(await readRuntimeState(home, budget(3000)), { status: 'connected', phase: 'idle' });
+    return nativePID;
+  };
+  const reopen = async nativePID => {
+    await invoke(nativePID, 'press', 'AXButton', 'General');
+    await invoke(nativePID, 'press', 'AXButton', 'Agents');
+    const nextPID = await child(packaged, '--settings-agents --settings-parent');
+    await prepareReader(nextPID);
+    await visible(nextPID, skill);
+    assert.equal(await invoke(nextPID, 'value', 'AXCheckBox', 'Ask agents for a demo video'), '1');
+    return nextPID;
+  };
+  const html = path.join(appDir, 'Contents/Resources/settings/app/dist/settings.html');
+  const held = `${html}.agents-native-held`;
+  assert.equal(await fs.realpath(html), html);
+  const htmlIdentity = await fs.lstat(html);
+  const htmlBytes = await fs.readFile(html);
+  assert.ok(htmlIdentity.isFile() && htmlIdentity.uid === process.getuid());
+  await assert.rejects(fs.lstat(held), { code: 'ENOENT' });
+  await fs.rename(html, held);
+  let fallbackPID;
+  try {
+    await invoke(rustPID(), 'open');
+    await poll(() => invoke(rustPID(), 'settings'), 'Owned Settings recovery menu');
+    const nativePID = await child(helper);
+    await invoke(nativePID, 'press', 'AXButton', 'Agents');
+    fallbackPID = await nativeFailure('agents-unavailable-assets');
+    recovery.missingAssets = true;
+  } finally {
+    const current = await fs.lstat(held);
+    assert.ok(current.ino === htmlIdentity.ino && current.dev === htmlIdentity.dev);
+    await assert.rejects(fs.lstat(html), { code: 'ENOENT' });
+    await fs.rename(held, html);
+    assert.deepEqual(await fs.readFile(html), htmlBytes);
+    recovery.assetsRestored = true;
+  }
+  pid = await reopen(fallbackPID);
+  // Exact mapped process and owned window were verified again after reopening.
+  await invoke(pid, 'window');
+  await run('/bin/kill', ['-KILL', String(pid)], { env, timeout: budget() });
+  fallbackPID = await nativeFailure('agents-unavailable-crash');
+  recovery.crash = true;
+  pid = await reopen(fallbackPID);
   await invoke(pid, 'close');
   await poll(async () => {
     await assert.rejects(run('/bin/kill', ['-0', String(pid)], { env, timeout: budget() }));
     assert.deepEqual(await readRuntimeState(home, budget(3000)), { status: 'connected', phase: 'idle' });
-  }, 'Closing Settings preserves live daemon');
-  evidence.navigationAndClose = true;
-  evidence.passed = evidence.cli.status === 'PASS';
+  }, 'Recovered Settings closes without stopping the daemon');
+  recovery.reopened = true;
+  evidence.passed = (recoveryOnly || evidence.cli.status === 'PASS') && recovery.missingAssets && recovery.assetsRestored && recovery.crash && recovery.reopened;
   assert.ok(evidence.passed, `Installed Agents acceptance incomplete: ${evidence.cli.reason}`);
 }
 
 const nativeSurface = process.env.APPARENT_SETTINGS_NATIVE_SURFACE ?? 'all';
-test(`real installed Mac Rust + shipped Electron ${nativeSurface === 'agents' ? 'Agents' : 'Settings'} native acceptance`, {
+test(`real installed Mac Rust + shipped Electron ${nativeSurface.startsWith('agents') ? `Agents${nativeSurface === 'agents-recovery' ? ' recovery' : ''}` : 'Settings'} native acceptance`, {
   timeout: 180000,
   skip: process.platform !== 'darwin' ? 'Native macOS CI only; Linux is not native proof' : false,
 }, async () => {
@@ -535,7 +605,7 @@ test(`real installed Mac Rust + shipped Electron ${nativeSurface === 'agents' ? 
   assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted', 'Refuse self-hosted or personal Macs');
   assert.equal(process.env.RUNNER_OS, 'macOS');
   assert.equal(process.env.APPARENT_STORAGE_NATIVE_CI, '1', 'Explicit native CI opt-in required');
-  assert.ok(['all', 'agents'].includes(nativeSurface), 'Unknown native Settings surface');
+  assert.ok(['all', 'agents', 'agents-recovery'].includes(nativeSurface), 'Unknown native Settings surface');
   assert.ok(!process.versions.electron || process.env.ELECTRON_RUN_AS_NODE === '1',
     'Only the test driver may use Electron Node mode; GUI children must not');
   const runner = await fs.realpath(process.env.RUNNER_TEMP);
@@ -544,6 +614,11 @@ test(`real installed Mac Rust + shipped Electron ${nativeSurface === 'agents' ? 
   assert.ok(output && path.isAbsolute(output), 'Private evidence output directory required');
   assert.ok(appDir && path.isAbsolute(appDir), 'Already installed owned .app required');
   assert.equal(path.basename(appDir), 'Apparent.app', 'CLI ownership proof requires the canonical installed app basename');
+  assert.match(process.env.GITHUB_RUN_ID ?? '', /^\d+$/);
+  assert.match(process.env.GITHUB_RUN_ATTEMPT ?? '', /^\d+$/);
+  const expectedApps = ['Settings', 'Storage'].map(scope => path.join(os.homedir(), 'Applications',
+    `Apparent-${scope}-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`, 'Apparent.app'));
+  assert.ok(expectedApps.includes(await fs.realpath(appDir)), 'Asset recovery only mutates this run-owned bundle');
   const executable = path.join(appDir, 'Contents/MacOS/apparent');
   const helperExecutable = path.join(appDir, 'Contents/MacOS/apparent-helper');
   assert.ok((await fs.stat(executable)).isFile());
@@ -558,7 +633,7 @@ test(`real installed Mac Rust + shipped Electron ${nativeSurface === 'agents' ? 
   const report = { passed: false, platform: process.platform, os: os.release(), arch: process.arch,
     driver: { pid: process.pid, node: process.version }, permissionSource,
     source: { entry: 'electron/main.cjs', preload: 'electron/preload.cjs', renderer: 'dist/index.html' },
-    scope: { surface: nativeSurface, storageAndReporting: nativeSurface === 'all', installedAgents: true,
+    scope: { surface: nativeSurface, storageAndReporting: nativeSurface === 'all', installedAgents: true, agentsCoverage: nativeSurface === 'agents-recovery' ? 'native-recovery-only' : 'full',
       exclusions: 'No recording, audio, permission or TCC changes' }, cleanup: {} };
   const deadline = Date.now() + 150000;
   const budget = (cap = 5000) => {

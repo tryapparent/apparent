@@ -603,198 +603,83 @@ when its `main.cjs` exists, alongside the same `dist/` and single `runtime/`. Th
 share consumer adds no entry or routing. A share owner must verify its installed route
 on both platforms before enabling it; resolver availability alone is not that proof.
 
-## Agents replacement slice
+## Installed Agents Settings (#376)
 
-`AgentsSettings` in `src/agents/page.tsx` is the reusable Agents page body for the
-installed shared Settings foundation. It is available by default with no new
-activation flag. Only the installed Agents window exposes or accepts these
-four narrow methods; the development window has no Agents controls or methods:
-`readAgents()`, `installCli()`, `uninstallCli()`, `setAgentDemoVideo(boolean)`.
-No renderer-supplied paths, commands, config keys or deadlines are accepted.
-The command is displayed for selection, never executed by Electron.
+Agents navigation uses the shared React page (`src/agents/page.tsx`) by default on
+macOS and Linux. Rust owns CLI paths/ownership, deadlines and preserving config
+transactions. The four installed-only bridge methods are `readAgents()`,
+`installCli()`, `uninstallCli()` and `setAgentDemoVideo(boolean)`, plus sidebar
+navigation. The renderer chooses no paths, config keys, commands or deadlines.
+It displays the canonical skill command for selection, never execution.
 
-Rust reuses `composition/command_line.rs` for OS paths and link policy and the
-existing serialized config transaction for `experiments.agentDemoVideo`.
-Unrelated config and nested flags survive. This existing preference defaults on;
-file edits apply on the next read and the existing handoff consumer's next read.
-CLI status excludes paths and distinguishes unavailable development binaries,
-foreign programs, stale links, missing links and Homebrew-managed installation.
-Homebrew-managed uninstall is refused. A created command may require the user to
-add its directory to PATH; installed status does not prove shell discovery.
+Main validates the exact mode, window/frame, URL and arguments. Agents cannot
+call Storage, Connect, sharing, reporting, runtime, clipboard or filesystem
+handlers; development windows receive no Agents methods. Connect retains its
+own preload, consume-once initial action and Navigate/Close-only parent pipe.
+Every replacement receives a new generation; stale replies are discarded.
+The TypeScript Agents preload (`electron/preloads/agents.cts`) compiles to the
+unchanged sandboxed CommonJS runtime path; packaging excludes authored CTS.
 
-All operations use the authenticated same-user socket and shared rendezvous
-worker, strict tagged requests, three-second monotonic admission, and bounded
-response sizes. Demo writes recheck expiry under the config lock and before
-publication. Main admits one Agents request at a time and discards stale replies
-after navigation/close. No mutation retries; errors require explicit readback.
-CLI syscalls already admitted can finish after a client timeout.
-The existing explicit `storage_electron_rust_roundtrip` also checks the real
-Agents read/demo write/readback and canonical command contract.
+CLI policy reuses `composition/command_line.rs`: foreign programs and
+Homebrew-owned commands are preserved. A command under `~/.local/bin` may need
+that directory on the shell's PATH. Demo-video writes preserve other flags and
+config keys. The existing flag defaults on; file edits apply on the next read
+and the handoff consumer's next read. Mutations never retry; an unknown result
+requires explicit refresh. Already admitted CLI syscalls may finish after a
+client timeout. Rust CLI diagnostics log fixed operation labels and I/O
+kind/errno only, without paths, raw errors or config contents.
 
-Installed routing now uses the shared page; see the routing section below for
-failure fallback, explicit rollback and native deletion scope. Keep native Agents
-until exact installed macOS and isolated Linux CLI, foreign-program, persistence,
-keyboard/error and skill-command acceptance passes. Parent independent review
-and platform gates remain.
-No Mac rental is authorized for this non-issue work; an approved existing Mac
-runner or other approved Mac access is required. No native acceptance is claimed
-from socket fixtures, builds or the prior Storage evidence.
+### Native retirement, recovery and rollback
 
-### Installed Agents routing (#376)
+Installed replacement acceptance at `4c20d75e` covered macOS and an isolated Linux
+AppImage: CLI install/uninstall and foreign preservation, keyboard toggles,
+false/true Rust restart persistence, canonical command, navigation and ordinary
+close with the daemon alive. macOS focused run `41658986306` retained the native
+receipt; its Agents-only scope does not claim Storage/reporting acceptance.
 
-Agents navigation now opens the shared Settings shell and reusable Agents page by
-default on macOS and Linux. Rust owns policy, config transactions and CLI OS
-operations; the renderer receives only the four Agents calls and sidebar
-navigation. Storage cannot call Agents; Agents cannot call Storage, Connect,
-sharing, reporting, runtime, clipboard or filesystem handlers. The existing
-packaged assets, UI-process ownership, generation and private parent pipe are
-shared with Storage and installed Connect. Connect keeps its dedicated preload,
-consume-once initial action, and Navigate/Close-only parent pipe. Returning from
-Connect can select Agents or Storage; each replacement receives a new generation
-and its own capability set. Other pages still use native Settings.
+The obsolete Swift/GPUI Agents forms, their view/CLI action fields and their
+presentation-only fixtures are removed. Rust policy, shared IPC, config readers,
+CLI entrypoints and other native pages remain. Missing assets, launch failure or
+renderer crash now open native Settings with read-only recovery guidance.
+Native navigation remains available; choosing Agents retries presentation, never
+a configuration mutation. Restoring assets and explicit navigation reopen the
+shared page. Rollback restores the previous accepted application package; there
+is no preference migration or new activation flag.
 
-Missing assets, launch errors and renderer crashes reopen native Agents. Until
-platform acceptance, explicit operational rollback is to restore the previous
-accepted application package (no config or experiment changes). The retained
-native Agents implementations are in settings_window.rs and native/Settings.swift;
-remove only their Agents bodies, CLI/demo action/view presentation consumers and
-obsolete presentation tests after exact installed macOS and isolated Linux proof
-(including navigation, restart persistence, foreign CLI preservation and close).
-Keep Rust policy/socket contracts and other native pages. Parent owns final
-removal and platform acceptance; development-window evidence is insufficient.
+Removal acceptance requires both native platforms to retain this recovery
+behavior after deletion: forced missing assets and owned Electron crash show
+guidance without legacy controls, preserve the idle daemon and saved values,
+and recover after restoration/navigation. Builds, source review and Linux tests
+do not prove macOS behavior. Publication still requires the exact main platform
+receipts; full CI runs on main only.
 
-The existing `tests/mac-storage-native.cjs` lifecycle now also runs its bounded installed Agents checks after Storage/reporting. It opens Settings
-through the verified installed Rust PID’s owned status-menu Settings action, selects native Agents,
-and inspects only its mapped packaged Electron child. It checks the visible
-sidebar/title/canonical skill command, real focused Space toggles, authoritative
-Rust/config readback with unrelated keys preserved, Rust restart/reopen,
-navigation away/back, and window close with the daemon still idle and reachable.
-No separate Electron Agents launch, debug port, renderer config write or new
-workflow is used. The total fixture timeout is 180 seconds (150-second action
-budget plus cleanup); existing Storage/reporting assertions and evidence remain.
+### Verification mechanics
 
-CLI acceptance checks all Rust Mac candidates (`/opt/homebrew/bin`,
-`/usr/local/bin`, private `~/.local/bin`, plus `~/bin`) before mutation. Any
-existing command leaves CLI explicitly `UNRUN` and the overall fixture fails
-incomplete. On the disposable GitHub runner only, an absent writable candidate
-gets real UI install/status/uninstall, then an exclusively created synthetic
-foreign file to check disabled Install and preservation. Cleanup removes only a
-symlink with the exact installed executable target or the exact synthetic file
-identified by device/inode/content; it never replaces an existing program.
-This proves UI refusal, not a forced forbidden IPC mutation.
+`tests/mac-storage-native.cjs` defaults to Storage/reporting plus installed
+Agents. The opt-in focused hosted job selects
+`APPARENT_SETTINGS_NATIVE_SURFACE=agents`; `settings_native_surface=agents-recovery`
+selects only current-package startup and the affected native recovery seams.
+That report marks CLI/persistence cases unrun; prior proof is assessed manually,
+never inferred by the fixture. The existing full/all entry and default Agents
+scenario remain available; no automatic selector, cache or full-CI gate changes.
+It builds/installs a frozen canonical `Apparent.app` beneath a unique run-owned
+parent, uses existing hosted Accessibility/AppleEvents permission, and never
+resets TCC, changes product flags, allocates a Mac or starts an Apparent capture.
+Recovery probes alter only that job's exact installed HTML inode and restore it.
 
-Source preparation is **not Mac acceptance**. Before executing, the parent must
-supply the approved existing platform CI dependency (#366), the installed frozen
-candidate with packaged Settings assets, an interactive GitHub-hosted macOS
-session and existing System Events Accessibility/AppleEvents permission. No TCC
-grant/reset or Mac allocation is part of this test. Unknown AX roles/tree shapes,
-missing focus, native navigation shortcuts or packaged child mapping fail closed
-with owned-window diagnostics; their actual compatibility remains unrun until
-Darwin execution. The root job already provides the guard/output/app variables:
+The native reader verifies the Rust-owned packaged PID/executable and unique
+window. Since pill and Settings share the runtime, the fixture also checks the
+exact parent-bound Agents mode. It requests Electron accessibility once per new
+process (Electron's two-second debounce restarts on repeated requests), then
+reads without resending. Space requires confirmed checkbox and foreground-window
+focus; a bounded read-only focus wait stays inside the original helper deadline.
+The paired native key events target that verified PID, not global HID routing;
+this proves Settings control behavior, not global capture shortcuts.
 
-```sh
-cd capture/desktop/ui/frontend
-node --check tests/mac-storage-native.cjs
-node --test tests/mac-storage-native.cjs
-# Existing focused shipped Electron regression (Linux needs an isolated X display):
-xvfb-run -a node --test tests/retention-smoke.cjs
-```
-
-For actual Mac proof use that same `node --test tests/mac-storage-native.cjs`
-invocation in the existing job after its owned app installation; retain
-`mac-storage-native.json` (`agents` included), Rust log and existing images with
-the job's evidence handling. A non-Mac skip, syntax check or Electron regression
-cannot certify Darwin compilation, AX/input, installed routing or native parity.
-Native Agents removal, merge and CI acceptance remain the parent's gates.
-
-Candidate native Mac Settings acceptance can be explicitly dispatched through
-`Mac verification` with `settings_native=true` on the owned feature ref. That
-focused job builds/installs the candidate and executes the existing native
-Settings fixture only. It emits no full verification/publication receipt; the
-full caller and reusable jobs remain main-only. Full CI runs after merge and
-gates publication of the exact main commit. Native failure still blocks Agents
-retirement and merge regardless of the absence of a branch full-CI requirement.
-
-The focused Settings job uses Rust cache shared-key `rust` and the same three
-workspace inputs as main, retaining the action’s platform/toolchain/lock
-fingerprints. Cache-on-failure preserves completed dependency compilation after
-a native fixture failure. Native AX evidence includes the verified helper window
-and bounded partial traversal output; a timeout is not proof that a control is
-absent, and never waives the native acceptance gate.
-
-The focused job typechecks the test-only Swift AX reader before building Rust.
-The fixture compiles its own hashed reader under the private evidence directory;
-it directly reads the verified helper/Electron window and performs only the
-listed Settings actions. The status-menu/close AppleScript remains separate.
-This removes per-node System Events round trips while retaining the original
-3.5-second call and whole-fixture deadlines, bounded traversal and uniqueness,
-executable/PID checks, focused Space input and authoritative Rust/config readback.
-Darwin compilation and execution remain required; Linux checks cannot prove them.
-
-The focused candidate job selects `APPARENT_SETTINGS_NATIVE_SURFACE=agents`.
-That runs installed Agents directly from the verified Rust app; the default
-`all` entry still executes Storage/reporting and Agents. Each receipt states its
-surface, so Agents proof does not claim a Storage picker pass. Failed earlier
-picker evidence remains retained. Agents acceptance covers both false and true
-Rust restart durability and owned foreground-window screenshots, as well as CLI
-ownership, navigation and ordinary close with the daemon alive.
-
-For the verified packaged Electron PID, the native test client requests
-`AXManualAccessibility` using Electron 45’s documented assistive-technology API.
-It does not change TCC, system preferences, product flags or renderer state.
-The receipt retains the native request result and last returned tree before
-content assertions, plus an owned-window failure image when available.
-
-The Agents preload is authored in TypeScript (`electron/preloads/agents.cts`).
-The frontend build emits the ignored `agents.cjs` at the unchanged runtime path;
-packaging copies the generated preload and excludes its TypeScript source.
-The same sandbox, typed operation names and main-process capability guards apply.
-
-Electron 45 debounces the native assistive-client request for two quiet seconds.
-The fixture sends `AXManualAccessibility` once for each newly opened packaged
-Electron process, after its owned window is ready. Readiness polls and later
-control reads never resend it; repeated writes would keep resetting activation.
-The receipt counts accepted requests per process and retains the returned tree.
-
-The native keyboard driver sends one checkbox focus request, then waits at most
-800 ms for Chromium's asynchronous AX focus readback within the existing helper
-deadline. It sends Space only after confirmed checkbox and application focus;
-no focus request or keyboard mutation is retried. An accepted AX request alone
-is never recorded as keyboard acceptance.
-
-For a failed keyboard readback, the fixture retains the authoritative Rust state,
-synthetic config, AX tree and an owned foreground-window image when available.
-The input receipt includes the pre-input value, event/session modifier flags,
-and confirmation that the app's focused window and focused UI element match the
-owned checkbox. Space is suppressed on a target mismatch. These diagnostics
-do not retry input or turn an accepted event post into a successful mutation.
-
-The focused Mac job installs a canonical `Apparent.app` beneath a unique
-run-owned parent directory. CLI ownership/uninstall recognizes that basename;
-renaming the bundle would test an unsupported fixture layout. CLI failures
-retain the current phase, selected link metadata, authoritative state, AX tree
-and owned-window image before ownership-aware cleanup.
-
-Settings keyboard proof posts the native CGEvent Space pair directly to the
-verified packaged Electron PID, after the same owned foreground-window and
-checkbox-focus checks. Its receipt identifies `owned-pid` delivery. This removes
-global HID routing from the Settings control test; it does not prove global
-shortcut or capture-input behavior. The key pair is sent once and Rust/config/AX
-readback must still confirm the mutation.
-
-Rust logs CLI request receipt/completion and, on failure, only the I/O error kind
-and OS errno. This distinguishes filesystem/ownership failures from an action
-that never reached Rust without logging paths, raw errors or config contents,
-and without broadening the renderer's generic error contract.
-
-After a native mutation, the fixture waits for the visible completed UI state
-before opening independent Rust readback connections. AXPress/CGEvent return
-before renderer IPC completion; racing direct reads against that IPC can take
-the shared zero-capacity worker's admission slot and reject the user mutation
-with `app_busy`. UI-first observation preserves single-send mutations and all
-authoritative Rust/config/filesystem readback, without queuing or retrying writes.
-
-The native fixture distinguishes the parent-bound Agents process by its exact
-mode suffix after checking Rust ancestry and the packaged executable. Pill and
-Settings share that runtime; the pill's entrypoint must never be selected for
-Settings input or screenshots.
+After input, observe the completed visible UI before independent Rust readback.
+Racing readback connections against renderer IPC can reject the mutation at the
+shared rendezvous worker. No write is retried and worker admission is unchanged.
+Failures retain authoritative state, AX data and owned-window images when
+available; CLI cleanup removes only the exact installed symlink or identified
+synthetic file. The focused job shares main's fingerprinted Rust cache inputs
+and saves completed compilation on unrelated native-test failure.

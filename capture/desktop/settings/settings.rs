@@ -715,6 +715,8 @@ pub enum Pane {
     About,
 }
 
+/// Recovery copy only; native Agents no longer contains setting controls.
+pub const AGENTS_UNAVAILABLE: &str = "Agents Settings could not open. Choose Agents to try again, or reinstall Apparent.";
 /// The capture-reading skill source is `capture/agent/skills/apparent/SKILL.md`.
 pub const SKILL_COMMAND: &str = "bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent";
 
@@ -726,7 +728,7 @@ pub struct View {
     pub hosted: Option<crate::connect::hosted::AccountView>,
     pub login: LoginView,
     pub error_reporting: bool,
-    pub agent_demo_video: bool,
+    pub agents_unavailable: &'static str,
     pub shortcuts: Vec<ShortcutView>,
     pub microphone: MicrophoneView,
     pub transcriber: TranscriberView,
@@ -742,8 +744,6 @@ pub struct View {
     pub update_check: UpdateCheck,
     pub update_channel: &'static str,
     pub main_updates: bool,
-    pub command_line: CommandLineView,
-    pub skill_command: &'static str,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -768,95 +768,6 @@ impl UpdateResult {
             Self::Current => "No update available",
             Self::Failed => "Update check failed",
         }
-    }
-}
-
-/// The "Command-line tool" row.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CommandLineView {
-    /// Where `apparent` is linked, once it is.
-    pub path: Option<String>,
-    /// "install", "uninstall", or none.
-    pub button: Option<&'static str>,
-    pub enabled: bool,
-    pub caption: String,
-    pub error: bool,
-}
-
-impl CommandLineView {
-    fn new(state: &crate::composition::command_line::State, error: Option<&str>) -> Self {
-        use crate::composition::command_line::{State, tilde, usually_on_path};
-        let folder = |link: &std::path::Path| link.parent().map_or_else(String::new, tilde);
-        let mut view = Self {
-            path: None,
-            button: Some("install"),
-            enabled: true,
-            caption: String::new(),
-            error: false,
-        };
-        match state {
-            State::Installed { link, homebrew } => {
-                view.path = Some(tilde(link));
-                view.caption = "Agents and your terminal can run apparent to read captures, zoom \
-                                into a moment and export video."
-                    .to_owned();
-                if *homebrew {
-                    view.button = None;
-                    view.caption = "Installed with Homebrew. Agents and your terminal can run \
-                                    apparent to read captures, zoom into a moment and export video."
-                        .to_owned();
-                } else {
-                    view.button = Some("uninstall");
-                    if !usually_on_path(link) {
-                        view.caption = format!(
-                            "If your shell can't find apparent, add {} to your PATH.",
-                            folder(link)
-                        );
-                    }
-                }
-            }
-            State::Missing { link } => {
-                view.caption = format!(
-                    "Links apparent into {}, so agents and your terminal can run it.",
-                    folder(link)
-                );
-            }
-            State::Stale { link } => {
-                view.caption = format!(
-                    "{} points to another copy of Apparent. Install links it to this one.",
-                    tilde(link)
-                );
-            }
-            State::Taken { link } => {
-                view.button = None;
-                view.error = true;
-                view.caption = format!(
-                    "{} is another program, so Apparent leaves it alone.",
-                    tilde(link)
-                );
-            }
-            State::Nowhere => {
-                view.enabled = false;
-                view.error = true;
-                view.caption =
-                    "There's no folder on your PATH that Apparent can write to.".to_owned();
-            }
-            State::Unavailable => {
-                view.enabled = false;
-                view.caption = if cfg!(target_os = "linux") {
-                    "The command-line tool links to Apparent's AppImage; run Apparent from one."
-                } else {
-                    "The command-line tool works in the installed app."
-                }
-                .to_owned();
-            }
-        }
-        if let Some(error) = error {
-            view.error = true;
-            view.caption = error.to_owned();
-        }
-        view
     }
 }
 
@@ -1162,9 +1073,6 @@ pub enum Action {
     UpdateLater,
     /// "Show Welcome Tour" on About.
     Tour,
-    /// Link `apparent` into a folder on PATH, or remove that link.
-    InstallCli,
-    UninstallCli,
     ConnectHosted,
     ManageSharedLinks,
     Close,
@@ -1202,8 +1110,6 @@ pub trait Host {
     fn pause_shortcuts(&mut self, paused: bool);
     fn config_path(&self) -> PathBuf;
     fn set_login_item(&mut self, on: bool) -> anyhow::Result<()>;
-    /// Apparent's binary and the folders `apparent` may be linked into.
-    fn command_line(&self) -> crate::composition::command_line::Places;
 }
 
 /// The window's own state: what it's recording, what failed, what was asked for.
@@ -1212,8 +1118,6 @@ pub struct Panel {
     connect: Option<super::connect::View>,
     recording: Option<ShortcutKind>,
     error: Option<(ShortcutKind, String)>,
-    /// Why the last Install or Uninstall failed.
-    cli_error: Option<String>,
     requested: BTreeSet<Permission>,
     grants: Option<Grants>,
     captures_size: Option<u64>,
@@ -1375,28 +1279,11 @@ impl Panel {
                 }
             }
             Action::Tour => Effect::Tour,
-            Action::InstallCli => {
-                let result = crate::composition::command_line::install(&host.command_line());
-                self.note_cli("install", result.map(drop));
-                Effect::None
-            }
-            Action::UninstallCli => {
-                let result = crate::composition::command_line::uninstall(&host.command_line());
-                self.note_cli("uninstall", result);
-                Effect::None
-            }
             Action::Close => {
                 self.stop_recording(host);
                 Effect::Close
             }
         }
-    }
-
-    fn note_cli(&mut self, verb: &str, result: anyhow::Result<()>) {
-        self.cli_error = result.err().map(|error| {
-            crate::capture::engine::runtime::apparent_log(format!("Command-line tool: {verb}: {error:#}"));
-            format!("Couldn't {verb} it: {error}.")
-        });
     }
 
     fn stop_recording(&mut self, host: &mut dyn Host) {
@@ -1438,11 +1325,6 @@ impl Panel {
         match (key, value) {
             ("errorReporting", serde_json::Value::Bool(on)) => {
                 if let Err(error) = crate::capture::desktop::workflow::error_reporting::set_enabled_in(&path, *on) {
-                    crate::capture::engine::runtime::apparent_log(format!("Saving {key} failed: {error:#}"));
-                }
-            }
-            ("agentDemoVideo", serde_json::Value::Bool(on)) => {
-                if let Err(error) = crate::shared::handoff::set_experiment_in(&path, "agentDemoVideo", *on) {
                     crate::capture::engine::runtime::apparent_log(format!("Saving {key} failed: {error:#}"));
                 }
             }
@@ -1608,7 +1490,7 @@ impl Panel {
                 needs_approval: login == LoginItem::NeedsApproval,
             },
             error_reporting: crate::capture::desktop::workflow::error_reporting::enabled_in(&host.config_path()),
-            agent_demo_video: crate::shared::handoff::experiment_enabled_in(&config, "agentDemoVideo"),
+            agents_unavailable: AGENTS_UNAVAILABLE,
             shortcuts: ShortcutKind::ALL
                 .into_iter()
                 .map(|kind| {
@@ -1673,11 +1555,6 @@ impl Panel {
                 "stable"
             },
             main_updates: cfg!(target_os = "linux"),
-            command_line: CommandLineView::new(
-                &crate::composition::command_line::state(&host.command_line()),
-                self.cli_error.as_deref(),
-            ),
-            skill_command: SKILL_COMMAND,
         }
     }
 }
@@ -1749,9 +1626,6 @@ impl Host for AppHost<'_> {
         set_login_item(on)
     }
 
-    fn command_line(&self) -> crate::composition::command_line::Places {
-        crate::composition::command_line::Places::system()
-    }
 }
 
 /// From the window's helper process and its pollers.
@@ -2267,7 +2141,6 @@ mod tests {
         refuse: Option<String>,
         refuse_login: bool,
         login_changes: Vec<bool>,
-        cli: crate::composition::command_line::Places,
     }
 
     impl Host for Fake {
@@ -2293,9 +2166,6 @@ mod tests {
             self.login_changes.push(on);
             anyhow::ensure!(!self.refuse_login, "login registration refused");
             Ok(())
-        }
-        fn command_line(&self) -> crate::composition::command_line::Places {
-            self.cli.clone()
         }
     }
 
@@ -2337,11 +2207,6 @@ mod tests {
             refuse: None,
             refuse_login: false,
             login_changes: Vec::new(),
-            cli: crate::composition::command_line::Places {
-                target: None,
-                install: vec![dir.0.join("bin")],
-                also: Vec::new(),
-            },
         }
     }
 
@@ -2420,20 +2285,19 @@ mod tests {
     }
 
     #[test]
-    fn agent_demo_video_switch_round_trips_without_losing_config() {
-        let dir = TempDir::new("agent-demo-video");
+    fn native_agents_fallback_has_no_mutating_presentation_contract() {
+        let dir = TempDir::new("agents-fallback");
         let mut host = fake(&dir);
         let mut panel = Panel::default();
-        assert!(panel.view(&host).agent_demo_video, "missing config defaults on");
-        std::fs::write(&host.path, r#"{"ingestToken":"private","experiments":{"other":true}}"#).unwrap();
-        assert!(panel.view(&host).agent_demo_video, "missing flag defaults on");
-        panel.on(Action::Set { key: "agentDemoVideo".into(), value: true.into() }, &mut host);
-        assert!(panel.view(&host).agent_demo_video);
-        assert_eq!(read_json(&host.path)["experiments"]["other"], true);
-        assert_eq!(read_json(&host.path)["ingestToken"], "private");
+        let raw = br#"{"private":"keep","experiments":{"agentDemoVideo":true}}"#;
+        std::fs::write(&host.path, raw).unwrap();
+        let view = serde_json::to_value(panel.view(&host)).unwrap();
+        assert_eq!(view["agentsUnavailable"], AGENTS_UNAVAILABLE);
+        for key in ["agentDemoVideo", "commandLine", "skillCommand"] {
+            assert!(view.get(key).is_none(), "retired native field {key}");
+        }
         panel.on(Action::Set { key: "agentDemoVideo".into(), value: false.into() }, &mut host);
-        assert!(!panel.view(&host).agent_demo_video);
-        assert_eq!(read_json(&host.path)["experiments"]["agentDemoVideo"], false);
+        assert_eq!(std::fs::read(&host.path).unwrap(), raw);
     }
 
     #[test]
@@ -3358,105 +3222,8 @@ mod tests {
             parse(r#"{"action":"check-for-updates"}"#),
             Action::CheckForUpdates
         );
-        assert_eq!(parse(r#"{"action":"install-cli"}"#), Action::InstallCli);
-        assert_eq!(parse(r#"{"action":"uninstall-cli"}"#), Action::UninstallCli);
+        assert!(serde_json::from_str::<Action>(r#"{"action":"install-cli"}"#).is_err());
+        assert!(serde_json::from_str::<Action>(r#"{"action":"uninstall-cli"}"#).is_err());
     }
 
-    #[test]
-    fn the_command_line_row_abbreviates_only_paths_inside_home() {
-        let home = PathBuf::from(std::env::var_os("HOME").unwrap());
-        // A sibling with the same string prefix is not inside HOME.
-        let mut outside = home.as_os_str().to_os_string();
-        outside.push("-outside");
-        let outside = PathBuf::from(outside).join("bin/apparent");
-        for (link, expected) in [
-            (
-                home.join(".local/bin/apparent"),
-                "~/.local/bin/apparent".to_owned(),
-            ),
-            (outside.clone(), outside.display().to_string()),
-        ] {
-            let row = CommandLineView::new(
-                &crate::composition::command_line::State::Installed {
-                    link,
-                    homebrew: false,
-                },
-                None,
-            );
-            assert_eq!(row.path, Some(expected));
-        }
-    }
-
-    /// Links are a unix thing; Windows has no Apparent.app to link (`State::Unavailable`).
-    #[cfg(unix)]
-    #[test]
-    fn the_command_line_row_installs_uninstalls_and_says_why_not() {
-        let dir = TempDir::new("cli");
-        let mut host = fake(&dir);
-        let mut panel = Panel::default();
-        // A development build has nothing to link.
-        let row = panel.view(&host).command_line;
-        assert_eq!((row.button, row.enabled), (Some("install"), false));
-        assert_eq!(
-            row.caption,
-            if cfg!(target_os = "linux") {
-                "The command-line tool links to Apparent's AppImage; run Apparent from one."
-            } else {
-                "The command-line tool works in the installed app."
-            }
-        );
-        assert_eq!(
-            panel.view(&host).skill_command,
-            "bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent"
-        );
-
-        let macos = dir.0.join("Apparent.app/Contents/MacOS");
-        std::fs::create_dir_all(&macos).unwrap();
-        std::fs::write(macos.join("apparent"), "").unwrap();
-        host.cli.target = Some(std::fs::canonicalize(macos.join("apparent")).unwrap());
-        let row = panel.view(&host).command_line;
-        assert_eq!(
-            (row.button, row.enabled, row.path),
-            (Some("install"), true, None)
-        );
-        assert!(
-            row.caption.starts_with("Links apparent into "),
-            "{}",
-            row.caption
-        );
-
-        panel.on(Action::InstallCli, &mut host);
-        let link = dir.0.join("bin/apparent");
-        assert_eq!(
-            std::fs::read_link(&link).unwrap(),
-            host.cli.target.clone().unwrap()
-        );
-        let row = panel.view(&host).command_line;
-        assert_eq!(row.button, Some("uninstall"));
-        assert_eq!(row.path, Some(crate::composition::command_line::tilde(&link)));
-        // Not Homebrew's or /usr/local's bin, so it may not be on PATH.
-        assert!(row.caption.contains("to your PATH"), "{}", row.caption);
-        assert!(!row.error);
-
-        panel.on(Action::UninstallCli, &mut host);
-        assert!(link.symlink_metadata().is_err());
-        assert_eq!(panel.view(&host).command_line.button, Some("install"));
-
-        // Someone else's apparent stays, and the row says so.
-        std::fs::write(&link, "other").unwrap();
-        let row = panel.view(&host).command_line;
-        assert_eq!((row.button, row.error), (None, true));
-        assert!(
-            row.caption
-                .ends_with("is another program, so Apparent leaves it alone.")
-        );
-        panel.on(Action::InstallCli, &mut host);
-        assert_eq!(std::fs::read_to_string(&link).unwrap(), "other");
-        let row = panel.view(&host).command_line;
-        assert!(
-            row.error && row.caption.starts_with("Couldn't install it: "),
-            "{}",
-            row.caption
-        );
-    }
 }

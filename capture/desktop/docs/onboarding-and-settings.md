@@ -282,7 +282,15 @@ Agents › Command-line tool (`composition/command_line.rs`) links the app's own
 
 Agents › Ask for a Apparent video on complex changes toggles `"experiments": {"agentDemoVideo": true|false}`. Absent is on; set it to false to disable. Settings preserves other experiment flags and config keys; the next copy or paste reads the file without a restart. It adds a conditional request to the copied/pasted agent prompt, not the archived `summary.md`; automatic session delivery has been removed. The agent should only demonstrate a result it can actually see and report if recording is unavailable.
 
-Render every pane (dark, light, each shortcut state: held, listening, partial, refused, accepted, custom; microphone chosen/missing/not allowed) with `apparent-helper settings --render DIR`, and one take on the shortcuts as 60 fps PNGs for a video with `--render DIR --shortcut-clip [--light]`; test with `cargo test settings::`.
+Installed Agents uses the shared Electron page on both platforms. The old native
+Agents controls and private mutation/view fields are retired after replacement
+acceptance. Missing assets or a crashed presentation leave native Settings
+navigation and read-only recovery guidance; choosing Agents tries the shared
+presentation again. Restore the previous accepted package for rollback without
+changing config or activation. Forced-failure recovery still requires native
+platform proof after removal; see the frontend README's Agents section.
+
+Render every native pane (Agents is recovery-only; dark, light, each shortcut state: held, listening, partial, refused, accepted, custom; microphone chosen/missing/not allowed) with `apparent-helper settings --render DIR`, and one take on the shortcuts as 60 fps PNGs for a video with `--render DIR --shortcut-clip [--light]`; test with `cargo test settings::`.
 
 ## Lower other audio while recording (`capture/desktop/playback.rs`, `capture/engine/native/PlaybackVolume.swift`)
 

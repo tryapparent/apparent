@@ -202,7 +202,7 @@ struct ViewState {
     hosted: Option<crate::connect::hosted::AccountView>,
     login: Login,
     error_reporting: bool,
-    agent_demo_video: bool,
+    agents_unavailable: String,
     shortcuts: Vec<Shortcut>,
     transcriber: Transcriber,
     microphone: Microphone,
@@ -220,7 +220,6 @@ struct ViewState {
     update_check: UpdateCheck,
     update_channel: String,
     main_updates: bool,
-    skill_command: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
@@ -385,8 +384,6 @@ pub struct SettingsWindow {
     meter: Option<(String, crate::capture::engine::runtime::audio::mic::Meter)>,
     icon: Arc<Image>,
     wordmark: Arc<Image>,
-    /// The skill command was just copied (the button says Copied for a moment).
-    copied: bool,
 }
 
 fn open(request: Request, cx: &mut App) {
@@ -515,7 +512,6 @@ fn open(request: Request, cx: &mut App) {
                         ImageFormat::Png,
                         include_bytes!("../../../shared/assets/brand/apparent-wordmark.png").to_vec(),
                     )),
-                    copied: false,
                 }
             })
         },
@@ -1028,7 +1024,7 @@ impl SettingsWindow {
             Pane::Recording => self.recording_pane(theme, state, cx),
             Pane::Storage => self.storage(theme, state, cx),
             Pane::Permissions => self.permissions(theme, state, cx),
-            Pane::Agents => self.agents(theme, state, cx),
+            Pane::Agents => self.agents_unavailable(theme, state),
             Pane::About => self.about(theme, state, width < 500.0, cx),
         };
         div()
@@ -1870,71 +1866,10 @@ impl SettingsWindow {
             .child(trailing)
     }
 
-    /// The agent skill's install command, with Copy. `apparent.exe` is a console program, so the
-    /// CLI needs no install step on Windows (macOS links it onto PATH here).
-    fn agents(&self, theme: Theme, state: &ViewState, cx: &mut Context<Self>) -> Div {
-        let command = state.skill_command.clone();
-        let demo_video = state.agent_demo_video;
-        let line = div()
-            .h(px(ROW))
-            .px(px(12.0))
-            .flex()
-            .items_center()
-            .gap(px(12.0))
-            .child(
-                div()
-                    .flex_1()
-                    .text_size(px(12.0))
-                    .font_family("Consolas")
-                    .text_color(theme.text())
-                    .child(command.clone()),
-            )
-            .child(
-                button(
-                    theme,
-                    "settings-copy-skill",
-                    if self.copied { "Copied" } else { "Copy" },
-                    true,
-                )
-                .on_click(cx.listener(move |view, _, _, cx| {
-                    if crate::shared::handoff::copy_string_to_clipboard(&command).is_ok() {
-                        view.copied = true;
-                        cx.notify();
-                        cx.spawn(async move |view, cx| {
-                            cx.background_executor()
-                                .timer(std::time::Duration::from_millis(1500))
-                                .await;
-                            let _ = view.update(cx, |view, cx| {
-                                view.copied = false;
-                                cx.notify();
-                            });
-                        })
-                        .detach();
-                    }
-                })),
-            )
-            .into_any_element();
-        div()
-            .flex()
-            .flex_col()
-            .child(group(theme, vec![row(
-                theme,
-                "Ask for an Apparent video on complex changes",
-                true,
-                switch(theme, "settings-agent-demo-video", demo_video, true).on_click(
-                    cx.listener(move |view, _, _, _| {
-                        view.set("agentDemoVideo", (!demo_video).into());
-                    }),
-                ),
-            ).into_any_element()]))
-            .child(caption(theme, "Adds a video request to copied and pasted captures when the agent can record the result. On by default.", false))
-            .child(header(theme, "Agent skill"))
-            .child(group(theme, vec![line]))
-            .child(caption(
-                theme,
-                "Run it in a terminal. It teaches Claude Code, OpenCode, Codex and other agents to read your captures and use apparent.",
-                false,
-            ))
+    // Agents controls are shared Electron UI. Native Settings remains navigable
+    // when that presentation cannot launch, without a competing native form.
+    fn agents_unavailable(&self, theme: Theme, state: &ViewState) -> Div {
+        div().child(caption(theme, &state.agents_unavailable, false))
     }
 
     fn about(&self, theme: Theme, state: &ViewState, compact: bool, cx: &mut Context<Self>) -> Div {

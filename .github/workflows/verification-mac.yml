@@ -11,6 +11,11 @@ on:
         description: 'Run only installed Connect worker proof on a candidate branch'
         type: boolean
         default: false
+      settings_native_surface:
+        description: Focused installed Settings scenario
+        type: choice
+        options: [agents, agents-recovery]
+        default: agents
       settings_native:
         description: 'Only installed Settings native acceptance for a feature candidate; no full CI or publication receipt'
         type: boolean
@@ -104,7 +109,7 @@ jobs:
         timeout-minutes: 10
         env:
           APPARENT_STORAGE_NATIVE_CI: '1'
-          APPARENT_SETTINGS_NATIVE_SURFACE: agents
+          APPARENT_SETTINGS_NATIVE_SURFACE: ${{ inputs.settings_native_surface || 'agents' }}
           APPARENT_STORAGE_NATIVE_OUTPUT: ${{ runner.temp }}/apparent-settings-native
         run: |
           test "$GITHUB_ACTIONS" = true

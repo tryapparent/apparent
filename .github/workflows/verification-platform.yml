@@ -128,7 +128,7 @@ jobs:
           xcode-version: '26.0'
       - name: Install CLI export speedup dependencies
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
-        run: command -v ffmpeg && command -v ffprobe || brew install ffmpeg
+        run: if ! command -v ffmpeg || ! command -v ffprobe; then brew install ffmpeg; fi
       - name: Install the Metal toolchain
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
         run: xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
@@ -232,7 +232,7 @@ jobs:
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
         shell: bash
         run: |
-          export APPARENT_APP_DIR="$HOME/Applications/Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.app"
+          export APPARENT_APP_DIR="$HOME/Applications/Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app"
           test ! -e "$APPARENT_APP_DIR"
           APPARENT_NO_LAUNCH=1 bash capture/desktop/scripts/packaging/install-app.sh
           codesign --verify --deep --strict "$APPARENT_APP_DIR"
@@ -244,7 +244,7 @@ jobs:
           APPARENT_PACKAGED_SMOKE: '1'
           APPARENT_SMOKE_OUTPUT: ${{ runner.temp }}/apparent-packaged-smoke
         run: |
-          export APPARENT_APP_DIR="$HOME/Applications/Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.app"
+          export APPARENT_APP_DIR="$HOME/Applications/Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app"
           node capture/desktop/scripts/mac/packaged-smoke.cjs
       - name: Retain packaged Mac smoke evidence, including failures
         if: always() && runner.os == 'macOS' && needs.select.outputs.root == 'true'
@@ -264,7 +264,7 @@ jobs:
         run: |
           test "$GITHUB_ACTIONS" = true
           test "$RUNNER_ENVIRONMENT" = github-hosted
-          export APPARENT_APP_DIR="$HOME/Applications/Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.app"
+          export APPARENT_APP_DIR="$HOME/Applications/Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app"
           npm --prefix capture/desktop/ui/frontend run build
           APPARENT_STORAGE_NATIVE_APP_DIR="$APPARENT_APP_DIR" \
             node --test capture/desktop/ui/frontend/tests/mac-storage-native.cjs
@@ -278,7 +278,7 @@ jobs:
         run: |
           test "$GITHUB_ACTIONS" = true
           test "$RUNNER_ENVIRONMENT" = github-hosted
-          app="$HOME/Applications/Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.app"
+          app="$HOME/Applications/Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app"
           evidence="$RUNNER_TEMP/apparent-copy-id-native"
           test ! -e "$evidence"
           # Keep compiler diagnostics even when native compilation fails. The
@@ -295,7 +295,7 @@ jobs:
         env:
           APPARENT_REFERENCE_OUTPUT: ${{ runner.temp }}/apparent-reference-electron
         run: |
-          export APPARENT_REFERENCE_BINARY="$HOME/Applications/Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.app/Contents/MacOS/apparent"
+          export APPARENT_REFERENCE_BINARY="$HOME/Applications/Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app/Contents/MacOS/apparent"
           node --test capture/desktop/ui/frontend/tests/reference-native.cjs
       - name: Installed Mac Connect worker restart and encrypted fetch
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
@@ -304,7 +304,7 @@ jobs:
           APPARENT_CONNECT_NATIVE_CI: '1'
         run: |
           (cd connect/service && npm ci --no-audit --no-fund && npm run build)
-          app="$HOME/Applications/Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.app"
+          app="$HOME/Applications/Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app"
           node connect/service/test/native/desktop-worker.mjs "$GITHUB_WORKSPACE" \
             "$app/Contents/MacOS/apparent" "$RUNNER_TEMP/apparent-connect-native"
       - name: Retain synthetic Connect worker evidence without credentials

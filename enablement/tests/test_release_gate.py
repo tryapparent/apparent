@@ -59,7 +59,10 @@ class AdmissionTests(unittest.TestCase):
         section = text.split('  settings-native:\n', 1)[1]
         self.assertIn("github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'", section)
         self.assertIn('node --test capture/desktop/ui/frontend/tests/mac-storage-native.cjs', section)
-        self.assertIn('APPARENT_SETTINGS_NATIVE_SURFACE: agents', section)
+        self.assertIn("APPARENT_SETTINGS_NATIVE_SURFACE: ${{ inputs.settings_native_surface || 'agents' }}", section)
+        self.assertIn('options: [agents, agents-recovery]', text)
+        full = (root / '.github/workflows/verification-platform.yml').read_text()
+        self.assertEqual(full.count('Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app'), 6)
         # CLI uninstall recognizes the canonical bundle basename; isolate the
         # parent directory rather than changing the installed app's name.
         self.assertEqual(section.count('Apparent-Settings-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app'), 2)
