@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -72,6 +72,11 @@ test('source mutation during a passing command is explicitly recorded', async t 
 test('receipt output inside checkout is refused before executing the command', async t => {
   const { root } = fixture(t)
   await assert.rejects(observe(root, 'bad', join(root, 'output'), [process.execPath, '-e', 'process.exit(0)']), /outside the checkout/)
+  assert.equal(existsSync(join(root, 'output')), false)
+  const link = join(dirname(root), 'external-link')
+  symlinkSync(root, link, 'dir')
+  await assert.rejects(observe(root, 'bad', join(link, 'new', 'output'), [process.execPath, '-e', 'process.exit(0)']), /outside the checkout/)
+  assert.equal(existsSync(join(root, 'new')), false)
 })
 
 test('owner working directories retain full-repository source identity', async t => {

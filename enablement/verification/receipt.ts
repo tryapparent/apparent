@@ -57,12 +57,31 @@ export async function observe(root: string, suite: string, output: string, comma
   if (!/^[a-z0-9][a-z0-9._-]{0,79}$/.test(suite) || !command.length) throw new Error('Invalid suite or empty command')
   const cwd = realpathSync(root)
   root = realpathSync(git(cwd, 'rev-parse', '--show-toplevel').toString().trim())
+  const external = (path: string) => {
+    const distance = relative(root, path)
+    if (!distance || (!distance.startsWith('../') && !isAbsolute(distance))) {
+      throw new Error('Receipt directory must be outside the checkout')
+    }
+  }
+  output = resolve(output)
+  external(output)
+  // Resolve the nearest existing ancestor before creating any missing children.
+  // An external-looking parent symlink may lead back into the checkout.
+  let ancestor = output
+  const missing: string[] = []
+  while (true) {
+    try {
+      external(resolve(realpathSync(ancestor), ...missing))
+      break
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      missing.unshift(basename(ancestor))
+      ancestor = dirname(ancestor)
+    }
+  }
   mkdirSync(output, { recursive: true })
   output = realpathSync(output)
-  const distance = relative(root, output)
-  if (!distance || (!distance.startsWith('../') && !isAbsolute(distance))) {
-    throw new Error('Receipt directory must be outside the checkout')
-  }
+  external(output)
   const path = resolve(output, `${suite}-${randomUUID()}.json`)
   const before = snapshot(root)
   const env = process.env
