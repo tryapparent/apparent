@@ -160,14 +160,12 @@ jobs:
 
   settings-native:
     name: Focused installed Settings native acceptance
-    needs: settings-build
-    if: needs.settings-build.result == 'success' && github.repository == 'tryapparent/apparent' && github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'
+    if: github.repository == 'tryapparent/apparent' && github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'
     runs-on: macos-15-intel
     timeout-minutes: 10
     env:
       APPARENT_PREBUILT_KIND: focused-settings-build
       APPARENT_PREBUILT_RUN: ${{ github.run_id }}
-      APPARENT_PREBUILT_ARTIFACT: ${{ needs.settings-build.outputs.artifact }}
     steps:
       - name: Verification runtime budget and ownership
         working-directory: ${{ runner.temp }}
@@ -196,6 +194,11 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: capture/desktop/ui/frontend/package-lock.json
+      - name: Await the successful same-attempt producer and immutable artifact ID
+        timeout-minutes: 8
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node --experimental-strip-types enablement/verification/focused/settings-producer.ts
       - name: Install only the admitted exact candidate without launching
         timeout-minutes: 4
         env:

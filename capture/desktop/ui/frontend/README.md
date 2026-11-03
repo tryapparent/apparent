@@ -782,3 +782,11 @@ app launch; that compilation replaces the duplicate standalone typecheck and
 stays inside the existing fixture and workflow deadlines. None of these setup
 optimizations changes product code, skips a native assertion or admits an
 incomplete producer job. Actual combined runtime remains an execution gate.
+
+The native job prepares its installed compiler/Node environment concurrently with
+`settings-build`. A bounded read-only GitHub API wait discovers the immutable
+artifact ID only after that exact run attempt's producer job succeeds; failed or
+cancelled producers stop before installation. The existing consumer independently
+rechecks the candidate, successful producer, ID/digest and complete manifest.
+Running readiness waits still count in the workflow execution union; no workload
+is excluded and neither job nor workflow budgets increase.
