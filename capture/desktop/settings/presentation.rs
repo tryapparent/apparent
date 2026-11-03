@@ -48,6 +48,10 @@ fn open_mode(pane: super::settings::Pane, events: Arc<dyn Fn(Event) + Send + Syn
     anyhow::ensure!(connect.is_none() || app.join("electron/preloads/connect.cjs").is_file(), "Packaged Connect Settings unavailable");
     let mut process = Command::new(runtime);
     prepare_electron_environment(&mut process);
+// Settings must share capture's XWayland input/stacking route: a native
+    // Wayland window can receive a Shift-click underneath the X11 ink overlay.
+    #[cfg(target_os = "linux")]
+    process.arg("--ozone-platform=x11");
     let mode = if connect.is_some() { "--settings-connect" } else if pane == super::settings::Pane::Agents { "--settings-agents" } else { "--settings-storage" };
     process.arg(app).arg(mode).arg("--settings-parent");
     if let Some(command) = connect {
@@ -57,6 +61,9 @@ fn open_mode(pane: super::settings::Pane, events: Arc<dyn Fn(Event) + Send + Syn
     let mut child = process.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
     let stdin = child.stdin.take();
     let stdout = child.stdout.take();
+    #[cfg(target_os = "linux")]
+    let child = crate::capture::ui_process::UiChild::settings(child);
+    #[cfg(not(target_os = "linux"))]
     let child = crate::capture::ui_process::UiChild::new(child);
     std::thread::spawn(move || {
         if let Some(stdout) = stdout {
@@ -77,8 +84,8 @@ fn open_mode(pane: super::settings::Pane, events: Arc<dyn Fn(Event) + Send + Syn
 }
 
 fn prepare_electron_environment(process: &mut Command) {
-    // GPUI hides WAYLAND_DISPLAY to select XWayland. Electron has its own
-    // backend selection and needs the original compositor socket in its child.
+    // Retain the compositor socket for portal/native helpers. The Settings
+    // window itself explicitly uses XWayland to share capture's input route.
     #[cfg(target_os = "linux")]
     if let Some(display) = crate::capture::desktop::linux::wayland_display() {
         process.env("WAYLAND_DISPLAY", display);
