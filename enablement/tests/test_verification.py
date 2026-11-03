@@ -3,6 +3,7 @@ import importlib.util
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -24,6 +25,41 @@ class SelectionTests(unittest.TestCase):
         result = verification.select(["enablement/refactor.md", "AGENTS.md", "docs/capture.md"])
         self.assertFalse(result["root"])
         self.assertFalse(result["engine"])
+
+    def test_explicit_platform_suite_executes_only_its_commands_and_default_keeps_all(self):
+        for suite, cargo, browser in [('all', True, True), ('rust', True, False), ('browser', False, True)]:
+            args = ['verification.py', '--base', 'unknown', '--run']
+            if suite != 'all': args += ['--suite', suite]
+            with self.subTest(suite=suite), patch.object(verification.sys, 'argv', args), patch.object(
+                    verification, 'plan', return_value=verification.select(['build.rs', 'connect/web/package.json'])), patch.object(
+                    verification.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run:
+                verification.main()
+                commands = [call.args[0] for call in run.call_args_list]
+                self.assertEqual(any('cargo' in command for command in commands), cargo)
+                self.assertEqual(any(command[0] == 'bun' for command in commands), browser)
+                self.assertEqual(['node', 'scripts/test-browser.mjs'] in commands, browser)
+                self.assertEqual(any('capture/engine/Cargo.toml' in command for command in commands), cargo)
+
+    def test_receipt_wrapper_preserves_explicit_suite(self):
+        args = ['verification.py', '--base', 'unknown', '--run', '--online',
+                '--suite', 'rust', '--receipt-dir', '/external/receipts']
+        with patch.object(verification.sys, 'argv', args), patch.object(verification.subprocess, 'run') as run:
+            verification.main()
+            command = run.call_args.args[0]
+            self.assertEqual(command[command.index('--suite', command.index('--') + 1) + 1], 'rust')
+            self.assertEqual(command[command.index('--suite') + 1], 'platform-rust')
+            self.assertIn('--online', command)
+
+    def test_explicit_platform_suites_execute_even_when_changed_tree_has_no_matching_inputs(self):
+        for suite in ('rust', 'browser'):
+            args = ['verification.py', '--base', 'unknown', '--run', '--suite', suite]
+            with self.subTest(suite=suite), patch.object(verification.sys, 'argv', args), patch.object(
+                    verification, 'plan', return_value=verification.select(['README.md'])), patch.object(
+                    verification.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run:
+                verification.main()
+                commands = [call.args[0] for call in run.call_args_list]
+                self.assertEqual(['node', 'scripts/test-browser.mjs'] in commands, suite == 'browser')
+                self.assertEqual(any('cargo' in command for command in commands), suite == 'rust')
 
     def test_engine_tests_compile_and_test_package(self):
         result = verification.select(["capture/engine/tests/process.rs"])
@@ -324,6 +360,89 @@ class SelectionTests(unittest.TestCase):
                     git("update-index", "--add", "--cacheinfo", "100644", oid, "README.md")
                     documented = commit()
                     self.assertEqual(verification.plan(base, documented)["focused"], sorted(reviewed["tests"]))
+
+
+class RuntimeBudgetTests(unittest.TestCase):
+    def test_budget_preserves_status_and_stdin(self):
+        result = subprocess.run(['python3', str(SCRIPT), '--hook-budget', '2',
+                                 'sh', '-c', 'cat; exit 7'], input='refs\n',
+                                text=True, capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 7)
+        self.assertEqual(result.stdout, 'refs\n')
+
+    def test_budget_kills_descendants_and_assigns_optimization(self):
+        # Inherited pipes stay open if the descendant escapes cleanup.
+        result = subprocess.run(['python3', str(SCRIPT), '--hook-budget', '.1',
+                                 'sh', '-c', 'sleep 30 & wait'],
+                                text=True, capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 124)
+        self.assertIn('Optimize the tests', result.stderr)
+        self.assertIn('agent whose run hit this limit owns', result.stderr)
+
+    def test_cancelled_watchdog_cleans_up_process_group(self):
+        import select
+        import signal
+        # Hold Popen after the real child exists but before the watchdog owns
+        # its return value. Child output is not watchdog-handler readiness.
+        driver = '''
+import runpy, subprocess, sys
+watchdog = runpy.run_path(sys.argv[1])['hook_budget']
+spawn = subprocess.Popen
+def held_spawn(*args, **kwargs):
+    child = spawn(*args, **kwargs)
+    print(child.pid, flush=True)
+    sys.stdin.readline()
+    return child
+if sys.argv[2] == 'spawn':
+    subprocess.Popen = held_spawn
+    command = 'sleep 30 & wait'
+else:
+    command = 'sleep 30 & echo $$; wait'
+sys.exit(watchdog(30, ['sh', '-c', command]))
+'''
+        for phase in ('spawn', 'running'):
+            for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+                with self.subTest(phase=phase, signal=sig):
+                    child_group = None
+                    with subprocess.Popen([sys.executable, '-c', driver, str(SCRIPT), phase],
+                                          text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                          stderr=subprocess.PIPE, start_new_session=True) as process:
+                        try:
+                            self.assertTrue(select.select([process.stdout], [], [], 5)[0], 'child did not start')
+                            child_group = int(process.stdout.readline())
+                            process.send_signal(sig)
+                            # EOF must include the whole child group, not just
+                            # the watchdog. Keep the original five-second bound.
+                            stdout, stderr = process.communicate(input='release\n', timeout=5)
+                            self.assertEqual(process.returncode, 128 + sig, stderr)
+                            self.assertEqual(stdout, '')
+                        finally:
+                            # Bound failure cleanup even when the watchdog has
+                            # exited but descendants still hold captured pipes.
+                            if child_group is not None:
+                                try: os.killpg(child_group, signal.SIGKILL)
+                                except ProcessLookupError: pass
+                            if process.poll() is None:
+                                process.kill()
+                            process.communicate(timeout=5)
+
+    def test_watchdog_restores_handlers_when_spawn_fails(self):
+        import signal
+        previous = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)}
+        with patch.object(verification.subprocess, 'Popen', side_effect=OSError('synthetic launch failure')):
+            with self.assertRaisesRegex(OSError, 'synthetic launch failure'):
+                verification.hook_budget(30, ['synthetic-command'])
+        self.assertEqual({sig: signal.getsignal(sig) for sig in previous}, previous)
+
+    def test_supported_ci_jobs_have_ten_minute_execution_budget(self):
+        import re
+        for workflow in (SCRIPT.parents[1] / '.github/workflows').glob('*.yml'):
+            if workflow.name == 'release-windows.yml':
+                continue  # Retired platform is outside the supported CI contract.
+            for job in re.split(r'^  [\w-]+:\n', workflow.read_text(), flags=re.M)[1:]:
+                if re.search(r'^    runs-on:', job, re.M):
+                    self.assertIn('    timeout-minutes: 10\n', job, str(workflow))
+                    self.assertIn('agent whose run hits the limit owns optimization', job)
 
 
 if __name__ == "__main__":
