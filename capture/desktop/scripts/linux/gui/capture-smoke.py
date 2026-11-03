@@ -136,7 +136,7 @@ class Recipe:
                        "commands": [], "cleanup_errors": [], "requests": []}
         if pill_recovery:
             self.report["gates"].update({key: "UNRUN" for key in (
-                "rapid_cancel_recording", "save_receipt", "repeat_recording",
+                "rapid_cancel_recording", "repeat_recording",
                 "pill_child_identity", "pill_xwayland_xid_pinned", "pill_native_screenshot",
                 "rapid_cancel_receipt", "rapid_cancel_idle", "repeat_saved_receipt")})
 
