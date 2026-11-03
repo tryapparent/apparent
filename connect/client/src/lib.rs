@@ -1886,7 +1886,7 @@ impl Client {
         self.fetch_inner(id, out, wait).map_err(|error| {
             match error.to_string().as_str() {
                 "Hosted API: not_found" => anyhow::anyhow!("Capture unavailable (not_found). The sender may still be uploading, the capture may have expired or been deleted, or this account/API origin may not have access. Check apparent connect status and confirm the API origin and approved read account with the sender; ask the sender to check upload status or provide a fresh handoff. Retry with --wait 120 if upload is still in progress."),
-                message if message.starts_with("auth_required:") || matches!(message, "Hosted API: unauthorized" | "Hosted API: forbidden" | "Hosted API: reauthorization_required") => anyhow::anyhow!("Capture read authorization failed. Check apparent connect status and sign in with apparent connect login --scope read using the sender's account and API origin; retry after approval."),
+                message if message.starts_with("auth_required:") || matches!(message, "Hosted API: unauthorized" | "Hosted API: forbidden" | "Hosted API: reauthorization_required") => anyhow::anyhow!("Capture read authorization failed. Check apparent connect status and sign in with apparent connect login --server <API-origin> --scope read using the sender's account and API origin; retry after approval."),
                 _ => error,
             }
         })
