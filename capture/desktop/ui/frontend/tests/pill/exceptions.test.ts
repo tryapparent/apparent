@@ -12,11 +12,15 @@ test('sandboxed renderer main-world throws and rejections reach the private sock
   { skip: !process.env.DISPLAY && process.platform === 'linux', timeout: 20000 }, async t => {
   // Darwin's per-user TMPDIR can exceed the Unix socket path limit.
   const home = await mkdtemp(path.join(process.platform === 'darwin' ? '/tmp' : tmpdir(), 'exception-'));
-  t.after(() => rm(home, { recursive: true, force: true }));
+  let server: net.Server | undefined;
+  t.after(async () => {
+    if (server?.listening) await new Promise<void>(resolve => server!.close(() => resolve()));
+    await rm(home, { recursive: true, force: true });
+  });
   const directory = path.join(home, '.config/apparent/agent-control');
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const received: Record<string, unknown>[] = [];
-  const server = net.createServer(socket => {
+  server = net.createServer(socket => {
     socket.on('error', () => {});
     socket.once('data', data => {
       try { received.push(JSON.parse(data.toString())); } catch {}
@@ -24,8 +28,6 @@ test('sandboxed renderer main-world throws and rejections reach the private sock
     });
   });
   const address = path.join(directory, 'capture.sock');
-  // Register cleanup before setup can fail, including chmod after listen.
-  t.after(() => { server.close(); });
   assert.ok(Buffer.byteLength(address) <= 103, 'fixture socket path exceeds portable limit');
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
