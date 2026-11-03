@@ -42,8 +42,10 @@ Desktop startup installs reporting only when packaging supplies the publishable
 `APPARENT_POSTHOG_TOKEN` (`phc_…`) for the intended EU project. Without it, builds
 never send. The fixed destination is `https://eu.i.posthog.com/i/v0/e/`; `curl`
 must be available. CLI commands/tests never install the global reporter.
-Live ingestion, grouping and alerts require bounded synthetic verification in an
-isolated project before release; local HTTP tests are not that proof.
+Live ingestion and grouping require bounded synthetic verification in an isolated
+project or an explicitly approved test target before release; local HTTP tests
+are not that proof. Alert configuration and delivery verification are deferred
+from the initial Electron exception-capture slice; capture does not imply notifications.
 
 Reports include a fixed failure category, version/build, OS/architecture and
 repo-relative source call site. Operation errors also include typed processing
