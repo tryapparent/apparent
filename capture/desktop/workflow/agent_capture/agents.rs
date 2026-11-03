@@ -20,6 +20,10 @@ impl Request {
     }
     fn execute_in(&self, config: &std::path::Path, deadline: u64, places: &Places) -> Value {
         let error = |code| json!({"error":code});
+        let cli_operation = match self { Self::Install { .. } => Some("install"), Self::Uninstall { .. } => Some("uninstall"), _ => None };
+        if let Some(operation) = cli_operation {
+            crate::capture::engine::runtime::apparent_log(format!("Agents CLI {operation}: received"));
+        }
         if storage_clock_ms() >= deadline { return error("admission_expired"); }
         if let Self::Demo { enabled, .. } = self {
             let allowed = || storage_clock_ms() < deadline;
@@ -40,7 +44,20 @@ impl Request {
             },
             _ => Ok(()),
         };
-        if result.is_err() { return error("cli_change_failed"); }
+        if let Err(cause) = result {
+            // Keep paths and raw error text off the bridge and out of diagnostic
+            // logs. OS kind/errno distinguish filesystem denial from ownership.
+            if let Some(operation) = cli_operation {
+                let io = cause.chain().find_map(|error| error.downcast_ref::<std::io::Error>());
+                crate::capture::engine::runtime::apparent_log(format!(
+                    "Agents CLI {operation}: failed kind={:?} errno={:?}",
+                    io.map(std::io::Error::kind), io.and_then(std::io::Error::raw_os_error)));
+            }
+            return error("cli_change_failed");
+        }
+        if let Some(operation) = cli_operation {
+            crate::capture::engine::runtime::apparent_log(format!("Agents CLI {operation}: completed"));
+        }
         let raw: Value = match std::fs::read(config) {
             Ok(bytes) => match serde_json::from_slice(&bytes) { Ok(value) => value, Err(_) => return error("config_read_failed") },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => json!({}),

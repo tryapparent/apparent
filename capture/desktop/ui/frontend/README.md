@@ -702,3 +702,8 @@ checkbox-focus checks. Its receipt identifies `owned-pid` delivery. This removes
 global HID routing from the Settings control test; it does not prove global
 shortcut or capture-input behavior. The key pair is sent once and Rust/config/AX
 readback must still confirm the mutation.
+
+Rust logs CLI request receipt/completion and, on failure, only the I/O error kind
+and OS errno. This distinguishes filesystem/ownership failures from an action
+that never reached Rust without logging paths, raw errors or config contents,
+and without broadening the renderer's generic error contract.
