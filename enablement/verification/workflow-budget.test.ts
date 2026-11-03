@@ -53,6 +53,8 @@ test('every supported root workflow waits for all payload jobs before auditing',
     assert.ok(jobs.includes('runtime-budget'), name)
     const gate = text.split('  runtime-budget:\n')[1]
     assert.match(gate, /    if: always\(\)/)
+    if (name === 'release-linux.yml')
+      assert.match(gate, /^    if: always\(\) && needs\.admit\.result != 'skipped'$/m)
     assert.ok(gate.includes(`needs: [${jobs.filter(j => j !== 'runtime-budget').join(', ')}]`), name)
     assert.match(gate, /actions: read/)
     assert.match(gate, /uses: .\/.github\/actions\/runtime-budget/)
