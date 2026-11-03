@@ -333,8 +333,18 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     evidence.windows.push({ pid, nativePID: native, mappedExecutable: packaged, tree });
     return pid;
   };
-  const before = JSON.parse(await fs.readFile(config, 'utf8'));
   let pid = await open();
+  const before = JSON.parse(await fs.readFile(config, 'utf8'));
+  const shot = async (pid, name) => {
+    const window = JSON.parse(await invoke(pid, 'window'));
+    assert.equal(window.pid, pid);
+    assert.equal(window.frontmost, true, 'Evidence must target the foreground owned Settings window');
+    assert.ok(Number.isSafeInteger(window.windowID) && window.windowID > 0);
+    await run('/usr/sbin/screencapture', ['-x', '-l', String(window.windowID), path.join(path.dirname(axTool), `${name}.png`)], {
+      env, timeout: budget(3000), killSignal: 'SIGKILL', maxBuffer: 8192,
+    });
+    (evidence.screenshots ??= []).push({ name: `${name}.png`, ...window });
+  };
   const demo = async enabled => {
     await invoke(pid, 'space', 'AXCheckBox', 'Ask agents for a demo video');
     await poll(async () => {
@@ -350,12 +360,19 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
   };
   assert.equal((await read()).agentDemoVideo, true);
   await demo(false);
+  await shot(pid, 'agents-false');
   evidence.restart = await stopRust();
   await startRust();
   pid = await open();
   assert.equal((await read()).agentDemoVideo, false);
   assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), '0');
   await demo(true);
+  await shot(pid, 'agents-true');
+  evidence.trueRestart = await stopRust();
+  await startRust();
+  pid = await open();
+  assert.equal((await read()).agentDemoVideo, true);
+  assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), '1');
   evidence.keyboardAndRestart = true;
 
   // Mirror Places::system's selection without changing PATH or system directories.
@@ -396,6 +413,7 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     }, 'Visible foreign command refusal');
     // AXPress must refuse disabled controls, just as a real user cannot activate them.
     await assert.rejects(invoke(pid, 'press', 'AXButton', 'Install command-line tool'), /disabled/);
+    await shot(pid, 'agents-restarted-foreign-preserved');
     const current = await fs.lstat(link);
     assert.equal(current.ino, identity.ino);
     assert.equal(await fs.readFile(link, 'utf8'), 'synthetic foreign command; never execute\n');
@@ -433,7 +451,8 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
   assert.ok(evidence.passed, `Installed Agents acceptance incomplete: ${evidence.cli.reason}`);
 }
 
-test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Reset', {
+const nativeSurface = process.env.APPARENT_SETTINGS_NATIVE_SURFACE ?? 'all';
+test(`real installed Mac Rust + shipped Electron ${nativeSurface === 'agents' ? 'Agents' : 'Settings'} native acceptance`, {
   timeout: 180000,
   skip: process.platform !== 'darwin' ? 'Native macOS CI only; Linux is not native proof' : false,
 }, async () => {
@@ -442,6 +461,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
   assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted', 'Refuse self-hosted or personal Macs');
   assert.equal(process.env.RUNNER_OS, 'macOS');
   assert.equal(process.env.APPARENT_STORAGE_NATIVE_CI, '1', 'Explicit native CI opt-in required');
+  assert.ok(['all', 'agents'].includes(nativeSurface), 'Unknown native Settings surface');
   assert.ok(!process.versions.electron || process.env.ELECTRON_RUN_AS_NODE === '1',
     'Only the test driver may use Electron Node mode; GUI children must not');
   const runner = await fs.realpath(process.env.RUNNER_TEMP);
@@ -463,7 +483,8 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
   const report = { passed: false, platform: process.platform, os: os.release(), arch: process.arch,
     driver: { pid: process.pid, node: process.version }, permissionSource,
     source: { entry: 'electron/main.cjs', preload: 'electron/preload.cjs', renderer: 'dist/index.html' },
-    scope: 'Storage/reporting and installed Agents; no recording, audio, permission or TCC changes', cleanup: {} };
+    scope: { surface: nativeSurface, storageAndReporting: nativeSurface === 'all', installedAgents: true,
+      exclusions: 'No recording, audio, permission or TCC changes' }, cleanup: {} };
   const deadline = Date.now() + 150000;
   const budget = (cap = 5000) => {
     const remaining = deadline - Date.now();
@@ -502,7 +523,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     // Compile every native script before opening the app. JavaScript syntax
     // checks cannot detect AppleScript dictionary terms used as variable names.
     report.scriptCompilation = {};
-    for (const [name, script] of [['agents', agentsAX], ['picker', panelScript]]) {
+    for (const [name, script] of [['agents', agentsAX], ...(nativeSurface === 'all' ? [['picker', panelScript]] : [])]) {
       const compiled = path.join(output, `${name}-ax.scpt`);
       await run('/usr/bin/osacompile', ['-o', compiled, '-e', script], {
         timeout: budget(5000), killSignal: 'SIGKILL', maxBuffer: 32768,
@@ -597,6 +618,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     }, 'Installed Rust live control readiness', 15000);
     };
     await startRust();
+    if (nativeSurface === 'all') {
     application = await electron.launch({ args: [root], env, timeout: budget(15000) });
     electronChild = application.process();
     // launch() attaches to the main process before app.whenReady() creates a window.
@@ -752,6 +774,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     // installed Settings. Packaged Agents is never launched independently.
     await within(application.close(), budget(), 'Close Storage fixture');
     application = null;
+    }
     await installedAgents({ home, config, appDir, axTool, report, osa, run, env, budget, poll,
       startRust, stopRust: () => stopOwned(backend, 'rust Agents restart', true),
       rustPID: () => report.rust.pid });

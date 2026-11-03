@@ -59,6 +59,7 @@ class AdmissionTests(unittest.TestCase):
         section = text.split('  settings-native:\n', 1)[1]
         self.assertIn("github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'", section)
         self.assertIn('node --test capture/desktop/ui/frontend/tests/mac-storage-native.cjs', section)
+        self.assertIn('APPARENT_SETTINGS_NATIVE_SURFACE: agents', section)
         self.assertIn('shared-key: rust', section)
         self.assertIn('cache-on-failure: true', section)
         for workspace in ('. -> target', 'capture/engine -> target', 'connect/client -> target'):

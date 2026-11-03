@@ -651,3 +651,11 @@ This removes per-node System Events round trips while retaining the original
 3.5-second call and whole-fixture deadlines, bounded traversal and uniqueness,
 executable/PID checks, focused Space input and authoritative Rust/config readback.
 Darwin compilation and execution remain required; Linux checks cannot prove them.
+
+The focused candidate job selects `APPARENT_SETTINGS_NATIVE_SURFACE=agents`.
+That runs installed Agents directly from the verified Rust app; the default
+`all` entry still executes Storage/reporting and Agents. Each receipt states its
+surface, so Agents proof does not claim a Storage picker pass. Failed earlier
+picker evidence remains retained. Agents acceptance covers both false and true
+Rust restart durability and owned foreground-window screenshots, as well as CLI
+ownership, navigation and ordinary close with the daemon alive.

@@ -65,7 +65,17 @@ func main() throws {
     var windowPID: pid_t = 0
     try require(AXUIElementGetPid(window, &windowPID) == .success && windowPID == pid, "Window PID mismatch")
     if op == "window" {
-        print("window=\(text(try attribute(window, kAXTitleAttribute)));pid=\(pid);children=\(try children(window).count)")
+        let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        let owned = rows.filter {
+            ($0[kCGWindowOwnerPID as String] as? Int32) == pid && ($0[kCGWindowLayer as String] as? Int) == 0
+        }
+        try require(owned.count == 1, "Expected one visible owned window for evidence")
+        guard let number = owned[0][kCGWindowNumber as String] as? NSNumber else {
+            throw Failure(description: "Missing owned window number")
+        }
+        let info: [String: Any] = ["title": text(try attribute(window, kAXTitleAttribute)), "pid": pid,
+            "windowID": number.uint32Value, "frontmost": NSWorkspace.shared.frontmostApplication?.processIdentifier == pid]
+        print(String(decoding: try JSONSerialization.data(withJSONObject: info), as: UTF8.self))
         return
     }
     var queue = [window], position = 0, trace = "", matches: [AXUIElement] = []
