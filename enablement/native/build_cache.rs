@@ -449,6 +449,14 @@ mod tests {
         }
         assert_eq!(write_buffered(Broken, |input| input.write_all(b"tail"))
             .unwrap_err().kind(), std::io::ErrorKind::BrokenPipe);
+        struct FlushFailure;
+        impl Write for FlushFailure {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> { Ok(bytes.len()) }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Err(std::io::Error::other("flush failed"))
+            }
+        }
+        assert!(write_buffered(FlushFailure, |input| input.write_all(b"tail")).is_err());
         assert!(write_buffered(Vec::new(), |_| Err(std::io::Error::other("source failed"))).is_err());
         fs::remove_dir_all(root).unwrap();
     }
