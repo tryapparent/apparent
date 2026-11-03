@@ -58,6 +58,11 @@ jobs:
           fetch-depth: 0
           # Keep complete ancestry/tags without downloading historical file bodies.
           filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/workflows/release-linux.yml
+            /capture/desktop/scripts/linux/maintenance/
+            /enablement/release_gate.py
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -271,6 +276,11 @@ jobs:
           fetch-depth: 0
           # Feed ordering needs full history, not obsolete historical file bodies.
           filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/workflows/release-linux.yml
+            /capture/desktop/scripts/linux/maintenance/
+            /enablement/release_gate.py
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -329,12 +339,12 @@ jobs:
         run: node --experimental-strip-types capture/desktop/scripts/linux/maintenance/signing-bridge.ts publish "$BRIDGE_COMMIT"
 
   runtime-budget:
-    if: always()
+    if: always() && needs.admit.result != 'skipped'
     needs: [admit, preview-needed, linux, publish]
     permissions:
       contents: read
       actions: read
-    name: Workflow runtime budget${{ needs.admit.result == 'skipped' && ' (no-op)' || '' }}
+    name: Workflow runtime budget
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
