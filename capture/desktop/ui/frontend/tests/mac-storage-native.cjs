@@ -232,11 +232,35 @@ const skill = 'bunx skills add https://github.com/tryapparent/apparent/tree/main
 const agentsAX = `on run argv
   tell application "System Events"
     tell (first application process whose unix id is (item 1 of argv as integer))
-      if item 2 of argv is "open" then
-        set frontmost to true
-        if not frontmost then error "Owned Rust app lost focus"
-        keystroke "," using command down
-        return "opened"
+      if item 2 of argv is "open" or item 2 of argv is "settings" then
+        -- The Rust daemon is a menu-bar app: no window exists to focus yet.
+        -- Select only its single status entry, never another process's menu.
+        set ownedBars to menu bars
+        if (count of ownedBars) > 2 then error "Unsupported owned menu bars"
+        set statusEntries to {}
+        repeat with ownedBar in ownedBars
+          set ownedItems to menu bar items of ownedBar
+          if (count of ownedItems) is 1 then set end of statusEntries to item 1 of ownedItems
+        end repeat
+        if (count of statusEntries) is not 1 then error "Missing or ambiguous owned status entry"
+        set statusEntry to item 1 of statusEntries
+        if item 2 of argv is "open" then
+          click statusEntry
+          return "owned-status-menu-opened"
+        end if
+        if (count of menus of statusEntry) is not 1 then error "Owned status menu not ready"
+        set ownedMenu to menu 1 of statusEntry
+        set ownedItems to menu items of ownedMenu
+        if (count of ownedItems) > 20 then error "Oversized owned status menu"
+        set settingsEntries to {}
+        repeat with ownedItem in ownedItems
+          if (name of ownedItem as text) is "Settings…" then set end of settingsEntries to contents of ownedItem
+        end repeat
+        if (count of settingsEntries) is not 1 then error "Missing or ambiguous owned Settings menu item"
+        set settingsEntry to item 1 of settingsEntries
+        if not enabled of settingsEntry then error "Owned Settings menu item disabled"
+        click settingsEntry
+        return "owned-settings-selected"
       end if
       if (count of windows) is not 1 then error "Expected exactly one owned Settings window"
       set w to window 1
@@ -315,6 +339,7 @@ async function installedAgents({ home, config, appDir, report, osa, run, env, bu
   };
   const open = async () => {
     await invoke(rustPID(), 'open');
+    evidence.openSettings = await poll(() => invoke(rustPID(), 'settings'), 'Owned status-menu Settings action');
     const native = await child(helper);
     await poll(() => invoke(native, 'press', 'AXButton', 'Agents'), 'Native Agents navigation');
     const pid = await child(packaged);

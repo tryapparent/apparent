@@ -585,7 +585,7 @@ Keep Rust policy/socket contracts and other native pages. Parent owns final
 removal and platform acceptance; development-window evidence is insufficient.
 
 The existing `tests/mac-storage-native.cjs` lifecycle now also runs its bounded installed Agents checks after Storage/reporting. It opens Settings
-with Command-comma on the verified installed Rust PID, selects native Agents,
+through the verified installed Rust PID’s owned status-menu Settings action, selects native Agents,
 and inspects only its mapped packaged Electron child. It checks the visible
 sidebar/title/canonical skill command, real focused Space toggles, authoritative
 Rust/config readback with unrelated keys preserved, Rust restart/reopen,

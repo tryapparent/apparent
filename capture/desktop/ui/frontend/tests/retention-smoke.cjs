@@ -203,8 +203,20 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   t.diagnostic('Retention and installed Settings presentation assertions completed');
 });
 
-test('Installed Agents owns only Agents and navigation capabilities', async t => {
-  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'ui-agents-installed-'));
+test('Installed Agents owns only Agents and navigation capabilities', { timeout: 45000 }, async t => {
+  // Darwin sun_path is 104 bytes, including termination; keep the real socket
+  // address below that bound even under the hosted runner's long TMPDIR.
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'a-'));
+  let app, server;
+  const clients = new Set();
+  t.after(async () => {
+    try { if (app) await app.close(); }
+    finally {
+      for (const socket of clients) socket.destroy();
+      if (server?.listening) await new Promise(resolve => server.close(resolve));
+      await fs.rm(home, { recursive: true, force: true });
+    }
+  });
   let agentInstalled = false;
   let agentDemo = true;
   let agentBusy = true;
@@ -212,7 +224,9 @@ test('Installed Agents owns only Agents and navigation capabilities', async t =>
   const directory = path.join(home, '.config/apparent/agent-control');
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   const requests = [];
-  const server = net.createServer(socket => socket.once('data', data => {
+  server = net.createServer(socket => {
+    clients.add(socket); socket.once('close', () => clients.delete(socket)); socket.on('error', () => {});
+    socket.once('data', data => {
     requests.push(data.toString());
     const request = JSON.parse(data);
     if (request?.agents) {
@@ -227,12 +241,13 @@ test('Installed Agents owns only Agents and navigation capabilities', async t =>
       socket.end(JSON.stringify({agents: {cli: agentInstalled ? 'installed' : 'missing', canInstall: !agentInstalled,
         canUninstall: agentInstalled, agentDemoVideo: agentDemo, skillCommand: 'canonical fixture command'}}) + '\n');
     }
-  }));
+    });
+  });
   const address = path.join(directory, 'capture.sock');
-  await new Promise(resolve => server.listen(address, resolve));
+  assert.ok(Buffer.byteLength(address) < 104, 'Synthetic socket path exceeds macOS sun_path');
+  await new Promise((resolve, reject) => server.once('error', reject).listen(address, resolve));
   await fs.chmod(address, 0o600);
-  const app = await electron.launch({ args: [path.join(__dirname, '..'), '--settings-agents'], env: { ...process.env, HOME: home } });
-  t.after(async () => { await app.close(); await new Promise(resolve => server.close(resolve)); await fs.rm(home, { recursive: true, force: true }); });
+  app = await electron.launch({ args: [path.join(__dirname, '..'), '--settings-agents'], env: { ...process.env, HOME: home } });
   const page = await app.firstWindow();
   await expect(page.getByRole('heading', { name: 'Agents', exact: true, level: 1 })).toBeVisible();
   await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle()))
