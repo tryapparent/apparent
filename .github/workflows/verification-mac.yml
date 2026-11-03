@@ -72,49 +72,133 @@ jobs:
     if: github.ref != 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.connect_worker_proof
     uses: ./.github/workflows/native-proof-mac.yml
 
-  settings-native:
-    name: Focused installed Settings native acceptance
-    if: github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'
+  settings-build:
+    name: settings-build
+    if: github.repository == 'tryapparent/apparent' && github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'
     runs-on: macos-15-intel
     timeout-minutes: 10
+    outputs:
+      artifact: ${{ steps.executables.outputs.artifact-id }}
     steps:
       - name: Verification runtime budget and ownership
         working-directory: ${{ runner.temp }}
         shell: bash
         run: echo '10 minute execution limit (runner queue excluded). If exceeded, optimize the tests. The agent whose run hits the limit owns optimization and a successful rerun; do not raise or bypass the limit.'
       - uses: actions/checkout@v4
+        timeout-minutes: 1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: maxim-lobanov/setup-xcode@v1
+        timeout-minutes: 1
         with:
           xcode-version: '26.0'
-      - name: Typecheck the focused AX reader before the Rust build
-        run: xcrun swiftc -typecheck capture/desktop/ui/frontend/tests/native/agents-ax.swift
       - uses: dtolnay/rust-toolchain@stable
+        timeout-minutes: 2
       - uses: Swatinem/rust-cache@v2
+        timeout-minutes: 3
         with:
           shared-key: rust
           cache-on-failure: true
+          # Cache paths participate in its version; retain the warm three-path inventory.
           workspaces: |
             . -> target
             capture/engine -> target
+            connect/client -> target
       - uses: actions/setup-node@v4
+        timeout-minutes: 2
         with:
           node-version: '22'
       - name: Prepare native build toolchain
+        timeout-minutes: 3
         run: |
           if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then brew install ffmpeg; fi
           xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
-      - name: Build and install the candidate without launching
+      - name: Build the exact Settings candidate once
+        timeout-minutes: 8
+        shell: bash
         run: |
-          umask 077
-          cargo build -j 3 --locked
+          set -euo pipefail
+          umask 022
+          mkdir -m 700 "$RUNNER_TEMP/settings-build"
+          settings_build_tmp="$(mktemp -d "$HOME/.apparent-settings-build.XXXXXX")"
+          readonly settings_build_tmp
+          trap 'rm -rf -- "$settings_build_tmp"' EXIT
+          TMPDIR="$settings_build_tmp" taskpolicy -c utility cargo build -j 3 --locked 2>&1 | tee "$RUNNER_TEMP/settings-build/cargo.log"
+      - name: Bind executables to the focused candidate and job
+        timeout-minutes: 1
+        run: |
+          otool -l target/debug/apparent > "$RUNNER_TEMP/settings-build/apparent-loads.log"
+          otool -l target/debug/apparent-helper > "$RUNNER_TEMP/settings-build/helper-loads.log"
+          node enablement/verification/mac-artifact.ts --producer-kind focused-settings-build "$RUNNER_TEMP/mac-dev-executables"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        timeout-minutes: 1
+        id: executables
+        with:
+          name: mac-dev-executables-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mac-dev-executables/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain candidate build diagnostics
+        if: always()
+        timeout-minutes: 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: settings-build-diagnostics
+          path: ${{ runner.temp }}/settings-build/
+          if-no-files-found: warn
+          retention-days: 7
+
+  settings-native:
+    name: Focused installed Settings native acceptance
+    needs: settings-build
+    if: needs.settings-build.result == 'success' && github.repository == 'tryapparent/apparent' && github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    env:
+      APPARENT_PREBUILT_KIND: focused-settings-build
+      APPARENT_PREBUILT_RUN: ${{ github.run_id }}
+      APPARENT_PREBUILT_ARTIFACT: ${{ needs.settings-build.outputs.artifact }}
+    steps:
+      - name: Verification runtime budget and ownership
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: echo '10 minute execution limit (runner queue excluded). If exceeded, optimize the tests. The agent whose run hits the limit owns optimization and a successful rerun; do not raise or bypass the limit.'
+      - uses: actions/checkout@v4
+        timeout-minutes: 1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: maxim-lobanov/setup-xcode@v1
+        timeout-minutes: 1
+        with:
+          xcode-version: '26.0'
+      - name: Typecheck the focused AX reader before installation
+        timeout-minutes: 2
+        run: xcrun swiftc -typecheck capture/desktop/ui/frontend/tests/native/agents-ax.swift
+      - uses: dtolnay/rust-toolchain@stable
+        timeout-minutes: 2
+      - uses: actions/setup-node@v4
+        timeout-minutes: 2
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: capture/desktop/ui/frontend/package-lock.json
+      - name: Install only the admitted exact candidate without launching
+        timeout-minutes: 4
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          umask 022
           export APPARENT_APP_DIR="$HOME/Applications/Apparent-Settings-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app"
+          export APPARENT_PREBUILT_DIR="$RUNNER_TEMP/settings-executables"
           test ! -e "$APPARENT_APP_DIR"
+          test ! -e "$APPARENT_PREBUILT_DIR"
           APPARENT_NO_LAUNCH=1 bash capture/desktop/scripts/packaging/install-app.sh
           codesign --verify --deep --strict "$APPARENT_APP_DIR"
       - name: Installed Settings native acceptance only
-        timeout-minutes: 10
+        timeout-minutes: 3
         env:
           APPARENT_STORAGE_NATIVE_CI: '1'
           APPARENT_SETTINGS_NATIVE_SURFACE: ${{ inputs.settings_native_surface || 'agents' }}
@@ -126,6 +210,7 @@ jobs:
           node --test capture/desktop/ui/frontend/tests/mac-storage-native.cjs
       - name: Retain owned native evidence, including failures
         if: always()
+        timeout-minutes: 2
         uses: actions/upload-artifact@v4
         with:
           name: settings-candidate-native

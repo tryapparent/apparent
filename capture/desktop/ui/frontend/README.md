@@ -748,8 +748,17 @@ Racing readback connections against renderer IPC can reject the mutation at the
 shared rendezvous worker. No write is retried and worker admission is unchanged.
 Failures retain authoritative state, AX data and owned-window images when
 available; CLI cleanup removes only the exact installed symlink or identified
-synthetic file. The focused job shares main's fingerprinted Rust cache inputs
-and saves completed compilation on unrelated native-test failure.
-Its complete job, including setup/build/evidence cleanup, has the repository's
-10-minute execution limit. A timeout requires owner-local optimization and a
-successful rerun; it does not authorize a larger budget or less acceptance.
+synthetic file. The focused workflow builds once in `settings-build`, then installs
+and tests in `settings-native`. Each job, including its setup and evidence work,
+has the repository's 10-minute execution limit. The builder preserves the warm
+three-path Rust cache inventory; removing a path changes its cache version.
+
+The existing three-file artifact contract binds the exact candidate SHA/tree,
+configuration, toolchain, executable hashes and Mach-O closure. Its explicit
+`focused-settings-build` kind admits only the same dispatch/run/attempt, successful
+`settings-build` job and current `settings-native` consumer; it grants no full-main
+verification or publication receipt. The installer validates the immutable ID and
+archive digest, freshly prepares/signs the frontend and package, and never falls
+back to rebuilding after admission failure. A build alone is not native proof.
+A timeout requires owner-local optimization and a successful rerun; it does not
+authorize a larger budget or less acceptance.

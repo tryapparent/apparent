@@ -56,26 +56,36 @@ class AdmissionTests(unittest.TestCase):
     def test_focused_settings_candidate_is_not_full_verification_or_a_receipt(self):
         root = Path(__file__).resolve().parents[2]
         text = (root / '.github/workflows/verification-mac.yml').read_text()
-        section = text.split('  settings-native:\n', 1)[1]
-        self.assertIn("github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'", section)
-        self.assertIn('node --test capture/desktop/ui/frontend/tests/mac-storage-native.cjs', section)
-        self.assertIn("APPARENT_SETTINGS_NATIVE_SURFACE: ${{ inputs.settings_native_surface || 'agents' }}", section)
+        build, native = text.split('  settings-build:\n', 1)[1].split('  settings-native:\n', 1)
+        for section in (build, native):
+            self.assertIn("github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'", section)
+            self.assertIn('timeout-minutes: 10', section)
+            self.assertNotIn('timeout-minutes: 30', section)
+            self.assertIn('If exceeded, optimize the tests.', section)
+            self.assertIn('ref: ${{ github.sha }}', section)
+            for forbidden in ('verification-platform.yml', 'verification.py', 'owner_lanes.py', 'cargo test', 'release-ready', 'release_gate.py', 'secrets.'):
+                self.assertNotIn(forbidden, section)
+        self.assertIn('name: settings-build', build)
+        self.assertIn('shared-key: rust', build)
+        self.assertIn('cache-on-failure: true', build)
+        for workspace in ('. -> target', 'capture/engine -> target', 'connect/client -> target'):
+            self.assertIn(workspace, build)
+        self.assertIn('taskpolicy -c utility cargo build -j 3 --locked', build)
+        self.assertIn('mac-artifact.ts --producer-kind focused-settings-build', build)
+        self.assertIn('artifact: ${{ steps.executables.outputs.artifact-id }}', build)
+        self.assertIn('if-no-files-found: error', build)
+        self.assertIn('needs: settings-build', native)
+        self.assertIn("needs.settings-build.result == 'success'", native)
+        self.assertIn('APPARENT_PREBUILT_KIND: focused-settings-build', native)
+        self.assertIn('APPARENT_PREBUILT_RUN: ${{ github.run_id }}', native)
+        self.assertIn('APPARENT_PREBUILT_ARTIFACT: ${{ needs.settings-build.outputs.artifact }}', native)
+        self.assertNotIn('cargo build', native)
+        self.assertIn('node --test capture/desktop/ui/frontend/tests/mac-storage-native.cjs', native)
+        self.assertIn("APPARENT_SETTINGS_NATIVE_SURFACE: ${{ inputs.settings_native_surface || 'agents' }}", native)
         self.assertIn('options: [agents, agents-recovery]', text)
         full = (root / '.github/workflows/verification-platform.yml').read_text()
         self.assertEqual(full.count('Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app'), 6)
-        # CLI uninstall recognizes the canonical bundle basename; isolate the
-        # parent directory rather than changing the installed app's name.
-        self.assertEqual(section.count('Apparent-Settings-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app'), 2)
-        self.assertIn('shared-key: rust', section)
-        self.assertIn('cache-on-failure: true', section)
-        self.assertIn('timeout-minutes: 10', section)
-        self.assertNotIn('timeout-minutes: 30', section)
-        self.assertIn('If exceeded, optimize the tests.', section)
-        for workspace in ('. -> target', 'capture/engine -> target'):
-            self.assertIn(workspace, section)
-        self.assertNotIn('connect/client -> target', section)
-        for forbidden in ('verification-platform.yml', 'verification.py', 'owner_lanes.py', 'cargo test', 'release-ready', 'release_gate.py', 'secrets.'):
-            self.assertNotIn(forbidden, section)
+        self.assertEqual(native.count('Apparent-Settings-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app'), 2)
 
     def test_full_verification_is_main_only_even_for_manual_dispatch(self):
         root = Path(__file__).resolve().parents[2]
