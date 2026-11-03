@@ -121,10 +121,8 @@ fn set_enabled_admitted_in(
 
 fn read_enabled_in(path: &Path) -> Result<bool, &'static str> {
     let config = reporting_config_in(path).ok_or("config_read_failed")?;
-    if config
-        .get("errorReportingGeneration")
-        .is_some_and(|v| !v.as_str().is_some_and(|s| s.len() <= 128))
-    {
+    let generation = config.get("errorReportingGeneration");
+    if generation.is_some_and(|v| !v.as_str().is_some_and(|s| s.len() <= 128)) {
         return Err("config_read_failed");
     }
     match config.get("errorReporting") {
