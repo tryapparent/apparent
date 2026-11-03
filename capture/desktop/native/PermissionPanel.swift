@@ -520,7 +520,7 @@ extension PermissionPanel {
           path.lineWidth = 1
           path.stroke()
           icon.draw(in: NSRect(x: 10, y: (size.height - 26) / 2, width: 26, height: 26))
-          let font = NSFont(name: "HostGrotesk_500wght", size: 18) ?? NSFont.systemFont(ofSize: 18)
+          let font = OnboardingBrand.platformFont(18, weight: 500)
           let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: OnboardingBrand.foregroundNS]
           let textHeight = (name as NSString).size(withAttributes: attributes).height
           (name as NSString).draw(at: NSPoint(x: 46, y: (size.height - textHeight) / 2), withAttributes: attributes)

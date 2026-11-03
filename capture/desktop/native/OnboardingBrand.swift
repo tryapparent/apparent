@@ -19,14 +19,26 @@ enum OnboardingBrand {
   }
   static var background: Color { Color(nsColor: backgroundNS) }
   static var foreground: Color { Color(nsColor: foregroundNS) }
-  static func font(_ size: CGFloat, weight: Int = 400) -> Font {
-    .custom("HostGrotesk_\(weight)wght", size: size)
-  }
-  static func loadFont() {
+  private static var fontURL: URL {
     let source = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent().appending(path: "shared/assets/fonts/HostGrotesk-Variable.ttf")
-    let url = Bundle.main.url(forResource: "HostGrotesk-Variable", withExtension: "ttf") ?? source
-    CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+    return Bundle.main.url(forResource: "HostGrotesk-Variable", withExtension: "ttf") ?? source
+  }
+  private static let fontDescriptor: CTFontDescriptor? = {
+    (CTFontManagerCreateFontDescriptorsFromURL(fontURL as CFURL) as? [CTFontDescriptor])?.first
+  }()
+  static func platformFont(_ size: CGFloat, weight: Int = 400) -> CTFont {
+    // macOS does not necessarily expose a variable font's named instances by name.
+    // Select the bundled face and its actual OpenType weight axis instead.
+    let base = fontDescriptor ?? CTFontDescriptorCreateWithNameAndSize("HostGrotesk-Light" as CFString, size)
+    let varied = CTFontDescriptorCreateCopyWithVariation(base, NSNumber(value: 0x77676874), CGFloat(weight))
+    return CTFontCreateWithFontDescriptor(varied, size, nil)
+  }
+  static func font(_ size: CGFloat, weight: Int = 400) -> Font {
+    Font(platformFont(size, weight: weight))
+  }
+  static func loadFont() {
+    CTFontManagerRegisterFontsForURL(fontURL as CFURL, .process, nil)
   }
 
   struct ActionStyle: ButtonStyle {

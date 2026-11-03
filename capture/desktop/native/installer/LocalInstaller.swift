@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -191,7 +192,12 @@ struct InstallerView: View {
 @main struct InstallerChecks {
   static func main() throws {
     OnboardingBrand.loadFont()
-    precondition(NSFont(name: "HostGrotesk_400wght", size: 18) != nil)
+    for weight in [400, 500, 700] {
+      let font = OnboardingBrand.platformFont(18, weight: weight)
+      precondition((CTFontCopyFamilyName(font) as String).hasPrefix("Host Grotesk"), "Bundled brand font must load")
+      let variations = CTFontCopyVariation(font) as? [NSNumber: NSNumber]
+      precondition(variations?[NSNumber(value: 0x77676874)]?.intValue == weight, "Brand font weight must match")
+    }
     let fm = FileManager.default
     let root = fm.temporaryDirectory.appendingPathComponent("apparent-installer-" + UUID().uuidString)
     try fm.createDirectory(at: root, withIntermediateDirectories: true)
