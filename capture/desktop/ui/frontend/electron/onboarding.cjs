@@ -1,10 +1,11 @@
+const {transparentBackgroundColor}=require('@apparent/ui/window-theme');
 const {parseAction}=require('./onboarding-protocol.cjs');
 // A private, Rust-owned presentation transport. No capture commands or filesystem IPC.
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const actions = new Set(['continue','back','later','close','change-shortcut','grant:screen-recording','grant:microphone','grant:accessibility','grant:speech-recognition','grant:camera','practice-paste','practice-pasted','practice-finish','pen:coral','pen:purple','pen:blue','pen:green']);
+const actions = new Set(['continue','back','later','close','change-shortcut','grant:screen-recording','grant:microphone','grant:accessibility','grant:speech-recognition','grant:camera','practice-paste','practice-locate','practice-pasted','practice-finish','pen:coral','pen:purple','pen:blue','pen:green']);
 const steps = new Set(['welcome','how-it-works','permissions','shortcut','try-it','done']);
-const phases = new Set(['start','whiteboard','board-ink','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']);
+const phases = new Set(['start','screen','whiteboard','board-ink','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']);
 function project(v) {
   if(v?.type!=='state'||!steps.has(v.step)||!Array.isArray(v.rows)||v.rows.length>5||typeof v.ready!=='boolean')return null;
   const rows=[];
@@ -27,7 +28,7 @@ function coachPosition(area,anchor,board,phase){
   const overlaps=([px,py],rect)=>rect&&px<rect[0]+rect[2]+8&&px+width>rect[0]-8&&py<rect[1]+rect[3]+8&&py+height>rect[1]-8;
   const options=candidates.map(clamp);
   const position=options.find(p=>!overlaps(p,board)&&!overlaps(p,anchor))||options[0];
-  return {x:position[0],y:position[1],arrow:Math.max(45,Math.min(width-45,x+w/2-position[0])),pointsUp:!board&&['whiteboard','stop','copied','locate'].includes(phase)};
+  return {x:position[0],y:position[1],arrow:Math.max(45,Math.min(width-45,x+w/2-position[0])),pointsUp:!board&&['screen','whiteboard','stop','copied','locate'].includes(phase)};
 }
 // A renderer has no useful lifetime after its Rust parent disconnects.
 // Keep the error listener installed while closing: write callbacks/errors can arrive later.
@@ -64,7 +65,7 @@ function shutdown(code=0){
 app.whenReady().then(()=>{
   app.dock?.hide();session.defaultSession.setPermissionRequestHandler((_w,_p,cb)=>cb(false));
   session.defaultSession.setPermissionCheckHandler(()=>false);
-  window=new BrowserWindow({width:760,height:720,show:false,frame:false,transparent:true,resizable:false,backgroundColor:'transparent',webPreferences:{preload:path.join(__dirname,'onboarding-preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true}});
+  window=new BrowserWindow({width:760,height:720,show:false,frame:false,transparent:true,resizable:false,backgroundColor:transparentBackgroundColor,webPreferences:{preload:path.join(__dirname,'onboarding-preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true}});
   window.removeMenu();page=pathToFileURL(path.join(__dirname,process.argv.includes('--native-onboarding')?'../dist/index.html':'../dist/onboarding.html')).href+(process.argv.includes('--native-onboarding')?'?nativeOnboarding':'');
   window.webContents.setWindowOpenHandler(()=>({action:'deny'}));window.webContents.on('will-navigate',e=>e.preventDefault());window.webContents.on('will-attach-webview',e=>e.preventDefault());
   const valid=e=>!window.isDestroyed()&&e.sender===window.webContents&&e.senderFrame===window.webContents.mainFrame&&e.senderFrame.url===page;
@@ -99,6 +100,7 @@ function present(v,activate=false){
   const width=coach?380:760,height=coach?440:720;
   if(lastMode!==coach){
     window.setAlwaysOnTop(coach,'floating');
+    window.setHasShadow(!coach); // The coach card paints its own shaped shadow, not a rectangular window shadow.
     // X11 fixed-size constraints must change together, only when the mode changes.
     window.setMaximumSize(0,0);window.setMinimumSize(width,height);window.setMaximumSize(width,height);
     window.setSize(width,height,false);

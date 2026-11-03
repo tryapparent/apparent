@@ -79,7 +79,7 @@ html.native-onboarding-shell body { background: transparent !important; margin: 
 .native-pencils { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; max-width: 100%; margin: 32px 0 16px; }
 .native-pencils button { background: none; border: 2px solid transparent; display: flex; align-items: center; flex-direction: column; padding: 16px 16px 24px; }
 .native-pencils button span { width: 25px; height: 95px; background: var(--pencil); border-radius: 4px 4px 1px 1px; position: relative; box-shadow: inset -7px 0 var(--apparent-shadow); }
-.native-pencils button span:after { content: ''; position: absolute; bottom: -17px; left: 0; border-left: 12.5px solid transparent; border-right: 12.5px solid transparent; border-top: 18px solid var(--apparent-artwork); }
+.native-pencils button span:after { content: ''; position: absolute; bottom: -17px; left: 0; border-left: 12.5px solid transparent; border-right: 12.5px solid transparent; border-top: 18px solid var(--apparent-foreground); }
 .native-pencils button[aria-pressed=true] { border-color: var(--apparent-ring); transform: translateY(-5px); }
 .native-pen-picker { height: 100%; min-height: min-content; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .native-pen-picker h1 { margin-bottom: 16px; }

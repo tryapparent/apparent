@@ -91,7 +91,7 @@ func hasOlderTest(installed: URL, running: [(id: String?, path: URL?)]) -> Bool 
     DispatchQueue.global(qos: .userInitiated).async {
       do {
         let target = try installCandidate(source: source, folder: folder)
-        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, animationDuration - Date().timeIntervalSince(began))) { self.installed = target; self.busy = false; self.message = "Preview 8 is installed and ready to open." }
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, animationDuration - Date().timeIntervalSince(began))) { self.installed = target; self.busy = false; self.message = "Preview 9 is installed and ready to open." }
       } catch {
         DispatchQueue.main.asyncAfter(deadline: .now() + max(0, animationDuration - Date().timeIntervalSince(began))) { self.busy = false; self.message = error.localizedDescription }
       }
@@ -167,7 +167,7 @@ struct InstallerView: View {
       HStack {
         Button("Choose location…") { model.chooseFolder(animationDuration: reduceMotion ? 0 : 1.05) }.buttonStyle(OnboardingBrand.ActionStyle()).disabled(model.busy || model.installed != nil)
         Spacer()
-        Button("Open preview 8") { model.open() }.buttonStyle(OnboardingBrand.ActionStyle(primary: true)).disabled(model.installed == nil)
+        Button("Open preview 9") { model.open() }.buttonStyle(OnboardingBrand.ActionStyle(primary: true)).disabled(model.installed == nil)
       }
     }.padding(32).frame(width: 720).font(OnboardingBrand.font(18))
       .foregroundStyle(OnboardingBrand.foreground).background(OnboardingBrand.background)
@@ -185,7 +185,7 @@ struct InstallerView: View {
 @main struct LocalInstaller: App {
   init() { OnboardingBrand.loadFont() }
   var body: some Scene {
-    WindowGroup("Install apparent · preview 8") { InstallerView() }.windowResizability(.contentSize)
+    WindowGroup("Install apparent · preview 9") { InstallerView() }.windowResizability(.contentSize)
   }
 }
 

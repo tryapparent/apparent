@@ -78,6 +78,8 @@ jobs:
         run: |
           cargo test -j 3 --offline workflow::test_instance -- --test-threads=1
           cargo test -j 3 --offline preview_relaunch_requests_the_exact_bundle -- --test-threads=1
+          cargo test -j 3 --offline choosing_capture_target_has_its_own_onboarding_milestone -- --test-threads=1
+          cargo test -j 3 --offline target_selection_precedes_recording -- --test-threads=1
           cargo test -j 3 --offline settings::practice -- --test-threads=2
           cargo test -j 3 --offline shared_pen_setup_skips_retired_intro -- --test-threads=2
           cargo test -j 3 --offline replay_rejects_queued_events_from_the_retired_transport -- --test-threads=2
@@ -103,7 +105,7 @@ jobs:
       - name: Verify the onboarding window and parent disconnect on macOS
         if: matrix.arch == 'Intel'
         working-directory: capture/desktop/ui/frontend
-        run: node --test --test-name-pattern='closed parent pipe|onboarding fixed window' tests/electron-smoke.cjs
+        run: node --test --test-name-pattern='closed parent pipe|onboarding fixed window|onboarding transparent coach' tests/electron-smoke.cjs
       - uses: actions/upload-artifact@v4
         with:
           name: Apparent-Onboarding-Test-${{ matrix.arch }}

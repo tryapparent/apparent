@@ -11,10 +11,12 @@ declare global {interface Window {nativeOnboarding?:{readState:()=>Promise<State
 const permissionNames:Record<string,string>={'screen-recording':'Screen & System Audio Recording',microphone:'Microphone',accessibility:'Accessibility','speech-recognition':'Speech Recognition',camera:'Camera'};
 export function NativeOnboarding(){
   const [state,setState]=useState<State|null>(null),[error,setError]=useState('');
-  const [penLanding,setPenLanding]=useState(false);
+  const [penPhase,setPenPhase]=useState<'idle'|'preparing'|'hopping'>('idle');
+  const penLanding=penPhase==='hopping',penBusy=penPhase!=='idle';
+  const penFrog=useRef<HTMLImageElement|null>(null),penRun=useRef(0),penActive=useRef(false);
   const penTimer=useRef<ReturnType<typeof setTimeout>|null>(null),penCommitted=useRef(false);
-  useEffect(()=>()=>{if(penTimer.current)clearTimeout(penTimer.current)},[]);
-  useEffect(()=>{if(state?.step!=='welcome'||!state?.penPicker||state?.penError){if(penTimer.current)clearTimeout(penTimer.current);penTimer.current=null;setPenLanding(false);penCommitted.current=false}},[state?.step,state?.penPicker,state?.penError]);
+  useEffect(()=>()=>{penRun.current++;if(penTimer.current)clearTimeout(penTimer.current)},[]);
+  useEffect(()=>{if(state?.step!=='welcome'||!state?.penPicker||state?.penError){penRun.current++;penActive.current=false;if(penTimer.current)clearTimeout(penTimer.current);penTimer.current=null;setPenPhase('idle');penCommitted.current=false}},[state?.step,state?.penPicker,state?.penError]);
   document.documentElement.classList.add('native-onboarding-shell');
   useEffect(()=>{const bridge=window.nativeOnboarding;const off=bridge?.onState(setState);void bridge?.readState().then(setState);return()=>off?.()},[]);
   async function action(value:Action){try{setError('');await window.nativeOnboarding?.action(value)}catch{setError('The app connection was interrupted. Close setup and reopen it from apparent.')}}
@@ -25,20 +27,39 @@ export function NativeOnboarding(){
     penTimer.current=null;
     void action('continue');
   }
-  function confirmPen(){
-    if(!state?.penSelected||state.penError||penLanding||penTimer.current)return;
-    penCommitted.current=false;setPenLanding(true);
-    penTimer.current=setTimeout(finishPenHop,window.matchMedia('(prefers-reduced-motion: reduce)').matches?0:1100);
+  async function confirmPen(){
+    if(!state?.penSelected||state.penError||penBusy||penActive.current)return;
+    penActive.current=true;const run=++penRun.current;
+    penCommitted.current=false;setError('');setPenPhase('preparing');
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){finishPenHop();return;}
+    const painted=()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
+    try {
+      const image=penFrog.current;if(!image)throw Error('Missing frog');
+      await Promise.all([image.decode(),document.fonts.ready]);
+      await painted();if(run!==penRun.current)return;
+      setPenPhase('hopping');await painted();if(run!==penRun.current)return;
+      const hop=image.getAnimations().find(animation=>(animation as CSSAnimation).animationName==='native-pen-hop');
+      if(!hop)throw Error('Hop did not start');
+      await hop.finished;if(run!==penRun.current)return;
+      // Let the landing remain visible. Advance from rendered animation completion, never a cold-start wall timer.
+      await new Promise<void>(resolve=>{penTimer.current=setTimeout(resolve,180)});
+      if(run===penRun.current)finishPenHop();
+    } catch {
+      if(run!==penRun.current)return;
+      if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){finishPenHop();return;}
+      penActive.current=false;setPenPhase('idle');setError('The frog could not finish its jump. Try again.');
+    }
   }
   const shortcutRecorder=useRef<HTMLDivElement|null>(null);
   useEffect(()=>{if(state?.shortcutEditor?.recording)shortcutRecorder.current?.focus()},[state?.shortcutEditor?.recording]);
   if(!state)return <main className="native-setup"><p>Connecting to apparent…</p></main>;
   const practice=state.step==='try-it',penPage=state.step==='welcome'&&state.penPicker;
   const boardName='Whiteboard';
-  document.title=state.testInstance?'apparent onboarding preview 8':'apparent setup';
+  document.title=state.testInstance?'apparent onboarding preview 9':'apparent setup';
   if(practice){
     const content:Record<string,{title:string;text:string;button?:string;action?:string}>={
       start:{title:'Start your first capture.',text:`Press ${state.shortcut} to start recording.`},
+      screen:{title:'Choose Screen.',text:'Choose Screen in the capture controls. Whiteboard becomes available once recording starts.'},
       whiteboard:{title:`Open ${boardName}.`,text:`Click ${boardName} in this app’s recording controls at the top of your screen.`},
       'board-ink':{title:'Draw on the whiteboard.',text:'Try a circle or an arrow. The guide moves on when you finish your mark.'},
       'screen-ink':{title:'Draw on your screen.',text:'Hold Shift and circle something in your window.'},
@@ -48,15 +69,15 @@ export function NativeOnboarding(){
       paste:{title:'Paste your capture.',text:`In your agent, press ${state.platform==='linux'?'Ctrl':'⌘'} V. Confirm when it appears.`,button:'Confirm paste',action:'practice-pasted'},
       locate:{title:'apparent lives here.',text:`Find the apparent icon in your ${state.platform==='linux'?'system tray':'menu bar'}. Click it, then choose Open Latest Capture.`},
       complete:{title:'Ready for your next idea.',text:'You can record, draw, paste, and find your captures. Your setup is complete.',button:'Finish setup',action:'practice-finish'},
-      retry:{title:'Try another capture.',text:`Press ${state.shortcut}, open Whiteboard, then try both drawing steps. Your previous capture was kept.`},
-      'copy-failed':{title:'Saved, but not copied.',text:'The capture is saved. Open it from apparent’s menu; setup has not marked the paste lesson complete.'},
+      retry:{title:'Try another capture.',text:`Press ${state.shortcut} to start again, then follow both drawing prompts. Your previous capture is saved.`},
+      'copy-failed':{title:'Saved, but not copied.',text:'Your capture is saved. Find it in apparent’s menu.',button:'Find saved capture',action:'practice-locate'},
     };
     const c=content[state.practice??'start']??content.start;
     return <main className="native-coach" data-stage={state.practice} data-arrow={state.coachPointsUp} style={{'--coach-arrow':`${(state.coachArrow??190)-24}px`} as React.CSSProperties}><img key={state.practice} src={frog} alt="Frog guide"/><div className="native-coach-content"><div className="native-coach-label">Your first capture</div><h1>{c.title}</h1><p>{c.text}</p>{c.button&&<Button onClick={()=>void action(c.action!)}>{c.button}</Button>}{!state.firstCaptureRequired&&<Button variant="outline" onClick={()=>void action('continue')}>Skip practice</Button>}{error&&<p role="alert">{error}</p>}<Button variant="ghost" className="native-later" onClick={()=>void action('later')}>Try later</Button></div></main>;
   }
-  return <main className="native-setup"><header><span>{state.testInstance?'apparent · onboarding preview 8':'apparent · setup'}</span><Button variant="ghost" size="icon" aria-label="Close setup" onClick={()=>void action('close')}>×</Button></header><section>
+  return <main className="native-setup"><header><span>{state.testInstance?'apparent · onboarding preview 9':'apparent · setup'}</span><Button variant="ghost" size="icon" aria-label="Close setup" onClick={()=>void action('close')}>×</Button></header><section>
     {state.step==='welcome'&&!state.penPicker&&<div className="native-welcome"><h1>Welcome.</h1><img src={icon} alt="apparent"/><Button disabled>Sign in with Google</Button><p>Set up locally. Sign-in is not available yet.</p></div>}
-    {penPage&&<div className="native-pen-picker"><h1>Pick your pen.</h1><div className="native-pencils">{([['coral',[217,76,68]],['purple',[122,88,199]],['blue',[59,121,189]],['green',[57,123,97]]] as const).map(([name,rgb])=><Button variant="ghost" key={name} aria-label={`${name} pen`} disabled={penLanding} aria-pressed={state.penSelected&&state.penRgb.every((component,index)=>component===rgb[index])} style={{'--pencil':`var(--apparent-pen-${name})`} as React.CSSProperties} onClick={()=>void action(`pen:${name}`)}><span aria-hidden="true"/></Button>)}</div><div className="native-pond" data-landing={penLanding} style={{'--pond-colour':state.penSelected?`rgb(${state.penRgb.join(',')})`:'var(--apparent-muted)'} as React.CSSProperties}><svg className="native-puddle" viewBox="0 0 300 100" role="img" aria-label="Puddle in your selected pen colour"><path d="M22 49C9 21 65 11 99 17C133 1 169 18 192 12C229 4 249 28 275 31C310 37 295 69 263 73C244 94 208 86 180 90C144 102 122 84 91 90C48 93 6 78 22 49Z"/><ellipse className="native-puddle-ring" cx="150" cy="49" rx="48" ry="15"/></svg><img className="native-pond-frog" src={frog} alt="Frog beside the puddle" onAnimationEnd={event=>{if(event.animationName==='native-pen-hop'&&penLanding)finishPenHop()}}/></div>{state.penError&&<p role="alert">The colour could not be saved. Try choosing it again.</p>}</div>}
+    {penPage&&<div className="native-pen-picker"><h1>Pick your pen.</h1><div className="native-pencils">{([['coral',[217,76,68]],['purple',[122,88,199]],['blue',[59,121,189]],['green',[57,123,97]]] as const).map(([name,rgb])=><Button variant="ghost" key={name} aria-label={`${name} pen`} disabled={penBusy} aria-pressed={state.penSelected&&state.penRgb.every((component,index)=>component===rgb[index])} style={{'--pencil':`var(--apparent-pen-${name})`} as React.CSSProperties} onClick={()=>void action(`pen:${name}`)}><span aria-hidden="true"/></Button>)}</div><div className="native-pond" data-landing={penLanding} style={{'--pond-colour':state.penSelected?`rgb(${state.penRgb.join(',')})`:'var(--apparent-muted)'} as React.CSSProperties}><svg className="native-puddle" viewBox="0 0 300 100" role="img" aria-label="Puddle in your selected pen colour"><path d="M22 49C9 21 65 11 99 17C133 1 169 18 192 12C229 4 249 28 275 31C310 37 295 69 263 73C244 94 208 86 180 90C144 102 122 84 91 90C48 93 6 78 22 49Z"/><ellipse className="native-puddle-ring" cx="150" cy="49" rx="48" ry="15"/></svg><img ref={penFrog} className="native-pond-frog" src={frog} alt="Frog beside the puddle"/></div>{state.penError&&<p role="alert">The colour could not be saved. Try choosing it again.</p>}</div>}
     {state.step==='permissions'&&<><h1>{state.fix?'Allow access.':'We need three things.'}</h1><div className="native-permissions">{state.rows.map(row=><div key={row.permission}><div><strong>{permissionNames[row.permission]}</strong>{!row.required&&<small>Optional</small>}</div>{row.reopening?<span>Reopening apparent…</span>:row.status==='granted'&&!row.relaunch?<span className="native-granted">✓ Enabled</span>:<Button variant="outline" onClick={()=>void action(`grant:${row.permission}`)}>{row.relaunch?'Reopen apparent':'Open Settings'}</Button>}</div>)}</div></>}
     {state.step==='shortcut'&&<><h1>Start and stop with your shortcut.</h1><div className="native-shortcut"><kbd>{state.shortcut}</kbd>{state.shortcutEditor?.externallyManaged?<Button onClick={()=>void action('use-desktop-shortcut')}>Use desktop shortcut</Button>:state.shortcutEditor?.recording?<div ref={shortcutRecorder} tabIndex={0} role="group" aria-label="Shortcut recorder" onKeyDown={event=>{
       if(event.key==='Tab'||event.target!==event.currentTarget)return;
@@ -68,5 +89,5 @@ export function NativeOnboarding(){
     }}><p>Press your new shortcut.</p><Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div>:<><Button variant="outline" onClick={()=>void action('change-shortcut')}>Change shortcut</Button>{!state.shortcutChosen&&<Button onClick={()=>void action('use-current-shortcut')}>Use this shortcut</Button>}</>}{state.shortcutEditor?.error&&<p role="alert">{state.shortcutEditor.error}</p>}</div></>}
     {state.step==='done'&&<><h1>Ready for your next idea.</h1><div className="native-explain"><img src={frog} alt=""/></div><p>apparent stays in the menu bar, ready when you are.</p></>}
     {error&&<p role="alert">{error}</p>}
-    </section><footer className={penPage?'native-pen-footer':undefined}><Button variant="ghost" onClick={()=>void action('back')} disabled={state.index===0||penLanding}>Back</Button>{!penPage&&<span>{state.index+1} / {state.count}</span>}<Button onClick={()=>penPage?confirmPen():void action('continue')} disabled={(penPage&&(!state.penSelected||penLanding||state.penError))||(state.step==='permissions'&&!state.ready)||(state.step==='shortcut'&&state.firstCaptureRequired&&!state.shortcutChosen)}>{state.step==='welcome'?(state.penPicker?'Use this pen':'Choose a pen'):state.step==='done'?'Finish setup':state.step==='permissions'?(state.fix?'Finish permission setup':'Choose recording shortcut'):'Try a capture'}</Button></footer></main>;
+    </section><footer className={penPage?'native-pen-footer':undefined}><Button variant="ghost" onClick={()=>void action('back')} disabled={state.index===0||penBusy}>Back</Button>{!penPage&&<span>{state.index+1} / {state.count}</span>}<Button aria-busy={penPage&&penBusy} onClick={()=>penPage?confirmPen():void action('continue')} disabled={(penPage&&(!state.penSelected||penBusy||state.penError))||(state.step==='permissions'&&!state.ready)||(state.step==='shortcut'&&state.firstCaptureRequired&&!state.shortcutChosen)}>{state.step==='welcome'?(state.penPicker?'Use this pen':'Choose a pen'):state.step==='done'?'Finish setup':state.step==='permissions'?(state.fix?'Finish permission setup':'Choose recording shortcut'):'Try a capture'}</Button></footer></main>;
 }

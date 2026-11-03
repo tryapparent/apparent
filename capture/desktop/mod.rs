@@ -2373,7 +2373,6 @@ impl ApparentCoordinator {
     /// Moves the island to `phase`, triggering a `.blurReplace` cross-transition on the inner content
     /// while the outer shell springs its width smoothly (`stiffness: 400, damping: 30` equivalent).
     fn set_island_phase(&mut self, phase: IslandPhase) {
-        use crate::capture::desktop::settings::onboarding::Input;
         if matches!(phase, IslandPhase::Selecting { .. } | IslandPhase::Processing | IslandPhase::Recording | IslandPhase::Hidden | IslandPhase::Dismissing) {
             self.public_share.cancel_all();
         }
@@ -2392,19 +2391,7 @@ impl ApparentCoordinator {
         if matches!(phase, IslandPhase::Recording) && !matches!(self.island_phase, IslandPhase::Recording) {
             self.capture_local_practice = self.onboarding.as_ref().is_some_and(|session| session.local_practice());
         }
-        let capture = match (self.island_phase, phase) {
-            (IslandPhase::Recording, IslandPhase::Recording) => None,
-            (_, IslandPhase::Recording) => Some(Input::CaptureStarted),
-            (IslandPhase::Recording | IslandPhase::Processing, IslandPhase::Completed { .. }) => {
-                Some(Input::CaptureEnded { completed: true })
-            }
-            // Startup can fail before Recording is presented. Clear the shortcut attempt
-            // then too, so a later menu capture cannot inherit it.
-            (_, IslandPhase::Hidden | IslandPhase::Dismissing) => {
-                Some(Input::CaptureEnded { completed: false })
-            }
-            _ => None,
-        };
+        let capture = onboarding_capture_transition(self.island_phase,phase);
         if let Some(input) = capture
             && let Some(session) = self.onboarding.as_mut()
         {
@@ -4699,8 +4686,32 @@ impl HudPillWindow {
     }
 }
 
-/// Leading status cluster: a 32px slot concentric with the capsule's left cap, then text.
-/// Also acts as the drag handle for the floating island.
+/// The onboarding coach follows the controls actually available in each capture phase.
+fn onboarding_capture_transition(previous:IslandPhase,next:IslandPhase)->Option<crate::capture::desktop::settings::onboarding::Input> {
+    use crate::capture::desktop::settings::onboarding::Input;
+    match (previous, next) {
+            (IslandPhase::Recording, IslandPhase::Recording) => None,
+            (_, IslandPhase::Selecting { .. }) => Some(Input::CaptureSelecting),
+            (_, IslandPhase::Recording) => Some(Input::CaptureStarted),
+            (IslandPhase::Recording | IslandPhase::Processing, IslandPhase::Completed { .. }) => {
+                Some(Input::CaptureEnded { completed: true })
+            }
+            // Startup can fail before Recording is presented. Clear the shortcut attempt
+            // then too, so a later menu capture cannot inherit it.
+            (_, IslandPhase::Hidden | IslandPhase::Dismissing) => {
+                Some(Input::CaptureEnded { completed: false })
+            }
+            _ => None,
+        }
+}
+
+#[cfg(test)]
+#[test]
+fn choosing_capture_target_has_its_own_onboarding_milestone() {
+    assert!(onboarding_capture_transition(IslandPhase::Hidden,IslandPhase::Selecting{mode:SelectionMode::Screen}).is_some(),"the coach must teach Screen while the target picker is visible");
+}
+
+/// Leading status cluster, also the floating island drag handle.
 fn island_lead() -> Div {
     island_lead_base().map(platform::window_drag_region)
 }

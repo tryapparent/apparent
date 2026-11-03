@@ -43,13 +43,13 @@ chmod 755 "$resources/onboarding-shell"
 python3 - "$app" "$(git rev-parse HEAD)" <<'PY'
 import pathlib,plistlib,sys,shutil
 app=pathlib.Path(sys.argv[1]);info=app/'Contents/Info.plist'
-p=plistlib.loads(info.read_bytes());p.update(CFBundleIdentifier='dev.apparent.onboarding-test.build-'+sys.argv[2][:12],CFBundleName='apparent preview 8',CFBundleDisplayName='apparent preview 8',LSEnvironment={'APPARENT_TEST_INSTANCE':'1','APPARENT_TEST_BUILD':sys.argv[2]},ApparentTestBuildID=sys.argv[2],ApparentTestPreview=8)
+p=plistlib.loads(info.read_bytes());p.update(CFBundleIdentifier='dev.apparent.onboarding-test.build-'+sys.argv[2][:12],CFBundleName='apparent preview 9',CFBundleDisplayName='apparent preview 9',LSEnvironment={'APPARENT_TEST_INSTANCE':'1','APPARENT_TEST_BUILD':sys.argv[2]},ApparentTestBuildID=sys.argv[2],ApparentTestPreview=9)
 for k in list(p):
  if k.startswith('SU') or k in ['CFBundleURLTypes']:p.pop(k,None)
 info.write_bytes(plistlib.dumps(p))
 framework=app/'Contents/Frameworks/Sparkle.framework'
 if framework.exists():shutil.rmtree(framework)
-ui=app/'Contents/Resources/settings/runtime/Electron.app/Contents/Info.plist';p=plistlib.loads(ui.read_bytes());p.update(CFBundleIdentifier='dev.apparent.onboarding-test.build-'+sys.argv[2][:12]+'.ui',CFBundleName='apparent preview 8 UI',CFBundleDisplayName='apparent preview 8 UI',LSUIElement=True);ui.write_bytes(plistlib.dumps(p))
+ui=app/'Contents/Resources/settings/runtime/Electron.app/Contents/Info.plist';p=plistlib.loads(ui.read_bytes());p.update(CFBundleIdentifier='dev.apparent.onboarding-test.build-'+sys.argv[2][:12]+'.ui',CFBundleName='apparent preview 9 UI',CFBundleDisplayName='apparent preview 9 UI',LSUIElement=True);ui.write_bytes(plistlib.dumps(p))
 PY
 # Strip only this owned copy, before signing; never mutate the build cache.
 strip -S "$app/Contents/MacOS/apparent" "$app/Contents/MacOS/apparent-helper"

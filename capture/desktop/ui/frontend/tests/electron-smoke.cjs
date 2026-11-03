@@ -230,6 +230,8 @@ for(const mode of ['--native-onboarding','--onboarding'])test(`onboarding fixed 
     await expect(page.locator('.native-setup')).toHaveCSS('background-color',scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)');
     await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toHaveCSS('background-color','rgb(122, 88, 199)');
     await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toHaveCSS('color','rgb(245, 240, 232)');
+    const tip=await page.locator('.native-pencils button span').first().evaluate(el=>getComputedStyle(el,'::after').borderTopColor);
+    assert.notEqual(tip,scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)','pen tip must remain visible against the page');
   }
 
   await page.getByRole('button',{name:'purple pen',exact:true}).click();
@@ -242,9 +244,15 @@ for(const mode of ['--native-onboarding','--onboarding'])test(`onboarding fixed 
     return [h.x+h.width/2,button.x+button.width/2,innerWidth/2];
   });
   assert.ok(Math.abs(centres[0]-centres[2])<2&&Math.abs(centres[1]-centres[2])<2);
+  // Hold the first image decode, as on a cold launch. No wall-clock timeout may skip the hop.
+  await page.locator('.native-pond-frog').evaluate(img=>{const decode=img.decode.bind(img);img.decode=()=>decode().then(()=>new Promise(resolve=>{window.releasePenImage=resolve}));});
   const before=await page.locator('.native-pond-frog').boundingBox();
   await page.getByRole('button',{name:'Use this pen',exact:true}).click();
   await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toBeDisabled();
+  await new Promise(resolve=>setTimeout(resolve,1400));
+  assert.equal(output.includes('"action":"continue"'),false,'cold image readiness must not be bypassed by a timer');
+  await page.evaluate(()=>window.releasePenImage());
+  await expect(page.locator('.native-pond')).toHaveAttribute('data-landing','true');
   const minimum=await page.evaluate(()=>new Promise(resolve=>{
     const frog=document.querySelector('.native-pond-frog');let min=frog.getBoundingClientRect().y;const began=performance.now();
     function sample(){min=Math.min(min,frog.getBoundingClientRect().y);if(performance.now()-began<1000)requestAnimationFrame(sample);else resolve(min)}requestAnimationFrame(sample);
@@ -252,6 +260,8 @@ for(const mode of ['--native-onboarding','--onboarding'])test(`onboarding fixed 
   assert.ok(minimum<before.y-25,'frog must rise visibly before landing');
   await expect.poll(()=>output).toContain('"action":"continue"');
   assert.equal(output.match(/"action":"continue"/g)?.length,1);
+  send({step:'try-it',practice:'screen'});
+  await expect(page.getByRole('heading',{name:'Choose Screen.',exact:true})).toBeVisible();
   send({ step:'try-it', practice:'whiteboard', anchor:[300,30,320,50] });
   await expect(page.getByRole('heading', { name:'Open Whiteboard.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(380);
@@ -259,11 +269,14 @@ for(const mode of ['--native-onboarding','--onboarding'])test(`onboarding fixed 
     const rect=document.querySelector('main').getBoundingClientRect();
     return rect.left>=0 && rect.right<=innerWidth && rect.bottom<=innerHeight;
   }), true);
+  send({step:'try-it',practice:'copy-failed'});
+  await page.getByRole('button',{name:'Find saved capture',exact:true}).click();
+  await expect.poll(()=>output).toContain('practice-locate');
   send({ step:'try-it', practice:'locate', anchor:[900,0,24,24] });
   await expect(page.getByRole('heading', { name:'apparent lives here.', exact:true })).toBeVisible();
   await expect(page.getByText('Find the apparent icon in your menu bar. Click it, then choose Open Latest Capture.', { exact:true })).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveAttribute('data-arrow','true');
-  for(const phase of ['start','whiteboard','board-ink','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
+  for(const phase of ['start','screen','whiteboard','board-ink','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
     send({step:'try-it',practice:phase});
     await expect(page.locator('.native-coach')).toHaveAttribute('data-stage',phase);
     const layout=await page.locator('.native-coach').evaluate(card=>{
@@ -363,5 +376,41 @@ test('onboarding survives a closed parent pipe and reopens the same profile', { 
     assert.equal(result.code,0,reason+': '+stderr);
     assert.ok(!stderr.includes('UNHANDLED_ONBOARDING'),stderr);
     await browser.close();
+  }
+});
+
+// Capture the real Electron painted surface, without Playwright's omitBackground override.
+test('onboarding transparent coach keeps the outside canvas clear', {timeout:30000}, async t=>{
+  const {_electron}=require('@playwright/test');
+  const profile=await fs.mkdtemp(path.join(os.tmpdir(),'onboarding-alpha-'));
+  const nativeFs=require('node:fs');
+  const fifo=path.join(profile,'parent-input');require('node:child_process').execFileSync('mkfifo',[fifo]);
+  const input=nativeFs.openSync(fifo,'r+');
+  // Playwright closes its child's stdin. Keep the production parent channel open via an owned FIFO.
+  const quote=value=>"'"+value.replaceAll("'","'\\''")+"'";
+  const launcher=path.join(profile,'electron-launch');
+  await fs.writeFile(launcher,`#!/bin/sh\nexec ${quote(require('electron'))} \"$@\" < ${quote(fifo)}\n`,{mode:0o700});
+  let app;
+  t.after(async()=>{try{await app?.close()}finally{try{nativeFs.closeSync(input)}finally{await fs.rm(profile,{recursive:true,force:true})}}});
+  app=await _electron.launch({executablePath:launcher,args:[path.join(__dirname,'..'),'--onboarding',...(process.platform==='linux'?['--no-sandbox']:[])],env:{...process.env,APPARENT_UI_PROFILE:profile}});
+  const page=await app.firstWindow();
+  const send=patch=>nativeFs.writeSync(input,JSON.stringify({type:'state',step:'welcome',rows:[],ready:true,index:0,count:5,testInstance:true,shortcut:'⌃⌥⇧9',...patch})+'\n');
+  send({});await expect(page.getByRole('heading',{name:'Welcome.',exact:true})).toBeVisible();
+  send({step:'try-it',practice:'whiteboard'});
+  await expect(page.getByRole('heading',{name:'Open Whiteboard.',exact:true})).toBeVisible();
+  const window=await app.browserWindow(page);
+  for(const colorScheme of ['light','dark']){
+    await page.emulateMedia({colorScheme});
+    await page.evaluate(()=>document.fonts.ready);
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    const pixels=await window.evaluate(async win=>{
+      const image=(await win.capturePage()).resize({width:380,height:440});const data=image.toBitmap();
+      const pixel=(x,y)=>[...data.subarray((y*380+x)*4,(y*380+x)*4+4)];
+      return{background:win.getBackgroundColor(),shadow:win.hasShadow(),corner:pixel(2,2),bottom:pixel(378,438),card:pixel(190,180)};
+    });
+    if(process.platform==='darwin')assert.equal(pixels.shadow,false,'only the popup should cast a shadow');
+    assert.ok(pixels.corner[3]<5,`${colorScheme}: opaque top gutter ${JSON.stringify(pixels)}`);
+    assert.ok(pixels.bottom[3]<5,`${colorScheme}: opaque bottom gutter ${JSON.stringify(pixels)}`);
+    assert.equal(pixels.card[3],255,'the popup itself must stay opaque');
   }
 });

@@ -292,7 +292,9 @@ The shared tour has Welcome, pen choice, permissions, recording shortcut and liv
 practice. It skips the retired HowItWorks page, including old resume points and
 Back. No typing opt-in or typing shortcut is added. The centred pen picker uses
 accessible colour names, a puddle reflecting the saved colour and a frog hop on
-confirmation; reduced motion advances without an animated delay. `penColor`
+confirmation. Confirmation waits for image/font readiness, the rendered hop and a
+short landing hold; reduced motion advances without an animated delay. Pen tips
+use the contrasting foreground in both appearances. `penColor`
 accepts coral, purple, blue or green; legacy captures without colour retain red.
 The onboarding chrome uses the brand Paper/Carbon appearance roles; pigment stays constant.
 
@@ -302,12 +304,22 @@ A desktop-owned Linux shortcut is explicitly accepted rather than rewritten.
 `experiments.onboardingFirstCapture=false` retains optional choice and a visible
 Skip practice action; it does not select another onboarding surface.
 
-Practice follows this process's recording, typed Whiteboard window, finished
+Practice follows the actual target picker (Choose Screen), then this process's
+recording (Open Whiteboard), typed Whiteboard window, finished
 whiteboard mark, screen ink, stop, successful clipboard write, manual paste
 confirmation and Open Latest Capture. Paste is never monitored or proof of agent
 delivery. **Apparent lives here** follows that confirmation and points to this
 app's menu-bar icon on macOS (the tray on Linux). Opening its latest capture
-completes that lesson. Practice stays local under Rust's existing capture policy.
+completes that lesson. A partial saved capture still reaches copy/paste and this
+location lesson, then offers a retry; completing practice still requires both
+kinds of drawing, manual paste confirmation and opening this app's own latest
+capture. Failed clipboard writes can reveal the saved capture without claiming
+paste success. Practice stays local under Rust's existing capture policy.
+
+The coaching window uses the shared explicit ARGB clear token for Electron's
+native background. CSS transparency alone does not clear a native white surface.
+The card paints its own shadow; the larger coach window has no rectangular native
+shadow. Electron pixel checks cover transparent outside gutters in both themes.
 
 Permission refreshes change contents without reactivating or resizing a visible
 setup window. Explicit parent Show may bring it forward after system prompts.
@@ -351,8 +363,8 @@ keeps both launch and agent-control Unix sockets within the macOS path limit. Ea
 helper and UI identifiers, so LaunchServices/TCC and the single-instance socket
 cannot resolve to an older preview. Restart explicitly opens this test bundle;
 repeat launches of the same build still share one GUI owner and resume its saved
-state. New builds start fresh and require their own OS permission grants. Preview 8 is
-labelled **apparent preview 8** in macOS so its entry is distinct from older tests. Existing
+state. New builds start fresh and require their own OS permission grants. Preview 9 is
+labelled **apparent preview 9** in macOS so its entry is distinct from older tests. Existing
 previews, their data and real app permissions are preserved. HOME and OS-owned
 paths are unchanged. Login defaults off; Record starts as Control–Option–Shift–9.
 

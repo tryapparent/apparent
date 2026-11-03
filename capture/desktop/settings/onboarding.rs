@@ -218,6 +218,7 @@ pub enum Input {
     },
     /// ⌥⇧S was pressed while a required permission is off.
     Blocked,
+    CaptureSelecting,
     CaptureStarted,
     CaptureEnded {
         completed: bool,
@@ -480,6 +481,7 @@ impl Flow {
                 }
                 Effect::Show
             }
+            Input::CaptureSelecting => Effect::None,
             Input::CaptureStarted if !self.hidden => {
                 self.practice_recording = std::mem::take(&mut self.shortcut_pending);
                 self.hidden = true;
@@ -1308,6 +1310,7 @@ impl Session {
     pub fn input(&mut self, input: Input) -> Effect {
         if self.practice.is_some() && self.flow.step()==Step::TryIt && !self.fallback_pending {
             match &input {
+                Input::CaptureSelecting => self.practice.as_mut().unwrap().selecting(),
                 Input::CaptureStarted => {
                     self.practice_completed=false;
                     self.practice=Some(super::practice::Practice::default());
@@ -1772,6 +1775,16 @@ mod tests {
         assert!(matches!(receiver.recv().unwrap().for_current_session(Some(replacement.source())),Some(Event::Action(_))));
         assert!(matches!(receiver.recv().unwrap().for_current_session(Some(replacement.source())),Some(Event::Exited)));
         assert!(matches!(Event::Launch(grants(&Permission::REQUIRED)).for_current_session(None),Some(Event::Launch(_))));
+    }
+
+    #[test]
+    fn target_selection_precedes_recording_and_partial_capture_still_reaches_the_menu_lesson() {
+        let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureSelecting);
+        assert_eq!(s.practice.as_ref().unwrap().stage,super::super::practice::Stage::Screen);
+        s.input(Input::CaptureStarted);s.practice_whiteboard();s.observe_practice(true,0,true,Some(true));
+        s.input(Input::CaptureEnded{completed:true});s.action("practice-paste");s.action("practice-pasted");
+        assert!(s.practice_locating());s.practice_latest();assert_eq!(s.action("practice-finish"),Effect::None);
+        assert!(!s.flow.first_capture_completed);
     }
 
     #[test]
