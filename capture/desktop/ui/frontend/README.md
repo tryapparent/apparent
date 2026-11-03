@@ -627,3 +627,11 @@ invocation in the existing job after its owned app installation; retain
 the job's evidence handling. A non-Mac skip, syntax check or Electron regression
 cannot certify Darwin compilation, AX/input, installed routing or native parity.
 Native Agents removal, merge and CI acceptance remain the parent's gates.
+
+Candidate native Mac Settings acceptance can be explicitly dispatched through
+`Mac verification` with `settings_native=true` on the owned feature ref. That
+focused job builds/installs the candidate and executes the existing native
+Settings fixture only. It emits no full verification/publication receipt; the
+full caller and reusable jobs remain main-only. Full CI runs after merge and
+gates publication of the exact main commit. Native failure still blocks Agents
+retirement and merge regardless of the absence of a branch full-CI requirement.

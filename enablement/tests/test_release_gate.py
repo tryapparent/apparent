@@ -53,6 +53,15 @@ class AdmissionTests(unittest.TestCase):
             self.assertEqual(self.admit(platform, number), self.sha)
             self.assertEqual(self.admit(platform), self.sha)
 
+    def test_focused_settings_candidate_is_not_full_verification_or_a_receipt(self):
+        root = Path(__file__).resolve().parents[2]
+        text = (root / '.github/workflows/verification-mac.yml').read_text()
+        section = text.split('  settings-native:\n', 1)[1]
+        self.assertIn("github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'", section)
+        self.assertIn('node --test capture/desktop/ui/frontend/tests/mac-storage-native.cjs', section)
+        for forbidden in ('verification-platform.yml', 'verification.py', 'owner_lanes.py', 'cargo test', 'release-ready', 'release_gate.py', 'secrets.'):
+            self.assertNotIn(forbidden, section)
+
     def test_full_verification_is_main_only_even_for_manual_dispatch(self):
         root = Path(__file__).resolve().parents[2]
         for caller in ('verification.yml', 'verification-mac.yml'):

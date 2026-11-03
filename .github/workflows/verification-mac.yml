@@ -11,6 +11,10 @@ on:
         description: 'Run only installed Connect worker proof on a candidate branch'
         type: boolean
         default: false
+      settings_native:
+        description: 'Only installed Settings native acceptance for a feature candidate; no full CI or publication receipt'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -57,3 +61,53 @@ jobs:
   connect-native:
     if: github.ref != 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.connect_worker_proof
     uses: ./.github/workflows/native-proof-mac.yml
+
+  settings-native:
+    name: Focused installed Settings native acceptance
+    if: github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.0'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare native build toolchain
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then brew install ffmpeg; fi
+          xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
+      - name: Build and install the candidate without launching
+        run: |
+          umask 077
+          cargo build -j 3 --locked
+          export APPARENT_APP_DIR="$HOME/Applications/Apparent-Settings-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.app"
+          test ! -e "$APPARENT_APP_DIR"
+          APPARENT_NO_LAUNCH=1 bash capture/desktop/scripts/packaging/install-app.sh
+          codesign --verify --deep --strict "$APPARENT_APP_DIR"
+      - name: Installed Settings native acceptance only
+        timeout-minutes: 10
+        env:
+          APPARENT_STORAGE_NATIVE_CI: '1'
+          APPARENT_STORAGE_NATIVE_OUTPUT: ${{ runner.temp }}/apparent-settings-native
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          export APPARENT_STORAGE_NATIVE_APP_DIR="$HOME/Applications/Apparent-Settings-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.app"
+          node --test capture/desktop/ui/frontend/tests/mac-storage-native.cjs
+      - name: Retain owned native evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: settings-candidate-native
+          path: |
+            ${{ runner.temp }}/apparent-settings-native/*.json
+            ${{ runner.temp }}/apparent-settings-native/*.png
+            ${{ runner.temp }}/apparent-settings-native/*.log
+          if-no-files-found: warn
