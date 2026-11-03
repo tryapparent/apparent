@@ -140,6 +140,18 @@ func main() throws {
               let up = CGEvent(keyboardEventSource: nil, virtualKey: 49, keyDown: false) else {
             throw Failure(description: "Could not create Space events")
         }
+        let focusedWindow = try attribute(app, kAXFocusedWindowAttribute)
+        let focusedElement = try attribute(app, kAXFocusedUIElementAttribute)
+        let keyboard: [String: Any] = ["pid": pid,
+            "windowFocused": focusedWindow.map { CFEqual($0, window) } ?? false,
+            "checkboxFocused": focusedElement.map { CFEqual($0, target) } ?? false,
+            "valueBefore": text(try attribute(target, kAXValueAttribute)),
+            "downFlags": down.flags.rawValue, "upFlags": up.flags.rawValue,
+            "sessionFlags": CGEventSource.flagsState(.combinedSessionState).rawValue]
+        let diagnostic = try JSONSerialization.data(withJSONObject: keyboard)
+        FileHandle.standardError.write(Data("owned-Space=\(String(decoding: diagnostic, as: UTF8.self))\n".utf8))
+        try require(keyboard["windowFocused"] as? Bool == true && keyboard["checkboxFocused"] as? Bool == true,
+                    "Owned app keyboard target does not match the checkbox window")
         try require(ProcessInfo.processInfo.systemUptime < deadline, "No keyboard input after AX deadline")
         // Queue the complete key pair together; no wait or throwing AX call
         // may leave a key held until the outer subprocess timeout.

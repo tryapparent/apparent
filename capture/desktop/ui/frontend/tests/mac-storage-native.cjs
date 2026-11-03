@@ -291,6 +291,8 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
         evidence.accessibilityRequests ??= {};
         evidence.accessibilityRequests[pid] = (evidence.accessibilityRequests[pid] ?? 0) + 1;
       }
+      const keyboard = stderr.split('\n').find(line => line.startsWith('owned-Space='));
+      if (keyboard) (evidence.keyboardEvents ??= []).push(JSON.parse(keyboard.slice('owned-Space='.length)));
       return stdout.trim();
     }
     catch (error) {
@@ -364,17 +366,31 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
   let pid = await open();
   const before = JSON.parse(await fs.readFile(config, 'utf8'));
   const demo = async enabled => {
-    await invoke(pid, 'space', 'AXCheckBox', 'Ask agents for a demo video');
-    await poll(async () => {
-      assert.equal((await read()).agentDemoVideo, enabled);
-      const saved = JSON.parse(await fs.readFile(config, 'utf8'));
-      assert.equal(saved.experiments.agentDemoVideo, enabled);
-      const expected = structuredClone(before);
-      expected.experiments.agentDemoVideo = enabled;
-      assert.deepEqual(saved, expected, 'Demo mutation changed unrelated config');
-      assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), enabled ? '1' : '0');
-      return saved;
-    }, 'Space toggle authoritative readback');
+    try {
+      await invoke(pid, 'space', 'AXCheckBox', 'Ask agents for a demo video');
+      await poll(async () => {
+        assert.equal((await read()).agentDemoVideo, enabled);
+        const saved = JSON.parse(await fs.readFile(config, 'utf8'));
+        assert.equal(saved.experiments.agentDemoVideo, enabled);
+        const expected = structuredClone(before);
+        expected.experiments.agentDemoVideo = enabled;
+        assert.deepEqual(saved, expected, 'Demo mutation changed unrelated config');
+        assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), enabled ? '1' : '0');
+        return saved;
+      }, 'Space toggle authoritative readback');
+    } catch (error) {
+      const failure = evidence.toggleFailure = { expected: enabled, pid };
+      for (const [name, inspect] of Object.entries({
+        rust: read,
+        config: async () => JSON.parse(await fs.readFile(config, 'utf8')),
+        tree: () => invoke(pid, 'inspect'),
+        screenshot: () => shot(pid, `agents-${enabled}-failure`),
+      })) {
+        try { failure[name] = await inspect(); }
+        catch (diagnosticError) { failure[`${name}Error`] = diagnosticError.message; }
+      }
+      throw error;
+    }
   };
   assert.equal((await read()).agentDemoVideo, true);
   await demo(false);

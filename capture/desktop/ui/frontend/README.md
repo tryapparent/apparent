@@ -682,3 +682,10 @@ The native keyboard driver sends one checkbox focus request, then waits at most
 deadline. It sends Space only after confirmed checkbox and application focus;
 no focus request or keyboard mutation is retried. An accepted AX request alone
 is never recorded as keyboard acceptance.
+
+For a failed keyboard readback, the fixture retains the authoritative Rust state,
+synthetic config, AX tree and an owned foreground-window image when available.
+The input receipt includes the pre-input value, event/session modifier flags,
+and confirmation that the app's focused window and focused UI element match the
+owned checkbox. Space is suppressed on a target mismatch. These diagnostics
+do not retry input or turn an accepted event post into a successful mutation.
