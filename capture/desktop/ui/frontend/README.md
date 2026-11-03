@@ -716,3 +716,10 @@ Rust logs CLI request receipt/completion and, on failure, only the I/O error kin
 and OS errno. This distinguishes filesystem/ownership failures from an action
 that never reached Rust without logging paths, raw errors or config contents,
 and without broadening the renderer's generic error contract.
+
+After a native mutation, the fixture waits for the visible completed UI state
+before opening independent Rust readback connections. AXPress/CGEvent return
+before renderer IPC completion; racing direct reads against that IPC can take
+the shared zero-capacity worker's admission slot and reject the user mutation
+with `app_busy`. UI-first observation preserves single-send mutations and all
+authoritative Rust/config/filesystem readback, without queuing or retrying writes.

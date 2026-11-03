@@ -1238,6 +1238,10 @@ mod tests {
         writeln!(blocked, "{}", serde_json::json!({"storage":"set", "path": selected, "expected":reset["storage"]["revision"], "deadline":blocked_deadline})).unwrap();
         let busy = call(serde_json::json!({"storage":"read", "deadline":storage_clock_ms()+3000}));
         assert_eq!(busy["error"], "app_busy", "{busy}");
+        // Agents mutations share this rendezvous worker. A native UI driver
+        // must not race its mutation with independent backend readback traffic.
+        let install = call(serde_json::json!({"agents":"install", "deadline":storage_clock_ms()+3000}));
+        assert_eq!(install["error"], "app_busy", "{install}");
         let mut state = UnixStream::connect(&path).unwrap();
         writeln!(state, "state").unwrap();
         let request = receiver.recv_timeout(Duration::from_secs(1)).unwrap();

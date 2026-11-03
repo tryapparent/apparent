@@ -343,6 +343,12 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     }
     return state;
   };
+  const visible = async (pid, label) => poll(async () => {
+    const tree = await invoke(pid, 'inspect');
+    evidence.lastVisibleTree = tree;
+    assert.ok(tree.includes(label), `Missing completed UI state: ${label}`);
+    return tree;
+  }, `Visible ${label}`);
   const prepareReader = async pid => {
     await poll(() => invoke(pid, 'window'), 'Owned packaged Settings window');
     await invoke(pid, 'request-accessibility');
@@ -381,6 +387,12 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
   const demo = async enabled => {
     try {
       await invoke(pid, 'space', 'AXCheckBox', 'Ask agents for a demo video');
+      // Native action acceptance precedes renderer/IPC completion. Observe the
+      // UI first so this driver's backend reads cannot steal worker admission.
+      await visible(pid, 'The command-line tool is not installed.');
+      await poll(async () => {
+        assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), enabled ? '1' : '0');
+      }, 'Visible saved checkbox state');
       await poll(async () => {
         assert.equal((await read()).agentDemoVideo, enabled);
         const saved = JSON.parse(await fs.readFile(config, 'utf8'));
@@ -431,12 +443,14 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     evidence.cli = { status: 'RUNNING', phase: 'install', link, installedTarget: executable };
     assert.equal((await read()).cli, 'missing');
     await invoke(pid, 'press', 'AXButton', 'Install command-line tool');
+    await visible(pid, 'The command-line tool is installed.');
     await poll(async () => {
       assert.equal((await read()).cli, 'installed');
       assert.equal(await fs.readlink(link), executable);
     }, 'Product CLI install');
     evidence.cli.phase = 'uninstall';
     await invoke(pid, 'press', 'AXButton', 'Uninstall command-line tool');
+    await visible(pid, 'The command-line tool is not installed.');
     await poll(async () => {
       assert.equal((await read()).cli, 'missing');
       await assert.rejects(fs.lstat(link), { code: 'ENOENT' });
@@ -447,11 +461,8 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     await foreign.writeFile('synthetic foreign command; never execute\n');
     const identity = foreignIdentity = await foreign.stat();
     await invoke(pid, 'press', 'AXButton', 'Refresh Agents settings');
+    await visible(pid, 'Another program owns this command. Apparent will leave it alone.');
     await poll(async () => assert.equal((await read()).cli, 'taken'), 'Foreign command refusal');
-    await poll(async () => {
-      const tree = await invoke(pid, 'inspect');
-      assert.ok(tree.includes('Another program owns this command. Apparent will leave it alone.'));
-    }, 'Visible foreign command refusal');
     // AXPress must refuse disabled controls, just as a real user cannot activate them.
     await assert.rejects(invoke(pid, 'press', 'AXButton', 'Install command-line tool'), /disabled/);
     await shot(pid, 'agents-restarted-foreign-preserved');
