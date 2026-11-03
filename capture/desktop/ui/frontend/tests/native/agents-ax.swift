@@ -127,7 +127,15 @@ func main() throws {
     if op == "space" {
         try require(AXUIElementSetAttributeValue(target, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success,
                     "Could not focus owned checkbox")
+        // Chromium accepts the action before its renderer updates the cached AX
+        // tree. Read back focus without resending the action or any keyboard input.
+        let focusDeadline = min(deadline, ProcessInfo.processInfo.systemUptime + 0.8)
+        while (try attribute(target, kAXFocusedAttribute)) as? Bool != true &&
+                ProcessInfo.processInfo.systemUptime < focusDeadline {
+            usleep(10000)
+        }
         try require((try attribute(target, kAXFocusedAttribute)) as? Bool == true, "Checkbox did not take focus")
+        try require(NSWorkspace.shared.frontmostApplication?.processIdentifier == pid, "Owned Settings lost focus before Space")
         guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 49, keyDown: true),
               let up = CGEvent(keyboardEventSource: nil, virtualKey: 49, keyDown: false) else {
             throw Failure(description: "Could not create Space events")

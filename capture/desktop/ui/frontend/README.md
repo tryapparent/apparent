@@ -676,3 +676,9 @@ The fixture sends `AXManualAccessibility` once for each newly opened packaged
 Electron process, after its owned window is ready. Readiness polls and later
 control reads never resend it; repeated writes would keep resetting activation.
 The receipt counts accepted requests per process and retains the returned tree.
+
+The native keyboard driver sends one checkbox focus request, then waits at most
+800 ms for Chromium's asynchronous AX focus readback within the existing helper
+deadline. It sends Space only after confirmed checkbox and application focus;
+no focus request or keyboard mutation is retried. An accepted AX request alone
+is never recorded as keyboard acceptance.
