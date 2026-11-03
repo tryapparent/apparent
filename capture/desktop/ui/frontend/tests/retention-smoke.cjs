@@ -247,7 +247,11 @@ test('Installed Agents owns only Agents and navigation capabilities', { timeout:
   assert.ok(Buffer.byteLength(address) < 104, 'Synthetic socket path exceeds macOS sun_path');
   await new Promise((resolve, reject) => server.once('error', reject).listen(address, resolve));
   await fs.chmod(address, 0o600);
-  app = await electron.launch({ args: [path.join(__dirname, '..'), '--settings-agents'], env: { ...process.env, HOME: home } });
+  const appRoot = process.env.APPARENT_AGENTS_TEST_APP_ROOT ?? path.join(__dirname, '..');
+  const executablePath = process.env.APPARENT_AGENTS_TEST_ELECTRON;
+  assert.ok(path.isAbsolute(appRoot));
+  if (executablePath) assert.ok(path.isAbsolute(executablePath));
+  app = await electron.launch({ executablePath, args: [appRoot, '--settings-agents'], env: { ...process.env, HOME: home } });
   const page = await app.firstWindow();
   await expect(page.getByRole('heading', { name: 'Agents', exact: true, level: 1 })).toBeVisible();
   await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle()))

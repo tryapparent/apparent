@@ -665,3 +665,8 @@ For the verified packaged Electron PID, the native test client requests
 It does not change TCC, system preferences, product flags or renderer state.
 The receipt retains the native request result and last returned tree before
 content assertions, plus an owned-window failure image when available.
+
+The Agents preload is authored in TypeScript (`electron/preloads/agents.cts`).
+The frontend build emits the ignored `agents.cjs` at the unchanged runtime path;
+packaging copies the generated preload and excludes its TypeScript source.
+The same sandbox, typed operation names and main-process capability guards apply.
