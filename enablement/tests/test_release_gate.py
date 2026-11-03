@@ -57,10 +57,15 @@ class AdmissionTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         text = (root / '.github/workflows/verification-mac.yml').read_text()
         build, native = text.split('  settings-build:\n', 1)[1].split('  settings-native:\n', 1)
+        native, budget = native.split('  runtime-budget:\n', 1)
+        self.assertIn('needs: [admit, verify, connect-native, settings-build, settings-native]', budget)
+        self.assertIn('if: always()', budget)
+        self.assertIn('uses: ./.github/workflows/runtime-budget.yml', budget)
         for section in (build, native):
             self.assertIn("github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'", section)
             self.assertIn('timeout-minutes: 10', section)
             self.assertNotIn('timeout-minutes: 30', section)
+            self.assertIn('10 minute whole-workflow execution budget', section)
             self.assertIn('If exceeded, optimize the tests.', section)
             self.assertIn('ref: ${{ github.sha }}', section)
             for forbidden in ('verification-platform.yml', 'verification.py', 'owner_lanes.py', 'cargo test', 'release-ready', 'release_gate.py', 'secrets.'):

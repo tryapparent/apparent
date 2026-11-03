@@ -749,8 +749,11 @@ shared rendezvous worker. No write is retried and worker admission is unchanged.
 Failures retain authoritative state, AX data and owned-window images when
 available; CLI cleanup removes only the exact installed symlink or identified
 synthetic file. The focused workflow builds once in `settings-build`, then installs
-and tests in `settings-native`. Each job, including its setup and evidence work,
-has the repository's 10-minute execution limit. The builder preserves the warm
+and tests in `settings-native`. The final runtime-budget gate includes both jobs
+in the ten-minute whole-workflow workload budget: setup, checks, cleanup and post
+actions count, parallel execution counts once and runner/dependency waiting is
+excluded. Each job also retains its ten-minute safeguard; splitting work does not
+create extra workload time. The builder preserves the warm
 three-path Rust cache inventory; removing a path changes its cache version.
 
 The existing three-file artifact contract binds the exact candidate SHA/tree,
