@@ -35,14 +35,19 @@ test('additive default migration preserves decisions, withdrawal tombstones and 
   await f.db.exec('UPDATE analytics_control SET enabled=1');
   const a=await f.identity('retained-choice'),b=await f.identity('withdrawn-choice');
   await choose(f,a,true,null);await choose(f,b,false,null);
+  await device(f,a);
+  const queued=(await f.db.prepare('SELECT * FROM analytics_outbox ORDER BY id').all()).results;
+  assert.equal(queued.length,1);
   const before=(await f.db.prepare('SELECT * FROM analytics_choices ORDER BY account_id').all()).results;
   const consents=(await f.db.prepare('SELECT * FROM analytics_consent').all()).results;
+  await f.db.exec('UPDATE r2_budget SET a_used=17,b_used=23,physical_used=1234 WHERE id=1');
   const budget=(await f.db.prepare('SELECT * FROM r2_budget').all()).results;
   await f.db.exec('UPDATE analytics_control SET enabled=0,dropped=7');
   await f.db.exec((await readFile('migrations/0007.sql','utf8')).replaceAll('\n',' '));
   assert.deepEqual(await f.db.prepare('SELECT enabled,dropped FROM analytics_control').first(),{enabled:1,dropped:7});
   assert.deepEqual((await f.db.prepare('SELECT * FROM analytics_choices ORDER BY account_id').all()).results,before);
   assert.deepEqual((await f.db.prepare('SELECT * FROM analytics_consent').all()).results,consents);
+  assert.deepEqual((await f.db.prepare('SELECT * FROM analytics_outbox ORDER BY id').all()).results,queued);
   assert.deepEqual((await f.db.prepare('SELECT * FROM r2_budget').all()).results,budget);
   assert.equal((await choose(f,b,true,null)).status,409);
  }finally{await f.close();}
