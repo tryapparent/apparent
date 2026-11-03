@@ -6,9 +6,14 @@ export type RuntimeState =
 declare global {
   interface Window {
     apparent?: {
+      readMicrophoneEnabled: () => Promise<ErrorReporting>;
+      setMicrophoneEnabled: (enabled: boolean) => Promise<ErrorReporting>;
       readRuntimeState: () => Promise<RuntimeState>;
       readCaptureReference: () => Promise<CaptureReference>;
       copyCaptureReference: () => Promise<CaptureReference>;
+      startPublicShare: () => Promise<PublicShareResult>;
+      readPublicShare: () => Promise<PublicShareResult>;
+      cancelPublicShare: () => Promise<PublicShareResult>;
       readCaptureLocation: () => Promise<CaptureLocation>;
       changeCaptureLocation: () => Promise<CaptureLocation>;
       resetCaptureLocation: () => Promise<CaptureLocation>;
@@ -21,11 +26,16 @@ declare global {
       checkConnectConnection: () => Promise<ConnectSettings>;
       disableConnectUploads: () => Promise<ConnectSettings>;
       disconnectConnectSettings: () => Promise<ConnectSettings>;
+      requestDisableConnectUploads: () => Promise<ConnectSettings>;
+      requestDisconnectConnectSettings: () => Promise<ConnectSettings>;
+      openConnectSharedLinks: () => Promise<ConnectSettings>;
       openConnectBrowser: () => Promise<ConnectSettings>;
       readRetention: () => Promise<RetentionResult>;
       saveRetention: (preset: string) => Promise<RetentionResult>;
       resetRetention: () => Promise<RetentionResult>;
       readCaptureUsage: () => Promise<UsageResult>;
+      navigateSettings: (pane: string) => Promise<void>;
+      showCaptureFolder: () => Promise<void>;
     };
   }
 }
@@ -46,12 +56,16 @@ export type CaptureLocation =
 
 export type ErrorReporting = { status: 'connected'; enabled: boolean } |
   { status: 'disconnected' | 'incompatible' } | { status: 'error'; code: string };
-export type ConnectAction = 'connect' | 'allow' | 'cancel' | 'check' | 'disable' | 'disconnect' | 'open-browser';
+export type ConnectAction = 'connect' | 'allow' | 'cancel' | 'check' | 'disable' | 'disconnect' | 'open-browser' | 'request-disable' | 'request-disconnect' | 'open-shared-links';
 export type ConnectView = {
   title: string; status: string; detail: string; server: string | null;
   verificationUri: string | null; userCode: string | null;
-  buttons: { command: ConnectAction; title: string; enabled: boolean }[]; note: string;
+  buttons: ConnectButton[]; note: string;
+  presentation?: { tone: 'neutral' | 'success' | 'progress' | 'warning' | 'failure';
+    headline: string; detail: string; note: string; artwork: boolean; compact: boolean;
+    accountMenu: boolean; buttons: ConnectButton[]; menuActions: ConnectAction[]; sharedLinksUrl: string | null };
 };
+export type ConnectButton = { command: ConnectAction; title: string; enabled: boolean };
 export type ConnectSettings =
   | { status: 'connected'; view: ConnectView }
   | { status: 'disabled' | 'disconnected' | 'cancelled' }
@@ -61,3 +75,5 @@ export type RetentionResult = Unavailable | { status: 'connected'; custom: boole
   retention: { preset: string | null; options: { id: string; label: string }[]; note: string } };
 export type UsageResult = Unavailable | { status: 'connected';
   usage: { effectivePath: string; displayPath: string; formatted: string } };
+
+export type PublicShareResult = { status:'connected'; state:'preparing'|'prepared'|'copied'|'failed'|'cancelled'|'expired' } | {status:'error';code:string} | {status:'cancelled'};

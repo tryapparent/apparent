@@ -155,3 +155,28 @@ function storagePreference(home, operation, fields = {}, timeoutMs = 3500) {
 }
 
 module.exports = { readRuntimeState, captureLocation, errorReporting, captureReference, storagePreference };
+
+async function publicShare(home, operation, value) {
+  const request = { publicShare: operation, deadline: Number(process.hrtime.bigint()/1000000n)+3000 };
+  if (operation === 'start') { request.expected = value; request.disclosed = true; }
+  else request.operation = value;
+  return exchange(home, JSON.stringify(request)+'\n', response => {
+    if (['feature_disabled','connect_required','app_busy','invalid_capture','local_state_error','conflict','no_selection','no_operation','not_prepared','cancelled','clipboard_failed','admission_expired','app_unresponsive'].includes(response?.error)) return {status:'error',code:response.error};
+    const v=response?.publicShare;
+    if (!v || !['preparing','prepared','copied','failed','cancelled','expired'].includes(v.state) ||
+        (operation==='start' && !/^[a-f0-9]{32}$/.test(v.operation))) return {status:'error',code:'invalid_response'};
+    return {status:'connected',state:v.state,...(operation==='start'?{operation:v.operation}:{})};
+  },4096,3500,{status:'error',code:'outcome_unknown'});
+}
+module.exports.publicShare = publicShare;
+
+function microphoneEnabled(home, enabled, timeoutMs = 3500) {
+  if (enabled !== undefined && typeof enabled !== 'boolean') throw new Error('Invalid microphone preference');
+  const request = { microphone: enabled === undefined ? 'read' : 'set', deadline: Number(process.hrtime.bigint() / 1000000n) + Math.min(timeoutMs, 3000) };
+  if (enabled !== undefined) request.enabled = enabled;
+  return exchange(home, JSON.stringify(request) + '\n', value => {
+    if (value?.error) return { status: 'error', code: reportingCodes.has(value.error) ? value.error : 'invalid_response' };
+    return typeof value?.microphone?.enabled === 'boolean' ? { status: 'connected', enabled: value.microphone.enabled } : { status: 'error', code: 'invalid_response' };
+  }, 4096, timeoutMs, { status: 'error', code: enabled === undefined ? 'timeout' : 'outcome_unknown' });
+}
+module.exports.microphoneEnabled = microphoneEnabled;
