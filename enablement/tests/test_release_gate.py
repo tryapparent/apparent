@@ -60,7 +60,8 @@ class AdmissionTests(unittest.TestCase):
         native, budget = native.split('  runtime-budget:\n', 1)
         self.assertIn('needs: [admit, verify, connect-native, settings-build, settings-native]', budget)
         self.assertIn('if: always()', budget)
-        self.assertIn('uses: ./.github/workflows/runtime-budget.yml', budget)
+        self.assertIn('uses: ./.github/actions/runtime-budget', budget)
+        self.assertIn('actions: read', budget)
         for section in (build, native):
             self.assertIn("github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'", section)
             self.assertIn('timeout-minutes: 10', section)
