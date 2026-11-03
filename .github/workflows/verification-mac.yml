@@ -77,6 +77,8 @@ jobs:
     if: github.repository == 'tryapparent/apparent' && github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'
     runs-on: macos-15-intel
     timeout-minutes: 10
+    env:
+      CARGO_INCREMENTAL: '0'
     outputs:
       artifact: ${{ steps.executables.outputs.artifact-id }}
     steps:
@@ -93,13 +95,20 @@ jobs:
         timeout-minutes: 1
         with:
           xcode-version: '26.0'
-      - uses: dtolnay/rust-toolchain@stable
-        timeout-minutes: 2
+      - name: Select the installed stable Rust toolchain
+        timeout-minutes: 1
+        run: |
+          installed_rust="$(rustup run stable rustc -vV)"
+          rustup default stable
+          test "$(rustc -vV)" = "$installed_rust"
+          rustc -vV
+          cargo -V
       - uses: Swatinem/rust-cache@v2
         timeout-minutes: 3
         with:
           shared-key: rust
-          cache-on-failure: true
+          # Main owns cache publication; this focused job only restores it.
+          save-if: false
           # Cache paths participate in its version; retain the warm three-path inventory.
           workspaces: |
             . -> target
@@ -112,7 +121,6 @@ jobs:
       - name: Prepare native build toolchain
         timeout-minutes: 3
         run: |
-          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then brew install ffmpeg; fi
           xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
       - name: Build the exact Settings candidate once
         timeout-minutes: 8
@@ -174,11 +182,14 @@ jobs:
         timeout-minutes: 1
         with:
           xcode-version: '26.0'
-      - name: Typecheck the focused AX reader before installation
-        timeout-minutes: 2
-        run: xcrun swiftc -typecheck capture/desktop/ui/frontend/tests/native/agents-ax.swift
-      - uses: dtolnay/rust-toolchain@stable
-        timeout-minutes: 2
+      - name: Select the installed stable Rust toolchain
+        timeout-minutes: 1
+        run: |
+          installed_rust="$(rustup run stable rustc -vV)"
+          rustup default stable
+          test "$(rustc -vV)" = "$installed_rust"
+          rustc -vV
+          cargo -V
       - uses: actions/setup-node@v4
         timeout-minutes: 2
         with:

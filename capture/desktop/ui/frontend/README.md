@@ -771,3 +771,14 @@ close button, once, after checking the button PID, role/subrole and enabled stat
 It does not require global foreground activation or retry a close action. Existing
 window-disappearance and Rust-idle assertions still determine whether close worked.
 Darwin execution of this replacement close probe remains pending.
+
+Focused Settings restores the shared Rust cache without republishing it; main owns
+cache refresh. Both jobs select an already-installed stable toolchain and fail if
+it is missing; artifact admission still compares the full producer/consumer
+identities. This avoids redundant channel refreshes, not compiler verification.
+The builder prepares Metal, but does not install unused FFmpeg tools for these
+Settings-only scenarios. The native fixture compiles its AX reader once before
+app launch; that compilation replaces the duplicate standalone typecheck and
+stays inside the existing fixture and workflow deadlines. None of these setup
+optimizations changes product code, skips a native assertion or admits an
+incomplete producer job. Actual combined runtime remains an execution gate.

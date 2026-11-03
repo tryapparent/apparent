@@ -709,7 +709,7 @@ test(`real installed Mac Rust + shipped Electron ${nativeSurface.startsWith('age
       report.scriptCompilation[name] = true;
     }
     await run('/usr/bin/swiftc', [path.join(__dirname, 'native/agents-ax.swift'), '-o', axTool], {
-      timeout: budget(15000), killSignal: 'SIGKILL', maxBuffer: 32768,
+      timeout: budget(45000), killSignal: 'SIGKILL', maxBuffer: 32768,
     });
     report.nativeAXReader = { source: 'tests/native/agents-ax.swift',
       sha256: createHash('sha256').update(await fs.readFile(axTool)).digest('hex') };

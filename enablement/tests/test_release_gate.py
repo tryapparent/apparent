@@ -72,7 +72,16 @@ class AdmissionTests(unittest.TestCase):
                 self.assertNotIn(forbidden, section)
         self.assertIn('name: settings-build', build)
         self.assertIn('shared-key: rust', build)
-        self.assertIn('cache-on-failure: true', build)
+        self.assertIn('save-if: false', build)
+        self.assertNotIn('brew install ffmpeg', build)
+        self.assertNotIn('dtolnay/rust-toolchain', build + native)
+        for section in (build, native):
+            self.assertIn('rustup run stable rustc -vV', section)
+            self.assertIn('rustup default stable', section)
+        self.assertIn("CARGO_INCREMENTAL: '0'", build)
+        self.assertNotIn('swiftc -typecheck', native)
+        fixture = (root / 'capture/desktop/ui/frontend/tests/mac-storage-native.cjs').read_text()
+        self.assertIn("await run('/usr/bin/swiftc', [path.join(__dirname, 'native/agents-ax.swift'), '-o', axTool]", fixture)
         for workspace in ('. -> target', 'capture/engine -> target', 'connect/client -> target'):
             self.assertIn(workspace, build)
         self.assertIn('taskpolicy -c utility cargo build -j 3 --locked', build)
