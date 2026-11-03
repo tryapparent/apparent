@@ -28,7 +28,7 @@
       "says": "The separate onboarding test app saves a pen colour for whiteboard and screen drawings, keyframes and exports.",
       "status": "main",
       "platforms": ["mac", "linux"],
-      "note": "Native test candidate; not installed routing. Legacy captures retain their existing red ink. Config is read at startup; the onboarding picker applies saved changes immediately. Native platform gates remain required.",
+      "note": "Native test candidate; not installed routing. Legacy captures retain their existing red ink. Config is read at startup; the centred onboarding picker applies saved changes immediately, previews them in a puddle and animates its frog on confirmation. The shared tour skips the retired explanation page. Native platform gates remain required.",
       "config": [{"key":"penColor","value":"coral | purple | blue | green","does":"Pen colour; absent keeps legacy red"}],
       "docs": ["capture/desktop/docs/onboarding-and-settings.md"]
     },

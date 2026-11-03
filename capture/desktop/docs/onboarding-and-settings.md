@@ -231,8 +231,8 @@ Off by default. General › Lower other audio while recording (`"lowerPlayback":
 
 `capture/desktop/scripts/packaging/build-onboarding-test.sh` builds the private
 macOS installer with a separately identified `Apparent Onboarding Test.app`.
-Set `APPARENT_TEST_OUTPUT` to a fresh absolute directory. The installer refuses
-existing destinations and offers a different folder; the app is ad-hoc signed,
+Set `APPARENT_TEST_OUTPUT` to a fresh absolute directory. If a previous test app occupies the default destination, the installer chooses
+a fresh build-specific subfolder automatically and preserves it; the app is ad-hoc signed,
 not a notarized release. It has no updater or registered `apparent:` URL handler.
 
 Its bundle environment sets `APPARENT_TEST_INSTANCE=1`. At startup Rust selects
@@ -273,3 +273,16 @@ retired session cannot dismiss or advance its replacement. App-wide launch and
 permission notifications retain their existing route. The **Apparent lives here**
 coach remains after the manual paste confirmation, anchored to this app’s menu-bar
 icon on macOS; opening its latest capture completes that lesson.
+
+Preview 4 centres the pen choices, keeps colour names as accessible labels only,
+and reflects Rust’s saved colour in a puddle. Confirming the pen plays a frog hop
+then advances once; reduced motion advances without an animated delay. The shared
+flow passes the retired HowItWorks step, including old resume points and Back;
+legacy native routing retains its existing reader/presentation.
+
+The installer validates its packaged build ID and copies into a fresh automatic
+location when the default is occupied. It never replaces an existing app. Only the
+frog moves on a complete arc and landing bounce; copy completion cannot cut it
+short. Opening a preview refuses an older running onboarding test or its UI, so
+launch forwarding cannot silently show that older version. Ordinary Apparent is
+not stopped or replaced. Native animation/launch proof is still a separate gate.

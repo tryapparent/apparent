@@ -2,61 +2,113 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-// Local review installer. Package a separately identified app in SharedSupport.
-// Never replaces an existing application, including a previous test candidate.
+// Each candidate gets a fresh location automatically; existing apps remain intact.
 private let candidateName = "Apparent Onboarding Test.app"
 private let candidateID = "dev.apparent.onboarding-test"
 
 enum InstallError: LocalizedError {
-  case invalidCandidate, destinationExists
+  case invalidCandidate, invalidDestination
   var errorDescription: String? {
     switch self {
-    case .invalidCandidate: "The separate onboarding test app is missing or has an unexpected identity."
-    case .destinationExists: "A test app already exists here. Choose another folder to preserve it."
+    case .invalidCandidate: "The onboarding preview is missing or has an unexpected identity."
+    case .invalidDestination: "Choose a folder outside the installer’s source app."
     }
   }
 }
 func installCandidate(source: URL, folder: URL) throws -> URL {
-  guard source.pathExtension == "app", Bundle(url: source)?.bundleIdentifier == candidateID,
-    FileManager.default.isExecutableFile(atPath: source.appendingPathComponent("Contents/MacOS/apparent").path)
+  let fm = FileManager.default
+  let sourcePath = source.resolvingSymlinksInPath().standardizedFileURL.path
+  let folderPath = folder.resolvingSymlinksInPath().standardizedFileURL.path
+  guard folderPath != sourcePath, !folderPath.hasPrefix(sourcePath + "/") else { throw InstallError.invalidDestination }
+  guard source.pathExtension == "app",
+    let data = try? Data(contentsOf: source.appendingPathComponent("Contents/Info.plist")),
+    let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+    info["CFBundleIdentifier"] as? String == candidateID,
+    let build = info["ApparentTestBuildID"] as? String,
+    build.count == 40, build.allSatisfy({ "0123456789abcdef".contains($0) }),
+    fm.isExecutableFile(atPath: source.appendingPathComponent("Contents/MacOS/apparent").path)
   else { throw InstallError.invalidCandidate }
-  let target = folder.appendingPathComponent(candidateName)
-  guard !FileManager.default.fileExists(atPath: target.path) else { throw InstallError.destinationExists }
-  // copyItem refuses existing destinations. Never recursively remove on error:
-  // another process could have created the destination between this check and copy.
-  try FileManager.default.copyItem(at: source, to: target)
+  var target = folder.appendingPathComponent(candidateName)
+  if fm.fileExists(atPath: target.path) {
+    let fallback = folder.appendingPathComponent("Apparent Onboarding Test Builds")
+    let resolvedFallback = fallback.resolvingSymlinksInPath().standardizedFileURL.path
+    guard resolvedFallback != sourcePath, !resolvedFallback.hasPrefix(sourcePath + "/") else { throw InstallError.invalidDestination }
+    target = fallback.appendingPathComponent(build + "-" + UUID().uuidString)
+      .appendingPathComponent(candidateName)
+  }
+  // The fallback may contain an existing symlink. Recheck the derived location
+  // before mkdir or copy, including any resolved parent of a not-yet-existing leaf.
+  for url in [target, target.deletingLastPathComponent()] {
+    let resolved = url.resolvingSymlinksInPath().standardizedFileURL.path
+    guard resolved != sourcePath, !resolved.hasPrefix(sourcePath + "/") else { throw InstallError.invalidDestination }
+  }
+  try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+  // copyItem refuses an occupied destination, including a concurrent creation.
+  // Never delete or replace another app, or execute an old copy based on its name.
+  try fm.copyItem(at: source, to: target)
   return target
+}
+
+struct FrogHop: GeometryEffect {
+  var progress: CGFloat
+  var animatableData: CGFloat { get { progress } set { progress = newValue } }
+  static func offset(at progress: CGFloat) -> CGPoint {
+    let t = min(1, max(0, progress))
+    if t == 0 { return .zero }
+    if t == 1 { return CGPoint(x: 262, y: 28) }
+    let first = min(1, t / 0.75)
+    let y = t <= 0.75 ? 28 * first - 96 * sin(.pi * first) : 28 - 20 * sin(.pi * (t - 0.75) / 0.25)
+    return CGPoint(x: 262 * first, y: y)
+  }
+  func effectValue(size: CGSize) -> ProjectionTransform {
+    let offset = Self.offset(at: progress)
+    return ProjectionTransform(CGAffineTransform(translationX: offset.x, y: offset.y))
+  }
+}
+
+func hasOlderTest(installed: URL, running: [(id: String?, path: URL?)]) -> Bool {
+  let current = installed.resolvingSymlinksInPath().standardizedFileURL.path
+  return running.contains { app in
+    guard app.id == candidateID || app.id == candidateID + ".ui" else { return false }
+    guard let path = app.path?.resolvingSymlinksInPath().standardizedFileURL.path else { return true }
+    return path != current && !path.hasPrefix(current + "/")
+  }
 }
 
 @MainActor final class InstallerModel: ObservableObject {
   @Published var busy = false
   @Published var installed: URL?
   @Published var message = ""
-  @Published var hopping = false
+  @Published var hopSerial = 0
   let source = Bundle.main.bundleURL.appendingPathComponent("Contents/SharedSupport/" + candidateName)
-  func install(folder: URL? = nil) {
+  func install(folder: URL? = nil, animationDuration: TimeInterval = 1.05) {
     guard !busy, installed == nil else { return }
     let folder = folder ?? FileManager.default.urls(for: .applicationDirectory, in: .userDomainMask)[0]
-    busy = true; hopping = true; message = ""
+    busy = true; hopSerial += 1; message = ""
+    let began = Date()
     let source = source
     DispatchQueue.global(qos: .userInitiated).async {
       do {
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let target = try installCandidate(source: source, folder: folder)
-        DispatchQueue.main.async { self.installed = target; self.busy = false; self.hopping = false; self.message = "Installed separately. Your everyday Apparent is unchanged." }
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, animationDuration - Date().timeIntervalSince(began))) { self.installed = target; self.busy = false; self.message = "Preview 4 is installed and ready to open." }
       } catch {
-        DispatchQueue.main.async { self.busy = false; self.hopping = false; self.message = error.localizedDescription }
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, animationDuration - Date().timeIntervalSince(began))) { self.busy = false; self.message = error.localizedDescription }
       }
     }
   }
-  func chooseFolder() {
+  func chooseFolder(animationDuration: TimeInterval = 1.05) {
     let panel = NSOpenPanel()
     panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
     panel.allowsMultipleSelection = false; panel.prompt = "Install here"
-    if panel.runModal() == .OK, let folder = panel.url { install(folder: folder) }
+    if panel.runModal() == .OK, let folder = panel.url { install(folder: folder, animationDuration: animationDuration) }
   }
   func open() {
     guard let installed else { return }
+    let previous = hasOlderTest(installed: installed, running: NSWorkspace.shared.runningApplications.map { (id: $0.bundleIdentifier, path: $0.bundleURL) })
+    guard !previous else {
+      message = "Quit the previous onboarding test from its menu, then click Open again."
+      return
+    }
     let options = NSWorkspace.OpenConfiguration()
     options.createsNewApplicationInstance = true
     NSWorkspace.shared.openApplication(at: installed, configuration: options) { _, error in
@@ -71,6 +123,8 @@ func installCandidate(source: URL, folder: URL) throws -> URL {
 struct InstallerView: View {
   @StateObject private var model = InstallerModel()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var hopProgress: CGFloat = 0
+  private func install() { model.install(animationDuration: reduceMotion ? 0 : 1.05) }
   private func image(_ name: String) -> NSImage {
     NSImage(contentsOf: Bundle.main.resourceURL!.appendingPathComponent(name)) ?? NSImage()
   }
@@ -78,49 +132,56 @@ struct InstallerView: View {
     VStack(alignment: .leading, spacing: 18) {
       Text("Add apparent to Applications.").font(.system(size: 30, weight: .medium))
       Text("Click the frog, or drag the app to Applications.").foregroundStyle(.secondary)
-      HStack(spacing: 65) {
-        Button { model.install() } label: {
+      HStack(spacing: 40) {
+        Button { install() } label: {
           VStack(spacing: 8) {
             ZStack(alignment: .top) {
               Image(nsImage: image("app-icon.png")).resizable().scaledToFit().frame(width: 85, height: 85)
               Image(nsImage: image("frog-jump.png")).resizable().scaledToFit().frame(width: 100, height: 75).offset(y: -60)
+                .modifier(FrogHop(progress: hopProgress))
             }
             Text("apparent · local test").font(.system(size: 12))
           }
-          .offset(x: model.hopping && !reduceMotion ? 200 : 0, y: model.hopping && !reduceMotion ? -40 : 0)
-          .animation(reduceMotion ? nil : .easeInOut(duration: 0.6), value: model.hopping)
+          .frame(width: 150)
         }.buttonStyle(.plain).disabled(model.busy || model.installed != nil)
         .onDrag { NSItemProvider(object: model.source as NSURL) }
-        Image(systemName: "arrow.right").font(.system(size: 26)).foregroundStyle(.tertiary)
+        Image(systemName: "arrow.right").font(.system(size: 26)).foregroundStyle(.tertiary).frame(width: 32)
         VStack(spacing: 10) {
           Image(systemName: "folder.fill").font(.system(size: 78)).foregroundStyle(Color.purple.opacity(0.35))
           Text("Applications").font(.system(size: 13))
-        }.onDrop(of: [.fileURL], isTargeted: nil) { providers in
+        }.frame(width: 150).onDrop(of: [.fileURL], isTargeted: nil) { providers in
           guard !model.busy, model.installed == nil, providers.count == 1 else { return false }
           providers[0].loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
             let url = (item as? URL) ?? (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
             DispatchQueue.main.async {
-              if url?.standardizedFileURL == model.source.standardizedFileURL { model.install() }
+              if url?.standardizedFileURL == model.source.standardizedFileURL { install() }
             }
           }
           return true
         }
       }.frame(maxWidth: .infinity).padding(.top, 75).padding(.bottom, 40)
-      Text(model.message.isEmpty ? "No existing application will be replaced." : model.message)
+      Text(model.message.isEmpty ? "Previous previews are kept. A location is chosen automatically." : model.message)
         .font(.system(size: 12)).foregroundStyle(.secondary).frame(minHeight: 30)
       HStack {
-        Button("Choose another folder…") { model.chooseFolder() }.disabled(model.busy || model.installed != nil)
+        Button("Choose location…") { model.chooseFolder(animationDuration: reduceMotion ? 0 : 1.05) }.disabled(model.busy || model.installed != nil)
         Spacer()
-        Button("Open apparent test") { model.open() }.buttonStyle(.borderedProminent).disabled(model.installed == nil)
+        Button("Open preview 4") { model.open() }.buttonStyle(.borderedProminent).disabled(model.installed == nil)
       }
     }.padding(36).frame(width: 650).background(Color(red: 0.98, green: 0.975, blue: 0.965))
       .tint(Color(red: 0.48, green: 0.35, blue: 0.70))
+      .onChange(of: model.hopSerial) { _, _ in
+        var instant = Transaction(); instant.disablesAnimations = true
+        withTransaction(instant) { hopProgress = 0 }
+        DispatchQueue.main.async {
+          withAnimation(reduceMotion ? nil : .linear(duration: 1.05)) { hopProgress = 1 }
+        }
+      }
   }
 }
 #if !INSTALLER_TEST
 @main struct LocalInstaller: App {
   var body: some Scene {
-    WindowGroup("Install apparent · local test") { InstallerView() }.windowResizability(.contentSize)
+    WindowGroup("Install Apparent · preview 4") { InstallerView() }.windowResizability(.contentSize)
   }
 }
 
@@ -134,7 +195,7 @@ struct InstallerView: View {
     let source = root.appendingPathComponent("Candidate.app")
     let macos = source.appendingPathComponent("Contents/MacOS")
     try fm.createDirectory(at: macos, withIntermediateDirectories: true)
-    let plist = try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": candidateID, "CFBundleExecutable": "apparent"], format: .xml, options: 0)
+    let plist = try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": candidateID, "CFBundleExecutable": "apparent", "ApparentTestBuildID": String(repeating: "a", count: 40)], format: .xml, options: 0)
     try plist.write(to: source.appendingPathComponent("Contents/Info.plist"))
     let executable = macos.appendingPathComponent("apparent")
     try Data("#!/bin/sh\nexit 0\n".utf8).write(to: executable)
@@ -143,12 +204,49 @@ struct InstallerView: View {
     try fm.createDirectory(at: destination, withIntermediateDirectories: true)
     let installed = try installCandidate(source: source, folder: destination)
     precondition(fm.fileExists(atPath: installed.appendingPathComponent("Contents/MacOS/apparent").path))
-    do { _ = try installCandidate(source: source, folder: destination); fatalError("overwrite accepted") }
-    catch InstallError.destinationExists { }
+    let original = try Data(contentsOf: installed.appendingPathComponent("Contents/MacOS/apparent"))
+    let updatedBytes = Data("#!/bin/sh\n# newer candidate\nexit 0\n".utf8)
+    try updatedBytes.write(to: executable)
+    try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+    let second = try installCandidate(source: source, folder: destination)
+    precondition(second != installed)
+    let preserved = try Data(contentsOf: installed.appendingPathComponent("Contents/MacOS/apparent"))
+    precondition(preserved == original)
+    let secondBytes = try Data(contentsOf: second.appendingPathComponent("Contents/MacOS/apparent"))
+    precondition(secondBytes == updatedBytes)
+    do { _ = try installCandidate(source: source, folder: source); fatalError("nested source accepted") }
+    catch InstallError.invalidDestination { }
+    let linkedDestination = root.appendingPathComponent("LinkedApplications")
+    try fm.createDirectory(at: linkedDestination, withIntermediateDirectories: true)
+    try Data("keep".utf8).write(to: linkedDestination.appendingPathComponent(candidateName))
+    try fm.createSymbolicLink(at: linkedDestination.appendingPathComponent("Apparent Onboarding Test Builds"), withDestinationURL: source)
+    let beforeLink = try fm.subpathsOfDirectory(atPath: source.path).sorted()
+    do { _ = try installCandidate(source: source, folder: linkedDestination); fatalError("source-contained fallback accepted") }
+    catch InstallError.invalidDestination { }
+    let afterLink = try fm.subpathsOfDirectory(atPath: source.path).sorted()
+    precondition(beforeLink == afterLink)
+    precondition(hasOlderTest(installed: second, running: [(candidateID, installed)]))
+    precondition(!hasOlderTest(installed: second, running: [(candidateID, second)]))
+    precondition(!hasOlderTest(installed: second, running: [("dev.kitlangton.apparent", installed)]))
+    precondition(hasOlderTest(installed: second, running: [(candidateID + ".ui", installed.appendingPathComponent("Contents/Resources/UI.app"))]))
+    precondition(!hasOlderTest(installed: second, running: [(candidateID + ".ui", second.appendingPathComponent("Contents/Resources/UI.app"))]))
+    precondition(FrogHop.offset(at: 0) == .zero)
+    precondition(FrogHop.offset(at: 0.375).y < -70)
+    precondition(FrogHop.offset(at: 0.75).x == FrogHop.offset(at: 1).x)
+    precondition(FrogHop.offset(at: 0.875).y < FrogHop.offset(at: 1).y)
+    precondition(FrogHop.offset(at: 1) == CGPoint(x: 262, y: 28))
     precondition(fm.fileExists(atPath: executable.path))
     do { _ = try installCandidate(source: root.appendingPathComponent("Wrong.app"), folder: root); fatalError("invalid source accepted") }
     catch InstallError.invalidCandidate { }
-    print("Installer copy, overwrite refusal, source preservation and identity checks passed")
+    let wrong = root.appendingPathComponent("Ordinary.app")
+    try fm.copyItem(at: source, to: wrong)
+    let wrongInfo = try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": "dev.kitlangton.apparent", "ApparentTestBuildID": String(repeating: "b", count: 40)], format: .xml, options: 0)
+    try wrongInfo.write(to: wrong.appendingPathComponent("Contents/Info.plist"))
+    let forbidden = root.appendingPathComponent("MustNotBeCreated")
+    do { _ = try installCandidate(source: wrong, folder: forbidden); fatalError("ordinary app accepted") }
+    catch InstallError.invalidCandidate { }
+    precondition(!fm.fileExists(atPath: forbidden.path))
+    print("Installer automatic destination, source/old-app preservation, identity and frog trajectory checks passed")
   }
 }
 #endif

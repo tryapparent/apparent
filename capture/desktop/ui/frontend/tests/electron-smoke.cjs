@@ -176,12 +176,35 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 3
     });
   });
   browser = await chromium.connectOverCDP(endpoint);
-  const page = browser.contexts()[0].pages()[0];
+  const context=browser.contexts()[0];
+  const page=context.pages()[0]||await context.waitForEvent('page');
   const send = patch => child.stdin.write(JSON.stringify({ type:'state', step:'welcome', rows:[], ready:true,
     index:0, count:5, testInstance:true, shortcut:'⌃⌥⇧9', ...patch })+'\n');
+  let output='';child.stdout.on('data',bytes=>output+=bytes);
   send({ penPicker:true });
   await expect(page.getByRole('heading', { name:'Pick your pen.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
+  assert.deepEqual(await page.locator('.native-pencils button').allTextContents(),['','','','']);
+  await page.getByRole('button',{name:'purple pen',exact:true}).click();
+  await expect.poll(()=>output).toContain('pen:purple');
+  send({penPicker:true,penSelected:true,penRgb:[122,88,199]});
+  await expect(page.locator('.native-puddle path')).toHaveCSS('fill','rgb(122, 88, 199)');
+  const centres=await page.evaluate(()=>{
+    const h=document.querySelector('.native-pen-picker h1').getBoundingClientRect();
+    const button=[...document.querySelectorAll('footer button')].at(-1).getBoundingClientRect();
+    return [h.x+h.width/2,button.x+button.width/2,innerWidth/2];
+  });
+  assert.ok(Math.abs(centres[0]-centres[2])<2&&Math.abs(centres[1]-centres[2])<2);
+  const before=await page.locator('.native-pond-frog').boundingBox();
+  await page.getByRole('button',{name:'That’s my pen',exact:true}).click();
+  await expect(page.getByRole('button',{name:'That’s my pen',exact:true})).toBeDisabled();
+  const minimum=await page.evaluate(()=>new Promise(resolve=>{
+    const frog=document.querySelector('.native-pond-frog');let min=frog.getBoundingClientRect().y;const began=performance.now();
+    function sample(){min=Math.min(min,frog.getBoundingClientRect().y);if(performance.now()-began<1000)requestAnimationFrame(sample);else resolve(min)}requestAnimationFrame(sample);
+  }));
+  assert.ok(minimum<before.y-25,'frog must rise visibly before landing');
+  await expect.poll(()=>output).toContain('"action":"continue"');
+  assert.equal(output.match(/"action":"continue"/g)?.length,1);
   send({ step:'try-it', practice:'whiteboard', anchor:[300,30,320,50] });
   await expect(page.getByRole('heading', { name:'Open Test board.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(380);
@@ -196,4 +219,10 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 3
   send({ step:'permissions' });
   await expect(page.getByRole('heading', { name:'One permission at a time.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
+  await page.emulateMedia({reducedMotion:'reduce'});
+  send({penPicker:true,penSelected:true,penRgb:[59,121,189]});
+  await expect(page.getByRole('heading',{name:'Pick your pen.',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'That’s my pen',exact:true}).click();
+  await expect.poll(()=>output.match(/"action":"continue"/g)?.length).toBe(2);
+  await expect(page.locator('.native-pond-frog')).toHaveCSS('animation-name','none');
 });

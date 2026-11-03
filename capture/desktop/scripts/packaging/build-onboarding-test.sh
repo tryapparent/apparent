@@ -55,10 +55,10 @@ resources=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 exec "$resources/Apparent Test UI.app/Contents/MacOS/Electron" "$resources/onboarding" "$@"
 SH
 chmod 755 "$resources/onboarding-shell"
-python3 - "$app" <<'PY'
+python3 - "$app" "$(git rev-parse HEAD)" <<'PY'
 import pathlib,plistlib,sys,shutil
 app=pathlib.Path(sys.argv[1]);info=app/'Contents/Info.plist'
-p=plistlib.loads(info.read_bytes());p.update(CFBundleIdentifier='dev.apparent.onboarding-test',CFBundleName='Apparent Onboarding Test',CFBundleDisplayName='Apparent Onboarding Test',LSEnvironment={'APPARENT_TEST_INSTANCE':'1'})
+p=plistlib.loads(info.read_bytes());p.update(CFBundleIdentifier='dev.apparent.onboarding-test',CFBundleName='Apparent Onboarding Test',CFBundleDisplayName='Apparent Onboarding Test',LSEnvironment={'APPARENT_TEST_INSTANCE':'1'},ApparentTestBuildID=sys.argv[2],ApparentTestPreview=4)
 for k in list(p):
  if k.startswith('SU') or k in ['CFBundleURLTypes']:p.pop(k,None)
 info.write_bytes(plistlib.dumps(p))

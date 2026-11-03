@@ -5,3 +5,22 @@ html.native-onboarding-shell,html.native-onboarding-shell body{background:transp
 @keyframes native-guide-hop{0%{transform:translate(-32px,12px) rotate(-10deg);opacity:.3}55%{transform:translate(-10px,-18px) rotate(6deg);opacity:1}100%{transform:none}}
 .native-coach[data-arrow=true]:before{content:'';position:absolute;top:-8px;left:calc(var(--coach-arrow,50%) - 9px);width:18px;height:18px;background:#fcf9f3;transform:rotate(45deg)}
 @media(prefers-reduced-motion:reduce){.native-coach>img{animation:none}.native-pencils button{transition:none}}
+
+.native-pen-picker{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.native-pen-picker h1{margin-bottom:12px}
+.native-pen-picker .native-pencils{margin:30px 0 16px;gap:32px}
+.native-pen-picker .native-pencils button{gap:0;padding:12px 16px 24px;border:2px solid transparent;border-radius:12px}
+.native-pen-picker .native-pencils button[aria-pressed=true]{border-color:#ad9ac8;transform:translateY(-5px)}
+.native-pond{width:360px;height:210px;position:relative;flex-shrink:0}
+.native-puddle{position:absolute;left:125px;bottom:20px;width:220px;height:80px;overflow:visible}
+.native-puddle path{fill:var(--pond-colour);transition:fill .2s ease}
+.native-puddle-ring{fill:none;stroke:#ffffff88;stroke-width:3;opacity:0;transform-origin:150px 49px}
+.native-pond-frog{position:absolute;left:18px;top:24px;width:105px;height:80px;object-fit:contain;transform-origin:center bottom}
+.native-pond[data-landing=true] .native-pond-frog{animation:native-pen-hop .9s linear forwards}
+.native-pond[data-landing=true] .native-puddle-ring{animation:native-pen-splash .3s .6s ease-out both}
+@keyframes native-pen-hop{0%{transform:translate(0,0) scale(1)}15%{transform:translate(0,5px) scale(1.08,.85)}45%{transform:translate(85px,-72px) rotate(9deg)}70%{transform:translate(165px,50px) scale(1.14,.75)}84%{transform:translate(165px,28px) scale(.95,1.05)}100%{transform:translate(165px,50px) scale(1)}}
+@keyframes native-pen-splash{0%{opacity:.8;transform:scale(.4)}100%{opacity:0;transform:scale(1.6)}}
+.native-setup footer.native-pen-footer{display:grid;grid-template-columns:1fr auto 1fr}
+.native-pen-footer button:first-child{justify-self:start}
+.native-pen-footer button:last-child{grid-column:2;justify-self:center}
+@media(prefers-reduced-motion:reduce){.native-puddle path{transition:none}.native-pond[data-landing=true] .native-pond-frog{animation:none;transform:translate(165px,50px)}.native-pond[data-landing=true] .native-puddle-ring{animation:none}}

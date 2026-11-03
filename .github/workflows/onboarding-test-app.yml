@@ -56,6 +56,10 @@ jobs:
         run: |
           test -d /Applications/Xcode_26.3.app/Contents/Developer
           echo 'DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer' >> "$GITHUB_ENV"
+      - name: Verify installer before the native build
+        run: |
+          xcrun swiftc -D INSTALLER_TEST -parse-as-library capture/desktop/native/installer/LocalInstaller.swift -o "$RUNNER_TEMP/installer-check"
+          "$RUNNER_TEMP/installer-check"
       - name: Prepare native compiler and locked dependencies
         run: |
           xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
@@ -70,9 +74,8 @@ jobs:
         env:
           CARGO_NET_OFFLINE: 'true'
         run: |
-          xcrun swiftc -D INSTALLER_TEST -parse-as-library capture/desktop/native/installer/LocalInstaller.swift -o "$RUNNER_TEMP/installer-check"
-          "$RUNNER_TEMP/installer-check"
           cargo test -j 3 --offline settings::practice -- --test-threads=2
+          cargo test -j 3 --offline shared_pen_setup_skips_retired_intro -- --test-threads=2
           cargo test -j 3 --offline replay_rejects_queued_events_from_the_retired_transport -- --test-threads=2
           cargo test -j 3 --offline menu_bar_lesson_remains_after_paste_and_requires_opening_own_capture -- --test-threads=2
           cargo test -j 3 --offline coaching_finishes_after_completion_pill_dismissal -- --test-threads=2

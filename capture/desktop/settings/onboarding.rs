@@ -312,9 +312,16 @@ pub struct Flow {
     first_capture_completed: bool,
     shortcut_pending: bool,
     practice_recording: bool,
+    skip_intro: bool,
 }
 
 impl Flow {
+    /// The shared pen picker is followed directly by permissions or shortcut setup.
+    fn with_intro_skipped(mut self, skipped: bool) -> Self {
+        self.skip_intro=skipped && self.mode==Mode::Tour;
+        if self.skip_intro && self.step==Step::HowItWorks { self.step=self.forward_from(self.step); }
+        self
+    }
     /// Opt into the first-capture onboarding experiment, restoring durable milestones.
     pub fn with_first_capture(mut self, required: bool, chosen: bool, completed: bool) -> Self {
         self.first_capture_required = required && self.mode == Mode::Tour;
@@ -376,6 +383,7 @@ impl Flow {
             first_capture_completed: false,
             shortcut_pending: false,
             practice_recording: false,
+            skip_intro: false,
         }
     }
 
@@ -570,7 +578,7 @@ impl Flow {
 
     /// A step the tour passes: the permissions screen once everything on it works.
     fn passes(&self, step: Step) -> bool {
-        step == Step::Permissions && self.done()
+        (step == Step::HowItWorks && self.skip_intro) || (step == Step::Permissions && self.done())
     }
 
     fn forward_from(&self, mut step: Step) -> Step {
@@ -1066,6 +1074,7 @@ impl Session {
             flow: flow
                 .with_auto_relaunch(allowed)
                 .with_tutorial(progress.tutorial)
+                .with_intro_skipped(shell)
                 .with_first_capture(
                     shell || crate::shared::handoff::experiment("onboardingFirstCapture"),
                     progress.shortcut_chosen,
@@ -1533,6 +1542,25 @@ mod tests {
         let mut session=Session::for_test(Flow::tour(Step::TryIt,Some(grants(&Permission::REQUIRED))).with_first_capture(true,true,false));
         session.practice=Some(super::super::practice::Practice::default());session
     }
+    #[test]
+    fn shared_pen_setup_skips_retired_intro_in_both_directions_and_on_resume() {
+        let mut flow=Flow::tour(Step::Welcome,Some(grants(&[]))).with_intro_skipped(true);
+        flow.on(Input::Continue);assert_eq!(flow.step(),Step::Permissions);
+        flow.on(Input::Back);assert_eq!(flow.step(),Step::Welcome);
+        let resumed=Flow::tour(Step::HowItWorks,Some(grants(&[]))).with_intro_skipped(true);
+        assert_eq!(resumed.step(),Step::Permissions);
+        let mut ready=Flow::tour(Step::Welcome,Some(grants(&Permission::REQUIRED))).with_intro_skipped(true);
+        ready.on(Input::Continue);assert_eq!(ready.step(),Step::Shortcut);
+        ready.on(Input::Back);assert_eq!(ready.step(),Step::Welcome);
+        assert!(!ready.view().fix);
+        for skipped in [false,true] {
+            let resumed=Flow::tour(Step::Permissions,Some(grants(&Permission::REQUIRED))).with_intro_skipped(skipped);
+            assert_eq!(resumed.step(),Step::Permissions,"a ready resumed permission page stays visible");
+            let repair=Flow::fix(Permission::REQUIRED.to_vec(),Some(grants(&Permission::REQUIRED))).with_intro_skipped(skipped);
+            assert_eq!(repair.step(),Step::Permissions);assert!(repair.view().fix);
+        }
+    }
+
     #[test]
     fn replay_rejects_queued_events_from_the_retired_transport() {
         let old=coached_session();
