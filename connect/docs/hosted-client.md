@@ -22,9 +22,10 @@ renewal, queue cancellation and config writer as the CLI. There is no Connect
 onboarding step. The Settings controller is owned by Desktop; the client's
 secret-free presentation API supplies fresh local state, a validated public
 verification URL/code and explicit bounded health checks, never raw responses.
-See [Settings](../../capture/desktop/docs/onboarding-and-settings.md#apparent-connect-experiment)
-for consent, cancellation, disable/disconnect and recovery behavior. This candidate
-does not claim live account approval, deployment or platform proof from compilation.
+See [Settings](../../capture/desktop/docs/onboarding-and-settings.md#apparent-connect)
+for consent, cancellation, disable/disconnect and recovery behavior. Compilation
+alone does not prove account approval, deployment or native behavior; the readiness
+map records the separately executed bounded beta acceptance and its limits.
 
 `connect/client` is the production `apparent-connect-client` library, not a
 protocol-only staging package. It owns transfer, device auth, credentials, queue
