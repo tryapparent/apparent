@@ -659,3 +659,9 @@ surface, so Agents proof does not claim a Storage picker pass. Failed earlier
 picker evidence remains retained. Agents acceptance covers both false and true
 Rust restart durability and owned foreground-window screenshots, as well as CLI
 ownership, navigation and ordinary close with the daemon alive.
+
+For the verified packaged Electron PID, the native test client requests
+`AXManualAccessibility` using Electron 45’s documented assistive-technology API.
+It does not change TCC, system preferences, product flags or renderer state.
+The receipt retains the native request result and last returned tree before
+content assertions, plus an owned-window failure image when available.

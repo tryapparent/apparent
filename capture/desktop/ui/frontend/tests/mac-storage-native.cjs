@@ -284,9 +284,12 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     const started = Date.now();
     try {
       if (['open', 'settings', 'close'].includes(op)) return await osa(agentsAX, [String(pid), op, role, name]);
-      const { stdout } = await run(axTool, [String(pid), op, role, name], {
+      const { stdout, stderr } = await run(axTool, [String(pid), op, role, name], {
         env, timeout: budget(3500), killSignal: 'SIGKILL', maxBuffer: 32768,
       });
+      if (stderr.includes('owned-Electron AXManualAccessibility=success')) {
+        (evidence.accessibilityRequests ??= {})[pid] = true;
+      }
       return stdout.trim();
     }
     catch (error) {
@@ -314,27 +317,6 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     assert.equal(result.status, 'connected');
     return result.agents;
   };
-  const open = async () => {
-    await invoke(rustPID(), 'open');
-    evidence.openSettings = await poll(() => invoke(rustPID(), 'settings'), 'Owned status-menu Settings action');
-    const native = await child(helper);
-    evidence.nativeWindows ??= [];
-    evidence.nativeWindows.push({ pid: native, mappedExecutable: helper,
-      window: await poll(() => invoke(native, 'window'), 'Owned native Settings window') });
-    await poll(() => invoke(native, 'press', 'AXButton', 'Agents'), 'Native Agents navigation');
-    const pid = await child(packaged);
-    const tree = await poll(async () => {
-      const tree = await invoke(pid, 'inspect');
-      assert.ok(tree.includes('Apparent Settings — Agents'));
-      for (const label of ['General', 'Recording', 'Storage', 'Permissions', 'Agents', 'About', skill, 'Ask agents for a demo video']) assert.ok(tree.includes(label), `Missing visible ${label}`);
-      return tree;
-    }, 'Installed Agents visible content');
-    evidence.windows ??= [];
-    evidence.windows.push({ pid, nativePID: native, mappedExecutable: packaged, tree });
-    return pid;
-  };
-  let pid = await open();
-  const before = JSON.parse(await fs.readFile(config, 'utf8'));
   const shot = async (pid, name) => {
     const window = JSON.parse(await invoke(pid, 'window'));
     assert.equal(window.pid, pid);
@@ -345,6 +327,35 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     });
     (evidence.screenshots ??= []).push({ name: `${name}.png`, ...window });
   };
+  const open = async () => {
+    await invoke(rustPID(), 'open');
+    evidence.openSettings = await poll(() => invoke(rustPID(), 'settings'), 'Owned status-menu Settings action');
+    const native = await child(helper);
+    evidence.nativeWindows ??= [];
+    evidence.nativeWindows.push({ pid: native, mappedExecutable: helper,
+      window: await poll(() => invoke(native, 'window'), 'Owned native Settings window') });
+    await poll(() => invoke(native, 'press', 'AXButton', 'Agents'), 'Native Agents navigation');
+    const pid = await child(packaged);
+    let tree;
+    try {
+      tree = await poll(async () => {
+        const next = await invoke(pid, 'inspect');
+        evidence.lastVisibleTree = next;
+        assert.ok(next.includes('Apparent Settings — Agents'));
+        for (const label of ['General', 'Recording', 'Storage', 'Permissions', 'Agents', 'About', skill, 'Ask agents for a demo video']) assert.ok(next.includes(label), `Missing visible ${label}`);
+        return next;
+      }, 'Installed Agents visible content');
+    } catch (error) {
+      try { await shot(pid, 'agents-visible-failure'); }
+      catch (shotError) { evidence.visibleFailureScreenshotError = shotError.message; }
+      throw error;
+    }
+    evidence.windows ??= [];
+    evidence.windows.push({ pid, nativePID: native, mappedExecutable: packaged, tree });
+    return pid;
+  };
+  let pid = await open();
+  const before = JSON.parse(await fs.readFile(config, 'utf8'));
   const demo = async enabled => {
     await invoke(pid, 'space', 'AXCheckBox', 'Ask agents for a demo video');
     await poll(async () => {

@@ -59,6 +59,15 @@ func main() throws {
     }
     try require(allowedExecutables.contains(executable), "PID does not map to the installed fixture")
     let app = AXUIElementCreateApplication(pid)
+    if executable == allowedExecutables[1] {
+        // Electron 45's documented third-party assistive-client handshake:
+        // https://github.com/electron/electron/blob/v45.2.1/docs/tutorial/accessibility.md#macos
+        // This is scoped to our verified Electron process, never TCC/system state.
+        _ = AXUIElementSetMessagingTimeout(app, 0.25)
+        try require(AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue) == .success,
+                    "Owned Electron accessibility request failed")
+        FileHandle.standardError.write(Data("owned-Electron AXManualAccessibility=success\n".utf8))
+    }
     let windows = try children(app, key: kAXWindowsAttribute)
     try require(windows.count == 1, "Expected exactly one owned Settings window")
     let window = windows[0]
