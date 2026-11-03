@@ -142,7 +142,7 @@ func main() throws {
         }
         let focusedWindow = try attribute(app, kAXFocusedWindowAttribute)
         let focusedElement = try attribute(app, kAXFocusedUIElementAttribute)
-        let keyboard: [String: Any] = ["pid": pid,
+        let keyboard: [String: Any] = ["pid": pid, "delivery": "owned-pid",
             "windowFocused": focusedWindow.map { CFEqual($0, window) } ?? false,
             "checkboxFocused": focusedElement.map { CFEqual($0, target) } ?? false,
             "valueBefore": text(try attribute(target, kAXValueAttribute)),
@@ -155,8 +155,10 @@ func main() throws {
         try require(ProcessInfo.processInfo.systemUptime < deadline, "No keyboard input after AX deadline")
         // Queue the complete key pair together; no wait or throwing AX call
         // may leave a key held until the outer subprocess timeout.
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
+        // Native Settings keyboard acceptance targets only this verified process;
+        // global HID routing and global capture shortcuts are separate contracts.
+        down.postToPid(pid)
+        up.postToPid(pid)
     } else {
         try require(AXUIElementPerformAction(target, kAXPressAction as CFString) == .success, "Owned AXPress failed")
     }

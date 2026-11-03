@@ -695,3 +695,10 @@ run-owned parent directory. CLI ownership/uninstall recognizes that basename;
 renaming the bundle would test an unsupported fixture layout. CLI failures
 retain the current phase, selected link metadata, authoritative state, AX tree
 and owned-window image before ownership-aware cleanup.
+
+Settings keyboard proof posts the native CGEvent Space pair directly to the
+verified packaged Electron PID, after the same owned foreground-window and
+checkbox-focus checks. Its receipt identifies `owned-pid` delivery. This removes
+global HID routing from the Settings control test; it does not prove global
+shortcut or capture-input behavior. The key pair is sent once and Rust/config/AX
+readback must still confirm the mutation.
