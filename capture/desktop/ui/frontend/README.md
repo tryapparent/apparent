@@ -793,3 +793,8 @@ before renderer IPC completion; racing direct reads against that IPC can take
 the shared zero-capacity worker's admission slot and reject the user mutation
 with `app_busy`. UI-first observation preserves single-send mutations and all
 authoritative Rust/config/filesystem readback, without queuing or retrying writes.
+
+The native fixture distinguishes the parent-bound Agents process by its exact
+mode suffix after checking Rust ancestry and the packaged executable. Pill and
+Settings share that runtime; the pill's entrypoint must never be selected for
+Settings input or screenshots.

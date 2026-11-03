@@ -303,14 +303,21 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
   };
   // Discover only direct children of our live Rust PID; verify their mapped text
   // before any AX access. Renderer/helper grandchildren are never selected by name.
-  const child = async target => poll(async () => {
+  const child = async (target, modeSuffix) => poll(async () => {
     const { stdout } = await run('/bin/ps', ['-axo', 'pid=,ppid='], { env, timeout: budget(), maxBuffer: 262144 });
     const candidates = stdout.trim().split('\n').map(s => s.trim().split(/\s+/).map(Number)).filter(([, p]) => p === rustPID());
     const found = [];
     for (const [pid] of candidates) {
       const mapped = await run('/usr/sbin/lsof', ['-nP', '-a', '-p', String(pid), '-d', 'txt', '-Fn'], { env, timeout: budget(), maxBuffer: 131072 });
       const files = mapped.stdout.split('\n').filter(s => s.startsWith('n/')).map(s => s.slice(1));
-      if ((await Promise.all(files.map(p => fs.realpath(p).catch(() => p)))).includes(target)) found.push(pid);
+      if (!(await Promise.all(files.map(p => fs.realpath(p).catch(() => p)))).includes(target)) continue;
+      if (modeSuffix) {
+        // Pill and Settings share the packaged runtime. Keep executable and
+        // ancestry checks, then select the exact parent-bound Settings mode.
+        const command = await run('/bin/ps', ['-ww', '-p', String(pid), '-o', 'command='], { env, timeout: budget(), maxBuffer: 32768 });
+        if (!command.stdout.trim().endsWith(` ${modeSuffix}`)) continue;
+      }
+      found.push(pid);
     }
     assert.equal(found.length, 1, 'Expected one mapped owned presentation child');
     return found[0];
@@ -362,7 +369,7 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     evidence.nativeWindows.push({ pid: native, mappedExecutable: helper,
       window: await poll(() => invoke(native, 'window'), 'Owned native Settings window') });
     await poll(() => invoke(native, 'press', 'AXButton', 'Agents'), 'Native Agents navigation');
-    const pid = await child(packaged);
+    const pid = await child(packaged, '--settings-agents --settings-parent');
     await prepareReader(pid);
     let tree;
     try {
@@ -500,7 +507,7 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
   await invoke(pid, 'press', 'AXButton', 'General');
   const native = await child(helper);
   await poll(() => invoke(native, 'press', 'AXButton', 'Agents'), 'Navigate back to Agents');
-  pid = await child(packaged);
+  pid = await child(packaged, '--settings-agents --settings-parent');
   await prepareReader(pid);
   await poll(async () => {
     const tree = await invoke(pid, 'inspect');
