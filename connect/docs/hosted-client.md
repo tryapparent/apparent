@@ -2,7 +2,7 @@
 
 ## Endpoint encryption candidate
 
-`experiments.hostedEncryption` is off by default. The candidate keeps local bundles ordinary and uses the existing any-browser link/sign-in/approve journey for grant-bound endpoint public keys. Account authorization is trusted; a compromised authorization service can substitute recipients. This is not Better Auth's token encryption and is not independent device pairing. No production enablement, plaintext migration or recovery guarantee is implied. See [the exact trust, wire, consent and remaining policy contract](hosted-encryption.md). Encrypted capture fetch requires the experiment and the original private endpoint identity; public/server-rendered sharing is rejected. Legacy plaintext remains explicitly identified and is not automatically migrated.
+`experiments.hostedEncryption` is off by default. The candidate keeps local bundles ordinary and uses the existing any-browser link/sign-in/approve journey for grant-bound endpoint public keys. Account authorization is trusted; a compromised authorization service can substitute recipients. This is not Better Auth's token encryption and is not independent device pairing. No production enablement, plaintext migration or recovery guarantee is implied. See [the exact trust, wire, consent and remaining policy contract](hosted-encryption.md). Desktop encryption remains controlled by the experiment. CLI read approval enrolls a receiving key without changing that flag; encrypted fetch requires the original approved private endpoint identity; public/server-rendered sharing is rejected. Legacy plaintext remains explicitly identified and is not automatically migrated.
 
 Shared macOS/Linux implementation, default-off `hostedSync` experiment. This is an implementation candidate, not a deployed service or proof of native GUI behavior. No Windows support. See [hosted-api.md](hosted-api.md) for the v1 protocol and hosting prerequisites.
 
@@ -38,8 +38,10 @@ requirements still apply; supported platforms remain macOS and Linux.
 `Client::prepare_public_link` is the compatible client integration contract for
 #171. Call it only after the sender explicitly chooses public sharing with:
 “Anyone with this link can view this capture. Shared captures are not end-to-end
-encrypted.” Existing Desktop callers still use `prepare_link`, which retains the
-encrypted-sharing refusal until their consent/UI integration is accepted.
+encrypted.” The completed-capture Copy link action reaches this method through
+its capture-bound Rust controller after the Electron confirmation. Other
+`prepare_link` callers retain the encrypted-sharing refusal. The installed
+sender's native acceptance and existing activation holds remain separate gates.
 
 The explicit method persists a separate `publicCopy` job, plaintext manifest and
 fresh capture ID under the current upload grant. It never edits/cancels the
@@ -105,6 +107,10 @@ config races, exact subprocess/CLI alias and logging assertions, and the real UI
 late-login helper. The feature is absent from normal application builds. Package
 experiment constants are included in feature-map discovery. Package checks do
 not substitute for root adoption compilation or native/platform proof.
+
+## Recipient CLI quick start
+
+Fresh Linux agents use the [latest published installer](../../capture/agent/docs/installation.md), then `apparent inspect <id>`. `apparent connect login` defaults to read scope, the configured API origin (or the official service), and printing the approval URL/code without opening a local browser. `--browser` opts into opening it. Existing `--server`, `--scope`, `--consent-upload` and `--no-browser` remain supported. CLI read approval enrolls an endpoint key even without the Desktop encryption experiment; encrypted fetch uses that approved key. It changes no upload consent or Desktop encryption flag. A receiver must be included when the sender encrypts; later approval cannot decrypt a previously sealed capture.
 
 ## Opt in on the recording computer
 
@@ -222,7 +228,7 @@ The `hosted/` directory beside `config.json` is private mode `0700`; `upload.cre
 
 ## Full fidelity and v1 limits
 
-The allowlist exactly matches the API: summary, metadata, contact sheets including full-sheet originals, numbered `frames/` and `frames-full/` PNGs, recording MP4/MOV, WAV audio, `timeline.json` and `finish-trace.json`. Whiteboard content already becomes numbered frames plus manifest data; no separate whiteboard extension is needed. Unknown assets fail the entire upload with `unsupported_asset`, never silently disappear. Symlinks are not uploaded, even when named like an allowed file. Files are staged and hashed before reservation; retry requires the same manifest. Reordered server manifests are accepted only if their complete path/size/hash sets agree.
+The allowlist exactly matches the API: summary, metadata, semantic `notes.json`, contact sheets including full-sheet originals, numbered `frames/` and `frames-full/` PNGs, recording MP4/MOV, WAV audio, `timeline.json` and `finish-trace.json`. Whiteboard content already becomes numbered frames plus manifest data; no separate whiteboard extension is needed. Unknown assets fail the entire upload with `unsupported_asset`, including failures wrapped by encryption staging; no paths or raw diagnostic text enter queue errors. They never silently disappear. The exact local `notes-ui.log` diagnostic is excluded only when it is a current-user-owned, private regular file with one link. Empty validated `microphone-off` and `.publication.lock` markers also stay local. Other unknown or unsafe entries still fail closed. Symlinks are not uploaded, even when named like an allowed file. Files are staged and hashed before reservation; retry requires the same manifest. Reordered server manifests are accepted only if their complete path/size/hash sets agree.
 
 The server quota is **500,000,000 bytes per account**. Separately, v1 accepts at most 512 files and **90,000,000 bytes per file**, with a 128KiB manifest request. `file_too_large` is reported in queue status; the capture stays local. There is no multipart/chunk protocol and the client never drops a large recording/audio asset to fit. Real larger recordings therefore need a future coordinated protocol change. Server retention is seven days after reservation, with incomplete reservations reclaimed after 24 hours; a tombstoned ID requires a fresh explicit `apparent connect upload`, not a retry of that ID.
 
@@ -252,6 +258,13 @@ it is not live Google, deployed Worker, Electron routing or native platform proo
 
 The independent package tests also exercise renewable account/upload/fetch/share/progress calls, proactive expiry and unexpected 401, separate-process single ownership, transient/permanent refresh failures, scope/grant mismatch, delayed refresh versus disable/logout/new generation, secret-free status, expired-grant revocation, offline logout and process exit after durable response before credential publication. These are synthetic protocol tests, not Better Auth/browser integration evidence; candidate backend-client integration and macOS/Linux native GUI checks remain separate gates.
 
+Saved `notes.json` is semantic capture data and transfers with the recording.
+The empty, owned, single-link, non-writable-by-others `microphone-off` marker stays
+local; its meaning already transfers as `microphoneCapture: off` in capture metadata.
+The legacy `notes-ui.log` is a local diagnostic and is never uploaded or served;
+staging skips only that exact name after checking a private, current-user-owned,
+regular file with one link. Unsafe diagnostics and unknown assets remain errors.
+
 The desktop presentation adapter may read
 `Client::upload_size_failure(bundle, UploadQueueKind::{Private,PublicCopy})`.
 It returns only the requested queue intent and numeric byte size/limit from the
@@ -275,3 +288,7 @@ The private destination guard, integrity validation and atomic complete-bundle
 publication still apply. Loopback tests exercise queue pointer → delayed upload
 → fetch and unavailable/unauthorized failures; these are not live service or
 native clipboard proof.
+
+Upload failures emit local allowlisted stage/reason codes on stderr. The existing
+queue/progress categories are unchanged; diagnostics emit neither raw error text,
+paths, endpoint keys, credentials or capture contents.

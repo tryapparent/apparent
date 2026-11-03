@@ -15,6 +15,24 @@ fn encrypted(f: &Fixture) {
         .unwrap();
 }
 
+#[test]
+fn fresh_recipient_uses_official_origin_and_actionable_read_approval() {
+    let f = Fixture::new();
+    assert_eq!(f.client.login_server(None).unwrap(), settings::DEFAULT_SERVER);
+    assert!(f.client.login_server(Some("not-an-origin")).is_err());
+    let out = f.root.join("missing.apparent");
+    let error = f.client.fetch(&"a".repeat(32), &out, 0).unwrap_err().to_string();
+    assert!(error.contains("apparent connect login"), "{error}");
+    assert!(!error.contains("--scope") && !error.contains("--server"));
+    assert!(!out.exists());
+    let cloud = CloudConfig { server: "https://custom.example.com".into(), ..Default::default() };
+    f.client.provider.set_cloud(&cloud).unwrap();
+    assert_eq!(f.client.login_server(None).unwrap(), cloud.server);
+    assert_eq!(f.client.login_server(Some(settings::DEFAULT_SERVER)).unwrap(), settings::DEFAULT_SERVER);
+    assert!(f.client.read_login_command().unwrap().contains("--server 'https://custom.example.com'"));
+    assert!(!f.client.enabled());
+}
+
 // Worker-path cases start with synthetic credentials but real generated endpoint
 // identities. The separate login test below exercises actual approval admission.
 fn pair(f: &Fixture, server: &Server) {
@@ -95,6 +113,43 @@ fn no_media(server: &Server) {
             .any(|r| r.starts_with("PUT ") || r.ends_with("/complete"))
     );
 }
+
+#[test]
+fn encrypted_unknown_asset_reports_snapshot_cause_without_uploading() {
+    let f = Fixture::new();
+    let server = encryption_server("");
+    pair(&f, &server);
+    let bundle = f.bundle();
+    fs::write(bundle.join("unexpected.svg"), b"private unknown asset").unwrap();
+    f.client.enqueue(&bundle).unwrap();
+    f.client.process_once().unwrap();
+    assert_eq!(job(&f).error.as_deref(), Some("unsupported_asset"));
+    no_media(&server);
+    assert!(!server.state.lock().unwrap().request_routes.iter()
+        .any(|route| route.starts_with("POST /v1/captures/")));
+}
+
+#[test]
+fn encrypted_notes_bundle_roundtrip_keeps_notes_and_excludes_local_diagnostic() {
+    let f = Fixture::new();
+    let server = encryption_server("");
+    pair(&f, &server);
+    let bundle = f.bundle();
+    let notes = br#"{"version":1,"notes":[{"text":"synthetic saved note"}]}"#;
+    fs::write(bundle.join("notes.json"), notes).unwrap();
+    OpenOptions::new().write(true).create_new(true).mode(0o600)
+        .open(bundle.join("notes-ui.log")).unwrap()
+        .write_all(b"private local diagnostic").unwrap();
+    let id = f.client.enqueue(&bundle).unwrap();
+    f.client.process_once().unwrap();
+    assert_ready(&f);
+    let out = f.root.join("notes-restored.apparent");
+    f.client.fetch(&id, &out, 0).unwrap();
+    assert_bundle(&bundle, &out);
+    assert_eq!(fs::read(out.join("notes.json")).unwrap(), notes);
+    assert!(!out.join("notes-ui.log").exists());
+    assert!(bundle.join("notes-ui.log").exists());
+}
 fn assert_bundle(source: &Path, out: &Path) {
     let stage = Scratch::new_output(out.parent().unwrap()).unwrap();
     let files = snapshot(source, &stage.0).unwrap();
@@ -129,7 +184,6 @@ fn fetch_refused(f: &Fixture, id: &str, name: &str, expected: &str) {
 fn encrypted_login_binds_public_key_before_approval_and_read_never_enables_upload() {
     let f = Fixture::new();
     let server = encryption_server("");
-    encrypted(&f);
     let gate = Arc::new(MediaGate::default());
     server.state.lock().unwrap().media_gate = Some(gate.clone());
     let client = f.client.clone();
@@ -178,6 +232,8 @@ fn encrypted_login_binds_public_key_before_approval_and_read_never_enables_uploa
     assert!(!f.client.state.join("upload.credential").exists());
     assert!(f.client.enqueue(&f.bundle()).is_err());
     no_media(&server);
+    assert!(!f.client.provider.experiment(HOSTED_ENCRYPTION));
+    encrypted(&f);
     // Normal explicit upload approval on the same endpoint; no synthetic worker
     // credential shortcut in this positive round trip.
     f.client.login(&server.url, "upload", true, false).unwrap();
@@ -186,6 +242,7 @@ fn encrypted_login_binds_public_key_before_approval_and_read_never_enables_uploa
     f.client.process_once().unwrap();
     assert_ready(&f);
     let out = f.root.join("login-roundtrip.apparent");
+    f.client.provider.set_experiment(HOSTED_ENCRYPTION, false).unwrap();
     f.client.fetch(&id, &out, 0).unwrap();
     assert_bundle(&bundle, &out);
 }

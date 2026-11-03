@@ -240,7 +240,7 @@ class PublicationProgressTests(unittest.TestCase):
 
     def test_ineligible_completions_cannot_evict_good_pending_candidates(self):
         root = Path(__file__).resolve().parents[2]
-        for name in ('verification-mac.yml', 'web-delivery.yml', 'release-linux.yml'):
+        for name in ('verification-mac.yml', 'web-delivery.yml'):
             workflow = (root / '.github/workflows' / name).read_text()
             group = workflow.split('\nconcurrency:\n')[1].split('  group: ')[1].splitlines()[0]
             def key(**overrides):
@@ -266,7 +266,35 @@ class PublicationProgressTests(unittest.TestCase):
                                      ('github.event.workflow_run.head_repository.full_name', 'fork/project')]:
                     self.assertNotEqual(good, key(**{field: value}))
 
-    def test_workflow_scheduling_keeps_running_work_and_matching_candidates(self):
+    def test_automatic_linux_build_supersedes_without_interrupting_publication(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / '.github/workflows/release-linux.yml').read_text()
+        self.assertNotIn('\nconcurrency:', workflow)
+        build = workflow.split('\n  linux:\n')[1].split('\n  publish:')[0]
+        self.assertIn("cancel-in-progress: ${{ github.event_name == 'workflow_run' }}", build)
+        self.assertIn("matrix.arch", build)
+        self.assertIn("github.event_name == 'workflow_run' && 'automatic' || github.run_id", build)
+        self.assertIn('needs: [admit, preview-needed]', build)
+        job = workflow.split('\n  publish:\n')[1]
+        self.assertEqual(workflow.count('group: release-linux-publication'), 1)
+        self.assertNotIn('queue:', workflow)  # Compatible with pinned actionlint 1.7.12.
+        self.assertIn('cancel-in-progress: false', job)
+        self.assertIn('needs: [admit, preview-needed, linux]', job)
+        self.assertIn("needs.preview-needed.outputs.build == 'false'", job)
+        self.assertIn("needs.admit.result == 'success'", job)
+        self.assertIn("inputs.verify_only != true", job)
+        steps = ('Attach to the release', 'Publish both checked AppImages',
+                 'Publish admitted immutable artifact identities and complete ancestry',
+                 'Publish unchanged verified assets for legacy updaters')
+        for step in steps:
+            self.assertIn(f'- name: {step}', job)
+        self.assertLess(job.index(steps[1]), job.index(steps[2]))
+        # Feed repair still runs when immutable assets already exist, without download.
+        download = job.split('- uses: actions/download-artifact@v5')[1].split('- name:')[0]
+        self.assertIn("needs.linux.result == 'success'", download)
+
+
+    def test_verification_scheduling_keeps_running_work_and_matching_candidates(self):
         root = Path(__file__).resolve().parents[2]
         linux = (root / gate.WORKFLOWS['linux']).read_text()
         mac = (root / gate.WORKFLOWS['macos']).read_text()

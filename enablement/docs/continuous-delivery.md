@@ -37,14 +37,28 @@ PR/manual checks, skipped jobs, failed/cancelled runs, legacy combined receipts
 and another platform's receipt cannot substitute for the required proof.
 
 Verified main ancestors may publish while newer main commits are still testing.
-Every checkout and artifact uses the admitted SHA. Existing publication locks
-finish running work and coalesce pending work. Under those locks, Linux previews,
+Every checkout and artifact uses the admitted SHA. Publication locks serialize
+writers without interrupting publication. Under those locks, Linux previews,
 Pages, Worker and the Mac appcast compare source ancestry against the published
-revision; equal/older candidates never replace newer deployments. Unknown or
+revision; equal/older candidates never replace newer deployments. Automatic Linux
+packaging jobs cancel older automatic builds per architecture after exact-SHA
+admission of a newer Linux-verified candidate. Manual/tag and verification-only
+builds use separate groups. One publication job retains a noncanceling lock around immutable assets and feed
+repair together; pending transactions may coalesce, but running feed replacement
+cannot be interrupted by a newer build. This uses the concurrency syntax accepted
+by pinned actionlint 1.7.12. Unknown or
 divergent identities fail closed. Mac also retains its monotonic Sparkle build
 number check. All writers must use these workflow locks; out-of-band deployment
-is not coordinated by Actions. Activation variables, schema, consent and
-native/product acceptance requirements remain unchanged.
+is not coordinated by Actions. Activation variables, schema and consent
+requirements remain unchanged. Desktop proof follows the
+[shared-behavior/native-boundary split](../../capture/desktop/docs/native-testing.md):
+shared renderer and real Rust↔Electron behavior run on Linux; only affected OS
+boundaries need native proof before merge. Shared-only changes may reuse applicable
+Mac seam evidence without a fresh Mac workflow walkthrough. Before Mac publication,
+retain a short current-package launch/interaction/cleanup smoke and applicable
+native evidence alongside the exact-commit verification/signing gates. This policy
+does not remove configured jobs, implement automatic selection or turn skipped
+checks into passes; existing executable admission remains in force.
 
 Manual/tag Linux releases require the same exact Linux/shared receipt; manual Mac
 previews require both receipts. Their optional `candidate_sha` selects an exact
@@ -263,8 +277,10 @@ Cargo build/test), `connect-web` (existing package build/browser fixtures),
 (JS and synthetic Electron smoke). Use the existing web workflow for complete
 composed-site and cross-origin acceptance, and platform workflow for real Rust
 bridge/native checks. Entrypoints require the same toolchains, browser and system
-dependencies as those workflows; they do not install OS dependencies or grant
-native acceptance. Run heavy local commands through the existing build runner.
+dependencies as those workflows; they do not install OS dependencies. The Linux
+`desktop-ui-integration` lane supplies shared renderer/real-bridge proof under the
+Desktop policy, not proof of Mac or Linux OS effects. Run heavy local commands
+through the existing build runner.
 
 Client edits also select Capture: root tests intentionally reuse client scenarios
 with the real AppConfig provider. Renderer edits select Capture for Rust bridge
