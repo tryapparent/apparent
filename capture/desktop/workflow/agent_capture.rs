@@ -1297,6 +1297,11 @@ mod tests {
         };
         std::thread::sleep(Duration::from_millis(30));
         assert_eq!(call(serde_json::json!({"errorReporting":"read","deadline":storage_clock_ms()+3000})), serde_json::json!({"errorReporting":{"enabled":true}}));
+        for kind in ["main_exception", "main_rejection", "renderer_exception", "renderer_rejection"] {
+            assert_eq!(call(serde_json::json!({"errorReporting":"exception","kind":kind,"deadline":storage_clock_ms()+3000})), serde_json::json!({"accepted":true}));
+            assert_eq!(call(serde_json::json!({"errorReporting":"exception","kind":kind,"deadline":1}))["error"], "admission_expired");
+            assert_eq!(call(serde_json::json!({"errorReporting":"exception","kind":kind,"message":"private text","deadline":storage_clock_ms()+3000}))["error"], "invalid_request");
+        }
         for invalid in [
             serde_json::json!({"errorReporting":"set","deadline":1}),
             serde_json::json!({"errorReporting":"set","enabled":"false","deadline":1}),
