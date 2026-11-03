@@ -264,6 +264,11 @@ const agentsAX = `on run argv
       end if
       if (count of windows) is not 1 then error "Expected exactly one owned Settings window"
       set w to window 1
+      if item 2 of argv is "window" then
+        set directChildren to UI elements of w
+        if (count of directChildren) > 16 then error "Unsupported owned window children"
+        return "window=" & (name of w as text) & ";role=" & (role of w as text) & ";child-roles=" & (role of every UI element of w as text)
+      end if
       if item 2 of argv is "close" then
         set frontmost to true
         if not frontmost then error "Owned Settings lost focus"
@@ -281,17 +286,37 @@ const agentsAX = `on run argv
         if visited > 350 then error "Owned AX tree exceeds bound"
         set r to role of el as text
         set labelText to ""
-        repeat with attr in {"AXTitle", "AXDescription", "AXValue"}
+        -- Avoid three cross-process attribute reads for every layout group.
+        -- Selection still inspects the complete bounded scope for uniqueness.
+        set requestedAttributes to {}
+        if r is item 3 of argv or item 2 of argv is "inspect" then
+          if r is "AXStaticText" then
+            set requestedAttributes to {"AXValue"}
+          else if r is "AXWindow" then
+            set requestedAttributes to {"AXTitle"}
+          else if r is "AXButton" then
+            set requestedAttributes to {"AXTitle", "AXDescription"}
+          else if r is "AXCheckBox" then
+            set requestedAttributes to {"AXTitle", "AXDescription", "AXValue"}
+          end if
+        end if
+        repeat with attr in requestedAttributes
           try
             set v to value of attribute (contents of attr) of el
             if v is not missing value then set labelText to labelText & "|" & (v as text)
           end try
         end repeat
-        set trace to trace & r & labelText & linefeed
+        set rowText to r & labelText
+        set trace to trace & rowText & linefeed
+        if (length of trace) > 20000 then error "Owned AX trace exceeds bound"
+        -- Preserve partial evidence even if a later AX call hits its deadline.
+        log ("owned-AX " & visited & " " & rowText)
         if r is item 3 of argv and labelText contains ("|" & item 4 of argv) then set end of matches to el
-        set children to UI elements of el
-        if (count of children) > 100 then error "Owned AX child bound exceeded"
-        set pending to pending & children
+        if r is not in {"AXStaticText", "AXImage", "AXCheckBox", "AXTextField", "AXSlider"} then
+          set children to UI elements of el
+          if (count of children) > 100 then error "Owned AX child bound exceeded"
+          set pending to pending & children
+        end if
       end repeat
       if item 2 of argv is "inspect" then return trace
       if (count of matches) is not 1 then error "Missing or ambiguous owned AX matchedElement: " & trace
@@ -317,7 +342,15 @@ async function installedAgents({ home, config, appDir, report, osa, run, env, bu
   const executable = await fs.realpath(path.join(appDir, 'Contents/MacOS/apparent'));
   const helper = await fs.realpath(path.join(appDir, 'Contents/MacOS/apparent-helper'));
   const packaged = await fs.realpath(path.join(appDir, 'Contents/Resources/settings/runtime/Electron.app/Contents/MacOS/Electron'));
-  const invoke = (pid, op, role = '', name = '') => osa(agentsAX, [String(pid), op, role, name]);
+  const invoke = async (pid, op, role = '', name = '') => {
+    const started = Date.now();
+    try { return await osa(agentsAX, [String(pid), op, role, name]); }
+    catch (error) {
+      evidence.lastAXFailure = { pid, op, role, name, elapsedMs: Date.now() - started,
+        stdout: error.stdout, stderr: error.stderr, signal: error.signal };
+      throw error;
+    }
+  };
   // Discover only direct children of our live Rust PID; verify their mapped text
   // before any AX access. Renderer/helper grandchildren are never selected by name.
   const child = async target => poll(async () => {
@@ -341,6 +374,9 @@ async function installedAgents({ home, config, appDir, report, osa, run, env, bu
     await invoke(rustPID(), 'open');
     evidence.openSettings = await poll(() => invoke(rustPID(), 'settings'), 'Owned status-menu Settings action');
     const native = await child(helper);
+    evidence.nativeWindows ??= [];
+    evidence.nativeWindows.push({ pid: native, mappedExecutable: helper,
+      window: await poll(() => invoke(native, 'window'), 'Owned native Settings window') });
     await poll(() => invoke(native, 'press', 'AXButton', 'Agents'), 'Native Agents navigation');
     const pid = await child(packaged);
     const tree = await poll(async () => {

@@ -635,3 +635,10 @@ Settings fixture only. It emits no full verification/publication receipt; the
 full caller and reusable jobs remain main-only. Full CI runs after merge and
 gates publication of the exact main commit. Native failure still blocks Agents
 retirement and merge regardless of the absence of a branch full-CI requirement.
+
+The focused Settings job uses Rust cache shared-key `rust` and the same three
+workspace inputs as main, retaining the action’s platform/toolchain/lock
+fingerprints. Cache-on-failure preserves completed dependency compilation after
+a native fixture failure. Native AX evidence includes the verified helper window
+and bounded partial traversal output; a timeout is not proof that a control is
+absent, and never waives the native acceptance gate.
