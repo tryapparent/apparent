@@ -569,7 +569,10 @@ operations; the renderer receives only the four Agents calls and sidebar
 navigation. Storage cannot call Agents; Agents cannot call Storage, Connect,
 sharing, reporting, runtime, clipboard or filesystem handlers. The existing
 packaged assets, UI-process ownership, generation and private parent pipe are
-shared with Storage. Other pages still use native Settings.
+shared with Storage and installed Connect. Connect keeps its dedicated preload,
+consume-once initial action, and Navigate/Close-only parent pipe. Returning from
+Connect can select Agents or Storage; each replacement receives a new generation
+and its own capability set. Other pages still use native Settings.
 
 Missing assets, launch errors and renderer crashes reopen native Agents. Until
 platform acceptance, explicit operational rollback is to restore the previous
