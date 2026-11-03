@@ -262,22 +262,7 @@ const agentsAX = `on run argv
         click settingsEntry
         return "owned-settings-selected"
       end if
-      if (count of windows) is not 1 then error "Expected exactly one owned Settings window"
-      set w to window 1
-      if item 2 of argv is "close" then
-        set frontmost to true
-        -- Activation is asynchronous. Observe readiness without resending it or
-        -- retrying the close key; stay inside the enclosing 3.5-second budget.
-        repeat 16 times
-          if frontmost then exit repeat
-          delay 0.05
-        end repeat
-        if not frontmost then error "Owned Settings lost focus"
-        if (count of windows) is not 1 then error "Owned Settings window changed before close"
-        keystroke "w" using command down
-        return "closed"
-      end if
-      error "Unsupported owned menu/close operation"
+      error "Unsupported owned menu operation"
     end tell
   end tell
 end run`;
@@ -292,7 +277,7 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
   const invoke = async (pid, op, role = '', name = '') => {
     const started = Date.now();
     try {
-      if (['open', 'settings', 'close'].includes(op)) return await osa(agentsAX, [String(pid), op, role, name]);
+      if (['open', 'settings'].includes(op)) return await osa(agentsAX, [String(pid), op, role, name]);
       const { stdout, stderr } = await run(axTool, [String(pid), op, role, name], {
         env, timeout: budget(3500), killSignal: 'SIGKILL', maxBuffer: 32768,
       });

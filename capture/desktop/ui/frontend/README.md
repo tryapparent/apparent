@@ -765,3 +765,9 @@ archive digest, freshly prepares/signs the frontend and package, and never falls
 back to rebuilding after admission failure. A build alone is not native proof.
 A timeout requires owner-local optimization and a successful rerun; it does not
 authorize a larger budget or less acceptance.
+
+The focused Agents fixture closes the verified window through its standard AX
+close button, once, after checking the button PID, role/subrole and enabled state.
+It does not require global foreground activation or retry a close action. Existing
+window-disappearance and Rust-idle assertions still determine whether close worked.
+Darwin execution of this replacement close probe remains pending.

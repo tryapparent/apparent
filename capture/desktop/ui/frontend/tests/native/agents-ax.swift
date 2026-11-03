@@ -40,10 +40,10 @@ func main() throws {
         throw Failure(description: "Missing owned process identity")
     }
     let op = args[2], requestedRole = args[3], label = args[4]
-    try require(["window", "inspect", "press", "value", "space", "request-accessibility"].contains(op), "Unsupported operation")
+    try require(["window", "inspect", "press", "value", "space", "close", "request-accessibility"].contains(op), "Unsupported operation")
     let allowed = ["Agents", "General", "Refresh Agents settings", "Install command-line tool",
                    "Uninstall command-line tool", "Ask agents for a demo video"]
-    if !["window", "inspect", "request-accessibility"].contains(op) {
+    if !["window", "inspect", "close", "request-accessibility"].contains(op) {
         try require(allowed.contains(label) && [kAXButtonRole, kAXCheckBoxRole].contains(requestedRole), "Unsupported Settings control")
         try require((op == "press" && requestedRole == kAXButtonRole) ||
                     (["space", "value"].contains(op) && requestedRole == kAXCheckBoxRole), "Unsupported control action")
@@ -90,6 +90,28 @@ func main() throws {
         let info: [String: Any] = ["title": text(try attribute(window, kAXTitleAttribute)), "pid": pid,
             "windowID": number.uint32Value, "frontmost": NSWorkspace.shared.frontmostApplication?.processIdentifier == pid]
         print(String(decoding: try JSONSerialization.data(withJSONObject: info), as: UTF8.self))
+        return
+    }
+    if op == "close" {
+        // Use the verified window's standard chrome, not global keyboard focus.
+        // NSWindow close still exercises the product's normal close lifecycle.
+        guard let raw = try attribute(window, kAXCloseButtonAttribute),
+              CFGetTypeID(raw) == AXUIElementGetTypeID() else {
+            throw Failure(description: "Missing owned window close button")
+        }
+        let button = raw as! AXUIElement
+        var buttonPID: pid_t = 0
+        try require(AXUIElementGetPid(button, &buttonPID) == .success && buttonPID == pid,
+                    "Close button PID mismatch")
+        try require(text(try attribute(button, kAXRoleAttribute)) == kAXButtonRole &&
+                    text(try attribute(button, kAXSubroleAttribute)) == kAXCloseButtonSubrole,
+                    "Unexpected owned close control")
+        try require((try attribute(button, kAXEnabledAttribute)) as? Bool == true,
+                    "Owned close button disabled")
+        try require(ProcessInfo.processInfo.systemUptime < deadline, "No close input after AX deadline")
+        try require(AXUIElementPerformAction(button, kAXPressAction as CFString) == .success,
+                    "Owned window close press failed")
+        print("closed-owned-window-button")
         return
     }
     var queue = [window], position = 0, trace = "", matches: [AXUIElement] = []
