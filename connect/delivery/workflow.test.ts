@@ -7,7 +7,7 @@ test('producer verifies before sealing and never publishes',async()=>{
  assert.ok(workflow.indexOf('Verify browser and analytics')<workflow.indexOf('Seal verified'));
  const producer=workflow.split('  publish:')[0];
  assert.doesNotMatch(producer,/wrangler deploy|cargo |secrets\.|public\/site|needs:.*(?:linux|macos)/);
- assert.equal((workflow.match(/timeout-minutes: 10/g)||[]).length,4);
+ assert.equal((workflow.match(/timeout-minutes: 10/g)||[]).length,5);
 });
 
 test('callable publisher admits independently with production controls',async()=>{
