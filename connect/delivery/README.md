@@ -102,7 +102,7 @@ The reviewed JSON pin contains `sourceSha` (40 lowercase hex), `run` and `attemp
 
 Both extracted files must pass GitHub attestation verification for the trusted workflow, main source ref and pinned source digest before binary architecture, digest and manifest identity validation. Tests use synthetic headers and injected transport/attestation results; they do not establish real producer provenance.
 
-Run tests: `node --experimental-strip-types --test connect/delivery/recipient/*.test.ts`.
+Run tests: `node --experimental-strip-types --test connect/delivery/recipient/*.test.ts connect/delivery/recipient/tests/*.test.ts`.
 
 Packaging preparation: all four assembly routes consume `pins.json` through
 `package.ts`. `adopted:false` preserves current production assembly. Adoption
