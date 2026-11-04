@@ -915,3 +915,8 @@ remain acceptance gates; no build or source review establishes them.
 The Agents recovery reader rediscovers the uniquely owned native helper during
 its bounded read poll because navigation can retire the preceding General helper.
 It sends each navigation action once; stale or ambiguous ownership is never accepted.
+
+If recovery fails the unchanged daemon-idle assertion, the fixture records its
+read duration and one extra bounded state-only diagnostic on the owned synthetic
+socket. The diagnostic retains only fixed status/error codes and phase; its
+result never turns the original failed read into a pass.

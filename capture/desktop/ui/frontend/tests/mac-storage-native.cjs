@@ -489,6 +489,42 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
   // Retired native forms provide recovery guidance, never a second implementation.
   const unavailable = 'Agents Settings could not open. Choose Agents to try again, or reinstall Apparent.';
   const recovery = evidence.recovery = { missingAssets: false, crash: false, reopened: false };
+  // Diagnostic only: one additional read of this fixture's verified socket.
+  // Never substitute its response for the failed production-reader assertion.
+  const diagnoseState = async () => {
+    const directory = path.join(home, '.config/apparent/agent-control');
+    const address = path.join(directory, 'capture.sock');
+    const dir = await fs.lstat(directory), entry = await fs.lstat(address);
+    assert.ok(dir.isDirectory() && dir.uid === process.geteuid() && (dir.mode & 0o077) === 0);
+    assert.ok(entry.isSocket() && entry.uid === process.geteuid() && (entry.mode & 0o777) === 0o600);
+    const timeout = budget(3000);
+    return new Promise(resolve => {
+      const started = Date.now();
+      const socket = require('node:net').createConnection(address);
+      let data = Buffer.alloc(0), settled = false;
+      const finish = result => {
+        if (settled) return;
+        settled = true; clearTimeout(timer); socket.destroy();
+        resolve({ ...result, elapsedMs: Date.now() - started });
+      };
+      const timer = setTimeout(() => finish({ result: 'timeout' }), timeout);
+      socket.once('connect', () => socket.write('state\n'));
+      socket.on('data', chunk => {
+        data = Buffer.concat([data, chunk]);
+        if (data.length > 1024) return finish({ result: 'oversized' });
+        if (!data.includes(10)) return;
+        try {
+          const value = JSON.parse(data.toString('utf8'));
+          const code = ['app_unresponsive', 'app_busy', 'invalid_request'].includes(value.error) ? value.error : undefined;
+          const phase = ['idle', 'selecting', 'starting', 'recording', 'processing', 'completed'].includes(value.state?.phase) ? value.state.phase : undefined;
+          finish({ result: 'reply', code, phase, bytes: data.length });
+        } catch { finish({ result: 'invalid_json', bytes: data.length }); }
+      });
+      socket.once('error', error => finish({ result: 'io_error',
+        code: ['ENOENT', 'ECONNREFUSED', 'ECONNRESET', 'EACCES', 'EPERM'].includes(error.code) ? error.code : 'other' }));
+      socket.once('end', () => finish({ result: 'eof', bytes: data.length }));
+    });
+  };
   const nativeFailure = async name => {
     // Navigation may replace the General helper after child discovery. Rejoin
     // ownership on each read; never retry the navigation press or pin a retired PID.
@@ -502,7 +538,14 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     assert.ok(!tree.includes('AXCheckBox') && !tree.includes(skill), 'Retired native Agents controls reappeared');
     await shot(nativePID, name);
     assert.equal((await read()).agentDemoVideo, true);
-    assert.deepEqual(await readRuntimeState(home, budget(3000)), { status: 'connected', phase: 'idle' });
+    const stateStarted = Date.now();
+    const state = await readRuntimeState(home, budget(3000));
+    recovery.stateRead = { result: state, elapsedMs: Date.now() - stateStarted };
+    if (state.status !== 'connected' || state.phase !== 'idle') {
+      try { recovery.stateDiagnostic = await diagnoseState(); }
+      catch { recovery.stateDiagnostic = { result: 'refused' }; }
+    }
+    assert.deepEqual(state, { status: 'connected', phase: 'idle' });
     return nativePID;
   };
   const reopen = async nativePID => {
