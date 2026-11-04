@@ -323,11 +323,13 @@ test('stdin accepts fragmented lines and rejects oversized individual lines',()=
     assert.equal(messages.length,1);
   });
   test('onboarding subscribes and reads current parent state without exposing filesystem access', async () => {
-    let receive,bridge;
+    let receive,bridge,identity;
     const current={step:'permissions',shortcut:'Alt+Shift+S'};
-    const electron={ipcRenderer:{on:(_channel,listener)=>{receive=listener},removeListener:()=>{receive=null},invoke:channel=>{assert.equal(channel,'onboarding:state');return Promise.resolve(current)}},contextBridge:{exposeInMainWorld:(name,value)=>{if(name==='nativeOnboarding')bridge=value;else assert.equal(name,'apparentExceptions')}}};
+    const electron={ipcRenderer:{on:(_channel,listener)=>{receive=listener},removeListener:()=>{receive=null},invoke:channel=>{if(channel==='apparent:build-identity')return Promise.resolve('0.3.13 · abc1234');assert.equal(channel,'onboarding:state');return Promise.resolve(current)}},contextBridge:{exposeInMainWorld:(name,value)=>{if(name==='nativeOnboarding')bridge=value;else if(name==='apparentBuild')identity=value;else assert.equal(name,'apparentExceptions')}}};
     vm.runInNewContext(fs.readFileSync(require.resolve('../electron/onboarding-preload.cjs'),'utf8'),{require:name=>{assert.equal(name,'electron');return electron}});
     assert.deepEqual(Object.keys(bridge).sort(),['action','onState','readState']);
+    assert.deepEqual(Object.keys(identity),['read']);
+    assert.equal(await identity.read(),'0.3.13 · abc1234');
     assert.equal(await bridge.readState(),current);
     const messages=[];const off=bridge.onState(value=>messages.push(value));
     receive({}, {step:'shortcut'});assert.equal(messages[0].step,'shortcut');off();assert.equal(receive,null);
