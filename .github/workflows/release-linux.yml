@@ -193,6 +193,10 @@ jobs:
       # Exact-commit Linux verification owns the full unit suite. Release keeps
       # the release-profile executable for both architectures' packaged proofs.
       - name: Compile packaged model test executable
+        # build.rs watches this variable. Keep the same build environment so
+        # compiling tests does not invalidate the just-built native outputs.
+        env:
+          APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
         run: |
           GITHUB_SHA="$CANDIDATE_SHA" cargo test --release --locked --bin apparent --no-run --message-format=json > target/test-artifacts.jsonl
           test=$(jq -r 'select(.reason == "compiler-artifact" and .target.name == "apparent" and .profile.test) | .executable // empty' target/test-artifacts.jsonl)
