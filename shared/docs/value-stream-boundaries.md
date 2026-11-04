@@ -107,9 +107,12 @@ Before declaring an owner migrated, verify all of the following:
    Rust. Unknown paths still fail conservatively; earn narrower selection by
    proving dependency closure rather than adding blanket directory exclusions.
 5. Provider/native contract changes run affected integration/platform checks.
-   Full main verification and exact-commit publication gates remain required
+   Applicable owner integration and exact-commit publication gates remain required
    under [continuous delivery](../../enablement/docs/continuous-delivery.md).
-   Independent development does not waive assembled-app acceptance.
+   Web's main-only verification admits its own artifact independently of native
+   application receipts. Public and Connect still share web composition and
+   verification; native owners remain coupled in the root application. Independent
+   development does not waive assembled-app acceptance.
 
 Enablement owns future executable source/import and build-command guards;
 stream owners own workflow and package proof. No new guard is implemented here.
