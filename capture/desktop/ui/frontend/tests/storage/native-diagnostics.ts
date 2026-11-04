@@ -14,7 +14,7 @@ export async function retainPickerFailure(identity: WindowIdentity, ownedPid: nu
   const { x, y, width, height } = identity.bounds;
   assert.ok([x, y, width, height].every(Number.isSafeInteger) && width > 0 && height > 0);
   assert.ok(path.isAbsolute(output));
-  const evidence: Record<string, string> = {};
+  const evidence: Record<string, unknown> = {};
   const observations: [string, string, string, string[]][] = [
     ['lastKnownWindowScreenshot', 'failed-owned-window.png', '/usr/sbin/screencapture', ['-x', '-R', [x, y, width, height].join(',')]],
     ['ownedProcessSample', 'electron-main-sample.txt', '/usr/bin/sample', [String(ownedPid), '1', '1', '-file']],
@@ -22,10 +22,16 @@ export async function retainPickerFailure(identity: WindowIdentity, ownedPid: nu
   for (const [key, file, command, args] of observations) {
     try {
       await run(command, [...args, path.join(output, file)], {
-        env, timeout: budget(3000), killSignal: 'SIGKILL', maxBuffer: 8192,
+        // Sampling lasts one second, but process attachment/report generation
+        // also need time. The caller's original overall deadline still bounds it.
+        env, timeout: budget(key === 'ownedProcessSample' ? 10000 : 3000), killSignal: 'SIGKILL', maxBuffer: 8192,
       });
       evidence[key] = file;
-    } catch (error) { evidence[`${key}Unavailable`] = (error as Error).message; }
+    } catch (error) {
+      const failure = error as Error & { code?: number | string | null; signal?: string | null; killed?: boolean };
+      evidence[`${key}Unavailable`] = failure.message;
+      evidence[`${key}Failure`] = { code: failure.code ?? null, signal: failure.signal ?? null, killed: failure.killed === true };
+    }
   }
   return evidence;
 }
