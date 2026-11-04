@@ -117,9 +117,9 @@ Python command named the old paths during the final audit. Historical receipts
 and older checkouts retain their own source/provenance; they do not reserve new
 main entrypoints. No VM, cold evidence or active resource was changed.
 
-The former packaged-smoke lifecycle re-exports were retired after maintained
-callers migrated and their active/frozen owner check cleared. All harness imports
-and executable VM commands now use canonical paths.
+Retiring packaged-smoke lifecycle re-exports requires maintained callers to
+migrate and the active/frozen owner check to clear. All harness imports and
+executable VM commands use canonical paths.
 
 Further Mac/frontend extraction checks exact active hunks with their owners;
 an open PR or pending native acceptance alone does not reserve stable mechanics. Storage/retention UI assertions remain Desktop
