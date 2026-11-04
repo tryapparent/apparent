@@ -1,9 +1,13 @@
-use std::{fs, path::PathBuf, process::Command};
+use std::{fs, path::PathBuf, process::Command, sync::atomic::{AtomicU64, Ordering}};
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("apparent-inspection-{}", std::process::id()));
-        fs::create_dir_all(path.join("legacy.apparent")).unwrap();
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!("apparent-inspection-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+        fs::create_dir(&path).unwrap();
+        // macOS temp roots can be symlinks; output intentionally uses absolute canonical paths.
+        let path = path.canonicalize().unwrap();
+        fs::create_dir(path.join("legacy.apparent")).unwrap();
         fs::write(path.join("legacy.apparent/apparent.json"), include_bytes!("fixtures/legacy.json")).unwrap();
         Self(path)
     }
@@ -68,4 +72,56 @@ fn legacy_outputs_errors_and_read_only_lookup() {
     assert_eq!(f.run(&["--unknown-option"]).status.code(), Some(2));
     assert_eq!(fs::read_dir(f.0.join("legacy.apparent")).unwrap().count(), 1);
     assert!(!f.0.join(".config").exists());
+}
+
+#[test]
+fn default_configured_and_environment_capture_lookup() {
+    let f = Fixture::new();
+    let run = |captures: Option<&std::path::Path>, args: &[&str]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_apparent-inspect"));
+        command.current_dir(&f.0).env("HOME", &f.0).env_remove("APPARENT_CAPTURES_DIR")
+            .env_remove("XDG_DATA_HOME");
+        if let Some(path) = captures { command.env("APPARENT_CAPTURES_DIR", path); }
+        command.args(args).output().unwrap()
+    };
+    let default = f.0.join(if cfg!(target_os = "macos") {
+        "Library/Application Support/apparent/captures"
+    } else { ".local/share/apparent/captures" });
+    fs::create_dir_all(default.join("legacy.apparent")).unwrap();
+    fs::copy(f.0.join("legacy.apparent/apparent.json"), default.join("legacy.apparent/apparent.json")).unwrap();
+    let id = |output: std::process::Output| {
+        assert!(output.status.success(), "{:?}", output);
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()["id"].clone()
+    };
+    assert_eq!(id(run(None, &["latest", "--json"])), "legacy");
+    let config_path = f.0.join(".config/apparent/config.json");
+    fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+    let configured = f.0.join("configured captures");
+    fs::create_dir_all(configured.join("current.apparent")).unwrap();
+    fs::write(configured.join("current.apparent/apparent.json"), include_bytes!("fixtures/current.json")).unwrap();
+    for captures_dir in [configured.to_str().unwrap().to_owned(), "~/configured captures".to_owned()] {
+        let config = serde_json::to_vec(&serde_json::json!({"capturesDir": captures_dir,
+            "experiments": {"agentContext": true}, "unrelated": "retain"})).unwrap();
+        fs::write(&config_path, &config).unwrap();
+        assert_eq!(id(run(None, &["latest", "--json"])), "current");
+        assert_eq!(id(run(None, &["current", "--json"])), "current");
+        let output = run(None, &["current"]);
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8(output.stdout).unwrap()
+            .replace(configured.join("current.apparent").to_str().unwrap(), "@BUNDLE@"),
+            include_str!("fixtures/current.agent.md"));
+        assert_eq!(id(run(Some(&f.0), &["latest", "--json"])), "legacy");
+        assert_eq!(fs::read(&config_path).unwrap(), config);
+    }
+    fs::write(&config_path, b"{\"capturesDir\":\"relative\"}").unwrap();
+    assert_eq!(id(run(None, &["latest", "--json"])), "legacy");
+    fs::write(&config_path, b"{").unwrap();
+    assert_eq!(id(run(None, &["latest", "--json"])), "legacy");
+    // Inspection must not create a configured capture location or mutate config.
+    let missing = f.0.join("missing");
+    let config = serde_json::to_vec(&serde_json::json!({"capturesDir":missing})).unwrap();
+    fs::write(&config_path, &config).unwrap();
+    assert_eq!(run(None, &["latest"]).status.code(), Some(1));
+    assert!(!missing.exists());
+    assert_eq!(fs::read(config_path).unwrap(), config);
 }

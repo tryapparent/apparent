@@ -52,3 +52,44 @@ real executable with isolated synthetic legacy/current/error manifests. No nativ
 capture or media proof is claimed. Before release, require supported-platform
 packaged execution and normal exact-commit app publication gates. Independent
 review and final integration remain with the parent task.
+
+## Archive and Mac acceptance
+
+The reviewed extraction is a prerequisite for independent app delivery. Static
+schema/producer reuse is intentional; the current app's inspection still changes
+only when its root executable is rebuilt. Neither this package nor the proof
+runner changes installed routing or establishes independent app shipping.
+
+From a clean committed checkout, create the source archive with the package command
+above. Retain its SHA-256, source commit and tree identity. On an approved Linux or
+Mac host with Node 22.18+, Cargo/rustc and the locked dependencies cached, run:
+
+    node --experimental-strip-types capture/agent/inspection/tests/package-proof.ts \
+      /absolute/apparent-inspect-0.1.0.crate EXPECTED_SHA256 /absolute/new-proof-directory
+
+The directory must not exist. The runner checks the archive digest/inventory,
+unpacks it outside the checkout, builds, tests and installs it into a
+private prefix, then runs that installed executable from a synthetic home. It
+checks legacy/current golden output, default platform capture lookup, absolute and
+`~/` config lookup, environment precedence, error exits and manifest nonmutation.
+It retains command logs and `proof.json`, including source-archive and executable
+digests, host/toolchain identity and results. It does not provision a machine,
+spend, download at runtime, launch Desktop, touch TCC or publish anything. When a
+fresh host lacks cached crates, explicitly fetch the locked dependencies before
+running the offline proof; missing dependency/toolchain evidence is not a pass.
+
+Because shared schema consumers moved, Mac acceptance also requires compilation
+of the root application from the same complete source tree and real root CLI
+comparison. On an approved Mac with its existing documented build prerequisites:
+
+    taskpolicy -c utility cargo build --locked --offline -j 3
+
+Then append `/absolute/source/target/debug/apparent` to the proof command. This
+adds real root `inspect` output comparisons; it does not launch the GUI or record
+anything. A standalone build cannot establish this root-consumer check. Preserve
+the complete source archive's digest/commit separately from the `.crate` digest.
+Do not substitute a different installed root binary for candidate compilation.
+
+Mac execution is pending an approved resource/budget for this task. Account
+credit, another task's ticket or another issue's allowance does not authorize it.
+Parent review and normal application publication gates remain separate.
