@@ -77,7 +77,9 @@ case "$name" in
       *) exit 90 ;;
     esac ;;
   gh)
-    if [[ "$1" == release ]]; then
+    if [[ "$1" == api ]]; then
+      printf '{"id":123,"run_attempt":%s,"repository":{"full_name":"tryapparent/apparent"},"head_repository":{"full_name":"tryapparent/apparent"},"head_branch":"main","head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","path":".github/workflows/connect-delivery.yml","event":"push","status":"completed","conclusion":"success"}\\n' "${2##*/}"
+    elif [[ "$1" == release ]]; then
       if bash "$MOCK_LOCK_WRAPPER" "$APPARENT_APP_DIR" true 2>/dev/null; then exit 84; fi
       while [[ $# -gt 0 ]]; do
         case "$1" in
