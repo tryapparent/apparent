@@ -15,7 +15,10 @@
     "pretest": "node scripts/build-connect.ts",
     "prepare:settings-native": "node scripts/settings-check.ts prepare-native",
     "test:settings": "node scripts/settings-check.ts test",
-    "check:onboarding": "tsc --project scripts/tsconfig.onboarding.json && vite build --mode onboarding-feedback"
+    "check:onboarding": "tsc --project scripts/tsconfig.onboarding.json && vite build --mode onboarding-feedback",
+    "renderer:build-artifact": "node --experimental-strip-types scripts/renderer-artifact.ts build",
+    "renderer:stage": "node --experimental-strip-types scripts/renderer-artifact.ts stage",
+    "renderer:test-artifact": "node --experimental-strip-types --test scripts/renderer-artifact.test.ts"
   },
   "dependencies": {
     "@apparent/ui": "file:../../../../shared/ui",
