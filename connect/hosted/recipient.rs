@@ -244,6 +244,7 @@ mod tests {
     }
     #[test]
     #[cfg(not(target_os = "macos"))]
+    #[ignore = "requires standalone recipient binary; run explicitly with APPARENT_TEST_RECIPIENT_EXECUTABLE"]
     fn recipient_package_validation_fails_closed() {
         let directory = std::env::temp_dir().join(format!("root-recipient-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
@@ -337,4 +338,112 @@ mod tests {
         assert!(!result.to_string().contains("synthetic-secret"));
         std::fs::remove_dir_all(directory).unwrap();
     }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+#[ignore = "requires standalone recipient binary; run explicitly with APPARENT_TEST_RECIPIENT_EXECUTABLE"]
+fn root_adapter_http_login_and_validated_fetches() {
+    use std::{io::{Read, Write}, net::TcpListener};
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let server = format!("http://{}", listener.local_addr().unwrap());
+    let origin = server.clone();
+    let id = "0123456789abcdef0123456789abcdef";
+    let fixture = std::thread::spawn(move || {
+        // Login start/poll, then manifest and three validated assets twice.
+        for _ in 0..10 {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(10))).unwrap();
+            let mut bytes = Vec::new();
+            let mut buffer = [0; 8192];
+            loop {
+                let count = stream.read(&mut buffer).unwrap();
+                bytes.extend_from_slice(&buffer[..count]);
+                if let Some(end) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let head = String::from_utf8_lossy(&bytes[..end]);
+                    let length: usize = head.lines().find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse().unwrap())).unwrap_or(0);
+                    if bytes.len() >= end + 4 + length { break; }
+                }
+                assert!(count > 0);
+            }
+            let request = String::from_utf8_lossy(&bytes);
+            let route = request.split_whitespace().nth(1).unwrap();
+            let body = if route == "/v1/device/start" {
+                assert!(request.contains("\"scope\":\"read\""));
+                serde_json::json!({"deviceCode":"fixture-device-private","userCode":"TEST-CODE","verificationUri":format!("{origin}/device?code=TEST-CODE"),"expiresIn":30,"interval":1}).to_string()
+            } else if route == "/v1/device/poll" {
+                serde_json::json!({"status":"approved","scope":"read","accessToken":"fixture-access-private","refreshToken":"fixture-refresh-private","expiresIn":3600,"refreshExpiresIn":86400,"grantId":"fixture-grant"}).to_string()
+            } else if route == format!("/v1/captures/{id}") {
+                assert!(request.contains("fixture-access-private"));
+                serde_json::json!({"id":id,"status":"ready","files":(["apparent.json","summary.md","contact-sheet.png"].map(|path| serde_json::json!({"path":path,"size":2,"sha256":"44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"})))}).to_string()
+            } else { assert!(route.contains("/files/")); "{}".into() };
+            write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
+        }
+    });
+    let directory = std::env::temp_dir().join(format!("recipient-fetch-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let config = directory.join("config.json");
+    std::fs::write(&config, br#"{"experiments":{"hostedEncryption":false},"unknown":{"kept":42},"cloud":{"enabled":false,"uploadConsent":false}}"#).unwrap();
+    let package = directory.join("recipient");
+    std::fs::create_dir(&package).unwrap();
+    let fixture_binary = std::env::var_os("APPARENT_TEST_RECIPIENT_EXECUTABLE")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("connect/client/target/debug/apparent-connect-recipient"));
+    std::fs::copy(fixture_binary, package.join("apparent-connect-recipient")).unwrap();
+    let digest = format!("{:x}", Sha256::digest(std::fs::read(package.join("apparent-connect-recipient")).unwrap()));
+    let manifest = serde_json::json!({"schema":1,"protocol":1,"target":format!("{}-unknown-linux-gnu",std::env::consts::ARCH),"sourceSha":"a".repeat(40),"version":"test","executable":"apparent-connect-recipient","sha256":digest});
+    std::fs::write(package.join("manifest.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+    let run = |operation: serde_json::Value| {
+        let request = serde_json::from_value(serde_json::json!({"protocol":1,"operation":operation})).unwrap();
+        let approval = std::sync::Mutex::new(String::new());
+        let result = invoke(&directory.join("apparent"), &config, &digest, &request,
+            &|uri, code| { *approval.lock().unwrap() = format!("{uri} {code}"); }, &|| true).unwrap();
+        let text = format!("{} {}", result, approval.lock().unwrap());
+        for secret in ["fixture-device-private","fixture-access-private","fixture-refresh-private"] { assert!(!text.contains(secret)); }
+        text
+    };
+    let approval = run(serde_json::json!({"kind":"login","server":server,"browser":false}));
+    assert!(approval.contains("TEST-CODE"));
+    for evidence_only in [true,false] {
+        let out = directory.join(if evidence_only {"evidence.apparent"} else {"full.apparent"});
+        run(serde_json::json!({"kind":"fetch","id":id,"out":out,"wait":0,"evidence_only":evidence_only}));
+        assert_eq!(std::fs::read(out.join("apparent.json")).unwrap(), b"{}");
+    }
+    // Existing destinations must survive adapter-level fetch attempts intact.
+    let out = directory.join("full.apparent");
+    let original = std::fs::read(out.join("apparent.json")).unwrap();
+    let request = serde_json::from_value(serde_json::json!({"protocol":1,"operation":{"kind":"fetch","id":id,"out":out,"wait":0,"evidence_only":false}})).unwrap();
+    assert!(invoke(&directory.join("apparent"), &config, &digest, &request, &|_, _| (), &|| true).is_err());
+    assert_eq!(std::fs::read(out.join("apparent.json")).unwrap(), original);
+    let value: serde_json::Value = serde_json::from_slice(&std::fs::read(&config).unwrap()).unwrap();
+    assert_eq!(value["cloud"]["enabled"],false);
+    assert_eq!(value["cloud"]["uploadConsent"],false);
+    assert_eq!(value["unknown"]["kept"],42);
+    fixture.join().unwrap();
+    // Cancel at APPROVAL, before polling or durable credential publication.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let server = format!("http://{}", listener.local_addr().unwrap());
+    let origin = server.clone();
+    let cancelled_fixture = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut bytes = [0; 8192];
+        stream.read(&mut bytes).unwrap();
+        let body = serde_json::json!({"deviceCode":"cancel-private","userCode":"CANCEL","verificationUri":format!("{origin}/device"),"expiresIn":30,"interval":1}).to_string();
+        write!(stream,"HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
+    });
+    let before = std::fs::read(&config).unwrap();
+    let allowed = std::sync::atomic::AtomicBool::new(true);
+    let request = serde_json::from_value(serde_json::json!({"protocol":1,"operation":{"kind":"login","server":server,"browser":false}})).unwrap();
+    let error = invoke(&directory.join("apparent"), &config, &digest, &request,
+        &|_, code| { assert_eq!(code, "CANCEL"); allowed.store(false, std::sync::atomic::Ordering::SeqCst); },
+        &|| allowed.load(std::sync::atomic::Ordering::SeqCst)).unwrap_err();
+    assert!(error.to_string().contains("cancelled"));
+    assert!(!error.to_string().contains("cancel-private"));
+    assert_eq!(std::fs::read(&config).unwrap(), before);
+    assert!(!directory.join("hosted/upload.credential").exists());
+    cancelled_fixture.join().unwrap();
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
 }
