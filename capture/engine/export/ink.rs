@@ -51,6 +51,7 @@ impl InkPlan {
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InkStroke {
+    pub color: [u8;4],
     /// The outline as drawn up to each moment, flat `x, y` pairs.
     pub snaps: Vec<Snap>,
     pub fade_at: u64,
@@ -274,6 +275,7 @@ fn ink_stroke(
         .filter(|s| s.poly.len() >= 6)
         .collect();
     (!snaps.is_empty()).then_some(InkStroke {
+        color: stroke.rgba(),
         snaps,
         fade_at,
         fade_ms: FADE_MS,
@@ -323,6 +325,7 @@ mod tests {
 
     fn stroke(t0: u64, pts: &[(i32, i32, i32)]) -> Stroke {
         Stroke {
+            color: None,
             t0,
             t1: t0 + pts.last().map_or(0, |p| p.2 as u64),
             fw: 2560,

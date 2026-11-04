@@ -750,6 +750,7 @@ mod tests {
             scale: 2.0,
         };
         let flat = Stroke {
+            color: None,
             t0: 0,
             t1: 10,
             fw: 1000,
@@ -765,6 +766,7 @@ mod tests {
             "{x} {y}"
         );
         let circle = Stroke {
+            color: None,
             pts: vec![1000, 1000, 0, 3000, 3000, 5],
             ..flat
         };
