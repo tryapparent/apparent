@@ -136,6 +136,9 @@ if [[ -d "${FRAMEWORKS_DIR}/Sparkle.framework/Versions/B" ]]; then
   codesign --force --sign "${IDENTITY}" "${SPARKLE_VER}/Updater.app"
   codesign --force --sign "${IDENTITY}" "${FRAMEWORKS_DIR}/Sparkle.framework"
 fi
+mkdir -p "${MACOS_DIR}"
+node --experimental-strip-types "${REPO_DIR}/connect/delivery/recipient/package.ts" "${REPO_DIR}/connect/delivery/recipient/pins.json" "$(uname -m | sed 's/^arm64$/aarch64/')-apple-darwin" "${MACOS_DIR}" codesign --force --sign "${IDENTITY}"
+
 codesign --force --sign "${IDENTITY}" --identifier "dev.kitlangton.apparent.helper" "${MACOS_DIR}/apparent-helper"
 codesign --force --sign "${IDENTITY}" --identifier "dev.kitlangton.apparent" "${APP_DIR}"
 

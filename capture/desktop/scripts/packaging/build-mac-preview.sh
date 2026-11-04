@@ -97,6 +97,9 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+mkdir -p "$app/Contents/MacOS"
+node --experimental-strip-types "$ROOT/connect/delivery/recipient/package.ts" "$ROOT/connect/delivery/recipient/pins.json" "$(uname -m | sed 's/^arm64$/aarch64/')-apple-darwin" "$app/Contents/MacOS" "${SIGN[@]}"
+
 if [[ "$NOTARIZE" == true ]]; then
   python3 "$ROOT/capture/desktop/scripts/packaging/stage-settings.py" "$app/Contents/Resources/settings" \
     --sign "$APPARENT_APPLE_SIGNING_IDENTITY" --keychain "$APPARENT_APPLE_SIGNING_DIR/signing.keychain-db"
