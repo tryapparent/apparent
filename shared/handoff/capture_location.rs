@@ -95,13 +95,10 @@ pub fn set_in(
         }
         Ok(())
     });
-    result.map_err(|_| refusal.unwrap_or_else(|| {
-        if !admit() { return "admission_expired"; }
-        match read_raw(path) {
-            Ok(raw) if expected.is_some_and(|expected_value| revision(&raw) != expected_value) => "outcome_unknown",
-            _ => "config_write_failed",
-        }
-    }))
+    result.map_err(|error| {
+        if error.is::<super::ConfigPublicationUncertain>() { return "outcome_unknown"; }
+        refusal.unwrap_or_else(|| if !admit() { "admission_expired" } else { "config_write_failed" })
+    })
 }
 
 #[cfg(test)]
@@ -147,6 +144,8 @@ mod tests {
         assert_eq!(set_in(&path, Some(next.to_str().unwrap()), Some(&saved.revision), || true), Err("outcome_unknown"));
         let after_unknown = read_in(&path).unwrap();
         assert_eq!(after_unknown.saved_path.as_deref(), next.to_str());
+        super::set_config_directory_sync_failure(true);
+        assert_eq!(set_in(&path, next.to_str(), Some(&after_unknown.revision), || true), Err("outcome_unknown"), "publishing the same path still requires directory sync");
         let before_cancel = fs::read(&path).unwrap();
         let admitted = Rc::new(Cell::new(true));
         let hook_admitted = Rc::clone(&admitted);

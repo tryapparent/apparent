@@ -118,16 +118,9 @@ pub(super) fn save(
         }
         Ok(())
     })
-    .map_err(|_| {
-        refusal.unwrap_or_else(|| {
-            if !admit() {
-                return "admission_expired";
-            }
-            match capture_location::read_raw(config) {
-                Ok(raw) if revision(&raw) != expected => "outcome_unknown",
-                _ => "config_write_failed",
-            }
-        })
+    .map_err(|error| {
+        if error.is::<crate::shared::handoff::ConfigPublicationUncertain>() { return "outcome_unknown"; }
+        refusal.unwrap_or_else(|| if !admit() { "admission_expired" } else { "config_write_failed" })
     })?;
     // Same timing as legacy Settings: schedule the existing worker, never run cleanup here.
     crate::capture::engine::bundle::retention::nudge();

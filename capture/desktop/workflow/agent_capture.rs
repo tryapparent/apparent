@@ -1191,6 +1191,8 @@ mod tests {
         crate::shared::handoff::set_config_directory_sync_failure(true);
         assert_eq!(super::super::storage_preferences::save(&config, Some(&month_policy), before_unknown["revision"].as_str().unwrap(), || true), Err("outcome_unknown"));
         let after_unknown = read();
+        crate::shared::handoff::set_config_directory_sync_failure(true);
+        assert_eq!(super::super::storage_preferences::save(&config, Some(&month_policy), after_unknown["revision"].as_str().unwrap(), || true), Err("outcome_unknown"), "publishing identical values can also have uncertain durability");
         assert_eq!(after_unknown["retention"]["mediaDays"]["value"], 30);
         assert_eq!(after_unknown["retention"]["bundleDays"]["value"], 90);
         // Fail an actual config commit (owned malformed file), not an optimistic UI mock.
