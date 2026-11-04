@@ -71,6 +71,7 @@ for (const mode of ['--settings-storage', '--settings-connect']) {
     assert.equal(window.options.titleBarStyle, 'hiddenInset');
     assert.equal(window.options.resizable, false);
     assert.equal(window.options.fullscreenable, false);
+    assert.equal(window.options.acceptFirstMouse, true, 'Inactive pane clicks match the native helper');
     assert.equal(window.centers, 1, 'Center the final AppKit frame before presenting it');
     assert.equal(window.visible, false, 'Do not expose the empty initial document');
     lines.emit('line', JSON.stringify({ type: 'show' }));

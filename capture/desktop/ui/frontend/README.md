@@ -415,7 +415,8 @@ restores immediate window display. The native/Electron pane replacement remains
 in place; this guard alone does not resolve or certify issue #562's intermittent
 blanking. Both Settings renderers open at 720×530 with a 210px black sidebar;
 Electron uses inset macOS title controls, matches the native fixed-size window,
-and centers after AppKit applies the titlebar metrics. It scrolls its content pane to keep
+and centers after AppKit applies the titlebar metrics. Inactive sidebar clicks
+select a pane on the first click, matching the native helper. It scrolls its content pane to keep
 controls reachable at that size. The content still follows system appearance.
 Reverting those layout styles/options restores the larger Electron presentation.
 Removing the native fallback still requires the

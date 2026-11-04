@@ -31,6 +31,7 @@ app.whenReady().then(() => {
     minWidth: 640, minHeight: settings ? 530 : 620,
     ...(settings && process.platform === 'darwin' ? {
       titleBarStyle: 'hiddenInset', resizable: false, fullscreenable: false,
+      acceptFirstMouse: true,
     } : {}),
     title: connectSettings ? 'Apparent Settings — Connect' : settings ? 'Apparent Settings — Storage' : 'Apparent — UI foundation',
     backgroundColor: followWindowTheme.backgroundColor(nativeTheme),
