@@ -16,14 +16,6 @@ fn field(raw: &serde_json::Value, name: &str) -> serde_json::Value {
     }
 }
 
-fn valid_days(field: &serde_json::Value) -> bool {
-    field["present"].as_bool() == Some(false)
-        || field["value"].is_null()
-        || field["value"]
-            .as_u64()
-            .is_some_and(|n| n <= u32::MAX as u64)
-}
-
 fn revision(raw: &serde_json::Value) -> String {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     serde_json::json!({"mediaDays":field(raw,"mediaDays"),"bundleDays":field(raw,"bundleDays")})
@@ -51,21 +43,22 @@ impl SavePolicy {
 
 pub(super) fn read(config: &Path) -> Result<serde_json::Value, &'static str> {
     let raw = capture_location::read_raw(config).map_err(|_| "config_read_failed")?;
-    if raw
-        .get("retention")
-        .is_some_and(|value| !value.is_object())
-    {
-        return Err("config_read_failed");
-    }
-    let media_days = field(&raw, "mediaDays");
-    let bundle_days = field(&raw, "bundleDays");
-    if !valid_days(&media_days) || !valid_days(&bundle_days) {
-        return Err("config_read_failed");
-    }
+    let stored = raw.get("retention").cloned().and_then(|value| serde_json::from_value::<crate::capture::engine::bundle::retention::Policy>(value).ok());
+    let malformed = raw.get("retention").is_some_and(|value| value.is_object()) && stored.is_none();
+    let (media_days, bundle_days) = if malformed {
+        // Preserve the old cleanup reader's `unwrap_or_default()` behavior: one
+        // malformed known value falls back to Week as a whole. Never project the
+        // malformed value itself into the Settings renderer.
+        (serde_json::json!({"present":false,"value":null}), serde_json::json!({"present":false,"value":null}))
+    } else {
+        (field(&raw, "mediaDays"), field(&raw, "bundleDays"))
+    };
+    let custom = raw["retention"].get("mediaDays").is_some()
+        || raw["retention"].get("bundleDays").is_some();
     Ok(serde_json::json!({
         "retention": {"mediaDays":media_days,"bundleDays":bundle_days},
         "revision": revision(&raw),
-        "custom": raw["retention"].get("mediaDays").is_some() || raw["retention"].get("bundleDays").is_some(),
+        "custom": custom,
     }))
 }
 
@@ -265,6 +258,21 @@ fn scan_directory(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn malformed_known_retention_values_use_week_defaults_without_echoing_them() {
+        let root = std::env::temp_dir().join(format!("retention-{}", crate::shared::ids::make_bundle_id()));
+        std::fs::create_dir(&root).unwrap();
+        let config = root.join("config.json");
+        std::fs::write(&config, r#"{"secret":"keep","retention":{"mediaDays":"private-invalid","bundleDays":90,"unknown":true}}"#).unwrap();
+        let read = read(&config).unwrap();
+        assert_eq!(read["retention"]["mediaDays"], serde_json::json!({"present":false,"value":null}));
+        assert_eq!(read["retention"]["bundleDays"], serde_json::json!({"present":false,"value":null}));
+        assert_eq!(read["custom"], true);
+        assert!(read.to_string().find("private-invalid").is_none());
+        assert_eq!(crate::capture::engine::bundle::retention::Policy::load_from(&config), Default::default());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn usage_pins_directories_and_never_follows_replaced_paths_or_child_links() {
         let root =

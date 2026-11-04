@@ -50,7 +50,7 @@ function effective(field: RetentionField, fallback: number | null): number | nul
 
 function days(value: number): string { return `${value} ${value === 1 ? 'day' : 'days'}`; }
 
-export function retentionView(stored: StoredRetention): { custom: boolean; retention: RetentionView } {
+export function retentionView(stored: StoredRetention, customOverride?: boolean): { custom: boolean; retention: RetentionView } {
   const mediaDays = effective(stored.mediaDays, 7);
   const bundleDays = effective(stored.bundleDays, 30);
   const preset = (Object.keys(presets) as RetentionPreset[]).find(id =>
@@ -63,7 +63,7 @@ export function retentionView(stored: StoredRetention): { custom: boolean; reten
         ? `Video and audio go to the ${bin} after ${days(mediaDays)}.`
         : `Captures go to the ${bin} after ${days(bundleDays!)}.`;
   return {
-    custom: stored.mediaDays.present || stored.bundleDays.present,
+    custom: customOverride ?? (stored.mediaDays.present || stored.bundleDays.present),
     retention: { preset, options: RETENTION_OPTIONS.map(option => ({ ...option })), note },
   };
 }

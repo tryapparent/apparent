@@ -33,11 +33,13 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
       const send = value => socket.end(JSON.stringify(value) + '\n');
       if (r.reference || r.connect) return send({ error: 'feature_disabled' });
       if (r.storage === 'retention' && initialRetentionBusy) return send({ error: 'app_busy' });
-      if (r.storage === 'read') {
-        const reply = () => send({ storage: { savedPath: '/captures', effectivePath: '/captures', displayPath: '/captures', source: 'configured', custom: true, revision } });
+      if (r.storage === 'locationfacts') {
+        const reply = () => send({ location: { saved: { kind: 'string', value: '/captures' },
+          environment: { present: false, value: null }, homePath: home, builtinPath: '/builtin', revision } });
         if (!releaseLocation) { releaseLocation = reply; return; }
         return reply();
       }
+      if (r.storage === 'probelocation') return send({ probe: { available: true } });
       if (r.storage === 'usage') {
         if (usageError) return send({ error: 'usage_unavailable', message: 'private failure' });
         const reply = { usage: { effectivePath: '/captures', displayPath: '/captures', formatted: '12 MB', secret: 'hidden' } };

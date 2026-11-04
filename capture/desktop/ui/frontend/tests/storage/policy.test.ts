@@ -31,6 +31,15 @@ test('partial custom values preserve absent-versus-null meaning and render truth
   assert.equal(forever.retention.note, '');
 });
 
+test('a malformed stored policy can show the native cleanup default without exposing its value', () => {
+  const recovered = retentionView({
+    mediaDays: { present: false, value: null }, bundleDays: { present: false, value: null },
+  }, true);
+  assert.equal(recovered.custom, true);
+  assert.equal(recovered.retention.preset, 'week');
+  assert.equal(recovered.retention.note, 'Video and audio go to the Trash after 7 days, the rest of each capture after 30 days.');
+});
+
 test('storage preference schemas fail closed on malformed or unbounded values', () => {
   assert.equal(isStoredRetention({ mediaDays: { present: true, value: 0 }, bundleDays: { present: true, value: null } }), true);
   assert.equal(isStoredRetention({ mediaDays: { present: false, value: 7 }, bundleDays: { present: false, value: null } }), false);

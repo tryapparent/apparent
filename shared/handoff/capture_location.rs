@@ -14,6 +14,32 @@ pub struct Snapshot {
     pub revision: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocationFacts {
+    pub saved: SavedValue,
+    pub environment: EnvironmentValue,
+    pub home_path: String,
+    pub builtin_path: String,
+    pub revision: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum SavedValue {
+    Absent,
+    String { value: String },
+    Null,
+    Other,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvironmentValue {
+    pub present: bool,
+    pub value: Option<String>,
+}
+
 fn revision(raw: &serde_json::Value) -> String {
     // An opaque stale-edit fingerprint, not an authentication token.
     // DefaultHasher is available on both platforms without a crypto dependency.
@@ -45,6 +71,39 @@ pub(crate) fn read_raw(path: &Path) -> Result<serde_json::Value> {
 
 pub fn read_in(path: &Path) -> Result<Snapshot> {
     snapshot(&read_raw(path)?, std::env::var_os("APPARENT_CAPTURES_DIR").map(PathBuf::from))
+}
+
+/// Facts only: TypeScript selects the Settings candidate and native code supplies
+/// environment/home/default paths plus the owner-scoped CAS revision.
+pub fn facts_in(path: &Path) -> Result<LocationFacts> {
+    let raw = read_raw(path)?;
+    let saved = match raw.get("capturesDir") {
+        None => SavedValue::Absent,
+        Some(serde_json::Value::String(value)) => SavedValue::String { value: value.clone() },
+        Some(serde_json::Value::Null) => SavedValue::Null,
+        Some(_) => SavedValue::Other,
+    };
+    let environment = match std::env::var_os("APPARENT_CAPTURES_DIR") {
+        Some(value) => EnvironmentValue {
+            present: true,
+            value: Some(value.into_string().map_err(|_| anyhow::anyhow!("invalid environment path"))?),
+        },
+        None => EnvironmentValue { present: false, value: None },
+    };
+    ensure!(environment.value.as_ref().is_none_or(|value| value.len() <= 4096 && !value.contains('\0')),
+        "invalid environment path");
+    let home_path = dirs::home_dir().context("home unavailable")?.to_str().context("non UTF-8 home")?.to_owned();
+    let builtin_path = crate::shared::handoff::builtin_captures_dir()
+        .to_str().context("non UTF-8 built-in path")?.to_owned();
+    ensure!(home_path.len() <= 4096 && builtin_path.len() <= 4096, "invalid native path fact");
+    Ok(LocationFacts { saved, environment, home_path, builtin_path, revision: revision(&raw) })
+}
+
+/// Filesystem availability is an OS fact. Path selection and normalization stay
+/// in the TypeScript Settings policy that calls this narrow probe.
+pub fn probe(path: &Path) -> bool {
+    std::fs::create_dir_all(path).is_ok()
+        && std::fs::metadata(path).is_ok_and(|meta| meta.is_dir() && !meta.permissions().readonly())
 }
 
 pub fn enabled_in(path: &Path) -> Result<bool> {

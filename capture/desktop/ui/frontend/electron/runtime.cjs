@@ -78,6 +78,53 @@ function decodeStorage(value) {
     displayPath: s.displayPath, custom: s.custom, source: s.source, revision: s.revision } };
 }
 
+function decodeLocationFacts(value) {
+  if (codes.has(value?.error)) {
+    if (value.error === 'feature_disabled') return { status: 'disabled' };
+    if (value.error === 'invalid_request') return { status: 'incompatible' };
+    return { status: 'error', code: value.error };
+  }
+  const l = value?.location;
+  const saved = l?.saved;
+  const environment = l?.environment;
+  const validSaved = saved?.kind === 'absent' || saved?.kind === 'null' || saved?.kind === 'other' ||
+    (saved?.kind === 'string' && text(saved.value));
+  if (!validSaved || !environment || typeof environment.present !== 'boolean' ||
+      !(environment.value === null || text(environment.value)) || environment.present !== (environment.value !== null) ||
+      !text(l.homePath) || !text(l.builtinPath) || !/^[a-f0-9]{16}$/.test(l.revision)) {
+    return { status: 'error', code: 'invalid_response' };
+  }
+  const projectedSaved = saved.kind === 'string' ? { kind: 'string', value: saved.value } : { kind: saved.kind };
+  return { status: 'connected', location: { saved: projectedSaved, environment: { present: environment.present, value: environment.value }, homePath: l.homePath,
+    builtinPath: l.builtinPath, revision: l.revision } };
+}
+
+function storageLocation(home, operation = 'facts', fields = {}, timeoutMs = 3500) {
+  if (!['facts', 'probe', 'set', 'reset'].includes(operation)) throw new Error('Invalid storage operation');
+  const wireOperation = { facts: 'locationfacts', probe: 'probelocation', set: 'setlocation', reset: 'resetlocation' }[operation];
+  const request = { storage: wireOperation, deadline: Number(process.hrtime.bigint() / 1000000n) + Math.min(timeoutMs, 3000) };
+  if (operation !== 'facts') {
+    if (!/^[a-f0-9]{16}$/.test(fields.expected)) throw new Error('Invalid revision');
+    request.expected = fields.expected;
+  }
+  if (operation === 'set' || operation === 'probe') {
+    if (!text(fields.path) || !path.isAbsolute(fields.path)) throw new Error('Invalid selected folder');
+    request.path = fields.path;
+  }
+  const decode = operation === 'facts' || operation === 'set' || operation === 'reset' ? decodeLocationFacts : (value) => {
+    if (codes.has(value?.error)) {
+      if (value.error === 'feature_disabled') return { status: 'disabled' };
+      if (value.error === 'invalid_request') return { status: 'incompatible' };
+      return { status: 'error', code: value.error };
+    }
+    return typeof value?.probe?.available === 'boolean' ? { status: 'connected', available: value.probe.available }
+      : { status: 'error', code: 'invalid_response' };
+  };
+  return exchange(home, JSON.stringify(request) + '\n', decode, 131072, timeoutMs,
+    { status: 'error', code: operation === 'set' || operation === 'reset' ? 'outcome_unknown' : 'timeout' });
+}
+
+// Retained for already-installed Settings assets and the capture bridge contract.
 function captureLocation(home, operation = 'read', fields = {}, timeoutMs = 3500) {
   if (!['read', 'set', 'reset'].includes(operation)) throw new Error('Invalid storage operation');
   const request = { storage: operation, deadline: Number(process.hrtime.bigint() / 1000000n) + Math.min(timeoutMs, 3000) };
@@ -157,7 +204,7 @@ function storagePreference(home, operation, fields = {}, timeoutMs = 3500) {
   }, 16384, timeoutMs, { status: 'error', code: mutation ? 'outcome_unknown' : 'timeout' });
 }
 
-module.exports = { readRuntimeState, captureLocation, errorReporting, captureReference, storagePreference };
+module.exports = { readRuntimeState, captureLocation, storageLocation, errorReporting, captureReference, storagePreference };
 
 function drawing(home, operation = 'read', expected, timeoutMs = 3500) {
   if (!['read', 'undo'].includes(operation) || (operation === 'undo' && !/^[a-f0-9]{16}$/.test(expected))) throw new Error('Invalid drawing request');

@@ -248,6 +248,10 @@ enum Storage {
     Read { deadline: u64 },
     Set { path: String, expected: String, deadline: u64 },
     Reset { expected: String, deadline: u64 },
+    LocationFacts { deadline: u64 },
+    ProbeLocation { path: String, expected: String, deadline: u64 },
+    SetLocation { path: String, expected: String, deadline: u64 },
+    ResetLocation { expected: String, deadline: u64 },
     Retention { deadline: u64 },
     SaveRetention { policy: super::storage_preferences::SavePolicy, expected: String, deadline: u64 },
     ResetRetention { expected: String, deadline: u64 },
@@ -258,6 +262,8 @@ impl Storage {
     fn deadline(&self) -> u64 {
         match self {
             Self::Read { deadline } | Self::Set { deadline, .. } | Self::Reset { deadline, .. }
+            | Self::LocationFacts { deadline } | Self::ProbeLocation { deadline, .. }
+            | Self::SetLocation { deadline, .. } | Self::ResetLocation { deadline, .. }
             | Self::Retention { deadline } | Self::SaveRetention { deadline, .. }
             | Self::ResetRetention { deadline, .. } | Self::Usage { deadline } => *deadline,
         }
@@ -282,16 +288,44 @@ impl Storage {
         if let Some(result) = preferences {
             return result.unwrap_or_else(|code| serde_json::json!({"error":code}));
         }
+        match self {
+            Self::LocationFacts { .. } => return capture_location::facts_in(config)
+                .map(|facts| serde_json::json!({"location":facts}))
+                .unwrap_or_else(|_| serde_json::json!({"error":"config_read_failed"})),
+            Self::ProbeLocation { path, expected, .. } => {
+                let before = match capture_location::facts_in(config) {
+                    Ok(facts) => facts,
+                    Err(_) => return serde_json::json!({"error":"config_read_failed"}),
+                };
+                if before.revision != *expected { return serde_json::json!({"error":"conflict"}); }
+                let available = capture_location::probe(std::path::Path::new(path));
+                if storage_clock_ms() >= deadline { return serde_json::json!({"error":"admission_expired"}); }
+                let after = match capture_location::facts_in(config) {
+                    Ok(facts) => facts,
+                    Err(_) => return serde_json::json!({"error":"config_read_failed"}),
+                };
+                if after.revision != *expected { return serde_json::json!({"error":"conflict"}); }
+                return serde_json::json!({"probe":{"available":available}});
+            }
+            _ => {}
+        }
         let mutation = match self {
             Self::Read { .. } => Ok(()),
             Self::Set { path, expected, .. } => capture_location::set_in(config, Some(path), Some(expected), || storage_clock_ms() < deadline),
             Self::Reset { expected, .. } => capture_location::set_in(config, None, Some(expected), || storage_clock_ms() < deadline),
+            Self::SetLocation { path, expected, .. } => capture_location::set_in(config, Some(path), Some(expected), || storage_clock_ms() < deadline),
+            Self::ResetLocation { expected, .. } => capture_location::set_in(config, None, Some(expected), || storage_clock_ms() < deadline),
             _ => unreachable!(),
         };
         if let Err(code) = mutation { return serde_json::json!({"error":code}); }
-        match capture_location::read_in(config) {
+        match self {
+          Self::SetLocation { .. } | Self::ResetLocation { .. } => capture_location::facts_in(config)
+            .map(|facts| serde_json::json!({"location":facts}))
+            .unwrap_or_else(|_| serde_json::json!({"error":"config_read_failed"})),
+          _ => match capture_location::read_in(config) {
             Ok(snapshot) => serde_json::json!({"storage": snapshot}),
             Err(_) => serde_json::json!({"error":"config_read_failed"}),
+          },
         }
     }
 }
@@ -445,6 +479,9 @@ fn parse_request(line: &str) -> Option<Wire> {
         match &storage {
             Storage::Set { path, expected, .. } if path.is_empty() || path.len() > 4096 || path.contains('\0') || !std::path::Path::new(path).is_absolute() || !valid_revision(expected) => return None,
             Storage::Reset { expected, .. } if !valid_revision(expected) => return None,
+            Storage::ProbeLocation { path, expected, .. } if path.is_empty() || path.len() > 4096 || path.contains('\0') || !std::path::Path::new(path).is_absolute() || !valid_revision(expected) => return None,
+            Storage::SetLocation { path, expected, .. } if path.is_empty() || path.len() > 4096 || path.contains('\0') || !std::path::Path::new(path).is_absolute() || !valid_revision(expected) => return None,
+            Storage::ResetLocation { expected, .. } if !valid_revision(expected) => return None,
             Storage::SaveRetention { policy, expected, .. } if !policy.valid() || !valid_revision(expected) => return None,
             Storage::ResetRetention { expected, .. } if !valid_revision(expected) => return None,
             _ => {}
@@ -1178,7 +1215,11 @@ mod tests {
             "CAS fingerprints distinguish an absent owner value from explicit JSON null");
         assert_eq!(save(serde_json::json!({"mediaDays":30,"bundleDays":90}), &media_absent["revision"])["error"], "conflict");
         std::fs::write(&config, r#"{"experiments":{"electronCaptureLocation":true},"retention":{"mediaDays":"private-value","bundleDays":30}}"#).unwrap();
-        assert_eq!(read()["error"], "config_read_failed");
+        let malformed = read();
+        assert_eq!(malformed["retention"]["mediaDays"], serde_json::json!({"present":false,"value":null}));
+        assert_eq!(malformed["retention"]["bundleDays"], serde_json::json!({"present":false,"value":null}));
+        assert_eq!(malformed["custom"], true);
+        assert!(!malformed.to_string().contains("private-value"));
         std::fs::write(&config, serde_json::json!({"experiments":{"electronCaptureLocation":true}, "capturesDir":captures,
             "secret":"keep", "unknown":{"nested":true}, "retention":{"mediaDays":null,"bundleDays":null,"future":"keep"}}).to_string()).unwrap();
         assert_eq!(call(serde_json::json!({"storage":"usage","deadline":storage_clock_ms()+3000}))["usage"]["formatted"], "1 MB");
@@ -1221,6 +1262,41 @@ mod tests {
             r#"{"storage":"set","deadline":1,"expected":"bad","path":"/tmp"}"#,
             r#"{"storage":"read","deadline":-1}"#,
         ] { assert!(super::parse_request(invalid).is_none(), "{invalid}"); }
+        for valid in [
+            r#"{"storage":"locationfacts","deadline":999999999999}"#,
+            r#"{"storage":"probelocation","path":"/tmp/candidate","expected":"0123456789abcdef","deadline":999999999999}"#,
+            r#"{"storage":"setlocation","path":"/tmp/candidate","expected":"0123456789abcdef","deadline":999999999999}"#,
+            r#"{"storage":"resetlocation","expected":"0123456789abcdef","deadline":999999999999}"#,
+        ] { assert!(super::parse_request(valid).is_some(), "{valid}"); }
+        for invalid in [
+            r#"{"storage":"probelocation","path":"relative","expected":"0123456789abcdef","deadline":1}"#,
+            r#"{"storage":"probelocation","path":"/tmp/candidate","expected":"invalid","deadline":1}"#,
+            r#"{"storage":"setlocation","path":"/tmp/candidate","expected":"0123456789abcdef","deadline":1,"secret":"hidden"}"#,
+        ] { assert!(super::parse_request(invalid).is_none(), "{invalid}"); }
+    }
+
+    #[test]
+    fn storage_location_facts_are_bounded_and_probe_checks_owner_revision() {
+        let (path, listener) = transport_fixture();
+        drop(listener);
+        let directory = path.parent().unwrap();
+        let config = directory.join("config.json");
+        std::fs::write(&config, r#"{"privateToken":"keep","capturesDir":"/saved"}"#).unwrap();
+        let facts_request = Storage::LocationFacts { deadline: storage_clock_ms() + 3000 };
+        let facts = facts_request.execute(&config, storage_clock_ms() + 3000);
+        assert_eq!(facts["location"]["saved"]["kind"], "string");
+        assert_eq!(facts["location"]["saved"]["value"], "/saved");
+        assert_eq!(facts["location"]["revision"].as_str().unwrap().len(), 16);
+        assert!(facts.get("privateToken").is_none());
+        let revision = facts["location"]["revision"].as_str().unwrap().to_owned();
+        let candidate = directory.join("probe");
+        let probe = Storage::ProbeLocation { path: candidate.to_str().unwrap().into(), expected: revision.clone(), deadline: storage_clock_ms() + 3000 };
+        assert_eq!(probe.execute(&config, storage_clock_ms() + 3000)["probe"]["available"], true);
+        let mut raw: serde_json::Value = serde_json::from_slice(&std::fs::read(&config).unwrap()).unwrap();
+        raw["capturesDir"] = "/changed".into();
+        std::fs::write(&config, serde_json::to_vec(&raw).unwrap()).unwrap();
+        assert_eq!(probe.execute(&config, storage_clock_ms() + 3000)["error"], "conflict");
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

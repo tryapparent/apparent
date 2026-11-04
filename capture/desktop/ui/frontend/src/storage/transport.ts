@@ -24,7 +24,7 @@ export async function resetCaptureLocation(): Promise<CaptureLocation> {
 function project(result: NativeRetentionResult): RetentionResult {
   if (result.status !== 'connected') return result;
   if (!isStoredRetention(result.policy)) return { status: 'error', code: 'invalid_response' };
-  return { status: 'connected', ...retentionView(result.policy) };
+  return { status: 'connected', ...retentionView(result.policy, result.custom) };
 }
 
 export async function readRetention(): Promise<RetentionResult> {
