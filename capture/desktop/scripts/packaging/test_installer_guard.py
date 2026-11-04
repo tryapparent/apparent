@@ -11,7 +11,7 @@ SCRIPTS = Path(__file__).resolve().parent
 
 
 class InstallerGuardTests(unittest.TestCase):
-    def run_installer(self, remote, running=None, ps_status=0, no_launch=False, prebuilt=None):
+    def run_installer(self, remote, running=None, ps_status=0, no_launch=False, prebuilt=None, target=None):
         with tempfile.TemporaryDirectory(prefix="installer-guard-") as temporary:
             root = Path(temporary)
             home = root / "Test User"
@@ -77,6 +77,11 @@ esac
                 asset = repo / relative
                 asset.parent.mkdir(parents=True, exist_ok=True)
                 asset.write_text("synthetic new asset")
+            if target:
+                for name in ("apparent", "apparent-helper"):
+                    asset = repo / "target" / target / "debug" / name
+                    asset.parent.mkdir(parents=True, exist_ok=True)
+                    asset.write_text("synthetic target asset")
             release = repo / "capture/desktop/scripts/release"
             release.mkdir()
             for name in ("setup-sparkle.sh", "release-app.sh"):
@@ -95,6 +100,9 @@ esac
                        MOCK_PS_STATUS=str(ps_status), MOCK_TMP=str(root),
                        APPARENT_APP_DIR=str(app), APPARENT_NO_LAUNCH="1" if no_launch else "0")
             env.pop("APPARENT_PREBUILT_DIR", None)
+            env.pop("CARGO_BUILD_TARGET", None)
+            if target:
+                env["CARGO_BUILD_TARGET"] = target
             if prebuilt:
                 binary_inputs = root / "verified inputs"
                 binary_inputs.mkdir()
@@ -130,7 +138,9 @@ esac
                     self.assertIn("ditto ", calls)
                     self.assertFalse(legacy_runtime.exists(), "ditto must not retain the obsolete popup runtime")
                 else:
-                    self.assertEqual(executable.read_text(), "synthetic verified input" if prebuilt else "synthetic new asset")
+                    expected = "synthetic verified input" if prebuilt else "synthetic target asset" if target else "synthetic new asset"
+                    self.assertEqual(executable.read_text(), expected)
+                    self.assertEqual((executable.parent / "apparent-helper").read_text(), expected)
                     self.assertNotIn("package-notes.mjs", calls)
                     self.assertEqual(calls.count("stage-settings"), 1)
                     self.assertIn("--popups-destination " + str(app / "Contents/Resources/note-ui"), calls)
@@ -140,6 +150,12 @@ esac
         for prebuilt in ("accepted", "rejected"):
             with self.subTest(prebuilt=prebuilt):
                 self.run_installer(False, no_launch=True, prebuilt=prebuilt)
+
+    def test_cross_built_install_selects_target_binaries_and_preserves_prebuilt_admission(self):
+        for target in ("aarch64-apple-darwin", "x86_64-apple-darwin"):
+            for prebuilt in (None, "accepted", "rejected"):
+                with self.subTest(target=target, prebuilt=prebuilt):
+                    self.run_installer(False, no_launch=True, prebuilt=prebuilt, target=target)
 
     def test_destination_processes_refuse_before_replacement(self):
         for remote in (False, True):

@@ -25,7 +25,6 @@ esac
 cd "${REPO_DIR}"
 chmod +x "${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh" "${REPO_DIR}/capture/desktop/scripts/release/release-app.sh" 2>/dev/null || true
 SPARKLE_DIR="$("${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh" 2>/dev/null || true)"
-BINARY_DIR="${REPO_DIR}/target/debug"
 if [[ -n "${APPARENT_PREBUILT_DIR:-}" ]]; then
   # An explicit immutable, successful main producer is required. Never rebuild
   # automatically after failed admission or silently consume a cached binary.
