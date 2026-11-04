@@ -241,6 +241,34 @@ and its walkthrough capture/export path was not exercised. Private evidence is
 retained outside the repository; the PR records candidate identity and gates.
 
 
+### Storage policy acceptance (#530)
+
+The policy move uses the existing installed Storage route. Relative to main
+`02c3aa92`, it changes neither Electron 45.2.1 nor the native launcher,
+window ownership, chooser options/parent, focus, permission, clipboard,
+capture-exclusion or cleanup mechanisms. The added policy module is emitted by
+`npm run build` before the unchanged packager copies the Electron tree; it has
+no runtime imports. The location contract types are owner-local so emission
+cannot pull Connect implementation into the Storage runtime.
+
+Linux shared checks exercise the shipped main/preload/renderer and real Rust
+socket. Native filesystem probes use the same create/metadata checks as the
+retained capture-time safety resolver; config publication uses the same flock,
+private temp file, fsync and rename. The new error marker records post-rename
+uncertainty, including unchanged-value saves. There is no new native route or
+OS effect to certify in this slice. The earlier installed-route evidence in
+[PR #357](https://github.com/tryapparent/apparent/pull/357) (Mac `d70b20ce`,
+Linux integrated `05bd4d9d`) and the retention evidence above remain evidence
+for those original seams, not fresh executions of this policy candidate.
+The runtime version is unchanged; subsequent main launcher/packaging work is
+preserved, not certified here. No fallback is retired. Existing native holds,
+including PR #376's Agents recovery, remain independent and open.
+
+No fresh native GUI or Mac execution is claimed. Before Mac publication the
+current packaged-app smoke, relevant native evidence and exact-main signing/CI
+gates still apply. Ordinary Storage policy build/unit checks invoke no Rust
+compiler; bridge/native changes still require their focused native integration.
+
 ## Checks
 
 Run Electron smoke files sequentially: Electron's lazy binary installation is

@@ -1,4 +1,4 @@
-import type { LocationSnapshot, NativeLocationFacts } from '../bridge';
+import type { LocationSnapshot, NativeLocationFacts } from './location-contract';
 
 export type LocationCandidate = {
   revision: string;
