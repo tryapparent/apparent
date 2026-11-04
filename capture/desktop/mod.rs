@@ -627,7 +627,7 @@ fn start_video_export() {
                 Ok(None) => say(Some("Export cancelled".into())),
                 Err(error) => {
                     apparent_log(format!("Video export failed: {error:#}"));
-                    workflow::error_reporting::report(workflow::error_reporting::Failure::VideoExport);
+                    workflow::error_reporting::report_error(workflow::error_reporting::Failure::VideoExport, &error);
                     #[cfg(target_os = "linux")]
                     {
                         let detail = format!("{error:#}");
@@ -867,12 +867,24 @@ pub struct ApparentCoordinator {
     agent_captures: crate::capture::desktop::workflow::agent_capture::Registry,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     public_share: crate::capture::desktop::workflow::public_sharing::Controller,
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    public_popup: Option<crate::capture::desktop::workflow::public_sharing::popup::Popup>,
     #[cfg(target_os = "linux")]
     agent_finishing: bool,
     last_live_no_words: bool,
     playback: Option<crate::capture::desktop::playback::Guard>,
     picker_metal_overlay: Option<LaserOverlay>,
     native_pill: Option<crate::capture::desktop::native::pill::NativePill>,
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    electron_pill: Option<ui::electron_pill::Session>,
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    electron_pill_failed: bool,
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    electron_pill_routed: bool,
+    #[cfg(target_os="macos")]
+    electron_pill_exclusions: Vec<u32>,
+    #[cfg(target_os = "linux")]
+    electron_equalizer: InputEqualizer,
     iphone_preview: Option<PhoneSession>,
     island_phase: IslandPhase,
     island_prev_phase: IslandPhase,
@@ -941,6 +953,7 @@ pub struct ApparentCoordinator {
     share_waiting_account: bool,
     share_login: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     share_copied: Option<PathBuf>,
+    completed_upload_size_failure: Option<(PathBuf, u64, crate::connect::hosted::UploadSizeFailure)>,
     /// When this Mac last finished a capture, so ⌥⇧V prefers it over older inbox items.
     last_local_capture_ms: u64,
     inbox: crate::capture::desktop::workflow::inbox::Inbox,
@@ -994,12 +1007,24 @@ impl ApparentCoordinator {
             agent_captures: crate::capture::desktop::workflow::agent_capture::Registry::default(),
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             public_share: crate::capture::desktop::workflow::public_sharing::Controller::default(),
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            public_popup: None,
             #[cfg(target_os = "linux")]
             agent_finishing: false,
             last_live_no_words: false,
             playback: None,
             picker_metal_overlay: None,
             native_pill: None,
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            electron_pill: None,
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            electron_pill_failed: false,
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            electron_pill_routed: false,
+            #[cfg(target_os="macos")]
+            electron_pill_exclusions: Vec::new(),
+            #[cfg(target_os = "linux")]
+            electron_equalizer: InputEqualizer::default(),
             iphone_preview: None,
             island_phase: IslandPhase::Hidden,
             island_prev_phase: IslandPhase::Hidden,
@@ -1051,6 +1076,7 @@ impl ApparentCoordinator {
             share_waiting_account: false,
             share_login: None,
             share_copied: None,
+            completed_upload_size_failure: None,
             last_local_capture_ms: 0,
             inbox: crate::capture::desktop::workflow::inbox::Inbox::load_default(),
             last_mode: SelectionMode::load_last_used(),
@@ -1455,7 +1481,6 @@ impl ApparentCoordinator {
                 }
                 self.share_waiting_account = false;
             }
-            Effect::ConnectHosted if self.share_waiting_account => self.reserve_completed_link(true, cx),
             Effect::ConnectHosted => {
                 if self.share_login.is_none() && crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING) {
                     let active = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
@@ -1920,20 +1945,23 @@ impl ApparentCoordinator {
     fn reveal_activity(&self) -> usize {
         use std::sync::PoisonError;
         let t = &self.telemetry;
-        t.events
+        // Each guard must end before taking the next lock. Input commits a
+        // finished stroke concurrently with this GUI activity snapshot.
+        let events = t.events
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .len()
-            + t.strokes
+            .len();
+        let strokes = t.strokes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len();
+        let live_ink = usize::from(
+            t.live_ink
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .len()
-            + usize::from(
-                t.live_ink
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .is_some(),
-            )
+                .is_some(),
+        );
+        events + strokes + live_ink
     }
 
     /// The recording just started from a tap: the capsule opens onto the switch chips.
@@ -2068,6 +2096,7 @@ impl ApparentCoordinator {
     }
 
     pub fn set_review_bundle(&mut self, bundle: (PathBuf, ApparentBundle), status: Option<String>) {
+        self.public_popup.take();
         self.public_share.cancel_all();
         self.review_audio_issue = bundle_audio_issue(&bundle.0, &bundle.1);
         self.review_bundle = Some(bundle);
@@ -2374,6 +2403,7 @@ impl ApparentCoordinator {
     /// while the outer shell springs its width smoothly (`stiffness: 400, damping: 30` equivalent).
     fn set_island_phase(&mut self, phase: IslandPhase) {
         if matches!(phase, IslandPhase::Selecting { .. } | IslandPhase::Processing | IslandPhase::Recording | IslandPhase::Hidden | IslandPhase::Dismissing) {
+            self.public_popup.take();
             self.public_share.cancel_all();
         }
         if matches!(phase, IslandPhase::Recording | IslandPhase::Hidden | IslandPhase::Dismissing) {
@@ -2449,7 +2479,7 @@ impl ApparentCoordinator {
 
     /// Puts the capsule on the pointer's display during screen recording or selection,
     /// else the one under the pointer (the phone mirror places its capsule separately).
-    fn place_capsule(&self) {
+    pub(crate) fn place_capsule(&self) {
         let centre = |[x, y, w, h]: [f64; 4]| [x + w / 2.0, y + h / 2.0];
         let anchor = match self.island_phase {
             IslandPhase::Recording => self
@@ -2463,6 +2493,8 @@ impl ApparentCoordinator {
         let Some(point) = anchor.or_else(crate::capture::engine::runtime::screens::pointer) else {
             return;
         };
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if let Some(session) = &self.electron_pill { session.place(point); }
         match self.native_pill {
             Some(ref pill) => pill.place_on(point),
             None => platform::place_hud_pill(point),
@@ -2498,6 +2530,8 @@ impl ApparentCoordinator {
         if let Some(ref pill) = self.native_pill {
             pill.place_on(centre);
         }
+        #[cfg(any(target_os="macos",target_os="linux"))]
+        if let Some(session)=&self.electron_pill {session.place(centre);}
     }
 
     /// Follow the pointer with Linux controls, not with the capture source. On Mac,
@@ -2533,7 +2567,7 @@ impl ApparentCoordinator {
             self.display_rect = frame.map(|v| v as f32);
             // A manually dragged Linux capsule remains where it was dropped.
             // Continue following with the ink overlay, but leave the pill alone.
-            if !platform::pill_user_moved() {
+            if !platform::pill_user_moved() && !self.electron_pill.as_ref().is_some_and(|s|s.moved()) {
                 self.place_capsule();
             }
         }
@@ -2591,6 +2625,8 @@ impl ApparentCoordinator {
     }
 
     pub(crate) fn ensure_native_pill(&mut self) {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if self.electron_pill_routed { return; }
         if !crate::shared::handoff::native_pill() || self.native_pill.is_some() {
             return;
         }
@@ -2675,6 +2711,8 @@ impl ApparentCoordinator {
     }
 
     pub(crate) fn sync_native_pill(&mut self) {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        self.sync_electron_pill();
         if self.native_pill.is_some() {
             let snap = self.pill_snapshot();
             if let Some(ref pill) = self.native_pill {
@@ -2753,29 +2791,45 @@ impl ApparentCoordinator {
     }
 
     fn tick_hosted_sharing(&mut self, cx: &mut Context<Self>) {
-        if !crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING)
+        if self.completed_upload_size_failure.as_ref().is_some_and(|(bundle, generation, _)|
+            *generation != self.capture_generation || self.completed_dir.as_ref() != Some(bundle)
+            || !matches!(self.island_phase, IslandPhase::Completed { .. })) {
+            self.completed_upload_size_failure = None;
+        }
+        let sharing = crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING);
+        if (!sharing && !crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SYNC))
             || !matches!(self.island_phase, IslandPhase::Completed { .. })
             || self.share_probe_at.is_some_and(|at| at.elapsed() < Duration::from_secs(5)) {
             return;
         }
         self.share_probe_at = Some(Instant::now());
         let generation = self.capture_generation;
-        let copied = self.share_copied.clone();
+        let completed = self.completed_dir.clone();
+        let copied = self.share_copied.clone().filter(|bundle| self.completed_dir.as_ref() == Some(bundle));
         cx.spawn(async move |entity, cx| {
-            let (online, progress) = cx.background_executor().spawn(async move {
-                (crate::connect::hosted::sharing_online(), copied.as_deref().map(crate::connect::hosted::sharing_progress))
+            let selected = completed.clone();
+            let copied_capture = copied.clone();
+            let (online, progress, failure) = cx.background_executor().spawn(async move {
+                use crate::connect::hosted::{self, UploadQueueKind};
+                // Local queue inspection works offline; private uploads never probe public admission.
+                let kind = if copied.is_some() { UploadQueueKind::PublicCopy } else { UploadQueueKind::Private };
+                let failure = selected.as_deref().and_then(|bundle| hosted::upload_size_failure(bundle, kind));
+                (sharing.then(hosted::sharing_online), copied.as_deref().map(hosted::sharing_progress), failure)
             }).await;
             let _ = entity.update(cx, |coord, cx| {
-                if coord.capture_generation != generation || !matches!(coord.island_phase, IslandPhase::Completed { .. }) { return; }
-                coord.share_online = online;
+                if coord.capture_generation != generation || coord.completed_dir != completed
+                    || coord.share_copied != copied_capture
+                    || !matches!(coord.island_phase, IslandPhase::Completed { .. }) { return; }
+                if let Some(online) = online { coord.share_online = online; }
                 if coord.share_pending.is_none() {
+                    coord.completed_upload_size_failure = completed.clone().zip(failure).map(|(bundle, failure)| (bundle, generation, failure));
                     if let Some(progress) = progress {
                         coord.completed_note = Some(progress);
-                    } else if !online {
+                    } else if online == Some(false) {
                         coord.completed_note = Some(if crate::connect::hosted::sharing_server().is_none() {
                             "Configure Hosted account in Settings"
                         } else { "Connect to the internet to share" }.into());
-                    } else if coord.completed_note.as_deref() == Some("Connect to the internet to share") {
+                    } else if online == Some(true) && coord.completed_note.as_deref() == Some("Connect to the internet to share") {
                         coord.completed_note = None;
                     }
                 }
@@ -2786,52 +2840,56 @@ impl ApparentCoordinator {
     }
 
     pub fn copy_completed_link(&mut self, cx: &mut Context<Self>) {
+        apparent_log(format!("public-share action completed={} online={} pending={} bundle={}",
+            matches!(self.island_phase, IslandPhase::Completed { .. }), self.share_online,
+            self.share_pending.is_some(), self.completed_dir.is_some()));
         if !crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING)
             || !matches!(self.island_phase, IslandPhase::Completed { .. })
             || !self.share_online || self.share_pending.is_some() { return; }
         let Some(bundle) = self.completed_dir.clone() else { return };
-        self.share_pending = Some((bundle, self.capture_generation, std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true))));
         if !crate::connect::hosted::sharing_connected() {
-            self.share_waiting_account = true;
-            self.completed_note = Some("Connect Hosted account to share".into());
+            apparent_log("public-share connect-required");
+            self.completed_note = Some("Connect in Settings, then choose Copy link again".into());
             self.open_settings(Some(crate::capture::desktop::settings::Pane::General));
-        } else {
-            self.reserve_completed_link(false, cx);
+            self.sync_native_pill(); cx.notify(); return;
+        }
+        self.public_popup.take();
+        match crate::capture::desktop::workflow::public_sharing::popup::Popup::open(bundle, self.capture_generation, self.public_share.clone()) {
+            Ok(popup) => {
+                apparent_log("public-share popup-opened");
+                let id = popup.id.clone();
+                self.public_popup = Some(popup);
+                cx.spawn(async move |entity, cx| {
+                    loop {
+                        cx.background_executor().timer(Duration::from_millis(100)).await;
+                        let keep = entity.update(cx, |coord, cx| {
+                            let Some(popup) = coord.public_popup.as_mut().filter(|p| p.id == id) else { return false; };
+                            let alive = popup.tick(coord.completed_dir.as_deref(), coord.capture_generation);
+                            if popup.copied() && coord.share_copied != coord.completed_dir {
+                                coord.share_copied = coord.completed_dir.clone();
+                                coord.completed_note = Some("Link copied · upload may still be preparing".into());
+                                coord.sync_native_pill(); cx.notify();
+                            }
+                            if !alive {
+                                coord.public_popup.take();
+                                if let IslandPhase::Completed { finished_at, .. } = &mut coord.island_phase {
+                                    *finished_at = Instant::now();
+                                }
+                                return false;
+                            }
+                            true
+                        }).unwrap_or(false);
+                        if !keep { break; }
+                    }
+                }).detach();
+            }
+            Err(_) => {
+                apparent_log("public-share popup-open-failed");
+                self.completed_note = Some("Sharing window unavailable · Local Paste remains available".into());
+            }
         }
         self.sync_native_pill();
         cx.notify();
-    }
-
-    fn reserve_completed_link(&mut self, connect: bool, cx: &mut Context<Self>) {
-        let Some((bundle, generation, active)) = self.share_pending.clone() else { return };
-        self.share_waiting_account = false;
-        self.completed_note = Some(if connect { "Approve hosted upload in your browser…" } else { "Reserving link…" }.into());
-        cx.spawn(async move |entity, cx| {
-            let worker_bundle = bundle.clone();
-            let worker_active = active.clone();
-            let result = cx.background_executor().spawn(async move {
-                let allowed = || worker_active.load(std::sync::atomic::Ordering::SeqCst);
-                if connect { crate::connect::hosted::connect_sharing(&allowed)?; }
-                crate::connect::hosted::copy_link_handoff(&worker_bundle, &allowed)
-            }).await;
-            let _ = entity.update(cx, |coord, cx| {
-                if !active.load(std::sync::atomic::Ordering::SeqCst)
-                    || !coord.share_pending.as_ref().is_some_and(|(_, _, current)| std::sync::Arc::ptr_eq(current, &active))
-                    || coord.capture_generation != generation
-                    || coord.completed_dir.as_ref() != Some(&bundle)
-                    || !matches!(coord.island_phase, IslandPhase::Completed { .. }) { return; }
-                coord.share_pending = None;
-                coord.completed_note = Some(match result {
-                    Ok(link) if link.authorized() => match crate::shared::handoff::copy_string_to_clipboard(&link.text) {
-                        Ok(()) => { coord.share_copied = Some(bundle.clone()); crate::connect::hosted::sharing_progress(&bundle) }
-                        Err(_) => "Copy failed · click Copy link to retry".into(),
-                    },
-                    Ok(_) | Err(_) => "Sharing stopped · click Copy link to retry".into(),
-                });
-                coord.sync_native_pill();
-                cx.notify();
-            });
-        }).detach();
     }
 
     pub fn paste_completed_bundle(
@@ -2869,6 +2927,8 @@ impl ApparentCoordinator {
     /// The UI loop's tick: advances the springs unless a new capsule window awaits its second
     /// frame (`island_await_frame`).
     pub fn island_tick(&mut self, cx: &mut Context<Self>) {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        self.tick_electron_pill(cx);
         self.tick_hosted_sharing(cx);
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         if matches!(self.island_phase, IslandPhase::Recording) {
@@ -2876,8 +2936,11 @@ impl ApparentCoordinator {
         }
         if self.note_ui.is_some() {
             let anchor = self.native_pill.as_ref().and_then(|p| p.note_badge_anchor());
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            let anchor = self.electron_pill.as_ref().filter(|_| self.electron_pill_routed)
+                .and_then(|pill| pill.note_badge_anchor()).or(anchor);
             #[cfg(target_os = "linux")]
-            let anchor = anchor.or_else(|| platform::note_badge_anchor(self.island_width * self.island_scale, self.island_y + (PILL_WINDOW_H - ISLAND_H * self.island_scale) / 2.0));
+            let anchor = anchor.or_else(|| platform::note_badge_anchor(self.island_width * self.island_scale, self.island_y + (PILL_WINDOW_H - ISLAND_H * self.island_scale) / 2.0, ISLAND_H * self.island_scale));
             if let (Some(ui), Some(point)) = (self.note_ui.as_mut(), anchor) { ui.position_badge(point); }
         }
         let live_no_words = self.recording_has_no_words();
@@ -2914,12 +2977,14 @@ impl ApparentCoordinator {
         let dt = (real * motion::time_scale()).min(0.025);
         if let IslandPhase::Completed { finished_at, .. } = self.island_phase
             && finished_at.elapsed() >= Duration::from_millis(25_000)
+            && self.public_popup.is_none()
             && self.share_pending.is_none()
             && !matches!(
                 self.completed_note.as_deref(),
                 Some("Saved · paste manually" | "Saved · open bundle (copy failed)")
             )
         {
+            apparent_log("completed-controls timeout-dismissal");
             self.set_island_phase(IslandPhase::Dismissing);
         }
 
@@ -2975,6 +3040,8 @@ impl ApparentCoordinator {
                 .native_pill
                 .as_ref()
                 .map_or_else(pointer_on_hud_pill, |p| p.pointer_on_pill());
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            let on_pill = self.electron_pill.as_ref().filter(|s| s.ready()).map_or(on_pill, |s| s.hovered());
             if self.reveal.tick(reveal_clock_ms(), on_pill, activity) {
                 self.play_fold();
             }
@@ -3204,6 +3271,8 @@ impl ApparentCoordinator {
     }
 
     pub fn start_recording_with_target(&mut self, target: TargetInfo, cx: &mut Context<Self>) {
+        #[cfg(any(target_os="macos",target_os="linux"))]
+        self.reconcile_electron_pill();
         if crate::capture::desktop::workflow::shutdown::requested() { return; }
         if crate::capture::engine::runtime::ensure_recording_mode(target.mode).is_err() {
             self.report_window_recording_disabled(cx);
@@ -3269,7 +3338,7 @@ impl ApparentCoordinator {
         let bundle_dir = root.join(format!("{id}.apparent"));
         if let Err(error) = crate::capture::engine::bundle::recover::begin_screen_capture(&bundle_dir) {
             apparent_log(format!("Capture could not protect raw video: {error:#}"));
-            workflow::error_reporting::report(workflow::error_reporting::Failure::ProtectRecording);
+            workflow::error_reporting::report_error(workflow::error_reporting::Failure::ProtectRecording, &error);
             self.cancel_recording(cx);
             if let Ok(mut status) = CAPTURE_STATUS.lock() {
                 *status = Some("Capture failed — could not protect raw video".into());
@@ -3280,6 +3349,15 @@ impl ApparentCoordinator {
 
         self.telemetry.set_capture_mode(target.mode);
         self.telemetry.reset_for_session(target.frame);
+        #[cfg(target_os="linux")]
+        if let Some(id)=self.electron_pill.as_ref().and_then(ui::electron_pill::Session::window_number) {
+            self.telemetry.excluded_window_ids.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner).push(id);
+        }
+        #[cfg(target_os="macos")]
+        self.telemetry.excluded_window_ids.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .append(&mut self.electron_pill_exclusions);
         // The picker stays open until present_recording_island defers its close.
         // Keep it out of the first ScreenCaptureKit frames after the session reset.
         #[cfg(target_os = "macos")]
@@ -3381,7 +3459,7 @@ impl ApparentCoordinator {
             Ok(recorder) => Some(recorder),
             Err(error) => {
                 let message = format!("Capture refused: narration could not be saved: {error:#}");
-                workflow::error_reporting::report(workflow::error_reporting::Failure::AudioStart);
+                workflow::error_reporting::report_error(workflow::error_reporting::Failure::AudioStart, &error);
                 apparent_log(&message);
                 self.cancel_recording(cx);
                 if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some(message); }
@@ -3398,7 +3476,7 @@ impl ApparentCoordinator {
             Ok(session) => session,
             Err(error) => {
                 apparent_log(format!("Capture refused: {error:#}"));
-                workflow::error_reporting::report(workflow::error_reporting::Failure::ScreenStart);
+                workflow::error_reporting::report_error(workflow::error_reporting::Failure::ScreenStart, &error);
                 if let Err(cleanup) = crate::capture::engine::bundle::recover::abandon_start(&bundle_dir, || drop(audio_recorder)) {
                     apparent_log(format!("Failed capture startup cleanup at {}: {cleanup:#}", bundle_dir.display()));
                 }
@@ -3569,7 +3647,7 @@ impl ApparentCoordinator {
                 Ok(session) => session,
                 Err(error) => {
                     apparent_log(format!("iPhone capture could not start: {error:#}"));
-                    workflow::error_reporting::report(workflow::error_reporting::Failure::PhoneStart);
+                    workflow::error_reporting::report_error(workflow::error_reporting::Failure::PhoneStart, &error);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
                     {
                         if let Some(id) = self.agent_capture_id.take() {
@@ -6376,6 +6454,18 @@ fn restack_soon(cx: &mut App) {
 }
 
 fn ensure_hud_pill_open(coord_entity: &Entity<ApparentCoordinator>, cx: &mut App) {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        coord_entity.update(cx, |coord, _| coord.ensure_electron_pill());
+        if coord_entity.read(cx).electron_pill_routed { return; }
+        // Linux reserves presentation for the launching renderer. The tick
+        // restores GPUI only on a real launch/readiness failure, avoiding a
+        // native pill flashing before the healthy Electron surface arrives.
+        #[cfg(target_os = "linux")]
+        if coord_entity.read(cx).electron_pill.as_ref().is_some_and(|session| session.healthy()) {
+            return;
+        }
+    }
     if crate::shared::handoff::native_pill() {
         let _ = coord_entity.update(cx, |coord, _| {
             coord.ensure_native_pill();
@@ -6753,6 +6843,10 @@ pub fn run_app(
         }
         let has_initial = initial_bundle.is_some();
         let coordinator = cx.new(|_| ApparentCoordinator::new(telemetry, initial_bundle));
+        // Warm the hidden Linux controls before the first capture. Capture
+        // admission and shortcuts do not wait for renderer startup.
+        #[cfg(target_os = "linux")]
+        coordinator.update(cx, |coord, _| coord.ensure_electron_pill());
         set_status_inbox_count(coordinator.read(cx).inbox.len());
         #[cfg(target_os = "linux")]
         if let Err(error) = crate::capture::desktop::linux::update::mark_relaunch_ready() {
@@ -6919,6 +7013,7 @@ pub fn run_app(
                             }
                             LiveOverlayEvent::NoteClosed { focus, owner } => platform::restore_note_focus(focus, owner),
                             LiveOverlayEvent::NoteOutside => { if let Some(ui) = coord.note_ui.as_ref() { ui.outside(); } },
+                            LiveOverlayEvent::NoteResumeDrawing => { if let Some(ui) = coord.note_ui.as_ref() { ui.resume_drawing(); } },
                             LiveOverlayEvent::Note { pin, t, x, y, screen_x, screen_y } => {
                                 coord.request_immediate_frame();
                                 let (focus, owner) = platform::note_focus();
@@ -6973,6 +7068,42 @@ pub fn run_app(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reveal_activity_releases_strokes_before_waiting_for_live_ink() {
+        let (sender, _) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        let writer_telemetry = telemetry.clone();
+        let (ready, started) = flume::bounded(1);
+        let (commit, proceed) = flume::bounded(1);
+        let writer = std::thread::spawn(move || {
+            // Shift release retains live ink until its saved stroke is committed.
+            let _ink = writer_telemetry.live_ink.lock().unwrap();
+            ready.send(()).unwrap();
+            proceed.recv_timeout(Duration::from_secs(3)).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                if let Ok(_strokes) = writer_telemetry.strokes.try_lock() { return true; }
+                if Instant::now() >= deadline { return false; }
+                std::thread::yield_now();
+            }
+        });
+        started.recv_timeout(Duration::from_secs(3)).unwrap();
+        let reader_telemetry = telemetry.clone();
+        let reader = std::thread::spawn(move || {
+            ApparentCoordinator::new(reader_telemetry, None).reveal_activity()
+        });
+        // Give the old snapshot a chance to retain strokes while awaiting ink.
+        // The corrected snapshot releases it; either way the test can unwind.
+        let deadline = Instant::now() + Duration::from_millis(100);
+        while telemetry.strokes.try_lock().is_ok() && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        commit.send(()).unwrap();
+        let committed = writer.join().unwrap();
+        assert_eq!(reader.join().unwrap(), 0);
+        assert!(committed, "activity snapshot retained strokes while waiting for live ink");
+    }
 
     #[cfg(target_os = "linux")]
     #[test]

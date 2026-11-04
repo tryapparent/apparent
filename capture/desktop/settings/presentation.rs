@@ -45,9 +45,14 @@ pub(super) fn open_connect(events: Arc<dyn Fn(Event) + Send + Sync>, command: su
 fn open_mode(events: Arc<dyn Fn(Event) + Send + Sync>, connect: Option<super::connect::Command>) -> anyhow::Result<Transport> {
     use std::io::BufRead;
     let (app, runtime) = assets().ok_or_else(|| anyhow::anyhow!("Packaged Settings unavailable"))?;
-    anyhow::ensure!(connect.is_none() || app.join("electron/connect-preload.cjs").is_file(), "Packaged Connect Settings unavailable");
+    anyhow::ensure!(connect.is_none() || app.join("electron/preloads/connect.cjs").is_file(), "Packaged Connect Settings unavailable");
     let mut process = Command::new(runtime);
+    crate::capture::desktop::workflow::error_reporting::configure_child(&mut process);
     prepare_electron_environment(&mut process);
+    // Settings must share capture's XWayland input/stacking route: a native
+    // Wayland window can receive a Shift-click underneath the X11 ink overlay.
+    #[cfg(target_os = "linux")]
+    process.arg("--ozone-platform=x11");
     process.arg(app).arg(if connect.is_some() { "--settings-connect" } else { "--settings-storage" }).arg("--settings-parent");
     if let Some(command) = connect {
         let command = serde_json::to_value(command)?;
@@ -56,6 +61,9 @@ fn open_mode(events: Arc<dyn Fn(Event) + Send + Sync>, connect: Option<super::co
     let mut child = process.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
     let stdin = child.stdin.take();
     let stdout = child.stdout.take();
+    #[cfg(target_os = "linux")]
+    let child = crate::capture::ui_process::UiChild::settings(child);
+    #[cfg(not(target_os = "linux"))]
     let child = crate::capture::ui_process::UiChild::new(child);
     std::thread::spawn(move || {
         if let Some(stdout) = stdout {
@@ -76,8 +84,8 @@ fn open_mode(events: Arc<dyn Fn(Event) + Send + Sync>, connect: Option<super::co
 }
 
 fn prepare_electron_environment(process: &mut Command) {
-    // GPUI hides WAYLAND_DISPLAY to select XWayland. Electron has its own
-    // backend selection and needs the original compositor socket in its child.
+    // Retain the compositor socket for portal/native helpers. The Settings
+    // window itself explicitly uses XWayland to share capture's input route.
     #[cfg(target_os = "linux")]
     if let Some(display) = crate::capture::desktop::linux::wayland_display() {
         process.env("WAYLAND_DISPLAY", display);

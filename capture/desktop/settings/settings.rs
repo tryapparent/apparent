@@ -2308,7 +2308,8 @@ mod tests {
                 std::process::id(),
                 crate::shared::clock::now_epoch_ms()
             ));
-            std::fs::create_dir_all(&dir).unwrap();
+            use std::os::unix::fs::DirBuilderExt;
+            std::fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
             Self(dir)
         }
     }
@@ -2393,12 +2394,15 @@ mod tests {
     }
 
     #[test]
-    fn hosted_sharing_settings_are_off_by_default_and_have_explicit_account_actions() {
+    fn hosted_sharing_settings_default_on_preserve_opt_out_and_explicit_account_actions() {
         let dir = TempDir::new("hosted-sharing-settings");
         let host = fake(&dir);
         let panel = Panel::default();
+        assert!(!serde_json::to_value(panel.view(&host)).unwrap()["hosted"].is_null());
+        assert!(crate::shared::handoff::load_config_from(&host.path).cloud.is_none());
+        std::fs::write(&host.path, r#"{"experiments":{"hostedSharing":false}}"#).unwrap();
         assert!(serde_json::to_value(panel.view(&host)).unwrap()["hosted"].is_null());
-        std::fs::write(&host.path, r#"{"experiments":{"hostedSharing":true},"cloud":{"server":"https://synthetic.example","enabled":false,"uploadConsent":false}}"#).unwrap();
+        std::fs::write(&host.path, r#"{"cloud":{"server":"https://synthetic.example","enabled":false,"uploadConsent":false}}"#).unwrap();
         let view = serde_json::to_value(panel.view(&host)).unwrap();
         assert_eq!(view["hosted"]["server"], "https://synthetic.example");
         assert!(serde_json::from_value::<Action>(serde_json::json!({"action":"manage-shared-links"})).is_ok());

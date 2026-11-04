@@ -1068,6 +1068,7 @@ fn log_chord(telemetry: &SharedCaptureTelemetry, mods: Modifiers, vk: u16) {
 fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
     let mut prev_keys: HashSet<u16> = HashSet::new();
     let mut prev_shift_ink = false;
+    let mut note_draw = super::super::NoteDrawGesture::default();
     let mut await_shift_release = false;
     let mut prev_buttons = [false; 2];
     let mut last_tap_check = Instant::now() - Duration::from_secs(1);
@@ -1133,6 +1134,7 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
         let buttons = [held.left, held.right];
         if !active {
             prev_shift_ink = false;
+            note_draw = super::super::NoteDrawGesture::default();
             prev_buttons = buttons;
             if pointer_taken {
                 linux::overlay::take_pointer(false);
@@ -1143,6 +1145,7 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
 
         let mut pure_shift =
             mods.shift && !mods.super_key && !mods.ctrl && !mods.alt && !await_shift_release;
+        let note_shift = pure_shift;
         // Wayland: XWayland only sees the pointer over X11 windows, so the overlay takes it
         // while ⇧ is held (`linux::overlay::take_pointer`).
         pure_shift &= !telemetry.notes_editing.load(Ordering::Acquire);
@@ -1161,6 +1164,8 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
         } else {
             stale_pointer = None;
         }
+        telemetry.resume_note_drawing(&mut note_draw, (x, y),
+            mods.shift && !mods.super_key && !mods.ctrl && !mods.alt && !await_shift_release);
         *telemetry
             .pointer_screen
             .lock()
@@ -1172,7 +1177,8 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
             buttons,
             (x, y),
             mods.shift && !mods.super_key && !mods.ctrl && !mods.alt,
-            |x, y| telemetry.on_capture_input_ui(x, y),
+            |x, y| if note_shift { telemetry.on_note_input_ui(x, y) }
+                else { telemetry.on_capture_input_ui(x, y) },
         );
 
         // Hold Shift + move the pointer inside the capture target = draw a persistent stroke.

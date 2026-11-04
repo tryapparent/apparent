@@ -42,18 +42,38 @@ Desktop startup installs reporting only when packaging supplies the publishable
 `APPARENT_POSTHOG_TOKEN` (`phc_…`) for the intended EU project. Without it, builds
 never send. The fixed destination is `https://eu.i.posthog.com/i/v0/e/`; `curl`
 must be available. CLI commands/tests never install the global reporter.
-Live ingestion, grouping and alerts require bounded synthetic verification in an
-isolated project before release; local HTTP tests are not that proof.
+Live ingestion and grouping require bounded synthetic verification in an isolated
+project or an explicitly approved test target before release; local HTTP tests
+are not that proof. Alert configuration and delivery verification are deferred
+from the initial Electron exception-capture slice; capture does not imply notifications.
 
-The payload allows only a static failure category, version/build, OS/architecture
-and repo-relative source call site. No raw error/panic text, logs, recordings,
+Reports include a fixed failure category, version/build, OS/architecture and
+repo-relative source call site. Operation errors also include typed processing
+breadcrumbs (step and source line), OS error kind/number, JSON error category and
+position when present, and bounded error-chain depth. Finalization failures include
+capture mode, dimensions/scale, duration, candidate-frame count, video/microphone
+presence when known, pending-notes status and stroke/interaction counts. These
+describe reproduction inputs, not their contents. Unknown third-party messages
+remain local; diagnostics never format an arbitrary error. Error groups distinguish
+the deepest known step and OS error kind per platform; breadcrumb frames are
+synthetic failure boundaries, not an unwound stack. No raw error/panic text, logs, recordings,
 screenshots, transcripts, clipboard contents, window/device names, capture IDs,
 share URLs or user paths. Each event gets a random identity; person profiles and
 geolocation are disabled. No session replay/usage tracking. The receiving service
 still sees the connection's IP address; transport is not anonymous.
 
 Coverage: desktop recording storage/audio/screen/phone startup, capture finalization,
-video export and Rust panics after startup. This is a synthetic call-site frame,
+video export and Rust panics after startup. Electron main uncaught exceptions and
+unhandled rejections, plus renderer error/unhandledrejection events, send fixed
+categories through the same-user Rust socket and the same consent/queue limits.
+Main failures exit with status 1 after at most 600 ms of best-effort enqueue;
+renderer reporting does not cancel the browser event. No exception payload is read.
+Only release Rust launches with an installed reporter enable these hooks; ordinary
+Electron development/test launches and debug Rust builds do not send them.
+Preload initialization exceptions and native renderer crashes remain outside coverage.
+These reports identify the runtime/category, not the original JavaScript stack.
+A missing Rust process, socket contention or exhausted queue can lose the report.
+This does not add native crash, handled fallback or Connect/CLI reporting. This is a synthetic call-site frame,
 **not a full unwound stack or native crash dump**. Segfaults, forced exits,
 Swift/Objective-C crashes and failures before startup are not captured. The queue
 holds at most 16 events, with 20 attempts/minute and a two-second HTTP timeout.
@@ -113,11 +133,14 @@ and permission-repair windows retain their existing behavior.
 
 ## Settings (`capture/desktop/settings/settings.rs`, `capture/desktop/native/Settings.swift`)
 
-### Apparent Connect (experiment)
+### Apparent Connect
 
 **General → Connect** appears by default above Launch at login on
 macOS and Linux. Opening it does not sign in, grant upload consent or enable
-uploads. To hide the controls, set `"connectSettings": false` in the existing
+uploads. Private Connect and endpoint encryption are available by default; explicit
+`experiments.hostedSync=false` or `experiments.hostedEncryption=false` retains an
+opt-out. Availability never changes `cloud.enabled` or `cloud.uploadConsent`, and
+onboarding practice remains local-only. To hide the controls, set `"connectSettings": false` in the existing
 `experiments` object in `~/.config/apparent/config.json`, then close and reopen
 Settings. It adds no onboarding step and does not require `hostedSharing`. Without a configured `cloud.server`, sign-in uses
 `https://hosted.tryapparent.com`; an existing valid custom origin is preserved.
@@ -127,8 +150,11 @@ It uses the existing Rust controller and a Connect-only bridge; navigating back
 returns to the existing Settings pages. Missing assets or a failed Electron window
 retain the native General fallback. Closing/reloading cancels pending approval;
 the native action that opened the view is consumed once and is never replayed by
-reload. Keep the native fallback until equivalent macOS and isolated Linux consent,
-cancellation, recovery and navigation acceptance passes. Ordinary Settings opens
+reload. Keep the native fallback until shared consent/cancellation/recovery and
+navigation pass Linux checks and affected launch/browser/focus/fallback seams pass
+on their OS under [Desktop verification](native-testing.md). Do not repeat the
+shared matrix on Mac; reuse applicable native evidence for unchanged inputs.
+Ordinary Settings opens
 no longer measure capture history; the native Storage fallback measures only on
 an explicit Storage visit, and Electron Storage uses its bounded usage request.
 
@@ -148,6 +174,12 @@ already uploaded data. Cancelled jobs cannot silently resume after a later login
 **Check connection** performs a bounded authenticated background probe; ordinary
 Settings refresh reads local state only. Offline, reauthorization, denied/expired
 approval and local storage failures retain local capture and offer recovery.
+An expired access token with a valid refresh grant shows **Connection needs a
+refresh**, with **Check connection** directly on the card. It does not ask for
+another sign-in or claim that renewal has completed. Checking renews access
+through the existing client; expired refresh grants and revoked authorization
+still require sign-in. Reopening Settings or updating the app preserves this
+distinction without making a network request merely to display the page.
 If a disable/disconnect could not finish because local state was busy, uploads
 remain blocked across restart. Use Disable uploads or Disconnect again to finish;
 do not delete the client's pending revocation files. Failed state writes are not
@@ -157,9 +189,10 @@ raw errors, tokens and device secrets never enter its presentation contract.
 
 Connect uses the accepted Paper card and the shared frog artwork, without a separate
 section heading. The invitation reads “Help others see what you mean.”; successful
-local activation becomes a compact confirmation. The top-right A opens connection
-controls, not an asserted account identity: the current Desktop contract has no
-verified email. Disable and disconnect first show a local confirmation; declining
+local activation becomes a compact confirmation. The top-right account control shows
+the initial derived from the verified email on the active local grant, without
+exposing the email to Desktop. Older credentials and unavailable identity use a
+neutral person icon. Disable and disconnect first show a local confirmation; declining
 it does not revoke or cancel anything. Confirmed commands retain the existing
 revocation and pending-login cancellation semantics. Shared-link management is
 available only through its existing feature gate and validated credential site.
@@ -178,7 +211,8 @@ and test instructions are in `../ui/frontend/README.md`. Its persistent socket
 belongs to that window: reload/close/crash or an expired idle lease cancels pending
 sign-in, including late authorization receipts. Local refreshes do not probe the
 server. This does not change installed Settings routing; legacy controls remain
-the rollback until equivalent native Linux and macOS acceptance is complete.
+the rollback until shared behavior and affected native seams are accepted under
+[Desktop verification](native-testing.md).
 
 The shared config writer serializes CLI and GUI processes with a private
 `config.json.lock` sidecar, held from before the file read until atomic publication.
@@ -205,6 +239,16 @@ On Omarchy, Hyprland's `code:201` is the Copilot key. At launch Apparent reads t
 Recording without speech: `microphoneEnabled` in `~/.config/apparent/config.json` defaults to `true`. The app menu’s **Microphone for next capture** and the Electron Recording control persist the same preference, preserving the selected input. A capture freezes that preference at permission admission: switching it during recording applies to the next capture. With it off, microphone permission is not required, no input is opened and no no-audio warning is emitted. The other capture permissions still apply. A capture-local `microphone-off` marker preserves that intent through recovery; bundle context records `microphoneCapture: "off"`.
 
 Shift-click opens an Electron note near the click on release; Shift-drag still draws. Enter/Attach saves, Shift+Enter inserts a newline, and empty Enter closes without saving or erasing a saved note. Escape or clicking outside closes while keeping a draft for this capture. The counter follows the recording capsule, opens the compact notes list, and counts only durable saves. Notes can be edited or deleted from the list. Finish waits for already submitted saves; a failed receipt retains recording assets for recovery. Drafts are not exported as note metadata or summary text. Linux display video includes the popup while visible, including text not yet attached. This notes surface uses Electron by default; the existing capture controls and platform input adapters remain in use. Packaging includes its runtime. Removing this routing requires restoring an accepted notes surface, not silently dropping typed feedback. See the frontend README for routing and native acceptance gates.
+
+On Linux, Shift-click also annotates the native and Electron Settings windows
+during a capture. Only those live Settings surfaces opt in; ordinary clicks on
+Apparent, the recording pill and the notes editor retain their input exclusions.
+Electron Settings uses XWayland, matching capture's overlay and note editor, so
+the Shift overlay owns the pointer before a Settings control can act. Native
+window/process lifetime guards remove admission when Settings closes or its child
+exits. macOS's own-window input route is unchanged and still excludes Settings
+self-annotation. Reverting this admission restores the old Settings exclusion;
+the shared Electron editor and already saved notes remain compatible.
 
 Recording › Microphone (`capture/engine/runtime/audio/mic.rs`): `"microphone": {"id","name"}` holds an input id in `~/.config/apparent/config.json`; the name only labels a missing device. Absent = System default. Mac uses CoreAudio UIDs (also `AVCaptureDevice.uniqueID`). Linux with a PulseAudio-compatible server (including PipeWire) and `pactl` lists source names as `pulse:<name>`; `capture/desktop/linux/microphone.rs` opens the chosen source with GStreamer's `pulsesrc`, converting it to 16 kHz mono samples for the same capture buffer and Settings meter. A new capture waits for its first sample before accepting the source; a disconnected or unopenable choice falls back to the Pulse default shown in Settings, then to CPAL only if that default cannot open. It never changes the system default. Linux without a working Pulse server / `pactl` falls back to CPAL's available inputs; this may expose only the shared `default` or `pipewire` device, so distinct microphones cannot be selected there. Windows is unsupported; retained code is not a parity target. `mic::Watch` re-lists inputs while Settings is open: CoreAudio listeners on Mac, one-second checks elsewhere. `AudioRecorder` opens the chosen input on its worker thread, otherwise the current system default; a disconnected or unopenable choice remains saved but does not stop a new capture (`mic::Pick` explains the fallback in Settings and `note_pick` logs once). An error partway through a capture keeps samples heard so far. Mac's helper `MicMeter` uses AVCaptureSession; Linux GPUI Settings starts a separate input stream, stops it when leaving Recording, and expires stale level readings after 300 ms. The meter shows input samples, not recognized words or speaker identity; #16 owns no-transcript messaging. `apparent mic list|set <id|default>|watch` reports and changes the same saved selection.
 

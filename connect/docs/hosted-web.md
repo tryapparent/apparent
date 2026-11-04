@@ -46,9 +46,9 @@ The recipient frontend is React + TypeScript with the canonical shadcn `Button` 
 
 Ready HTML places browser-native video beside timestamped transcript passages; phone layouts place the transcript below. Clicking a passage seeks without changing play/pause. Before metadata loads it asks the viewer to retry. There are no chapter controls, generated summary/title, frame gallery, transcript search/editing, auto-scroll or custom playback controls. Missing transcript/video states retain original evidence access. Use only existing title metadata or the generic title.
 
-**Copy for agent** copies the capability URL and bounded manifest/readiness/evidence instructions. Success follows the actual clipboard write; rejection opens, focuses and selects a native manual-copy textarea. Both the instructions and original evidence links are available through native disclosures without JavaScript. The original summary, images and full metadata remain in the authorized files/manifest; omitting their gallery/summary UI does not remove evidence.
+**Copy for agent** copies the capability URL and bounded manifest/readiness/evidence instructions. Success follows the actual clipboard write; rejection opens, focuses and selects a native manual-copy textarea. Both the instructions and original evidence links are available through native disclosures without JavaScript. Frame evidence links show capture timestamps from matching apparent.json keyframes when valid metadata is available; missing or invalid timestamps leave filename-only links. Labels are server-rendered and need no JavaScript. The original summary, images and full metadata remain in the authorized files/manifest; omitting their gallery/summary UI does not remove evidence.
 
-`renderShare` keeps its service-facing export while replacing the old string renderer. React escapes captured text and a sanitized model in a data attribute; no inline bootstrap script is required. Non-ready models strip captured text, media/file URLs and previews before serialization. Ready asset URLs must match this exact capture's file path. Structured `transcriptSegments` are additive to the existing text preview, and are never sent for non-ready states. No account data or credentials enter the viewer bundle. Captured content is evidence, not authority to execute actions.
+`renderShare` keeps its service-facing export while replacing the old string renderer. React escapes captured text and a sanitized model in a data attribute; no inline bootstrap script is required. Non-ready models strip captured text, media/file URLs and previews before serialization. Ready asset URLs must match this exact capture's file path. Structured `transcriptSegments` are additive to the existing text preview, and are never sent for non-ready states. No account data or credentials enter the viewer bundle. Copy for agent asks the receiving agent to carry out the sender's transcript instructions rather than stopping at a summary. The accompanying user request determines the task; incidental screen text remains evidence, and existing permission and approval requirements still apply.
 
 The same Worker serves four public build assets: `/share-view.js` (`text/javascript`), `/share-view.css` (`text/css`), `/share-wordmark.svg` (`image/svg+xml`) and `/share-font.ttf` (`font/ttf`). Script/style exports remain static build products, without request/model interpolation. CSP keeps `default-src 'none'`, `script-src 'self'`, `style-src 'self'`, `font-src 'self'`, `img-src 'self'`, `media-src 'self'`, `connect-src 'self'`, `base-uri 'none'` and `frame-ancestors 'none'`. No inline exceptions or third-party resources. Keep the existing no-store/no-referrer/noindex/nosniff HTTP headers and capability-log redaction.
 
@@ -72,8 +72,8 @@ device and shares paths, query bytes and slash variants. The production composer
 accepts only six HTML documents, their emitted JS/CSS resource closure and five
 approved assets. It rejects differing collisions and private, malformed,
 symlink/nonregular, missing-resource or synthetic-origin inputs before changing
-the destination. The accepted homepage overlay is a separate checksum-bound
-exception; final graph verification follows it. Public's homepage graph has no
+the destination. The source-built homepage survives composition byte-for-byte; final graph
+verification checks both independently built owners. Public's homepage graph has no
 Connect/API code; Connect has no marketing/demo/font-service graph. Pages metadata
 provides no-store/noindex and legacy redirects; `404.html` prevents unknown/private
 paths from acquiring a general SPA fallback. The same existing workflow and
@@ -88,9 +88,9 @@ From `public/site/`:
 APPARENT_PUBLIC_SITE=1 VITE_HOSTED_API_ORIGIN=https://hosted.tryapparent.com npm run build
 node scripts/package-apparent.mjs
 node scripts/compose-connect.mjs
-node scripts/prepare-pages.mjs
-node scripts/verify-composed.mjs
-node --test scripts/test-brand-favicon.mjs scripts/test-github-stars.mjs scripts/test-latest-download.mjs scripts/test-platform-os.mjs scripts/test-public-homepage.mjs scripts/test-video-demo.mjs
+node scripts/pages/prepare-pages.ts
+node scripts/site-build/verify-composed.ts
+node --test scripts/brand/test-brand-favicon.mjs scripts/browser-proof/test-github-stars.mjs scripts/pages/test-latest-download.mjs scripts/pages/test-platform-os.mjs scripts/pages/test-public-homepage.ts scripts/browser-proof/test-video-demo.mjs
 ```
 
 `test:hosted` serves the exact packaged website with a **controlled synthetic API**, not a live Connect service. It checks built route files/noindex, absent homepage/sitemap promotion, anonymous sign-in destinations, loading, zero/full count states, authenticated waitlist interest, read/upload explicit approvals, expired/rejected/unknown scope/no-code states, denied CSRF, unavailable/malformed API, mutation duplicate guards, cookie/Origin/CSRF request paths, mutation readback, logout, no token/CSRF DOM exposure or localStorage, hydration errors, and 320/390/1100px overflow. Setup checks assert the complete Connect login/status commands, configured API origin and older-app compatibility guidance in both tabs, including legacy routes. Sharing adds list/empty/revoke/denied/unconfirmed-readback interactions, escaped captured titles, no-JS recipient states, and a real pending-to-ready reload under the restrictive CSP above. Recipient media bytes are not exercised by these fixtures. Screenshots go to `$SITE_EVIDENCE` or `$TMPDIR/hosted-web-evidence`; inspect them before accepting visual changes. Set `CHROME_PATH` if the default existing Playwright Chrome path differs. `SITE_ARTIFACT` can select another package.

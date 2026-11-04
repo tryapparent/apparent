@@ -1,3 +1,4 @@
+import './runtime/exceptions';
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Button } from '@apparent/ui/button';
@@ -9,6 +10,7 @@ import { ConnectSettingsCard } from './connect-settings';
 import { CaptureReference } from './reference';
 import './style.css';
 import { NativeOnboarding } from './onboarding/onboarding';
+import {ShareCapture} from './share';
 import { CaptureNotes } from './notes';
 import { RecordingMicrophone } from './notes/microphone';
 
@@ -113,4 +115,4 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')!).render(<StrictMode>{new URLSearchParams(location.search).has('nativeOnboarding') ? <NativeOnboarding /> : location.hash.startsWith('#notes-') ? <CaptureNotes /> : <App />}</StrictMode>);
+createRoot(document.getElementById('root')!).render(<StrictMode>{new URLSearchParams(location.search).has('nativeOnboarding') ? <NativeOnboarding /> : location.hash === '#share' ? <ShareCapture /> : location.hash.startsWith('#notes-') ? <CaptureNotes /> : <App />}</StrictMode>);

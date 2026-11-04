@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Publish checked main ancestors without superseding a newer checked preview.
 
-The workflow serializes builds/publication without canceling the running release.
+Publication jobs serialize without cancellation; automatic builds supersede old builds.
 Ancestry, not completion time or version numbers, orders Main previews.
 """
 
 import hashlib
+from functools import cache
 import json
 import os
 from pathlib import Path
@@ -34,7 +35,10 @@ def checked_sha(value):
     return value
 
 
+@cache
 def comparison(repo, base, tip):
+    # Immutable SHA pairs retain their ancestry across both admission checks.
+    # Current main and release history are still fetched afresh each time.
     status = json.loads(gh("api", f"repos/{repo}/compare/{base}...{tip}"))["status"]
     if status not in ("ahead", "behind", "identical", "diverged"):
         raise RuntimeError(f"Unknown ancestry comparison: {status!r}")
@@ -56,13 +60,13 @@ def publication_needed(repo, sha):
         for item in page:
             if not isinstance(item, dict) or not isinstance(item.get("tag_name"), str):
                 raise RuntimeError("Malformed release history entry")
-            if not item["tag_name"].startswith("linux-main-"):
+            if not item["tag_name"].startswith("linux-main-v2-"):
                 continue
             if not isinstance(item.get("draft"), bool) or not isinstance(item.get("prerelease"), bool):
                 raise RuntimeError("Malformed Main release flags")
             if item["draft"] or not item["prerelease"]:
                 continue
-            published = checked_sha(item["tag_name"][len("linux-main-"):])
+            published = checked_sha(item["tag_name"][len("linux-main-v2-"):])
             if comparison(repo, published, current) not in ("ahead", "identical"):
                 continue
             if comparison(repo, sha, published) in ("ahead", "identical"):
@@ -78,7 +82,7 @@ def main():
     sha = checked_sha(os.environ["GITHUB_SHA"])
     if os.environ["GITHUB_REF"] != "refs/heads/main":
         raise RuntimeError("Main previews require refs/heads/main")
-    tag = f"linux-main-{sha}"
+    tag = f"linux-main-v2-{sha}"
     dist = Path("dist")
     images = sorted(dist.glob("*.AppImage"))
     expected = {f"Apparent-{os.environ['APPARENT_VERSION']}-linux-{arch}.AppImage"

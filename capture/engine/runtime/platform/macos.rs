@@ -924,7 +924,7 @@ pub fn record_external_frontmost_app() {
     let workspace = NSWorkspace::sharedWorkspace();
     if let Some(app) = workspace.frontmostApplication() {
         let pid = app.processIdentifier();
-        if pid > 0 && pid != std::process::id() as i32 {
+        if crate::capture::ui_process::is_external_app(pid) {
             LAST_EXTERNAL_APP_PID.store(pid, Ordering::Release);
         }
     }
@@ -932,18 +932,16 @@ pub fn record_external_frontmost_app() {
 
 pub fn ensure_external_app_active() {
     use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication, NSWorkspace};
-    let our_pid = std::process::id() as i32;
     let workspace = NSWorkspace::sharedWorkspace();
     let front_pid = workspace
         .frontmostApplication()
         .map_or(0, |a| a.processIdentifier());
-    if front_pid != 0 && front_pid != our_pid {
+    if crate::capture::ui_process::is_external_app(front_pid) {
         LAST_EXTERNAL_APP_PID.store(front_pid, Ordering::Release);
         return;
     }
     let target_pid = LAST_EXTERNAL_APP_PID.load(Ordering::Acquire);
-    if target_pid > 0
-        && target_pid != our_pid
+    if crate::capture::ui_process::is_external_app(target_pid)
         && let Some(target_app) =
             NSRunningApplication::runningApplicationWithProcessIdentifier(target_pid)
     {
@@ -967,24 +965,22 @@ pub fn ensure_external_app_active() {
 /// The frontmost app's pid, or the last external one while Apparent itself is in front.
 pub fn frontmost_external_pid() -> Option<i32> {
     use objc2_app_kit::NSWorkspace;
-    let our_pid = std::process::id() as i32;
     let pid = NSWorkspace::sharedWorkspace()
         .frontmostApplication()
         .map_or(0, |a| a.processIdentifier());
-    if pid > 0 && pid != our_pid {
+    if crate::capture::ui_process::is_external_app(pid) {
         return Some(pid);
     }
     let fallback = LAST_EXTERNAL_APP_PID.load(Ordering::Acquire);
-    (fallback > 0 && fallback != our_pid).then_some(fallback)
+    crate::capture::ui_process::is_external_app(fallback).then_some(fallback)
 }
 
 pub fn frontmost_app_info() -> Option<(i32, String, Option<String>)> {
     use objc2_app_kit::{NSRunningApplication, NSWorkspace};
-    let our_pid = std::process::id() as i32;
     let workspace = NSWorkspace::sharedWorkspace();
     if let Some(app) = workspace.frontmostApplication() {
         let pid = app.processIdentifier();
-        if pid != our_pid {
+        if crate::capture::ui_process::is_external_app(pid) {
             LAST_EXTERNAL_APP_PID.store(pid, Ordering::Release);
             let name = app.localizedName()?.to_string();
             let bundle_id = app.bundleIdentifier().map(|b| b.to_string());
@@ -992,7 +988,7 @@ pub fn frontmost_app_info() -> Option<(i32, String, Option<String>)> {
         }
     }
     let fallback_pid = LAST_EXTERNAL_APP_PID.load(Ordering::Acquire);
-    if fallback_pid > 0 && fallback_pid != our_pid {
+    if crate::capture::ui_process::is_external_app(fallback_pid) {
         let app = NSRunningApplication::runningApplicationWithProcessIdentifier(fallback_pid)?;
         let name = app.localizedName()?.to_string();
         let bundle_id = app.bundleIdentifier().map(|b| b.to_string());
@@ -1746,6 +1742,7 @@ pub fn post_synthetic_click(screen_x: f64, screen_y: f64) {
 /// Key codes are never polled: reading them is Input Monitoring's.
 fn run_global_hid_poller(telemetry: Arc<SharedCaptureTelemetry>) {
     let mut prev_shift_ink = false;
+    let mut note_draw = super::super::NoteDrawGesture::default();
     let mut await_shift_release = false;
     let mut prev_buttons = [false; 2];
     let mut last_tap_check: Option<Instant> = None;
@@ -1775,6 +1772,7 @@ fn run_global_hid_poller(telemetry: Arc<SharedCaptureTelemetry>) {
         };
         if !telemetry.active.load(Ordering::Acquire) {
             prev_shift_ink = false;
+            note_draw = super::super::NoteDrawGesture::default();
             prev_buttons = buttons;
             continue;
         }
@@ -1797,6 +1795,7 @@ fn run_global_hid_poller(telemetry: Arc<SharedCaptureTelemetry>) {
         );
 
         let pure_shift = shift && !cmd && !ctrl && !alt && !await_shift_release;
+        telemetry.resume_note_drawing(&mut note_draw, (loc.x, loc.y), pure_shift);
         // Hold Shift + move cursor inside the capture target = draw a persistent stroke.
         track_shift_ink(&telemetry, (loc.x, loc.y), pure_shift, prev_shift_ink);
 

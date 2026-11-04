@@ -1091,10 +1091,14 @@ impl Session {
         };
         let renderer_events = Self::scope_transport(transport_generation, events.clone());
         let attempted = if let Some(shell) = std::env::var_os("APPARENT_ONBOARDING_SHELL") {
-            Self::spawn_transport(std::process::Command::new(shell).arg("--native-onboarding"), renderer_events.clone()).ok()
+            let mut command = std::process::Command::new(shell);
+            crate::capture::desktop::workflow::error_reporting::configure_child(&mut command);
+            Self::spawn_transport(command.arg("--native-onboarding"), renderer_events.clone()).ok()
         } else {
             electron.and_then(|(app, runtime)| {
-                Self::spawn_transport(std::process::Command::new(runtime).arg(app).arg("--onboarding"), renderer_events.clone()).ok()
+                let mut command = std::process::Command::new(runtime);
+                crate::capture::desktop::workflow::error_reporting::configure_child(&mut command);
+                Self::spawn_transport(command.arg(app).arg("--onboarding"), renderer_events.clone()).ok()
             })
         };
         let shell = attempted.is_some();

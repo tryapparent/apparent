@@ -1,3 +1,4 @@
+import '../runtime/exceptions';
 import '../style.css';
 import {createRoot} from 'react-dom/client';
 import {NativeOnboarding} from './onboarding';

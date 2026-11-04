@@ -186,6 +186,7 @@ Every successfully built bundle has `finish-trace.json` beside `apparent.json`, 
 ## Click-based visual handoff (`shared/handoff/mod.rs`, `capture/engine/sketch.rs`)
 
 The old automatic OpenCode attachment policy is inactive. The full capture, keyframes, contact sheet, and video are still built and saved. Manual Paste remains image-first; `apparent zoom` is available for closer inspection.
+Clipboard instructions ask recipients to install or update the latest published CLI once per agent session; the [installation guide](../../agent/docs/installation.md) owns setup and private read approval. This instruction does not change saved bundle text or grant access.
 `apparent copy` is text-only by default, and its confirmation points to the contact sheet. Copying or dispatching Paste does not prove a receiving composer accepted the image. Check the unsent draft; if the image is absent, attach the saved `contact-sheet.png` manually. An agent that cannot open an unattached local path must ask for the image instead of guessing a click target from coordinates or “element unavailable.”
 
 ## Passive auto-crop safety (`capture/engine/autocrop/autocrop.rs`)
@@ -280,14 +281,16 @@ To compare a summary experiment on real captures, `capture/agent/scripts/agent-e
 
 During screen capture, Shift-click opens a compact Electron text field at the
 point; Shift drawing is unchanged. Enter or Attach saves; empty Enter keeps
-only the pin. Escape preserves the in-capture draft. The count reflects durable
+only the pin. Escape preserves the in-capture draft. A deliberate Shift-move
+outside the editor retains its draft and returns to drawing; stationary Shift
+presses and movement inside the editor keep typing protected. The count reflects durable
 saved notes; its compact list edits/deletes them. Unsubmitted drafts are not
 handoff content and do not survive ending/restarting the capture.
 
 Rust stores submitted text plus the pin's original timestamp and normalized
 position in `notes.json`. Finalization/recovery includes it as typed `note`
-events in `apparent.json` and an explicit Typed note section in `summary.md`,
-with the pin's keyframe link where available. Reprocessing replaces these
+events in `apparent.json` and timed Typed note entries alongside speech in
+`summary.md`, with the pin's keyframe link where available. Reprocessing replaces these
 events from the local notes file rather than duplicating them. The note's
 clock/anchor never moves to the time typing or editing finished. Text stays
 semantic; popup controls are not rasterized captions.

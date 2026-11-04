@@ -1,9 +1,24 @@
 # Desktop UI foundation
 
-Shared Electron Settings surfaces and a separate opt-in development window use
-React/TypeScript, shadcn/ui and Tailwind. Installed routing and retained native
-fallbacks are described per surface below. The development window has native
-Linux and macOS checks with their own proof limits. No Windows support.
+Shared Electron Desktop surfaces use React/TypeScript, shadcn/ui and Tailwind.
+Installed Settings routing, the recording pill replacement candidate and retained
+native fallbacks have separate contracts and acceptance gates below. The opt-in
+development window has Linux and macOS checks with their own proof limits;
+foundation evidence does not establish pill, capture or overlay behavior.
+No Windows support.
+
+## Verification policy
+
+Follow [Desktop verification](../../docs/native-testing.md): run the shared
+renderer/workflow matrix and real Rust↔Electron contract checks on Linux. Mac
+checks cover affected native boundaries, not a duplicate UI matrix. Reuse
+applicable successful seam evidence for unchanged inputs; shared-only changes
+need no new Mac walkthrough before merge. A short current-package Mac smoke and
+existing CI/signing gates remain required before Mac publication. This policy
+governs the workflow checklists below; specific human holds remain in force.
+Synthetic fixtures never establish OS effects, and new native routes still need
+focused real-platform checks. Automatic selection/reuse is not implemented by
+this documentation change.
 
 From the repository root, with Node 22 and npm 10 or newer:
 
@@ -86,10 +101,12 @@ it does not approve a real account or upload media. Run it from the root with
 `APPARENT_CONNECT_TEST_ELECTRON` set to the absolute frontend Electron executable:
 `cargo test --offline connect_settings_electron_rust_roundtrip -- --ignored --nocapture`.
 On Clanker, wrap the command once with `t3-build` as documented in `AGENTS.md`.
-Neither check substitutes for native Linux/macOS acceptance. The earlier shell evidence below does not
-certify this new workflow. Roll back by disabling `connectSettings`; missing packaged Connect assets or
-a failed Connect window also restore native General. Do not remove the legacy
-presentation until both platforms pass equivalent consent/cancel/recovery proof.
+These checks cover shared consent/cancel/recovery behavior; native launch,
+browser opening, focus and fallback need affected-platform seam proof. The earlier
+shell evidence below does not certify this new workflow. Roll back by disabling
+`connectSettings`; missing packaged Connect assets or a failed Connect window also
+restore native General. Remove the legacy presentation only after shared coverage
+and affected-platform boundaries pass under the verification policy above.
 
 Background completion receipts are consumed only on a valid window request,
 not while the stream is idle. Closing before the next read therefore retains
@@ -261,11 +278,12 @@ that executable before npm ci, preventing Electron's lazy downloader from
 silently fetching a binary. Missing prerequisites fail rather than skip proof.
 The ordinary `desktop-ui` lane remains lightweight and unchanged.
 
-This checkpoint proves renderer/synthetic transport behavior and real Rust bridge
-roundtrips only. It does not replace exact-candidate isolated Linux/Omarchy GUI,
-portal/picker, permissions, capture/output or installed packaging proof, nor Mac
-native acceptance. Follow `../../docs/native-testing.md` and
-`../../docs/linux/linux.md`; required exact-SHA CI/release receipts remain separate.
+This checkpoint supplies shared renderer/synthetic transport and real Rust bridge
+proof. It does not establish OS effects: changed portal/picker, permissions,
+capture/output, focus or packaging boundaries still need focused native checks.
+It need not be followed by a duplicate full Mac/Linux workflow walkthrough.
+Follow `../../docs/native-testing.md` and `../../docs/linux/linux.md` for affected
+seams; required exact-SHA CI/release receipts remain separate.
 
 The Electron smoke checks controls/keyboard use, disconnected/error/reconnect,
 renderer reload, minimum-width layout, sandbox/Node isolation, navigation/network
@@ -463,14 +481,86 @@ public link. No automatic-sharing preference or historical scan is introduced.
 Routing remains the existing Electron development window (`npm start`); installed
 native Copy link retains its refusal for encrypted captures. Close this window to
 roll back. Do not remove the legacy donor or switch installed capsule routing
-until this workflow passes real macOS/isolated Linux acceptance and the routing
-switch is authorized. Socket/controller/browser fixtures are not native proof.
+until shared behavior and affected native seams pass under the verification policy
+above and the routing switch is authorized. Mac proof covers installed entry,
+popup ownership/focus, startup/fallback and actual clipboard; shared consent,
+retry and recipient assertions belong in Linux checks. Socket/controller/browser
+fixtures alone are not proof of native effects.
+
+## Recording pill replacement candidate
+
+`pill/index.html`, `src/pill`, `electron/pill` and `../electron_pill` implement the
+shared pill presentation and parent-owned Rust transport. This candidate is
+not evidence of accepted installed/native behavior. Do not remove the old
+pill or treat the synthetic tests as native capture proof.
+
+Rust launches the packaged pill alongside the existing Settings runtime; no
+new config key or off-by-default product feature is introduced. Missing assets,
+startup failure, bounded Hyprland pinning failure or child failure retain/restore the old pill for the remainder
+of the app process. The old pill stays until Electron reports readiness;
+Electron remains hidden until Rust closes the old pill and activates it.
+Linux pin discovery waits for activation acknowledgement; hidden placement and
+uncommitted renderer layout do not start native retries. Failure diagnostics
+retain only phase and activation/readiness/visibility flags.
+Authoritative dismissal hides the native window during renderer loading too;
+hidden-state heartbeats do not repeatedly request native hiding.
+Recording and finalization remain owned by Rust across renderer reload/exit.
+A failed or ambiguous action is never automatically retried. The keyboard
+shortcut and tray remain independent controls.
+
+Before installed routing may land, verify shared selection/state/action rendering,
+warnings, processing/failure states, sharing refusals and theme/reduced-motion
+on Linux. Verify affected native seams on each OS: actual microphone input where
+supported, Finish/Cancel/Whiteboard admission, clipboard/drag-to-paste,
+drag/clamping/new-capture placement, click-through, focus return,
+fullscreen/workspace visibility, capture exclusion and startup/crash/fallback/
+shutdown. Reuse applicable evidence for unchanged boundaries; do not replay the
+shared matrix on Mac. Inspect actual bundle text,
+contact sheet, full-quality frames and movie for interaction preservation and
+capture inclusion/exclusion. Preserve native glass/config compatibility until
+its replacement is established. Compare response and resource measurements
+with the same native baseline; copied-link and watch-ready timing differ.
+
+Remove old presentations only after those applicable gates pass and their
+consumers/build/package inputs are verified. Until then the native adapters and
+fallback are required. The implementation's remaining parity gaps must be
+closed before enabling the installed replacement through a release.
+
+`tests/pill/smoke.cjs` runs shipped Electron/main/preload/React against an
+explicitly synthetic parent stream. It checks state rendering, stale and
+unavailable action refusal, keyboard cancellation, themes/reduced motion,
+renderer reload and isolation. It does not prove real Rust command dispatch,
+native desktop mechanics, clipboard or capture output.
+
+On Linux, a user-owned runtime without a valid root-owned SUID helper requests
+Chromium's namespace sandbox instead. Kernel restrictions still refuse startup
+and restore the native controls; production never adds `--no-sandbox`. The local
+Xvfb renderer fixtures use that flag for testing and do not establish OS sandbox
+acceptance. Native runtime/namespace proof remains required.
+
+Known expired commands return a new revision and a visible rejection without
+dispatch; an old command never consumes a newer capture's revision. Readiness
+requires the owned React renderer to acknowledge its committed state/layout,
+not just successful HTML loading. Missing renderer assets time out without
+retiring the functioning previous controls. Mac paste gestures temporarily keep
+mouse delivery through release/cancel; programmatic size changes clamp every
+phase to its display. Native glass and Mac capture-exclusion opt-out continue
+on their original presentation, including changes between captures; retiring
+Electron windows remain explicitly excluded from the next stream.
+
+The parent receives `BrowserWindow.getMediaSourceId()`'s native window ID with
+readiness, before activation. Mac compatibility retirement therefore does not
+depend on a window being onscreen. Linux registers the XID for candidate-only
+masking before showing the pill and after each session reset; delivered movies
+and full-quality frames retain their existing inclusion behavior. A Mac route
+that returns to native compatibility stays native until the next app launch,
+avoiding overlapping Electron profiles during asynchronous retirement.
 
 ## Shift-click notes
 
 The default-available notes surface runs `electron/notes/main.cjs`, launched by
 Rust for a screen capture. It renders only the nearby text popup and a small
-saved-note badge/list beside the existing capture controls; picker, ink and
+compact Notes control/list beside the existing capture controls; picker, ink and
 capture lifecycle remain on their current native path. There is no competing
 Electron capture state machine. This is independent of the foundation Settings
 window and requires no experiment. Packagers ship its production assets and
@@ -480,10 +570,19 @@ and `npm run build` before starting the rebuilt Rust app.
 A private inherited pipe carries click-time anchors and bounded note commands.
 Only trusted local main frames can submit draft/save/edit/delete/dismiss/list;
 no renderer paths, window IDs, IPC names, shell or network commands are accepted.
-Rust writes saved notes to `notes.json` before acknowledging/counting them;
-unsent drafts stay in the capture's Rust session rather than note metadata/summary. Linux display video still includes the visible popup and its text. Enter with no text closes the
+Rust writes saved notes to `notes.json` before acknowledging/counting them.
+An acknowledged nonempty save briefly flies a click-through letter to the counter.
+It reuses the owned popup, which the native input filter temporarily treats as
+passthrough; new notes and Finish cancel the animation. Reduced motion hides the
+decorative flight. Animation never delays saving or the Finish barrier.
+Linux anchors convert GPUI DIPs to the panel's physical X11 geometry, including
+fractional display scales. Native focus arrival refocuses an open textarea.
+
+Unsent drafts stay in the capture's Rust session rather than note metadata/summary. Linux display video still includes the visible popup and its text. Enter with no text closes the
 field and retains the pin. Escape keeps the in-capture draft; Shift+Enter adds
-a newline. Capture completion closes this capture-local surface. Restarting or
+a newline. Shift-move outside the note retains its draft and returns to drawing
+once the pointer has moved beyond the existing ink threshold; Shift typing and
+selection inside the editor stay protected. Capture completion closes this capture-local surface. Restarting or
 ending a capture does not promise recovery of unsubmitted drafts.
 
 The native menu and Electron Recording control share `microphoneEnabled` in
@@ -521,5 +620,44 @@ The executable is the existing Settings runtime at `Contents/Resources/settings/
 or `usr/share/apparent/settings/runtime`; popup packaging adds no second runtime.
 `package-notes.mjs` stages the required `electron/notes/` and includes `electron/share/`
 when its `main.cjs` exists, alongside the same `dist/` and single `runtime/`. The absent
-share consumer adds no entry or routing. A share owner must verify its installed route
-on both platforms before enabling it; resolver availability alone is not that proof.
+share consumer adds no entry or routing. A share owner must verify affected installed
+route seams on each platform before enabling it, reusing applicable evidence under
+the verification policy above; resolver availability alone is not that proof.
+
+### Installed public-copy confirmation (#171)
+
+Completed Copy link opens the independent `electron/share` entry in the one
+shared packaged runtime resolved by `workflow::electron`. It shows only the
+selected capture and the explicit anyone-with-link/non-E2E disclosure. Its
+private parent pipe carries capture name/status and bounded confirm/cancel/deliver
+commands, never a capture path, share URL or account token to the renderer.
+Rust pins the completed bundle path, inode and generation before opening; every
+poll revalidates them, and only the GUI thread may deliver a prepared clipboard
+write. Electron requests delivery only while focused; Rust independently rechecks the current OS foreground owner immediately before clipboard admission. Losing focus between those steps cancels the operation without a clipboard write; close and choose Copy link again to retry. Closing,
+selection changes, new recording and expiry cancel future effects; an admitted
+clipboard write or transmitted data cannot be recalled. A copied result remains
+separate from upload/recipient readiness. No automatic ambiguous-write retry.
+
+The completed pill's ordinary timeout pauses while this capture-bound popup is
+open. New capture/phase transitions still close it; local Paste stays available.
+Disconnected users use the existing General connection setup, then choose Copy
+link again. Missing assets fail with an actionable local-Paste message; there is
+no legacy direct-public-copy fallback. The old direct reservation path is removed.
+Existing hostedSharing and service activation holds are preserved; this adds no
+new experiment. Keep this routing only after macOS/isolated Linux acceptance;
+rollback must restore a verified consent surface, never bypass public-copy consent.
+The development foundation card remains a diagnostic surface, not an installed
+second capture workspace. No #172 ChatGPT-web or deployed-account proof is implied.
+
+The scoped hosted macOS native route is `native-proof-mac.yml`, dispatched with
+`scenario=share` against the frozen candidate. The default worker case remains
+unchanged. The share case uses a synthetic full-screen scene, normal capture
+start/stop, the installed completed-pill action, native owned-window OCR/input,
+explicit consent/cancel/repeated clipboard delivery, and the actual loopback
+Worker. It retains synthetic screenshots/bundle and available decodable video;
+it does not edit TCC or establish deployed-account/ChatGPT acceptance. A long
+open confirmation pauses completion dismissal; closing grants a fresh retry interval.
+
+The share Electron entry/preload are authored as `.cts`. `npm run build` checks
+and emits their ignored `.cjs` runtime files; popup packaging stages only those
+outputs. The share smoke and hosted native case are TypeScript run by Node 22.

@@ -355,7 +355,7 @@ fn offer_image_handoff(
 const AGENT_DEMO_VIDEO: &str = "agentDemoVideo";
 const DEMO_VIDEO_REQUEST: &str = "Use make-it-apparent for complex visible changes; share verified video proof or explain the blocker.";
 const CLI_INSTALL: &str =
-    "If apparent is unavailable, install it: https://github.com/tryapparent/apparent#agents";
+    "Once per agent session, install or update to the latest Apparent CLI: https://github.com/tryapparent/apparent#agents";
 
 /// Clipboard-only instructions precede the timeline so the last pasted lines identify
 /// the user's request. A queued hosted identity, not sign-in alone, selects remote access.
@@ -1016,6 +1016,7 @@ pub(crate) fn experiment_enabled_in(config: &Config, name: &str) -> bool {
             name,
             AGENT_DEMO_VIDEO | "copyCaptureId" | "connectSettings" | "nativeLaunch" | "electronCaptureLocation"
                 | "movableRecordingControls" | "exportNarration" | "onboardingFirstCapture"
+                | "hostedSync" | "hostedEncryption" | "hostedSharing"
         ))
 }
 

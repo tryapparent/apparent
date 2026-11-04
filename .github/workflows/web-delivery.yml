@@ -9,11 +9,12 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 # Never cancel a deployment halfway through publication. Every publisher also
-# checks current main; Actions concurrency is not a FIFO queue.
+# checks ancestry against the deployed revision while this lock is held.
 concurrency:
-  group: web-delivery-production
+  group: web-delivery-production-${{ github.event_name == 'workflow_run' && (github.event.workflow_run.conclusion != 'success' || github.event.workflow_run.event != 'push' || github.event.workflow_run.head_repository.full_name != github.repository) && github.run_id || 'eligible' }}
   cancel-in-progress: false
 
 jobs:
@@ -23,9 +24,14 @@ jobs:
       contents: read
       actions: read
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     outputs:
       sha: ${{ steps.gate.outputs.sha }}
     steps:
+      - name: Verification runtime budget and ownership
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: echo '10 minute whole-workflow execution budget (runner queue excluded; parallel jobs count once). Per-job timeout is an additional safeguard. If exceeded, optimize the tests. The agent whose run hits the limit owns optimization and a successful rerun; do not raise or bypass the limit.'
       # Admission code comes from trusted main, never an unchecked event SHA.
       - uses: actions/checkout@v4
         with:
@@ -40,11 +46,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Superseded automatic candidates need no more runner time.
-          if [[ "$GITHUB_EVENT_NAME" == workflow_run && "$(git rev-parse origin/main)" != "$REQUEST_SHA" ]]; then
-            echo 'Skipping superseded main candidate'
-            exit 0
-          fi
           args=(--platform linux --sha "$REQUEST_SHA")
           if [[ -n "$VERIFY_RUN_ID" ]]; then args+=(--run-id "$VERIFY_RUN_ID"); fi
           python3 enablement/release_gate.py "${args[@]}"
@@ -53,8 +54,17 @@ jobs:
     needs: admit
     if: needs.admit.outputs.sha != ''
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 10
+    env:
+      PUBLIC_POSTHOG_ENABLED: ${{ vars.PUBLIC_POSTHOG_ENABLED || 'true' }}
+      PUBLIC_POSTHOG_TOKEN: ${{ vars.PUBLIC_POSTHOG_TOKEN }}
+      PUBLIC_POSTHOG_HOST: https://eu.i.posthog.com
+      PUBLIC_POSTHOG_ENVIRONMENT: production
     steps:
+      - name: Verification runtime budget and ownership
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: echo '10 minute whole-workflow execution budget (runner queue excluded; parallel jobs count once). Per-job timeout is an additional safeguard. If exceeded, optimize the tests. The agent whose run hits the limit owns optimization and a successful rerun; do not raise or bypass the limit.'
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -92,26 +102,35 @@ jobs:
         run: |
           npm run build
           node scripts/site-build/package-apparent.mjs
-          node --test scripts/brand/test-brand-favicon.mjs scripts/browser-proof/test-github-stars.mjs scripts/pages/test-latest-download.mjs scripts/pages/test-platform-os.mjs scripts/pages/test-public-homepage.mjs scripts/browser-proof/test-video-demo.mjs
-          node --test scripts/commerce/test-package-text.mjs scripts/site-build/test-expected-canonical-packaging.mjs scripts/browser-proof/test-upstream-link-guard.mjs scripts/commerce/test-package-feature-grid.mjs scripts/browser-proof/test-og-stage-redirect.mjs scripts/browser-proof/test-og-video-stage-browser.mjs
+          node --test scripts/brand/test-brand-favicon.mjs scripts/browser-proof/test-github-stars.mjs scripts/pages/test-latest-download.mjs scripts/pages/test-platform-os.mjs scripts/pages/test-public-homepage.ts scripts/browser-proof/test-video-demo.mjs
+          node --test scripts/commerce/test-package-text.mjs scripts/site-build/test-expected-canonical-packaging.mjs scripts/browser-proof/test-upstream-link-guard.mjs scripts/browser-proof/test-og-stage-redirect.mjs scripts/browser-proof/test-og-video-stage-browser.mjs
           cp -a dist-apparent "$RUNNER_TEMP/public-artifact"
           node scripts/connect/compose-connect.mjs
-      - name: Reconcile accepted live homepage and prepare Pages-only artifact
+      - name: Verify default-enabled analytics with isolated synthetic transport
+        working-directory: connect/web
+        env:
+          CONNECT_EVIDENCE: ${{ runner.temp }}/analytics-browser-evidence
+        run: npm run test:analytics
+      - name: Prepare source-built Pages artifact
         working-directory: public/site
         run: |
-          node --test scripts/connect/test-compose-connect.mjs scripts/pages/test-pages-package.mjs scripts/pages/test-pages-video.mjs scripts/pages/test-pages-video-runtime.mjs
-          node scripts/pages/prepare-pages.mjs
-          node scripts/site-build/verify-composed.mjs
+          node --test scripts/connect/test-compose-connect.mjs scripts/pages/test-pages-package.ts scripts/pages/test-pages-video.mjs scripts/pages/test-pages-video-runtime.mjs
+          node scripts/pages/prepare-pages.ts
+          COMPOSE_PUBLIC_INPUT="$RUNNER_TEMP/public-artifact" node scripts/site-build/verify-composed.ts
           PUBLIC_THEME_ARTIFACT=public/site/dist-apparent THEME_SURFACES=public,connect,recipient node ../../shared/ui/test/appearance.mjs
           node scripts/pages/prepare-pages-video.mjs
+          ../../connect/service/node_modules/.bin/esbuild lib/pages-worker.ts --bundle --platform=browser --format=esm --outfile=dist-apparent/_worker.js
+          PAGES_WORKER=dist-apparent/_worker.js node --test scripts/pages/test-pages-video-runtime.mjs
+          SITE_ARTIFACT=dist-apparent node --test scripts/pages/test-public-homepage.ts
+          python3 scripts/cd/publish_pages.py seal ${{ needs.admit.outputs.sha }}
       - uses: actions/upload-artifact@v4
         with:
           name: website-${{ needs.admit.outputs.sha }}
-          path: public/site/dist-apparent/
+          path: .build/website/
           if-no-files-found: error
           # The checked public demos use .local-media; do not drop their assets.
           include-hidden-files: true
-          retention-days: 7
+          retention-days: 90
       - name: Verify Connect browser behavior across credentialed origins
         working-directory: public/site
         env:
@@ -126,8 +145,8 @@ jobs:
         run: |
           (cd ../../connect/web && CONNECT_BUILD_DIR=dist-test npm run build)
           node scripts/connect/compose-connect.mjs
-          node scripts/pages/prepare-pages.mjs
-          node scripts/site-build/verify-composed.mjs
+          node scripts/pages/prepare-pages.ts
+          node scripts/site-build/verify-composed.ts
           npm run test:hosted
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -144,8 +163,12 @@ jobs:
       name: website-production
       url: https://app.tryapparent.com
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
+      - name: Verification runtime budget and ownership
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: echo '10 minute whole-workflow execution budget (runner queue excluded; parallel jobs count once). Per-job timeout is an additional safeguard. If exceeded, optimize the tests. The agent whose run hits the limit owns optimization and a successful rerun; do not raise or bypass the limit.'
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -153,7 +176,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: website-${{ needs.admit.outputs.sha }}
-          path: public/site/dist-apparent
+          path: .build/website
       - uses: actions/setup-node@v4
         with:
           node-version: '22.23.0'
@@ -163,6 +186,7 @@ jobs:
         working-directory: connect/service
       - name: Publish checked main to Cloudflare Pages (never Clanker or the Worker)
         env:
+          GH_TOKEN: ${{ github.token }}
           WEBSITE_PAGES_API_TOKEN: ${{ secrets.WEBSITE_PAGES_API_TOKEN }}
         run: GITHUB_SHA="${{ needs.admit.outputs.sha }}" python3 public/site/scripts/cd/publish_pages.py
       - uses: actions/upload-artifact@v4
@@ -182,11 +206,18 @@ jobs:
     timeout-minutes: 10
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      HOSTED_WORKER_NAME: ${{ vars.HOSTED_WORKER_NAME }}
+      HOSTED_D1_NAME: ${{ vars.HOSTED_D1_NAME }}
       HOSTED_D1_ID: ${{ vars.HOSTED_D1_ID }}
       HOSTED_R2_BUCKET: ${{ vars.HOSTED_R2_BUCKET }}
-      HOSTED_GOOGLE_CLIENT_ID: ${{ vars.HOSTED_GOOGLE_CLIENT_ID }}
+      POSTHOG_ENABLED: ${{ vars.POSTHOG_ENABLED || 'true' }}
+      SHARING_ENABLED: ${{ vars.SHARING_ENABLED || 'true' }}
       WRANGLER_SEND_METRICS: 'false'
     steps:
+      - name: Verification runtime budget and ownership
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: echo '10 minute whole-workflow execution budget (runner queue excluded; parallel jobs count once). Per-job timeout is an additional safeguard. If exceeded, optimize the tests. The agent whose run hits the limit owns optimization and a successful rerun; do not raise or bypass the limit.'
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -200,14 +231,20 @@ jobs:
         working-directory: connect/service
       - name: Render approved resource bindings (never apply migrations)
         run: python3 public/site/scripts/cd/hosted_config.py
-      - name: Deploy current checked main and read back version and anonymous CORS
+      - name: Check source ordering under the publication lock
+        id: order
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: python3 public/site/scripts/cd/verify_worker.py --publication-needed "${{ needs.admit.outputs.sha }}"
+      - name: Deploy checked main and read back version and anonymous CORS
+        if: steps.order.outputs.publish == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           set -euo pipefail
           export GITHUB_SHA="${{ needs.admit.outputs.sha }}"
           test -n "$CLOUDFLARE_API_TOKEN"
-          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$GITHUB_SHA"
           cd connect/service
           ./node_modules/.bin/wrangler deploy --config wrangler.cd.json --tag "$GITHUB_SHA" --message "GitHub Actions $GITHUB_RUN_ID commit $GITHUB_SHA" --strict --no-autoconfig
           cd ../..
@@ -218,3 +255,19 @@ jobs:
           name: hosted-deployment-receipt
           path: connect-service-receipt.json
           if-no-files-found: ignore
+
+  runtime-budget:
+    if: always()
+    needs: [admit, verify, website, hosted]
+    permissions:
+      contents: read
+      actions: read
+    name: Workflow runtime budget
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/runtime-budget

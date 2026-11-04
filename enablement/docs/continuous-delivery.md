@@ -6,18 +6,19 @@ they do not rebuild the application.
 Use `python3 enablement/verification.py --base <base> --run` for explicit affected
 local checks. Dirty-tree, hidden-index and exact-HEAD push guards remain enforced.
 
-`Linux verification` and `Mac verification` run independently on `main`, each
-coalescing superseded runs within its own platform. Both call the same reusable
-`verification-platform.yml`, preserving the full Rust, Engine/client, browser,
-Electron and applicable native checks. Each checks the entire tree, not just the
-latest push delta: changes from a cancelled earlier run cannot escape verification.
-Full verification is main-only, including explicit `workflow_dispatch`; a dispatch
-on another ref skips the reusable workflow before allocating its runners. PRs use
-focused checks, independent review, current-base integration checks and required
-native/platform proof before merge. Do not dispatch or wait for full branch CI as
-a merge gate. After merge, full verification of the exact main commit gates
-publication; a failed platform leaves its last verified release available.
-Each caller's `verify / Release verification` job is its platform receipt.
+`Linux verification` runs on main pushes. Running verification finishes; only
+pending work is replaced. `Mac verification` follows successful Linux runs and
+checks their exact SHA, so every automatic Mac candidate retains matching Linux
+proof even while main advances. Mac's running work also finishes and its pending
+candidates coalesce; slow Mac capacity never blocks Linux. Manual main dispatches
+remain diagnostic and cannot substitute for automatic release receipts.
+Both use `verification-platform.yml` and retain full Rust, Engine/client, browser,
+Electron and applicable native checks against the entire selected tree. Cancelled
+pending runs cannot hide changes. Full verification is main-only; feature branches
+use focused checks, independent review, current-base integration and required
+native/platform proof before merge. Do not wait for full branch CI as a merge gate.
+Linux's terminal job is `verify / Release verification`; Mac's terminal receipt
+includes the exact tested SHA, since a workflow-run control SHA may be newer.
 General Mac verification uses `macos-15-intel` so it does not depend on the
 standard Apple Silicon runner pool. The required Xcode/macOS SDK remains selected
 explicitly. Preview publication stays on `macos-latest` for arm64 packaging; Intel
@@ -30,18 +31,44 @@ successful Linux/shared receipt. Mac preview publication requires both the
 Linux/shared and Mac receipts for the same commit. A queued/failed Mac run cannot
 hold Linux publication; Linux success cannot authorize a Mac release.
 `enablement/release_gate.py --platform linux|macos` validates the exact caller
-workflow, upstream run/attempt, repository, main push, SHA and every required job.
+workflow, upstream run/attempt, repository, main push (or Linux-verified Mac
+follower), SHA and every required job.
 PR/manual checks, skipped jobs, failed/cancelled runs, legacy combined receipts
 and another platform's receipt cannot substitute for the required proof.
 
-Automatic stale candidates are skipped before builds. Every downstream checkout
-and website artifact uses the admitted SHA, including when `workflow_run`'s default
-SHA points at a newer main commit. Publication locks are separate from cancellable
-verification; a new push never cancels publication. Existing service activation,
-schema, consent and native/product acceptance requirements are unchanged.
+Verified main ancestors may publish while newer main commits are still testing.
+Every checkout and artifact uses the admitted SHA. Publication locks serialize
+writers without interrupting publication. Under those locks, Linux previews,
+Pages, Worker and the Mac appcast compare source ancestry against the published
+revision; equal/older candidates never replace newer deployments. Automatic Linux
+packaging jobs cancel older automatic builds per architecture after exact-SHA
+admission of a newer Linux-verified candidate. Manual/tag and verification-only
+builds use separate groups. One publication job retains a noncanceling lock around immutable assets and feed
+repair together; pending transactions may coalesce, but running feed replacement
+cannot be interrupted by a newer build. This uses the concurrency syntax accepted
+by pinned actionlint 1.7.12. Unknown or
+divergent identities fail closed. Mac also retains its monotonic Sparkle build
+number check. All writers must use these workflow locks; out-of-band deployment
+is not coordinated by Actions. Activation variables, schema and consent
+requirements remain unchanged. Desktop proof follows the
+[shared-behavior/native-boundary split](../../capture/desktop/docs/native-testing.md):
+shared renderer and real Rust↔Electron behavior run on Linux; only affected OS
+boundaries need native proof before merge. Shared-only changes may reuse applicable
+Mac seam evidence without a fresh Mac workflow walkthrough. Before Mac publication,
+retain a short current-package launch/interaction/cleanup smoke and applicable
+native evidence alongside the exact-commit verification/signing gates. This policy
+does not remove configured jobs, implement automatic selection or turn skipped
+checks into passes; existing executable admission remains in force.
 
 Manual/tag Linux releases require the same exact Linux/shared receipt; manual Mac
-previews require both receipts. Linux `verify_only` still permits isolated branch
+previews require both receipts. For Linux Main previews and Mac previews, optional
+`candidate_sha` selects an exact verified main ancestor; empty retains the dispatch
+commit. Linux selection excludes tag, bridge and verification-only modes. When
+that immutable Linux release already exists, Main publication skips packaging
+and repairs the feed using its checked assets. Publication refreshes remote tags
+before feed identity/ancestry validation, including tags created after checkout.
+The selected SHA flows
+through checkout, tags, admission and feed ordering. Linux `verify_only` still permits isolated branch
 packaging without publication. Failed required verification leaves that platform's
 last published version available; fix or revert main and verify the next candidate.
 CodeQL managed setup is disabled by Simon's explicit instruction; it is not a
@@ -96,20 +123,25 @@ Node 22.23.0 and Bun 1.3.10 are pinned. Browser installation uses the version of
 `VITE_HOSTED_API_ORIGIN=https://hosted.tryapparent.com`. The production artifact
 is saved **before** a separate loopback-configured browser build. The loopback
 package is never uploaded for deployment. Artifact download is scoped to the
-same workflow run and named with its event SHA. Production runs are serialized
-without canceling a deployment halfway through; each publisher also refuses a
-candidate that is no longer current `main`. Pages treats a revision superseded
-after admission as a successful skip, without uploading or issuing a deployment
-receipt; remote lookup, upload and readback errors still fail the job. A relevant
+same workflow run and named with its admitted SHA. The website artifact includes
+compiled Pages Functions, provider config and a complete checksum manifest outside
+the served tree; publication uses `--no-bundle` and verifies the downloaded bytes.
+The source-built homepage is never replaced by a committed deployment snapshot.
+Website artifacts are retained for 90 days, with Pages deployment IDs and receipts
+supporting rollback without rebuilding. Production runs are serialized
+without canceling a deployment halfway through. Publishers admit verified main
+ancestors but refuse to replace an equal or newer deployed revision. Pages treats
+such a superseded revision as a successful skip, without uploading or issuing a
+deployment receipt; remote lookup, upload and readback errors still fail the job. A relevant
 later push supplies the replacement; otherwise dispatch the workflow on `main` after reviewing it.
 
 ## Website activation: Cloudflare Pages
 
-The active website job now publishes only `public/site/dist-apparent` to the isolated
+The active website job now publishes only the sealed source-built `dist-apparent` to the isolated
 `apparent-capture` Pages project, using `public/site/scripts/cd/publish_pages.py` and
 `public/site/wrangler.pages.jsonc`. It does not execute `public/site/wrangler.jsonc`, deploy the
 hosted Worker, or connect to Clanker. See
-[`../public/site/docs/pages-deploy.md`](../public/site/docs/pages-deploy.md) for the current build,
+[`../../public/site/docs/pages-deploy.md`](../../public/site/docs/pages-deploy.md) for the current build,
 accepted-homepage reconciliation, video limits, exact hostname cutover and rollback.
 Set `WEBSITE_PAGES_API_TOKEN` in `website-production`; the existing
 `WEBSITE_CD_ENABLED=true` gate enables only Pages. Remove obsolete SSH settings
@@ -120,8 +152,8 @@ when present; they are no longer read. The hosted activation gate is unchanged.
 After canonical Pages acceptance, the capture site's Caddy serving block,
 release symlink and historical release directories were removed. Do not restore
 the old DNS A record, configure website SSH credentials, recreate that release
-tree or run historical overlay activators. Production `publish_site.py` already
-rejects this root; its temporary-filesystem tests are not a deployment procedure.
+tree or run historical overlay activators. The retired publisher, activators
+and their obsolete protocol tests have been deleted.
 Use only the Pages rollback in `public/site/docs/pages-deploy.md`.
 
 The proxy is shared. Its container, volumes, unrelated sites and separate
@@ -131,7 +163,7 @@ inert coordination inode; there is no active capture website behind it.
 
 ## Hosted activation (separate operator gate)
 
-Complete [`../connect/service/README.md`](../connect/service/README.md)'s deployment prerequisites
+Complete [`../../connect/service/README.md`](../../connect/service/README.md)'s deployment prerequisites
 first: approved Free-plan configuration and CPU proof, existing private Standard
 R2 bucket, initialized D1/ledger, live Google/cookie/device/cron proof and security
 review. A green local workerd suite is not those proofs. Do not activate this job
@@ -142,19 +174,37 @@ Configure `hosted-production`, limited to `main`, with:
 | Kind | Name | Meaning |
 | --- | --- | --- |
 | Variable | `CLOUDFLARE_ACCOUNT_ID` | Approved account ID |
+| Variable | `HOSTED_WORKER_NAME` | Exact existing approved Worker service name; no template fallback |
+| Variable | `HOSTED_D1_NAME` | Exact existing database name |
 | Variable | `HOSTED_D1_ID` | Existing initialized database UUID |
 | Variable | `HOSTED_R2_BUCKET` | Existing private Standard bucket name |
-| Variable | `HOSTED_GOOGLE_CLIENT_ID` | Approved Google OAuth client ID (public) |
 | Secret | `CLOUDFLARE_API_TOKEN` | Least-privilege token for this Worker/deployment and binding reads |
 
-The existing Worker's `GOOGLE_CLIENT_SECRET` and `TOKEN_ENCRYPTION_KEY` stay in
-Cloudflare. They are never supplied to Actions or rotated by CD. Restrict the token
+The existing Worker's `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+`BETTER_AUTH_SECRET` and `TOKEN_ENCRYPTION_KEY` stay in Cloudflare. They are never supplied to Actions or rotated by CD. Restrict the token
 as far as Cloudflare permits and review its actual access before activation.
 `hosted_config.py` validates the required public identifiers and writes an ignored
 `connect/service/wrangler.cd.json` next to the existing entrypoint. The fixed production
 origins retain hosted API/auth/callback and legacy transition CORS; the UI stays
-on app. Observability, workers.dev and preview URLs remain off. No CPU override,
+on app. The Worker owns `/auth/*`, `/v1/*`, `/s/*` and the four exact recipient assets
+(`/share-view.js`, `/share-view.css`, `/share-wordmark.svg`, `/share-font.ttf`);
+Pages/legacy UI and the rest of the hostname remain untouched. The initial
+sharing activation must establish these exact routes before CD preflight passes.
+`SHARING_ENABLED` defaults to `true` for this approved deployment; an explicit
+`false` environment variable stops new grants while retaining existing-link
+reads and revocation. This does not publish any capture without sender consent. `keep_vars` preserves other writers' plain variables; provider secret
+bindings are not rendered, replaced or rotated. Preflight reads the selected
+existing service and refuses missing service, different D1/R2/origin bindings,
+missing/malformed settings, missing auth-secret names, route/cron drift or
+additional non-variable bindings it would discard.
+No token permission or provider setting is changed by this admission check. Observability, workers.dev and preview URLs remain off. No CPU override,
 resource creation command, database migration or ledger initializer is run.
+
+A descriptive readback User-Agent avoids confusing edge rejection of a library
+default with Worker failure; it is not authentication. Unknown/legacy publication
+tags still fail source-order admission. Do not truncate, guess or rewrite them to
+enable CD: the separately approved initial cutover must establish its full source
+identity and retain the previous provider version/rollback record first.
 
 After separate approval, set repository variable `HOSTED_CD_ENABLED=true` and
 dispatch `main`. Wrangler uses strict deployment and tags the version with the
@@ -236,8 +286,10 @@ Cargo build/test), `connect-web` (existing package build/browser fixtures),
 (JS and synthetic Electron smoke). Use the existing web workflow for complete
 composed-site and cross-origin acceptance, and platform workflow for real Rust
 bridge/native checks. Entrypoints require the same toolchains, browser and system
-dependencies as those workflows; they do not install OS dependencies or grant
-native acceptance. Run heavy local commands through the existing build runner.
+dependencies as those workflows; they do not install OS dependencies. The Linux
+`desktop-ui-integration` lane supplies shared renderer/real-bridge proof under the
+Desktop policy, not proof of Mac or Linux OS effects. Run heavy local commands
+through the existing build runner.
 
 Client edits also select Capture: root tests intentionally reuse client scenarios
 with the real AppConfig provider. Renderer edits select Capture for Rust bridge
@@ -257,16 +309,142 @@ candidate, including cancelled-run changes. Missing or incompatible proof must
 rerun. Validate shadow decisions against full execution and investigate omissions.
 Dependency caches are not test receipts; no speedup is claimed here.
 
+## Verification receipts and timing
+
+Platform verification runs Desktop UI, Connect client, Connect browser and Rust
+jobs independently after selector contracts. All four jobs must pass on the exact
+candidate before the terminal platform receipt or publication admission succeeds.
+The browser job owns Bun/Chrome setup and the existing production-build, artifact,
+route and synthetic-browser checks; Rust retains root/staged-Engine checks and
+real bridge/native acceptance. Browser tests still execute on each claimed platform.
+This split adds no browser-result reuse or owner-report skipping.
+
+`verification.py --suite rust --run` explicitly executes full root and staged-Engine
+checks; `--suite browser --run` explicitly executes the browser package checks.
+These choices cannot become empty successes from changed-tree selection. Omitting
+`--suite` preserves normal changed-tree selection for hooks and manual checks.
+Receipt wrapping forwards the explicit choice and labels it `platform-rust` or
+`platform-browser`; the default remains `changed-tree`.
+
+The platform Rust job uses `--parallel-contracts` to overlap the existing isolated
+Python selector/hook/temp contracts with the selected build/test sequence. Both paths must
+succeed before the receipt succeeds; failure or cancellation terminates and reaps
+the owned contract process group. The receipt wrapper forwards this option.
+Local invocations remain sequential unless the option is explicitly supplied.
+
+Mac CI also supplies `--overlap-root-build`: after Cargo reports successful full
+root test compilation, the ordinary app build runs alongside test execution.
+Cargo still launches the tests with two test threads, and each build retains its
+existing worker limit. Both commands must succeed before Engine or downstream
+checks; failure or cancellation kills the owned process groups and reaps both
+direct children. The fresh app binary remains required. Focused filters and
+invocations without this option keep sequential test/build ordering. This overlap
+does not establish a runtime improvement until measured on the actual Mac run.
+
+`--cargo-timings` records Cargo unit reports on the existing build/test commands;
+the platform job retains available HTML reports even when later verification
+fails. Reports may be absent for an interrupted compilation and do not certify
+native acceptance. The private verification TMPDIR is removed after successful
+verification only. Failure or interruption leaves it to disposable hosted-runner
+teardown, since shell exit alone does not prove every detached worker has stopped.
+
+`verification.py --run|--pr --receipt-dir <external-directory>` and
+`owner_lanes.py --lane <name> --run --receipt-dir <external-directory>` record
+observation-only JSON through `enablement/verification/receipt.ts` (Node 22).
+The wrapper can also run a bounded existing command:
+`node enablement/verification/receipt.ts --suite <name> --output <external-directory> -- <command> ...`.
+It preserves the command's working directory and nonzero exit status.
+
+Receipts include the actual checkout SHA, a fingerprint of all tracked and
+nonignored working inputs, platform/kernel, tool-version digests, verifier digest,
+start/end timestamps, duration, outcome, and an Actions run/attempt evidence link.
+They include neither command arguments, output nor environment values. Generated,
+ignored and external/native inputs are explicitly outside this observation's
+attestation; **these receipts cannot skip verification or authorize publication**.
+An initial `in_progress` record precedes command execution. Signals are forwarded
+to the command group and yield `interrupted`; hard termination leaves incomplete
+proof. Source mutations are recorded and never labelled reusable.
+
+The platform workflow uploads renderer and changed-tree observations for 14 days,
+including failures, and puts command duration in the job summary. Missing uploads
+or unfinished records are not passes. For queue time, use Actions run/job timestamps
+alongside receipt execution times; command duration does not include runner wait,
+setup, or the entire platform workflow. No speedup is claimed from instrumentation.
+
+## Bounded Connect client reuse pilot
+
+The independent Connect client build/test job uses
+`enablement/verification/client-suite.ts`. It runs alongside Desktop UI and root
+Rust verification after selector contracts pass, on the exact candidate checkout.
+Both the terminal verification job and publication admission require its successful
+`connect-client (<runner>)` result; older runs without that job cannot admit
+publication. Its dedicated Rust dependency cache targets `target/ci-connect-client`,
+matching the verifier, separately from root build outputs. This scheduling split
+does not enable owner-report skipping or broaden result reuse.
+
+Reuse is eligible only on identified
+GitHub-hosted **Linux** images; Mac and local runs still execute the suite. Root
+Rust checks, real-provider consumer tests and native/platform proof always remain
+required. This pilot does not cache any GUI/native acceptance or release artifacts.
+
+The standalone client stream excludes `capture/`, `composition/`, `shared/`,
+`public/`, `connect/web/` and `enablement/native/`. Its reviewed Cargo package has
+no path dependencies, build script or source/fixture includes outside the package;
+its tests construct local synthetic configuration, media and transport fixtures.
+Root tests still execute the real application-provider consumers. Service/API,
+root build, workflow, verification and unknown inputs remain conservative
+invalidation inputs, even when not compiled by the standalone client. Changes in
+excluded streams do not invalidate matching client proof; that is not permission
+to skip those streams' own checks or any native acceptance.
+
+Client sources/fixtures/manifests/locks, root Cargo manifests/locks and `.cargo`
+configuration are additionally pinned by a reviewed signature. A changed
+package/configuration automatically runs in full; updating that signature requires
+reviewing its new dependency and runtime-input closure, not copying a new hash to
+make a test pass. The renewed signature covers the current encryption, renewal,
+settings and transport scenarios. New untracked work anywhere, symlinks in included inputs,
+unknown runner images, global Cargo configuration, missing tool probes and
+application environment overrides disable reuse. Image, kernel, architecture,
+Rust/Cargo/curl/checksum/compiler/libc/Node identities and relevant build/locale
+environment also participate in compatibility. Curl proxy/bypass and certificate
+environment overrides invalidate prior proof too. Values are hashed rather than
+published.
+
+A successful baseline plus **two matching full shadow executions** are required
+before the first reuse, independently per compatible input/environment identity.
+After four reuses the next candidate runs the suite as an uncached result audit
+(Cargo dependency/build caches remain usable). Audit/shadow failure disables reuse
+for that verifier namespace, including after subsequent full passes. Reviewed
+verifier changes create a new namespace and restart shadow qualification.
+
+Actions caches only the small proof/tombstone JSON, with a unique run/attempt key
+and a verifier/platform restore prefix. Automatic main workflows alone save it;
+manual diagnostics cannot displace it. Failed audits are saved too. A missing,
+malformed, incompatible, failed or incomplete proof always executes; malformed
+proof also disables reuse. Complete client-stream input identity, not the last-push delta,
+prevents cancelled intermediate commits from hiding changes. Reuse reports both
+the currently checked candidate and the original successful test SHA/evidence.
+The `connect-client-proof-<runner>` artifact records decisions and duration for
+14 days. No speedup is assumed until these live artifacts demonstrate it.
+
+For a local full execution through the build runner:
+`node enablement/verification/client-suite.ts --state <external-directory>/proof.json --offline --shadow`.
+Local runs deliberately cannot qualify CI reuse. Never copy local proof into an
+Actions cache or treat a dependency cache as a successful test receipt.
+
 ## Commit integration checkpoint
 
 With `core.hooksPath=.githooks`, `post-commit` refreshes `origin/main` with a
 five-second, noninteractive fetch on feature branches. When HEAD does not contain
-that main commit, it prints `INTEGRATION REQUIRED` and the exact fetched SHA.
-The owning agent should finish running operations, preserve any remaining
-uncommitted work, rebase onto that SHA, inspect incoming changes and rerun affected
-checks before starting the next work section. This is an advisory checkpoint,
-not an enforced merge gate or an automatic rebase. A partial commit remains a
-partial commit: the hook never stashes, stages, rewrites, pushes or changes files.
+that main commit, it prints `INTEGRATION CHECKPOINT`, the exact fetched SHA,
+incoming paths/areas and paths changed on both branches. Shared/build/verification
+changes explicitly prompt consumer assessment. Paths are advisory: disjoint files
+can still share contracts. Assess incoming dependencies and integrate immediately
+for conflicts or relevant changes; otherwise finish the current bounded slice.
+Before merging, fetch current main, integrate, rerun affected checks and complete
+independent review. This checkpoint never automatically rebases or relaxes that
+pre-merge requirement. Preserve remaining uncommitted work explicitly: the hook
+never stashes, stages, rewrites, pushes or changes files.
 
 Detached checkouts, main, and in-progress rebase/merge/cherry-pick/revert/bisect
 operations skip the checkpoint. A failed or timed-out fetch reports unknown
@@ -274,3 +452,38 @@ freshness without failing the successful commit. No background worker is started
 other worktrees are untouched. Existing worktrees acquire the hook when they
 integrate this change; frozen evidence checkouts need not be updated. Local hook
 checks do not replace current-main integration and review before merge.
+
+Linux Main's signing-history migration uses the v2 release namespace. The one-time
+`bridge_commit` dispatch shares the Linux publication lock and aliases verified
+canonical v2 assets; it never admits an unverified branch build. The signed bridge
+tag retains legacy ancestry outside Main, with an identical canonical source tree.
+Keep that permanent v1 release for late upgraders and never resume v1 publication.
+Preparation, exact evidence and rollback constraints are in
+[`Linux signing-history migration`](../../capture/desktop/docs/linux/linux.md#signing-history-migration-november-2026).
+
+## Verification runtime budgets
+
+The complete pre-commit hook has 60 seconds; pre-push has 300 seconds.
+Linux workflow attempts have a 10-minute workload execution budget; Mac
+verification, native proof and preview release attempts have 15 minutes. The final `runtime-budget` gate reads all jobs in that exact run attempt,
+including reusable workflows, and measures the union of their execution intervals.
+Parallel jobs count once. Gaps with no executing workload job (runner, dependency
+and concurrency waiting) and budget-audit jobs are excluded. Setup, checks,
+cleanup and post actions in workload jobs count. Reruns audit their own attempt.
+API errors, incomplete inventories, nonterminal jobs or invalid timestamps fail
+closed. Skipped jobs consume no execution time.
+
+Enforce the whole-workflow budget at completion: fail the final audit above
+600 seconds for Linux or 900 seconds for Mac without automatic whole-workflow cancellation or a standalone
+waiting-runner watchdog. This is Simon's selected policy. The final read-only
+composite audit waits for all workload jobs; it does not poll or cancel them.
+Workload-job timeouts remain additional safeguards: 10 minutes for Linux,
+15 minutes for Mac. A failed
+verification workflow cannot admit downstream releases. Native proof, cleanup
+requirements and correctness/release gates remain required. Same-workflow
+publication may finish before the final audit fails; audit success never replaces
+other admission checks.
+The agent whose run exceeds a budget owns optimizing the tests and rerunning
+successfully before continuing delivery. Do not increase/bypass limits, remove
+coverage or weaken checks to obtain a pass. CI logs print this instruction before
+setup so it remains visible even when GitHub terminates a timed-out job.

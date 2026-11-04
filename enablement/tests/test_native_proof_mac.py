@@ -22,7 +22,7 @@ class NativeProofMacTests(unittest.TestCase):
         self.assertNotIn('secrets.', workflow)
         self.assertNotIn('write\n', workflow)
         self.assertIn("github.event_name == 'workflow_dispatch'", workflow)
-        self.assertIn('    timeout-minutes: 65\n', workflow)
+        self.assertIn('    timeout-minutes: 10\n', workflow)
         self.assertIn('timeout-minutes: 4\n', workflow)
         self.assertIn('persist-credentials: false', workflow)
 
@@ -59,7 +59,8 @@ class NativeProofMacTests(unittest.TestCase):
         workflow = WORKFLOW.read_text()
         main = (ROOT / '.github/workflows/verification-platform.yml').read_text()
         block = workflow.split('      - uses: Swatinem/rust-cache@v2\n', 1)[1].split('      - uses:', 1)[0]
-        main_block = main.split('      - uses: Swatinem/rust-cache@v2\n', 1)[1].split('      - uses:', 1)[0]
+        main_root = main.split('  rust:\n', 1)[1]
+        main_block = main_root.split('      - uses: Swatinem/rust-cache@v2\n', 1)[1].split('      - uses:', 1)[0]
         def workspaces(text):
             return re.search(r'          workspaces: \|\n((?:            .*\n)+)', text)[1]
         self.assertEqual(workspaces(block), workspaces(main_block))
@@ -76,17 +77,62 @@ class NativeProofMacTests(unittest.TestCase):
             self.assertIn('if: always()\n', step)
             self.assertIn('timeout-minutes: 2\n', step)
 
-    def test_step_caps_preserve_post_action_reserve(self):
+    def test_job_budget_bounds_steps_and_keeps_cleanup_required(self):
         workflow = WORKFLOW.read_text()
         job_cap = int(re.search(r'^    timeout-minutes: (\d+)$', workflow, re.M)[1])
-        steps = re.split(r'^      - ', workflow.split('    steps:\n', 1)[1], flags=re.M)[1:]
-        caps = []
+        self.assertEqual(job_cap, 10)
+        steps = re.split(r'^      - ', workflow.split('  runtime-budget:\n', 1)[0].split('    steps:\n', 1)[1], flags=re.M)[1:]
+        self.assertTrue(steps[0].startswith('name: Verification runtime budget and ownership\n'))
         for step in steps:
+            if step.startswith('name: Verification runtime budget and ownership\n'):
+                # The notice runs inside the job budget, before setup.
+                self.assertIn('runner queue excluded', step)
+                self.assertIn('agent whose run hits the limit owns optimization', step)
+                self.assertIn('do not raise or bypass the limit', step)
+                continue
             cap = re.search(r'^        timeout-minutes: (\d+)$', step, re.M)
             self.assertIsNotNone(cap, step.splitlines()[0])
-            caps.append(int(cap[1]))
-        self.assertEqual(sum(caps), 58)
-        self.assertGreaterEqual(job_cap - sum(caps), 7)
+            self.assertGreater(int(cap[1]), 0)
+        # Step caps are ceilings, not additive allocations: the job's 10m
+        # deadline wins. They cannot prove a cleanup reserve. The package/cache
+        # optimization must leave time for these mandatory final steps; a job
+        # timeout is failed proof, never evidence of successful cleanup.
+        cleanup_names = ('Verify owned cleanup and retain only allowlisted evidence',
+                         'Retain synthetic proof evidence including failures')
+        for step, name in zip(steps[-2:], cleanup_names):
+            self.assertTrue(step.startswith('name: ' + name + '\n'))
+            self.assertIn('        if: always()\n', step)
+            self.assertIn('        timeout-minutes: 2\n', step)
+
+    def test_share_build_is_required_and_never_falls_back_to_recompilation(self):
+        workflow = WORKFLOW.read_text()
+        build, native = workflow.split('  connect-worker:\n', 1)
+        self.assertIn('  share-build:\n    name: share-build\n', build)
+        self.assertIn("inputs.scenario == 'share' && inputs.producer_run == '' && inputs.producer_artifact == ''", build)
+        self.assertIn('--producer-kind focused-share-build', build)
+        self.assertIn('artifact: ${{ steps.executables.outputs.artifact-id }}', build)
+        self.assertIn('needs: share-build', native)
+        self.assertIn('  runtime-budget:\n    if: always()\n    needs: [share-build, connect-worker]', workflow)
+        self.assertIn("needs.share-build.result == 'success'", native)
+        self.assertIn("needs.share-build.result == 'skipped'", native)
+        self.assertNotIn("needs.share-build.result == 'failure'", native)
+        self.assertIn('!cancelled()', native)
+        self.assertIn("'focused-share-build' || 'verified-main'", native)
+        self.assertIn('needs.share-build.outputs.artifact || inputs.producer_artifact', native)
+        self.assertEqual(re.findall(r'^    timeout-minutes: (\d+)$', workflow.split('  runtime-budget:\n', 1)[0], re.M), ['10', '10'])
+
+    def test_share_scenario_is_explicit_and_cannot_run_worker_case(self):
+        workflow = WORKFLOW.read_text()
+        self.assertIn('options: [worker, share]\n        default: worker', workflow)
+        worker = workflow.split('      - name: Installed Connect worker restart and encrypted fetch\n', 1)[1].split('      - name:', 1)[0]
+        share = workflow.split('      - name: Installed completed-capture public copy\n', 1)[1].split('      - name:', 1)[0]
+        self.assertIn("if: inputs.scenario != 'share'", worker)
+        self.assertIn("if: inputs.scenario == 'share'", share)
+        self.assertIn('desktop-worker.mjs', worker)
+        self.assertNotIn('desktop-share.ts', worker)
+        self.assertIn('desktop-share.ts', share)
+        self.assertNotIn('desktop-worker.mjs', share)
+        self.assertIn('name: mac-connect-${{ inputs.scenario || \'worker\' }}-native', workflow)
 
     def run_cleanup(self, *, owned=False, unsafe=False):
         script = re.search(r'      - name: Verify owned cleanup.*?python3 - <<\'PY\'\n(.*?)^          PY',
@@ -113,7 +159,7 @@ class NativeProofMacTests(unittest.TestCase):
             ps.chmod(0o700)
             env = dict(os.environ, HOME=str(home), PATH=str(binary) + ':' + os.environ['PATH'],
                        APPARENT_APP_DIR=str(unrelated if unsafe else app), APPARENT_BUILD_TMP=str(build),
-                       APPARENT_CONNECT_PROOF=str(proof), GITHUB_RUN_ID='42', GITHUB_RUN_ATTEMPT='1')
+                       APPARENT_CONNECT_PROOF=str(proof), APPARENT_NATIVE_SCENARIO='worker', GITHUB_RUN_ID='42', GITHUB_RUN_ATTEMPT='1')
             result = subprocess.run(['python3', '-c', script], env=env, capture_output=True)
             self.assertTrue(unrelated.exists())
             self.assertFalse((proof / 'evidence/credentials.json').exists())
