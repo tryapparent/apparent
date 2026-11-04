@@ -96,6 +96,9 @@ test('source-bound AppImage invokes its genuine bundled recipient and preserves 
   const files:Record<string,Buffer>={'apparent.json':Buffer.from(JSON.stringify(bundle)),
     'summary.md':Buffer.from('Synthetic packaged recipient proof\n'),'contact-sheet.png':png};
   let tamper=false, requests=0;
+  let readerKey:import('./grouped-fixture.ts').EndpointKey;
+  let grouped:Awaited<ReturnType<typeof import('./grouped-fixture.ts').groupedFixture>>|undefined;
+  const downloads:string[]=[];
   let loginOutcome:'approve'|'await-cancellation'='approve';
   const server=createServer(async (request,response) => {
     try {
@@ -103,16 +106,20 @@ test('source-bound AppImage invokes its genuine bundled recipient and preserves 
       const route=new URL(request.url!,'http://fixture').pathname;
       response.setHeader('content-type','application/json');
       if(route==='/v1/device/start') {
-        assert.equal(JSON.parse(body).scope,'read');
+        const start=JSON.parse(body);assert.equal(start.scope,'read');
+        if(loginOutcome==='approve')readerKey=start.encryptionKey;
         response.end(JSON.stringify({deviceCode:'synthetic-device-private',userCode:loginOutcome==='approve'?'TEST-CODE':'CANCEL-CODE',verificationUri:`${origin}/device`,expiresIn:30,interval:1}));
       } else if(route==='/v1/device/poll') {
         response.end(JSON.stringify(loginOutcome==='approve'?{status:'approved',scope:'read',accessToken:'synthetic-read-private',refreshToken:'synthetic-refresh-private',expiresIn:3600,refreshExpiresIn:86400,grantId:'synthetic-grant'}:{status:'pending'}));
       } else if(route===`/v1/captures/${id}`) {
         assert.equal(request.headers.authorization,'Bearer synthetic-read-private');requests++;
-        response.end(JSON.stringify({id,status:'ready',files:Object.entries(files).map(([path,bytes])=>({path,size:bytes.length,sha256:hash(bytes)}))}));
+        response.end(JSON.stringify(grouped?.manifest ?? {id,status:'ready',files:Object.entries(files).map(([path,bytes])=>({path,size:bytes.length,sha256:hash(bytes)}))}));
+      } else if(route==='/v1/encryption/peers') {
+        assert.ok(grouped);response.end(JSON.stringify(grouped.peers));
       } else if(route.startsWith(`/v1/captures/${id}/files/`)) {
-        const path=route.slice(`/v1/captures/${id}/files/`.length);assert.ok(files[path]);
-        response.end(tamper && path==='summary.md'?Buffer.from('tampered'):files[path]);
+        const path=route.slice(`/v1/captures/${id}/files/`.length);
+        const bytes=(grouped?.transport ?? files)[path];assert.ok(bytes);downloads.push(path);
+        response.end(tamper && path==='summary.md'?Buffer.from('tampered'):bytes);
       } else {response.statusCode=404;response.end('{}');}
     } catch(error) { response.statusCode=500;response.end('{}');serverErrors.push(String(error)); }
   });
@@ -129,7 +136,7 @@ test('source-bound AppImage invokes its genuine bundled recipient and preserves 
     await run(image,['connect','login','--server',origin,'--no-browser']);
     const status=JSON.parse(await run(image,['connect','status']));
     assert.equal(status.readSignedIn,true);assert.equal(status.enabled,false);assert.equal(status.uploadConsent,false);
-    // Plaintext evidence fixture only: this does not prove distinct encrypted/full-media download modes.
+    // Preserve legacy plaintext retrieval before exercising distinct encrypted groups.
     const full=join(work,'full.apparent');
     await run(image,['fetch',id,'--out',full,'--wait','0']);
     for(const [path,bytes] of Object.entries(files))assert.deepEqual(readFileSync(join(full,path)),bytes);
@@ -139,6 +146,24 @@ test('source-bound AppImage invokes its genuine bundled recipient and preserves 
     assert.deepEqual(readFileSync(join(full,'apparent.json')),files['apparent.json']);
     tamper=true;const invalid=join(work,'invalid.apparent');
     await run(image,['fetch',id,'--out',invalid,'--wait','0'],'failure');assert.equal(existsSync(invalid),false);tamper=false;
+    const {groupedFixture}=await import('./grouped-fixture.ts');
+    const encryptedMetadata=Buffer.from(JSON.stringify({...bundle,audio:'audio.wav'}));
+    grouped=await groupedFixture(origin,id,readerKey!,{...files,'apparent.json':encryptedMetadata});
+    // Remove the earlier legacy inspect output so the real bare-ID route downloads anew.
+    const evidence=join(work,`${id}.evidence.apparent`);rmSync(evidence,{recursive:true});downloads.length=0;
+    assert.equal(JSON.parse(await run(image,['inspect',id,'--json'])).id,id);
+    for(const [path,bytes] of Object.entries(grouped.plain)) {
+      if(path==='audio.wav')assert.equal(existsSync(join(evidence,path)),false);
+      else assert.deepEqual(readFileSync(join(evidence,path)),bytes);
+    }
+    assert.equal(JSON.parse(readFileSync(join(evidence,'.evidence-only.json'),'utf8')).media,'not downloaded');
+    assert.ok(downloads.some(path=>path.startsWith('evidence/')));
+    assert.ok(downloads.every(path=>!path.startsWith('media/')),'evidence inspection must not request media');
+    downloads.length=0;const recording=join(work,'recording.apparent');
+    await run(image,['fetch',id,'--media','--out',recording,'--wait','0']);
+    for(const [path,bytes] of Object.entries(grouped.plain))assert.deepEqual(readFileSync(join(recording,path)),bytes);
+    assert.equal(existsSync(join(recording,'.evidence-only.json')),false);
+    assert.ok(downloads.some(path=>path.startsWith('media/')),'complete fetch must request authenticated media');
     const beforeCancellation=readFileSync(config);loginOutcome='await-cancellation';
     await run(image,['connect','login','--server',origin,'--no-browser'],'cancel-at-approval');
     assert.deepEqual(readFileSync(config),beforeCancellation);loginOutcome='approve';
