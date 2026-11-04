@@ -80,26 +80,33 @@ the existing Settings pages. Missing assets and startup/crash failure restore th
 native General presentation. No onboarding route changes. See
 `../../docs/onboarding-and-settings.md` for consent and recovery behavior.
 
-Electron main owns one persistent, same-user Rust socket/controller. Opening and
+Electron main owns one persistent, same-user backend socket. Opening and
 one-second local refreshes never initiate network access. Each bounded request
 uses Electron's monotonic clock; a ten-second idle lease, EOF, renderer reload,
-crash or window close drops the controller and cancels pending authorization.
-Connect-owned TypeScript (`connect/client/typescript/src/settings-presentation.ts`)
-owns the Electron card's presentation from allowlisted semantic facts. Rust still
-owns the asynchronous controller, consent admission, credentials, health probes
-and durable revocation; these are explicit #529 migration debt. JS does
+crash or window close closes the lease and cancels pending authorization.
+Connect-owned TypeScript (`connect/client/typescript/src/settings-controller.cts`
+and `settings-presentation.ts`) owns the asynchronous controller, consent and
+confirmation workflow, receipt ownership, activation intent and presentation.
+Rust retains local snapshots, auth/renewal, credentials, health probes and durable
+mutations behind closed backend RPC operations; these are explicit #529 migration
+debt. Native EOF/lease enforcement durably cancels a login until activation has
+been explicitly acknowledged against fresh committed gates. JS does
 not read config or implement an auth client. Raw errors/config/device secrets do
 not enter the renderer. Only an explicit zero-argument **Open browser** command
 can open the current Rust-validated public verification URI; no arbitrary URL is
 accepted from the renderer. Ambiguous commands are never retried automatically.
 
-`tests/connect/transport.test.cjs` exercises real Unix-stream transport and projection;
-`tests/connect/smoke.cjs` exercises shipped Electron main/preload/renderer against
-an explicitly synthetic socket. `tests/rust-connect.cjs`, launched by the ignored
+`tests/connect/transport.test.cjs` exercises the retained legacy transport;
+Connect's owner tests cover the new controller/transport. `tests/connect/backend.smoke.ts`
+exercises the shipped Electron controller through main/preload/React, including
+consent, activation, confirmation and stale browser cancellation. The retained
+`smoke.cjs` scenarios verify old-server fallback against labelled synthetic sockets.
+`tests/rust-connect.cjs`, launched by the ignored
 Rust `connect_settings_electron_rust_roundtrip` test, exercises the actual Rust
-listener/controller/production client using Electron's real clock and a synthetic
-loopback pending-device HTTP fixture. It verifies explicit consent admission,
-public-only projection, durable cancel/EOF revocation and preserved config;
+listener/auth client and shipped TypeScript controller using Electron's real clock
+and a synthetic loopback device HTTP fixture. It verifies explicit consent,
+public projection, durable cancel/EOF revocation, preserved config, rejection,
+expiry, offline/retry and public encryption-key enrollment;
 it does not approve a real account or upload media. Run it from the root with
 `APPARENT_CONNECT_TEST_ELECTRON` set to the absolute frontend Electron executable:
 `cargo test --offline connect_settings_electron_rust_roundtrip -- --ignored --nocapture`.
@@ -157,22 +164,32 @@ the owned generated-fixture windows and stay outside git.
 Installed Settings routes Storage to the branded React presentation by default.
 `experiments.electronCaptureLocation=false` restores the native Storage page on
 its next open. No retention policy is changed by enabling the presentation.
-`readRetention()`, `saveRetention(preset)`, `resetRetention()` and
-`readCaptureUsage()` are the only additional preload methods. Only Save takes
-an argument: a validated `week`, `month` or `forever` identifier. Rust supplies
-the option labels, current/custom policy, policy note, effective path and
-formatted logical-byte usage. No renderer-provided path, config, revision,
-deadline, filesystem, shell or arbitrary IPC operation is accepted.
+`readRetention()`, `saveRetention(policy)`, `resetRetention()` and
+`readCaptureUsage()` are the only additional preload methods. TypeScript owns
+retention defaults, custom-value validation, preset mapping, labels and notes:
+Week is 7 media/30 bundle days, Month is 30/90, Forever is null/null. An absent
+field falls back independently to the 7/30 default; explicit JSON `null` means
+forever. Rust returns presence-aware retention values and a stale-edit revision to main;
+main retains the revision and exposes only the policy view to the renderer. Save
+accepts the two allowlisted `mediaDays`/`bundleDays` values, never a config object,
+path or renderer revision. TypeScript selects the Settings capture location from
+native facts; the native usage worker scans the actual effective folder and
+returns formatted logical bytes.
 
 The existing bounded socket worker admits `retention`, `saveretention`,
 `resetretention` and `usage` through its unchanged activation/expiry gate.
 Main retains the last authoritative retention revision; a concurrent edit
-conflicts rather than silently overwriting it. The existing config transaction
-preserves unrelated top-level and nested policy keys and secrets; Reset removes
-only the recognized retention fields, restoring `Policy::default()` (7-day
-media/30-day bundle policy). A custom hand-edited policy remains visible until
-explicitly replaced. Writes fail closed, including malformed/unsafe config;
-failed or outcome-unknown saves require a refresh and are never retried.
+conflicts rather than silently overwriting it. The config transaction compares
+fresh presence-aware owner values under the persistent config lock, preserves
+unrelated top-level and nested policy keys and secrets, and durably publishes
+only after file and directory sync. Reset removes only the recognized retention
+fields. A custom hand-edited policy remains visible until explicitly replaced.
+Malformed known retention values follow the existing cleanup reader's Week
+fallback and are not echoed to the renderer. Writes fail closed on malformed or
+unsafe config;
+failed or outcome-unknown saves require a refresh and are never retried. Rust
+config locking/CAS remains a named temporary executor dependency; the TypeScript
+Storage route owns persistence intent. No Node-side config read/modify/write runs.
 
 Saving/resetting nudges the **existing** Rust cleanup worker, as native Settings
 does: it schedules a pass about five seconds later, deferring while recording.
@@ -181,7 +198,7 @@ pass (normally hourly; first launch pass after about 90 seconds). It retains
 its startup capture folder until app restart. Nothing in the bridge runs a
 cleanup pass or moves a capture; normal policy cleanup remains unchanged.
 
-Usage scans the freshly resolved Rust effective location, not a cached renderer
+Usage scans the freshly resolved native capture location, not a cached renderer
 path, on open and manual refresh only. It counts logical file bytes (not free
 space or physical allocation), does not follow symlink entries, and returns
 an error rather than a partial total on I/O failure, expiry, its 100,000-entry
@@ -231,7 +248,76 @@ and its walkthrough capture/export path was not exercised. Private evidence is
 retained outside the repository; the PR records candidate identity and gates.
 
 
+### Storage policy acceptance (#530)
+
+The policy move uses the existing installed Storage route. Relative to main
+`02c3aa92`, it changes neither Electron 45.2.1 nor the native launcher,
+window ownership, chooser options/parent, focus, permission, clipboard,
+capture-exclusion or cleanup mechanisms. The added policy module is emitted by
+`npm run build` before the unchanged packager copies the Electron tree; it has
+no runtime imports. The location contract types are owner-local so emission
+cannot pull Connect implementation into the Storage runtime.
+
+Linux shared checks exercise the shipped main/preload/renderer and real Rust
+socket. Native filesystem probes use the same create/metadata checks as the
+retained capture-time safety resolver; config publication uses the same flock,
+private temp file, fsync and rename. The new error marker records post-rename
+uncertainty, including unchanged-value saves. There is no new native route or
+OS effect to certify in this slice. The earlier installed-route evidence in
+[PR #357](https://github.com/tryapparent/apparent/pull/357) (Mac `d70b20ce`,
+Linux integrated `05bd4d9d`) and the retention evidence above remain evidence
+for those original seams, not fresh executions of this policy candidate.
+The runtime version is unchanged; subsequent main launcher/packaging work is
+preserved, not certified here. No fallback is retired. Existing native holds,
+including PR #376's Agents recovery, remain independent and open.
+
+No fresh native GUI or Mac execution is claimed. Before Mac publication the
+current packaged-app smoke, relevant native evidence and exact-main signing/CI
+gates still apply. Ordinary Storage policy build/unit checks invoke no Rust
+compiler; bridge/native changes still require their focused native integration.
+
 ## Checks
+
+For ordinary Settings policy and renderer changes, `npm run test:settings` runs
+the TypeScript production build, unit/contract tests, shipped Electron smoke
+matrix under Xvfb, then the existing real Rust socket roundtrip. The bridge step
+runs the prepared Rust test executable directly; it never invokes Cargo or
+rustc. Its private receipt hashes the executable and all repository Rust/native
+sources, statically embedded resources, build-script inputs, Cargo manifests/lockfile,
+toolchain selectors and `.cargo` config. Loader-linked and adjacent staged shared
+libraries and the loader environment are hashed too. Compiler identity is recorded
+from preparation, not queried or revalidated by the ordinary lane.
+Preparation rejects native inputs changing during compilation. The receipt must
+name the required Storage test, the harness must list it, and the actual run must
+report exactly one executed pass; zero tests and ignored tests fail.
+Any native input, runtime library or executable change rejects the receipt and returns the work
+to native integration. This proves the current TypeScript policy and shipped
+Electron transport against that unchanged native listener; it does not replace
+the conservative `desktop-ui-integration` lane or native gates for bridge or OS
+contract changes.
+
+Prepare the native test executable once when needed, then run the owner-local
+checks without Rust tools available:
+
+```sh
+cd capture/desktop/ui/frontend
+# Explicit native preparation; compilation occurs only in this step.
+npm run prepare:settings-native
+export ELECTRON_OVERRIDE_DIST_PATH=/absolute/path/to/preinstalled/electron/dist
+# Offline runner also needs npm dependencies and the external Electron dist already installed.
+PATH=/usr/bin:/bin npm run test:settings
+```
+
+The preparation writes `~/.cache/apparent/desktop-settings-native.json` with
+mode 0600 (or under `XDG_CACHE_HOME`). On Clanker, run that preparation command
+once through `/home/simon/.local/bin/t3-build -- npm run prepare:settings-native`;
+do not nest the runner. The owner-local check requires Linux, Node 22+, Xvfb,
+installed npm dependencies and a preinstalled Electron distribution outside
+`node_modules`; it does not run `npm ci`, access the network, compile Rust or
+launch the desktop app. The existing `desktop-ui-integration` lane remains the
+conservative route for native/bridge contract changes.
+
+The existing commands below remain useful independently:
 
 Run Electron smoke files sequentially: Electron's lazy binary installation is
 shared by both tests and concurrent first launches can race during extraction.
@@ -292,7 +378,7 @@ The Electron smoke checks controls/keyboard use, disconnected/error/reconnect,
 renderer reload, minimum-width layout, sandbox/Node isolation, navigation/network
 refusal and rejection of a second renderer. It is not native platform acceptance.
 `tests/native-smoke.cjs` is a disposable-guest-only Electron entrypoint. The
-existing isolated Linux runner is `capture/desktop/scripts/linux/gui/gui-vm.py`;
+existing isolated Linux runner is `enablement/native/linux/gui-vm.py`;
 follow `../../docs/native-testing.md` for template/access/lifecycle requirements.
 In an owned disposable Mac, run it with `SCRAWL_GUI_OUTPUT` set to a private
 evidence directory. Use a fresh private HOME for disconnected checks; for live
@@ -320,33 +406,45 @@ separate `npm start` window remains a developer harness; it is not installed or
 used by the Settings route. Browser preview has no Storage bridge.
 
 `readCaptureLocation()`, `changeCaptureLocation()` and `resetCaptureLocation()`
-accept no path, revision, dialog options or other arguments. Main reads the
-revision from Rust before opening its parented native folder dialog. Cancel,
+accept no path, revision, dialog options or other arguments. Installed main reads
+presence-aware native facts, then the emitted `electron/storage-policy.cjs`
+(built from `src/storage/location-policy.ts`) owns saved-path normalization,
+environment precedence, Settings candidate selection and fallback presentation.
+The native adapter supplies home/built-in paths, environment presence/value, the
+owner-key revision and a narrow availability probe for the TS-selected path.
+Main reads the revision before opening its parented native folder dialog. Cancel,
 reload, navigation and closing the window discard an unfinished selection.
 Change and Reset are single-flight. A timeout never retries a mutation: refresh
 to establish its actual outcome before trying again.
 
-The same-user socket accepts strict JSON `{storage:"read",deadline}`,
-`{storage:"set",path,expected,deadline}` and `{storage:"reset",expected,deadline}`
-frames with a trailing newline. `deadline` is same-host monotonic milliseconds;
-Rust caps admission at three seconds and rechecks it after acquiring the config
-lock. Storage uses libuv's clock: `CLOCK_MONOTONIC` on Linux,
-`CLOCK_MONOTONIC_RAW` on macOS. The legacy Rust-client clock is unchanged.
-`expected` is an opaque 16-hex stale-edit fingerprint of **only** the raw
-`capturesDir` value, not a security token or portable content digest.
-Other config edits survive; a changed capture preference refuses the stale save.
-One worker handles Storage without blocking the GUI or queuing config writers.
-Legacy state/start/inspect/stop/cancel requests keep their existing contract.
+The same-user socket accepts strict JSON `{storage:"locationfacts",deadline}`,
+`{storage:"probelocation",path,expected,deadline}`,
+`{storage:"setlocation",path,expected,deadline}` and
+`{storage:"resetlocation",expected,deadline}` frames with a trailing newline.
+`deadline` is same-host monotonic milliseconds; Rust caps admission at three
+seconds and rechecks it after acquiring the config lock for a mutation. Storage
+uses libuv's clock: `CLOCK_MONOTONIC` on Linux, `CLOCK_MONOTONIC_RAW` on macOS.
+`expected` is an opaque 16-hex stale-edit fingerprint of **only** the
+presence-tagged raw `capturesDir` value (so absent and explicit JSON `null`
+differ), not a security token or portable content digest. Other config edits
+survive; a changed capture preference refuses the stale save. One worker handles
+Storage without blocking the GUI or queuing config writers.
 
-Rust validates paths, preserves unknown config keys, removes the saved key on
-Reset, and returns authoritative saved/effective/display paths and source
-(`environment`, `configured`, `builtin`, `fallback`). Revisions remain in main;
-raw config and diagnostics never reach the renderer. An environment override
-still wins over the saved preference. An unusable saved folder falls back to
-the built-in folder. Existing bundles keep their recorded directory; nothing
-is relocated. Subsequent captures resolve the new preference. Existing
-background retention/transcript workers retain their startup directory until
-the Rust app restarts; this slice does not change their lifecycle.
+Rust keeps the flock/CAS transaction, preserves unknown config keys and secrets,
+removes only `capturesDir` on Reset, and reports durable success only after file
+fsync, atomic rename and directory fsync. It returns bounded location facts and
+probes only the absolute candidate selected by TypeScript; the renderer receives
+no revision, raw config, filesystem capability or diagnostics. TypeScript applies
+`APPARENT_CAPTURES_DIR` presence before a saved preference, then built-in; empty
+and relative environment overrides remain effective as before. A selected saved
+folder that cannot be created/written displays the built-in fallback without
+deleting the preference. The native capture-time resolver remains authoritative
+for actual capture and independently enforces the same safe fallback for older
+supported readers. Existing bundles keep their recorded directory; nothing is
+relocated. Subsequent captures resolve the saved preference. Existing background
+retention/transcript workers retain their startup directory until the Rust app
+restarts; this slice does not change their lifecycle. Config CAS remains an
+explicit low-level executor debt until a coordinated all-writer cutover.
 
 Rust config/socket tests and synthetic Electron tests are not native picker or
 capture proof. The earlier Linux/macOS foundation results above do **not**
@@ -560,6 +658,10 @@ that returns to native compatibility stays native until the next app launch,
 avoiding overlapping Electron profiles during asynchronous retirement.
 
 ## Shift-click notes
+
+Linux recording controls retain their native drawing/input shape across unchanged
+measurements. Geometry, note-extension, pocket and display-scale changes reapply it;
+clock and microphone heartbeats keep the existing region.
 
 While the Electron recording pill is routed, its flush Lilac right extension
 shows a shared Lucide note icon and the durable saved count, hidden at zero.

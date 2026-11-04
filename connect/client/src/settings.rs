@@ -36,7 +36,7 @@ pub enum SafeError {
 }
 
 // Inspect only known internal diagnostics, never copy remote text, paths or secrets.
-fn safe_error(error: &anyhow::Error, allowed: &dyn Fn() -> bool) -> SafeError {
+pub fn safe_error(error: &anyhow::Error, allowed: &dyn Fn() -> bool) -> SafeError {
     if !allowed() {
         return SafeError::Cancelled;
     }
@@ -133,6 +133,28 @@ impl Client {
             .stored_credential(scope)
             .map_err(|_| SafeError::LocalState)?;
         Ok((credential.server == server).then_some(credential))
+    }
+    /// Private main-process facts for the adopted TypeScript account-state policy.
+    /// Private record validation and filesystem safety remain native mechanics;
+    /// tokens, refresh tokens, paths and generations never cross this boundary.
+    pub fn settings_facts(&self) -> std::result::Result<Value, SafeError> {
+        let config = self.settings_local_config()?;
+        let pending = self.revocation_pending();
+        let grant = |scope: &str| -> std::result::Result<Value, SafeError> {
+            if pending { return Ok(Value::Null); }
+            match fs::symlink_metadata(self.state.join(format!("{scope}.credential"))) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Value::Null),
+                Err(_) => return Err(SafeError::LocalState),
+                Ok(_) => (),
+            }
+            let c = self.stored_credential(scope).map_err(|_| SafeError::LocalState)?;
+            Ok(json!({"server":c.server,"scope":c.scope,"authRequired":c.auth_required,
+                "hasRefresh":c.refresh_token.is_some(),"expiresAt":c.expires_at,
+                "refreshExpiresAt":c.refresh_expires_at,"accountInitial":c.account_initial}))
+        };
+        Ok(json!({"cloud":{"server":config.server,"enabled":config.enabled,"uploadConsent":config.upload_consent},
+            "hostedSync":self.provider.experiment(HOSTED_SYNC),"revocationPending":pending,
+            "upload":grant("upload")?,"read":grant("read")?}))
     }
     /// Fresh disk-only state; never renews credentials or probes the server.
     pub fn settings_snapshot(&self) -> std::result::Result<Snapshot, SafeError> {

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { executionSeconds, enforceBudget, workflowBudgetSeconds, loadJobs, auditName, type Job } from './workflow-budget.ts'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
@@ -61,6 +63,33 @@ test('every supported root workflow waits for all payload jobs before auditing',
   }
 })
 
+
+test('Linux folds preflight into the complete suite and overlaps its required app build; Mac preserves focused preflight', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/verification-platform.yml', import.meta.url), 'utf8')
+  const block = workflow.split('      - name: Execute Rust changed-tree checks (not GUI acceptance)\n')[1].split('      - name: Actual Electron')[0]
+  const script = block.split('        run: |\n')[1].split('\n').map(line => line.replace(/^          /, '')).join('\n').replaceAll('${{ needs.select.outputs.root }}', 'true')
+  const root = mkdtempSync(join(tmpdir(), 'verification-scheduling-'))
+  try {
+    for (const name of ['cargo', 'python3']) writeFileSync(join(root, name), `#!/bin/sh\nprintf '${name}:%s\\n' "$*"\n`, { mode: 0o700 })
+    for (const platform of ['Linux', 'macOS']) {
+      const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], { encoding: 'utf8', env: { ...process.env, HOME: root, PATH: root + ':' + process.env.PATH, RUNNER_OS: platform } })
+      assert.equal(result.status, 0, result.stderr)
+      const cargo = result.stdout.split('\n').filter(line => line.startsWith('cargo:'))
+      assert.equal(cargo.length, platform === 'Linux' ? 0 : 1, 'Linux must not serialize a cold test compilation before the complete verifier')
+      if (platform === 'macOS') {
+        assert.match(cargo[0], /the_command_line_row_/)
+        assert.match(cargo[0], /competing_launches_cannot_remove_the_winning_control_socket/)
+        assert.match(cargo[0], /hosted_security_darwin_acl_grants_fail_closed/)
+      }
+      const verifier = result.stdout.split('\n').find(line => line.startsWith('python3:'))!
+      const emptyTree = spawnSync('git', ['hash-object', '-t', 'tree', '/dev/null'], { encoding: 'utf8' }).stdout.trim()
+      assert.ok(verifier.includes('--base ' + emptyTree), 'empty-tree selection retains the complete root and Engine suites')
+      assert.match(verifier, /--run --online --suite rust --parallel-contracts/)
+      assert.match(verifier, /--overlap-root-build/)
+      assert.doesNotMatch(verifier, /--focused|--skip/)
+    }
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
 
 test('watched workflow starts have no standalone watchdog to spawn', () => {
   const folder = new URL('../../.github/workflows/', import.meta.url)
@@ -186,4 +215,67 @@ test('Mac alone has a fifteen-minute budget with strict boundaries', () => {
   }
   for (const name of ['verification.yml', 'release-linux.yml', 'web-delivery.yml'])
     assert.doesNotMatch(readFileSync(new URL(name, folder), 'utf8'), /platform: macos|timeout-minutes: 15/)
+})
+
+test('Electron to Rust Settings workflow builds frontend artifacts before the bridge test', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/verification-platform.yml', import.meta.url), 'utf8')
+  const block = workflow.split('      - name: Actual Electron to Rust Settings integration (not native GUI proof)\n')[1].split('\n      - name: Install the Mac candidate')[0]
+  const script = block.split('        run: |\n')[1].split('\n').map(line => line.replace(/^          /, '')).join('\n')
+  const root = mkdtempSync(join(tmpdir(), 'electron-settings-workflow-'))
+  try {
+    const calls = join(root, 'calls')
+    for (const binary of ['electron', 'Electron.app/Contents/MacOS/Electron']) {
+      const file = join(root, 'capture/desktop/ui/frontend/node_modules/electron/dist', binary)
+      mkdirSync(join(file, '..'), { recursive: true })
+      writeFileSync(file, '#!/bin/sh\nexit 0\n', { mode: 0o700 })
+    }
+    writeFileSync(join(root, 'npm'), `#!/bin/sh
+printf 'npm:%s\\n' "$*" >> "$CALLS"
+case "$*" in *'run build'*) exit "$BUILD_STATUS";; esac
+`, { mode: 0o700 })
+    const sandbox = join(root, 'capture/desktop/ui/frontend/node_modules/electron/dist/chrome-sandbox')
+    writeFileSync(sandbox, 'synthetic helper')
+    writeFileSync(join(root, 'sudo'), `#!/bin/sh
+printf 'sudo:%s\\n' "$*" >> "$CALLS"
+exit "${'${SUDO_STATUS:-0}'}"
+`, { mode: 0o700 })
+    writeFileSync(join(root, 'stat'), '#!/bin/sh\nprintf "%s\\n" "$HELPER_STAT"\n', { mode: 0o700 })
+    writeFileSync(join(root, 'xvfb-run'), '#!/bin/sh\nprintf "xvfb:%s\\n" "$*" >> "$CALLS"\nshift\nexec "$@"\n', { mode: 0o700 })
+    for (const name of ['cargo', 'node']) writeFileSync(join(root, name), `#!/bin/sh
+printf '${name}:%s\\n' "$*" >> "$CALLS"
+`, { mode: 0o700 })
+    for (const os of ['Linux', 'macOS']) for (const status of ['0', '7']) {
+      writeFileSync(calls, '')
+      const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], { cwd: root, encoding: 'utf8',
+        env: { ...process.env, PATH: `${root}:${process.env.PATH}`, CALLS: calls, BUILD_STATUS: status, HOME: root, RUNNER_OS: os, GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', HELPER_STAT: '0:0:4755' } })
+      assert.equal(result.status, Number(status), result.stderr)
+      const lines = readFileSync(calls, 'utf8').trim().split('\n')
+      assert.equal(lines[0], 'npm:--prefix capture/desktop/ui/frontend ci --no-audit --no-fund')
+      assert.equal(lines[1], 'npm:--prefix capture/desktop/ui/frontend run build')
+      if (status === '0') {
+        assert.match(lines[2], /^node:-e /)
+        assert.deepEqual(lines.slice(3), os === 'Linux' ? [
+          `sudo:chown root:root -- ${sandbox}`, `sudo:chmod 4755 -- ${sandbox}`,
+          'xvfb:-a cargo test -j 3 --locked _electron_rust_roundtrip -- --ignored --nocapture',
+          'cargo:test -j 3 --locked _electron_rust_roundtrip -- --ignored --nocapture',
+        ] : ['cargo:test -j 3 --locked _electron_rust_roundtrip -- --ignored --nocapture'])
+      } else assert.equal(lines.length, 2, 'build failure must stop before Electron or Cargo')
+    }
+    for (const scenario of ['not-hosted', 'wrong-mode', 'sudo-failure', 'symlink', 'missing']) {
+      writeFileSync(calls, '')
+      if (scenario === 'symlink' || scenario === 'missing') {
+        rmSync(sandbox)
+        if (scenario === 'symlink') symlinkSync(join(root, 'npm'), sandbox)
+      }
+      const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], { cwd: root, encoding: 'utf8',
+        env: { ...process.env, PATH: `${root}:${process.env.PATH}`, CALLS: calls, BUILD_STATUS: '0', HOME: root,
+          RUNNER_OS: 'Linux', GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: scenario === 'not-hosted' ? 'self-hosted' : 'github-hosted',
+          HELPER_STAT: scenario === 'wrong-mode' ? '1000:1000:755' : '0:0:4755', SUDO_STATUS: scenario === 'sudo-failure' ? '9' : '0' } })
+      assert.notEqual(result.status, 0, scenario)
+      const recorded = readFileSync(calls, 'utf8')
+      assert.doesNotMatch(recorded, /^cargo:|^xvfb:/m, scenario)
+      if (['not-hosted', 'symlink', 'missing'].includes(scenario)) assert.doesNotMatch(recorded, /^sudo:/m, scenario)
+      if (scenario === 'symlink' || scenario === 'missing') { rmSync(sandbox, { force: true }); writeFileSync(sandbox, 'synthetic helper') }
+    }
+  } finally { rmSync(root, { recursive: true, force: true }) }
 })

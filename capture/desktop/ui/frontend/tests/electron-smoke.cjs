@@ -141,7 +141,9 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   await page.getByText('Connected · processing', { exact: true }).waitFor();
   assert.equal(await page.getByText('private', { exact: true }).count(), 0);
   assert.ok(requests.length >= 3);
-  assert.ok(requests.every((request) => request === 'state\n' || ['read', 'undo'].includes(JSON.parse(request).drawing) || JSON.parse(request).microphone === 'read' || JSON.parse(request).storage === 'read' || JSON.parse(request).reference === 'read' || JSON.parse(request).connect === 'settings' ||
+  assert.ok(requests.every((request) => request === 'state\n' || ['read', 'undo'].includes(JSON.parse(request).drawing) || JSON.parse(request).microphone === 'read' || ['read', 'locationfacts', 'probelocation', 'retention', 'usage'].includes(JSON.parse(request).storage) || JSON.parse(request).reference === 'read' || JSON.parse(request).connect === 'settings' ||
+    (JSON.parse(request).connect === 'backend' && JSON.parse(request).version === 1 &&
+      Object.keys(JSON.parse(request)).every((key) => ['connect', 'version', 'deadline'].includes(key))) ||
     ['read', 'set'].includes(JSON.parse(request).errorReporting)));
   assert.deepEqual(errors, []);
   const screenshot = path.join(os.tmpdir(), `apparent-foundation-${process.pid}.png`);
@@ -186,3 +188,6 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
     } finally { other.destroy(); }
   }, path.join(__dirname, '..')), true);
 });
+
+// Shared identity rendering and click-through checks use the shipped renderer.
+require('./build/identity.smoke.ts');

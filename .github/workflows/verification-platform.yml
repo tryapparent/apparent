@@ -36,9 +36,11 @@ jobs:
         with:
           node-version: '22'
       - name: Verification receipt contracts
-        run: node --experimental-strip-types --test enablement/verification/*.test.ts enablement/native/mac-setup.test.ts enablement/native/owned-processes.test.ts
+        run: node --experimental-strip-types --test enablement/verification/*.test.ts enablement/native/mac-setup.test.ts enablement/native/owned-processes.test.ts enablement/native/cache-command-timing.test.ts
       - name: Recipient CLI installation contracts
         run: node --experimental-strip-types --test capture/agent/scripts/tests/install-cli.test.ts
+      - name: Linux release download cache contracts
+        run: node --experimental-strip-types --test capture/desktop/scripts/linux/appimage/*.test.ts
       - name: Selector and hook contracts (no native proof)
         run: |
           python3 -m unittest discover -s enablement/tests -p 'test_pre_push_guard.py'
@@ -273,6 +275,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         if: needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true'
         with:
+          cmd-format: ${{ runner.os == 'macOS' && format('node --experimental-strip-types "{0}/enablement/native/cache-command-timing.ts" {{0}}', github.workspace) || '{0}' }}
           # Cache versions include every path, not just the visible key. Keep
           # the pre-split inventory compatible with successful Mac caches and
           # native-proof-mac; client checks still run in their own required job.
@@ -314,8 +317,10 @@ jobs:
             exit "$status"
           }
           trap cleanup EXIT
-          # Reproduce the CI-sensitive fixtures before the full affected suites.
-          if [ "${{ needs.select.outputs.root }}" = true ]; then
+          # Preserve Mac's serial native-sensitive preflight. Linux's complete
+          # suite includes the same cases: let cold compilation overlap contract
+          # checks rather than serializing a second Cargo invocation before them.
+          if [ "${{ needs.select.outputs.root }}" = true ] && [ "$RUNNER_OS" = macOS ]; then
             preflight_filters=(capture::desktop::settings::settings::tests::the_command_line_row_ capture::desktop::workflow::agent_capture::tests::competing_launches_cannot_remove_the_winning_control_socket)
             if [ "$RUNNER_OS" = macOS ]; then
               preflight_filters+=(connect::hosted::hosted_tests::hosted_security_darwin_acl_grants_fail_closed)
@@ -324,7 +329,7 @@ jobs:
           fi
           BASE=$(git hash-object -t tree /dev/null)
           cargo_trace_env=()
-          root_build_overlap=()
+          root_build_overlap=(--overlap-root-build)
           if [ "$RUNNER_OS" = macOS ]; then
             cargo_trace_env=(env CARGO_LOG=cargo::compiler::fingerprint=trace)
             root_build_overlap=(--overlap-root-build)
@@ -336,6 +341,7 @@ jobs:
         shell: bash
         run: |
           npm --prefix capture/desktop/ui/frontend ci --no-audit --no-fund
+          npm --prefix capture/desktop/ui/frontend run build
           # Electron 45 downloads lazily. Resolve it once before the test;
           # do not capture its download log as part of an executable pathname.
           node -e "require('./capture/desktop/ui/frontend/node_modules/electron')"
@@ -345,12 +351,27 @@ jobs:
             electron="$PWD/capture/desktop/ui/frontend/node_modules/electron/dist/electron"
           fi
           test -x "$electron"
+          bridge_runner=()
+          if [ "$RUNNER_OS" = Linux ]; then
+            test "$GITHUB_ACTIONS" = true
+            test "$RUNNER_ENVIRONMENT" = github-hosted
+            command -v xvfb-run
+            # Configure only this job's locked Electron download. Keep Chromium
+            # sandboxing enabled for the actual Notes renderer roundtrip.
+            sandbox="$PWD/capture/desktop/ui/frontend/node_modules/electron/dist/chrome-sandbox"
+            test -f "$sandbox"
+            test ! -L "$sandbox"
+            sudo chown root:root -- "$sandbox"
+            sudo chmod 4755 -- "$sandbox"
+            test "$(stat -c '%u:%g:%a' -- "$sandbox")" = '0:0:4755'
+            bridge_runner=(xvfb-run -a)
+          fi
           storage_tmp="$(mktemp -d "$HOME/.apparent-storage.XXXXXX")"
           readonly storage_tmp
           trap 'rm -rf -- "$storage_tmp"' EXIT
           TMPDIR="$storage_tmp" APPARENT_STORAGE_TEST_ELECTRON="$electron" \
             APPARENT_CONNECT_TEST_ELECTRON="$electron" \
-            cargo test -j 3 --locked _electron_rust_roundtrip -- --ignored --nocapture
+            "${bridge_runner[@]}" cargo test -j 3 --locked _electron_rust_roundtrip -- --ignored --nocapture
       - name: Install the Mac candidate (packaging, not launch acceptance)
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
         shell: bash

@@ -56,7 +56,13 @@ repair together; pending transactions may coalesce, but running feed replacement
 cannot be interrupted by a newer build. This uses the concurrency syntax accepted
 by pinned actionlint 1.7.12. Unknown or
 divergent identities fail closed. Mac also retains its monotonic Sparkle build
-number check. All writers must use these workflow locks; out-of-band deployment
+number check. Linux release jobs use bounded Actions caches for the checksummed
+speech model, Electron downloads and checksum-pinned packaging tools. The tool
+manifest is resolved from official release metadata on every run before its
+architecture-specific cache lookup; a miss uses the ordinary download path.
+Every build still verifies and runs the model, executes packaging and all AppImage
+smoke gates, and uses the existing exact-SHA admission and publication checks.
+Cached bytes are not release evidence. All writers must use these workflow locks; out-of-band deployment
 is not coordinated by Actions. Activation variables, schema and consent
 requirements remain unchanged. Desktop proof follows the
 [shared-behavior/native-boundary split](../../capture/desktop/docs/native-testing.md):
@@ -340,14 +346,17 @@ succeed before the receipt succeeds; failure or cancellation terminates and reap
 the owned contract process group. The receipt wrapper forwards this option.
 Local invocations remain sequential unless the option is explicitly supplied.
 
-Mac CI also supplies `--overlap-root-build`: after Cargo reports successful full
+Linux and Mac CI also supply `--overlap-root-build`: after Cargo reports successful full
 root test compilation, the ordinary app build runs alongside test execution.
 Cargo still launches the tests with two test threads, and each build retains its
 existing worker limit. Both commands must succeed before Engine or downstream
 checks; failure or cancellation kills the owned process groups and reaps both
 direct children. The fresh app binary remains required. Focused filters and
 invocations without this option keep sequential test/build ordering. This overlap
-does not establish a runtime improvement until measured on the actual Mac run.
+does not establish a runtime improvement until measured on the actual platform run.
+Linux runs the preflight cases within that complete suite instead of serializing
+a separate cold Cargo test invocation before the verifier and contract checks.
+Mac retains its serial native-sensitive preflight.
 
 `--cargo-timings` records Cargo unit reports on the existing build/test commands;
 the platform job retains available HTML reports even when later verification

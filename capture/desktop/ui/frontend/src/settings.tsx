@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { AgentsSettings } from './agents/page';
 import { Storage } from './storage';
 import { ConnectSettingsCard } from './connect-settings';
+import { BuildIdentityFrame } from '@apparent/ui/build-identity';
 import './style.css';
 import wordmark from '../../../../../shared/assets/brand/apparent-wordmark.svg';
 
@@ -37,4 +38,4 @@ function Settings() {
   </div>;
 }
 
-createRoot(document.getElementById('root')!).render(<Settings />);
+createRoot(document.getElementById('root')!).render(<BuildIdentityFrame><Settings /></BuildIdentityFrame>);
