@@ -58,6 +58,8 @@ case "$name" in
     case "$1" in
       */package-notes.mjs) mkdir -p "$2/dist" ;;
       */mac-artifact-consumer.ts) test "$MOCK_PREBUILT" = accepted ;;
+      */recipient/package.ts) : ;; # assembly is tested separately; lock remains real
+      --experimental-strip-types) [[ "$2" == */recipient/package.ts ]] ;;
       *) exit 90 ;;
     esac ;;
   taskpolicy|cargo|git|codesign|open|sleep|pgrep|pkill|ditto) : ;;
@@ -81,7 +83,7 @@ esac
             release.mkdir()
             for name in ("setup-sparkle.sh", "release-app.sh"):
                 (release / name).write_text("#!/usr/bin/env bash\nexit 0\n")
-            for name in ("install-app.sh", "install-app-remote.sh"):
+            for name in ("install-app.sh", "install-app-remote.sh", "with-install-lock.sh"):
                 source = (SCRIPTS / name).read_text()
                 # Redirect fixed native paths into this disposable synthetic fixture.
                 source = source.replace("/tmp/", str(root) + "/")

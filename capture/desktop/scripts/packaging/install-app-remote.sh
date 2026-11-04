@@ -70,6 +70,9 @@ if ! grep -q "STAGE-EXIT=0" "${LOG}" 2>/dev/null; then
 fi
 
 APP="${HOME}/Applications/Apparent.app"
+mkdir -p "$(dirname "$APP")"
+install_destination() {
+local APP="$1" STAGE="$2"
 assert_app_stopped "${APP}"
 mkdir -p "${APP}"
 /usr/bin/ditto "${STAGE}" "${APP}"
@@ -93,6 +96,8 @@ sleep 2
 ps -axww -o pid= -o comm= | while read -r PID EXECUTABLE; do
   [[ "${EXECUTABLE}" != "${APP}/Contents/MacOS/apparent" ]] || echo "${PID} ${EXECUTABLE}"
 done
+}
+bash capture/desktop/scripts/packaging/with-install-lock.sh "$APP" bash -c "$(declare -f assert_app_stopped install_destination); install_destination \"\$1\" \"\$2\"" bash "$APP" "$STAGE"
 assert_app_stopped "${STAGE}"
 rm -rf "${STAGE}" "${JOB}" "${PLIST}"
 REMOTE

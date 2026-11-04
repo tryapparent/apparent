@@ -8,6 +8,10 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 # install-app-remote.sh); APPARENT_NO_LAUNCH=1 skips the ~/bin link and launch,
 # but never permits replacement of a running app.
 APP_DIR="${APPARENT_APP_DIR:-${HOME}/Applications/Apparent.app}"
+mkdir -p "$(dirname "$APP_DIR")"
+if [[ "${APPARENT_INSTALL_LOCKED:-}" != "$APP_DIR" ]]; then
+  exec bash "${REPO_DIR}/capture/desktop/scripts/packaging/with-install-lock.sh" "$APP_DIR" env APPARENT_INSTALL_LOCKED="$APP_DIR" bash "$0" "$@"
+fi
 CONTENTS_DIR="${APP_DIR}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
