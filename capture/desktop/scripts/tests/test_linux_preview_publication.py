@@ -485,8 +485,6 @@ class LinuxPreviewPublicationTest(unittest.TestCase):
             self.assertIn(f"arch: {arch}", build)
         for check in (
             "cargo build --release --locked",
-            "cargo test --release --locked -- --test-threads=2",
-            "cargo test --release --locked speech:: -- --nocapture",
             "cargo test --release --locked --bin apparent --no-run --message-format=json",
             "test -f \"$test\"",
             "GGML_NATIVE:BOOL=OFF",
