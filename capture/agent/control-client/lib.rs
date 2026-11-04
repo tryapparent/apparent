@@ -416,6 +416,9 @@ pub fn execute_with(
             }
             next = Some((Action::Inspect, id));
         } else {
+            if !matches!(value["state"]["phase"].as_str(), Some("idle" | "selecting" | "starting" | "recording" | "processing" | "completed")) {
+                return serde_json::json!({"error": "invalid_response"});
+            }
             return value;
         }
         std::thread::sleep(
