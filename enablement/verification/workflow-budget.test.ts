@@ -44,6 +44,23 @@ test('API denial and incomplete inventories cannot pass', async () => {
   for (const response of [new Response('', { status: 403 }), new Response(JSON.stringify({total_count: 1, jobs: []})), new Response('{}'), new Response(JSON.stringify({total_count: 0, jobs: []})), new Response(JSON.stringify({total_count: 1, jobs: [job(0, 1), job(1, 2)]}))])
     await assert.rejects(loadJobs('https://api.github.com', 'owner/repo', '42', '1', 'token', (async () => response) as typeof fetch))
 })
+test('Mac no-work followers skip the audit while every executed outcome remains audited', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/verification-mac.yml', import.meta.url), 'utf8')
+  const condition = workflow.split('  runtime-budget:\n')[1].match(/^    if: (.+)$/m)![1]
+  for (const admit of ['skipped', 'success', 'failure', 'cancelled'])
+    for (const verify of ['skipped', 'success', 'failure', 'cancelled'])
+      for (const native of ['skipped', 'success', 'failure', 'cancelled'])
+        for (const settingsBuild of ['skipped', 'success', 'failure', 'cancelled'])
+          for (const settingsNative of ['skipped', 'success', 'failure', 'cancelled']) {
+        const expression = condition.replace('always()', 'true')
+          .replaceAll('needs.admit.result', JSON.stringify(admit))
+          .replaceAll('needs.verify.result', JSON.stringify(verify))
+          .replaceAll('needs.connect-native.result', JSON.stringify(native))
+          .replaceAll('needs.settings-build.result', JSON.stringify(settingsBuild))
+          .replaceAll('needs.settings-native.result', JSON.stringify(settingsNative))
+        assert.equal(Function(`return (${expression})`)(), [admit, verify, native, settingsBuild, settingsNative].some(result => result !== 'skipped'))
+      }
+})
 test('every supported root workflow waits for all payload jobs before auditing', () => {
   const folder = new URL('../../.github/workflows/', import.meta.url)
   for (const name of readdirSync(folder)) {
@@ -287,4 +304,12 @@ printf '${name}:%s\\n' "$*" >> "$CALLS"
       if (scenario === 'symlink' || scenario === 'missing') { rmSync(sandbox, { force: true }); writeFileSync(sandbox, 'synthetic helper') }
     }
   } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('focused Settings work retains completion audit when main verification is skipped', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/verification-mac.yml', import.meta.url), 'utf8')
+  const audit = workflow.slice(workflow.indexOf('  runtime-budget:'))
+  assert.ok(audit.includes("needs.settings-build.result != 'skipped'"))
+  assert.ok(audit.includes("needs.settings-native.result != 'skipped'"))
+  assert.ok(audit.includes('needs: [admit, verify, connect-native, settings-build, settings-native]'))
 })

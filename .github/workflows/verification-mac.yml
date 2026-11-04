@@ -276,7 +276,8 @@ jobs:
             ${{ runner.temp }}/apparent-settings-native/*.log
           if-no-files-found: warn
   runtime-budget:
-    if: always()
+    # Audit every admitted workload, including the focused Settings jobs.
+    if: always() && (needs.admit.result != 'skipped' || needs.verify.result != 'skipped' || needs.connect-native.result != 'skipped' || needs.settings-build.result != 'skipped' || needs.settings-native.result != 'skipped')
     needs: [admit, verify, connect-native, settings-build, settings-native]
     permissions:
       contents: read
