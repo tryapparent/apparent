@@ -112,10 +112,10 @@ installed tools, reserves capacity or redirects an active run.
 
 The three former paths in `capture/desktop/scripts/linux/gui/` are relative
 symlinks to this implementation, not copies. The updater and maintained frontend documentation now use canonical paths.
-All three remain for existing external skill commands and frozen candidates:
+The shared VM skill also advertises the canonical infrastructure. All three
+links remain as a bounded transition for frozen candidates and external callers:
 the old runner/tests locate the reaper by sibling path. Remove them together only
-after the shared VM skill and other supported callers migrate, and active owner
-reservations/runs are checked. Do not
+after external callers and active owner reservations/runs are checked and released. Do not
 rewrite an active candidate merely to retire these entrypoints.
 
 Further Mac/frontend extraction checks exact active hunks with their owners;
