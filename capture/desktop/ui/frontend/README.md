@@ -920,3 +920,10 @@ If recovery fails the unchanged daemon-idle assertion, the fixture records its
 read duration and one extra bounded state-only diagnostic on the owned synthetic
 socket. The diagnostic retains only fixed status/error codes and phase; its
 result never turns the original failed read into a pass.
+
+The failure-only raw state diagnostic allows 500ms wire grace beyond Rust’s
+3000ms coordinator deadline. The original assertion still uses its original
+request budget. A single one-second stack sample is attempted only after fresh
+parent/executable verification of the fixture’s Rust process; sampling has a
+four-second subprocess cap. The stack artifact can contain routine machine paths
+and stays private with the synthetic fixture evidence; it contains no heap dump.

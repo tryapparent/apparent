@@ -497,7 +497,8 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     const dir = await fs.lstat(directory), entry = await fs.lstat(address);
     assert.ok(dir.isDirectory() && dir.uid === process.geteuid() && (dir.mode & 0o077) === 0);
     assert.ok(entry.isSocket() && entry.uid === process.geteuid() && (entry.mode & 0o777) === 0o600);
-    const timeout = budget(3000);
+    // Rust gives the coordinator 3000ms; retain bounded wire-response grace.
+    const timeout = budget(3500);
     return new Promise(resolve => {
       const started = Date.now();
       const socket = require('node:net').createConnection(address);
@@ -544,6 +545,26 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
     if (state.status !== 'connected' || state.phase !== 'idle') {
       try { recovery.stateDiagnostic = await diagnoseState(); }
       catch { recovery.stateDiagnostic = { result: 'refused' }; }
+      // One stack sample of the exact still-owned Rust process, only on failure.
+      // The private artifact distinguishes a blocked coordinator from socket I/O.
+      try {
+        const target = rustPID();
+        const owner = await run('/bin/ps', ['-p', String(target), '-o', 'ppid='], { env, timeout: budget(1000), maxBuffer: 4096 });
+        assert.equal(owner.stdout.trim(), String(report.rust.supervisorPid));
+        const mapping = await run('/usr/sbin/lsof', ['-nP', '-a', '-p', String(target), '-d', 'txt', '-Fn'], { env, timeout: budget(1000), maxBuffer: 131072 });
+        assert.ok(mapping.stdout.split('\n').includes(`n${executable}`));
+        const file = path.join(path.dirname(axTool), 'rust-state-timeout.sample.log');
+        await assert.rejects(fs.lstat(file), { code: 'ENOENT' });
+        // budget() clamps to the original fixture deadline; skip a sample
+        // without time for its one-second capture and output completion.
+        const sampleTimeout = budget(4000);
+        assert.ok(sampleTimeout >= 2000, 'Insufficient fixture time for sampling');
+        await run('/usr/bin/sample', [String(target), '1', '1', '-file', file], {
+          env, timeout: sampleTimeout, killSignal: 'SIGKILL', maxBuffer: 8192,
+        });
+        await fs.chmod(file, 0o600);
+        recovery.stateSample = { result: 'retained', file: 'rust-state-timeout.sample.log', pid: target };
+      } catch { recovery.stateSample = { result: 'unavailable' }; }
     }
     assert.deepEqual(state, { status: 'connected', phase: 'idle' });
     return nativePID;

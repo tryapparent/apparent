@@ -27,7 +27,7 @@ test('native recovery rediscovers the owned helper after navigation retires Gene
   };
   const visible = (pid: number) => poll(() => invoke(pid));
   const nativeFailure = new Function('child', 'helper', 'poll', 'visible', 'invoke', 'evidence', 'assert',
-    'unavailable', 'skill', 'shot', 'read', 'readRuntimeState', 'home', 'budget', 'recovery', 'diagnoseState', `return (${body})`)(
+    'unavailable', 'skill', 'shot', 'read', 'readRuntimeState', 'home', 'budget', 'recovery', 'diagnoseState', 'rustPID', `return (${body})`)(
     child, '/owned/helper', poll, visible, invoke, evidence, assert, unavailable, 'canonical skill',
     async (pid: number) => screenshots.push(pid), async () => ({ agentDemoVideo: true }),
     async () => ({ status: 'connected', phase: 'idle' }), '/synthetic', (ms: number) => ms, {}, () => { throw new Error('Unexpected diagnostic on success'); });
@@ -41,11 +41,11 @@ test('healthy diagnostic cannot replace the failed daemon-idle assertion', async
   const failed = { status: 'error', message: 'unavailable' };
   let diagnostics = 0;
   const nativeFailure = new Function('child', 'helper', 'poll', 'visible', 'invoke', 'evidence', 'assert',
-    'unavailable', 'skill', 'shot', 'read', 'readRuntimeState', 'home', 'budget', 'recovery', 'diagnoseState', `return (${body})`)(
+    'unavailable', 'skill', 'shot', 'read', 'readRuntimeState', 'home', 'budget', 'recovery', 'diagnoseState', 'rustPID', `return (${body})`)(
     async () => 20, '/owned/helper', async (operation: () => Promise<unknown>) => operation(), undefined,
     async () => 'Recovery guidance', {}, assert, 'Recovery guidance', 'canonical skill',
     async () => {}, async () => ({ agentDemoVideo: true }), async () => failed, '/synthetic', (ms: number) => ms,
-    recovery, async () => { diagnostics++; return { result: 'reply', phase: 'idle' }; });
+    recovery, async () => { diagnostics++; return { result: 'reply', phase: 'idle' }; }, () => { throw new Error('No native process in this unit test'); });
   await assert.rejects(nativeFailure('recovery'), { code: 'ERR_ASSERTION' });
   assert.equal(diagnostics, 1);
   assert.deepEqual((recovery.stateRead as { result: unknown }).result, failed);
