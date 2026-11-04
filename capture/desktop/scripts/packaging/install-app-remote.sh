@@ -74,14 +74,8 @@ mkdir -p "$(dirname "$APP")"
 install_destination() {
 local APP="$1" STAGE="$2"
 assert_app_stopped "${APP}"
-mkdir -p "${APP}"
-/usr/bin/ditto "${STAGE}" "${APP}"
-# ditto merges: remove the old generated popup runtime only when the verified
-# stage supplies the canonical Settings runtime and no longer ships the old one.
-if [[ -d "${STAGE}/Contents/Resources/settings/runtime" && ! -e "${STAGE}/Contents/Resources/note-ui/runtime" ]]; then
-  rm -rf "${APP}/Contents/Resources/note-ui/runtime"
-fi
-codesign --verify --deep --strict "${APP}"
+codesign --verify --deep --strict "$STAGE"
+node --experimental-strip-types shared/packaging/transaction.ts publish-prepared-app "$STAGE" "$APP"
 codesign -dvv "${APP}" 2>&1 | grep -E "^Authority=Developer ID Application" || echo "warning: not Developer ID signed" >&2
 mkdir -p "${HOME}/bin"
 if [[ -e "${HOME}/bin/apparent" || -L "${HOME}/bin/apparent" ]]; then

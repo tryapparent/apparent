@@ -30,7 +30,7 @@ test('authenticated staging publishes only after both attestations and validatio
  if(command==='gh' && args[0]==='attestation') { assert.ok(args.includes(pin.sourceSha)); assert.ok(args.includes('refs/heads/main')); assert.ok(args.includes('tryapparent/apparent/.github/workflows/connect-delivery.yml')); assert.equal(existsSync(out),false); verified++; if(args[2].endsWith('/'+failure)) throw Error('untrusted'); }
  return Buffer.alloc(0);
  };
- if((failure==='none'||failure==='retry')) { stage(file,pin.target,out,runner); assert.equal(verified,2); assert.deepEqual(readFileSync(join(out,'apparent-connect-recipient')),bytes); assert.equal(statSync(join(out,'apparent-connect-recipient')).mode & 0o777,0o755); assert.throws(()=>stage(file,pin.target,out,runner)); }
+ if((failure==='none'||failure==='retry')) { stage(file,pin.target,out,runner); assert.equal(verified,2); assert.equal(statSync(out).mode & 0o777,0o755); assert.deepEqual(readFileSync(join(out,'apparent-connect-recipient')),bytes); assert.equal(statSync(join(out,'apparent-connect-recipient')).mode & 0o777,0o755); assert.throws(()=>stage(file,pin.target,out,runner)); }
  else { assert.throws(()=>stage(file,pin.target,out,runner)); assert.equal(existsSync(out),false); if(failure.startsWith('producer-')) { assert.equal(downloaded,0); assert.equal(verified,0); } }
  }
  for (const releaseVersion of [`recipient-${pin.sourceSha}-${pin.run}-0`,`recipient-${pin.sourceSha}-124-2`,`recipient-${'b'.repeat(40)}-${pin.run}-2`]) {
