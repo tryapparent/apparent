@@ -43,9 +43,7 @@ class PreviewReleaseTest(unittest.TestCase):
                 'printf "test" > target/release/apparent\n'
                 'printf "test" > target/release/apparent-helper\n'
             )
-            (root / "bin/node").write_text('#!/bin/sh\nset -eu\ncase "$1" in\n'
-                '*/package-notes.mjs) mkdir -p "$2/dist"; printf synthetic > "$2/dist/index.html" ;;\n'
-                '*) exit 1 ;;\nesac\n')
+            (root / "bin/node").write_text('#!/bin/sh\nset -eu\nif [ "$1" = --experimental-strip-types ]; then shift; fi\ncase "$1" in\n  */package-notes.mjs) mkdir -p "$2/dist"; printf synthetic > "$2/dist/index.html" ;;\n  */composition.ts)\n    test "$2" = package\n    inspector_destination="$4"\n    mkdir -p "$inspector_destination/inspection"\n    printf synthetic > "$inspector_destination/inspection/apparent-inspect"\n    printf \'{"schema":1,"executable":"apparent-inspect"}\' > "$inspector_destination/inspection/manifest.json"\n    shift 4\n    "$@" "$inspector_destination/inspection/apparent-inspect" ;;\n  *) exit 1 ;;\nesac\n')
             (root / "bin/plutil").write_text('#!/bin/sh\nexit 0\n')
             (root / "bin/codesign").write_text('#!/bin/sh\nexit 0\n')
             (root / "bin/hdiutil").write_text(
