@@ -21,5 +21,8 @@ fn main() -> anyhow::Result<()> {
             };
         }
     }
+    #[cfg(any(target_os="macos",target_os="linux"))]
+    capture::desktop::workflow::test_instance::initialize()?;
+    shared::handoff::pen::refresh();
     composition::cli::run()
 }

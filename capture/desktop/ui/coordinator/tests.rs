@@ -1031,3 +1031,8 @@ fn clock_template_is_width_stable() {
     );
     assert_eq!(completed_status_label(0, None, None), "Copied");
 }
+
+#[test]
+fn choosing_capture_target_has_its_own_onboarding_milestone() {
+    assert!(onboarding_capture_transition(IslandPhase::Hidden,IslandPhase::Selecting{mode:SelectionMode::Screen}).is_some(),"the coach must teach Screen while the target picker is visible");
+}

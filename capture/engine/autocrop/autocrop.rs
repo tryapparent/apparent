@@ -1965,6 +1965,7 @@ mod tests {
     #[test]
     fn grouped_ink_belongs_to_its_keyframe_alone() {
         let stroke = |t0: u64, x: i32| Stroke {
+            color: None,
             t0,
             t1: t0 + 100,
             fw: 1000,
@@ -2310,6 +2311,7 @@ mod tests {
     fn crop_view_moves_ink_and_clicks_into_the_crop() {
         let r = [0.25, 0.5, 0.75, 1.0];
         let stroke = Stroke {
+            color: None,
             t0: 0,
             t1: 10,
             fw: 1000,

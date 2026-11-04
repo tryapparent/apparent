@@ -516,6 +516,7 @@ mod tests {
             },
         ];
         let mut strokes = vec![Stroke {
+            color: None,
             t0: 3_000,
             t1: 3_600,
             fw: 100,

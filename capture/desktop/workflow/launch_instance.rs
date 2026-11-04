@@ -38,8 +38,7 @@ pub fn request_url(url: &str) -> Result<()> {
 }
 
 fn socket_path() -> Result<PathBuf> {
-    let dir = PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?)
-        .join(".config/apparent/launch");
+    let dir = super::test_instance::control_directory("launch")?;
     std::fs::create_dir_all(&dir)?;
     let meta = std::fs::symlink_metadata(&dir)?;
     ensure!(

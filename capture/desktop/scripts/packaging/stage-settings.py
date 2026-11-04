@@ -60,7 +60,11 @@ def main():
     env = os.environ.copy()
     env.pop("ELECTRON_SKIP_BINARY_DOWNLOAD", None)
     subprocess.run(["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"], cwd=frontend, env=env, check=True)
-    subprocess.run(["node", "node_modules/electron/install.js"], cwd=frontend, env=env, check=True)
+    runtime_env = env.copy()
+    target = env.get("CARGO_BUILD_TARGET", "")
+    if target in ("aarch64-apple-darwin", "x86_64-apple-darwin"):
+        runtime_env["npm_config_arch"] = "arm64" if target.startswith("aarch64") else "x64"
+    subprocess.run(["node", "node_modules/electron/install.js"], cwd=frontend, env=runtime_env, check=True)
     subprocess.run(["npm", "run", "build"], cwd=frontend, env=env, check=True)
     if args.popups_destination:
         # Use the existing guarded stager only after a successful locked build.

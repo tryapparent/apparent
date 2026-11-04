@@ -1084,7 +1084,6 @@ impl ApparentCoordinator {
     /// Moves the island to `phase`, triggering a `.blurReplace` cross-transition on the inner content
     /// while the outer shell springs its width smoothly (`stiffness: 400, damping: 30` equivalent).
     pub(in crate::capture::desktop) fn set_island_phase(&mut self, phase: IslandPhase) {
-        use crate::capture::desktop::settings::onboarding::Input;
         if matches!(
             phase,
             IslandPhase::Selecting { .. }
@@ -1119,19 +1118,7 @@ impl ApparentCoordinator {
                 .as_ref()
                 .is_some_and(|session| session.local_practice());
         }
-        let capture = match (self.presentation.island_phase, phase) {
-            (IslandPhase::Recording, IslandPhase::Recording) => None,
-            (_, IslandPhase::Recording) => Some(Input::CaptureStarted),
-            (IslandPhase::Recording | IslandPhase::Processing, IslandPhase::Completed { .. }) => {
-                Some(Input::CaptureEnded { completed: true })
-            }
-            // Startup can fail before Recording is presented. Clear the shortcut attempt
-            // then too, so a later menu capture cannot inherit it.
-            (_, IslandPhase::Hidden | IslandPhase::Dismissing) => {
-                Some(Input::CaptureEnded { completed: false })
-            }
-            _ => None,
-        };
+        let capture = onboarding_capture_transition(self.presentation.island_phase,phase);
         if let Some(input) = capture
             && let Some(session) = self.onboarding.as_mut()
         {
@@ -1980,4 +1967,23 @@ impl ApparentCoordinator {
             cx.notify();
         }
     }
+}
+
+/// The onboarding coach follows the controls actually available in each capture phase.
+pub(in crate::capture::desktop) fn onboarding_capture_transition(previous:IslandPhase,next:IslandPhase)->Option<crate::capture::desktop::settings::onboarding::Input> {
+    use crate::capture::desktop::settings::onboarding::Input;
+    match (previous, next) {
+            (IslandPhase::Recording, IslandPhase::Recording) => None,
+            (_, IslandPhase::Selecting { .. }) => Some(Input::CaptureSelecting),
+            (_, IslandPhase::Recording) => Some(Input::CaptureStarted),
+            (IslandPhase::Recording | IslandPhase::Processing, IslandPhase::Completed { .. }) => {
+                Some(Input::CaptureEnded { completed: true })
+            }
+            // Startup can fail before Recording is presented. Clear the shortcut attempt
+            // then too, so a later menu capture cannot inherit it.
+            (_, IslandPhase::Hidden | IslandPhase::Dismissing) => {
+                Some(Input::CaptureEnded { completed: false })
+            }
+            _ => None,
+        }
 }

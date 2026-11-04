@@ -182,5 +182,247 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   }, path.join(__dirname, '..')), true);
 });
 
+// Rust state is synthetic; the main/preload/renderer and OS window resizing are real.
+for(const mode of ['--native-onboarding','--onboarding'])test(`onboarding fixed window shrinks to coach and restores setup ${mode}`, { timeout: 30000 }, async (t) => {
+  const { spawn } = require('node:child_process');
+  const { chromium } = require('@playwright/test');
+  const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'onboarding-window-'));
+  const child = spawn(require('electron'), [path.join(__dirname, '..'), mode, '--remote-debugging-port=0', ...(process.platform === 'linux' ? ['--no-sandbox'] : [])], {
+    env: { ...process.env, APPARENT_UI_PROFILE: profile }, stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let browser;
+  t.after(async () => {
+    if (child.exitCode === null) {
+      const exited = new Promise(resolve => child.once('exit', resolve));
+      child.stdin.end('{"type":"close"}\n');
+      const timer = setTimeout(() => child.kill(), 3000);
+      await exited; clearTimeout(timer);
+    }
+    await browser?.close();
+    await fs.rm(profile, { recursive: true, force: true });
+  });
+  const endpoint = await new Promise((resolve, reject) => {
+    let log = '';
+    const timer = setTimeout(() => reject(Error('No Electron debugger endpoint')), 10000);
+    child.once('error', reject);
+    child.once('exit', () => { clearTimeout(timer); reject(Error('Electron exited before connection')); });
+    child.stderr.on('data', bytes => {
+      log += bytes;
+      const match = log.match(/DevTools listening on (ws:\/\/[^\s]+)/);
+      if (match) { clearTimeout(timer); resolve(match[1]); }
+    });
+  });
+  browser = await chromium.connectOverCDP(endpoint);
+  const context=browser.contexts()[0];
+  const page=context.pages()[0]||await context.waitForEvent('page');
+  const send = patch => child.stdin.write(JSON.stringify({ type:'state', step:'welcome', rows:[], ready:true,
+    index:0, count:5, testInstance:true, shortcut:'⌃⌥⇧9', ...patch })+'\n');
+  let output='';child.stdout.on('data',bytes=>output+=bytes);
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  send({ penPicker:true });
+  await expect(page.getByRole('heading', { name:'Pick your pen.', exact:true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
+  await expect(page.locator('.apparent-build-identity')).toBeVisible();
+  assert.equal(await page.locator('.apparent-build-identity').evaluate(marker=>{
+    const a=marker.getBoundingClientRect();
+    return [...document.querySelectorAll('.native-setup button')].every(button=>{
+      const b=button.getBoundingClientRect();
+      return !b.width || !b.height || a.right<=b.left || a.left>=b.right || a.bottom<=b.top || a.top>=b.bottom;
+    });
+  }),true,'passive build identity must not obscure onboarding controls');
+  assert.deepEqual(await page.locator('.native-pencils button').allTextContents(),['','','','']);
+  await page.evaluate(()=>document.fonts.ready);
+  await expect(page.locator('.native-setup')).toHaveCSS('font-family', '"Host Grotesk", system-ui, sans-serif');
+  await expect(page.getByRole('heading',{name:'Pick your pen.',exact:true})).toHaveCSS('font-size','36px');
+  await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toHaveCSS('font-size','18px');
+  for(const scheme of ['light','dark','light']){
+    await page.emulateMedia({colorScheme:scheme});
+    await expect(page.locator('.native-setup')).toHaveCSS('background-color',scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)');
+    await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toHaveCSS('background-color','rgb(122, 88, 199)');
+    await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toHaveCSS('color','rgb(245, 240, 232)');
+    const tip=await page.locator('.native-pencils button span').first().evaluate(el=>getComputedStyle(el,'::after').borderTopColor);
+    assert.notEqual(tip,scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)','pen tip must remain visible against the page');
+  }
+
+  await page.getByRole('button',{name:'purple pen',exact:true}).click();
+  await expect.poll(()=>output).toContain('pen:purple');
+  send({penPicker:true,penSelected:true,penRgb:[122,88,199]});
+  await expect(page.locator('.native-puddle path')).toHaveCSS('fill','rgb(122, 88, 199)');
+  const centres=await page.evaluate(()=>{
+    const h=document.querySelector('.native-pen-picker h1').getBoundingClientRect();
+    const button=[...document.querySelectorAll('footer button')].at(-1).getBoundingClientRect();
+    return [h.x+h.width/2,button.x+button.width/2,innerWidth/2];
+  });
+  assert.ok(Math.abs(centres[0]-centres[2])<2&&Math.abs(centres[1]-centres[2])<2);
+  // Hold the first image decode, as on a cold launch. No wall-clock timeout may skip the hop.
+  await page.locator('.native-pond-frog').evaluate(img=>{const decode=img.decode.bind(img);img.decode=()=>decode().then(()=>new Promise(resolve=>{window.releasePenImage=resolve}));});
+  const before=await page.locator('.native-pond-frog').boundingBox();
+  await page.getByRole('button',{name:'Use this pen',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toBeDisabled();
+  await new Promise(resolve=>setTimeout(resolve,1400));
+  assert.equal(output.includes('"action":"continue"'),false,'cold image readiness must not be bypassed by a timer');
+  await page.evaluate(()=>window.releasePenImage());
+  await expect(page.locator('.native-pond')).toHaveAttribute('data-landing','true');
+  const minimum=await page.evaluate(()=>new Promise(resolve=>{
+    const frog=document.querySelector('.native-pond-frog');let min=frog.getBoundingClientRect().y;const began=performance.now();
+    function sample(){min=Math.min(min,frog.getBoundingClientRect().y);if(performance.now()-began<1000)requestAnimationFrame(sample);else resolve(min)}requestAnimationFrame(sample);
+  }));
+  assert.ok(minimum<before.y-25,'frog must rise visibly before landing');
+  await expect.poll(()=>output).toContain('"action":"continue"');
+  assert.equal(output.match(/"action":"continue"/g)?.length,1);
+  send({step:'try-it',practice:'screen'});
+  await expect(page.getByRole('heading',{name:'Choose Screen.',exact:true})).toBeVisible();
+  send({ step:'try-it', practice:'whiteboard', anchor:[300,30,320,50] });
+  await expect(page.getByRole('heading', { name:'Open Whiteboard.', exact:true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(380);
+  assert.equal(await page.evaluate(() => {
+    const rect=document.querySelector('main').getBoundingClientRect();
+    return rect.left>=0 && rect.right<=innerWidth && rect.bottom<=innerHeight;
+  }), true);
+  send({step:'try-it',practice:'copy-failed'});
+  await page.getByRole('button',{name:'Find saved capture',exact:true}).click();
+  await expect.poll(()=>output).toContain('practice-locate');
+  send({ step:'try-it', practice:'locate', anchor:[900,0,24,24] });
+  await expect(page.getByRole('heading', { name:'apparent lives here.', exact:true })).toBeVisible();
+  await expect(page.getByText('Find the apparent icon in your menu bar. Click it, then choose Open Latest Capture.', { exact:true })).toBeVisible();
+  await expect(page.locator('.native-coach')).toHaveAttribute('data-arrow','true');
+  for(const phase of ['start','screen','whiteboard','board-ink','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
+    send({step:'try-it',practice:phase});
+    await expect(page.locator('.native-coach')).toHaveAttribute('data-stage',phase);
+    const layout=await page.locator('.native-coach').evaluate(card=>{
+      const content=card.querySelector('.native-coach-content'),rect=card.getBoundingClientRect();
+      const buttons=[...card.querySelectorAll('button')].map(button=>({font:parseFloat(getComputedStyle(button).fontSize),radius:getComputedStyle(button).borderRadius,...(()=>{const r=button.getBoundingClientRect();return{width:r.width,height:r.height}})()}));
+      return{bottom:rect.bottom,viewport:innerHeight,horizontal:content.scrollWidth>content.clientWidth,scroll:content.scrollHeight>content.clientHeight,buttons};
+    });
+    assert.ok(layout.bottom<=layout.viewport,phase+' coach is clipped');
+    assert.equal(layout.horizontal,false,phase+' content overflows horizontally');
+    assert.equal(layout.scroll,false,phase+' needs scrolling at normal text size');
+    for(const button of layout.buttons){assert.ok(button.font>=18&&button.width>=44&&button.height>=44,phase+' button violates brand minimum');assert.equal(button.radius,'0px');}
+  }
+  await page.evaluate(()=>document.documentElement.style.fontSize='200%');
+  await expect(page.locator('.native-coach p')).toHaveCSS('font-size','36px');
+  assert.equal(await page.locator('.native-coach-content').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
+  await page.getByRole('button',{name:'Try later',exact:true}).scrollIntoViewIfNeeded();
+  await expect(page.getByRole('button',{name:'Try later',exact:true})).toBeInViewport();
+  await page.evaluate(()=>document.documentElement.style.fontSize='');
+
+  send({ step:'permissions' });
+  await expect(page.getByRole('heading', { name:'We need three things.', exact:true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
+  assert.equal(await page.locator('.native-setup section > p').count(),0);
+  send({step:'shortcut',shortcutChosen:true});
+  await expect(page.getByRole('heading',{name:'Start and stop with your shortcut.',exact:true})).toBeVisible();
+  assert.equal(await page.locator('.native-setup section > p').count(),0);
+  await expect(page.getByRole('button',{name:'Change shortcut',exact:true})).toBeVisible();
+  send({step:'shortcut',shortcutChosen:false,platform:'macos',shortcutEditor:{recording:false,externallyManaged:false}});
+  await page.getByRole('button',{name:'Use this shortcut',exact:true}).click();
+  await expect.poll(()=>output).toContain('use-current-shortcut');
+  send({step:'shortcut',shortcutEditor:{recording:true,externallyManaged:false}});
+  await page.getByRole('group',{name:'Shortcut recorder'}).press('Control+Alt+k');
+  await expect.poll(()=>output).toContain('"keyCode":40');
+  await expect.poll(()=>output).toContain('"modifiers":6144');
+  await page.getByRole('group',{name:'Shortcut recorder'}).evaluate(element=>element.dispatchEvent(new KeyboardEvent('keydown',{key:'ß',code:'KeyS',altKey:true,bubbles:true})));
+  await expect.poll(()=>output).toContain('"keyCode":1,"modifiers":2048,"key":"s"');
+  await page.getByRole('group',{name:'Shortcut recorder'}).press('Tab');
+  await expect(page.getByRole('button',{name:'Cancel',exact:true})).toBeFocused();
+  await page.getByRole('button',{name:'Cancel',exact:true}).press('Enter');
+  await expect.poll(()=>output).toContain('cancel-shortcut');
+
+
+  await page.emulateMedia({reducedMotion:'reduce'});
+  send({penPicker:true,penSelected:true,penRgb:[59,121,189]});
+  await expect(page.getByRole('heading',{name:'Pick your pen.',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Use this pen',exact:true}).click();
+  await expect.poll(()=>output.match(/"action":"continue"/g)?.length).toBe(2);
+  await expect(page.locator('.native-pond-frog')).toHaveCSS('animation-name','none');
+  await page.setViewportSize({width:320,height:720});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'pen picker must reflow at 320 CSS pixels');
+  await page.setViewportSize({width:760,height:720});
+
+});
+
+// Replace only the default error dialog with a failing receipt. The real renderer,
+// stdin/stdout pipes, shutdown handlers and profile are exercised unchanged.
+test('onboarding survives a closed parent pipe and reopens the same profile', { timeout:30000 }, async t => {
+  const { spawn }=require('node:child_process');
+  const { chromium }=require('@playwright/test');
+  const profile=await fs.mkdtemp(path.join(os.tmpdir(),'onboarding-parent-'));
+  const wrapper=path.join(profile,'entry.cjs');
+  await fs.writeFile(wrapper,`const {app}=require('electron');\nprocess.on('uncaughtException',error=>{process.stderr.write('UNHANDLED_ONBOARDING:'+error.stack+'\\n');app.exit(42)});\nrequire(${JSON.stringify(path.resolve(__dirname,'../electron/onboarding.cjs'))});\n`);
+  const children=[],browsers=[];
+  t.after(async()=>{
+    for(const child of children)if(child.exitCode===null&&child.signalCode===null){
+      await new Promise((resolve,reject)=>{
+        const timer=setTimeout(()=>{child.kill('SIGKILL');reject(Error('Owned Electron child did not exit during cleanup'));},3000);
+        child.once('exit',()=>{clearTimeout(timer);resolve();});
+        child.kill();
+      });
+    }
+    for(const browser of browsers)await browser.close();
+    await fs.rm(profile,{recursive:true,force:true});
+  });
+  for(const reason of ['stdin ended','close command','action after broken output']){
+    const child=spawn(require('electron'),[wrapper,'--remote-debugging-port=0',...(process.platform==='linux'?['--no-sandbox']:[])],{env:{...process.env,APPARENT_UI_PROFILE:profile},stdio:['pipe','pipe','pipe']});
+    children.push(child);let stderr='';child.stderr.on('data',bytes=>stderr+=bytes);
+    const exit=new Promise(resolve=>child.once('exit',(code,signal)=>resolve({code,signal})));
+    const endpoint=await new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(Error('No debugger endpoint: '+stderr)),10000);
+      child.once('exit',()=>{clearTimeout(timer);reject(Error('Early exit: '+stderr));});
+      child.stderr.on('data',()=>{const match=stderr.match(/DevTools listening on (ws:\/\/[^\s]+)/);if(match){clearTimeout(timer);resolve(match[1]);}});
+    });
+    const browser=await chromium.connectOverCDP(endpoint);browsers.push(browser);
+    const context=browser.contexts()[0],page=context.pages()[0]||await context.waitForEvent('page');
+    child.stdin.write(JSON.stringify({type:'state',step:'permissions',ready:false,rows:[],index:1,count:4})+'\n');
+    await expect(page.locator('.native-permissions')).toBeVisible();
+    // The Rust parent can disappear during macOS Quit & Reopen. Its output
+    // consumer is gone before Electron's window-close event is delivered.
+    child.stdout.destroy();
+    if(reason==='stdin ended')child.stdin.end();
+    else if(reason==='close command')child.stdin.write('{"type":"close"}\n');
+    else await page.getByRole('button',{name:'Back',exact:true}).click().catch(error=>{if(!/closed|Target/.test(error.message))throw error;});
+    let timer;
+    const result=await Promise.race([exit,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Shutdown stalled: '+stderr)),5000)})]);
+    clearTimeout(timer);
+    assert.equal(result.code,0,reason+': '+stderr);
+    assert.ok(!stderr.includes('UNHANDLED_ONBOARDING'),stderr);
+    await browser.close();
+  }
+});
+
+// Capture the real Electron painted surface, without Playwright's omitBackground override.
+test('onboarding transparent coach keeps the outside canvas clear', {timeout:30000}, async t=>{
+  const {_electron}=require('@playwright/test');
+  const profile=await fs.mkdtemp(path.join(os.tmpdir(),'onboarding-alpha-'));
+  const nativeFs=require('node:fs');
+  const fifo=path.join(profile,'parent-input');require('node:child_process').execFileSync('mkfifo',[fifo]);
+  const input=nativeFs.openSync(fifo,'r+');
+  // Playwright closes its child's stdin. Keep the production parent channel open via an owned FIFO.
+  const quote=value=>"'"+value.replaceAll("'","'\\''")+"'";
+  const launcher=path.join(profile,'electron-launch');
+  await fs.writeFile(launcher,`#!/bin/sh\nexec ${quote(require('electron'))} \"$@\" < ${quote(fifo)}\n`,{mode:0o700});
+  let app;
+  t.after(async()=>{try{await app?.close()}finally{try{nativeFs.closeSync(input)}finally{await fs.rm(profile,{recursive:true,force:true})}}});
+  app=await _electron.launch({executablePath:launcher,args:[path.join(__dirname,'..'),'--onboarding',...(process.platform==='linux'?['--no-sandbox']:[])],env:{...process.env,APPARENT_UI_PROFILE:profile}});
+  const page=await app.firstWindow();
+  const send=patch=>nativeFs.writeSync(input,JSON.stringify({type:'state',step:'welcome',rows:[],ready:true,index:0,count:5,testInstance:true,shortcut:'⌃⌥⇧9',...patch})+'\n');
+  send({});await expect(page.getByRole('heading',{name:'Welcome.',exact:true})).toBeVisible();
+  send({step:'try-it',practice:'whiteboard'});
+  await expect(page.getByRole('heading',{name:'Open Whiteboard.',exact:true})).toBeVisible();
+  const window=await app.browserWindow(page);
+  for(const colorScheme of ['light','dark']){
+    await page.emulateMedia({colorScheme});
+    await page.evaluate(()=>document.fonts.ready);
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    const pixels=await window.evaluate(async win=>{
+      const image=(await win.capturePage()).resize({width:380,height:440});const data=image.toBitmap();
+      const pixel=(x,y)=>[...data.subarray((y*380+x)*4,(y*380+x)*4+4)];
+      return{background:win.getBackgroundColor(),shadow:win.hasShadow(),corner:pixel(2,2),bottom:pixel(378,438),card:pixel(190,180)};
+    });
+    if(process.platform==='darwin')assert.equal(pixels.shadow,false,'only the popup should cast a shadow');
+    assert.ok(pixels.corner[3]<5,`${colorScheme}: opaque top gutter ${JSON.stringify(pixels)}`);
+    assert.ok(pixels.bottom[3]<5,`${colorScheme}: opaque bottom gutter ${JSON.stringify(pixels)}`);
+    assert.equal(pixels.card[3],255,'the popup itself must stay opaque');
+  }
+});
 // Shared identity rendering and click-through checks use the shipped renderer.
 require('./build/identity.smoke.ts');

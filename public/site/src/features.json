@@ -22,6 +22,17 @@
   ],
   "features": [
     {
+      "id": "onboarding-pen-colour",
+      "group": "settings",
+      "name": "Onboarding pen colour",
+      "says": "Shared onboarding saves a pen colour for whiteboard and screen drawings, keyframes and exports.",
+      "status": "main",
+      "platforms": ["mac", "linux"],
+      "note": "Packaged macOS/Linux onboarding uses the shared Electron renderer with native fallback. Legacy captures retain their existing red ink. Config is read at startup; the centred picker previews the saved colour in a puddle and animates its frog on confirmation. The shared tour skips the retired explanation page. Native permission/capture acceptance remains required before release.",
+      "config": [{"key":"penColor","value":"coral | purple | blue | green","does":"Pen colour; absent keeps legacy red"}],
+      "docs": ["capture/desktop/docs/onboarding-and-settings.md"]
+    },
+    {
       "id": "connect-aggregate-daily-activity",
       "added": "2026-11-04",
       "group": "settings",
@@ -1356,7 +1367,7 @@
       "id": "onboarding",
       "group": "install",
       "name": "Welcome tour",
-      "says": "A welcome, an 11 s demo, one permissions checklist, an optional inline Record shortcut editor, and a first capture; it resumes where any quit left it.",
+      "says": "Shared welcome, pen colour, permission checklist, recording shortcut and live first-capture prompts; setup resumes after quitting.",
       "status": "main",
       "added": "2026-10-29",
       "platforms": ["mac", "linux"],
@@ -1367,7 +1378,7 @@
       "id": "onboarding-first-capture",
       "group": "install",
       "name": "Choose and try your Record shortcut",
-      "says": "Onboarding requires an explicit shortcut choice and a successful shortcut-started recording before it can finish. Closing leaves setup unfinished for the next launch.",
+      "says": "Onboarding requires an explicit shortcut choice and a successful shortcut-started recording before it can finish. The shared coach follows Screen selection when shown, then Whiteboard and screen drawing, copying, manual paste confirmation and finding Open Latest Capture. Partial saved captures still reach the location lesson; finishing practice requires both drawing steps. Closing leaves setup unfinished for the next launch.",
       "status": "main",
       "added": "2026-10-31",
       "platforms": ["mac", "linux"],

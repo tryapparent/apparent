@@ -403,15 +403,98 @@ Render every pane (dark, light, each shortcut state: held, listening, partial, r
 
 Off by default. General › Lower other audio while recording (`"lowerPlayback": true`) ramps the default output device's volume over one second to `playbackLevel` percent of what it was (Lower to, default 20%; 0 mutes) from the moment the shortcut is pressed or a recording starts, Mac or cabled iPhone, and back when it finishes, is cancelled or the picker closes without recording. `apparent-helper playback-volume --server`, started at launch while the setting is on, does the CoreAudio work and takes `start N` / `stop` lines on stdin. It reads every writable output channel's volume scalar before writing any (the master volume only when the channels have none), so balance and silent channels come back as they were; it never touches the mute flag or any input device. It restores when told to stop, when Apparent exits or crashes (stdin closes) and at once on SIGTERM, SIGINT or SIGHUP; it leaves the volume alone if someone changed it during the recording, and a device switched to mid-recording isn't lowered (the original device is restored). Fixed-volume outputs are left unchanged. Linux does nothing. `apparent-helper playback-volume --self-test` runs the ramp tests on fake devices; `--inspect` prints the current device's volume controls without changing them.
 
-Electron onboarding permission effects stay in Rust: Linux uses its privacy
-adapter; macOS keeps an installed `apparent-helper onboarding --permissions-only`
-process alive for AVFoundation/Speech consent and permission guidance panels.
-That mode never creates the onboarding window, admits only fixed permission
-identifiers/actions, closes granted guides, and cleans up guides on pipe closure.
-The Electron pipe carries presentation only. Native fallback remains available;
-its presentation can be removed only after Mac permission/media and isolated
-Linux acceptance. Packaged assets route this workflow to Electron; missing assets, spawn failure
-or a renderer crash restore the native presentation. During capture, construction
-of a crashed presentation’s native replacement waits until capture ends. The
-first-capture opt-out changes the workflow requirements; it does not select a
-second competing onboarding surface.
+## Shared onboarding and native fallback
+
+Packaged macOS and Linux apps use `dist/onboarding.html` and the approved React
+setup/coach in the existing Settings Electron package. This reuses its single
+runtime; Rust owns permission gates, configuration, saved pen colour, shortcuts
+and capture milestones. No test-instance environment is needed by the regular
+app. The development `--native-onboarding` entry remains for preview tests.
+
+The shared tour has Welcome, pen choice, permissions, recording shortcut and live
+practice. It skips the retired HowItWorks page, including old resume points and
+Back. No typing opt-in or typing shortcut is added. The centred pen picker uses
+accessible colour names, a puddle reflecting the saved colour and a frog hop on
+confirmation. Confirmation waits for image/font readiness, the rendered hop and a
+short landing hold; reduced motion advances without an animated delay. Pen tips
+use the contrasting foreground in both appearances. `penColor`
+accepts coral, purple, blue or green; legacy captures without colour retain red.
+The onboarding chrome uses the brand Paper/Carbon appearance roles; pigment stays constant.
+
+The shortcut recorder uses Rust's Settings validation/persistence, including Mac
+reserved-key checks. Mac Option glyphs are decoded from their physical key code.
+A desktop-owned Linux shortcut is explicitly accepted rather than rewritten.
+`experiments.onboardingFirstCapture=false` retains optional choice and a visible
+Skip practice action; it does not select another onboarding surface.
+
+Practice follows the actual target picker (Choose Screen), then this process's
+recording (Open Whiteboard), typed Whiteboard window, finished
+whiteboard mark, screen ink, stop, successful clipboard write, manual paste
+confirmation and Open Latest Capture. Paste is never monitored or proof of agent
+delivery. **Apparent lives here** follows that confirmation and points to this
+app's menu-bar icon on macOS (the tray on Linux). Opening its latest capture
+completes that lesson. A partial saved capture still reaches copy/paste and this
+location lesson, then offers a retry; completing practice still requires both
+kinds of drawing, manual paste confirmation and opening this app's own latest
+capture. Failed clipboard writes can reveal the saved capture without claiming
+paste success. Practice stays local under Rust's existing capture policy.
+
+The coaching window uses the shared explicit ARGB clear token for Electron's
+native background. CSS transparency alone does not clear a native white surface.
+The card paints its own shadow; the larger coach window has no rectangular native
+shadow. Electron pixel checks cover transparent outside gutters in both themes.
+
+Permission refreshes change contents without reactivating or resizing a visible
+setup window. Explicit parent Show may bring it forward after system prompts.
+macOS lazily starts `apparent-helper onboarding --permissions-only` for native
+consent/guides; this mode never presents competing onboarding and only admits
+fixed permission commands. Granted guides close, and leaving permissions retires
+guidance. The drag card uses opaque upward guidance; placement is geometric,
+so audio-only coverage across Settings layouts still requires native verification.
+
+Missing packaged assets, spawn failure or renderer failure retain native fallback.
+Rollback is the existing native path; remove it only after accepted Mac permission/
+media and isolated Linux evidence plus verified packaging/callers. During capture,
+a crashed renderer's native replacement waits until capture ends. Session IDs
+reject retired sessions, and transport generations reject queued callbacks from
+an Electron window replaced inside the same session. Retiring children does not
+wait on the capture/UI thread. EOF/broken parent output closes obsolete Electron
+cleanly; unexpected channel errors remain failures, without global exception
+suppression. Permission-grant/relaunch proof remains separate from renderer tests.
+
+### Onboarding brand mapping
+
+Setup, coaching, the permission drag guide and the separate test installer use
+Host Grotesk, the brand Paper/Stock/Carbon/Lilac/Signal palette and the 36/18/16
+text scale. Actions have square controls with a minimum 44-point target; grouped
+content uses one-pixel rules. The shared renderer reflows at 320 CSS pixels and
+keeps coach actions reachable at 200% text size. Existing Settings colours are
+unchanged. User-approved exceptions retain the frogs, colour puddle, popup
+silhouettes and their motion; permission placement still follows System Settings
+geometry. Renderer checks do not establish native permission-grant/relaunch or
+installer animation proof.
+
+### Separate onboarding test app
+
+`capture/desktop/scripts/packaging/build-onboarding-test.sh` wraps the same installed
+frontend/runtime in a private ad-hoc signed Mac installer. Set `APPARENT_TEST_OUTPUT`
+to a fresh absolute directory. It has no updater or `apparent:` URL handler.
+`APPARENT_TEST_INSTANCE=1` and the packaged `APPARENT_TEST_BUILD` select only Apparent
+config/captures/sockets/profile under
+`~/.apparent-test/<12-character-build-id>` on both platforms. The compact root
+keeps both launch and agent-control Unix sockets within the macOS path limit. Each build has its own macOS bundle,
+helper and UI identifiers, so LaunchServices/TCC and the single-instance socket
+cannot resolve to an older preview. Restart explicitly opens this test bundle;
+repeat launches of the same build still share one GUI owner and resume its saved
+state. New builds start fresh and require their own OS permission grants. Preview 9 is
+labelled **apparent preview 9** in macOS so its entry is distinct from older tests. Existing
+previews, their data and real app permissions are preserved. HOME and OS-owned
+paths are unchanged. Login defaults off; Record starts as Control–Option–Shift–9.
+
+The installer chooses a fresh build-specific location if the destination exists;
+it never overwrites an existing app. It refuses to open while an older onboarding
+test or its UI is running, preserves ordinary Apparent, and exits after launch.
+Only its frog follows the installation arc/bounce; copy completion cannot cut the
+animation short. Test controls say Whiteboard, while identity and paths stay
+isolated. Quit this test to roll back; no real TCC grants are reset. Native installer
+animation and actual System Settings Quit & Reopen remain separate acceptance gates.

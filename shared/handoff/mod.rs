@@ -8,6 +8,7 @@ use serde::Serialize;
 use crate::shared::model::ApparentBundle;
 
 mod config_store;
+pub(crate) mod pen;
 mod config;
 mod integration;
 // Preserve the handoff API while each boundary owns its implementation.

@@ -713,6 +713,7 @@ pub fn run_app(
                                         crate::shared::handoff::load_bundle(std::path::Path::new("latest"))
                                     {
                                         loop_coord.update(cx, |coord, cx| {
+                                            if let Some(session)=coord.onboarding.as_mut(){session.practice_latest();}
                                             coord.mark_handled(&dir);
                                             coord.set_review_bundle((dir, bundle), None);
                                             cx.notify();
@@ -798,6 +799,9 @@ pub fn run_app(
                         // The picker may not have the keys (another app is active), but the
                         // key tap sees Esc anyway.
                         loop_coord.update(cx, |coord, cx| coord.cancel_recording(cx));
+                    }
+                    if loop_coord.read(cx).onboarding.as_ref().is_some_and(|s|s.practice_active()) {
+                        loop_coord.update(cx, |coord,cx|coord.tick_onboarding_practice(cx));
                     }
                     if loop_coord.read(cx).gate.is_pending() {
                         loop_coord.update(cx, |coord, _| coord.tick_gate());

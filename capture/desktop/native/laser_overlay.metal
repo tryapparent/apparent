@@ -19,6 +19,7 @@ struct LaserUniforms {
     uint tile_rows;
     float tile_size;
     float _pad2;
+    float4 ink;
 };
 
 // Each segment connects A -> B in logical screen points.
@@ -212,7 +213,7 @@ fragment float4 laser_fragment(
             float2 lo = u.target_rect.xy;
             float2 hi = lo + u.target_rect.zw;
             float d = max(min(min(p.x - lo.x, hi.x - p.x), min(p.y - lo.y, hi.y - p.y)), 0.0);
-            out.rgb = float3(1.0, 0.23, 0.19);
+            out.rgb = (u.ink.a > 0.0 ? u.ink.rgb : float3(1.0, 0.23, 0.19));
             out.a = exp(-d / 22.0) * 0.45 * env;
         }
     } else if (intro_fade > 0.002) {
@@ -223,7 +224,7 @@ fragment float4 laser_fragment(
 
     // 1. Composite ink (red fill)
     if (ink_red_cov > 0.001) {
-        float3 ink_col = float3(1.0, 0.23, 0.19);
+        float3 ink_col = (u.ink.a > 0.0 ? u.ink.rgb : float3(1.0, 0.23, 0.19));
         float a = ink_red_cov;
         out.rgb = ink_col * a + out.rgb * (1.0 - a);
         out.a = a + out.a * (1.0 - a);

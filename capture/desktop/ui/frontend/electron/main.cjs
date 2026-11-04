@@ -1,6 +1,6 @@
 require('./runtime.cjs').installBuildIdentity(require('electron'));
 require('./runtime.cjs').installExceptionReporting(require('electron'));
-if(process.argv.includes('--onboarding')) { require('./onboarding.cjs'); } else {
+if((process.argv.includes('--onboarding') || process.argv.includes('--native-onboarding'))) { require('./onboarding.cjs'); } else {
 const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, nativeTheme } = require('electron');
 const os = require('node:os');
 const {PublicShare} = require('./public-share.cjs');

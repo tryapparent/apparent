@@ -224,6 +224,34 @@ for (const [reply, expected] of [
   assert.deepEqual(await captureLocation(f.home), expected);
 });
 
+test('onboarding coach avoids its board and pill on offset displays, preserves identity', () => {
+  const { coachPosition, project } = require('../electron/onboarding.cjs');
+  for (const area of [{x:0,y:25,width:1440,height:875},{x:-1920,y:40,width:1920,height:1040}]) {
+    const board=[area.x+260,area.y+160,760,590], anchor=[area.x+500,area.y+15,320,50];
+    const p=coachPosition(area,anchor,board,'board-ink');
+    assert.ok(p.x>=area.x && p.y>=area.y && p.x+380<=area.x+area.width && p.y+440<=area.y+area.height);
+    for(const [x,y,w,h] of [board,anchor]) assert.ok(p.x+380<=x || p.x>=x+w || p.y+440<=y || p.y>=y+h);
+    assert.equal(p.pointsUp,false);
+  }
+  const state={type:'state',step:'try-it',rows:[],ready:true,testInstance:true,practiceBoard:[0,0,700,600]};
+  assert.equal(project(state).testInstance,true);
+  assert.deepEqual(project(state).practiceBoard,[0,0,700,600]);
+  assert.equal(project({...state,practiceBoard:[0,0,-1,600]}).practiceBoard,undefined);
+});
+
+test('onboarding output failure retires the channel once and preserves its error', async () => {
+  const { Writable }=require('node:stream');
+  const { parentChannel }=require('../electron/onboarding.cjs');
+  for(const code of ['EPIPE','EIO']){
+    const error=Object.assign(new Error(code),{code}),failures=[];
+    const output=new Writable({write(_bytes,_encoding,callback){callback(error)}});
+    const channel=parentChannel(output,failure=>failures.push(failure));
+    channel.send('continue');
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.deepEqual(failures,[error]);
+    assert.equal(channel.send('close'),false);
+  }
+});
 test('drawing undo binds recording identity and strips unexpected state', async (t) => {
   const { drawing } = require('../electron/runtime.cjs');
   const f = await fixture(t, '{"drawing":{"revision":"0123456789abcdef","strokes":2,"private":"hidden"}}\n');
@@ -271,7 +299,7 @@ test('closing public-share window rejects late start receipt and never delivers'
 
 {
 const {test}=require('node:test');const assert=require('node:assert/strict');const {parseAction,lines}=require('../electron/onboarding-protocol.cjs');
-test('bounded action contract',()=>{assert.deepEqual(parseAction('use-current-shortcut'),{action:'use-current-shortcut'});assert.deepEqual(parseAction('grant:microphone'),{action:'grant',permission:'microphone'});for(const value of ['start-capture','grant:other',null,{},['continue']])assert.throws(()=>parseAction(value));const value={action:'shortcut',kind:'record',keyCode:15,modifiers:6144,key:'r',reserved:false};assert.deepEqual(parseAction(value),value);for(const changed of [{extra:true},{keyCode:'15'},{reserved:true},{modifiers:1},{kind:'other'}])assert.throws(()=>parseAction({...value,...changed}))});
+test('bounded action contract',()=>{assert.deepEqual(parseAction('practice-locate'),{action:'practice-locate'});assert.deepEqual(parseAction('use-current-shortcut'),{action:'use-current-shortcut'});assert.deepEqual(parseAction('grant:microphone'),{action:'grant',permission:'microphone'});for(const value of ['start-capture','grant:other',null,{},['continue']])assert.throws(()=>parseAction(value));const value={action:'shortcut',kind:'record',keyCode:15,modifiers:6144,key:'r',reserved:false};assert.deepEqual(parseAction(value),value);for(const changed of [{extra:true},{keyCode:'15'},{reserved:true},{modifiers:1},{kind:'other'}])assert.throws(()=>parseAction({...value,...changed}))});
 test('stdin accepts fragmented lines and rejects oversized individual lines',()=>{const received=[];const feed=lines(v=>received.push(v));feed('{"type":');feed('"state"}\ninvalid\n{"type":"show"}\n');assert.equal(received.length,2);assert.throws(()=>feed('x'.repeat(65537)));const many=lines(()=>{});many('{}\n'.repeat(30000))});
 
 }
@@ -279,33 +307,32 @@ test('stdin accepts fragmented lines and rejects oversized individual lines',()=
 {
   const vm = require('node:vm');
   const fs = require('node:fs');
-  test('onboarding replays parent messages received before React subscribes', () => {
-    let receive;
-    let bridge;
-    const electron = {
-      ipcRenderer: { on: (_channel, listener) => { receive = listener; }, invoke: () => Promise.resolve() },
-      contextBridge: { exposeInMainWorld: (name, value) => { if (name !== 'apparentExceptions') bridge = value; } },
-    };
-    vm.runInNewContext(fs.readFileSync(require.resolve('../electron/onboarding-preload.cjs'), 'utf8'), {
-      require: name => { assert.equal(name, 'electron'); return electron; },
-      window: { addEventListener() {} },
-    });
-    receive({}, { type: 'shortcut', label: 'Alt+Shift+S' });
-    receive({}, { type: 'state', step: 'try-it' });
-    const messages = [];
-    const unsubscribe = bridge.subscribe(value => messages.push(value));
-    assert.equal(messages[0].label, 'Alt+Shift+S');
-    assert.equal(messages[1].step, 'try-it');
-    receive({}, { type: 'shortcut', label: 'Ctrl+Alt+K' });
-    assert.equal(messages.at(-1).label, 'Ctrl+Alt+K');
-    unsubscribe();
-    receive({}, { type: 'state', step: 'done' });
-    assert.equal(messages.length, 3);
-    const replay = [];
-    bridge.subscribe(value => replay.push(value));
-    assert.equal(replay.length, 2);
-    assert.equal(replay[0].label, 'Ctrl+Alt+K');
-    assert.equal(replay[1].step, 'done');
+  test('onboarding replays parent messages received before React subscribes', async () => {
+    let bridge, receive;
+    let current={step:'try-it',shortcut:'Alt+Shift+S'};
+    const electron={ipcRenderer:{on:(_channel,listener)=>{receive=listener},removeListener:()=>{receive=null},invoke:()=>Promise.resolve(current)},contextBridge:{exposeInMainWorld:(name,value)=>{if(name==='nativeOnboarding')bridge=value}}};
+    vm.runInNewContext(fs.readFileSync(require.resolve('../electron/onboarding-preload.cjs'),'utf8'),{require:()=>electron});
+    const messages=[];const off=bridge.onState(value=>messages.push(value));
+    // The current renderer subscribes before requesting the authoritative snapshot.
+    assert.equal((await bridge.readState()).shortcut,'Alt+Shift+S');
+    current={step:'shortcut',shortcut:'Ctrl+Alt+K'};receive({},current);
+    assert.equal(messages.at(-1).shortcut,'Ctrl+Alt+K');off();assert.equal(receive,null);
+    current={step:'done',shortcut:'Ctrl+Alt+K'};
+    bridge.onState(value=>messages.push(value));
+    assert.equal((await bridge.readState()).step,'done');
+    assert.equal(messages.length,1);
+  });
+  test('onboarding subscribes and reads current parent state without exposing filesystem access', async () => {
+    let receive,bridge,identity;
+    const current={step:'permissions',shortcut:'Alt+Shift+S'};
+    const electron={ipcRenderer:{on:(_channel,listener)=>{receive=listener},removeListener:()=>{receive=null},invoke:channel=>{if(channel==='apparent:build-identity')return Promise.resolve('0.3.13 · abc1234');assert.equal(channel,'onboarding:state');return Promise.resolve(current)}},contextBridge:{exposeInMainWorld:(name,value)=>{if(name==='nativeOnboarding')bridge=value;else if(name==='apparentBuild')identity=value;else assert.equal(name,'apparentExceptions')}}};
+    vm.runInNewContext(fs.readFileSync(require.resolve('../electron/onboarding-preload.cjs'),'utf8'),{require:name=>{assert.equal(name,'electron');return electron}});
+    assert.deepEqual(Object.keys(bridge).sort(),['action','onState','readState']);
+    assert.deepEqual(Object.keys(identity),['read']);
+    assert.equal(await identity.read(),'0.3.13 · abc1234');
+    assert.equal(await bridge.readState(),current);
+    const messages=[];const off=bridge.onState(value=>messages.push(value));
+    receive({}, {step:'shortcut'});assert.equal(messages[0].step,'shortcut');off();assert.equal(receive,null);
   });
 }
 
@@ -372,6 +399,33 @@ for (const kind of ['main_exception', 'main_rejection']) {
   });
 }
 
+// Exercise shipped main's window policy with native method receipts. A permission
+// refresh must render without stealing focus back from System Settings.
+test('permission refresh keeps setup unfocused and avoids repeating native geometry calls',()=>{
+ const vm=require('node:vm'),fs=require('node:fs'),{EventEmitter}=require('node:events');
+ const stdin=new EventEmitter();stdin.setEncoding=stdin.resume=()=>{};
+ const stdout=new EventEmitter();stdout.write=()=>true;
+ const calls=[];let window;
+ class Window extends EventEmitter {
+  constructor(){super();window=this;this.visible=false;this.webContents=new EventEmitter();this.webContents.setWindowOpenHandler=()=>{};this.webContents.send=()=>calls.push('state');}
+  removeMenu(){} loadURL(){} isDestroyed(){return false} isVisible(){return this.visible}
+  show(){this.visible=true;calls.push('show')} showInactive(){this.visible=true;calls.push('showInactive')} hide(){this.visible=false}
+  setAlwaysOnTop(){calls.push('top')} setHasShadow(){calls.push('shadow')} setVisibleOnAllWorkspaces(){calls.push('spaces')}
+  setMaximumSize(){calls.push('max')} setMinimumSize(){calls.push('min')} setSize(){calls.push('size')}
+  setPosition(){calls.push('position')} getBounds(){return{x:0,y:0,width:760,height:720}}
+ }
+ const area={x:0,y:0,width:1440,height:900};
+ const electron={app:{setName(){},getPath(){return'/tmp'},setPath(){},whenReady(){return{then:fn=>fn()}},dock:{hide(){}},quit(){}},BrowserWindow:Window,ipcMain:{handle(){}},screen:{getCursorScreenPoint:()=>({x:0,y:0}),getDisplayNearestPoint:()=>({workArea:area})},session:{defaultSession:{setPermissionRequestHandler(){},setPermissionCheckHandler(){}}}};
+ vm.runInNewContext('(function(){'+fs.readFileSync(require.resolve('../electron/onboarding.cjs'),'utf8')+'})()',{require:name=>name==='electron'?electron:require('node:module').createRequire(require.resolve('../electron/onboarding.cjs'))(name),__dirname:path.resolve(__dirname,'../electron'),module:{exports:{}},process:{versions:{electron:'fixture'},env:{},argv:[],stdin,stdout},console});
+ const send=status=>stdin.emit('data',JSON.stringify({type:'state',step:'permissions',rows:[{permission:'microphone',status,required:true}],ready:false})+'\n');
+ send('not-determined');const initial=calls.slice();send('granted');
+ assert.equal(calls.filter(x=>x==='state').length,2);
+ assert.equal(calls.filter(x=>x==='show').length,1,'permission refresh must not reactivate setup over OS prompts');
+ assert.equal(calls.filter(x=>x==='size').length,1,'same mode must not resize its native window again');
+ assert.equal(calls.filter(x=>x==='position').length,1,'same mode must preserve a user-moved window');
+ stdin.emit('data','{"type":"show"}\n');
+ assert.equal(calls.filter(x=>x==='show').length,2,'explicit parent show may reactivate setup');
+});
 // Keep identity contract logic in TypeScript and share this existing runner entry.
 require('./build/identity.test.ts');
 require('./build/transport.test.ts');

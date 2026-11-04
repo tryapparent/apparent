@@ -786,6 +786,23 @@ impl ApparentCoordinator {
         false
     }
 
+    pub(in crate::capture::desktop) fn tick_onboarding_practice(&mut self,cx:&mut Context<Self>) {
+        if !self.onboarding.as_ref().is_some_and(|s|s.practice_active()) {return;}
+        #[cfg(target_os="macos")]
+        let anchor=if self.onboarding.as_ref().is_some_and(|s|s.practice_locating()) {crate::capture::desktop::ui::macos::status_bar_anchor()} else {self.native_pill.as_ref().and_then(|p|p.coach_anchor())};
+        #[cfg(not(target_os="macos"))]
+        let anchor=None;
+        if let Some(session)=self.onboarding.as_mut(){session.practice_anchor(anchor);}
+        let board_frame=whiteboard::frame(cx);
+        if let Some(session)=self.onboarding.as_mut(){session.practice_board(board_frame);}
+        let board=self.whiteboard.borrow().strokes.iter().any(|s|s.len()>3);
+        let screen=self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|s|!s.laser && s.pts.len()>9).count();
+        let processing=self.is_processing();
+        let was_screen=self.onboarding.as_ref().unwrap().practice_screen_stage();
+        if let Some(session)=self.onboarding.as_mut() {session.observe_practice(board,screen,processing,None);}
+        if !was_screen && self.onboarding.as_ref().is_some_and(|s|s.practice_screen_stage()) {cx.defer(whiteboard::close);}
+    }
+
     /// Polled while the gate holds a request: shows the permissions window once ⌥⇧ is up.
     pub fn tick_gate(&mut self) {
         use crate::capture::desktop::settings::onboarding::{Flow, Input, Mode, Permission};
@@ -817,7 +834,10 @@ impl ApparentCoordinator {
         cx: &mut Context<Self>,
     ) {
         use crate::capture::desktop::settings::onboarding::{Effect, Event, Progress};
+        let Some(event)=event.for_current_session(self.onboarding.as_ref().map(|session|session.source())) else {return;};
+        let Some(event)=event.for_current_transport(self.onboarding.as_ref().map(|session|session.transport_generation())) else {return;};
         let effect = match event {
+            Event::Session { .. } | Event::Transport { .. } => Effect::None,
             Event::Launch(grants) => {
                 self.note_grants(&grants);
                 let mut progress = Progress::load();

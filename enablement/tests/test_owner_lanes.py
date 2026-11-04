@@ -1,5 +1,6 @@
 """Advisory selection cannot become execution or omit structural changes."""
 import os
+import re
 import json
 import shutil
 from pathlib import Path
@@ -93,7 +94,8 @@ class OwnerTests(unittest.TestCase):
                     ['npm', 'test'], ['xvfb-run', '-a', 'npm', 'run', 'test:electron']])
                 self.assertEqual(commands[3], ['node', '-p', "require('electron')"])
                 self.assertEqual(commands[4], ['cargo', 'test', '-j', '2',
-                    '--locked' if online else '--offline', '_electron_rust_roundtrip',
+                    '--locked' if online else '--offline',
+                    'capture::desktop::workflow::agent_capture::tests::',
                     '--', '--ignored', '--test-threads=1'])
                 for call in run.call_args_list[:4]:
                     self.assertEqual(call.kwargs['cwd'], lanes.ROOT / 'capture/desktop/ui/frontend')
@@ -103,6 +105,33 @@ class OwnerTests(unittest.TestCase):
                     self.assertEqual(rust['env'][key], '/fixture/electron')
                 self.assertTrue(all(call.kwargs['check'] for call in run.call_args_list))
         self.assertNotIn('desktop-ui-integration', lanes.LANES)
+
+    def test_host_bridge_filter_excludes_isolated_notes_desktop(self):
+        candidates = []
+        for module, relative in (
+                ('agent_capture::tests', 'capture/desktop/workflow/agent_capture.rs'),
+                ('notes::transport_tests', 'capture/desktop/workflow/notes/mod.rs')):
+            source = (lanes.ROOT / relative).read_text()
+            ignored = re.findall(r'#\[ignore[^\n]*\]\s*fn\s+(\w+)', source)
+            candidates.extend(f'capture::desktop::workflow::{module}::{name}'
+                              for name in ignored)
+        with patch.object(lanes.sys, 'platform', 'linux'), \
+                patch.object(lanes.legacy, 'check_temp_environment'), \
+                patch.object(lanes.os, 'access', return_value=True), \
+                patch.object(lanes.subprocess, 'run') as run:
+            def execute(args, **kwargs):
+                if args[0] != 'cargo':
+                    return SimpleNamespace(stdout='/fixture/electron\n')
+                selector = args[args.index('--') - 1]
+                selected = [name for name in candidates if selector in name]
+                self.assertEqual(set(selected), {
+                    'capture::desktop::workflow::agent_capture::tests::connect_settings_electron_rust_roundtrip',
+                    'capture::desktop::workflow::agent_capture::tests::storage_electron_rust_roundtrip',
+                })
+                self.assertIn('capture::desktop::workflow::notes::transport_tests::notes_electron_rust_roundtrip', candidates)
+                return SimpleNamespace(stdout=''.join(f'test {name} ... ok\n' for name in selected))
+            run.side_effect = execute
+            lanes.run_lane('desktop-ui-integration', online=True)
 
     def test_integration_rejects_zero_rust_tests(self):
         with patch.object(lanes.sys, 'platform', 'linux'), \

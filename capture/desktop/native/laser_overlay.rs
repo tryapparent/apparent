@@ -55,6 +55,7 @@ struct LaserUniforms {
     tile_rows: u32,
     tile_size: f32,
     _pad2: f32,
+    ink: [f32;4],
 }
 
 #[repr(C)]
@@ -647,6 +648,7 @@ impl SharedMetalOverlay {
                 tile_rows,
                 tile_size: TILE_PT,
                 _pad2: 0.0,
+                ink: {let [r,g,b]=crate::shared::handoff::pen::rgb();[r as f32/255.0,g as f32/255.0,b as f32/255.0,1.0]},
             };
             let frame = ShownFrame::new(uniforms, &segments, &pins);
             if renderer.shown.as_ref() == Some(&frame) {

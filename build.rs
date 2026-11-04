@@ -293,6 +293,7 @@ fn compile_helper() {
         ],
         &[
             "capture/desktop/native/Onboarding.swift",
+            "capture/desktop/native/OnboardingBrand.swift",
             "capture/desktop/native/OnboardingDemo.swift",
             "capture/desktop/native/PermissionPanel.swift",
             "capture/desktop/native/Settings.swift",
@@ -316,7 +317,7 @@ fn compile_helper() {
     // OUT_DIR is target/<profile>/build/apparent-<hash>/out.
     let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
     let plist = if let Ok(bundle_id) = std::env::var("APPARENT_HELPER_BUNDLE_ID") {
-        assert_eq!(bundle_id, "dev.simonvanlaak.apparent.preview.helper");
+        assert!(allowed_helper_bundle_id(&bundle_id), "Unexpected preview helper identity");
         let source = std::fs::read_to_string(&original_plist).expect("read helper plist");
         let original = "<string>dev.kitlangton.apparent.helper</string>";
         assert!(source.contains(original), "helper bundle ID changed");
@@ -385,4 +386,23 @@ fn compile_helper() {
     let dest = profile_dir.join("apparent-helper");
     let _ = std::fs::remove_file(&dest);
     std::fs::copy(&built, dest).expect("Could not place apparent-helper");
+}
+
+fn allowed_helper_bundle_id(id: &str) -> bool {
+    id == "dev.simonvanlaak.apparent.preview.helper" || id
+        .strip_prefix("dev.apparent.onboarding-test.build-")
+        .and_then(|s| s.strip_suffix(".helper"))
+        .is_some_and(|build| build.len()==12 && build.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b)))
+}
+
+#[cfg(test)]
+mod helper_identity_tests {
+    #[test]
+    fn helper_bundle_ids_admit_only_regular_preview_or_a_test_build() {
+        assert!(super::allowed_helper_bundle_id("dev.simonvanlaak.apparent.preview.helper"));
+        assert!(super::allowed_helper_bundle_id("dev.apparent.onboarding-test.build-012345abcdef.helper"));
+        for id in ["dev.kitlangton.apparent.helper", "dev.apparent.onboarding-test.helper", "dev.apparent.onboarding-test.build-012345ABCDEF.helper", "dev.apparent.onboarding-test.build-012345abcdef0.helper", "dev.apparent.onboarding-test.build-../bad.helper", "dev.apparent.onboarding-test.build-012345abcdef.helper</string>"] {
+            assert!(!super::allowed_helper_bundle_id(id),"{id}");
+        }
+    }
 }

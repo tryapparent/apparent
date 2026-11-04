@@ -104,6 +104,12 @@ enum Permissions {
     }
   }
 
+  static func closeAllGuides() {
+    let owned = panels
+    panels.removeAll()
+    for panel in owned.values { PermissionPanel.tell(panel, "cancel") }
+  }
+
   static func closeGuide(_ permission: String) {
     if let panel = panels.removeValue(forKey: permission) { PermissionPanel.tell(panel, "granted") }
   }
@@ -1086,12 +1092,15 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let state = type == "state" ? try? JSONDecoder().decode(OnboardingState.self, from: data) : nil
         DispatchQueue.main.async {
           if CommandLine.arguments.contains("--permissions-only"),
-             !["request", "open-settings", "close-guide", "close"].contains(type) { return }
+             !["request", "open-settings", "close-guide", "cancel-guides", "close"].contains(type) { return }
           if ["request", "open-settings", "close-guide"].contains(type),
              !["screen-recording", "microphone", "camera", "accessibility", "speech-recognition"].contains(permission) { return }
           switch type {
           case "state":
             guard let state else { return }
+            // Native fallback owns its permission guide lifetime.
+            for row in state.rows where row.granted { Permissions.closeGuide(row.permission) }
+            if state.step != "permissions" { Permissions.closeAllGuides() }
             if state.step != "shortcut" || !state.shortcutEditing {
               self.listenForShortcut(false)
               self.model.shortcutEditor = nil
@@ -1107,6 +1116,8 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
           // The user has moved on to another row: answering an earlier question mustn't pull
           // this window over the System Settings pane they're working in.
+          case "cancel-guides":
+            Permissions.closeAllGuides()
           case "close-guide":
             Permissions.closeGuide(permission)
           case "request":
@@ -1131,8 +1142,7 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
           case "hide": self.window?.orderOut(nil)
           case "show": self.present()
           case "close":
-            for panel in Permissions.panels.values { PermissionPanel.tell(panel, "cancel") }
-            Permissions.panels.removeAll()
+            Permissions.closeAllGuides()
             self.keys.handBack()
             exit(0)
           default: break

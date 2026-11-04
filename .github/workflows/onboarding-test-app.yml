@@ -1,0 +1,236 @@
+name: Onboarding test app
+
+on:
+  push:
+    branches: [preview/onboarding-attached, codex/onboarding-integration]
+    paths:
+      - '.github/workflows/onboarding-test-app.yml'
+      - 'capture/desktop/**'
+      - 'capture/engine/**'
+      - 'shared/**'
+      - 'main.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'build.rs'
+      - '.cargo/**'
+      - 'composition/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: onboarding-test-app-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    if: github.repository == 'tryapparent/apparent' && (github.ref == 'refs/heads/preview/onboarding-attached' || github.ref == 'refs/heads/codex/onboarding-integration')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: Apple-Silicon
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            arch: Intel
+    runs-on: ${{ matrix.runner }}
+    # The agent whose run hits the limit owns optimization before another attempt.
+    timeout-minutes: 15
+    env:
+      CARGO_BUILD_JOBS: 3
+      CARGO_PROFILE_DEV_DEBUG: 0
+    steps:
+      - name: Verification runtime budget and ownership
+        run: echo '15 minute whole-workflow execution budget (runner queue excluded; parallel jobs count once). Per-job timeout is an additional safeguard. If exceeded, optimize the tests. The agent whose run hits the limit owns optimization and a successful rerun; do not raise or bypass the limit.'
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: onboarding-test-app-${{ matrix.arch }}
+          cache-on-failure: true
+      - name: Select the macOS 26 SDK on Intel
+        run: |
+          test -d /Applications/Xcode_26.3.app/Contents/Developer
+          echo 'DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer' >> "$GITHUB_ENV"
+      - name: Verify installer and prepare native dependencies
+        run: |
+          # Independent compiler checks and prerequisite discovery can overlap.
+          # Job control gives each owned worker a process group for cancellation.
+          set -m
+          workers=()
+          cleanup() {
+            trap - EXIT INT TERM
+            for worker in "${workers[@]}"; do
+              kill -TERM -- "-$worker" 2>/dev/null || true
+            done
+            for worker in "${workers[@]}"; do wait "$worker" 2>/dev/null || true; done
+          }
+          trap cleanup EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          (
+            rustc --edition 2024 --test build.rs -o "$RUNNER_TEMP/build-identity-check"
+            "$RUNNER_TEMP/build-identity-check" helper_bundle_ids_admit_only_regular_preview_or_a_test_build
+            xcrun swiftc -D INSTALLER_TEST -parse-as-library capture/desktop/native/OnboardingBrand.swift capture/desktop/native/installer/LocalInstaller.swift -o "$RUNNER_TEMP/installer-check"
+            "$RUNNER_TEMP/installer-check"
+          ) &
+          workers+=("$!")
+          (xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain) &
+          workers+=("$!")
+          # An exact restored dependency cache should not need an index update.
+          (cargo fetch --locked --offline || cargo fetch --locked) &
+          workers+=("$!")
+          failed=0
+          for worker in "${workers[@]}"; do wait "$worker" || failed=1; done
+          workers=()
+          exit "$failed"
+      - name: Build the separate test app and installer
+        env:
+          CARGO_NET_OFFLINE: 'true'
+          APPARENT_TEST_OUTPUT: ${{ runner.temp }}/onboarding-test-output
+          APPARENT_TEST_TARGET: ${{ matrix.target }}
+        run: |
+          if [ '${{ matrix.arch }}' != Intel ]; then
+            bash capture/desktop/scripts/packaging/build-onboarding-test.sh
+            exit 0
+          fi
+          export APPARENT_HELPER_BUNDLE_ID="dev.apparent.onboarding-test.build-${GITHUB_SHA:0:12}.helper"
+          set -m
+          workers=()
+          cleanup() {
+            trap - EXIT INT TERM
+            for worker in "${workers[@]}"; do kill -TERM -- "-$worker" 2>/dev/null || true; done
+            for grace in {1..20}; do
+              alive=0
+              for worker in "${workers[@]}"; do
+                if kill -0 -- "-$worker" 2>/dev/null; then alive=1; fi
+              done
+              if [ "$alive" = 0 ]; then break; fi
+              sleep .1
+            done
+            for worker in "${workers[@]}"; do
+              if kill -0 -- "-$worker" 2>/dev/null; then
+                echo "Force stopping owned worker group $worker after TERM grace" >&2
+                kill -KILL -- "-$worker" 2>/dev/null || true
+              fi
+            done
+            for worker in "${workers[@]}"; do wait "$worker" 2>/dev/null || true; done
+          }
+          trap cleanup EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          (bash capture/desktop/scripts/packaging/build-onboarding-test.sh) &
+          package_pid=$!
+          workers+=("$package_pid")
+          ready="$APPARENT_TEST_OUTPUT/Apparent Onboarding Test.app/Contents/MacOS/apparent"
+          helper_ready="$APPARENT_TEST_OUTPUT/Apparent Onboarding Test.app/Contents/MacOS/apparent-helper"
+          # install-app copies these executables only after cargo build returns.
+          # The fresh output directory prevents a previous package satisfying it.
+          for attempt in {1..480}; do
+            if [ -x "$ready" ] && [ -x "$helper_ready" ]; then break; fi
+            if ! kill -0 "$package_pid" 2>/dev/null; then
+              wait "$package_pid" || exit "$?"
+              echo 'Packaging exited without its built executable' >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          test -x "$ready" && test -x "$helper_ready" || { echo 'Timed out waiting for completed Cargo build' >&2; exit 1; }
+          (cargo test --bin apparent -j 3 --locked --offline --no-run --message-format=json > "$RUNNER_TEMP/onboarding-test-artifacts.jsonl") &
+          workers+=("$!")
+          failed=0
+          for worker in "${workers[@]}"; do wait "$worker" || failed=1; done
+          workers=()
+          test "$failed" = 0
+          node -e '
+            const fs=require("node:fs"),path=require("node:path");
+            const artifacts=fs.readFileSync(process.argv[1],"utf8").trim().split("\n").filter(Boolean).map(line=>JSON.parse(line));
+            const matches=artifacts.filter(a=>a.reason==="compiler-artifact"&&a.profile?.test===true&&a.target?.name==="apparent"&&a.target.kind.includes("bin")&&typeof a.executable==="string");
+            if(matches.length!==1||!path.isAbsolute(matches[0].executable))throw Error("Expected one apparent test executable");
+            fs.accessSync(matches[0].executable,fs.constants.X_OK);
+            console.log(matches[0].executable);
+          ' "$RUNNER_TEMP/onboarding-test-artifacts.jsonl" > "$RUNNER_TEMP/onboarding-test-executable"
+      - name: Verify installer and practice state
+        # Both packages are built on Intel; run the host matrix once, not twice.
+        if: matrix.arch == 'Intel'
+        env:
+          CARGO_NET_OFFLINE: 'true'
+        run: |
+          export APPARENT_HELPER_BUNDLE_ID="dev.apparent.onboarding-test.build-${GITHUB_SHA:0:12}.helper"
+          test_binary=$(cat "$RUNNER_TEMP/onboarding-test-executable")
+          run_case() {
+            filter=$1
+            threads=$2
+            "$test_binary" "$filter" --test-threads="$threads" | tee "$RUNNER_TEMP/onboarding-case.log"
+            grep -Eq '^test result: ok\. [1-9][0-9]* passed;' "$RUNNER_TEMP/onboarding-case.log" || {
+              echo "Required Rust filter ran no passing tests: $filter" >&2
+              return 1
+            }
+          }
+          run_case workflow::test_instance 1
+          run_case preview_relaunch_requests_the_exact_bundle 1
+          run_case choosing_capture_target_has_its_own_onboarding_milestone 1
+          run_case target_selection_precedes_recording 1
+          run_case settings::practice 2
+          run_case shared_pen_setup_skips_retired_intro 2
+          run_case replay_rejects_queued_events_from_the_retired_transport 2
+          run_case menu_bar_lesson_remains_after_paste_and_requires_opening_own_capture 2
+          run_case coaching_finishes_after_completion_pill_dismissal 2
+          run_case menu_retry_cannot_inherit_completed_shortcut_attempt 2
+          HELPER="$RUNNER_TEMP/onboarding-test-output/Apparent Onboarding Test.app/Contents/MacOS/apparent-helper" zsh capture/desktop/scripts/support/check-permission-panel-dock.sh
+      - name: Verify packaged architecture and record build identity
+        run: |
+          expected_arch=x86_64
+          if [ '${{ matrix.arch }}' = Apple-Silicon ]; then expected_arch=arm64; fi
+          app="$RUNNER_TEMP/onboarding-test-output/Apparent Onboarding Test.app"
+          installer="$RUNNER_TEMP/onboarding-test-output/Install Apparent Onboarding Test.app"
+          for binary in "$app/Contents/MacOS/apparent" "$app/Contents/MacOS/apparent-helper" "$app/Contents/Resources/settings/runtime/Electron.app/Contents/MacOS/Electron" "$installer/Contents/MacOS/LocalInstaller"; do
+            test "$(lipo -archs "$binary")" = "$expected_arch"
+          done
+          (cd "$RUNNER_TEMP/onboarding-test-output" && shasum -a 256 Apparent-Onboarding-Test.zip > SHA256SUMS)
+          {
+            git rev-parse HEAD
+            echo 'Build host:'
+            uname -m
+            echo 'App architecture: ${{ matrix.arch }}'
+            sw_vers
+          } > "$RUNNER_TEMP/onboarding-test-output/BUILD-INFO.txt"
+      - name: Verify the onboarding window and parent disconnect on macOS
+        if: matrix.arch == 'Intel'
+        working-directory: capture/desktop/ui/frontend
+        run: node --test --test-name-pattern='closed parent pipe|onboarding fixed window|onboarding transparent coach' tests/electron-smoke.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Apparent-Onboarding-Test-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/onboarding-test-output/Apparent-Onboarding-Test.zip
+            ${{ runner.temp }}/onboarding-test-output/SHA256SUMS
+            ${{ runner.temp }}/onboarding-test-output/BUILD-INFO.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  runtime-budget:
+    if: always() && needs.package.result != 'skipped'
+    needs: [package]
+    name: Workflow runtime budget
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/runtime-budget
+        with:
+          platform: macos

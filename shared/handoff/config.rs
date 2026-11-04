@@ -7,6 +7,8 @@ use serde::Deserialize;
 #[derive(Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
+    #[serde(default)]
+    pub pen_color: Option<String>,
     /// Hosted sync preference; credentials are separate private artifacts, not settings.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[serde(default)]

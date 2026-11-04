@@ -218,6 +218,7 @@ pub enum Input {
     },
     /// ⌥⇧S was pressed while a required permission is off.
     Blocked,
+    CaptureSelecting,
     CaptureStarted,
     CaptureEnded {
         completed: bool,
@@ -312,9 +313,16 @@ pub struct Flow {
     first_capture_completed: bool,
     shortcut_pending: bool,
     practice_recording: bool,
+    skip_intro: bool,
 }
 
 impl Flow {
+    /// The shared pen picker is followed directly by permissions or shortcut setup.
+    fn with_intro_skipped(mut self, skipped: bool) -> Self {
+        self.skip_intro=skipped && self.mode==Mode::Tour;
+        if self.skip_intro && self.step==Step::HowItWorks { self.step=self.forward_from(self.step); }
+        self
+    }
     /// Opt into the first-capture onboarding experiment, restoring durable milestones.
     pub fn with_first_capture(mut self, required: bool, chosen: bool, completed: bool) -> Self {
         self.first_capture_required = required && self.mode == Mode::Tour;
@@ -376,6 +384,7 @@ impl Flow {
             first_capture_completed: false,
             shortcut_pending: false,
             practice_recording: false,
+            skip_intro: false,
         }
     }
 
@@ -472,6 +481,7 @@ impl Flow {
                 }
                 Effect::Show
             }
+            Input::CaptureSelecting => Effect::None,
             Input::CaptureStarted if !self.hidden => {
                 self.practice_recording = std::mem::take(&mut self.shortcut_pending);
                 self.hidden = true;
@@ -575,7 +585,7 @@ impl Flow {
 
     /// A step the tour passes: the permissions screen once everything on it works.
     fn passes(&self, step: Step) -> bool {
-        step == Step::Permissions && self.done()
+        (step == Step::HowItWorks && self.skip_intro) || (step == Step::Permissions && self.done())
     }
 
     fn forward_from(&self, mut step: Step) -> Step {
@@ -888,6 +898,38 @@ pub enum Event {
     /// The inline recorder uses the same actions and validation as Settings.
     Shortcut(crate::capture::desktop::settings::Action),
     Exited,
+    /// Reader callbacks belong to the session that created their transport.
+    Session { source: u64, event: Box<Event> },
+    /// A fallback replaces a transport inside the same Session.
+    Transport { generation: u64, event: Box<Event> },
+}
+
+impl Event {
+    pub fn for_current_transport(self, active: Option<u64>) -> Option<Self> {
+        match self {
+            Self::Transport { generation, event } if Some(generation) == active => match *event {
+                Self::Transport { .. } | Self::Session { .. } => None,
+                event => Some(event),
+            },
+            Self::Transport { .. } => None,
+            event => Some(event),
+        }
+    }
+    pub fn for_current_session(self, active: Option<u64>) -> Option<Self> {
+        match self {
+            Self::Session { source, event } if Some(source) == active => match *event {
+                Self::Session { .. } => None,
+                event => Some(event),
+            },
+            Self::Session { .. } => None,
+            event => Some(event), // App-wide launch and OS grant notifications.
+        }
+    }
+}
+
+fn next_session_source() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Reads what's granted now from a fresh helper, except Accessibility: the separately
@@ -959,8 +1001,10 @@ pub fn poll_grants(
 /// The open welcome window: the `Flow` and the window drawing it. On macOS the app
 /// supplies permission updates even while this window is closed; other platforms poll here.
 pub struct Session {
+    source: u64,
+    transport_generation: u64,
     flow: Flow,
-    fallback: Option<Box<dyn Fn() -> anyhow::Result<Transport>>>,
+    fallback: Option<Box<dyn Fn(u64) -> anyhow::Result<Transport>>>,
     fallback_pending: bool,
     transport: Transport,
     permission_adapter: Option<Transport>,
@@ -973,6 +1017,14 @@ pub struct Session {
     saved_shortcut_chosen: bool,
     saved_first_capture_completed: bool,
     clock: std::time::Instant,
+    practice: Option<super::practice::Practice>,
+    anchor: Option<[f32;4]>,
+    practice_board: Option<[f32;4]>,
+    practice_completed: bool,
+    editor: Option<crate::capture::desktop::settings::ShortcutView>,
+    pen_picker: bool,
+    pen_selected: bool,
+    pen_error: bool,
 }
 
 impl Session {
@@ -980,6 +1032,8 @@ impl Session {
     #[cfg(test)]
     pub(crate) fn for_test(flow: Flow) -> Self {
         Self {
+            source: next_session_source(),
+            transport_generation: next_session_source(),
             flow,
             fallback: None,
             fallback_pending: false,
@@ -994,6 +1048,10 @@ impl Session {
             saved_shortcut_chosen: false,
             saved_first_capture_completed: false,
             clock: std::time::Instant::now(),
+            practice: None,
+            anchor: None,
+            practice_board: None,
+            practice_completed:false,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
         }
     }
 
@@ -1006,6 +1064,9 @@ impl Session {
         #[cfg(not(target_os = "macos"))]
         use std::sync::atomic::Ordering;
 
+        let source = next_session_source();
+        let transport_generation = next_session_source();
+        let events = Self::scope_events(source, events);
         let polling = std::sync::Arc::new(AtomicBool::new(true));
         let event_alive = polling.clone();
         let events = move |event| {
@@ -1014,7 +1075,8 @@ impl Session {
         let electron = super::presentation::assets().filter(|(app, _)| app.join("dist/onboarding.html").is_file() && app.join("electron/onboarding.cjs").is_file());
         let native_events = events.clone();
         let native_shortcut = shortcut.to_owned();
-        let native = move || {
+        let native = move |generation| {
+            let native_events = Self::scope_transport(generation, native_events.clone());
             if cfg!(target_os = "macos") {
                 Self::spawn_helper(&native_shortcut, native_events.clone())
             } else {
@@ -1027,15 +1089,24 @@ impl Session {
                 Ok(Transport::InProcess(Some(sender)))
             }
         };
-        let attempted = electron.and_then(|(app, runtime)| {
-            let mut command = std::process::Command::new(runtime);
+        let renderer_events = Self::scope_transport(transport_generation, events.clone());
+        let attempted = if let Some(shell) = std::env::var_os("APPARENT_ONBOARDING_SHELL") {
+            let mut command = std::process::Command::new(shell);
             crate::capture::ui_process::configure_build_identity(&mut command);
             crate::capture::desktop::workflow::error_reporting::configure_child(&mut command);
-            Self::spawn_transport(command.arg(app).arg("--onboarding"), events.clone()).ok()
-        });
+            Self::spawn_transport(command.arg("--native-onboarding"), renderer_events.clone()).ok()
+        } else {
+            electron.and_then(|(app, runtime)| {
+                let mut command = std::process::Command::new(runtime);
+                crate::capture::ui_process::configure_build_identity(&mut command);
+                crate::capture::desktop::workflow::error_reporting::configure_child(&mut command);
+                Self::spawn_transport(command.arg(app).arg("--onboarding"), renderer_events.clone()).ok()
+            })
+        };
+        let shell = attempted.is_some();
         let (transport, fallback) = match attempted {
-            Some(transport) => (transport, Some(Box::new(native) as Box<dyn Fn() -> anyhow::Result<Transport>>)),
-            None => (native()?, None),
+            Some(transport) => (transport, Some(Box::new(native) as Box<dyn Fn(u64) -> anyhow::Result<Transport>>)),
+            None => (native(transport_generation)?, None),
         };
 
         #[cfg(not(target_os = "macos"))]
@@ -1055,9 +1126,12 @@ impl Session {
         let progress = Progress::load();
         let allowed = relaunch_allowed(&progress, unix_ms());
         let mut session = Self {
+            source,
+            transport_generation,
             flow: flow
                 .with_auto_relaunch(allowed)
                 .with_tutorial(progress.tutorial)
+                .with_intro_skipped(shell)
                 .with_first_capture(
                     crate::shared::handoff::experiment("onboardingFirstCapture"),
                     progress.shortcut_chosen,
@@ -1076,10 +1150,29 @@ impl Session {
             saved_shortcut_chosen: progress.shortcut_chosen,
             saved_first_capture_completed: progress.first_capture_completed,
             clock: std::time::Instant::now(),
+            practice: shell.then(super::practice::Practice::default),
+            anchor: None,
+            practice_board: None,
+            practice_completed:false,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
         };
         session.shortcut_changed(shortcut);
         session.sync();
         Ok(session)
+    }
+
+    pub fn source(&self) -> u64 { self.source }
+    pub fn transport_generation(&self) -> u64 { self.transport_generation }
+
+    fn scope_transport(generation: u64, events: impl Fn(Event) + Send + Sync + Clone + 'static)
+        -> impl Fn(Event) + Send + Sync + Clone + 'static
+    {
+        move |event| events(Event::Transport { generation, event: Box::new(event) })
+    }
+
+    fn scope_events(source: u64, events: impl Fn(Event) + Send + Sync + Clone + 'static)
+        -> impl Fn(Event) + Send + Sync + Clone + 'static
+    {
+        move |event| events(Event::Session { source, event: Box::new(event) })
     }
 
     fn spawn_helper(
@@ -1104,15 +1197,17 @@ impl Session {
     }
 
     fn spawn_transport(command: &mut std::process::Command, events: impl Fn(Event) + Send + Sync + Clone + 'static) -> anyhow::Result<Transport> {
-        use std::io::BufRead;
         command.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
         let mut child = command.spawn()?;
         let stdin = child.stdin.take();
-        let stdout = child.stdout.take();
+        if let Some(stdout) = child.stdout.take() { Self::read_actions(stdout, events); }
+        Ok(Transport::Helper { child: crate::capture::ui_process::UiChild::new(child), stdin })
+    }
 
+    fn read_actions(stdout: std::process::ChildStdout, events: impl Fn(Event)+Send+Sync+Clone+'static) {
         std::thread::spawn(move || {
             let mut closed = false;
-            if let Some(stdout) = stdout {
+            {
                 let mut reader = std::io::BufReader::new(stdout);
                 loop {
                     let mut line = Vec::new();
@@ -1126,6 +1221,20 @@ impl Session {
                         continue;
                     };
                     let action = action.to_owned();
+                    #[cfg(target_os="linux")]
+                    if action=="shortcut-key" {
+                        if let (Some(key),Some(modifiers))=(value["key"].as_str(),value["modifiers"].as_u64()) {
+                            if key.len()<=32 && modifiers & !0x1b00 == 0 {
+                                if let Some(key_code)=crate::capture::desktop::settings::settings_window::key_code(key) {
+                                    events(Event::Shortcut(crate::capture::desktop::settings::Action::Shortcut {
+                                        kind:crate::capture::engine::runtime::ShortcutKind::Record,
+                                        pressed:crate::capture::desktop::settings::Pressed {key_code,modifiers:modifiers as u32,key:key.to_owned(),reserved:false},
+                                    }));
+                                }
+                            }
+                        }
+                        continue;
+                    }
                     if matches!(
                         action.as_str(),
                         "shortcut" | "cancel-shortcut" | "reset-shortcut"
@@ -1153,10 +1262,11 @@ impl Session {
             }
             if !closed { events(Event::Exited); }
         });
-        Ok(Transport::Helper { child: crate::capture::ui_process::UiChild::new(child), stdin })
     }
 
     pub fn restore_native(&mut self) -> bool {
+        // Invalidate queued actions/EOF before dropping the old child's input.
+        if self.fallback.is_some() { self.transport_generation = next_session_source(); }
         if self.fallback.is_some() && self.flow.hidden {
             // A replacement native window may map before a queued hide reaches it.
             // Defer creating any replacement until capture completion reveals the flow.
@@ -1170,9 +1280,12 @@ impl Session {
         if let Some(adapter) = self.permission_adapter.take() { retire_transport(adapter); }
         let old = std::mem::replace(&mut self.transport, Transport::InProcess(None));
         retire_transport(old);
-        match fallback() {
+        match fallback(self.transport_generation) {
             Ok(transport) => {
                 self.transport = transport;
+                // The native fallback has its own optional/required practice presentation.
+                self.practice = None;
+                self.pen_picker = false;
                 self.last_view.clear();
                 let label = self.shortcut_label.clone();
                 self.shortcut_changed(&label);
@@ -1202,7 +1315,27 @@ impl Session {
     /// Feeds the flow and carries out what the window can do itself. Returns what needs the
     /// app: `Close` or `Relaunch`.
     pub fn input(&mut self, input: Input) -> Effect {
+        if self.practice.is_some() && self.flow.step()==Step::TryIt && !self.fallback_pending {
+            match &input {
+                Input::CaptureSelecting => self.practice.as_mut().unwrap().selecting(),
+                Input::CaptureStarted => {
+                    self.practice_completed=false;
+                    self.practice=Some(super::practice::Practice::default());
+                },
+                Input::CaptureEnded { completed:true } => {
+                    self.practice_completed=self.flow.practice_recording;
+                    // A finished capture owns no live shortcut/hidden state. Coaching
+                    // keeps its own eligibility until the person finishes the lesson.
+                    self.flow.on(Input::CaptureEnded{completed:false});
+                    self.sync();return Effect::None;
+                },
+                Input::CaptureEnded { completed:false } => self.practice.as_mut().unwrap().cancelled(),
+                _=>{},
+            }
+        }
+        let started=matches!(input,Input::CaptureStarted);
         let effect = self.flow.on(input);
+        if started && self.flow.practice_recording {if let Some(p)=self.practice.as_mut(){p.started();}}
         // The in-process window feeds the flow on every refresh: log only what changed.
         static LAST: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
         let line = format!("onboarding: {:?} -> {effect:?}", self.flow.step());
@@ -1265,6 +1398,26 @@ impl Session {
 
     /// An action string from the helper as an `Input`.
     pub fn action(&mut self, action: &str) -> Effect {
+        if self.practice.is_some() && self.flow.step()==Step::Welcome {
+            if action=="continue" && !self.pen_picker {self.pen_picker=true;self.sync();return Effect::None;}
+            if let Some(name)=action.strip_prefix("pen:") {
+                if self.pen_picker {self.pen_error=crate::shared::handoff::pen::save(name).is_err();self.pen_selected=!self.pen_error;self.sync();}
+                return Effect::None;
+            }
+            if action=="continue" && !self.pen_selected {return Effect::None;}
+        }
+
+        if action.starts_with("practice-") {
+            if let Some(practice)=self.practice.as_mut() {
+                if practice.action(action) && action=="practice-finish" && self.practice_completed {
+                    self.flow.first_capture_completed=true;
+                    self.flow.step=Step::Done;
+                    self.sync();
+                    return self.input(Input::Continue);
+                }
+            }
+            self.sync();return Effect::None;
+        }
         let input = match action {
             "continue" => Input::Continue,
             "back" => Input::Back,
@@ -1305,7 +1458,9 @@ impl Session {
     pub fn shortcut_editor(&mut self, editor: &crate::capture::desktop::settings::ShortcutView) {
         let message = serde_json::json!({"type": "shortcut-editor", "shortcut": editor});
         self.shortcut_state = Some(message.clone());
+        self.editor = Some(editor.clone());
         self.send(&message);
+        self.sync();
     }
 
     pub(crate) fn local_practice(&self) -> bool {
@@ -1316,6 +1471,26 @@ impl Session {
         self.flow.step() == Step::Shortcut
     }
 
+    pub fn observe_practice(&mut self, board:bool, screen:usize, processing:bool, saved:Option<bool>) {
+        if self.flow.step()!=Step::TryIt {return;}
+        if let Some(practice)=self.practice.as_mut() {
+            practice.observe_ink(board,screen);
+            if processing {practice.processing();}
+            if let Some(copied)=saved {practice.saved(copied);}
+        }
+        self.sync();
+    }
+    pub fn practice_anchor(&mut self,anchor:Option<[f32;4]>) {self.anchor=anchor;}
+    pub fn practice_board(&mut self, frame: Option<[f32;4]>) {
+        self.practice_board=frame;
+        if let Some(p)=self.practice.as_mut() { p.whiteboard_visible(frame.is_some()); }
+    }
+    pub fn practice_active(&self)->bool {self.practice.is_some() && self.flow.step()==Step::TryIt}
+    pub fn practice_locating(&self)->bool {self.practice.as_ref().is_some_and(|p|p.stage==super::practice::Stage::Locate)}
+    pub fn practice_screen_stage(&self)->bool {self.practice.as_ref().is_some_and(|p|p.stage==super::practice::Stage::ScreenInk)}
+    pub fn practice_whiteboard(&mut self) {if let Some(p)=self.practice.as_mut(){p.whiteboard();}self.sync();}
+    pub fn practice_latest(&mut self) {if let Some(p)=self.practice.as_mut(){p.opened_latest();}self.sync();}
+
     pub fn editing_shortcut(&self) -> bool {
         self.flow.step() == Step::Shortcut && self.flow.shortcut_editing
     }
@@ -1325,19 +1500,27 @@ impl Session {
         if matches!(self.transport, Transport::InProcess(None)) {
             return;
         }
-        #[cfg(target_os = "macos")]
-        if let Some(Transport::Helper { stdin: Some(pipe), .. }) = self.permission_adapter.as_mut() {
-            use std::io::Write;
-            for row in self.flow.view().rows.iter().filter(|row| row.status == Status::Granted) {
-                let message = serde_json::json!({"type": "close-guide", "permission": row.permission});
-                let _ = writeln!(pipe, "{message}").and_then(|()| pipe.flush());
-            }
-        }
         let mut view = serde_json::to_value(self.flow.view()).unwrap_or_default();
         view["type"] = "state".into();
+        if let Some(practice)=self.practice.as_ref() {view["practice"]=serde_json::json!(practice.stage);}
+        view["shortcut"]=self.shortcut_label.clone().into();
+        view["platform"]=std::env::consts::OS.into();
+        view["shortcutEditor"]=serde_json::json!(self.editor);
+        view["anchor"]=serde_json::json!(self.anchor);
+        view["practiceBoard"]=serde_json::json!(self.practice_board);
+        view["testInstance"]=(std::env::var_os("APPARENT_TEST_INSTANCE").as_deref()==Some(std::ffi::OsStr::new("1"))).into();
+        view["penPicker"]=self.pen_picker.into();view["penSelected"]=self.pen_selected.into();view["penError"]=self.pen_error.into();
+        view["penRgb"]=serde_json::json!(crate::shared::handoff::pen::rgb());
         view["speech"] = serde_json::to_value(crate::capture::engine::runtime::audio::transcription::speech_model::current()).unwrap_or_default();
         let text = view.to_string();
         if text != self.last_view {
+            #[cfg(target_os = "macos")]
+            if let Some(Transport::Helper { stdin: Some(pipe), .. }) = self.permission_adapter.as_mut() {
+                use std::io::Write;
+                for message in permission_guide_messages(&self.flow.view()) {
+                    let _ = writeln!(pipe, "{message}").and_then(|()| pipe.flush());
+                }
+            }
             self.send(&view);
             self.last_view = text;
         }
@@ -1437,6 +1620,15 @@ impl Session {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn permission_guide_messages(view: &View) -> Vec<serde_json::Value> {
+    if view.step != Step::Permissions {
+        return vec![serde_json::json!({"type":"cancel-guides"})];
+    }
+    view.rows.iter().filter(|row|row.status==Status::Granted)
+        .map(|row|serde_json::json!({"type":"close-guide","permission":row.permission})).collect()
+}
+
 fn read_protocol_line(reader: &mut impl std::io::BufRead, line: &mut Vec<u8>) -> std::io::Result<usize> {
     use std::io::BufRead;
     std::io::Read::take(reader, 65_537).read_until(b'\n', line)
@@ -1493,31 +1685,15 @@ const AFTER_EXIT: &str = "pid=$1; shift; i=0; \
     while kill -0 \"$pid\" 2>/dev/null && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; ";
 
 /// Starts Apparent again once this copy has quit (after a Screen Recording grant). The app is
-/// opened without `-n`: if macOS's own "Quit & Reopen" already started a new copy, `open` only
+/// Regular apps open without `-n`: if macOS's own "Quit & Reopen" already started a new copy, `open` only
 /// brings that one forward, so there are never two.
 #[cfg(not(windows))]
 pub fn relaunch() {
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
-    let bundle = exe
-        .ancestors()
-        .find(|p| p.extension().is_some_and(|ext| ext == "app"));
-    let pid = std::process::id().to_string();
-    let mut command = std::process::Command::new("/bin/sh");
-    match bundle {
-        Some(app) => command
-            .arg("-c")
-            .arg(format!("{AFTER_EXIT}exec /usr/bin/open \"$1\""))
-            .args(["apparent-relaunch", &pid])
-            .arg(app),
-        None => command
-            .arg("-c")
-            .arg(format!("{AFTER_EXIT}exec \"$@\""))
-            .args(["apparent-relaunch", &pid])
-            .arg(&exe)
-            .args(std::env::args_os().skip(1)),
-    };
+    let mut command = relaunch_command(&exe, std::env::args_os().skip(1), std::process::id(),
+        std::env::var_os("APPARENT_TEST_INSTANCE").as_deref()==Some(std::ffi::OsStr::new("1")));
     let _ = command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -1525,8 +1701,132 @@ pub fn relaunch() {
         .spawn();
 }
 
+#[cfg(not(windows))]
+fn relaunch_command(exe: &Path, args: impl IntoIterator<Item=std::ffi::OsString>, pid: u32, test_instance: bool) -> std::process::Command {
+    let bundle=exe.ancestors().find(|p|p.extension().is_some_and(|ext|ext=="app"));
+    let mut command=std::process::Command::new("/bin/sh");
+    match bundle {
+        Some(app) => {
+            // Preview builds have separate identifiers/state. Force this exact bundle to
+            // launch; a same-build duplicate still joins that build's single GUI owner.
+            let open=if test_instance { "exec /usr/bin/open -n \"$1\"" } else { "exec /usr/bin/open \"$1\"" };
+            command.arg("-c").arg(format!("{AFTER_EXIT}{open}"))
+                .args(["apparent-relaunch", &pid.to_string()]).arg(app);
+        }
+        None => { command.arg("-c").arg(format!("{AFTER_EXIT}exec \"$@\""))
+            .args(["apparent-relaunch", &pid.to_string()]).arg(exe).args(args); }
+    }
+    command
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn preview_relaunch_requests_the_exact_bundle_without_changing_regular_launches() {
+        use std::ffi::OsString;
+        let exe=Path::new("/Applications/Preview's $name.app/Contents/MacOS/apparent");
+        for test in [false,true] {
+            let command=relaunch_command(exe,Vec::<OsString>::new(),123,test);
+            let args:Vec<_>=command.get_args().map(|x|x.to_string_lossy().into_owned()).collect();
+            assert_eq!(args.len(),5);
+            assert_eq!(args[0],"-c");
+            assert_eq!(args[1],format!("{AFTER_EXIT}exec /usr/bin/open {}\"$1\"",if test {"-n "} else {""}));
+            assert_eq!(&args[2..],&["apparent-relaunch","123","/Applications/Preview's $name.app"]);
+        }
+        let command=relaunch_command(Path::new("/tmp/app target/apparent"),[OsString::from("app")],321,true);
+        let args:Vec<_>=command.get_args().map(|x|x.to_string_lossy().into_owned()).collect();
+        assert_eq!(args[1],format!("{AFTER_EXIT}exec \"$@\""));
+        assert_eq!(&args[2..],&["apparent-relaunch","321","/tmp/app target/apparent","app"]);
+    }
+
+    fn coached_session()->Session {
+        let mut session=Session::for_test(Flow::tour(Step::TryIt,Some(grants(&Permission::REQUIRED))).with_first_capture(true,true,false));
+        session.practice=Some(super::super::practice::Practice::default());session
+    }
+    #[test]
+    fn shared_pen_setup_skips_retired_intro_in_both_directions_and_on_resume() {
+        let mut flow=Flow::tour(Step::Welcome,Some(grants(&[]))).with_intro_skipped(true);
+        flow.on(Input::Continue);assert_eq!(flow.step(),Step::Permissions);
+        flow.on(Input::Back);assert_eq!(flow.step(),Step::Welcome);
+        let resumed=Flow::tour(Step::HowItWorks,Some(grants(&[]))).with_intro_skipped(true);
+        assert_eq!(resumed.step(),Step::Permissions);
+        let mut ready=Flow::tour(Step::Welcome,Some(grants(&Permission::REQUIRED))).with_intro_skipped(true);
+        ready.on(Input::Continue);assert_eq!(ready.step(),Step::Shortcut);
+        ready.on(Input::Back);assert_eq!(ready.step(),Step::Welcome);
+        assert!(!ready.view().fix);
+        for skipped in [false,true] {
+            let resumed=Flow::tour(Step::Permissions,Some(grants(&Permission::REQUIRED))).with_intro_skipped(skipped);
+            assert_eq!(resumed.step(),Step::Permissions,"a ready resumed permission page stays visible");
+            let repair=Flow::fix(Permission::REQUIRED.to_vec(),Some(grants(&Permission::REQUIRED))).with_intro_skipped(skipped);
+            assert_eq!(repair.step(),Step::Permissions);assert!(repair.view().fix);
+        }
+    }
+
+    #[test]
+    fn replay_rejects_queued_events_from_the_retired_transport() {
+        let old=coached_session();
+        let (sender,receiver)=flume::unbounded();
+        let emit=Session::scope_events(old.source(),move |event| {sender.send(event).unwrap();});
+        // The old stream may queue actions before closing, and Exited after it closes.
+        emit(Event::Action("continue".into()));
+        drop(old);
+        let replacement=coached_session();
+        emit(Event::Exited);
+        for event in receiver.try_iter() {
+            assert!(event.for_current_session(Some(replacement.source())).is_none());
+        }
+        let (sender,receiver)=flume::unbounded();
+        let emit=Session::scope_events(replacement.source(),move |event| {sender.send(event).unwrap();});
+        emit(Event::Action("continue".into()));
+        emit(Event::Exited);
+        assert!(matches!(receiver.recv().unwrap().for_current_session(Some(replacement.source())),Some(Event::Action(_))));
+        assert!(matches!(receiver.recv().unwrap().for_current_session(Some(replacement.source())),Some(Event::Exited)));
+        assert!(matches!(Event::Launch(grants(&Permission::REQUIRED)).for_current_session(None),Some(Event::Launch(_))));
+    }
+
+    #[test]
+    fn target_selection_precedes_recording_and_partial_capture_still_reaches_the_menu_lesson() {
+        let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureSelecting);
+        assert_eq!(s.practice.as_ref().unwrap().stage,super::super::practice::Stage::Screen);
+        s.input(Input::CaptureStarted);s.practice_whiteboard();s.observe_practice(true,0,true,Some(true));
+        s.input(Input::CaptureEnded{completed:true});s.action("practice-paste");s.action("practice-pasted");
+        assert!(s.practice_locating());s.practice_latest();assert_eq!(s.action("practice-finish"),Effect::None);
+        assert!(!s.flow.first_capture_completed);
+    }
+
+    #[test]
+    fn menu_bar_lesson_remains_after_paste_and_requires_opening_own_capture() {
+        let mut s=coached_session();
+        s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.observe_practice(true,1,true,Some(true));
+        s.input(Input::CaptureEnded{completed:true});
+        assert!(!s.practice_locating());
+        s.action("practice-paste");assert!(!s.practice_locating());
+        s.action("practice-pasted");assert!(s.practice_locating());
+        assert_eq!(s.action("practice-finish"),Effect::None);
+        s.practice_latest();assert_eq!(s.action("practice-finish"),Effect::Close);
+    }
+
+    #[test]
+    fn coaching_finishes_after_completion_pill_dismissal() {
+        let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.observe_practice(true,1,false,None);
+        s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
+        assert!(!s.flow.practice_recording);assert!(!s.flow.hidden);
+        s.input(Input::CaptureEnded{completed:false}); // normal 25-second pill dismissal
+        s.action("practice-paste");s.action("practice-pasted");s.practice_latest();
+        assert_eq!(s.action("practice-finish"),Effect::Close);assert!(s.flow.first_capture_completed);
+    }
+    #[test]
+    fn menu_retry_cannot_inherit_completed_shortcut_attempt() {
+        let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
+        s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
+        s.input(Input::CaptureStarted); // menu start, without ShortcutTriggered
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.observe_practice(true,1,true,Some(true));
+        s.input(Input::CaptureEnded{completed:true});s.action("practice-paste");s.action("practice-pasted");s.practice_latest();
+        assert_eq!(s.action("practice-finish"),Effect::None);assert!(!s.flow.first_capture_completed);
+    }
     #[test]
     fn first_capture_close_resumes_until_success_without_trapping_the_user() {
         let mut progress = Progress::default();
@@ -2419,13 +2719,56 @@ mod adapter_regressions {
         assert_eq!(line.len(), 65_537);
     }
     #[test]
+    fn back_from_permissions_cancels_guides_without_claiming_a_grant() {
+        let mut flow=Flow::tour(Step::Permissions,None).with_intro_skipped(true);
+        assert!(permission_guide_messages(&flow.view()).is_empty());
+        flow.on(Input::Back);
+        assert_eq!(flow.step(),Step::Welcome);
+        assert_eq!(permission_guide_messages(&flow.view()),vec![serde_json::json!({"type":"cancel-guides"})]);
+        let granted=Flow::tour(Step::Permissions,Some(Grants{statuses:BTreeMap::from([(Permission::Accessibility,Status::Granted)]),screen_needs_relaunch:false}));
+        assert!(permission_guide_messages(&granted.view()).iter().any(|m|m["type"]=="close-guide"&&m["permission"]=="accessibility"));
+    }
+
+    #[test]
+    fn fallback_retires_queued_events_from_its_old_transport_but_keeps_grants() {
+        let mut session=Session::for_test(Flow::tour(Step::Permissions,None));
+        let old=session.transport_generation();
+        let (tx,_rx)=flume::unbounded();
+        session.fallback=Some(Box::new(move |_|Ok(Transport::InProcess(Some(tx.clone())))));
+        assert!(session.restore_native());
+        assert_ne!(old,session.transport_generation());
+        for event in [Event::Exited,Event::Action("close".into())] {
+            let queued=Event::Session{source:session.source(),event:Box::new(Event::Transport{generation:old,event:Box::new(event)})};
+            assert!(queued.for_current_session(Some(session.source())).unwrap().for_current_transport(Some(session.transport_generation())).is_none());
+        }
+        let current=Event::Transport{generation:session.transport_generation(),event:Box::new(Event::Action("continue".into()))};
+        assert!(matches!(current.for_current_transport(Some(session.transport_generation())),Some(Event::Action(_))));
+        assert!(matches!(Event::Grants(Grants{statuses:BTreeMap::new(),screen_needs_relaunch:false}).for_current_transport(Some(session.transport_generation())),Some(Event::Grants(_))));
+    }
+
+    #[test]
+    fn coached_capture_completion_reveals_a_pending_native_fallback() {
+        let mut flow=Flow::tour(Step::TryIt,None).with_first_capture(true,true,false);
+        flow.on(Input::ShortcutTriggered);flow.on(Input::CaptureStarted);
+        let mut session=Session::for_test(flow);
+        session.practice=Some(super::super::practice::Practice::default());
+        let (tx,rx)=flume::unbounded();
+        session.fallback=Some(Box::new(move |_|Ok(Transport::InProcess(Some(tx.clone())))));
+        assert!(session.restore_native());assert!(session.fallback_pending);
+        session.input(Input::CaptureEnded{completed:true});
+        assert!(!session.fallback_pending);assert!(session.practice.is_none());
+        assert_eq!(session.flow.step(),Step::Done);
+        assert!(rx.try_iter().any(|m|m["type"]=="show"));
+    }
+
+    #[test]
     fn hidden_fallback_waits_until_capture_ends_before_creating_native_window() {
         let mut flow = Flow::tour(Step::TryIt, None);
         flow.hidden = true;
         let mut session = Session::for_test(flow);
         session.shortcut_label = "Test shortcut".into();
         let (tx, rx) = flume::unbounded();
-        session.fallback = Some(Box::new(move || Ok(Transport::InProcess(Some(tx.clone())))));
+        session.fallback = Some(Box::new(move |_| Ok(Transport::InProcess(Some(tx.clone())))));
         assert!(session.restore_native());
         assert!(rx.try_recv().is_err(), "no replacement transport is created while hidden");
         assert!(session.fallback_pending);

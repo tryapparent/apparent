@@ -120,7 +120,10 @@ def run_lane(lane, online=False):
         env = dict(os.environ, APPARENT_STORAGE_TEST_ELECTRON=electron,
                    APPARENT_CONNECT_TEST_ELECTRON=electron)
         try:
-            result = subprocess.run(['cargo', 'test', '-j', jobs, mode, '_electron_rust_roundtrip',
+            # This host lane supplies only Connect/Storage bridge environments.
+            # Notes owns a separate isolated, sandbox-capable desktop scenario.
+            result = subprocess.run(['cargo', 'test', '-j', jobs, mode,
+                                     'capture::desktop::workflow::agent_capture::tests::',
                                      '--', '--ignored', '--test-threads=1'],
                                     cwd=ROOT, env=env, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as error:

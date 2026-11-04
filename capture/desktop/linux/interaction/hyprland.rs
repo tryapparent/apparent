@@ -516,7 +516,7 @@ fn owned_pin_command(clients: &str, pid: u32, title: &str, syntax: Syntax) -> Re
 pub fn float_whiteboard() -> Result<()> {
     let clients: Vec<serde_json::Value> = serde_json::from_str(&request("j/clients")?)?;
     let Some(board) = clients.iter().find(|client| {
-        client["title"].as_str() == Some("Apparent Whiteboard")
+        client["title"].as_str() == Some(crate::capture::desktop::ui::whiteboard::title())
             && client["pid"].as_u64() == Some(u64::from(std::process::id()))
     }) else {
         bail!("Whiteboard window not mapped yet");
@@ -537,11 +537,11 @@ pub fn float_whiteboard() -> Result<()> {
                 ""
             };
             run(&format!(
-                "eval local w = hl.get_windows({{ title = 'Apparent Whiteboard' }})[1]; \
+                "eval local w; for _, candidate in ipairs(hl.get_windows({{ title = '{}' }})) do if candidate.address == '{}' then w = candidate; break end end; \
                  assert(w and w.address == '{}', 'Whiteboard window changed'); \
                  {}hl.dispatch(hl.dsp.window.float({{ action = 'set', window = w }})); \
                  hl.dispatch(hl.dsp.window.resize({{ x = 560, y = 460, window = w }}))",
-                address, unset_fullscreen
+                crate::capture::desktop::ui::whiteboard::title(), address, address, unset_fullscreen
             ))?;
         }
         Syntax::Hyprlang => {

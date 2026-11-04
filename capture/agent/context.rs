@@ -841,6 +841,7 @@ mod tests {
     fn stroke(t0: u64, x: f32, y: f32) -> Stroke {
         let p = |v: f32| (v * SCALE as f32) as i32;
         Stroke {
+            color: None,
             t0,
             t1: t0 + 400,
             fw: 1000,
@@ -1149,6 +1150,7 @@ mod tests {
         );
         b.strokes = vec![
             Stroke {
+                color: None,
                 on: Some("button “Window”".into()),
                 ..stroke(1_000, 0.1, 0.2)
             },

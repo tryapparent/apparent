@@ -1,5 +1,6 @@
 /* Canonical system appearance for every value stream. No framework required. */
 :root {
+  --apparent-window-clear: #00000000;
   /* Public marketing palette from tryapparent.com/brand. */
   --apparent-site-paper: #F5F0E8;
   --apparent-site-stock: #E7E0EE;
@@ -8,6 +9,14 @@
   --apparent-site-signal: #7A58C7;
   color-scheme: light;
   --font-sans: system-ui, sans-serif;
+  /* Approved brand masters. Surfaces opt into these roles without restyling siblings. */
+  --apparent-paper: #f5f0e8;
+  --apparent-stock: #e7e0ee;
+  --apparent-carbon: #020102;
+  --apparent-lilac: #b7a5d8;
+  --apparent-signal: #7a58c7;
+  --apparent-confirmed: #146b43;
+  --apparent-failed: #b42318;
   --apparent-background: #f5f0e8;
   --apparent-foreground: #19161d;
   --apparent-surface: #faf9f6;
@@ -37,6 +46,11 @@
   --apparent-brand: #b7a5d8;
   --apparent-brand-foreground: #19161d;
   --apparent-artwork: #f5f0e8;
+  /* Drawing pigment stays the same across system appearances. Rust owns saved RGB. */
+  --apparent-pen-coral: #d94c44;
+  --apparent-pen-purple: #7a58c7;
+  --apparent-pen-blue: #3b79bd;
+  --apparent-pen-green: #397b61;
   --color-background: var(--apparent-background);
   --color-foreground: var(--apparent-foreground);
   --color-surface: var(--apparent-surface);

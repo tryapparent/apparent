@@ -15,10 +15,16 @@ FRAMEWORKS_DIR="${CONTENTS_DIR}/Frameworks"
 SIGN_ID="Developer ID Application: Christopher Langton (QC99C9JE59)"
 SPARKLE_PUBLIC_KEY="mIek27lttJe8cIBqVZFhh6reRKjpTx1h9ZY9OKWPtuM="
 
+# Cargo places cross-built binaries below the selected target triple.
+case "${CARGO_BUILD_TARGET:-}" in
+  "") BINARY_DIR="${REPO_DIR}/target/debug" ;;
+  aarch64-apple-darwin|x86_64-apple-darwin) BINARY_DIR="${REPO_DIR}/target/${CARGO_BUILD_TARGET}/debug" ;;
+  *) echo 'Unsupported Mac install target.' >&2; exit 1 ;;
+esac
+
 cd "${REPO_DIR}"
 chmod +x "${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh" "${REPO_DIR}/capture/desktop/scripts/release/release-app.sh" 2>/dev/null || true
 SPARKLE_DIR="$("${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh" 2>/dev/null || true)"
-BINARY_DIR="${REPO_DIR}/target/debug"
 if [[ -n "${APPARENT_PREBUILT_DIR:-}" ]]; then
   # An explicit immutable, successful main producer is required. Never rebuild
   # automatically after failed admission or silently consume a cached binary.

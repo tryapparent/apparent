@@ -28,6 +28,7 @@ pub const PORT: u16 = 47777;
 
 /// The browser SDK runs on a local listener independently of phone capture.
 pub fn start_server() {
+    if std::env::var_os("APPARENT_TEST_INSTANCE").as_deref()==Some(std::ffi::OsStr::new("1")){return;}
     std::thread::spawn(|| {
         let listener = match TcpListener::bind(("127.0.0.1", PORT)) {
             Ok(listener) => listener,

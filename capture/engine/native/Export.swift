@@ -42,6 +42,7 @@ struct ExportPlan: Decodable {
     var trails: [Trail]
   }
   struct Stroke: Decodable {
+    var color: [Double]?
     var snaps: [Snap]
     var fadeAt: Double
     var fadeMs: Double
@@ -128,7 +129,8 @@ enum ExportInk {
         i += 2
       }
       ctx.closePath()
-      ctx.setFillColor(CGColor(red: red.r, green: red.g, blue: red.b, alpha: alpha))
+      let rgb = stroke.color ?? [255, 59, 48, 255]
+      ctx.setFillColor(CGColor(red: rgb[0] / 255, green: rgb[1] / 255, blue: rgb[2] / 255, alpha: alpha))
       ctx.fillPath()
     }
 

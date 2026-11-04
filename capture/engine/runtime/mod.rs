@@ -114,6 +114,7 @@ mod record_target_tests {
     fn clipping_splits_outside_detours_without_phantom_edge_marks() {
         let s = SCALE;
         let stroke = Stroke {
+            color: None,
             t0: 100,
             t1: 150,
             fw: 1000,
@@ -1112,6 +1113,7 @@ impl SharedCaptureTelemetry {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let number = self.next_note_pin.fetch_add(1, Ordering::AcqRel) as u32 + 1;
         strokes.push(Stroke {
+            color: Some(crate::shared::handoff::pen::rgb()),
             t0,
             t1: t_ms,
             fw,
@@ -1621,6 +1623,7 @@ fn track_shift_ink(
             telemetry.window_log_request.store(true, Ordering::Release);
         }
         let stroke = guard.get_or_insert_with(|| Stroke {
+            color: Some(crate::shared::handoff::pen::rgb()),
             t0: t_ms,
             t1: t_ms,
             fw,
@@ -1791,7 +1794,7 @@ mod tests {
         let frame = TargetFrame { x: 0.0, y: 0.0, width: 1280.0, height: 800.0, scale: 1.0 };
         // Hyprland left output -1280..0 maps to X 1280..2560; the right
         // output 0..1024 at scale 1.25 maps to X 0..1280.
-        let stroke = Stroke { t0: 10, t1: 50, fw: 1280, fh: 800, on: None, pin: None, laser: false,
+        let stroke = Stroke { color: None, t0: 10, t1: 50, fw: 1280, fh: 800, on: None, pin: None, laser: false,
             pts: [ [2500.0,420.0], [2550.0,420.0], [10.0,525.0], [50.0,525.0] ].into_iter().enumerate().flat_map(|(i,p)|
                 [(p[0] / 1280.0 * SCALE as f64) as i32, (p[1] / 800.0 * SCALE as f64) as i32, i as i32 * 10]).collect() };
         let parts = ink_output_parts(&stroke, frame, &[[0.0,0.0,1280.0,800.0],[1280.0,0.0,1280.0,800.0]]);
@@ -2216,6 +2219,7 @@ mod tests {
     fn a_shift_click_mid_drawing_drops_no_pin() {
         let telemetry = session(1000.0, 1000.0);
         let ink = |pts: &[(i32, i32, i32)]| Stroke {
+            color: Some(crate::shared::handoff::pen::rgb()),
             t0: 0,
             t1: 0,
             fw: 1000,
