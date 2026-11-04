@@ -20,7 +20,7 @@ node scripts/connect/compose-connect.mjs
 node scripts/pages/prepare-pages.ts
 node scripts/site-build/verify-composed.ts
 node scripts/pages/prepare-pages-video.mjs
-../../connect/service/node_modules/.bin/esbuild lib/pages-worker.ts --bundle --platform=browser --format=esm --outfile=dist-apparent/_worker.js
+./node_modules/.bin/esbuild lib/pages-worker.ts --bundle --platform=browser --format=esm --outfile=dist-apparent/_worker.js
 PAGES_WORKER=dist-apparent/_worker.js node --test scripts/pages/test-pages-video-runtime.mjs
 python3 scripts/cd/publish_pages.py seal <full-commit-sha>
 ```
@@ -56,7 +56,23 @@ the existing Workers Free daily allowance; no paid service is activated. The pro
 is configured fail-closed. At quota exhaustion the movie may be unavailable; static
 pages do not consume that Function allowance.
 
+Public owns its locked esbuild, Miniflare and Wrangler dependencies.
+`bun install --frozen-lockfile` in `public/site`, then `npm run package:public`
+builds/packages the website without installing either Connect package or invoking
+Cargo. `npm run build:pages-worker` compiles its Pages Function; the real workerd
+movie test uses Public dependencies. Production composition still requires the
+Connect browser artifact. The Pages publisher installs only Public dependencies.
+
 ## Main-branch CD
+
+The workflow starts directly on main pushes or manual main dispatches, independently
+of native application verification. Candidate admission validates canonical-main
+event and checkout identity. Both publishers require the same run's complete web
+verification; failed or skipped web checks cannot admit either publisher. Pages
+consumes the revision-named sealed artifact. The hosted publisher currently
+rebuilds its Worker from that verified SHA before publication. Public and Connect currently share the composed
+Pages artifact and web verification lane; this does not claim separate deployment
+of those two owners yet.
 
 PR verification has no production credentials. The production Pages artifact is
 frozen before the separate synthetic Connect build. The website job downloads only that run's revision-named artifact, checks current
