@@ -22,9 +22,11 @@ function host(mode: string) {
     visible: boolean;
     focuses = 0;
     destroyed = false;
+    options: Record<string, unknown>;
     constructor(options: Record<string, unknown>) {
       super();
       window = this;
+      this.options = options;
       this.visible = options.show !== false;
     }
     removeMenu() {}
@@ -62,6 +64,9 @@ function host(mode: string) {
 for (const mode of ['--settings-storage', '--settings-connect']) {
   test(`${mode} waits for first paint even when the parent requests focus early`, () => {
     const { window, lines } = host(mode);
+    assert.equal(window.options.width, 720);
+    assert.equal(window.options.height, 530);
+    assert.equal(window.options.titleBarStyle, 'hiddenInset');
     assert.equal(window.visible, false, 'Do not expose the empty initial document');
     lines.emit('line', JSON.stringify({ type: 'show' }));
     assert.equal(window.visible, false, 'A parent show command must not bypass first paint');

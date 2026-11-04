@@ -27,7 +27,9 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionCheckHandler(() => false);
   const window = new BrowserWindow({
     show: !settings,
-    width: 920, height: 760, minWidth: 640, minHeight: 620,
+    width: settings ? 720 : 920, height: settings ? 530 : 760,
+    minWidth: 640, minHeight: settings ? 530 : 620,
+    ...(settings && process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' } : {}),
     title: connectSettings ? 'Apparent Settings — Connect' : settings ? 'Apparent Settings — Storage' : 'Apparent — UI foundation',
     backgroundColor: followWindowTheme.backgroundColor(nativeTheme),
     webPreferences: {

@@ -1,12 +1,14 @@
 import './runtime/exceptions';
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Settings2, CircleDot, HardDrive, ShieldCheck, Terminal, Info } from 'lucide-react';
 import { Storage } from './storage';
 import { ConnectSettingsCard } from './connect-settings';
 import './style.css';
 import wordmark from '../../../../../shared/assets/brand/apparent-wordmark.svg';
 
 const panes = ['General', 'Recording', 'Storage', 'Permissions', 'Agents', 'About'] as const;
+const icons = [Settings2, CircleDot, HardDrive, ShieldCheck, Terminal, Info];
 
 function Settings() {
   const connect = new URLSearchParams(location.search).get('surface') === 'connect';
@@ -22,10 +24,10 @@ function Settings() {
   }
   return <div className="settings-shell">
     <aside className="settings-sidebar" aria-label="Settings pages">
-      <div className="settings-brand"><img src={wordmark} alt="Apparent" /></div>
-      <nav>{panes.map(pane => <button key={pane} type="button" disabled={navigating}
+      <div className="settings-brand"><img src={wordmark} alt="Apparent" /><p>CAPTURE SETTINGS</p></div>
+      <nav>{panes.map((pane, index) => { const Icon = icons[index]; return <button key={pane} type="button" disabled={navigating}
         aria-current={!connect && pane === 'Storage' ? 'page' : undefined}
-        onClick={() => { if (connect || pane !== 'Storage') void navigate(pane); }}>{pane}</button>)}</nav>
+        onClick={() => { if (connect || pane !== 'Storage') void navigate(pane); }}><Icon aria-hidden="true" size={20} />{pane}</button>; })}</nav>
     </aside>
     <main className="settings-content">
       <header><h1>{connect ? 'Connect' : 'Storage'}</h1>{!connect && <p>Choose where captures live and how long to keep them.</p>}</header>

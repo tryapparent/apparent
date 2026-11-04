@@ -413,7 +413,11 @@ the shipped host's event ordering with a delayed first paint; it is synthetic
 lifecycle coverage, not macOS focus or rendering acceptance. Reverting this guard
 restores immediate window display. The native/Electron pane replacement remains
 in place; this guard alone does not resolve or certify issue #562's intermittent
-blanking and differing layouts. Removing the native fallback still requires the
+blanking. Both Settings renderers open at 720×530 with a 210px black sidebar;
+Electron uses inset macOS title controls and scrolls its content pane to keep
+controls reachable at that size. The content still follows system appearance.
+Reverting those layout styles/options restores the larger Electron presentation.
+Removing the native fallback still requires the
 accepted Settings routing switch and its platform checks.
 
 `readCaptureLocation()`, `changeCaptureLocation()` and `resetCaptureLocation()`
