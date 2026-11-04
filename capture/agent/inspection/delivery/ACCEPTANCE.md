@@ -35,8 +35,11 @@ composition, then stages the renderer into the same app candidate:
 component metadata; only the caller-provided archive digest authenticates its
 bytes. Verified directories are normalized to `0755` and files to `0644` for
 cross-user package access. This component staging step makes no atomic-visibility
-claim; the enclosing app remains private until its existing package transaction
+claim; on macOS the enclosing app remains private until its existing package transaction
 completes.
+
+Linux stages into `target/appimage/AppDir` with ordinary directory permissions;
+that AppDir is a build artifact, not a private candidate or an installed app.
 
 Use a sealed root receipt whose input inventory and policy digest match the exact
 candidate. An older PR631 receipt is not admitted just because executable bytes
