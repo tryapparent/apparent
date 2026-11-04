@@ -26,7 +26,13 @@ fn parse_pins(raw: &str) -> Result<serde_json::Value> {
             ensure!(pin[key].as_str().is_some_and(|s| s.len() == length && s.bytes().all(|b| b.is_ascii_hexdigit())), "Invalid recipient pin digest");
         }
     }
-    ensure!(map["adopted"] != true || !map["pins"].as_object().unwrap().is_empty(), "Adopted recipient pins missing");
+    if map["adopted"] == true {
+        for target in ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin"] {
+            ensure!(map["pins"][target].is_object(), "Adopted recipient target pin missing");
+        }
+    } else {
+        ensure!(map["pins"].as_object().unwrap().is_empty(), "Unreviewed partial recipient adoption");
+    }
     Ok(map)
 }
 
@@ -268,6 +274,11 @@ mod tests {
     #[test]
     fn pins_reject_malformed_structure() {
         assert!(parse_pins(include_str!("../delivery/recipient/pins.json")).is_ok());
+        let pin = serde_json::json!({"sourceSha":"a".repeat(40),"run":"1","attempt":"1","target":"x86_64-unknown-linux-gnu","sha256":"b".repeat(64),"version":"test"});
+        for adopted in [false, true] {
+            let partial = serde_json::json!({"schema":1,"adopted":adopted,"pins":{"x86_64-unknown-linux-gnu":pin}});
+            assert!(parse_pins(&partial.to_string()).is_err(), "partial pin maps must never become runtime authority");
+        }
         for raw in [r#"{"schema":1,"adopted":false}"#, r#"{"schema":1,"adopted":true,"pins":{}}"#, r#"{"schema":1,"adopted":false,"pins":{"x":{}}}"#] {
             assert!(parse_pins(raw).is_err());
         }
