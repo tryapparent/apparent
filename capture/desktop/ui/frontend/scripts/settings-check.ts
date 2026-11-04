@@ -1,3 +1,4 @@
+import { STORAGE_BRIDGE_TEST, verifyBridgeListing, verifyBridgeResult } from './settings/bridge-result.ts';
 import { createHash } from 'node:crypto';
 import { chmod, mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -8,7 +9,7 @@ const frontend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const root = path.resolve(frontend, '../../../..');
 const receiptDefault = path.join(process.env.XDG_CACHE_HOME || path.join(process.env.HOME || '/tmp', '.cache'),
   'apparent', 'desktop-settings-native.json');
-const testNameSuffix = '::storage_electron_rust_roundtrip';
+
 
 function run(command: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv; capture?: boolean } = {}) {
   return new Promise<{ code: number; stdout: string; stderr: string }>((resolve, reject) => {
@@ -36,7 +37,7 @@ async function nativeInputs(directory = root, relative = ''): Promise<Array<[str
     const rel = path.join(relative, entry.name).split(path.sep).join('/');
     if (entry.isDirectory()) {
       found.push(...await nativeInputs(absolute, rel));
-    } else if (/\.(rs|c|h|m|mm|swift)$/.test(entry.name) ||
+    } else if (/\.(rs|c|cc|cpp|cxx|h|hh|hpp|m|mm|swift|metal|plist)$/.test(entry.name) ||
       entry.name === 'Cargo.toml' || entry.name === 'Cargo.lock' || entry.name === 'build.rs' ||
       entry.name === 'rust-toolchain' || entry.name === 'rust-toolchain.toml' ||
       (relative === '.cargo' && entry.name.startsWith('config'))) {
@@ -48,7 +49,47 @@ async function nativeInputs(directory = root, relative = ''): Promise<Array<[str
 
 async function nativeSourceHash() {
   const inputs = await nativeInputs();
+  const resources = new Set<string>();
+  for (const [file] of inputs.filter(([file]) => file.endsWith('.rs'))) {
+    const source = await readFile(path.join(root, file), 'utf8');
+    for (const match of source.matchAll(/include_(?:str|bytes)!\(\s*"([^"]+)"/g)) {
+      resources.add(path.resolve(root, path.dirname(file), match[1]));
+    }
+    for (const match of source.matchAll(/env!\("CARGO_MANIFEST_DIR"\),\s*"([^"]+)"/g)) {
+      resources.add(path.resolve(root, '.' + match[1]));
+    }
+    if (file === 'build.rs') {
+      for (const match of source.matchAll(/"((?:capture|shared|enablement)\/[^"\n]+)"/g)) {
+        const candidate = path.join(root, match[1]);
+        if ((await stat(candidate).catch(() => undefined))?.isFile()) resources.add(candidate);
+      }
+    }
+  }
+  for (const resource of resources) {
+    if (!(await stat(resource).catch(() => undefined))?.isFile()) continue;
+    const relative = path.relative(root, resource).split(path.sep).join('/');
+    if (relative.startsWith('../')) throw new Error('Native resource is outside the checkout');
+    if (!inputs.some(([file]) => file === relative)) inputs.push([relative, sha256(await readFile(resource))]);
+  }
+  inputs.sort(([a], [b]) => a.localeCompare(b));
   return { hash: sha256(JSON.stringify(inputs)), count: inputs.length };
+}
+
+async function runtimeIdentity(backend: string) {
+  const listing = await run('ldd', [backend], { capture: true });
+  if (listing.code !== 0) throw new Error('Cannot identify prepared backend shared libraries');
+  const libraries = new Set<string>();
+  for (const line of listing.stdout.split(/\r?\n/)) {
+    if (line.includes('not found')) throw new Error('Prepared backend has a missing shared library');
+    const file = line.match(/(?:=>\s+|^\s*)(\/.*?)\s+\(0x[0-9a-f]+\)/)?.[1];
+    if (file) libraries.add(file);
+  }
+  for (const entry of await readdir(path.dirname(backend))) {
+    if (/\.so(?:\.|$)/.test(entry)) libraries.add(path.join(path.dirname(backend), entry));
+  }
+  const files: Array<[string, string]> = [];
+  for (const file of [...libraries].sort()) files.push([file, sha256(await readFile(file))]);
+  return { files, preload: process.env.LD_PRELOAD || '', libraryPath: process.env.LD_LIBRARY_PATH || '' };
 }
 
 async function locateHarness(output: string) {
@@ -62,6 +103,7 @@ async function locateHarness(output: string) {
 
 async function prepareNative() {
   if (process.platform !== 'linux') throw new Error('The real Rust/Electron Settings bridge lane requires Linux');
+  const before = await nativeSourceHash();
   const built = await run('cargo', ['test', '--offline', 'storage_electron_rust_roundtrip', '--no-run'], { capture: true });
   process.stdout.write(built.stdout);
   process.stderr.write(built.stderr);
@@ -69,13 +111,15 @@ async function prepareNative() {
   const backend = await locateHarness(`${built.stdout}\n${built.stderr}`);
   const listing = await run(backend, ['--list'], { capture: true });
   if (listing.code !== 0) throw new Error(`Prepared Rust harness could not list tests (${listing.code}): ${listing.stderr}`);
-  const testName = listing.stdout.split(/\r?\n/).find(line => line.endsWith(`${testNameSuffix}: test`))?.split(': test')[0];
-  if (!testName) throw new Error('Prepared Rust harness does not contain storage_electron_rust_roundtrip');
+  const testName = STORAGE_BRIDGE_TEST;
+  verifyBridgeListing(testName, listing.code, listing.stdout);
   const rustc = await run('rustc', ['-Vv'], { capture: true });
   if (rustc.code !== 0) throw new Error(`Could not record rustc version (${rustc.code})`);
   const inputs = await nativeSourceHash();
+  if (inputs.hash !== before.hash) throw new Error("Native inputs changed during backend preparation; prepare again from a stable checkout");
   const manifest = {
-    schema: 1,
+    schema: 2,
+    runtime: await runtimeIdentity(backend),
     createdAt: new Date().toISOString(),
     sourceCommit: (await run('git', ['rev-parse', 'HEAD'], { capture: true })).stdout.trim(),
     platform: process.platform,
@@ -102,11 +146,11 @@ async function prepareNative() {
 async function readVerifiedReceipt() {
   const receipt = path.resolve(process.argv[3] || receiptDefault);
   const manifest = JSON.parse(await readFile(receipt, 'utf8'));
-  if (manifest.schema !== 1) throw new Error('Unsupported native bridge receipt schema');
+  if (manifest.schema !== 2) throw new Error('Unsupported native bridge receipt schema');
   if (manifest.platform !== process.platform || manifest.architecture !== process.arch)
     throw new Error('Native bridge receipt is for a different platform or architecture');
   if (process.platform !== 'linux') throw new Error('The real Rust/Electron Settings bridge lane requires Linux');
-  if (typeof manifest.backend !== 'string' || !manifest.backend.startsWith('target/debug/deps/apparent-'))
+  if (typeof manifest.backend !== 'string' || !/^target\/debug\/deps\/apparent-[a-f0-9]+$/.test(manifest.backend))
     throw new Error('Receipt does not identify the expected in-checkout Rust test executable');
   const inputs = await nativeSourceHash();
   if (manifest.nativeInputHash !== inputs.hash)
@@ -116,6 +160,10 @@ async function readVerifiedReceipt() {
   const backend = path.resolve(root, manifest.backend);
   if (!(await stat(backend)).isFile() || sha256(await readFile(backend)) !== manifest.backendSha256)
     throw new Error('Prepared Rust test backend is missing or changed; prepare a new backend receipt');
+  if (JSON.stringify(await runtimeIdentity(backend)) !== JSON.stringify(manifest.runtime))
+    throw new Error('Prepared native runtime libraries or loader environment changed; prepare a new receipt');
+  const listing = await run(backend, ['--list'], { capture: true });
+  verifyBridgeListing(manifest.testName, listing.code, listing.stdout);
   return { manifest, backend, receipt };
 }
 
@@ -144,10 +192,18 @@ async function runSettings() {
     const result = await run(command, [...args], { cwd });
     if (result.code !== 0) throw new Error(`${command} ${args.join(' ')} failed (${result.code})`);
   }
-  const bridge = await run(backend, [manifest.testName, '--ignored', '--exact', '--nocapture', '--test-threads=1'], {
-    env: { ...process.env, APPARENT_STORAGE_TEST_ELECTRON: electronPath },
+  const beforeBridge = await readVerifiedReceipt();
+  if (JSON.stringify(beforeBridge.manifest) !== JSON.stringify(manifest))
+    throw new Error('Prepared receipt changed during Settings checks');
+  const bridge = await run(backend, [manifest.testName, '--ignored', '--exact', '--test-threads=1'], {
+    env: { ...process.env, APPARENT_STORAGE_TEST_ELECTRON: electronPath }, capture: true,
   });
-  if (bridge.code !== 0) throw new Error(`Prebuilt Rust/Electron Storage bridge test failed (${bridge.code})`);
+  process.stdout.write(bridge.stdout);
+  process.stderr.write(bridge.stderr);
+  verifyBridgeResult(bridge.code, bridge.stdout);
+  const afterBridge = await readVerifiedReceipt();
+  if (JSON.stringify(afterBridge.manifest) !== JSON.stringify(manifest))
+    throw new Error('Prepared receipt changed during bridge execution');
   console.log(`Settings checks passed using the prepared real Rust listener and Electron ${electronPath}`);
 }
 

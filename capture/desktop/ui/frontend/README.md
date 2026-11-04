@@ -283,8 +283,14 @@ the TypeScript production build, unit/contract tests, shipped Electron smoke
 matrix under Xvfb, then the existing real Rust socket roundtrip. The bridge step
 runs the prepared Rust test executable directly; it never invokes Cargo or
 rustc. Its private receipt hashes the executable and all repository Rust/native
-sources, Cargo manifests/lockfile, toolchain selectors and `.cargo` config.
-Any native input or executable change rejects the receipt and returns the work
+sources, statically embedded resources, build-script inputs, Cargo manifests/lockfile,
+toolchain selectors and `.cargo` config. Loader-linked and adjacent staged shared
+libraries and the loader environment are hashed too. Compiler identity is recorded
+from preparation, not queried or revalidated by the ordinary lane.
+Preparation rejects native inputs changing during compilation. The receipt must
+name the required Storage test, the harness must list it, and the actual run must
+report exactly one executed pass; zero tests and ignored tests fail.
+Any native input, runtime library or executable change rejects the receipt and returns the work
 to native integration. This proves the current TypeScript policy and shipped
 Electron transport against that unchanged native listener; it does not replace
 the conservative `desktop-ui-integration` lane or native gates for bridge or OS
