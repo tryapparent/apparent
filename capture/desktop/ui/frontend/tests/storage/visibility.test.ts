@@ -42,7 +42,7 @@ function host(mode: string) {
     setActivationPolicy() {}, whenReady: () => ({ then: (fn: () => void) => fn() }),
     quit() {}, exit: (code: number) => exits.push(code),
   });
-  const runtime = { installExceptionReporting() {} };
+  const runtime = { installExceptionReporting() {}, installBuildIdentity() {} };
   const followTheme = Object.assign(() => {}, { backgroundColor: () => '#f5f0e8' });
   const modules: Record<string, unknown> = {
     electron: { app, BrowserWindow: Window, nativeTheme: {},
