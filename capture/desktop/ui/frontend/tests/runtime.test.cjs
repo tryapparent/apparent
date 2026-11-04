@@ -424,3 +424,6 @@ test('permission refresh keeps setup unfocused and avoids repeating native geome
  stdin.emit('data','{"type":"show"}\n');
  assert.equal(calls.filter(x=>x==='show').length,2,'explicit parent show may reactivate setup');
 });
+// Keep identity contract logic in TypeScript and share this existing runner entry.
+require('./build/identity.test.ts');
+require('./build/transport.test.ts');

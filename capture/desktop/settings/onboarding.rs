@@ -1092,11 +1092,13 @@ impl Session {
         let renderer_events = Self::scope_transport(transport_generation, events.clone());
         let attempted = if let Some(shell) = std::env::var_os("APPARENT_ONBOARDING_SHELL") {
             let mut command = std::process::Command::new(shell);
+            crate::capture::ui_process::configure_build_identity(&mut command);
             crate::capture::desktop::workflow::error_reporting::configure_child(&mut command);
             Self::spawn_transport(command.arg("--native-onboarding"), renderer_events.clone()).ok()
         } else {
             electron.and_then(|(app, runtime)| {
                 let mut command = std::process::Command::new(runtime);
+                crate::capture::ui_process::configure_build_identity(&mut command);
                 crate::capture::desktop::workflow::error_reporting::configure_child(&mut command);
                 Self::spawn_transport(command.arg(app).arg("--onboarding"), renderer_events.clone()).ok()
             })
@@ -1180,6 +1182,7 @@ impl Session {
         use std::process::{Command, Stdio};
 
         let mut command = Command::new(crate::capture::desktop::helper::path()?);
+        crate::capture::ui_process::configure_build_identity(&mut command);
         command
             .args(["onboarding", "--shortcut", shortcut, "--paste"])
             .arg(crate::capture::desktop::settings::paste_label())
@@ -1574,6 +1577,7 @@ impl Session {
                     return;
                 };
                 let mut command = std::process::Command::new(path);
+                crate::capture::ui_process::configure_build_identity(&mut command);
                 command.args(["onboarding", "--permissions-only"]);
                 self.permission_adapter = Self::spawn_transport(&mut command, |_| {}).ok();
                 if self.permission_adapter.is_none() {

@@ -222,6 +222,14 @@ for(const mode of ['--native-onboarding','--onboarding'])test(`onboarding fixed 
   send({ penPicker:true });
   await expect(page.getByRole('heading', { name:'Pick your pen.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
+  await expect(page.locator('.apparent-build-identity')).toBeVisible();
+  assert.equal(await page.locator('.apparent-build-identity').evaluate(marker=>{
+    const a=marker.getBoundingClientRect();
+    return [...document.querySelectorAll('.native-setup button')].every(button=>{
+      const b=button.getBoundingClientRect();
+      return !b.width || !b.height || a.right<=b.left || a.left>=b.right || a.bottom<=b.top || a.top>=b.bottom;
+    });
+  }),true,'passive build identity must not obscure onboarding controls');
   assert.deepEqual(await page.locator('.native-pencils button').allTextContents(),['','','','']);
   await page.evaluate(()=>document.fonts.ready);
   await expect(page.locator('.native-setup')).toHaveCSS('font-family', '"Host Grotesk", system-ui, sans-serif');
@@ -416,3 +424,5 @@ test('onboarding transparent coach keeps the outside canvas clear', {timeout:300
     assert.equal(pixels.card[3],255,'the popup itself must stay opaque');
   }
 });
+// Shared identity rendering and click-through checks use the shipped renderer.
+require('./build/identity.smoke.ts');

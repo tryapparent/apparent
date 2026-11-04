@@ -57,16 +57,38 @@ jobs:
         run: |
           test -d /Applications/Xcode_26.3.app/Contents/Developer
           echo 'DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer' >> "$GITHUB_ENV"
-      - name: Verify installer before the native build
+      - name: Verify installer and prepare native dependencies
         run: |
-          rustc --edition 2024 --test build.rs -o "$RUNNER_TEMP/build-identity-check"
-          "$RUNNER_TEMP/build-identity-check" helper_bundle_ids_admit_only_regular_preview_or_a_test_build
-          xcrun swiftc -D INSTALLER_TEST -parse-as-library capture/desktop/native/OnboardingBrand.swift capture/desktop/native/installer/LocalInstaller.swift -o "$RUNNER_TEMP/installer-check"
-          "$RUNNER_TEMP/installer-check"
-      - name: Prepare native compiler and locked dependencies
-        run: |
-          xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
-          cargo fetch --locked
+          # Independent compiler checks and prerequisite discovery can overlap.
+          # Job control gives each owned worker a process group for cancellation.
+          set -m
+          workers=()
+          cleanup() {
+            trap - EXIT INT TERM
+            for worker in "${workers[@]}"; do
+              kill -TERM -- "-$worker" 2>/dev/null || true
+            done
+            for worker in "${workers[@]}"; do wait "$worker" 2>/dev/null || true; done
+          }
+          trap cleanup EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          (
+            rustc --edition 2024 --test build.rs -o "$RUNNER_TEMP/build-identity-check"
+            "$RUNNER_TEMP/build-identity-check" helper_bundle_ids_admit_only_regular_preview_or_a_test_build
+            xcrun swiftc -D INSTALLER_TEST -parse-as-library capture/desktop/native/OnboardingBrand.swift capture/desktop/native/installer/LocalInstaller.swift -o "$RUNNER_TEMP/installer-check"
+            "$RUNNER_TEMP/installer-check"
+          ) &
+          workers+=("$!")
+          (xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain) &
+          workers+=("$!")
+          # An exact restored dependency cache should not need an index update.
+          (cargo fetch --locked --offline || cargo fetch --locked) &
+          workers+=("$!")
+          failed=0
+          for worker in "${workers[@]}"; do wait "$worker" || failed=1; done
+          workers=()
+          exit "$failed"
       - name: Build the separate test app and installer
         env:
           CARGO_NET_OFFLINE: 'true'

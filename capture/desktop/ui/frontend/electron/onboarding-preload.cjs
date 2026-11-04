@@ -1,4 +1,7 @@
 const {contextBridge,ipcRenderer}=require('electron');
+contextBridge.exposeInMainWorld('apparentBuild',Object.freeze({
+  read:()=>ipcRenderer.invoke('apparent:build-identity'),
+}));
 contextBridge.exposeInMainWorld('nativeOnboarding',Object.freeze({
   readState:()=>ipcRenderer.invoke('onboarding:state'),
   action:action=>ipcRenderer.invoke('onboarding:action',action),

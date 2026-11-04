@@ -109,3 +109,6 @@ html.native-onboarding-shell body { background: transparent !important; margin: 
   .native-pond[data-landing=true] .native-pond-frog { animation: none; transform: translate(165px,50px); }
   .native-pond[data-landing=true] .native-puddle-ring { animation: none; }
 }
+
+/* Keep the passive build label clear of setup footer actions; coach gutters stay transparent. */
+html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 19px; bottom: auto; right: 64px; }

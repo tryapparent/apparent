@@ -13,6 +13,7 @@ import { NativeOnboarding } from './onboarding/onboarding';
 import {ShareCapture} from './share';
 import { CaptureNotes } from './notes';
 import { RecordingMicrophone } from './notes/microphone';
+import { BuildIdentity, BuildIdentityFrame } from '@apparent/ui/build-identity';
 
 // Visual fixtures only. These do not model or control real recording state.
 const examples = [
@@ -60,7 +61,7 @@ function App() {
   }
   useEffect(() => { void refresh(); }, []);
   return (
-    <main className="mx-auto max-w-4xl space-y-8 px-8 py-10">
+    <main className="mx-auto max-w-4xl space-y-8 px-8 py-10 pb-20">
       <header className="space-y-3">
         <p className="text-sm font-medium text-primary">Apparent / UI foundation</p>
         <h1 className="text-3xl font-semibold tracking-tight">A small window into what’s next.</h1>
@@ -115,4 +116,4 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')!).render(<StrictMode>{new URLSearchParams(location.search).has('nativeOnboarding') ? <NativeOnboarding /> : location.hash === '#share' ? <ShareCapture /> : location.hash.startsWith('#notes-') ? <CaptureNotes /> : <App />}</StrictMode>);
+createRoot(document.getElementById('root')!).render(<StrictMode>{new URLSearchParams(location.search).has('nativeOnboarding') ? <><NativeOnboarding /><BuildIdentity /></> : location.hash.startsWith('#notes-') ? <CaptureNotes /> : <BuildIdentityFrame>{location.hash === '#share' ? <ShareCapture /> : <App />}</BuildIdentityFrame>}</StrictMode>);

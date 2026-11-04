@@ -163,6 +163,7 @@ impl Render for WhiteboardWindow {
         div()
             .track_focus(&self.focus)
             .size_full()
+            .relative()
             .flex()
             .flex_col()
             .bg(rgb(PAPER))
@@ -208,6 +209,13 @@ impl Render for WhiteboardWindow {
                                     .text_size(px(16.0))
                                     .font_weight(FontWeight::MEDIUM)
                                     .child("Whiteboard"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(10.0))
+                                    .font_family("monospace")
+                                    .text_color(rgb(PAPER))
+                                    .child(crate::capture::desktop::running_build_label()),
                             ),
                     )
                     .child(
