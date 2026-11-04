@@ -57,7 +57,7 @@ case "$name" in
   node)
     case "$1" in
       */package-notes.mjs) mkdir -p "$2/dist" ;;
-      */mac-artifact-consumer.ts) test "$MOCK_PREBUILT" = accepted ;;
+      */mac-artifact-consumer.ts) [[ "$MOCK_PREBUILT" == accepted || "$MOCK_PREBUILT" == accepted-legacy ]] ;;
       *) exit 90 ;;
     esac ;;
   taskpolicy|cargo|git|codesign|open|sleep|pgrep|pkill|ditto) : ;;
@@ -69,7 +69,7 @@ esac
                 tool = tools / name
                 tool.write_text(mock)
                 tool.chmod(0o755)
-            for relative in ("target/debug/apparent", "target/debug/apparent-helper",
+            for relative in ("target/debug/apparent", "target/debug/apparent-helper", "target/debug/apparent-engine-media",
                              "capture/desktop/assets/Apparent.icns",
                              "shared/assets/fonts/HostGrotesk-Variable.ttf",
                              "shared/assets/brand/apparent-wordmark.png",
@@ -98,7 +98,8 @@ esac
             if prebuilt:
                 binary_inputs = root / "verified inputs"
                 binary_inputs.mkdir()
-                for name in ("apparent", "apparent-helper"):
+                names = ("apparent", "apparent-helper") if prebuilt == "accepted-legacy" else ("apparent", "apparent-helper", "apparent-engine-media")
+                for name in names:
                     (binary_inputs / name).write_text("synthetic verified input")
                 env.update(APPARENT_PREBUILT_DIR=str(binary_inputs), MOCK_PREBUILT=prebuilt)
             script = packaging / ("install-app-remote.sh" if remote else "install-app.sh")
@@ -131,19 +132,21 @@ esac
                     self.assertFalse(legacy_runtime.exists(), "ditto must not retain the obsolete popup runtime")
                 else:
                     self.assertEqual(executable.read_text(), "synthetic verified input" if prebuilt else "synthetic new asset")
+                    self.assertEqual((app / "Contents/MacOS/apparent-engine-media").is_file(), prebuilt != "accepted-legacy")
                     self.assertNotIn("package-notes.mjs", calls)
                     self.assertEqual(calls.count("stage-settings"), 1)
                     self.assertIn("--popups-destination " + str(app / "Contents/Resources/note-ui"), calls)
+                    self.assertEqual("dev.kitlangton.apparent.engine-media" in calls, prebuilt != "accepted-legacy")
                 self.assertEqual("open " in calls, remote or not no_launch)
 
     def test_explicit_prebuilt_admission_selects_inputs_or_refuses_without_fallback(self):
-        for prebuilt in ("accepted", "rejected"):
+        for prebuilt in ("accepted", "accepted-legacy", "rejected"):
             with self.subTest(prebuilt=prebuilt):
                 self.run_installer(False, no_launch=True, prebuilt=prebuilt)
 
     def test_destination_processes_refuse_before_replacement(self):
         for remote in (False, True):
-            for running in ("Contents/MacOS/apparent", "Contents/MacOS/apparent-helper",
+            for running in ("Contents/MacOS/apparent", "Contents/MacOS/apparent-helper", "Contents/MacOS/apparent-engine-media",
                             "Contents/Frameworks/Sparkle.framework/Autoupdate",
                             "Contents/Resources/note-ui/runtime/Electron.app/Contents/MacOS/Electron",
                             "Contents/Resources/settings/runtime/Electron.app/Contents/MacOS/Electron"):

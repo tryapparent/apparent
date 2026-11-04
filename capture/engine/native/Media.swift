@@ -498,49 +498,6 @@ enum Transcriber {
 }
 
 enum Media {
-  static func probe(_ movie: URL) async throws -> [String: Any] {
-    let asset = AVURLAsset(url: movie)
-    let duration = try await asset.load(.duration).seconds
-    var result: [String: Any] = ["durationMs": Int(((duration.isFinite ? duration : 0) * 1000).rounded())]
-    var videoDuration = duration
-    if let track = try await asset.loadTracks(withMediaType: .video).first {
-      let (size, transform) = try await track.load(.naturalSize, .preferredTransform)
-      let shown = size.applying(transform)
-      result["width"] = Int(abs(shown.width).rounded())
-      result["height"] = Int(abs(shown.height).rounded())
-      result["fps"] = Double(try await track.load(.nominalFrameRate))
-      let range = try await track.load(.timeRange)
-      videoDuration = range.duration.seconds
-      if videoDuration.isFinite && videoDuration > 0 {
-        result["videoDurationMs"] = Int((videoDuration * 1000).rounded())
-      }
-    }
-    let audioTracks = try await asset.loadTracks(withMediaType: .audio)
-    result["audioTracks"] = audioTracks.count
-    var audioOverlapsVideo = false
-    for track in audioTracks {
-      if try await audioTrackOverlaps(track, start: 0, end: videoDuration) {
-        audioOverlapsVideo = true
-      }
-    }
-    result["audioOverlapsVideo"] = audioOverlapsVideo
-    return result
-  }
-
-  /// A track's timeRange can include empty edit-list padding before its media.
-  /// Admission and export must both find an actual, nonempty media segment.
-  static func audioTrackOverlaps(_ track: AVAssetTrack, start: Double, end: Double) async throws -> Bool {
-    for segment in try await track.load(.segments) where !segment.isEmpty {
-      let range = segment.timeMapping.target
-      let first = range.start.seconds
-      let last = CMTimeRangeGetEnd(range).seconds
-      if first.isFinite && last.isFinite && first < end && last > start && last > first {
-        return true
-      }
-    }
-    return false
-  }
-
   /// Decodes frames as raw RGBA8 (`frame-NNNN.rgba`), either sampled every `everyMs` (nearest
   /// decodable frame, for keyframe candidates) or exactly at `atMs` (for the keyframes themselves).
   static func frames(movie: URL, outDir: URL, everyMs: Int?, atMs: [Int]?, maxEdge: Int) async throws -> [[String: Any]] {

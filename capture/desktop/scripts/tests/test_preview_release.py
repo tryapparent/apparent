@@ -42,6 +42,7 @@ class PreviewReleaseTest(unittest.TestCase):
                 '#!/bin/sh\nmkdir -p target/release\n'
                 'printf "test" > target/release/apparent\n'
                 'printf "test" > target/release/apparent-helper\n'
+                'printf "test" > target/release/apparent-engine-media\n'
             )
             (root / "bin/node").write_text('#!/bin/sh\nset -eu\ncase "$1" in\n'
                 '*/package-notes.mjs) mkdir -p "$2/dist"; printf synthetic > "$2/dist/index.html" ;;\n'
@@ -70,6 +71,7 @@ class PreviewReleaseTest(unittest.TestCase):
             self.assertEqual(info["CFBundleIdentifier"], "dev.simonvanlaak.apparent.preview")
             self.assertEqual(info["CFBundleShortVersionString"], "0.123.2")
             self.assertEqual(info["CFBundleVersion"], "123.2")
+            self.assertTrue((root / "dist/Apparent Preview.app/Contents/MacOS/apparent-engine-media").is_file())
             self.assertTrue((root / "dist/Apparent Preview.app/Contents/Resources/settings/app/dist/settings.html").is_file())
             self.assertIn("preview-mac-feed/appcast.xml", info["SUFeedURL"])
             self.assertEqual(info["SUPublicEDKey"], env["APPARENT_PREVIEW_PUBLIC_KEY"])

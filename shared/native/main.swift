@@ -149,7 +149,24 @@ case "export":
   runAsync { try await Exporter.run(plan: URL(filePath: arguments[1])) }
 case "probe":
   guard arguments.count >= 2 else { fail("probe needs MOVIE") }
-  runAsync { emit(try await Media.probe(URL(filePath: arguments[1]))) }
+  let helperURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+  let engineMedia = helperURL.deletingLastPathComponent().appendingPathComponent("apparent-engine-media")
+  guard FileManager.default.isExecutableFile(atPath: engineMedia.path) else {
+    fail("apparent-engine-media is missing beside apparent-helper; rebuild Apparent")
+  }
+  let process = Process()
+  process.executableURL = engineMedia
+  process.arguments = ["probe", arguments[1]]
+  process.standardInput = FileHandle.standardInput
+  process.standardOutput = FileHandle.standardOutput
+  process.standardError = FileHandle.standardError
+  do {
+    try process.run()
+    process.waitUntilExit()
+    exit(process.terminationStatus)
+  } catch {
+    fail("could not start apparent-engine-media: \(error.localizedDescription)")
+  }
 case "permission-panel":
   PermissionPanel.run(arguments: arguments)
 case "permissions":

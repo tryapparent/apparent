@@ -28,6 +28,17 @@ else
   taskpolicy -c utility cargo build -j 3
 fi
 
+ENGINE_MEDIA_BINARY="${BINARY_DIR}/apparent-engine-media"
+if [[ -f "${ENGINE_MEDIA_BINARY}" ]]; then
+  HAS_ENGINE_MEDIA=1
+elif [[ -n "${APPARENT_PREBUILT_DIR:-}" ]]; then
+  # The consumer admits this absence only for the declared legacy two-binary schema.
+  HAS_ENGINE_MEDIA=0
+else
+  echo "apparent-engine-media is missing from the local Mac build" >&2
+  exit 1
+fi
+
 # Inspect executable paths, not argv: other installations and CLI commands that
 # merely mention this app are not ours. Helpers inside this bundle count too.
 if ! PROCESSES="$(ps -axww -o pid= -o comm=)"; then
@@ -43,10 +54,14 @@ done <<< "${PROCESSES}"
 
 mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}" "${FRAMEWORKS_DIR}" "${HOME}/bin"
 
-rm -f "${MACOS_DIR}/apparent" "${MACOS_DIR}/apparent-helper"
+rm -f "${MACOS_DIR}/apparent" "${MACOS_DIR}/apparent-helper" "${MACOS_DIR}/apparent-engine-media"
 cp -f "${BINARY_DIR}/apparent" "${MACOS_DIR}/apparent"
 cp -f "${BINARY_DIR}/apparent-helper" "${MACOS_DIR}/apparent-helper"
 chmod +x "${MACOS_DIR}/apparent" "${MACOS_DIR}/apparent-helper"
+if [[ "${HAS_ENGINE_MEDIA}" == "1" ]]; then
+  cp -f "${ENGINE_MEDIA_BINARY}" "${MACOS_DIR}/apparent-engine-media"
+  chmod +x "${MACOS_DIR}/apparent-engine-media"
+fi
 
 cp -f "${REPO_DIR}/capture/desktop/assets/Apparent.icns" "${RESOURCES_DIR}/Apparent.icns"
 cp -f "${REPO_DIR}/shared/assets/fonts/HostGrotesk-Variable.ttf" "${RESOURCES_DIR}/HostGrotesk-Variable.ttf"
@@ -137,6 +152,9 @@ if [[ -d "${FRAMEWORKS_DIR}/Sparkle.framework/Versions/B" ]]; then
   codesign --force --sign "${IDENTITY}" "${FRAMEWORKS_DIR}/Sparkle.framework"
 fi
 codesign --force --sign "${IDENTITY}" --identifier "dev.kitlangton.apparent.helper" "${MACOS_DIR}/apparent-helper"
+if [[ "${HAS_ENGINE_MEDIA}" == "1" ]]; then
+  codesign --force --sign "${IDENTITY}" --identifier "dev.kitlangton.apparent.engine-media" "${MACOS_DIR}/apparent-engine-media"
+fi
 codesign --force --sign "${IDENTITY}" --identifier "dev.kitlangton.apparent" "${APP_DIR}"
 
 if [[ "${APPARENT_NO_LAUNCH:-0}" == "1" ]]; then

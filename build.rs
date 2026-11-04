@@ -23,6 +23,7 @@ fn main() {
         return;
     }
     compile_helper();
+    compile_engine_media_probe();
     compile_laser_shader();
     println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
     if let Ok(output) = Command::new("xcode-select").arg("-p").output()
@@ -287,6 +288,7 @@ fn compile_helper() {
             "capture/engine/native/Export.swift",
             "capture/engine/native/LiveTranscribe.swift",
             "capture/engine/native/Media.swift",
+            "capture/engine/native/MediaProbeSupport.swift",
             "capture/engine/native/Mirror.swift",
             "capture/engine/native/PlaybackVolume.swift",
             "capture/engine/native/ScreenProbe.swift",
@@ -385,4 +387,81 @@ fn compile_helper() {
     let dest = profile_dir.join("apparent-helper");
     let _ = std::fs::remove_file(&dest);
     std::fs::copy(&built, dest).expect("Could not place apparent-helper");
+}
+
+/// Builds the read-only Engine media capability beside `apparent-helper`.
+/// Keeping this source closure separate lets probe implementation changes rebuild and ship
+/// without compiling or changing the Desktop helper.
+fn compile_engine_media_probe() {
+    let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    let sources = [
+        manifest_dir.join("capture/engine/native/MediaProbeSupport.swift"),
+        manifest_dir.join("capture/engine/native/MediaProbe.swift"),
+    ];
+    for source in &sources {
+        println!("cargo:rerun-if-changed={}", source.display());
+    }
+    let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    let profile_dir = out_dir
+        .ancestors()
+        .nth(3)
+        .expect("Unexpected OUT_DIR layout");
+    let arch = match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
+        Ok("aarch64") => "arm64",
+        Ok(other) => other,
+        Err(_) => "arm64",
+    }
+    .to_owned();
+    let built = out_dir.join("apparent-engine-media");
+    let mut command = Command::new("xcrun");
+    command
+        .args([
+            "swiftc",
+            "-O",
+            "-swift-version",
+            "5",
+            "-parse-as-library",
+            "-target",
+        ])
+        .arg(format!("{arch}-apple-macos15.0"))
+        .args(&sources)
+        .arg("-o")
+        .arg(&built);
+    let command_args = command_args_record(&command);
+    let key_inputs: Vec<_> = sources
+        .iter()
+        .map(|path| ("swift-source", path.as_path()))
+        .collect();
+    let identity = move || {
+        native_key(&key_inputs).and_then(|mut key| {
+            build_cache::add_field(&mut key, b"command", &command_args);
+            push_field(
+                &mut key,
+                b"swiftc",
+                &build_cache::tool_identity("swiftc", &["--version"])?,
+            );
+            Some(key)
+        })
+    };
+    let compile = || -> std::io::Result<()> {
+        if !build_cache::timed("Engine media probe Swift compiler execution", || command.status())?
+            .success()
+        {
+            return Err(std::io::Error::other("Engine media probe failed to compile"));
+        }
+        Ok(())
+    };
+    let cache = out_dir.join(".native-cache").join("swift-engine-media-probe");
+    let outputs = [("apparent-engine-media", built.clone(), true)];
+    let cached = build_cache::timed("swift-engine-media-probe", || {
+        build_cache::cold_reuse_or_build(&cache, &outputs, identity, compile)
+            .expect("Engine media probe build/cache failed")
+    });
+    println!(
+        "cargo:warning=Engine media probe Swift cache: {}",
+        if cached { "reused" } else { "compiled" }
+    );
+    let dest = profile_dir.join("apparent-engine-media");
+    let _ = std::fs::remove_file(&dest);
+    std::fs::copy(&built, dest).expect("Could not place apparent-engine-media");
 }

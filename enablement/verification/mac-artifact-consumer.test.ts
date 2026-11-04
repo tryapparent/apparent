@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync, rmSync, symlinkSync, readdirSync, existsSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, symlinkSync, readdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -42,17 +42,58 @@ test('rejects extra names, traversal names, missing helper and symlinks', () => 
   symlinkSync(join(dir, 'apparent'), join(dir, 'apparent-helper')); assert.throws(() => verify(dir, m, expected, identity))
 }))
 
-function zip(kind: string) {
-  const result = spawnSync('python3', ['-c', `import io,sys,zipfile,stat
+function engineProbeFixture(fn: (directory: string, manifest: any, expected: any, identity: any) => void) {
+  const directory = mkdtempSync(join(tmpdir(), 'mac-engine-media-consumer-'))
+  const expected = { sha: 'a'.repeat(40), tree: 'b'.repeat(40), lock: 'c'.repeat(64), config: 'd'.repeat(64) }
+  const files = ['apparent', 'apparent-helper', 'apparent-engine-media'].map(name => {
+    writeFileSync(join(directory, name), name, { mode: 0o644 })
+    return { name, size: name.length, mode: 0o755, sha256: createHash('sha256').update(name).digest('hex'), runtime: { rpaths: [], closure: [] } }
+  })
+  const source_inputs = ['capture/engine/native/MediaProbe.swift', 'capture/engine/native/MediaProbeSupport.swift'].map(path => ({ path, sha256: createHash('sha256').update(readFileSync(path)).digest('hex') }))
+  const manifest = { schema: 2, kind: 'mac-dev-executables', artifact_contract: 'engine-media-probe-v1', source_inputs, source: { sha: expected.sha, tree: expected.tree, clean: true }, producer: { repository: repository.full_name, run: '123', attempt: '2', job: 'rust', workflow: 'tryapparent/apparent/.github/workflows/verification-mac.yml@refs/heads/main' }, target: 'x86_64-apple-darwin', profile: 'dev', deployment_target: '15.0', cargo_lock_sha256: expected.lock, config_sha256: expected.config, files }
+  writeFileSync(join(directory, 'manifest.json'), JSON.stringify(manifest))
+  try { fn(directory, manifest, expected, admit(run, artifact, [job], '123', '456')) } finally { rmSync(directory, { recursive: true, force: true }) }
+}
+test('accepts the exact versioned Engine media probe payload', () => engineProbeFixture((dir, manifest, expected, identity) => {
+  verify(dir, manifest, expected, identity)
+  assert.deepEqual(readdirSync(dir).sort(), ['apparent', 'apparent-engine-media', 'apparent-helper', 'manifest.json'])
+}))
+test('rejects missing, unexpected, wrong-source, wrong-architecture and wrong-digest Engine payloads', () => engineProbeFixture((dir, manifest, expected, identity) => {
+  rmSync(join(dir, 'apparent-engine-media'))
+  assert.throws(() => verify(dir, manifest, expected, identity), 'missing sibling')
+  writeFileSync(join(dir, 'apparent-engine-media'), 'apparent-engine-media')
+  writeFileSync(join(dir, 'unlisted'), 'unexpected')
+  assert.throws(() => verify(dir, manifest, expected, identity), 'unexpected file')
+  rmSync(join(dir, 'unlisted'))
+  for (const patch of [
+    { artifact_contract: 'engine-media-probe-v2' },
+    { source_inputs: [] },
+    { source: { ...manifest.source, sha: 'f'.repeat(40) } },
+    { source: { ...manifest.source, tree: 'f'.repeat(40) } },
+    { target: 'arm64-apple-darwin' },
+    { files: manifest.files.map((f: any) => f.name === 'apparent-engine-media' ? { ...f, sha256: 'f'.repeat(64) } : f) },
+    { files: manifest.files.filter((f: any) => f.name !== 'apparent-engine-media') },
+  ]) assert.throws(() => verify(dir, { ...manifest, ...patch }, expected, identity))
+}))
+
+function zip(kind: string, contract = 'legacy') {
+  const result = spawnSync('python3', ['-c', `import io,json,sys,zipfile,stat
 output=io.BytesIO()
 with zipfile.ZipFile(output, 'w') as z:
-    for name in ['apparent', 'apparent-helper', 'manifest.json']:
+    names=['apparent', 'apparent-helper'] if sys.argv[2]=='legacy' else ['apparent', 'apparent-helper', 'apparent-engine-media']
+    manifest={'schema':1,'profile':'dev'} if sys.argv[2]=='legacy' else {'schema':2,'profile':'dev','artifact_contract':'engine-media-probe-v1'}
+    names=names+['manifest.json']
+    if sys.argv[1]=='schema-mismatch': manifest['artifact_contract']='wrong'
+    if sys.argv[1]=='legacy-extra': names.append('apparent-engine-media')
+    for name in names:
+        if sys.argv[1]=='missing-engine' and name=='apparent-engine-media': continue
         if sys.argv[1]=='traversal' and name=='apparent': name='../apparent'
         info=zipfile.ZipInfo(name)
         info.external_attr=(stat.S_IFLNK | 0o777) << 16 if sys.argv[1]=='symlink' else (stat.S_IFREG | 0o644) << 16
-        z.writestr(info, 'x' * (1024*1024+1) if sys.argv[1]=='large' and name=='manifest.json' else name)
+        data=json.dumps(manifest) if name=='manifest.json' else name
+        z.writestr(info, 'x' * (1024*1024+1) if sys.argv[1]=='large' and name=='manifest.json' else data)
     if sys.argv[1]=='duplicate': z.writestr('apparent', 'replacement')
-sys.stdout.buffer.write(output.getvalue())`, kind], { maxBuffer: 2 * 1024 * 1024 })
+sys.stdout.buffer.write(output.getvalue())`, kind, contract], { maxBuffer: 2 * 1024 * 1024 })
   assert.equal(result.status, 0)
   return result.stdout
 }
@@ -74,6 +115,13 @@ test('download owner authenticates bytes before extracting only fixed regular fi
     unpack(good, digest, directory)
     assert.deepEqual(readdirSync(directory).sort(), ['apparent', 'apparent-helper', 'manifest.json'])
     assert.throws(() => unpack(good, digest, directory))
+    const engine = zip('good', 'engine')
+    unpack(engine, 'sha256:' + createHash('sha256').update(engine).digest('hex'), join(root, 'engine-payload'))
+    assert.deepEqual(readdirSync(join(root, 'engine-payload')).sort(), ['apparent', 'apparent-engine-media', 'apparent-helper', 'manifest.json'])
+    for (const invalid of [zip('missing-engine', 'engine'), zip('schema-mismatch', 'engine'), zip('legacy-extra', 'legacy')]) {
+      assert.throws(() => unpack(invalid, 'sha256:' + createHash('sha256').update(invalid).digest('hex'), join(root, 'rejected')))
+      assert.equal(existsSync(join(root, 'rejected')), false)
+    }
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 

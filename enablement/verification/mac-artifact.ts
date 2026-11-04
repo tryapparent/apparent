@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url'
 import { platform, arch } from 'node:os'
 
 const hash = (b: Buffer | string) => createHash('sha256').update(b).digest('hex')
+const executableNames = ['apparent', 'apparent-helper', 'apparent-engine-media'] as const
+const engineMediaSources = ['capture/engine/native/MediaProbe.swift', 'capture/engine/native/MediaProbeSupport.swift'] as const
 type Probe = (command: string, args: string[]) => string
 export const focusedProducers = {
   'focused-settings-build': { workflow: 'verification-mac.yml', buildJob: 'settings-build', nativeJob: 'settings-native' },
@@ -99,7 +101,7 @@ export function produce(root: string, output: string, env: NodeJS.ProcessEnv, pr
   const sdkPath = q('xcrun', '--sdk', 'macosx', '--show-sdk-path')
   if (!sdkPath.startsWith(`${developer}/Platforms/MacOSX.platform/Developer/SDKs/`) || sdkPath.includes('..')) throw new Error('Unexpected SDK')
   const swift = requireMatch(q('xcrun', 'swiftc', '--version'), /Apple Swift version [\s\S]+Target: x86_64-apple-macosx/)
-  const files = ['apparent', 'apparent-helper'].map(name => {
+  const files = executableNames.map(name => {
     const path = join(root, 'target/debug', name)
     const stat = lstatSync(path)
     if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o777) !== 0o755) throw new Error('Unsafe executable mode/type')
@@ -110,7 +112,8 @@ export function produce(root: string, output: string, env: NodeJS.ProcessEnv, pr
     const bytes = readFileSync(path)
     return { name, mode: stat.mode & 0o777, sha256: hash(bytes), size: bytes.length, runtime, bytes }
   })
-  const manifest = { schema: 1, kind: 'mac-dev-executables', source: { sha, tree, clean: true }, producer: identity,
+  const sourceInputs = engineMediaSources.map(path => ({ path, sha256: hash(readFileSync(join(root, path))) }))
+  const manifest = { schema: 2, kind: 'mac-dev-executables', artifact_contract: 'engine-media-probe-v1', source_inputs: sourceInputs, source: { sha, tree, clean: true }, producer: identity,
     target: 'x86_64-apple-darwin', profile: 'dev', deployment_target: '15.0',
     cargo_lock_sha256: hash(readFileSync(join(root, 'Cargo.lock'))), config_sha256: hash(config),
     toolchain: { rust, cargo, developer, xcode, sdk, sdkPath, swift }, environment: { MACOSX_DEPLOYMENT_TARGET: env.MACOSX_DEPLOYMENT_TARGET ?? '15.0 (Cargo config)' },

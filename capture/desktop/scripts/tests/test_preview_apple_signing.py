@@ -28,7 +28,7 @@ class AppleSigningTest(unittest.TestCase):
         setup.write_text('#!/bin/sh\nprintf "%s/sparkle\\n" "$PWD"\n')
         setup.chmod(0o755)
         tools = {
-            "cargo": 'mkdir -p target/release; touch target/release/apparent target/release/apparent-helper',
+            "cargo": 'mkdir -p target/release; touch target/release/apparent target/release/apparent-helper target/release/apparent-engine-media',
             "node": '''printf 'node %s\\n' "$*" >> "$TRACE"
 case "$1" in
   */package-notes.mjs) mkdir -p "$2/dist"; printf synthetic > "$2/dist/index.html" ;;
@@ -86,6 +86,7 @@ if [ "$1" = notarytool ] && [ "${REJECT_NOTARY:-0}" = 1 ]; then exit 1; fi''',
             self.assertEqual(result.returncode, 0, result.stderr)
             trace = (root / "trace").read_text()
             self.assertIn("--options runtime --timestamp", trace)
+            self.assertIn("--identifier dev.simonvanlaak.apparent.preview.engine-media", trace)
             self.assertLess(trace.index("stage-settings "), trace.index("codesign --force"))
             self.assertNotIn("--sign - ", trace)
             app_staple = trace.index("stapler staple " + str(root / "dist/Apparent Preview.app"))

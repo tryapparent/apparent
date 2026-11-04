@@ -247,7 +247,7 @@ fn install_with(
     Ok(())
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Probe {
     pub duration_ms: u64,
@@ -268,7 +268,24 @@ pub struct Probe {
 }
 
 pub fn probe(movie: &Path) -> Result<Probe> {
-    run(&[os("probe"), movie.as_os_str()], Duration::from_secs(30))
+    let helper = engine_media_path()?;
+    run_program(
+        &helper,
+        &[os("probe"), movie.as_os_str()],
+        Duration::from_secs(30),
+    )
+}
+
+/// The Engine media capability is packaged beside the Apple helper that owns its launch path.
+/// Resolve it by bundle location; never search PATH or accept an independently configured binary.
+fn engine_media_path() -> Result<PathBuf> {
+    let helper = path()?;
+    let engine_media = helper.with_file_name("apparent-engine-media");
+    ensure!(
+        engine_media.is_file(),
+        "apparent-engine-media is missing beside apparent-helper; rebuild Apparent"
+    );
+    Ok(engine_media)
 }
 
 /// Re-encodes `movie` into `out` as HEVC with its long edge at most `max_edge`, audio copied and
@@ -413,6 +430,37 @@ pub fn qr(text: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn engine_media_is_resolved_as_a_sibling_of_the_packaged_helper() {
+        let helper = Path::new("/Applications/Apparent.app/Contents/MacOS/apparent-helper");
+        assert_eq!(
+            helper.with_file_name("apparent-engine-media"),
+            Path::new("/Applications/Apparent.app/Contents/MacOS/apparent-engine-media")
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn engine_media_probe_reads_a_real_quicktime_file_without_mutating_it() {
+        let movie = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("capture/engine/bundle/bundle_processing/publication/fixtures/tiny.mov");
+        let original = std::fs::read(&movie).unwrap();
+        let result = probe(&movie).unwrap();
+        let compatibility: Probe = run(
+            &[os("probe"), movie.as_os_str()],
+            Duration::from_secs(30),
+        )
+        .unwrap();
+        assert_eq!(compatibility, result);
+        assert_eq!(result.duration_ms, 200);
+        assert_eq!(result.video_duration_ms, Some(200));
+        assert_eq!((result.width, result.height), (16, 16));
+        assert_eq!(result.fps, 10.0);
+        assert_eq!(result.audio_tracks, 0);
+        assert!(!result.audio_overlaps_video);
+        assert_eq!(std::fs::read(&movie).unwrap(), original);
+    }
 
     #[test]
     fn a_superseded_install_stops_without_waiting_for_the_helper() {

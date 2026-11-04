@@ -26,7 +26,8 @@ mkdir -p "${APP_BUNDLE}/Contents/MacOS" "${APP_BUNDLE}/Contents/Resources" "${AP
 
 cp -f "${REPO_DIR}/target/release/apparent" "${APP_BUNDLE}/Contents/MacOS/apparent"
 cp -f "${REPO_DIR}/target/release/apparent-helper" "${APP_BUNDLE}/Contents/MacOS/apparent-helper"
-chmod +x "${APP_BUNDLE}/Contents/MacOS/apparent" "${APP_BUNDLE}/Contents/MacOS/apparent-helper"
+cp -f "${REPO_DIR}/target/release/apparent-engine-media" "${APP_BUNDLE}/Contents/MacOS/apparent-engine-media"
+chmod +x "${APP_BUNDLE}/Contents/MacOS/apparent" "${APP_BUNDLE}/Contents/MacOS/apparent-helper" "${APP_BUNDLE}/Contents/MacOS/apparent-engine-media"
 
 cp -f "${REPO_DIR}/capture/desktop/assets/Apparent.icns" "${APP_BUNDLE}/Contents/Resources/Apparent.icns"
 cp -f "${REPO_DIR}/shared/assets/fonts/HostGrotesk-Variable.ttf" "${APP_BUNDLE}/Contents/Resources/HostGrotesk-Variable.ttf"
@@ -121,6 +122,7 @@ SPARKLE_VER="${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework/Versions/B"
 "${SIGN[@]}" "${SPARKLE_VER}/Updater.app"
 "${SIGN[@]}" "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
 "${SIGN[@]}" --entitlements "${ENTITLEMENTS}" --identifier "dev.kitlangton.apparent.helper" "${APP_BUNDLE}/Contents/MacOS/apparent-helper"
+"${SIGN[@]}" --identifier "dev.kitlangton.apparent.engine-media" "${APP_BUNDLE}/Contents/MacOS/apparent-engine-media"
 "${SIGN[@]}" --entitlements "${ENTITLEMENTS}" --identifier "dev.kitlangton.apparent" "${APP_BUNDLE}"
 
 /usr/bin/ditto "${APP_BUNDLE}" "${DIST_DIR}/staging/Apparent.app"
