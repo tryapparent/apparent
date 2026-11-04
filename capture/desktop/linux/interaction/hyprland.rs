@@ -419,6 +419,17 @@ pub fn pill_title(xid: u32) -> String {
 
 pub fn note_title(xid: u32) -> String { format!("Apparent notes {xid:x}") }
 
+pub fn note_is_active(xid: u32, pid: u32) -> bool {
+    request("j/activewindow").ok().and_then(|reply| serde_json::from_str::<serde_json::Value>(&reply).ok())
+        .is_some_and(|window| active_note_matches(&window, xid, pid))
+}
+
+fn active_note_matches(window: &serde_json::Value, xid: u32, pid: u32) -> bool {
+    window["pid"].as_u64() == Some(u64::from(pid))
+        && window["title"].as_str() == Some(&note_title(xid))
+        && window["xwayland"].as_bool() == Some(true)
+}
+
 pub fn pin_note(xid: u32, pid: u32) -> Result<()> {
     if let Some(command) = owned_pin_command(&request("j/clients")?, pid, &note_title(xid), syntax()?)? {
         run(&command)?;
@@ -733,6 +744,17 @@ pub fn watch_reloads(reloaded: impl Fn() + Send + 'static) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn note_focus_requires_the_exact_active_xwayland_surface() {
+        let note = serde_json::json!({"pid": 10, "title": "Apparent notes 14", "xwayland": true});
+        assert!(super::active_note_matches(&note, 20, 10));
+        assert!(!super::active_note_matches(&note, 21, 10));
+        assert!(!super::active_note_matches(&note, 20, 11));
+        assert!(!super::active_note_matches(&serde_json::json!({}), 20, 10));
+        let mut native = note;
+        native["xwayland"] = serde_json::json!(false);
+        assert!(!super::active_note_matches(&native, 20, 10));
+    }
     use super::*;
 
     const ALT_SHIFT: u32 = CARBON_OPTION_KEY | CARBON_SHIFT_KEY;
