@@ -39,9 +39,10 @@ adjacent checksum or manifest is not an authentication source. Staging hashes
 one immutable input snapshot, rejects symlink entries, unsafe paths and unexpected
 archive members, checks exact inventory and file digests, rejects a pre-existing or
 symlinked destination, and publishes into a new directory. The staged contract
-is `<stage>/renderer/**` plus `<stage>/manifest.json`; root assembly owns closure
-exclusions and trust/admission policy and consumes this exact directory and
-manifest seam. It must not duplicate producer-side trust decisions.
+is `<stage>/renderer/**` plus `<stage>/manifest.json`. This is the intended seam
+for a separate root-assembly consumer; this producer does not establish app
+consumption or installed routing. That consumer owns closure exclusions and
+trust/admission policy and must not duplicate producer-side trust decisions.
 
 For real build and staging proof after `npm ci`:
 
