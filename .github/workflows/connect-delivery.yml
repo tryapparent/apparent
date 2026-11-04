@@ -33,10 +33,7 @@ jobs:
       PUBLIC_POSTHOG_ENVIRONMENT: production
     steps:
       - name: Verification runtime budget and ownership
-        run: |
-          echo '10 minute whole-workflow execution budget; agent whose run hits the limit owns optimization and a successful rerun. Do not raise or bypass the limit.'
-          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
-          echo "CONNECT_EVIDENCE=$RUNNER_TEMP/connect-browser-evidence" >> "$GITHUB_ENV"
+        run: echo '10 minute whole-workflow execution budget; agent whose run hits the limit owns optimization and a successful rerun. Do not raise or bypass the limit.'
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
