@@ -18,6 +18,7 @@ mod transport;
 mod encrypted_transfer;
 mod encryption;
 mod device;
+pub mod recipient_protocol;
 pub use device::DeviceLogin;
 pub mod settings;
 
