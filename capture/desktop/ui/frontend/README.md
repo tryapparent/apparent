@@ -84,7 +84,10 @@ Electron main owns one persistent, same-user Rust socket/controller. Opening and
 one-second local refreshes never initiate network access. Each bounded request
 uses Electron's monotonic clock; a ten-second idle lease, EOF, renderer reload,
 crash or window close drops the controller and cancels pending authorization.
-Rust owns all consent, credentials, health probes and durable revocation; JS does
+Connect-owned TypeScript (`connect/client/typescript/src/settings-presentation.ts`)
+owns the Electron card's presentation from allowlisted semantic facts. Rust still
+owns the asynchronous controller, consent admission, credentials, health probes
+and durable revocation; these are explicit #529 migration debt. JS does
 not read config or implement an auth client. Raw errors/config/device secrets do
 not enter the renderer. Only an explicit zero-argument **Open browser** command
 can open the current Rust-validated public verification URI; no arbitrary URL is
@@ -557,6 +560,17 @@ that returns to native compatibility stays native until the next app launch,
 avoiding overlapping Electron profiles during asynchronous retirement.
 
 ## Shift-click notes
+
+While the Electron recording pill is routed, its flush Lilac right extension
+shows a shared Lucide note icon and the durable saved count, hidden at zero.
+The main row stays at fixed coordinates across count changes; its transparent
+72px native reserve is not an input target at zero. The extension opens the
+existing list, without changing the editor. Native fallback retains the separate
+Notes control. Reverting the count integration restores that control; remove its
+fallback only when the native pill routing and package consumers are retired.
+Shared Linux coverage checks count transitions, screen coordinates, hit shapes,
+themes, revision-scoped list actions and the real Rust note authority. Native
+window shaping/placement and popup ownership are the affected platform seams.
 
 The default-available notes surface runs `electron/notes/main.cjs`, launched by
 Rust for a screen capture. It renders only the nearby text popup and a small
