@@ -14,7 +14,9 @@ fn executable_receipts_and_exit_codes() {
         (vec!["stop", &id], r#"{"capture_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"recording","outcome":"wrong_capture"}"#, false),
         (vec!["inspect", &id], r#"{"capture_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"recording"}"#, true),
     ] {
-        let home = std::env::temp_dir().join(format!("ac-e-{}", apparent_capture::new_id().unwrap()));
+        // Darwin's default TMPDIR plus the production socket suffix exceeds SUN_LEN.
+        // Keep the private fixture short; never alter the production rendezvous path.
+        let home = std::path::PathBuf::from("/tmp").join(format!("ac-e-{}", apparent_capture::new_id().unwrap()));
         let dir = home.join(".config/apparent/agent-control");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
