@@ -13,7 +13,7 @@
   font-display: swap;
   src: url('../../../../../shared/assets/fonts/HostGrotesk-Variable.ttf') format('truetype');
 }
-.settings-shell { display: flex; height: 100vh; overflow: hidden; background: var(--color-background); color: var(--color-foreground); font-family: 'Host Grotesk', system-ui, sans-serif; }
+.settings-shell { display: flex; height: 100%; overflow: hidden; background: var(--color-background); color: var(--color-foreground); font-family: 'Host Grotesk', system-ui, sans-serif; }
 .settings-sidebar { width: 210px; flex: none; overflow-y: auto; background: var(--apparent-site-carbon); color: var(--apparent-site-paper); padding-top: 52px; }
 .settings-brand { padding: 0 20px 28px; -webkit-app-region: drag; }
 .settings-brand img { width: 150px; height: auto; }

@@ -12,6 +12,9 @@ test('Settings renderer and window follow Electron theme changes without reload'
   // Playwright otherwise forces light media even when Electron follows the OS.
   await page.emulateMedia({colorScheme:null});
   await page.locator('.settings-shell').waitFor();
+  const contentBounds = await page.locator('.apparent-window-content').boundingBox();
+  const shellBounds = await page.locator('.settings-shell').boundingBox();
+  assert.equal(shellBounds.height, contentBounds.height, 'Settings must fit above the build label without an outer scroll area');
   await expect(page.getByText('CAPTURE SETTINGS', {exact:true})).toBeVisible();
   assert.equal(await application.evaluate(({nativeTheme})=>nativeTheme.themeSource),'system');
   for(const mode of ['light','dark','light']) {
