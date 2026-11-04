@@ -323,6 +323,7 @@ backend identity and show `build unknown`. This adds no settings writer or flag.
 | Target picker | Existing GPUI platform adapters; recording pill is exempt |
 | Whiteboard and lab | Existing GPUI rendering adapters |
 
+Decommissioned iPhone/mirror surfaces are outside this inventory.
 The offscreen Linux keepalive window is intentionally invisible. Transient
 transparent note-flight sprites carry no controls and are also left clear. Labels do not
 keep transient overlays mapped, change capture exclusion, or activate a different
