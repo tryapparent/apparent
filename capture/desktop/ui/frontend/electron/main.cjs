@@ -26,6 +26,7 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, reply) => reply(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
   const window = new BrowserWindow({
+    show: !settings,
     width: 920, height: 760, minWidth: 640, minHeight: 620,
     title: connectSettings ? 'Apparent Settings — Connect' : settings ? 'Apparent Settings — Storage' : 'Apparent — UI foundation',
     backgroundColor: followWindowTheme.backgroundColor(nativeTheme),
@@ -34,6 +35,19 @@ app.whenReady().then(() => {
       contextIsolation: true, nodeIntegration: false, sandbox: true,
       webSecurity: true, spellcheck: false,
     },
+  });
+  // A parent show can arrive before Chromium paints the Settings page. Keep
+  // the empty initial document hidden through that request too.
+  let settingsPainted = false;
+  let settingsClosing = false;
+  const showSettings = () => {
+    if (!settingsPainted || settingsClosing || window.isDestroyed()) return;
+    window.show();
+    window.focus();
+  };
+  if (settings) window.once('ready-to-show', () => {
+    settingsPainted = true;
+    showSettings();
   });
   followWindowTheme(nativeTheme, window);
   window.removeMenu();
@@ -76,19 +90,23 @@ app.whenReady().then(() => {
     process.stdout.write(`${JSON.stringify({ action: 'show-captures' })}\n`);
   });
   if (settings) {
+    const closeSettings = () => { settingsClosing = true; app.quit(); };
     // Only the Rust Settings owner supplies this private pipe. EOF closes its child.
     if (process.argv.includes('--settings-parent')) {
     const lines = require('node:readline').createInterface({ input: process.stdin });
     lines.on('line', line => {
       try {
         const command = JSON.parse(line);
-        if (command.type === 'close') app.quit();
-        if (command.type === 'show') { window.show(); window.focus(); }
+        if (command.type === 'close') closeSettings();
+        if (command.type === 'show') showSettings();
       } catch { /* malformed parent message has no effect */ }
     });
-    lines.on('close', () => app.quit());
+    lines.on('close', closeSettings);
     }
-    window.on('close', () => process.stdout.write(`${JSON.stringify({ action: 'close' })}\n`));
+    window.on('close', () => {
+      settingsClosing = true;
+      process.stdout.write(`${JSON.stringify({ action: 'close' })}\n`);
+    });
     window.webContents.on('did-fail-load', () => app.exit(1));
     window.webContents.on('render-process-gone', () => app.exit(1));
   }

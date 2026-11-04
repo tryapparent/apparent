@@ -364,6 +364,17 @@ apply at the next request; reopen Settings to change presentation routing. The
 separate `npm start` window remains a developer harness; it is not installed or
 used by the Settings route. Browser preview has no Storage bridge.
 
+Installed Storage and Connect windows stay hidden until Electron's first paint,
+including when the native parent sends `show` during loading. Later `show`
+requests still bring the painted window forward. Load failure and renderer crash
+retain the native fallback route. `tests/storage/visibility.test.ts` exercises
+the shipped host's event ordering with a delayed first paint; it is synthetic
+lifecycle coverage, not macOS focus or rendering acceptance. Reverting this guard
+restores immediate window display. The native/Electron pane replacement remains
+in place; this guard alone does not resolve or certify issue #562's intermittent
+blanking and differing layouts. Removing the native fallback still requires the
+accepted Settings routing switch and its platform checks.
+
 `readCaptureLocation()`, `changeCaptureLocation()` and `resetCaptureLocation()`
 accept no path, revision, dialog options or other arguments. Installed main reads
 presence-aware native facts, then the emitted `electron/storage-policy.cjs`
