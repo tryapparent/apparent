@@ -108,15 +108,19 @@ disk/firmware; a matching live copy is only a partial snapshot. Keep private
 receipts and media private. No migration command launches guests, changes
 installed tools, reserves capacity or redirects an active run.
 
-## Temporary compatibility
+## Compatibility
 
-The three former paths in `capture/desktop/scripts/linux/gui/` are relative
-symlinks to this implementation, not copies. The updater and maintained frontend documentation now use canonical paths.
-The shared VM skill also advertises the canonical infrastructure. All three
-links remain as a bounded transition for frozen candidates and external callers:
-the old runner/tests locate the reaper by sibling path. Remove them together only
-after external callers and active owner reservations/runs are checked and released. Do not
-rewrite an active candidate merely to retire these entrypoints.
+The former runner, reaper and test symlinks in
+`capture/desktop/scripts/linux/gui/` were removed after the updater, maintained
+frontend documentation and shared VM skill adopted canonical paths. The Settings
+owner explicitly released the old paths: its current disposable controller uses
+the canonical runner and its frozen Mac packet references none. No running
+Python command named the old paths during the final audit. Historical receipts
+and older checkouts retain their own source/provenance; they do not reserve new
+main entrypoints. No VM, cold evidence or active resource was changed.
+
+The Desktop packaged-smoke helper exports remain the bounded compatibility
+contract described above; all executable VM commands use canonical paths.
 
 Further Mac/frontend extraction checks exact active hunks with their owners;
 an open PR or pending native acceptance alone does not reserve stable mechanics. Storage/retention UI assertions remain Desktop
