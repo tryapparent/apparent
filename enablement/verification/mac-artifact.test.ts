@@ -145,7 +145,7 @@ for (const os of ['macOS', 'Linux']) for (const status of [0, 7]) test(`verifier
     assert.equal(result.status, status, result.stderr)
     assert.deepEqual(readFileSync(record, 'utf8').trim().split('\n'), [
       os === 'macOS' ? 'cargo::compiler::fingerprint=trace' : 'inherited',
-      `enablement/verification.py --base synthetic-base --run --online --suite rust --parallel-contracts --cargo-timings ${os === 'macOS' ? '--overlap-root-build ' : ''}--receipt-dir ${root}/verification-receipts`,
+      `enablement/verification.py --base synthetic-base --run --online --suite rust --parallel-contracts --cargo-timings --overlap-root-build --receipt-dir ${root}/verification-receipts`,
     ])
     assert.equal(result.stdout.trim(), status === 0 ? 'inherited' : '')
   } finally { rmSync(root, { recursive: true, force: true }) }
@@ -218,8 +218,10 @@ for (const outcome of ['success', 'failure', 'incomplete', 'signal']) test(`actu
   try {
     const workflow = readFileSync('.github/workflows/verification-platform.yml', 'utf8')
     const step = workflow.split('      - name: Execute Rust changed-tree checks (not GUI acceptance)\n')[1]
-    const prefix = step.split('        run: |\n')[1].split('          # Reproduce the CI-sensitive fixtures')[0]
-      .split('\n').map(line => line.replace(/^          /, '')).join('\n')
+    const lines = step.split('        run: |\n')[1].split('\n')
+    const trap = lines.findIndex(line => line.trim() === 'trap cleanup EXIT')
+    assert.ok(trap >= 0, 'exercise the actual cleanup trap, independent of later scheduling comments')
+    const prefix = lines.slice(0, trap + 1).map(line => line.replace(/^          /, '')).join('\n')
     const finish = outcome === 'success' ? 'verification_complete=true; exit 0' : outcome === 'failure' ? 'exit 7' : outcome === 'signal' ? 'kill -TERM $$' : 'exit 0'
     const result = spawnSync('bash', ['-c', prefix + '\nprintf "%s\\n" "$TMPDIR"\n' + finish], {
       encoding: 'utf8', env: { ...process.env, HOME: root },
