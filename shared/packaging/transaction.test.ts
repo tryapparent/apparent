@@ -3,6 +3,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, st
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { discardApplication, prepareApplication, publishApplication, publishValidatedDirectory } from './transaction.ts';
 function app(path: string, version: string) {
   mkdirSync(join(path, 'Contents/MacOS'), { recursive: true });
@@ -13,6 +15,46 @@ function app(path: string, version: string) {
     writeFileSync(join(path, 'Contents/MacOS', component, 'version'), version);
   }
 }
+test('exclusive publication rejects a destination created after its absence check', () => {
+  const root = mkdtempSync(join(tmpdir(), 'publication-race-'));
+  const destination = join(root, 'output');
+  const candidate = join(root, 'candidate');
+  mkdirSync(candidate);
+  writeFileSync(join(candidate, 'payload'), 'validated');
+  const original = fs.existsSync;
+  let competingInode: number | undefined;
+  fs.existsSync = ((path) => {
+    if (path === destination && competingInode === undefined) {
+      mkdirSync(destination);
+      competingInode = statSync(destination).ino;
+      return false; // The competing process published just after this check.
+    }
+    return original(path);
+  }) as typeof fs.existsSync;
+  syncBuiltinESMExports();
+  try {
+    assert.throws(() => publishValidatedDirectory(candidate, destination), /EEXIST/);
+    assert.equal(statSync(destination).ino, competingInode);
+    assert.equal(readFileSync(join(candidate, 'payload'), 'utf8'), 'validated');
+  } finally {
+    fs.existsSync = original;
+    syncBuiltinESMExports();
+    rmSync(root, { recursive: true });
+  }
+});
+test('failed exclusive publication returns validated contents to the candidate', () => {
+  const root = mkdtempSync(join(tmpdir(), 'publication-rollback-'));
+  try {
+    const candidate = join(root, 'candidate');
+    const destination = join(root, 'output');
+    mkdirSync(candidate);
+    writeFileSync(join(candidate, 'payload'), 'validated');
+    assert.throws(() => publishValidatedDirectory(candidate, destination, undefined,
+      () => { throw Error('admission failed'); }), /admission failed/);
+    assert(!existsSync(destination));
+    assert.equal(readFileSync(join(candidate, 'payload'), 'utf8'), 'validated');
+  } finally { rmSync(root, { recursive: true }); }
+});
 test('one managed app transaction upgrades both components; failed admission leaves installed bytes intact', () => {
   const root = mkdtempSync(join(tmpdir(), 'application-transaction-'));
   try {
