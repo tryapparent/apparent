@@ -1,6 +1,6 @@
 /** Packaging-only transactions. Callers own validation, signing and exclusive installation locks. */
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -24,6 +24,31 @@ export function publishValidatedDirectory(candidate: string, destination: string
     previousOwner(output);
   }
   shippingDirectory(candidate);
+  if (!previousOwner) {
+    // Reserve the destination exclusively. rename(candidate, output) can replace
+    // a concurrently created empty directory on both supported platforms.
+    // Callers keep assembly private until this operation returns successfully.
+    mkdirSync(output, { mode: 0o700 });
+    const moved: string[] = [];
+    try {
+      for (const entry of readdirSync(candidate)) {
+        renameSync(join(candidate, entry), join(output, entry));
+        moved.push(entry);
+      }
+      shippingDirectory(output);
+      afterPublish();
+    } catch (error) {
+      try {
+        for (const entry of moved.reverse()) renameSync(join(output, entry), join(candidate, entry));
+        rmSync(output, { recursive: true });
+      } catch (rollback) {
+        throw new AggregateError([error, rollback], `Publication failed; reserved payload retained at ${output}`);
+      }
+      throw error;
+    }
+    rmSync(candidate, { recursive: true });
+    return;
+  }
   const transaction = mkdtempSync(join(dirname(output), '.package-publication-'));
   chmodSync(transaction, 0o700);
   const previous = join(transaction, 'previous');

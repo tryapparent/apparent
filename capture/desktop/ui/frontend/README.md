@@ -20,6 +20,48 @@ Synthetic fixtures never establish OS effects, and new native routes still need
 focused real-platform checks. Automatic selection/reuse is not implemented by
 this documentation change.
 
+## Standalone renderer artifact
+
+`npm run renderer:build-artifact -- /absolute/new/output` runs the real frontend
+`npm run build` (TypeScript checks, Vite production build and existing asset
+producers), then packages the resulting `dist` as a separate static renderer
+artifact. It does not invoke Cargo, build the native application, install the app,
+or select an updater. The output path must be new; failed output is retained for
+inspection. The manifest records `gitHead`, SHA-256 for each source/input file in
+this frontend tree and `shared/ui`, the Vite output inventory and digests, the
+four renderer entry pages, and runtime compatibility (`vite-static-multipage`,
+relative asset base, Electron major 45, Node integration disabled).
+
+The standalone archive has `renderer/` and `manifest.json`. Assembly callers
+must authenticate the archive out of band and provide that expected SHA-256:
+`npm run renderer:stage -- /path/to/archive SHA256 /absolute/new/stage`. The
+adjacent checksum or manifest is not an authentication source. Staging hashes
+one immutable input snapshot, rejects symlink entries, unsafe paths and unexpected
+archive members, checks exact inventory and file digests, rejects a pre-existing or
+symlinked destination, and publishes into a new directory. The staged contract
+is `<stage>/renderer/**` plus `<stage>/manifest.json`. This is the intended seam
+for a separate root-assembly consumer; this producer does not establish app
+consumption or installed routing. That consumer owns closure exclusions and
+trust/admission policy and must not duplicate producer-side trust decisions.
+
+For real build and staging proof after `npm ci`:
+
+```sh
+out="$(mktemp -d)/renderer-artifact"
+npm run renderer:build-artifact -- "$out"
+artifact="$(find "$out" -maxdepth 1 -name 'apparent-desktop-renderer-*.tar.gz' -print -quit)"
+APPARENT_RENDERER_ARTIFACT="$artifact" npm run renderer:test-artifact
+npm run renderer:stage -- "$artifact" "$APPARENT_RENDERER_EXPECTED_SHA256" "$(mktemp -d)/renderer-stage"
+```
+
+Set `APPARENT_RENDERER_EXPECTED_SHA256` from the caller's authenticated receipt
+before the staging command; a locally computed adjacent digest is not that receipt.
+
+The artifact test covers real Vite output plus authenticated staging, destination
+non-overwrite, wrong archive digest, changed output under a valid caller digest,
+and symlink-member rejection. Rollback is to keep consuming the existing native
+renderer assets; adoption and install routing are separate root-owned work.
+
 From the repository root, with Node 22 and npm 10 or newer:
 
 ```sh

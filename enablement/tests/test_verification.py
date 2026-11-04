@@ -18,6 +18,27 @@ spec.loader.exec_module(verification)
 
 
 class SelectionTests(unittest.TestCase):
+    def test_each_real_onboarding_input_selects_renderer_feedback(self):
+        frontend = "capture/desktop/ui/frontend/"
+        inputs = [frontend + name for name in (
+            "src/style.css", "tsconfig.json", "scripts/tsconfig.onboarding.json",
+            "vite.config.ts", "package-lock.json", "src/onboarding/main.tsx")]
+        inputs += ["shared/assets/fonts/HostGrotesk-Variable.ttf", "shared/ui/theme.css"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("src/onboarding/main.tsx", "node_modules/typescript/bin/tsc",
+                         "node_modules/vite/bin/vite.js", "node_modules/@apparent/ui/package.json"):
+                target = root / frontend / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.touch()
+            for name in inputs + ["public/site/src/features.json"]:
+                with self.subTest(path=name), patch.object(verification, "ROOT", root), patch.object(
+                        verification.subprocess, "run") as run:
+                    verification.run_pr_checks({"paths": [name]})
+                    selected = any(call.args[0] == ["npm", "run", "check:onboarding"]
+                                   for call in run.call_args_list)
+                    self.assertEqual(selected, name in inputs)
+
     def setUp(self):
         guard = patch.object(verification, "check_temp_environment")
         guard.start()
@@ -480,6 +501,42 @@ class SelectionTests(unittest.TestCase):
         result = verification.select(["capture/engine/tests/process.rs"])
         self.assertFalse(result["root"])
         self.assertTrue(result["engine"])
+
+    def test_engine_package_source_and_metadata_get_fast_feedback_and_root_when_needed(self):
+        for path in ("capture/engine/src/session.rs", "capture/engine/src/lib.rs"):
+            with self.subTest(path=path):
+                result = verification.select([path])
+                self.assertTrue(result["root"])
+                self.assertTrue(result["engine"])
+        for path in ("capture/engine/Cargo.toml", "capture/engine/Cargo.lock"):
+            with self.subTest(path=path):
+                result = verification.select([path])
+                self.assertTrue(result["root"])
+                self.assertTrue(result["engine"])
+
+    def test_engine_deletions_and_unrelated_owners_select_conservatively(self):
+        # The selector consumes both sides of a deletion/rename diff, so a
+        # deleted package test still keeps the standalone package route.
+        self.assertTrue(verification.select(["capture/engine/tests/process.rs"])["engine"])
+        unrelated = verification.select(["README.md"])
+        self.assertFalse(unrelated["root"])
+        self.assertFalse(unrelated["engine"])
+
+    def test_engine_package_failure_stops_before_root_checks(self):
+        commands = []
+        def cargo_command(command):
+            return command[0] == "cargo" or command[:4] == ["taskpolicy", "-c", "utility", "cargo"]
+        def fail_engine(command, **kwargs):
+            if cargo_command(command):
+                commands.append(command)
+            if cargo_command(command) and "capture/engine/Cargo.toml" in command:
+                raise subprocess.CalledProcessError(1, command)
+            return subprocess.CompletedProcess(command, 0)
+        with patch.object(verification.subprocess, "run", side_effect=fail_engine):
+            with self.assertRaises(subprocess.CalledProcessError):
+                verification.run_selected_checks(verification.select(["capture/engine/tests/process.rs"]))
+        self.assertEqual(len(commands), 1)
+        self.assertIn("capture/engine/Cargo.toml", commands[0])
 
     def test_unknown_shared_build_security_lifecycle_and_tooling_broaden(self):
         for path in ["new-owner/foo.rs", "Cargo.toml", "Cargo.lock", "build.rs",
