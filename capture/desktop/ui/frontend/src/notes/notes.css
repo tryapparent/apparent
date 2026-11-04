@@ -39,7 +39,7 @@ body:has(.capture-notes), body:has(.notes-unavailable), body:has(.note-flight) {
 .note-number { color: var(--color-muted-foreground); font-size: 11px; }
 .note-row small { color: var(--color-muted-foreground); font-size: 10px; }
 .notes-unavailable { font: 12px system-ui; padding: 12px; }
-.notes-build-slot { display:flex; justify-content:flex-end; min-height:18px; margin-top:3px; padding-inline:2px; }
+.notes-build-slot { display:flex; justify-content:flex-end; min-height:18px; margin-top:3px; padding-inline:2px; pointer-events:none; }
 .notes-badge .notes-build-slot { box-sizing:border-box;height:14px;min-height:14px;margin:0;padding-inline:3px;overflow:hidden; }
 .notes-badge .apparent-build-identity { position:static;right:auto;bottom:auto;z-index:auto;min-height:14px;padding:0 3px;font-size:10px;line-height:12px; }
 .capture-notes:not(.notes-badge) .notes-build-slot .apparent-build-identity { position:static;right:auto;bottom:auto;z-index:auto; }
