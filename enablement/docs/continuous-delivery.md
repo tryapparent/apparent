@@ -97,7 +97,10 @@ enable a disabled publisher, provision resources or apply migrations.
 Activate the versioned hooks in each clone with `git config --local core.hooksPath
 .githooks`. This common-repository setting also applies to linked worktrees;
 cloning or pulling does not activate hooks automatically. Keep the existing
-pre-commit directory-width check and pre-push verification enabled.
+pre-commit directory-width and [2,000-line staged-file checks](../file-length/README.md)
+and pre-push verification enabled. Lockfiles and the documented generated/binary
+exclusions do not receive the file-length check; existing oversized files must
+meet the limit when changed.
 
 `.githooks/reference-transaction` requires `git verify-commit` to accept every
 new commit introduced by a local branch or detached HEAD update. It runs before
@@ -481,21 +484,23 @@ Preparation, exact evidence and rollback constraints are in
 ## Verification runtime budgets
 
 The complete pre-commit hook has 60 seconds; pre-push has 300 seconds.
-Linux workflow attempts have a 10-minute workload execution budget; Mac
-verification, native proof and preview release attempts have 15 minutes. The final `runtime-budget` gate reads all jobs in that exact run attempt,
+Linux and Mac workflow attempts have a 15-minute workload execution budget;
+web-only delivery retains 10 minutes. The final `runtime-budget` gate reads all jobs in that exact run attempt,
 including reusable workflows, and measures the union of their execution intervals.
 Parallel jobs count once. Gaps with no executing workload job (runner, dependency
 and concurrency waiting) and budget-audit jobs are excluded. Setup, checks,
 cleanup and post actions in workload jobs count. Reruns audit their own attempt.
 API errors, incomplete inventories, nonterminal jobs or invalid timestamps fail
 closed. Skipped jobs consume no execution time.
+Mac followers with every workload job skipped also skip the audit, so an
+ineligible Linux completion does not produce a successful Mac verification run.
 
 Enforce the whole-workflow budget at completion: fail the final audit above
-600 seconds for Linux or 900 seconds for Mac without automatic whole-workflow cancellation or a standalone
+900 seconds for Linux/Mac or 600 seconds for web-only delivery without automatic whole-workflow cancellation or a standalone
 waiting-runner watchdog. This is Simon's selected policy. The final read-only
 composite audit waits for all workload jobs; it does not poll or cancel them.
-Workload-job timeouts remain additional safeguards: 10 minutes for Linux,
-15 minutes for Mac. A failed
+Workload-job timeouts remain additional safeguards: 15 minutes for Linux and Mac,
+10 minutes for web-only delivery. A failed
 verification workflow cannot admit downstream releases. Native proof, cleanup
 requirements and correctness/release gates remain required. Same-workflow
 publication may finish before the final audit fails; audit success never replaces
