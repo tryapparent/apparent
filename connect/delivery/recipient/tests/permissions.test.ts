@@ -31,6 +31,7 @@ test('root-owned shipping recipient is traversable/executable by the intended di
   let changedOwner = false;
   try {
     const runner = (command: string, args: string[]) => {
+      if (command === 'gh' && args[0] === 'api') return Buffer.from(JSON.stringify({ id: 123, run_attempt: 1, repository: { full_name: 'tryapparent/apparent' }, head_repository: { full_name: 'tryapparent/apparent' }, head_branch: 'main', head_sha: pin.sourceSha, path: '.github/workflows/connect-delivery.yml', event: 'push', status: 'completed', conclusion: 'success' }));
       if (command === 'gh' && args[0] === 'release') { copyFileSync(archive, join(args.at(-1)!, args[6])); return Buffer.alloc(0); }
       if (command === 'gh' && args[0] === 'attestation') return Buffer.alloc(0);
       return execFileSync(command, args, { maxBuffer: 256 * 1024 * 1024 });
