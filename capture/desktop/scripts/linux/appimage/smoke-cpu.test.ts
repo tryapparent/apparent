@@ -35,11 +35,15 @@ chmod +x squashfs-root/usr/bin/apparent`)
   exit 0
 fi
 if [[ "$1" == *downloads_and_runs_parakeet ]]; then
+  test -z "\${APPARENT_TEST_NO_AVX_VNNI:-}"
+  test -z "\${APPARENT_TEST_NO_AVX512:-}"
   echo native-verify >> "$TRACE"
   [[ "$SCENARIO" != bad-model ]] || exit 9
   mkdir -p "$APPARENT_TEST_MODEL_DIR"
   echo verified > "$APPARENT_TEST_MODEL_DIR/model"
 else
+  test "$APPARENT_TEST_NO_AVX_VNNI" = 1
+  test "$APPARENT_TEST_NO_AVX512" = 1
   test -s "$APPARENT_TEST_MODEL_DIR/model"
   echo prepared-inference >> "$TRACE"
   [[ "$SCENARIO" != bad-inference ]] || exit 10
@@ -51,7 +55,8 @@ exec "$@"`)
       const trace = join(root, 'trace')
       writeFileSync(trace, '')
       const result = spawnSync('bash', [join(scripts, 'smoke-cpu.sh'), image, speech, emulator], {
-        encoding: 'utf8', env: { ...process.env, SCENARIO: scenario, TRACE: trace, APPARENT_TEST_MODEL_DIR: join(root, 'model') },
+        encoding: 'utf8', env: { ...process.env, SCENARIO: scenario, TRACE: trace, APPARENT_TEST_MODEL_DIR: join(root, 'model'),
+          APPARENT_TEST_NO_AVX_VNNI: '1', APPARENT_TEST_NO_AVX512: '1' },
       })
       const events = readFileSync(trace, 'utf8').trim().split('\n').filter(Boolean)
       if (scenario === 'success') {

@@ -46,7 +46,8 @@ if [[ $# == 0 ]]; then
 else
   # Verify the actual model bytes natively on every invocation before passing
   # the same directory to the emulator. Missing/corrupt models fail here.
-  ./speech-test "$test_name" --exact --ignored --nocapture
+  env -u APPARENT_TEST_NO_AVX_VNNI -u APPARENT_TEST_NO_AVX512 \
+    ./speech-test "$test_name" --exact --ignored --nocapture
   "$@" -- ./speech-test "$prepared_test" --exact --ignored --nocapture
   # Also exercise the shipped Rust binary's keyframe/render/bundle path, without
   # a display, microphone, clipboard or an installed speech model.
