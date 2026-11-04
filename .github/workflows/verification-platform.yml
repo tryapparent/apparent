@@ -268,7 +268,7 @@ jobs:
   release-ready:
     name: Release verification
     needs: [select, desktop-ui, rust]
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || (github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/t3/onboarding-mac-release-baseline' && github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     steps:
       - run: echo "Platform checks passed for $GITHUB_SHA"

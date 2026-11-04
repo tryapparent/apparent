@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   preview:
-    if: github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main'
+    if: github.repository == 'tryapparent/apparent' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/t3/onboarding-mac-release-baseline')
     runs-on: macos-latest
     timeout-minutes: 90
     env:
@@ -29,7 +29,19 @@ jobs:
       - name: Require Linux/shared and Mac verification of this exact main commit
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 enablement/release_gate.py --platform macos --sha "$GITHUB_SHA"
+        run: |
+          if [ "$GITHUB_REF" = refs/heads/t3/onboarding-mac-release-baseline ]; then
+            test "$APPARENT_PREVIEW_NOTARIZE" = true
+            python3 enablement/release_gate.py --platform macos --sha "$GITHUB_SHA" --onboarding-candidate
+            echo 'APPARENT_PREVIEW_VERSION=0.12.2' >> "$GITHUB_ENV"
+            echo 'APPARENT_PREVIEW_BUILD_NUMBER=12.2' >> "$GITHUB_ENV"
+            echo 'APPARENT_PREVIEW_TAG=preview-mac-12-2' >> "$GITHUB_ENV"
+          else
+            python3 enablement/release_gate.py --platform macos --sha "$GITHUB_SHA"
+            echo "APPARENT_PREVIEW_VERSION=0.$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+            echo "APPARENT_PREVIEW_BUILD_NUMBER=$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+            echo "APPARENT_PREVIEW_TAG=preview-mac-$GITHUB_RUN_NUMBER-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+          fi
       - name: Prepare Developer ID credentials
         if: env.APPARENT_PREVIEW_NOTARIZE == 'true'
         env:
@@ -50,8 +62,6 @@ jobs:
       - name: Build and verify the preview app
         env:
           APPARENT_APPLE_SIGNING_DIR: ${{ runner.temp }}/apparent-apple-signing
-          APPARENT_PREVIEW_VERSION: 0.${{ github.run_number }}.${{ github.run_attempt }}
-          APPARENT_PREVIEW_BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
           APPARENT_PREVIEW_PUBLIC_KEY: ${{ vars.SPARKLE_PREVIEW_PUBLIC_KEY }}
           APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
         run: |
@@ -67,19 +77,34 @@ jobs:
           set -euo pipefail
           test -n "$SPARKLE_PREVIEW_PRIVATE_KEY" || { echo 'Missing preview Sparkle signing secret' >&2; exit 1; }
           swift capture/desktop/scripts/release/verify-preview-sparkle-key.swift
-          version="0.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          version="$APPARENT_PREVIEW_VERSION"
           zip="dist/Apparent-Preview-${version}-arm64.zip"
           # Sparkle reads the key from stdin; do not put it in arguments, logs or the checkout.
           printf '%s\n' "$SPARKLE_PREVIEW_PRIVATE_KEY" | \
             "$(capture/desktop/scripts/release/setup-sparkle.sh)/bin/sign_update" --ed-key-file - "$zip" \
             > "$RUNNER_TEMP/preview-signature-attributes"
+      - name: Recheck scoped candidate against live feed before public release
+        if: github.ref == 'refs/heads/t3/onboarding-mac-release-baseline'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api 'repos/tryapparent/apparent/contents/appcast.xml?ref=preview-mac-feed' --jq .content | \
+            python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))' > "$RUNNER_TEMP/live-preview-before-release.xml"
+          python3 capture/desktop/scripts/release/preview_appcast.py \
+            --previous "$RUNNER_TEMP/live-preview-before-release.xml" \
+            --zip "dist/Apparent-Preview-${APPARENT_PREVIEW_VERSION}-arm64.zip" \
+            --version "$APPARENT_PREVIEW_VERSION" --build-number "$APPARENT_PREVIEW_BUILD_NUMBER" \
+            --signature-attributes "$(cat "$RUNNER_TEMP/preview-signature-attributes")" \
+            --url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${APPARENT_PREVIEW_TAG}/Apparent-Preview-${APPARENT_PREVIEW_VERSION}-arm64.zip" \
+            --out "$RUNNER_TEMP/preview-prepublication-check.xml"
       - name: Publish a uniquely versioned prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          version="0.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
-          tag="preview-mac-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          version="$APPARENT_PREVIEW_VERSION"
+          tag="$APPARENT_PREVIEW_TAG"
           dmg="dist/Apparent-Preview-${version}-arm64.dmg"
           zip="dist/Apparent-Preview-${version}-arm64.zip"
           # A maintainer may pre-create this exact tag when the workflow token
@@ -125,9 +150,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          version="0.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
-          build="${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
-          tag="preview-mac-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          version="$APPARENT_PREVIEW_VERSION"
+          build="$APPARENT_PREVIEW_BUILD_NUMBER"
+          tag="$APPARENT_PREVIEW_TAG"
           zip="dist/Apparent-Preview-${version}-arm64.zip"
           url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/$(basename "$zip")"
           curl --fail --location --head --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors "$url" > /dev/null

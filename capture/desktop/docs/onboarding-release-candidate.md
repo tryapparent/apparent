@@ -61,3 +61,18 @@ permissions, does not sign an appcast or mutate releases/feeds, and records the
 source commit, tree, artifact sizes/hashes and pending native acceptance. It is
 restricted to the bound candidate branch and is removed with that branch after
 accepted delivery. Actions artifact availability is not a release receipt.
+
+
+## Approved scoped exception
+
+Simon approved this exception for Preview `0.12.2` / build `12.2`. Admission is
+limited to `tryapparent/apparent`, Mac publication and the exact
+`t3/onboarding-mac-release-baseline` head descending from published `75dc870c`.
+Both exact-source manual platform runs must pass their latest-attempt required
+jobs and release receipts; Mac must also complete signed candidate packaging.
+The ordinary main-only path is unchanged. Signing/notarization are mandatory for
+the exception, and the existing Sparkle generator rejects repeated/backward feed
+versions. Publication dispatch remains held until installed workflow/audio/output
+acceptance. Future main releases must integrate and verify the accepted onboarding
+behavior before superseding this release; this exception does not authorize
+publishing an unverified main successor or resetting that branch.
