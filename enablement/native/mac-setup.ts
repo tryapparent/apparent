@@ -163,7 +163,8 @@ async function prepareToStatus(path: string): Promise<void> {
   let exit: 0 | 1 = 0
   try { await prepareMacDependencies(Math.max(1, pending.deadlineAt - Date.now())) }
   catch (error) { exit = 1; console.error(error instanceof Error ? error.message : String(error)) }
-  // The supervisor only returns after owned process-group cleanup has completed.
+  // The supervisor awaits direct-child close and signals remaining owned groups
+  // before returning; it does not separately observe every descendant exit.
   await writeFinalStatus(path, pending, exit)
   if (exit !== 0) process.exitCode = 1
 }

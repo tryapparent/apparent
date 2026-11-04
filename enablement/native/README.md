@@ -5,8 +5,9 @@
 `mac-setup.ts` runs the existing FFmpeg and Metal setup commands concurrently
 after Xcode selection. In main verification, its bounded worker overlaps Rust
 compiler/cache setup; an atomic, invocation-bound success record gates Cargo.
-Both dependency commands must succeed and finish cleanup before that record is
-published. A missing, malformed, stale or failed record stops compilation.
+Both direct commands must close successfully; the supervisor signals any
+remaining owned descendants before publishing the record. It does not separately
+confirm every descendant has exited. A missing, malformed, stale or failed record stops compilation.
 The helper retains command output, reports elapsed times, and terminates its
 owned process groups on failure, cancellation or the 120-second setup deadline.
 `mac-setup.test.ts` exercises the orchestration with executable fixtures; actual
