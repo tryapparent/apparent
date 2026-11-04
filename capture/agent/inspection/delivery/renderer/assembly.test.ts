@@ -66,7 +66,6 @@ test('compose the authenticated renderer with the retained root while Cargo is u
     mkdirSync(binary, { recursive: true, mode: 0o755 });
     mkdirSync(join(work, 'AppDir/usr/share/apparent'), { recursive: true, mode: 0o755 });
     const assembled = join(work, 'assembled');
-    mkdirSync(assembled, { mode: 0o700 });
     const composition = assemble(rootDirectory, rootReceipt, rootReceiptSha256,
       inspectorArchive, inspectorSha256, assembled);
     assert.equal(composition.rootRebuilt, false);
@@ -138,7 +137,9 @@ test('reject wrong renderer digest and altered inventory without publishing reso
     command('tar', ['-xzf', rendererArchive, '-C', payload]);
     writeFileSync(join(payload, 'renderer/index.html'), '<html>tampered</html>');
     const altered = join(work, 'altered.tar.gz');
-    command('tar', ['-czf', altered, '-C', payload, 'renderer', 'manifest.json']);
+    const entries = JSON.parse(readFileSync(join(payload, 'manifest.json'), 'utf8')).files
+      .map((file: { path: string }) => `renderer/${file.path}`);
+    command('tar', ['-czf', altered, '-C', payload, ...entries, 'manifest.json']);
     const rejected = join(work, 'altered-stage');
     assert.throws(() => stageRendererArchive(altered, sha256(readFileSync(altered)), rejected), /inventory|digest mismatch/);
     assert.throws(() => lstatSync(rejected), { code: 'ENOENT' });
