@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, renameSync, chmodSync, rmSync, existsSync } from 'node:fs';
 import { join, resolve, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -15,6 +15,32 @@ const source = process.env.APPARENT_TEST_PACKAGE_SOURCE;
 const imageDigest = process.env.APPARENT_TEST_APPIMAGE_SHA256;
 const requested = Boolean(image || source || imageDigest);
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+const linuxTarget = (arch:string) => ({x64:'x86_64-unknown-linux-gnu',arm64:'aarch64-unknown-linux-gnu'}[arch]);
+function completion(status:number|null, signal:NodeJS.Signals|null, limit:string|undefined,
+  expected:'success'|'failure'|'cancel-at-approval', interrupted:boolean) {
+  assert.equal(limit,undefined,'process hit an acceptance harness limit');
+  if(expected==='cancel-at-approval') {
+    assert.ok(interrupted,'must reach actual packaged approval before interrupt');
+    assert.ok(signal==='SIGINT' || (signal===null && status!==null && status!==0),'expected cancellation exit');
+  } else {
+    assert.equal(signal,null,'unexpected signal is not rejection evidence');
+    assert.notEqual(status,null,'missing exit status is not rejection evidence');
+    assert.equal(status===0,expected==='success','unexpected command exit');
+  }
+}
+test('package acceptance distinguishes process rejection from harness termination',()=>{
+  assert.equal(linuxTarget('x64'),'x86_64-unknown-linux-gnu');
+  assert.equal(linuxTarget('arm64'),'aarch64-unknown-linux-gnu');
+  assert.equal(linuxTarget('other'),undefined);
+  const rejected=spawnSync(process.execPath,['-e','process.exit(7)']);
+  completion(rejected.status,rejected.signal,undefined,'failure',false);
+  const timedOut=spawnSync(process.execPath,['-e','setInterval(()=>{},1000)'],{timeout:50});
+  assert.throws(()=>completion(timedOut.status,timedOut.signal,'timeout','failure',false));
+  const overflow=spawnSync(process.execPath,['-e',"process.stdout.write('x'.repeat(1000000))"],{maxBuffer:100});
+  assert.ok(overflow.error);
+  assert.throws(()=>completion(overflow.status,overflow.signal,'output-limit','failure',false));
+  assert.throws(()=>completion(null,'SIGKILL',undefined,'failure',false));
+});
 
 test('source-bound AppImage invokes its genuine bundled recipient and preserves local inspection', {
   skip: requested ? false : 'requires frozen AppImage, reviewed package source and image checksum; not adapter proof',
@@ -28,35 +54,35 @@ test('source-bound AppImage invokes its genuine bundled recipient and preserves 
   const map = JSON.parse(execFileSync('git', ['show', `${source}:connect/delivery/recipient/pins.json`], {encoding:'utf8'}));
   assert.equal(map.schema, 1); assert.equal(map.adopted, true, 'package source must contain complete reviewed adoption');
   for (const target of targets) assert.equal(map.pins[target]?.target, target, 'all four real pins required');
-  const target = `${process.arch}-unknown-linux-gnu`;
-  assert.ok(targets.includes(target), 'unsupported host architecture');
+  const target = linuxTarget(process.arch);
+  assert.ok(target && targets.includes(target), 'unsupported host architecture');
   const pin: StagePin = map.pins[target];
   const work = mkdtempSync(join(tmpdir(), 'recipient-appimage-proof-'));
   chmodSync(work, 0o700);
   const config = join(work, 'config.json');
-  const commands: {args:string[]; status:number|null; stdout:string; stderr:string}[] = [];
+  const commands: {args:string[]; status:number|null; signal:NodeJS.Signals|null; limit?:string; stdout:string; stderr:string}[] = [];
   const children = new Set<ReturnType<typeof spawn>>();
   const run = (executable:string, args:string[], expected:'success'|'failure'|'cancel-at-approval'='success') => new Promise<string>((resolveRun, reject) => {
     const child = spawn(executable, args, {cwd:work, detached:true,
       env:{...process.env, APPARENT_CONFIG:config, APPIMAGE_EXTRACT_AND_RUN:'1'}, stdio:['ignore','pipe','pipe']});
     children.add(child);
     let stdout='', stderr='';
+    let limit:string|undefined;
     let phase:'ordinary'|'awaiting-approval'|'interrupted'=expected==='cancel-at-approval'?'awaiting-approval':'ordinary';
     const kill = () => { try { process.kill(-child.pid!, 'SIGKILL'); } catch {} };
-    const timer = setTimeout(kill, 30_000);
+    const timer = setTimeout(()=>{limit='timeout';kill();}, 30_000);
     child.stdout.on('data', chunk => {
-      stdout+=chunk;if(stdout.length>2_000_000)kill();
+      stdout+=chunk;if(stdout.length>2_000_000){limit='output-limit';kill();}
       if(phase==='awaiting-approval' && stdout.includes('CANCEL-CODE')) {
         phase='interrupted';try{process.kill(-child.pid!, 'SIGINT');}catch{}
       }
     });
-    child.stderr.on('data', chunk => { stderr+=chunk; if(stderr.length>2_000_000)kill(); });
+    child.stderr.on('data', chunk => { stderr+=chunk; if(stderr.length>2_000_000){limit='output-limit';kill();} });
     child.once('error', error => {clearTimeout(timer);children.delete(child);reject(error);});
-    child.once('close', status => {
-      clearTimeout(timer);children.delete(child);commands.push({args,status,stdout,stderr});
+    child.once('close', (status,signal) => {
+      clearTimeout(timer);children.delete(child);commands.push({args,status,signal,limit,stdout,stderr});
       try {
-        assert.equal(status===0,expected==='success',JSON.stringify(commands.at(-1)));
-        if(expected==='cancel-at-approval')assert.equal(phase,'interrupted','must reach actual packaged approval before interrupt');
+        completion(status,signal,limit,expected,phase==='interrupted');
         resolveRun(stdout);
       } catch(error){reject(error);}
     });
@@ -103,6 +129,7 @@ test('source-bound AppImage invokes its genuine bundled recipient and preserves 
     await run(image,['connect','login','--server',origin,'--no-browser']);
     const status=JSON.parse(await run(image,['connect','status']));
     assert.equal(status.readSignedIn,true);assert.equal(status.enabled,false);assert.equal(status.uploadConsent,false);
+    // Plaintext evidence fixture only: this does not prove distinct encrypted/full-media download modes.
     const full=join(work,'full.apparent');
     await run(image,['fetch',id,'--out',full,'--wait','0']);
     for(const [path,bytes] of Object.entries(files))assert.deepEqual(readFileSync(join(full,path)),bytes);
