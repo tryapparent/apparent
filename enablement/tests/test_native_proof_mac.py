@@ -22,7 +22,7 @@ class NativeProofMacTests(unittest.TestCase):
         self.assertNotIn('secrets.', workflow)
         self.assertNotIn('write\n', workflow)
         self.assertIn("github.event_name == 'workflow_dispatch'", workflow)
-        self.assertIn('    timeout-minutes: 10\n', workflow)
+        self.assertIn('    timeout-minutes: 15\n', workflow)
         self.assertIn('timeout-minutes: 4\n', workflow)
         self.assertIn('persist-credentials: false', workflow)
 
@@ -80,7 +80,7 @@ class NativeProofMacTests(unittest.TestCase):
     def test_job_budget_bounds_steps_and_keeps_cleanup_required(self):
         workflow = WORKFLOW.read_text()
         job_cap = int(re.search(r'^    timeout-minutes: (\d+)$', workflow, re.M)[1])
-        self.assertEqual(job_cap, 10)
+        self.assertEqual(job_cap, 15)
         steps = re.split(r'^      - ', workflow.split('  runtime-budget:\n', 1)[0].split('    steps:\n', 1)[1], flags=re.M)[1:]
         self.assertTrue(steps[0].startswith('name: Verification runtime budget and ownership\n'))
         for step in steps:
@@ -93,7 +93,7 @@ class NativeProofMacTests(unittest.TestCase):
             cap = re.search(r'^        timeout-minutes: (\d+)$', step, re.M)
             self.assertIsNotNone(cap, step.splitlines()[0])
             self.assertGreater(int(cap[1]), 0)
-        # Step caps are ceilings, not additive allocations: the job's 10m
+        # Step caps are ceilings, not additive allocations: the job's 15m
         # deadline wins. They cannot prove a cleanup reserve. The package/cache
         # optimization must leave time for these mandatory final steps; a job
         # timeout is failed proof, never evidence of successful cleanup.
@@ -119,7 +119,7 @@ class NativeProofMacTests(unittest.TestCase):
         self.assertIn('!cancelled()', native)
         self.assertIn("'focused-share-build' || 'verified-main'", native)
         self.assertIn('needs.share-build.outputs.artifact || inputs.producer_artifact', native)
-        self.assertEqual(re.findall(r'^    timeout-minutes: (\d+)$', workflow.split('  runtime-budget:\n', 1)[0], re.M), ['10', '10'])
+        self.assertEqual(re.findall(r'^    timeout-minutes: (\d+)$', workflow.split('  runtime-budget:\n', 1)[0], re.M), ['15', '15'])
 
     def test_share_scenario_is_explicit_and_cannot_run_worker_case(self):
         workflow = WORKFLOW.read_text()
