@@ -53,6 +53,13 @@ class PrePushGuardTests(unittest.TestCase):
         theme.mkdir(parents=True)
         for name in ("check-theme.py", "legacy-colors.json"):
             shutil.copy2(SELECTOR.parents[1] / "shared/ui/scripts" / name, theme / name)
+        # Exercise prerequisite ordering without installing dependencies inside
+        # each synthetic hook repository. The real executor has its own checks.
+        prepare = self.repo / "shared/handoff/typescript/scripts/prepare.ts"
+        prepare.parent.mkdir(parents=True)
+        prepare.write_text("import {appendFileSync} from 'node:fs';\n"
+                           "appendFileSync(process.env.COMMAND_LOG, 'config-prepare ' + process.argv.slice(2).join(' ') + '\\n');\n"
+                           "process.exitCode=Number(process.env.CONFIG_PREPARE_STATUS || 0);\n")
         run("git", "add", ".", cwd=self.repo)
         run("git", "commit", "-qm", "original", cwd=self.repo)
         self.head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
@@ -89,6 +96,7 @@ class PrePushGuardTests(unittest.TestCase):
         result = self.push()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.log.read_text().splitlines(), [
+            "config-prepare --offline",
             "-c utility cargo test -j 3 --offline -- --test-threads=2",
             "-c utility cargo build -j 3 --offline",
             "-c utility cargo build --manifest-path capture/engine/Cargo.toml -j 3 --offline",
@@ -104,6 +112,7 @@ class PrePushGuardTests(unittest.TestCase):
         result = self.push(env=dict(self.env, T3_BUILD_JOBS="7"))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.log.read_text().splitlines(), [
+            "config-prepare --offline",
             "-c utility cargo test -j 7 --offline -- --test-threads=2",
             "-c utility cargo build -j 7 --offline",
             "-c utility cargo build --manifest-path capture/engine/Cargo.toml -j 7 --offline",
@@ -176,12 +185,19 @@ class PrePushGuardTests(unittest.TestCase):
         result = run(*args, cwd=self.repo, env=self.env)
         self.assertEqual(result.returncode, 0, result.stderr)
         commands = self.log.read_text().splitlines()
-        self.assertEqual(len(commands), 4)
-        self.assertTrue(all("--locked" in line and "--offline" not in line for line in commands))
+        self.assertEqual(commands[0], "config-prepare ")
+        self.assertEqual(len(commands), 5)
+        self.assertTrue(all("--locked" in line and "--offline" not in line for line in commands[1:]))
         self.log.unlink()
         result = run(*args, cwd=self.repo, env=dict(self.env, MOCK_STATUS="1"))
         self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(len(self.log.read_text().splitlines()), 1)
+        self.assertEqual(len(self.log.read_text().splitlines()), 2)
+
+    def test_failed_config_preparation_rejects_before_cargo(self):
+        result = self.push(env=dict(self.env, CONFIG_PREPARE_STATUS="1"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("verification failed", result.stderr)
+        self.assertEqual(self.log.read_text().splitlines(), ["config-prepare --offline"])
 
     def test_tree_changed_during_verification_rejects_push(self):
         taskpolicy = self.bin / "taskpolicy"
