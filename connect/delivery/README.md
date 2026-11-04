@@ -40,8 +40,15 @@ the originals remain untouched. Remove donors only with Public's coordinated
 consumer migration; move release_gate ancestry policy only as a separately verified
 compatible owner change. Runtime controls, resources and migrations are unchanged.
 
-Outstanding independence gate: main pushes still build unchanged Connect inputs.
-Trusted artifact reuse/selection and an explicit selected-run/not-applicable result
-contract with Public are not implemented; callers currently require a real
-successful producer run containing the requested Worker artifact. Manual dispatch
-continues to force a fresh producer run.
+Selection enumerates authenticated successful main workflow runs in pages of 100
+until an empty page, checking direct browser and Worker artifacts against complete
+current inputs and production environment. Receipt-only runs do not truncate the
+search. Manual dispatch forces a fresh producer run.
+
+The callable requires string input `producer-run`: empty runs selection/production;
+nonempty publishes that successful run. Each completed invocation uploads
+`connect-selection-<SHA>` containing exactly `connect-selection.json`, with JSON
+`{"schema":1,"selectedRun":""}` for a fresh build or a prior direct producer run ID
+as the string `selectedRun`. Publication authenticates the current receipt and its
+one-hop prior producer, including archive digests, expiry and Git ancestry. Outputs
+are `selected-run`, `build`, and `applicable` (currently always true).

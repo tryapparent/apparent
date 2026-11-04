@@ -11,7 +11,10 @@ export async function select(force=false){
  const token=process.env.GH_TOKEN;if(!token)throw Error('missing GitHub token');
  async function api(path:string){const r=await fetch(`https://api.github.com/repos/tryapparent/apparent/${path}`,{headers:{Authorization:`Bearer ${token}`,Accept:'application/vnd.github+json'}});if(!r.ok)throw Error(`GitHub ${r.status}`);return r;}
  const workflow=await(await api('actions/workflows/connect-delivery.yml')).json();
- const listing=await(await api('actions/workflows/connect-delivery.yml/runs?branch=main&status=success&per_page=30')).json();
+ for(let page=1;;page++){
+ const listing=await(await api(`actions/workflows/connect-delivery.yml/runs?branch=main&status=success&per_page=100&page=${page}`)).json();
+ if(!Array.isArray(listing.workflow_runs))throw Error('invalid run listing');
+ if(listing.workflow_runs.length===0)break;
  for(const run of listing.workflow_runs){
  const dir=await mkdtemp(join(tmpdir(),'connect-selection-'));
  try{
@@ -30,6 +33,7 @@ export async function select(force=false){
  }
  return String(run.id);
  }catch{ /* Missing, stale or incompatible evidence requires a producer. */ }finally{await rm(dir,{recursive:true,force:true});}
+ }
  }
  return '';
 }
