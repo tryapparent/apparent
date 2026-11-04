@@ -34,7 +34,7 @@ class SigningTests(unittest.TestCase):
     def test_one_fresh_build_stages_both_surfaces_and_propagates_failures(self):
         # Run the real popup stager against disposable generated output; only
         # dependency installation/build and the OS are synthetic here.
-        for failure in (None, "standalone", "build", "popup"):
+        for failure in (None, "standalone", "build", "shared", "popup"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary) / "repo"
                 frontend = root / "capture/desktop/ui/frontend"
@@ -64,6 +64,17 @@ class SigningTests(unittest.TestCase):
                     calls.append(command)
                     if command[:3] == ["npm", "run", "build"] and failure == "build":
                         raise subprocess.CalledProcessError(1, command)
+                    if command[:2] == ["node", "scripts/stage.ts"]:
+                        if failure == "shared":
+                            raise subprocess.CalledProcessError(1, command)
+                        staged = Path(command[2])
+                        staged.mkdir(parents=True)
+                        (staged / "native.cjs").write_text("native executor")
+                        (staged / "rpc.cjs").write_text("private transaction entry")
+                        binary = staged / "node_modules/@koromix/koffi-linux-x64/linux_x64/koffi.node"
+                        binary.parent.mkdir(parents=True)
+                        binary.write_bytes(b"synthetic native addon")
+                        return
                     if command[:2] == ["node", "--input-type=module"]:
                         if failure == "popup":
                             (frontend / "dist/index.html").unlink()
@@ -76,13 +87,16 @@ class SigningTests(unittest.TestCase):
                      patch.object(stage.sys, "platform", "linux"), \
                      patch.object(stage.sys, "argv", argv), \
                      patch.object(stage.subprocess, "run", side_effect=run):
-                    if failure in ("build", "popup"):
+                    if failure in ("build", "shared", "popup"):
                         with self.assertRaises(subprocess.CalledProcessError):
                             stage.main()
                         self.assertFalse(destination.exists())
                     else:
                         stage.main()
                         self.assertTrue((destination / "app/dist/settings.html").is_file())
+                        self.assertEqual((destination / "app/shared-config/native.cjs").read_text(), "native executor")
+                        self.assertTrue((destination / "app/shared-config/rpc.cjs").is_file())
+                        self.assertTrue((destination / "app/shared-config/node_modules/@koromix/koffi-linux-x64/linux_x64/koffi.node").is_file())
                         self.assertTrue((destination / "runtime/electron").is_file())
                         if failure == "standalone":
                             self.assertFalse(popups.exists())
@@ -93,6 +107,21 @@ class SigningTests(unittest.TestCase):
                             self.assertFalse((popups / "electron/share/main.cts").exists())
                 self.assertEqual(sum(c[:2] == ["npm", "ci"] for c in calls), 1)
                 self.assertEqual(sum(c == ["npm", "run", "build"] for c in calls), 1)
+                self.assertEqual(sum(c[:2] == ["node", "scripts/stage.ts"] for c in calls), int(failure != "build"))
+                self.assertEqual(list(Path(temporary).glob(".settings.shared-config-*")), [])
+
+    def test_staged_native_extension_uses_same_identity_and_keychain(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            shared = Path(temporary) / "shared-config"
+            binary = shared / "node_modules/@koromix/koffi-darwin-arm64/darwin_arm64/koffi.node"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"synthetic Mach-O")
+            sign = ["codesign", "--force", "--options", "runtime", "--sign", "Developer ID", "--timestamp",
+                    "--keychain", "/private/signing.keychain-db"]
+            calls = []
+            with patch.object(stage.subprocess, "run", side_effect=lambda command, check: calls.append(command)):
+                stage.sign_staged_native(shared, sign)
+            self.assertEqual(calls, [sign + [str(binary)], ["codesign", "--verify", "--strict", str(binary)]])
 
     def test_principal_executables_wait_for_nested_code(self):
         with tempfile.TemporaryDirectory() as temporary:

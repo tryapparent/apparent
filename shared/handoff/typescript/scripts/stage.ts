@@ -39,8 +39,10 @@ export async function stagePrepared(destination:string):Promise<void> {
     nodeApi:8,dependency:'koffi@3.3.4',source:hash.digest('hex')})+'\n');
 }
 
-export async function prepare():Promise<void> {
-  execFileSync('npm',['ci','--ignore-scripts','--no-audit','--no-fund'],{cwd:root,stdio:'inherit'});
+export async function prepare(offline=false):Promise<void> {
+  const install=['ci','--ignore-scripts','--no-audit','--no-fund'];
+  if(offline) install.push('--offline');
+  execFileSync('npm',install,{cwd:root,stdio:'inherit'});
   execFileSync('npm',['run','build'],{cwd:root,stdio:'inherit'});
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href) {

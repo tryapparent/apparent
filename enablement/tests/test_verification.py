@@ -132,6 +132,19 @@ class SelectionTests(unittest.TestCase):
                 self.fail('selected checks must not run')
         self.assertEqual({sig: signal.getsignal(sig) for sig in previous}, previous)
 
+    def test_native_checks_stop_when_the_config_executor_cannot_be_prepared(self):
+        commands = []
+        def run(command, **kwargs):
+            commands.append(command)
+            if command[:2] == ['node', 'shared/handoff/typescript/scripts/prepare.ts']:
+                self.assertIn('--offline', command)
+                raise subprocess.CalledProcessError(1, command)
+            return subprocess.CompletedProcess(command, 0)
+        with patch.object(verification.subprocess, 'run', side_effect=run):
+            with self.assertRaises(subprocess.CalledProcessError):
+                verification.run_selected_checks({'root': True, 'engine': True})
+        self.assertFalse(any('cargo' in command for command in commands))
+
     def test_cargo_timings_preserve_commands_and_test_arguments(self):
         selection = {'root': True, 'engine': True, 'browser': False}
         with patch.object(verification.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run:
