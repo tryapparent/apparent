@@ -25,11 +25,11 @@
       "id": "connect-aggregate-daily-activity",
       "added": "2026-11-04",
       "group": "settings",
-      "name": "Aggregate-only daily service activity — privacy review candidate",
-      "says": "Candidate: successful upload/share actions deduplicate per account and original UTC day inside Cloudflare. Only daily observed totals and coverage metadata are exposed to the existing warehouse connector. Individual PostHog events remain opt-in. Prior refusals, request privacy signals and fixture exclusions are respected; account/day attribution expires at UTC day end plus one hour. Missing days are unknown, not verified zeroes.",
-      "status": "branch:t3/aggregate-connect-dau",
+      "name": "Aggregate-only daily service activity",
+      "says": "Successful upload/share actions deduplicate per account and original UTC day inside Cloudflare. Only daily observed totals and coverage metadata are selected for sync to the existing warehouse connector. Individual PostHog events remain opt-in. Prior refusals, request privacy signals and fixture exclusions are respected; account/day attribution expires at UTC day end plus one hour. Missing days are unknown, not verified zeroes.",
+      "status": "main",
       "platforms": ["mac", "linux"],
-      "note": "Not deployed or privacy-approved. Production migration/counting and consumer activation remain held for controller assessment of the actual basis, notice/effective boundary, small-cohort inference and retention/erasure limitations. This is a fail-open observed lower bound, not an exact census or anonymity guarantee. No new browser SDK, replay, identity or export service.",
+      "note": "Server-side daily totals for this small friends project; prospective notice precedes counting. This is a fail-open observed lower bound, not an exact census or anonymity guarantee. Existing D1 Read access is account-scoped; only sync selection is restricted to reviewed views. No new browser SDK, replay, identity or export service.",
       "docs": ["connect/docs/aggregate-dau.md"]
     },
     {

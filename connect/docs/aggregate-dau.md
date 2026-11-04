@@ -1,12 +1,14 @@
-# Aggregate Connect daily activity — candidate, production HOLD
+# Aggregate Connect daily activity
 
 This is the bounded implementation of server-side daily totals, **not** default-on
 account-linked PostHog events. Existing individual PostHog consent, choices, UUIDs,
-outbox and delivery remain unchanged. No production migration, deployment,
-connector allowlist change or trial is authorized by this document. The controller
-assessment below and independent privacy/technical review must be resolved first.
-There is no hidden experiment flag: applying 0009 and deploying the code is the
-processing boundary and must not occur while this hold is active.
+outbox and delivery remain unchanged. Simon authorized this minimal feature for a
+small project used by friends. This is not a declaration of GDPR exemption or
+anonymity. The earlier blanket external-review/signature hold is withdrawn for
+this aggregate feature, not for default-on individual PostHog tracking. Normal
+source review, tests, release admission, notice and isolated acceptance still apply.
+Applying 0009 establishes the prospective counting boundary; no hidden experiment
+flag or historical backfill is introduced.
 
 ## Producer contract
 
@@ -29,8 +31,8 @@ The implementation never certifies complete coverage and never exports a zero:
 missing days, failed reads and zero observed admissions are **unknown**, not true
 zero. Consumers must not zero-fill these gaps. First/current days are also partial;
 identify the first from `collection_started_at_ms`, the current from UTC today.
-If an exact census/true zero is mandatory, this candidate does not meet that demand;
-the availability-versus-exactness decision must be resolved rather than hidden.
+The accepted metric is exact distinct counting of observed eligible admissions,
+not a guaranteed census of all successful service actions.
 
 Successful `pending`→`ready` upload completion after object verification and first
 durable share insertion qualify. SQL `RETURNING` identifies the actual winning
@@ -82,8 +84,9 @@ The existing two aggregate views and storage/distribution reports are untouched.
   Counter zero after a correction is not published as a verified zero.
 - Physical removal is by the next **successful** maintenance run: ordinarily within
   15 minutes after logical expiry, not a guarantee during outages. Existing D1 backup/
-  Time Travel copies can retain data separately; their actual window and lawful
-  erasure handling must be included in the deployment assessment. No all-copy 25-hour
+  Time Travel copies retain data separately: Cloudflare documents seven days on
+  Workers Free and 30 days on Paid. Verify the existing plan without changing it.
+  No all-copy 25-hour
   deletion promise is made. PostHog and its backups retain synced totals under its
   existing settings; removing a D1 row is not proof of remote physical deletion.
 - Fixture exclusions are exact account IDs, registered **before** any test action,
@@ -91,21 +94,25 @@ The existing two aggregate views and storage/distribution reports are untouched.
   the synthetic account exists; expired exclusions for absent accounts are removed.
   Never rely on provider-side identity exclusion to repair a polluted aggregate.
 
-## Concrete purpose / necessity / balancing assessment candidate
+## Limited purpose, necessity and safeguards
 
-Controller/contact: Simon van Laak, `simon@tryapparent.com`. Proposed purpose is to
-understand daily use of successful hosted handoff, so that reliability and product
-investment can be assessed, without sending account events to a third party unless
-that account separately opted in. Proposed, **not approved**, basis is GDPR6(1)(f)
-for this separate internal operational-statistics processing. Product authorization
-and pseudonymization do not establish lawfulness.
+Controller/contact: Simon van Laak, `simon@tryapparent.com`. The limited purpose is
+to see whether friends use successful hosted handoff, using daily totals rather
+than sending their individual actions to PostHog. The operational interest is
+understanding use and reliability of this small service. Where GDPR applies, this
+is a separate limited server-side statistics purpose, assessed through legitimate
+purpose, necessity and balancing rather than borrowing consent for individual
+events. Small-project context is not an exemption or a claim of legal certification.
 
 Data flow: existing authenticated upload/share authorization resolves the account
 inside the Worker. Only the winning service action passes its already-known opaque
 ID and server time to the internal counter. D1 transiently reads the existing email
 only for the `.invalid` fixture exclusion; neither that email nor the action time is
-stored in dedup. D1 keeps account/day until the short attribution expiry; the existing
-connector can read only the day/total/coverage view. Individual opt-in event export
+stored in dedup. D1 keeps account/day until the short attribution expiry. The
+existing connector's D1 Read credential is account-scoped and can read operational
+databases/tables. Only its **sync configuration** is restricted to reviewed views;
+this is not credential-level or view-level access isolation. Simon chose that
+existing native-access tradeoff after scope disclosure. Individual opt-in event export
 remains separate. There is no new SDK, browser event, client cookie, local-storage key,
 replay, cross-device link, export service, access grant or purchase.
 
@@ -117,39 +124,37 @@ retry twice after forgetting. Longer account-level histories, action IDs, per-ac
 journals, content and individual provider events are unnecessary for this purpose.
 Alternatives considered: existing affirmative event DAU has consent-limited coverage;
 request totals measure volume, not distinct accounts; primary-transaction counting
-would violate the required fail-open service behavior. None grants blanket authority
-to override a refusal. The lower-bound compromise requires explicit product review.
+would violate the required fail-open service behavior. None permits overriding a
+refusal. The consumer labels the accepted sparse lower-bound metric accordingly.
 
 Balancing concerns: accounts may not reasonably expect new nonconsented processing,
 even on our own server; stable IDs remain personal data. A tiny beta cohort means a
 daily total of one may reveal a known person's use. Exact totals and consecutive-day
 patterns are **not certified anonymous** just because identity columns are absent.
-The candidate does not invent a k-anonymity guarantee. Controller/privacy review must
-choose whether this small-cohort disclosure is permissible or requires suppression,
-bucketing, a minimum cohort or no third-party export; no such policy is assumed.
+No k-anonymity guarantee is made. Simon chose exact daily observed totals for this
+small project, without a new cohort threshold, suppression or bucketing feature.
 Mitigations implemented: bounded attribution, prospective-only start, no event history,
 refusal/signal exclusions, exact fixture isolation, minimal provider view, coarse
 watermark, no true-zero/full-coverage claim, retained provider protections, and an
-always-available objection control. These reduce risk but do not complete balancing.
+always-available objection control. The acknowledged residual risks are small-cohort
+inference, broader connector credential access and retention in provider backups.
 
 Terminal/credential purpose audit: upload/read tokens in the existing client's private
 `hosted/*.credential` files, Google/browser session cookies and device grants support
 requested authentication/upload/read access. This counter neither reads those files
 nor creates or refreshes a credential; it receives the account already established
-for the requested service. Nevertheless, reusing an identity for a further statistics
-purpose requires an actual German TDDDG25 purpose assessment; no inference that all
-credential storage becomes necessary for analytics is permitted. No new device-data
-access is requested. This audit must be checked against actual installed client and
-cookie behavior, not treated as legal clearance from a source-code assertion.
+for the requested service. It introduces no extra terminal storage/read request,
+credential access or device fingerprint. It does not reclassify analytics as
+necessary credential storage. Server-side reuse for statistics is documented above;
+individual browser/account tracking retains its existing separate consent rules.
 
-Authorities to assess: [TDDDG25](https://www.gesetze-im-internet.de/ttdsg/__25.html),
+Relevant rules: [TDDDG25](https://www.gesetze-im-internet.de/ttdsg/__25.html),
 [GDPR6/13/21](https://eur-lex.europa.eu/eli/reg/2016/679/ojv),
 [Baden-Württemberg FAQ3.1](https://www.baden-wuerttemberg.datenschutz.de/faq-zu-cookies-und-tracking-2/),
 [EDPB consent05/2020 ¶121–123](https://www.edpb.europa.eu/system/files/documents/files/file1/edpb_guidelines_202005_consent_en.pdf).
-The cited EDPB legitimate-interest1/2024 consultation material and Council2026
-negotiating proposals must not be described as final/operative permission.
+Provider backup reference: [Cloudflare Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/).
 
-## Prospective notice and release gate
+## Prospective notice and release
 
 The candidate account notice visibly separates these service totals from individual
 consent, explains the attribution window, lower-bound/inference limitations and
@@ -158,18 +163,15 @@ it records the existing false preference and stops individual export as before.
 A no-choice account is not marked consented. Existing true/false records are not
 rewritten. Individual re-consent does not cancel the separate aggregate objection;
 the candidate has no automatic objection-reset control. The expanded notice is a
-draft until reviewed with this assessment.
+part of the reviewed implementation, not a new consent flow.
 
-Before any production migration/code activation, the controller must approve the
-actual purpose/basis, terminal-purpose assessment, small-cohort policy, lower-bound
-rather than census contract, retention/backup/erasure limitations, and notice delivery
-and effective UTC boundary. Publish the approved notice **before** that boundary;
-apply 0009 no earlier than it. Its actual SQL time is the reporting start. Do not
-silently infer that prior service users saw a new notice. If advance notice or further
-user action is required, implement that reviewed rule first; no product request
-waives it. No production fixture or new data processing occurs while unresolved.
+Publish and read back the short account notice **before** applying 0009. Record its
+actual publication/readback and the migration's actual SQL start separately. Do not
+claim that every prior user opened the notice or infer a historical counting window.
+Normal verification, release admission and bounded backup/runtime checks apply;
+there is no undefined external-lawyer or controller-signature release stage.
 
-After approval: independent candidate review and focused/full affected checks; exact
+Release: independent candidate review and focused/full affected checks; exact
 current-main Linux release admission; backup and checked additive schema application;
 verified source deployment; pre-register exact synthetic exclusions before any trial;
 read back aggregation/TTL/refusal/failure behavior; only the consumer owner enables

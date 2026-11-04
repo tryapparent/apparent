@@ -1,5 +1,5 @@
-/* Candidate aggregate-only statistics. Applying this migration is a processing
-   boundary, not legal approval: production is held pending the owner assessment.
+/* Aggregate-only statistics. Apply after the short prospective notice and normal
+   release admission; application time is the actual collection boundary.
    No historical activity is scanned; no individual consent/revision/budget changes. */
 /* Preserve the aggregate objection independently of later individual opt-in.
    Existing revisions/times and individual consent are not rewritten. */
