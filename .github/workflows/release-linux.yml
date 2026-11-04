@@ -149,6 +149,8 @@ jobs:
             arch: aarch64
     permissions:
       contents: read
+      id-token: write
+      attestations: write
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     env:
@@ -246,6 +248,8 @@ jobs:
         run: python3 capture/desktop/scripts/linux/appimage/check-cpu-tiers.py target/release
       - name: Package
         id: package
+        env:
+          APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           if [[ -n "$TAG" && "$TAG" != "v$version" ]]; then
@@ -258,6 +262,24 @@ jobs:
           cp "target/appimage/Apparent-${{ matrix.arch }}.AppImage" "dist/$name"
           (cd dist && sha256sum "$name" > "$name.sha256")
           echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: Retain release-profile composition inputs
+        if: github.ref == 'refs/heads/main' && env.CANDIDATE_SHA == github.sha
+        env:
+          APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
+        run: node --experimental-strip-types capture/agent/inspection/delivery/composition.ts retain-release target/release target/appimage/AppDir/usr/bin "$RUNNER_TEMP/inspection-release"
+      - uses: actions/attest-build-provenance@v2
+        if: github.ref == 'refs/heads/main' && env.CANDIDATE_SHA == github.sha
+        with:
+          subject-path: |
+            ${{ runner.temp }}/inspection-release/root/root-receipt.json
+            ${{ runner.temp }}/inspection-release/inspector.tar.gz
+      - uses: actions/upload-artifact@v4
+        if: github.ref == 'refs/heads/main' && env.CANDIDATE_SHA == github.sha
+        with:
+          name: inspection-release-${{ matrix.arch }}-${{ github.sha }}
+          path: ${{ runner.temp }}/inspection-release/
+          if-no-files-found: error
+          retention-days: 14
       - name: AppImage runs headless without FUSE
         run: APPIMAGE_EXTRACT_AND_RUN=1 "dist/${{ steps.package.outputs.name }}" --help
       - name: Bundled GStreamer decodes an H.264 MP4

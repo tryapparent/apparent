@@ -21,7 +21,7 @@ SPARKLE_DIR="$("${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh" 2>
 BINARY_DIR="${REPO_DIR}/target/debug"
 if [[ -n "${APPARENT_INSPECTION_REUSE:-}" ]]; then
   BINARY_DIR="$(mktemp -d "$REPO_DIR/target/inspection-reuse-parent.XXXXXX")/bin"
-  node --experimental-strip-types "$REPO_DIR/capture/agent/inspection/delivery/composition.ts" reuse "$APPARENT_INSPECTION_REUSE" "$BINARY_DIR"
+  APPARENT_INSPECTION_REQUIRED_PROFILE=debug node --experimental-strip-types "$REPO_DIR/capture/agent/inspection/delivery/composition.ts" reuse "$APPARENT_INSPECTION_REUSE" "$BINARY_DIR"
 elif [[ -n "${APPARENT_PREBUILT_DIR:-}" ]]; then
   # An explicit immutable, successful main producer is required. Never rebuild
   # automatically after failed admission or silently consume a cached binary.

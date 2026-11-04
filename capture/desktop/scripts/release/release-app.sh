@@ -22,7 +22,7 @@ SPARKLE_DIR="$("${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh")"
 BINARY_DIR="$REPO_DIR/target/release"
 if [[ -n "${APPARENT_INSPECTION_REUSE:-}" ]]; then
   BINARY_DIR="$(mktemp -d "$REPO_DIR/target/inspection-reuse-parent.XXXXXX")/bin"
-  node --experimental-strip-types "$REPO_DIR/capture/agent/inspection/delivery/composition.ts" reuse "$APPARENT_INSPECTION_REUSE" "$BINARY_DIR"
+  APPARENT_INSPECTION_REQUIRED_PROFILE=release node --experimental-strip-types "$REPO_DIR/capture/agent/inspection/delivery/composition.ts" reuse "$APPARENT_INSPECTION_REUSE" "$BINARY_DIR"
 else
 taskpolicy -c utility cargo build --release -j 3 --offline
 fi

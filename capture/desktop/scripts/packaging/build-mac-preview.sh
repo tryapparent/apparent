@@ -43,7 +43,7 @@ BINARY_DIR="$ROOT/target/release"
 if [[ -n "${APPARENT_INSPECTION_REUSE:-}" ]]; then
   BINARY_DIR="$(mktemp -d "$ROOT/target/inspection-reuse-parent.XXXXXX")/bin"
   APPARENT_PREVIEW_BUILD=1 APPARENT_HELPER_BUNDLE_ID=dev.simonvanlaak.apparent.preview.helper \
-  node --experimental-strip-types "$ROOT/capture/agent/inspection/delivery/composition.ts" reuse "$APPARENT_INSPECTION_REUSE" "$BINARY_DIR"
+  APPARENT_INSPECTION_REQUIRED_PROFILE=release node --experimental-strip-types "$ROOT/capture/agent/inspection/delivery/composition.ts" reuse "$APPARENT_INSPECTION_REUSE" "$BINARY_DIR"
 else
 APPARENT_PREVIEW_BUILD=1 APPARENT_HELPER_BUNDLE_ID=dev.simonvanlaak.apparent.preview.helper \
   cargo build --release --locked -j 3
@@ -104,14 +104,15 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-node --experimental-strip-types "$ROOT/capture/agent/inspection/delivery/composition.ts" package "$BINARY_DIR" "$app/Contents/MacOS" "${SIGN[@]}"
-
 if [[ "$NOTARIZE" == true ]]; then
   python3 "$ROOT/capture/desktop/scripts/packaging/stage-settings.py" "$app/Contents/Resources/settings" \
     --sign "$APPARENT_APPLE_SIGNING_IDENTITY" --keychain "$APPARENT_APPLE_SIGNING_DIR/signing.keychain-db"
 else
   python3 "$ROOT/capture/desktop/scripts/packaging/stage-settings.py" "$app/Contents/Resources/settings" --sign -
 fi
+
+APPARENT_PREVIEW_BUILD=1 APPARENT_HELPER_BUNDLE_ID=dev.simonvanlaak.apparent.preview.helper \
+node --experimental-strip-types "$ROOT/capture/agent/inspection/delivery/composition.ts" package "$BINARY_DIR" "$app/Contents/MacOS" "${SIGN[@]}"
 
 plutil -lint "$app/Contents/Info.plist"
 sparkle="$app/Contents/Frameworks/Sparkle.framework/Versions/B"

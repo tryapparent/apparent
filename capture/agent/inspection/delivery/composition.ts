@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build, stage } from './package.ts';
 const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
@@ -29,6 +30,7 @@ export function inputs(root = repository()) {
 export function sealRoot(binaryDirectory: string, profile: string, output: string) {
   assert(['debug', 'release'].includes(profile));
   assert(['linux', 'darwin'].includes(process.platform));
+  for (const key of ['CARGO_TARGET_DIR', 'CARGO_BUILD_TARGET', 'RUSTC', 'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER']) assert(!process.env[key], `Unsupported root build override: ${key}`);
   const root = repository();
   const closure = inputs(root);
   assert.equal(resolve(binaryDirectory), join(root, 'target', profile), 'Seal only this clean source build');
@@ -89,6 +91,28 @@ export function assemble(rootDirectory: string, rootReceipt: string, rootDigest:
   writeFileSync(join(dest, 'inspection-composition.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
   return receipt;
 }
+function initialRootIdentity(binaryDirectory: string) {
+  const retained = join(binaryDirectory, 'root-receipt.json');
+  if (existsSync(retained)) return admitRoot(binaryDirectory, retained, hash(readFileSync(retained)));
+  // Preserve the already authenticated exact-source Mac development-input route.
+  const legacy = join(binaryDirectory, 'manifest.json');
+  if (process.env.APPARENT_PREBUILT_DIR && existsSync(legacy)) {
+    const manifest = JSON.parse(readFileSync(legacy, 'utf8'));
+    assert(manifest.kind === 'mac-dev-executables' && manifest.source.sha === command('git', ['rev-parse', 'HEAD']) &&
+      manifest.source.tree === command('git', ['rev-parse', 'HEAD^{tree}']), 'Exact-source Mac inputs required');
+    for (const file of manifest.files) {
+      assert(['apparent', 'apparent-helper'].includes(file.name));
+      assert.equal(hash(readFileSync(join(binaryDirectory, file.name))), file.sha256);
+    }
+    return { kind: 'legacy-exact-source-root', compatibility, sourceSha: manifest.source.sha,
+      sourceTree: manifest.source.tree, originalReceiptSha256: hash(readFileSync(legacy)), files: manifest.files };
+  }
+  const directory = resolve(binaryDirectory);
+  const profile = basename(directory);
+  assert(['debug', 'release'].includes(profile), 'A sealed root artifact or normal source build is required');
+  const receipt = join(repository(), 'target', `initial-root-${Date.now()}.json`);
+  return sealRoot(directory, profile, receipt);
+}
 /** Called by ordinary app packaging after root build; no separate manual installation. */
 export function packageApplication(binaryDirectory: string, destination: string, signing: string[]) {
   const root = repository();
@@ -122,14 +146,14 @@ export function packageApplication(binaryDirectory: string, destination: string,
         const source = process.env.APPARENT_INSPECTION_SOURCE_SHA;
         assert(source && /^[a-f0-9]{40}$/.test(source), 'Expected inspector source required');
         assert.equal(hash(readFileSync(archive)), expected);
-        command('gh', ['attestation', 'verify', archive, '--repo', 'tryapparent/apparent',
-          '--signer-workflow', 'tryapparent/apparent/.github/workflows/verification-platform.yml',
-          '--source-ref', 'refs/heads/main', '--source-digest', source]);
+        provenance(archive, source, process.env.APPARENT_INSPECTION_SIGNER_WORKFLOW, expected);
       }
       const inspector = stage(archive, expected, target, candidate);
       if (component) assert.equal(inspector.sourceSha, process.env.APPARENT_INSPECTION_SOURCE_SHA);
+      const rootIdentity = initialRootIdentity(binaryDirectory);
+      for (const f of rootIdentity.files) { if (['apparent', 'apparent-helper'].includes(f.name)) assert.equal(hash(readFileSync(join(destination, f.name))), f.sha256, 'Copied root differs from its source receipt'); }
       receipt = { schema: 1, compatibility, compositionSource: command('git', ['rev-parse', 'HEAD']),
-        inspector, inspectorArchiveSha256: expected };
+        root: rootIdentity, inspector, inspectorArchiveSha256: expected };
     }
     if (signing.length) command(signing[0], [...signing.slice(1), join(candidate, 'apparent-inspect')]);
     receipt.inspectorRuntimeSha256 = hash(readFileSync(join(candidate, 'apparent-inspect')));
@@ -150,19 +174,29 @@ export function packageApplication(binaryDirectory: string, destination: string,
     throw error;
   } finally { rmSync(temporary, { recursive: true }); }
 }
-/** Production reuse additionally authenticates each exact component with GitHub provenance.
- * Local assemble is proof tooling, never an alternative release admission receipt. */
+const signerWorkflows = ['verification-platform.yml', 'release-linux.yml', 'release-mac-preview.yml'].map(name => `tryapparent/apparent/.github/workflows/${name}`);
+function provenance(file: string, source: string, signer = signerWorkflows[0], expectedDigest: string) {
+  assert(/^[a-f0-9]{40}$/.test(source) && signerWorkflows.includes(signer), 'Unsupported component producer');
+  const bytes = readFileSync(file);
+  assert.equal(hash(bytes), expectedDigest, 'Provenance subject changed');
+  const directory = mkdtempSync(join(tmpdir(), 'inspection-provenance-'));
+  try {
+    const subject = join(directory, 'subject');
+    writeFileSync(subject, bytes, { mode: 0o400, flag: 'wx' });
+    command('gh', ['attestation', 'verify', subject, '--repo', 'tryapparent/apparent',
+      '--signer-workflow', signer, '--source-ref', 'refs/heads/main', '--source-digest', source]);
+  } finally { rmSync(directory, { recursive: true }); }
+}
+/** Production reuse authenticates each exact component; local assemble is proof only. */
 export function reuse(inputPath: string, destination: string) {
   const input = JSON.parse(readFileSync(inputPath, 'utf8'));
   assert(input.schema === 1, 'Invalid composition inputs');
   const root = admitRoot(input.rootDirectory, input.rootReceipt, input.rootReceiptSha256);
-  command('gh', ['attestation', 'verify', input.rootReceipt, '--repo', 'tryapparent/apparent',
-    '--signer-workflow', 'tryapparent/apparent/.github/workflows/verification-platform.yml',
-    '--source-ref', 'refs/heads/main', '--source-digest', root.sourceSha]);
+  assert(['debug', 'release'].includes(input.rootProfile) && root.profile === input.rootProfile, 'Root profile mismatch');
+  if (process.env.APPARENT_INSPECTION_REQUIRED_PROFILE) assert.equal(root.profile, process.env.APPARENT_INSPECTION_REQUIRED_PROFILE);
+  provenance(input.rootReceipt, root.sourceSha, input.rootSignerWorkflow, input.rootReceiptSha256);
   assert.equal(hash(readFileSync(input.inspectorArchive)), input.inspectorArchiveSha256);
-  command('gh', ['attestation', 'verify', input.inspectorArchive, '--repo', 'tryapparent/apparent',
-    '--signer-workflow', 'tryapparent/apparent/.github/workflows/verification-platform.yml',
-    '--source-ref', 'refs/heads/main', '--source-digest', input.inspectorSourceSha]);
+  provenance(input.inspectorArchive, input.inspectorSourceSha, input.inspectorSignerWorkflow, input.inspectorArchiveSha256);
   command('git', ['merge-base', '--is-ancestor', input.inspectorSourceSha, 'origin/main']);
   const result = assemble(input.rootDirectory, input.rootReceipt, input.rootReceiptSha256,
     input.inspectorArchive, input.inspectorArchiveSha256, destination);
@@ -178,9 +212,24 @@ export function rootBundle(binaryDirectory: string, profile: string, destination
     writeFileSync(join(destination, file.name), bytes, { mode: 0o755, flag: 'wx' });
   }
 }
+export function retainRelease(binaryDirectory: string, applicationDirectory: string, destination: string) {
+  assert(!process.env.APPARENT_INSPECTION_REUSE, 'Reused components retain their original producer identity');
+  const head = command('git', ['rev-parse', 'HEAD']);
+  assert(process.env.GITHUB_SHA === head && process.env.GITHUB_REF === 'refs/heads/main', 'Exact main producer context required');
+  mkdirSync(destination, { mode: 0o700 });
+  rootBundle(binaryDirectory, 'release', join(destination, 'root'));
+  const receipt = JSON.parse(readFileSync(join(applicationDirectory, 'inspection-composition.json'), 'utf8'));
+  assert.equal(receipt.inspector.sourceSha, head, 'Do not reattribute an older inspector to this producer');
+  const candidates = readdirSync('target').filter(n => /^inspection-[0-9]+$/.test(n)).flatMap(n =>
+    readdirSync(join('target', n)).filter(f => f.endsWith('.tar.gz')).map(f => join('target', n, f)))
+    .filter(p => hash(readFileSync(p)) === receipt.inspectorArchiveSha256);
+  assert(candidates.length > 0, 'Current inspector archive unavailable');
+  writeFileSync(join(destination, 'inspector.tar.gz'), readFileSync(candidates[0]), { flag: 'wx' });
+}
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const [op, ...args] = process.argv.slice(2);
-  if (op === 'root-bundle' && args.length === 3) rootBundle(args[0], args[1], args[2]);
+  if (op === 'retain-release' && args.length === 3) retainRelease(args[0], args[1], args[2]);
+  else if (op === 'root-bundle' && args.length === 3) rootBundle(args[0], args[1], args[2]);
   else if (op === 'reuse' && args.length === 2) console.log(JSON.stringify(reuse(args[0], args[1])));
   else if (op === 'seal-root' && args.length === 3) console.log(JSON.stringify(sealRoot(args[0], args[1], args[2])));
   else if (op === 'assemble' && args.length === 6) console.log(JSON.stringify(assemble(...args as [string,string,string,string,string,string])));

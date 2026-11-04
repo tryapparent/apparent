@@ -46,6 +46,11 @@ jobs:
         run: python3 enablement/release_gate.py --platform macos --sha "$REQUEST_SHA"
 
   preview:
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
     needs: admit
     if: github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main'
     runs-on: macos-latest
@@ -100,6 +105,26 @@ jobs:
           bash capture/desktop/scripts/packaging/build-mac-preview.sh
           capture/desktop/scripts/support/check-ca-roots.sh target/release/apparent
           target/release/apparent --help
+      - name: Retain preview-root composition inputs
+        if: env.CANDIDATE_SHA == github.sha
+        env:
+          APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
+          APPARENT_PREVIEW_BUILD: '1'
+          APPARENT_HELPER_BUNDLE_ID: dev.simonvanlaak.apparent.preview.helper
+        run: node --experimental-strip-types capture/agent/inspection/delivery/composition.ts retain-release target/release 'dist/Apparent Preview.app/Contents/MacOS' "$RUNNER_TEMP/inspection-release"
+      - uses: actions/attest-build-provenance@v2
+        if: env.CANDIDATE_SHA == github.sha
+        with:
+          subject-path: |
+            ${{ runner.temp }}/inspection-release/root/root-receipt.json
+            ${{ runner.temp }}/inspection-release/inspector.tar.gz
+      - uses: actions/upload-artifact@v4
+        if: env.CANDIDATE_SHA == github.sha
+        with:
+          name: inspection-preview-root-${{ github.sha }}
+          path: ${{ runner.temp }}/inspection-release/
+          if-no-files-found: error
+          retention-days: 14
       - name: Sign the Sparkle archive
         env:
           SPARKLE_PREVIEW_PRIVATE_KEY: ${{ secrets.SPARKLE_PREVIEW_PRIVATE_KEY }}
