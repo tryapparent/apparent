@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
-const { ConnectSettings } = require('../electron/connect.cjs');
+const { ConnectSettings } = require(process.env.APPARENT_CONNECT_TEST_MODULE || '../electron/connect.cjs');
 const [home, config] = process.argv.slice(2);
 const address = path.join(home, '.config/apparent/agent-control/capture.sock');
 const state = path.join(path.dirname(config), 'hosted');
@@ -42,6 +42,19 @@ async function raw(request, command) {
 }
 async function main() {
   const calls = [];
+  const frames = [];
+  const createConnection = net.createConnection;
+  net.createConnection = (...args) => {
+    const socket = createConnection(...args);
+    if (args[0] === address) {
+      const write = socket.write.bind(socket);
+      socket.write = (chunk, ...rest) => {
+        try { const frame = JSON.parse(String(chunk)); frames.push({connect:frame.connect,version:frame.version}); } catch {}
+        return write(chunk, ...rest);
+      };
+    }
+    return socket;
+  };
   const clients = new Set();
   let client;
   let origin;
@@ -116,6 +129,8 @@ async function main() {
       assert.ok(failed.view.buttons.some(button => button.command === 'connect' && button.enabled));
     }
     deviceMode = 'pending';
+    assert.ok(frames.some(frame => frame.connect === 'backend' && frame.version === 1));
+    assert.equal(frames.some(frame => frame.connect === 'settings'), false, 'New runtime must exercise the TypeScript controller, not the legacy fallback');
     assert.ok(enrollment.length >= 5);
     for (const request of enrollment) {
       assert.equal(request.scope, 'upload');
@@ -147,12 +162,15 @@ async function main() {
     assert.equal((await client.request()).view.presentationState.snapshot.accountInitial, null);
     assert.equal(calls.length, count, 'Identity display must stay local-only');
     console.log(JSON.stringify({ platform: process.platform, electron: process.versions.electron,
-      bridge: 'shipped TypeScript controller + real Rust listener/auth client', http: 'synthetic loopback pending-device fixture, no account approval',
+      bridge: 'shipped TypeScript controller + real Rust listener/auth client', controllerProtocol:'backend-v1',
+      packagedController:process.env.APPARENT_CONNECT_TEST_MODULE !== undefined,
+      http: 'synthetic loopback pending-device fixture, no account approval',
       checks: 'disabled/local-only/no-consent/public-projection/cancel/EOF/durable-off/preserved-config/rejection/expiry/offline/retry/key-enrollment/expired-frame/account-initial/revoked-identity', requests: calls.length }));
   } catch (error) {
     console.error(JSON.stringify({ fixtureEndpointsObserved: calls }));
     throw error;
   } finally {
+    net.createConnection = createConnection;
     client?.close(); for (const socket of clients) socket.destroy();
     await new Promise(resolve => server.close(resolve));
   }
