@@ -26,6 +26,14 @@ CI is not Apple Silicon runtime proof. An image change must still pass the same
 checks before Mac publication.
 
 Linux and web delivery trigger only after successful `Linux verification`.
+Linux packaging compiles the release-profile model test executable on both
+architectures but leaves the full unit suite to that verification receipt.
+Packaged library, media and CPU compatibility checks remain release gates.
+The Ice Lake emulator receives a model verified natively in the same smoke
+invocation; model loading and inference still execute under emulation, while
+download and whole-model hashing stay outside it. Production verification is
+unchanged. Run the harness contracts with
+`node --experimental-strip-types --test capture/desktop/scripts/linux/appimage/smoke-cpu.test.ts`.
 Their admission job reads trusted-main code and requires that exact commit's
 successful Linux/shared receipt. Mac preview publication requires both the
 Linux/shared and Mac receipts for the same commit. A queued/failed Mac run cannot
@@ -338,14 +346,17 @@ succeed before the receipt succeeds; failure or cancellation terminates and reap
 the owned contract process group. The receipt wrapper forwards this option.
 Local invocations remain sequential unless the option is explicitly supplied.
 
-Mac CI also supplies `--overlap-root-build`: after Cargo reports successful full
+Linux and Mac CI also supply `--overlap-root-build`: after Cargo reports successful full
 root test compilation, the ordinary app build runs alongside test execution.
 Cargo still launches the tests with two test threads, and each build retains its
 existing worker limit. Both commands must succeed before Engine or downstream
 checks; failure or cancellation kills the owned process groups and reaps both
 direct children. The fresh app binary remains required. Focused filters and
 invocations without this option keep sequential test/build ordering. This overlap
-does not establish a runtime improvement until measured on the actual Mac run.
+does not establish a runtime improvement until measured on the actual platform run.
+Linux runs the preflight cases within that complete suite instead of serializing
+a separate cold Cargo test invocation before the verifier and contract checks.
+Mac retains its serial native-sensitive preflight.
 
 `--cargo-timings` records Cargo unit reports on the existing build/test commands;
 the platform job retains available HTML reports even when later verification
