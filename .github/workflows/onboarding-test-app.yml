@@ -219,7 +219,7 @@ jobs:
 
   runtime-budget:
     if: always() && needs.package.result != 'skipped'
-    needs: package
+    needs: [package]
     name: Workflow runtime budget
     runs-on: ubuntu-24.04
     timeout-minutes: 15
