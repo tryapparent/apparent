@@ -17,5 +17,5 @@ test('callable publisher admits independently with production controls',async()=
  assert.ok(workflow.includes("inputs.producer-run == ''"));
  for(const value of ["inputs.producer-run != ''", "github.repository == 'tryapparent/apparent'", "vars.HOSTED_CD_ENABLED == 'true'",'name: hosted-production','group: web-delivery-production-eligible','cancel-in-progress: false','${{ inputs.producer-run }}','${{ secrets.CLOUDFLARE_API_TOKEN }}','Require atomic retirement'])assert.ok(publish.includes(value),value);
  assert.doesNotMatch(publish,/needs:|github.event_name|github.event.workflow_run.id/);
- assert.ok(workflow.includes('needs: [select, produce, publish]'));
+ assert.ok(workflow.includes('needs: [select, produce, publish, recipient]'));
 });

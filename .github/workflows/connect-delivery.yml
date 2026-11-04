@@ -172,7 +172,7 @@ jobs:
   runtime-budget:
     name: Workflow runtime budget
     if: always()
-    needs: [select, produce, publish]
+    needs: [select, produce, publish, recipient]
     permissions:
       contents: read
       actions: read
