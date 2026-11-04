@@ -196,7 +196,23 @@ jobs:
           fi
           bash capture/desktop/scripts/packaging/install-app.sh
           codesign --verify --deep --strict "$APPARENT_APP_DIR"
-          shasum -a 256 "$APPARENT_APP_DIR/Contents/MacOS/apparent" "$APPARENT_APP_DIR/Contents/MacOS/apparent-helper" > "$APPARENT_CONNECT_PROOF/evidence/binary.sha256"
+          executables=(apparent apparent-helper apparent-engine-media)
+          if [ -n "$APPARENT_PREBUILT_RUN" ]; then
+            artifact_schema=$(node -p "JSON.parse(require('node:fs').readFileSync(process.env.APPARENT_PREBUILT_DIR + '/manifest.json')).schema")
+            case "$artifact_schema" in
+              1) executables=(apparent apparent-helper) ;;
+              2) ;;
+              *) echo 'Unsupported admitted payload schema' >&2; exit 1 ;;
+            esac
+          fi
+          : > "$APPARENT_CONNECT_PROOF/evidence/binary.sha256"
+          for binary in "${executables[@]}"; do
+            executable="$APPARENT_APP_DIR/Contents/MacOS/$binary"
+            test -f "$executable"
+            codesign --verify --strict "$executable"
+            codesign -d --verbose=4 "$executable" > "$APPARENT_CONNECT_PROOF/evidence/$binary.signature.txt" 2>&1
+            shasum -a 256 "$executable" >> "$APPARENT_CONNECT_PROOF/evidence/binary.sha256"
+          done
           if [ -n "$APPARENT_PREBUILT_RUN" ]; then
             cp "$APPARENT_PREBUILT_DIR/manifest.json" "$APPARENT_CONNECT_PROOF/evidence/build-inputs.json"
           fi
