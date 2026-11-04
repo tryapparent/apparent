@@ -97,7 +97,7 @@ ps -axww -o pid= -o comm= | while read -r PID EXECUTABLE; do
   [[ "${EXECUTABLE}" != "${APP}/Contents/MacOS/apparent" ]] || echo "${PID} ${EXECUTABLE}"
 done
 }
-bash capture/desktop/scripts/packaging/with-install-lock.sh "$APP" bash -c "$(declare -f assert_app_stopped install_destination); install_destination \"\$1\" \"\$2\"" bash "$APP" "$STAGE"
+bash capture/desktop/scripts/packaging/with-install-lock.sh "$APP" bash -euo pipefail -c "$(declare -f assert_app_stopped install_destination); install_destination \"\$1\" \"\$2\"" bash "$APP" "$STAGE"
 assert_app_stopped "${STAGE}"
 rm -rf "${STAGE}" "${JOB}" "${PLIST}"
 REMOTE

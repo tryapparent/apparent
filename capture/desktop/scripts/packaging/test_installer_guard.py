@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Synthetic installer execution: never builds, contacts SSH or touches a real app."""
 import os
+import fcntl
 from pathlib import Path
 import subprocess
 import tempfile
@@ -11,7 +12,7 @@ SCRIPTS = Path(__file__).resolve().parent
 
 
 class InstallerGuardTests(unittest.TestCase):
-    def run_installer(self, remote, running=None, ps_status=0, no_launch=False, prebuilt=None):
+    def run_installer(self, remote, running=None, ps_status=0, no_launch=False, prebuilt=None, fail_tool=None):
         with tempfile.TemporaryDirectory(prefix="installer-guard-") as temporary:
             root = Path(temporary)
             home = root / "Test User"
@@ -42,6 +43,7 @@ class InstallerGuardTests(unittest.TestCase):
 set -eu
 name="${0##*/}"
 printf '%s\\n' "$name $*" >> "$MOCK_LOG"
+if [[ "$name" == "${MOCK_FAIL_TOOL:-}" ]]; then exit 42; fi
 case "$name" in
   ps) cat "$MOCK_PROCESSES"; exit "$MOCK_PS_STATUS" ;;
   ssh) shift; exec "$@" ;;
@@ -94,7 +96,7 @@ esac
                 "with Path(os.environ['MOCK_LOG']).open('a') as log: log.write('stage-settings ' + ' '.join(sys.argv[1:]) + '\\n')\n")
             env = dict(os.environ, HOME=str(home), PATH=str(tools) + ":" + os.environ["PATH"],
                        MOCK_LOG=str(log), MOCK_PROCESSES=str(processes),
-                       MOCK_PS_STATUS=str(ps_status), MOCK_TMP=str(root),
+                       MOCK_PS_STATUS=str(ps_status), MOCK_TMP=str(root), MOCK_FAIL_TOOL=fail_tool or "",
                        APPARENT_APP_DIR=str(app), APPARENT_NO_LAUNCH="1" if no_launch else "0")
             env.pop("APPARENT_PREBUILT_DIR", None)
             if prebuilt:
@@ -108,6 +110,21 @@ esac
                                     capture_output=True, timeout=10)
             calls = log.read_text() if log.exists() else ""
             self.assertNotIn("pkill ", calls, result.stderr)
+            if fail_tool:
+                self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
+                self.assertNotIn("open ", calls)
+                self.assertFalse((home / "bin/apparent").exists())
+                lock = app.parent / ".Apparent.app.recipient.lock"
+                inode = lock.stat().st_ino
+                # Acquire the same persistent file after the failed installer exits.
+                with lock.open("r+") as handle:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    self.assertEqual(os.fstat(handle.fileno()).st_ino, inode)
+                self.assertEqual(lock.stat().st_ino, inode)
+                if fail_tool == "ditto":
+                    self.assertNotIn("codesign ", calls)
+                    self.assertTrue(legacy_runtime.exists())
+                return
             refused = running is not None or ps_status != 0 or prebuilt == "rejected"
             if prebuilt:
                 self.assertNotIn("cargo build", calls, "Explicit artifact selection must never rebuild")
@@ -137,6 +154,11 @@ esac
                     self.assertEqual(calls.count("stage-settings"), 1)
                     self.assertIn("--popups-destination " + str(app / "Contents/Resources/note-ui"), calls)
                 self.assertEqual("open " in calls, remote or not no_launch)
+
+    def test_remote_copy_and_signature_failure_prevent_launch_and_release_lock(self):
+        for tool in ("ditto", "codesign"):
+            with self.subTest(tool=tool):
+                self.run_installer(True, fail_tool=tool)
 
     def test_explicit_prebuilt_admission_selects_inputs_or_refuses_without_fallback(self):
         for prebuilt in ("accepted", "rejected"):
