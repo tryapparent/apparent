@@ -1,0 +1,16 @@
+{
+  "name": "@apparent/config-store",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "files": ["dist"],
+  "exports": {".": "./dist/store.cjs", "./rpc": "./dist/rpc.cjs"},
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test test/*.test.ts",
+    "pack": "npm run build && npm pack --dry-run"
+  },
+  "dependencies": {"koffi": "3.3.4", "lossless-json": "4.3.3"},
+  "devDependencies": {"@types/node": "22.19.1", "typescript": "5.9.3"}
+}
