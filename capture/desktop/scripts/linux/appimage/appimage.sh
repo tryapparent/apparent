@@ -47,12 +47,15 @@ for library in "$(dirname "$binary")"/libggml-cpu*.so; do
 done
 
 mkdir -p "$appdir/usr/bin"
+cp "$binary" "$appdir/usr/bin/apparent"
+chmod 755 "$appdir/usr/bin/apparent"
+node --experimental-strip-types "$root/connect/delivery/recipient/package.ts" "$root/connect/delivery/recipient/pins.json" "$arch-unknown-linux-gnu" "$appdir/usr/bin"
 node --experimental-strip-types "$root/capture/agent/inspection/delivery/composition.ts" package "$(dirname "$binary")" "$appdir/usr/bin"
 
 cd "$out"
 LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy \
   --appdir "$appdir" \
-  --executable "$binary" \
+  --executable "$appdir/usr/bin/apparent" \
   "${libraries[@]}" \
   --executable "$(command -v wl-copy)" \
   --executable "$(command -v wl-paste)" \

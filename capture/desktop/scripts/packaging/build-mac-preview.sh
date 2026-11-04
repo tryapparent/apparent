@@ -111,6 +111,8 @@ else
   python3 "$ROOT/capture/desktop/scripts/packaging/stage-settings.py" "$app/Contents/Resources/settings" --sign -
 fi
 
+node --experimental-strip-types "$ROOT/connect/delivery/recipient/package.ts" "$ROOT/connect/delivery/recipient/pins.json" "$(uname -m | sed 's/^arm64$/aarch64/')-apple-darwin" "$app/Contents/MacOS" "${SIGN[@]}"
+
 APPARENT_PREVIEW_BUILD=1 APPARENT_HELPER_BUNDLE_ID=dev.simonvanlaak.apparent.preview.helper \
 node --experimental-strip-types "$ROOT/capture/agent/inspection/delivery/composition.ts" package "$BINARY_DIR" "$app/Contents/MacOS" "${SIGN[@]}"
 

@@ -120,6 +120,8 @@ fi
 
 python3 "${REPO_DIR}/capture/desktop/scripts/packaging/stage-settings.py" "${APP_BUNDLE}/Contents/Resources/settings" --sign "${IDENTITY}"
 
+node --experimental-strip-types "$REPO_DIR/connect/delivery/recipient/package.ts" "$REPO_DIR/connect/delivery/recipient/pins.json" "$(uname -m | sed 's/^arm64$/aarch64/')-apple-darwin" "$APP_BUNDLE/Contents/MacOS" "${SIGN[@]}"
+
 node --experimental-strip-types "$REPO_DIR/capture/agent/inspection/delivery/composition.ts" package "$BINARY_DIR" "$APP_BUNDLE/Contents/MacOS" "${SIGN[@]}"
 
 SPARKLE_VER="${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework/Versions/B"

@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { publishValidatedDirectory } from '../../../../shared/packaging/transaction.ts';
 
 const targets = ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'x86_64-apple-darwin', 'aarch64-apple-darwin'];
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
@@ -83,7 +84,6 @@ export function stage(archive: string, expectedHash: string, target: string, des
   assert(parent.isDirectory() && !parent.isSymbolicLink() && (parent.mode & 0o022) === 0 &&
     (process.getuid === undefined || parent.uid === process.getuid()), 'Trusted exclusive assembly directory required');
   const temporary = mkdtempSync(join(dirname(dest), '.inspection-stage-'));
-  let created = false;
   try {
     const input = join(temporary, 'input.tar.gz');
     writeFileSync(input, snapshot, { mode: 0o600, flag: 'wx' });
@@ -99,14 +99,12 @@ export function stage(archive: string, expectedHash: string, target: string, des
       validHash(manifest.sourceArchiveSha256) && /^\d+\.\d+\.\d+$/.test(manifest.version), 'Invalid component manifest');
     assert.equal(binaryTarget(bytes), target, 'Binary architecture mismatch');
     assert.equal(sha256(bytes), manifest.sha256, 'Executable digest mismatch');
-    mkdirSync(dest, { mode: 0o755 }); // Atomic refusal of any existing destination; no rename overwrite.
-    created = true;
-    writeFileSync(join(dest, manifest.executable), bytes, { mode: 0o755, flag: 'wx' });
-    writeFileSync(join(dest, 'manifest.json'), manifestBytes, { mode: 0o644, flag: 'wx' });
+    const shipping = join(temporary, 'shipping');
+    mkdirSync(shipping, { mode: 0o700 });
+    writeFileSync(join(shipping, manifest.executable), bytes, { mode: 0o755, flag: 'wx' });
+    writeFileSync(join(shipping, 'manifest.json'), manifestBytes, { mode: 0o644, flag: 'wx' });
+    publishValidatedDirectory(shipping, dest);
     return manifest;
-  } catch (error) {
-    if (created) rmSync(dest, { recursive: true });
-    throw error;
   } finally { rmSync(temporary, { recursive: true }); }
 }
 
