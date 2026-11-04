@@ -38,3 +38,33 @@ Build context retained for the next root-build slice: cold root test compilation
 was 3m06s; cached adoption builds were 5.83s and 4.42s. Standalone component builds
 exclude Desktop/GPUI/capture; whole-root cold native work is still substantial.
 These differing cache states do not support a speedup benchmark.
+
+## Current-main integrated rerun
+
+Source `341bb83a66da128f7fae31bbb107f2ce2f44fe7d` includes main
+`1ad6a64a2e84` and the narrow current recipient admission contract. Its actual
+AppImage passed the same ten cases and tamper rejection:
+`/tmp/inspection-final-image-proof/proof.json`. Builder H.264 encode/decode passed;
+`/tmp/inspection-final-appimage.log`. Final AppImage SHA-256:
+`437b671df9babea866ef797f631a063926efc7cbb6c6fc37f85d9748f1d44b12`.
+The final source archive producer again passed build/test/install/golden/lookup
+checks in `target/inspection-1793825970727/proof/proof.json`.
+
+Two-component composition again passed with Cargo forbidden, rootRebuilt=false
+and unchanged root SHA-256
+`fd389ed4a32e12660435d456a5f2b1e4a78e7eb4dd4e9be577ffb15193b13b29`;
+`/tmp/inspection-final-composition.log`. Root sealing took 4334 ms with warm
+caches. Current-main owner-input CI selection contracts passed all 16 tests.
+The root Rust source/build dependencies are unchanged from the 917-test run;
+incoming main changes affected CI/web selection and native-test diagnostics.
+Final changes after this rerun are evidence documentation only, excluded by the
+pinned root-input policy. No unrun final-head native proof is implied.
+
+The proposed capture-control follow-up must preserve more than DTOs:
+Desktop imports Action plus clock_ms/same_user/socket_path/valid_id/connect_until/
+DeadlineStream from the existing client; root CLI alone imports execute/new_id.
+First isolate the provider-required wire and socket/deadline safety mechanisms
+from the executable's transport/argument implementation, then adopt the packaged
+client at the root dispatch and audit actual compiler dep-info exclusions. A CLI
+forwarder alone would leave the full client crate in the root closure. No follow-up
+implementation is included here.
