@@ -185,3 +185,56 @@ jobs:
       - uses: ./.github/actions/runtime-budget
         with:
           platform: web
+
+  recipient:
+    if: github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' && inputs.producer-run == ''
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: ubuntu-24.04, target: x86_64-unknown-linux-gnu}
+          - {runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu}
+          - {runner: macos-15, target: aarch64-apple-darwin}
+          - {runner: macos-15-intel, target: x86_64-apple-darwin}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - name: Test executable sealing
+        run: node --experimental-strip-types --test connect/delivery/recipient/seal.test.ts
+      - name: Isolate component from root build configuration
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/recipient-source" "$RUNNER_TEMP/recipient-output"
+          cp -R connect/client/. "$RUNNER_TEMP/recipient-source/"
+      - name: Test and build component only
+        working-directory: ${{ runner.temp }}/recipient-source
+        shell: bash
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '15.0'
+        run: |
+          cargo test --locked --target '${{ matrix.target }}' -j 3
+          cargo build --locked --release --bin apparent-connect-recipient --target '${{ matrix.target }}' -j 3
+          cp 'target/${{ matrix.target }}/release/apparent-connect-recipient' "$RUNNER_TEMP/recipient-output/"
+      - name: Seal executable bytes
+        env:
+          TARGET: ${{ matrix.target }}
+        run: node --experimental-strip-types connect/delivery/recipient/seal.ts "$RUNNER_TEMP/recipient-output" "$TARGET" "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ runner.temp }}/recipient-output/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recipient-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.target }}
+          path: ${{ runner.temp }}/recipient-output/*
+          if-no-files-found: error
+          retention-days: 90

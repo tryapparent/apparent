@@ -52,3 +52,22 @@ nonempty publishes that successful run. Each completed invocation uploads
 as the string `selectedRun`. Publication authenticates the current receipt and its
 one-hop prior producer, including archive digests, expiry and Git ancestry. Outputs
 are `selected-run`, `build`, and `applicable` (currently always true).
+
+Recipient producer prerequisite
+
+`connect-delivery.yml` runs only on canonical main and builds the standalone
+Rust recipient in a temporary source directory, outside root Cargo configuration.
+Each of four macOS/Linux architecture outputs includes its executable and a
+protocol-1 manifest sealing the actual executable SHA256, full source SHA and
+unique workflow run/attempt version. GitHub build attestations cover both files.
+Actions v4 archives are immutable by artifact ID; their 90-day retention is a
+limitation, not a durable release guarantee. This prerequisite must not be adopted
+as a permanent Desktop pin until a durable release lane and authenticated consumer
+are implemented and verified. No Desktop packaging or runtime routing changes in
+this prerequisite. Existing Desktop artifact reuse has not been assessed.
+
+Before adoption, authenticate the canonical workflow run on main and its source,
+verify GitHub attestations with the expected repository/workflow identity, validate
+platform/architecture/protocol and hash the downloaded executable before copying
+it into the application. Never fall back to source compilation. App signing,
+notarization, updater identity and exact-commit publication gates remain required.
