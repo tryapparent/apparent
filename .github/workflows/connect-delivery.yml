@@ -12,8 +12,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
-      TMPDIR: ${{ runner.temp }}
-      CONNECT_EVIDENCE: ${{ runner.temp }}/connect-browser-evidence
       NODE_ENV: production
       VITE_HOSTED_API_ORIGIN: https://hosted.tryapparent.com
       PUBLIC_POSTHOG_ENABLED: ${{ vars.PUBLIC_POSTHOG_ENABLED || 'true' }}
@@ -22,7 +20,10 @@ jobs:
       PUBLIC_POSTHOG_ENVIRONMENT: production
     steps:
       - name: Verification runtime budget and ownership
-        run: echo '10 minute whole-workflow execution budget; agent whose run hits the limit owns optimization and a successful rerun. Do not raise or bypass the limit.'
+        run: |
+          echo '10 minute whole-workflow execution budget; agent whose run hits the limit owns optimization and a successful rerun. Do not raise or bypass the limit.'
+          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "CONNECT_EVIDENCE=$RUNNER_TEMP/connect-browser-evidence" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
@@ -75,7 +76,10 @@ jobs:
   runtime-budget:
     name: Workflow runtime budget
     if: always()
-    needs: produce
+    needs: [produce]
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
