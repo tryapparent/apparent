@@ -132,6 +132,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      - name: Verification runtime budget and ownership
+        run: echo '10 minute whole-workflow execution budget; agent whose run hits the limit owns optimization and a successful rerun. Do not raise or bypass the limit.'
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.admit.outputs.sha || github.sha }}
