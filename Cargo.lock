@@ -215,6 +215,7 @@ dependencies = [
  "anyhow",
  "apparent-capture",
  "apparent-connect-client",
+ "apparent-inspect",
  "arboard",
  "ashpd 0.11.1",
  "block2",
@@ -279,6 +280,18 @@ dependencies = [
  "serde",
  "serde_json",
  "zeroize",
+]
+
+[[package]]
+name = "apparent-inspect"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dirs 7.0.0",
+ "hound",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

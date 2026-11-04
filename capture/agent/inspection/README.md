@@ -1,0 +1,54 @@
+# Local bundle inspection
+
+`apparent-inspect [BUNDLE|latest] [--json] [--marks] [--experiment agentContext]`
+reads existing `.apparent` directories and prints the existing semantic summary,
+normalized manifest or mark list. It never fetches remote IDs, authenticates,
+uploads, renders images, records, reprocesses or writes a user bundle. Use
+`apparent fetch` for remote retrieval. `apparent inspect <remote-id>` keeps its
+existing explicit Connect resolver before invoking this same local implementation.
+
+This Rust package owns the existing bundle schema, legacy deserialization,
+mark recognition, time-aligned context, summary formatting and local reader.
+Engine producers and Desktop consumers import these types and functions through
+thin compatibility exports; there is one maintained implementation. Native window
+collection, crop computation and media execution stay with their existing owners.
+The schema's small WAV-presence reader uses pure Rust `hound`, without capture or
+codec execution. This is a bounded extraction, not the TypeScript migration target.
+
+## Build and package
+
+On macOS or Linux, without the root application, Desktop, GPUI, Connect, build.rs,
+native capture libraries or their build tools:
+
+    cargo test --locked --offline --manifest-path capture/agent/inspection/Cargo.toml
+    cargo package --locked --offline --manifest-path capture/agent/inspection/Cargo.toml
+    cargo install --locked --offline --path capture/agent/inspection --root PREFIX
+
+Use a new absolute private PREFIX, following `control-client`'s dedicated-prefix
+convention. Run `PREFIX/bin/apparent-inspect` from outside the checkout. Rollback
+removes only this prefix's executable; never replace another installed command.
+Normal app users need no separate installation: the existing `apparent inspect`
+CLI directly adopts this package in the ordinary app build and distribution.
+Standalone updates do not replace the statically linked implementation in an
+already installed app; those updates still require the ordinary app release.
+No runtime downloader, alternate app routing or daemon is introduced.
+
+The standalone reader resolves `latest` and short local names using
+`APPARENT_CAPTURES_DIR`, then an absolute `capturesDir` in the existing config,
+then the platform's existing built-in captures path. It reads config only and does
+not create directories or probe write access. Unlike capture admission, an
+unavailable configured directory produces a read error rather than a writable
+fallback. Explicit bundle paths do not depend on this lookup. App capture storage
+policy remains authoritative and unchanged. Unknown experiment switches retain
+the CLI's existing ignored behavior; only agentContext affects inspection output.
+
+Missing/invalid bundles fail with exit 1 and the existing contextual errors;
+argument errors use clap exit 2. Legacy optional fields remain optional. Absolute
+bundle paths, transcript timing, marks and semantic text remain in output. Paths
+stored in manifests are displayed as before; inspection does not execute them.
+
+Tests retain the existing schema/context compatibility cases and exercise the
+real executable with isolated synthetic legacy/current/error manifests. No native
+capture or media proof is claimed. Before release, require supported-platform
+packaged execution and normal exact-commit app publication gates. Independent
+review and final integration remain with the parent task.

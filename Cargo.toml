@@ -10,6 +10,7 @@ name = "apparent"
 path = "main.rs"
 
 [dependencies]
+apparent-inspect = { path = "capture/agent/inspection" }
 apparent-capture = { path = "capture/agent/control-client" }
 apparent-connect-client = { path = "connect/client" }
 anyhow = "1.0.104"
