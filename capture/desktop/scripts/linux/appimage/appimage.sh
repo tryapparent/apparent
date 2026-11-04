@@ -53,6 +53,10 @@ node --experimental-strip-types "$root/connect/delivery/recipient/package.ts" "$
 node --experimental-strip-types "$root/capture/agent/inspection/delivery/composition.ts" package "$(dirname "$binary")" "$appdir/usr/bin"
 
 cd "$out"
+# The staged executable's $ORIGIN is now AppDir/usr/bin. Resolve its native
+# dependencies from the admitted root input directory, before linuxdeploy copies
+# them into usr/lib and patches the packaged runtime search path.
+export LD_LIBRARY_PATH="$(dirname "$binary")${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy \
   --appdir "$appdir" \
   --executable "$appdir/usr/bin/apparent" \
