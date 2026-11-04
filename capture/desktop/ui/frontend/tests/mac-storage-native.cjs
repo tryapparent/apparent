@@ -135,7 +135,18 @@ on run argv
           delay 0.4
           if not frontmost then error "Focus left owned Electron process"
           -- argv, not script interpolation: spaces, quotes and accents remain data.
-          keystroke (item 2 of argv)
+          set goSheets to sheets of picker
+          if (count of goSheets) is not 1 then error "Owned Go to Folder sheet missing or ambiguous"
+          set goSheet to item 1 of goSheets
+          set pathFields to text fields of goSheet
+          if (count of pathFields) is not 1 then error "Owned Go to Folder path field missing or ambiguous"
+          set pathField to item 1 of pathFields
+          set value of pathField to (item 2 of argv)
+          if (value of pathField as text) is not (item 2 of argv) then error "Go to Folder path readback differs"
+          -- Let NSOpenPanel resolve the edited path before committing navigation.
+          -- Immediate Return can leave the autocomplete sheet open on CI.
+          delay 1
+          if not frontmost then error "Focus left owned Electron process"
           key code 36
         else if operation is "choose" then
           click chooseButton
