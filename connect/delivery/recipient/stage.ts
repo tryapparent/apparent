@@ -1,10 +1,11 @@
 /** Build-time authenticated staging. Never called by the recipient runtime. */
 import { execFileSync } from 'node:child_process';
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, chmodSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, chmodSync, writeFileSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { validate, type Pin } from './validate.ts';
 import { targets } from './seal.ts';
+import { publishValidatedDirectory } from '../../../shared/packaging/transaction.ts';
 export interface StagePin extends Pin { version: string; releaseVersion?: string; manifest: { schema: number; protocol: number; repository: string; workflow: string; executable: string } }
 export type Runner = (command: string, args: string[]) => Buffer;
 const run: Runner = (command, args) => execFileSync(command, args, { maxBuffer: 256 * 1024 * 1024 });
@@ -48,7 +49,7 @@ export function stage(pinFile: string, target: string, destination: string, exec
     rmSync(archive);
     chmodSync(join(temporary, 'apparent-connect-recipient'), 0o755);
     chmodSync(join(temporary, 'manifest.json'), 0o644);
-    renameSync(temporary, output);
+    publishValidatedDirectory(temporary, output);
   } finally { rmSync(temporary, { recursive: true, force: true }); }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
