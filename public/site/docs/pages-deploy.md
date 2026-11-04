@@ -13,10 +13,10 @@ artifacts separately; Public installs only its own dependencies. From the
 repository root, with an Actions-read token and the approved Public build variables:
 
 ```sh
+(cd public/site && bun install --frozen-lockfile)
 node --experimental-strip-types public/site/scripts/connect/artifact.ts .build/connect-browser
 export CONNECT_BROWSER_ARTIFACT="$PWD/.build/connect-browser/dist"
 cd public/site
-bun install --frozen-lockfile
 APPARENT_PUBLIC_SITE=1 npm run build
 node scripts/site-build/package-apparent.mjs
 node scripts/connect/compose-connect.mjs

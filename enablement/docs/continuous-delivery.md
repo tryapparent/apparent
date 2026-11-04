@@ -213,7 +213,7 @@ Configure `hosted-production`, limited to `main`, with:
 The existing Worker's `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
 `BETTER_AUTH_SECRET` and `TOKEN_ENCRYPTION_KEY` stay in Cloudflare. They are never supplied to Actions or rotated by CD. Restrict the token
 as far as Cloudflare permits and review its actual access before activation.
-`hosted_config.py` validates the required public identifiers and writes an ignored
+`connect/delivery/runtime/hosted_config.py` validates the required public identifiers and writes an ignored
 `connect/service/wrangler.cd.json` next to the existing entrypoint. The fixed production
 origins retain hosted API/auth/callback and legacy transition CORS; the UI stays
 on app. The Worker owns `/auth/*`, `/v1/*`, `/s/*` and the four exact recipient assets
