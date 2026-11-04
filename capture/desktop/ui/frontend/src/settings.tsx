@@ -11,9 +11,20 @@ import wordmark from '../../../../../shared/assets/brand/apparent-wordmark.svg';
 const panes = ['General', 'Recording', 'Storage', 'Permissions', 'Agents', 'About'] as const;
 const icons = [Settings2, CircleDot, HardDrive, ShieldCheck, Terminal, Info];
 
+declare global {
+  interface Window { apparentSettingsMounted?: () => Promise<void>; }
+}
+
 function Settings() {
   const connect = new URLSearchParams(location.search).get('surface') === 'connect';
-  useEffect(() => { document.title = `Apparent Settings — ${connect ? 'Connect' : 'Storage'}`; }, [connect]);
+  useEffect(() => {
+    document.title = `Apparent Settings — ${connect ? 'Connect' : 'Storage'}`;
+    let painted: number | undefined;
+    const committed = requestAnimationFrame(() => {
+      painted = requestAnimationFrame(() => { void window.apparentSettingsMounted?.().catch(() => {}); });
+    });
+    return () => { cancelAnimationFrame(committed); if (painted !== undefined) cancelAnimationFrame(painted); };
+  }, [connect]);
   const [error, setError] = useState('');
   const [navigating, setNavigating] = useState(false);
   async function navigate(pane: string) {

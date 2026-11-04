@@ -42,22 +42,37 @@ app.whenReady().then(() => {
       webSecurity: true, spellcheck: false,
     },
   });
-  // Recenter after AppKit applies the inset titlebar metrics. Constructor-time
-  // centering places this frame one titlebar lower than the native Settings.
-  if (settings && process.platform === 'darwin') window.center();
   // A parent show can arrive before Chromium paints the Settings page. Keep
   // the empty initial document hidden through that request too.
   let settingsPainted = false;
+  let settingsMounted = false;
   let settingsClosing = false;
+  let settingsFailed = false;
+  let startupTimer;
+  const failSettings = () => {
+    settingsFailed = settingsClosing = true;
+    clearTimeout(startupTimer);
+    app.exit(1);
+  };
   const showSettings = () => {
-    if (!settingsPainted || settingsClosing || window.isDestroyed()) return;
+    if (!settingsPainted || !settingsMounted || settingsClosing || window.isDestroyed()) return;
+    clearTimeout(startupTimer);
     window.show();
     window.focus();
   };
-  if (settings) window.once('ready-to-show', () => {
-    settingsPainted = true;
-    showSettings();
-  });
+  if (settings) {
+    // Chromium can paint an empty document when an entry module fails to load.
+    // Require the real React surface too, or let the parent restore native UI.
+    startupTimer = setTimeout(failSettings, 15000);
+    startupTimer.unref();
+    window.once('ready-to-show', () => {
+      settingsPainted = true;
+      showSettings();
+    });
+  }
+  // Recenter after AppKit applies the inset titlebar metrics. Constructor-time
+  // centering places this frame one titlebar lower than the native Settings.
+  if (settings && process.platform === 'darwin') window.center();
   followWindowTheme(nativeTheme, window);
   window.removeMenu();
   const pageUrl = pathToFileURL(path.join(__dirname, settings ? '../dist/settings.html' : '../dist/index.html'));
@@ -75,6 +90,12 @@ app.whenReady().then(() => {
     if (window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame ||
         event.senderFrame.url !== page || args.length !== 0) throw new Error('Forbidden bridge request');
   };
+  ipcMain.handle('apparent:settings-mounted', (event, ...args) => {
+    validate(event, args);
+    if (!settings) throw new Error('Unavailable outside Settings');
+    settingsMounted = true;
+    showSettings();
+  });
   let drawingRevision;
   const validateStorage = (event, args) => {
     if (connectSettings) throw new Error('Unavailable in Connect Settings');
@@ -99,7 +120,7 @@ app.whenReady().then(() => {
     process.stdout.write(`${JSON.stringify({ action: 'show-captures' })}\n`);
   });
   if (settings) {
-    const closeSettings = () => { settingsClosing = true; app.quit(); };
+    const closeSettings = () => { settingsClosing = true; clearTimeout(startupTimer); app.quit(); };
     // Only the Rust Settings owner supplies this private pipe. EOF closes its child.
     if (process.argv.includes('--settings-parent')) {
     const lines = require('node:readline').createInterface({ input: process.stdin });
@@ -114,10 +135,13 @@ app.whenReady().then(() => {
     }
     window.on('close', () => {
       settingsClosing = true;
-      process.stdout.write(`${JSON.stringify({ action: 'close' })}\n`);
+      clearTimeout(startupTimer);
+      // A failed startup must reach the parent's Exited fallback, not look
+      // like a user dismissing Settings.
+      if (!settingsFailed) process.stdout.write(`${JSON.stringify({ action: 'close' })}\n`);
     });
-    window.webContents.on('did-fail-load', () => app.exit(1));
-    window.webContents.on('render-process-gone', () => app.exit(1));
+    window.webContents.on('did-fail-load', failSettings);
+    window.webContents.on('render-process-gone', failSettings);
   }
   let generation = 0;
   let mutation = false;

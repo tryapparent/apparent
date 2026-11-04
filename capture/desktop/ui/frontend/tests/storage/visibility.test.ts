@@ -16,9 +16,12 @@ const source = readFileSync(filename, 'utf8');
 function host(mode: string) {
   const lines = new EventEmitter();
   const exits: number[] = [];
+  const written: string[] = [];
+  const handlers = new Map<string, (...args: any[]) => void>();
+  const timers: { callback: () => void; active: boolean; unref(): void }[] = [];
   let window: Window;
   class Window extends EventEmitter {
-    webContents = Object.assign(new EventEmitter(), { setWindowOpenHandler() {} });
+    webContents = Object.assign(new EventEmitter(), { setWindowOpenHandler() {}, mainFrame: { url: '' } });
     visible: boolean;
     focuses = 0;
     centers = 0;
@@ -31,7 +34,7 @@ function host(mode: string) {
       this.visible = options.show !== false;
     }
     removeMenu() {}
-    loadURL() { return Promise.resolve(); }
+    loadURL(url: string) { this.webContents.mainFrame.url = url; return Promise.resolve(); }
     isDestroyed() { return this.destroyed; }
     show() { this.visible = true; }
     focus() { this.focuses++; }
@@ -46,7 +49,7 @@ function host(mode: string) {
   const followTheme = Object.assign(() => {}, { backgroundColor: () => '#f5f0e8' });
   const modules: Record<string, unknown> = {
     electron: { app, BrowserWindow: Window, nativeTheme: {},
-      ipcMain: { handle() {} }, Menu: { setApplicationMenu() {} },
+      ipcMain: { handle: (name: string, fn: (...args: any[]) => void) => handlers.set(name, fn) }, Menu: { setApplicationMenu() {} },
       session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } } },
     './runtime.cjs': runtime,
     './storage-policy.cjs': {},
@@ -58,14 +61,18 @@ function host(mode: string) {
   vm.runInNewContext(source, {
     require: (name: string) => Object.hasOwn(modules, name) ? modules[name] : require(name),
     __dirname: path.dirname(filename),
-    process: { argv: ['electron', '.', mode, '--settings-parent'], platform: 'darwin', stdin: {}, stdout: { write() {} } },
+    setTimeout: (callback: () => void) => { const timer = { callback, active: true, unref() {} }; timers.push(timer); return timer; },
+    clearTimeout: (timer?: typeof timers[number]) => { if (timer) timer.active = false; },
+    process: { argv: ['electron', '.', mode, '--settings-parent'], platform: 'darwin', stdin: {}, stdout: { write: (line: string) => written.push(line) } },
   }, { filename });
-  return { window: window!, lines, exits };
+  const mounted = () => handlers.get('apparent:settings-mounted')!({ sender: window.webContents, senderFrame: window.webContents.mainFrame });
+  const expire = () => { for (const timer of timers) if (timer.active) { timer.active = false; timer.callback(); } };
+  return { window: window!, lines, exits, written, mounted, expire, handlers };
 }
 
 for (const mode of ['--settings-storage', '--settings-connect']) {
   test(`${mode} waits for first paint even when the parent requests focus early`, () => {
-    const { window, lines } = host(mode);
+    const { window, lines, mounted, expire, exits } = host(mode);
     assert.equal(window.options.width, 720);
     assert.equal(window.options.height, 530);
     assert.equal(window.options.titleBarStyle, 'hiddenInset');
@@ -78,10 +85,33 @@ for (const mode of ['--settings-storage', '--settings-connect']) {
     assert.equal(window.visible, false, 'A parent show command must not bypass first paint');
     assert.equal(window.focuses, 0);
     window.emit('ready-to-show');
+    assert.equal(window.visible, false, 'Chromium may paint a document whose React entry module is missing');
+    mounted();
     assert.equal(window.visible, true);
     assert.equal(window.focuses, 1);
     lines.emit('line', JSON.stringify({ type: 'show' }));
     assert.equal(window.focuses, 2, 'Loaded Settings can still be brought forward');
+    expire();
+    assert.deepEqual(exits, [], 'A mounted surface cancels the startup deadline');
+  });
+
+  test(`${mode} waits for paint when React commits first`, () => {
+    const { window, mounted } = host(mode);
+    mounted();
+    assert.equal(window.visible, false);
+    window.emit('ready-to-show');
+    assert.equal(window.visible, true);
+  });
+
+  test(`${mode} missing React mount exits for fallback without a user-close signal`, () => {
+    const { window, mounted, expire, exits, written } = host(mode);
+    window.emit('ready-to-show');
+    expire();
+    assert.deepEqual(exits, [1]);
+    mounted();
+    window.emit('close');
+    assert.equal(window.visible, false);
+    assert.deepEqual(written, []);
   });
 
   test(`${mode} retains load failure and crash fallback signals`, () => {
@@ -93,12 +123,14 @@ for (const mode of ['--settings-storage', '--settings-connect']) {
 
   for (const close of ['parent', 'eof', 'window', 'destroyed']) {
     test(`${mode} never presents a retired window after ${close}`, () => {
-      const { window, lines } = host(mode);
+      const { window, lines, mounted } = host(mode);
       if (close === 'parent') lines.emit('line', JSON.stringify({ type: 'close' }));
       else if (close === 'eof') lines.emit('close');
       else if (close === 'window') window.emit('close');
       else window.destroyed = true;
       window.emit('ready-to-show');
+      if (close === 'destroyed') assert.throws(mounted, /Forbidden bridge/);
+      else mounted();
       lines.emit('line', JSON.stringify({ type: 'show' }));
       assert.equal(window.visible, false);
       assert.equal(window.focuses, 0);
@@ -107,7 +139,15 @@ for (const mode of ['--settings-storage', '--settings-connect']) {
 }
 
 test('development foundation keeps its existing window presentation', () => {
-  const { window } = host('--foundation');
+  const { window, mounted } = host('--foundation');
   assert.equal(window.visible, true);
   assert.equal(window.centers, 0);
+  assert.throws(mounted, /Unavailable outside Settings/);
+});
+
+test('readiness refuses another frame and unexpected arguments', () => {
+  const { window, handlers } = host('--settings-storage');
+  const ready = handlers.get('apparent:settings-mounted');
+  assert.throws(() => ready!({ sender: window.webContents, senderFrame: { url: window.webContents.mainFrame.url } }), /Forbidden bridge/);
+  assert.throws(() => ready!({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, true), /Forbidden bridge/);
 });

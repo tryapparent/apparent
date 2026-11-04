@@ -405,12 +405,19 @@ apply at the next request; reopen Settings to change presentation routing. The
 separate `npm start` window remains a developer harness; it is not installed or
 used by the Settings route. Browser preview has no Storage bridge.
 
-Installed Storage and Connect windows stay hidden until Electron's first paint,
-including when the native parent sends `show` during loading. Later `show`
+Installed Storage and Connect windows stay hidden until Electron's first paint
+and the React surface's post-commit paint acknowledgement, including when the
+native parent sends `show` during loading. A first paint alone can be an empty
+document when its entry module is missing. Startup without that acknowledgement
+exits after 15 seconds so the parent restores its native fallback; a startup
+failure does not emit the user-dismissal action. Later `show`
 requests still bring the painted window forward. Load failure and renderer crash
 retain the native fallback route. `tests/storage/visibility.test.ts` exercises
 the shipped host's event ordering with a delayed first paint; it is synthetic
-lifecycle coverage, not macOS focus or rendering acceptance. Reverting this guard
+lifecycle coverage, not macOS focus or rendering acceptance. The real Electron
+`tests/storage/readiness.smoke.ts` removes the shipped React entry from a private
+app copy and verifies hidden failure/exit rather than an empty visible window.
+Reverting this guard
 restores immediate window display. The native/Electron pane replacement remains
 in place; this guard alone does not resolve or certify issue #562's intermittent
 blanking. Both Settings renderers open at 720×530 with a 210px black sidebar;
