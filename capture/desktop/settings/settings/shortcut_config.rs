@@ -494,4 +494,3 @@ pub fn validate(
         cfg
     })
 }
-
