@@ -96,7 +96,7 @@ class AdmissionTests(unittest.TestCase):
         self.assertIn('mac-artifact.ts --producer-kind focused-settings-build', build)
         self.assertIn('artifact: ${{ steps.executables.outputs.artifact-id }}', build)
         self.assertIn('if-no-files-found: error', build)
-        self.assertNotIn('needs: settings-build', native)
+        self.assertIn('needs: settings-build', native)
         self.assertIn('APPARENT_PREBUILT_KIND: focused-settings-build', native)
         self.assertIn('APPARENT_PREBUILT_RUN: ${{ github.run_id }}', native)
         self.assertIn('enablement/verification/focused/settings-producer.ts', native)

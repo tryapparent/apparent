@@ -183,6 +183,8 @@ jobs:
           retention-days: 7
 
   settings-native:
+    # Avoid consuming a runner/readiness budget while the producer is queued.
+    needs: settings-build
     name: Focused installed Settings native acceptance
     if: github.repository == 'tryapparent/apparent' && github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'
     runs-on: macos-15-intel
