@@ -48,31 +48,61 @@ rejection of altered/extra files, wrong target and destination replacement:
     APPARENT_INSPECTION_ARTIFACT=/absolute/BINARY.tar.gz \
       node --experimental-strip-types --test capture/agent/inspection/delivery/package.test.ts
 
-## Parent integration boundary
+## Adopted host and composition v1
 
-The smallest app adoption places this component beside the existing root binary
-(`Contents/MacOS/inspection` on Mac, `usr/bin/inspection` in AppImage) and changes
-only local inspection dispatch in `composition/cli.rs`. Preserve the separate
-Connect resolver, CLI arguments, stdout/stderr and exit codes; do not add PATH
-search, runtime downloading, a manual user install, or a silent source fallback.
-Keep schema and producer imports until their real consumers no longer need them.
+The host now invokes only the bundled inspector. Runtime verifies the composition
+protocol/target and hashes a bounded regular-file byte snapshot. It writes that
+snapshot into a new private directory, executes it with inherited stdout/stderr,
+returns the component exit code, and removes the snapshot. Concurrent replacement
+of the installed component cannot replace the already-checked execution bytes.
+The installed application/composition receipt uses normal package trust; this
+is not isolation from a malicious process with the same OS identity.
 
-Concrete shared assembly overlap with Connect PR616 at `a16c01d8` is its component
-staging before signing in `build-mac-preview.sh`, `install-app.sh`, `release-app.sh`,
-and before linuxdeploy in `linux/appimage/appimage.sh`. These files are untouched
-here. Parent integration must compose both components before signing/admission.
-Mac signing changes executable bytes: retain producer identity separately from
-final signed assembly identity; do not treat the pre-sign digest as the final
-signed digest. No runtime verification-to-execution guarantee is claimed here.
+Ordinary Mac installers/preview/release assembly and Linux AppImage assembly stage
+the component automatically before signing/packing. Source builds produce it from
+this clean committed Cargo archive. Externally supplied artifacts require canonical
+GitHub provenance, exact source and archive digest. Mac signing records a separate
+post-sign runtime digest before the enclosing app is signed. There is no runtime
+PATH/source fallback and no extra installation for app users.
 
-Independent updates also need accepted reuse of the unchanged root artifact.
-`enablement/verification/mac-artifact-consumer.ts::verify` currently requires the
-root artifact's exact source SHA/tree, lock and build config; its header explicitly
-limits it to development inputs, not release admission. Preview/release scripts
-still build the root application. This stager cannot bypass either contract.
-Parent integration needs an explicit accepted composition receipt binding the
-unchanged verified root artifact and independently authenticated inspection
-artifact, followed by ordinary app signing/update/publication gates. Demonstrate
-root-byte reuse during actual package assembly and real CLI dispatch on both
-platforms before calling independent app delivery complete. No generic distribution
-redesign, new updater, daemon or unrelated Connect adoption belongs in this slice.
+`composition.ts seal-root ROOT/target/debug debug NEW_RECEIPT` performs the initial
+clean root build and records exact source/tree, toolchain, native executable/shared
+object hashes and a conservative tracked-input inventory. It audits actual rustc
+dep-info (including the library), not Cargo's aggregate Git-identity watch list.
+Only inspector main/standalone lock, tests, documentation and delivery tooling are
+excluded; shared schema/reader/formatter sources remain root inputs. Excluded
+inputs are checked absent from compiler dep-info. The policy source hash is pinned
+in the receipt. Root build-version metadata retains its original source identity
+when reused; the composition separately records inspector/composition revisions.
+No existing exact-source development-artifact admission is relaxed.
+
+Local integration proof may call `composition.ts assemble ROOT_DIR ROOT_RECEIPT
+ROOT_RECEIPT_SHA INSPECTOR_ARCHIVE INSPECTOR_SHA NEW_DIR`. This checks ancestry,
+compatibility and identical root input closure, snapshots/hash-checks root files,
+and assembles only verified bytes. It never invokes Cargo. Its local receipt is
+not publication authority. Tests run actual root CLI dispatch outside the checkout
+with two different inspector binaries, block Cargo in PATH, and check tampering.
+
+For production reuse, `APPARENT_INSPECTION_REUSE` names schema-1 JSON containing
+rootDirectory/rootReceipt/rootReceiptSha256 and inspectorArchive/
+inspectorArchiveSha256/inspectorSourceSha. Ordinary packaging calls `reuse`, which
+additionally verifies canonical main GitHub attestations for each exact component.
+Root/inspector provenance producer artifacts and successful exact-commit publication
+gates must exist before that release path can be used; a locally written receipt or
+adjacent checksum cannot replace them. Root receipt attestations are constrained
+to verification-platform.yml; inspector attestations to verification-platform.yml.
+No workflow is dispatched or authority to publish inferred by these local tools.
+
+The existing platform verification job now retains source-bound root bundles and
+attested inspector archives on its existing runners/budgets; no new workflow,
+runner allocation or local paid resource is created. Production is admitted only
+when the checked-out revision equals the attested workflow source revision. A Mac
+follower selecting a different Linux-verified SHA still performs its existing
+verification, but does not emit misleading composition provenance for that SHA.
+The expected inspector signer is the same verification-platform.yml producer.
+No new Actions run was dispatched for this change.
+
+Root receipts include native transcribe/ggml shared-object hashes and build-variant
+environment digests. Preview/helper identity and other compiled variants must
+match; a normal root artifact is not silently relabeled as a preview. The existing
+Mac development-artifact verifier and its exact-source rules are unchanged.

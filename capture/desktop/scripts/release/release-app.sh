@@ -19,13 +19,19 @@ ZIP_NAME="Apparent-${VERSION}-arm64.zip"
 cd "${REPO_DIR}"
 SPARKLE_DIR="$("${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh")"
 
+BINARY_DIR="$REPO_DIR/target/release"
+if [[ -n "${APPARENT_INSPECTION_REUSE:-}" ]]; then
+  BINARY_DIR="$(mktemp -d "$REPO_DIR/target/inspection-reuse-parent.XXXXXX")/bin"
+  node --experimental-strip-types "$REPO_DIR/capture/agent/inspection/delivery/composition.ts" reuse "$APPARENT_INSPECTION_REUSE" "$BINARY_DIR"
+else
 taskpolicy -c utility cargo build --release -j 3 --offline
+fi
 
 rm -rf "${APP_BUNDLE}" "${DIST_DIR}/staging" "${UPDATES_DIR}"
 mkdir -p "${APP_BUNDLE}/Contents/MacOS" "${APP_BUNDLE}/Contents/Resources" "${APP_BUNDLE}/Contents/Frameworks" "${DIST_DIR}/staging" "${UPDATES_DIR}"
 
-cp -f "${REPO_DIR}/target/release/apparent" "${APP_BUNDLE}/Contents/MacOS/apparent"
-cp -f "${REPO_DIR}/target/release/apparent-helper" "${APP_BUNDLE}/Contents/MacOS/apparent-helper"
+cp -f "${BINARY_DIR}/apparent" "${APP_BUNDLE}/Contents/MacOS/apparent"
+cp -f "${BINARY_DIR}/apparent-helper" "${APP_BUNDLE}/Contents/MacOS/apparent-helper"
 chmod +x "${APP_BUNDLE}/Contents/MacOS/apparent" "${APP_BUNDLE}/Contents/MacOS/apparent-helper"
 
 cp -f "${REPO_DIR}/capture/desktop/assets/Apparent.icns" "${APP_BUNDLE}/Contents/Resources/Apparent.icns"
@@ -113,6 +119,8 @@ if [[ "${IDENTITY}" == "-" ]]; then
 fi
 
 python3 "${REPO_DIR}/capture/desktop/scripts/packaging/stage-settings.py" "${APP_BUNDLE}/Contents/Resources/settings" --sign "${IDENTITY}"
+
+node --experimental-strip-types "$REPO_DIR/capture/agent/inspection/delivery/composition.ts" package "$BINARY_DIR" "$APP_BUNDLE/Contents/MacOS" "${SIGN[@]}"
 
 SPARKLE_VER="${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework/Versions/B"
 "${SIGN[@]}" "${SPARKLE_VER}/XPCServices/Installer.xpc"

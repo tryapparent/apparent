@@ -1330,10 +1330,8 @@ pub(crate) fn run() -> Result<()> {
             }
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             let bundle = hosted::inspect_source(&bundle)?;
-            let (dir, loaded) = handoff::load_bundle(&bundle)?;
-            print!("{}", apparent_inspect::inspect(&dir, &loaded, json, marks,
-                handoff::experiment(handoff::AGENT_CONTEXT))?);
-            Ok(())
+            let dir = handoff::resolve_bundle_dir(&bundle)?;
+            crate::composition::inspection::inspect(&dir, json, marks, &experiments)
         }
         Command::Clean {
             dry_run,
