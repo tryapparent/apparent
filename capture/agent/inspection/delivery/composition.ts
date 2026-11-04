@@ -13,13 +13,17 @@ const compatibility = 'inspection-host-v1';
 const buildEnvironment = () => Object.fromEntries(['APPARENT_PREVIEW_BUILD', 'APPARENT_HELPER_BUNDLE_ID', 'APPARENT_POSTHOG_TOKEN', 'MACOSX_DEPLOYMENT_TARGET', 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS'].map(key => [key, process.env[key] ? hash(process.env[key]!) : null]));
 const policy = () => hash(readFileSync(fileURLToPath(import.meta.url)));
 const runtime = (name: string) => /^lib(?:transcribe|ggml)[A-Za-z0-9_.-]*\.so(?:\.[0-9.]+)?$/.test(name);
+// Electron's packaged resources are built/staged independently; Rust bridge/native
+// code remains in the root closure and the compiler dep-info guard below verifies it.
+const independentlyPackagedRenderer = (path: string) => path.startsWith('capture/desktop/ui/frontend/');
+const independent = (path: string) => path === 'capture/agent/inspection/main.rs' || path === 'capture/agent/inspection/Cargo.lock' ||
+  path === 'capture/agent/inspection/README.md' || path.startsWith('capture/agent/inspection/tests/') ||
+  path.startsWith('capture/agent/inspection/delivery/') || independentlyPackagedRenderer(path);
 function command(cmd: string, args: string[], cwd = process.cwd()) {
   const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', timeout: 300_000, maxBuffer: 32 * 1024 * 1024 });
   assert.equal(r.status, 0, `${cmd}: ${r.stderr}`); return r.stdout.trim();
 }
 const repository = () => command('git', ['rev-parse', '--show-toplevel']);
-const independent = (p: string) => p === 'capture/agent/inspection/main.rs' || p === 'capture/agent/inspection/Cargo.lock' ||
-  p === 'capture/agent/inspection/README.md' || p.startsWith('capture/agent/inspection/tests/') || p.startsWith('capture/agent/inspection/delivery/');
 export function inputs(root = repository()) {
   assert.equal(command('git', ['status', '--porcelain', '--untracked-files=normal'], root), '', 'Clean committed source required');
   const files = command('git', ['ls-files', '-z'], root).split('\0').filter(Boolean);
