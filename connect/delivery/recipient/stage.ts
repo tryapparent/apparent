@@ -5,7 +5,7 @@ import { dirname, resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { validate, type Pin } from './validate.ts';
 import { targets } from './seal.ts';
-export interface StagePin extends Pin { version: string; manifest: { schema: number; protocol: number; repository: string; workflow: string; executable: string } }
+export interface StagePin extends Pin { version: string; releaseVersion?: string; manifest: { schema: number; protocol: number; repository: string; workflow: string; executable: string } }
 export type Runner = (command: string, args: string[]) => Buffer;
 const run: Runner = (command, args) => execFileSync(command, args, { maxBuffer: 256 * 1024 * 1024 });
 export function stage(pinFile: string, target: string, destination: string, execute: Runner = run) {
@@ -16,6 +16,11 @@ export function stage(pinFile: string, target: string, destination: string, exec
       pin.version !== `recipient-${pin.sourceSha}-${pin.run}-${pin.attempt}` ||
       !pin.manifest || Object.entries({ schema: 1, protocol: 1, repository: 'tryapparent/apparent', workflow: '.github/workflows/connect-delivery.yml', executable: 'apparent-connect-recipient' }).some(([key, value]) => (pin.manifest as unknown as Record<string, unknown>)[key] !== value)) throw Error('Invalid staging pin');
   const output = resolve(destination);
+  // Release assembly can reuse successful jobs from an earlier run attempt.
+  // The reviewed release tag locates bytes; the original pin authenticates them.
+  const releaseVersion = pin.releaseVersion ?? pin.version;
+  const release = /^recipient-([a-f0-9]{40})-([1-9][0-9]*)-([1-9][0-9]*)$/.exec(releaseVersion);
+  if (!release || release[1] !== pin.sourceSha || release[2] !== pin.run || BigInt(release[3]) < BigInt(pin.attempt)) throw Error('Invalid release version');
   // Reject symlink ancestors, including existing output. Never replace user data.
   for (let path = output;; path = dirname(path)) {
     try { if (lstatSync(path).isSymbolicLink()) throw Error('Symlink destination'); }
@@ -28,8 +33,8 @@ export function stage(pinFile: string, target: string, destination: string, exec
   const temporary = mkdtempSync(join(dirname(output), '.recipient-stage-'));
   chmodSync(temporary, 0o700);
   try {
-    const asset = `${pin.version}-${target}.tar.gz`;
-    execute('gh', ['release', 'download', pin.version, '--repo', 'tryapparent/apparent', '--pattern', asset, '--dir', temporary]);
+    const asset = `${releaseVersion}-${target}.tar.gz`;
+    execute('gh', ['release', 'download', releaseVersion, '--repo', 'tryapparent/apparent', '--pattern', asset, '--dir', temporary]);
     const archive = join(temporary, asset);
     const members = execute('tar', ['-tzf', archive]).toString('utf8').trim().split('\n');
     if (members.length !== 2 || new Set(members).size !== 2 || !members.includes('manifest.json') || !members.includes('apparent-connect-recipient')) throw Error('Unexpected archive members');

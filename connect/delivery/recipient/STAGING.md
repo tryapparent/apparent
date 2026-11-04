@@ -40,3 +40,15 @@ Injected assembly tests and Linux Rust tests do not prove Mac resource sealing
 or packaged signature behavior. Parent-owned packaged Mac proof must verify
 receipt mutation rejection, wrong-team rejection and successful invocation before
 adoption. Production dispatch and `adopted:false` remain unchanged.
+
+For retry assembly, an optional reviewed `releaseVersion` locates the release tag
+and exact target archive. It must name the same source SHA and run with an attempt
+at least as new as the producer `attempt`. The manifest `version` and producer
+attempt remain original. `recipient-identities.json` is untrusted inventory for
+reviewing candidate identities; it never supplies authority or automatically
+updates a trusted pin. The reviewed pin remains authoritative.
+
+The root adapter test accepts an explicit private fixture path through
+`APPARENT_TEST_RECIPIENT_EXECUTABLE`; it copies that executable beside a synthetic
+root path outside the checkout and invokes the real adapter. This test-only input
+never changes runtime resolution or PATH.

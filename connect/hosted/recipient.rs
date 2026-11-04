@@ -313,8 +313,10 @@ mod tests {
         );
         // The client fixture lane builds this real executable first. Copy it into
         // an isolated package; production resolution never consults this path.
-        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("connect/client/target/debug/apparent-connect-recipient");
+        let fixture = std::env::var_os("APPARENT_TEST_RECIPIENT_EXECUTABLE")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("connect/client/target/debug/apparent-connect-recipient"));
         std::fs::copy(fixture, package.join("apparent-connect-recipient"))
             .expect("build the recipient executable fixture first");
         let digest = format!(
