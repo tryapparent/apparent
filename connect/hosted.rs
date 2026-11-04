@@ -205,11 +205,21 @@ pub fn command(command: ConnectCommand) -> Result<()> {
             consent_upload,
             no_browser,
             browser,
-        } => client.login(&client.login_server(server.as_deref())?, &scope, consent_upload, browser && !no_browser),
+        } => {
+            if scope == "read" && recipient::adopted()? {
+                anyhow::ensure!(!consent_upload, "Read login cannot grant upload consent");
+                recipient::production(apparent_connect_client::recipient_protocol::Operation::Login { server, browser: browser && !no_browser })?;
+                Ok(())
+            } else {
+                client.login(&client.login_server(server.as_deref())?, &scope, consent_upload, browser && !no_browser)
+            }
+        },
         ConnectCommand::Status { account } => {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&client.status(account)?)?
+                serde_json::to_string_pretty(&if recipient::adopted()? {
+                    recipient::production(apparent_connect_client::recipient_protocol::Operation::Status { account })?
+                } else { client.status(account)? })?
             );
             Ok(())
         }
@@ -246,8 +256,18 @@ pub fn command(command: ConnectCommand) -> Result<()> {
     }
 }
 pub fn fetch(id: &str, out: &Path, wait: u64) -> Result<()> {
-    println!("{}", client().fetch(id, out, wait)?.display());
+    println!("{}", recipient_fetch(id, out, wait, false)?.display());
     Ok(())
+}
+fn recipient_fetch(id: &str, out: &Path, wait: u64, evidence_only: bool) -> Result<PathBuf> {
+    if !recipient::adopted()? {
+        return if evidence_only { client().fetch_evidence(id, out, wait) } else { client().fetch(id, out, wait) };
+    }
+    let out = if out.is_absolute() { out.to_owned() } else { std::env::current_dir()?.join(out) };
+    let result = recipient::production(apparent_connect_client::recipient_protocol::Operation::Fetch { id: id.into(), out: out.clone(), wait, evidence_only })?;
+    let path = PathBuf::from(result["path"].as_str().context("Invalid recipient output path")?);
+    anyhow::ensure!(path == out.canonicalize()?, "Unexpected recipient output path");
+    Ok(path)
 }
 /// Only a bare canonical Connect ID implies a download. Explicit local paths
 /// retain local inspection semantics; fetch never overwrites existing output.
@@ -255,7 +275,7 @@ pub fn inspect_source(source: &Path) -> Result<PathBuf> {
     let Some(id) = inspect_capture_id(source) else {
         return Ok(source.to_path_buf());
     };
-    client().fetch_evidence(id, &PathBuf::from(format!("./{id}.evidence.apparent")), 120)
+    recipient_fetch(id, &PathBuf::from(format!("./{id}.evidence.apparent")), 120, true)
 }
 
 fn inspect_capture_id(source: &Path) -> Option<&str> {

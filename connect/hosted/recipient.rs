@@ -9,6 +9,45 @@ use std::{
     process::{Command, Stdio},
 };
 
+pub(super) fn adopted() -> Result<bool> {
+    let map = parse_pins(include_str!("../delivery/recipient/pins.json"))?;
+    Ok(map["adopted"] == true)
+}
+
+fn parse_pins(raw: &str) -> Result<serde_json::Value> {
+    let map: serde_json::Value = serde_json::from_str(raw)?;
+    ensure!(map["schema"] == 1 && map["adopted"].is_boolean() && map["pins"].is_object(), "Invalid recipient pins");
+    for (target, pin) in map["pins"].as_object().unwrap() {
+        for key in ["sourceSha", "run", "attempt", "target", "sha256", "version"] {
+            ensure!(pin[key].as_str().is_some_and(|s| !s.is_empty()), "Invalid recipient pin identity");
+        }
+        ensure!(pin["target"] == *target, "Invalid recipient pin target");
+        for (key, length) in [("sourceSha", 40), ("sha256", 64)] {
+            ensure!(pin[key].as_str().is_some_and(|s| s.len() == length && s.bytes().all(|b| b.is_ascii_hexdigit())), "Invalid recipient pin digest");
+        }
+    }
+    ensure!(map["adopted"] != true || !map["pins"].as_object().unwrap().is_empty(), "Adopted recipient pins missing");
+    Ok(map)
+}
+
+pub(super) fn production(operation: apparent_connect_client::recipient_protocol::Operation) -> Result<serde_json::Value> {
+    let map = parse_pins(include_str!("../delivery/recipient/pins.json"))?;
+    ensure!(adopted()?, "Recipient package is not adopted");
+    let target = format!("{}-{}", std::env::consts::ARCH, if cfg!(target_os="macos") { "apple-darwin" } else { "unknown-linux-gnu" });
+    let pin = &map["pins"][&target];
+    let digest = pin["sha256"].as_str().context("Recipient target pin missing")?;
+    let root = std::env::current_exe()?;
+    let manifest: serde_json::Value = serde_json::from_slice(&std::fs::read(root.parent().context("Missing package directory")?.join("recipient/recipient-provenance.json"))?)?;
+    for key in ["sourceSha", "run", "attempt", "target", "sha256", "version"] {
+        ensure!(pin[key].is_string() && manifest[key] == pin[key], "Recipient producer identity mismatch");
+    }
+    let _signals = crate::capture::desktop::workflow::shutdown::Signals::install()?;
+    invoke(&root, &crate::shared::handoff::default_config_path(), digest,
+        &Request { protocol: 1, operation },
+        &|uri, code| println!("Open {uri}\nCode: {code}"),
+        &|| !crate::capture::desktop::workflow::shutdown::requested())
+}
+
 /// Resolve only beside the installed root executable (Contents/MacOS on macOS).
 /// The trusted digest must come from package assembly, never the adjacent manifest.
 pub(super) fn invoke(
@@ -226,6 +265,13 @@ fn verify_mac_package(root: &Path, directory: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pins_reject_malformed_structure() {
+        assert!(parse_pins(include_str!("../delivery/recipient/pins.json")).is_ok());
+        for raw in [r#"{"schema":1,"adopted":false}"#, r#"{"schema":1,"adopted":true,"pins":{}}"#, r#"{"schema":1,"adopted":false,"pins":{"x":{}}}"#] {
+            assert!(parse_pins(raw).is_err());
+        }
+    }
     #[test]
     fn signing_team_rejects_unsigned_and_ambiguous_identity() {
         for value in [
