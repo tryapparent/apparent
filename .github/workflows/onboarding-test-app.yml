@@ -37,11 +37,13 @@ jobs:
             arch: Intel
     runs-on: ${{ matrix.runner }}
     # The agent whose run hits the limit owns optimization before another attempt.
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       CARGO_BUILD_JOBS: 3
       CARGO_PROFILE_DEV_DEBUG: 0
     steps:
+      - name: Verification runtime budget and ownership
+        run: echo '15 minute whole-workflow execution budget (runner queue excluded; parallel jobs count once). Per-job timeout is an additional safeguard. If exceeded, optimize the tests. The agent whose run hits the limit owns optimization and a successful rerun; do not raise or bypass the limit.'
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
@@ -214,3 +216,21 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
+
+  runtime-budget:
+    if: always() && needs.package.result != 'skipped'
+    needs: package
+    name: Workflow runtime budget
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/runtime-budget
+        with:
+          platform: macos
