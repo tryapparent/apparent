@@ -694,6 +694,7 @@ mod tests {
             },
         ];
         let stroke = |t0| Stroke {
+            color: None,
             t0,
             t1: t0 + 10,
             fw: 100,
