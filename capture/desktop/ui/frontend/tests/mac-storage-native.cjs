@@ -475,6 +475,11 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     const afterCancelStat = await fs.stat(config, { bigint: true });
     assert.equal(afterCancelStat.ino, beforeCancelStat.ino, 'Cancel replaced config');
     assert.equal(afterCancelStat.mtimeNs, beforeCancelStat.mtimeNs, 'Cancel rewrote config');
+    // Cancel remounts Retention, which reads policy and then scans usage on
+    // Rust's single Storage worker. Wait for that real receipt before the
+    // fixture's direct socket probe and one Reset; do not retry mutations.
+    await expect(card.getByRole('button', { name: 'Refresh usage', exact: true }))
+      .toBeEnabled({ timeout: budget() });
     report.cancel = { ...await snapshot(), files: await assertFiles(selected),
       bytesUnchanged: true, inodeUnchanged: true, mtimeUnchanged: true };
     assert.deepEqual(report.cancel.location, report.change.location);
