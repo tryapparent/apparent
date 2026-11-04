@@ -18,8 +18,25 @@ requires all four reviewed real pins together; missing pins then fail closed.
 Keep this integration unmerged until producer execution and native proof pass.
 Mac assembly signs the nested recipient before the enclosing app. The original
 attested manifest is retained as `recipient-provenance.json`; `manifest.json`
-contains the signed executable digest. Runtime adoption MUST bind that signed
-output digest in the trusted adapter argument (never trust the adjacent manifest
-alone). Current production dispatch remains unchanged. This is still an open
+contains the signed executable digest. Linux adoption MUST bind the raw producer digest in the trusted adapter
+argument. Mac adoption authenticates the signed receipt through the enclosing
+app signature as described below; an adjacent manifest alone is insufficient. Current production dispatch remains unchanged. This is still an open
 integration gate; raw producer hashes cannot be used as signed output hashes.
 No recipient updater or runtime download is introduced.
+
+Assembly publishes `recipient/` beside the root executable (on Mac,
+`Contents/MacOS/recipient/`). Signing and strict nested verification complete in
+a private same-destination staging directory before directory rename; failure
+removes staging. Existing output is refused. Ancestors and concurrent writers
+must remain trusted throughout assembly.
+
+The staged Mac adapter accepts a receipt only inside the running app's canonical
+bundle, after `/usr/bin/codesign --verify --strict --deep` on the enclosing app,
+running executable and recipient. Their nonempty TeamIdentifiers must agree.
+The enclosing signature must seal `recipient/manifest.json` and the retained
+provenance. The receipt digest then binds the signed executable bytes. Linux
+continues to require a trusted compiled raw digest argument; no real pin exists.
+Injected assembly tests and Linux Rust tests do not prove Mac resource sealing
+or packaged signature behavior. Parent-owned packaged Mac proof must verify
+receipt mutation rejection, wrong-team rejection and successful invocation before
+adoption. Production dispatch and `adopted:false` remain unchanged.
