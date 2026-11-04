@@ -29,7 +29,9 @@ app.whenReady().then(() => {
     show: !settings,
     width: settings ? 720 : 920, height: settings ? 530 : 760,
     minWidth: 640, minHeight: settings ? 530 : 620,
-    ...(settings && process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' } : {}),
+    ...(settings && process.platform === 'darwin' ? {
+      titleBarStyle: 'hiddenInset', resizable: false, fullscreenable: false,
+    } : {}),
     title: connectSettings ? 'Apparent Settings — Connect' : settings ? 'Apparent Settings — Storage' : 'Apparent — UI foundation',
     backgroundColor: followWindowTheme.backgroundColor(nativeTheme),
     webPreferences: {
@@ -38,6 +40,9 @@ app.whenReady().then(() => {
       webSecurity: true, spellcheck: false,
     },
   });
+  // Recenter after AppKit applies the inset titlebar metrics. Constructor-time
+  // centering places this frame one titlebar lower than the native Settings.
+  if (settings && process.platform === 'darwin') window.center();
   // A parent show can arrive before Chromium paints the Settings page. Keep
   // the empty initial document hidden through that request too.
   let settingsPainted = false;

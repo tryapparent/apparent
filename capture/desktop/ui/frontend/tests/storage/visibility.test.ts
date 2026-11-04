@@ -21,6 +21,7 @@ function host(mode: string) {
     webContents = Object.assign(new EventEmitter(), { setWindowOpenHandler() {} });
     visible: boolean;
     focuses = 0;
+    centers = 0;
     destroyed = false;
     options: Record<string, unknown>;
     constructor(options: Record<string, unknown>) {
@@ -34,6 +35,7 @@ function host(mode: string) {
     isDestroyed() { return this.destroyed; }
     show() { this.visible = true; }
     focus() { this.focuses++; }
+    center() { this.centers++; }
   }
   const app = Object.assign(new EventEmitter(), {
     setName() {}, setPath() {}, getPath: () => '/synthetic',
@@ -67,6 +69,9 @@ for (const mode of ['--settings-storage', '--settings-connect']) {
     assert.equal(window.options.width, 720);
     assert.equal(window.options.height, 530);
     assert.equal(window.options.titleBarStyle, 'hiddenInset');
+    assert.equal(window.options.resizable, false);
+    assert.equal(window.options.fullscreenable, false);
+    assert.equal(window.centers, 1, 'Center the final AppKit frame before presenting it');
     assert.equal(window.visible, false, 'Do not expose the empty initial document');
     lines.emit('line', JSON.stringify({ type: 'show' }));
     assert.equal(window.visible, false, 'A parent show command must not bypass first paint');
@@ -101,5 +106,7 @@ for (const mode of ['--settings-storage', '--settings-connect']) {
 }
 
 test('development foundation keeps its existing window presentation', () => {
-  assert.equal(host('--foundation').window.visible, true);
+  const { window } = host('--foundation');
+  assert.equal(window.visible, true);
+  assert.equal(window.centers, 0);
 });
