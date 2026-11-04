@@ -1,0 +1,16 @@
+[
+  {
+    "frame": "frames/frame-01.png",
+    "id": "m1",
+    "keyframe": 1,
+    "number": 1,
+    "numbered": false,
+    "on": "button “Save”",
+    "shape": "circle",
+    "strokes": 0,
+    "t0": 1000,
+    "t1": 1400,
+    "text": "circled button “Save”",
+    "time": "0:01"
+  }
+]
