@@ -80,3 +80,18 @@ test('only explicit safe transport errors cross the boundary', async () => {
   f.transport.commit = async () => { throw new Error('access-secret'); };
   assert.equal(await authorizeDevice(f.transport, new AbortController().signal, () => {}, { now: () => 0, sleep: async () => {} }), 'unavailable');
 });
+
+for (const userCode of [undefined, null, 1234, {}]) test('malformed public code cannot be coerced into an approval', async () => {
+  const f=fixture();f.transport.start=async()=>start({userCode});let exposed=false;
+  assert.equal(await authorizeDevice(f.transport,new AbortController().signal,()=>{exposed=true;}),'unavailable');
+  assert.equal(exposed,false);assert.equal(f.polls(),0);
+});
+
+test('server interval zero still waits one second and a late approval cannot commit',async()=>{
+  const f=fixture();f.transport.start=async()=>start({interval:0,expiresIn:2});let clock=0;
+  f.transport.poll=async()=>{clock=2000;return approved();};
+  assert.equal(await authorizeDevice(f.transport,new AbortController().signal,()=>{}, {
+    now:()=>clock,sleep:async ms=>{assert.equal(ms,1000);clock+=ms;},
+  }),'expired');
+  assert.deepEqual(f.commits,[]);
+});
