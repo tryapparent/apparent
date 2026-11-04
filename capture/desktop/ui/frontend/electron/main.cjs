@@ -260,9 +260,14 @@ app.whenReady().then(() => {
   });
   for (const operation of ['save', 'reset']) {
     ipcMain.handle(`apparent:${operation}-retention`, async (event, ...args) => {
-      const preset = operation === 'save' ? args[0] : undefined;
-      validateStorage(event, operation === 'save' && args.length === 1 && ['week', 'month', 'forever'].includes(preset) ? [] : args);
-      if (operation === 'save' && args.length !== 1) throw new Error('Invalid preset');
+      const policy = operation === 'save' ? args[0] : undefined;
+      validateStorage(event, operation === 'save' && args.length === 1 ? [] : args);
+      if (operation === 'save' && (!policy || Object.keys(policy).length !== 2 ||
+          !['mediaDays', 'bundleDays'].every(key => Object.hasOwn(policy, key)) ||
+          !['mediaDays', 'bundleDays'].every(key => policy[key] === null ||
+            (Number.isInteger(policy[key]) && policy[key] >= 0 && policy[key] <= 0xffffffff)))) {
+        throw new Error('Invalid retention policy');
+      }
       if (mutation) return { status: 'error', code: 'app_busy' };
       if (!retentionRevision) return { status: 'error', code: 'refresh_required' };
       const expected = retentionRevision;
@@ -271,7 +276,7 @@ app.whenReady().then(() => {
       storageVersion += 1;
       const token = generation;
       try {
-        const result = await storagePreference(os.homedir(), `${operation}retention`, { expected, preset });
+        const result = await storagePreference(os.homedir(), `${operation}retention`, { expected, policy });
         return token === generation ? projectRetention(result) : { status: 'cancelled' };
       } finally { storageVersion += 1; mutation = false; }
     });

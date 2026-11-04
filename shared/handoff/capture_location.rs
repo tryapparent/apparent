@@ -18,7 +18,11 @@ fn revision(raw: &serde_json::Value) -> String {
     // An opaque stale-edit fingerprint, not an authentication token.
     // DefaultHasher is available on both platforms without a crypto dependency.
     let mut hash = std::collections::hash_map::DefaultHasher::new();
-    serde_json::to_vec(&raw["capturesDir"]).unwrap().hash(&mut hash);
+    let captures_dir = match raw.get("capturesDir") {
+        Some(value) => serde_json::json!({"present":true,"value":value}),
+        None => serde_json::json!({"present":false,"value":null}),
+    };
+    serde_json::to_vec(&captures_dir).unwrap().hash(&mut hash);
     format!("{:016x}", hash.finish())
 }
 
@@ -73,14 +77,14 @@ fn snapshot(raw: &serde_json::Value, environment: Option<PathBuf>) -> Result<Sna
 /// `admit` runs after acquiring the existing config flock, against the fresh raw object.
 /// Errors are fixed codes; callers must never forward config-store diagnostics to a renderer.
 pub fn set_in(
-    path: &Path, value: Option<&str>, expected: Option<&str>, admit: impl FnOnce() -> bool,
+    path: &Path, value: Option<&str>, expected: Option<&str>, admit: impl Fn() -> bool,
 ) -> std::result::Result<(), &'static str> {
     let value = value.map(str::trim).filter(|s| !s.is_empty());
     if value.is_some_and(|s| s.len() > 4096 || s.contains('\0') || configured_captures_dir(s).is_none()) {
         return Err("invalid_path");
     }
     let mut refusal = None;
-    let result = update_config_in(path, |raw| {
+    let result = update_config_allowed_in(path, &admit, |raw| {
         if !admit() { refusal = Some("admission_expired"); bail!("expired"); }
         if expected.is_some_and(|expected| revision(raw) != expected) {
             refusal = Some("conflict"); bail!("conflict");
@@ -91,13 +95,20 @@ pub fn set_in(
         }
         Ok(())
     });
-    result.map_err(|_| refusal.unwrap_or("config_write_failed"))
+    result.map_err(|_| refusal.unwrap_or_else(|| {
+        if !admit() { return "admission_expired"; }
+        match read_raw(path) {
+            Ok(raw) if expected.is_some_and(|expected_value| revision(&raw) != expected_value) => "outcome_unknown",
+            _ => "config_write_failed",
+        }
+    }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
+    use std::{cell::Cell, rc::Rc};
 
     #[test]
     fn capture_location_transaction_preserves_secrets_conflicts_expires_and_resets() {
@@ -109,8 +120,15 @@ mod tests {
         let first = read_in(&path).unwrap();
         // Preserve an unrelated edit made while a picker is open.
         set_config_value_in(&path, "otherSetting", "new".into()).unwrap();
+        let mut current = read_raw(&path).unwrap();
+        current["capturesDir"] = serde_json::Value::Null;
+        fs::write(&path, serde_json::to_vec(&current).unwrap()).unwrap();
+        let explicit_null = read_in(&path).unwrap();
+        assert_ne!(first.revision, explicit_null.revision,
+            "CAS fingerprints distinguish an absent preference from explicit JSON null");
         let chosen = dir.join("captures with é");
-        set_in(&path, chosen.to_str(), Some(&first.revision), || true).unwrap();
+        assert_eq!(set_in(&path, chosen.to_str(), Some(&first.revision), || true), Err("conflict"));
+        set_in(&path, chosen.to_str(), Some(&explicit_null.revision), || true).unwrap();
         let saved = read_in(&path).unwrap();
         assert_eq!(saved.saved_path.as_deref(), chosen.to_str());
         assert_eq!(saved.source, "configured");
@@ -124,6 +142,24 @@ mod tests {
         for invalid in ["relative", "~someone", "/bad\0path"] {
             assert_eq!(set_in(&path, Some(invalid), None, || true), Err("invalid_path"));
         }
+        let next = dir.join("next captures");
+        super::set_config_directory_sync_failure(true);
+        assert_eq!(set_in(&path, Some(next.to_str().unwrap()), Some(&saved.revision), || true), Err("outcome_unknown"));
+        let after_unknown = read_in(&path).unwrap();
+        assert_eq!(after_unknown.saved_path.as_deref(), next.to_str());
+        let before_cancel = fs::read(&path).unwrap();
+        let admitted = Rc::new(Cell::new(true));
+        let hook_admitted = Rc::clone(&admitted);
+        super::set_config_write_hook(Some(Box::new(move |point, _| {
+            if point == "before_publish" {
+                hook_admitted.set(false);
+            }
+        })));
+        let third = dir.join("cancelled captures");
+        let cancelled = set_in(&path, Some(third.to_str().unwrap()), Some(&after_unknown.revision), || admitted.get());
+        super::set_config_write_hook(None);
+        assert_eq!(cancelled, Err("admission_expired"));
+        assert_eq!(fs::read(&path).unwrap(), before_cancel);
         let overridden = snapshot(&raw, Some(PathBuf::from("relative-env"))).unwrap();
         assert_eq!(overridden.source, "environment");
         assert_eq!(overridden.effective_path, "relative-env");
@@ -132,7 +168,7 @@ mod tests {
         fs::write(&blocked, "not a folder").unwrap();
         raw["capturesDir"] = blocked.to_str().unwrap().into();
         assert_eq!(snapshot(&raw, None).unwrap().source, "fallback");
-        set_in(&path, None, Some(&saved.revision), || true).unwrap();
+        set_in(&path, None, Some(&after_unknown.revision), || true).unwrap();
         assert!(!read_raw(&path).unwrap().as_object().unwrap().contains_key("capturesDir"));
         assert_eq!(read_in(&path).unwrap().source, "builtin");
         fs::write(&path, "malformed").unwrap();

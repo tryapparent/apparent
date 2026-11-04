@@ -32,9 +32,9 @@ declare global {
       requestDisconnectConnectSettings: () => Promise<ConnectSettings>;
       openConnectSharedLinks: () => Promise<ConnectSettings>;
       openConnectBrowser: () => Promise<ConnectSettings>;
-      readRetention: () => Promise<RetentionResult>;
-      saveRetention: (preset: string) => Promise<RetentionResult>;
-      resetRetention: () => Promise<RetentionResult>;
+      readRetention: () => Promise<NativeRetentionResult>;
+      saveRetention: (policy: RetentionPolicy) => Promise<NativeRetentionResult>;
+      resetRetention: () => Promise<NativeRetentionResult>;
       readCaptureUsage: () => Promise<UsageResult>;
       navigateSettings: (pane: string) => Promise<void>;
       showCaptureFolder: () => Promise<void>;
@@ -73,8 +73,14 @@ export type ConnectSettings =
   | { status: 'disabled' | 'disconnected' | 'cancelled' }
   | { status: 'error' };
 type Unavailable = Exclude<CaptureLocation, { status: 'connected' }>;
+export type RetentionPreset = 'week' | 'month' | 'forever';
+export type RetentionPolicy = { mediaDays: number | null; bundleDays: number | null };
+export type RetentionView = { preset: RetentionPreset | null;
+  options: { id: RetentionPreset; label: string }[]; note: string };
 export type RetentionResult = Unavailable | { status: 'connected'; custom: boolean;
-  retention: { preset: string | null; options: { id: string; label: string }[]; note: string } };
+  retention: RetentionView };
+export type NativeRetentionResult = Unavailable | { status: 'connected'; custom: boolean;
+  policy: { mediaDays: { present: boolean; value: number | null }; bundleDays: { present: boolean; value: number | null } } };
 export type UsageResult = Unavailable | { status: 'connected';
   usage: { effectivePath: string; displayPath: string; formatted: string } };
 

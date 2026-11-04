@@ -6,7 +6,7 @@ const path = require('node:path');
 const phases = new Set(['idle', 'selecting', 'starting', 'recording', 'processing', 'completed']);
 const reportingCodes = new Set(['invalid_request', 'config_read_failed', 'config_write_failed', 'app_busy', 'admission_expired']);
 const failure = { status: 'error', message: 'The Rust app did not return a valid state. Retry when it is responsive.' };
-const codes = new Set(['invalid_request', 'invalid_path', 'conflict', 'admission_expired', 'config_write_failed',
+const codes = new Set(['invalid_request', 'invalid_path', 'conflict', 'admission_expired', 'outcome_unknown', 'config_write_failed',
   'config_read_failed', 'app_busy', 'app_unresponsive', 'feature_disabled', 'usage_unavailable']);
 const text = (value) => typeof value === 'string' && Buffer.byteLength(value) <= 4096 && !value.includes('\0');
 
@@ -133,8 +133,11 @@ function storagePreference(home, operation, fields = {}, timeoutMs = 3500) {
     request.expected = fields.expected;
   }
   if (operation === 'saveretention') {
-    if (!['week', 'month', 'forever'].includes(fields.preset)) throw new Error('Invalid preset');
-    request.preset = fields.preset;
+    const policy = fields.policy;
+    const validDays = value => value === null || (Number.isInteger(value) && value >= 0 && value <= 0xffffffff);
+    if (!policy || Object.keys(policy).length !== 2 || !validDays(policy.mediaDays) || !validDays(policy.bundleDays))
+      throw new Error('Invalid retention policy');
+    request.policy = { mediaDays: policy.mediaDays, bundleDays: policy.bundleDays };
   }
   return exchange(home, JSON.stringify(request) + '\n', (value) => {
     if (value?.error) return decodeStorage(value);
@@ -145,12 +148,12 @@ function storagePreference(home, operation, fields = {}, timeoutMs = 3500) {
         : { status: 'error', code: 'invalid_response' };
     }
     const r = value?.retention;
-    if (!r || !(r.preset === null || ['week', 'month', 'forever'].includes(r.preset)) || !text(r.note) ||
-        typeof value.custom !== 'boolean' || !/^[a-f0-9]{16}$/.test(value.revision) ||
-        !Array.isArray(r.options) || r.options.length !== 3 ||
-        !r.options.every((o, i) => o.id === ['week', 'month', 'forever'][i] && text(o.label))) return { status: 'error', code: 'invalid_response' };
-    return { status: 'connected', retention: { preset: r.preset, note: r.note,
-      options: r.options.map(o => ({ id: o.id, label: o.label })) }, custom: value.custom, revision: value.revision };
+    const field = v => v && typeof v.present === 'boolean' &&
+      (v.value === null || (Number.isInteger(v.value) && v.value >= 0 && v.value <= 0xffffffff));
+    if (!r || !field(r.mediaDays) || !field(r.bundleDays) || typeof value.custom !== 'boolean' ||
+        !/^[a-f0-9]{16}$/.test(value.revision)) return { status: 'error', code: 'invalid_response' };
+    return { status: 'connected', policy: { mediaDays: { present: r.mediaDays.present, value: r.mediaDays.value },
+      bundleDays: { present: r.bundleDays.present, value: r.bundleDays.value } }, custom: value.custom, revision: value.revision };
   }, 16384, timeoutMs, { status: 'error', code: mutation ? 'outcome_unknown' : 'timeout' });
 }
 

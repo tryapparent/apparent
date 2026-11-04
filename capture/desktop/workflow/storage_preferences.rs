@@ -1,22 +1,69 @@
-//! Narrow experimental Storage bridge; policy and config transactions remain Rust-owned.
-use crate::capture::engine::bundle::retention::{Policy, Preset};
-use crate::shared::handoff::{capture_location, update_config_in};
+//! Narrow Storage transaction executor; Settings policy and persistence intent live in TypeScript.
+use crate::shared::handoff::{capture_location, update_config_allowed_in};
 use std::hash::{Hash, Hasher};
 use std::os::fd::{FromRawFd, IntoRawFd};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
+fn field(raw: &serde_json::Value, name: &str) -> serde_json::Value {
+    match raw
+        .get("retention")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|r| r.get(name))
+    {
+        Some(value) => serde_json::json!({"present":true,"value":value}),
+        None => serde_json::json!({"present":false,"value":null}),
+    }
+}
+
+fn valid_days(field: &serde_json::Value) -> bool {
+    field["present"].as_bool() == Some(false)
+        || field["value"].is_null()
+        || field["value"]
+            .as_u64()
+            .is_some_and(|n| n <= u32::MAX as u64)
+}
+
 fn revision(raw: &serde_json::Value) -> String {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
-    raw["retention"].to_string().hash(&mut hash);
+    serde_json::json!({"mediaDays":field(raw,"mediaDays"),"bundleDays":field(raw,"bundleDays")})
+        .to_string().hash(&mut hash);
     format!("{:016x}", hash.finish())
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct SavePolicy {
+    #[serde(rename = "mediaDays")]
+    pub(super) media_days: serde_json::Value,
+    #[serde(rename = "bundleDays")]
+    pub(super) bundle_days: serde_json::Value,
+}
+
+impl SavePolicy {
+    pub(super) fn valid(&self) -> bool {
+        let valid = |days: &serde_json::Value| {
+            days.is_null() || days.as_u64().is_some_and(|n| n <= u32::MAX as u64)
+        };
+        valid(&self.media_days) && valid(&self.bundle_days)
+    }
 }
 
 pub(super) fn read(config: &Path) -> Result<serde_json::Value, &'static str> {
     let raw = capture_location::read_raw(config).map_err(|_| "config_read_failed")?;
-    let policy: Policy = serde_json::from_value(raw["retention"].clone()).unwrap_or_default();
+    if raw
+        .get("retention")
+        .is_some_and(|value| !value.is_object())
+    {
+        return Err("config_read_failed");
+    }
+    let media_days = field(&raw, "mediaDays");
+    let bundle_days = field(&raw, "bundleDays");
+    if !valid_days(&media_days) || !valid_days(&bundle_days) {
+        return Err("config_read_failed");
+    }
     Ok(serde_json::json!({
-        "retention": crate::capture::desktop::settings::settings::retention_view(&policy),
+        "retention": {"mediaDays":media_days,"bundleDays":bundle_days},
         "revision": revision(&raw),
         "custom": raw["retention"].get("mediaDays").is_some() || raw["retention"].get("bundleDays").is_some(),
     }))
@@ -24,21 +71,15 @@ pub(super) fn read(config: &Path) -> Result<serde_json::Value, &'static str> {
 
 pub(super) fn save(
     config: &Path,
-    preset: Option<&str>,
+    policy: Option<&SavePolicy>,
     expected: &str,
-    admit: impl FnOnce() -> bool,
+    admit: impl Fn() -> bool,
 ) -> Result<serde_json::Value, &'static str> {
-    let policy = preset
-        .map(|id| {
-            Preset::ALL
-                .into_iter()
-                .find(|p| crate::capture::desktop::settings::settings::preset_id(*p) == id)
-                .map(|p| p.policy())
-                .ok_or("invalid_request")
-        })
-        .transpose()?;
+    if policy.is_some_and(|p| !p.valid()) {
+        return Err("invalid_request");
+    }
     let mut refusal = None;
-    update_config_in(config, |raw| {
+    update_config_allowed_in(config, &admit, |raw| {
         if !admit() {
             refusal = Some("admission_expired");
             anyhow::bail!("expired");
@@ -47,14 +88,21 @@ pub(super) fn save(
             refusal = Some("conflict");
             anyhow::bail!("conflict");
         }
+        if raw
+            .get("retention")
+            .is_some_and(|value| !value.is_object())
+        {
+            refusal = Some("config_write_failed");
+            anyhow::bail!("invalid retention object");
+        }
         match policy {
             Some(policy) => {
                 // Keep unrecognized nested policy keys, too.
                 if !raw["retention"].is_object() {
                     raw["retention"] = serde_json::json!({});
                 }
-                raw["retention"]["mediaDays"] = serde_json::json!(policy.media_days);
-                raw["retention"]["bundleDays"] = serde_json::json!(policy.bundle_days);
+                raw["retention"]["mediaDays"] = policy.media_days.clone();
+                raw["retention"]["bundleDays"] = policy.bundle_days.clone();
             }
             None => {
                 if let Some(fields) = raw["retention"].as_object_mut() {
@@ -70,7 +118,17 @@ pub(super) fn save(
         }
         Ok(())
     })
-    .map_err(|_| refusal.unwrap_or("config_write_failed"))?;
+    .map_err(|_| {
+        refusal.unwrap_or_else(|| {
+            if !admit() {
+                return "admission_expired";
+            }
+            match capture_location::read_raw(config) {
+                Ok(raw) if revision(&raw) != expected => "outcome_unknown",
+                _ => "config_write_failed",
+            }
+        })
+    })?;
     // Same timing as legacy Settings: schedule the existing worker, never run cleanup here.
     crate::capture::engine::bundle::retention::nudge();
     read(config)

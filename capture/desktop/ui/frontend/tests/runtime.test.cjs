@@ -126,20 +126,24 @@ test('copy mismatch and timeout never become success or automatic retries', asyn
 const snapshot = { savedPath: '/saved', effectivePath: '/override', displayPath: '/override',
   custom: true, source: 'environment', revision: 'a'.repeat(16) };
 test('retention and usage are explicitly projected; malformed policy fails closed', async t => {
-  const r = { revision: 'a'.repeat(16), custom: false, retention: { preset: 'week', note: 'Rust note',
-    options: ['week', 'month', 'forever'].map(id => ({ id, label: id, secret: 'hidden' })) }, secret: 'hidden' };
+  const r = { revision: 'a'.repeat(16), custom: false, retention: {
+    mediaDays: { present: false, value: null }, bundleDays: { present: false, value: null } }, secret: 'hidden' };
   const f = await fixture(t, JSON.stringify(r) + '\n');
   const decoded = await storagePreference(f.home, 'retention');
-  assert.equal(decoded.secret, undefined); assert.equal(decoded.retention.options[0].secret, undefined);
-  await storagePreference(f.home, 'saveretention', { expected: r.revision, preset: 'month', secret: 'hidden' });
-  assert.deepEqual({ ...JSON.parse(f.requests[1]), deadline: 0 }, { storage: 'saveretention', expected: r.revision, preset: 'month', deadline: 0 });
-  assert.throws(() => storagePreference(f.home, 'saveretention', { expected: r.revision, preset: '/arbitrary' }));
-  const invalid = await fixture(t, JSON.stringify({ ...r, retention: { ...r.retention, options: [] } }) + '\n');
+  assert.equal(decoded.secret, undefined);
+  await storagePreference(f.home, 'saveretention', { expected: r.revision,
+    policy: { mediaDays: 30, bundleDays: 90 } });
+  assert.deepEqual({ ...JSON.parse(f.requests[1]), deadline: 0 }, { storage: 'saveretention', expected: r.revision,
+    policy: { mediaDays: 30, bundleDays: 90 }, deadline: 0 });
+  assert.throws(() => storagePreference(f.home, 'saveretention', { expected: r.revision, policy: { mediaDays: -1, bundleDays: 30 } }));
+  assert.throws(() => storagePreference(f.home, 'saveretention', { expected: r.revision,
+    policy: { mediaDays: 30, bundleDays: 90, secret: 'ignored' } }));
+  const invalid = await fixture(t, JSON.stringify({ ...r, retention: { mediaDays: { present: 'yes', value: 7 }, bundleDays: r.retention.bundleDays } }) + '\n');
   assert.deepEqual(await storagePreference(invalid.home, 'retention'), { status: 'error', code: 'invalid_response' });
   const usage = await fixture(t, JSON.stringify({ usage: { effectivePath: '/captures', displayPath: '~/captures', formatted: '1 MB', secret: 'hidden' } }) + '\n');
   assert.deepEqual(await storagePreference(usage.home, 'usage'), { status: 'connected', usage: { effectivePath: '/captures', displayPath: '~/captures', formatted: '1 MB' } });
   const stalled = await fixture(t, null);
-  assert.deepEqual(await storagePreference(stalled.home, 'saveretention', { expected: r.revision, preset: 'month' }, 50), { status: 'error', code: 'outcome_unknown' });
+  assert.deepEqual(await storagePreference(stalled.home, 'saveretention', { expected: r.revision, policy: { mediaDays: 30, bundleDays: 90 } }, 50), { status: 'error', code: 'outcome_unknown' });
   assert.equal(stalled.requests.length, 1);
 });
 test('storage uses typed requests and projects only permitted snapshot fields', async (t) => {

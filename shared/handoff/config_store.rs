@@ -87,6 +87,8 @@ fn update_config_checked_in(
         let mut file = writer.open(&tmp, libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL)?;
         file.write_all(&body)?;
         file.sync_all()?;
+        #[cfg(test)]
+        config_write_hook("before_publish", path);
         ensure!(allowed.is_none_or(|check| check()), "cancelled");
         let fd = writer.directory.as_raw_fd();
         if unsafe { libc::renameat(fd, tmp.as_ptr(), fd, writer.name.as_ptr()) } != 0 {

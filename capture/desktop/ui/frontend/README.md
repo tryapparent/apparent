@@ -154,22 +154,29 @@ the owned generated-fixture windows and stay outside git.
 Installed Settings routes Storage to the branded React presentation by default.
 `experiments.electronCaptureLocation=false` restores the native Storage page on
 its next open. No retention policy is changed by enabling the presentation.
-`readRetention()`, `saveRetention(preset)`, `resetRetention()` and
-`readCaptureUsage()` are the only additional preload methods. Only Save takes
-an argument: a validated `week`, `month` or `forever` identifier. Rust supplies
-the option labels, current/custom policy, policy note, effective path and
-formatted logical-byte usage. No renderer-provided path, config, revision,
-deadline, filesystem, shell or arbitrary IPC operation is accepted.
+`readRetention()`, `saveRetention(policy)`, `resetRetention()` and
+`readCaptureUsage()` are the only additional preload methods. TypeScript owns
+retention defaults, custom-value validation, preset mapping, labels and notes:
+Week is 7 media/30 bundle days, Month is 30/90, Forever is null/null. An absent
+field falls back independently to the 7/30 default; explicit JSON `null` means
+forever. Rust returns presence-aware values and a stale-edit revision to main;
+main retains the revision and exposes only the values to the renderer. Save
+accepts the two allowlisted `mediaDays`/`bundleDays` values, never a config object,
+path or renderer revision. Effective-path facts, native selection and formatted
+logical-byte usage remain native filesystem mechanics.
 
 The existing bounded socket worker admits `retention`, `saveretention`,
 `resetretention` and `usage` through its unchanged activation/expiry gate.
 Main retains the last authoritative retention revision; a concurrent edit
-conflicts rather than silently overwriting it. The existing config transaction
-preserves unrelated top-level and nested policy keys and secrets; Reset removes
-only the recognized retention fields, restoring `Policy::default()` (7-day
-media/30-day bundle policy). A custom hand-edited policy remains visible until
-explicitly replaced. Writes fail closed, including malformed/unsafe config;
-failed or outcome-unknown saves require a refresh and are never retried.
+conflicts rather than silently overwriting it. The config transaction compares
+fresh presence-aware owner values under the persistent config lock, preserves
+unrelated top-level and nested policy keys and secrets, and durably publishes
+only after file and directory sync. Reset removes only the recognized retention
+fields. A custom hand-edited policy remains visible until explicitly replaced;
+invalid stored values fail closed. Writes fail closed on malformed/unsafe config;
+failed or outcome-unknown saves require a refresh and are never retried. Rust
+config locking/CAS remains a named temporary executor dependency; the TypeScript
+Storage route owns persistence intent. No Node-side config read/modify/write runs.
 
 Saving/resetting nudges the **existing** Rust cleanup worker, as native Settings
 does: it schedules a pass about five seconds later, deferring while recording.
@@ -329,8 +336,9 @@ frames with a trailing newline. `deadline` is same-host monotonic milliseconds;
 Rust caps admission at three seconds and rechecks it after acquiring the config
 lock. Storage uses libuv's clock: `CLOCK_MONOTONIC` on Linux,
 `CLOCK_MONOTONIC_RAW` on macOS. The legacy Rust-client clock is unchanged.
-`expected` is an opaque 16-hex stale-edit fingerprint of **only** the raw
-`capturesDir` value, not a security token or portable content digest.
+`expected` is an opaque 16-hex stale-edit fingerprint of **only** the presence-tagged
+raw `capturesDir` value (so absent and explicit JSON `null` differ), not a security
+token or portable content digest.
 Other config edits survive; a changed capture preference refuses the stale save.
 One worker handles Storage without blocking the GUI or queuing config writers.
 Legacy state/start/inspect/stop/cancel requests keep their existing contract.

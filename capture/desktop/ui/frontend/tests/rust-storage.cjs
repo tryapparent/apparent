@@ -34,15 +34,17 @@ async function main() {
   assert.equal(raw.capturesDir, selected);
   assert.deepEqual(await captureLocation(home, 'reset', { expected: first.storage.revision }), { status: 'error', code: 'conflict' });
   const policy = await storagePreference(home, 'retention');
-  assert.equal(policy.retention.preset, 'week');
-  const changedPolicy = await storagePreference(home, 'saveretention', { expected: policy.revision, preset: 'month' });
-  assert.equal(changedPolicy.retention.preset, 'month');
+  assert.deepEqual(policy.policy, { mediaDays: { present: false, value: null }, bundleDays: { present: false, value: null } });
+  const changedPolicy = await storagePreference(home, 'saveretention', { expected: policy.revision,
+    policy: { mediaDays: 30, bundleDays: 90 } });
+  assert.deepEqual(changedPolicy.policy, { mediaDays: { present: true, value: 30 }, bundleDays: { present: true, value: 90 } });
   assert.deepEqual(await storagePreference(home, 'retention'), changedPolicy);
-  assert.deepEqual(await storagePreference(home, 'saveretention', { expected: policy.revision, preset: 'forever' }), { status: 'error', code: 'conflict' });
+  assert.deepEqual(await storagePreference(home, 'saveretention', { expected: policy.revision,
+    policy: { mediaDays: null, bundleDays: null } }), { status: 'error', code: 'conflict' });
   await fs.writeFile(path.join(selected, 'synthetic.bin'), Buffer.alloc(1_000_000));
   assert.equal((await storagePreference(home, 'usage')).usage.formatted, '1 MB');
   const defaultPolicy = await storagePreference(home, 'resetretention', { expected: changedPolicy.revision });
-  assert.equal(defaultPolicy.retention.preset, 'week');
+  assert.deepEqual(defaultPolicy.policy, { mediaDays: { present: false, value: null }, bundleDays: { present: false, value: null } });
   assert.equal(defaultPolicy.custom, false);
   assert.equal(JSON.parse(await fs.readFile(config, 'utf8')).privateFixture, 'keep');
   assert.equal((await fs.stat(path.join(selected, 'synthetic.bin'))).size, 1_000_000);
