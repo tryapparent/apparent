@@ -39,6 +39,8 @@ jobs:
         run: node --experimental-strip-types --test enablement/verification/*.test.ts enablement/native/mac-setup.test.ts enablement/native/owned-processes.test.ts enablement/native/cache-command-timing.test.ts
       - name: Recipient CLI installation contracts
         run: node --experimental-strip-types --test capture/agent/scripts/tests/install-cli.test.ts
+      - name: Linux release download cache contracts
+        run: node --experimental-strip-types --test capture/desktop/scripts/linux/appimage/*.test.ts
       - name: Selector and hook contracts (no native proof)
         run: |
           python3 -m unittest discover -s enablement/tests -p 'test_pre_push_guard.py'
@@ -339,6 +341,7 @@ jobs:
         shell: bash
         run: |
           npm --prefix capture/desktop/ui/frontend ci --no-audit --no-fund
+          npm --prefix capture/desktop/ui/frontend run build
           # Electron 45 downloads lazily. Resolve it once before the test;
           # do not capture its download log as part of an executable pathname.
           node -e "require('./capture/desktop/ui/frontend/node_modules/electron')"
@@ -348,12 +351,27 @@ jobs:
             electron="$PWD/capture/desktop/ui/frontend/node_modules/electron/dist/electron"
           fi
           test -x "$electron"
+          bridge_runner=()
+          if [ "$RUNNER_OS" = Linux ]; then
+            test "$GITHUB_ACTIONS" = true
+            test "$RUNNER_ENVIRONMENT" = github-hosted
+            command -v xvfb-run
+            # Configure only this job's locked Electron download. Keep Chromium
+            # sandboxing enabled for the actual Notes renderer roundtrip.
+            sandbox="$PWD/capture/desktop/ui/frontend/node_modules/electron/dist/chrome-sandbox"
+            test -f "$sandbox"
+            test ! -L "$sandbox"
+            sudo chown root:root -- "$sandbox"
+            sudo chmod 4755 -- "$sandbox"
+            test "$(stat -c '%u:%g:%a' -- "$sandbox")" = '0:0:4755'
+            bridge_runner=(xvfb-run -a)
+          fi
           storage_tmp="$(mktemp -d "$HOME/.apparent-storage.XXXXXX")"
           readonly storage_tmp
           trap 'rm -rf -- "$storage_tmp"' EXIT
           TMPDIR="$storage_tmp" APPARENT_STORAGE_TEST_ELECTRON="$electron" \
             APPARENT_CONNECT_TEST_ELECTRON="$electron" \
-            cargo test -j 3 --locked _electron_rust_roundtrip -- --ignored --nocapture
+            "${bridge_runner[@]}" cargo test -j 3 --locked _electron_rust_roundtrip -- --ignored --nocapture
       - name: Install the Mac candidate (packaging, not launch acceptance)
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
         shell: bash
