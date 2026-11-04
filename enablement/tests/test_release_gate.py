@@ -60,8 +60,10 @@ class AdmissionTests(unittest.TestCase):
             section = re.search(r'^  ' + job + r':\n(.*?)(?=^  [a-z]|\Z)', workflow, re.M | re.S)[1]
             self.assertIn("if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'", section)
         receipt = workflow.split('  release-ready:\n', 1)[1]
-        self.assertIn("if: github.ref == 'refs/heads/main'\n", receipt)
-        self.assertNotIn('workflow_dispatch', receipt)
+        self.assertIn("github.ref == 'refs/heads/main'", receipt)
+        self.assertIn("github.ref == 'refs/heads/t3/onboarding-mac-release-baseline'", receipt)
+        self.assertIn("github.repository == 'tryapparent/apparent'", receipt)
+        self.assertIn("github.event_name == 'workflow_dispatch'", receipt)
         for platform in self.runs:
             self.runs[platform].update(event='workflow_dispatch', head_branch='feature')
         for platform in self.runs:
@@ -171,6 +173,54 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(gate.admit(self.repo, self.sha, '84', fetch, platform='macos'), self.sha)
         with self.assertRaises(ValueError):
             gate.pages('jobs', lambda _: dict(total_count=1, workflow_runs=[]))
+
+
+
+class OnboardingAdmissionTests(unittest.TestCase):
+    fetch_main = AdmissionTests.fetch
+    def setUp(self):
+        AdmissionTests.setUp(self)
+        self.repo = 'tryapparent/apparent'
+        self.status = 'ahead'
+        self.branch_sha = self.sha
+        self.jobs['macos'].append(dict(name='onboarding-candidate', status='completed', conclusion='success'))
+        for run in self.runs.values():
+            run.update(repository={'full_name': self.repo}, head_repository={'full_name': self.repo},
+                       head_branch='t3/onboarding-mac-release-baseline', event='workflow_dispatch')
+
+    def fetch(self, path):
+        if '/git/ref/heads/' in path:
+            return {'object': {'type': 'commit', 'sha': self.branch_sha}}
+        return self.fetch_main(path)
+
+    def candidate(self):
+        return gate.admit(self.repo, self.sha, fetch=self.fetch, platform='macos', onboarding_candidate=True)
+
+    def test_scoped_candidate_requires_exact_both_platforms_and_current_branch(self):
+        self.assertEqual(self.candidate(), self.sha)
+        for platform in self.runs:
+            original = copy.deepcopy(self.runs[platform])
+            for field, value in [('head_sha', 'b'*40), ('head_branch', 'feature'), ('event', 'push'),
+                                 ('conclusion', 'failure'), ('status', 'queued'), ('path', 'other.yml')]:
+                with self.subTest(platform=platform, field=field):
+                    self.runs[platform][field] = value
+                    with self.assertRaises(ValueError): self.candidate()
+                    self.runs[platform] = copy.deepcopy(original)
+            receipt = self.jobs[platform].pop()
+            with self.assertRaises(ValueError): self.candidate()
+            self.jobs[platform].append(receipt)
+        self.branch_sha = 'b'*40
+        with self.assertRaisesRegex(ValueError, 'branch moved'): self.candidate()
+
+    def test_scoped_candidate_requires_published_baseline_ancestry(self):
+        for status in ['behind', 'diverged', 'identical']:
+            self.status = status
+            with self.assertRaisesRegex(ValueError, 'descend'): self.candidate()
+
+    def test_exception_cannot_admit_other_repositories_or_linux_publication(self):
+        for repo, platform in [('example/project', 'macos'), (self.repo, 'linux')]:
+            with self.assertRaises(ValueError):
+                gate.admit(repo, self.sha, fetch=self.fetch, platform=platform, onboarding_candidate=True)
 
 
 if __name__ == '__main__': unittest.main()

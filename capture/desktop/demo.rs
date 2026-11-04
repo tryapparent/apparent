@@ -47,6 +47,7 @@ pub(crate) fn generate_demo_bundle(out: Option<PathBuf>) -> Result<(PathBuf, App
         circle_pts.extend_from_slice(&[x, y, i * 18]);
     }
     let circle_stroke = Stroke {
+        color: None,
         t0: 2_900,
         t1: 2_900 + 36 * 18,
         fw,
@@ -66,6 +67,7 @@ pub(crate) fn generate_demo_bundle(out: Option<PathBuf>) -> Result<(PathBuf, App
         shaft_pts.extend_from_slice(&[x, y, i * 16]);
     }
     let arrow_shaft = Stroke {
+        color: None,
         t0: 5_800,
         t1: 5_800 + 12 * 16,
         fw,
@@ -76,6 +78,7 @@ pub(crate) fn generate_demo_bundle(out: Option<PathBuf>) -> Result<(PathBuf, App
         pts: shaft_pts,
     };
     let arrow_head = Stroke {
+        color: None,
         t0: 6_100,
         t1: 6_160,
         fw,
@@ -98,6 +101,7 @@ pub(crate) fn generate_demo_bundle(out: Option<PathBuf>) -> Result<(PathBuf, App
 
     // 3. Numbered pin on the composer send button
     let pin_stroke = Stroke {
+        color: None,
         t0: 8_900,
         t1: 8_900,
         fw,

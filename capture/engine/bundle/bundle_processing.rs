@@ -1055,6 +1055,7 @@ mod tests {
             ]
         };
         let strokes = vec![Stroke {
+            color: None,
             t0: 250,
             t1: 260,
             fw: 32,

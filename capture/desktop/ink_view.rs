@@ -49,10 +49,11 @@ struct Scene {
 }
 
 fn ink_color(alpha: f32) -> Hsla {
+    let [r,g,b]=crate::shared::handoff::pen::rgb();
     gpui::Rgba {
-        r: 1.0,
-        g: 0.23,
-        b: 0.19,
+        r: r as f32/255.0,
+        g: g as f32/255.0,
+        b: b as f32/255.0,
         a: alpha,
     }
     .into()

@@ -280,3 +280,14 @@ or a renderer crash restore the native presentation. During capture, constructio
 of a crashed presentation’s native replacement waits until capture ends. The
 first-capture opt-out changes the workflow requirements; it does not select a
 second competing onboarding surface.
+
+
+The release-baseline onboarding candidate uses the existing packaged Electron route
+for the approved pen picker, permission checklist, shortcut editor and floating
+practice coaches. The lesson follows real whiteboard/screen ink, completion and
+clipboard receipts, then asks the person to confirm a manual paste and open the
+same practice bundle. Confirmation does not establish destination focus or audio
+quality; installed platform acceptance remains required. `penColor` accepts
+`coral`, `purple`, `blue` or `green`, loads at app startup and applies immediately
+when saved in setup. Legacy strokes without a color retain red. Config writes
+preserve unrelated keys. See [candidate admission and proof](onboarding-release-candidate.md).

@@ -1,3 +1,4 @@
+pub mod pen;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -814,6 +815,8 @@ fn opencode_binary() -> Result<PathBuf> {
 #[derive(Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
+    #[serde(default)]
+    pub pen_color: Option<String>,
     /// Hosted sync preference; credentials are separate private artifacts, not settings.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[serde(default)]

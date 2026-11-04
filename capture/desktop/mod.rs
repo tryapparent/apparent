@@ -1574,6 +1574,23 @@ impl ApparentCoordinator {
     }
 
     /// Polled while the gate holds a request: shows the permissions window once ⌥⇧ is up.
+    pub(in crate::capture::desktop) fn tick_onboarding_practice(&mut self,cx:&mut Context<Self>) {
+        if !self.onboarding.as_ref().is_some_and(|s|s.practice_active()) {return;}
+        #[cfg(target_os="macos")]
+        let anchor=if self.onboarding.as_ref().is_some_and(|s|s.practice_locating()) {crate::capture::desktop::ui::macos::status_bar_anchor()} else {self.native_pill.as_ref().and_then(|p|p.coach_anchor())};
+        #[cfg(not(target_os="macos"))]
+        let anchor=None;
+        if let Some(session)=self.onboarding.as_mut(){session.practice_anchor(anchor);}
+        let board_frame=whiteboard::frame(cx);
+        if let Some(session)=self.onboarding.as_mut(){session.practice_board(board_frame);}
+        let board=self.whiteboard.borrow().strokes.iter().any(|s|s.len()>3);
+        let screen=self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|s|!s.laser && s.pts.len()>9).count();
+        let processing=self.is_processing();
+        let was_screen=self.onboarding.as_ref().unwrap().practice_screen_stage();
+        if let Some(session)=self.onboarding.as_mut() {session.observe_practice(board,screen,processing,None);}
+        if !was_screen && self.onboarding.as_ref().is_some_and(|s|s.practice_screen_stage()) {cx.defer(whiteboard::close);}
+    }
+
     pub fn tick_gate(&mut self) {
         use crate::capture::desktop::settings::onboarding::{Flow, Input, Mode, Permission};
         let Some(asks) = self.gate.tick(crate::capture::engine::runtime::modifier_flags() != 0) else {
@@ -1597,7 +1614,10 @@ impl ApparentCoordinator {
 
     fn onboarding_event(&mut self, event: crate::capture::desktop::settings::onboarding::Event, cx: &mut Context<Self>) {
         use crate::capture::desktop::settings::onboarding::{Effect, Event, Progress};
+        let Some(event) = event.for_current_session(self.onboarding.as_ref().map(|s|s.source())) else {return;};
+        let Some(event) = event.for_current_transport(self.onboarding.as_ref().map(|s|s.transport_generation())) else {return;};
         let effect = match event {
+            Event::Session { .. } | Event::Transport { .. } => Effect::None,
             Event::Launch(grants) => {
                 self.note_grants(&grants);
                 let mut progress = Progress::load();
@@ -2332,6 +2352,7 @@ impl ApparentCoordinator {
         }
         let capture = match (self.island_phase, phase) {
             (IslandPhase::Recording, IslandPhase::Recording) => None,
+            (_, IslandPhase::Selecting { .. }) => Some(Input::CaptureSelecting),
             (_, IslandPhase::Recording) => Some(Input::CaptureStarted),
             (IslandPhase::Recording | IslandPhase::Processing, IslandPhase::Completed { .. }) => {
                 Some(Input::CaptureEnded { completed: true })
@@ -6768,6 +6789,7 @@ pub fn run_app(
                                         crate::shared::handoff::load_bundle(std::path::Path::new("latest"))
                                     {
                                         loop_coord.update(cx, |coord, cx| {
+                                            if let Some(session)=coord.onboarding.as_mut(){session.practice_opened_bundle(&dir);}
                                             coord.mark_handled(&dir);
                                             coord.set_review_bundle((dir, bundle), None);
                                             cx.notify();
@@ -6856,6 +6878,7 @@ pub fn run_app(
                     if loop_coord.read(cx).gate.is_pending() {
                         loop_coord.update(cx, |coord, _| coord.tick_gate());
                     }
+                    loop_coord.update(cx, |coord, cx| coord.tick_onboarding_practice(cx));
                     if loop_coord.read(cx).is_island_visible() {
                         record_external_frontmost_app();
                         loop_coord.update(cx, |coord, cx| coord.island_tick(cx));
