@@ -95,6 +95,18 @@ jobs:
         timeout-minutes: 1
         with:
           xcode-version: '26.0'
+      - name: Pin the selected developer directory for Rust verification
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          selected_developer=$(xcode-select -p)
+          case "$selected_developer" in
+            /Applications/Xcode*.app/Contents/Developer) ;;
+            *) echo 'Unexpected selected Xcode developer directory' >&2; exit 1 ;;
+          esac
+          test -d "$selected_developer"
+          printf 'DEVELOPER_DIR=%s\n' "$selected_developer" >> "$GITHUB_ENV"
+          printf 'Selected developer directory: %s\n' "$selected_developer"
       - name: Begin bounded Metal preparation alongside Rust and cache setup
         timeout-minutes: 1
         run: |
@@ -192,6 +204,18 @@ jobs:
         timeout-minutes: 1
         with:
           xcode-version: '26.0'
+      - name: Pin the selected developer directory for Rust verification
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          selected_developer=$(xcode-select -p)
+          case "$selected_developer" in
+            /Applications/Xcode*.app/Contents/Developer) ;;
+            *) echo 'Unexpected selected Xcode developer directory' >&2; exit 1 ;;
+          esac
+          test -d "$selected_developer"
+          printf 'DEVELOPER_DIR=%s\n' "$selected_developer" >> "$GITHUB_ENV"
+          printf 'Selected developer directory: %s\n' "$selected_developer"
       - uses: dtolnay/rust-toolchain@stable
         timeout-minutes: 2
         with:
