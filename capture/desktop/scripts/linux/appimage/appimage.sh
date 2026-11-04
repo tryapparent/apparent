@@ -11,6 +11,11 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../../../../.." && pwd)"
 binary="$(realpath "${1:-$root/target/release/apparent}")"
+if [[ -n "${APPARENT_INSPECTION_REUSE:-}" ]]; then
+  reused="$(mktemp -d "$root/target/inspection-reuse-parent.XXXXXX")/bin"
+  node --experimental-strip-types "$root/capture/agent/inspection/delivery/composition.ts" reuse "$APPARENT_INSPECTION_REUSE" "$reused"
+  binary="$reused/apparent"
+fi
 arch="$(uname -m)"
 out="$root/target/appimage"
 tools="${APPARENT_PACKAGING_TOOLS_DIR:-$out/tools}"
@@ -40,6 +45,9 @@ for library in "$(dirname "$binary")"/libggml-cpu*.so; do
   [[ -f "$library" ]] || { echo "Missing transcribe runtime: $library" >&2; exit 1; }
   libraries+=(--library "$library")
 done
+
+mkdir -p "$appdir/usr/bin"
+node --experimental-strip-types "$root/capture/agent/inspection/delivery/composition.ts" package "$(dirname "$binary")" "$appdir/usr/bin"
 
 cd "$out"
 LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy \

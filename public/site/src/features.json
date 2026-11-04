@@ -1186,7 +1186,7 @@
       "says": "Print summary.md, apparent.json or the marks; pull plain PNGs of a time range.",
       "status": "stable@0.3.4",
       "platforms": ["mac", "linux"],
-      "note": "Existing Rust local inspection also builds and packages independently as apparent-inspect; the normal CLI adopts the same implementation. Standalone packaged macOS proof remains required before release.",
+      "note": "Local inspection uses the verified bundled apparent-inspect component, staged automatically with the app. Source-bound composition can reuse an unchanged root only after closure and provenance admission. Packaged macOS dispatch/signing proof remains required before release.",
       "docs": ["capture/agent/skills/apparent/SKILL.md", "capture/agent/inspection/README.md"]
     },
     {

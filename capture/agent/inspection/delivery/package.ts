@@ -46,7 +46,7 @@ export function build(archive: string, expectedHash: string, destination: string
   const debug = join(proof, 'installed/bin/apparent-inspect');
   assert.equal(sha256(readFileSync(debug)), result.executableSha256, 'Installed proof executable changed');
   const release = join(output, 'release-install');
-  run('cargo', ['install', '--locked', '--offline', '--path', join(proof, source[0]), '--root', release], output);
+  run('cargo', ['install', '--locked', '--offline', '--config', 'profile.release.strip="symbols"', '--path', join(proof, source[0]), '--root', release], output);
   const executable = join(release, 'bin/apparent-inspect');
   const home = realpathSync(join(proof, 'synthetic-home'));
   const environment = { ...process.env, HOME: home, APPARENT_CAPTURES_DIR: join(home, 'explicit-captures') };
@@ -60,7 +60,7 @@ export function build(archive: string, expectedHash: string, destination: string
   const bytes = readFileSync(executable);
   const manifest = { schema: 1, protocol: 1, executable: 'apparent-inspect',
     sourceSha: vcs.git.sha1, sourceArchiveSha256: expectedHash, version: source[0].slice('apparent-inspect-'.length),
-    target: binaryTarget(bytes), sha256: sha256(bytes) };
+    target: binaryTarget(bytes), profile: 'release-stripped', rustc: run('rustc', ['-vV']).trim(), sha256: sha256(bytes) };
   const payload = join(output, 'payload');
   mkdirSync(payload, { mode: 0o700 });
   writeFileSync(join(payload, manifest.executable), bytes, { mode: 0o755, flag: 'wx' });

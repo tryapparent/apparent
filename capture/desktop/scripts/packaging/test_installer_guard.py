@@ -55,9 +55,11 @@ case "$name" in
     fi ;;
   security) exit 1 ;;
   node)
+    if [[ "$1" == --experimental-strip-types ]]; then shift; fi
     case "$1" in
       */package-notes.mjs) mkdir -p "$2/dist" ;;
       */mac-artifact-consumer.ts) test "$MOCK_PREBUILT" = accepted ;;
+      */composition.ts) test "$2" = package ;;
       *) exit 90 ;;
     esac ;;
   taskpolicy|cargo|git|codesign|open|sleep|pgrep|pkill|ditto) : ;;

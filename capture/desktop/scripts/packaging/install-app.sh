@@ -19,7 +19,10 @@ cd "${REPO_DIR}"
 chmod +x "${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh" "${REPO_DIR}/capture/desktop/scripts/release/release-app.sh" 2>/dev/null || true
 SPARKLE_DIR="$("${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh" 2>/dev/null || true)"
 BINARY_DIR="${REPO_DIR}/target/debug"
-if [[ -n "${APPARENT_PREBUILT_DIR:-}" ]]; then
+if [[ -n "${APPARENT_INSPECTION_REUSE:-}" ]]; then
+  BINARY_DIR="$(mktemp -d "$REPO_DIR/target/inspection-reuse-parent.XXXXXX")/bin"
+  node --experimental-strip-types "$REPO_DIR/capture/agent/inspection/delivery/composition.ts" reuse "$APPARENT_INSPECTION_REUSE" "$BINARY_DIR"
+elif [[ -n "${APPARENT_PREBUILT_DIR:-}" ]]; then
   # An explicit immutable, successful main producer is required. Never rebuild
   # automatically after failed admission or silently consume a cached binary.
   node "${REPO_DIR}/enablement/verification/mac-artifact-consumer.ts" prepare "${APPARENT_PREBUILT_DIR}"
@@ -127,6 +130,9 @@ else
 fi
 python3 "${REPO_DIR}/capture/desktop/scripts/packaging/stage-settings.py" "${RESOURCES_DIR}/settings" --sign "${IDENTITY}" \
   --popups-destination "${RESOURCES_DIR}/note-ui"
+
+node --experimental-strip-types "$REPO_DIR/capture/agent/inspection/delivery/composition.ts" package "$BINARY_DIR" "$MACOS_DIR" codesign --force --sign "${IDENTITY}"
+
 
 if [[ -d "${FRAMEWORKS_DIR}/Sparkle.framework/Versions/B" ]]; then
   SPARKLE_VER="${FRAMEWORKS_DIR}/Sparkle.framework/Versions/B"
