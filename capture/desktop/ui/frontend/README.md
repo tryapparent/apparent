@@ -721,6 +721,8 @@ alone is insufficient: X11 focus can be cleared during that handoff. Only the
 still-active compositor note can receive this repair. Dismissed or replaced
 surface requests cannot reclaim focus; counters and decorative flights
 remain inactive. This is a Linux adapter correction; notes routing is unchanged.
+Focus ownership is checked after geometry placement, before compositor activation
+and again before the X11 repair, so an intervening app switch wins.
 
 Rust owns the private Chromium profile and removes it after reaping Electron,
 before the Finish receipt. Deleting it in Electron's `quit` event races Chromium's

@@ -1071,7 +1071,11 @@ fn pin_note_surface(id: u32, pid: u32, index: usize) {
         let visible = x11::window_info(id as isize).is_some_and(|w| w.pid == pid && w.on_screen());
         let result = if visible {
             place_note_with_keyboard_focus(
-                || linux::hyprland::place_note(id, pid, rect, focus),
+                || linux::hyprland::place_note(id, pid, rect, focus, || {
+                    let state = NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                    state.current(pid, id, index, generation)
+                        && x11::window_info(id as isize).is_some_and(|w| w.pid == pid && w.on_screen())
+                }),
                 focus,
                 || {
                     let state = NOTE_SURFACES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
