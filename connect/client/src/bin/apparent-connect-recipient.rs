@@ -32,6 +32,6 @@ fn main() {
     unsafe { libc::signal(libc::SIGINT, cancel as *const () as libc::sighandler_t); libc::signal(libc::SIGTERM, cancel as *const () as libc::sighandler_t); }
     match run() {
         Ok(result) => emit(json!({"protocol":1,"result":result})),
-        Err(error) => { emit(json!({"protocol":1,"error":{"code":if CANCELLED.load(Ordering::Relaxed) {"cancelled"} else {"operation_failed"},"message":error.to_string()}})); std::process::exit(1); }
+        Err(_error) => { emit(json!({"protocol":1,"error":{"code":if CANCELLED.load(Ordering::Relaxed) {"cancelled"} else {"operation_failed"},"message":"Connect recipient operation failed"}})); std::process::exit(1); }
     }
 }

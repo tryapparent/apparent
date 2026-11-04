@@ -339,3 +339,7 @@ mod hosted_logging_tests;
 mod hosted_settings_tests;
 #[cfg(test)]
 pub(crate) mod hosted_tests;
+
+// Staged until the native package dependency and authenticated pin land.
+#[allow(dead_code)]
+mod recipient;
