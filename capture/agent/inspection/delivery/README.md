@@ -70,12 +70,16 @@ PATH/source fallback and no extra installation for app users.
 clean root build and records exact source/tree, toolchain, native executable/shared
 object hashes and a conservative tracked-input inventory. It audits actual rustc
 dep-info (including the library), not Cargo's aggregate Git-identity watch list.
-Only inspector main/standalone lock, tests, documentation and delivery tooling are
-excluded; shared schema/reader/formatter sources remain root inputs. Excluded
-inputs are checked absent from compiler dep-info. The policy source hash is pinned
-in the receipt. Root build-version metadata retains its original source identity
-when reused; the composition separately records inspector/composition revisions.
-No existing exact-source development-artifact admission is relaxed.
+Only inspector main/standalone lock, tests, documentation and delivery tooling, plus
+the independently packaged `capture/desktop/ui/frontend/` inputs, are excluded.
+Shared UI, Rust bridge/schema/readers, native sources and root build contracts remain
+root inputs. Every excluded tracked path must be absent from compiler dep-info.
+Renderer package build inputs remain owned by their separate producer/stager; they
+do not change the root executable bytes. The policy source hash is pinned in the
+receipt, so changing this allowlist invalidates older receipts. Root build-version
+metadata retains its original source identity when reused; the composition separately
+records inspector/composition revisions. No existing exact-source development-artifact
+admission is relaxed.
 
 Local integration proof may call `composition.ts assemble ROOT_DIR ROOT_RECEIPT
 ROOT_RECEIPT_SHA INSPECTOR_ARCHIVE INSPECTOR_SHA NEW_DIR`. This checks ancestry,
