@@ -99,6 +99,23 @@ release-linux.yml and release-mac-preview.yml producers. A release rootProfile
 must match its consumer; debug roots cannot enter release assembly.
 No workflow is dispatched or authority to publish inferred by these local tools.
 
+The same ordinary package step can include a separately produced Desktop renderer
+archive when both `APPARENT_DESKTOP_RENDERER_ARCHIVE` and
+`APPARENT_DESKTOP_RENDERER_SHA256` are supplied. The expected SHA-256 comes from
+the caller's authenticated input; the embedded manifest and any adjacent checksum
+are not authentication sources. `renderer/assembly.ts` delegates archive
+validation and staging to the producer CLI, then normalizes the verified static
+tree to directories `0755` and files `0644` while the enclosing app candidate is
+private. The producer manifest remains beside `renderer/` as renderer metadata;
+it does not replace root or inspector receipt identity.
+
+The packaged resource is `Contents/Resources/desktop-ui` on macOS and
+`usr/share/apparent/desktop-ui` in the Linux AppDir. It is part of the same app
+package; no second install is involved. This does not route any installed window
+to the renderer or change capture behavior: existing native and `note-ui` paths
+remain active. A locally computed archive digest is sufficient only for local
+proof, never release admission.
+
 The existing platform verification job now retains source-bound root bundles and
 attested inspector archives on its existing runners/budgets; no new workflow,
 runner allocation or local paid resource is created. Production is admitted only

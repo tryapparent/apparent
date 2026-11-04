@@ -7,6 +7,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build, stage } from './package.ts';
+import { stageRendererArchive } from './renderer/assembly.ts';
 import { publishValidatedDirectory } from '../../../../shared/packaging/transaction.ts';
 const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 const compatibility = 'inspection-host-v1';
@@ -123,6 +124,10 @@ function initialRootIdentity(binaryDirectory: string) {
 /** Called by ordinary app packaging after root build; no separate manual installation. */
 export function packageApplication(binaryDirectory: string, destination: string, signing: string[]) {
   const root = repository();
+  const rendererArchive = process.env.APPARENT_DESKTOP_RENDERER_ARCHIVE;
+  const rendererDigest = process.env.APPARENT_DESKTOP_RENDERER_SHA256;
+  assert.equal(Boolean(rendererArchive), Boolean(rendererDigest),
+    'Renderer assembly requires both archive path and authenticated SHA-256');
   const temporary = mkdtempSync(join(destination, '.inspection-package-'));
   const candidate = join(temporary, 'inspection');
   const final = join(destination, 'inspection');
@@ -168,6 +173,17 @@ export function packageApplication(binaryDirectory: string, destination: string,
       renameSync(nextReceipt, join(destination, 'inspection-composition.json'));
     });
   } finally { rmSync(temporary, { recursive: true }); }
+  if (rendererArchive && rendererDigest) {
+    const executableDirectory = resolve(destination);
+    const parent = basename(dirname(executableDirectory));
+    const leaf = basename(executableDirectory);
+    const resourceDirectory = leaf === 'MacOS' && parent === 'Contents'
+      ? join(dirname(executableDirectory), 'Resources', 'desktop-ui')
+      : leaf === 'bin' && parent === 'usr'
+        ? join(dirname(executableDirectory), 'share', 'apparent', 'desktop-ui')
+        : join(executableDirectory, 'desktop-ui');
+    stageRendererArchive(rendererArchive, rendererDigest, resourceDirectory);
+  }
 }
 const signerWorkflows = ['verification-platform.yml', 'release-linux.yml', 'release-mac-preview.yml'].map(name => `tryapparent/apparent/.github/workflows/${name}`);
 function provenance(file: string, source: string, signer = signerWorkflows[0], expectedDigest: string) {

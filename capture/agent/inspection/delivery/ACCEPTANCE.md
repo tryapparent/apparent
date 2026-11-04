@@ -24,6 +24,47 @@ certify GUI/capture behavior. `composition.test.ts` additionally requires
 ROOT_DIRECTORY/ROOT_RECEIPT/INSPECTOR_FIRST/INSPECTOR_SECOND: use two genuinely
 different real produced archives; its Cargo trap proves assembly does no build.
 
+## Renderer-only app assembly
+
+The ordinary package consumer accepts the real `renderer-artifact.ts` archive
+through `APPARENT_DESKTOP_RENDERER_ARCHIVE` and its caller-authenticated
+`APPARENT_DESKTOP_RENDERER_SHA256`. It reuses the root receipt and inspector
+composition, then stages the renderer into the same app candidate:
+`usr/share/apparent/desktop-ui` for Linux or
+`Contents/Resources/desktop-ui` for macOS. The embedded renderer manifest is
+component metadata; only the caller-provided archive digest authenticates its
+bytes. Verified directories are normalized to `0755` and files to `0644` for
+cross-user package access. This component staging step makes no atomic-visibility
+claim; the enclosing app remains private until its existing package transaction
+completes.
+
+Use a sealed root receipt whose input inventory and policy digest match the exact
+candidate. An older PR631 receipt is not admitted just because executable bytes
+match: the consumer checks source ancestry/tree, policy hash, the full input
+inventory, build environment and each root/native runtime digest. For an exact
+current root and retained real inspector and renderer archives, run:
+
+    APPARENT_ROOT_DIRECTORY=/absolute/root-bundle \
+    APPARENT_ROOT_RECEIPT=/absolute/root-bundle/root-receipt.json \
+    APPARENT_INSPECTOR_ARTIFACT=/absolute/apparent-inspect.tar.gz \
+    APPARENT_RENDERER_ARTIFACT=/absolute/apparent-desktop-renderer.tar.gz \
+      node --experimental-strip-types --test \
+        capture/agent/inspection/delivery/renderer/assembly.test.ts
+
+The proof invokes the existing root/inspector assembler and ordinary
+`packageApplication` consumer with `cargo` replaced by a failing executable. It
+checks all real Vite files at the packaged resource path, cross-user permissions,
+unchanged root executable/native library bytes, wrong renderer digest and altered
+inventory rejection, and reuse refusal after committed shared model, Desktop
+bridge or native source changes. A renderer-only source change must still admit
+the same root receipt. This is non-GUI artifact proof; it does not establish
+Electron launch, window routing, Mac signing or native platform behavior.
+
+Before Mac publication, run exact-candidate signature verification and the short
+packaged-app launch/interaction/cleanup smoke under the Desktop policy. This
+assembly slice has no Mac GUI or signing proof and does not authorize runtime
+routing, updater changes, release or activation.
+
 ## Mac: prepared, not executed
 
 No approved task issue/budget or Mac resource is established. Authenticated funded
