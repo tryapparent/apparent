@@ -67,7 +67,7 @@ test(`${mode} Connect shipped Electron IPC, consent presentation, browser action
         if (request.connect === 'backend') { socket.end('{"error":"invalid_request"}\n'); continue; }
         if (request.microphone === 'read') { socket.end('{"microphone":{"enabled":true}}\n'); continue; }
         if (request.errorReporting === 'read') { socket.end('{"errorReporting":{"enabled":true}}\n'); continue; }
-        if (request.storage || request.reference) { socket.end('{"error":"feature_disabled"}\n'); continue; }
+        if (request.storage || request.reference || request.agents) { socket.end('{"error":"feature_disabled"}\n'); continue; }
         connect = true; requests.push(request);
         if (request.connect === 'settings') stage = 'initial';
         if (request.command === 'connect') stage = 'consent';
@@ -93,13 +93,14 @@ test(`${mode} Connect shipped Electron IPC, consent presentation, browser action
   if (installed) {
     await expect(page).toHaveTitle('Apparent Settings — Connect');
     assert.equal(await page.evaluate(() => typeof window.apparent.readCaptureUsage), 'undefined');
+    assert.deepEqual(await page.evaluate(() => ['readAgents', 'installCli', 'uninstallCli', 'setAgentDemoVideo'].map(key => typeof window.apparent[key])), ['undefined', 'undefined', 'undefined', 'undefined']);
     assert.deepEqual(await page.evaluate(() => [typeof window.apparent.readMicrophoneEnabled, typeof window.apparent.setMicrophoneEnabled]), ['undefined', 'undefined']);
     assert.equal(await application.evaluate(async ({ ipcMain, BrowserWindow }) => {
       const sender = BrowserWindow.getAllWindows()[0].webContents;
       for (const channel of ['apparent:read-capture-usage', 'apparent:read-capture-location', 'apparent:read-retention', 'apparent:read-runtime-state', 'apparent:show-capture-folder']) {
         try { await ipcMain._invokeHandlers.get(channel)({ sender, senderFrame: sender.mainFrame }); return false; } catch {}
       }
-      for (const [channel, args] of [['apparent:read-microphone-enabled', []], ['apparent:set-microphone-enabled', [false]]]) {
+      for (const [channel, args] of [['apparent:read-microphone-enabled', []], ['apparent:set-microphone-enabled', [false]], ['apparent:agents-read', []], ['apparent:agents-install', []], ['apparent:agents-uninstall', []], ['apparent:agents-demo', [false]]]) {
         try { await ipcMain._invokeHandlers.get(channel)({ sender, senderFrame: sender.mainFrame }, ...args); return false; } catch {}
       }
       return true;

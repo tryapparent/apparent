@@ -159,15 +159,6 @@ struct SettingsCapturesDir: Decodable, Equatable {
   var custom = false
 }
 
-struct SettingsCommandLine: Decodable, Equatable {
-  var path: String?
-  /// "install", "uninstall", or none.
-  var button: String? = "install"
-  var enabled = true
-  var caption = "Links apparent into /opt/homebrew/bin, so agents and your terminal can run it."
-  var error = false
-}
-
 struct HostedAccountState: Decodable, Equatable {
   var server: String?
   var connected: Bool
@@ -273,7 +264,7 @@ struct SettingsState: Decodable, Equatable {
   var version = "0.3.2"
   var login = SettingsLogin()
   var errorReporting = true
-  var agentDemoVideo = true
+  var agentsUnavailable = "Agents Settings could not open. Choose Agents to try again, or reinstall Apparent."
   var shortcuts: [SettingsShortcut] = [
     SettingsShortcut(),
     SettingsShortcut(kind: "paste", title: "Paste last capture", label: "⌥⇧V", key: "V", clearable: true),
@@ -289,8 +280,6 @@ struct SettingsState: Decodable, Equatable {
   var permissions: [SettingsPermission] = ["screen-recording", "microphone", "accessibility", "camera"]
     .map { SettingsPermission(permission: $0, required: ["screen-recording", "microphone", "accessibility"].contains($0)) }
   var updates = true
-  var commandLine = SettingsCommandLine()
-  var skillCommand = "bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent"
 
   var pasteLabel: String { shortcuts.first { $0.kind == "paste" }?.label ?? "⌥⇧V" }
   var recording: String? { shortcuts.first(where: \.recording)?.kind }
@@ -1020,7 +1009,7 @@ struct SettingsView: View {
 
   private func select(_ pane: SettingsPane) {
     if model.state.recording != nil { model.act("cancel-shortcut") }
-    if pane == .storage {
+    if pane == .storage || pane == .agents {
       model.act("navigate", ["pane": pane.rawValue])
     } else {
       model.pane = pane
@@ -1054,7 +1043,7 @@ struct SettingsView: View {
       case .recording: recording
       case .storage: storage
       case .permissions: permissions
-      case .agents: agents
+      case .agents: agentsUnavailable
       case .about: about
       }
       Spacer(minLength: 0)
@@ -1266,44 +1255,8 @@ struct SettingsView: View {
     }
   }
 
-  private var agents: some View {
-    let theme = SettingsTheme(scheme)
-    let cli = state.commandLine
-    return VStack(spacing: 0) {
-      SettingsGroup {
-        SettingsRow(title: "Ask for an Apparent video on complex changes") {
-          SettingsSwitch(on: state.agentDemoVideo) { model.set("agentDemoVideo", $0) }
-        }
-      }
-      SettingsCaption(text: "Adds a video request to copied and pasted captures when the agent can record the result. On by default.")
-      SettingsGroup {
-        HStack(spacing: 12) {
-          VStack(alignment: .leading, spacing: 1) {
-            Text("Command-line tool").font(.system(size: 14)).foregroundStyle(theme.text)
-            if let path = cli.path {
-              Text(path)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(theme.secondary)
-                .truncationMode(.head)
-            }
-          }
-          .lineLimit(1)
-          Spacer(minLength: 8)
-          if let button = cli.button {
-            SettingsButton(title: button == "uninstall" ? "Uninstall" : "Install", enabled: cli.enabled) {
-              model.act(button == "uninstall" ? "uninstall-cli" : "install-cli")
-            }
-          }
-        }
-        .padding(.horizontal, 12)
-        .frame(height: cli.path == nil ? SettingsMetrics.row : 52)
-      }
-      SettingsCaption(text: cli.caption, error: cli.error)
-        .animation(SettingsMotion.state, value: cli)
-      SettingsHeader("Agent skill")
-      SettingsGroup { CopyLine(text: state.skillCommand) }
-      SettingsCaption(text: "Run it in a terminal. It teaches Claude Code, OpenCode, Codex and other agents to read your captures and use apparent.")
-    }
+  private var agentsUnavailable: some View {
+    SettingsCaption(text: state.agentsUnavailable)
   }
 
   private var about: some View {
@@ -1374,33 +1327,6 @@ struct SettingsView: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-  }
-}
-
-/// A command in monospace with a Copy button that says Copied for a moment.
-struct CopyLine: View {
-  @Environment(\.settingsTheme) private var theme
-  let text: String
-  @State private var copied = false
-
-  var body: some View {
-    HStack(spacing: 12) {
-      Text(text)
-        .font(.system(size: 12, design: .monospaced))
-        .foregroundStyle(theme.text)
-        .lineLimit(1)
-        .textSelection(.enabled)
-      Spacer(minLength: 8)
-      SettingsButton(title: copied ? "Copied" : "Copy") {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        copied = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
-      }
-      .animation(SettingsMotion.state, value: copied)
-    }
-    .padding(.horizontal, 12)
-    .frame(height: SettingsMetrics.row)
   }
 }
 
@@ -1845,24 +1771,6 @@ final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
     noUpdates.updates = false
     var storageCustom = base
     storageCustom.capturesDir = SettingsCapturesDir(path: "~/Documents/Apparent Captures", custom: true)
-    var cliInstalled = base
-    cliInstalled.commandLine = SettingsCommandLine(
-      path: "/opt/homebrew/bin/apparent", button: "uninstall",
-      caption: "Agents and your terminal can run apparent to read captures, zoom into a moment and export video.")
-    var cliLocal = base
-    cliLocal.commandLine = SettingsCommandLine(
-      path: "~/.local/bin/apparent", button: "uninstall",
-      caption: "If your shell can't find apparent, add ~/.local/bin to your PATH.")
-    var cliHomebrew = base
-    cliHomebrew.commandLine = SettingsCommandLine(
-      path: "/opt/homebrew/bin/apparent", button: nil,
-      caption: "Installed with Homebrew. Agents and your terminal can run apparent to read captures, zoom into a moment and export video.")
-    var cliTaken = base
-    cliTaken.commandLine = SettingsCommandLine(
-      button: nil, caption: "/usr/local/bin/apparent is another program, so Apparent leaves it alone.", error: true)
-    var cliDev = base
-    cliDev.commandLine = SettingsCommandLine(
-      enabled: false, caption: "The command-line tool works in the installed app.")
     var micChosen = base
     micChosen.microphone = SettingsMicrophone(selected: devices[1].id, value: "Shure MV7", options: micOptions, note: nil, meter: devices[1].id)
     var micMissing = base
@@ -1901,12 +1809,7 @@ final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
       ("storage-custom", .storage, storageCustom),
       ("permissions", .permissions, base),
       ("permissions-missing", .permissions, missing),
-      ("agents", .agents, base),
-      ("agents-installed", .agents, cliInstalled),
-      ("agents-local", .agents, cliLocal),
-      ("agents-homebrew", .agents, cliHomebrew),
-      ("agents-taken", .agents, cliTaken),
-      ("agents-dev", .agents, cliDev),
+      ("agents-unavailable", .agents, base),
       ("about", .about, base),
       ("about-dev", .about, noUpdates),
     ]

@@ -45,7 +45,6 @@ struct Fake {
     refuse: Option<String>,
     refuse_login: bool,
     login_changes: Vec<bool>,
-    cli: crate::composition::command_line::Places,
 }
 
 impl Host for Fake {
@@ -71,9 +70,6 @@ impl Host for Fake {
         self.login_changes.push(on);
         anyhow::ensure!(!self.refuse_login, "login registration refused");
         Ok(())
-    }
-    fn command_line(&self) -> crate::composition::command_line::Places {
-        self.cli.clone()
     }
 }
 
@@ -115,11 +111,6 @@ fn fake(dir: &TempDir) -> Fake {
         refuse: None,
         refuse_login: false,
         login_changes: Vec::new(),
-        cli: crate::composition::command_line::Places {
-            target: None,
-            install: vec![dir.0.join("bin")],
-            also: Vec::new(),
-        },
     }
 }
 
@@ -201,20 +192,19 @@ fn login_preference_is_saved_after_registration_succeeds() {
 }
 
 #[test]
-fn agent_demo_video_switch_round_trips_without_losing_config() {
-    let dir = TempDir::new("agent-demo-video");
+fn native_agents_fallback_has_no_mutating_presentation_contract() {
+    let dir = TempDir::new("agents-fallback");
     let mut host = fake(&dir);
     let mut panel = Panel::default();
-    assert!(panel.view(&host).agent_demo_video, "missing config defaults on");
-    std::fs::write(&host.path, r#"{"ingestToken":"private","experiments":{"other":true}}"#).unwrap();
-    assert!(panel.view(&host).agent_demo_video, "missing flag defaults on");
-    panel.on(Action::Set { key: "agentDemoVideo".into(), value: true.into() }, &mut host);
-    assert!(panel.view(&host).agent_demo_video);
-    assert_eq!(read_json(&host.path)["experiments"]["other"], true);
-    assert_eq!(read_json(&host.path)["ingestToken"], "private");
+    let raw = br#"{"private":"keep","experiments":{"agentDemoVideo":true}}"#;
+    std::fs::write(&host.path, raw).unwrap();
+    let view = serde_json::to_value(panel.view(&host)).unwrap();
+    assert_eq!(view["agentsUnavailable"], AGENTS_UNAVAILABLE);
+    for key in ["agentDemoVideo", "commandLine", "skillCommand"] {
+        assert!(view.get(key).is_none(), "retired native field {key}");
+    }
     panel.on(Action::Set { key: "agentDemoVideo".into(), value: false.into() }, &mut host);
-    assert!(!panel.view(&host).agent_demo_video);
-    assert_eq!(read_json(&host.path)["experiments"]["agentDemoVideo"], false);
+    assert_eq!(std::fs::read(&host.path).unwrap(), raw);
 }
 
 #[test]
@@ -1139,106 +1129,8 @@ fn helper_lines_parse_into_actions() {
         parse(r#"{"action":"check-for-updates"}"#),
         Action::CheckForUpdates
     );
-    assert_eq!(parse(r#"{"action":"install-cli"}"#), Action::InstallCli);
-    assert_eq!(parse(r#"{"action":"uninstall-cli"}"#), Action::UninstallCli);
-}
-
-#[test]
-fn the_command_line_row_abbreviates_only_paths_inside_home() {
-    let home = PathBuf::from(std::env::var_os("HOME").unwrap());
-    // A sibling with the same string prefix is not inside HOME.
-    let mut outside = home.as_os_str().to_os_string();
-    outside.push("-outside");
-    let outside = PathBuf::from(outside).join("bin/apparent");
-    for (link, expected) in [
-        (
-            home.join(".local/bin/apparent"),
-            "~/.local/bin/apparent".to_owned(),
-        ),
-        (outside.clone(), outside.display().to_string()),
-    ] {
-        let row = CommandLineView::new(
-            &crate::composition::command_line::State::Installed {
-                link,
-                homebrew: false,
-            },
-            None,
-        );
-        assert_eq!(row.path, Some(expected));
-    }
-}
-
-/// Links are a unix thing; Windows has no Apparent.app to link (`State::Unavailable`).
-#[cfg(unix)]
-#[test]
-fn the_command_line_row_installs_uninstalls_and_says_why_not() {
-    let dir = TempDir::new("cli");
-    let mut host = fake(&dir);
-    let mut panel = Panel::default();
-    // A development build has nothing to link.
-    let row = panel.view(&host).command_line;
-    assert_eq!((row.button, row.enabled), (Some("install"), false));
-    assert_eq!(
-        row.caption,
-        if cfg!(target_os = "linux") {
-            "The command-line tool links to Apparent's AppImage; run Apparent from one."
-        } else {
-            "The command-line tool works in the installed app."
-        }
-    );
-    assert_eq!(
-        panel.view(&host).skill_command,
-        "bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent"
-    );
-
-    let macos = dir.0.join("Apparent.app/Contents/MacOS");
-    std::fs::create_dir_all(&macos).unwrap();
-    std::fs::write(macos.join("apparent"), "").unwrap();
-    host.cli.target = Some(std::fs::canonicalize(macos.join("apparent")).unwrap());
-    let row = panel.view(&host).command_line;
-    assert_eq!(
-        (row.button, row.enabled, row.path),
-        (Some("install"), true, None)
-    );
-    assert!(
-        row.caption.starts_with("Links apparent into "),
-        "{}",
-        row.caption
-    );
-
-    panel.on(Action::InstallCli, &mut host);
-    let link = dir.0.join("bin/apparent");
-    assert_eq!(
-        std::fs::read_link(&link).unwrap(),
-        host.cli.target.clone().unwrap()
-    );
-    let row = panel.view(&host).command_line;
-    assert_eq!(row.button, Some("uninstall"));
-    assert_eq!(row.path, Some(crate::composition::command_line::tilde(&link)));
-    // Not Homebrew's or /usr/local's bin, so it may not be on PATH.
-    assert!(row.caption.contains("to your PATH"), "{}", row.caption);
-    assert!(!row.error);
-
-    panel.on(Action::UninstallCli, &mut host);
-    assert!(link.symlink_metadata().is_err());
-    assert_eq!(panel.view(&host).command_line.button, Some("install"));
-
-    // Someone else's apparent stays, and the row says so.
-    std::fs::write(&link, "other").unwrap();
-    let row = panel.view(&host).command_line;
-    assert_eq!((row.button, row.error), (None, true));
-    assert!(
-        row.caption
-            .ends_with("is another program, so Apparent leaves it alone.")
-    );
-    panel.on(Action::InstallCli, &mut host);
-    assert_eq!(std::fs::read_to_string(&link).unwrap(), "other");
-    let row = panel.view(&host).command_line;
-    assert!(
-        row.error && row.caption.starts_with("Couldn't install it: "),
-        "{}",
-        row.caption
-    );
+    assert!(serde_json::from_str::<Action>(r#"{"action":"install-cli"}"#).is_err());
+    assert!(serde_json::from_str::<Action>(r#"{"action":"uninstall-cli"}"#).is_err());
 }
 
 #[test]

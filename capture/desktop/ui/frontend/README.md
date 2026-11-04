@@ -783,3 +783,153 @@ open confirmation pauses completion dismissal; closing grants a fresh retry inte
 The share Electron entry/preload are authored as `.cts`. `npm run build` checks
 and emits their ignored `.cjs` runtime files; popup packaging stages only those
 outputs. The share smoke and hosted native case are TypeScript run by Node 22.
+
+## Installed Agents Settings (#376)
+
+Agents navigation uses the shared React page (`src/agents/page.tsx`) by default on
+macOS and Linux. Rust owns CLI paths/ownership, deadlines and preserving config
+transactions. The four installed-only bridge methods are `readAgents()`,
+`installCli()`, `uninstallCli()` and `setAgentDemoVideo(boolean)`, plus sidebar
+navigation. The renderer chooses no paths, config keys, commands or deadlines.
+It displays the canonical skill command for selection, never execution.
+
+Main validates the exact mode, window/frame, URL and arguments. Agents cannot
+call Storage, Connect, sharing, reporting, runtime, clipboard or filesystem
+handlers; development windows receive no Agents methods. Connect retains its
+own preload, consume-once initial action and Navigate/Close-only parent pipe.
+Every replacement receives a new generation; stale replies are discarded.
+The TypeScript Agents preload (`electron/preloads/agents.cts`) compiles to the
+unchanged sandboxed CommonJS runtime path; packaging excludes authored CTS.
+
+CLI policy reuses `composition/command_line.rs`: foreign programs and
+Homebrew-owned commands are preserved. A command under `~/.local/bin` may need
+that directory on the shell's PATH. Demo-video writes preserve other flags and
+config keys. The existing flag defaults on; file edits apply on the next read
+and the handoff consumer's next read. Mutations never retry; an unknown result
+requires explicit refresh. Already admitted CLI syscalls may finish after a
+client timeout. Rust CLI diagnostics log fixed operation labels and I/O
+kind/errno only, without paths, raw errors or config contents.
+
+### Native retirement, recovery and rollback
+
+Installed replacement acceptance at `4c20d75e` covered macOS and an isolated Linux
+AppImage: CLI install/uninstall and foreign preservation, keyboard toggles,
+false/true Rust restart persistence, canonical command, navigation and ordinary
+close with the daemon alive. macOS focused run `41658986306` retained the native
+receipt; its Agents-only scope does not claim Storage/reporting acceptance.
+
+The obsolete Swift/GPUI Agents forms, their view/CLI action fields and their
+presentation-only fixtures are removed. Rust policy, shared IPC, config readers,
+CLI entrypoints and other native pages remain. Missing assets, launch failure or
+renderer crash now open native Settings with read-only recovery guidance.
+Native navigation remains available; choosing Agents retries presentation, never
+a configuration mutation. Restoring assets and explicit navigation reopen the
+shared page. Rollback restores the previous accepted application package; there
+is no preference migration or new activation flag.
+
+Removal acceptance requires both native platforms to retain this recovery
+behavior after deletion: forced missing assets and owned Electron crash show
+guidance without legacy controls, preserve the idle daemon and saved values,
+and recover after restoration/navigation. Builds, source review and Linux tests
+do not prove macOS behavior. Publication still requires the exact main platform
+receipts; full CI runs on main only.
+
+### Verification mechanics
+
+`tests/mac-storage-native.cjs` defaults to Storage/reporting plus installed
+Agents. The opt-in focused hosted job selects
+`APPARENT_SETTINGS_NATIVE_SURFACE=agents`; `settings_native_surface=agents-recovery`
+selects only current-package startup and the affected native recovery seams.
+That report marks CLI/persistence cases unrun; prior proof is assessed manually,
+never inferred by the fixture. The existing full/all entry and default Agents
+scenario remain available; no automatic selector, cache or full-CI gate changes.
+It builds/installs a frozen canonical `Apparent.app` beneath a unique run-owned
+parent, uses existing hosted Accessibility/AppleEvents permission, and never
+resets TCC, changes product flags, allocates a Mac or starts an Apparent capture.
+Recovery probes alter only that job's exact installed HTML inode and restore it.
+They await the helper's unique visible window before the single Agents press;
+process discovery alone is not window readiness.
+
+The native reader verifies the Rust-owned packaged PID/executable and unique
+window. Since pill and Settings share the runtime, the fixture also checks the
+exact parent-bound Agents mode. A failed mapping read may ignore a retiring child
+only after a fresh process check confirms absence or a Rust-owned zombie; live or
+unknown mapping failures still fail closed and retain diagnostics.
+It requests Electron accessibility once per new
+process (Electron's two-second debounce restarts on repeated requests), then
+reads without resending. Ordinary close presses the verified window's standard
+AX close button once, after checking its PID, role/subrole, enabled state and
+deadline. Window-disappearance and Rust-idle assertions decide success; failure
+retains owned state/AX diagnostics and any available owned-window image.
+Space requires confirmed checkbox and foreground-window
+focus; a bounded read-only focus wait stays inside the original helper deadline.
+The paired native key events target that verified PID, not global HID routing;
+this proves Settings control behavior, not global capture shortcuts.
+
+After input, observe the completed visible UI before independent Rust readback.
+Racing readback connections against renderer IPC can reject the mutation at the
+shared rendezvous worker. No write is retried and worker admission is unchanged.
+Failures retain authoritative state, AX data and owned-window images when
+available; CLI cleanup removes only the exact installed symlink or identified
+synthetic file. The focused workflow builds once in `settings-build`, then installs
+and tests in `settings-native`. The final runtime-budget gate includes both jobs
+in the ten-minute whole-workflow workload budget: setup, checks, cleanup and post
+actions count, parallel execution counts once and runner/dependency waiting is
+excluded. Each job also retains its ten-minute safeguard; splitting work does not
+create extra workload time. The builder preserves the warm
+three-path Rust cache inventory; removing a path changes its cache version.
+
+The existing three-file artifact contract binds the exact candidate SHA/tree,
+configuration, toolchain, executable hashes and Mach-O closure. Its explicit
+`focused-settings-build` kind admits only the same dispatch/run/attempt, successful
+`settings-build` job and current `settings-native` consumer; it grants no full-main
+verification or publication receipt. The installer validates the immutable ID and
+archive digest, freshly prepares/signs the frontend and package, and never falls
+back to rebuilding after admission failure. A build alone is not native proof.
+A timeout requires owner-local optimization and a successful rerun; it does not
+authorize a larger budget or less acceptance.
+
+Focused Settings restores the shared Rust cache without republishing it; main
+owns cache refresh. Both jobs use the trusted producer's setup action pinned to
+Rust 1.99.1, retaining its CARGO_HOME, CARGO_INCREMENTAL and CARGO_TERM_COLOR
+environment. They verify the expected compiler and log all installed toolchains,
+because both environment and compiler inventory affect the cache fingerprint.
+Both jobs use the shared hosted-Mac cache preparation action: it validates the
+complete allowlisted inventory before removing only the known unused stable1.98
+alias, retains selected1.99.1 and same-version aliases, and rejects unexpected
+states. Fingerprints still describe the actual admitted environment; the
+consumer's complete toolchain comparison remains mandatory. Cache availability is
+a performance input, not a prerequisite for preparing or dispatching focused proof.
+Installation requires the exact candidate's successful same-attempt producer and
+strict immutable-artifact admission. Completion-time accounting applies Simon's
+900-second Mac budget; existing job and step caps remain. Full CI stays main-only.
+
+Metal preparation overlaps Rust installation/cache restore in the builder, with
+a 120-second subprocess limit and atomic status. Cargo starts only after success.
+The native job prepares compiler/Node concurrently, then uses bounded read-only
+GitHub metadata to discover the immutable ID after same-attempt producer success.
+Failed or cancelled producers stop before installation; the unchanged consumer
+independently rechecks all artifact admission conditions. Running readiness waits
+and background preparation count in the workflow's execution union.
+
+The builder does not provision FFmpeg tools unused by these Settings scenarios.
+The native fixture compiles its AX reader once before app launch, inside the
+existing fixture and workflow deadlines. These setup optimizations skip no native
+assertion or package check. Darwin close/recovery and actual combined runtime
+remain acceptance gates; no build or source review establishes them.
+
+The Agents recovery reader rediscovers the uniquely owned native helper during
+its bounded read poll because navigation can retire the preceding General helper.
+It sends each navigation action once; stale or ambiguous ownership is never accepted.
+
+If recovery fails the unchanged daemon-idle assertion, the fixture records its
+read duration and one extra bounded state-only diagnostic on the owned synthetic
+socket. The diagnostic retains only fixed status/error codes and phase; its
+result never turns the original failed read into a pass.
+
+The failure-only raw state diagnostic allows 500ms wire grace beyond Rust’s
+3000ms coordinator deadline. The original assertion still uses its original
+request budget. A single one-second stack sample is attempted only after fresh
+parent/executable verification of the fixture’s Rust process; sampling has a
+four-second subprocess cap. The stack artifact can contain routine machine paths
+and stays private with the synthetic fixture evidence; it contains no heap dump.

@@ -53,6 +53,62 @@ class AdmissionTests(unittest.TestCase):
             self.assertEqual(self.admit(platform, number), self.sha)
             self.assertEqual(self.admit(platform), self.sha)
 
+    def test_focused_settings_candidate_is_not_full_verification_or_a_receipt(self):
+        root = Path(__file__).resolve().parents[2]
+        text = (root / '.github/workflows/verification-mac.yml').read_text()
+        build, native = text.split('  settings-build:\n', 1)[1].split('  settings-native:\n', 1)
+        native, budget = native.split('  runtime-budget:\n', 1)
+        self.assertIn('needs: [admit, verify, connect-native, settings-build, settings-native]', budget)
+        self.assertIn('if: always()', budget)
+        self.assertIn('uses: ./.github/actions/runtime-budget', budget)
+        self.assertIn('platform: macos', budget)
+        self.assertIn('actions: read', budget)
+        for section in (build, native):
+            self.assertIn("github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'", section)
+            self.assertIn('timeout-minutes: 15', section)
+            self.assertNotIn('timeout-minutes: 30', section)
+            self.assertIn('15 minute whole-workflow execution budget', section)
+            self.assertIn('If exceeded, optimize the tests.', section)
+            self.assertIn('ref: ${{ github.sha }}', section)
+            for forbidden in ('verification-platform.yml', 'verification.py', 'owner_lanes.py', 'cargo test', 'release-ready', 'release_gate.py', 'secrets.'):
+                self.assertNotIn(forbidden, section)
+        self.assertIn('name: settings-build', build)
+        self.assertIn('shared-key: rust', build)
+        self.assertIn('save-if: false', build)
+        self.assertNotIn('brew install ffmpeg', build)
+        for section in (build, native):
+            self.assertIn('uses: dtolnay/rust-toolchain@stable', section)
+            self.assertIn('toolchain: 1.99.1', section)
+            self.assertIn('rustup toolchain list --quiet', section)
+            self.assertIn('uses: ./.github/actions/mac-rust-cache', section)
+            self.assertLess(section.index('rustup toolchain list --quiet'), section.index('uses: ./.github/actions/mac-rust-cache'))
+        self.assertIn("CARGO_INCREMENTAL: '0'", build)
+        self.assertLess(build.index('Begin bounded Metal preparation'), build.index('uses: dtolnay/rust-toolchain@stable'))
+        self.assertLess(build.index('uses: ./.github/actions/mac-rust-cache'), build.index('uses: Swatinem/rust-cache@v2'))
+        self.assertLess(native.index('uses: ./.github/actions/mac-rust-cache'), native.index('settings-producer.ts'))
+        self.assertLess(build.index('metal.py --await'), build.index('taskpolicy -c utility cargo build'))
+        self.assertNotIn('swiftc -typecheck', native)
+        fixture = (root / 'capture/desktop/ui/frontend/tests/mac-storage-native.cjs').read_text()
+        self.assertIn("await run('/usr/bin/swiftc', [path.join(__dirname, 'native/agents-ax.swift'), '-o', axTool]", fixture)
+        for workspace in ('. -> target', 'capture/engine -> target', 'connect/client -> target'):
+            self.assertIn(workspace, build)
+        self.assertIn('taskpolicy -c utility cargo build -j 3 --locked', build)
+        self.assertIn('mac-artifact.ts --producer-kind focused-settings-build', build)
+        self.assertIn('artifact: ${{ steps.executables.outputs.artifact-id }}', build)
+        self.assertIn('if-no-files-found: error', build)
+        self.assertNotIn('needs: settings-build', native)
+        self.assertIn('APPARENT_PREBUILT_KIND: focused-settings-build', native)
+        self.assertIn('APPARENT_PREBUILT_RUN: ${{ github.run_id }}', native)
+        self.assertIn('enablement/verification/focused/settings-producer.ts', native)
+        self.assertLess(native.index('settings-producer.ts'), native.index('bash capture/desktop/scripts/packaging/install-app.sh'))
+        self.assertNotIn('cargo build', native)
+        self.assertIn('node --test capture/desktop/ui/frontend/tests/mac-storage-native.cjs', native)
+        self.assertIn("APPARENT_SETTINGS_NATIVE_SURFACE: ${{ inputs.settings_native_surface || 'agents' }}", native)
+        self.assertIn('options: [agents, agents-recovery]', text)
+        full = (root / '.github/workflows/verification-platform.yml').read_text()
+        self.assertEqual(full.count('Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app'), 6)
+        self.assertEqual(native.count('Apparent-Settings-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app'), 2)
+
     def test_full_verification_is_main_only_even_for_manual_dispatch(self):
         root = Path(__file__).resolve().parents[2]
         for caller in ('verification.yml', 'verification-mac.yml'):
@@ -458,3 +514,100 @@ class MacPreviewAdmissionWorkflowTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class SettingsMetalPreparationTests(unittest.TestCase):
+    def module(self):
+        import importlib.util
+        source = Path(__file__).resolve().parents[2] / 'enablement/verification/focused/metal.py'
+        spec = importlib.util.spec_from_file_location('settings_metal', source)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_preparation_requires_success_and_does_not_retry_timed_out_tools(self):
+        import tempfile
+        module = self.module()
+        for codes, expected in [([0], 0), ([1, 0], 0), ([1, 2], 2), ([124], 124)]:
+            calls = []
+            responses = iter(codes)
+            def run(arguments, deadline):
+                calls.append((arguments, deadline))
+                return next(responses)
+            with tempfile.TemporaryDirectory() as directory:
+                status = Path(directory) / 'metal.status'
+                self.assertEqual(module.prepare(status, run), expected)
+                self.assertEqual(len(calls), len(codes))
+                self.assertEqual(calls[0][0], ['xcrun', '--sdk', 'macosx', 'metal', '--version'])
+                if len(calls) == 2:
+                    self.assertEqual(calls[1][0], ['xcodebuild', '-downloadComponent', 'MetalToolchain'])
+                    self.assertEqual(calls[0][1], calls[1][1])
+                if expected == 0:
+                    module.await_ready(status, seconds=0)
+                else:
+                    with self.assertRaisesRegex(RuntimeError, 'failed'):
+                        module.await_ready(status, seconds=0)
+                self.assertFalse(status.with_suffix('.pending').exists())
+                original = status.read_bytes()
+                with self.assertRaisesRegex(RuntimeError, 'not fresh'):
+                    module.prepare(status, run)
+                self.assertEqual(status.read_bytes(), original)
+                self.assertEqual(len(calls), len(codes))
+
+    def test_missing_or_symlink_status_does_not_admit_compilation(self):
+        import tempfile
+        module = self.module()
+        with tempfile.TemporaryDirectory() as directory:
+            status = Path(directory) / 'metal.status'
+            with self.assertRaisesRegex(RuntimeError, 'did not finish'):
+                module.await_ready(status, seconds=0)
+            target = Path(directory) / 'other'
+            target.write_text('{"exit": 0}')
+            status.symlink_to(target)
+            with self.assertRaisesRegex(RuntimeError, 'failed'):
+                module.await_ready(status, seconds=0)
+            status.unlink()
+            for malformed in ['{"exit": false}', '{"exit": 0, "extra": 1}', '{}']:
+                status.write_text(malformed)
+                with self.assertRaisesRegex(RuntimeError, 'failed'):
+                    module.await_ready(status, seconds=0)
+
+    def test_timed_out_owned_command_is_killed_and_reaped(self):
+        import sys
+        import time
+        self.assertEqual(self.module().command(['/nonexistent-apparent-fixture-tool'], time.monotonic() + 1), 127)
+        self.assertEqual(self.module().command([sys.executable, '-c', 'import time; time.sleep(30)'], time.monotonic() + 0.1), 124)
+
+    def test_actual_workflow_background_step_finishes_only_preparation_before_the_gate(self):
+        import os
+        import subprocess
+        import tempfile
+        import textwrap
+        import time
+        workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/verification-mac.yml').read_text()
+        section = workflow.split('      - name: Begin bounded Metal preparation', 1)[1]
+        script = textwrap.dedent(section.split('        run: |\n', 1)[1].split('      - ', 1)[0])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tool = root / 'xcrun'
+            tool.write_text('#!/usr/bin/python3\nimport os,time,sys\nfrom pathlib import Path\np=Path(os.environ["METAL_FIXTURE_GATE"])\np.with_suffix(".started").touch()\nd=time.monotonic()+5\nwhile not p.exists() and time.monotonic()<d: time.sleep(.01)\nsys.exit(0 if p.exists() else 1)\n')
+            tool.chmod(0o700)
+            gate = root / 'release'
+            env = {**os.environ, 'PATH': str(root) + os.pathsep + os.environ['PATH'],
+                   'RUNNER_TEMP': directory, 'METAL_FIXTURE_GATE': str(gate)}
+            try:
+                result = subprocess.run(['/bin/bash', '-e', '-o', 'pipefail', '-c', script],
+                                        cwd=Path(__file__).resolve().parents[2], env=env,
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                deadline = time.monotonic() + 2
+                while not gate.with_suffix('.started').exists() and time.monotonic() < deadline:
+                    time.sleep(.01)
+                self.assertTrue(gate.with_suffix('.started').exists())
+                status = root / 'settings-build/metal.status'
+                self.assertFalse(status.exists(), 'The cache/Rust phase can overlap this owned preparation')
+            finally:
+                gate.touch()
+                status = root / 'settings-build/metal.status'
+                self.module().await_ready(status, seconds=5)
+            self.assertEqual(status.read_text(), '{"exit": 0}')

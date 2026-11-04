@@ -1110,7 +1110,7 @@
         "mac",
         "linux"
       ],
-      "note": "Default on; experiments.electronCaptureLocation=false restores native Storage on reopen. Missing packaged assets or an Electron crash also use native Storage. Other Settings pages retain native presentation. Existing worker timing and usage-scan limits are unchanged. Candidate installed routing and platform acceptance are tracked in #291; prior foundation evidence does not prove this routing change.",
+      "note": "Default on; experiments.electronCaptureLocation=false restores native Storage on reopen. Missing packaged assets or an Electron crash also use native Storage. Agents also uses shared Electron Settings; remaining pages retain native presentation. Existing worker timing and usage-scan limits are unchanged. Candidate installed routing and platform acceptance are tracked in #291; prior foundation evidence does not prove this routing change.",
       "config": [
         {
           "key": "experiments.electronCaptureLocation",
@@ -1147,7 +1147,7 @@
       "status": "main",
       "added": "2026-10-28",
       "platforms": ["mac", "linux"],
-      "note": "Unrelated or package-manager-owned commands are not deleted.",
+      "note": "Unrelated or package-manager-owned commands are not deleted. Installed Agents uses the shared Electron page; obsolete native forms are retired. Missing assets or a crash show native recovery guidance with navigation, not a second form. Restore the previous accepted package for rollback.",
       "docs": ["README.md#agents"]
     },
     {

@@ -39,7 +39,7 @@ Verified in an Ubuntu 24.04 arm64 VM with GNOME 46 (Wayland and X11) and Plasma 
 
 ### Clicks and ink on Wayland
 
-Installed Electron Connect/Storage Settings explicitly uses X11/XWayland, like
+Installed Electron Connect/Storage/Agents Settings explicitly uses X11/XWayland, like
 GPUI and the note editor. This keeps Settings under the same Shift-overlay input
 and window-stacking route while giving feedback; a native Wayland Settings window
 can otherwise receive the click underneath that overlay. The compositor socket

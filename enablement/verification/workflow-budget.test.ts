@@ -49,12 +49,16 @@ test('Mac no-work followers skip the audit while every executed outcome remains 
   const condition = workflow.split('  runtime-budget:\n')[1].match(/^    if: (.+)$/m)![1]
   for (const admit of ['skipped', 'success', 'failure', 'cancelled'])
     for (const verify of ['skipped', 'success', 'failure', 'cancelled'])
-      for (const native of ['skipped', 'success', 'failure', 'cancelled']) {
+      for (const native of ['skipped', 'success', 'failure', 'cancelled'])
+        for (const settingsBuild of ['skipped', 'success', 'failure', 'cancelled'])
+          for (const settingsNative of ['skipped', 'success', 'failure', 'cancelled']) {
         const expression = condition.replace('always()', 'true')
           .replaceAll('needs.admit.result', JSON.stringify(admit))
           .replaceAll('needs.verify.result', JSON.stringify(verify))
           .replaceAll('needs.connect-native.result', JSON.stringify(native))
-        assert.equal(Function(`return (${expression})`)(), [admit, verify, native].some(result => result !== 'skipped'))
+          .replaceAll('needs.settings-build.result', JSON.stringify(settingsBuild))
+          .replaceAll('needs.settings-native.result', JSON.stringify(settingsNative))
+        assert.equal(Function(`return (${expression})`)(), [admit, verify, native, settingsBuild, settingsNative].some(result => result !== 'skipped'))
       }
 })
 test('every supported root workflow waits for all payload jobs before auditing', () => {
@@ -137,6 +141,80 @@ test('obsolete watch invocation fails before making any API request', () => {
   const result = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(new URL('./workflow-budget.ts', import.meta.url)), '--watch'], { encoding: 'utf8' })
   assert.equal(result.status, 1)
   assert.match(result.stderr, /completion-time audit only/)
+})
+
+// Parallel preparation cannot admit an artifact from an unfinished producer.
+import { waitForSettingsProducer } from './focused/settings-producer.ts'
+const settingsContext = { repository: 'tryapparent/apparent', run: '42', attempt: '3', token: 'synthetic', event: 'workflow_dispatch', job: 'settings-native' }
+const settingsJob = (status = 'completed', conclusion: string | null = 'success') => ({ name: 'settings-build', run_id: 42, run_attempt: 3, status, conclusion })
+const settingsArtifact = () => ({ id: 123, name: 'mac-dev-executables-42-3', expired: false, workflow_run: { id: 42 } })
+function settingsAPI(bodies: unknown[]) {
+  const urls: string[] = []
+  const request = (async (url: string | URL | Request, init?: RequestInit) => {
+    urls.push(String(url)); assert.equal(init?.redirect, 'error')
+    assert.equal((init?.headers as Record<string, string>).Authorization, 'Bearer synthetic')
+    assert.ok(bodies.length, 'Unexpected extra metadata request')
+    return new Response(JSON.stringify(bodies.shift()), { headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+  return { urls, request }
+}
+test('Settings preparation waits for final producer success before discovering its immutable artifact', async () => {
+  let clock = 0
+  const api = settingsAPI([{ total_count: 1, jobs: [settingsJob('in_progress', null)] },
+    { total_count: 1, jobs: [settingsJob()] }, { total_count: 1, artifacts: [settingsArtifact()] }])
+  assert.equal(await waitForSettingsProducer(settingsContext, { request: api.request, now: () => clock, pause: async ms => { clock += ms } }), '123')
+  assert.equal(clock, 5000)
+  assert.ok(api.urls[0].includes('/runs/42/attempts/3/jobs?'))
+  assert.ok(api.urls[1].includes('/runs/42/attempts/3/jobs?'))
+  assert.ok(api.urls[2].includes('/runs/42/artifacts?name=mac-dev-executables-42-3&'))
+})
+test('Settings cancelled or failed producers refuse an earlier uploaded artifact', async () => {
+  for (const conclusion of ['cancelled', 'failure', 'skipped']) {
+    const api = settingsAPI([{ total_count: 1, jobs: [settingsJob('completed', conclusion)] }])
+    await assert.rejects(waitForSettingsProducer(settingsContext, { request: api.request }), /did not succeed/)
+    assert.equal(api.urls.length, 1)
+  }
+})
+test('Settings discovery rejects incomplete, duplicate and foreign-attempt job inventories', async () => {
+  for (const body of [{ total_count: 2, jobs: [settingsJob()] },
+    { total_count: 2, jobs: [settingsJob(), settingsJob()] },
+    { total_count: 1, jobs: [{ ...settingsJob(), run_attempt: 2 }] },
+    { total_count: 1, jobs: [{ ...settingsJob(), run_id: 41 }] }]) {
+    const api = settingsAPI([body]); await assert.rejects(waitForSettingsProducer(settingsContext, { request: api.request }))
+    assert.equal(api.urls.length, 1)
+  }
+})
+test('Settings artifact discovery refuses duplicate, expired, foreign or nonnumeric IDs', async () => {
+  for (const body of [{ total_count: 2, artifacts: [settingsArtifact(), settingsArtifact()] },
+    ...[{ expired: true }, { id: '123\nINJECT=true' }, { name: 'other' }, { workflow_run: { id: 41 } }]
+      .map(change => ({ total_count: 1, artifacts: [{ ...settingsArtifact(), ...change }] }))]) {
+    const api = settingsAPI([{ total_count: 1, jobs: [settingsJob()] }, body])
+    await assert.rejects(waitForSettingsProducer(settingsContext, { request: api.request }))
+  }
+})
+test('Settings readiness is bounded and never installs or admits while producer is absent', async () => {
+  let clock = 0; const api = settingsAPI([{ total_count: 0, jobs: [] }, { total_count: 0, jobs: [] }])
+  await assert.rejects(waitForSettingsProducer(settingsContext, { request: api.request, timeout: 5001,
+    now: () => clock, pause: async ms => { clock += ms } }), /timed out/)
+  assert.equal(api.urls.length, 2); assert.equal(clock, 5001)
+})
+test('Settings readiness refuses unexpected invocation and metadata transport failures', async () => {
+  for (const change of [{ repository: 'foreign/repo' }, { event: 'push' }, { job: 'other' }, { attempt: 'x' }, { token: '' }]) {
+    const api = settingsAPI([])
+    await assert.rejects(waitForSettingsProducer({ ...settingsContext, ...change }, { request: api.request }))
+    assert.equal(api.urls.length, 0)
+  }
+  await assert.rejects(waitForSettingsProducer(settingsContext, { request: (async () => new Response('', { status: 403 })) as typeof fetch }), /Cannot read/)
+})
+test('Settings readiness refuses a final artifact body delivered after its deadline', async () => {
+  let clock = 0, count = 0
+  const request = (async () => {
+    count++
+    if (count === 1) return new Response(JSON.stringify({ total_count: 1, jobs: [settingsJob()] }))
+    return { ok: true, json: async () => { clock = 501; return { total_count: 1, artifacts: [settingsArtifact()] } } } as Response
+  }) as typeof fetch
+  await assert.rejects(waitForSettingsProducer(settingsContext, { request, now: () => clock, timeout: 500 }), /timed out/)
+  assert.equal(count, 2)
 })
 
 test('Linux and Mac have fifteen minutes while web retains ten', () => {
@@ -226,4 +304,12 @@ printf '${name}:%s\\n' "$*" >> "$CALLS"
       if (scenario === 'symlink' || scenario === 'missing') { rmSync(sandbox, { force: true }); writeFileSync(sandbox, 'synthetic helper') }
     }
   } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('focused Settings work retains completion audit when main verification is skipped', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/verification-mac.yml', import.meta.url), 'utf8')
+  const audit = workflow.slice(workflow.indexOf('  runtime-budget:'))
+  assert.ok(audit.includes("needs.settings-build.result != 'skipped'"))
+  assert.ok(audit.includes("needs.settings-native.result != 'skipped'"))
+  assert.ok(audit.includes('needs: [admit, verify, connect-native, settings-build, settings-native]'))
 })

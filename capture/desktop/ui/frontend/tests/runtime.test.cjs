@@ -371,7 +371,23 @@ for (const kind of ['main_exception', 'main_rejection']) {
     assert.equal(writes, 1);
   });
 }
+test('Agents projects status, uses bounded deadlines and never retries ambiguous writes', async t => {
+  const { agents } = require('../electron/runtime.cjs');
+  const view = { cli: 'taken', canInstall: false, canUninstall: false, agentDemoVideo: true, skillCommand: 'canonical fixture' };
+  const f = await fixture(t, JSON.stringify({ agents: { ...view, privatePath: '/private' } }) + '\n');
+  assert.deepEqual(await agents(f.home), { status: 'connected', agents: view });
+  assert.equal(JSON.parse(f.requests[0]).agents, 'read');
+  assert.ok(Number.isSafeInteger(JSON.parse(f.requests[0]).deadline));
+  assert.throws(() => agents(f.home, 'shell'));
+  assert.throws(() => agents(f.home, 'demo', 'yes'));
+  const slow = await fixture(t, null);
+  assert.deepEqual(await agents(slow.home, 'install', undefined, 30), { status: 'error', code: 'outcome_unknown' });
+  assert.equal(slow.requests.length, 1);
+});
 
 // Keep identity contract logic in TypeScript and share this existing runner entry.
 require('./build/identity.test.ts');
 require('./build/transport.test.ts');
+
+// Exercise the native driver's read-only helper-retirement race without OS input.
+require('./native/recovery.test.ts');

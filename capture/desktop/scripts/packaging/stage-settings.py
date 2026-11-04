@@ -77,7 +77,7 @@ def main():
         shutil.rmtree(destination)
     app = destination / "app"
     app.mkdir(parents=True)
-    shutil.copytree(frontend / "electron", app / "electron")
+    shutil.copytree(frontend / "electron", app / "electron", ignore=shutil.ignore_patterns("*.cts"))
     theme = app / "node_modules/@apparent/ui"
     (theme / "src").mkdir(parents=True)
     for name in ("window-theme.cjs", "tokens.css"):

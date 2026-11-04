@@ -244,6 +244,22 @@ function microphoneEnabled(home, enabled, timeoutMs = 3500) {
 }
 module.exports.microphoneEnabled = microphoneEnabled;
 
+function agents(home, operation = 'read', enabled, timeoutMs = 3500) {
+  if (!['read', 'install', 'uninstall', 'demo'].includes(operation) ||
+      (operation === 'demo' ? typeof enabled !== 'boolean' : enabled !== undefined)) throw new Error('Invalid Agents request');
+  const request = { agents: operation, deadline: Number(process.hrtime.bigint() / 1000000n) + Math.min(timeoutMs, 3000) };
+  if (operation === 'demo') request.enabled = enabled;
+  return exchange(home, JSON.stringify(request) + '\n', value => {
+    if (['invalid_request', 'config_read_failed', 'config_write_failed', 'app_busy', 'admission_expired', 'cli_managed', 'cli_change_failed'].includes(value?.error))
+      return { status: 'error', code: value.error };
+    const v = value?.agents;
+    if (!v || !['unavailable', 'installed', 'managed', 'missing', 'stale', 'taken', 'nowhere'].includes(v.cli) ||
+        typeof v.canInstall !== 'boolean' || typeof v.canUninstall !== 'boolean' || typeof v.agentDemoVideo !== 'boolean' ||
+        typeof v.skillCommand !== 'string' || v.skillCommand.length > 512 || /[\r\n\0]/.test(v.skillCommand)) return { status: 'error', code: 'invalid_response' };
+    return { status: 'connected', agents: { cli: v.cli, canInstall: v.canInstall, canUninstall: v.canUninstall, agentDemoVideo: v.agentDemoVideo, skillCommand: v.skillCommand } };
+  }, 4096, timeoutMs, { status: 'error', code: operation === 'read' ? 'timeout' : 'outcome_unknown' });
+}
+module.exports.agents = agents;
 // Only fixed codes cross this boundary. Never inspect Error/rejection payloads.
 function reportException(home, kind) {
   if (!['main_exception', 'main_rejection', 'renderer_exception', 'renderer_rejection'].includes(kind)) return Promise.resolve();

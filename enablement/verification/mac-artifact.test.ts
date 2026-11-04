@@ -115,6 +115,13 @@ test('Rust workflow exports only the existing selected Xcode directory', () => {
     const step = workflow.split('      - name: Pin the selected developer directory for Rust verification\n')[1].split('      - name:')[0]
     assert.match(step, /if: runner.os == 'macOS' && needs.select.outputs.root == 'true'/)
     const shell = step.split('        run: |\n')[1]
+    const settingsSteps = readFileSync('.github/workflows/verification-mac.yml', 'utf8')
+      .split('      - name: Pin the selected developer directory for Rust verification\n').slice(1)
+    assert.equal(settingsSteps.length, 2, 'both focused Settings jobs pin the reviewed selection')
+    for (const entry of settingsSteps) {
+      const focusedShell = entry.split('\n      - ')[0].split('        run: |\n')[1]
+      assert.equal(focusedShell.trim(), shell.trim(), 'focused selection matches the executed main recipe')
+    }
     for (const [selected, exists, probeStatus, expected] of [
       [developer, 'yes', '0', 0], ['/tmp/Xcode.app/Contents/Developer', 'yes', '0', 1],
       [developer, 'no', '0', 1], [developer, 'yes', '7', 7],

@@ -11,6 +11,15 @@ on:
         description: 'Run only installed Connect worker proof on a candidate branch'
         type: boolean
         default: false
+      settings_native_surface:
+        description: Focused installed Settings scenario
+        type: choice
+        options: [agents, agents-recovery]
+        default: agents
+      settings_native:
+        description: 'Only installed Settings native acceptance for a feature candidate; no full CI or publication receipt'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -63,11 +72,213 @@ jobs:
     if: github.ref != 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.connect_worker_proof
     uses: ./.github/workflows/native-proof-mac.yml
 
+  settings-build:
+    name: settings-build
+    if: github.repository == 'tryapparent/apparent' && github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    env:
+      CARGO_INCREMENTAL: '0'
+    outputs:
+      artifact: ${{ steps.executables.outputs.artifact-id }}
+    steps:
+      - name: Verification runtime budget and ownership
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: echo '15 minute whole-workflow execution budget (runner queue excluded; parallel jobs count once). Per-job timeout is an additional safeguard. If exceeded, optimize the tests. The agent whose run hits the limit owns optimization and a successful rerun; do not raise or bypass the limit.'
+      - uses: actions/checkout@v4
+        timeout-minutes: 1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: maxim-lobanov/setup-xcode@v1
+        timeout-minutes: 1
+        with:
+          xcode-version: '26.0'
+      - name: Pin the selected developer directory for Rust verification
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          selected_developer=$(xcode-select -p)
+          case "$selected_developer" in
+            /Applications/Xcode*.app/Contents/Developer) ;;
+            *) echo 'Unexpected selected Xcode developer directory' >&2; exit 1 ;;
+          esac
+          test -d "$selected_developer"
+          printf 'DEVELOPER_DIR=%s\n' "$selected_developer" >> "$GITHUB_ENV"
+          printf 'Selected developer directory: %s\n' "$selected_developer"
+      - name: Begin bounded Metal preparation alongside Rust and cache setup
+        timeout-minutes: 1
+        run: |
+          umask 077
+          mkdir -m 700 "$RUNNER_TEMP/settings-build"
+          python3 enablement/verification/focused/metal.py "$RUNNER_TEMP/settings-build/metal.status" > "$RUNNER_TEMP/settings-build/metal.log" 2>&1 &
+      - uses: dtolnay/rust-toolchain@stable
+        timeout-minutes: 2
+        with:
+          # Match the trusted main producer, including its Cargo environment.
+          toolchain: 1.99.1
+      - name: Verify compiler and installed inventory
+        timeout-minutes: 1
+        run: |
+          test "$(rustc -V)" = 'rustc 1.99.1 (58cf8f9c3 2026-10-13)'
+          rustc -vV
+          cargo -V
+          rustup toolchain list --quiet
+      - uses: ./.github/actions/mac-rust-cache
+        timeout-minutes: 1
+      - uses: Swatinem/rust-cache@v2
+        timeout-minutes: 3
+        with:
+          shared-key: rust
+          # Main owns cache publication; this focused job only restores it.
+          save-if: false
+          # Cache paths participate in its version; retain the warm three-path inventory.
+          workspaces: |
+            . -> target
+            capture/engine -> target
+            connect/client -> target
+      - uses: actions/setup-node@v4
+        timeout-minutes: 2
+        with:
+          node-version: '22'
+      - name: Require completed Metal preparation before compilation
+        timeout-minutes: 3
+        run: |
+          python3 enablement/verification/focused/metal.py --await "$RUNNER_TEMP/settings-build/metal.status"
+          cat "$RUNNER_TEMP/settings-build/metal.log"
+      - name: Build the exact Settings candidate once
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 022
+          settings_build_tmp="$(mktemp -d "$HOME/.apparent-settings-build.XXXXXX")"
+          readonly settings_build_tmp
+          trap 'rm -rf -- "$settings_build_tmp"' EXIT
+          TMPDIR="$settings_build_tmp" taskpolicy -c utility cargo build -j 3 --locked 2>&1 | tee "$RUNNER_TEMP/settings-build/cargo.log"
+      - name: Bind executables to the focused candidate and job
+        timeout-minutes: 1
+        run: |
+          otool -l target/debug/apparent > "$RUNNER_TEMP/settings-build/apparent-loads.log"
+          otool -l target/debug/apparent-helper > "$RUNNER_TEMP/settings-build/helper-loads.log"
+          node enablement/verification/mac-artifact.ts --producer-kind focused-settings-build "$RUNNER_TEMP/mac-dev-executables"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        timeout-minutes: 1
+        id: executables
+        with:
+          name: mac-dev-executables-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mac-dev-executables/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain candidate build diagnostics
+        if: always()
+        timeout-minutes: 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: settings-build-diagnostics
+          path: ${{ runner.temp }}/settings-build/
+          if-no-files-found: warn
+          retention-days: 7
+
+  settings-native:
+    name: Focused installed Settings native acceptance
+    if: github.repository == 'tryapparent/apparent' && github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    env:
+      APPARENT_PREBUILT_KIND: focused-settings-build
+      APPARENT_PREBUILT_RUN: ${{ github.run_id }}
+    steps:
+      - name: Verification runtime budget and ownership
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: echo '15 minute whole-workflow execution budget (runner queue excluded; parallel jobs count once). Per-job timeout is an additional safeguard. If exceeded, optimize the tests. The agent whose run hits the limit owns optimization and a successful rerun; do not raise or bypass the limit.'
+      - uses: actions/checkout@v4
+        timeout-minutes: 1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: maxim-lobanov/setup-xcode@v1
+        timeout-minutes: 1
+        with:
+          xcode-version: '26.0'
+      - name: Pin the selected developer directory for Rust verification
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          selected_developer=$(xcode-select -p)
+          case "$selected_developer" in
+            /Applications/Xcode*.app/Contents/Developer) ;;
+            *) echo 'Unexpected selected Xcode developer directory' >&2; exit 1 ;;
+          esac
+          test -d "$selected_developer"
+          printf 'DEVELOPER_DIR=%s\n' "$selected_developer" >> "$GITHUB_ENV"
+          printf 'Selected developer directory: %s\n' "$selected_developer"
+      - uses: dtolnay/rust-toolchain@stable
+        timeout-minutes: 2
+        with:
+          # Match the trusted main producer, including its Cargo environment.
+          toolchain: 1.99.1
+      - name: Verify compiler and installed inventory
+        timeout-minutes: 1
+        run: |
+          test "$(rustc -V)" = 'rustc 1.99.1 (58cf8f9c3 2026-10-13)'
+          rustc -vV
+          cargo -V
+          rustup toolchain list --quiet
+      - uses: ./.github/actions/mac-rust-cache
+        timeout-minutes: 1
+      - uses: actions/setup-node@v4
+        timeout-minutes: 2
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: capture/desktop/ui/frontend/package-lock.json
+      - name: Await the successful same-attempt producer and immutable artifact ID
+        timeout-minutes: 8
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node --experimental-strip-types enablement/verification/focused/settings-producer.ts
+      - name: Install only the admitted exact candidate without launching
+        timeout-minutes: 4
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          umask 022
+          export APPARENT_APP_DIR="$HOME/Applications/Apparent-Settings-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app"
+          export APPARENT_PREBUILT_DIR="$RUNNER_TEMP/settings-executables"
+          test ! -e "$APPARENT_APP_DIR"
+          test ! -e "$APPARENT_PREBUILT_DIR"
+          APPARENT_NO_LAUNCH=1 bash capture/desktop/scripts/packaging/install-app.sh
+          codesign --verify --deep --strict "$APPARENT_APP_DIR"
+      - name: Installed Settings native acceptance only
+        timeout-minutes: 3
+        env:
+          APPARENT_STORAGE_NATIVE_CI: '1'
+          APPARENT_SETTINGS_NATIVE_SURFACE: ${{ inputs.settings_native_surface || 'agents' }}
+          APPARENT_STORAGE_NATIVE_OUTPUT: ${{ runner.temp }}/apparent-settings-native
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          export APPARENT_STORAGE_NATIVE_APP_DIR="$HOME/Applications/Apparent-Settings-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/Apparent.app"
+          node --test capture/desktop/ui/frontend/tests/mac-storage-native.cjs
+      - name: Retain owned native evidence, including failures
+        if: always()
+        timeout-minutes: 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: settings-candidate-native
+          path: |
+            ${{ runner.temp }}/apparent-settings-native/*.json
+            ${{ runner.temp }}/apparent-settings-native/*.png
+            ${{ runner.temp }}/apparent-settings-native/*.log
+          if-no-files-found: warn
   runtime-budget:
-    # An ineligible follower has no workload; keep the entire run skipped.
-    # Still audit failed/cancelled attempts whenever a workload was admitted.
-    if: always() && (needs.admit.result != 'skipped' || needs.verify.result != 'skipped' || needs.connect-native.result != 'skipped')
-    needs: [admit, verify, connect-native]
+    # Audit every admitted workload, including the focused Settings jobs.
+    if: always() && (needs.admit.result != 'skipped' || needs.verify.result != 'skipped' || needs.connect-native.result != 'skipped' || needs.settings-build.result != 'skipped' || needs.settings-native.result != 'skipped')
+    needs: [admit, verify, connect-native, settings-build, settings-native]
     permissions:
       contents: read
       actions: read

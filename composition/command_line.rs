@@ -202,14 +202,6 @@ pub fn tilde(path: &Path) -> String {
     path.display().to_string()
 }
 
-/// Whether a link here is likely on the user's PATH already: Homebrew's and /usr/local's bin
-/// are on every macOS shell's PATH; a folder under home may not be.
-pub fn usually_on_path(link: &Path) -> bool {
-    link.parent().is_some_and(|dir| {
-        dir == Path::new("/opt/homebrew/bin") || dir == Path::new("/usr/local/bin")
-    })
-}
-
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
@@ -304,8 +296,6 @@ mod tests {
         assert_eq!(state(&places), State::Missing { link: link.clone() });
         install(&places).unwrap();
         assert!(links_to(&link, &target));
-        assert!(!usually_on_path(&link));
-        assert!(usually_on_path(Path::new("/opt/homebrew/bin/apparent")));
     }
 
     #[cfg(unix)]

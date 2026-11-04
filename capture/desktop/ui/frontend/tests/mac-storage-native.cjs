@@ -9,7 +9,7 @@ const { createHash } = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { _electron: electron, expect } = require('@playwright/test');
-const { readRuntimeState } = require('../electron/runtime.cjs');
+const { agents, readRuntimeState } = require('../electron/runtime.cjs');
 const run = promisify(execFile);
 const { pidFileSupervisor: rustSupervisor, stopOwned, withinLabelled: within } = require('../../../../../enablement/native/owned-processes.ts');
 const root = path.join(__dirname, '..');
@@ -153,8 +153,477 @@ on run argv
 end run
 `;
 
-test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Reset', {
-  timeout: 120000,
+const skill = 'bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent';
+
+// Bounded traversal of one verified process/window. No global UI search, coordinates,
+// TCC edits, injected renderer code, or generic production automation endpoint.
+const agentsAX = `on run argv
+  tell application "System Events"
+    tell (first application process whose unix id is (item 1 of argv as integer))
+      if item 2 of argv is "open" or item 2 of argv is "settings" then
+        -- The Rust daemon is a menu-bar app: no window exists to focus yet.
+        -- Select only its single status entry, never another process's menu.
+        set ownedBars to menu bars
+        if (count of ownedBars) > 2 then error "Unsupported owned menu bars"
+        set statusEntries to {}
+        repeat with ownedBar in ownedBars
+          set ownedItems to menu bar items of ownedBar
+          if (count of ownedItems) is 1 then set end of statusEntries to item 1 of ownedItems
+        end repeat
+        if (count of statusEntries) is not 1 then error "Missing or ambiguous owned status entry"
+        set statusEntry to item 1 of statusEntries
+        if item 2 of argv is "open" then
+          click statusEntry
+          return "owned-status-menu-opened"
+        end if
+        if (count of menus of statusEntry) is not 1 then error "Owned status menu not ready"
+        set ownedMenu to menu 1 of statusEntry
+        set ownedItems to menu items of ownedMenu
+        if (count of ownedItems) > 20 then error "Oversized owned status menu"
+        set settingsEntries to {}
+        repeat with ownedItem in ownedItems
+          if (name of ownedItem as text) is "Settings…" then set end of settingsEntries to contents of ownedItem
+        end repeat
+        if (count of settingsEntries) is not 1 then error "Missing or ambiguous owned Settings menu item"
+        set settingsEntry to item 1 of settingsEntries
+        if not enabled of settingsEntry then error "Owned Settings menu item disabled"
+        click settingsEntry
+        return "owned-settings-selected"
+      end if
+      error "Unsupported owned menu operation"
+    end tell
+  end tell
+end run`;
+
+async function installedAgents({ home, config, appDir, axTool, report, osa, run, env, budget, poll, startRust, stopRust, rustPID }) {
+  const recoveryOnly = nativeSurface === 'agents-recovery';
+  const evidence = report.agents = { passed: false, coverage: recoveryOnly ? 'native-recovery-only' : 'full',
+    cli: { status: 'UNRUN', reason: recoveryOnly ? 'Outside this focused native seam; assessed from prior evidence' : undefined } };
+  const executable = await fs.realpath(path.join(appDir, 'Contents/MacOS/apparent'));
+  const helper = await fs.realpath(path.join(appDir, 'Contents/MacOS/apparent-helper'));
+  const packaged = await fs.realpath(path.join(appDir, 'Contents/Resources/settings/runtime/Electron.app/Contents/MacOS/Electron'));
+  const invoke = async (pid, op, role = '', name = '') => {
+    const started = Date.now();
+    try {
+      if (['open', 'settings'].includes(op)) return await osa(agentsAX, [String(pid), op, role, name]);
+      const { stdout, stderr } = await run(axTool, [String(pid), op, role, name], {
+        env, timeout: budget(3500), killSignal: 'SIGKILL', maxBuffer: 32768,
+      });
+      if (stderr.includes('owned-Electron AXManualAccessibility=success')) {
+        evidence.accessibilityRequests ??= {};
+        evidence.accessibilityRequests[pid] = (evidence.accessibilityRequests[pid] ?? 0) + 1;
+      }
+      const keyboard = stderr.split('\n').find(line => line.startsWith('owned-Space='));
+      if (keyboard) (evidence.keyboardEvents ??= []).push(JSON.parse(keyboard.slice('owned-Space='.length)));
+      return stdout.trim();
+    }
+    catch (error) {
+      evidence.lastAXFailure = { pid, op, role, name, elapsedMs: Date.now() - started,
+        stdout: error.stdout, stderr: error.stderr, signal: error.signal };
+      throw error;
+    }
+  };
+  // Discover only direct children of our live Rust PID; verify their mapped text
+  // before any AX access. Renderer/helper grandchildren are never selected by name.
+  const child = async (target, modeSuffix) => poll(async () => {
+    const { stdout } = await run('/bin/ps', ['-axo', 'pid=,ppid='], { env, timeout: budget(), maxBuffer: 262144 });
+    const candidates = stdout.trim().split('\n').map(s => s.trim().split(/\s+/).map(Number)).filter(([, p]) => p === rustPID());
+    const found = [];
+    for (const [pid] of candidates) {
+      let mapped;
+      try {
+        mapped = await run('/usr/sbin/lsof', ['-nP', '-a', '-p', String(pid), '-d', 'txt', '-Fn'], { env, timeout: budget(), maxBuffer: 131072 });
+      } catch (error) {
+        // Navigation retires the old helper asynchronously. A snapshot can still
+        // include its PID after it has lost all mapped text. Never skip a live
+        // mapping error: confirm absence or zombie state with a fresh read.
+        if (error.code !== 1 || error.signal || error.stderr?.trim() || error.stdout?.trim()) throw error;
+        let state;
+        try {
+          state = await run('/bin/ps', ['-p', String(pid), '-o', 'ppid=,stat='], { env, timeout: budget(), maxBuffer: 4096 });
+        } catch (stateError) {
+          if (stateError.code === 1 && !stateError.signal && !stateError.stdout?.trim() && !stateError.stderr?.trim()) {
+            (evidence.retiredChildren ??= []).push({ pid, state: 'absent' });
+            continue;
+          }
+          evidence.childMappingFailure = { pid, stateError: stateError.message };
+          throw error;
+        }
+        const fields = state.stdout.trim().split(/\s+/);
+        if (fields.length === 2 && fields[0] === String(rustPID()) && fields[1].startsWith('Z')) {
+          (evidence.retiredChildren ??= []).push({ pid, state: fields[1] });
+          continue;
+        }
+        evidence.childMappingFailure = { pid, state: state.stdout.trim() };
+        throw error;
+      }
+      const files = mapped.stdout.split('\n').filter(s => s.startsWith('n/')).map(s => s.slice(1));
+      if (!(await Promise.all(files.map(p => fs.realpath(p).catch(() => p)))).includes(target)) continue;
+      if (modeSuffix) {
+        // Pill and Settings share the packaged runtime. Keep executable and
+        // ancestry checks, then select the exact parent-bound Settings mode.
+        const command = await run('/bin/ps', ['-ww', '-p', String(pid), '-o', 'command='], { env, timeout: budget(), maxBuffer: 32768 });
+        if (!command.stdout.trim().endsWith(` ${modeSuffix}`)) continue;
+      }
+      found.push(pid);
+    }
+    assert.equal(found.length, 1, 'Expected one mapped owned presentation child');
+    return found[0];
+  }, 'Owned installed Settings child');
+  const read = async () => {
+    const result = await agents(home, 'read', undefined, budget(3000));
+    assert.equal(result.status, 'connected');
+    return result.agents;
+  };
+  const shot = async (pid, name) => {
+    const window = JSON.parse(await invoke(pid, 'window'));
+    assert.equal(window.pid, pid);
+    assert.equal(window.frontmost, true, 'Evidence must target the foreground owned Settings window');
+    assert.ok(Number.isSafeInteger(window.windowID) && window.windowID > 0);
+    await run('/usr/sbin/screencapture', ['-x', '-l', String(window.windowID), path.join(path.dirname(axTool), `${name}.png`)], {
+      env, timeout: budget(3000), killSignal: 'SIGKILL', maxBuffer: 8192,
+    });
+    (evidence.screenshots ??= []).push({ name: `${name}.png`, ...window });
+  };
+  const snapshot = async name => {
+    const state = { pid };
+    for (const [field, inspect] of Object.entries({
+      rust: read,
+      config: async () => JSON.parse(await fs.readFile(config, 'utf8')),
+      tree: () => invoke(pid, 'inspect'),
+      screenshot: () => shot(pid, name),
+    })) {
+      try { state[field] = await inspect(); }
+      catch (error) { state[`${field}Error`] = error.message; }
+    }
+    return state;
+  };
+  const close = async () => {
+    try { await invoke(pid, 'close'); }
+    catch (error) {
+      evidence.closeFailure = await snapshot('agents-close-failure');
+      throw error;
+    }
+  };
+  const visible = async (pid, label) => poll(async () => {
+    const tree = await invoke(pid, 'inspect');
+    evidence.lastVisibleTree = tree;
+    assert.ok(tree.includes(label), `Missing completed UI state: ${label}`);
+    return tree;
+  }, `Visible ${label}`);
+  const prepareReader = async pid => {
+    await poll(() => invoke(pid, 'window'), 'Owned packaged Settings window');
+    await invoke(pid, 'request-accessibility');
+    assert.equal(evidence.accessibilityRequests[pid], 1, 'Request accessibility once per new Electron process');
+  };
+  const open = async () => {
+    await invoke(rustPID(), 'open');
+    evidence.openSettings = await poll(() => invoke(rustPID(), 'settings'), 'Owned status-menu Settings action');
+    const native = await child(helper);
+    evidence.nativeWindows ??= [];
+    evidence.nativeWindows.push({ pid: native, mappedExecutable: helper,
+      window: await poll(() => invoke(native, 'window'), 'Owned native Settings window') });
+    await poll(() => invoke(native, 'press', 'AXButton', 'Agents'), 'Native Agents navigation');
+    const pid = await child(packaged, '--settings-agents --settings-parent');
+    await prepareReader(pid);
+    let tree;
+    try {
+      tree = await poll(async () => {
+        const next = await invoke(pid, 'inspect');
+        evidence.lastVisibleTree = next;
+        assert.ok(next.includes('Apparent Settings — Agents'));
+        for (const label of ['General', 'Recording', 'Storage', 'Permissions', 'Agents', 'About', skill, 'Ask agents for a demo video']) assert.ok(next.includes(label), `Missing visible ${label}`);
+        return next;
+      }, 'Installed Agents visible content');
+    } catch (error) {
+      try { await shot(pid, 'agents-visible-failure'); }
+      catch (shotError) { evidence.visibleFailureScreenshotError = shotError.message; }
+      throw error;
+    }
+    evidence.windows ??= [];
+    evidence.windows.push({ pid, nativePID: native, mappedExecutable: packaged, tree });
+    return pid;
+  };
+  let pid = await open();
+  if (!recoveryOnly) {
+    const before = JSON.parse(await fs.readFile(config, 'utf8'));
+    const demo = async enabled => {
+      try {
+        await invoke(pid, 'space', 'AXCheckBox', 'Ask agents for a demo video');
+        // Native action acceptance precedes renderer/IPC completion. Observe the
+        // UI first so this driver's backend reads cannot steal worker admission.
+        await visible(pid, 'The command-line tool is not installed.');
+        await poll(async () => {
+          assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), enabled ? '1' : '0');
+        }, 'Visible saved checkbox state');
+        await poll(async () => {
+          assert.equal((await read()).agentDemoVideo, enabled);
+          const saved = JSON.parse(await fs.readFile(config, 'utf8'));
+          assert.equal(saved.experiments.agentDemoVideo, enabled);
+          const expected = structuredClone(before);
+          expected.experiments.agentDemoVideo = enabled;
+          assert.deepEqual(saved, expected, 'Demo mutation changed unrelated config');
+          assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), enabled ? '1' : '0');
+          return saved;
+        }, 'Space toggle authoritative readback');
+      } catch (error) {
+        evidence.toggleFailure = { expected: enabled, ...await snapshot(`agents-${enabled}-failure`) };
+        throw error;
+      }
+    };
+    assert.equal((await read()).agentDemoVideo, true);
+    await demo(false);
+    await shot(pid, 'agents-false');
+    evidence.restart = await stopRust();
+    await startRust();
+    pid = await open();
+    assert.equal((await read()).agentDemoVideo, false);
+    assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), '0');
+    await demo(true);
+    await shot(pid, 'agents-true');
+    evidence.trueRestart = await stopRust();
+    await startRust();
+    pid = await open();
+    assert.equal((await read()).agentDemoVideo, true);
+    assert.equal(await invoke(pid, 'value', 'AXCheckBox', 'Ask agents for a demo video'), '1');
+    evidence.keyboardAndRestart = true;
+
+    // Mirror Places::system's selection without changing PATH or system directories.
+    // Refuse every existing candidate, including stale/managed/foreign symlinks.
+    const candidates = ['/opt/homebrew/bin', '/usr/local/bin', path.join(home, '.local/bin')];
+    const links = [...candidates, path.join(home, 'bin')].map(p => path.join(p, 'apparent'));
+    let link, foreign, foreignIdentity;
+    try {
+      for (const p of links) {
+        const st = await fs.lstat(p).catch(e => { if (e.code !== 'ENOENT') throw e; });
+        if (st) throw new Error(`Existing command at ${p}; CLI mutation UNRUN`);
+      }
+      for (const dir of candidates) {
+        try { await fs.access(dir, fs.constants.W_OK); link = path.join(dir, 'apparent'); break; }
+        catch (e) { if (dir === candidates.at(-1) && e.code === 'ENOENT') link = path.join(dir, 'apparent'); }
+      }
+      assert.ok(link, 'No safe writable installation candidate');
+      evidence.cli = { status: 'RUNNING', phase: 'install', link, installedTarget: executable };
+      assert.equal((await read()).cli, 'missing');
+      await invoke(pid, 'press', 'AXButton', 'Install command-line tool');
+      await visible(pid, 'The command-line tool is installed.');
+      await poll(async () => {
+        assert.equal((await read()).cli, 'installed');
+        assert.equal(await fs.readlink(link), executable);
+      }, 'Product CLI install');
+      evidence.cli.phase = 'uninstall';
+      await invoke(pid, 'press', 'AXButton', 'Uninstall command-line tool');
+      await visible(pid, 'The command-line tool is not installed.');
+      await poll(async () => {
+        assert.equal((await read()).cli, 'missing');
+        await assert.rejects(fs.lstat(link), { code: 'ENOENT' });
+      }, 'Product CLI uninstall');
+      evidence.cli.phase = 'foreign-refusal';
+      foreign = await fs.open(link, 'wx', 0o600);
+      foreignIdentity = await foreign.stat();
+      await foreign.writeFile('synthetic foreign command; never execute\n');
+      const identity = foreignIdentity = await foreign.stat();
+      await invoke(pid, 'press', 'AXButton', 'Refresh Agents settings');
+      await visible(pid, 'Another program owns this command. Apparent will leave it alone.');
+      await poll(async () => assert.equal((await read()).cli, 'taken'), 'Foreign command refusal');
+      // AXPress must refuse disabled controls, just as a real user cannot activate them.
+      await assert.rejects(invoke(pid, 'press', 'AXButton', 'Install command-line tool'), /disabled/);
+      await shot(pid, 'agents-restarted-foreign-preserved');
+      const current = await fs.lstat(link);
+      assert.equal(current.ino, identity.ino);
+      assert.equal(await fs.readFile(link, 'utf8'), 'synthetic foreign command; never execute\n');
+      await fs.unlink(link);
+      await foreign.close(); foreign = null;
+      evidence.cli = { status: 'PASS', link, installedTarget: executable, foreignPreserved: true };
+    } catch (error) {
+      if (!link) evidence.cli = { status: 'UNRUN', reason: error.message };
+      else {
+        evidence.cli = { ...evidence.cli, status: 'FAIL', reason: error.message,
+          failure: await snapshot('agents-cli-failure') };
+        try {
+          const st = await fs.lstat(link);
+          evidence.cli.linkAtFailure = { symlink: st.isSymbolicLink(), inode: st.ino,
+            target: st.isSymbolicLink() ? await fs.readlink(link) : undefined };
+        } catch (diagnosticError) { evidence.cli.linkError = diagnosticError.message; }
+        throw error;
+      }
+    } finally {
+      if (foreign) {
+        const current = await fs.lstat(link);
+        if (current.isFile() && foreignIdentity && current.ino === foreignIdentity.ino && current.dev === foreignIdentity.dev &&
+            await fs.readFile(link, 'utf8') === 'synthetic foreign command; never execute\n') await fs.unlink(link);
+        await foreign.close();
+      }
+      // Never sweep a path or remove a foreign/replaced file after failure.
+      if (link) {
+        const st = await fs.lstat(link).catch(e => { if (e.code !== 'ENOENT') throw e; });
+        if (st?.isSymbolicLink() && await fs.readlink(link) === executable) await fs.unlink(link);
+      }
+    }
+    await invoke(pid, 'press', 'AXButton', 'General');
+    const native = await child(helper);
+    await poll(() => invoke(native, 'press', 'AXButton', 'Agents'), 'Navigate back to Agents');
+    pid = await child(packaged, '--settings-agents --settings-parent');
+    await prepareReader(pid);
+    await poll(async () => {
+      const tree = await invoke(pid, 'inspect');
+      evidence.lastVisibleTree = tree;
+      assert.ok(tree.includes(skill), 'Returned Agents page has no canonical command');
+    }, 'Visible Agents after General navigation');
+    assert.equal((await read()).agentDemoVideo, true);
+    await close();
+    await poll(async () => {
+      await assert.rejects(run('/bin/kill', ['-0', String(pid)], { env, timeout: budget() }));
+      assert.deepEqual(await readRuntimeState(home, budget(3000)), { status: 'connected', phase: 'idle' });
+    }, 'Closing Settings preserves live daemon');
+    evidence.navigationAndClose = true;
+  } else {
+    await close();
+    await poll(async () => {
+      await assert.rejects(run('/bin/kill', ['-0', String(pid)], { env, timeout: budget() }));
+      assert.deepEqual(await readRuntimeState(home, budget(3000)), { status: 'connected', phase: 'idle' });
+    }, 'Current package startup/close smoke');
+    evidence.packageSmoke = true;
+  }
+
+  // Retired native forms provide recovery guidance, never a second implementation.
+  const unavailable = 'Agents Settings could not open. Choose Agents to try again, or reinstall Apparent.';
+  const recovery = evidence.recovery = { missingAssets: false, crash: false, reopened: false };
+  // Diagnostic only: one additional read of this fixture's verified socket.
+  // Never substitute its response for the failed production-reader assertion.
+  const diagnoseState = async () => {
+    const directory = path.join(home, '.config/apparent/agent-control');
+    const address = path.join(directory, 'capture.sock');
+    const dir = await fs.lstat(directory), entry = await fs.lstat(address);
+    assert.ok(dir.isDirectory() && dir.uid === process.geteuid() && (dir.mode & 0o077) === 0);
+    assert.ok(entry.isSocket() && entry.uid === process.geteuid() && (entry.mode & 0o777) === 0o600);
+    // Rust gives the coordinator 3000ms; retain bounded wire-response grace.
+    const timeout = budget(3500);
+    return new Promise(resolve => {
+      const started = Date.now();
+      const socket = require('node:net').createConnection(address);
+      let data = Buffer.alloc(0), settled = false;
+      const finish = result => {
+        if (settled) return;
+        settled = true; clearTimeout(timer); socket.destroy();
+        resolve({ ...result, elapsedMs: Date.now() - started });
+      };
+      const timer = setTimeout(() => finish({ result: 'timeout' }), timeout);
+      socket.once('connect', () => socket.write('state\n'));
+      socket.on('data', chunk => {
+        data = Buffer.concat([data, chunk]);
+        if (data.length > 1024) return finish({ result: 'oversized' });
+        if (!data.includes(10)) return;
+        try {
+          const value = JSON.parse(data.toString('utf8'));
+          const code = ['app_unresponsive', 'app_busy', 'invalid_request'].includes(value.error) ? value.error : undefined;
+          const phase = ['idle', 'selecting', 'starting', 'recording', 'processing', 'completed'].includes(value.state?.phase) ? value.state.phase : undefined;
+          finish({ result: 'reply', code, phase, bytes: data.length });
+        } catch { finish({ result: 'invalid_json', bytes: data.length }); }
+      });
+      socket.once('error', error => finish({ result: 'io_error',
+        code: ['ENOENT', 'ECONNREFUSED', 'ECONNRESET', 'EACCES', 'EPERM'].includes(error.code) ? error.code : 'other' }));
+      socket.once('end', () => finish({ result: 'eof', bytes: data.length }));
+    });
+  };
+  const nativeFailure = async name => {
+    // Navigation may replace the General helper after child discovery. Rejoin
+    // ownership on each read; never retry the navigation press or pin a retired PID.
+    const { nativePID, tree } = await poll(async () => {
+      const nativePID = await child(helper);
+      const tree = await invoke(nativePID, 'inspect');
+      evidence.lastVisibleTree = tree;
+      assert.ok(tree.includes(unavailable), 'Missing native Agents recovery guidance');
+      return { nativePID, tree };
+    }, 'Visible native Agents recovery');
+    assert.ok(!tree.includes('AXCheckBox') && !tree.includes(skill), 'Retired native Agents controls reappeared');
+    await shot(nativePID, name);
+    assert.equal((await read()).agentDemoVideo, true);
+    const stateStarted = Date.now();
+    const state = await readRuntimeState(home, budget(3000));
+    recovery.stateRead = { result: state, elapsedMs: Date.now() - stateStarted };
+    if (state.status !== 'connected' || state.phase !== 'idle') {
+      try { recovery.stateDiagnostic = await diagnoseState(); }
+      catch { recovery.stateDiagnostic = { result: 'refused' }; }
+      // One stack sample of the exact still-owned Rust process, only on failure.
+      // The private artifact distinguishes a blocked coordinator from socket I/O.
+      try {
+        const target = rustPID();
+        const owner = await run('/bin/ps', ['-p', String(target), '-o', 'ppid='], { env, timeout: budget(1000), maxBuffer: 4096 });
+        assert.equal(owner.stdout.trim(), String(report.rust.supervisorPid));
+        const mapping = await run('/usr/sbin/lsof', ['-nP', '-a', '-p', String(target), '-d', 'txt', '-Fn'], { env, timeout: budget(1000), maxBuffer: 131072 });
+        assert.ok(mapping.stdout.split('\n').includes(`n${executable}`));
+        const file = path.join(path.dirname(axTool), 'rust-state-timeout.sample.log');
+        await assert.rejects(fs.lstat(file), { code: 'ENOENT' });
+        // budget() clamps to the original fixture deadline; skip a sample
+        // without time for its one-second capture and output completion.
+        const sampleTimeout = budget(4000);
+        assert.ok(sampleTimeout >= 2000, 'Insufficient fixture time for sampling');
+        await run('/usr/bin/sample', [String(target), '1', '1', '-file', file], {
+          env, timeout: sampleTimeout, killSignal: 'SIGKILL', maxBuffer: 8192,
+        });
+        await fs.chmod(file, 0o600);
+        recovery.stateSample = { result: 'retained', file: 'rust-state-timeout.sample.log', pid: target };
+      } catch { recovery.stateSample = { result: 'unavailable' }; }
+    }
+    assert.deepEqual(state, { status: 'connected', phase: 'idle' });
+    return nativePID;
+  };
+  const reopen = async nativePID => {
+    await invoke(nativePID, 'press', 'AXButton', 'General');
+    await invoke(nativePID, 'press', 'AXButton', 'Agents');
+    const nextPID = await child(packaged, '--settings-agents --settings-parent');
+    await prepareReader(nextPID);
+    await visible(nextPID, skill);
+    assert.equal(await invoke(nextPID, 'value', 'AXCheckBox', 'Ask agents for a demo video'), '1');
+    return nextPID;
+  };
+  const html = path.join(appDir, 'Contents/Resources/settings/app/dist/settings.html');
+  const held = `${html}.agents-native-held`;
+  assert.equal(await fs.realpath(html), html);
+  const htmlIdentity = await fs.lstat(html);
+  const htmlBytes = await fs.readFile(html);
+  assert.ok(htmlIdentity.isFile() && htmlIdentity.uid === process.getuid());
+  await assert.rejects(fs.lstat(held), { code: 'ENOENT' });
+  await fs.rename(html, held);
+  let fallbackPID;
+  try {
+    await invoke(rustPID(), 'open');
+    await poll(() => invoke(rustPID(), 'settings'), 'Owned Settings recovery menu');
+    const nativePID = await child(helper);
+    // A mapped helper process can precede its first window, as on initial open.
+    recovery.nativeWindow = JSON.parse(await poll(() => invoke(nativePID, 'window'), 'Owned missing-assets Settings window'));
+    await invoke(nativePID, 'press', 'AXButton', 'Agents');
+    fallbackPID = await nativeFailure('agents-unavailable-assets');
+    recovery.missingAssets = true;
+  } finally {
+    const current = await fs.lstat(held);
+    assert.ok(current.ino === htmlIdentity.ino && current.dev === htmlIdentity.dev);
+    await assert.rejects(fs.lstat(html), { code: 'ENOENT' });
+    await fs.rename(held, html);
+    assert.deepEqual(await fs.readFile(html), htmlBytes);
+    recovery.assetsRestored = true;
+  }
+  pid = await reopen(fallbackPID);
+  // Exact mapped process and owned window were verified again after reopening.
+  await invoke(pid, 'window');
+  await run('/bin/kill', ['-KILL', String(pid)], { env, timeout: budget() });
+  fallbackPID = await nativeFailure('agents-unavailable-crash');
+  recovery.crash = true;
+  pid = await reopen(fallbackPID);
+  await close();
+  await poll(async () => {
+    await assert.rejects(run('/bin/kill', ['-0', String(pid)], { env, timeout: budget() }));
+    assert.deepEqual(await readRuntimeState(home, budget(3000)), { status: 'connected', phase: 'idle' });
+  }, 'Recovered Settings closes without stopping the daemon');
+  recovery.reopened = true;
+  evidence.passed = (recoveryOnly || evidence.cli.status === 'PASS') && recovery.missingAssets && recovery.assetsRestored && recovery.crash && recovery.reopened;
+  assert.ok(evidence.passed, `Installed Agents acceptance incomplete: ${evidence.cli.reason}`);
+}
+
+const nativeSurface = process.env.APPARENT_SETTINGS_NATIVE_SURFACE ?? 'all';
+test(`real installed Mac Rust + shipped Electron ${nativeSurface.startsWith('agents') ? `Agents${nativeSurface === 'agents-recovery' ? ' recovery' : ''}` : 'Settings'} native acceptance`, {
+  timeout: 180000,
   skip: process.platform !== 'darwin' ? 'Native macOS CI only; Linux is not native proof' : false,
 }, async () => {
   assert.equal(process.env.CI, 'true', 'Refuse a personal Mac');
@@ -162,6 +631,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
   assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted', 'Refuse self-hosted or personal Macs');
   assert.equal(process.env.RUNNER_OS, 'macOS');
   assert.equal(process.env.APPARENT_STORAGE_NATIVE_CI, '1', 'Explicit native CI opt-in required');
+  assert.ok(['all', 'agents', 'agents-recovery'].includes(nativeSurface), 'Unknown native Settings surface');
   assert.ok(!process.versions.electron || process.env.ELECTRON_RUN_AS_NODE === '1',
     'Only the test driver may use Electron Node mode; GUI children must not');
   const runner = await fs.realpath(process.env.RUNNER_TEMP);
@@ -169,6 +639,12 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
   const appDir = process.env.APPARENT_STORAGE_NATIVE_APP_DIR;
   assert.ok(output && path.isAbsolute(output), 'Private evidence output directory required');
   assert.ok(appDir && path.isAbsolute(appDir), 'Already installed owned .app required');
+  assert.equal(path.basename(appDir), 'Apparent.app', 'CLI ownership proof requires the canonical installed app basename');
+  assert.match(process.env.GITHUB_RUN_ID ?? '', /^\d+$/);
+  assert.match(process.env.GITHUB_RUN_ATTEMPT ?? '', /^\d+$/);
+  const expectedApps = ['Settings', 'Storage'].map(scope => path.join(os.homedir(), 'Applications',
+    `Apparent-${scope}-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`, 'Apparent.app'));
+  assert.ok(expectedApps.includes(await fs.realpath(appDir)), 'Asset recovery only mutates this run-owned bundle');
   const executable = path.join(appDir, 'Contents/MacOS/apparent');
   const helperExecutable = path.join(appDir, 'Contents/MacOS/apparent-helper');
   assert.ok((await fs.stat(executable)).isFile());
@@ -183,11 +659,12 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
   const report = { passed: false, platform: process.platform, os: os.release(), arch: process.arch,
     driver: { pid: process.pid, node: process.version }, permissionSource,
     source: { entry: 'electron/main.cjs', preload: 'electron/preload.cjs', renderer: 'dist/index.html' },
-    scope: 'Native Storage only; no recording, audio, permission or TCC changes', cleanup: {} };
-  const deadline = Date.now() + 95000;
+    scope: { surface: nativeSurface, storageAndReporting: nativeSurface === 'all', installedAgents: true, agentsCoverage: nativeSurface === 'agents-recovery' ? 'native-recovery-only' : 'full',
+      exclusions: 'No recording, audio, permission or TCC changes' }, cleanup: {} };
+  const deadline = Date.now() + 150000;
   const budget = (cap = 5000) => {
     const remaining = deadline - Date.now();
-    assert.ok(remaining > 0, 'Native Storage overall deadline exceeded');
+    assert.ok(remaining > 0, 'Native Settings overall deadline exceeded');
     return Math.min(cap, remaining);
   };
   let home, backend, application, electronChild, page, logHandle, failure;
@@ -208,6 +685,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     });
     return stdout.trim();
   };
+  const axTool = path.join(output, 'agents-ax');
   const panel = (operation) => osa(panelScript, [String(electronChild.pid), home, operation]);
   const snapshot = async () => {
     const runtime = await within(page.evaluate(() => window.apparent.readRuntimeState()), budget(), 'Runtime read');
@@ -218,6 +696,22 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     return { runtime, location };
   };
   try {
+    // Compile every native script before opening the app. JavaScript syntax
+    // checks cannot detect AppleScript dictionary terms used as variable names.
+    report.scriptCompilation = {};
+    for (const [name, script] of [['agents', agentsAX], ...(nativeSurface === 'all' ? [['picker', panelScript]] : [])]) {
+      const compiled = path.join(output, `${name}-ax.scpt`);
+      await run('/usr/bin/osacompile', ['-o', compiled, '-e', script], {
+        timeout: budget(5000), killSignal: 'SIGKILL', maxBuffer: 32768,
+      });
+      assert.ok((await fs.stat(compiled)).size > 0);
+      report.scriptCompilation[name] = true;
+    }
+    await run('/usr/bin/swiftc', [path.join(__dirname, 'native/agents-ax.swift'), '-o', axTool], {
+      timeout: budget(45000), killSignal: 'SIGKILL', maxBuffer: 32768,
+    });
+    report.nativeAXReader = { source: 'tests/native/agents-ax.swift',
+      sha256: createHash('sha256').update(await fs.readFile(axTool)).digest('hex') };
     // Apple's Git may cold-start its developer-tool shim on a fresh runner.
     // Provenance is still required, within the existing overall test deadline;
     // it should not spend the much shorter per-control interaction budget.
@@ -228,7 +722,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     })).stdout.trim();
     assert.match(report.source.commit, /^[0-9a-f]{40}$/);
     report.source.sha256 = {};
-    for (const file of ['electron/main.cjs', 'electron/preload.cjs', 'electron/runtime.cjs', 'src/storage.tsx', 'dist/index.html']) {
+    for (const file of ['electron/main.cjs', 'electron/preload.cjs', 'electron/runtime.cjs', 'src/storage.tsx', 'dist/index.html', 'electron/preloads/agents.cjs', 'src/agents/page.tsx', 'dist/settings.html']) {
       report.source.sha256[file] = createHash('sha256').update(await fs.readFile(path.join(root, file))).digest('hex');
     }
     home = await fs.mkdtemp(path.join(runner, 'sn-'));
@@ -300,6 +794,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     }, 'Installed Rust live control readiness', 15000);
     };
     await startRust();
+    if (nativeSurface === 'all') {
     application = await electron.launch({ args: [root], env, timeout: budget(15000) });
     electronChild = application.process();
     // launch() attaches to the main process before app.whenReady() creates a window.
@@ -451,6 +946,14 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     assert.equal(report.reset.location.storage.effectivePath, builtin);
     await page.screenshot({ path: path.join(output, 'storage-reset.png'), timeout: budget() });
     assert.deepEqual(rendererErrors, []);
+    // Finish the existing dev Storage presentation before exercising Rust-owned
+    // installed Settings. Packaged Agents is never launched independently.
+    await within(application.close(), budget(), 'Close Storage fixture');
+    application = null;
+    }
+    await installedAgents({ home, config, appDir, axTool, report, osa, run, env, budget, poll,
+      startRust, stopRust: () => stopOwned(backend, 'rust Agents restart', true),
+      rustPID: () => report.rust.pid });
     report.passed = true;
   } catch (error) {
     failure = error;

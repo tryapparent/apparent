@@ -220,6 +220,8 @@ pub enum Pane {
     About,
 }
 
+/// Recovery copy only; native Agents no longer contains setting controls.
+pub const AGENTS_UNAVAILABLE: &str = "Agents Settings could not open. Choose Agents to try again, or reinstall Apparent.";
 /// The capture-reading skill source is `capture/agent/skills/apparent/SKILL.md`.
 pub const SKILL_COMMAND: &str = "bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent";
 
@@ -231,7 +233,7 @@ pub struct View {
     pub hosted: Option<crate::connect::hosted::AccountView>,
     pub login: LoginView,
     pub error_reporting: bool,
-    pub agent_demo_video: bool,
+    pub agents_unavailable: &'static str,
     pub shortcuts: Vec<ShortcutView>,
     pub microphone: MicrophoneView,
     pub transcriber: TranscriberView,
@@ -247,8 +249,6 @@ pub struct View {
     pub update_check: UpdateCheck,
     pub update_channel: &'static str,
     pub main_updates: bool,
-    pub command_line: CommandLineView,
-    pub skill_command: &'static str,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -273,95 +273,6 @@ impl UpdateResult {
             Self::Current => "No update available",
             Self::Failed => "Update check failed",
         }
-    }
-}
-
-/// The "Command-line tool" row.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CommandLineView {
-    /// Where `apparent` is linked, once it is.
-    pub path: Option<String>,
-    /// "install", "uninstall", or none.
-    pub button: Option<&'static str>,
-    pub enabled: bool,
-    pub caption: String,
-    pub error: bool,
-}
-
-impl CommandLineView {
-    fn new(state: &crate::composition::command_line::State, error: Option<&str>) -> Self {
-        use crate::composition::command_line::{State, tilde, usually_on_path};
-        let folder = |link: &std::path::Path| link.parent().map_or_else(String::new, tilde);
-        let mut view = Self {
-            path: None,
-            button: Some("install"),
-            enabled: true,
-            caption: String::new(),
-            error: false,
-        };
-        match state {
-            State::Installed { link, homebrew } => {
-                view.path = Some(tilde(link));
-                view.caption = "Agents and your terminal can run apparent to read captures, zoom \
-                                into a moment and export video."
-                    .to_owned();
-                if *homebrew {
-                    view.button = None;
-                    view.caption = "Installed with Homebrew. Agents and your terminal can run \
-                                    apparent to read captures, zoom into a moment and export video."
-                        .to_owned();
-                } else {
-                    view.button = Some("uninstall");
-                    if !usually_on_path(link) {
-                        view.caption = format!(
-                            "If your shell can't find apparent, add {} to your PATH.",
-                            folder(link)
-                        );
-                    }
-                }
-            }
-            State::Missing { link } => {
-                view.caption = format!(
-                    "Links apparent into {}, so agents and your terminal can run it.",
-                    folder(link)
-                );
-            }
-            State::Stale { link } => {
-                view.caption = format!(
-                    "{} points to another copy of Apparent. Install links it to this one.",
-                    tilde(link)
-                );
-            }
-            State::Taken { link } => {
-                view.button = None;
-                view.error = true;
-                view.caption = format!(
-                    "{} is another program, so Apparent leaves it alone.",
-                    tilde(link)
-                );
-            }
-            State::Nowhere => {
-                view.enabled = false;
-                view.error = true;
-                view.caption =
-                    "There's no folder on your PATH that Apparent can write to.".to_owned();
-            }
-            State::Unavailable => {
-                view.enabled = false;
-                view.caption = if cfg!(target_os = "linux") {
-                    "The command-line tool links to Apparent's AppImage; run Apparent from one."
-                } else {
-                    "The command-line tool works in the installed app."
-                }
-                .to_owned();
-            }
-        }
-        if let Some(error) = error {
-            view.error = true;
-            view.caption = error.to_owned();
-        }
-        view
     }
 }
 
@@ -667,9 +578,6 @@ pub enum Action {
     UpdateLater,
     /// "Show Welcome Tour" on About.
     Tour,
-    /// Link `apparent` into a folder on PATH, or remove that link.
-    InstallCli,
-    UninstallCli,
     ConnectHosted,
     ManageSharedLinks,
     Close,
@@ -707,8 +615,6 @@ pub trait Host {
     fn pause_shortcuts(&mut self, paused: bool);
     fn config_path(&self) -> PathBuf;
     fn set_login_item(&mut self, on: bool) -> anyhow::Result<()>;
-    /// Apparent's binary and the folders `apparent` may be linked into.
-    fn command_line(&self) -> crate::composition::command_line::Places;
 }
 
 /// The window's own state: what it's recording, what failed, what was asked for.
@@ -717,8 +623,6 @@ pub struct Panel {
     connect: Option<super::connect::View>,
     recording: Option<ShortcutKind>,
     error: Option<(ShortcutKind, String)>,
-    /// Why the last Install or Uninstall failed.
-    cli_error: Option<String>,
     requested: BTreeSet<Permission>,
     grants: Option<Grants>,
     captures_size: Option<u64>,
@@ -880,28 +784,11 @@ impl Panel {
                 }
             }
             Action::Tour => Effect::Tour,
-            Action::InstallCli => {
-                let result = crate::composition::command_line::install(&host.command_line());
-                self.note_cli("install", result.map(drop));
-                Effect::None
-            }
-            Action::UninstallCli => {
-                let result = crate::composition::command_line::uninstall(&host.command_line());
-                self.note_cli("uninstall", result);
-                Effect::None
-            }
             Action::Close => {
                 self.stop_recording(host);
                 Effect::Close
             }
         }
-    }
-
-    fn note_cli(&mut self, verb: &str, result: anyhow::Result<()>) {
-        self.cli_error = result.err().map(|error| {
-            crate::capture::engine::runtime::apparent_log(format!("Command-line tool: {verb}: {error:#}"));
-            format!("Couldn't {verb} it: {error}.")
-        });
     }
 
     fn stop_recording(&mut self, host: &mut dyn Host) {
@@ -943,11 +830,6 @@ impl Panel {
         match (key, value) {
             ("errorReporting", serde_json::Value::Bool(on)) => {
                 if let Err(error) = crate::capture::desktop::workflow::error_reporting::set_enabled_in(&path, *on) {
-                    crate::capture::engine::runtime::apparent_log(format!("Saving {key} failed: {error:#}"));
-                }
-            }
-            ("agentDemoVideo", serde_json::Value::Bool(on)) => {
-                if let Err(error) = crate::shared::handoff::set_experiment_in(&path, "agentDemoVideo", *on) {
                     crate::capture::engine::runtime::apparent_log(format!("Saving {key} failed: {error:#}"));
                 }
             }
@@ -1113,7 +995,7 @@ impl Panel {
                 needs_approval: login == LoginItem::NeedsApproval,
             },
             error_reporting: crate::capture::desktop::workflow::error_reporting::enabled_in(&host.config_path()),
-            agent_demo_video: crate::shared::handoff::experiment_enabled_in(&config, "agentDemoVideo"),
+            agents_unavailable: AGENTS_UNAVAILABLE,
             shortcuts: ShortcutKind::ALL
                 .into_iter()
                 .map(|kind| {
@@ -1178,11 +1060,6 @@ impl Panel {
                 "stable"
             },
             main_updates: cfg!(target_os = "linux"),
-            command_line: CommandLineView::new(
-                &crate::composition::command_line::state(&host.command_line()),
-                self.cli_error.as_deref(),
-            ),
-            skill_command: SKILL_COMMAND,
         }
     }
 }
@@ -1254,9 +1131,6 @@ impl Host for AppHost<'_> {
         set_login_item(on)
     }
 
-    fn command_line(&self) -> crate::composition::command_line::Places {
-        crate::composition::command_line::Places::system()
-    }
 }
 
 /// From the window's helper process and its pollers.
@@ -1298,7 +1172,7 @@ pub(super) enum Transport {
 /// The open Settings window.
 pub struct Session {
     generation: u64,
-    storage: bool,
+    electron_pane: Option<Pane>,
     connect_presentation: bool,
     panel: Panel,
     connect: Option<super::connect::Controller>,
@@ -1319,7 +1193,7 @@ impl Session {
 
         let events: std::sync::Arc<dyn Fn(Event) + Send + Sync> = std::sync::Arc::new(events);
         let generation = super::presentation::generation();
-        let (transport, storage) = Self::open_presentation(pane, generation, &events, true)?;
+        let (transport, electron_pane) = Self::open_presentation(pane, generation, &events, true)?;
 
         let polling = std::sync::Arc::new(AtomicBool::new(true));
         let alive = std::sync::Arc::clone(&polling);
@@ -1369,7 +1243,7 @@ impl Session {
         panel.connect = connect.as_ref().map(|controller| controller.view());
         Ok(Self {
             generation,
-            storage,
+            electron_pane,
             connect_presentation: false,
             panel,
             connect,
@@ -1384,16 +1258,16 @@ impl Session {
     fn open_presentation(
         pane: Option<Pane>, generation: u64,
         events: &std::sync::Arc<dyn Fn(Event) + Send + Sync>,
-        allow_storage: bool,
-    ) -> anyhow::Result<(Transport, bool)> {
+        allow_electron: bool,
+    ) -> anyhow::Result<(Transport, Option<Pane>)> {
         let target = events.clone();
         let events: std::sync::Arc<dyn Fn(Event) + Send + Sync> = std::sync::Arc::new(move |event| {
             target(Event::Presentation { generation, event: Box::new(event) });
         });
-        if allow_storage && pane == Some(Pane::Storage) && crate::shared::handoff::experiment("electronCaptureLocation") {
-            match super::presentation::open(events.clone()) {
-                Ok(transport) => return Ok((transport, true)),
-                Err(error) => crate::capture::engine::runtime::apparent_log(format!("Storage Settings fallback: {error:#}")),
+        if allow_electron && (pane == Some(Pane::Agents) || (pane == Some(Pane::Storage) && crate::shared::handoff::experiment("electronCaptureLocation"))) {
+            match super::presentation::open(pane.unwrap(), events.clone()) {
+                Ok(transport) => return Ok((transport, pane)),
+                Err(error) => crate::capture::engine::runtime::apparent_log(format!("Shared Settings fallback: {error:#}")),
             }
         }
         let transport = if cfg!(not(target_os = "macos")) {
@@ -1406,7 +1280,7 @@ impl Session {
         if pane == Some(Pane::Storage) {
             Self::measure_native_storage(events);
         }
-        Ok((transport, false))
+        Ok((transport, None))
     }
 
     // Native fallback has no bounded Electron usage request. Measure only after
@@ -1497,7 +1371,7 @@ impl Session {
                     if let Some(controller) = &mut self.connect { controller.close(); }
                     self.connect = None;
                     self.generation = generation;
-                    self.storage = false;
+                    self.electron_pane = None;
                     self.connect_presentation = true;
                     self.last_view.clear();
                     super::presentation::retire(std::mem::replace(&mut self.transport, transport));
@@ -1536,13 +1410,13 @@ impl Session {
                 self.show(Some(Pane::General));
                 return Effect::None;
             }
-            Event::Exited if self.storage => {
+            Event::Exited if self.electron_pane.is_some() => {
                 // EOF without a normal Close means Electron crashed or failed to
                 // launch. Keep Settings usable without touching saved policy.
                 let generation = super::presentation::generation();
-                if let Ok((transport, storage)) = Self::open_presentation(Some(Pane::Storage), generation, &self.events, false) {
+                if let Ok((transport, electron_pane)) = Self::open_presentation(self.electron_pane, generation, &self.events, false) {
                     self.generation = generation;
-                    self.storage = storage;
+                    self.electron_pane = electron_pane;
                     self.last_view.clear();
                     super::presentation::retire(std::mem::replace(&mut self.transport, transport));
                     self.sync(host);
@@ -1634,15 +1508,15 @@ impl Session {
     pub fn show(&mut self, pane: Option<Pane>) {
         let mut replaced = false;
         if let Some(pane) = pane {
-            let storage = pane == Pane::Storage && crate::shared::handoff::experiment("electronCaptureLocation");
-            if self.connect_presentation || storage != self.storage {
+            let electron_pane = if pane == Pane::Agents || (pane == Pane::Storage && crate::shared::handoff::experiment("electronCaptureLocation")) { Some(pane) } else { None };
+            if self.connect_presentation || electron_pane != self.electron_pane {
                 let generation = super::presentation::generation();
                 match Self::open_presentation(Some(pane), generation, &self.events, true) {
-                    Ok((transport, storage)) => {
+                    Ok((transport, electron_pane)) => {
                         replaced = true;
                         self.send(&serde_json::json!({"type": "close"}));
                         self.generation = generation;
-                        self.storage = storage;
+                        self.electron_pane = electron_pane;
                         self.connect_presentation = false;
                         self.last_view.clear();
                         super::presentation::retire(std::mem::replace(&mut self.transport, transport));
@@ -1651,14 +1525,14 @@ impl Session {
                 }
             }
         }
-        if !replaced && !self.storage && pane == Some(Pane::Storage) {
+        if !replaced && self.electron_pane.is_none() && pane == Some(Pane::Storage) {
             let generation = self.generation;
             let events = self.events.clone();
             Self::measure_native_storage(std::sync::Arc::new(move |event| {
                 events(Event::Presentation { generation, event: Box::new(event) });
             }));
         }
-        if !self.storage && !self.connect_presentation && self.connect.is_none()
+        if self.electron_pane.is_none() && !self.connect_presentation && self.connect.is_none()
             && crate::shared::handoff::experiment(super::connect::CONNECT_SETTINGS)
         {
             let events = self.events.clone();
@@ -1671,9 +1545,9 @@ impl Session {
     }
 
     pub fn sync(&mut self, host: &dyn Host) {
-        // Storage reads its narrow projected socket contract. Do not forward the
+        // Electron pages read their narrow projected socket contracts. Do not forward the
         // other pages' state to a renderer which does not present those pages.
-        if self.storage || self.connect_presentation { return; }
+        if self.electron_pane.is_some() || self.connect_presentation { return; }
         let mut view = serde_json::to_value(self.panel.view(host)).unwrap_or_default();
         view["type"] = "state".into();
         // Switched from Hex to Apple Speech: get its model now, not at the first capture.
