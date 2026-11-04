@@ -12,7 +12,7 @@ path = "main.rs"
 [dependencies]
 sha2 = "0.10.9"
 apparent-inspect = { path = "capture/agent/inspection" }
-apparent-capture = { path = "capture/agent/control-client" }
+apparent-capture = { path = "capture/agent/control-client", default-features = false, features = ["provider-wire"] }
 apparent-connect-client = { path = "connect/client" }
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
