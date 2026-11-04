@@ -63,6 +63,20 @@ On each build-script execution, missing, corrupt or mismatched output rebuilds; 
 the normal compiler path without admitting a cache entry. Root Git revision and
 dirty labels continue to be calculated on every build-script invocation.
 
+Root build identity is still coupled to the whole checkout: `build_version.rs`
+watches Git refs and every tracked path so it can refresh `APPARENT_VERSION_LABEL`
+for both unrelated edits and root source edits. The Cargo fixture in
+`build-cache.test.ts` traces the consequence: a tracked unrelated edit relinks
+the root crate while native outputs remain reusable, and an unrelated commit
+changes the embedded label to the new checkout revision; removing all tracked
+watches would instead leave the embedded label stale after a dirty Rust source edit.
+Do not narrow this watch set to guessed directories or remove it until the build
+identity input is bound to the actual root artifact compiler dependency closure
+and the packaged binary can retain its original source identity separately from
+the assembly revision. Existing Mac producer admission and platform verification
+continue to use exact checkout SHA/tree and clean-source checks; the UI label is
+not a substitute for those gates.
+
 When the Swift helper receipt is absent, its unchanged compiler command overlaps
 complete identity discovery in a scoped thread. Both finish before output
 validation and receipt publication; failed identity discovery leaves no receipt.
