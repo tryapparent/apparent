@@ -294,6 +294,9 @@ jobs:
             cat "$RUNNER_TEMP/mac-compiler-setup/setup.log"
             exit 1
           fi
+      - name: Prepare the sole config transaction executor before native preflight
+        if: needs.select.outputs.root == 'true'
+        run: node shared/handoff/typescript/scripts/prepare.ts
       - name: Execute Rust changed-tree checks (not GUI acceptance)
         run: |
           # Engine finalizer proofs reject group-writable cache ancestors.

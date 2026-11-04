@@ -4,6 +4,7 @@ import { chmod, mkdir, readFile, readdir, rename, stat, writeFile } from 'node:f
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 const frontend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = path.resolve(frontend, '../../../..');
@@ -89,7 +90,36 @@ async function runtimeIdentity(backend: string) {
   }
   const files: Array<[string, string]> = [];
   for (const file of [...libraries].sort()) files.push([file, sha256(await readFile(file))]);
-  return { files, preload: process.env.LD_PRELOAD || '', libraryPath: process.env.LD_LIBRARY_PATH || '' };
+  // The native backend now delegates all physical config writes to this
+  // executor. A Rust-only receipt must not silently credit changed emitted JS,
+  // FFI bindings or the runtime that loads them as unchanged native evidence.
+  const configRoot = path.join(root, 'shared/handoff/typescript');
+  const configRequire = createRequire(path.join(configRoot, 'package.json'));
+  const configFiles: Array<[string, string]> = [];
+  async function hashTree(directory: string) {
+    for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) await hashTree(file);
+      else if (entry.isFile()) configFiles.push([path.relative(root, file), sha256(await readFile(file))]);
+      else throw new Error('Unexpected config runtime entry');
+    }
+  }
+  await hashTree(path.join(configRoot, 'src'));
+  await hashTree(path.join(configRoot, 'dist'));
+  await hashTree(path.dirname(configRequire.resolve(`@koromix/koffi-${process.platform}-${process.arch}/package.json`)));
+  await hashTree(path.resolve(path.dirname(configRequire.resolve('lossless-json')), '../..'));
+  for (const name of ['package.json', 'package-lock.json']) {
+    configFiles.push([path.join('shared/handoff/typescript', name), sha256(await readFile(path.join(configRoot, name)))]);
+  }
+  // Account for both supported development resolver choices. An externally
+  // supplied Electron dist does not imply the native child uses that runtime.
+  const node = await run('node', ['-p', 'process.execPath'], { capture: true });
+  if (node.code !== 0) throw new Error('Cannot identify config Node runtime');
+  const runtimes = [node.stdout.trim(), path.join(frontend, 'node_modules/electron/dist/electron')];
+  for (const executable of runtimes) if ((await stat(executable).catch(() => undefined))?.isFile()) {
+    configFiles.push([executable, sha256(await readFile(executable))]);
+  }
+  return { files, configFiles, preload: process.env.LD_PRELOAD || '', libraryPath: process.env.LD_LIBRARY_PATH || '' };
 }
 
 async function locateHarness(output: string) {
@@ -103,6 +133,8 @@ async function locateHarness(output: string) {
 
 async function prepareNative() {
   if (process.platform !== 'linux') throw new Error('The real Rust/Electron Settings bridge lane requires Linux');
+  const config = await run('node', ['shared/handoff/typescript/scripts/prepare.ts', '--offline']);
+  if (config.code !== 0) throw new Error('Config executor preparation failed');
   const before = await nativeSourceHash();
   const built = await run('cargo', ['test', '--offline', 'storage_electron_rust_roundtrip', '--no-run'], { capture: true });
   process.stdout.write(built.stdout);

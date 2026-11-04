@@ -427,6 +427,11 @@ def run_selected_checks(selection, offline=True, cargo_timings=False, overlap_ro
     dependency_mode = "--offline" if offline else "--locked"
     diagnostics = ["--timings"] if cargo_timings else []
     if selection["root"]:
+        # Every native config caller delegates its physical transaction to this
+        # locked TypeScript executor. Prepare it explicitly, never via Cargo or
+        # an npm lifecycle hook; offline verification must remain offline.
+        subprocess.run(["node", "shared/handoff/typescript/scripts/prepare.ts"] +
+                       (["--offline"] if offline else []), cwd=ROOT, check=True)
         if selection.get("focused"):
             for test_filter in selection["focused"]:
                 result = subprocess.run(cargo + ["test", "-j", jobs, dependency_mode] + diagnostics + [test_filter,

@@ -23,14 +23,7 @@ fn resolve_from(installed: &Path, development: &Path) -> Result<Resources> {
     let root = if packaged { root } else { development.to_path_buf() };
     // Settings already packages the shared runtime. Assets and entry protocols
     // remain surface-owned; callers never derive the executable from the asset root.
-    #[cfg(target_os = "macos")]
-    let binary = if packaged {
-        installed.join("../Resources/settings/runtime/Electron.app/Contents/MacOS/Electron")
-    } else { root.join("node_modules/electron/dist/Electron.app/Contents/MacOS/Electron") };
-    #[cfg(target_os = "linux")]
-    let binary = if packaged {
-        installed.join("../share/apparent/settings/runtime/electron")
-    } else { root.join("node_modules/electron/dist/electron") };
+    let binary = crate::shared::node_runtime::electron_executable(installed, &root, packaged);
     ensure!(
         binary.is_file() && root.join("dist/index.html").is_file(),
         "Desktop UI is missing; rebuild the packaged Electron frontend"

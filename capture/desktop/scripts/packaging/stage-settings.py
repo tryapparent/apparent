@@ -40,6 +40,16 @@ def sign_runtime(runtime, sign, entitlements):
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(runtime)], check=True)
 
 
+def sign_staged_native(shared_config, sign):
+    package_root = shared_config / "node_modules/@koromix"
+    binaries = list(package_root.rglob("*.node"))
+    if len(binaries) != 1 or binaries[0].is_symlink() or not binaries[0].is_file():
+        raise ValueError("Expected one staged Settings native extension")
+    binary = binaries[0]
+    subprocess.run(sign + [str(binary)], check=True)
+    subprocess.run(["codesign", "--verify", "--strict", str(binary)], check=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("destination", type=Path)
@@ -57,51 +67,64 @@ def main():
             parser.error("Settings and popup staging destinations must not overlap")
     root = Path(__file__).resolve().parents[4]
     frontend = root / "capture/desktop/ui/frontend"
+    shared_typescript = root / "shared/handoff/typescript"
     env = os.environ.copy()
     env.pop("ELECTRON_SKIP_BINARY_DOWNLOAD", None)
     subprocess.run(["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"], cwd=frontend, env=env, check=True)
     subprocess.run(["node", "node_modules/electron/install.js"], cwd=frontend, env=env, check=True)
     subprocess.run(["npm", "run", "build"], cwd=frontend, env=env, check=True)
-    if args.popups_destination:
-        # Use the existing guarded stager only after a successful locked build.
-        # Standalone popup packaging still prepares its own frontend normally.
-        subprocess.run(["node", "--input-type=module", "-e",
-                        "import { stagePopupAssets } from './scripts/popup-entries.mjs'; "
-                        "await stagePopupAssets(process.cwd(), process.argv[1]);",
-                        str(args.popups_destination.absolute())],
-                       cwd=frontend, env=env, check=True)
     destination = args.destination.absolute()
     if destination.is_symlink():
         parser.error("Refusing a symlink staging destination")
-    if destination.exists():
-        shutil.rmtree(destination)
-    app = destination / "app"
-    app.mkdir(parents=True)
-    shutil.copytree(frontend / "electron", app / "electron")
-    theme = app / "node_modules/@apparent/ui"
-    (theme / "src").mkdir(parents=True)
-    for name in ("window-theme.cjs", "tokens.css"):
-        shutil.copy2(root / "shared/ui/src" / name, theme / "src" / name)
-    (theme / "package.json").write_text(json.dumps({"exports": {"./window-theme": "./src/window-theme.cjs"}}) + "\n")
-    shutil.copytree(frontend / "dist/assets", app / "dist/assets",
-                    ignore=shutil.ignore_patterns("foundation-*"))
-    shutil.copy2(frontend / "dist/settings.html", app / "dist/settings.html")
-    (app / "dist/pill").mkdir()
-    shutil.copy2(frontend / "dist/pill/index.html", app / "dist/pill/index.html")
-    shutil.copy2(frontend / "dist/onboarding.html", app / "dist/onboarding.html")
-    (app / "package.json").write_text(json.dumps({"name": "apparent-settings", "version": "0.0.0", "main": "electron/settings.cjs"}) + "\n")
-    shutil.copytree(frontend / "node_modules/electron/dist", destination / "runtime", symlinks=True)
-    if sys.platform == "darwin":
-        if not args.sign:
-            parser.error("macOS packaging requires an explicit signing identity")
-        runtime = destination / "runtime/Electron.app"
-        entitlements = Path(__file__).with_name("Settings.entitlements")
-        sign = ["codesign", "--force", "--options", "runtime", "--sign", args.sign]
-        if args.sign != "-":
-            sign.append("--timestamp")
-        if args.keychain:
-            sign.extend(["--keychain", str(args.keychain)])
-        sign_runtime(runtime, sign, entitlements)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shared_stage = destination.parent / f".{destination.name}.shared-config-{os.getpid()}"
+    if shared_stage.exists() or shared_stage.is_symlink():
+        parser.error("Refusing an existing shared config staging path")
+    try:
+        subprocess.run(["node", "scripts/stage.ts", str(shared_stage)],
+                       cwd=shared_typescript, env=env, check=True)
+        if args.popups_destination:
+            # Use the existing guarded stager only after a successful locked build.
+            # Standalone popup packaging still prepares its own frontend normally.
+            subprocess.run(["node", "--input-type=module", "-e",
+                            "import { stagePopupAssets } from './scripts/popup-entries.mjs'; "
+                            "await stagePopupAssets(process.cwd(), process.argv[1]);",
+                            str(args.popups_destination.absolute())],
+                           cwd=frontend, env=env, check=True)
+        if destination.exists():
+            shutil.rmtree(destination)
+        app = destination / "app"
+        app.mkdir(parents=True)
+        shutil.copytree(shared_stage, app / "shared-config")
+        shutil.copytree(frontend / "electron", app / "electron")
+        theme = app / "node_modules/@apparent/ui"
+        (theme / "src").mkdir(parents=True)
+        for name in ("window-theme.cjs", "tokens.css"):
+            shutil.copy2(root / "shared/ui/src" / name, theme / "src" / name)
+        (theme / "package.json").write_text(json.dumps({"exports": {"./window-theme": "./src/window-theme.cjs"}}) + "\n")
+        shutil.copytree(frontend / "dist/assets", app / "dist/assets",
+                        ignore=shutil.ignore_patterns("foundation-*"))
+        shutil.copy2(frontend / "dist/settings.html", app / "dist/settings.html")
+        (app / "dist/pill").mkdir(parents=True)
+        shutil.copy2(frontend / "dist/pill/index.html", app / "dist/pill/index.html")
+        shutil.copy2(frontend / "dist/onboarding.html", app / "dist/onboarding.html")
+        (app / "package.json").write_text(json.dumps({"name": "apparent-settings", "version": "0.0.0", "main": "electron/settings.cjs"}) + "\n")
+        shutil.copytree(frontend / "node_modules/electron/dist", destination / "runtime", symlinks=True)
+        if sys.platform == "darwin":
+            if not args.sign:
+                parser.error("macOS packaging requires an explicit signing identity")
+            runtime = destination / "runtime/Electron.app"
+            entitlements = Path(__file__).with_name("Settings.entitlements")
+            sign = ["codesign", "--force", "--options", "runtime", "--sign", args.sign]
+            if args.sign != "-":
+                sign.append("--timestamp")
+            if args.keychain:
+                sign.extend(["--keychain", str(args.keychain)])
+            sign_staged_native(app / "shared-config", sign)
+            sign_runtime(runtime, sign, entitlements)
+    finally:
+        if shared_stage.exists() and not shared_stage.is_symlink():
+            shutil.rmtree(shared_stage)
     print(f"Staged Storage Settings: {destination}")
 
 

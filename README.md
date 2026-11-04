@@ -74,7 +74,12 @@ integration verification are still required; this is not a release announcement.
 
 ## Usage
 
+For source builds, prepare the shared settings transaction executor with Node
+22.18+ before running the native application. Official packages include it.
+
 ```sh
+node shared/handoff/typescript/scripts/prepare.ts
+
 # Launch the GPUI menu-bar and review app (press ⌥⇧S to record)
 cargo run -- app
 
