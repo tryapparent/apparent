@@ -29,7 +29,7 @@ class AppleSigningTest(unittest.TestCase):
         setup.chmod(0o755)
         tools = {
             "cargo": 'mkdir -p target/release; touch target/release/apparent target/release/apparent-helper',
-            "node": 'printf \'node %s\\n\' "$*" >> "$TRACE"\nif [ "$1" = --experimental-strip-types ]; then shift; fi\ncase "$1" in\n  */package-notes.mjs) mkdir -p "$2/dist"; printf synthetic > "$2/dist/index.html" ;;\n  */composition.ts)\n    test "$2" = package\n    inspector_destination="$4"\n    mkdir -p "$inspector_destination/inspection"\n    printf synthetic > "$inspector_destination/inspection/apparent-inspect"\n    printf \'{"schema":1,"executable":"apparent-inspect"}\' > "$inspector_destination/inspection/manifest.json"\n    shift 4\n    "$@" "$inspector_destination/inspection/apparent-inspect" ;;\n  *) exit 1 ;;\nesac\n',
+            "node": 'printf \'node %s\\n\' "$*" >> "$TRACE"\nif [ "$1" = --experimental-strip-types ]; then shift; fi\ncase "$1" in\n  */package-notes.mjs) mkdir -p "$2/dist"; printf synthetic > "$2/dist/index.html" ;;\n  */recipient/package.ts) exit 0 ;;\n  */composition.ts)\n    test "$2" = package\n    inspector_destination="$4"\n    mkdir -p "$inspector_destination/inspection"\n    printf synthetic > "$inspector_destination/inspection/apparent-inspect"\n    printf \'{"schema":1,"executable":"apparent-inspect"}\' > "$inspector_destination/inspection/manifest.json"\n    shift 4\n    "$@" "$inspector_destination/inspection/apparent-inspect" ;;\n  *) exit 1 ;;\nesac\n',
             "plutil": 'exit 0',
             "codesign": '''printf 'codesign %s\\n' "$*" >> "$TRACE"
 if [ "$1" = -dv ]; then

@@ -28,10 +28,11 @@ Use a new absolute private PREFIX, following `control-client`'s dedicated-prefix
 convention. Run `PREFIX/bin/apparent-inspect` from outside the checkout. Rollback
 removes only this prefix's executable; never replace another installed command.
 Normal app users need no separate installation: the existing `apparent inspect`
-CLI directly adopts this package in the ordinary app build and distribution.
-Standalone updates do not replace the statically linked implementation in an
-already installed app; those updates still require the ordinary app release.
-No runtime downloader, alternate app routing or daemon is introduced.
+CLI invokes the verified bundled executable, automatically staged by ordinary
+app assembly. A compatible inspector-only composition can reuse the admitted root
+without recompiling it; users still receive one ordinary app package. See
+[delivery contracts](delivery/README.md) for exact component provenance and reuse
+admission. No runtime downloader or daemon is introduced.
 
 The standalone reader resolves `latest` and short local names using
 `APPARENT_CAPTURES_DIR`, then an absolute `capturesDir` in the existing config,
@@ -55,10 +56,11 @@ review and final integration remain with the parent task.
 
 ## Archive and Mac acceptance
 
-The reviewed extraction is a prerequisite for independent app delivery. Static
-schema/producer reuse is intentional; the current app's inspection still changes
-only when its root executable is rebuilt. Neither this package nor the proof
-runner changes installed routing or establishes independent app shipping.
+Static schema/producer reuse is intentional. Initial bundled dispatch adoption
+requires a root rebuild. Subsequent inspector executable changes use the versioned
+composition contract; schema/reader/formatter changes still require a root rebuild
+while existing producers consume them. Linux packaged proof and Mac packaged
+acceptance are separate gates.
 
 From a clean committed checkout, create the source archive with the package command
 above. Retain its SHA-256, source commit and tree identity. On an approved Linux or
@@ -84,7 +86,8 @@ comparison. On an approved Mac with its existing documented build prerequisites:
 
     taskpolicy -c utility cargo build --locked --offline -j 3
 
-Then append `/absolute/source/target/debug/apparent` to the proof command. This
+Assemble the bundled inspector with the normal installer (see delivery commands),
+then append `/absolute/Apparent.app/Contents/MacOS/apparent` to the proof command. This
 adds real root `inspect` output comparisons; it does not launch the GUI or record
 anything. A standalone build cannot establish this root-consumer check. Preserve
 the complete source archive's digest/commit separately from the `.crate` digest.

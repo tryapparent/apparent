@@ -7,6 +7,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build, stage } from './package.ts';
+import { publishValidatedDirectory } from '../../../../shared/packaging/transaction.ts';
 const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 const compatibility = 'inspection-host-v1';
 const buildEnvironment = () => Object.fromEntries(['APPARENT_PREVIEW_BUILD', 'APPARENT_HELPER_BUNDLE_ID', 'APPARENT_POSTHOG_TOKEN', 'MACOSX_DEPLOYMENT_TARGET', 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS'].map(key => [key, process.env[key] ? hash(process.env[key]!) : null]));
@@ -34,7 +35,9 @@ export function sealRoot(binaryDirectory: string, profile: string, output: strin
   const root = repository();
   const closure = inputs(root);
   assert.equal(resolve(binaryDirectory), join(root, 'target', profile), 'Seal only this clean source build');
+  const buildStarted = Date.now();
   command('cargo', ['build', '--locked', '--offline', '-j', process.env.T3_BUILD_JOBS ?? '3', ...(profile === 'release' ? ['--release'] : [])], root);
+  const rootBuildElapsedMs = Date.now() - buildStarted;
   assert.deepEqual(inputs(root), closure, 'Source changed during root production');
   // Compiler dep-info, not the aggregate .d containing Git-identity invalidation watches.
   const deps = join(root, 'target', profile, 'deps');
@@ -51,7 +54,7 @@ export function sealRoot(binaryDirectory: string, profile: string, output: strin
   const manifest = { schema: 1, kind: 'inspection-root', compatibility, sourceSha: command('git', ['rev-parse', 'HEAD'], root),
     sourceTree: command('git', ['rev-parse', 'HEAD^{tree}'], root), inputPolicySha256: policy(), inputs: closure, inputsSha256: hash(JSON.stringify(closure)),
     target: `${process.arch === 'x64' ? 'x86_64' : 'aarch64'}-${process.platform === 'darwin' ? 'apple-darwin' : 'unknown-linux-gnu'}`,
-    profile, buildEnvironment: buildEnvironment(), rustc: command('rustc', ['-vV']), cargo: command('cargo', ['-V']), files,
+    profile, rootBuildElapsedMs, buildEnvironment: buildEnvironment(), rustc: command('rustc', ['-vV']), cargo: command('cargo', ['-V']), files,
     buildIdentity: 'Root label retains root source revision; composition records independent component revision.' };
   writeFileSync(output, JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' });
   return manifest;
@@ -119,8 +122,6 @@ export function packageApplication(binaryDirectory: string, destination: string,
   const temporary = mkdtempSync(join(destination, '.inspection-package-'));
   const candidate = join(temporary, 'inspection');
   const final = join(destination, 'inspection');
-  const previous = join(temporary, 'previous');
-  let moved = false, published = false;
   try {
     let receipt: any;
     if (process.env.APPARENT_INSPECTION_REUSE) {
@@ -159,19 +160,9 @@ export function packageApplication(binaryDirectory: string, destination: string,
     receipt.inspectorRuntimeSha256 = hash(readFileSync(join(candidate, 'apparent-inspect')));
     const nextReceipt = join(temporary, 'inspection-composition.json');
     writeFileSync(nextReceipt, JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
-    if (existsSync(final)) {
-      assert(lstatSync(final).isDirectory() && !lstatSync(final).isSymbolicLink(), 'Unsafe previous inspector');
-      assert.deepEqual(readdirSync(final).sort(), ['apparent-inspect', 'manifest.json'], 'Unknown previous inspector files');
-      const owner = JSON.parse(readFileSync(join(final, 'manifest.json'), 'utf8'));
-      assert(owner.schema === 1 && owner.executable === 'apparent-inspect', 'Unowned previous inspector');
-      renameSync(final, previous); moved = true;
-    }
-    renameSync(candidate, final); published = true;
-    renameSync(nextReceipt, join(destination, 'inspection-composition.json'));
-  } catch (error) {
-    if (published) rmSync(final, { recursive: true });
-    if (moved) renameSync(previous, final);
-    throw error;
+    publishValidatedDirectory(candidate, final, undefined, () => {
+      renameSync(nextReceipt, join(destination, 'inspection-composition.json'));
+    });
   } finally { rmSync(temporary, { recursive: true }); }
 }
 const signerWorkflows = ['verification-platform.yml', 'release-linux.yml', 'release-mac-preview.yml'].map(name => `tryapparent/apparent/.github/workflows/${name}`);

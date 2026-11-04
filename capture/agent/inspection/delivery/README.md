@@ -2,9 +2,10 @@
 
 This is an offline producer/stager for the existing Rust inspection executable.
 It extends the Agent `cargo package` and dedicated-prefix `cargo install`
-conventions. It does not publish, fetch, update an installation, switch root CLI
-routing or change Desktop/Connect packaging. It is a delivery prerequisite, not
-completion of independently shipped app inspection.
+conventions. The reviewed producer/stager remains an independently usable prerequisite. The
+composition layer below adopts its artifact in the normal application, with
+versioned root reuse and per-component provenance. Platform acceptance and final
+review remain required before publication.
 
 With Node 22.18+, Rust/Cargo and cached locked dependencies:
 
@@ -84,13 +85,14 @@ not publication authority. Tests run actual root CLI dispatch outside the checko
 with two different inspector binaries, block Cargo in PATH, and check tampering.
 
 For production reuse, `APPARENT_INSPECTION_REUSE` names schema-1 JSON containing
-rootDirectory/rootReceipt/rootReceiptSha256 and inspectorArchive/
+rootDirectory/rootReceipt/rootReceiptSha256/rootProfile and inspectorArchive/
 inspectorArchiveSha256/inspectorSourceSha. Ordinary packaging calls `reuse`, which
 additionally verifies canonical main GitHub attestations for each exact component.
 Root/inspector provenance producer artifacts and successful exact-commit publication
 gates must exist before that release path can be used; a locally written receipt or
-adjacent checksum cannot replace them. Root receipt attestations are constrained
-to verification-platform.yml; inspector attestations to verification-platform.yml.
+adjacent checksum cannot replace them. Both signer workflows are constrained to the existing verification-platform.yml,
+release-linux.yml and release-mac-preview.yml producers. A release rootProfile
+must match its consumer; debug roots cannot enter release assembly.
 No workflow is dispatched or authority to publish inferred by these local tools.
 
 The existing platform verification job now retains source-bound root bundles and

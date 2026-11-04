@@ -212,7 +212,7 @@ jobs:
         with:
           node-version: '22.23.0'
       - name: Test executable sealing
-        run: node --experimental-strip-types --test connect/delivery/recipient/seal.test.ts
+        run: node --experimental-strip-types --test shared/packaging/transaction.test.ts connect/delivery/recipient/*.test.ts connect/delivery/recipient/tests/*.test.ts
       - name: Isolate component from root build configuration
         shell: bash
         run: |
@@ -227,6 +227,11 @@ jobs:
           cargo test --locked --target '${{ matrix.target }}' -j 3
           cargo build --locked --release --bin apparent-connect-recipient --target '${{ matrix.target }}' -j 3
           cp 'target/${{ matrix.target }}/release/apparent-connect-recipient' "$RUNNER_TEMP/recipient-output/"
+      - name: Verify intended Linux runtime user can execute the shipping component
+        if: runner.os == 'Linux'
+        env:
+          APPARENT_RECIPIENT_EXECUTABLE: ${{ runner.temp }}/recipient-output/apparent-connect-recipient
+        run: node --experimental-strip-types --test connect/delivery/recipient/tests/permissions.test.ts
       - name: Seal executable bytes
         env:
           TARGET: ${{ matrix.target }}
