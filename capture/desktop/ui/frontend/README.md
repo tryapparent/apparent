@@ -911,3 +911,7 @@ The native fixture compiles its AX reader once before app launch, inside the
 existing fixture and workflow deadlines. These setup optimizations skip no native
 assertion or package check. Darwin close/recovery and actual combined runtime
 remain acceptance gates; no build or source review establishes them.
+
+The Agents recovery reader rediscovers the uniquely owned native helper during
+its bounded read poll because navigation can retire the preceding General helper.
+It sends each navigation action once; stale or ambiguous ownership is never accepted.

@@ -490,8 +490,15 @@ async function installedAgents({ home, config, appDir, axTool, report, osa, run,
   const unavailable = 'Agents Settings could not open. Choose Agents to try again, or reinstall Apparent.';
   const recovery = evidence.recovery = { missingAssets: false, crash: false, reopened: false };
   const nativeFailure = async name => {
-    const nativePID = await child(helper);
-    const tree = await visible(nativePID, unavailable);
+    // Navigation may replace the General helper after child discovery. Rejoin
+    // ownership on each read; never retry the navigation press or pin a retired PID.
+    const { nativePID, tree } = await poll(async () => {
+      const nativePID = await child(helper);
+      const tree = await invoke(nativePID, 'inspect');
+      evidence.lastVisibleTree = tree;
+      assert.ok(tree.includes(unavailable), 'Missing native Agents recovery guidance');
+      return { nativePID, tree };
+    }, 'Visible native Agents recovery');
     assert.ok(!tree.includes('AXCheckBox') && !tree.includes(skill), 'Retired native Agents controls reappeared');
     await shot(nativePID, name);
     assert.equal((await read()).agentDemoVideo, true);

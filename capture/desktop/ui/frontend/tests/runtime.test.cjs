@@ -388,3 +388,6 @@ test('Agents projects status, uses bounded deadlines and never retries ambiguous
 // Keep identity contract logic in TypeScript and share this existing runner entry.
 require('./build/identity.test.ts');
 require('./build/transport.test.ts');
+
+// Exercise the native driver's read-only helper-retirement race without OS input.
+require('./native/recovery.test.ts');
