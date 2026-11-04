@@ -61,12 +61,13 @@ class AdmissionTests(unittest.TestCase):
         self.assertIn('needs: [admit, verify, connect-native, settings-build, settings-native]', budget)
         self.assertIn('if: always()', budget)
         self.assertIn('uses: ./.github/actions/runtime-budget', budget)
+        self.assertIn('platform: macos', budget)
         self.assertIn('actions: read', budget)
         for section in (build, native):
             self.assertIn("github.event_name == 'workflow_dispatch' && inputs.settings_native && github.ref != 'refs/heads/main'", section)
-            self.assertIn('timeout-minutes: 10', section)
+            self.assertIn('timeout-minutes: 15', section)
             self.assertNotIn('timeout-minutes: 30', section)
-            self.assertIn('10 minute whole-workflow execution budget', section)
+            self.assertIn('15 minute whole-workflow execution budget', section)
             self.assertIn('If exceeded, optimize the tests.', section)
             self.assertIn('ref: ${{ github.sha }}', section)
             for forbidden in ('verification-platform.yml', 'verification.py', 'owner_lanes.py', 'cargo test', 'release-ready', 'release_gate.py', 'secrets.'):
