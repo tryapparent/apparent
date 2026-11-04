@@ -46,7 +46,7 @@ pub(super) fn production(operation: apparent_connect_client::recipient_protocol:
     let pin = &map["pins"][&target];
     let digest = pin["sha256"].as_str().context("Recipient target pin missing")?;
     let root = std::env::current_exe()?;
-    let _installation_lock = installation_lock::acquire(&installation_lock::installation(&root)?)?;
+    let _installation_lock = installation_lock::for_root(&root)?;
     let manifest: serde_json::Value = serde_json::from_slice(&std::fs::read(root.parent().context("Missing package directory")?.join("recipient/recipient-provenance.json"))?)?;
     for key in ["sourceSha", "run", "attempt", "target", "sha256", "version"] {
         ensure!(pin[key].is_string() && manifest[key] == pin[key], "Recipient producer identity mismatch");
@@ -70,7 +70,7 @@ pub(super) fn invoke(
 ) -> Result<serde_json::Value> {
     ensure!(allowed(), "Recipient operation cancelled");
     request.validate()?;
-    let _installation_lock = installation_lock::acquire(&installation_lock::installation(root)?)?;
+    let _installation_lock = installation_lock::for_root(root)?;
     #[cfg(not(target_os = "macos"))]
     ensure!(
         trusted_digest.len() == 64 && trusted_digest.bytes().all(|b| b.is_ascii_hexdigit()),
@@ -447,8 +447,10 @@ fn root_adapter_http_login_and_validated_fetches() {
     std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
     let config = directory.join("config.json");
     std::fs::write(&config, br#"{"experiments":{"hostedEncryption":false},"unknown":{"kept":42},"cloud":{"enabled":false,"uploadConsent":false}}"#).unwrap();
-    let package = directory.join("recipient");
-    std::fs::create_dir(&package).unwrap();
+    let app = directory.join("Apparent.app");
+    let root = app.join("Contents/MacOS/apparent");
+    let package = root.parent().unwrap().join("recipient");
+    std::fs::create_dir_all(&package).unwrap();
     let fixture_binary = std::env::var_os("APPARENT_TEST_RECIPIENT_EXECUTABLE")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("connect/client/target/debug/apparent-connect-recipient"));
@@ -459,13 +461,13 @@ fn root_adapter_http_login_and_validated_fetches() {
     let run = |operation: serde_json::Value| {
         let request = serde_json::from_value(serde_json::json!({"protocol":1,"operation":operation})).unwrap();
         let approval = std::sync::Mutex::new(String::new());
-        let result = invoke(&directory.join("apparent"), &config, &digest, &request,
+        let result = invoke(&root, &config, &digest, &request,
             &|uri, code| {
                 *approval.lock().unwrap() = format!("{uri} {code}");
                 let mutation = directory.join("installer-mutation");
                 let installer = Command::new("bash")
                     .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/capture/desktop/scripts/packaging/with-install-lock.sh"))
-                    .arg(&directory).arg("touch").arg(&mutation).output().unwrap();
+                    .arg(&app).arg("touch").arg(&mutation).output().unwrap();
                 assert!(!installer.status.success(), "installer entered during real recipient approval");
                 assert!(!mutation.exists());
             }, &|| true).unwrap();
@@ -484,7 +486,7 @@ fn root_adapter_http_login_and_validated_fetches() {
     let out = directory.join("full.apparent");
     let original = std::fs::read(out.join("apparent.json")).unwrap();
     let request = serde_json::from_value(serde_json::json!({"protocol":1,"operation":{"kind":"fetch","id":id,"out":out,"wait":0,"evidence_only":false}})).unwrap();
-    assert!(invoke(&directory.join("apparent"), &config, &digest, &request, &|_, _| (), &|| true).is_err());
+    assert!(invoke(&root, &config, &digest, &request, &|_, _| (), &|| true).is_err());
     assert_eq!(std::fs::read(out.join("apparent.json")).unwrap(), original);
     let value: serde_json::Value = serde_json::from_slice(&std::fs::read(&config).unwrap()).unwrap();
     assert_eq!(value["cloud"]["enabled"],false);
@@ -505,7 +507,7 @@ fn root_adapter_http_login_and_validated_fetches() {
     let before = std::fs::read(&config).unwrap();
     let allowed = std::sync::atomic::AtomicBool::new(true);
     let request = serde_json::from_value(serde_json::json!({"protocol":1,"operation":{"kind":"login","server":server,"browser":false}})).unwrap();
-    let error = invoke(&directory.join("apparent"), &config, &digest, &request,
+    let error = invoke(&root, &config, &digest, &request,
         &|_, code| { assert_eq!(code, "CANCEL"); allowed.store(false, std::sync::atomic::Ordering::SeqCst); },
         &|| allowed.load(std::sync::atomic::Ordering::SeqCst)).unwrap_err();
     assert!(error.to_string().contains("cancelled"));
@@ -515,7 +517,7 @@ fn root_adapter_http_login_and_validated_fetches() {
     cancelled_fixture.join().unwrap();
     assert!(Command::new("bash")
         .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/capture/desktop/scripts/packaging/with-install-lock.sh"))
-        .arg(&directory).arg("true").status().unwrap().success(), "cancelled child must release installation lock");
+        .arg(&app).arg("true").status().unwrap().success(), "cancelled child must release installation lock");
     std::fs::remove_dir_all(directory).unwrap();
 }
 

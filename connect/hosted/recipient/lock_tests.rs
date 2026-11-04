@@ -12,6 +12,17 @@ fn temporary() -> std::path::PathBuf {
     path
 }
 #[test]
+fn linux_package_lock_does_not_write_into_read_only_image_tree() {
+    let dir = temporary();
+    let usr = dir.join("usr");
+    fs::create_dir_all(usr.join("bin")).unwrap();
+    fs::set_permissions(&usr, fs::Permissions::from_mode(0o555)).unwrap();
+    assert!(installation_lock::for_root(&usr.join("bin/apparent")).unwrap().is_none());
+    assert!(!usr.join(".bin.recipient.lock").exists());
+    fs::set_permissions(&usr, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::remove_dir_all(dir).unwrap();
+}
+#[test]
 fn shell_and_rust_reject_unsafe_lock_files() {
     let dir = temporary();
     let app = dir.join("Apparent.app");

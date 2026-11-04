@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, ensure};
-use std::{fs::{File, OpenOptions}, path::{Path, PathBuf}, os::{fd::AsRawFd, unix::fs::{MetadataExt, OpenOptionsExt}}};
+use std::{fs::{File, OpenOptions}, path::Path, os::{fd::AsRawFd, unix::fs::{MetadataExt, OpenOptionsExt}}};
 
 pub(super) fn acquire(installation: &Path) -> Result<File> {
     ensure!(!installation.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()), "Symlink installation");
@@ -16,9 +16,13 @@ pub(super) fn acquire(installation: &Path) -> Result<File> {
     Ok(file)
 }
 
-pub(super) fn installation(root: &Path) -> Result<PathBuf> {
+pub(super) fn for_root(root: &Path) -> Result<Option<File>> {
     let directory = root.parent().context("Package directory missing")?;
     if directory.file_name().is_some_and(|s| s == "MacOS") && directory.parent().is_some_and(|p| p.file_name().is_some_and(|s| s == "Contents")) {
-        Ok(directory.parent().unwrap().parent().context("App directory missing")?.to_owned())
-    } else { Ok(directory.to_owned()) }
+        acquire(directory.parent().unwrap().parent().context("App directory missing")?).map(Some)
+    } else {
+        // Linux's updater exchanges the outer image; it never mutates this tree.
+        // A mounted AppImage is read-only: do not create a lock inside usr/.
+        Ok(None)
+    }
 }
