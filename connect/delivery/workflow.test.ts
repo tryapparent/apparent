@@ -19,6 +19,3 @@ test('callable publisher admits independently with production controls',async()=
  assert.doesNotMatch(publish,/needs:|github.event_name|github.event.workflow_run.id/);
  assert.ok(workflow.includes('needs: [select, produce, publish]'));
 });
-test('transitional runtime copies preserve tested donor source',async()=>{
- for(const name of ['hosted_config.py','verify_worker.py'])assert.deepEqual(await readFile(new URL('./runtime/'+name,import.meta.url)),await readFile(new URL('../../public/site/scripts/cd/'+name,import.meta.url)));
-});

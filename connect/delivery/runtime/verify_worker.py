@@ -4,7 +4,7 @@ import os
 import re
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "enablement"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "enablement"))
 from release_gate import publication_needed
 from hosted_config import config, worker_name
 from urllib.request import Request, urlopen
