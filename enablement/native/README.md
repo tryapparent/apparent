@@ -1,5 +1,40 @@
 # Native test infrastructure
 
+## Owned native-test processes
+
+`owned-processes.ts` provides the packaged smoke driver's existing Bash
+process-group supervisor, bounded operation wrapper (`within`), `stopBackend`
+and `stopElectron`. The native Storage driver also imports `pidFileSupervisor`
+and `stopOwned` from this module; its labelled deadlines use `withinLabelled`.
+The capture-reference driver imports `stopChild` for its existing direct-child
+TERM/2.5-second KILL escalation. That helper does not manage process groups. Its supervisor requires the pre-created,
+non-symlink, owned `$TMPDIR/rust.pid` and publishes only its launched child PID.
+`stopOwned` returns a per-child cleanup receipt and refuses to signal after its
+leader exits. It treats an exited group probe's `EPERM` as failure; do not silently
+substitute the packaged smoke's different, snapshot-validated cleanup contract.
+Import it from a Node 22.18+ driver; the main verification
+workflow uses Node 22. It has no Playwright, Desktop or application dependency.
+Callers retain admission, isolated HOME/config, operation budgets, assertions,
+evidence/report writing and fixture retention. Keep the supervisor's stdin open
+until teardown; EOF stops its owned group if the driver disappears.
+
+Packaged-smoke cleanup preserves its existing TERM/KILL sequence. Darwin `EPERM` is
+accepted only after the supervisor exits and a successful bounded, validated
+`ps` snapshot establishes no live group members. Live, unknown or malformed
+results fail and the caller retains its private fixture. A timed-out Electron
+close kills its owned child and still fails the check. `within` bounds waiting;
+it does not cancel the operation. Callers must arrange owned cleanup.
+
+Run `node --test enablement/native/owned-processes.test.ts` for the real harmless
+child/descendant and strict cleanup contracts. The packaged smoke regressions
+moved from Desktop; additional contracts exercise the Storage caller import, PID
+file and receipt/refusal semantics. They establish no new Mac GUI acceptance.
+Desktop's packaged smoke
+entrypoint still exports the same helper objects for existing callers. Those
+exports are a transition contract: remove only after supported imports/tests and
+active frozen candidates have migrated, with an owner check. There is one
+implementation, with no compatibility executable or copied helper.
+
 ## Mac verification setup
 
 `mac-setup.ts` runs the existing FFmpeg and Metal setup commands concurrently
@@ -73,18 +108,22 @@ disk/firmware; a matching live copy is only a partial snapshot. Keep private
 receipts and media private. No migration command launches guests, changes
 installed tools, reserves capacity or redirects an active run.
 
-## Temporary compatibility
+## Compatibility
 
-The three former paths in `capture/desktop/scripts/linux/gui/` are relative
-symlinks to this implementation, not copies. All three remain because updater
-launches the former runner path and runner/tests locate the reaper by sibling
-path. Existing frontend documentation and active owners can continue using them.
-Remove these links together only after updater callers/tests and maintained
-documentation move, and active owner reservations/runs are checked. Do not
-rewrite an active candidate merely to retire these entrypoints.
+The former runner, reaper and test symlinks in
+`capture/desktop/scripts/linux/gui/` were removed after the updater, maintained
+frontend documentation and shared VM skill adopted canonical paths. The Settings
+owner explicitly released the old paths: its current disposable controller uses
+the canonical runner and its frozen Mac packet references none. No running
+Python command named the old paths during the final audit. Historical receipts
+and older checkouts retain their own source/provenance; they do not reserve new
+main entrypoints. No VM, cold evidence or active resource was changed.
 
-Mac/frontend driver extraction is deferred while Settings and other native
-acceptance owners modify it. Storage/retention UI assertions remain Desktop
+The Desktop packaged-smoke helper exports remain the bounded compatibility
+contract described above; all executable VM commands use canonical paths.
+
+Further Mac/frontend extraction checks exact active hunks with their owners;
+an open PR or pending native acceptance alone does not reserve stable mechanics. Storage/retention UI assertions remain Desktop
 scenarios; a filename containing “native” does not make a test reusable.
 
 [Desktop verification policy](../../capture/desktop/docs/native-testing.md)
@@ -92,3 +131,17 @@ continues to govern: shared UI and real Rust bridge primarily on Linux, affected
 native seams on their OS, unchanged-input evidence reuse, and current-package
 Mac publication smoke plus exact-main verification/signing. Relocation alone
 requires path/contract checks, not a fresh native workflow or paid resources.
+
+## Desktop scenario boundary
+
+The inspected frontend drivers remain beside Desktop: `native-smoke.cjs` asserts
+UI tabs and the real runtime bridge; `native-retention.cjs` asserts user retention
+policy and config writes (it is not evidence retention); `reference-native.cjs`
+asserts selection and actual clipboard payloads; `mac-storage-native.cjs` asserts
+Storage, reporting and native picker/recovery behavior. Their private fixtures,
+screenshots, report schemas and failure-retention decisions describe those
+scenarios. Generic supervision, waiting and child cleanup are imported here.
+Named AX controls and their allowlists remain part of Desktop acceptance; there
+is no independent cross-owner AX consumer to justify extracting their selector
+logic. Product startup/readiness adapters likewise retain their real bridge
+assertions with Desktop. This boundary does not wait for PR376 acceptance.

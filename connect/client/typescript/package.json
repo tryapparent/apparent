@@ -1,0 +1,30 @@
+{
+  "name": "@apparent/connect-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "files": ["dist"],
+  "exports": {
+    ".": "./dist/index.js",
+    "./settings-controller": "./dist/settings-controller.cjs",
+    "./settings-transport": "./dist/settings-transport.cjs",
+    "./settings-presentation": "./dist/settings-presentation.js"
+  },
+  "scripts": {
+    "dev": "tsc --watch",
+    "prepack": "npm run build",
+    "pretest": "npm run build",
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "pack": "npm pack --dry-run"
+  },
+  "dependencies": {
+    "age-encryption": "0.3.1",
+    "@noble/ed25519": "3.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.1",
+    "typescript": "5.9.3"
+  }
+}

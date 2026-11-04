@@ -247,8 +247,12 @@ enum Storage {
     Read { deadline: u64 },
     Set { path: String, expected: String, deadline: u64 },
     Reset { expected: String, deadline: u64 },
+    LocationFacts { deadline: u64 },
+    ProbeLocation { path: String, expected: String, deadline: u64 },
+    SetLocation { path: String, expected: String, deadline: u64 },
+    ResetLocation { expected: String, deadline: u64 },
     Retention { deadline: u64 },
-    SaveRetention { preset: String, expected: String, deadline: u64 },
+    SaveRetention { policy: super::storage_preferences::SavePolicy, expected: String, deadline: u64 },
     ResetRetention { expected: String, deadline: u64 },
     Usage { deadline: u64 },
 }
@@ -257,6 +261,8 @@ impl Storage {
     fn deadline(&self) -> u64 {
         match self {
             Self::Read { deadline } | Self::Set { deadline, .. } | Self::Reset { deadline, .. }
+            | Self::LocationFacts { deadline } | Self::ProbeLocation { deadline, .. }
+            | Self::SetLocation { deadline, .. } | Self::ResetLocation { deadline, .. }
             | Self::Retention { deadline } | Self::SaveRetention { deadline, .. }
             | Self::ResetRetention { deadline, .. } | Self::Usage { deadline } => *deadline,
         }
@@ -273,7 +279,7 @@ impl Storage {
         }
         let preferences = match self {
             Self::Retention { .. } => Some(super::storage_preferences::read(config)),
-            Self::SaveRetention { preset, expected, .. } => Some(super::storage_preferences::save(config, Some(preset), expected, || storage_clock_ms() < deadline)),
+            Self::SaveRetention { policy, expected, .. } => Some(super::storage_preferences::save(config, Some(policy), expected, || storage_clock_ms() < deadline)),
             Self::ResetRetention { expected, .. } => Some(super::storage_preferences::save(config, None, expected, || storage_clock_ms() < deadline)),
             Self::Usage { .. } => Some(super::storage_preferences::usage(config, || storage_clock_ms() < deadline)),
             _ => None,
@@ -281,16 +287,44 @@ impl Storage {
         if let Some(result) = preferences {
             return result.unwrap_or_else(|code| serde_json::json!({"error":code}));
         }
+        match self {
+            Self::LocationFacts { .. } => return capture_location::facts_in(config)
+                .map(|facts| serde_json::json!({"location":facts}))
+                .unwrap_or_else(|_| serde_json::json!({"error":"config_read_failed"})),
+            Self::ProbeLocation { path, expected, .. } => {
+                let before = match capture_location::facts_in(config) {
+                    Ok(facts) => facts,
+                    Err(_) => return serde_json::json!({"error":"config_read_failed"}),
+                };
+                if before.revision != *expected { return serde_json::json!({"error":"conflict"}); }
+                let available = capture_location::probe(std::path::Path::new(path));
+                if storage_clock_ms() >= deadline { return serde_json::json!({"error":"admission_expired"}); }
+                let after = match capture_location::facts_in(config) {
+                    Ok(facts) => facts,
+                    Err(_) => return serde_json::json!({"error":"config_read_failed"}),
+                };
+                if after.revision != *expected { return serde_json::json!({"error":"conflict"}); }
+                return serde_json::json!({"probe":{"available":available}});
+            }
+            _ => {}
+        }
         let mutation = match self {
             Self::Read { .. } => Ok(()),
             Self::Set { path, expected, .. } => capture_location::set_in(config, Some(path), Some(expected), || storage_clock_ms() < deadline),
             Self::Reset { expected, .. } => capture_location::set_in(config, None, Some(expected), || storage_clock_ms() < deadline),
+            Self::SetLocation { path, expected, .. } => capture_location::set_in(config, Some(path), Some(expected), || storage_clock_ms() < deadline),
+            Self::ResetLocation { expected, .. } => capture_location::set_in(config, None, Some(expected), || storage_clock_ms() < deadline),
             _ => unreachable!(),
         };
         if let Err(code) = mutation { return serde_json::json!({"error":code}); }
-        match capture_location::read_in(config) {
+        match self {
+          Self::SetLocation { .. } | Self::ResetLocation { .. } => capture_location::facts_in(config)
+            .map(|facts| serde_json::json!({"location":facts}))
+            .unwrap_or_else(|_| serde_json::json!({"error":"config_read_failed"})),
+          _ => match capture_location::read_in(config) {
             Ok(snapshot) => serde_json::json!({"storage": snapshot}),
             Err(_) => serde_json::json!({"error":"config_read_failed"}),
+          },
         }
     }
 }
@@ -341,6 +375,7 @@ enum Wire {
     ErrorReporting(ErrorReportingRequest),
     Microphone(super::notes::audio::Request),
     Connect(u64),
+    ConnectBackend(u64),
 }
 
 // A single rendezvous worker handles the two bounded Settings contracts. A
@@ -415,6 +450,9 @@ impl ErrorReportingRequest {
 }
 
 fn parse_request(line: &str) -> Option<Wire> {
+    if let Some(deadline) = super::connect_settings::backend_opening_deadline(line) {
+        return Some(Wire::ConnectBackend(deadline.min(storage_clock_ms() + 3000)));
+    }
     if let Some(deadline) = super::connect_settings::opening_deadline(line) {
         return Some(Wire::Connect(deadline.min(storage_clock_ms() + 3000)));
     }
@@ -444,7 +482,10 @@ fn parse_request(line: &str) -> Option<Wire> {
         match &storage {
             Storage::Set { path, expected, .. } if path.is_empty() || path.len() > 4096 || path.contains('\0') || !std::path::Path::new(path).is_absolute() || !valid_revision(expected) => return None,
             Storage::Reset { expected, .. } if !valid_revision(expected) => return None,
-            Storage::SaveRetention { preset, expected, .. } if !["week", "month", "forever"].contains(&preset.as_str()) || !valid_revision(expected) => return None,
+            Storage::ProbeLocation { path, expected, .. } if path.is_empty() || path.len() > 4096 || path.contains('\0') || !std::path::Path::new(path).is_absolute() || !valid_revision(expected) => return None,
+            Storage::SetLocation { path, expected, .. } if path.is_empty() || path.len() > 4096 || path.contains('\0') || !std::path::Path::new(path).is_absolute() || !valid_revision(expected) => return None,
+            Storage::ResetLocation { expected, .. } if !valid_revision(expected) => return None,
+            Storage::SaveRetention { policy, expected, .. } if !policy.valid() || !valid_revision(expected) => return None,
             Storage::ResetRetention { expected, .. } if !valid_revision(expected) => return None,
             _ => {}
         }
@@ -558,13 +599,17 @@ fn listen_at_config(path: PathBuf, config_path: PathBuf) -> Result<flume::Receiv
     // Rendezvous channel: one persistent worker, no queued/accumulating blocked writers.
     // The listener and GUI remain free while this worker waits on the existing flock.
     let (storage_tx, storage_rx) = std::sync::mpsc::sync_channel::<(SettingsRequest, u64, UnixStream)>(0);
-    let (connect_tx, connect_rx) = std::sync::mpsc::sync_channel::<(u64, UnixStream)>(0);
+    let (connect_tx, connect_rx) = std::sync::mpsc::sync_channel::<(bool, u64, UnixStream)>(0);
     let connect_config = config_path.clone();
     std::thread::Builder::new()
         .name("apparent-connect-settings".into())
         .spawn(move || {
-            while let Ok((deadline, stream)) = connect_rx.recv() {
-                super::connect_settings::serve(stream, deadline, &connect_config);
+            while let Ok((backend, deadline, stream)) = connect_rx.recv() {
+                if backend {
+                    super::connect_settings::backend::serve(stream, deadline, &connect_config);
+                } else {
+                    super::connect_settings::serve(stream, deadline, &connect_config);
+                }
             }
         })?;
     std::thread::Builder::new().name("apparent-storage-control".into()).spawn(move || {
@@ -600,15 +645,20 @@ fn listen_at_config(path: PathBuf, config_path: PathBuf) -> Result<flume::Receiv
                 let response = if valid_frame {
                     if let Some(wire) = parse_request(line.trim()) {
                         let (action, deadline_ms) = match wire {
-                            Wire::Connect(deadline) => {
+                            wire @ (Wire::Connect(_) | Wire::ConnectBackend(_)) => {
+                                let (backend, deadline) = match wire {
+                                    Wire::Connect(deadline) => (false, deadline),
+                                    Wire::ConnectBackend(deadline) => (true, deadline),
+                                    _ => unreachable!(),
+                                };
                                 if line.len() > 4096 {
                                     let _ = writeln!(stream, "{{\"error\":\"invalid_request\"}}");
                                     continue;
                                 }
-                                match connect_tx.try_send((deadline, stream)) {
+                                match connect_tx.try_send((backend, deadline, stream)) {
                                     Ok(()) => {}
-                                    Err(std::sync::mpsc::TrySendError::Full((_, mut stream))
-                                        | std::sync::mpsc::TrySendError::Disconnected((_, mut stream))) => {
+                                    Err(std::sync::mpsc::TrySendError::Full((_, _, mut stream))
+                                        | std::sync::mpsc::TrySendError::Disconnected((_, _, mut stream))) => {
                                         let _ = writeln!(stream, "{{\"error\":\"app_busy\"}}");
                                     }
                                 }
@@ -1149,33 +1199,64 @@ mod tests {
         std::fs::write(&config, serde_json::json!({"experiments":{"electronCaptureLocation":true}, "capturesDir":captures,
             "secret":"keep", "unknown":{"nested":true}, "retention":{"mediaDays":2,"bundleDays":null,"future":"keep"}}).to_string()).unwrap();
         let initial = read();
-        assert!(initial["retention"]["preset"].is_null());
-        assert_eq!(initial["retention"]["options"].as_array().unwrap().len(), 3);
-        let save = |preset: &str, expected: &serde_json::Value| call(serde_json::json!({"storage":"saveretention", "preset":preset,"expected":expected,"deadline":storage_clock_ms()+3000}));
-        let saved = save("month", &initial["revision"]);
-        assert_eq!(saved["retention"]["preset"], "month");
+        assert_eq!(initial["retention"]["mediaDays"], serde_json::json!({"present":true,"value":2}));
+        assert_eq!(initial["retention"]["bundleDays"], serde_json::json!({"present":true,"value":null}));
+        let month = serde_json::json!({"mediaDays":30,"bundleDays":90});
+        let save = |policy: serde_json::Value, expected: &serde_json::Value| call(serde_json::json!({"storage":"saveretention", "policy":policy,"expected":expected,"deadline":storage_clock_ms()+3000}));
+        crate::shared::handoff::set_config_value_in(&config, "concurrentSetting", "kept".into()).unwrap();
+        let saved = save(month.clone(), &initial["revision"]);
+        assert_eq!(saved["retention"]["mediaDays"]["value"], 30);
+        assert_eq!(saved["retention"]["bundleDays"]["value"], 90);
         assert_eq!(read(), saved);
-        assert_eq!(save("forever", &initial["revision"])["error"], "conflict");
+        assert_eq!(save(serde_json::json!({"mediaDays":null,"bundleDays":null}), &initial["revision"])["error"], "conflict");
         let reset = call(serde_json::json!({"storage":"resetretention","expected":saved["revision"],"deadline":storage_clock_ms()+3000}));
-        assert_eq!(reset["retention"]["preset"], "week");
+        assert_eq!(reset["retention"]["mediaDays"], serde_json::json!({"present":false,"value":null}));
+        assert_eq!(reset["retention"]["bundleDays"], serde_json::json!({"present":false,"value":null}));
         assert_eq!(reset["custom"], false);
         let raw = crate::shared::handoff::capture_location::read_raw(&config).unwrap();
         assert_eq!(raw["secret"], "keep");
         assert_eq!(raw["unknown"]["nested"], true);
+        assert_eq!(raw["concurrentSetting"], "kept");
         assert_eq!(raw["retention"]["future"], "keep");
         assert_eq!(raw["capturesDir"], captures.to_str().unwrap());
+        std::fs::write(&config, r#"{"experiments":{"electronCaptureLocation":true},"retention":{"bundleDays":null}}"#).unwrap();
+        let media_absent = read();
+        std::fs::write(&config, r#"{"experiments":{"electronCaptureLocation":true},"retention":{"mediaDays":null,"bundleDays":null}}"#).unwrap();
+        let media_explicit_null = read();
+        assert_ne!(media_absent["revision"], media_explicit_null["revision"],
+            "CAS fingerprints distinguish an absent owner value from explicit JSON null");
+        assert_eq!(save(serde_json::json!({"mediaDays":30,"bundleDays":90}), &media_absent["revision"])["error"], "conflict");
+        std::fs::write(&config, r#"{"experiments":{"electronCaptureLocation":true},"retention":{"mediaDays":"private-value","bundleDays":30}}"#).unwrap();
+        let malformed = read();
+        assert_eq!(malformed["retention"]["mediaDays"], serde_json::json!({"present":false,"value":null}));
+        assert_eq!(malformed["retention"]["bundleDays"], serde_json::json!({"present":false,"value":null}));
+        assert_eq!(malformed["custom"], true);
+        assert!(!malformed.to_string().contains("private-value"));
+        std::fs::write(&config, serde_json::json!({"experiments":{"electronCaptureLocation":true}, "capturesDir":captures,
+            "secret":"keep", "unknown":{"nested":true}, "retention":{"mediaDays":null,"bundleDays":null,"future":"keep"}}).to_string()).unwrap();
         assert_eq!(call(serde_json::json!({"storage":"usage","deadline":storage_clock_ms()+3000}))["usage"]["formatted"], "1 MB");
         assert_eq!(super::super::storage_preferences::usage(&config, || false), Err("usage_unavailable"));
+        let month_policy = super::super::storage_preferences::SavePolicy { media_days: 30.into(), bundle_days: 90.into() };
+        let before_unknown = read();
         let bytes = std::fs::read(&config).unwrap();
-        assert_eq!(super::super::storage_preferences::save(&config, Some("month"), reset["revision"].as_str().unwrap(), || false), Err("admission_expired"));
+        assert_eq!(super::super::storage_preferences::save(&config, Some(&month_policy), before_unknown["revision"].as_str().unwrap(), || false), Err("admission_expired"));
         assert_eq!(std::fs::read(&config).unwrap(), bytes);
+        crate::shared::handoff::set_config_directory_sync_failure(true);
+        assert_eq!(super::super::storage_preferences::save(&config, Some(&month_policy), before_unknown["revision"].as_str().unwrap(), || true), Err("outcome_unknown"));
+        let after_unknown = read();
+        crate::shared::handoff::set_config_directory_sync_failure(true);
+        assert_eq!(super::super::storage_preferences::save(&config, Some(&month_policy), after_unknown["revision"].as_str().unwrap(), || true), Err("outcome_unknown"), "publishing identical values can also have uncertain durability");
+        assert_eq!(after_unknown["retention"]["mediaDays"]["value"], 30);
+        assert_eq!(after_unknown["retention"]["bundleDays"]["value"], 90);
         // Fail an actual config commit (owned malformed file), not an optimistic UI mock.
         std::fs::write(&config, "malformed").unwrap();
-        assert_eq!(super::super::storage_preferences::save(&config, Some("month"), reset["revision"].as_str().unwrap(), || true), Err("config_write_failed"));
+        assert_eq!(super::super::storage_preferences::save(&config, Some(&month_policy), after_unknown["revision"].as_str().unwrap(), || true), Err("config_write_failed"));
         assert_eq!(std::fs::read_to_string(&config).unwrap(), "malformed");
         assert_eq!(std::fs::read(captures.join("keep")).unwrap(), vec![42; 1_000_000]);
         for value in [
-            serde_json::json!({"storage":"saveretention","preset":"arbitrary","expected":"aaaaaaaaaaaaaaaa","deadline":1}),
+            serde_json::json!({"storage":"saveretention","policy":{"mediaDays":-1,"bundleDays":90},"expected":"aaaaaaaaaaaaaaaa","deadline":1}),
+            serde_json::json!({"storage":"saveretention","policy":{"mediaDays":7,"bundleDays":90,"unexpected":true},"expected":"aaaaaaaaaaaaaaaa","deadline":1}),
+            serde_json::json!({"storage":"saveretention","policy":{"mediaDays":7},"expected":"aaaaaaaaaaaaaaaa","deadline":1}),
             serde_json::json!({"storage":"usage","path":"/forbidden","deadline":1}),
             serde_json::json!({"storage":"resetretention","expected":"invalid","deadline":1}),
         ] { assert!(parse_request(&value.to_string()).is_none()); }
@@ -1193,6 +1274,41 @@ mod tests {
             r#"{"storage":"set","deadline":1,"expected":"bad","path":"/tmp"}"#,
             r#"{"storage":"read","deadline":-1}"#,
         ] { assert!(super::parse_request(invalid).is_none(), "{invalid}"); }
+        for valid in [
+            r#"{"storage":"locationfacts","deadline":999999999999}"#,
+            r#"{"storage":"probelocation","path":"/tmp/candidate","expected":"0123456789abcdef","deadline":999999999999}"#,
+            r#"{"storage":"setlocation","path":"/tmp/candidate","expected":"0123456789abcdef","deadline":999999999999}"#,
+            r#"{"storage":"resetlocation","expected":"0123456789abcdef","deadline":999999999999}"#,
+        ] { assert!(super::parse_request(valid).is_some(), "{valid}"); }
+        for invalid in [
+            r#"{"storage":"probelocation","path":"relative","expected":"0123456789abcdef","deadline":1}"#,
+            r#"{"storage":"probelocation","path":"/tmp/candidate","expected":"invalid","deadline":1}"#,
+            r#"{"storage":"setlocation","path":"/tmp/candidate","expected":"0123456789abcdef","deadline":1,"secret":"hidden"}"#,
+        ] { assert!(super::parse_request(invalid).is_none(), "{invalid}"); }
+    }
+
+    #[test]
+    fn storage_location_facts_are_bounded_and_probe_checks_owner_revision() {
+        let (path, listener) = transport_fixture();
+        drop(listener);
+        let directory = path.parent().unwrap();
+        let config = directory.join("config.json");
+        std::fs::write(&config, r#"{"privateToken":"keep","capturesDir":"/saved"}"#).unwrap();
+        let facts_request = Storage::LocationFacts { deadline: storage_clock_ms() + 3000 };
+        let facts = facts_request.execute(&config, storage_clock_ms() + 3000);
+        assert_eq!(facts["location"]["saved"]["kind"], "string");
+        assert_eq!(facts["location"]["saved"]["value"], "/saved");
+        assert_eq!(facts["location"]["revision"].as_str().unwrap().len(), 16);
+        assert!(facts.get("privateToken").is_none());
+        let revision = facts["location"]["revision"].as_str().unwrap().to_owned();
+        let candidate = directory.join("probe");
+        let probe = Storage::ProbeLocation { path: candidate.to_str().unwrap().into(), expected: revision.clone(), deadline: storage_clock_ms() + 3000 };
+        assert_eq!(probe.execute(&config, storage_clock_ms() + 3000)["probe"]["available"], true);
+        let mut raw: serde_json::Value = serde_json::from_slice(&std::fs::read(&config).unwrap()).unwrap();
+        raw["capturesDir"] = "/changed".into();
+        std::fs::write(&config, serde_json::to_vec(&raw).unwrap()).unwrap();
+        assert_eq!(probe.execute(&config, storage_clock_ms() + 3000)["error"], "conflict");
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -1351,6 +1467,9 @@ mod tests {
     #[test]
     #[ignore = "needs the frontend Electron binary; see frontend/README.md"]
     fn connect_settings_electron_rust_roundtrip() {
+        // Unit-test builds deliberately disable default experiments. Exercise
+        // the normal encrypted endpoint-enrollment path in this isolated lane.
+        crate::shared::handoff::enable_experiment(apparent_connect_client::HOSTED_ENCRYPTION);
         let electron = std::env::var_os("APPARENT_CONNECT_TEST_ELECTRON")
             .expect("Set APPARENT_CONNECT_TEST_ELECTRON to the frontend Electron executable");
         let home = std::env::temp_dir().join(format!("ce-{}", &new_id().unwrap()[..8]));

@@ -19,13 +19,32 @@ Desktop account controls appear by default in **Settings → General**. The
 independent `connectSettings` flag supports an explicit false opt-out; close and
 reopen Settings after editing it. Visibility does not grant upload consent. They use the same client device flow, private credentials,
 renewal, queue cancellation and config writer as the CLI. There is no Connect
-onboarding step. The Settings controller is owned by Desktop; the client's
+onboarding step. Connect owns account Settings policy even in Desktop's shell.
+The Electron asynchronous controller now lives in Connect TypeScript. The retained
+Rust controller serves older/native fallback consumers as migration debt; the client's
 secret-free presentation API supplies fresh local state, a validated public
 verification URL/code and explicit bounded health checks, never raw responses.
 See [Settings](../../capture/desktop/docs/onboarding-and-settings.md#apparent-connect)
 for consent, cancellation, disable/disconnect and recovery behavior. Compilation
 alone does not prove account approval, deployment or native behavior; the readiness
 map records the separately executed bounded beta acceptance and its limits.
+
+`client/typescript/src/settings-controller.cts` and `settings-presentation.ts` own
+the Electron workflow and presentation. The generated Desktop entry uses the
+existing private socket's backend RPC for local snapshots, auth/renewal and durable
+mutations. The TypeScript controller admits explicit consent, confirmation,
+receipt handling and activation intent; native guards retain durable cancellation
+until a matching successful login is activated against fresh committed gates.
+No generic mutation, private credential or arbitrary browser URL enters the renderer.
+
+An unsupported read-only opening may fall back to the retained legacy transport
+before any action; ambiguous mutations never retry against another controller.
+Older installed assets/native callers retain the previous Rust projection.
+Rollback may use the previous client assets and unchanged file formats against
+that retained route. Remove legacy policy/transport only after those consumers
+and native fallback surfaces migrate and their affected seams pass. Rust
+auth/snapshot/credentials/queue remain explicit debt; no state writer has switched,
+and this controller adoption is not full account or Rust-free Connect acceptance.
 
 `connect/client` is the production `apparent-connect-client` library, not a
 protocol-only staging package. It owns transfer, device auth, credentials, queue
@@ -312,7 +331,8 @@ sender reserves the capture on the API. `apparent fetch <id> --wait 120` waits
 within that budget for both a privacy-preserving `not_found` and a known pending
 capture. A 404 does not establish whether a capture exists: absent, expired,
 deleted, wrong-account and wrong-origin requests remain indistinguishable.
-Fetch gives recipient guidance to check `apparent connect status`, confirm the
+Both evidence-first `inspect` and complete-media `fetch` give recipient guidance
+to check `apparent connect status`, confirm the
 API origin and approved read account with the sender, and ask for upload status
 or a fresh handoff. Authorization failures need read approval rather than polling.
 The private destination guard, integrity validation and atomic complete-bundle

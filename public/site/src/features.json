@@ -33,6 +33,17 @@
       "docs": ["capture/desktop/docs/onboarding-and-settings.md"]
     },
     {
+      "id": "connect-aggregate-daily-activity",
+      "added": "2026-11-04",
+      "group": "settings",
+      "name": "Aggregate-only daily service activity",
+      "says": "Successful upload/share actions deduplicate per account and original UTC day inside Cloudflare. Only daily observed totals and coverage metadata are selected for sync to the existing warehouse connector. Individual PostHog events remain opt-in. Prior refusals, request privacy signals and fixture exclusions are respected; account/day attribution expires at UTC day end plus one hour. Missing days are unknown, not verified zeroes.",
+      "status": "main",
+      "platforms": ["mac", "linux"],
+      "note": "Server-side daily totals for this small friends project; prospective notice precedes counting. This is a fail-open observed lower bound, not an exact census or anonymity guarantee. Existing D1 Read access is account-scoped; only sync selection is restricted to reviewed views. No new browser SDK, replay, identity or export service.",
+      "docs": ["connect/docs/aggregate-dau.md"]
+    },
+    {
       "id": "connect-product-analytics",
       "added": "2026-11-03",
       "group": "settings",
@@ -72,7 +83,7 @@
       "id": "typed-capture-notes",
       "group": "record",
       "name": "Shift-click typed notes",
-      "says": "Shift-click opens a compact Electron note field. Enter or Attach saves text; empty Enter keeps the pin. Escape retains an in-capture draft; Shift-move outside the editor resumes drawing. A compact Notes control offers editing and deletion, with a save animation that respects reduced motion. Typed notes retain click-time anchors and appear alongside speech in the handoff timeline.",
+      "says": "Shift-click opens a compact Electron note field. Enter or Attach saves text; empty Enter keeps the pin. Escape retains an in-capture draft; Shift-move outside the editor resumes drawing. The Electron recording pill shows a note icon and saved count in a flush lilac extension, hidden at zero without moving recording controls. It opens the existing notes list; native fallback retains its compact Notes control. Typed notes retain click-time anchors and appear alongside speech in the handoff timeline.",
       "status": "main",
       "added": "2026-11-02",
       "platforms": [
