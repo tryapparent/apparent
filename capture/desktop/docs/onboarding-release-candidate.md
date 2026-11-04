@@ -51,3 +51,13 @@ workflow or publish this branch to evade that gate. Proposed narrow exception:
 A draft review should target a dedicated baseline branch, not main. Creating or
 merging such a review does not grant release admission. No policy implementation,
 version allocation, publication or additional Mac spending is included yet.
+
+The branch-only `onboarding-candidate` job in Mac verification prepares a signed,
+notarized installable CI artifact after that exact commit's Mac verification.
+It uses candidate version `0.12.2` / build `12.2` and refuses if the live feed has
+caught up. This version is for installed testing; publication still needs the
+lineage decision and fresh feed/version checks. The job has read-only repository
+permissions, does not sign an appcast or mutate releases/feeds, and records the
+source commit, tree, artifact sizes/hashes and pending native acceptance. It is
+restricted to the bound candidate branch and is removed with that branch after
+accepted delivery. Actions artifact availability is not a release receipt.
