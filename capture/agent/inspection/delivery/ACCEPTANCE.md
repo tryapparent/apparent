@@ -46,8 +46,11 @@ current root and retained real inspector and renderer archives, run:
 
     APPARENT_ROOT_DIRECTORY=/absolute/root-bundle \
     APPARENT_ROOT_RECEIPT=/absolute/root-bundle/root-receipt.json \
+    APPARENT_ROOT_RECEIPT_SHA256=CALLER_PROVIDED_SHA256 \
     APPARENT_INSPECTOR_ARTIFACT=/absolute/apparent-inspect.tar.gz \
+    APPARENT_INSPECTOR_ARTIFACT_SHA256=CALLER_PROVIDED_SHA256 \
     APPARENT_RENDERER_ARTIFACT=/absolute/apparent-desktop-renderer.tar.gz \
+    APPARENT_RENDERER_ARTIFACT_SHA256=CALLER_PROVIDED_SHA256 \
       node --experimental-strip-types --test \
         capture/agent/inspection/delivery/renderer/assembly.test.ts
 

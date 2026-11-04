@@ -12,16 +12,21 @@ import { stageRendererArchive } from './assembly.ts';
 
 const root = resolve(fileURLToPath(new URL('../../../../..', import.meta.url)));
 assert(process.env.APPARENT_ROOT_DIRECTORY && process.env.APPARENT_ROOT_RECEIPT &&
-  process.env.APPARENT_INSPECTOR_ARTIFACT && process.env.APPARENT_RENDERER_ARTIFACT,
-  'Set APPARENT_ROOT_DIRECTORY, APPARENT_ROOT_RECEIPT, APPARENT_INSPECTOR_ARTIFACT and APPARENT_RENDERER_ARTIFACT to verified inputs');
+  process.env.APPARENT_ROOT_RECEIPT_SHA256 && process.env.APPARENT_INSPECTOR_ARTIFACT &&
+  process.env.APPARENT_INSPECTOR_ARTIFACT_SHA256 && process.env.APPARENT_RENDERER_ARTIFACT &&
+  process.env.APPARENT_RENDERER_ARTIFACT_SHA256,
+  'Set artifact paths and caller-provided SHA-256 values for the sealed root receipt, inspector and renderer');
 const rootDirectory = resolve(process.env.APPARENT_ROOT_DIRECTORY);
 const rootReceipt = resolve(process.env.APPARENT_ROOT_RECEIPT);
 const inspectorArchive = resolve(process.env.APPARENT_INSPECTOR_ARTIFACT);
 const rendererArchive = resolve(process.env.APPARENT_RENDERER_ARTIFACT);
 const sha256 = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
-const rootReceiptSha256 = sha256(readFileSync(rootReceipt));
-const inspectorSha256 = sha256(readFileSync(inspectorArchive));
-const rendererSha256 = sha256(readFileSync(rendererArchive));
+const rootReceiptSha256 = process.env.APPARENT_ROOT_RECEIPT_SHA256;
+const inspectorSha256 = process.env.APPARENT_INSPECTOR_ARTIFACT_SHA256;
+const rendererSha256 = process.env.APPARENT_RENDERER_ARTIFACT_SHA256;
+assert.equal(sha256(readFileSync(rootReceipt)), rootReceiptSha256, 'Root receipt input digest mismatch');
+assert.equal(sha256(readFileSync(inspectorArchive)), inspectorSha256, 'Inspector archive input digest mismatch');
+assert.equal(sha256(readFileSync(rendererArchive)), rendererSha256, 'Renderer archive input digest mismatch');
 
 function command(cmd: string, args: string[], cwd = root) {
   const result = spawnSync(cmd, args, { cwd, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
