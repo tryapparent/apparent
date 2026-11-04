@@ -60,11 +60,16 @@ Rust recipient in a temporary source directory, outside root Cargo configuration
 Each of four macOS/Linux architecture outputs includes its executable and a
 protocol-1 manifest sealing the actual executable SHA256, full source SHA and
 unique workflow run/attempt version. GitHub build attestations cover both files.
-Actions v4 archives are immutable by artifact ID; their 90-day retention is a
-limitation, not a durable release guarantee. This prerequisite must not be adopted
-as a permanent Desktop pin until a durable release lane and authenticated consumer
-are implemented and verified. No Desktop packaging or runtime routing changes in
-this prerequisite. Existing Desktop artifact reuse has not been assessed.
+A main-only release job verifies both attestations against the canonical workflow,
+main ref and exact source digest, then publishes four target archives and SHA256SUMS
+as durable GitHub release assets. Versions are independently named
+`recipient-<full SHA>-<run ID>-<attempt>`; reruns create a new version. Existing
+versions/assets must never be edited, deleted or overwritten. Release creation
+fails on an existing tag; no update/upload-clobber path exists. Actions archives
+are only intermediate transport. GitHub repository administrators can still alter
+releases: consumers must verify the embedded executable and manifest attestations,
+not trust a release URL or checksum alone. These binaries are not Apple signed or
+notarized. No Desktop packaging, app release or hosted activation is included.
 
 Before adoption, authenticate the canonical workflow run on main and its source,
 verify GitHub attestations with the expected repository/workflow identity, validate
