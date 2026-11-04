@@ -49,7 +49,7 @@ pub struct Session {
     frame: Arc<Mutex<Option<(u64, [f64; 4])>>>,
 }
 
-fn assets() -> Option<(PathBuf, PathBuf)> {
+pub(super) fn assets() -> Option<(PathBuf, PathBuf)> {
     let executable = std::env::current_exe().ok()?;
     let parent = executable.parent()?;
     #[cfg(target_os = "macos")]
@@ -325,13 +325,8 @@ impl Session {
     }
     pub fn note_badge_anchor(&self) -> Option<[f64; 4]> {
         if !self.healthy() || !self.ready() { return None; }
-        #[cfg(target_os = "linux")]
-        return crate::capture::desktop::linux::x11::geometry(self.window_number()?);
-        #[cfg(target_os = "macos")]
-        {
-            let (revision, rect) = (*self.frame.lock().ok()?)?;
-            (revision == self.view.revision).then_some(rect)
-        }
+        let (revision, rect) = (*self.frame.lock().ok()?)?;
+        (revision == self.view.revision).then_some(rect)
     }
     pub fn healthy(&self) -> bool {
         #[cfg(target_os = "linux")]
@@ -478,7 +473,7 @@ mod native_tests {
         let view = View {
             revision: 1, phase: "recording", clock: "00:01".into(), label: "Synthetic pin test".into(),
             warning: None, notice: None, pocket: None, reduced_motion: true,
-            draggable: false, input_level: None, actions: vec![],
+            draggable: false, input_level: None, actions: vec![], note_count: 0,
         };
         let mut session = Session::open(view.clone(), 1, Default::default()).unwrap();
         let deadline = Instant::now() + Duration::from_secs(8);
