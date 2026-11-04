@@ -104,7 +104,20 @@ def select(paths, history_known=True):
     for path in paths:
         if path in DOCS or (path.startswith("docs/") and path.endswith(".md")):
             continue
-        if path.startswith("capture/engine/tests/") or path == "capture/engine/README.md":
+        # The extracted Rust package is a real standalone Cargo workspace.
+        # Its src/tests/manifest/lock inputs run package checks; only src/tests
+        # are isolated from the root app, while manifest/lock changes may
+        # affect shared build resolution and therefore stay broad.
+        if path.startswith(("capture/engine/src/", "capture/engine/tests/")):
+            engine = True
+            if path.startswith("capture/engine/src/"):
+                broad = True  # root production modules still consume this code
+                reasons.append(path)
+        elif path in {"capture/engine/Cargo.toml", "capture/engine/Cargo.lock"}:
+            engine = True
+            broad = True
+            reasons.append(path)
+        elif path == "capture/engine/README.md":
             engine = True
         elif path in BROWSER_FILES:
             browser = True
@@ -203,10 +216,27 @@ def run_pr_checks(selection=None):
                     "test_temp_preflight.py", "test_owner_lanes.py"):
         subprocess.run(["python3", "-m", "unittest", "discover", "-s", "enablement/tests",
                         "-p", pattern], cwd=ROOT, check=True)
-    entry = "capture/desktop/ui/frontend/src/onboarding/main.tsx"
-    if selection and entry in selection["paths"]:
+    frontend_root = "capture/desktop/ui/frontend/"
+    onboarding_inputs = (
+        frontend_root + "src/onboarding/",
+        frontend_root + "src/shared/",
+        frontend_root + "src/components/",
+        frontend_root + "src/styles/",
+    )
+    onboarding_exact = {
+        frontend_root + path for path in (
+            "onboarding.html", "package.json", "package-lock.json", "vite.config.ts",
+            "scripts/tsconfig.onboarding.json", "tsconfig.json", "src/style.css",
+            "src/main.tsx", "src/base.css",
+        )
+    }
+    paths = selection["paths"] if selection else []
+    if any(path == frontend_root + "src/onboarding/main.tsx"
+           or path.startswith(onboarding_inputs) or path in onboarding_exact
+           or path.startswith("shared/ui/")
+           or path == "shared/assets/fonts/HostGrotesk-Variable.ttf" for path in paths):
         frontend = ROOT / "capture/desktop/ui/frontend"
-        if not (ROOT / entry).is_file():
+        if not (ROOT / (frontend_root + "src/onboarding/main.tsx")).is_file():
             raise RuntimeError("Onboarding entry was deleted or renamed; update its focused check contract before pushing")
         if not all((frontend / item).is_file() for item in (
                 "node_modules/typescript/bin/tsc", "node_modules/vite/bin/vite.js",
@@ -436,6 +466,16 @@ def run_selected_checks(selection, offline=True, cargo_timings=False, overlap_ro
     jobs = os.environ.get("T3_BUILD_JOBS", "3")
     dependency_mode = "--offline" if offline else "--locked"
     diagnostics = ["--timings"] if cargo_timings else []
+    # The standalone Engine package is a smaller consumer than the root app.
+    # Run it first when both lanes are selected so package-local compiler or
+    # test failures stop before the broader application compile. Root checks
+    # still run for every source change because production remains a root module.
+    if selection["engine"]:
+        for command in ("build", "test"):
+            args = cargo + [command, "--manifest-path", "capture/engine/Cargo.toml", "-j", jobs, dependency_mode] + diagnostics
+            if command == "test":
+                args += ["--", "--test-threads=2"]
+            subprocess.run(args, cwd=ROOT, check=True)
     if selection["root"]:
         if selection.get("focused"):
             for test_filter in selection["focused"]:
@@ -460,12 +500,6 @@ def run_selected_checks(selection, offline=True, cargo_timings=False, overlap_ro
             subprocess.run(build_command if not selection.get("focused") else
                            cargo + ["build", "-j", jobs, dependency_mode] + diagnostics,
                            cwd=ROOT, check=True)
-    if selection["engine"]:
-        for command in ("build", "test"):
-            args = cargo + [command, "--manifest-path", "capture/engine/Cargo.toml", "-j", jobs, dependency_mode] + diagnostics
-            if command == "test":
-                args += ["--", "--test-threads=2"]
-            subprocess.run(args, cwd=ROOT, check=True)
     if selection.get("browser"):
         # Use the existing package fixtures, including the separate loopback
         # build. Do not substitute a production artifact with synthetic config.

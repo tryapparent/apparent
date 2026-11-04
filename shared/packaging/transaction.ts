@@ -1,6 +1,6 @@
 /** Packaging-only transactions. Callers own validation, signing and exclusive installation locks. */
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -24,6 +24,34 @@ export function publishValidatedDirectory(candidate: string, destination: string
     previousOwner(output);
   }
   shippingDirectory(candidate);
+  if (!previousOwner) {
+    // Reserve the destination exclusively. rename(candidate, output) can replace
+    // a concurrently created empty directory on both supported platforms.
+    // Callers keep assembly private until this operation returns successfully.
+    mkdirSync(output, { mode: 0o700 });
+    const moved: string[] = [];
+    let candidateRemoved = false;
+    try {
+      for (const entry of readdirSync(candidate)) {
+        renameSync(join(candidate, entry), join(output, entry));
+        moved.push(entry);
+      }
+      shippingDirectory(output);
+      rmSync(candidate, { recursive: true });
+      candidateRemoved = true;
+      afterPublish();
+    } catch (error) {
+      try {
+        if (candidateRemoved && !existsSync(candidate)) mkdirSync(candidate, { mode: 0o700 });
+        for (const entry of moved.reverse()) renameSync(join(output, entry), join(candidate, entry));
+        rmSync(output, { recursive: true });
+      } catch (rollback) {
+        throw new AggregateError([error, rollback], `Publication failed; reserved payload retained at ${output}`);
+      }
+      throw error;
+    }
+    return;
+  }
   const transaction = mkdtempSync(join(dirname(output), '.package-publication-'));
   chmodSync(transaction, 0o700);
   const previous = join(transaction, 'previous');
@@ -34,7 +62,10 @@ export function publishValidatedDirectory(candidate: string, destination: string
     afterPublish(); state = 'committed';
   } catch (error) {
     try {
-      if (state === 'published') rmSync(output, { recursive: true });
+      if (state === 'published') {
+        assert(!existsSync(candidate), 'Candidate rollback destination already exists');
+        renameSync(output, candidate);
+      }
       if (existsSync(previous)) renameSync(previous, output);
       state = 'rolled-back';
     } catch (rollback) {
@@ -42,7 +73,19 @@ export function publishValidatedDirectory(candidate: string, destination: string
       throw new AggregateError([error, rollback], `Publication failed; previous application retained at ${previous}`);
     }
     throw error;
-  } finally { if (state !== 'rollback-failed') rmSync(transaction, { recursive: true }); }
+  } finally {
+    if (state !== 'rollback-failed') {
+      try { rmSync(transaction, { recursive: true }); }
+      catch {
+        // Cleanup cannot change a committed installation into a failed one, or
+        // obscure the original failure after a successful rollback.
+        // Do not emit a process event: application warning listeners must not
+        // participate in the transaction. Even diagnostic I/O is best effort.
+        try { writeSync(2, `Publication ${state}; private cleanup retained at ${transaction}\n`); }
+        catch { /* The transaction result takes precedence over reporting. */ }
+      }
+    }
+  }
 }
 
 function application(path: string) {
