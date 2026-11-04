@@ -60,7 +60,7 @@ export function NativeOnboarding(){
     const content:Record<string,{title:string;text:string;button?:string;action?:string}>={
       start:{title:'Start your first capture.',text:`Press ${state.shortcut} to start recording.`},
       screen:{title:'Choose Screen.',text:'Choose Screen in the capture controls. Whiteboard becomes available once recording starts.'},
-      whiteboard:{title:`Open ${boardName}.`,text:`Click ${boardName} in this app’s recording controls at the top of your screen.`},
+      whiteboard:{title:`Open ${boardName}.`,text:'Click Screen, then choose Whiteboard.'},
       'board-ink':{title:'Draw on the whiteboard.',text:'Try a circle or an arrow. The guide moves on when you finish your mark.'},
       'screen-ink':{title:'Draw on your screen.',text:'Hold Shift and circle something in your window.'},
       stop:{title:'Finish your capture.',text:`Press ${state.shortcut} again. Your sketch and screen marks stay together.`},
