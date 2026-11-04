@@ -36,19 +36,29 @@ test('source-bound AppImage invokes its genuine bundled recipient and preserves 
   const config = join(work, 'config.json');
   const commands: {args:string[]; status:number|null; stdout:string; stderr:string}[] = [];
   const children = new Set<ReturnType<typeof spawn>>();
-  const run = (executable:string, args:string[], success=true) => new Promise<string>((resolveRun, reject) => {
+  const run = (executable:string, args:string[], expected:'success'|'failure'|'cancel-at-approval'='success') => new Promise<string>((resolveRun, reject) => {
     const child = spawn(executable, args, {cwd:work, detached:true,
       env:{...process.env, APPARENT_CONFIG:config, APPIMAGE_EXTRACT_AND_RUN:'1'}, stdio:['ignore','pipe','pipe']});
     children.add(child);
     let stdout='', stderr='';
+    let phase:'ordinary'|'awaiting-approval'|'interrupted'=expected==='cancel-at-approval'?'awaiting-approval':'ordinary';
     const kill = () => { try { process.kill(-child.pid!, 'SIGKILL'); } catch {} };
     const timer = setTimeout(kill, 30_000);
-    child.stdout.on('data', chunk => { stdout+=chunk; if(stdout.length>2_000_000)kill(); });
+    child.stdout.on('data', chunk => {
+      stdout+=chunk;if(stdout.length>2_000_000)kill();
+      if(phase==='awaiting-approval' && stdout.includes('CANCEL-CODE')) {
+        phase='interrupted';try{process.kill(-child.pid!, 'SIGINT');}catch{}
+      }
+    });
     child.stderr.on('data', chunk => { stderr+=chunk; if(stderr.length>2_000_000)kill(); });
     child.once('error', error => {clearTimeout(timer);children.delete(child);reject(error);});
     child.once('close', status => {
       clearTimeout(timer);children.delete(child);commands.push({args,status,stdout,stderr});
-      try { assert.equal(status===0,success,JSON.stringify(commands.at(-1)));resolveRun(stdout); } catch(error){reject(error);}
+      try {
+        assert.equal(status===0,expected==='success',JSON.stringify(commands.at(-1)));
+        if(expected==='cancel-at-approval')assert.equal(phase,'interrupted','must reach actual packaged approval before interrupt');
+        resolveRun(stdout);
+      } catch(error){reject(error);}
     });
   });
   const id='0123456789abcdef0123456789abcdef';
@@ -60,6 +70,7 @@ test('source-bound AppImage invokes its genuine bundled recipient and preserves 
   const files:Record<string,Buffer>={'apparent.json':Buffer.from(JSON.stringify(bundle)),
     'summary.md':Buffer.from('Synthetic packaged recipient proof\n'),'contact-sheet.png':png};
   let tamper=false, requests=0;
+  let loginOutcome:'approve'|'await-cancellation'='approve';
   const server=createServer(async (request,response) => {
     try {
       let body='';for await(const chunk of request)body+=chunk;
@@ -67,9 +78,9 @@ test('source-bound AppImage invokes its genuine bundled recipient and preserves 
       response.setHeader('content-type','application/json');
       if(route==='/v1/device/start') {
         assert.equal(JSON.parse(body).scope,'read');
-        response.end(JSON.stringify({deviceCode:'synthetic-device-private',userCode:'TEST-CODE',verificationUri:`${origin}/device`,expiresIn:30,interval:1}));
+        response.end(JSON.stringify({deviceCode:'synthetic-device-private',userCode:loginOutcome==='approve'?'TEST-CODE':'CANCEL-CODE',verificationUri:`${origin}/device`,expiresIn:30,interval:1}));
       } else if(route==='/v1/device/poll') {
-        response.end(JSON.stringify({status:'approved',scope:'read',accessToken:'synthetic-read-private',refreshToken:'synthetic-refresh-private',expiresIn:3600,refreshExpiresIn:86400,grantId:'synthetic-grant'}));
+        response.end(JSON.stringify(loginOutcome==='approve'?{status:'approved',scope:'read',accessToken:'synthetic-read-private',refreshToken:'synthetic-refresh-private',expiresIn:3600,refreshExpiresIn:86400,grantId:'synthetic-grant'}:{status:'pending'}));
       } else if(route===`/v1/captures/${id}`) {
         assert.equal(request.headers.authorization,'Bearer synthetic-read-private');requests++;
         response.end(JSON.stringify({id,status:'ready',files:Object.entries(files).map(([path,bytes])=>({path,size:bytes.length,sha256:hash(bytes)}))}));
@@ -97,10 +108,14 @@ test('source-bound AppImage invokes its genuine bundled recipient and preserves 
     for(const [path,bytes] of Object.entries(files))assert.deepEqual(readFileSync(join(full,path)),bytes);
     assert.equal(JSON.parse(await run(image,['inspect',id,'--json'])).id,id);
     assert.equal(JSON.parse(await run(image,['inspect',full,'--json'])).id,id);
-    await run(image,['fetch',id,'--out',full,'--wait','0'],false);
+    await run(image,['fetch',id,'--out',full,'--wait','0'],'failure');
     assert.deepEqual(readFileSync(join(full,'apparent.json')),files['apparent.json']);
     tamper=true;const invalid=join(work,'invalid.apparent');
-    await run(image,['fetch',id,'--out',invalid,'--wait','0'],false);assert.equal(existsSync(invalid),false);tamper=false;
+    await run(image,['fetch',id,'--out',invalid,'--wait','0'],'failure');assert.equal(existsSync(invalid),false);tamper=false;
+    const beforeCancellation=readFileSync(config);loginOutcome='await-cancellation';
+    await run(image,['connect','login','--server',origin,'--no-browser'],'cancel-at-approval');
+    assert.deepEqual(readFileSync(config),beforeCancellation);loginOutcome='approve';
+    await run(image,['connect','status']);
     const saved=JSON.parse(readFileSync(config,'utf8'));assert.equal(saved.unknown.preserved,42);
     assert.equal(saved.cloud.enabled,false);assert.equal(saved.cloud.uploadConsent,false);
     for(const secret of ['synthetic-read-private','synthetic-refresh-private','synthetic-device-private','synthetic-config-private'])assert.ok(!JSON.stringify(commands).includes(secret));
@@ -112,11 +127,11 @@ test('source-bound AppImage invokes its genuine bundled recipient and preserves 
     const original=readFileSync(component), originalReceipt=readFileSync(receipt);
     assert.equal(hash(original),pin.sha256);assert.equal(hash(readFileSync(join(work,'verified-producer/apparent-connect-recipient'))),pin.sha256);
     renameSync(component,component+'.held');
-    try {await run(root,['connect','status'],false);}finally{renameSync(component+'.held',component);}
+    try {await run(root,['connect','status'],'failure');}finally{renameSync(component+'.held',component);}
     writeFileSync(component,Buffer.concat([original,Buffer.from('tamper')]));
-    try {await run(root,['connect','status'],false);}finally{writeFileSync(component,original);}
+    try {await run(root,['connect','status'],'failure');}finally{writeFileSync(component,original);}
     writeFileSync(receipt,JSON.stringify({...JSON.parse(originalReceipt.toString()),protocol:2}));
-    try {await run(root,['connect','status'],false);}finally{writeFileSync(receipt,originalReceipt);}
+    try {await run(root,['connect','status'],'failure');}finally{writeFileSync(receipt,originalReceipt);}
     await run(root,['connect','status']);
     assert.deepEqual(serverErrors,[]);assert.ok(requests>=3);
     passed=true;
