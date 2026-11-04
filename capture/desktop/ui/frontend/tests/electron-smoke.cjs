@@ -24,7 +24,26 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
     ...(process.env.PUBLIC_SHARE_VIDEO ? {recordVideo:{dir:process.env.PUBLIC_SHARE_VIDEO,size:{width:920,height:760}}}:{}),
     env: { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(home, 'config') },
   });
+  let phase = 'launch';
+  let phaseStarted = Date.now();
+  const progress = (next) => {
+    phase = next;
+    phaseStarted = Date.now();
+    console.log(`Synthetic preview phase: ${phase}`);
+  };
+  // Synchronous owned-fixture metadata only: diagnostics must not wait on the
+  // renderer/IPC that may be stalled, or delay the original test deadline.
+  const diagnose = () => console.log('Synthetic preview state: ' + JSON.stringify({
+    phase, phaseMs: Date.now() - phaseStarted, requests: requests.length,
+    publicRequests: requests.filter(request => request.includes('"publicShare"')).length,
+    socketListening: server?.listening ?? false,
+    windows: application.windows().length,
+    pid: application.process().pid, exitCode: application.process().exitCode,
+  }));
+  let diagnosticTimer;
   t.after(async () => {
+    clearInterval(diagnosticTimer);
+    diagnose();
     await application.close();
     if(process.env.PUBLIC_SHARE_VIDEO && page.video()) await page.video().saveAs(path.join(process.env.PUBLIC_SHARE_VIDEO,'sender-electron.webm'));
     if (server) await new Promise((resolve) => server.close(resolve));
@@ -131,34 +150,48 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   await page.screenshot({ path: screenshot, fullPage: true });
   console.log(`Synthetic Electron screenshot: ${screenshot}`);
 
+  diagnosticTimer = setInterval(diagnose, 5000);
+  diagnosticTimer.unref();
+  progress('refresh capture reference: click');
   await page.getByRole('button',{name:'Refresh capture reference',exact:true}).click();
+  progress('refresh capture reference: readback');
   await page.getByText('synthetic.apparent',{exact:true}).waitFor();
   const beforeShare=requests.filter(r=>r.includes('"publicShare"')).length;
+  progress('public link: open confirmation');
   await page.getByRole('button',{name:'Copy public link',exact:true}).click();
+  progress('public link: disclosure visible');
   await expect(page.getByText('Anyone with this link can view this capture. Shared captures are not end-to-end encrypted.',{exact:true})).toBeVisible();
   assert.equal(requests.filter(r=>r.includes('"publicShare"')).length,beforeShare);
   if(process.env.PUBLIC_SHARE_VIDEO) await page.waitForTimeout(1500);
+  progress('public link: create');
   await page.getByRole('button',{name:'Create and copy public link',exact:true}).click();
+  progress('public link: copied readback');
   await page.getByText('Link copied · upload may still be preparing. Open the link to check readiness.',{exact:true}).waitFor();
   if(process.env.PUBLIC_SHARE_VIDEO) {await page.screenshot({path:path.join(process.env.PUBLIC_SHARE_VIDEO,'sender-copied.png')});await page.waitForTimeout(1500);}
   assert.equal(requests.filter(r=>r.includes('"publicShare":"deliver"')).length,1);
   publicFailure=true;
+  progress('public link failure: open confirmation');
   await page.getByRole('button',{name:'Copy public link',exact:true}).click();
+  progress('public link failure: create');
   await page.getByRole('button',{name:'Create and copy public link',exact:true}).click();
+  progress('public link failure: error readback');
   await page.getByText('Public link was not confirmed copied. Check your clipboard and refresh before trying again. Local Paste remains available.',{exact:true}).waitFor();
 
   // Do this after interaction checks: Playwright tracks even a cancelled Electron
   // navigation as pending; the actual webContents URL remains authoritative.
   const originalUrl = page.url();
+  progress('isolation: external navigation attempt');
   await page.evaluate(() => {
     const link = document.createElement('a');
     link.href = 'https://example.com'; document.body.append(link); link.click(); link.remove();
     window.open('https://example.com');
   });
+  progress('isolation: owned URL readback');
   assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getURL()), originalUrl);
   assert.equal(application.windows().length, 1);
 
   // A second renderer with the same preload still cannot invoke the bridge.
+  progress('isolation: second renderer bridge refusal');
   assert.equal(await application.evaluate(async ({ BrowserWindow }, root) => {
     const other = new BrowserWindow({ show: false, webPreferences: {
       preload: root + '/electron/preload.cjs', sandbox: true, contextIsolation: true, nodeIntegration: false,
@@ -168,6 +201,7 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
       return await other.webContents.executeJavaScript(`Promise.all(['readRuntimeState', 'readCaptureReference', 'copyCaptureReference', 'startPublicShare', 'readPublicShare', 'cancelPublicShare'].map(k => window.apparent[k]().then(() => false, () => true))).then(r => r.every(Boolean))`);
     } finally { other.destroy(); }
   }, path.join(__dirname, '..')), true);
+  progress('complete');
 });
 
 // Rust state is synthetic; the main/preload/renderer and OS window resizing are real.
