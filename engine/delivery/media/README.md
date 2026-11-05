@@ -21,6 +21,9 @@ manifest, and must be supplied by the delivery environment;
 the producer never installs packages. The default source is the GStreamer
 plugin directory reported by `pkg-config`. Its package/OS identity and host
 GStreamer version are recorded rather than presented as a universal baseline.
+Overrides are restricted to local proof builds and refused when `CI` is set;
+they are not eligible for composition artifact admission/reuse. The registered
+producer must use the runtime installed by its declared CI environment.
 
 `dist/` contains the absolute launch entry `apparent-engine-frames`, `lib/`
 with each non-base-OS transitive library by its needed SONAME, `plugins/` with

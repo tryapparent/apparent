@@ -11,6 +11,7 @@ function frozen(): string { const dirty = execFileSync('git', ['status', '--porc
 function run(command: string, args: string[], cwd = root): string { return execFileSync(command, args, { cwd, encoding: 'utf8' }).trim() }
 function copyLibrary(path: string, libDir: string) { const real = run('realpath', ['-e', path]); const name = path.split('/').at(-1)!; const destination = resolve(libDir, name); if (!existsSync(destination)) copyFileSync(real, destination, 0); return destination }
 const sourceSha = frozen()
+if (process.env.CI && process.env.APPARENT_GST_PLUGIN_SOURCE) throw new Error('plugin overrides are local proof inputs only; admitted CI must use its declared system runtime')
 if (process.platform !== 'linux' || process.arch !== 'x64') throw new Error('media producer only builds on native linux-x64')
 if (process.env.OWNER_TARGET !== 'linux-x64') throw new Error('OWNER_TARGET=linux-x64 is required')
 const plugins = [...REQUIRED_PLUGINS]
@@ -28,7 +29,9 @@ for (const { name, from } of pluginInputs) copyFileSync(from, resolve(stagePlugi
 const cargoTarget = resolve(pkg, '.build', 'cargo-target')
 const common = ['--manifest-path', resolve(root, 'engine/Cargo.toml'), '--features', 'media', '--bin', 'apparent-engine-frames', '--release', '--locked', '--target-dir', cargoTarget]
 if (process.env.APPARENT_CARGO_OFFLINE === '1') common.push('--offline')
-execFileSync('/home/simon/.local/bin/t3-build', ['cargo', 'build', ...common], { cwd: root, stdio: 'inherit', env: { ...process.env, CARGO_BUILD_JOBS: process.env.T3_BUILD_JOBS ?? '2' } })
+const admission = '/home/simon/.local/bin/t3-build'
+const needsAdmission = existsSync(admission) && !process.env.T3_BUILD_JOBS
+execFileSync(needsAdmission ? admission : 'cargo', needsAdmission ? ['--jobs', '3', '--min-jobs', '3', '--', 'cargo', 'build', ...common] : ['build', ...common], { cwd: root, stdio: 'inherit', env: { ...process.env, CARGO_BUILD_JOBS: process.env.T3_BUILD_JOBS ?? '2' } })
 const worker = resolve(cargoTarget, 'release/apparent-engine-frames')
 copyFileSync(worker, resolve(workerDir, 'apparent-engine-frames'), 0); chmodSync(resolve(workerDir, 'apparent-engine-frames'), 0o755)
 const launch = resolve(pkg, 'src/launch.sh'); copyFileSync(launch, resolve(output, 'apparent-engine-frames'), 0); chmodSync(resolve(output, 'apparent-engine-frames'), 0o755)
@@ -41,6 +44,7 @@ const seen = new Set<string>()
 while (pending.length) {
   const file = pending.pop()!; if (seen.has(file)) continue; seen.add(file)
   const outputText = run('ldd', [file])
+  if (/=>\s+not found(?:\s|$)/m.test(outputText)) throw new Error(`unresolved runtime dependency: ${file}`)
   for (const line of outputText.split('\n')) {
     const match = line.match(/^\s*(\S+)\s+=>\s+(\/\S+)/); if (!match) continue
     const [, soname, resolved] = match

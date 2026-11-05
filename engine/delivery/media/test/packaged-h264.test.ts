@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
@@ -10,7 +10,7 @@ import { createMediaJobId, MediaClient, launchMediaWorker } from '../../../sdk/s
 test('packaged entry decodes real H.264 with ambient plugin and loader paths closed', async t => {
   const entry = process.env.APPARENT_ENGINE_FRAMES_BIN
   if (!entry) { t.skip('requires the built package entry'); return }
-  const root = await mkdtemp(join(await import('node:fs/promises').then(m => m.realpath(tmpdir())), 'apparent-media-h264-'))
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'apparent-media-h264-'))
   await chmod(root, 0o700)
   const runtime = join(root, 'runtime'); const bundle = join(root, 'synthetic.apparent')
   await mkdir(runtime, { mode: 0o700 }); await mkdir(bundle, { mode: 0o700 })
@@ -19,10 +19,11 @@ test('packaged entry decodes real H.264 with ambient plugin and loader paths clo
   await chmod(video, 0o600)
   await writeFile(join(bundle, 'apparent.json'), JSON.stringify({ version: 1, id: 'synthetic', durationMs: 2250, video: 'recording.mp4', videoOffsetMs: 250 }), { mode: 0o600 })
   const m = await stat(video, { bigint: true })
-  const client = new MediaClient(launchMediaWorker(resolve(entry), runtime))
   const old = Object.fromEntries(['LD_LIBRARY_PATH', 'GST_PLUGIN_PATH', 'GST_PLUGIN_PATH_1_0', 'GST_PLUGIN_SYSTEM_PATH', 'GST_PLUGIN_SYSTEM_PATH_1_0'].map(k => [k, process.env[k]]))
   for (const k of Object.keys(old)) process.env[k] = '/nonexistent/host-runtime'
+  let client: MediaClient | undefined
   try {
+    client = new MediaClient(launchMediaWorker(resolve(entry), runtime))
     assert.equal((await client.handshake()).capabilities.decodeFrames, true)
     const outputDirectory = join(root, 'frames'); await mkdir(outputDirectory, { mode: 0o700 })
     const input = { jobId: createMediaJobId(), source: { bundleId: 'synthetic', bundlePath: bundle, videoPath: video, videoOffsetMs: 250, identity: { device: String(m.dev), inode: String(m.ino), size: Number(m.size), modifiedNs: String(m.mtimeNs) } }, requestedBundleMs: [1250, 0, 5000, 1250], outputDirectory, limits: { maxFrames: 48, maxEdge: 320, maxTotalPixels: 64000000, deadlineMs: 30000 } }
@@ -37,6 +38,6 @@ test('packaged entry decodes real H.264 with ambient plugin and loader paths clo
     if (evidence) { await mkdir(evidence, { recursive: true, mode: 0o700 }); await writeFile(join(evidence, 'packaged-h264-result.json'), JSON.stringify({ result, sourceSha256: createHash('sha256').update(await readFile(video)).digest('hex') }, null, 2), { mode: 0o600 }) }
   } finally {
     for (const [k, v] of Object.entries(old)) { if (v === undefined) delete process.env[k]; else process.env[k] = v }
-    await client.close(); await rm(root, { recursive: true, force: true })
+    await client?.close(); await rm(root, { recursive: true, force: true })
   }
 })
