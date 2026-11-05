@@ -241,6 +241,9 @@ test("test-double capabilities, unsupported methods and secret-shaped error code
   const badError: CaptureTransport = { async request(request) { return request.method === "handshake" ? scripted(() => null).request(request) : { channel: "capture", protocolVersion: 2, rpcId: request.rpcId, error: { code: authority.ownerToken, message: "private diagnostic" } }; }, async close() { return "already-exited"; } };
   const errors = new CaptureClient(badError); await errors.handshake();
   await assert.rejects(errors.inspect(authority), error => !String(error).includes(authority.ownerToken) && /invalid capture error code/.test(String(error)));
+  const privateFailure: CaptureTransport = { async request(request) { if (request.method === "handshake") return scripted(() => null).request(request); throw new Error(authority.ownerToken); }, async close() { return "already-exited"; } };
+  const failed = new CaptureClient(privateFailure); await failed.handshake();
+  await assert.rejects(failed.inspect(authority), error => !String(error).includes(authority.ownerToken) && /outcome is unknown/.test(String(error)));
 });
 
 test("strict capture paths and scroll delta types reject malformed data", async () => {

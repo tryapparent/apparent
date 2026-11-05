@@ -6,6 +6,7 @@ import type {
   MaterialsDocument,
   MaterialsKey,
   PublishEnvelope,
+  InvocationFact,
 } from "./capture-documents/types.ts";
 import { validatePublicationPlan } from "./capture-documents/publication.ts";
 import type { DerivativeDocumentInput } from "./capture-documents/types.ts";
@@ -26,6 +27,7 @@ export type {
   StrokeFacts,
   PublicationPlan,
   PublishEnvelope,
+  InvocationFact,
 } from "./capture-documents/index.ts";
 
 export const CAPTURE_CHANNEL = "capture" as const;
@@ -172,7 +174,7 @@ export type CaptureRequest = Base &
         bundlePath: string;
         source: SourceDescriptor;
         options: CaptureOptions;
-        invocation: unknown;
+        invocation: InvocationFact;
       }
     | {
         method: "inspect" | "stop" | "cancel";
@@ -476,7 +478,9 @@ export class CaptureClient {
     let timer: NodeJS.Timeout | undefined;
     try {
       const response = await Promise.race([
-        this.transport.request(request, timeoutMs),
+        Promise.resolve().then(() => this.transport.request(request, timeoutMs)).catch(() => {
+          throw new Error("capture transport failed; operation outcome is unknown");
+        }),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
             () =>
@@ -577,7 +581,7 @@ export class CaptureClient {
       bundlePath: string;
       source: SourceDescriptor;
       options: CaptureOptions;
-      invocation: unknown;
+      invocation: InvocationFact;
     },
     timeoutMs = 5000,
   ): Promise<CaptureStatus> {

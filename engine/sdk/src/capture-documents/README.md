@@ -110,6 +110,40 @@ the pinned same-filesystem, no-replace publication journal and crash
 reconciliation; cancellation versus the atomic publication commit; and the
 native macOS/Linux proof. These are not silently decided by SDK shape choices.
 
+## Native enforcement required before availability
+
+The native owner must authenticate capture authority before receipt recovery or
+reading caller-supplied plan paths. It durably binds owner, capture, bundle/final
+path, source generation, options and invocation before acquiring native capture
+resources. Same-identity replay recovers that operation; a changed binding fails
+without starting another capture. Current permission/source readiness must not
+prevent authenticated inspection or control of an already-owned operation.
+Source generations must change when their native identity/consent is invalidated;
+an advertised source cannot silently become another output. First-frame readiness
+requires actual selected-source buffers, not admission or a reference fixture.
+
+Sealed materials and derivative/inference receipts are resolved against the
+Engine-owned durable registry, with pinned native file identities and exact-byte
+digests. A caller-provided hash or path alone establishes no native provenance.
+Explicit material release requires matching owner/key/lease and exclusion of
+active native readers, capture and publication; a failed or lost release answer
+does not establish deletion. Media jobs do not take live-capture admission.
+
+Publication first durably binds the immutable publication ID and exact plan hash.
+It snapshots pinned inputs into an exclusively owned sibling under the pinned
+destination parent, validates the complete bundle/media and exact inventory,
+and syncs files/directories. Final visibility requires same-filesystem atomic
+no-replace rename (Linux `renameat2(RENAME_NOREPLACE)`, macOS
+`renameatx_np(RENAME_EXCL)`), followed by parent durability and a durable receipt.
+An existing destination is preserved; it is never overwritten or taken as Saved
+from EEXIST. No weaker rename fallback is allowed. The native journal must retain
+the staged directory identity, plan and inventory digests before commit so a crash
+between rename and receipt can reconcile the exact same artifact, not a path scan.
+Cancel and the commit decision serialize under native publication authority:
+before commit cancellation wins; after commit the result is Saved. Ambiguous
+durability stays unresolved until reconciliation proves the result. These are
+implementation and platform-proof requirements, not claims this SDK supplies them.
+
 Record's committed processing baseline is PR715 (`495715bf`): its TypeScript
 formatter consumes target/session/context, transcript, selected-frame, note/mark
 and warning facts and returns `summaryMarkdown` only. It owns their translation
