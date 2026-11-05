@@ -1,13 +1,7 @@
 name: Website — checks & deploy
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
-  workflow_run:
-    workflows: [Connect producer, Value-stream delivery]
-    branches: [main]
-    types: [completed]
 
 permissions:
   contents: read

@@ -35,7 +35,8 @@ test('forks, feature branches, follower events and malformed identities cannot p
 
 test('web publishers retain their own verification, artifact identity and activation gates', () => {
   const workflow = readFileSync(new URL('../../../.github/workflows/web-delivery.yml', import.meta.url), 'utf8')
-  assert.match(workflow, /push:\n\s+branches: \[main\]/)
+  assert.match(workflow, /on:\n  workflow_dispatch:/)
+  assert.doesNotMatch(workflow, /^  (push|workflow_run|schedule):/m)
   assert.doesNotMatch(workflow, /Linux verification|--platform linux/)
   assert.match(workflow, /node .*enablement\/verification\/web\/candidate.ts/)
   for (const name of ['website']) {

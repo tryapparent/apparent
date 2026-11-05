@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import test from 'node:test'
 const workflow = readFileSync(new URL('../../../.github/workflows/web-delivery.yml', import.meta.url), 'utf8')
 const section = (name: string) => workflow.split(`\n  ${name}:\n`)[1]?.split(/\n  [a-z-]+:\n/)[0] ?? ''
@@ -9,7 +9,7 @@ test('Public consumes immutable Connect output without native or Connect product
   assert(verify.indexOf('scripts/connect/artifact.ts') < verify.indexOf('node scripts/connect/compose-connect.ts'))
   assert(verify.indexOf('scripts/cd/stream-artifact.ts') < verify.indexOf('node scripts/connect/compose-connect.ts'))
   assert.doesNotMatch(verify, /npm run build|package-apparent\.ts|analytics-smoke\.ts|vite build|\besbuild\b|scripts\/brand\//, 'Public compiles/tests once in its common producer')
-  assert.match(workflow, /workflows: \[Connect producer, Value-stream delivery\]/)
+  assert.doesNotMatch(workflow, /^  workflow_run:/m)
   assert.doesNotMatch(verify, /node --test\s*$/m, 'consumer test invocations must name their integration suites')
   assert.match(verify, /CONNECT_BROWSER_ARTIFACT:/)
   assert.match(verify, /fetch-depth: 0/)
@@ -50,4 +50,16 @@ test('Reusable worker caller grants the complete nested contents permission clos
     assert(rank[caller] >= rank[requirement[1]], `worker contents:${caller} cannot grant nested contents:${requirement[1]}`)
   }
   assert.match(workflow.split('jobs:')[0], /contents: read/)
+})
+
+test('only Value-stream delivery has automatic workflow triggers', () => {
+  const directory = new URL('../../../.github/workflows/', import.meta.url)
+  for (const file of readdirSync(directory).filter(name => /\.ya?ml$/.test(name))) {
+    const source = readFileSync(new URL(file, directory), 'utf8')
+    const triggers = source.split('\non:\n')[1]?.split(/\n[^\s#]/)[0] ?? ''
+    const events = [...triggers.matchAll(/^  ([a-z_]+):/gm)].map(match => match[1])
+    assert(events.length > 0, file)
+    assert.deepEqual(events.filter(event => !['workflow_dispatch', 'workflow_call'].includes(event)),
+      file === 'value-stream-delivery.yml' ? ['push'] : [], file)
+  }
 })
