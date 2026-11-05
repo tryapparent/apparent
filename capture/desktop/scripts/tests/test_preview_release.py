@@ -15,6 +15,23 @@ ROOT = Path(__file__).resolve().parents[4]
 
 
 class PreviewReleaseTest(unittest.TestCase):
+    def test_hotfix_candidate_remains_manual_private_and_nonpublishing(self):
+        workflow = (ROOT / '.github/workflows/verification-mac.yml').read_text()
+        candidate = workflow.split('  onboarding-candidate:', 1)[1]
+        guard = candidate.split('    needs:', 1)[0]
+        self.assertIn("github.event_name == 'workflow_dispatch'", guard)
+        self.assertIn("github.repository == 'tryapparent/apparent'", guard)
+        self.assertIn("refs/heads/t3/issue-653-defer-onboarding", guard)
+        self.assertIn("refs/heads/t3/onboarding-mac-release-baseline", guard)
+        self.assertIn("contents: read", workflow.split('jobs:', 1)[0])
+        self.assertNotIn('contents: write', workflow)
+        self.assertNotIn('gh release', candidate)
+        self.assertNotIn('SPARKLE_PREVIEW_PRIVATE_KEY', candidate)
+        self.assertIn("'0.12.3' || '0.12.2'", candidate)
+        self.assertIn("'12.3' || '12.2'", candidate)
+        self.assertIn("'releaseAdmission': 'held'", candidate)
+        self.assertIn('dist/Apparent-Preview-${{ env.APPARENT_PREVIEW_VERSION }}-arm64.zip', candidate)
+
     def test_packager_layout_and_version_with_stubbed_mac_tools(self):
         # A Linux layout test: the real signing, DMG and GUI still need a Mac run.
         with tempfile.TemporaryDirectory() as tmp:

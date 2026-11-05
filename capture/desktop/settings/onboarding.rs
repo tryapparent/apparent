@@ -776,6 +776,9 @@ pub struct Progress {
     /// The tour finished (or was dismissed in the legacy flow); it won't open by itself again.
     #[serde(default)]
     pub seen: bool,
+    /// Explicitly dismissed unfinished setup; resume only when the person asks.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub deferred: bool,
     /// Where the tour picks up at the next launch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume: Option<Step>,
@@ -809,6 +812,21 @@ impl Progress {
         self.seen = !flow.first_capture_required || flow.first_capture_completed;
         self.resume = if self.seen { None } else { flow.resume_point() };
     }
+    pub fn dismiss(&mut self, flow: &Flow) {
+        self.leave(flow);
+        if flow.mode == Mode::Tour {
+            self.deferred = !self.seen;
+        }
+    }
+
+    pub fn requested_step(&self) -> Step {
+        if self.seen { Step::Welcome } else { self.resume.unwrap_or(Step::Welcome) }
+    }
+
+    pub fn resume_requested(&mut self) {
+        self.deferred = false;
+    }
+
     pub fn load() -> Self {
         Self::load_from(&crate::shared::handoff::default_config_path())
     }
@@ -876,7 +894,7 @@ pub fn unix_ms() -> u64 {
 /// that was open when Apparent relaunched itself, else the permissions screen when a required
 /// permission that was granted once is gone, else nothing.
 pub fn launch_plan(progress: &Progress, grants: &Grants) -> Option<Flow> {
-    if !progress.seen {
+    if !progress.seen && !progress.deferred {
         let start = progress.resume.unwrap_or(Step::Welcome);
         return Some(Flow::tour(start, Some(grants.clone())));
     }
@@ -1113,7 +1131,11 @@ impl Session {
             }
         });
 
-        let progress = Progress::load();
+        let mut progress = Progress::load();
+        if flow.mode() == Mode::Tour && progress.deferred {
+            progress.resume_requested();
+            progress.save();
+        }
         let allowed = relaunch_allowed(&progress, unix_ms());
         let mut session = Self {
             source,
@@ -1305,7 +1327,11 @@ impl Session {
             return;
         }
         let mut progress = Progress::load();
-        progress.leave(&self.flow);
+        if exited {
+            progress.leave(&self.flow);
+        } else {
+            progress.dismiss(&self.flow);
+        }
         progress.save();
     }
 
@@ -1866,25 +1892,28 @@ mod tests {
         assert_eq!(s.action("practice-finish"),Effect::None);assert!(!s.flow.first_capture_completed);
     }
     #[test]
-    fn first_capture_close_resumes_until_success_without_trapping_the_user() {
+    fn first_capture_dismissal_defers_until_requested_without_faking_completion() {
         let mut progress = Progress::default();
         let mut flow = Flow::tour(Step::Shortcut, Some(grants(&Permission::REQUIRED)))
             .with_first_capture(true, false, false);
         assert_eq!(flow.on(Input::Closed), Effect::Close);
-        progress.leave(&flow);
+        progress.dismiss(&flow);
         assert!(!progress.seen);
+        assert!(progress.deferred);
         assert_eq!(progress.resume, Some(Step::Shortcut));
         flow.on(Input::ShortcutChosen);
         flow.on(Input::Continue);
         assert_eq!(flow.on(Input::Later), Effect::Close);
-        progress.leave(&flow);
+        progress.dismiss(&flow);
         assert!(!progress.seen);
+        assert!(progress.deferred);
         assert_eq!(progress.resume, Some(Step::TryIt));
         flow.on(Input::ShortcutTriggered);
         flow.on(Input::CaptureStarted);
         flow.on(Input::CaptureEnded { completed: true });
-        progress.leave(&flow);
+        progress.dismiss(&flow);
         assert!(progress.seen);
+        assert!(!progress.deferred);
         assert_eq!(progress.resume, None);
     }
 
@@ -2571,6 +2600,7 @@ mod tests {
             tutorial: Some(Tutorial::Practiced),
             shortcut_chosen: true,
             first_capture_completed: true,
+            deferred: false,
         };
         progress.save_to(&path).unwrap();
         assert_eq!(Progress::load_from(&path), progress);
@@ -2881,4 +2911,44 @@ fn shortcut_native_process_failures_reject_without_accepting_renderer_claims() {
     assert!(query("printf invalid"));
     assert!(query("exec sleep 2"));
     assert!(query_shortcut_reservation(&mut Command::new("/nonexistent/apparent-test-helper"), Duration::from_millis(100)));
+}
+
+#[cfg(test)]
+mod deferred_setup_tests {
+    use super::*;
+
+    #[test]
+    fn dismissal_defers_without_faking_completion_and_explicit_resume_restores_step() {
+        let flow = Flow::tour(Step::Shortcut, None).with_first_capture(true, false, false);
+        let mut progress = Progress::default();
+        progress.dismiss(&flow);
+        assert!(!progress.seen);
+        assert!(progress.deferred);
+        assert_eq!(progress.resume, Some(Step::Shortcut));
+        assert!(!progress.shortcut_chosen && !progress.first_capture_completed);
+        let grants = Grants { statuses: Permission::REQUIRED.into_iter().map(|p| (p, Status::Granted)).collect(), screen_needs_relaunch: false };
+        assert!(launch_plan(&progress, &grants).is_none());
+        let encoded = serde_json::to_vec(&progress).unwrap();
+        let mut restored: Progress = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(restored.requested_step(), Step::Shortcut);
+        restored.resume_requested();
+        assert_eq!(launch_plan(&restored, &grants).unwrap().step(), Step::Shortcut);
+    }
+
+    #[test]
+    fn deferred_setup_keeps_permission_repair_and_crash_resume() {
+        let flow = Flow::tour(Step::Shortcut, None).with_first_capture(true, false, false);
+        let mut progress = Progress::default();
+        progress.dismiss(&flow);
+        progress.granted.insert(Permission::Accessibility);
+        let grants = Grants { statuses: BTreeMap::new(), screen_needs_relaunch: false };
+        assert_eq!(launch_plan(&progress, &grants).unwrap().mode(), Mode::Fix);
+        let mut crashed = Progress::default();
+        crashed.leave(&flow);
+        assert!(!crashed.deferred);
+        assert_eq!(launch_plan(&crashed, &grants).unwrap().step(), Step::Permissions, "crash resume must recheck missing permissions");
+        let legacy: Progress = serde_json::from_str(r#"{"seen":false,"resume":"shortcut"}"#).unwrap();
+        assert!(!legacy.deferred);
+        assert!(launch_plan(&legacy, &grants).is_some());
+    }
 }

@@ -1451,7 +1451,7 @@ impl ApparentCoordinator {
                 }
             }
             Effect::Tour => self.open_onboarding(crate::capture::desktop::settings::onboarding::Flow::tour(
-                crate::capture::desktop::settings::onboarding::Step::Welcome,
+                crate::capture::desktop::settings::onboarding::Progress::load().requested_step(),
                 self.grants.clone(),
             )),
             Effect::Relaunch => {
