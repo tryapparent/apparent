@@ -1342,11 +1342,11 @@
       "id": "onboarding-first-capture",
       "group": "install",
       "name": "Choose and try your Record shortcut",
-      "says": "Onboarding coaches a shortcut-started recording, whiteboard and screen drawing, manual paste confirmation and locating the practice capture. Closing leaves setup unfinished for the next launch.",
+      "says": "Onboarding coaches a shortcut-started recording, whiteboard and screen drawing, manual paste confirmation and locating the practice capture. Later or close defers unfinished setup; resume it explicitly from Welcome tour.",
       "status": "main",
       "added": "2026-10-31",
       "platforms": ["mac", "linux"],
-      "note": "Enabled by default; experiments.onboardingFirstCapture=false restores optional practice. Desktop-owned Linux shortcuts must be explicitly accepted rather than edited. Existing completed users are not forced through setup again.",
+      "note": "Enabled by default; experiments.onboardingFirstCapture=false restores optional practice. Desktop-owned Linux shortcuts must be explicitly accepted rather than edited. Existing completed users are not forced through setup again. Later or close defers unfinished setup across launches without completing it; Welcome tour resumes the saved step. OS permission checks remain enforced.",
       "config": [{ "key": "experiments.onboardingFirstCapture", "value": "false", "does": "Restore optional shortcut choice and practice on the next tour open" }],
       "docs": ["capture/desktop/docs/onboarding-and-settings.md"]
     },
