@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 
 const workflow = readFileSync(new URL('../../../../../.github/workflows/release-linux.yml', import.meta.url), 'utf8')
 const linux = workflow.split('  linux:\n')[1]?.split('\n  publish:\n')[0]
@@ -175,3 +178,36 @@ test('cache hits cannot skip smoke gates or change release admission', () => {
   assert.match(publish, /name: Publish admitted immutable artifact identities and complete ancestry/)
   assert.match(publish, /name: Publish unchanged verified assets/)
 })
+
+
+for (const platform of ['linux', 'mac']) {
+  test(`${platform} executes the committed artifact selector with paginated CLI results`, () => {
+    const text = readFileSync(new URL(`../../../../../.github/workflows/${platform === 'linux' ? 'release-linux.yml' : 'release-mac-preview.yml'}`, import.meta.url), 'utf8')
+    const marker = `      - name: Find the latest retained ${platform === 'linux' ? 'Linux native release inputs' : 'Mac preview native release inputs'}\n`
+    const start = text.indexOf(marker)
+    assert(start >= 0)
+    const rest = text.slice(start + marker.length)
+    const end = rest.search(/^      - /m)
+    const section = end < 0 ? rest : rest.slice(0, end)
+    const body = section.split('        run: |\n')[1]
+    assert(body)
+    const script = body.split('\n').map(line => line.slice(10)).join('\n')
+    const work = mkdtempSync(join(tmpdir(), 'renderer-selector-'))
+    try {
+      const bin = join(work, 'bin'); mkdirSync(bin)
+      // Controlled API output tests command ordering and filtering, not real provenance.
+      writeFileSync(join(bin, 'gh'), '#!/usr/bin/env bash\nset -euo pipefail\ncase "$1" in\nrun) printf "123\\t%s\\n" "$FIXTURE_SHA";;\napi) test "$#" = 3; test "$2" = --paginate; cat "$FIXTURE_RESPONSE";;\n*) exit 9;;\nesac\n', { mode: 0o755 })
+      const source = 'a'.repeat(40)
+      const name = platform === 'linux' ? `inspection-release-x86_64-${source}` : `inspection-preview-root-${source}`
+      const response = join(work, 'pages.json')
+      const output = join(work, 'output')
+      for (const matching of [true, false]) {
+        writeFileSync(response, JSON.stringify({ artifacts: [{ name, expired: true }] }) + '\n' + JSON.stringify({ artifacts: [{ name: matching ? name : 'other', expired: false }] }))
+        writeFileSync(output, '')
+        const result = spawnSync('bash', ['-euo', 'pipefail', '-c', script], { encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GITHUB_REPOSITORY: 'tryapparent/apparent', GITHUB_OUTPUT: output, ARCH: 'x86_64', FIXTURE_SHA: source, FIXTURE_RESPONSE: response } })
+        assert.equal(result.status, 0, result.stderr)
+        assert.equal(readFileSync(output, 'utf8'), matching ? `run_id=123\nartifact=${name}\n` : '')
+      }
+    } finally { rmSync(work, { recursive: true, force: true }) }
+  })
+}

@@ -120,7 +120,7 @@ jobs:
           while IFS=$'\t' read -r run_id source_sha; do
             [[ -n "$run_id" && "$source_sha" =~ ^[a-f0-9]{40}$ ]] || continue
             artifact="inspection-preview-root-${source_sha}"
-            found=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts" --jq --arg name "$artifact" '[.artifacts[] | select(.name == $name and .expired == false)] | length')
+            found=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?per_page=100" | jq -s --arg name "$artifact" '[.[].artifacts[] | select(.name == $name and .expired == false)] | length')
             if [[ "$found" == 1 ]]; then
               echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
               echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
