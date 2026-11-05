@@ -25,6 +25,7 @@ test('renderer package edits preserve root closure while bridge, shared ABI and 
   git(root, 'config', 'user.name', 'Root input policy fixture');
   git(root, 'config', 'user.email', 'fixture@example.invalid');
   write(root, 'capture/desktop/ui/frontend/src/main.tsx', 'export const view = 1;\n');
+  write(root, 'capture/agent/control-client/lib.rs', 'pub fn current_client() {}\n');
   write(root, 'capture/desktop/workflow/electron/bridge.rs', 'pub fn dispatch() {}\n');
   write(root, 'shared/model.rs', 'pub struct Bundle { schema: u32 }\n');
   write(root, 'capture/engine/native/worker.rs', 'pub fn run_native() {}\n');
@@ -32,6 +33,8 @@ test('renderer package edits preserve root closure while bridge, shared ABI and 
 
   const baseline = inputs(root);
   assert(!baseline.some(entry => entry.path.startsWith('capture/desktop/ui/frontend/')));
+  assert(baseline.some(entry => entry.path === 'capture/agent/control-client/lib.rs'),
+    'Provider and root CLI callers keep the client implementation in the root closure');
   assert(baseline.some(entry => entry.path === 'capture/desktop/workflow/electron/bridge.rs'));
   assert(baseline.some(entry => entry.path === 'shared/model.rs'));
   assert(baseline.some(entry => entry.path === 'capture/engine/native/worker.rs'));
@@ -39,6 +42,10 @@ test('renderer package edits preserve root closure while bridge, shared ABI and 
   write(root, 'capture/desktop/ui/frontend/src/main.tsx', 'export const view = 2;\n');
   git(root, 'add', '.'); git(root, 'commit', '-qm', 'renderer update');
   assert.deepEqual(inputs(root), baseline, 'independently packaged renderer edits must not invalidate the root receipt');
+
+  write(root, 'capture/agent/control-client/lib.rs', 'pub fn changed_client() {}\n');
+  git(root, 'add', '.'); git(root, 'commit', '-qm', 'change Agent control client');
+  assert.notDeepEqual(inputs(root), baseline, 'The client stays a root input until the actual root callers are removed');
 
   for (const [path, value] of [
     ['capture/desktop/workflow/electron/bridge.rs', 'pub fn dispatch_v2() {}\n'],

@@ -8,9 +8,12 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build, stage } from './package.ts';
 import { stageRendererArchive } from './renderer/assembly.ts';
+import { stage as stageAgentControlClientArchive } from '../../control-client/delivery/package.ts';
 import { publishValidatedDirectory } from '../../../../shared/packaging/transaction.ts';
 const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 const compatibility = 'inspection-host-v1';
+const agentControlCompatibility = 'agent-control-client-v1';
+const agentControlProtocol = 1;
 const buildEnvironment = () => Object.fromEntries(['APPARENT_PREVIEW_BUILD', 'APPARENT_HELPER_BUNDLE_ID', 'APPARENT_POSTHOG_TOKEN', 'MACOSX_DEPLOYMENT_TARGET', 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS'].map(key => [key, process.env[key] ? hash(process.env[key]!) : null]));
 const policy = () => hash(readFileSync(fileURLToPath(import.meta.url)));
 const runtime = (name: string) => /^lib(?:transcribe|ggml)[A-Za-z0-9_.-]*\.so(?:\.[0-9.]+)?$/.test(name);
@@ -86,16 +89,46 @@ export function admitRoot(binaryDirectory: string, manifestPath: string, expecte
   Object.defineProperty(m, 'payload', { value: payload });
   return m;
 }
+/** Stage the caller-authenticated client into the same app candidate as its root. */
+export function stageAgentControlClient(archive: string, archiveDigest: string, sourceSha: string,
+  target: string, destination: string, compositionSource = command('git', ['rev-parse', 'HEAD']), rootSourceSha?: string) {
+  const output = resolve(destination);
+  const temporary = mkdtempSync(join(dirname(output), '.agent-control-client-compose-'));
+  chmodSync(temporary, 0o700);
+  try {
+    const candidate = join(temporary, 'candidate');
+    const manifest = stageAgentControlClientArchive(archive, archiveDigest, sourceSha, target, candidate);
+    assert.equal(manifest.protocol, agentControlProtocol, 'Unsupported Agent control-client protocol');
+    const receipt = { schema: 1, compatibility: agentControlCompatibility, kind: 'agent-control-client-assembly',
+      compositionSource, rootSourceSha: rootSourceSha ?? null, sourceSha: manifest.sourceSha,
+      target: manifest.target, protocol: manifest.protocol,
+      archiveSha256: archiveDigest, inputsSha256: manifest.inputsSha256,
+      executableSha256: manifest.executableSha256, size: manifest.size };
+    const receiptPath = join(candidate, 'composition.json');
+    writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\n', { mode: 0o644, flag: 'wx' });
+    chmodSync(receiptPath, 0o644);
+    publishValidatedDirectory(candidate, output);
+    return receipt;
+  } finally { rmSync(temporary, { recursive: true }); }
+}
 /** Fresh executable directory. Surrounding app resources/signing remain their existing owners. */
 export function assemble(rootDirectory: string, rootReceipt: string, rootDigest: string,
-  inspectorArchive: string, inspectorDigest: string, destination: string) {
+  inspectorArchive: string, inspectorDigest: string, destination: string,
+  agentControlClient?: { archive: string; archiveDigest: string; sourceSha: string; protocol: number }) {
   const root = admitRoot(rootDirectory, rootReceipt, rootDigest);
   const dest = resolve(destination); mkdirSync(dest, { mode: 0o755 });
   for (const f of root.files) { writeFileSync(join(dest, f.name), root.payload.get(f.name), { flag: 'wx' }); chmodSync(join(dest, f.name), 0o755); }
   const inspector = stage(inspectorArchive, inspectorDigest, root.target, join(dest, 'inspection'));
+  let controlClient;
+  if (agentControlClient) {
+    assert.equal(agentControlClient.protocol, agentControlProtocol, 'Unsupported Agent control-client protocol');
+    controlClient = stageAgentControlClient(agentControlClient.archive, agentControlClient.archiveDigest,
+      agentControlClient.sourceSha, root.target, join(dest, 'agent-control-client'),
+      command('git', ['rev-parse', 'HEAD']), root.sourceSha);
+  }
   const receipt = { schema: 1, compatibility, compositionSource: command('git', ['rev-parse', 'HEAD']),
     root, rootReceiptSha256: rootDigest, inspector, inspectorArchiveSha256: inspectorDigest,
-    inspectorRuntimeSha256: inspector.sha256, rootRebuilt: false };
+    inspectorRuntimeSha256: inspector.sha256, ...(controlClient ? { agentControlClient: controlClient } : {}), rootRebuilt: false };
   writeFileSync(join(dest, 'inspection-composition.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
   return receipt;
 }
@@ -126,15 +159,30 @@ export function packageApplication(binaryDirectory: string, destination: string,
   const root = repository();
   const rendererArchive = process.env.APPARENT_DESKTOP_RENDERER_ARCHIVE;
   const rendererDigest = process.env.APPARENT_DESKTOP_RENDERER_SHA256;
+  const controlClientArchive = process.env.APPARENT_AGENT_CONTROL_CLIENT_ARCHIVE;
+  const controlClientDigest = process.env.APPARENT_AGENT_CONTROL_CLIENT_SHA256;
+  const controlClientSource = process.env.APPARENT_AGENT_CONTROL_CLIENT_SOURCE_SHA;
   assert.equal(Boolean(rendererArchive), Boolean(rendererDigest),
     'Renderer assembly requires both archive path and authenticated SHA-256');
+  const hasAgentControlInput = Boolean(controlClientArchive || controlClientDigest || controlClientSource);
+  const hasCompleteAgentControlInput = Boolean(controlClientArchive && controlClientDigest && controlClientSource);
+  assert(!hasAgentControlInput || hasCompleteAgentControlInput,
+    'Agent control-client assembly requires archive, authenticated SHA-256 and source SHA');
+  if (controlClientArchive && controlClientDigest && controlClientSource) {
+    assert(/^[a-f0-9]{40}$/.test(controlClientSource), 'Expected Agent control-client source SHA required');
+    assert.equal(hash(readFileSync(controlClientArchive)), controlClientDigest, 'Agent control-client archive digest mismatch');
+    provenance(controlClientArchive, controlClientSource, signerWorkflows[0], controlClientDigest);
+    command('git', ['merge-base', '--is-ancestor', controlClientSource, 'origin/main']);
+  }
   const temporary = mkdtempSync(join(destination, '.inspection-package-'));
   const candidate = join(temporary, 'inspection');
   const final = join(destination, 'inspection');
+  let rootSourceSha: string | undefined;
   try {
     let receipt: any;
     if (process.env.APPARENT_INSPECTION_REUSE) {
       receipt = JSON.parse(readFileSync(join(binaryDirectory, 'inspection-composition.json'), 'utf8'));
+      rootSourceSha = receipt.root.sourceSha;
       const bytes = readFileSync(join(binaryDirectory, 'inspection/apparent-inspect'));
       assert.equal(hash(bytes), receipt.inspectorRuntimeSha256, 'Reused inspector changed');
       mkdirSync(candidate, { mode: 0o755 });
@@ -161,6 +209,7 @@ export function packageApplication(binaryDirectory: string, destination: string,
       const inspector = stage(archive, expected, target, candidate);
       if (component) assert.equal(inspector.sourceSha, process.env.APPARENT_INSPECTION_SOURCE_SHA);
       const rootIdentity = initialRootIdentity(binaryDirectory);
+      rootSourceSha = rootIdentity.sourceSha;
       for (const f of rootIdentity.files) { if (['apparent', 'apparent-helper'].includes(f.name)) assert.equal(hash(readFileSync(join(destination, f.name))), f.sha256, 'Copied root differs from its source receipt'); }
       receipt = { schema: 1, compatibility, compositionSource: command('git', ['rev-parse', 'HEAD']),
         root: rootIdentity, inspector, inspectorArchiveSha256: expected };
@@ -184,8 +233,21 @@ export function packageApplication(binaryDirectory: string, destination: string,
         : join(executableDirectory, 'desktop-ui');
     stageRendererArchive(rendererArchive, rendererDigest, resourceDirectory);
   }
+  if (controlClientArchive && controlClientDigest && controlClientSource) {
+    const target = `${process.arch === 'x64' ? 'x86_64' : 'aarch64'}-${process.platform === 'darwin' ? 'apple-darwin' : 'unknown-linux-gnu'}`;
+    stageAgentControlClient(controlClientArchive, controlClientDigest, controlClientSource, target,
+      join(resolve(destination), 'agent-control-client'), command('git', ['rev-parse', 'HEAD']), rootSourceSha);
+  }
 }
 const signerWorkflows = ['verification-platform.yml', 'release-linux.yml', 'release-mac-preview.yml'].map(name => `tryapparent/apparent/.github/workflows/${name}`);
+export function validateAgentControlClientAdmission(value: any) {
+  assert(value && typeof value.archive === 'string' && value.archive.length > 0 && /^[a-f0-9]{64}$/.test(value.archiveSha256) &&
+    /^[a-f0-9]{40}$/.test(value.sourceSha) && value.protocol === agentControlProtocol &&
+    (value.signerWorkflow === undefined || value.signerWorkflow === signerWorkflows[0]),
+    'Invalid Agent control-client admission');
+  return { archive: value.archive, archiveSha256: value.archiveSha256,
+    sourceSha: value.sourceSha, protocol: value.protocol };
+}
 function provenance(file: string, source: string, signer = signerWorkflows[0], expectedDigest: string) {
   assert(/^[a-f0-9]{40}$/.test(source) && signerWorkflows.includes(signer), 'Unsupported component producer');
   const bytes = readFileSync(file);
@@ -209,9 +271,20 @@ export function reuse(inputPath: string, destination: string) {
   assert.equal(hash(readFileSync(input.inspectorArchive)), input.inspectorArchiveSha256);
   provenance(input.inspectorArchive, input.inspectorSourceSha, input.inspectorSignerWorkflow, input.inspectorArchiveSha256);
   command('git', ['merge-base', '--is-ancestor', input.inspectorSourceSha, 'origin/main']);
+  let agentControlClient;
+  if (input.agentControlClient !== undefined) {
+    const client = validateAgentControlClientAdmission(input.agentControlClient);
+    assert.equal(hash(readFileSync(client.archive)), client.archiveSha256, 'Agent control-client archive digest mismatch');
+    provenance(client.archive, client.sourceSha, signerWorkflows[0], client.archiveSha256);
+    command('git', ['merge-base', '--is-ancestor', client.sourceSha, 'origin/main']);
+    agentControlClient = { archive: client.archive, archiveDigest: client.archiveSha256,
+      sourceSha: client.sourceSha, protocol: client.protocol };
+  }
   const result = assemble(input.rootDirectory, input.rootReceipt, input.rootReceiptSha256,
-    input.inspectorArchive, input.inspectorArchiveSha256, destination);
+    input.inspectorArchive, input.inspectorArchiveSha256, destination, agentControlClient);
   assert.equal(result.inspector.sourceSha, input.inspectorSourceSha, 'Inspector producer source mismatch');
+  if (agentControlClient) assert.equal(result.agentControlClient?.sourceSha, agentControlClient.sourceSha,
+    'Agent control-client producer source mismatch');
   return result;
 }
 export function rootBundle(binaryDirectory: string, profile: string, destination: string) {

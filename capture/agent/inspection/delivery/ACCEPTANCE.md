@@ -101,7 +101,40 @@ test artifacts. Do not touch real captures, TCC or another installed app. Mac
 publication still requires exact-main Mac verification/signing and the documented
 short packaged-app smoke; no Linux result substitutes for those gates.
 
-## Next bounded root-build slice (not implemented here)
+## Agent control-client assembly prerequisite
+
+The composition consumer accepts an optional control-client artifact only with
+its authenticated SHA-256 and source SHA. Production admission is restricted to
+the existing `verification-platform.yml` attestation, an exact protocol-1
+manifest, supported target, and a source commit admitted to `origin/main`. The
+stager writes the component and its composition receipt under one validated
+`agent-control-client/` directory inside the same app candidate. It does not
+change the CLI caller, build the client from source, or activate a runtime path.
+
+For the source-only consumer proof, use the real standalone binary from the
+producer tests and a clean committed checkout:
+
+    APPARENT_CAPTURE_CLIENT=/absolute/path/to/apparent-capture \
+      node --experimental-strip-types --test \
+        capture/agent/control-client/delivery/assembly.test.ts
+    node --experimental-strip-types --test \
+      capture/agent/control-client/delivery/package.test.ts \
+      capture/agent/inspection/delivery/composition-policy.test.ts
+
+The first test packages and stages real executable bytes under `umask 077`, checks
+the one-app inventory and modes, and rejects wrong digest/source/target while
+retaining an existing destination. The policy test confirms control-client files
+remain root inputs while the renderer remains excluded. These are component and
+policy proofs only; they do not mint a root receipt or prove packaged app startup.
+The composition policy hash changed, so existing receipts must not be relabeled or
+reused; create a new exact-source root artifact through the approved root build
+when resources allow. Before activation, require the authenticated published
+Linux client artifact, exact root receipt/admission and real Linux CLI/provider
+compatibility/security checks. Mac component compilation, enclosing signature,
+and the focused packaged-app smoke remain separate gates on an approved Mac
+resource. Until those checks pass, leave the current Rust CLI dispatch in place.
+
+## Next bounded Agent control-client dispatch slice (not implemented here)
 
 The current closure deliberately retains shared inspection schema/readers/
 formatters as root inputs. `build_version` watches every tracked file and Git
@@ -110,11 +143,15 @@ composition identity instead of bypassing exact-source checks. Receipts record
 actual root build wall time, toolchain, variant, native runtime hashes and compiler
 dep-info admission. Cached timings are evidence of those runs, not benchmarks.
 
-The next candidate is existing capture-control CLI adoption: Desktop currently
-imports `apparent_capture` in `workflow/agent_capture.rs`; distinguish versioned
-request/action DTOs used by the provider from client transport, then dispatch the
-CLI to the already independently packaged PR609 executable. Prove real provider
-compatibility and unchanged root-input admission before reusing roots across
-client-only changes. This needs a stable wire contract and automatic app assembly;
-it is not a new service, rewrite or cosmetic crate move. Broader native Engine
-compilation remains a separate boundary and is not claimed solved by this slice.
+The component producer and shared single-app assembly/admission contract now exist,
+but installed dispatch remains on the existing Rust client. Desktop and the root
+CLI still import `apparent_capture`; its source remains a root input and no compiler
+dep-info exclusion or root-receipt reuse across client changes is claimed. The next
+candidate must verify an authenticated exact-main artifact, its staged one-install
+inventory, root/provider protocol compatibility, cancellation/deadline/error
+semantics and Linux packaged-app behavior before changing the actual CLI caller.
+Mac affected app/signing checks remain required before release. Keep the original
+root build identity separate from composition identity, preserve the old dispatch
+until those gates pass, and do not introduce source-build, PATH or second-install
+fallbacks. Broader native Engine compilation remains a separate boundary and is
+not claimed solved by this slice.
