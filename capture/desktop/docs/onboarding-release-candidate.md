@@ -76,3 +76,23 @@ versions. Publication dispatch remains held until installed workflow/audio/outpu
 acceptance. Future main releases must integrate and verify the accepted onboarding
 behavior before superseding this release; this exception does not authorize
 publishing an unverified main successor or resetting that branch.
+
+## Follow-up candidate (not published)
+
+The one-time `onboarding.tourRevision` migration restarts unfinished pre-revision
+setup at Welcome. Completed users remain completed, grants/pen/shortcut settings
+are preserved, and subsequent permission-triggered restarts resume normally.
+Screen Recording's drag card covers the lower half of the Settings content
+column; resizing recomputes its opaque surface. Accessibility keeps its existing
+placement. Native acceptance must verify the audio-only target is fully covered,
+the upper screen-recording list accepts the dragged real app, and consent/reopen
+still completes at standard/scaled display sizes. Geometry alone is not proof.
+
+The shipped DMG contains a normal app and Applications link. The separate test
+installer was never included in this release. Do not transplant its test-only
+copy policy: it deliberately creates private side-by-side builds, whereas a
+production installer must preserve the regular app identity, signing, updater
+and existing-install handling. A signed/notarized interactive installer and its
+DMG entry/auto-open behavior require separate packaged Mac acceptance before a
+new Preview release. No release exception or feed advancement is granted by this
+candidate branch.
