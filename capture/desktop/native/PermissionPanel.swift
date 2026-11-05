@@ -946,7 +946,7 @@ extension PermissionPanel {
     /// The panel follows Settings 1:1 (the user is moving it) and steps aside while another app
     /// is in front.
     private func track() {
-      guard !finished, let panel else { return }
+      guard !finished, var panel = self.panel else { return }
       var frame = settingsID.flatMap(SettingsWindow.frame(of:))
       if frame == nil, let window = SettingsWindow.main() {
         settingsID = window.id
@@ -963,9 +963,13 @@ extension PermissionPanel {
         let nextLayout = Layout(settingsWidth: frame.width, settingsHeight: frame.height, screenRecording: kind == .screenRecording)
         if kind == .screenRecording && nextLayout != layout {
           layout = nextLayout
-          panel?.orderOut(nil)
+          let previousAlpha = panel.alphaValue
+          panel.close()
           buildPanel(at: dockFrame(settingsQuartz: frame, layout: layout))
-          panel?.orderFrontRegardless()
+          guard let replacement = self.panel else { return }
+          panel = replacement
+          panel.alphaValue = previousAlpha
+          panel.orderFrontRegardless()
         } else {
           moveDock(to: dockFrame(settingsQuartz: frame, layout: layout))
         }
