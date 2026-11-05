@@ -67,8 +67,9 @@ The proof invokes the existing root/inspector assembler and ordinary
 checks all real Vite files at the packaged resource path, cross-user permissions,
 unchanged root executable/native library bytes, wrong renderer digest and altered
 inventory rejection, and reuse refusal after committed shared model, Desktop
-bridge or native source changes. A renderer-only source change must still admit
-the same root receipt. This is non-GUI artifact proof; it does not establish
+bridge or native source changes. It also executes the packaged root CLI from the
+AppDir outside the checkout. A renderer-only source change must still admit the
+same root receipt. This is non-GUI artifact proof; it does not establish
 Electron launch, window routing, Mac signing or native platform behavior.
 
 Before Mac publication, run exact-candidate signature verification and the short
