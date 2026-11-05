@@ -126,8 +126,9 @@ export function packageApplication(binaryDirectory: string, destination: string,
   const root = repository();
   const rendererArchive = process.env.APPARENT_DESKTOP_RENDERER_ARCHIVE;
   const rendererDigest = process.env.APPARENT_DESKTOP_RENDERER_SHA256;
-  assert.equal(Boolean(rendererArchive), Boolean(rendererDigest),
-    'Renderer assembly requires both archive path and authenticated SHA-256');
+  const rendererSource = process.env.APPARENT_DESKTOP_RENDERER_SOURCE_SHA;
+  assert.equal(Boolean(rendererArchive), Boolean(rendererDigest) && Boolean(rendererSource),
+    'Renderer assembly requires the producer archive, digest and source revision');
   const temporary = mkdtempSync(join(destination, '.inspection-package-'));
   const candidate = join(temporary, 'inspection');
   const final = join(destination, 'inspection');
@@ -173,7 +174,7 @@ export function packageApplication(binaryDirectory: string, destination: string,
       renameSync(nextReceipt, join(destination, 'inspection-composition.json'));
     });
   } finally { rmSync(temporary, { recursive: true }); }
-  if (rendererArchive && rendererDigest) {
+  if (rendererArchive && rendererDigest && rendererSource) {
     const executableDirectory = resolve(destination);
     const parent = basename(dirname(executableDirectory));
     const leaf = basename(executableDirectory);
@@ -182,7 +183,8 @@ export function packageApplication(binaryDirectory: string, destination: string,
       : leaf === 'bin' && parent === 'usr'
         ? join(dirname(executableDirectory), 'share', 'apparent', 'desktop-ui')
         : join(executableDirectory, 'desktop-ui');
-    stageRendererArchive(rendererArchive, rendererDigest, resourceDirectory);
+    const renderer = stageRendererArchive(rendererArchive, rendererDigest, resourceDirectory);
+    assert.equal(renderer.sourceGitHead, rendererSource, 'Renderer producer source revision changed');
   }
 }
 const signerWorkflows = ['verification-platform.yml', 'release-linux.yml', 'release-mac-preview.yml'].map(name => `tryapparent/apparent/.github/workflows/${name}`);

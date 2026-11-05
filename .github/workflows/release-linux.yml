@@ -206,6 +206,25 @@ jobs:
         with:
           path: ~/.cache/electron
           key: release-linux-electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('capture/desktop/ui/frontend/package-lock.json') }}
+      - name: Install Desktop renderer dependencies
+        run: ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --prefix capture/desktop/ui/frontend --no-audit --no-fund
+      - name: Build source-bound Desktop renderer artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          destination="$RUNNER_TEMP/desktop-renderer"
+          record="$RUNNER_TEMP/desktop-renderer-build.json"
+          node --experimental-strip-types capture/desktop/ui/frontend/scripts/renderer-artifact.ts build "$destination" > "$record"
+          archive=$(jq -er '.artifact' "$record")
+          manifest=$(tar -xOzf "$archive" manifest.json)
+          source=$(jq -er '.source.gitHead' <<< "$manifest")
+          test "$source" = "$CANDIDATE_SHA"
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test "$(jq -r '.source.gitDirty' <<< "$manifest")" = false
+          test "$(jq -er '.source.inputInventory.sha256' <<< "$manifest")" = "$(jq -er '.sourceInputSha256' "$record")"
+          echo "APPARENT_DESKTOP_RENDERER_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          echo "APPARENT_DESKTOP_RENDERER_SHA256=$(jq -er '.archiveSha256' "$record")" >> "$GITHUB_ENV"
+          echo "APPARENT_DESKTOP_RENDERER_SOURCE_SHA=$source" >> "$GITHUB_ENV"
       - name: Cache verified packaging tools
         if: steps.packaging-tools.outputs.key != ''
         uses: actions/cache@v4

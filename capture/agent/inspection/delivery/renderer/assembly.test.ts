@@ -82,9 +82,12 @@ test('compose the authenticated renderer with the retained root while Cargo is u
     const oldReuse = process.env.APPARENT_INSPECTION_REUSE;
     const oldRenderer = process.env.APPARENT_DESKTOP_RENDERER_ARCHIVE;
     const oldRendererSha = process.env.APPARENT_DESKTOP_RENDERER_SHA256;
+    const oldRendererSource = process.env.APPARENT_DESKTOP_RENDERER_SOURCE_SHA;
     process.env.APPARENT_INSPECTION_REUSE = 'proof';
     process.env.APPARENT_DESKTOP_RENDERER_ARCHIVE = rendererArchive;
     process.env.APPARENT_DESKTOP_RENDERER_SHA256 = rendererSha256;
+    process.env.APPARENT_DESKTOP_RENDERER_SOURCE_SHA = JSON.parse(
+      command('tar', ['-xOzf', rendererArchive, 'manifest.json'])).source.gitHead;
     try { packageApplication(assembled, binary, []); }
     finally {
       if (oldReuse === undefined) delete process.env.APPARENT_INSPECTION_REUSE;
@@ -93,6 +96,8 @@ test('compose the authenticated renderer with the retained root while Cargo is u
       else process.env.APPARENT_DESKTOP_RENDERER_ARCHIVE = oldRenderer;
       if (oldRendererSha === undefined) delete process.env.APPARENT_DESKTOP_RENDERER_SHA256;
       else process.env.APPARENT_DESKTOP_RENDERER_SHA256 = oldRendererSha;
+      if (oldRendererSource === undefined) delete process.env.APPARENT_DESKTOP_RENDERER_SOURCE_SHA;
+      else process.env.APPARENT_DESKTOP_RENDERER_SOURCE_SHA = oldRendererSource;
     }
     const resourceDirectory = join(work, 'AppDir/usr/share/apparent/desktop-ui');
     const result = { fileCount: JSON.parse(readFileSync(join(resourceDirectory, 'manifest.json'), 'utf8')).files.length,

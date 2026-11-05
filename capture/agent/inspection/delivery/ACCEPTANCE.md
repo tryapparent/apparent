@@ -26,9 +26,13 @@ different real produced archives; its Cargo trap proves assembly does no build.
 
 ## Renderer-only app assembly
 
-The ordinary package consumer accepts the real `renderer-artifact.ts` archive
-through `APPARENT_DESKTOP_RENDERER_ARCHIVE` and its caller-authenticated
-`APPARENT_DESKTOP_RENDERER_SHA256`. It reuses the root receipt and inspector
+The ordinary release workflows build the real `renderer-artifact.ts` archive
+from the exact checked-out source, require a clean renderer source inventory,
+and pass its archive, digest and source revision through
+`APPARENT_DESKTOP_RENDERER_ARCHIVE`, `APPARENT_DESKTOP_RENDERER_SHA256` and
+`APPARENT_DESKTOP_RENDERER_SOURCE_SHA`. The consumer requires all three and
+matches the staged renderer source identity to the producer's revision. It reuses
+the root receipt and inspector
 composition, then stages the renderer into the same app candidate:
 `usr/share/apparent/desktop-ui` for Linux or
 `Contents/Resources/desktop-ui` for macOS. The embedded renderer manifest is
@@ -54,6 +58,7 @@ current root and retained real inspector and renderer archives, run:
     APPARENT_INSPECTOR_ARTIFACT_SHA256=CALLER_PROVIDED_SHA256 \
     APPARENT_RENDERER_ARTIFACT=/absolute/apparent-desktop-renderer.tar.gz \
     APPARENT_RENDERER_ARTIFACT_SHA256=CALLER_PROVIDED_SHA256 \
+    APPARENT_DESKTOP_RENDERER_SOURCE_SHA=PRODUCER_SOURCE_SHA \
       node --experimental-strip-types --test \
         capture/agent/inspection/delivery/renderer/assembly.test.ts
 

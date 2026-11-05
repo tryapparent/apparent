@@ -27,6 +27,19 @@ test('Linux release caches use bounded paths and exact immutable identities', ()
   assert.match(node, /cache: npm/)
   assert.match(node, /cache-dependency-path: capture\/desktop\/ui\/frontend\/package-lock\.json/)
 
+  const rendererInstall = step('Install Desktop renderer dependencies')
+  assert.match(rendererInstall, /ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --prefix capture\/desktop\/ui\/frontend/)
+  const rendererBuild = step('Build source-bound Desktop renderer artifact')
+  assert.match(rendererBuild, /renderer-artifact\.ts build/)
+  assert.match(rendererBuild, /tar -xOzf "\$archive" manifest\.json/)
+  assert.match(rendererBuild, /\.source\.gitHead/)
+  assert.match(rendererBuild, /\.source\.gitDirty/)
+  assert.match(rendererBuild, /\.sourceInputSha256/)
+  assert.match(rendererBuild, /APPARENT_DESKTOP_RENDERER_ARCHIVE=/)
+  assert.match(rendererBuild, /APPARENT_DESKTOP_RENDERER_SHA256=/)
+  assert.match(rendererBuild, /APPARENT_DESKTOP_RENDERER_SOURCE_SHA=/)
+  assert.ok(linux.indexOf('      - name: Build source-bound Desktop renderer artifact') < linux.indexOf('      - name: Package\n'))
+
   const model = step('Cache verified speech model')
   assert.match(model, /uses: actions\/cache@v4/)
   assert.match(model, /path: \$\{\{ runner\.temp \}\}\/speech-model/)
@@ -49,6 +62,23 @@ test('Linux release caches use bounded paths and exact immutable identities', ()
   assert.doesNotMatch(tools, /restore-keys:/)
   assert.ok(linux.indexOf('      - name: Resolve pinned packaging tools') < linux.indexOf('      - name: Cache verified packaging tools'))
   assert.ok(linux.indexOf('      - name: Cache verified packaging tools') < linux.indexOf('      - name: Package\n'))
+})
+
+test('Mac preview builds and passes the exact source-bound renderer to app packaging', () => {
+  const mac = readFileSync(new URL('../../../../../.github/workflows/release-mac-preview.yml', import.meta.url), 'utf8')
+  const install = mac.split('      - name: Install Desktop renderer dependencies\n')[1]?.split('\n      - ')[0]
+  const build = mac.split('      - name: Build source-bound Desktop renderer artifact\n')[1]?.split('\n      - ')[0]
+  assert.ok(install && build)
+  assert.match(install, /ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --prefix capture\/desktop\/ui\/frontend/)
+  assert.match(build, /renderer-artifact\.ts build/)
+  assert.match(build, /tar -xOzf "\$archive" manifest\.json/)
+  assert.match(build, /\.source\.gitHead/)
+  assert.match(build, /\.source\.gitDirty/)
+  assert.match(build, /\.sourceInputSha256/)
+  assert.match(build, /APPARENT_DESKTOP_RENDERER_ARCHIVE=/)
+  assert.match(build, /APPARENT_DESKTOP_RENDERER_SHA256=/)
+  assert.match(build, /APPARENT_DESKTOP_RENDERER_SOURCE_SHA=/)
+  assert.ok(mac.indexOf('      - name: Build source-bound Desktop renderer artifact') < mac.indexOf('      - name: Build and verify the preview app\n'))
 })
 
 test('cache hits cannot skip smoke gates or change release admission', () => {

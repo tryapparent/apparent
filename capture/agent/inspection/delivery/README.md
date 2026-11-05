@@ -99,11 +99,12 @@ release-linux.yml and release-mac-preview.yml producers. A release rootProfile
 must match its consumer; debug roots cannot enter release assembly.
 No workflow is dispatched or authority to publish inferred by these local tools.
 
-The same ordinary package step can include a separately produced Desktop renderer
-archive when both `APPARENT_DESKTOP_RENDERER_ARCHIVE` and
-`APPARENT_DESKTOP_RENDERER_SHA256` are supplied. The expected SHA-256 comes from
-the caller's authenticated input; the embedded manifest and any adjacent checksum
-are not authentication sources. `renderer/assembly.ts` delegates archive
+The Linux and Mac release workflows produce the Desktop renderer archive from the
+exact checked-out source, require a clean renderer input inventory, and pass its
+archive, digest and source revision as `APPARENT_DESKTOP_RENDERER_ARCHIVE`,
+`APPARENT_DESKTOP_RENDERER_SHA256` and `APPARENT_DESKTOP_RENDERER_SOURCE_SHA`.
+The digest comes from the real producer invocation; the embedded manifest and any
+adjacent checksum are not independent authentication sources. `renderer/assembly.ts` delegates archive
 validation and staging to the producer CLI, then normalizes the verified static
 tree to directories `0755` and files `0644` while the enclosing app candidate is
 private. The producer manifest remains beside `renderer/` as renderer metadata;
