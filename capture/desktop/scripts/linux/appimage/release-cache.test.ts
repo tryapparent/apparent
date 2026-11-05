@@ -54,7 +54,7 @@ test('Linux release caches use bounded paths and exact immutable identities', ()
   const resolver = step('Resolve pinned packaging tools')
   assert.match(resolver, /id: packaging-tools/)
   assert.match(resolver, /node --experimental-strip-types capture\/desktop\/scripts\/linux\/appimage\/packaging-tools\.ts resolve "\$RUNNER_TEMP\/packaging-tools\.json" "\$GITHUB_OUTPUT"/)
-  assert.doesNotMatch(linux, /GH_TOKEN:/)
+  assert.doesNotMatch(resolver, /GH_TOKEN:/)
 
   const tools = step('Cache verified packaging tools')
   assert.match(tools, /path: \$\{\{ runner\.temp \}\}\/packaging-tools/)
@@ -62,6 +62,55 @@ test('Linux release caches use bounded paths and exact immutable identities', ()
   assert.doesNotMatch(tools, /restore-keys:/)
   assert.ok(linux.indexOf('      - name: Resolve pinned packaging tools') < linux.indexOf('      - name: Cache verified packaging tools'))
   assert.ok(linux.indexOf('      - name: Cache verified packaging tools') < linux.indexOf('      - name: Package\n'))
+})
+
+test('Linux renderer-only release admits a sealed prior root before every native build', () => {
+  const lookup = step('Find the latest retained Linux native release inputs')
+  assert.match(lookup, /--workflow release-linux\.yml --branch main --status success/)
+  assert.match(lookup, /inspection-release-\$\{ARCH\}-\$\{source_sha\}/)
+  assert.match(lookup, /actions\/runs\/\$run_id\/artifacts/)
+
+  const download = linux.slice(linux.indexOf('      - uses: actions/download-artifact@v5'))
+    .split('\n      - ')[0]
+  assert.match(download, /run-id: \$\{\{ steps\.root-artifact\.outputs\.run_id \}\}/)
+  assert.match(download, /github-token: \$\{\{ github\.token \}\}/)
+
+  const admission = step('Admit compatible retained Linux native inputs')
+  assert.match(admission, /rootProfile release/)
+  assert.match(admission, /expected_target="\$\{ARCH\}-unknown-linux-gnu"/)
+  assert.match(admission, /Current release toolchain differs from the retained root/)
+  assert.ok(admission.indexOf('gh attestation verify "$receipt"') < admission.indexOf('rustc_version='),
+    'Authenticate the receipt before using its recorded toolchain identity')
+  assert.match(admission, /gh attestation verify "\$inspector"/)
+  assert.match(admission, /gh attestation verify "\$speech_test"/)
+  assert.match(admission, /rustc -vV/)
+  assert.match(admission, /cargo -V/)
+  assert.match(admission, /APPARENT_INSPECTION_REQUIRED_PROFILE=release/)
+  assert.match(admission, /composition\.ts reuse/)
+  assert.match(admission, /attestation verify "\$speech_test"/)
+  assert.match(admission, /source-digest "\$root_source"/)
+  assert.match(admission, /Retained native inputs failed release admission; compiling a fresh native baseline/)
+
+  for (const name of [
+    'Build with PostHog error reporting',
+    'Compile packaged model test executable',
+    'No build-machine CPU specialization',
+  ]) {
+    assert.match(step(name), /if: steps\.root-reuse\.outputs\.reuse != 'true'/, `${name} must be skipped after reuse`)
+  }
+  assert.match(step('Forbid native rebuild after Linux root reuse'), /cargo rustc rustup cmake clang/)
+  assert.ok(linux.indexOf('      - name: Admit compatible retained Linux native inputs') < linux.indexOf('      - name: Forbid native rebuild after Linux root reuse'))
+  assert.ok(linux.indexOf('      - name: Forbid native rebuild after Linux root reuse') < linux.indexOf('      - name: Build with PostHog error reporting'))
+  assert.match(step('CPU tiers contain only their declared instructions'), /APPARENT_REUSED_ROOT_DIRECTORY:-target\/release/)
+  assert.match(step('Package'), /GH_TOKEN: \$\{\{ github\.token \}\}/)
+
+  const retain = step('Retain release-profile composition inputs')
+  assert.match(retain, /steps\.root-reuse\.outputs\.reuse != 'true'/)
+  assert.match(retain, /inspection-release\/speech-test/)
+  const attest = linux.slice(linux.indexOf('      - uses: actions/attest-build-provenance@v2'))
+    .split('\n      - ')[0]
+  assert.match(attest, /inspection-release\/speech-test/)
+  assert.match(attest, /steps\.root-reuse\.outputs\.reuse != 'true'/)
 })
 
 test('Mac preview builds and passes the exact source-bound renderer to app packaging', () => {
@@ -79,6 +128,27 @@ test('Mac preview builds and passes the exact source-bound renderer to app packa
   assert.match(build, /APPARENT_DESKTOP_RENDERER_SHA256=/)
   assert.match(build, /APPARENT_DESKTOP_RENDERER_SOURCE_SHA=/)
   assert.ok(mac.indexOf('      - name: Build source-bound Desktop renderer artifact') < mac.indexOf('      - name: Build and verify the preview app\n'))
+
+  const lookup = mac.split('      - name: Find the latest retained Mac preview native release inputs\n')[1]?.split('\n      - ')[0]
+  const admission = mac.split('      - name: Admit compatible retained Mac preview native inputs\n')[1]?.split('\n      - ')[0]
+  assert.ok(lookup && admission)
+  assert.match(lookup, /--workflow release-mac-preview\.yml --branch main --status success/)
+  assert.match(lookup, /inspection-preview-root-\$\{source_sha\}/)
+  assert.match(admission, /APPARENT_PREVIEW_BUILD=1 APPARENT_HELPER_BUNDLE_ID=dev\.simonvanlaak\.apparent\.preview\.helper/)
+  assert.match(admission, /APPARENT_INSPECTION_REQUIRED_PROFILE=release/)
+  assert.match(admission, /expected_target=aarch64-apple-darwin/)
+  assert.match(admission, /Current Mac release toolchain differs from the retained root/)
+  assert.ok(admission.indexOf('gh attestation verify "$receipt"') < admission.indexOf('rustc_version='),
+    'Authenticate the receipt before using its recorded toolchain identity')
+  assert.match(admission, /gh attestation verify "\$inspector"/)
+  assert.match(admission, /rustc -vV/)
+  assert.match(admission, /cargo -V/)
+  assert.match(admission, /composition\.ts reuse/)
+  assert.match(mac, /Forbid native rebuild after Mac root reuse/)
+  assert.ok(mac.indexOf('      - name: Admit compatible retained Mac preview native inputs') < mac.indexOf('      - name: Forbid native rebuild after Mac root reuse'))
+  assert.ok(mac.indexOf('      - name: Forbid native rebuild after Mac root reuse') < mac.indexOf('      - name: Build and verify the preview app'))
+  assert.match(mac, /steps\.root-reuse\.outputs\.reuse != 'true'/)
+  assert.match(mac, /Retain preview-root composition inputs[\s\S]*?APPARENT_PREVIEW_BUILD: '1'[\s\S]*?APPARENT_HELPER_BUNDLE_ID: dev\.simonvanlaak\.apparent\.preview\.helper/)
 })
 
 test('cache hits cannot skip smoke gates or change release admission', () => {

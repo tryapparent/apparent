@@ -178,6 +178,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.admit.outputs.sha }}
+          fetch-depth: 0
       - name: Confirm build identity
         if: env.TAG == ''
         run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
@@ -225,6 +226,145 @@ jobs:
           echo "APPARENT_DESKTOP_RENDERER_ARCHIVE=$archive" >> "$GITHUB_ENV"
           echo "APPARENT_DESKTOP_RENDERER_SHA256=$(jq -er '.archiveSha256' "$record")" >> "$GITHUB_ENV"
           echo "APPARENT_DESKTOP_RENDERER_SOURCE_SHA=$source" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Find the latest retained Linux native release inputs
+        id: root-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release-linux.yml --branch main --status success --limit 100 --json databaseId,headSha --jq '.[] | [.databaseId, .headSha] | @tsv')
+          while IFS=$'\t' read -r run_id source_sha; do
+            [[ -n "$run_id" && "$source_sha" =~ ^[a-f0-9]{40}$ ]] || continue
+            artifact="inspection-release-${ARCH}-${source_sha}"
+            found=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts" --jq --arg name "$artifact" '[.artifacts[] | select(.name == $name and .expired == false)] | length')
+            if [[ "$found" == 1 ]]; then
+              echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+              echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
+              break
+            fi
+          done <<< "$runs"
+      - uses: actions/download-artifact@v5
+        if: steps.root-artifact.outputs.run_id != ''
+        with:
+          name: ${{ steps.root-artifact.outputs.artifact }}
+          run-id: ${{ steps.root-artifact.outputs.run_id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          path: ${{ runner.temp }}/inspection-reuse
+      - name: Admit compatible retained Linux native inputs
+        id: root-reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${{ steps.root-artifact.outputs.run_id }}" ]]; then
+            echo 'No retained Linux root artifact is available; building the native baseline.'
+            echo 'reuse=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          bundle="$RUNNER_TEMP/inspection-reuse"
+          root="$bundle/root"
+          receipt="$root/root-receipt.json"
+          inspector="$bundle/inspector.tar.gz"
+          speech_test="$bundle/speech-test"
+          if [[ ! -f "$receipt" || ! -f "$inspector" || ! -x "$speech_test" ]]; then
+            echo 'Retained Linux artifact is incomplete; building a fresh native baseline.'
+            echo 'reuse=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          root_sha=$(sha256sum "$receipt" | cut -d ' ' -f 1)
+          inspector_sha=$(sha256sum "$inspector" | cut -d ' ' -f 1)
+          inspector_source=$(tar -xOzf "$inspector" manifest.json | jq -er '.sourceSha')
+          root_source=$(jq -er '.sourceSha' "$receipt")
+          if [[ ! "$root_source" =~ ^[a-f0-9]{40}$ || ! "$inspector_source" =~ ^[a-f0-9]{40}$ ]]; then
+            echo 'Retained Linux component source identity is malformed; compiling a fresh native baseline.'
+            echo 'reuse=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! gh attestation verify "$receipt" --repo tryapparent/apparent \
+              --signer-workflow tryapparent/apparent/.github/workflows/release-linux.yml \
+              --source-ref refs/heads/main --source-digest "$root_source" \
+            || ! gh attestation verify "$inspector" --repo tryapparent/apparent \
+              --signer-workflow tryapparent/apparent/.github/workflows/release-linux.yml \
+              --source-ref refs/heads/main --source-digest "$inspector_source" \
+            || ! gh attestation verify "$speech_test" --repo tryapparent/apparent \
+              --signer-workflow tryapparent/apparent/.github/workflows/release-linux.yml \
+              --source-ref refs/heads/main --source-digest "$root_source"; then
+            echo 'Retained Linux artifacts lack matching release provenance; compiling a fresh native baseline.'
+            echo 'reuse=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          expected_target="${ARCH}-unknown-linux-gnu"
+          if [[ "$(jq -er '.profile' "$receipt")" != release || "$(jq -er '.target' "$receipt")" != "$expected_target" ]]; then
+            echo 'Retained Linux root profile or target differs; compiling a fresh native baseline.'
+            echo 'reuse=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          rustc_version=$(jq -er '.rustc | split("\\n")[0] | capture("^rustc (?<version>[^ ]+)").version' "$receipt")
+          expected_rustc=$(jq -er '.rustc' "$receipt")
+          expected_cargo=$(jq -er '.cargo' "$receipt")
+          if [[ ! "$rustc_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || "$(rustc -vV)" != "$expected_rustc" || "$(cargo -V)" != "$expected_cargo" ]]; then
+            echo 'Current release toolchain differs from the retained root; compiling a fresh native baseline.'
+            echo 'reuse=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          jq -n \
+            --arg rootDirectory "$root" --arg rootReceipt "$receipt" --arg rootReceiptSha256 "$root_sha" \
+            --arg rootProfile release --arg rootSignerWorkflow tryapparent/apparent/.github/workflows/release-linux.yml \
+            --arg inspectorArchive "$inspector" --arg inspectorArchiveSha256 "$inspector_sha" \
+            --arg inspectorSourceSha "$inspector_source" \
+            --arg inspectorSignerWorkflow tryapparent/apparent/.github/workflows/release-linux.yml \
+            '{schema:1, rootDirectory:$rootDirectory, rootReceipt:$rootReceipt, rootReceiptSha256:$rootReceiptSha256,
+              rootProfile:$rootProfile, rootSignerWorkflow:$rootSignerWorkflow, inspectorArchive:$inspectorArchive,
+              inspectorArchiveSha256:$inspectorArchiveSha256, inspectorSourceSha:$inspectorSourceSha,
+              inspectorSignerWorkflow:$inspectorSignerWorkflow}' > "$RUNNER_TEMP/inspection-reuse.json"
+          chmod 600 "$RUNNER_TEMP/inspection-reuse.json"
+          if APPARENT_POSTHOG_TOKEN="$APPARENT_POSTHOG_TOKEN" APPARENT_INSPECTION_REQUIRED_PROFILE=release \
+              node --experimental-strip-types capture/agent/inspection/delivery/composition.ts reuse \
+                "$RUNNER_TEMP/inspection-reuse.json" "$RUNNER_TEMP/root-reuse-probe"; then
+            echo "APPARENT_INSPECTION_REUSE=$RUNNER_TEMP/inspection-reuse.json" >> "$GITHUB_ENV"
+            echo 'APPARENT_INSPECTION_REQUIRED_PROFILE=release' >> "$GITHUB_ENV"
+            echo "APPARENT_REUSED_ROOT_DIRECTORY=$root" >> "$GITHUB_ENV"
+            echo "APPARENT_REUSED_SPEECH_TEST=$speech_test" >> "$GITHUB_ENV"
+            echo "SPEECH_TEST=$speech_test" >> "$GITHUB_ENV"
+            echo 'reuse=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'Retained native inputs failed release admission; compiling a fresh native baseline.'
+            echo 'reuse=false' >> "$GITHUB_OUTPUT"
+          fi
+          rm -rf "$RUNNER_TEMP/root-reuse-probe"
+      - name: Prepare native build directory
+        if: steps.root-reuse.outputs.reuse != 'true'
+        run: mkdir -p target/release
+      - name: Forbid native rebuild after Linux root reuse
+        if: steps.root-reuse.outputs.reuse == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          guard="$RUNNER_TEMP/no-native-rebuild"
+          mkdir -p "$guard"
+          for tool in cargo rustc rustup cmake clang clang++ cc c++ g++ make ninja; do
+            cat > "$guard/$tool" <<EOF
+          #!/bin/sh
+          echo "Unexpected native rebuild command after root reuse: $tool \$*" >&2
+          exit 97
+          EOF
+            chmod 755 "$guard/$tool"
+          done
+          real_gcc=$(command -v gcc)
+          cat > "$guard/gcc" <<EOF
+          #!/bin/sh
+          if [ "\$#" = 1 ] && [ "\$1" = -print-multiarch ]; then exec "$real_gcc" "\$@"; fi
+          echo "Unexpected native compile command after root reuse: gcc \$*" >&2
+          exit 97
+          EOF
+          chmod 755 "$guard/gcc"
+          echo "$guard" >> "$GITHUB_PATH"
       - name: Cache verified packaging tools
         if: steps.packaging-tools.outputs.key != ''
         uses: actions/cache@v4
@@ -233,18 +373,20 @@ jobs:
           key: release-linux-packaging-tools-${{ matrix.arch }}-${{ steps.packaging-tools.outputs.key }}
       - name: Install build and packaging dependencies
         run: ./capture/desktop/scripts/linux/appimage/dependencies.sh
-      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        if: steps.root-reuse.outputs.reuse != 'true'
         with:
           key: release-linux-${{ matrix.arch }}
           cache-on-failure: true
       - name: Build with PostHog error reporting
+        if: steps.root-reuse.outputs.reuse != 'true'
         env:
           APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
         run: GITHUB_SHA="$CANDIDATE_SHA" cargo build --release --locked
       # Exact-commit Linux verification owns the full unit suite. Release keeps
       # the release-profile executable for both architectures' packaged proofs.
       - name: Compile packaged model test executable
+        if: steps.root-reuse.outputs.reuse != 'true'
         # build.rs watches this variable. Keep the same build environment so
         # compiling tests does not invalidate the just-built native outputs.
         env:
@@ -255,6 +397,7 @@ jobs:
           test -f "$test"
           echo "SPEECH_TEST=$test" >> "$GITHUB_ENV"
       - name: No build-machine CPU specialization
+        if: steps.root-reuse.outputs.reuse != 'true'
         run: |
           mapfile -t caches < <(jq -r 'select(.reason == "build-script-executed" and (.package_id | contains("transcribe-cpp-sys"))) | .out_dir + "/build/CMakeCache.txt"' target/test-artifacts.jsonl)
           test "${#caches[@]}" -gt 0
@@ -264,10 +407,11 @@ jobs:
           done
       - name: CPU tiers contain only their declared instructions
         if: matrix.arch == 'x86_64'
-        run: python3 capture/desktop/scripts/linux/appimage/check-cpu-tiers.py target/release
+        run: python3 capture/desktop/scripts/linux/appimage/check-cpu-tiers.py "${APPARENT_REUSED_ROOT_DIRECTORY:-target/release}"
       - name: Package
         id: package
         env:
+          GH_TOKEN: ${{ github.token }}
           APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
@@ -282,18 +426,21 @@ jobs:
           (cd dist && sha256sum "$name" > "$name.sha256")
           echo "name=$name" >> "$GITHUB_OUTPUT"
       - name: Retain release-profile composition inputs
-        if: github.ref == 'refs/heads/main' && env.CANDIDATE_SHA == github.sha
+        if: github.ref == 'refs/heads/main' && env.CANDIDATE_SHA == github.sha && steps.root-reuse.outputs.reuse != 'true'
         env:
           APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
-        run: node --experimental-strip-types capture/agent/inspection/delivery/composition.ts retain-release target/release target/appimage/AppDir/usr/bin "$RUNNER_TEMP/inspection-release"
+        run: |
+          node --experimental-strip-types capture/agent/inspection/delivery/composition.ts retain-release target/release target/appimage/AppDir/usr/bin "$RUNNER_TEMP/inspection-release"
+          install -D -m 755 "$SPEECH_TEST" "$RUNNER_TEMP/inspection-release/speech-test"
       - uses: actions/attest-build-provenance@v2
-        if: github.ref == 'refs/heads/main' && env.CANDIDATE_SHA == github.sha
+        if: github.ref == 'refs/heads/main' && env.CANDIDATE_SHA == github.sha && steps.root-reuse.outputs.reuse != 'true'
         with:
           subject-path: |
             ${{ runner.temp }}/inspection-release/root/root-receipt.json
             ${{ runner.temp }}/inspection-release/inspector.tar.gz
+            ${{ runner.temp }}/inspection-release/speech-test
       - uses: actions/upload-artifact@v4
-        if: github.ref == 'refs/heads/main' && env.CANDIDATE_SHA == github.sha
+        if: github.ref == 'refs/heads/main' && env.CANDIDATE_SHA == github.sha && steps.root-reuse.outputs.reuse != 'true'
         with:
           name: inspection-release-${{ matrix.arch }}-${{ github.sha }}
           path: ${{ runner.temp }}/inspection-release/
