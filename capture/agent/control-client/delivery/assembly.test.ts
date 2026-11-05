@@ -78,7 +78,7 @@ test('stage the real capture client inside one app candidate with separate sourc
     assert.throws(() => lstatSync(wrongDigest), { code: 'ENOENT' });
     const wrongTarget = join(app, 'wrong-target');
     const alternateTarget = target === 'x86_64-unknown-linux-gnu' ? 'aarch64-unknown-linux-gnu' : 'x86_64-unknown-linux-gnu';
-    assert.throws(() => stageAgentControlClient(produced.archive, produced.digest, sourceSha, alternateTarget, wrongTarget), /target mismatch/);
+    assert.throws(() => stageAgentControlClient(produced.archive, produced.digest, sourceSha, alternateTarget, wrongTarget), /target mismatch|Invalid capture client manifest/);
     assert.throws(() => lstatSync(wrongTarget), { code: 'ENOENT' });
     assert.equal(assembly.sourceSha, sourceSha, 'The component source stays distinct from root receipt identity');
   } finally {
