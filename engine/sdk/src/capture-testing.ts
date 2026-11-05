@@ -104,6 +104,7 @@ export class ReferenceCapturePeer implements CaptureTransport {
                 state: "publishing",
                 materials: manifest,
                 publicationId: "f".repeat(32),
+                planSha256: "1".repeat(64),
               }
             : {
                 captureId: request.captureId,

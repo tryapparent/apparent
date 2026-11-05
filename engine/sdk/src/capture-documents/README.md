@@ -1,7 +1,7 @@
 # Detached capture documents (unpublished)
 
-These module-local helpers prepare the new capture channel's data boundary.
-They are not package exports, a negotiated wire contract, a native provider or
+These helpers support the proposed `@apparent/engine-sdk/capture` contract.
+This branch is a review candidate, not a frozen contract, native provider or
 evidence of capture readiness. Capture-v1 and media/1 are unchanged.
 
 The helpers verify exact detached UTF-8 bytes and their SHA256, envelope/payload
@@ -22,7 +22,9 @@ invocation, context/session/window/cursor, interactions, candidate, transcript,
 and accepted-stroke facts. Context/session paths are absolute; window titles
 remain manifest-only facts. Every observation is explicitly collected or
 unavailable. Collection state and a typed sealed reference must agree: an
-unavailable observation cannot be represented as an empty collected value.
+unavailable observation must be tagged unavailable. A successful observation may
+legitimately collect zero windows/interactions or empty context; emptiness alone
+does not prove that a native collector ran. Native producer proof remains required.
 Source and invocation facts are checked against the same capture/materials
 identity. This remains a review candidate; some native/platform schema and
 authority gates are open, so it is not a frozen or available capability.
@@ -51,6 +53,11 @@ the existing version-1 `apparent.json` plus `summary.md`, at least one frame and
 a contact sheet, with existing conditional media references. No semantic.json
 is added. Record persists the publication identity and exact plan binding in
 private control storage before dispatch and never creates the final path.
+Record may assemble the staged summary while materials are ready, before publish;
+only copy/handoff readiness waits for authenticated matching Saved. Publication
+observations, including failed/cancelled outcomes, carry the original publication
+ID and plan hash. Reconnect inspection also requires the caller's restored
+material/bundle/path/manifest-hash expectation and checks Saved fields against it.
 
 Cancel has a capture or materials scope and does not release materials. A
 materials-ready capture may be abandoned and released only through explicit
@@ -58,6 +65,10 @@ safe `releaseMaterials`; no timeout cleanup is defined. Publication identity
 and plan hash remain stable across reconnect. A timeout does not cancel or
 authorize a new allocation. Process close distinguishes observed exit from
 signal requests; process death proves neither Saved nor material release.
+Authenticated terminal inspection also returns the immutable materials manifest
+while its source data is retained, so a reconnect can recover its lease and
+explicitly release it even if the materials-ready reply was lost. After safe
+release that reference is omitted. Cancel never silently releases sealed data.
 
 The explicit `@apparent/engine-sdk/capture/testing` peer always handshakes as
 test-double, unavailable, with capture capabilities false. It can exercise

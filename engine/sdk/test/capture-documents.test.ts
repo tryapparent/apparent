@@ -5,7 +5,7 @@ import { validateDerivativeEnvelope } from "../src/capture-documents/derivative.
 import { validateInferenceEnvelope } from "../src/capture-documents/inference.ts";
 import { validateMaterialsDocument, validateStrokeFacts } from "../src/capture-documents/materials.ts";
 import { validatePublicationPlan } from "../src/capture-documents/publication.ts";
-import { validateContextFacts } from "../src/capture-documents/facts.ts";
+import { validateContextFacts, validateFactFile } from "../src/capture-documents/facts.ts";
 
 const id = (n: string) => n.repeat(32);
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -54,6 +54,11 @@ test("context facts bind source and invocation to the exact materials identity w
   assert.throws(()=>validateContextFacts({...context,identity:{...context.identity,materialsId:id("9")}},f.document),/not bound/);
   assert.throws(()=>validateContextFacts({...context,source:{...context.source,id:"other-display"}},f.document),/do not match sealed/);
   assert.throws(()=>validateContextFacts({...context,session:{state:"collected",value:{id:"session",directory:"relative/path"}}},f.document),/absolute/);
+  const raw = bytes(context); const file = receiptFile("context.json", raw);
+  const fixture = materialFixture({ files: [f.payload.files[0], file] });
+  const document = validateMaterialsDocument(fixture.manifest, fixture.payloadBytes);
+  const reordered = { ...file, identity: { modifiedNs: file.identity.modifiedNs, size: file.identity.size, inode: file.identity.inode, device: file.identity.device } };
+  assert.doesNotThrow(() => validateFactFile(reordered, raw, document, "context"));
 });
 
 test("materials reject invalid UTF-8, oversize bytes, traversal, duplicate paths and bad collection references", () => {
@@ -115,6 +120,7 @@ test("stroke facts bind material identity, declared transforms and bounded order
   const f = material(); const strokes = { schema: "apparent.capture-strokes/1", identity: f.payload.identity, coordinates: "target-normalized-10000", surfaces: [{ surfaceId: "screen-1", transformId: "transform-1", width: 1280, height: 720, target: "capture-rectangle" }], strokes: [{ id: id("f"), surface: "screen", surfaceId: "screen-1", transformId: "transform-1", startMs: 10, endMs: 20, acceptedAtMs: 25, points: [{ timeMs: 10, x: 0, y: 10000 }, { timeMs: 20, x: 10000, y: 1 }] }] };
   const check = (value: unknown) => { const factBytes = bytes(value); const factFile = { ...sealed("strokes.json"), identity: { device: "1", inode: "9", size: factBytes.byteLength, modifiedNs: "3" }, sha256: hash(factBytes) }; const fixture = materialFixture({ files: [...f.payload.files, factFile], facts: { ...f.payload.facts, acceptedStrokes: { file: "strokes.json", schema: "apparent.capture-strokes/1" } }, collection: { ...f.payload.collection, acceptedStrokes: "collected" } }); const doc = validateMaterialsDocument(fixture.manifest, fixture.payloadBytes); return validateStrokeFacts(factFile, factBytes, doc); };
   assert.doesNotThrow(() => check(strokes));
+  assert.throws(() => check({ ...strokes, strokes: [{ ...strokes.strokes[0], surface: "whiteboard" }] }), /declared target/);
   assert.throws(() => check({ ...strokes, strokes: [{ ...strokes.strokes[0], acceptedAtMs: 19 }] }), /time order/);
   assert.throws(() => check({ ...strokes, strokes: [{ ...strokes.strokes[0], points: [{ timeMs: 26, x: 2, y: 2 }] }] }), /outside sorted/);
   assert.throws(() => check({ ...strokes, strokes: [{ ...strokes.strokes[0], points: [{ timeMs: 12, x: 10001, y: 2 }] }] }), /normalized range/);

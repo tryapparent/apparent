@@ -9,6 +9,7 @@ import type {
 } from "./capture-documents/types.ts";
 import { validatePublicationPlan } from "./capture-documents/publication.ts";
 import type { DerivativeDocumentInput } from "./capture-documents/types.ts";
+import { MAX_DOCUMENT_BYTES, relativePath, validateSealedFile } from "./capture-documents/common.ts";
 export {
   validateMaterialsDocument,
   validateFactFile,
@@ -31,6 +32,19 @@ export const CAPTURE_CHANNEL = "capture" as const;
 export const CAPTURE_PROTOCOL_VERSION = 2 as const;
 export const CAPTURE_MAX_LINE_BYTES = 64 * 1024;
 const MAX_TIMEOUT = 60_000;
+const ERROR_CODES = ["malformed_request", "unsupported_version", "unsupported_channel", "identity_conflict", "not_ready", "not_found", "busy", "permission_denied", "unavailable", "source_changed", "source_mismatch", "invalid_materials", "invalid_publication", "lease_busy", "cancelled", "deadline_exceeded", "internal"] as const;
+export type CaptureErrorCode = typeof ERROR_CODES[number];
+export class CaptureRpcError extends Error {
+  readonly code: CaptureErrorCode;
+  constructor(code: CaptureErrorCode) {
+    super(`Engine capture request failed (${code})`);
+    this.code = code;
+    this.name = "CaptureRpcError";
+  }
+}
+function errorCode(value: unknown): asserts value is CaptureErrorCode {
+  if (!ERROR_CODES.includes(value as CaptureErrorCode)) throw new Error("invalid capture error code");
+}
 const hex = (n: number) => new RegExp(`^[0-9a-f]{${n}}$`);
 const id = (v: unknown): v is string =>
   typeof v === "string" && hex(32).test(v);
@@ -117,6 +131,7 @@ export interface CaptureStatus {
   state: CaptureState;
   materials?: MaterialsDocument["manifest"];
   publicationId?: string;
+  planSha256?: string;
   publication?: PublicationReceipt;
   error?: { code: string };
 }
@@ -131,6 +146,13 @@ export interface PublicationReceipt {
   artifactProvenance: "native";
   manifestSha256: string;
   inventorySha256: string;
+}
+/** Restore this binding with the publication ID after reconnect. */
+export interface PublicationExpectation {
+  materials: MaterialsKey;
+  bundleId: string;
+  bundlePath: string;
+  manifestSha256: string;
 }
 interface Base {
   channel: "capture";
@@ -153,11 +175,16 @@ export type CaptureRequest = Base &
         invocation: unknown;
       }
     | {
-        method: "inspect" | "stop" | "cancel" | "releaseMaterials";
+        method: "inspect" | "stop" | "cancel";
         ownerToken: string;
         captureId: string;
-        materialsId?: string;
-        leaseId?: string;
+      }
+    | {
+        method: "releaseMaterials";
+        ownerToken: string;
+        captureId: string;
+        materialsId: string;
+        leaseId: string;
       }
     | {
         method: "publish";
@@ -232,9 +259,9 @@ function envelope(v: unknown, rpcId: string): CaptureResponse {
   if (x.error !== undefined) {
     const e = object(x.error, "error");
     exact(e, ["code", "message"]);
-    text(e.code, "error code", 64);
+    errorCode(e.code);
     text(e.message, "error message", 256);
-    throw new Error(`Engine capture request failed (${e.code})`);
+    throw new CaptureRpcError(e.code);
   }
   return x as unknown as CaptureResponse;
 }
@@ -394,14 +421,15 @@ export function validateCaptureRequest(
         throw new Error("invalid materials binding");
       const f = object(x.planFile, "plan file");
       exact(f, ["relativePath", "identity", "sha256"]);
-      text(f.relativePath, "plan file relative path");
+      relativePath(f.relativePath, "plan file relative path");
+      validateSealedFile(f, "plan file");
       if (!hash(f.sha256) || f.sha256 !== x.planSha256)
         throw new Error("plan hash does not bind plan file");
       const fi = object(f.identity, "plan file identity");
       exact(fi, ["device", "inode", "size", "modifiedNs"]);
       text(fi.device, "plan file device");
       text(fi.inode, "plan file inode");
-      if (!Number.isSafeInteger(fi.size) || Number(fi.size) < 1)
+      if (!Number.isSafeInteger(fi.size) || Number(fi.size) < 1 || Number(fi.size) > MAX_DOCUMENT_BYTES)
         throw new Error("invalid plan file size");
       text(fi.modifiedNs, "plan file modifiedNs");
     }
@@ -435,13 +463,14 @@ export class CaptureClient {
     timeoutMs = 5000,
   ): Promise<unknown> {
     timeout(timeoutMs);
+    if (["channel", "protocolVersion", "clientId", "rpcId", "method"].some(key => Object.hasOwn(params, key))) throw new Error("capture input contains reserved envelope fields");
     const request = {
+      ...structuredClone(params),
       channel: CAPTURE_CHANNEL,
       protocolVersion: CAPTURE_PROTOCOL_VERSION,
       clientId: this.clientId,
       rpcId: randomBytes(16).toString("hex"),
       method,
-      ...params,
     } as CaptureRequest;
     validateCaptureRequest(request);
     let timer: NodeJS.Timeout | undefined;
@@ -496,18 +525,24 @@ export class CaptureClient {
       throw new Error("invalid capture/2 handshake");
     if (
       v.implementation === "test-double" &&
-      (v.readiness !== "unavailable" || c.displayCapture || c.areaCapture)
+      (v.readiness !== "unavailable" || Object.values(c).some(Boolean))
     )
       throw new Error("test double cannot claim capture readiness");
     if (v.implementation === "test-double" && !this.allowTestDouble)
       throw new Error("test Engine requires explicit /capture/testing opt-in");
+    if (v.readiness === "ready" && (!c.sourceDiscovery || !(c.displayCapture || c.areaCapture) || !c.retainedMaterials)) throw new Error("capture readiness requires source and retained-material capabilities");
     this.handshaken = true;
     this.testDouble = v.implementation === "test-double";
-    this.handshakeValue = v as unknown as CaptureHandshake;
-    return this.handshakeValue;
+    this.handshakeValue = structuredClone(v) as unknown as CaptureHandshake;
+    this.advertisedSources.clear();
+    return structuredClone(this.handshakeValue);
   }
   async discoverSources(timeoutMs = 5000): Promise<SourceDiscovery> {
     this.requireHandshake();
+    if (!this.handshakeValue?.capabilities.sourceDiscovery) {
+      this.advertisedSources.clear();
+      return { state: "unavailable", sources: [], reason: "source discovery is unavailable" };
+    }
     const value = object(
       await this.rpc("discoverSources", {}, timeoutMs),
       "source discovery",
@@ -526,7 +561,7 @@ export class CaptureClient {
     for (const source of sources) {
       if (this.advertisedSources.has(source.id))
         throw new Error("duplicate discovered source identity");
-      this.advertisedSources.set(source.id, source);
+      this.advertisedSources.set(source.id, structuredClone(source));
     }
     return {
       state: value.state as SourceDiscovery["state"],
@@ -547,6 +582,7 @@ export class CaptureClient {
     timeoutMs = 5000,
   ): Promise<CaptureStatus> {
     this.requireHandshake();
+    input = structuredClone(input);
     if (this.handshakeValue?.readiness !== "ready")
       throw new Error("capture provider is unavailable");
     const source = this.advertisedSources.get(input.source.id);
@@ -575,6 +611,7 @@ export class CaptureClient {
     timeoutMs = 5000,
   ): Promise<CaptureStatus> {
     this.requireHandshake();
+    authority = structuredClone(authority);
     return this.status(
       await this.rpc("inspect", authority, timeoutMs),
       authority.captureId,
@@ -585,6 +622,7 @@ export class CaptureClient {
     timeoutMs = 5000,
   ): Promise<CaptureStatus> {
     this.requireHandshake();
+    authority = structuredClone(authority);
     return this.status(
       await this.rpc("stop", authority, timeoutMs),
       authority.captureId,
@@ -595,6 +633,7 @@ export class CaptureClient {
     timeoutMs = 5000,
   ): Promise<CaptureStatus> {
     this.requireHandshake();
+    authority = structuredClone(authority);
     return this.status(
       await this.rpc("cancel", authority, timeoutMs),
       authority.captureId,
@@ -614,6 +653,9 @@ export class CaptureClient {
     timeoutMs = 10000,
   ): Promise<CaptureStatus> {
     this.requireHandshake();
+    if (!this.handshakeValue?.capabilities.publication) throw new Error("publication is unavailable");
+    authority = structuredClone(authority);
+    if (authority.leaseId !== authority.materials.manifest.leaseId) throw new Error("publication lease binding mismatch");
     const plan = validatePublicationPlan(
       authority.planFile,
       authority.planBytes,
@@ -643,17 +685,10 @@ export class CaptureClient {
       ),
       authority.captureId,
     );
-    if (
-      result.publication &&
-      (result.publication.publicationId !== authority.publicationId ||
-        result.publication.planSha256 !== authority.planFile.planSha256 ||
-        result.publication.materials.revision !== plan.materials.revision ||
-        result.publication.bundleId !== plan.bundleId ||
-        result.publication.bundlePath !== plan.destination.path)
-    )
-      throw new Error(
-        "Saved publication receipt does not match immutable plan",
-      );
+    validatePublicationObservation(result, authority.publicationId, authority.planFile.planSha256, {
+      materials: plan.materials, bundleId: plan.bundleId, bundlePath: plan.destination.path,
+      manifestSha256: plan.entries.find(entry => entry.relativePath === "apparent.json")!.sha256,
+    });
     return result;
   }
   async inspectPublication(
@@ -662,20 +697,17 @@ export class CaptureClient {
       captureId: string;
       publicationId: string;
       planSha256: string;
+      expected: PublicationExpectation;
     },
     timeoutMs = 5000,
   ): Promise<CaptureStatus> {
     this.requireHandshake();
+    input = structuredClone(input);
     const result = this.status(
-      await this.rpc("inspectPublication", input, timeoutMs),
+      await this.rpc("inspectPublication", { ownerToken: input.ownerToken, captureId: input.captureId, publicationId: input.publicationId, planSha256: input.planSha256 }, timeoutMs),
       input.captureId,
     );
-    if (
-      result.publication &&
-      (result.publication.publicationId !== input.publicationId ||
-        result.publication.planSha256 !== input.planSha256)
-    )
-      throw new Error("publication inspection identity mismatch");
+    validatePublicationObservation(result, input.publicationId, input.planSha256, input.expected);
     return result;
   }
   async releaseMaterials(
@@ -688,6 +720,8 @@ export class CaptureClient {
     timeoutMs = 5000,
   ): Promise<{ released: boolean; captureId: string; materialsId: string }> {
     this.requireHandshake();
+    if (!this.handshakeValue?.capabilities.retainedMaterials) throw new Error("materials release is unavailable");
+    input = structuredClone(input);
     const x = object(
       await this.rpc("releaseMaterials", input, timeoutMs),
       "release result",
@@ -713,6 +747,18 @@ export class CaptureClient {
   get isTestDouble() {
     return this.testDouble;
   }
+}
+function validatePublicationObservation(status: CaptureStatus, publicationId: string, planSha256: string, expected: PublicationExpectation): void {
+  const e = object(expected, "publication expectation");
+  exact(e, ["materials", "bundleId", "bundlePath", "manifestSha256"]);
+  const key = object(e.materials, "expected materials");
+  exact(key, ["captureId", "materialsId", "revision"]);
+  if (key.captureId !== status.captureId || !id(key.materialsId) || !hash(key.revision) || !hash(e.manifestSha256)) throw new Error("invalid publication expectation");
+  text(e.bundleId, "expected bundleId", 255); abs(e.bundlePath, "expected bundlePath");
+  if (status.state === "saved") {
+    const p = status.publication!;
+    if (p.publicationId !== publicationId || p.planSha256 !== planSha256 || !isDeepStrictEqual(p.materials, expected.materials) || p.bundleId !== expected.bundleId || p.bundlePath !== expected.bundlePath || p.manifestSha256 !== expected.manifestSha256) throw new Error("Saved publication receipt does not match immutable plan");
+  } else if (!["publishing", "failed", "cancelled"].includes(status.state) || status.publicationId !== publicationId || status.planSha256 !== planSha256 || (status.materials && !isDeepStrictEqual(status.materials.key, expected.materials))) throw new Error("publication observation identity mismatch");
 }
 function validateSource(v: unknown): SourceDescriptor {
   const x = object(v, "source");
@@ -793,6 +839,7 @@ function validateStatus(
     "state",
     "materials",
     "publicationId",
+    "planSha256",
     "publication",
     "error",
   ];
@@ -803,7 +850,8 @@ function validateStatus(
     !states.includes(String(x.state))
   )
     throw new Error("capture status identity mismatch");
-  if (x.state === "materials-ready" || x.state === "publishing") {
+  if ((x.state === "materials-ready" || x.state === "publishing") && x.materials === undefined) throw new Error("finalized materials reference is required");
+  if (x.materials !== undefined) {
     const m = object(x.materials, "materials manifest");
     exact(m, ["schema", "key", "root", "leaseId", "payloadFile"]);
     const k = object(m.key, "materials key");
@@ -819,16 +867,17 @@ function validateStatus(
     if (!id(m.leaseId)) throw new Error("invalid materials lease");
     const file = object(m.payloadFile, "materials payload reference");
     exact(file, ["relativePath", "identity", "sha256"]);
-    text(file.relativePath, "materials payload file");
+    relativePath(file.relativePath, "materials payload file");
+    validateSealedFile(file, "materials payload file");
     if (!hash(file.sha256) || file.sha256 !== k.revision)
       throw new Error("materials revision does not bind payload file");
     const fi = object(file.identity, "materials payload identity");
     exact(fi, ["device", "inode", "size", "modifiedNs"]);
     for (const key of ["device", "inode", "modifiedNs"])
       text(fi[key], `payload ${key}`);
-    if (!Number.isSafeInteger(fi.size) || Number(fi.size) < 1)
+    if (!Number.isSafeInteger(fi.size) || Number(fi.size) < 1 || Number(fi.size) > MAX_DOCUMENT_BYTES)
       throw new Error("invalid materials payload size");
-    if (x.state === "publishing" && !id(x.publicationId))
+    if (x.state === "publishing" && (!id(x.publicationId) || !hash(x.planSha256)))
       throw new Error("publishing state requires publication identity");
   }
   if (x.state === "saved") {
@@ -862,25 +911,26 @@ function validateStatus(
       !hash(p.inventorySha256)
     )
       throw new Error("invalid Saved receipt");
+    if (x.materials !== undefined && !isDeepStrictEqual(object(x.materials, "retained materials").key, p.materials)) throw new Error("Saved retained materials identity mismatch");
     text(p.bundleId, "Saved bundleId", 255);
     abs(p.bundlePath, "saved bundlePath");
   }
   if (x.state === "failed") {
     const e = object(x.error, "failure error");
     exact(e, ["code"]);
-    text(e.code, "failure code", 64);
-  } else if (x.error !== undefined && x.state !== "cancelled")
+    errorCode(e.code);
+  } else if (x.error !== undefined)
     throw new Error("error is invalid for this capture state");
   if (x.state !== "saved" && x.publication !== undefined)
     throw new Error("publication receipt only valid for Saved");
   if (
-    !["materials-ready", "publishing"].includes(String(x.state)) &&
+    !["materials-ready", "publishing", "saved", "cancelled", "failed"].includes(String(x.state)) &&
     x.materials !== undefined
   )
     throw new Error("materials only valid after material finalization");
   if (
-    !["publishing"].includes(String(x.state)) &&
-    x.publicationId !== undefined
+    (x.publicationId !== undefined || x.planSha256 !== undefined) &&
+    (!["publishing", "failed", "cancelled"].includes(String(x.state)) || !id(x.publicationId) || !hash(x.planSha256))
   )
     throw new Error("publication identity only valid while publishing");
   return x as unknown as CaptureStatus;
@@ -932,16 +982,19 @@ export class ChildProcessCaptureTransport implements CaptureTransport {
   private child: ChildProcessWithoutNullStreams;
   private shutdownMs: number;
   constructor(child: ChildProcessWithoutNullStreams, shutdownMs = 3000) {
+    timeout(shutdownMs);
     this.child = child;
     this.shutdownMs = shutdownMs;
     child.stdout.on("data", (chunk) => this.onData(Buffer.from(chunk)));
     child.stdout.on("error", () =>
       this.fail(new Error("capture Engine stdout failed")),
     );
+    child.stdout.on("end", () => this.fail(new Error("capture Engine output ended")));
     child.stdin.on("error", () =>
       this.fail(new Error("capture Engine stdin failed")),
     );
     child.stderr.on("data", () => {});
+    child.stderr.on("error", () => {});
     child.on("error", () =>
       this.fail(new Error("capture Engine process failed")),
     );
@@ -976,7 +1029,7 @@ export class ChildProcessCaptureTransport implements CaptureTransport {
           ["channel", "protocolVersion", "rpcId", "result", "error"],
           ["channel", "protocolVersion", "rpcId"],
         );
-        if (x.channel !== "capture" || x.protocolVersion !== 2 || !id(x.rpcId))
+        if (x.channel !== "capture" || x.protocolVersion !== 2 || !id(x.rpcId) || (x.result === undefined) === (x.error === undefined))
           throw Error();
         const p = this.pending.get(x.rpcId);
         if (!p) continue;
@@ -998,6 +1051,7 @@ export class ChildProcessCaptureTransport implements CaptureTransport {
       );
     if (this.pending.size >= 64)
       return Promise.reject(new Error("capture pending RPC bound reached"));
+    if (this.pending.has(req.rpcId)) return Promise.reject(new Error("duplicate capture RPC identity"));
     const line = encodeCaptureRequest(req);
     if (this.child.stdin.writableLength + Buffer.byteLength(line) > 1024 * 1024)
       return Promise.reject(new Error("capture write queue bound reached"));

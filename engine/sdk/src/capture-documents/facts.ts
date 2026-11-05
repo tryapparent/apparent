@@ -152,7 +152,7 @@ export function validateContextFacts(
     exact(c, ["values", "changes"], "context values");
     const values = record(c.values, "context values map");
     for (const [k, val] of Object.entries(values))
-      if (typeof val !== "string") fail(`context value ${k} must be text`);
+      if (typeof val !== "string") fail("context values must be text");
     if (!Array.isArray(c.changes)) fail("context changes must be an array");
     c.changes.forEach((item, i) => {
       const a = record(item, `context change ${i}`);
@@ -368,6 +368,7 @@ export function validateInteractionFacts(
         fail("drag ends before it starts");
     }
     if (e.pin !== undefined) safeInt(e.pin, "interaction pin");
+    if (e.kind === "scroll" && [e.dx, e.dy].some(value => typeof value !== "number" || !Number.isFinite(value))) fail("scroll deltas must be finite numbers");
     for (const k of ["x", "y", "x0", "y0", "x1", "y1"])
       if (
         e[k] !== undefined &&
@@ -429,7 +430,7 @@ export function validateFactFile(
   if (
     !sealed ||
     sealed.sha256 !== file.sha256 ||
-    JSON.stringify(sealed.identity) !== JSON.stringify(file.identity) ||
+    !isDeepStrictEqual(sealed.identity, file.identity) ||
     file.identity.size !== bytes.byteLength
   )
     fail("fact file differs from materials sealed reference");
