@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, sy
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { stage } from './renderer-artifact.ts';
+import { inputInventory, stage } from './renderer-artifact.ts';
 
 const artifact = resolve(process.env.APPARENT_RENDERER_ARTIFACT ?? '');
 assert(process.env.APPARENT_RENDERER_ARTIFACT, 'Set APPARENT_RENDERER_ARTIFACT to the real renderer archive produced by npm run renderer:build-artifact');
@@ -63,4 +63,23 @@ test('stage the authenticated Vite snapshot, preserve exact inventory and refuse
     assert.throws(() => stage(artifact, archiveHash, join(alias, 'rejected')), /Symlink/);
     assert(!existsSync(join(work, 'rejected')));
   } finally { rmSync(work, { recursive: true, force: true }); }
+});
+
+
+test('source identity ignores generated Python bytecode and still hashes tracked inputs', () => {
+  const before = inputInventory();
+  const source = resolve('package.json');
+  const original = readFileSync(source);
+  const cache = resolve('../../../../shared/ui/test/__pycache__/renderer-inventory-regression.cpython-312.pyc');
+  assert(!existsSync(cache));
+  mkdirSync(resolve(cache, '..'), { recursive: true });
+  try {
+    writeFileSync(cache, 'synthetic bytecode');
+    assert.deepEqual(inputInventory(), before);
+    writeFileSync(source, Buffer.concat([original, Buffer.from('\n')]));
+    assert.notEqual(inputInventory().sha256, before.sha256);
+  } finally {
+    writeFileSync(source, original);
+    rmSync(cache, { force: true });
+  }
 });

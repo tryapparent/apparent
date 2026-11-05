@@ -43,10 +43,16 @@ function filesUnder(directory: string): string[] {
   return files;
 }
 
-function inputInventory() {
-  const files = [...filesUnder(frontend), ...filesUnder(join(root, 'shared/ui'))]
-    .sort((a, b) => compare(relative(root, a), relative(root, b)))
-    .map(absolute => ({ path: relative(root, absolute).split(sep).join('/'), sha256: sha256(readFileSync(absolute)) }));
+export function inputInventory() {
+  // Only versioned inputs belong to the source identity; ignored build/test caches do not.
+  const paths = runBytes('git', ['ls-files', '-z', '--', relative(root, frontend), 'shared/ui'])
+    .toString().split('\0').filter(Boolean).sort(compare);
+  const files = paths.map(path => {
+    const absolute = join(root, path);
+    const metadata = lstatSync(absolute);
+    assert(metadata.isFile() && !metadata.isSymbolicLink(), `Unsupported renderer source input: ${path}`);
+    return { path: path.split(sep).join('/'), sha256: sha256(readFileSync(absolute)) };
+  });
   return { files, sha256: sha256(JSON.stringify(files)) };
 }
 
