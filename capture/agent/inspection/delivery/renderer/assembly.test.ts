@@ -100,6 +100,8 @@ test('compose the authenticated renderer with the retained root while Cargo is u
       else process.env.APPARENT_DESKTOP_RENDERER_SOURCE_SHA = oldRendererSource;
     }
     const resourceDirectory = join(work, 'AppDir/usr/share/apparent/desktop-ui');
+    const packagedHelp = command(join(binary, 'apparent'), ['--help'], work);
+    assert.match(packagedHelp, /Usage: apparent/);
     const result = { fileCount: JSON.parse(readFileSync(join(resourceDirectory, 'manifest.json'), 'utf8')).files.length,
       archiveSha256: rendererSha256 };
     assert.equal(result.fileCount, 20);
@@ -127,7 +129,8 @@ test('compose the authenticated renderer with the retained root while Cargo is u
     console.log(JSON.stringify({ rootSourceSha: receipt.sourceSha, rootFiles: originalRoot.size,
       rootUnchanged: true, cargoAvailable: false, rendererSourceGitHead: manifest.source.gitHead,
       rendererArchiveSha256: rendererSha256, installedResources: manifest.files.length,
-      rendererDirectoriesWorldTraversable: true, proofKind: 'non-GUI app assembly' }));
+      rendererDirectoriesWorldTraversable: true, packagedAppExecutesOutsideCheckout: true,
+      proofKind: 'non-GUI AppDir assembly and native execution' }));
   } finally {
     process.env.PATH = previousPath;
     rmSync(work, { recursive: true });
