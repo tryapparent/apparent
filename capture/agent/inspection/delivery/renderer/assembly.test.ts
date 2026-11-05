@@ -110,6 +110,8 @@ test('compose the authenticated renderer with the retained root while Cargo is u
     assert.equal(lstatSync(join(resourceDirectory, 'manifest.json')).mode & 0o777, 0o644);
     const installedReceipt = JSON.parse(readFileSync(join(binary, 'inspection-composition.json'), 'utf8'));
     assert.equal(installedReceipt.root.sourceSha, receipt.sourceSha);
+    assert.equal(installedReceipt.compositionSource, command('git', ['rev-parse', 'HEAD']));
+    assert.notEqual(installedReceipt.root.sourceSha, installedReceipt.compositionSource);
     assert.equal(installedReceipt.root.files[0].sha256, originalRoot.get('apparent'));
     for (const file of manifest.files) {
       const path = join(resourceDirectory, 'renderer', ...file.path.split('/'));
