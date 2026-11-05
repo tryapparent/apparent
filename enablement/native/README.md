@@ -70,12 +70,17 @@ for both unrelated edits and root source edits. The Cargo fixture in
 the root crate while native outputs remain reusable, and an unrelated commit
 changes the embedded label to the new checkout revision; removing all tracked
 watches would instead leave the embedded label stale after a dirty Rust source edit.
-Do not narrow this watch set to guessed directories or remove it until the build
-identity input is bound to the actual root artifact compiler dependency closure
-and the packaged binary can retain its original source identity separately from
-the assembly revision. Existing Mac producer admission and platform verification
-continue to use exact checkout SHA/tree and clean-source checks; the UI label is
-not a substitute for those gates.
+This is a synthetic Cargo trace only: it makes no production rebuild optimization
+or native proof claim. In the fixture, the unrelated edit/commit relinks the root
+crate while the native compiler invocation count stays unchanged; actual Rust
+source edits still relink and update the dirty label. Do not narrow this watch set
+to guessed directories or remove it. After the accepted component consumers adopt
+the root artifact's original source identity and separate assembly revision, use
+that artifact's verified compiler dependency closure to propose exclusions, then
+complete the required focused Mac build/artifact proof before changing production
+watches. Existing Mac producer admission and platform verification continue to
+use exact checkout SHA/tree and clean-source checks; the UI label is not a
+substitute for those gates.
 
 When the Swift helper receipt is absent, its unchanged compiler command overlaps
 complete identity discovery in a scoped thread. Both finish before output
