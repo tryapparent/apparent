@@ -1342,7 +1342,7 @@
       "id": "onboarding-first-capture",
       "group": "install",
       "name": "Choose and try your Record shortcut",
-      "says": "Onboarding coaches a shortcut-started recording, whiteboard and screen drawing, manual paste confirmation and locating the practice capture. Closing leaves setup unfinished for the next launch.",
+      "says": "Onboarding coaches a shortcut-started recording, whiteboard and screen drawing, manual paste confirmation and locating the practice capture. Compact animated key and drawing guides play once, with replay and static reduced-motion alternatives. Closing leaves setup unfinished for the next launch.",
       "status": "main",
       "added": "2026-10-31",
       "platforms": ["mac", "linux"],

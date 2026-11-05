@@ -291,3 +291,21 @@ quality; installed platform acceptance remains required. `penColor` accepts
 `coral`, `purple`, `blue` or `green`, loads at app startup and applies immediately
 when saved in setup. Legacy strokes without a color retain red. Config writes
 preserve unrelated keys. See [candidate admission and proof](onboarding-release-candidate.md).
+
+### Compact practice illustrations
+
+The shared Electron coach shows finite four-second key/gesture illustrations on
+start/retry (the saved Record shortcut), screen drawing (Shift and drag), and
+copied/paste (Command V on Mac, Ctrl V on Linux). The inline strip is about
+68–74 points tall; secondary actions share a wrapping row to avoid excess blank
+space in the existing 380×440 coach window. Replay uses the canonical shared
+Button and restarts presentation only. Illustrations send no keys, draw no ink
+and advance no Rust milestones. Polling does not restart them; changing practice
+stage does. Reduced motion shows static keys/gesture and hides Replay.
+
+Routing and native fallback are unchanged. Roll back by removing GestureGuide
+from the coach; no config/data migration is involved. Native onboarding remains
+unmodified and must not be removed based on renderer-only acceptance. Browser
+video uses synthetic onboarding state; actual Electron checks cover layout,
+saved platform keys, finite playback, replay isolation and reduced motion. New
+installed Mac acceptance is still required before publishing these illustrations.
