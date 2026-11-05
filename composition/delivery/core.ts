@@ -170,10 +170,10 @@ export function buildOwner(root: string, owner: Owner, target: Target, outputPat
 type Run = { id: number; run_attempt: number; head_sha: string; head_branch: string; event: string; conclusion: string | null; path?: string }
 type Job = { name: string; status: string; conclusion: string | null }
 type Artifact = { id: number; name: string; expired: boolean }
-export type AdmissionResult = { reuse: boolean; reason: string; input_digest: string; prior_artifact_id: number | null; prior_source_sha: string | null }
+export type AdmissionResult = { reuse: boolean; reason: string; input_digest: string; prior_artifact_id: number | null; prior_source_sha: string | null; prior_run_id: number | null; prior_run_attempt: number | null }
 export function assessPrior(root: string, owner: Owner, target: Target, currentSha: string, repository: string, runs: Run[], jobsFor: (run: Run) => Job[], artifactsFor: (run: Run) => Artifact[]): AdmissionResult {
   const digest = inputDigest(root, owner, target)
-  const rebuild = (reason: string): AdmissionResult => ({ reuse: false, reason, input_digest: digest, prior_artifact_id: null, prior_source_sha: null })
+  const rebuild = (reason: string): AdmissionResult => ({ reuse: false, reason, input_digest: digest, prior_artifact_id: null, prior_source_sha: null, prior_run_id: null, prior_run_attempt: null })
   if (!owner.targets.includes(target)) return rebuild('owner is not registered for this target')
   if (repository !== 'tryapparent/apparent') return rebuild('repository identity is not canonical')
   for (const run of [...runs].sort((a, b) => b.id - a.id)) {
@@ -187,7 +187,7 @@ export function assessPrior(root: string, owner: Owner, target: Target, currentS
         jobs.filter(j => j.name === auditJob && j.status === 'completed' && j.conclusion === 'success').length !== 1) continue
     const wanted = `stream-${owner.id}-${target}-${digest}`
     const artifact = artifactsFor(run).find(a => Number.isSafeInteger(a.id) && a.id > 0 && a.name === wanted && !a.expired)
-    if (artifact) return { reuse: true, reason: 'same workflow owner, successful audit, ancestor source and matching unexpired artifact', input_digest: digest, prior_artifact_id: artifact.id, prior_source_sha: run.head_sha }
+    if (artifact) return { reuse: true, reason: 'same workflow owner, successful audit, ancestor source and matching unexpired artifact', input_digest: digest, prior_artifact_id: artifact.id, prior_source_sha: run.head_sha, prior_run_id: run.id, prior_run_attempt: run.run_attempt }
   }
   return rebuild('no qualifying prior artifact')
 }
@@ -216,12 +216,13 @@ export function sealPayload(root: string, owner: Owner, target: Target, inputDir
 function requireNoSymlink(path: string) { if (lstatSync(path).isSymbolicLink()) throw new Error('Output directory cannot be a symlink') }
 
 /** Reissue an admitted, byte-verified archive; never extract its application payload. */
-export function reusePayload(root: string, owner: Owner, target: Target, zip: string, outputDir: string, digest: string, priorSha: string, artifactId: string, env = process.env) {
+export function reusePayload(root: string, owner: Owner, target: Target, zip: string, outputDir: string, digest: string, priorSha: string, artifactId: string, priorRunId: string, priorAttempt: string, env = process.env) {
   if (!owner.targets.includes(target) || !/^[0-9a-f]{64}$/.test(digest) || !/^[0-9a-f]{40,64}$/.test(priorSha) || !/^[1-9][0-9]*$/.test(artifactId)) throw new Error('Invalid reuse identity')
   if (env.GITHUB_REF !== 'refs/heads/main' || env.GITHUB_REPOSITORY !== 'tryapparent/apparent' || env.GITHUB_WORKFLOW_REF !== `tryapparent/apparent/${workflowPath}@refs/heads/main` || !/^[1-9][0-9]*$/.test(env.GITHUB_RUN_ID ?? '') || !/^[1-9][0-9]*$/.test(env.GITHUB_RUN_ATTEMPT ?? '')) throw new Error('Reuse requires canonical main workflow identity')
   const entries = execFileSync('unzip', ['-Z1', zip], { encoding: 'utf8', maxBuffer: 4096 }).trim().split('\n').sort()
   if (JSON.stringify(entries) !== JSON.stringify(['component.tar.gz', 'receipt.json'])) throw new Error('Unexpected artifact ZIP inventory')
   const original = JSON.parse(execFileSync('unzip', ['-p', zip, 'receipt.json'], { encoding: 'utf8', maxBuffer: 16384 }))
+  if (!/^[1-9][0-9]*$/.test(priorRunId) || !/^[1-9][0-9]*$/.test(priorAttempt) || original.runId !== priorRunId || original.runAttempt !== priorAttempt) throw new Error('Prior receipt run does not match admission')
   if (original.schema !== 1 || original.id !== owner.id || original.target !== target || original.stage !== owner.stage || original.inputDigest !== digest || original.sourceSha !== priorSha || !/^[0-9a-f]{64}$/.test(original.sha256) || !Number.isSafeInteger(original.size) || original.size <= 0) throw new Error('Prior receipt does not match admission')
   const output = outsideCheckout(root, outputDir)
   mkdirSync(output, { recursive: true }); requireNoSymlink(output)

@@ -56,8 +56,8 @@ async function main(args: string[]) {
       result = assessPrior(root, owner, target, execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), repo, runs,
         run => ghPages<{ name: string; status: string; conclusion: string | null }>(repo, `repos/${repo}/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs`),
         run => ghPages<{ id: number; name: string; expired: boolean }>(repo, `repos/${repo}/actions/runs/${run.id}/artifacts`))
-    } catch { result = { reuse: false, reason: 'GitHub identity or artifact history could not be established; rebuilding', input_digest: inputDigest(root, owner, target), prior_artifact_id: null, prior_source_sha: null } }
-    output({ reuse: result.reuse, input_digest: result.input_digest, prior_artifact_id: result.prior_artifact_id ?? '', prior_source_sha: result.prior_source_sha ?? '' })
+    } catch { result = { reuse: false, reason: 'GitHub identity or artifact history could not be established; rebuilding', input_digest: inputDigest(root, owner, target), prior_artifact_id: null, prior_source_sha: null, prior_run_id: null, prior_run_attempt: null } }
+    output({ reuse: result.reuse, input_digest: result.input_digest, prior_artifact_id: result.prior_artifact_id ?? '', prior_source_sha: result.prior_source_sha ?? '', prior_run_id: result.prior_run_id ?? '', prior_run_attempt: result.prior_run_attempt ?? '' })
     console.log(JSON.stringify(result))
     return
   }
@@ -72,8 +72,8 @@ async function main(args: string[]) {
     console.log(JSON.stringify(receipt))
     return
   }
-  if (args.length === 8 && args[0] === 'reuse') {
-    console.log(JSON.stringify(reusePayload(root, ownerFor(args[1]), targetArg(args[2]), args[3], args[4], args[5], args[6], args[7])))
+  if (args.length === 10 && args[0] === 'reuse') {
+    console.log(JSON.stringify(reusePayload(root, ownerFor(args[1]), targetArg(args[2]), args[3], args[4], args[5], args[6], args[7], args[8], args[9])))
     return
   }
   throw new Error('Usage: node --experimental-strip-types composition/delivery/cli.ts plan | admit ID TARGET | build ID TARGET OUTPUT_DIR | seal ID TARGET INPUT_DIR OUTPUT_DIR INPUT_DIGEST')

@@ -44,14 +44,15 @@ test('reuse reissues the exact admitted bytes and rejects tampering and wrong re
   const zip = resolve(temp, 'prior.zip')
   execFileSync('zip', ['-q', zip, 'component.tar.gz', 'receipt.json'], { cwd: priorDir })
   const output = resolve(temp, 'reuse-output')
-  const next = reusePayload(repo, owner, 'linux-x64', zip, output, 'b'.repeat(64), receipt.sourceSha, '99', { ...env, GITHUB_RUN_ID: '124' })
+  const next = reusePayload(repo, owner, 'linux-x64', zip, output, 'b'.repeat(64), receipt.sourceSha, '99', '123', '1', { ...env, GITHUB_RUN_ID: '124' })
   assert.deepEqual(readFileSync(resolve(output, 'component.tar.gz')), readFileSync(resolve(priorDir, 'component.tar.gz')))
   assert.equal(next.runId, '124'); assert.equal(next.reusedFrom.artifactId, '99')
-  assert.throws(() => reusePayload(repo, owner, 'linux-x64', zip, resolve(temp, 'bad-receipt'), 'c'.repeat(64), receipt.sourceSha, '99', env), /receipt/)
+  assert.throws(() => reusePayload(repo, owner, 'linux-x64', zip, resolve(temp, 'bad-run'), 'b'.repeat(64), receipt.sourceSha, '99', '999', '1', env), /run does not match/)
+  assert.throws(() => reusePayload(repo, owner, 'linux-x64', zip, resolve(temp, 'bad-receipt'), 'c'.repeat(64), receipt.sourceSha, '99', '123', '1', env), /receipt/)
   writeFileSync(resolve(priorDir, 'component.tar.gz'), 'tampered')
   rmSync(zip)
   execFileSync('zip', ['-q', zip, 'component.tar.gz', 'receipt.json'], { cwd: priorDir })
-  assert.throws(() => reusePayload(repo, owner, 'linux-x64', zip, resolve(temp, 'bad-archive'), 'b'.repeat(64), receipt.sourceSha, '99', env), /hash or size/)
+  assert.throws(() => reusePayload(repo, owner, 'linux-x64', zip, resolve(temp, 'bad-archive'), 'b'.repeat(64), receipt.sourceSha, '99', '123', '1', env), /hash or size/)
 })
 
 test('full input closure changes for owner source, delivery core, workflow, budget, license and renames', () => {
@@ -122,8 +123,13 @@ test('fingerprints refuse reuse when hosted runner image identity is absent', ()
 
 test('admit invokes gh api with canonical GH_REPO and no unsupported flags', () => {
   const bin = resolve(temp, 'fake-bin'); mkdirSync(bin)
-  const ancestor = execFileSync('git', ['rev-parse', 'HEAD^'], { cwd: repo, encoding: 'utf8' }).trim()
-  const digest = inputDigest(repo, catalog(repo).owners.find(x => x.id === 'record')!, 'linux-x64')
+  const checkout = resolve(temp, 'cli-repo'); newRepo(checkout)
+  for (const file of ['core.ts', 'cli.ts']) writeFileSync(resolve(checkout, 'composition/delivery', file), readFileSync(resolve(repo, 'composition/delivery', file)))
+  writeFileSync(resolve(checkout, 'record/delivery.json'), JSON.stringify(owner))
+  git(checkout, 'add', '-A'); git(checkout, 'commit', '-qm', 'delivery implementation')
+  const ancestor = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim()
+  git(checkout, 'commit', '--allow-empty', '-qm', 'unchanged candidate')
+  const digest = inputDigest(checkout, owner, 'linux-x64')
   const fakeGh = [
     '#!/bin/sh',
     '[ "$1" = api ] && [ "$GH_REPO" = tryapparent/apparent ] || exit 90',
@@ -137,7 +143,7 @@ test('admit invokes gh api with canonical GH_REPO and no unsupported flags', () 
   ].join('\n') + '\n'
   const executable = resolve(bin, 'gh'); writeFileSync(executable, fakeGh); chmodSync(executable, 0o755)
   const result = spawnSync('node', ['--experimental-strip-types', 'composition/delivery/cli.ts', 'admit', 'record', 'linux-x64'], {
-    cwd: repo, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GITHUB_REPOSITORY: 'tryapparent/apparent', ImageOS: process.env.ImageOS!, ImageVersion: process.env.ImageVersion! },
+    cwd: checkout, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GITHUB_REPOSITORY: 'tryapparent/apparent', ImageOS: process.env.ImageOS!, ImageVersion: process.env.ImageVersion! },
   })
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /"reuse":true/)

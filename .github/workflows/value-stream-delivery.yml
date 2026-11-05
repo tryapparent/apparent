@@ -115,11 +115,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PRIOR_ARTIFACT: ${{ steps.admit.outputs.prior_artifact_id }}
           PRIOR_SHA: ${{ steps.admit.outputs.prior_source_sha }}
+          PRIOR_RUN: ${{ steps.admit.outputs.prior_run_id }}
+          PRIOR_ATTEMPT: ${{ steps.admit.outputs.prior_run_attempt }}
           INPUT_DIGEST: ${{ steps.admit.outputs.input_digest }}
         shell: bash
         run: |
           gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$PRIOR_ARTIFACT/zip" > "$RUNNER_TEMP/prior-component.zip"
-          node --experimental-strip-types composition/delivery/cli.ts reuse "$OWNER_ID" "$OWNER_TARGET" "$RUNNER_TEMP/prior-component.zip" "$RUNNER_TEMP/stream-output" "$INPUT_DIGEST" "$PRIOR_SHA" "$PRIOR_ARTIFACT"
+          node --experimental-strip-types composition/delivery/cli.ts reuse "$OWNER_ID" "$OWNER_TARGET" "$RUNNER_TEMP/prior-component.zip" "$RUNNER_TEMP/stream-output" "$INPUT_DIGEST" "$PRIOR_SHA" "$PRIOR_ARTIFACT" "$PRIOR_RUN" "$PRIOR_ATTEMPT"
       - uses: dtolnay/rust-toolchain@stable
         if: steps.admit.outputs.reuse != 'true' && matrix.language == 'native'
       - name: Independently install, verify and build the owner artifact
