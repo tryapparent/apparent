@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, chmodSync, lstatSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -211,3 +211,36 @@ for (const platform of ['linux', 'mac']) {
     } finally { rmSync(work, { recursive: true, force: true }) }
   })
 }
+
+
+test('downloaded speech test regains execution only after trusted admission', () => {
+  const section = step('Admit compatible retained Linux native inputs')
+  const body = section.split('        run: |\n')[1]
+  const script = body.split('\n').map(line => line.slice(10)).join('\n').replaceAll('${{ steps.root-artifact.outputs.run_id }}', '123')
+  const work = mkdtempSync(join(tmpdir(), 'root-mode-admission-'))
+  try {
+    const bin = join(work, 'bin'); mkdirSync(bin)
+    const bundle = join(work, 'inspection-reuse'); mkdirSync(join(bundle, 'root'), { recursive: true })
+    const source = 'a'.repeat(40)
+    writeFileSync(join(bundle, 'root/root-receipt.json'), JSON.stringify({ sourceSha: source, profile: 'release', target: 'x86_64-unknown-linux-gnu', rustc: 'rustc 1.99.1', cargo: 'cargo 1.99.1' }))
+    writeFileSync(join(work, 'manifest.json'), JSON.stringify({ sourceSha: source }))
+    assert.equal(spawnSync('tar', ['-czf', join(bundle, 'inspector.tar.gz'), '-C', work, 'manifest.json']).status, 0)
+    const speech = join(bundle, 'speech-test'); writeFileSync(speech, 'synthetic fixture; never executed')
+    const tools = {
+      gh: '#!/bin/sh\n[ "$FAIL_ATTESTATION" != 1 ]\n',
+      rustc: '#!/bin/sh\nprintf "rustc 1.99.1\\n"\n',
+      cargo: '#!/bin/sh\nprintf "cargo 1.99.1\\n"\n',
+      node: '#!/bin/sh\n# Controlled successful root admission; not real provenance proof.\nexit 0\n',
+    }
+    for (const [name, value] of Object.entries(tools)) writeFileSync(join(bin, name), value, { mode: 0o755 })
+    for (const reject of [false, true]) {
+      chmodSync(speech, 0o644) // upload-artifact's documented transport mode
+      const output = join(work, 'output'), environment = join(work, 'environment')
+      writeFileSync(output, ''); writeFileSync(environment, '')
+      const result = spawnSync('bash', ['-euo', 'pipefail', '-c', script], { encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, RUNNER_TEMP: work, GITHUB_OUTPUT: output, GITHUB_ENV: environment, APPARENT_POSTHOG_TOKEN: '', ARCH: 'x86_64', FAIL_ATTESTATION: reject ? '1' : '0' } })
+      assert.equal(result.status, 0, result.stderr)
+      assert.match(readFileSync(output, 'utf8'), reject ? /reuse=false/ : /reuse=true/)
+      assert.equal(lstatSync(speech).mode & 0o777, reject ? 0o644 : 0o755)
+    }
+  } finally { rmSync(work, { recursive: true, force: true }) }
+})

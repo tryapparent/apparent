@@ -272,7 +272,7 @@ jobs:
           receipt="$root/root-receipt.json"
           inspector="$bundle/inspector.tar.gz"
           speech_test="$bundle/speech-test"
-          if [[ ! -f "$receipt" || ! -f "$inspector" || ! -x "$speech_test" ]]; then
+          if [[ ! -f "$receipt" || ! -f "$inspector" || ! -f "$speech_test" || -L "$speech_test" ]]; then
             echo 'Retained Linux artifact is incomplete; building a fresh native baseline.'
             echo 'reuse=false' >> "$GITHUB_OUTPUT"
             exit 0
@@ -330,6 +330,8 @@ jobs:
             echo "APPARENT_INSPECTION_REUSE=$RUNNER_TEMP/inspection-reuse.json" >> "$GITHUB_ENV"
             echo 'APPARENT_INSPECTION_REQUIRED_PROFILE=release' >> "$GITHUB_ENV"
             echo "APPARENT_REUSED_ROOT_DIRECTORY=$root" >> "$GITHUB_ENV"
+            # Artifact transport drops executable bits; restore only admitted bytes.
+            chmod 755 "$speech_test"
             echo "APPARENT_REUSED_SPEECH_TEST=$speech_test" >> "$GITHUB_ENV"
             echo "SPEECH_TEST=$speech_test" >> "$GITHUB_ENV"
             echo 'reuse=true' >> "$GITHUB_OUTPUT"
