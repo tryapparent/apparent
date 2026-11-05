@@ -1253,11 +1253,11 @@
       "id": "mac-download",
       "group": "install",
       "name": "Mac download and Homebrew",
-      "says": "The Mac installer builds Apparent.app; a branded release has not been published yet.",
+      "says": "The follow-up Mac DMG candidate includes an interactive frog installer alongside the regular Finder drag installation.",
       "status": "main",
       "platforms": ["mac"],
       "added": "2026-10-28",
-      "note": "No branded download or Homebrew cask has been published.",
+      "note": "Published Preview 0.12.2 uses the standard DMG. The new interactive installer remains a candidate requiring installed Mac and signed-package acceptance; the normal app identity and updater ZIP are preserved. No Homebrew cask has been published.",
       "docs": ["README.md#install", "capture/desktop/docs/release.md"]
     },
     {
@@ -1342,7 +1342,7 @@
       "id": "onboarding-first-capture",
       "group": "install",
       "name": "Choose and try your Record shortcut",
-      "says": "Onboarding coaches a shortcut-started recording, whiteboard and screen drawing, manual paste confirmation and locating the practice capture. Compact animated key and drawing guides play once, with replay and static reduced-motion alternatives. Closing leaves setup unfinished for the next launch.",
+      "says": "Onboarding coaches a shortcut-started recording, whiteboard and screen drawing, manual paste confirmation and locating the practice capture. All six compact illustrations cover recording keys, Screen/Whiteboard, Shift-drawing, Finish/Copied, paste keys and menu location; they play once with replay and static reduced-motion alternatives. Closing leaves setup unfinished for the next launch.",
       "status": "main",
       "added": "2026-10-31",
       "platforms": ["mac", "linux"],

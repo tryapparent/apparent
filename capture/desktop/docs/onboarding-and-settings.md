@@ -309,3 +309,11 @@ unmodified and must not be removed based on renderer-only acceptance. Browser
 video uses synthetic onboarding state; actual Electron checks cover layout,
 saved platform keys, finite playback, replay isolation and reduced motion. New
 installed Mac acceptance is still required before publishing these illustrations.
+
+The control illustrations additionally cover Screen → Whiteboard, Finish →
+Copied and the Apparent menu → Open Latest Capture. The real Rust capture phase
+selects the coach; replay/illustrated clicks are local presentation only. Screen
+selection can show only Screen, then the recording-stage coach demonstrates the
+Whiteboard control. The location example opens its menu below the icon with an
+arrow to the matching entry and uses neutral theme roles rather than wallpaper
+tint. These remain finite, replayable and static under reduced motion.

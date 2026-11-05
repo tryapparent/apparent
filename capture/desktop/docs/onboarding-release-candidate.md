@@ -96,3 +96,28 @@ and existing-install handling. A signed/notarized interactive installer and its
 DMG entry/auto-open behavior require separate packaged Mac acceptance before a
 new Preview release. No release exception or feed advancement is granted by this
 candidate branch.
+
+## Combined follow-up candidate
+
+The combined Mac candidate includes the one-time unfinished-tour restart, the
+lower Settings drop cover, all six compact practice illustrations, and a real
+interactive installer in the DMG. The separate installer is Electron/React with
+shared controls; a signed native adapter owns the install transaction. Opening
+the DMG does not automatically execute code: double-click **Install Apparent**
+for the frog/drag interaction, or retain the normal Finder drag alternative.
+The regular app's identity and Sparkle updater ZIP remain unchanged. Existing
+installations require explicit replacement consent and a user-initiated quit;
+there is no forced capture interruption. Previous app bytes are retained in a
+hidden non-app backup path rather than registering another competing app.
+
+Manual Mac verification on the explicitly bound candidate branch can build a
+signed/notarized private Actions artifact, default candidate version 0.12.3 /
+build 12.3 (the current published feed is 0.12.2 / 12.2). This creates no release
+receipt or feed publication. The existing 0.12.2 publication exception is not
+expanded. Installed acceptance and the next version's release admission remain
+required before any public update. Check the exact downloaded DMG/manifest
+hashes, real frog install/replacement and first-hop behavior, upper recording
+list drop with the audio-only target covered, Welcome migration and permission
+reopen, all practice milestones, paste and menu location. Do not reset a user's
+real TCC grants. The isolated Swift filesystem/host/renderer tests are necessary
+checks, not proof of native permission consent or installed GUI behavior.

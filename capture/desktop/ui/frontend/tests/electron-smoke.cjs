@@ -298,7 +298,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect.poll(()=>output).toContain('practice-locate');
   send({ step:'try-it', practice:'locate', anchor:[900,0,24,24] });
   await expect(page.getByRole('heading', { name:'apparent lives here.', exact:true })).toBeVisible();
-  await expect(page.getByText('Find the apparent icon in your menu bar. Click it, then choose Open Latest Capture.', { exact:true })).toBeVisible();
+  await expect(page.getByText('Click the a in your menu bar, then Open Latest Capture.', { exact:true })).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveAttribute('data-arrow','true');
   for(const phase of ['start','screen','whiteboard','board-ink','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
     send({step:'try-it',practice:phase});
@@ -313,6 +313,23 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     assert.equal(layout.scroll,false,phase+' needs scrolling at normal text size');
     for(const button of layout.buttons){assert.ok(button.font>=18&&button.width>=44&&button.height>=44,phase+' button violates brand minimum');assert.equal(button.radius,'0px');}
   }
+  // All three control examples remain presentation only, and settle once.
+  for(const [phase,kind] of [['whiteboard','whiteboard'],['stop','finish'],['locate','locate']]){
+    send({step:'try-it',practice:phase,firstCaptureRequired:true});
+    await expect(page.locator('.native-control')).toHaveAttribute('data-kind',kind);
+    const before=output;
+    await page.locator('.native-control button').click();
+    assert.equal(output,before,'Control-guide replay must never drive the app');
+  }
+  send({step:'try-it',practice:'whiteboard',firstCaptureRequired:true});
+  await expect(page.locator('.native-control')).toHaveAttribute('data-kind','whiteboard');
+  await page.locator('.native-control').evaluate(el=>{for(const a of el.getAnimations({subtree:true})){a.pause();a.currentTime=2500}});
+  await expect(page.locator('.control-screen')).toHaveCSS('opacity','0');
+  await expect(page.locator('.control-board')).toHaveCSS('opacity','1');
+  await page.emulateMedia({reducedMotion:'reduce'});
+  assert.equal(await page.locator('.native-control').evaluate(el=>el.getAnimations({subtree:true}).length),0);
+  await expect(page.locator('.native-control button')).toBeHidden();
+  await page.emulateMedia({reducedMotion:'no-preference'});
   // Guides use the saved keys, finish once, and replay without invoking app actions.
   send({step:'try-it',practice:'start',shortcut:'⌃⌘9',firstCaptureRequired:true});
   await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','record');
