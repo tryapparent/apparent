@@ -1,6 +1,7 @@
 import { absolutePath, contained, exact, fail, id, optionalExact, parseDetached, record, relativePath, safeInt, sha, string, validateMaterialEnvelopeIdentity, validateMaterialsKey, validateSealedFile } from "./common.ts";
 import type { MaterialsDocument, MaterialsManifest, MaterialsPayload, SealedFile } from "./types.ts";
 import { isDeepStrictEqual } from "node:util";
+import { validateConfirmedSource, validateInvocation } from "./facts.ts";
 
 const factSchemas = { context: "apparent.capture-context/1", interactions: "apparent.capture-interactions/1", candidates: "apparent.capture-candidates/1", transcript: "apparent.capture-transcript/1", acceptedStrokes: "apparent.capture-strokes/1" } as const;
 
@@ -34,8 +35,9 @@ function validatePayload(value: unknown): asserts value is MaterialsPayload {
   if (!Array.isArray(p.warnings)) fail("warnings must be an array");
   p.warnings.forEach((warning, i) => { const w = record(warning, `warnings[${i}]`); optionalExact(w, ["code", "atMs"], ["code"], `warnings[${i}]`); string(w.code, "warning code"); if (w.atMs !== undefined) withinClock(w.atMs, clock.durationMs as number, "warning time"); });
   const safety = record(p.safety, "safety"); exact(safety, ["nativeRemoteDelivery", "safeForProcessing"], "safety"); if (safety.nativeRemoteDelivery !== "forbidden" || typeof safety.safeForProcessing !== "boolean") fail("invalid safety facts");
-  // These fields are factual opaque documents owned by native/platform schemas.
-  if (p.confirmedSource === undefined || p.invocation === undefined) fail("confirmed source and invocation facts must be explicit");
+  const factContext = { payload: p } as unknown as MaterialsDocument;
+  validateConfirmedSource(p.confirmedSource, factContext);
+  validateInvocation(p.invocation, factContext);
 }
 function validateMaterialRef(value: unknown, label: string, paths: Set<string>, referenced: Set<string>): void { relativePath(value, label); if (!paths.has(value)) fail(`${label} does not name a sealed material file`); if (referenced.has(value)) fail(`${label} duplicates another file reference`); referenced.add(value); }
 export function withinClock(value: unknown, durationMs: number, label: string): asserts value is number { safeInt(value, label); if ((value as number) > durationMs) fail(`${label} exceeds capture duration`); }

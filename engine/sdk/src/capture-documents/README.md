@@ -17,9 +17,87 @@ media, enforce source/lease/publication authority, and perform no-replace durabl
 publication with crash recovery. Required role presence alone does not prove a
 valid bundle. There is no new mandatory semantic companion file.
 
-Context/source/invocation schemas are not frozen. The materials helper preserves
-those opaque inputs without claiming to validate their native facts. Do not use
-it as the complete capture contract or bypass a missing capability.
+The capture/2 contract candidate now types and strictly validates source,
+invocation, context/session/window/cursor, interactions, candidate, transcript,
+and accepted-stroke facts. Context/session paths are absolute; window titles
+remain manifest-only facts. Every observation is explicitly collected or
+unavailable. Collection state and a typed sealed reference must agree: an
+unavailable observation cannot be represented as an empty collected value.
+Source and invocation facts are checked against the same capture/materials
+identity. This remains a review candidate; some native/platform schema and
+authority gates are open, so it is not a frozen or available capability.
+
+The package subpath `@apparent/engine-sdk/capture` defines a distinct
+`channel: "capture"`, protocol version 2. It uses fresh 32-hex RPC IDs and
+separate durable capture/material/publication identities. Requests reject
+unknown fields, cap JSONL to 64 KiB, cap pending RPCs to 64 and queued writes to
+1 MiB, and bound RPC timeouts to 60 seconds. Methods are `handshake`,
+`discoverSources`, `start`, `inspect`, `stop`, `cancel`, `publish`,
+`inspectPublication`, and `releaseMaterials`. Start names an advertised
+display/area source and binds source identity, options, bundle identity and
+invocation. No source fallback is allowed. The suggested launch command is
+`<absolute executable> --runtime-directory DIR --capture-channel capture
+--capture-protocol-version 2`; current `apparent-engine` does not implement
+these flags and remains unavailable.
+
+`materials-ready` means native media and detached materials are finalized,
+synced and validated; it is never Saved. Publication requires exact plan bytes,
+matching detached hashes and an ABSENT destination. Saved requires a native
+receipt correlated to capture/material/publication/bundle/path/manifest,
+inventory and plan hashes. SDK preflight checks the declared inventory only;
+it does not establish a complete ApparentBundle, image/media validity, native
+provenance, filesystem authority or durability. The required bundle profile is
+the existing version-1 `apparent.json` plus `summary.md`, at least one frame and
+a contact sheet, with existing conditional media references. No semantic.json
+is added. Record persists the publication identity and exact plan binding in
+private control storage before dispatch and never creates the final path.
+
+Cancel has a capture or materials scope and does not release materials. A
+materials-ready capture may be abandoned and released only through explicit
+safe `releaseMaterials`; no timeout cleanup is defined. Publication identity
+and plan hash remain stable across reconnect. A timeout does not cancel or
+authorize a new allocation. Process close distinguishes observed exit from
+signal requests; process death proves neither Saved nor material release.
+
+The explicit `@apparent/engine-sdk/capture/testing` peer always handshakes as
+test-double, unavailable, with capture capabilities false. It can exercise
+bounded protocol failures and explicitly selected synthetic lifecycle
+observations such as materials-ready or publishing; it never supplies native
+facts or provenance. Those synthetic materials references are not native
+artifacts and cannot produce a native Saved receipt. The separate capture-v1 and media/1 exports and semantics remain
+unchanged. Native filesystem authority, full profile validation, durable
+publication/recovery, platform proof and Record review remain gates. This is
+not an availability claim or a contract freeze.
+
+The candidate handshake shape is:
+
+```json
+{"channel":"capture","protocolVersion":2,"implementation":"native","readiness":"unavailable","capabilities":{"sourceDiscovery":false,"displayCapture":false,"areaCapture":false,"audioCapture":false,"contextFacts":false,"interactionFacts":false,"candidates":false,"transcript":false,"strokes":false,"publication":false,"retainedMaterials":false}}
+```
+
+Each request additionally carries a process `clientId` and a fresh `rpcId`:
+
+```json
+{"channel":"capture","protocolVersion":2,"clientId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","rpcId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","method":"start","ownerToken":"<private 64-hex authority>","captureId":"cccccccccccccccccccccccccccccccc","bundleId":"take-1.apparent","bundlePath":"/captures/take-1.apparent","source":{"id":"display:7","generation":"dddddddddddddddddddddddddddddddd","kind":"display","displayId":7,"bounds":{"x":0,"y":0,"width":1920,"height":1080,"scale":1}},"options":{"audio":"none","localOnly":true},"invocation":{"kind":"explicit","invocationId":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","observedAtMs":0}}
+```
+
+The start source must have been returned by `discoverSources` for the same
+provider generation. Source kinds are only `display` and `area`; a provider that
+does not advertise them cannot be substituted with a screen fallback. A status
+is one explicit `starting`, `recording`, `stopping`, `materials-ready`,
+`publishing`, `saved`, `cancelled` or `failed` observation. `materials-ready`
+carries the detached materials manifest. `saved` carries a native publication
+receipt, never just a path or an EEXIST observation. Controls repeat the durable
+capture ID and private owner authority. `releaseMaterials` additionally repeats
+the exact materials and lease IDs.
+
+Open review points remain: exact compatibility of context/session and source
+facts with Record's accepted handoff schema; native capability names and their
+provider-generation rules; the authenticated filesystem authority behind
+detached identities; complete bounded `apparent.json` and media validation;
+the pinned same-filesystem, no-replace publication journal and crash
+reconciliation; cancellation versus the atomic publication commit; and the
+native macOS/Linux proof. These are not silently decided by SDK shape choices.
 
 Record's committed processing baseline is PR715 (`495715bf`): its TypeScript
 formatter consumes target/session/context, transcript, selected-frame, note/mark
