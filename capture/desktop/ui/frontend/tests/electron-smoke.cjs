@@ -379,7 +379,12 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('button',{name:'Replay drawing guide',exact:true})).toHaveCount(0);
   await page.emulateMedia({reducedMotion:'no-preference',colorScheme:'light'});
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
-  await expect(page.locator('.native-coach p')).toHaveCSS('font-size','36px');
+  await expect.poll(()=>page.evaluate(()=>innerWidth)).toBe(720);
+  await expect(page.locator('.native-coach')).toHaveAttribute('data-paired','true');
+  await expect(page.locator('.native-coach-content > p')).toHaveCSS('font-size','36px');
+  await expect(page.locator('.native-trackpad-helper p')).toHaveCSS('font-size','36px');
+  const enlargedHelper=await page.locator('.native-trackpad-helper').evaluate(el=>{const r=el.getBoundingClientRect(),content=el.querySelector('.native-trackpad-helper-content');return{inside:r.right<=innerWidth&&r.bottom<=innerHeight,horizontal:content.scrollWidth>content.clientWidth}});
+  assert.deepEqual(enlargedHelper,{inside:true,horizontal:false});
   assert.equal(await page.locator('.native-coach-content').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
   await page.getByRole('button',{name:'Try later',exact:true}).scrollIntoViewIfNeeded();
   await expect(page.getByRole('button',{name:'Try later',exact:true})).toBeInViewport();
