@@ -271,20 +271,25 @@ function installRendererConsumers(stage: string, archive: string, archiveDigest:
   for (const [index, consumer] of consumers.entries()) {
     const dist = join(consumer.app, 'dist');
     const electron = join(consumer.app, 'electron');
-    validateOwnedDirectory(dist, manifest.entries);
+    const previousEntries = consumer.label === 'settings/app'
+      ? ['settings.html', 'onboarding.html', 'pill/index.html']
+      : ['index.html'];
+    validateOwnedDirectory(dist, previousEntries);
     validateOwnedDirectory(electron, consumer.label === 'settings/app'
       ? ['main.cjs', 'preload.cjs', 'settings.cjs', 'pill/main.cjs', 'pill/preload.cjs']
       : ['notes/main.cjs', 'notes/preload.cjs']);
     const nextDist = join(temporary, `renderer-dist-${index}`);
     copyPackageFiles(join(stage, 'renderer'), nextDist, rendererFiles);
-    publishValidatedDirectory(nextDist, dist, path => validateOwnedDirectory(path, manifest.entries));
+    validateOwnedDirectory(nextDist, manifest.entries);
+    publishValidatedDirectory(nextDist, dist, path => validateOwnedDirectory(path, previousEntries));
     const nextElectron = join(temporary, `renderer-electron-${index}`);
     const files = consumer.label === 'settings/app' ? hostFiles : popupHostFiles;
     copyPackageFiles(join(stage, 'electron'), nextElectron, files);
-    publishValidatedDirectory(nextElectron, electron, path => validateOwnedDirectory(path,
-      consumer.label === 'settings/app'
-        ? ['main.cjs', 'preload.cjs', 'settings.cjs', 'pill/main.cjs', 'pill/preload.cjs']
-        : ['notes/main.cjs', 'notes/preload.cjs']));
+    const requiredHost = consumer.label === 'settings/app'
+      ? ['main.cjs', 'preload.cjs', 'settings.cjs', 'pill/main.cjs', 'pill/preload.cjs']
+      : ['notes/main.cjs', 'notes/preload.cjs'];
+    validateOwnedDirectory(nextElectron, requiredHost);
+    publishValidatedDirectory(nextElectron, electron, path => validateOwnedDirectory(path, requiredHost));
     const marker = join(consumer.app, 'apparent-renderer-manifest.json');
     writeFileSync(marker, JSON.stringify(record, null, 2) + '\n', { mode: 0o644, flag: 'wx' });
   }

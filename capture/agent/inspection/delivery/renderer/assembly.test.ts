@@ -53,10 +53,10 @@ function copyAndAppend(work: string, path: string, suffix: string) {
   writeFileSync(join(work, path), readFileSync(source, 'utf8') + suffix);
 }
 
-function seedElectronConsumer(app: string, host: string[]) {
+function seedElectronConsumer(app: string, distEntries: string[], host: string[]) {
   const dist = join(app, 'dist');
   const electron = join(app, 'electron');
-  for (const name of ['index.html', 'settings.html', 'onboarding.html', 'pill/index.html']) {
+  for (const name of distEntries) {
     const path = join(dist, name);
     mkdirSync(join(path, '..'), { recursive: true });
     writeFileSync(path, '<html>previously staged product renderer</html>');
@@ -107,8 +107,12 @@ test('compose the authenticated renderer with the retained root while Cargo is u
     mkdirSync(binary, { recursive: true, mode: 0o755 });
     const settingsApp = join(work, 'AppDir/usr/share/apparent/settings/app');
     const noteUi = join(work, 'AppDir/usr/lib/apparent/note-ui');
-    seedElectronConsumer(settingsApp, ['main.cjs', 'preload.cjs', 'settings.cjs', 'pill/main.cjs', 'pill/preload.cjs']);
-    seedElectronConsumer(noteUi, ['runtime.cjs', 'notes/main.cjs', 'notes/preload.cjs', 'notes/protocol.cjs']);
+    seedElectronConsumer(settingsApp, ['settings.html', 'onboarding.html', 'pill/index.html'],
+      ['main.cjs', 'preload.cjs', 'settings.cjs', 'pill/main.cjs', 'pill/preload.cjs']);
+    seedElectronConsumer(noteUi, ['index.html', 'settings.html', 'onboarding.html', 'pill/index.html'],
+      ['runtime.cjs', 'notes/main.cjs', 'notes/preload.cjs', 'notes/protocol.cjs']);
+    assert(!existsSync(join(settingsApp, 'dist/index.html')),
+      'the ordinary Settings staging tree does not include the foundation index page');
     const assembled = join(work, 'assembled');
     const composition = assemble(rootDirectory, rootReceipt, rootReceiptSha256,
       inspectorArchive, inspectorSha256, assembled);
