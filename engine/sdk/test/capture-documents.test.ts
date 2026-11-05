@@ -112,8 +112,10 @@ test("stroke facts bind material identity, declared transforms and bounded order
 
 test("publication binds exact plan bytes and enforces absent-only destination and bundle profile inventory", () => {
   const f = material();
-  const derivativePayload = { schema: "apparent.media-derivative-payload/1", materials: f.manifest.key, jobId: id("a"), receiptId: id("b"), root: "/private/derivative", frames: [{ requestIndex: 1, requestedBundleMs: 10, effectiveVideoMs: 0, actualVideoMs: 0, clampedToStart: false, clampedToEnd: false, width: 10, height: 5, file: { ...sealed("frame.png"), sha256: "3".repeat(64), identity: { device: "1", inode: "2", size: 50, modifiedNs: "3" } } }] };
-  const derivativeReceipt = { schema: "apparent.media-derivative/1", materials: f.manifest.key, jobId: derivativePayload.jobId, receiptId: derivativePayload.receiptId, root: derivativePayload.root, receiptFile: sealed("derivative-receipt.json"), payload: derivativePayload };
+  const derivativePayload = { schema: "apparent.media-derivative-payload/1", materials: f.manifest.key, jobId: id("a"), receiptId: id("b"), root: "/private/derivative", frames: [{ requestIndex: 1, requestedBundleMs: 10, effectiveVideoMs: 0, actualVideoMs: 200, clampedToStart: true, clampedToEnd: false, width: 10, height: 5, file: { ...sealed("frame.png"), sha256: "3".repeat(64), identity: { device: "1", inode: "2", size: 50, modifiedNs: "3" } } }] };
+  const derivativeBytes = bytes(derivativePayload);
+  const derivativeReceipt = { schema: "apparent.media-derivative/1", materials: f.manifest.key, jobId: derivativePayload.jobId, receiptId: derivativePayload.receiptId, root: derivativePayload.root, receiptFile: receiptFile("derivative-receipt.json", derivativeBytes), payload: derivativePayload };
+  const proofs = [{ envelope: derivativeReceipt, bytes: derivativeBytes, requestedBundleMs: [10] }];
   const plan = { schema: "apparent.bundle-publication/1", publicationId: id("d"), materials: f.manifest.key, bundleId: f.payload.bundleId, stagingRoot: "/private/staging/op-1", destination: { path: "/private/final/bundle.apparent", mode: "absent" }, artifactVersion: 1, entries: [
     { relativePath: "apparent.json", sha256: "1".repeat(64), byteLength: 100, role: "manifest", input: { kind: "assembled", file: assembledFile("apparent.json", "1".repeat(64), 100) } },
     { relativePath: "summary.md", sha256: "2".repeat(64), byteLength: 10, role: "summary", input: { kind: "assembled", file: assembledFile("summary.md", "2".repeat(64), 10) } },
@@ -121,14 +123,46 @@ test("publication binds exact plan bytes and enforces absent-only destination an
     { relativePath: "contact-sheet.png", sha256: "4".repeat(64), byteLength: 50, role: "contact-sheet", input: { kind: "assembled", file: assembledFile("contact-sheet.png", "4".repeat(64), 50) } },
   ], manifestPath: "apparent.json", summaryPath: "summary.md", profile: "apparent-bundle/1" };
   const planBytes = bytes(plan); const envelope = { stagingRoot: plan.stagingRoot, planFile: receiptFile("plan.json", planBytes), planSha256: hash(planBytes) };
-  assert.equal(validatePublicationPlan(envelope, planBytes, f.document).profile, "apparent-bundle/1");
+  assert.equal(validatePublicationPlan(envelope, planBytes, f.document, proofs).profile, "apparent-bundle/1");
+  assert.throws(() => validatePublicationPlan(envelope, planBytes, f.document), /detached receipt bytes/);
+  assert.throws(() => validatePublicationPlan(envelope, planBytes, f.document, [{ ...proofs[0], bytes: Buffer.from("tampered") }]), /byte length|SHA256/);
+  const otherBundle = { ...plan, bundleId: "another-bundle" }; const otherBundleBytes = bytes(otherBundle);
+  assert.throws(() => validatePublicationPlan({ ...envelope, planFile: receiptFile("plan.json", otherBundleBytes), planSha256: hash(otherBundleBytes) }, otherBundleBytes, f.document, proofs), /bundle identity/);
   const unsafeFixture = materialFixture({ safety: { nativeRemoteDelivery: "forbidden", safeForProcessing: false } });
   const unsafeDocument = validateMaterialsDocument(unsafeFixture.manifest, unsafeFixture.payloadBytes);
   assert.throws(() => validatePublicationPlan(envelope, planBytes, unsafeDocument), /not safe for processing/);
-  assert.throws(() => validatePublicationPlan({ ...envelope, stagingRoot: "/elsewhere" }, planBytes, f.document), /stagingRoot mismatch/);
+  assert.throws(() => validatePublicationPlan({ ...envelope, stagingRoot: "/elsewhere" }, planBytes, f.document, proofs), /stagingRoot mismatch/);
   assert.throws(() => validatePublicationPlan({ ...envelope, planSha256: "f".repeat(64) }, planBytes, f.document), /planSha256/);
   const occupiedMode = { ...plan, destination: { ...plan.destination, mode: "replace" } }; const occupiedBytes = bytes(occupiedMode);
   assert.throws(() => validatePublicationPlan({ ...envelope, planFile: receiptFile("plan.json", occupiedBytes), planSha256: hash(occupiedBytes) }, occupiedBytes, f.document), /absent-only/);
   const duplicate = { ...plan, entries: [...plan.entries, { ...plan.entries[2] }] }; const duplicateBytes = bytes(duplicate);
-  assert.throws(() => validatePublicationPlan({ ...envelope, planFile: receiptFile("plan.json", duplicateBytes), planSha256: hash(duplicateBytes) }, duplicateBytes, f.document), /duplicate/);
+  assert.throws(() => validatePublicationPlan({ ...envelope, planFile: receiptFile("plan.json", duplicateBytes), planSha256: hash(duplicateBytes) }, duplicateBytes, f.document, proofs), /duplicate/);
+});
+
+test("derivatives preserve real decoder PTS independently at both clamps and reject path aliases", () => {
+  const fixture = materialFixture({ clock: { epoch: "capture-admission-monotonic", units: "integer-milliseconds", durationMs: 2250, videoOffsetMs: 250 }, video: { file: "video.mp4", width: 640, height: 360, durationMs: 2000 } });
+  const document = validateMaterialsDocument(fixture.manifest, fixture.payloadBytes);
+  // Synthetic receipt carrying the clock values observed in the native H.264
+  // conformance case. This validates protocol data, not media or native provenance.
+  const requests = [0, 5000, 2251, 5000];
+  const payload = { schema: "apparent.media-derivative-payload/1", materials: fixture.manifest.key, jobId: id("d"), receiptId: id("e"), root: "/private/derivative", frames: requests.map((time, index) => ({ requestIndex: index + 1, requestedBundleMs: time, effectiveVideoMs: Math.max(0, time - 250), actualVideoMs: index === 0 ? 200 : 2199, clampedToStart: index === 0, clampedToEnd: index !== 0, width: 320, height: 180, file: sealed(`frame-${index + 1}.png`) })) };
+  const check = (value: typeof payload) => { const raw = bytes(value); const envelope = { schema: "apparent.media-derivative/1", materials: fixture.manifest.key, jobId: value.jobId, receiptId: value.receiptId, root: value.root, receiptFile: receiptFile("receipt.json", raw), payload: value }; validateDerivativeEnvelope(envelope, raw, document, requests); };
+  assert.doesNotThrow(() => check(payload));
+  assert.throws(() => check({ ...payload, frames: payload.frames.map((f) => ({ ...f, file: sealed("same.png") })) }), /aliases/);
+  assert.throws(() => check({ ...payload, frames: payload.frames.map((f, i) => i === 0 ? { ...f, file: sealed("receipt.json") } : f) }), /aliases/);
+  assert.throws(() => check({ ...payload, frames: payload.frames.map((f) => ({ ...f, width: 4097 })) }), /limits/);
+});
+
+test("stroke fact envelopes bind the entire sealed identity and exact byte length", () => {
+  const base = materialFixture();
+  const value = { schema: "apparent.capture-strokes/1", identity: base.payload.identity, coordinates: "target-normalized-10000", surfaces: [], strokes: [] };
+  const raw = bytes(value); const file = receiptFile("strokes.json", raw);
+  const fixture = materialFixture({ files: [...base.payload.files, file], facts: { ...base.payload.facts, acceptedStrokes: { file: "strokes.json", schema: "apparent.capture-strokes/1" } }, collection: { ...base.payload.collection, acceptedStrokes: "collected" } });
+  const document = validateMaterialsDocument(fixture.manifest, fixture.payloadBytes);
+  assert.doesNotThrow(() => validateStrokeFacts(file, raw, document));
+  assert.throws(() => validateStrokeFacts({ ...file, identity: { ...file.identity, inode: "999" } }, raw, document), /sealed accepted-strokes reference/);
+  const wrongSize = { ...file, identity: { ...file.identity, size: raw.byteLength + 1 } };
+  const badFixture = materialFixture({ ...fixture.payload, files: [...base.payload.files, wrongSize] });
+  const badDocument = validateMaterialsDocument(badFixture.manifest, badFixture.payloadBytes);
+  assert.throws(() => validateStrokeFacts(wrongSize, raw, badDocument), /sealed size/);
 });

@@ -1,34 +1,54 @@
 import { isDeepStrictEqual } from "node:util";
 import { absolutePath, assertProcessingAllowed, contained, exact, fail, id, parseDetached, record, relativePath, safeInt, sha, sameMaterials, string, validateMaterialsKey, validateSealedFile } from "./common.ts";
-import type { MaterialsDocument, PublicationPlan, PublishEnvelope, SealedFile } from "./types.ts";
+import type { DerivativeDocumentInput, DerivativeEnvelope, MaterialsDocument, PublicationPlan, PublishEnvelope, SealedFile } from "./types.ts";
+import { validateDerivativeEnvelope } from "./derivative.ts";
 
-export function validatePublicationPlan(envelope: unknown, planBytes: Uint8Array, materials: MaterialsDocument): PublicationPlan {
+/** Draft inventory preflight. Native still authenticates provenance, validates
+ * the complete ApparentBundle/media and enforces filesystem durability. */
+export function validatePublicationPlan(envelope: unknown, planBytes: Uint8Array, materials: MaterialsDocument, derivatives: readonly DerivativeDocumentInput[] = []): PublicationPlan {
   assertProcessingAllowed(materials);
   const e = record(envelope, "publish envelope"); exact(e, ["stagingRoot", "planFile", "planSha256"], "publish envelope");
   absolutePath(e.stagingRoot, "envelope stagingRoot"); validateSealedFile(e.planFile, "planFile"); sha(e.planSha256, "planSha256");
   const file = e.planFile as SealedFile; if (e.planSha256 !== file.sha256) fail("planSha256 does not match exact planFile hash");
   if (file.identity.size !== planBytes.byteLength) fail("publication plan byte length differs from sealed identity");
-  const parsed = parseDetached<unknown>(planBytes, file.sha256, "publication plan"); validatePlan(parsed, materials);
+  if (derivatives.length > 32) fail("too many derivative receipts");
+  const checked = new Map<string, DerivativeEnvelope>();
+  for (const derivative of derivatives) {
+    validateDerivativeEnvelope(derivative.envelope, derivative.bytes, materials, derivative.requestedBundleMs);
+    if (checked.has(derivative.envelope.receiptId)) fail("duplicate derivative receipt identity");
+    checked.set(derivative.envelope.receiptId, derivative.envelope);
+  }
+  const parsed = parseDetached<unknown>(planBytes, file.sha256, "publication plan"); validatePlan(parsed, materials, checked);
   if ((parsed as PublicationPlan).stagingRoot !== e.stagingRoot) fail("envelope/plan stagingRoot mismatch");
   return parsed as PublicationPlan;
 }
 
-function validatePlan(value: unknown, materials: MaterialsDocument): asserts value is PublicationPlan {
+function validatePlan(value: unknown, materials: MaterialsDocument, derivatives: ReadonlyMap<string, DerivativeEnvelope>): asserts value is PublicationPlan {
   const p = record(value, "publication plan"); exact(p, ["schema", "publicationId", "materials", "bundleId", "stagingRoot", "destination", "artifactVersion", "entries", "manifestPath", "summaryPath", "profile"], "publication plan");
   if (p.schema !== "apparent.bundle-publication/1" || p.artifactVersion !== 1 || p.profile !== "apparent-bundle/1" || p.manifestPath !== "apparent.json" || p.summaryPath !== "summary.md") fail("unsupported publication plan profile");
   id(p.publicationId, "publicationId"); validateMaterialsKey(p.materials); sameMaterials(p.materials as PublicationPlan["materials"], materials.manifest.key, "publication");
-  string(p.bundleId, "bundleId"); absolutePath(p.stagingRoot, "plan stagingRoot");
+  string(p.bundleId, "bundleId"); if (p.bundleId !== materials.payload.bundleId) fail("publication bundle identity differs from materials"); absolutePath(p.stagingRoot, "plan stagingRoot");
   const destination = record(p.destination, "destination"); exact(destination, ["path", "mode"], "destination"); absolutePath(destination.path, "destination path"); if (destination.mode !== "absent") fail("publication destination must be absent-only");
-  if (!Array.isArray(p.entries) || p.entries.length === 0) fail("publication inventory must be nonempty");
+  if (!Array.isArray(p.entries) || p.entries.length === 0 || p.entries.length > 4096) fail("publication inventory must be nonempty and bounded");
   const paths = new Set<string>(), roles = new Map<string, number>();
-  p.entries.forEach((entry, i) => { const x = record(entry, `entries[${i}]`); exact(x, ["relativePath", "sha256", "byteLength", "role", "input"], `entries[${i}]`); relativePath(x.relativePath, "artifact path"); if (paths.has(x.relativePath as string)) fail("duplicate publication inventory path"); paths.add(x.relativePath as string); sha(x.sha256, "artifact sha256"); safeInt(x.byteLength, "artifact byteLength", 1); if (!["manifest", "summary", "companion", "frame", "contact-sheet", "video", "audio", "transcript", "context", "interactions", "marks"].includes(x.role as string)) fail("unsupported artifact role"); roles.set(x.role as string, (roles.get(x.role as string) ?? 0) + 1); validateInput(x.input, materials, x); });
+  p.entries.forEach((entry, i) => {
+    const x = record(entry, `entries[${i}]`);
+    exact(x, ["relativePath", "sha256", "byteLength", "role", "input"], `entries[${i}]`);
+    relativePath(x.relativePath, "artifact path");
+    if (paths.has(x.relativePath)) fail("duplicate publication inventory path");
+    paths.add(x.relativePath);
+    sha(x.sha256, "artifact sha256"); safeInt(x.byteLength, "artifact byteLength", 1);
+    if (!["manifest", "summary", "companion", "frame", "contact-sheet", "video", "audio", "transcript", "context", "interactions", "marks"].includes(x.role as string)) fail("unsupported artifact role");
+    roles.set(x.role as string, (roles.get(x.role as string) ?? 0) + 1);
+    validateInput(x.input, materials, x, derivatives);
+  });
   if (p.entries.filter((entry) => (entry as Record<string, unknown>).relativePath === "apparent.json" && (entry as Record<string, unknown>).role === "manifest").length !== 1) fail("profile requires apparent.json manifest");
   if (p.entries.filter((entry) => (entry as Record<string, unknown>).relativePath === "summary.md" && (entry as Record<string, unknown>).role === "summary").length !== 1) fail("profile requires summary.md");
   if (!roles.has("frame") || !roles.has("contact-sheet")) fail("profile requires nonempty frame and contact-sheet references");
   // This is an inventory/profile prerequisite, not the native full bundle/media gate.
 }
 
-function validateInput(value: unknown, materials: MaterialsDocument, entry: Record<string, unknown>): void {
+function validateInput(value: unknown, materials: MaterialsDocument, entry: Record<string, unknown>, derivatives: ReadonlyMap<string, DerivativeEnvelope>): void {
   const input = record(value, "artifact input");
   if (input.kind === "material") {
     exact(input, ["kind", "relativePath"], "material artifact input"); relativePath(input.relativePath, "material input path");
@@ -40,19 +60,13 @@ function validateInput(value: unknown, materials: MaterialsDocument, entry: Reco
     if (source.sha256 !== entry.sha256 || source.identity.size !== entry.byteLength) fail("artifact inventory differs from assembled input");
   } else if (input.kind === "derivative") {
     exact(input, ["kind", "receipt", "fileIndex"], "derivative artifact input"); safeInt(input.fileIndex, "derivative fileIndex", 1);
-    const receipt = record(input.receipt, "derivative receipt");
-    exact(receipt, ["schema", "materials", "jobId", "receiptId", "root", "receiptFile", "payload"], "derivative receipt");
-    if (receipt.schema !== "apparent.media-derivative/1") fail("unsupported derivative artifact receipt");
-    validateMaterialsKey(receipt.materials); sameMaterials(receipt.materials as PublicationPlan["materials"], materials.manifest.key, "derivative artifact");
-    id(receipt.jobId, "derivative jobId"); id(receipt.receiptId, "derivative receiptId"); absolutePath(receipt.root, "derivative root"); validateSealedFile(receipt.receiptFile, "derivative receiptFile"); contained(receipt.root as string, (receipt.receiptFile as SealedFile).relativePath, "derivative receipt");
-    const payload = record(receipt.payload, "derivative payload"); const frames = payload.frames;
-    if (payload.schema !== "apparent.media-derivative-payload/1" || !Array.isArray(frames) || (input.fileIndex as number) > frames.length) fail("derivative fileIndex is outside receipt inventory");
-    validateMaterialsKey(payload.materials); sameMaterials(payload.materials as PublicationPlan["materials"], materials.manifest.key, "derivative payload");
-    if (payload.jobId !== receipt.jobId || payload.receiptId !== receipt.receiptId || payload.root !== receipt.root) fail("derivative payload identity mismatch");
-    const frame = record(frames[(input.fileIndex as number) - 1], "derivative frame");
-    if (frame.requestIndex !== input.fileIndex) fail("derivative fileIndex must equal one-based requestIndex");
-    const file = record(frame.file, "derivative frame file");
-    if (file.sha256 !== entry.sha256 || file.identity === undefined || record(file.identity, "derivative frame identity").size !== entry.byteLength) fail("publication derivative entry differs from referenced frame bytes");
+    const raw = record(input.receipt, "derivative receipt");
+    id(raw.receiptId, "derivative receiptId");
+    const receipt = derivatives.get(raw.receiptId);
+    if (!receipt || !isDeepStrictEqual(raw, receipt)) fail("publication derivative requires matching detached receipt bytes");
+    const frame = receipt.payload.frames[(input.fileIndex as number) - 1];
+    if (!frame || frame.requestIndex !== input.fileIndex) fail("derivative fileIndex is outside receipt inventory");
+    if (frame.file.sha256 !== entry.sha256 || frame.file.identity.size !== entry.byteLength) fail("publication derivative entry differs from referenced frame bytes");
   } else fail("unsupported artifact input provenance");
 }
 

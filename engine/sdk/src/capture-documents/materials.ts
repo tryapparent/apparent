@@ -1,5 +1,6 @@
 import { absolutePath, contained, exact, fail, id, optionalExact, parseDetached, record, relativePath, safeInt, sha, string, validateMaterialEnvelopeIdentity, validateMaterialsKey, validateSealedFile } from "./common.ts";
 import type { MaterialsDocument, MaterialsManifest, MaterialsPayload, SealedFile } from "./types.ts";
+import { isDeepStrictEqual } from "node:util";
 
 const factSchemas = { context: "apparent.capture-context/1", interactions: "apparent.capture-interactions/1", candidates: "apparent.capture-candidates/1", transcript: "apparent.capture-transcript/1", acceptedStrokes: "apparent.capture-strokes/1" } as const;
 
@@ -50,6 +51,7 @@ export function validateMaterialsDocument(manifestInput: unknown, payloadBytes: 
   validatePayload(parsed);
   const manifest = m as unknown as MaterialsManifest;
   validateMaterialEnvelopeIdentity(parsed as MaterialsPayload, manifest);
+  if (parsed.files.some((file) => file.relativePath === manifest.payloadFile.relativePath)) fail("materials payload must be detached from its own file inventory");
   return { manifest, payload: parsed as MaterialsPayload };
 }
 
@@ -57,7 +59,8 @@ export function validateStrokeFacts(fileEnvelope: SealedFile, bytes: Uint8Array,
   validateSealedFile(fileEnvelope, "stroke fact envelope");
   const ref = materials.payload.facts.acceptedStrokes;
   const listed = materials.payload.files.find((item) => item.relativePath === fileEnvelope.relativePath);
-  if (!ref || ref.file !== fileEnvelope.relativePath || ref.schema !== "apparent.capture-strokes/1" || !listed || listed.sha256 !== fileEnvelope.sha256) fail("stroke fact envelope is not the sealed accepted-strokes reference");
+  if (!ref || ref.file !== fileEnvelope.relativePath || ref.schema !== "apparent.capture-strokes/1" || !listed || !isDeepStrictEqual(listed, fileEnvelope)) fail("stroke fact envelope is not the sealed accepted-strokes reference");
+  if (fileEnvelope.identity.size !== bytes.byteLength) fail("stroke fact bytes differ from sealed size");
   const value = parseDetached<unknown>(bytes, fileEnvelope.sha256, "stroke facts");
   const s = record(value, "stroke facts"); exact(s, ["schema", "identity", "coordinates", "surfaces", "strokes"], "stroke facts");
   if (s.schema !== "apparent.capture-strokes/1" || s.coordinates !== "target-normalized-10000") fail("invalid stroke document schema or coordinates");

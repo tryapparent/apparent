@@ -30,6 +30,7 @@ export interface MaterialsDocument { manifest: MaterialsManifest; payload: Mater
 export interface DerivativeFrame { requestIndex: number; requestedBundleMs: number; effectiveVideoMs: number; actualVideoMs?: number; clampedToStart: boolean; clampedToEnd: boolean; width: number; height: number; file: SealedFile }
 export interface DerivativePayload { schema: "apparent.media-derivative-payload/1"; materials: MaterialsKey; jobId: Id; receiptId: Id; root: string; frames: DerivativeFrame[] }
 export interface DerivativeEnvelope { schema: "apparent.media-derivative/1"; materials: MaterialsKey; jobId: Id; receiptId: Id; root: string; receiptFile: SealedFile; payload: DerivativePayload }
+export interface DerivativeDocumentInput { envelope: unknown; bytes: Uint8Array; requestedBundleMs: readonly number[] }
 
 export interface InferencePayload { schema: "apparent.transcript-result-payload/1"; materials: MaterialsKey; jobId: Id; receiptId: Id; root: string; clock: "bundle"; state: "complete" | "unavailable"; transcript?: { provider: string; model: string; text: string; segments: Array<{ startMs: number; endMs?: number; text: string }> }; warning?: { code: "transcript_unavailable"; retryable: boolean } }
 export interface InferenceEnvelope { schema: "apparent.transcript-result/1"; materials: MaterialsKey; jobId: Id; receiptId: Id; root: string; receiptFile: SealedFile; payload: InferencePayload }
