@@ -11,6 +11,18 @@ const repository = 'tryapparent/apparent'
 const digest = (data: Buffer | string) => createHash('sha256').update(data).digest('hex')
 const check = (ok: unknown, message: string) => { if (!ok) throw new Error(message) }
 const number = (value: string) => { check(/^[1-9]\d*$/.test(value), 'Invalid immutable identity'); return value }
+const legacyExecutables = ['apparent', 'apparent-helper'] as const
+const engineProbeExecutables = ['apparent', 'apparent-helper', 'apparent-engine-media'] as const
+const engineProbeSources = ['capture/engine/native/MediaProbe.swift', 'capture/engine/native/MediaProbeSupport.swift'] as const
+function payloadExecutables(manifest: any): readonly string[] {
+  if (manifest.schema === 1 && manifest.profile === 'dev' && !Object.hasOwn(manifest, 'artifact_contract')) {
+    return legacyExecutables
+  }
+  if (manifest.schema === 2 && manifest.profile === 'dev' && manifest.artifact_contract === 'engine-media-probe-v1') {
+    return engineProbeExecutables
+  }
+  throw new Error('Unsupported Mac executable payload contract')
+}
 type Context = { kind?: string, run?: string, attempt?: string, sha?: string, head?: string, tree?: string,
   workflow?: string, workflowSha?: string, job?: string, event?: string }
 export function admit(run: any, artifact: any, jobs: any[], runId: string, artifactId: string, context: Context = {}) {
@@ -48,11 +60,20 @@ export function unpack(bytes: Buffer, expectedDigest: string, directory: string)
   check(`sha256:${digest(bytes)}` === expectedDigest, 'Artifact transport digest mismatch')
   check(!existsSync(directory), 'Artifact destination must be fresh')
   // zipfile only reads the authenticated archive. Never use extractall or honor
-  // archive paths/modes; write precisely the three fixed regular-file payloads.
-  const script = `import io, os, stat, sys, zipfile
+  // archive paths/modes; write only the exact inventory allowed by its versioned contract.
+  const script = `import io, json, os, stat, sys, zipfile
 with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as archive:
     entries = archive.infolist()
-    assert sorted(e.filename for e in entries) == ['apparent', 'apparent-helper', 'manifest.json']
+    manifest_entries = [e for e in entries if e.filename == 'manifest.json']
+    assert len(manifest_entries) == 1
+    manifest = json.loads(archive.read(manifest_entries[0]))
+    if manifest.get('schema') == 1 and manifest.get('profile') == 'dev' and 'artifact_contract' not in manifest:
+        expected = ['apparent', 'apparent-helper', 'manifest.json']
+    elif manifest.get('schema') == 2 and manifest.get('profile') == 'dev' and manifest.get('artifact_contract') == 'engine-media-probe-v1':
+        expected = ['apparent', 'apparent-engine-media', 'apparent-helper', 'manifest.json']
+    else:
+        raise AssertionError('unsupported payload contract')
+    assert sorted(e.filename for e in entries) == expected
     assert sum(e.file_size for e in entries) <= 768 * 1024 * 1024
     for e in entries:
         mode = e.external_attr >> 16
@@ -69,9 +90,14 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as archive:
 }
 export function verify(directory: string, manifest: any, expected: { sha: string, tree: string, lock: string, config: string }, identity: ReturnType<typeof admit>) {
   check(!lstatSync(directory).isSymbolicLink(), 'Unsafe payload directory')
-  check(JSON.stringify(readdirSync(directory).sort()) === JSON.stringify(['apparent', 'apparent-helper', 'manifest.json']), 'Unexpected payload files')
-  check(manifest.schema === 1 && manifest.kind === 'mac-dev-executables' && manifest.source?.clean === true &&
+  const executables = payloadExecutables(manifest)
+  check(JSON.stringify(readdirSync(directory).sort()) === JSON.stringify([...executables, 'manifest.json'].sort()), 'Unexpected payload files')
+  check(manifest.kind === 'mac-dev-executables' && manifest.source?.clean === true &&
     manifest.source.sha === expected.sha && manifest.source.tree === expected.tree, 'Wrong source identity')
+  if (manifest.schema === 2) {
+    const sourceInputs = engineProbeSources.map(path => ({ path, sha256: digest(readFileSync(path)) }))
+    check(JSON.stringify(manifest.source_inputs) === JSON.stringify(sourceInputs), 'Wrong Engine media source inputs')
+  }
   check(manifest.producer?.repository === repository && manifest.producer.run === identity.run && manifest.producer.attempt === identity.attempt &&
     (manifest.producer.kind ?? 'verified-main') === identity.kind, 'Wrong manifest producer')
   if (identity.kind === 'verified-main') {
@@ -83,8 +109,8 @@ export function verify(directory: string, manifest: any, expected: { sha: string
   }
   check(manifest.target === 'x86_64-apple-darwin' && manifest.profile === 'dev' && manifest.deployment_target === '15.0' &&
     manifest.cargo_lock_sha256 === expected.lock && manifest.config_sha256 === expected.config, 'Incompatible build configuration')
-  check(Array.isArray(manifest.files) && manifest.files.length === 2, 'Wrong executable set')
-  for (const name of ['manifest.json', 'apparent', 'apparent-helper']) {
+  check(Array.isArray(manifest.files) && manifest.files.length === executables.length, 'Wrong executable set')
+  for (const name of ['manifest.json', ...executables]) {
     const stat = lstatSync(join(directory, name))
     check(stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1, 'Unsafe payload file')
     if (name === 'manifest.json') continue
@@ -139,7 +165,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       xcode: command('xcodebuild', '-version'), sdk: command('xcrun', '--sdk', 'macosx', '--show-sdk-version'),
       sdkPath: command('xcrun', '--sdk', 'macosx', '--show-sdk-path'), swift: command('xcrun', 'swiftc', '--version') }
     for (const [key, value] of Object.entries(tools)) check(manifest.toolchain?.[key] === value, 'Consumer toolchain differs from producer')
-    for (const name of ['apparent', 'apparent-helper']) {
+    for (const name of payloadExecutables(manifest)) {
       const file = join(directory, name)
       check(command('lipo', '-archs', file) === 'x86_64', 'Wrong executable architecture')
       const runtime = audit(command('otool', '-l', file), tools.developer)

@@ -22,7 +22,7 @@ class NativeProofMacTests(unittest.TestCase):
         self.assertNotIn('secrets.', workflow)
         self.assertNotIn('write\n', workflow)
         self.assertIn("github.event_name == 'workflow_dispatch'", workflow)
-        self.assertIn('    timeout-minutes: 10\n', workflow)
+        self.assertIn('    timeout-minutes: 15\n', workflow)
         self.assertIn('timeout-minutes: 4\n', workflow)
         self.assertIn('persist-credentials: false', workflow)
 
@@ -34,13 +34,48 @@ class NativeProofMacTests(unittest.TestCase):
         self.assertIn('APPARENT_NO_LAUNCH:', workflow)
         self.assertIn('bash capture/desktop/scripts/packaging/install-app.sh', workflow)
         self.assertIn('codesign --verify --deep --strict "$APPARENT_APP_DIR"', workflow)
-        self.assertIn('"$APPARENT_APP_DIR/Contents/MacOS/apparent"', workflow)
+        self.assertIn('executables=(apparent apparent-helper apparent-engine-media)', workflow)
         self.assertNotRegex(workflow, r'cargo test|npm test|verification\.py|release_gate\.py|release-ready|workflow_run')
         self.assertIn('APPARENT_CONNECT_NATIVE_CI:', workflow)
         self.assertIn("if: always()", workflow)
         self.assertIn('path: ${{ runner.temp }}/apparent-connect-native/evidence/', workflow)
         self.assertIn("for name in ('report.json', 'desktop.log'):", workflow)
         self.assertNotIn('include-hidden-files: true', workflow)
+
+    def test_native_evidence_binds_each_profile_binary_and_rejects_missing_probe(self):
+        block = re.search(r'^          executables=\(.*?^          done$', WORKFLOW.read_text(), re.M | re.S)
+        self.assertIsNotNone(block)
+        script = 'set -eu\n' + textwrap.dedent(block.group(0))
+        for schema, probe, signature_ok, expected in (
+                (None, True, True, 3), (2, True, True, 3),
+                (1, False, True, 2), (2, False, True, 0),
+                (9, True, True, 0), (2, True, False, 0)):
+            with self.subTest(schema=schema, probe=probe, signature=signature_ok), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                binaries = root / 'app/Contents/MacOS'
+                binaries.mkdir(parents=True)
+                names = ['apparent', 'apparent-helper'] + (['apparent-engine-media'] if probe else [])
+                for name in names:
+                    (binaries / name).write_text(name)
+                (root / 'evidence').mkdir()
+                tools = root / 'bin'
+                tools.mkdir()
+                signer = tools / 'codesign'
+                signer.write_text('#!/bin/sh\necho fixture-signature\nexit ' + ('0' if signature_ok else '1') + '\n')
+                signer.chmod(0o755)
+                (root / 'manifest.json').write_text(json.dumps({'schema': schema}))
+                env = dict(os.environ, APPARENT_APP_DIR=str(root / 'app'),
+                           APPARENT_CONNECT_PROOF=str(root), APPARENT_PREBUILT_DIR=str(root),
+                           APPARENT_PREBUILT_RUN='' if schema is None else '123',
+                           PATH=str(tools) + os.pathsep + os.environ['PATH'])
+                result = subprocess.run(['bash', '-c', script], env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode == 0, expected > 0, result.stderr)
+                if expected:
+                    hashes = (root / 'evidence/binary.sha256').read_text().splitlines()
+                    self.assertEqual(len(hashes), expected)
+                    for name in names:
+                        self.assertTrue(any(line.endswith('/' + name) for line in hashes))
+                        self.assertIn('fixture-signature', (root / f'evidence/{name}.signature.txt').read_text())
 
     def test_registered_dispatcher_keeps_full_ci_main_only(self):
         dispatcher = (ROOT / '.github/workflows/verification-mac.yml').read_text()
@@ -80,7 +115,7 @@ class NativeProofMacTests(unittest.TestCase):
     def test_job_budget_bounds_steps_and_keeps_cleanup_required(self):
         workflow = WORKFLOW.read_text()
         job_cap = int(re.search(r'^    timeout-minutes: (\d+)$', workflow, re.M)[1])
-        self.assertEqual(job_cap, 10)
+        self.assertEqual(job_cap, 15)
         steps = re.split(r'^      - ', workflow.split('  runtime-budget:\n', 1)[0].split('    steps:\n', 1)[1], flags=re.M)[1:]
         self.assertTrue(steps[0].startswith('name: Verification runtime budget and ownership\n'))
         for step in steps:
@@ -93,7 +128,7 @@ class NativeProofMacTests(unittest.TestCase):
             cap = re.search(r'^        timeout-minutes: (\d+)$', step, re.M)
             self.assertIsNotNone(cap, step.splitlines()[0])
             self.assertGreater(int(cap[1]), 0)
-        # Step caps are ceilings, not additive allocations: the job's 10m
+        # Step caps are ceilings, not additive allocations: the job's 15m
         # deadline wins. They cannot prove a cleanup reserve. The package/cache
         # optimization must leave time for these mandatory final steps; a job
         # timeout is failed proof, never evidence of successful cleanup.
@@ -119,7 +154,7 @@ class NativeProofMacTests(unittest.TestCase):
         self.assertIn('!cancelled()', native)
         self.assertIn("'focused-share-build' || 'verified-main'", native)
         self.assertIn('needs.share-build.outputs.artifact || inputs.producer_artifact', native)
-        self.assertEqual(re.findall(r'^    timeout-minutes: (\d+)$', workflow.split('  runtime-budget:\n', 1)[0], re.M), ['10', '10'])
+        self.assertEqual(re.findall(r'^    timeout-minutes: (\d+)$', workflow.split('  runtime-budget:\n', 1)[0], re.M), ['15', '15'])
 
     def test_share_scenario_is_explicit_and_cannot_run_worker_case(self):
         workflow = WORKFLOW.read_text()

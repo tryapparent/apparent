@@ -13,14 +13,18 @@ function fixture(fn: (run: (override?: Record<string, string>, os?: string, kind
   const root = mkdtempSync(join(tmpdir(), 'mac-producer-'))
   mkdirSync(join(root, '.cargo')); copyFileSync('.cargo/config.toml', join(root, '.cargo/config.toml'))
   mkdirSync(join(root, 'target/debug'), { recursive: true })
-  for (const name of ['apparent', 'apparent-helper']) { writeFileSync(join(root, 'target/debug', name), name); chmodSync(join(root, 'target/debug', name), 0o755) }
+  for (const path of ['capture/engine/native/MediaProbe.swift', 'capture/engine/native/MediaProbeSupport.swift']) {
+    mkdirSync(join(root, path, '..'), { recursive: true })
+    copyFileSync(path, join(root, path))
+  }
+  for (const name of ['apparent', 'apparent-helper', 'apparent-engine-media']) { writeFileSync(join(root, 'target/debug', name), name); chmodSync(join(root, 'target/debug', name), 0o755) }
   writeFileSync(join(root, 'Cargo.lock'), 'synthetic lock')
   const env = { GITHUB_REPOSITORY: 'tryapparent/apparent', GITHUB_WORKFLOW_REF: 'tryapparent/apparent/.github/workflows/verification-mac.yml@refs/heads/main', GITHUB_WORKFLOW_SHA: 'b'.repeat(40), GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1', GITHUB_JOB: 'rust' }
   const probes: Record<string, string> = { 'git status --porcelain --untracked-files=normal': '', 'git rev-parse HEAD': 'a'.repeat(40), 'git rev-parse HEAD^{tree}': 'c'.repeat(40), 'rustc -vV': 'rustc 1.90.0\nhost: x86_64-apple-darwin\nrelease: 1.90.0', 'cargo -V': 'cargo 1.90.0 (abc)', 'xcode-select -p': developer, 'xcodebuild -version': 'Xcode 26.0\nBuild version 17A123', 'xcrun --sdk macosx --show-sdk-version': '26.0', 'xcrun --sdk macosx --show-sdk-path': `${developer}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.0.sdk`, 'xcrun swiftc --version': 'Apple Swift version 6.2\nTarget: x86_64-apple-macosx15.0' }
   try { fn((override = {}, os = 'darwin', kind = 'verified-main') => produce(root, join(root, 'payload'), { ...env, ...Object.fromEntries(Object.entries(override).filter(([k]) => !k.includes(' '))) }, (c, args) => {
     const key = [c, ...args].join(' ')
     if (key in override) return override[key]
-    if (c === 'lipo') return 'x86_64'
+    if (c === 'lipo') return override['lipo arch'] ?? 'x86_64'
     if (c === 'otool') return override.loads ?? loads
     assert.ok(key in probes, key); return probes[key]
   }, os as 'darwin', 'x64', kind), root) } finally { rmSync(root, { recursive: true, force: true }) }
@@ -28,7 +32,8 @@ function fixture(fn: (run: (override?: Record<string, string>, os?: string, kind
 test('production creator emits exact fixed payload, checkout identity, hashes and modes', () => fixture((run, root) => {
   const m = run(); assert.equal(m.source.sha, 'a'.repeat(40)); assert.equal(m.producer.workflow_sha, 'b'.repeat(40))
   assert.equal(Object.hasOwn(m.producer, 'kind'), false, 'Legacy main identity stays unchanged')
-  assert.deepEqual(readdirSync(join(root, 'payload')).sort(), ['apparent', 'apparent-helper', 'manifest.json'])
+  assert.deepEqual(readdirSync(join(root, 'payload')).sort(), ['apparent', 'apparent-engine-media', 'apparent-helper', 'manifest.json'])
+  assert.equal(m.schema, 2); assert.equal(m.artifact_contract, 'engine-media-probe-v1'); assert.equal(m.profile, 'dev')
   for (const f of m.files) { assert.equal(f.mode, 0o755); assert.equal(f.sha256, createHash('sha256').update(readFileSync(join(root, 'payload', f.name))).digest('hex')) }
   assert.deepEqual(JSON.parse(readFileSync(join(root, 'payload/manifest.json'), 'utf8')), m)
 }))
@@ -40,8 +45,9 @@ test('focused creator emits its explicit kind with the same bounded payload cont
   assert.equal(m.producer.kind, 'focused-settings-build'); assert.equal(m.producer.job, 'settings-build')
   assert.equal(m.producer.workflow, focused.GITHUB_WORKFLOW_REF)
   assert.equal(m.source.sha, focused.GITHUB_SHA); assert.equal(m.producer.workflow_sha, m.source.sha)
-  assert.equal(m.kind, 'mac-dev-executables'); assert.equal(m.schema, 1)
-  assert.deepEqual(readdirSync(join(root, 'payload')).sort(), ['apparent', 'apparent-helper', 'manifest.json'])
+  assert.equal(m.kind, 'mac-dev-executables'); assert.equal(m.schema, 2)
+  assert.equal(m.artifact_contract, 'engine-media-probe-v1')
+  assert.deepEqual(readdirSync(join(root, 'payload')).sort(), ['apparent', 'apparent-engine-media', 'apparent-helper', 'manifest.json'])
   assert.deepEqual(JSON.parse(readFileSync(join(root, 'payload/manifest.json'), 'utf8')), m)
 }))
 for (const [label, override] of Object.entries<Record<string, string>>({
@@ -72,6 +78,8 @@ for (const [label, override] of Object.entries<Record<string, string>>({ dirty: 
 }
 test('wrong platform', () => fixture(run => assert.throws(() => run({}, 'linux'))))
 test('missing helper', () => fixture((run, root) => { rmSync(join(root, 'target/debug/apparent-helper')); assert.throws(() => run()) }))
+test('missing Engine media capability', () => fixture((run, root) => { rmSync(join(root, 'target/debug/apparent-engine-media')); assert.throws(() => run()) }))
+test('wrong Engine media architecture', () => fixture(run => assert.throws(() => run({ 'lipo arch': 'arm64' }))))
 test('unsafe mode', () => fixture((run, root) => { chmodSync(join(root, 'target/debug/apparent'), 0o777); assert.throws(() => run()) }))
 test('rejects unreviewed config', () => fixture((run, root) => { writeFileSync(join(root, '.cargo/config.toml'), '[build]'); assert.throws(() => run()) }))
 test('runtime closure rejects traversal, loader paths, unknown commands and Xcode-only Swift', () => {

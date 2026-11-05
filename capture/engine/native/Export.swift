@@ -474,7 +474,7 @@ enum Exporter {
       for candidate in try await source.loadTracks(withMediaType: .audio) {
         let wantedStart = Double(plan.audioStartMs) / 1000
         let wantedEnd = wantedStart + Double(plan.audioLengthMs) / 1000
-        if try await Media.audioTrackOverlaps(candidate, start: wantedStart, end: wantedEnd) {
+        if try await MediaProbeSupport.audioTrackOverlaps(candidate, start: wantedStart, end: wantedEnd) {
           selectedTrack = candidate
           break
         }
