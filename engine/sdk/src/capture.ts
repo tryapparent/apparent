@@ -608,7 +608,9 @@ export class CaptureClient {
       throw new Error("microphone capture is unavailable");
     validateStartInvocation(input.invocation);
     const receipt = await this.rpc("start", input, timeoutMs);
-    return this.status(receipt, input.captureId);
+    const status = this.status(receipt, input.captureId);
+    if (status.publication && (status.publication.bundleId !== input.bundleId || status.publication.bundlePath !== input.bundlePath)) throw new Error("Saved start receipt does not match original bundle identity");
+    return status;
   }
   async inspect(
     authority: { ownerToken: string; captureId: string },

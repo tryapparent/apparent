@@ -275,3 +275,14 @@ test("terminal inspection preserves retained materials authority for reconnect a
   assert.equal(recovered.materials?.leaseId, manifest.leaseId);
   assert.equal((await client.releaseMaterials({ ...authority, materialsId: recovered.materials!.key.materialsId, leaseId: recovered.materials!.leaseId })).released, true);
 });
+
+test("a Saved start replay must name the originally requested bundle", async () => {
+  const publication = { captureId, ...publicationInput.expected, publicationId: publicationInput.publicationId, planSha256: publicationInput.planSha256, artifactVersion: 1, artifactProvenance: "native", inventorySha256: "2".repeat(64) };
+  const start = { ...authority, bundleId: publication.bundleId, bundlePath: publication.bundlePath, source, options: { audio: "none" as const, localOnly: true as const }, invocation: { kind: "explicit" as const, invocationId: "a".repeat(32), observedAtMs: 0 } };
+  for (const changed of [{}, { bundleId: "other-bundle" }, { bundlePath: "/other/take.apparent" }]) {
+    const client = new CaptureClient(scripted(request => request.method === "discoverSources" ? { state: "available", sources: [source] } : { captureId, state: "saved", publication: { ...publication, ...changed } }));
+    await client.handshake(); await client.discoverSources();
+    if (Object.keys(changed).length) await assert.rejects(client.start(start), /original bundle identity/);
+    else assert.equal((await client.start(start)).state, "saved");
+  }
+});
