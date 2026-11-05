@@ -1590,8 +1590,9 @@ impl ApparentCoordinator {
         let board=self.whiteboard.borrow().strokes.iter().any(|s|s.len()>3);
         let screen=self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|s|!s.laser && s.pts.len()>9).count();
         let processing=self.is_processing();
+        let note_saved=self.note_ui.as_ref().is_some_and(|notes|notes.has_saved_note());
         let was_screen=self.onboarding.as_ref().unwrap().practice_screen_stage();
-        if let Some(session)=self.onboarding.as_mut() {session.observe_practice(board,screen,processing,None);}
+        if let Some(session)=self.onboarding.as_mut() {session.practice_note_saved(note_saved);session.observe_practice(board,screen,processing,None);}
         if !was_screen && self.onboarding.as_ref().is_some_and(|s|s.practice_screen_stage()) {cx.defer(whiteboard::close);}
     }
 
@@ -3679,6 +3680,8 @@ impl ApparentCoordinator {
             && matches!(&rec.source, CaptureSource::Screen { .. });
         #[cfg(not(target_os = "linux"))]
         let auto_active = false;
+        // Keep the capture-local receipt alive while Finish drains already queued Saves.
+        let note_receipt = self.note_ui.as_ref().map(workflow::notes::Session::saved_note_receipt);
         let notes_finished = self.note_ui.take().map(workflow::notes::Session::finish);
         let (events, strokes) = self.telemetry.finish_session();
         let bundle_dir = rec.bundle_dir;
@@ -3751,6 +3754,12 @@ impl ApparentCoordinator {
                             if !local_practice { desktop_completion::connect_completed(dir); }
                         },
                         |coord, finalized| {
+                            // receive_capture_result admits only this generation's active UI.
+                            if finalized.is_ok() {
+                                if let Some(session) = coord.onboarding.as_mut() {
+                                    session.practice_note_saved(note_receipt.as_ref().is_some_and(|receipt| receipt.load(std::sync::atomic::Ordering::Acquire)));
+                                }
+                            }
                             coord.present_capture_result(
                                 finalized, duration_ms, auto_active, cx,
                             );

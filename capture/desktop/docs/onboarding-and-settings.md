@@ -346,3 +346,21 @@ Rust owns the phase; the illustration/hint never sends keys or changes progress.
 Native fallback routing remains available until installed acceptance; disabling
 the Electron route is the existing rollback. Real Mac shortcut/permission/focus
 and packaged acceptance remain separate from renderer and state-machine tests.
+
+### First-capture text note lesson
+
+After screen drawing, the existing Electron coach shows **Add a note.**:
+“Hold Shift and click a spot. Type a short note, then press Enter or click Attach.”
+Its compact Shift-click illustration is presentation only, with Replay and a
+reduced-motion still. The screen-drawing trackpad helper disappears in this phase.
+The existing notes editor remains the only place to enter real text; the coach
+never takes keyboard focus or submits a note. Rust advances to Finish only after
+the current capture's notes session reports a nonempty durable save. Opening the
+editor, keeping a draft, dismissing, empty Enter or a failed write cannot satisfy
+this lesson. An early finish still teaches paste/location, but cannot complete
+required practice without drawing and attaching a note. Completed users are not
+re-enrolled. Existing default Electron coaching and native fallback routing are
+unchanged; rollback/remove this lesson together with its durable-save check and
+illustration, rather than rendering a competing surface. Installed Mac acceptance
+must verify Shift-click → real editor → Attach/Enter → Finish, focus restoration,
+and bundle `notes.json`/semantic output. Renderer simulation is not native proof.

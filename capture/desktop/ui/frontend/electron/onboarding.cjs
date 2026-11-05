@@ -5,7 +5,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const actions = new Set(['continue','back','later','close','change-shortcut','grant:screen-recording','grant:microphone','grant:accessibility','grant:speech-recognition','grant:camera','practice-paste','practice-locate','practice-pasted','practice-finish','pen:coral','pen:purple','pen:blue','pen:green']);
 const steps = new Set(['welcome','how-it-works','permissions','shortcut','try-it','done']);
-const phases = new Set(['start','screen','whiteboard','board-ink','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']);
+const phases = new Set(['start','screen','whiteboard','board-ink','screen-ink','note','stop','preparing','copied','paste','locate','complete','retry','copy-failed']);
 function project(v) {
   if(v?.type!=='state'||!steps.has(v.step)||!Array.isArray(v.rows)||v.rows.length>5||typeof v.ready!=='boolean')return null;
   const rows=[];

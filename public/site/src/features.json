@@ -1342,7 +1342,7 @@
       "id": "onboarding-first-capture",
       "group": "install",
       "name": "Choose and try your Record shortcut",
-      "says": "Onboarding starts with no preselected Record shortcut: choose a combination, test it once without recording, then use it again for the guided real capture. Early setup shortcuts stay in onboarding. Drawing includes a trackpad hint; practice continues through whiteboard and screen drawing, manual paste confirmation and locating the capture. All six compact illustrations cover recording keys, Screen/Whiteboard, Shift-drawing, Finish/Copied, paste keys and menu location; they play once with replay and static reduced-motion alternatives. Closing leaves setup unfinished for the next launch.",
+      "says": "Onboarding starts with no preselected Record shortcut: choose a combination, test it once without recording, then use it again for the guided real capture. Early setup shortcuts stay in onboarding. Drawing includes a trackpad hint; practice continues through whiteboard and screen drawing, Shift-clicking to attach a text note, manual paste confirmation and locating the capture. All seven compact illustrations cover recording keys, Screen/Whiteboard, Shift-drawing, Shift-click notes, Finish/Copied, paste keys and menu location; they play once with replay and static reduced-motion alternatives. Closing leaves setup unfinished for the next launch.",
       "status": "main",
       "added": "2026-10-31",
       "platforms": ["mac", "linux"],

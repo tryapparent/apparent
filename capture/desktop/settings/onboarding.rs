@@ -1562,6 +1562,11 @@ impl Session {
         }
         self.sync();
     }
+    pub fn practice_note_saved(&mut self, saved: bool) {
+        if self.flow.step()==Step::TryIt {
+            if let Some(practice)=self.practice.as_mut() {practice.observe_note(saved);}
+        }
+    }
     pub fn practice_anchor(&mut self,anchor:Option<[f32;4]>) {self.anchor=anchor;}
     pub fn practice_board(&mut self, frame: Option<[f32;4]>) {
         self.practice_board=frame;
@@ -1884,7 +1889,8 @@ mod tests {
         s.input(Input::CaptureStarted);
         s.practice_whiteboard();
         s.observe_practice(true, 0, false, None);
-        s.observe_practice(true, 1, true, Some(true));
+        s.observe_practice(true, 1, false, None);
+        s.practice_note_saved(true);s.observe_practice(true, 1, true, Some(true));
         s.practice_saved_bundle(first);
         s.input(Input::CaptureEnded { completed: true });
         s.action("practice-paste");
@@ -1900,7 +1906,8 @@ mod tests {
         assert!(s.practice_bundle.is_none());
         s.practice_whiteboard();
         s.observe_practice(true, 0, false, None);
-        s.observe_practice(true, 1, true, Some(true));
+        s.observe_practice(true, 1, false, None);
+        s.practice_note_saved(true);s.observe_practice(true, 1, true, Some(true));
         s.practice_saved_bundle(other);
         s.input(Input::CaptureEnded { completed: true });
         s.action("practice-paste");
@@ -1925,7 +1932,7 @@ mod tests {
     fn menu_bar_lesson_remains_after_paste_and_requires_opening_own_capture() {
         let mut s=coached_session();
         s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
-        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.observe_practice(true,1,true,Some(true));
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.observe_practice(true,1,false,None);s.practice_note_saved(true);s.observe_practice(true,1,true,Some(true));
         s.input(Input::CaptureEnded{completed:true});
         assert!(!s.practice_locating());
         s.action("practice-paste");assert!(!s.practice_locating());
@@ -1938,7 +1945,7 @@ mod tests {
     fn coaching_finishes_after_completion_pill_dismissal() {
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
         s.practice_whiteboard();s.observe_practice(true,0,false,None);s.observe_practice(true,1,false,None);
-        s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
+        s.practice_note_saved(true);s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
         assert!(!s.flow.practice_recording);assert!(!s.flow.hidden);
         s.input(Input::CaptureEnded{completed:false}); // normal 25-second pill dismissal
         s.action("practice-paste");s.action("practice-pasted");s.practice_latest();
@@ -1949,7 +1956,7 @@ mod tests {
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
         s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
         s.input(Input::CaptureStarted); // menu start, without ShortcutTriggered
-        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.observe_practice(true,1,true,Some(true));
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.observe_practice(true,1,false,None);s.practice_note_saved(true);s.observe_practice(true,1,true,Some(true));
         s.input(Input::CaptureEnded{completed:true});s.action("practice-paste");s.action("practice-pasted");s.practice_latest();
         assert_eq!(s.action("practice-finish"),Effect::None);assert!(!s.flow.first_capture_completed);
     }

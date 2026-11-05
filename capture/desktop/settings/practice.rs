@@ -2,10 +2,10 @@
 use serde::Serialize;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all="kebab-case")]
-pub enum Stage { Start, Screen, Whiteboard, BoardInk, ScreenInk, Stop, Preparing, Copied, Paste, Locate, Complete, Retry, CopyFailed }
+pub enum Stage { Start, Screen, Whiteboard, BoardInk, ScreenInk, Note, Stop, Preparing, Copied, Paste, Locate, Complete, Retry, CopyFailed }
 #[derive(Debug)]
-pub struct Practice { pub stage: Stage, board_ink: bool, screen_ink: bool, pub latest: bool, screen_baseline: usize, pasted: bool }
-impl Default for Practice { fn default()->Self { Self{stage:Stage::Start,board_ink:false,screen_ink:false,latest:false,screen_baseline:0,pasted:false} } }
+pub struct Practice { pub stage: Stage, board_ink: bool, screen_ink: bool, note_saved: bool, pub latest: bool, screen_baseline: usize, pasted: bool }
+impl Default for Practice { fn default()->Self { Self{stage:Stage::Start,board_ink:false,screen_ink:false,note_saved:false,latest:false,screen_baseline:0,pasted:false} } }
 impl Practice {
     pub fn selecting(&mut self) { if self.stage!=Stage::Screen {*self=Self::default();self.stage=Stage::Screen;} }
     pub fn started(&mut self) { if matches!(self.stage,Stage::Start|Stage::Screen|Stage::Retry|Stage::CopyFailed) {*self=Self::default();self.stage=Stage::Whiteboard;} }
@@ -16,14 +16,17 @@ impl Practice {
     }
     pub fn observe_ink(&mut self,board:bool,screen:usize) {
         if self.stage==Stage::BoardInk && board {self.board_ink=true;self.screen_baseline=screen;self.stage=Stage::ScreenInk;return;}
-        if self.stage==Stage::ScreenInk && screen>self.screen_baseline {self.screen_ink=true;self.stage=Stage::Stop;}
+        if self.stage==Stage::ScreenInk && screen>self.screen_baseline {self.screen_ink=true;self.stage=Stage::Note;}
     }
-    pub fn processing(&mut self) { if matches!(self.stage,Stage::Whiteboard|Stage::BoardInk|Stage::ScreenInk|Stage::Stop) {self.stage=Stage::Preparing;} }
+    pub fn observe_note(&mut self, saved: bool) {
+        if matches!(self.stage,Stage::Note|Stage::Preparing) && self.screen_ink && saved {self.note_saved=true;if self.stage==Stage::Note {self.stage=Stage::Stop;}}
+    }
+    pub fn processing(&mut self) { if matches!(self.stage,Stage::Whiteboard|Stage::BoardInk|Stage::ScreenInk|Stage::Note|Stage::Stop) {self.stage=Stage::Preparing;} }
     pub fn saved(&mut self,copied:bool) {
         if self.stage!=Stage::Preparing {return;}
         self.stage=if copied {Stage::Copied} else {Stage::CopyFailed};
     }
-    pub fn cancelled(&mut self) { if matches!(self.stage,Stage::Screen|Stage::Whiteboard|Stage::BoardInk|Stage::ScreenInk|Stage::Stop|Stage::Preparing) {self.stage=Stage::Retry;} }
+    pub fn cancelled(&mut self) { if matches!(self.stage,Stage::Screen|Stage::Whiteboard|Stage::BoardInk|Stage::ScreenInk|Stage::Note|Stage::Stop|Stage::Preparing) {self.stage=Stage::Retry;} }
     // A person confirms their manual paste. A key press is never treated as proof
     // of delivery to another application; no monitoring of a private composer.
     pub fn action(&mut self,action:&str)->bool {
@@ -35,13 +38,15 @@ impl Practice {
             _=>false,
         }
     }
-    pub fn opened_latest(&mut self) {if self.stage==Stage::Locate {self.latest=true;self.stage=if self.board_ink&&self.screen_ink&&self.pasted {Stage::Complete} else {Stage::Retry};}}
+    pub fn opened_latest(&mut self) {if self.stage==Stage::Locate {self.latest=true;self.stage=if self.board_ink&&self.screen_ink&&self.note_saved&&self.pasted {Stage::Complete} else {Stage::Retry};}}
 }
 #[cfg(test)] mod tests {
     use super::*;
     #[test] fn renderer_cannot_skip_real_capture_or_drawing() {
         let mut p=Practice::default();assert!(!p.action("practice-pasted"));p.started();p.observe_ink(true,1);assert_eq!(p.stage,Stage::Whiteboard);
-        p.whiteboard();p.observe_ink(true,0);assert_eq!(p.stage,Stage::ScreenInk);p.observe_ink(true,1);assert_eq!(p.stage,Stage::Stop);
+        p.whiteboard();p.observe_ink(true,0);assert_eq!(p.stage,Stage::ScreenInk);p.observe_ink(true,1);assert_eq!(p.stage,Stage::Note);
+        p.observe_note(false);assert_eq!(p.stage,Stage::Note);assert!(!p.action("practice-note-saved"));
+        p.observe_note(true);assert_eq!(p.stage,Stage::Stop);
         p.processing();p.saved(true);assert_eq!(p.stage,Stage::Copied);assert!(!p.action("practice-finish"));assert!(p.action("practice-paste"));assert!(p.action("practice-pasted"));p.opened_latest();assert_eq!(p.stage,Stage::Complete);assert!(p.action("practice-finish"));
     }
     #[test] fn owned_board_visibility_reconciles_open_and_close_without_skipping_ink() {
@@ -87,5 +92,36 @@ impl Practice {
         p.processing();p.saved(false);assert_eq!(p.stage,Stage::CopyFailed);
         assert!(p.action("practice-locate"));assert_eq!(p.stage,Stage::Locate);p.opened_latest();
         assert_eq!(p.stage,Stage::Retry);assert!(!p.action("practice-finish"));
+    }
+}
+
+#[cfg(test)] mod note_lesson_tests {
+    use super::*;
+    #[test] fn early_finish_without_a_saved_note_cannot_complete_practice() {
+        let mut p=Practice::default();p.started();p.whiteboard();
+        p.observe_ink(true,0);p.observe_ink(false,1);assert_eq!(p.stage,Stage::Note);
+        p.observe_note(false);p.processing();p.saved(true);
+        p.action("practice-paste");p.action("practice-pasted");p.opened_latest();
+        assert_eq!(p.stage,Stage::Retry);
+    }
+    #[test] fn note_receipt_only_advances_the_note_lesson_and_retry_resets_it() {
+        let mut p=Practice::default();p.observe_note(true);assert_eq!(p.stage,Stage::Start);
+        p.started();p.observe_note(true);assert_eq!(p.stage,Stage::Whiteboard);
+        p.whiteboard();p.observe_ink(true,0);p.observe_ink(false,1);
+        p.observe_note(true);assert_eq!(p.stage,Stage::Stop);
+        p.cancelled();assert_eq!(p.stage,Stage::Retry);p.started();
+        p.whiteboard();p.observe_ink(true,0);p.observe_ink(false,1);
+        p.observe_note(false);assert_eq!(p.stage,Stage::Note);
+    }
+}
+
+#[cfg(test)] mod note_finish_race_tests {
+    use super::*;
+    #[test] fn a_durable_save_drained_at_finish_counts_before_publishing_the_capture() {
+        let mut p=Practice::default();p.started();p.whiteboard();
+        p.observe_ink(true,0);p.observe_ink(false,1);p.processing();
+        assert_eq!(p.stage,Stage::Preparing);p.observe_note(true);
+        assert!(p.note_saved);p.saved(true);p.action("practice-paste");
+        p.action("practice-pasted");p.opened_latest();assert_eq!(p.stage,Stage::Complete);
     }
 }
