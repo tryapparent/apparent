@@ -8,6 +8,9 @@ import { spawnSync } from 'node:child_process'
 import { after, test } from 'node:test'
 import { assessPrior, catalog, inputDigest, reusePayload, sealPayload, type Owner, workflowPath } from './core.ts'
 
+// Hooks export repository-local Git variables. Synthetic repositories must not
+// accidentally use the hook caller's index, object database or worktree.
+for (const name of execFileSync('git', ['rev-parse', '--local-env-vars'], { encoding: 'utf8' }).trim().split('\n')) delete process.env[name]
 process.env.ImageOS ??= 'ubuntu24'
 process.env.ImageVersion ??= '2026.01.01'
 const repo = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
