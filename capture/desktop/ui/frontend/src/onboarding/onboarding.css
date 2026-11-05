@@ -122,3 +122,14 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 
 .native-coach-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .native-coach-actions .native-later { margin-top: 0; }
+
+/* The companion shares the existing transparent coach window; no extra focusable window. */
+.native-trackpad-helper { padding: 16px; margin: 16px 0; border: 1px solid var(--apparent-border); border-radius: 18px 18px 18px 5px; background: var(--apparent-surface); color: var(--apparent-foreground); font: 400 1.125rem/1.5 var(--font-sans); }
+.native-trackpad-helper strong { display: block; margin-bottom: 8px; font-weight: 700; text-wrap: balance; }
+.native-trackpad-helper p { margin: 0; text-wrap: balance; }
+@media (min-width: 700px) {
+  .native-coach[data-paired=true] { right: auto; width: 332px; }
+  body > #root > .native-trackpad-helper { position: absolute; left: 388px; top: 164px; width: 308px; margin: 0; box-shadow: 0 6px 16px var(--apparent-shadow); }
+  body > #root > .native-trackpad-helper .native-trackpad-helper-content { max-height: calc(100vh - 222px); overflow: auto; }
+  body > #root > .native-trackpad-helper:before { content: ''; position: absolute; left: -7px; top: calc(50% - 6px); width: 12px; height: 12px; transform: rotate(45deg); background: var(--apparent-surface); border-left: 1px solid var(--apparent-border); border-bottom: 1px solid var(--apparent-border); }
+}

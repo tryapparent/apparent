@@ -21,7 +21,7 @@ export function GestureGuide({ kind, shortcut, platform }: {
 }) {
   const [replay, setReplay] = useState(0);
   if (kind === 'record' && !shortcut.trim()) return null;
-  const label = kind === 'draw' ? 'Hold Shift and drag to draw' :
+  const label = kind === 'draw' ? 'Hold Shift and move your pointer to draw' :
     kind === 'paste' ? `Paste with ${platform === 'linux' ? 'Control' : 'Command'} V` : `Record with ${shortcut}`;
   const keys = kind === 'paste' ? [platform === 'linux' ? 'Ctrl' : '⌘', 'V'] :
     recordKeys(shortcut);

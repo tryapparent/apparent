@@ -66,7 +66,7 @@ follows PostHog's Rust wire contract. Connect logging is unchanged.
 
 Rust decides what shows (`Flow`, `launch_plan`, `Gate`, tested) and stores progress under `"onboarding"` in `~/.config/apparent/config.json`, including the tour's current step (`resume`), so any quit (macOS's "Quit & Reopen" too) picks up there; the SwiftUI window in `apparent-helper onboarding` only renders the state it's sent and reports buttons (`grant:<permission>` for a row).
 
-Tour: Welcome → HowItWorks → Permissions (one checklist of three required rows, Screen Recording first, then Microphone and Accessibility; any order works) → Shortcut → TryIt → Done. Shortcut shows the effective Record keys. Continue moves on without editing; Change shortcut starts the Record recorder in the same onboarding page, using Settings' validation, save, cancel and reset behavior. Leaving the page cancels an unfinished recording and resumes hotkeys. On Omarchy, a Hyprland-owned shortcut cannot be replaced by Apparent; the inline page explains that ownership. Camera (iPhone) is never in the tour: its first use opens `Flow::fix(vec![Camera])`, the same screen with one row.
+Tour: Welcome → HowItWorks → Permissions (one checklist of three required rows, Screen Recording first, then Microphone and Accessibility; any order works) → Shortcut → TryIt → Done. The default first-capture shortcut page starts with no selection and uses Settings' validation/save/cancel behavior. A saved combination must pass a non-recording press-and-release trial before Continue. The explicit optional-practice opt-out retains the legacy advance behavior. Leaving the page cancels an unfinished recording and resumes hotkeys. On Omarchy, a Hyprland-owned shortcut cannot be replaced by Apparent; the inline page explains that ownership. Camera (iPhone) is never in the tour: its first use opens `Flow::fix(vec![Camera])`, the same screen with one row.
 
 HowItWorks is a silent 11 s loop (`capture/desktop/native/OnboardingDemo.swift`): a pretend checkout page whose Pay button runs out of its window, ⌥⇧S opening the pill, subtitles for what the person says, a ⇧ mark around the bug, a click, ⌥⇧S to Copied, the frame lifting off as a one-frame contact sheet with its `1` chip, ⌥⇧V into an agent chat, and the fix. Everything on the stage is a function of one clock (`DemoScript`), so any moment renders the same. Holding ⇧ over the stage pauses the loop and draws a mark in the window (nothing is recorded or asked for). The button under it reads Skip until the loop has played through or a mark was drawn, then Continue; the helper reports `skip`, `watched` and `practiced`, and `Flow` keeps the furthest outcome in `Progress::tutorial` (`"tutorial"`), so a resumed tour keeps Continue. Reduced motion shows four still frames with captions. `apparent-helper onboarding --render DIR --demo-frames 30` writes one loop as PNGs for a video.
 
@@ -93,9 +93,9 @@ First-capture onboarding is enabled by default. Set
 or reopen the tour. The opt-out restores optional shortcut choice and practice.
 Existing users who already finished setup are not forced through it again.
 
-On Shortcut, explicitly confirm the current Record combination or enter a valid
-combination in the inline recorder before continuing. Invalid, cancelled or reset
-choices alone do not count; confirm the default after resetting.
+On Shortcut, choose a valid combination in the inline recorder and test it once
+before continuing. There is no preselected default or accept-current action.
+Invalid or cancelled choices and an untested saved combination cannot advance.
 A verified desktop-owned Linux binding instead offers **Use desktop shortcut**;
 Apparent cannot rewrite that compositor setting. The next page asks the user to
 try giving feedback on onboarding: start with the chosen shortcut, talk and point,
@@ -317,3 +317,32 @@ selection can show only Screen, then the recording-stage coach demonstrates the
 Whiteboard control. The location example opens its menu below the icon with an
 arrow to the matching entry and uses neutral theme roles rather than wallpaper
 tint. These remain finite, replayable and static under reduced motion.
+
+### Required shortcut choice and trial
+
+The default first-capture tour offers no preselected Record combination and no
+accept-current shortcut action. Save a valid combination in the existing editor,
+then press and release that combination once. Rust consumes the normal shortcut
+release as a trial: no capture, picker, microphone admission or clipboard handoff
+starts. Continue remains disabled until the trial succeeds. Changing the saved
+combination invalidates the trial. `onboarding.shortcutTestedFor` stores the exact
+effective label for restart checks; a mismatched binding returns to the trial.
+Completed users retain completion, and a desktop-managed Linux binding keeps its
+existing explicit acceptance path before the same trial.
+
+Early setup shortcut presses show setup rather than ordinary recording. The same
+setup policy guards menu, picker, agent and iPhone starts; Camera permission
+checks and finishing an active capture retain their existing behavior. Closing
+an unfinished tour leaves its progress intact; a shortcut reopens it first.
+After the trial, Continue opens the first-capture coach. The next shortcut starts
+the real local guided recording, and later presses retain normal finishing.
+The explicit first-capture opt-out retains optional legacy behavior.
+
+During screen drawing, the existing transparent Electron coach widens to 720 px
+when space permits to show the approved trackpad helper beside the main guide.
+Narrow displays keep the same helper inline with scrolling; enlarged text remains
+reachable. It shares the existing window and disappears with the drawing phase.
+Rust owns the phase; the illustration/hint never sends keys or changes progress.
+Native fallback routing remains available until installed acceptance; disabling
+the Electron route is the existing rollback. Real Mac shortcut/permission/focus
+and packaged acceptance remain separate from renderer and state-machine tests.

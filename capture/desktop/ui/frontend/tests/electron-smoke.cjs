@@ -303,6 +303,13 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   for(const phase of ['start','screen','whiteboard','board-ink','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
     send({step:'try-it',practice:phase});
     await expect(page.locator('.native-coach')).toHaveAttribute('data-stage',phase);
+    if(phase==='screen-ink'){
+      await expect.poll(()=>page.evaluate(()=>innerWidth)).toBe(720);
+      await expect(page.locator('.native-coach')).toHaveAttribute('data-paired','true');
+      await expect(page.getByRole('complementary',{name:'Trackpad drawing hint'})).toBeVisible();
+      const pair=await page.evaluate(()=>{const a=document.querySelector('.native-coach').getBoundingClientRect(),b=document.querySelector('.native-trackpad-helper').getBoundingClientRect();return{separate:a.right<b.left,inside:b.right<=innerWidth&&b.bottom<=innerHeight}});
+      assert.deepEqual(pair,{separate:true,inside:true});
+    }else{assert.equal(await page.getByRole('complementary',{name:'Trackpad drawing hint'}).count(),0)}
     const layout=await page.locator('.native-coach').evaluate(card=>{
       const content=card.querySelector('.native-coach-content'),rect=card.getBoundingClientRect();
       const buttons=[...card.querySelectorAll('button')].map(button=>({font:parseFloat(getComputedStyle(button).fontSize),radius:getComputedStyle(button).borderRadius,...(()=>{const r=button.getBoundingClientRect();return{width:r.width,height:r.height}})()}));
@@ -382,13 +389,21 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('heading', { name:'We need three things.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
   assert.equal(await page.locator('.native-setup section > p').count(),0);
-  send({step:'shortcut',shortcutChosen:true});
-  await expect(page.getByRole('heading',{name:'Start and stop with your shortcut.',exact:true})).toBeVisible();
-  assert.equal(await page.locator('.native-setup section > p').count(),0);
+  send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:false,platform:'macos',shortcutEditor:{recording:false,externallyManaged:false}});
+  await expect(page.getByRole('heading',{name:'Choose your shortcut.',exact:true})).toBeVisible();
+  assert.equal(await page.locator('.native-shortcut kbd').count(),0,'no preselected/default combination');
+  await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'Choose shortcut',exact:true}).click();
+  await expect.poll(()=>output).toContain('change-shortcut');
+  assert.equal(output.includes('use-current-shortcut'),false);
+  send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:false});
+  await expect(page.getByRole('heading',{name:'Try your shortcut.',exact:true})).toBeVisible();
+  await expect(page.getByText('Press it once, then release the keys. This check won’t record.',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeDisabled();
+  send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
+  await expect(page.getByRole('status')).toHaveText('✓ Your shortcut works.');
+  await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeEnabled();
   await expect(page.getByRole('button',{name:'Change shortcut',exact:true})).toBeVisible();
-  send({step:'shortcut',shortcutChosen:false,platform:'macos',shortcutEditor:{recording:false,externallyManaged:false}});
-  await page.getByRole('button',{name:'Use this shortcut',exact:true}).click();
-  await expect.poll(()=>output).toContain('use-current-shortcut');
   send({step:'shortcut',shortcutEditor:{recording:true,externallyManaged:false}});
   await page.getByRole('group',{name:'Shortcut recorder'}).press('Control+Alt+k');
   await expect.poll(()=>output).toContain('"keyCode":40');

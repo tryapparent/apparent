@@ -1542,6 +1542,7 @@ impl ApparentCoordinator {
         if self.lab {
             return true;
         }
+        if self.setup_blocks_capture() { return false; }
         let microphone = crate::capture::engine::runtime::audio::mic::enabled();
         let missing = self.missing_to_record(microphone);
         if missing.is_empty() {
@@ -1575,6 +1576,9 @@ impl ApparentCoordinator {
 
     /// Polled while the gate holds a request: shows the permissions window once ⌥⇧ is up.
     pub(in crate::capture::desktop) fn tick_onboarding_practice(&mut self,cx:&mut Context<Self>) {
+        if let Some(session) = self.onboarding.as_mut() {
+            session.shortcut_selection_released(crate::capture::engine::runtime::modifier_flags() & 0x1b00 == 0);
+        }
         if !self.onboarding.as_ref().is_some_and(|s|s.practice_active()) {return;}
         #[cfg(target_os="macos")]
         let anchor=if self.onboarding.as_ref().is_some_and(|s|s.practice_locating()) {crate::capture::desktop::ui::macos::status_bar_anchor()} else {self.native_pill.as_ref().and_then(|p|p.coach_anchor())};
@@ -1653,7 +1657,7 @@ impl ApparentCoordinator {
                 let host = crate::capture::desktop::settings::AppHost { telemetry: &self.telemetry };
                 let editor = self.onboarding_editor.record_shortcut(&host);
                 let accepted = !editor.recording && editor.error.is_none()
-                    && (action == "use-current-shortcut" || editor.externally_managed);
+                    && action == "use-desktop-shortcut" && editor.externally_managed;
                 if accepted
                     && let Some(session) = self.onboarding.as_mut()
                 {
@@ -1797,6 +1801,46 @@ impl ApparentCoordinator {
         }
     }
 
+    fn onboarding_shortcut_policy(&mut self) -> crate::capture::desktop::settings::onboarding::ShortcutPolicy {
+        use crate::capture::desktop::settings::onboarding::{Flow, Progress, ShortcutPolicy, Step};
+        if self.lab { return ShortcutPolicy::Record; }
+        if let Some(session) = self.onboarding.as_ref() { return session.shortcut_policy(); }
+        if !crate::shared::handoff::experiment("onboardingFirstCapture") { return ShortcutPolicy::Record; }
+        if self.onboarding.is_none() {
+            let progress = Progress::load();
+            if !progress.seen {
+                self.open_onboarding(Flow::tour(progress.resume.unwrap_or(Step::Welcome), self.grants.clone()));
+                return ShortcutPolicy::Block;
+            }
+        }
+        self.onboarding.as_ref().map_or(ShortcutPolicy::Record, |s| s.shortcut_policy())
+    }
+
+    /// Shared by real-start admission and the picker/iPhone entry points.
+    /// Only the guided shortcut may own the first-capture start; Finish is unaffected.
+    fn setup_blocks_capture(&mut self) -> bool {
+        use crate::capture::desktop::settings::onboarding::ShortcutPolicy;
+        if self.lab { return false; }
+        let blocked = self.onboarding_shortcut_policy() != ShortcutPolicy::Record
+            || self.onboarding.as_ref().is_some_and(|s| !s.allows_capture_start());
+        if blocked {
+            if let Some(session) = self.onboarding.as_mut() { session.show(); }
+        }
+        blocked
+    }
+
+    /// Consume the release as a setup trial, never as a recording request.
+    fn consume_setup_shortcut(&mut self) -> bool {
+        use crate::capture::desktop::settings::onboarding::{Input, ShortcutPolicy};
+        let policy = self.onboarding_shortcut_policy();
+        if policy == ShortcutPolicy::Record { return false; }
+        if let Some(session) = self.onboarding.as_mut() {
+            if policy == ShortcutPolicy::Trial { session.input(Input::ShortcutTriggered); }
+            session.show();
+        }
+        true
+    }
+
     /// The capture shortcut went down (from Carbon, the event tap or the HID poller).
     pub fn press_shortcut(&mut self, cx: &mut Context<Self>) {
         let activity = self.activity();
@@ -1804,6 +1848,22 @@ impl ApparentCoordinator {
             return;
         }
         if !self.shortcut.is_pending() && activity == crate::capture::desktop::settings::shortcut::Activity::Free {
+            use crate::capture::desktop::settings::onboarding::{Input, ShortcutPolicy};
+            match self.onboarding_shortcut_policy() {
+                ShortcutPolicy::Block => {
+                    if let Some(session) = self.onboarding.as_mut() { session.show(); }
+                    return;
+                }
+                ShortcutPolicy::Trial => {
+                    if let Some(session) = self.onboarding.as_mut() { session.input(Input::ShortcutTrialStarted); }
+                    self.hold_mods = crate::capture::engine::runtime::modifier_flags();
+                    self.telemetry.take_escape();
+                    let action = self.shortcut.press(activity);
+                    self.apply_shortcut(action, cx);
+                    return;
+                }
+                ShortcutPolicy::Record => {}
+            }
             // No picker or overlay before the permissions are on: they sit above
             // macOS's permission prompts and take the clicks meant for them.
             let missing = self.missing_to_record(crate::capture::engine::runtime::audio::mic::enabled());
@@ -1851,12 +1911,14 @@ impl ApparentCoordinator {
                 self.playback.take();
             }
             Action::RecordScreen => {
+                if self.consume_setup_shortcut() { return; }
                 if let Some(session) = self.onboarding.as_mut() {
                     session.input(crate::capture::desktop::settings::onboarding::Input::ShortcutTriggered);
                 }
                 self.record_screen_now(cx);
             }
             Action::RecordSelected => {
+                if self.consume_setup_shortcut() { return; }
                 if let Some(session) = self.onboarding.as_mut() {
                     session.input(crate::capture::desktop::settings::onboarding::Input::ShortcutTriggered);
                 }
@@ -3035,6 +3097,7 @@ impl ApparentCoordinator {
         if self.is_recording() || self.is_processing() {
             return;
         }
+        if self.setup_blocks_capture() { return; }
         apparent_log(format!("open_picker invoked (mode: {mode:?})"));
         let started = Instant::now();
         self.recording_shortcut_key = false;
@@ -3448,6 +3511,7 @@ impl ApparentCoordinator {
             self.start_lab_recording(crate::capture::engine::runtime::phone::phone_target("iPhone", None, None, 0, 0), cx);
             return;
         }
+        if self.setup_blocks_capture() { return; }
         if !self.ready_for(crate::capture::desktop::settings::onboarding::Permission::Camera) {
             self.cancel_recording(cx);
             return;
@@ -6960,6 +7024,40 @@ mod tests {
 
 
     #[test]
+    fn onboarding_trial_release_is_consumed_before_capture_admission() {
+        use crate::capture::desktop::settings::onboarding::{Flow, Input, Session, ShortcutPolicy, Step};
+        let (sender,_receiver)=flume::unbounded();
+        let mut coordinator=ApparentCoordinator::new(SharedCaptureTelemetry::new(sender),None);
+        coordinator.onboarding=Some(Session::for_test(Flow::tour(Step::Shortcut,None)
+            .with_first_capture(true,false,false,false)));
+        assert!(coordinator.consume_setup_shortcut(),"an unchosen default cannot record");
+        assert!(coordinator.setup_blocks_capture(),"menu and picker starts cannot bypass setup");
+        let session=coordinator.onboarding.as_mut().unwrap();
+        session.input(Input::ShortcutChosen);
+        assert_eq!(session.shortcut_policy(),ShortcutPolicy::Block,"selection keys must be released before the trial");
+        session.shortcut_selection_released(false);
+        assert_eq!(session.shortcut_policy(),ShortcutPolicy::Block);
+        session.shortcut_selection_released(true);
+        session.input(Input::ShortcutTrialStarted);
+        session.input(Input::Continue);
+        assert_eq!(session.shortcut_policy(),ShortcutPolicy::Trial,"holding keys cannot advance");
+        coordinator.shortcut.press(crate::capture::desktop::settings::shortcut::Activity::Free);
+        assert_eq!(coordinator.shortcut.tick(true),crate::capture::desktop::settings::shortcut::Action::None);
+        assert_eq!(coordinator.shortcut.tick(false),crate::capture::desktop::settings::shortcut::Action::RecordScreen);
+        assert!(coordinator.consume_setup_shortcut(),"the release confirms the trial, not recording");
+        assert!(!coordinator.capture_busy());
+        assert!(coordinator.admitted_microphone.is_none());
+        let session=coordinator.onboarding.as_mut().unwrap();
+        session.input(Input::Continue);
+        assert_eq!(session.shortcut_policy(),ShortcutPolicy::Record);
+        assert!(!session.local_practice(),"the first recording still requires another press");
+        assert!(!coordinator.consume_setup_shortcut());
+        assert!(coordinator.setup_blocks_capture(),"a menu start cannot replace guided shortcut practice");
+        coordinator.onboarding.as_mut().unwrap().input(Input::ShortcutTriggered);
+        assert!(!coordinator.setup_blocks_capture(),"the next guided press admits the real capture");
+    }
+
+    #[test]
     fn broader_restart_gate_waits_for_dismissed_finalizers_too() {
         let (sender, _receiver) = flume::unbounded();
         let mut coord = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
@@ -6996,7 +7094,7 @@ mod tests {
             ..Default::default()
         };
         coordinator.onboarding = Some(Session::for_test(
-            Flow::tour(Step::TryIt, Some(grants)).with_first_capture(true, true, false),
+            Flow::tour(Step::TryIt, Some(grants)).with_first_capture(true, true, true, false),
         ));
         let bundle: ApparentBundle = serde_json::from_value(serde_json::json!({
             "version": 1, "id": "a", "createdAtMs": 0, "durationMs": 1000,
@@ -7147,7 +7245,7 @@ mod tests {
             ..Default::default()
         };
         coordinator.onboarding = Some(Session::for_test(
-            Flow::tour(Step::TryIt, Some(grants)).with_first_capture(true, true, false),
+            Flow::tour(Step::TryIt, Some(grants)).with_first_capture(true, true, true, false),
         ));
         coordinator.onboarding.as_mut().unwrap().input(Input::ShortcutTriggered);
         // The same cancellation path used by journal/startup failure, before any island appears.
@@ -7173,7 +7271,7 @@ mod tests {
             grants.statuses.insert(permission, crate::capture::desktop::settings::onboarding::Status::Granted);
         }
         let mut flow = Flow::tour(Step::TryIt, Some(grants))
-            .with_first_capture(true, true, false);
+            .with_first_capture(true, true, true, false);
         coordinator.set_island_phase(IslandPhase::Recording);
         let first = coordinator.capture_generation;
         coordinator.set_island_phase(IslandPhase::Processing);
