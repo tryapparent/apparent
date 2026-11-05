@@ -8,6 +8,12 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 # install-app-remote.sh); APPARENT_NO_LAUNCH=1 skips the ~/bin link and launch,
 # but never permits replacement of a running app.
 APP_DIR="${APPARENT_APP_DIR:-${HOME}/Applications/Apparent.app}"
+mkdir -p "$(dirname "$APP_DIR")"
+if [[ "${APPARENT_INSTALL_LOCKED:-}" != "$APP_DIR" ]]; then
+  exec bash "${REPO_DIR}/capture/desktop/scripts/packaging/with-install-lock.sh" "$APP_DIR" env APPARENT_INSTALL_LOCKED="$APP_DIR" bash "$0" "$@"
+fi
+INSTALL_DEST="$APP_DIR"
+TRANSACTION="$REPO_DIR/shared/packaging/transaction.ts"
 CONTENTS_DIR="${APP_DIR}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
@@ -19,7 +25,10 @@ cd "${REPO_DIR}"
 chmod +x "${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh" "${REPO_DIR}/capture/desktop/scripts/release/release-app.sh" 2>/dev/null || true
 SPARKLE_DIR="$("${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh" 2>/dev/null || true)"
 BINARY_DIR="${REPO_DIR}/target/debug"
-if [[ -n "${APPARENT_PREBUILT_DIR:-}" ]]; then
+if [[ -n "${APPARENT_INSPECTION_REUSE:-}" ]]; then
+  BINARY_DIR="$(mktemp -d "$REPO_DIR/target/inspection-reuse-parent.XXXXXX")/bin"
+  APPARENT_INSPECTION_REQUIRED_PROFILE=debug node --experimental-strip-types "$REPO_DIR/capture/agent/inspection/delivery/composition.ts" reuse "$APPARENT_INSPECTION_REUSE" "$BINARY_DIR"
+elif [[ -n "${APPARENT_PREBUILT_DIR:-}" ]]; then
   # An explicit immutable, successful main producer is required. Never rebuild
   # automatically after failed admission or silently consume a cached binary.
   node "${REPO_DIR}/enablement/verification/mac-artifact-consumer.ts" prepare "${APPARENT_PREBUILT_DIR}"
@@ -41,6 +50,13 @@ while read -r PID EXECUTABLE; do
   fi
 done <<< "${PROCESSES}"
 
+# Prepare and validate the entire replacement without mutating the installed app.
+APP_DIR="$(node --experimental-strip-types "$TRANSACTION" prepare-app "$INSTALL_DEST")"
+trap 'node --experimental-strip-types "$TRANSACTION" discard-app "$APP_DIR"' EXIT
+CONTENTS_DIR="$APP_DIR/Contents"
+MACOS_DIR="$CONTENTS_DIR/MacOS"
+RESOURCES_DIR="$CONTENTS_DIR/Resources"
+FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
 mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}" "${FRAMEWORKS_DIR}" "${HOME}/bin"
 
 rm -f "${MACOS_DIR}/apparent" "${MACOS_DIR}/apparent-helper"
@@ -128,6 +144,11 @@ fi
 python3 "${REPO_DIR}/capture/desktop/scripts/packaging/stage-settings.py" "${RESOURCES_DIR}/settings" --sign "${IDENTITY}" \
   --popups-destination "${RESOURCES_DIR}/note-ui"
 
+node --experimental-strip-types "$REPO_DIR/connect/delivery/recipient/package.ts" "$REPO_DIR/connect/delivery/recipient/pins.json" "$(uname -m | sed 's/^arm64$/aarch64/')-apple-darwin" "$MACOS_DIR" codesign --force --sign "$IDENTITY"
+
+node --experimental-strip-types "$REPO_DIR/capture/agent/inspection/delivery/composition.ts" package "$BINARY_DIR" "$MACOS_DIR" codesign --force --sign "${IDENTITY}"
+
+
 if [[ -d "${FRAMEWORKS_DIR}/Sparkle.framework/Versions/B" ]]; then
   SPARKLE_VER="${FRAMEWORKS_DIR}/Sparkle.framework/Versions/B"
   codesign --force --sign "${IDENTITY}" "${SPARKLE_VER}/XPCServices/Installer.xpc"
@@ -138,6 +159,16 @@ if [[ -d "${FRAMEWORKS_DIR}/Sparkle.framework/Versions/B" ]]; then
 fi
 codesign --force --sign "${IDENTITY}" --identifier "dev.kitlangton.apparent.helper" "${MACOS_DIR}/apparent-helper"
 codesign --force --sign "${IDENTITY}" --identifier "dev.kitlangton.apparent" "${APP_DIR}"
+
+codesign --verify --deep --strict "$APP_DIR"
+node --experimental-strip-types "$TRANSACTION" publish-app "$APP_DIR" "$INSTALL_DEST"
+node --experimental-strip-types "$TRANSACTION" discard-app "$APP_DIR"
+trap - EXIT
+APP_DIR="$INSTALL_DEST"
+CONTENTS_DIR="$APP_DIR/Contents"
+MACOS_DIR="$CONTENTS_DIR/MacOS"
+RESOURCES_DIR="$CONTENTS_DIR/Resources"
+FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
 
 if [[ "${APPARENT_NO_LAUNCH:-0}" == "1" ]]; then
   exit 0

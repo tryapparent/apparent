@@ -15,6 +15,8 @@ on:
 permissions:
   contents: read
   actions: read
+  id-token: write
+  attestations: write
 
 # Every automatic Mac candidate already has a matching Linux receipt.
 # Finish running Mac work; coalesce only pending Linux-verified candidates.

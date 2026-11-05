@@ -11,6 +11,11 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../../../../.." && pwd)"
 binary="$(realpath "${1:-$root/target/release/apparent}")"
+if [[ -n "${APPARENT_INSPECTION_REUSE:-}" ]]; then
+  reused="$(mktemp -d "$root/target/inspection-reuse-parent.XXXXXX")/bin"
+  node --experimental-strip-types "$root/capture/agent/inspection/delivery/composition.ts" reuse "$APPARENT_INSPECTION_REUSE" "$reused"
+  binary="$reused/apparent"
+fi
 arch="$(uname -m)"
 out="$root/target/appimage"
 tools="${APPARENT_PACKAGING_TOOLS_DIR:-$out/tools}"
@@ -41,10 +46,20 @@ for library in "$(dirname "$binary")"/libggml-cpu*.so; do
   libraries+=(--library "$library")
 done
 
+mkdir -p "$appdir/usr/bin"
+cp "$binary" "$appdir/usr/bin/apparent"
+chmod 755 "$appdir/usr/bin/apparent"
+node --experimental-strip-types "$root/connect/delivery/recipient/package.ts" "$root/connect/delivery/recipient/pins.json" "$arch-unknown-linux-gnu" "$appdir/usr/bin"
+node --experimental-strip-types "$root/capture/agent/inspection/delivery/composition.ts" package "$(dirname "$binary")" "$appdir/usr/bin"
+
 cd "$out"
+# The staged executable's $ORIGIN is now AppDir/usr/bin. Resolve its native
+# dependencies from the admitted root input directory, before linuxdeploy copies
+# them into usr/lib and patches the packaged runtime search path.
+export LD_LIBRARY_PATH="$(dirname "$binary")${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy \
   --appdir "$appdir" \
-  --executable "$binary" \
+  --executable "$appdir/usr/bin/apparent" \
   "${libraries[@]}" \
   --executable "$(command -v wl-copy)" \
   --executable "$(command -v wl-paste)" \

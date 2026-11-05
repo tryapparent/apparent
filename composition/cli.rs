@@ -34,7 +34,6 @@ use crate::capture::engine::bundle::bundle_processing::{
 };
 use crate::capture::engine::runtime::audio::audio::AudioRecorder;
 use crate::capture::engine::runtime::{ScreenCaptureSession, discover_target, record_target};
-use crate::capture::engine::sketch::summary_markdown;
 use crate::shared::clock::now_epoch_ms;
 use crate::shared::ids::make_bundle_id;
 use crate::shared::model::{CaptureMode, InteractionEvent, Shape, parse_clock_ms};
@@ -1331,28 +1330,18 @@ pub(crate) fn run() -> Result<()> {
             }
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             let bundle = hosted::inspect_source(&bundle)?;
-            let (dir, loaded) = handoff::load_bundle(&bundle)?;
-            if dir.join(".evidence-only.json").exists() {
-                eprintln!("Evidence snapshot: video/audio not downloaded. Use apparent fetch <id> --media --out <new-directory> for the complete recording.");
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            {
+                let dir = handoff::resolve_bundle_dir(&bundle)?;
+                crate::composition::inspection::inspect(&dir, json, marks, &experiments)
             }
-            if marks {
-                let entries = agent_context::mark_entries(&loaded);
-                if json {
-                    let list: Vec<_> = entries.iter().map(|e| e.json()).collect();
-                    println!("{}", serde_json::to_string_pretty(&list)?);
-                } else if entries.is_empty() {
-                    println!("No marks");
-                } else {
-                    for entry in &entries {
-                        println!("{}", entry.line());
-                    }
-                }
-            } else if json {
-                println!("{}", serde_json::to_string_pretty(&loaded)?);
-            } else {
-                print!("{}", summary_markdown(&loaded, &dir));
+            #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+            {
+                let (dir, loaded) = handoff::load_bundle(&bundle)?;
+                print!("{}", apparent_inspect::inspect(&dir, &loaded, json, marks,
+                    handoff::experiment(handoff::AGENT_CONTEXT))?);
+                Ok(())
             }
-            Ok(())
         }
         Command::Clean {
             dry_run,

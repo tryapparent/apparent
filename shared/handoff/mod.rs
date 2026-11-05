@@ -137,95 +137,14 @@ pub fn reveal_path(target: &Path) -> Result<()> {
     }
 }
 
-pub fn resolve_bundle_dir(path_or_id: &Path) -> Result<PathBuf> {
-    if path_or_id == Path::new("latest") {
-        return newest_bundle(&default_captures_dir());
-    }
-    let mut path = path_or_id.to_owned();
-    if path.file_name().is_some_and(|name| name == "apparent.json") {
-        path = path
-            .parent()
-            .context("Missing bundle directory")?
-            .to_owned();
-        if path.as_os_str().is_empty() {
-            path = PathBuf::from(".");
-        }
-    }
-    if !path.exists() && path.components().count() == 1 {
-        path = default_captures_dir().join(&path);
-        if path.extension().is_none() {
-            path.set_extension("apparent");
-        }
-    }
-    ensure!(
-        path.is_dir(),
-        "Bundle directory not found: {}",
-        path.display()
-    );
-    let path = plain_path(
-        path.canonicalize()
-            .with_context(|| format!("Could not resolve {}", path.display()))?,
-    );
-    ensure!(
-        path.extension().is_some_and(|ext| ext == "apparent"),
-        "Expected a .apparent directory: {}",
-        path.display()
-    );
-    Ok(path)
+pub fn resolve_bundle_dir(path: &Path) -> Result<PathBuf> {
+    apparent_inspect::reader::resolve_bundle_dir(path, &default_captures_dir())
 }
-
-fn newest_bundle(captures: &Path) -> Result<PathBuf> {
-    capture_history(captures)?
-        .into_iter()
-        .next()
-        .context("No .apparent captures found")
-}
-
-/// Completed captures in reverse creation order. Do not use directory mtime: reprocessing and
-/// zooming an old capture can change it without making that capture the newest one.
 pub fn capture_history(captures: &Path) -> Result<Vec<PathBuf>> {
-    let mut candidates = Vec::new();
-    for entry in
-        fs::read_dir(captures).with_context(|| format!("Could not read {}", captures.display()))?
-    {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "apparent") && path.is_dir() {
-            // A cancelled or still-processing capture has a directory but no manifest.
-            // Never let it hide the last completed capture from paste/inspect latest.
-            let Some(bundle) = fs::read(path.join("apparent.json"))
-                .ok()
-                .and_then(|bytes| serde_json::from_slice::<ApparentBundle>(&bytes).ok())
-            else {
-                continue;
-            };
-            // Bundle creation time is stable even after later zoom-frame extraction.
-            candidates.push((bundle.created_at_ms, path));
-        }
-    }
-    candidates.sort_unstable_by(|a, b| b.cmp(a));
-    Ok(candidates
-        .into_iter()
-        .filter_map(|(_, path)| path.canonicalize().ok().map(plain_path))
-        .collect())
+    apparent_inspect::reader::capture_history(captures)
 }
-
-/// `canonicalize` on Windows returns `\\?\C:\…`; agents and terminals want `C:\…`.
-fn plain_path(path: PathBuf) -> PathBuf {
-    match path.to_str().and_then(|p| p.strip_prefix(r"\\?\")) {
-        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
-        _ => path,
-    }
-}
-
-pub fn load_bundle(bundle_dir: &Path) -> Result<(PathBuf, ApparentBundle)> {
-    let directory = resolve_bundle_dir(bundle_dir)?;
-    let path = directory.join("apparent.json");
-    let bundle = serde_json::from_slice(
-        &fs::read(&path).with_context(|| format!("Could not read {}", path.display()))?,
-    )
-    .with_context(|| format!("Invalid bundle manifest: {}", path.display()))?;
-    Ok((directory, bundle))
+pub fn load_bundle(path: &Path) -> Result<(PathBuf, ApparentBundle)> {
+    apparent_inspect::reader::load_bundle(path, &default_captures_dir())
 }
 
 #[cfg(target_os = "macos")]
@@ -876,3 +795,7 @@ fn existing_keyframes(
 mod test_modules;
 #[cfg(test)]
 pub(crate) use test_modules::fake_api;
+
+use apparent_inspect::reader::plain_path;
+#[cfg(test)]
+use apparent_inspect::reader::newest_bundle;

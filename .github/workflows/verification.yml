@@ -8,6 +8,8 @@ on:
 permissions:
   contents: read
   actions: read
+  id-token: write
+  attestations: write
 
 # Finish the running candidate; replace only pending work. Mac never holds this lane.
 concurrency:

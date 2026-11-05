@@ -39,8 +39,15 @@ case "$NOTARIZE" in
   *) echo 'APPARENT_PREVIEW_NOTARIZE must be true or false' >&2; exit 1 ;;
 esac
 SPARKLE_DIR="$(capture/desktop/scripts/release/setup-sparkle.sh)"
+BINARY_DIR="$ROOT/target/release"
+if [[ -n "${APPARENT_INSPECTION_REUSE:-}" ]]; then
+  BINARY_DIR="$(mktemp -d "$ROOT/target/inspection-reuse-parent.XXXXXX")/bin"
+  APPARENT_PREVIEW_BUILD=1 APPARENT_HELPER_BUNDLE_ID=dev.simonvanlaak.apparent.preview.helper \
+  APPARENT_INSPECTION_REQUIRED_PROFILE=release node --experimental-strip-types "$ROOT/capture/agent/inspection/delivery/composition.ts" reuse "$APPARENT_INSPECTION_REUSE" "$BINARY_DIR"
+else
 APPARENT_PREVIEW_BUILD=1 APPARENT_HELPER_BUNDLE_ID=dev.simonvanlaak.apparent.preview.helper \
   cargo build --release --locked -j 3
+fi
 
 dist="$ROOT/dist"
 app="$dist/Apparent Preview.app"
@@ -49,7 +56,7 @@ name="Apparent-Preview-${VERSION}-arm64.dmg"
 zip="Apparent-Preview-${VERSION}-arm64.zip"
 rm -rf "$app" "$staging"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Frameworks" "$staging"
-cp target/release/apparent target/release/apparent-helper "$app/Contents/MacOS/"
+cp "$BINARY_DIR/apparent" "$BINARY_DIR/apparent-helper" "$app/Contents/MacOS/"
 chmod +x "$app/Contents/MacOS/apparent" "$app/Contents/MacOS/apparent-helper"
 cp capture/desktop/assets/Apparent.icns "$app/Contents/Resources/Apparent.icns"
 cp shared/assets/fonts/HostGrotesk-Variable.ttf "$app/Contents/Resources/HostGrotesk-Variable.ttf"
@@ -103,6 +110,11 @@ if [[ "$NOTARIZE" == true ]]; then
 else
   python3 "$ROOT/capture/desktop/scripts/packaging/stage-settings.py" "$app/Contents/Resources/settings" --sign -
 fi
+
+node --experimental-strip-types "$ROOT/connect/delivery/recipient/package.ts" "$ROOT/connect/delivery/recipient/pins.json" "$(uname -m | sed 's/^arm64$/aarch64/')-apple-darwin" "$app/Contents/MacOS" "${SIGN[@]}"
+
+APPARENT_PREVIEW_BUILD=1 APPARENT_HELPER_BUNDLE_ID=dev.simonvanlaak.apparent.preview.helper \
+node --experimental-strip-types "$ROOT/capture/agent/inspection/delivery/composition.ts" package "$BINARY_DIR" "$app/Contents/MacOS" "${SIGN[@]}"
 
 plutil -lint "$app/Contents/Info.plist"
 sparkle="$app/Contents/Frameworks/Sparkle.framework/Versions/B"
