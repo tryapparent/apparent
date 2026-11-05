@@ -1,20 +1,19 @@
-.native-control { position: relative; margin: 4px 0 8px; padding: 4px 44px 4px 4px; background: var(--apparent-stock); border: 1px solid var(--apparent-border); }
-.native-control-motion svg { display: block; width: 100%; height: 66px; overflow: visible; font: 14px var(--font-sans); }
-.native-control[data-kind=locate] .native-control-motion svg { height: 104px; }
+.native-control { position: relative; margin: 8px 0; padding: 8px 48px 8px 8px; background: var(--apparent-stock); border: 1px solid var(--apparent-border); }
+/* Reference labels share the SVG design-space scale; the real instruction uses rem. */
+.native-control-motion svg { display: block; width: 100%; height: 64px; overflow: visible; font: 400 16px/1.5 var(--font-sans); }
+.native-control[data-kind=locate] .native-control-motion svg { height: 120px; }
 .native-control .native-control-replay { position: absolute; right: 0; top: 50%; transform: translateY(-50%); min-height: 44px; min-width: 44px; padding: 0; color: var(--apparent-carbon); font-size: 24px; }
 .control-pill, .control-menu-surface { fill: var(--apparent-surface); stroke: var(--apparent-input); stroke-width: 1; }
 .control-screen text, .control-board text, .control-menu text { fill: var(--apparent-foreground); }
 .control-highlight, .control-finish-button, .control-menu-target, .control-copied circle { fill: var(--apparent-lilac); }
-.control-board text { font-size: 13px; }
 .control-board, .control-copied { animation: control-appear 4s steps(1,end) both; }
 .control-screen, .control-before-finish { animation: control-disappear 4s steps(1,end) both; }
 .control-recording-pill { fill: var(--apparent-carbon); }
-.control-before-finish text, .control-copied text { fill: var(--apparent-paper); font-size: 12px; }
+.control-before-finish text, .control-copied text { fill: var(--apparent-paper); }
 .control-before-finish text:last-child, .control-board text:nth-child(4), .control-menu-target-label { fill: var(--apparent-carbon); }
 .control-record-dot { fill: var(--apparent-pen-coral); }
 .control-copied path { fill: none; stroke: var(--apparent-carbon); stroke-width: 2; }
 .control-menu { animation: control-menu-open 4s steps(1,end) both; }
-.control-menu .control-menu-mic { font-size: 12px; }
 .control-menu-separator { fill: none; stroke: var(--apparent-input); stroke-width: .7; }
 .control-menu-target { animation: control-menu-target 4s steps(1,end) both; }
 .control-menu .control-menu-target-label { fill: var(--apparent-carbon); }
@@ -35,7 +34,7 @@
 @keyframes control-board-pointer { 0%,8% { transform: translate(130px,62px); } 25%,42% { transform: translate(233px,37px); } 68%,100% { transform: translate(179px,37px); } }
 @keyframes control-screen-pointer { 0%,8% { transform: translate(130px,62px); } 25%,100% { transform: translate(233px,37px); } }
 @keyframes control-finish-pointer { 0%,8% { transform: translate(190px,65px); opacity: 1; } 28%,42% { transform: translate(276px,40px); opacity: 1; } 58%,100% { transform: translate(276px,40px); opacity: 0; } }
-@keyframes control-menu-pointer { 0%,8% { transform: translate(120px,30px); } 25%,43% { transform: translate(64px,13px); } 68%,100% { transform: translate(190px,106px); } }
+@keyframes control-menu-pointer { 0%,8% { transform: translate(120px,30px); } 25%,43% { transform: translate(40px,13px); } 68%,100% { transform: translate(166px,124px); } }
 @keyframes control-click-first { 0%,28%,42%,100% { opacity: 0; transform: scale(.6); } 31% { opacity: 1; transform: scale(.6); } 41% { opacity: 0; transform: scale(1.4); } }
 @keyframes control-click-second { 0%,70%,84%,100% { opacity: 0; transform: scale(.6); } 73% { opacity: 1; transform: scale(.6); } 83% { opacity: 0; transform: scale(1.4); } }
 @media (prefers-reduced-motion: reduce) {
@@ -45,7 +44,7 @@
   .control-pointer { display: none; }
   .native-control[data-screen-only=true] .control-screen { display: block; }
   .native-control .native-control-replay { display: none; }
-  .native-control { padding-right: 4px; }
+  .native-control { padding-right: 8px; }
 }
 
 .control-screen text:nth-child(5) { fill: var(--apparent-carbon); }

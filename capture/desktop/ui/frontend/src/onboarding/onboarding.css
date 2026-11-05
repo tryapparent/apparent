@@ -113,10 +113,12 @@ html.native-onboarding-shell body { background: transparent !important; margin: 
 /* Keep the passive build label clear of setup footer actions; coach gutters stay transparent. */
 html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 19px; bottom: auto; right: 64px; }
 
-.native-coach:is(:has(.native-gesture),:has(.native-control)) { padding: 18px; }
-.native-coach:is(:has(.native-gesture),:has(.native-control)) h1 { margin: 8px 0 6px; }
+.native-coach:is(:has(.native-gesture),:has(.native-control)) { padding: 16px; }
+/* 56px top + 34px card frame + 22px bottom clearance in the fixed coach window. */
+.native-coach:is(:has(.native-gesture),:has(.native-control)) .native-coach-content { max-height: calc(100vh - 112px); }
+.native-coach:is(:has(.native-gesture),:has(.native-control)) h1 { margin: 8px 0; }
 .native-coach:is(:has(.native-gesture),:has(.native-control)) p { margin-bottom: 8px; }
 .native-coach:is(:has(.native-gesture),:has(.native-control)) .native-later { margin-top: 0; }
 
-.native-coach-actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.native-coach-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .native-coach-actions .native-later { margin-top: 0; }
