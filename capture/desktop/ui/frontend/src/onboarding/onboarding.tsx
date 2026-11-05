@@ -3,6 +3,7 @@ import { Button } from '@apparent/ui/button';
 import icon from '../../../../../../shared/assets/brand/apparent-app-icon.svg';
 import frog from '../../../../assets/onboarding/frog.png';
 import './onboarding.css';
+import { GestureGuide } from './gesture-guide';
 type Row={permission:string;status:string;required:boolean;reopening:boolean;relaunch:boolean};
 type Action=string|{action:'shortcut';kind:'record';keyCode:number;modifiers:number;key:string;reserved:false};
 type Editor={recording:boolean;externallyManaged:boolean;error:string|null};
@@ -73,7 +74,7 @@ export function NativeOnboarding(){
       'copy-failed':{title:'Saved, but not copied.',text:'Your capture is saved. Find it in apparent’s menu.',button:'Find saved capture',action:'practice-locate'},
     };
     const c=content[state.practice??'start']??content.start;
-    return <main className="native-coach" data-stage={state.practice} data-arrow={state.coachPointsUp} style={{'--coach-arrow':`${(state.coachArrow??190)-24}px`} as React.CSSProperties}><img key={state.practice} src={frog} alt="Frog guide"/><div className="native-coach-content"><div className="native-coach-label">Your first capture</div><h1>{c.title}</h1><p>{c.text}</p>{c.button&&<Button onClick={()=>void action(c.action!)}>{c.button}</Button>}{!state.firstCaptureRequired&&<Button variant="outline" onClick={()=>void action('continue')}>Skip practice</Button>}{error&&<p role="alert">{error}</p>}<Button variant="ghost" className="native-later" onClick={()=>void action('later')}>Try later</Button></div></main>;
+    return <main className="native-coach" data-stage={state.practice} data-arrow={state.coachPointsUp} style={{'--coach-arrow':`${(state.coachArrow??190)-24}px`} as React.CSSProperties}><img key={state.practice} src={frog} alt="Frog guide"/><div className="native-coach-content"><div className="native-coach-label">Your first capture</div><h1>{c.title}</h1><p>{c.text}</p>{(['start','retry','screen-ink','copied','paste'].includes(state.practice??'start'))&&<GestureGuide key={state.practice} kind={state.practice==='screen-ink'?'draw':state.practice==='copied'||state.practice==='paste'?'paste':'record'} shortcut={state.shortcut} platform={state.platform}/>} {c.button&&<Button onClick={()=>void action(c.action!)}>{c.button}</Button>}{error&&<p role="alert">{error}</p>}<div className="native-coach-actions">{!state.firstCaptureRequired&&<Button variant="outline" onClick={()=>void action('continue')}>Skip practice</Button>}<Button variant="ghost" className="native-later" onClick={()=>void action('later')}>Try later</Button></div></div></main>;
   }
   return <main className="native-setup"><header><span>{state.testInstance?'apparent · onboarding preview 9':'apparent · setup'}</span><Button variant="ghost" size="icon" aria-label="Close setup" onClick={()=>void action('close')}>×</Button></header><section>
     {state.step==='welcome'&&!state.penPicker&&<div className="native-welcome"><h1>Welcome.</h1><img src={icon} alt="apparent"/><Button disabled>Sign in with Google</Button><p>Set up locally. Sign-in is not available yet.</p></div>}

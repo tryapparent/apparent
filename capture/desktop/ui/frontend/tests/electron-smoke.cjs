@@ -313,6 +313,47 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     assert.equal(layout.scroll,false,phase+' needs scrolling at normal text size');
     for(const button of layout.buttons){assert.ok(button.font>=18&&button.width>=44&&button.height>=44,phase+' button violates brand minimum');assert.equal(button.radius,'0px');}
   }
+  // Guides use the saved keys, finish once, and replay without invoking app actions.
+  send({step:'try-it',practice:'start',shortcut:'⌃⌘9',firstCaptureRequired:true});
+  await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','record');
+  assert.deepEqual(await page.locator('.native-gesture kbd').allTextContents(),['⌃','⌘','9']);
+  const strip=await page.locator('.native-gesture').boundingBox();
+  assert.ok(strip.height<=80,'Keep the inline demonstration compact');
+  await page.locator('.native-gesture').evaluate(async el=>{
+    await Promise.all(el.getAnimations({subtree:true}).map(animation=>animation.finished));
+  });
+  assert.equal(await page.locator('.native-gesture').evaluate(el=>el.getAnimations({subtree:true}).every(animation=>animation.playState==='finished')),true);
+  await page.locator('.native-gesture-motion').evaluate(el=>window.originalGuideNode=el);
+  const priorActions=output;
+  await page.getByRole('button',{name:'Replay shortcut guide',exact:true}).click();
+  assert.equal(await page.locator('.native-gesture-motion').evaluate(el=>el!==window.originalGuideNode),true);
+  assert.equal(output,priorActions,'Replay must never send shortcuts or advance onboarding');
+  send({step:'try-it',practice:'paste',platform:'linux',firstCaptureRequired:true});
+  await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','paste');
+  assert.deepEqual(await page.locator('.native-gesture kbd').allTextContents(),['Ctrl','V']);
+  send({step:'try-it',practice:'start',platform:'linux',shortcut:'Ctrl+Alt+K',firstCaptureRequired:true});
+  await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','record');
+  assert.deepEqual(await page.locator('.native-gesture kbd').allTextContents(),['Ctrl','Alt','K']);
+  for(const [platform,shortcut,keys] of [
+    ['linux','Ctrl++',['Ctrl','+']],
+    ['macos','⌥⇧Space',['⌥','⇧','Space']],
+    ['macos','⌥⇧+',['⌥','⇧','+']],
+  ]){
+    send({step:'try-it',practice:'start',platform,shortcut,firstCaptureRequired:true});
+    await expect(page.locator('.native-gesture')).toHaveAttribute('aria-label','Record with '+shortcut);
+    assert.deepEqual(await page.locator('.native-gesture kbd').allTextContents(),keys);
+  }
+  await page.emulateMedia({colorScheme:'dark'});
+  await page.locator('.native-gesture').evaluate(el=>{for(const animation of el.getAnimations({subtree:true})){animation.pause();animation.currentTime=2000}});
+  await expect(page.locator('.native-gesture kbd').first()).toHaveCSS('color','rgb(2, 1, 2)');
+  await expect(page.locator('.native-gesture')).toHaveCSS('background-color','rgb(231, 224, 238)');
+  await expect(page.getByRole('button',{name:'Replay shortcut guide',exact:true})).toHaveCSS('color','rgb(2, 1, 2)');
+  send({step:'try-it',practice:'screen-ink',firstCaptureRequired:true});
+  await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','draw');
+  await page.emulateMedia({reducedMotion:'reduce',colorScheme:'dark'});
+  assert.equal(await page.locator('.native-gesture').evaluate(el=>el.getAnimations({subtree:true}).length),0);
+  await expect(page.getByRole('button',{name:'Replay drawing guide',exact:true})).toHaveCount(0);
+  await page.emulateMedia({reducedMotion:'no-preference',colorScheme:'light'});
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
   await expect(page.locator('.native-coach p')).toHaveCSS('font-size','36px');
   assert.equal(await page.locator('.native-coach-content').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
