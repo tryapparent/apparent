@@ -773,6 +773,9 @@ impl Gate {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Progress {
+    /// Version of the setup journey whose resume point this belongs to.
+    #[serde(default)]
+    pub tour_revision: u32,
     /// The tour finished (or was dismissed in the legacy flow); it won't open by itself again.
     #[serde(default)]
     pub seen: bool,
@@ -801,6 +804,21 @@ pub struct Progress {
 }
 
 impl Progress {
+    /// Old unfinished tours restart once at Welcome. Permission relaunches within
+    /// this revision continue where they left off; completed users are not re-enrolled.
+    pub fn prepare_current_tour(&mut self) -> bool {
+        const CURRENT_TOUR: u32 = 1;
+        if self.tour_revision >= CURRENT_TOUR { return false; }
+        self.tour_revision = CURRENT_TOUR;
+        if !self.seen {
+            self.resume = Some(Step::Welcome);
+            self.tutorial = None;
+            self.shortcut_chosen = false;
+            self.first_capture_completed = false;
+        }
+        true
+    }
+
     /// Closing is allowed, but an experimental tour resumes until its capture succeeds.
     pub fn leave(&mut self, flow: &Flow) {
         if flow.mode == Mode::Fix {
@@ -2417,6 +2435,31 @@ mod tests {
     }
 
     #[test]
+    fn legacy_unfinished_tour_restarts_once_without_losing_grants() {
+        let mut progress = Progress { resume: Some(Step::Permissions),
+            granted: Permission::REQUIRED.into_iter().collect(), ..Progress::default() };
+        let granted = progress.granted.clone();
+        assert!(progress.prepare_current_tour());
+        assert_eq!(progress.resume, Some(Step::Welcome));
+        assert_eq!(progress.granted, granted);
+        assert_eq!(launch_plan(&progress, &grants(&Permission::REQUIRED)).unwrap().step(), Step::Welcome);
+        progress.relaunching(Some(Step::Permissions), 123);
+        assert!(!progress.prepare_current_tour());
+        assert_eq!(progress.resume, Some(Step::Permissions));
+    }
+
+    #[test]
+    fn completed_and_newer_tours_are_not_restarted_by_migration() {
+        let mut finished = Progress { seen: true, ..Progress::default() };
+        assert!(finished.prepare_current_tour());
+        assert!(finished.seen);
+        assert!(launch_plan(&finished, &grants(&Permission::REQUIRED)).is_none());
+        let mut future = Progress { tour_revision: 2, resume: Some(Step::Shortcut), ..Progress::default() };
+        assert!(!future.prepare_current_tour());
+        assert_eq!(future.resume, Some(Step::Shortcut));
+    }
+
+    #[test]
     fn a_tour_quit_midway_resumes_where_it_was() {
         let mut flow = Flow::tour(Step::Welcome, Some(grants(&[])));
         assert_eq!(flow.resume_point(), Some(Step::Welcome));
@@ -2563,6 +2606,7 @@ mod tests {
         std::fs::write(&path, r#"{"agentHost":"studio","autocrop":false}"#).unwrap();
         assert_eq!(Progress::load_from(&path), Progress::default());
         let progress = Progress {
+            tour_revision: 0,
             seen: true,
             resume: Some(Step::Permissions),
             granted: [Microphone].into_iter().collect(),

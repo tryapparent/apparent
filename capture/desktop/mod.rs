@@ -1621,6 +1621,7 @@ impl ApparentCoordinator {
             Event::Launch(grants) => {
                 self.note_grants(&grants);
                 let mut progress = Progress::load();
+                if progress.prepare_current_tour() { progress.save(); }
                 let plan = crate::capture::desktop::settings::onboarding::launch_plan(&progress, &grants);
                 if std::mem::take(&mut progress.reopen_fix) {
                     progress.save();
