@@ -17,8 +17,7 @@ need no new Mac walkthrough before merge. A short current-package Mac smoke and
 existing CI/signing gates remain required before Mac publication. This policy
 governs the workflow checklists below; specific human holds remain in force.
 Synthetic fixtures never establish OS effects, and new native routes still need
-focused real-platform checks. Automatic selection/reuse is not implemented by
-this documentation change.
+focused real-platform checks.
 
 ## Standalone renderer artifact
 
@@ -29,20 +28,24 @@ artifact. It does not invoke Cargo, build the native application, install the ap
 or select an updater. The output path must be new; failed output is retained for
 inspection. The manifest records `gitHead`, SHA-256 for each source/input file in
 this frontend tree and `shared/ui`, the Vite output inventory and digests, the
-four renderer entry pages, and runtime compatibility (`vite-static-multipage`,
-relative asset base, Electron major 45, Node integration disabled).
+four renderer entry pages, source-bound Electron host files and runtime
+compatibility (`vite-static-multipage`, relative asset base, Electron major 45,
+Node integration disabled).
 
-The standalone archive has `renderer/` and `manifest.json`. Assembly callers
+The standalone archive has `renderer/`, `electron/` and `manifest.json`. Assembly callers
 must authenticate the archive out of band and provide that expected SHA-256:
 `npm run renderer:stage -- /path/to/archive SHA256 /absolute/new/stage`. The
 adjacent checksum or manifest is not an authentication source. Staging hashes
 one immutable input snapshot, rejects symlink entries, unsafe paths and unexpected
 archive members, checks exact inventory and file digests, rejects a pre-existing or
 symlinked destination, and publishes into a new directory. The staged contract
-is `<stage>/renderer/**` plus `<stage>/manifest.json`. This is the intended seam
-for a separate root-assembly consumer; this producer does not establish app
-consumption or installed routing. That consumer owns closure exclusions and
-trust/admission policy and must not duplicate producer-side trust decisions.
+is `<stage>/renderer/**`, `<stage>/electron/**` and `<stage>/manifest.json`.
+Normal packaging installs these bytes into the existing Settings/Pill app and
+Notes app directories. Their current Electron entrypoints load the sibling
+`dist/settings.html`, `dist/pill/index.html` and `dist/index.html` files. The
+host files and Vite output come from this same source-bound artifact; the root
+assembly consumer still owns root closure exclusions and trust/admission policy
+and must not duplicate producer-side trust decisions.
 
 For real build and staging proof after `npm ci`:
 
@@ -59,8 +62,10 @@ before the staging command; a locally computed adjacent digest is not that recei
 
 The artifact test covers real Vite output plus authenticated staging, destination
 non-overwrite, wrong archive digest, changed output under a valid caller digest,
-and symlink-member rejection. Rollback is to keep consuming the existing native
-renderer assets; adoption and install routing are separate root-owned work.
+and symlink-member rejection. Existing target executables may use checkout assets
+for development. Packaged executables require the admitted product resources and
+fail closed if they are missing; they do not load renderer files from the source
+checkout.
 
 From the repository root, with Node 22 and npm 10 or newer:
 

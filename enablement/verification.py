@@ -93,6 +93,84 @@ BROWSER_FILES = {"connect/web/" + path for path in (
 )}
 
 
+DIRECTORY_WIDTH_CONTRACT_INPUTS = {
+    ".githooks/pre-commit",
+    "enablement/directory-width/check.py",
+    "enablement/file-length/check.ts",
+    "enablement/verification.py",
+}
+
+
+def directory_width_contract_selected(paths):
+    """Select its existing integration suite only when its inputs changed."""
+    if not paths:
+        return True  # Unknown history stays conservative.
+    return any(path in DIRECTORY_WIDTH_CONTRACT_INPUTS
+               or path.startswith("enablement/directory-width/tests/")
+               for path in paths)
+
+
+CONNECT_CLIENT_TYPESCRIPT = "connect/client/typescript/"
+CONNECT_CLIENT_TYPESCRIPT_CONFIG = {
+    CONNECT_CLIENT_TYPESCRIPT + name
+    for name in ("package.json", "package-lock.json", "tsconfig.json")
+}
+
+
+def connect_client_typescript_selected(paths):
+    """Select the existing client package test for its full local input set."""
+    if not paths:
+        return True  # Unknown history stays conservative.
+    return any(
+        path in CONNECT_CLIENT_TYPESCRIPT_CONFIG
+        or path.startswith(CONNECT_CLIENT_TYPESCRIPT + "src/")
+        or (path.startswith(CONNECT_CLIENT_TYPESCRIPT + "test/")
+            and "/" not in path[len(CONNECT_CLIENT_TYPESCRIPT + "test/"):]
+            and path.endswith(".test.ts"))
+        for path in paths
+    )
+
+
+PUBLIC_SITE_ROOT = "public/site/"
+PUBLIC_SITE_BUILD_INPUTS = {
+    PUBLIC_SITE_ROOT + name for name in (
+        "index.html", "package.json", "bun.lock", "tsconfig.json", "vite.config.ts",
+    )
+}
+PUBLIC_SITE_TOOLING_INPUTS = {
+    PUBLIC_SITE_ROOT + "lib/public-assets.mjs",
+    PUBLIC_SITE_ROOT + "scripts/site-build/agent-files.ts",
+    PUBLIC_SITE_ROOT + "scripts/site-build/feature-audit.ts",
+    PUBLIC_SITE_ROOT + "scripts/site-build/prerender.ts",
+    "shared/analytics/config.ts",
+    "shared/analytics/browser.ts",
+    "shared/ui/src/tokens.css",
+    "shared/ui/scripts/check-theme.py",
+    "shared/ui/scripts/legacy-colors.json",
+}
+PUBLIC_CONNECT_SHARED_ASSETS = {
+    "public/site/public/assets/" + path for path in (
+        "hosted/source-pond-v4.png", "hosted/agent-pond-v4.png",
+        "hosted/agent-reading-v4.png", "fonts/HostGrotesk-Variable.ttf",
+        "brand/apparent-wordmark.svg",
+    )
+}
+PUBLIC_CONNECT_SHARED_INPUTS = PUBLIC_CONNECT_SHARED_ASSETS | {
+    "shared/analytics/config.ts", "shared/analytics/browser.ts", "shared/ui/src/tokens.css",
+}
+
+
+def public_site_build_selected(paths):
+    """Select Public's existing non-browser package build for its real inputs."""
+    if not paths:
+        return True  # Feature-push contracts do not run the selected root suite.
+    return any(
+        path in PUBLIC_SITE_BUILD_INPUTS | PUBLIC_SITE_TOOLING_INPUTS
+        or path.startswith((PUBLIC_SITE_ROOT + "src/", PUBLIC_SITE_ROOT + "public/"))
+        for path in paths
+    )
+
+
 def select(paths, history_known=True):
     paths = sorted(set(paths))
     # Unknown/shared/build/security/lifecycle input is broad by default. Do not
@@ -100,9 +178,21 @@ def select(paths, history_known=True):
     broad = not history_known or not paths
     engine = False
     browser = False
+    public_site = False
     reasons = []
     for path in paths:
         if path in DOCS or (path.startswith("docs/") and path.endswith(".md")):
+            continue
+        if path in PUBLIC_CONNECT_SHARED_INPUTS:
+            # Shared browser sources and Public-owned assets have Connect
+            # consumers; preserve broad root and browser checks as well.
+            public_site = True
+            browser = True
+            broad = True
+            reasons.append(path)
+            continue
+        if public_site_build_selected([path]):
+            public_site = True
             continue
         # The extracted Rust package is a real standalone Cargo workspace.
         # Its src/tests/manifest/lock inputs run package checks; only src/tests
@@ -125,6 +215,7 @@ def select(paths, history_known=True):
             broad = True
             reasons.append(path)
     return {"root": broad, "engine": broad or engine, "browser": browser,
+            "public_site": public_site or not history_known or not paths,
             "focused": [], "paths": paths,
             "reason": "unknown history or empty delta" if not history_known or not paths
             else "broad inputs: " + ", ".join(reasons) if broad else "document/package-test-only delta"}
@@ -212,6 +303,13 @@ def check_temp_environment():
 def run_pr_checks(selection=None):
     subprocess.run(["node", "--experimental-strip-types", "--test", "enablement/file-length/check.test.ts"], cwd=ROOT, check=True)
     subprocess.run(["python3", "shared/ui/scripts/check-theme.py"], cwd=ROOT, check=True)
+    paths = selection["paths"] if selection else []
+    if connect_client_typescript_selected(paths):
+        run_connect_client_typescript_tests()
+    if directory_width_contract_selected(paths):
+        subprocess.run(["python3", "-m", "unittest", "discover", "-s",
+                        "enablement/directory-width/tests", "-p", "test_*.py"],
+                       cwd=ROOT, check=True)
     for pattern in ("test_*push*.py", "test_verification.py", "test_release_gate.py",
                     "test_temp_preflight.py", "test_owner_lanes.py"):
         subprocess.run(["python3", "-m", "unittest", "discover", "-s", "enablement/tests",
@@ -230,7 +328,6 @@ def run_pr_checks(selection=None):
             "src/main.tsx", "src/base.css",
         )
     }
-    paths = selection["paths"] if selection else []
     if any(path == frontend_root + "src/onboarding/main.tsx"
            or path.startswith(onboarding_inputs) or path in onboarding_exact
            or path.startswith("shared/ui/")
@@ -243,6 +340,64 @@ def run_pr_checks(selection=None):
                 "node_modules/@apparent/ui/package.json")):
             raise RuntimeError("Onboarding feedback needs installed dependencies: run npm ci in capture/desktop/ui/frontend, then retry the push; the hook never installs dependencies")
         subprocess.run(["npm", "run", "check:onboarding"], cwd=frontend, check=True)
+    if (selection or {}).get("public_site", public_site_build_selected(paths)):
+        run_public_site_build()
+
+
+def run_connect_client_typescript_tests():
+    package = ROOT / "connect/client/typescript"
+    controls = ("package.json", "package-lock.json", "tsconfig.json")
+    missing_controls = [name for name in controls if not (package / name).is_file()]
+    if missing_controls:
+        raise RuntimeError(
+            "Connect client TypeScript package controls are missing or deleted: "
+            + ", ".join(missing_controls)
+            + "; restore them or update the pre-push contract before pushing"
+        )
+    dependencies = (
+        "node_modules/typescript/bin/tsc",
+        "node_modules/@types/node/package.json",
+        "node_modules/age-encryption/package.json",
+        "node_modules/@noble/ed25519/package.json",
+    )
+    missing_dependencies = [name for name in dependencies if not (package / name).is_file()]
+    if missing_dependencies:
+        raise RuntimeError(
+            "Connect client TypeScript feedback needs installed locked dependencies; "
+            "run `npm ci --no-audit --no-fund` in connect/client/typescript, then retry. "
+            "The pre-push hook never installs dependencies. Missing: "
+            + ", ".join(missing_dependencies)
+        )
+    subprocess.run(["npm", "test"], cwd=package, check=True)
+
+
+def run_public_site_build():
+    package = ROOT / "public/site"
+    controls = ("package.json", "bun.lock", "tsconfig.json", "vite.config.ts", "index.html")
+    missing_controls = [name for name in controls if not (package / name).is_file()]
+    if missing_controls:
+        raise RuntimeError(
+            "Public site build inputs are missing or deleted: "
+            + ", ".join(missing_controls)
+            + "; restore them or update the pre-push contract before pushing"
+        )
+    try:
+        manifest = json.loads((package / "package.json").read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError("Public site package.json must remain valid for pre-push build feedback") from error
+    dependencies = {**manifest.get("dependencies", {}), **manifest.get("devDependencies", {})}
+    missing_dependencies = [
+        name for name in dependencies
+        if not (package / "node_modules" / name / "package.json").is_file()
+    ]
+    if missing_dependencies:
+        raise RuntimeError(
+            "Public site feedback needs installed locked dependencies; run "
+            "`bun install --frozen-lockfile` in public/site, then retry. "
+            "The pre-push hook never installs dependencies. Missing: "
+            + ", ".join(sorted(missing_dependencies))
+        )
+    subprocess.run(["npm", "run", "build"], cwd=package, check=True)
 
 
 def run_contract_checks():
@@ -466,6 +621,16 @@ def run_selected_checks(selection, offline=True, cargo_timings=False, overlap_ro
     jobs = os.environ.get("T3_BUILD_JOBS", "3")
     dependency_mode = "--offline" if offline else "--locked"
     diagnostics = ["--timings"] if cargo_timings else []
+    # The standalone Engine package is a smaller consumer than the root app.
+    # Run it first when both lanes are selected so package-local compiler or
+    # test failures stop before the broader application compile. Root checks
+    # still run for every source change because production remains a root module.
+    if selection["engine"]:
+        for command in ("build", "test"):
+            args = cargo + [command, "--manifest-path", "capture/engine/Cargo.toml", "-j", jobs, dependency_mode] + diagnostics
+            if command == "test":
+                args += ["--", "--test-threads=2"]
+            subprocess.run(args, cwd=ROOT, check=True)
     if selection["root"]:
         if selection.get("focused"):
             for test_filter in selection["focused"]:
@@ -490,14 +655,6 @@ def run_selected_checks(selection, offline=True, cargo_timings=False, overlap_ro
             subprocess.run(build_command if not selection.get("focused") else
                            cargo + ["build", "-j", jobs, dependency_mode] + diagnostics,
                            cwd=ROOT, check=True)
-    # Keep existing root failure/order semantics, then run fast package checks
-    # for early package-specific feedback before later non-Cargo lanes.
-    if selection["engine"]:
-        for command in ("build", "test"):
-            args = cargo + [command, "--manifest-path", "capture/engine/Cargo.toml", "-j", jobs, dependency_mode] + diagnostics
-            if command == "test":
-                args += ["--", "--test-threads=2"]
-            subprocess.run(args, cwd=ROOT, check=True)
     if selection.get("browser"):
         # Use the existing package fixtures, including the separate loopback
         # build. Do not substitute a production artifact with synthetic config.

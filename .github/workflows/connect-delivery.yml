@@ -97,11 +97,11 @@ jobs:
         run: |
           (cd connect/service && npm ci --include=dev)
           (cd connect/web && bun install --frozen-lockfile)
-          (cd connect/web && ./node_modules/.bin/playwright-core install --with-deps chromium firefox)
           cd connect/web
+          node --experimental-strip-types scripts/playwright-runtime.ts
           echo "CHROME_PATH=$(node --input-type=module -e 'import {chromium} from "playwright-core"; console.log(chromium.executablePath())')" >> "$GITHUB_ENV"
       - name: Verify producer contracts
-        run: node --experimental-strip-types --test connect/delivery/*.test.ts
+        run: node --experimental-strip-types --test connect/delivery/*.test.ts connect/web/scripts/*.test.ts
       - name: Verify service
         run: cd connect/service && npm test
       - name: Verify browser and analytics
@@ -253,8 +253,15 @@ jobs:
         env:
           MACOSX_DEPLOYMENT_TARGET: '15.0'
         run: |
-          cargo test --locked --target '${{ matrix.target }}' -j 3
-          cargo build --locked --release --bin apparent-connect-recipient --target '${{ matrix.target }}' -j 3
+          build_jobs=3
+          if [ '${{ matrix.runner }}' = 'macos-15-intel' ]; then
+            # GitHub's standard Intel macOS runner has four CPUs; use its full
+            # allocation for this target's test and release builds.
+            build_jobs="$(sysctl -n hw.ncpu)"
+            test "$build_jobs" -eq 4
+          fi
+          cargo test --locked --target '${{ matrix.target }}' -j "$build_jobs"
+          cargo build --locked --release --bin apparent-connect-recipient --target '${{ matrix.target }}' -j "$build_jobs"
           cp 'target/${{ matrix.target }}/release/apparent-connect-recipient' "$RUNNER_TEMP/recipient-output/"
       - name: Verify intended Linux runtime user can execute the shipping component
         if: runner.os == 'Linux'
@@ -276,25 +283,47 @@ jobs:
           retention-days: 90
 
   recipient-release:
-    needs: recipient
-    if: github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' && inputs.producer-run == ''
+    name: Recipient target release and aggregate
+    needs: [select, produce, publish, recipient-select, recipient]
+    if: always() && !cancelled() && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' && inputs.producer-run == '' && needs.recipient-select.result == 'success' && (needs.recipient.result == 'success' || needs.recipient.result == 'failure' || needs.recipient.result == 'cancelled')
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 2
     permissions:
       contents: write
-      attestations: read
+      id-token: write
+      attestations: write
     steps:
       - name: Runtime budget ownership
-        run: echo '10 minute execution budget; agent whose run hits the limit owns optimization and a successful rerun. Do not raise or bypass the limit.'
+        run: echo '2 minute execution budget; agent whose run hits the limit owns optimization and a successful rerun. Do not raise or bypass the limit.'
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Reserve shared workflow budget before durable publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_BUDGET_PLATFORM: web
+          WORKFLOW_BUDGET_PUBLISHER_NAME: Recipient target release and aggregate
+          WORKFLOW_BUDGET_RESERVE_SECONDS: '120'
+          WORKFLOW_BUDGET_EXPECTED_JOB_NAMES: '["select","produce","publish","recipient-select","recipient (ubuntu-24.04, x86_64-unknown-linux-gnu)","recipient (ubuntu-24.04-arm, aarch64-unknown-linux-gnu)","recipient (macos-15, aarch64-apple-darwin)","recipient (macos-15-intel, x86_64-apple-darwin)","Recipient target release and aggregate"]'
+        run: node --experimental-strip-types enablement/verification/workflow-budget.ts --publication-preflight
       - uses: actions/download-artifact@v4
         with:
           pattern: recipient-${{ github.sha }}-${{ github.run_id }}-*
           path: recipient-assets
+      - name: Prepare authenticated successful target assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node --experimental-strip-types connect/delivery/recipient/release.ts prepare-targets recipient-assets "$RUNNER_TEMP/recipient-release-output" "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ runner.temp }}/recipient-release-output/*
+      - name: Verify all target receipts and publish successful targets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node --experimental-strip-types connect/delivery/recipient/release.ts publish-targets "$RUNNER_TEMP/recipient-release-output" "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
       - name: Verify provenance and publish durable component version
+        if: needs.recipient.result == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash

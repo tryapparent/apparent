@@ -72,6 +72,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.admit.outputs.sha }}
+          fetch-depth: 0
       - name: Require Linux/shared and Mac verification of this exact main commit
         env:
           GH_TOKEN: ${{ github.token }}
@@ -86,15 +87,175 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: capture/desktop/ui/frontend/package-lock.json
+      - name: Install Desktop renderer dependencies
+        run: ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --prefix capture/desktop/ui/frontend --no-audit --no-fund
+      - name: Build source-bound Desktop renderer artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          destination="$RUNNER_TEMP/desktop-renderer"
+          record="$RUNNER_TEMP/desktop-renderer-build.json"
+          node --experimental-strip-types capture/desktop/ui/frontend/scripts/renderer-artifact.ts build "$destination" > "$record"
+          archive=$(jq -er '.artifact' "$record")
+          manifest=$(tar -xOzf "$archive" manifest.json)
+          source=$(jq -er '.source.gitHead' <<< "$manifest")
+          test "$source" = "$CANDIDATE_SHA"
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test "$(jq -r '.source.gitDirty' <<< "$manifest")" = false
+          test "$(jq -er '.source.inputInventory.sha256' <<< "$manifest")" = "$(jq -er '.sourceInputSha256' "$record")"
+          echo "APPARENT_DESKTOP_RENDERER_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          echo "APPARENT_DESKTOP_RENDERER_SHA256=$(jq -er '.archiveSha256' "$record")" >> "$GITHUB_ENV"
+          echo "APPARENT_DESKTOP_RENDERER_SOURCE_SHA=$source" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
+      - name: Find the latest retained Mac preview native release inputs
+        id: root-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release-mac-preview.yml --branch main --status success --limit 100 --json databaseId,headSha --jq '.[] | [.databaseId, .headSha] | @tsv')
+          while IFS=$'\t' read -r run_id source_sha; do
+            [[ -n "$run_id" && "$source_sha" =~ ^[a-f0-9]{40}$ ]] || continue
+            artifact="inspection-preview-root-${source_sha}"
+            found=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?per_page=100" | jq -s --arg name "$artifact" '[.[].artifacts[] | select(.name == $name and .expired == false)] | length')
+            if [[ "$found" == 1 ]]; then
+              echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+              echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
+              break
+            fi
+          done <<< "$runs"
+      - uses: actions/download-artifact@v5
+        if: steps.root-artifact.outputs.run_id != ''
+        with:
+          name: ${{ steps.root-artifact.outputs.artifact }}
+          run-id: ${{ steps.root-artifact.outputs.run_id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          path: ${{ runner.temp }}/inspection-reuse
+      - name: Admit compatible retained Mac preview native inputs
+        id: root-reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${{ steps.root-artifact.outputs.run_id }}" ]]; then
+            echo 'No retained Mac preview root artifact is available; building the native baseline.'
+            echo 'reuse=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          bundle="$RUNNER_TEMP/inspection-reuse"
+          root="$bundle/root"
+          receipt="$root/root-receipt.json"
+          inspector="$bundle/inspector.tar.gz"
+          if [[ ! -f "$receipt" || ! -f "$inspector" ]]; then
+            echo 'Retained Mac preview artifact is incomplete; building a fresh native baseline.'
+            echo 'reuse=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          root_sha=$(shasum -a 256 "$receipt" | cut -d ' ' -f 1)
+          inspector_sha=$(shasum -a 256 "$inspector" | cut -d ' ' -f 1)
+          inspector_source=$(tar -xOzf "$inspector" manifest.json | jq -er '.sourceSha')
+          root_source=$(jq -er '.sourceSha' "$receipt")
+          if [[ ! "$root_source" =~ ^[a-f0-9]{40}$ || ! "$inspector_source" =~ ^[a-f0-9]{40}$ ]]; then
+            echo 'Retained Mac component source identity is malformed; compiling a fresh native baseline.'
+            echo 'reuse=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! gh attestation verify "$receipt" --repo tryapparent/apparent \
+              --signer-workflow tryapparent/apparent/.github/workflows/release-mac-preview.yml \
+              --source-ref refs/heads/main --source-digest "$root_source" \
+            || ! gh attestation verify "$inspector" --repo tryapparent/apparent \
+              --signer-workflow tryapparent/apparent/.github/workflows/release-mac-preview.yml \
+              --source-ref refs/heads/main --source-digest "$inspector_source"; then
+            echo 'Retained Mac artifacts lack matching release provenance; compiling a fresh native baseline.'
+            echo 'reuse=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          expected_target=aarch64-apple-darwin
+          if [[ "$(jq -er '.profile' "$receipt")" != release || "$(jq -er '.target' "$receipt")" != "$expected_target" ]]; then
+            echo 'Retained Mac root profile or target differs; compiling a fresh native baseline.'
+            echo 'reuse=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          rustc_version=$(jq -er '.rustc | split("\\n")[0] | capture("^rustc (?<version>[^ ]+)").version' "$receipt")
+          expected_rustc=$(jq -er '.rustc' "$receipt")
+          expected_cargo=$(jq -er '.cargo' "$receipt")
+          if [[ ! "$rustc_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || "$(rustc -vV)" != "$expected_rustc" || "$(cargo -V)" != "$expected_cargo" ]]; then
+            echo 'Current Mac release toolchain differs from the retained root; compiling a fresh native baseline.'
+            echo 'reuse=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          jq -n \
+            --arg rootDirectory "$root" --arg rootReceipt "$receipt" --arg rootReceiptSha256 "$root_sha" \
+            --arg rootProfile release --arg rootSignerWorkflow tryapparent/apparent/.github/workflows/release-mac-preview.yml \
+            --arg inspectorArchive "$inspector" --arg inspectorArchiveSha256 "$inspector_sha" \
+            --arg inspectorSourceSha "$inspector_source" \
+            --arg inspectorSignerWorkflow tryapparent/apparent/.github/workflows/release-mac-preview.yml \
+            '{schema:1, rootDirectory:$rootDirectory, rootReceipt:$rootReceipt, rootReceiptSha256:$rootReceiptSha256,
+              rootProfile:$rootProfile, rootSignerWorkflow:$rootSignerWorkflow, inspectorArchive:$inspectorArchive,
+              inspectorArchiveSha256:$inspectorArchiveSha256, inspectorSourceSha:$inspectorSourceSha,
+              inspectorSignerWorkflow:$inspectorSignerWorkflow}' > "$RUNNER_TEMP/inspection-reuse.json"
+          chmod 600 "$RUNNER_TEMP/inspection-reuse.json"
+          probe="$RUNNER_TEMP/root-reuse-probe"
+          if APPARENT_PREVIEW_BUILD=1 APPARENT_HELPER_BUNDLE_ID=dev.simonvanlaak.apparent.preview.helper \
+              APPARENT_POSTHOG_TOKEN="$APPARENT_POSTHOG_TOKEN" APPARENT_INSPECTION_REQUIRED_PROFILE=release \
+              node --experimental-strip-types capture/agent/inspection/delivery/composition.ts reuse \
+                "$RUNNER_TEMP/inspection-reuse.json" "$probe"; then
+            echo "APPARENT_INSPECTION_REUSE=$RUNNER_TEMP/inspection-reuse.json" >> "$GITHUB_ENV"
+            echo 'APPARENT_INSPECTION_REQUIRED_PROFILE=release' >> "$GITHUB_ENV"
+            echo 'reuse=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'Retained native inputs failed release admission; compiling a fresh native baseline.'
+            echo 'reuse=false' >> "$GITHUB_OUTPUT"
+          fi
+          rm -rf "$probe"
+      - name: Forbid native rebuild after Mac root reuse
+        if: steps.root-reuse.outputs.reuse == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          guard="$RUNNER_TEMP/no-native-rebuild"
+          mkdir -p "$guard"
+          for tool in cargo rustc rustup xcodebuild swiftc cmake clang clang++ cc c++ gcc g++ make ninja; do
+            cat > "$guard/$tool" <<EOF
+          #!/bin/sh
+          echo "Unexpected native build command after root reuse: $tool \$*" >&2
+          exit 97
+          EOF
+            chmod 755 "$guard/$tool"
+          done
+          real_xcrun=$(command -v xcrun)
+          cat > "$guard/xcrun" <<EOF
+          #!/bin/sh
+          case " \$* " in *" metal "*) echo 'Unexpected Metal toolchain invocation after root reuse' >&2; exit 97 ;; esac
+          exec "$real_xcrun" "\$@"
+          EOF
+          chmod 755 "$guard/xcrun"
+          real_swift=$(command -v swift)
+          cat > "$guard/swift" <<EOF
+          #!/bin/sh
+          if [ "\$#" = 1 ] && [ "\$1" = capture/desktop/scripts/release/verify-preview-sparkle-key.swift ]; then exec "$real_swift" "\$@"; fi
+          echo "Unexpected Swift source compilation after root reuse: swift \$*" >&2
+          exit 97
+          EOF
+          chmod 755 "$guard/swift"
+          echo "$guard" >> "$GITHUB_PATH"
       - uses: Swatinem/rust-cache@v2
+        if: steps.root-reuse.outputs.reuse != 'true'
         with:
           key: mac-preview
           cache-on-failure: true
       - name: Install the Metal toolchain
+        if: steps.root-reuse.outputs.reuse != 'true'
         run: xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
       - name: Build and verify the preview app
         env:
+          GH_TOKEN: ${{ github.token }}
           APPARENT_APPLE_SIGNING_DIR: ${{ runner.temp }}/apparent-apple-signing
           APPARENT_PREVIEW_VERSION: 0.${{ github.run_number }}.${{ github.run_attempt }}
           APPARENT_PREVIEW_BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
@@ -106,20 +267,21 @@ jobs:
           capture/desktop/scripts/support/check-ca-roots.sh target/release/apparent
           target/release/apparent --help
       - name: Retain preview-root composition inputs
-        if: env.CANDIDATE_SHA == github.sha
+        if: env.CANDIDATE_SHA == github.sha && steps.root-reuse.outputs.reuse != 'true'
         env:
+          GH_TOKEN: ${{ github.token }}
           APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
           APPARENT_PREVIEW_BUILD: '1'
           APPARENT_HELPER_BUNDLE_ID: dev.simonvanlaak.apparent.preview.helper
         run: node --experimental-strip-types capture/agent/inspection/delivery/composition.ts retain-release target/release 'dist/Apparent Preview.app/Contents/MacOS' "$RUNNER_TEMP/inspection-release"
       - uses: actions/attest-build-provenance@v2
-        if: env.CANDIDATE_SHA == github.sha
+        if: env.CANDIDATE_SHA == github.sha && steps.root-reuse.outputs.reuse != 'true'
         with:
           subject-path: |
             ${{ runner.temp }}/inspection-release/root/root-receipt.json
             ${{ runner.temp }}/inspection-release/inspector.tar.gz
       - uses: actions/upload-artifact@v4
-        if: env.CANDIDATE_SHA == github.sha
+        if: env.CANDIDATE_SHA == github.sha && steps.root-reuse.outputs.reuse != 'true'
         with:
           name: inspection-preview-root-${{ github.sha }}
           path: ${{ runner.temp }}/inspection-release/

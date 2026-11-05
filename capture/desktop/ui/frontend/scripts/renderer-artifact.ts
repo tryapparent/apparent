@@ -43,10 +43,16 @@ function filesUnder(directory: string): string[] {
   return files;
 }
 
-function inputInventory() {
-  const files = [...filesUnder(frontend), ...filesUnder(join(root, 'shared/ui'))]
-    .sort((a, b) => compare(relative(root, a), relative(root, b)))
-    .map(absolute => ({ path: relative(root, absolute).split(sep).join('/'), sha256: sha256(readFileSync(absolute)) }));
+export function inputInventory() {
+  // Only versioned inputs belong to the source identity; ignored build/test caches do not.
+  const paths = runBytes('git', ['ls-files', '-z', '--', relative(root, frontend), 'shared/ui'])
+    .toString().split('\0').filter(Boolean).sort(compare);
+  const files = paths.map(path => {
+    const absolute = join(root, path);
+    const metadata = lstatSync(absolute);
+    assert(metadata.isFile() && !metadata.isSymbolicLink(), `Unsupported renderer source input: ${path}`);
+    return { path: path.split(sep).join('/'), sha256: sha256(readFileSync(absolute)) };
+  });
   return { files, sha256: sha256(JSON.stringify(files)) };
 }
 
@@ -63,16 +69,19 @@ export function build(destination: string) {
   run('npm', ['run', 'build'], frontend);
   const dist = join(frontend, 'dist');
   const inventory = treeInventory(dist);
+  const host = join(frontend, 'electron');
+  const hostInventory = treeInventory(host);
   assert(outputEntries.every(entry => inventory.some(file => file.path === entry)), 'Vite output is missing a declared renderer entry');
   const manifest = {
     schema: 1,
-    protocol: 1,
+    protocol: 2,
     kind: 'apparent-desktop-renderer',
     source: { gitHead: run('git', ['rev-parse', 'HEAD']).trim(), gitDirty: Boolean(run('git', ['status', '--porcelain', '--', 'capture/desktop/ui/frontend', 'shared/ui']).trim()), inputInventory: inputInventory() },
     target: 'any',
     runtimeCompatibility,
     entries: outputEntries,
     files: inventory,
+    hostFiles: hostInventory,
   };
   const payload = join(dest, 'payload');
   mkdirSync(payload, { mode: 0o700 });
@@ -84,11 +93,18 @@ export function build(destination: string) {
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, readFileSync(source), { flag: 'wx', mode: 0o644 });
   }
+  for (const file of hostInventory) {
+    const source = join(host, ...file.path.split('/'));
+    const target = join(payload, 'electron', ...file.path.split('/'));
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, readFileSync(source), { flag: 'wx', mode: 0o644 });
+  }
   writeFileSync(join(payload, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx', mode: 0o644 });
   const sourceSha = manifest.source.inputInventory.sha256.slice(0, 16);
   const artifact = join(dest, `apparent-desktop-renderer-${sourceSha}.tar.gz`);
   run('tar', ['-czf', artifact, '-C', payload,
-    ...inventory.map(file => `renderer/${file.path}`), 'manifest.json'], dest);
+    ...inventory.map(file => `renderer/${file.path}`),
+    ...hostInventory.map(file => `electron/${file.path}`), 'manifest.json'], dest);
   return { artifact, archiveSha256: sha256(readFileSync(artifact)), manifest };
 }
 
@@ -114,11 +130,12 @@ export function stage(archive: string, expectedHash: string, destination: string
     const input = join(temporary, 'input.tar.gz');
     writeFileSync(input, snapshot, { flag: 'wx', mode: 0o600 });
     const names = run('tar', ['-tzf', input]).trim().split('\n').sort();
-    const listedFiles = names.filter(name => name.startsWith('renderer/'));
+    const listedFiles = names.filter(name => name.startsWith('renderer/') || name.startsWith('electron/'));
     assert.deepEqual(names, ['manifest.json', ...listedFiles].sort(), 'Unexpected renderer archive inventory');
     assert(run('tar', ['-tvzf', input]).trim().split('\n').every(line => line.startsWith('-')), 'Renderer archive may contain regular files only');
     assert(listedFiles.every(name => {
-      const parts = name.slice('renderer/'.length).split('/');
+      const prefix = name.startsWith('renderer/') ? 'renderer/' : 'electron/';
+      const parts = name.slice(prefix.length).split('/');
       return parts.length > 0 && parts.every(part => part !== '' && part !== '.' && part !== '..' && !part.includes('\\'));
     }), 'Unsafe renderer archive path');
     assert(names.includes('renderer/index.html') && names.includes('renderer/settings.html') &&
@@ -127,7 +144,7 @@ export function stage(archive: string, expectedHash: string, destination: string
     const manifest = JSON.parse(manifestBytes.toString());
     const inputFiles = manifest.source?.inputInventory?.files;
     const inputPaths = Array.isArray(inputFiles) ? inputFiles.map((file: { path: string }) => file.path) : [];
-    assert(manifest.schema === 1 && manifest.protocol === 1 && manifest.kind === 'apparent-desktop-renderer' &&
+    assert(manifest.schema === 1 && manifest.protocol === 2 && manifest.kind === 'apparent-desktop-renderer' &&
       manifest.target === 'any' && JSON.stringify(manifest.runtimeCompatibility) === JSON.stringify(runtimeCompatibility) &&
       /^[a-f0-9]{40}$/.test(manifest.source?.gitHead) && typeof manifest.source?.gitDirty === 'boolean' && validHash(manifest.source?.inputInventory?.sha256) &&
       Array.isArray(inputFiles) && inputFiles.length > 0 && inputFiles.every((file: { path: string; sha256: string }) =>
@@ -135,12 +152,15 @@ export function stage(archive: string, expectedHash: string, destination: string
         !file.path.includes('\\') && !file.path.includes('\0') &&
         !file.path.split('/').some((part: string) => part === '' || part === '.' || part === '..') && validHash(file.sha256)) &&
       new Set(inputPaths).size === inputPaths.length &&
-      sha256(JSON.stringify(inputFiles)) === manifest.source.inputInventory.sha256 && Array.isArray(manifest.files), 'Invalid renderer manifest');
+      sha256(JSON.stringify(inputFiles)) === manifest.source.inputInventory.sha256 && Array.isArray(manifest.files) && Array.isArray(manifest.hostFiles), 'Invalid renderer manifest');
     assert.deepEqual(manifest.entries, outputEntries, 'Renderer entry contract mismatch');
-    assert.deepEqual(listedFiles, manifest.files.map((file: { path: string }) => `renderer/${file.path}`).sort(), 'Archive member inventory mismatch');
+    const rendererMembers = listedFiles.filter(name => name.startsWith('renderer/'));
+    const hostMembers = listedFiles.filter(name => name.startsWith('electron/'));
+    assert.deepEqual(rendererMembers, manifest.files.map((file: { path: string }) => `renderer/${file.path}`).sort(), 'Renderer member inventory mismatch');
+    assert.deepEqual(hostMembers, manifest.hostFiles.map((file: { path: string }) => `electron/${file.path}`).sort(), 'Electron host member inventory mismatch');
     const extracted = join(temporary, 'renderer');
     mkdirSync(extracted, { mode: 0o700 });
-    for (const name of listedFiles) {
+    for (const name of rendererMembers) {
       const file = name.slice('renderer/'.length);
       const target = join(extracted, ...file.split('/'));
       mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
@@ -148,12 +168,29 @@ export function stage(archive: string, expectedHash: string, destination: string
     }
     const actual = treeInventory(extracted);
     assert.deepEqual(actual, manifest.files, 'Renderer staged inventory or digest mismatch');
+    const extractedHost = join(temporary, 'electron');
+    mkdirSync(extractedHost, { mode: 0o700 });
+    for (const name of hostMembers) {
+      const file = name.slice('electron/'.length);
+      const target = join(extractedHost, ...file.split('/'));
+      mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+      writeFileSync(target, runBytes('tar', ['-xOzf', input, '--', name]), { flag: 'wx', mode: 0o600 });
+    }
+    const actualHost = treeInventory(extractedHost);
+    assert.deepEqual(actualHost, manifest.hostFiles, 'Electron host staged inventory or digest mismatch');
     const candidate = join(temporary, 'candidate');
     mkdirSync(join(candidate, 'renderer'), { recursive: true, mode: 0o700 });
+    mkdirSync(join(candidate, 'electron'), { recursive: true, mode: 0o700 });
     for (const file of actual) {
       const source = join(temporary, 'renderer', ...file.path.split('/'));
       const target = join(candidate, 'renderer', ...file.path.split('/'));
       mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, readFileSync(source), { flag: 'wx', mode: 0o644 });
+    }
+    for (const file of actualHost) {
+      const source = join(extractedHost, ...file.path.split('/'));
+      const target = join(candidate, 'electron', ...file.path.split('/'));
+      mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
       writeFileSync(target, readFileSync(source), { flag: 'wx', mode: 0o644 });
     }
     writeFileSync(join(candidate, 'manifest.json'), manifestBytes, { flag: 'wx', mode: 0o644 });

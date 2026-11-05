@@ -18,6 +18,167 @@ spec.loader.exec_module(verification)
 
 
 class SelectionTests(unittest.TestCase):
+    def test_connect_client_typescript_inputs_select_package_tests_without_narrowing_rust(self):
+        prefix = "connect/client/typescript/"
+        selected = (
+            "package.json", "package-lock.json", "tsconfig.json",
+            "src/settings-controller.cts", "src/device-flow.cts",
+            "test/settings-controller.test.ts", "test/device-flow.test.ts",
+        )
+        for name in selected:
+            with self.subTest(path=name):
+                self.assertTrue(verification.connect_client_typescript_selected([prefix + name]))
+        unrelated = (
+            "README.md", ".gitignore", "test/production-interop.ts",
+            "test/nested/ignored.test.ts", "connect/client/Cargo.toml",
+            "connect/service/src/worker.ts", "connect/web/src/main.tsx",
+            "shared/handoff/config_store.rs",
+        )
+        for path in unrelated:
+            with self.subTest(path=path):
+                self.assertFalse(verification.connect_client_typescript_selected([path]))
+        self.assertTrue(verification.connect_client_typescript_selected([]))
+        root_selection = verification.select([prefix + "src/index.ts"])
+        self.assertTrue(root_selection["root"])
+        self.assertTrue(root_selection["engine"])
+
+    def test_connect_client_check_uses_declared_npm_test_from_owner_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "connect/client/typescript"
+            for name in ("package.json", "package-lock.json", "tsconfig.json",
+                         "node_modules/typescript/bin/tsc",
+                         "node_modules/@types/node/package.json",
+                         "node_modules/age-encryption/package.json",
+                         "node_modules/@noble/ed25519/package.json"):
+                target = package / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.touch()
+            with patch.object(verification, "ROOT", root), patch.object(
+                    verification.subprocess, "run") as run:
+                verification.run_pr_checks({"paths": [
+                    "connect/client/typescript/src/settings-controller.cts"]})
+            command = ["npm", "test"]
+            calls = [call for call in run.call_args_list if call.args[0] == command]
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0].kwargs["cwd"], package)
+            self.assertTrue(calls[0].kwargs["check"])
+            patterns = [call.args[0][-1] for call in run.call_args_list
+                        if call.args[0][:4] == ["python3", "-m", "unittest", "discover"]]
+            self.assertLess(run.call_args_list.index(calls[0]), next(
+                index for index, call in enumerate(run.call_args_list)
+                if call.args[0][:4] == ["python3", "-m", "unittest", "discover"]))
+            self.assertIn("test_*push*.py", patterns)
+
+    def test_connect_client_missing_locked_dependencies_fails_without_install(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "connect/client/typescript"
+            package.mkdir(parents=True)
+            for name in ("package.json", "package-lock.json", "tsconfig.json"):
+                (package / name).touch()
+            with patch.object(verification, "ROOT", root), patch.object(
+                    verification.subprocess, "run") as run:
+                with self.assertRaisesRegex(RuntimeError, r"npm ci --no-audit --no-fund"):
+                    verification.run_connect_client_typescript_tests()
+                run.assert_not_called()
+
+    def test_public_site_build_inputs_select_existing_non_browser_build(self):
+        inputs = (
+            "public/site/src/features.json",
+            "public/site/src/components/home/App.tsx",
+            "public/site/public/assets/brand/icon.svg",
+            "public/site/index.html", "public/site/package.json", "public/site/bun.lock",
+            "public/site/tsconfig.json", "public/site/vite.config.ts",
+            "public/site/lib/public-assets.mjs",
+            "public/site/scripts/site-build/agent-files.ts",
+            "public/site/scripts/site-build/feature-audit.ts",
+            "public/site/scripts/site-build/prerender.ts",
+            "shared/ui/scripts/check-theme.py", "shared/ui/scripts/legacy-colors.json",
+        )
+        for path in inputs:
+            with self.subTest(path=path):
+                selection = verification.select([path])
+                self.assertTrue(selection["public_site"])
+                self.assertFalse(selection["root"])
+                self.assertFalse(selection["engine"])
+                self.assertFalse(selection["browser"])
+                self.assertTrue(verification.public_site_build_selected([path]))
+        for path in (
+            "public/site/docs/pages-deploy.md",
+            "public/site/scripts/cd/publish_pages.py",
+            "public/site/scripts/site-build/verify.mjs",
+            "public/site/functions/Apparent-ghost-demo-v4-lilac.mp4.js",
+            "public/site/video-demo/Cargo.toml",
+            "connect/client/typescript/src/index.ts", "connect/web/src/Hosted.tsx",
+            "connect/service/src/worker.ts", "capture/desktop/native/linux.rs",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(verification.public_site_build_selected([path]))
+
+    def test_public_shared_inputs_keep_connect_browser_checks(self):
+        for path in ("shared/analytics/browser.ts", "shared/analytics/config.ts", "shared/ui/src/tokens.css"):
+            with self.subTest(path=path):
+                selection = verification.select([path])
+                self.assertTrue(selection["public_site"])
+                self.assertTrue(selection["browser"])
+                self.assertTrue(selection["root"])
+                self.assertTrue(verification.public_site_build_selected([path]))
+
+    def test_unknown_history_runs_public_feedback_on_feature_pushes(self):
+        for paths in ([], ["capture/desktop/native/linux.rs"]):
+            with self.subTest(paths=paths), patch.object(verification.subprocess, "run"), patch.object(
+                    verification, "run_connect_client_typescript_tests"), patch.object(
+                    verification, "run_public_site_build") as build:
+                selection = verification.select(paths, history_known=False)
+                verification.run_pr_checks(selection)
+                build.assert_called_once_with()
+        self.assertTrue(verification.public_site_build_selected([]))
+
+    def test_public_site_build_runs_declared_build_and_only_after_locked_dependencies_exist(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "public/site"
+            source_package = SCRIPT.parents[1] / "public/site/package.json"
+            manifest = __import__("json").loads(source_package.read_text())
+            for name in ("package.json", "bun.lock", "tsconfig.json", "vite.config.ts", "index.html"):
+                target = package / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(source_package.read_text() if name == "package.json" else "fixture\n")
+            for name in (*manifest.get("dependencies", {}), *manifest.get("devDependencies", {})):
+                (package / "node_modules" / name / "package.json").parent.mkdir(parents=True, exist_ok=True)
+                (package / "node_modules" / name / "package.json").touch()
+            with patch.object(verification, "ROOT", root), patch.object(
+                    verification.subprocess, "run") as run:
+                verification.run_pr_checks({"paths": ["public/site/src/features.json"]})
+            command = ["npm", "run", "build"]
+            calls = [call for call in run.call_args_list if call.args[0] == command]
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0].kwargs["cwd"], package)
+            self.assertTrue(calls[0].kwargs["check"])
+            self.assertFalse(any(call.args[0][0] in ("bun", "cargo") for call in run.call_args_list))
+
+    def test_public_site_missing_controls_or_dependencies_fail_without_install(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "public/site"
+            package.mkdir(parents=True)
+            for name in ("package.json", "bun.lock", "tsconfig.json", "vite.config.ts", "index.html"):
+                (package / name).touch()
+            (package / "bun.lock").unlink()
+            with patch.object(verification, "ROOT", root), patch.object(
+                    verification.subprocess, "run") as run:
+                with self.assertRaisesRegex(RuntimeError, "Public site build inputs are missing or deleted"):
+                    verification.run_public_site_build()
+                run.assert_not_called()
+            package.joinpath("package.json").write_text('{"dependencies":{"vite":"1"}}')
+            package.joinpath("bun.lock").write_text("fixture\n")
+            with patch.object(verification, "ROOT", root), patch.object(
+                    verification.subprocess, "run") as run:
+                with self.assertRaisesRegex(RuntimeError, r"bun install --frozen-lockfile.*never installs"):
+                    verification.run_public_site_build()
+                run.assert_not_called()
+
     def test_each_real_onboarding_input_selects_renderer_feedback(self):
         frontend = "capture/desktop/ui/frontend/"
         inputs = [frontend + name for name in (
@@ -31,7 +192,7 @@ class SelectionTests(unittest.TestCase):
                 target = root / frontend / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.touch()
-            for name in inputs + ["public/site/src/features.json"]:
+            for name in inputs + ["public/site/docs/features.md"]:
                 with self.subTest(path=name), patch.object(verification, "ROOT", root), patch.object(
                         verification.subprocess, "run") as run:
                     verification.run_pr_checks({"paths": [name]})
@@ -160,7 +321,9 @@ class SelectionTests(unittest.TestCase):
         commands = [call.args[0] for call in run.call_args_list if 'cargo' in call.args[0]]
         self.assertEqual(len(commands), 4)
         self.assertEqual([next(c for c in command if c in ('build', 'test')) for command in commands],
-                         ['test', 'build', 'build', 'test'])
+                         ['build', 'test', 'test', 'build'])
+        self.assertTrue(all('capture/engine/Cargo.toml' in command for command in commands[:2]))
+        self.assertTrue(all('capture/engine/Cargo.toml' not in command for command in commands[2:]))
         for command in commands:
             self.assertEqual(command.count('--timings'), 1)
             self.assertIn('--locked', command)
@@ -472,7 +635,7 @@ class SelectionTests(unittest.TestCase):
                     if 'cargo' in command:
                         commands.append(command)
                         self.assertTrue(kwargs['check'])
-                        if failure in command:
+                        if 'capture/engine/Cargo.toml' not in command and failure in command:
                             raise subprocess.CalledProcessError(7, command)
                     return subprocess.CompletedProcess(command, 0, stdout='test result: ok. 2 passed; 0 failed\n')
                 with self.subTest(focused=focused, failure=failure), patch.object(
@@ -480,11 +643,12 @@ class SelectionTests(unittest.TestCase):
                     with self.assertRaises(subprocess.CalledProcessError):
                         verification.run_selected_checks({'root': True, 'engine': True,
                                                           'browser': False, 'focused': focused})
-                self.assertEqual(len(commands), 1 if failure == 'test' else 2)
-                self.assertIn('test', commands[0])
+                self.assertEqual(len(commands), 3 if failure == 'test' else 4)
+                self.assertTrue(all('capture/engine/Cargo.toml' in command for command in commands[:2]))
+                self.assertIn('test', commands[2])
                 if failure == 'build':
-                    self.assertIn('build', commands[1])
-                self.assertFalse(any('capture/engine/Cargo.toml' in c for c in commands))
+                    self.assertIn('build', commands[3])
+                self.assertFalse(any('capture/engine/Cargo.toml' in c for c in commands[2:]))
 
     def test_explicit_platform_suites_execute_even_when_changed_tree_has_no_matching_inputs(self):
         for suite in ('rust', 'browser'):
@@ -538,16 +702,76 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(len(commands), 1)
         self.assertIn("capture/engine/Cargo.toml", commands[0])
 
+    def test_engine_source_failure_stops_before_selected_root_compile(self):
+        commands = []
+        selection = verification.select(["capture/engine/src/session.rs"])
+        self.assertTrue(selection["root"])
+        self.assertTrue(selection["engine"])
+
+        def fail_package(command, **kwargs):
+            if command[0] == "cargo":
+                commands.append(command)
+            if "cargo" in command and "capture/engine/Cargo.toml" in command:
+                if command not in commands:
+                    commands.append(command)
+                raise subprocess.CalledProcessError(9, command)
+            return subprocess.CompletedProcess(command, 0)
+
+        with patch.object(verification.subprocess, "run", side_effect=fail_package):
+            with self.assertRaises(subprocess.CalledProcessError) as failure:
+                verification.run_selected_checks(selection)
+        self.assertEqual(failure.exception.returncode, 9)
+        self.assertEqual(len(commands), 1)
+        self.assertIn("capture/engine/Cargo.toml", commands[0])
+        self.assertNotIn("--", commands[0])
+
+    def test_directory_width_hook_contracts_follow_their_input_closure(self):
+        for path in (".githooks/pre-commit", "enablement/verification.py",
+                     "enablement/directory-width/check.py",
+                     "enablement/directory-width/tests/test_hook.py",
+                     "enablement/file-length/check.ts"):
+            with self.subTest(path=path):
+                self.assertTrue(verification.directory_width_contract_selected([path]))
+        for path in ("README.md", "capture/desktop/ui/frontend/src/main.tsx",
+                     "enablement/directory-width/README.md",
+                     "enablement/file-length/check.test.ts"):
+            with self.subTest(path=path):
+                self.assertFalse(verification.directory_width_contract_selected([path]))
+        self.assertTrue(verification.directory_width_contract_selected([]))
+
+    def test_pre_push_runs_directory_width_suite_only_for_its_contract_inputs(self):
+        command = ["python3", "-m", "unittest", "discover", "-s",
+                   "enablement/directory-width/tests", "-p", "test_*.py"]
+        for path, expected in ((".githooks/pre-commit", True), ("README.md", False)):
+            with self.subTest(path=path), patch.object(verification.subprocess, "run") as run:
+                verification.run_pr_checks({"paths": [path]})
+                commands = [call.args[0] for call in run.call_args_list]
+                self.assertEqual(command in commands, expected)
+                if expected:
+                    self.assertLess(commands.index(command), commands.index(
+                        ["python3", "-m", "unittest", "discover", "-s", "enablement/tests",
+                         "-p", "test_*push*.py"]))
+
     def test_unknown_shared_build_security_lifecycle_and_tooling_broaden(self):
         for path in ["new-owner/foo.rs", "Cargo.toml", "Cargo.lock", "build.rs",
                      "assets/icon.png", "src/ui/recording_completion.rs", "src/handoff.rs",
                      "capture/engine/src/session.rs", "capture/desktop/native/Settings.swift",
                      "enablement/verification.py", ".githooks/pre-push",
-                     ".github/workflows/verification.yml", "public/site/package.json", "connect/service/src/auth.ts"]:
+                     ".github/workflows/verification.yml", "connect/service/src/auth.ts"]:
             with self.subTest(path=path):
                 result = verification.select([path])
                 self.assertTrue(result["root"])
                 self.assertTrue(result["engine"])
+
+    def test_public_site_manifest_is_independent_and_unknown_inputs_stay_broad(self):
+        selected = verification.select(["public/site/package.json"])
+        self.assertEqual((selected["root"], selected["engine"], selected["public_site"]),
+                         (False, False, True))
+        for path in ("public/site/scripts/cd/publish_pages.py", "public/site/functions/worker.ts",
+                     "public/site/video-demo/Cargo.toml"):
+            with self.subTest(path=path):
+                self.assertTrue(verification.select([path])["root"])
+        self.assertTrue(verification.select([])["root"])
 
     def test_mixed_delta_cannot_hide_broad_path(self):
         self.assertTrue(verification.select(["README.md", "main.rs"])["root"])
@@ -604,9 +828,12 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual((selected["root"], selected["engine"], selected["browser"]),
                          (False, False, True))
         for path in ["connect/web/src/Other.tsx", "connect/web/src/sharedlinks.tsx",
-                     "public/site/scripts/cd/publish_pages.py", "public/site/public/hosted/source-pond-v4.png",
-                     "public/site/public/hosted/agent-pond-v4.png", "public/site/public/hosted/agent-reading-v4.png",
-                     "public/site/public/HostGrotesk-Variable.ttf", "public/site/public/apparent-wordmark.svg"]:
+                     "public/site/scripts/cd/publish_pages.py",
+                     "public/site/public/assets/hosted/source-pond-v4.png",
+                     "public/site/public/assets/hosted/agent-pond-v4.png",
+                     "public/site/public/assets/hosted/agent-reading-v4.png",
+                     "public/site/public/assets/fonts/HostGrotesk-Variable.ttf",
+                     "public/site/public/assets/brand/apparent-wordmark.svg"]:
             with self.subTest(path=path):
                 result = verification.select(["connect/web/src/SharedLinks.tsx", path])
                 self.assertTrue(result["root"])
@@ -940,11 +1167,18 @@ sys.exit(watchdog(30, ['sh', '-c', command]))
                     expected = ('15' if workflow.name in {'verification.yml', 'verification-platform.yml', 'release-linux.yml', 'linux-updater-harness.yml', 'verification-mac.yml', 'native-proof-mac.yml', 'release-mac-preview.yml'} else '10')
                     temporary_mac = (workflow.name == 'release-mac-preview.yml' and '    runs-on: macos-latest\n' in job)
                     temporary_platform = (workflow.name == 'verification-platform.yml' and '    name: rust (' in job)
+                    bounded_publication = (workflow.name == 'connect-delivery.yml' and
+                                           '    name: Recipient target release and aggregate\n' in job)
                     if temporary_platform:
                         expected = "${{ startsWith(inputs.runner, 'macos-') && 60 || 15 }}"
                     elif temporary_mac:
                         expected = '60'
+                    elif bounded_publication:
+                        expected = '2'
                     self.assertIn(f'    timeout-minutes: {expected}\n', job, str(workflow))
+                    if bounded_publication:
+                        self.assertIn("WORKFLOW_BUDGET_RESERVE_SECONDS: '120'", job)
+                        self.assertIn('2 minute execution budget', job)
                     if temporary_mac or temporary_platform:
                         self.assertIn('Simon-authorized Mac release', job)
                     elif '    name: Workflow runtime budget\n' not in job:

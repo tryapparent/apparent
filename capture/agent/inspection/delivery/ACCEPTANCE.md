@@ -24,6 +24,64 @@ certify GUI/capture behavior. `composition.test.ts` additionally requires
 ROOT_DIRECTORY/ROOT_RECEIPT/INSPECTOR_FIRST/INSPECTOR_SECOND: use two genuinely
 different real produced archives; its Cargo trap proves assembly does no build.
 
+## Renderer-only app assembly
+
+The ordinary release workflows build the real `renderer-artifact.ts` archive
+from the exact checked-out source, require a clean renderer source inventory,
+and pass its archive, digest and source revision through
+`APPARENT_DESKTOP_RENDERER_ARCHIVE`, `APPARENT_DESKTOP_RENDERER_SHA256` and
+`APPARENT_DESKTOP_RENDERER_SOURCE_SHA`. The consumer requires all three and
+matches the staged renderer source identity to the producer's revision. It reuses
+the root receipt and inspector composition, then replaces resources at the
+existing product consumers: `usr/share/apparent/settings/app` and
+`usr/lib/apparent/note-ui` on Linux; `Contents/Resources/settings/app` and
+`Contents/Resources/note-ui` on macOS. Each consumer receives the Vite `dist/`
+files and its source-bound Electron host files. The Settings main process loads
+`dist/settings.html`, the recording pill loads `dist/pill/index.html`, and the
+Notes process loads `dist/index.html` from those installed directories. No
+unconsumed `desktop-ui` directory is staged. The embedded manifest is component
+metadata; only the caller-provided archive digest authenticates its bytes.
+Verified files are normalized to `0644` and directories to `0755` for cross-user
+package access. The Rust Notes resolver permits checkout fallback only for an
+executable under `target/`; an installed executable fails closed when its
+admitted resources or Electron host files are missing.
+
+Linux stages into `target/appimage/AppDir` with ordinary directory permissions;
+that AppDir is a build artifact, not a private candidate or an installed app.
+
+Use a sealed root receipt whose input inventory and policy digest match the exact
+candidate. An older PR631 receipt is not admitted just because executable bytes
+match: the consumer checks source ancestry/tree, policy hash, the full input
+inventory, build environment and each root/native runtime digest. For an exact
+current root and retained real inspector and renderer archives, run:
+
+    APPARENT_ROOT_DIRECTORY=/absolute/root-bundle \
+    APPARENT_ROOT_RECEIPT=/absolute/root-bundle/root-receipt.json \
+    APPARENT_ROOT_RECEIPT_SHA256=CALLER_PROVIDED_SHA256 \
+    APPARENT_INSPECTOR_ARTIFACT=/absolute/apparent-inspect.tar.gz \
+    APPARENT_INSPECTOR_ARTIFACT_SHA256=CALLER_PROVIDED_SHA256 \
+    APPARENT_RENDERER_ARTIFACT=/absolute/apparent-desktop-renderer.tar.gz \
+    APPARENT_RENDERER_ARTIFACT_SHA256=CALLER_PROVIDED_SHA256 \
+    APPARENT_DESKTOP_RENDERER_SOURCE_SHA=PRODUCER_SOURCE_SHA \
+      node --experimental-strip-types --test \
+        capture/agent/inspection/delivery/renderer/assembly.test.ts
+
+The proof invokes the existing root/inspector assembler and ordinary
+`packageApplication` consumer with native compilation blocked. It checks all real
+Vite files and Electron host files at both installed consumer paths, a clearly
+labeled synthetic renderer change in the installed HTML, cross-user permissions,
+unchanged root executable/native library bytes, wrong renderer digest and altered
+inventory rejection, and reuse refusal after committed shared model, Desktop
+bridge or native source changes. It also executes the packaged root CLI from the
+AppDir outside the checkout. A renderer-only source change must still admit the
+same root receipt. This is non-GUI artifact proof; it does not establish
+Electron window launch, Mac signing or native platform behavior.
+
+Before Mac publication, run exact-candidate signature verification and the short
+packaged-app launch/interaction/cleanup smoke under the Desktop policy. This
+assembly slice has no Mac GUI or signing proof and does not authorize updater
+changes, release or activation.
+
 ## Mac: prepared, not executed
 
 No approved task issue/budget or Mac resource is established. Authenticated funded

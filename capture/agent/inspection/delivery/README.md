@@ -70,12 +70,16 @@ PATH/source fallback and no extra installation for app users.
 clean root build and records exact source/tree, toolchain, native executable/shared
 object hashes and a conservative tracked-input inventory. It audits actual rustc
 dep-info (including the library), not Cargo's aggregate Git-identity watch list.
-Only inspector main/standalone lock, tests, documentation and delivery tooling are
-excluded; shared schema/reader/formatter sources remain root inputs. Excluded
-inputs are checked absent from compiler dep-info. The policy source hash is pinned
-in the receipt. Root build-version metadata retains its original source identity
-when reused; the composition separately records inspector/composition revisions.
-No existing exact-source development-artifact admission is relaxed.
+Only inspector main/standalone lock, tests, documentation and delivery tooling, plus
+the independently packaged `capture/desktop/ui/frontend/` inputs, are excluded.
+Shared UI, Rust bridge/schema/readers, native sources and root build contracts remain
+root inputs. Every excluded tracked path must be absent from compiler dep-info.
+Renderer package build inputs remain owned by their separate producer/stager; they
+do not change the root executable bytes. The policy source hash is pinned in the
+receipt, so changing this allowlist invalidates older receipts. Root build-version
+metadata retains its original source identity when reused; the composition separately
+records inspector/composition revisions. No existing exact-source development-artifact
+admission is relaxed.
 
 Local integration proof may call `composition.ts assemble ROOT_DIR ROOT_RECEIPT
 ROOT_RECEIPT_SHA INSPECTOR_ARCHIVE INSPECTOR_SHA NEW_DIR`. This checks ancestry,
@@ -94,6 +98,27 @@ adjacent checksum cannot replace them. Both signer workflows are constrained to 
 release-linux.yml and release-mac-preview.yml producers. A release rootProfile
 must match its consumer; debug roots cannot enter release assembly.
 No workflow is dispatched or authority to publish inferred by these local tools.
+
+The Linux and Mac release workflows produce the Desktop renderer archive from the
+exact checked-out source, require a clean renderer input inventory, and pass its
+archive, digest and source revision as `APPARENT_DESKTOP_RENDERER_ARCHIVE`,
+`APPARENT_DESKTOP_RENDERER_SHA256` and `APPARENT_DESKTOP_RENDERER_SOURCE_SHA`.
+The digest comes from the real producer invocation; the embedded manifest and any
+adjacent checksum are not independent authentication sources. `renderer/assembly.ts`
+validates and stages the archive's Vite output and Electron host files. Ordinary
+packaging installs them over the existing Settings/Pill and Notes app resources:
+`usr/share/apparent/settings/app` plus `usr/lib/apparent/note-ui` in Linux, and
+`Contents/Resources/settings/app` plus `Contents/Resources/note-ui` on macOS.
+Those existing hosts load the sibling `dist/settings.html`, `dist/pill/index.html`
+and `dist/index.html`. The root composition receipt records the renderer source,
+archive digest and consumer paths separately from the original root source
+identity. A locally computed archive digest is sufficient only for local proof,
+never release admission.
+
+Installed Notes resolution requires the admitted `dist/` and Electron host files
+and fails closed when they are missing. Only a development executable under
+`target/` may fall back to checkout assets. The archive producer and ordinary
+package consumer do not alter native capture behavior or install a second app.
 
 The existing platform verification job now retains source-bound root bundles and
 attested inspector archives on its existing runners/budgets; no new workflow,
