@@ -116,6 +116,42 @@ to the renderer or change capture behavior: existing native and `note-ui` paths
 remain active. A locally computed archive digest is sufficient only for local
 proof, never release admission.
 
+## Agent control-client assembly prerequisite
+
+The existing composition API can stage an `agent-control-client` archive into the
+same executable directory as the app root. It uses the Agent producer's stager,
+requires the caller's archive SHA-256 and source SHA, checks target and protocol
+1, and records a separate component receipt beside the staged binary. The root
+receipt keeps its original source/tree identity; the composition receipt records
+its own source and the client producer source. The current root CLI and Desktop
+provider still import the Rust client, so `capture/agent/control-client/**`
+remains in the root input inventory. No compile-closure exclusion is claimed.
+
+Production reuse accepts an optional `agentControlClient` input only when its
+archive digest, main-ancestor source and provenance from the existing
+`verification-platform.yml` producer validate. Ordinary packaging uses the same
+explicit authenticated artifact inputs:
+`APPARENT_AGENT_CONTROL_CLIENT_ARCHIVE`,
+`APPARENT_AGENT_CONTROL_CLIENT_SHA256`, and
+`APPARENT_AGENT_CONTROL_CLIENT_SOURCE_SHA`. It does not build the client from source.
+The current packaging workflows do not download or pass that artifact, and the
+CLI still uses its existing Rust client path. This is an assembly/admission
+prerequisite, not production dispatch activation. Activation remains gated on a
+published authenticated artifact and accepted Linux/Mac app evidence.
+
+The component consumer contract can be exercised without creating a root receipt
+or compiling the root app:
+
+    APPARENT_CAPTURE_CLIENT=/absolute/path/to/apparent-capture \
+      node --experimental-strip-types --test \
+        capture/agent/control-client/delivery/assembly.test.ts
+
+This uses a real standalone binary and synthetic private app directory to prove
+single-install inventory, separate source identities, restrictive-umask modes,
+and negative digest/source/target/protocol admission. It is not native app
+acceptance. Changing the composition policy source invalidates older root receipts;
+an initial root artifact is still required before production reuse.
+
 The existing platform verification job now retains source-bound root bundles and
 attested inspector archives on its existing runners/budgets; no new workflow,
 runner allocation or local paid resource is created. Production is admitted only
