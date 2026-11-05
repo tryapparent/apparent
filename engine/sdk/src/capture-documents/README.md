@@ -102,7 +102,11 @@ native macOS/Linux proof. These are not silently decided by SDK shape choices.
 Record's committed processing baseline is PR715 (`495715bf`): its TypeScript
 formatter consumes target/session/context, transcript, selected-frame, note/mark
 and warning facts and returns `summaryMarkdown` only. It owns their translation
-and semantic choices. No canonical manifest writer or authenticated publication
-consumer is supplied here. A new capture-channel allocator must persist its
+and semantic choices. Its `"local-clipboard"` presentation is used by the newer
+pure `formatLocalHandoff` wrapper; that wrapper takes caller-attested Saved path
+and semantic input, and performs no publication or clipboard effect. The
+formatter remains the consumer boundary for the fact schemas here. No canonical
+manifest writer or authenticated publication consumer is supplied here. A new
+capture-channel allocator must persist its
 identity/plan binding in a separate private control namespace and leave the final
 destination absent. The existing v1 reservation-directory allocator is incompatible.
