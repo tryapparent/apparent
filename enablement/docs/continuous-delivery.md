@@ -551,6 +551,24 @@ budget to 900 seconds and both expanded job limits to 15 minutes after verified
 publication and installed updater acceptance; this exception is not a performance
 improvement or an increase to the separate NoMac spending/session limits.
 
+### Connect client TypeScript feedback before feature pushes
+
+Feature pre-push runs the existing `npm test` command in
+`connect/client/typescript` when the full merge-base delta changes its
+`package.json`, `package-lock.json`, `tsconfig.json`, `src/**`, or direct
+`test/*.test.ts` inputs. The command's declared `pretest` builds the package
+before running its Node tests. Node and the locked npm dependencies must already
+be installed; if package dependencies are missing, the hook prints the exact
+`npm ci --no-audit --no-fund` command and never installs them itself. Deleted
+package control files fail with an instruction to restore or update the check
+contract. Unrelated Connect service/web files skip this package command.
+
+This adds early TypeScript client feedback while retaining conservative root
+Cargo and Connect Rust consumer verification in current-main CI. The separate
+`test/production-interop.ts` fixture has an opt-in Rust bridge test marked
+`#[ignore]`, requiring explicit environment setup. Ordinary Cargo runs, feature
+hooks and the package's `test/*.test.ts` script do not execute that fixture.
+
 ### Onboarding entry feedback before feature pushes
 
 Feature pre-push verification runs the existing Desktop `npm run check:onboarding`
@@ -565,6 +583,29 @@ for the developer. Deleting or renaming the entry requires updating this check's
 contract before pushing. Existing repository contracts, exact-HEAD/clean-tree
 checks, conservative selection and native/release gates remain unchanged.
 This adds developer feedback, not a guarantee that all product tests run in hooks.
+
+### Public site build feedback before feature pushes
+
+Feature pre-push runs the existing `npm run build` in `public/site` when the
+full merge-base delta changes Public source, served assets, the package/build
+controls, or the build's direct tooling inputs. This command runs the Public
+theme contract, TypeScript check, client and SSR Vite builds, and prerender. It
+does not package Pages output or run browser/video checks. The five Public
+brand assets also consumed by Connect web, shared analytics and shared UI tokens
+retain their broader root and Connect browser checks; unrelated Connect-only and
+native-only deltas skip the Public build. Unknown history selects the Public build
+conservatively even on feature pushes, where broad root checks do not execute.
+
+The selector follows the build's actual closure: `public/site/src`,
+`public/site/public`, `index.html`, `package.json`, `bun.lock`, `tsconfig.json`,
+`vite.config.ts`, the Public asset plugin and site-build prerender inputs, plus
+`shared/analytics/{config,browser}.ts`, shared UI tokens and the theme guard inputs.
+Deleted or renamed source paths still select the build. Missing/deleted package
+controls fail with an instruction to restore or update the contract. Bun 1.3.10
+and locked dependencies must already be installed with
+`bun install --frozen-lockfile`; the hook never installs dependencies. This
+feedback does not change website artifact reuse, composition, publication
+provenance or release gates.
 
 Connect automatic main producers use one stable concurrency group with
 `cancel-in-progress: false`: GitHub retains one active run and replaces the pending
