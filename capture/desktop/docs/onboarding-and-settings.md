@@ -350,7 +350,7 @@ and packaged acceptance remain separate from renderer and state-machine tests.
 ### First-capture text note lesson
 
 After screen drawing, the existing Electron coach shows **Add a note.**:
-“Hold Shift and click a spot. Type a short note, then press Enter or click Attach.”
+“Hold Shift and click a spot.”
 Its compact Shift-click illustration is presentation only, with Replay and a
 reduced-motion still. The screen-drawing trackpad helper disappears in this phase.
 The existing notes editor remains the only place to enter real text; the coach

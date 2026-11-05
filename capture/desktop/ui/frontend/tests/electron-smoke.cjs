@@ -322,7 +322,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   }
   send({step:'try-it',practice:'note',firstCaptureRequired:true});
   await expect(page.getByRole('heading',{name:'Add a note.',exact:true})).toBeVisible();
-  await expect(page.getByText('Hold Shift and click a spot. Type a short note, then press Enter or click Attach.',{exact:true})).toBeVisible();
+  await expect(page.getByText('Hold Shift and click a spot.',{exact:true})).toBeVisible();
   await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','note');
   assert.equal(await page.getByRole('textbox').count(),0,'the coach must not compete with the real note editor');
   const beforeNoteReplay=output;

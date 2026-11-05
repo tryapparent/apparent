@@ -69,7 +69,7 @@ export function NativeOnboarding(){
       whiteboard:{title:`Open ${boardName}.`,text:'Click Screen, then choose Whiteboard.'},
       'board-ink':{title:'Draw on the whiteboard.',text:'Try a circle or an arrow. The guide moves on when you finish your mark.'},
       'screen-ink':{title:'Draw on your screen.',text:'Hold Shift and circle something in your window.'},
-      note:{title:'Add a note.',text:'Hold Shift and click a spot. Type a short note, then press Enter or click Attach.'},
+      note:{title:'Add a note.',text:'Hold Shift and click a spot.'},
       stop:{title:'Finish your capture.',text:`Press ${state.shortcut} again. Your sketch and screen marks stay together.`},
       preparing:{title:'Preparing your capture…',text:'Recording has stopped. Your marks and context are being brought together.'},
       copied:{title:'Copied. Try pasting it.',text:'Your capture is copied. Paste it into your agent.',button:'Show paste steps',action:'practice-paste'},
