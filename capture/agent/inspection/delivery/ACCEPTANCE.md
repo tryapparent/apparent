@@ -32,15 +32,19 @@ and pass its archive, digest and source revision through
 `APPARENT_DESKTOP_RENDERER_ARCHIVE`, `APPARENT_DESKTOP_RENDERER_SHA256` and
 `APPARENT_DESKTOP_RENDERER_SOURCE_SHA`. The consumer requires all three and
 matches the staged renderer source identity to the producer's revision. It reuses
-the root receipt and inspector
-composition, then stages the renderer into the same app candidate:
-`usr/share/apparent/desktop-ui` for Linux or
-`Contents/Resources/desktop-ui` for macOS. The embedded renderer manifest is
-component metadata; only the caller-provided archive digest authenticates its
-bytes. Verified directories are normalized to `0755` and files to `0644` for
-cross-user package access. This component staging step makes no atomic-visibility
-claim; on macOS the enclosing app remains private until its existing package transaction
-completes.
+the root receipt and inspector composition, then replaces resources at the
+existing product consumers: `usr/share/apparent/settings/app` and
+`usr/lib/apparent/note-ui` on Linux; `Contents/Resources/settings/app` and
+`Contents/Resources/note-ui` on macOS. Each consumer receives the Vite `dist/`
+files and its source-bound Electron host files. The Settings main process loads
+`dist/settings.html`, the recording pill loads `dist/pill/index.html`, and the
+Notes process loads `dist/index.html` from those installed directories. No
+unconsumed `desktop-ui` directory is staged. The embedded manifest is component
+metadata; only the caller-provided archive digest authenticates its bytes.
+Verified files are normalized to `0644` and directories to `0755` for cross-user
+package access. The Rust Notes resolver permits checkout fallback only for an
+executable under `target/`; an installed executable fails closed when its
+admitted resources or Electron host files are missing.
 
 Linux stages into `target/appimage/AppDir` with ordinary directory permissions;
 that AppDir is a build artifact, not a private candidate or an installed app.
@@ -63,19 +67,20 @@ current root and retained real inspector and renderer archives, run:
         capture/agent/inspection/delivery/renderer/assembly.test.ts
 
 The proof invokes the existing root/inspector assembler and ordinary
-`packageApplication` consumer with `cargo` replaced by a failing executable. It
-checks all real Vite files at the packaged resource path, cross-user permissions,
+`packageApplication` consumer with native compilation blocked. It checks all real
+Vite files and Electron host files at both installed consumer paths, a clearly
+labeled synthetic renderer change in the installed HTML, cross-user permissions,
 unchanged root executable/native library bytes, wrong renderer digest and altered
 inventory rejection, and reuse refusal after committed shared model, Desktop
 bridge or native source changes. It also executes the packaged root CLI from the
 AppDir outside the checkout. A renderer-only source change must still admit the
 same root receipt. This is non-GUI artifact proof; it does not establish
-Electron launch, window routing, Mac signing or native platform behavior.
+Electron window launch, Mac signing or native platform behavior.
 
 Before Mac publication, run exact-candidate signature verification and the short
 packaged-app launch/interaction/cleanup smoke under the Desktop policy. This
-assembly slice has no Mac GUI or signing proof and does not authorize runtime
-routing, updater changes, release or activation.
+assembly slice has no Mac GUI or signing proof and does not authorize updater
+changes, release or activation.
 
 ## Mac: prepared, not executed
 

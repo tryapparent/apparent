@@ -28,6 +28,12 @@ test('stage the authenticated Vite snapshot, preserve exact inventory and refuse
       path: file.path, sha256: digest(readFileSync(join(destination, 'renderer', ...file.path.split('/')))),
     }));
     assert.deepEqual(actual, manifest.files);
+    const actualHost = manifest.hostFiles.map((file: { path: string; sha256: string }) => ({
+      path: file.path, sha256: digest(readFileSync(join(destination, 'electron', ...file.path.split('/')))),
+    }));
+    assert.deepEqual(actualHost, manifest.hostFiles);
+    assert(actualHost.some((file: { path: string }) => file.path === 'main.cjs'));
+    assert(actualHost.some((file: { path: string }) => file.path === 'notes/main.cjs'));
     assert.deepEqual(JSON.parse(readFileSync(join(destination, 'manifest.json'), 'utf8')), manifest);
     assert.throws(() => stage(artifact, archiveHash, destination), /already exists/);
     assert.throws(() => stage(artifact, '0'.repeat(64), join(work, 'wrong-hash')), /digest mismatch/);
@@ -62,6 +68,16 @@ test('stage the authenticated Vite snapshot, preserve exact inventory and refuse
     symlinkSync(work, alias, 'dir');
     assert.throws(() => stage(artifact, archiveHash, join(alias, 'rejected')), /Symlink/);
     assert(!existsSync(join(work, 'rejected')));
+
+    const missingHost = join(work, 'missing-host');
+    mkdirSync(join(missingHost, 'renderer'), { recursive: true });
+    writeFileSync(join(missingHost, 'renderer/index.html'), readFileSync(join(destination, 'renderer/index.html')));
+    writeFileSync(join(missingHost, 'manifest.json'), readFileSync(join(destination, 'manifest.json')));
+    const incompleteHost = join(work, 'incomplete-host.tar.gz');
+    tar(missingHost, incompleteHost, ['renderer/index.html', 'manifest.json']);
+    assert.throws(() => stage(incompleteHost, digest(readFileSync(incompleteHost)), join(work, 'incomplete-host-stage')),
+      /inventory|member inventory/);
+    assert(!existsSync(join(work, 'incomplete-host-stage')));
   } finally { rmSync(work, { recursive: true, force: true }); }
 });
 

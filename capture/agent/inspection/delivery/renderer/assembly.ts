@@ -25,13 +25,20 @@ export function stageRendererArchive(archive: string, expectedSha256: string, de
   assert(rendererStat.isDirectory() && !rendererStat.isSymbolicLink(), 'Staged renderer is unsafe');
   assert(manifestStat.isFile() && !manifestStat.isSymbolicLink(), 'Staged renderer manifest is unsafe');
   const manifest = JSON.parse(readFileSync(join(output, 'manifest.json'), 'utf8'));
-  assert(manifest.schema === 1 && manifest.protocol === 1 && manifest.kind === 'apparent-desktop-renderer' &&
-    Array.isArray(manifest.files) && manifest.files.length > 0, 'Staged renderer contract is invalid');
+  assert(manifest.schema === 1 && manifest.protocol === 2 && manifest.kind === 'apparent-desktop-renderer' &&
+    Array.isArray(manifest.files) && manifest.files.length > 0 &&
+    Array.isArray(manifest.hostFiles) && manifest.hostFiles.length > 0,
+    'Staged renderer and Electron host contract is invalid');
 
   // The producer keeps this nested tree private. Normalize for ordinary app
   // resources before the containing app candidate is signed or published.
   normalize(renderer);
+  const host = join(output, 'electron');
+  const hostStat = lstatSync(host);
+  assert(hostStat.isDirectory() && !hostStat.isSymbolicLink(), 'Staged Electron host is unsafe');
+  normalize(host);
   shippingDirectory(renderer);
+  shippingDirectory(host);
   assert.equal(lstatSync(renderer).mode & 0o777, 0o755, 'Renderer directory must be traversable by package users');
   assert.equal(lstatSync(join(output, 'manifest.json')).mode & 0o777, 0o644,
     'Renderer manifest must be readable by package users');
@@ -41,9 +48,16 @@ export function stageRendererArchive(archive: string, expectedSha256: string, de
     assert(stat.isFile() && !stat.isSymbolicLink(), `Invalid packaged renderer file: ${file.path}`);
     assert.equal(stat.mode & 0o777, 0o644, `Renderer file is not readable by package users: ${file.path}`);
   }
+  for (const file of manifest.hostFiles) {
+    const path = join(host, ...file.path.split('/'));
+    const stat = lstatSync(path);
+    assert(stat.isFile() && !stat.isSymbolicLink(), `Invalid packaged Electron host file: ${file.path}`);
+    assert.equal(stat.mode & 0o777, 0o644, `Electron host file is not readable by package users: ${file.path}`);
+  }
   for (const entry of manifest.entries) assert(lstatSync(join(renderer, entry)).isFile(), `Missing renderer entry: ${entry}`);
   return { sourceGitHead: manifest.source.gitHead, archiveSha256: expectedSha256,
-    inputInventorySha256: manifest.source.inputInventory.sha256, fileCount: manifest.files.length };
+    inputInventorySha256: manifest.source.inputInventory.sha256,
+    fileCount: manifest.files.length, hostFileCount: manifest.hostFiles.length };
 }
 
 function normalize(directory: string) {

@@ -129,10 +129,19 @@ export function packageApplication(binaryDirectory: string, destination: string,
   const rendererSource = process.env.APPARENT_DESKTOP_RENDERER_SOURCE_SHA;
   assert.equal(Boolean(rendererArchive), Boolean(rendererDigest) && Boolean(rendererSource),
     'Renderer assembly requires the producer archive, digest and source revision');
+  const consumers = rendererArchive ? rendererConsumerRoots(destination) : [];
   const temporary = mkdtempSync(join(destination, '.inspection-package-'));
   const candidate = join(temporary, 'inspection');
   const final = join(destination, 'inspection');
   try {
+    let renderer: any;
+    let rendererStage: string | undefined;
+    if (rendererArchive && rendererDigest && rendererSource) {
+      rendererStage = join(temporary, 'renderer-artifact');
+      renderer = stageRendererArchive(rendererArchive, rendererDigest, rendererStage);
+      assert.equal(renderer.sourceGitHead, rendererSource, 'Renderer producer source revision changed');
+      renderer = { ...renderer, consumers: consumers.map(item => item.label) };
+    }
     let receipt: any;
     if (process.env.APPARENT_INSPECTION_REUSE) {
       receipt = JSON.parse(readFileSync(join(binaryDirectory, 'inspection-composition.json'), 'utf8'));
@@ -166,6 +175,7 @@ export function packageApplication(binaryDirectory: string, destination: string,
       receipt = { schema: 1, compatibility, compositionSource: command('git', ['rev-parse', 'HEAD']),
         root: rootIdentity, inspector, inspectorArchiveSha256: expected };
     }
+    if (renderer) receipt.renderer = renderer;
     if (signing.length) command(signing[0], [...signing.slice(1), join(candidate, 'apparent-inspect')]);
     receipt.inspectorRuntimeSha256 = hash(readFileSync(join(candidate, 'apparent-inspect')));
     const nextReceipt = join(temporary, 'inspection-composition.json');
@@ -173,18 +183,110 @@ export function packageApplication(binaryDirectory: string, destination: string,
     publishValidatedDirectory(candidate, final, undefined, () => {
       renameSync(nextReceipt, join(destination, 'inspection-composition.json'));
     });
+    if (renderer && rendererStage && rendererArchive && rendererDigest) {
+      installRendererConsumers(rendererStage, rendererArchive, rendererDigest, rendererSource!, consumers, temporary);
+    }
   } finally { rmSync(temporary, { recursive: true }); }
-  if (rendererArchive && rendererDigest && rendererSource) {
-    const executableDirectory = resolve(destination);
-    const parent = basename(dirname(executableDirectory));
-    const leaf = basename(executableDirectory);
-    const resourceDirectory = leaf === 'MacOS' && parent === 'Contents'
-      ? join(dirname(executableDirectory), 'Resources', 'desktop-ui')
-      : leaf === 'bin' && parent === 'usr'
-        ? join(dirname(executableDirectory), 'share', 'apparent', 'desktop-ui')
-        : join(executableDirectory, 'desktop-ui');
-    const renderer = stageRendererArchive(rendererArchive, rendererDigest, resourceDirectory);
-    assert.equal(renderer.sourceGitHead, rendererSource, 'Renderer producer source revision changed');
+}
+
+/** Existing installed Electron consumers; the packaged host files load their sibling `dist/`. */
+export function rendererConsumerRoots(destination: string, platform = process.platform) {
+  const executableDirectory = resolve(destination);
+  const parent = basename(dirname(executableDirectory));
+  const leaf = basename(executableDirectory);
+  if (platform === 'darwin') {
+    assert(leaf === 'MacOS' && parent === 'Contents', 'Unsupported packaged macOS renderer destination');
+    const resources = join(dirname(executableDirectory), 'Resources');
+    return [
+      { label: 'settings/app', app: join(resources, 'settings/app') },
+      { label: 'note-ui', app: join(resources, 'note-ui') },
+    ];
+  }
+  if (platform === 'linux') {
+    assert(leaf === 'bin' && parent === 'usr', 'Unsupported packaged Linux renderer destination');
+    const usr = dirname(executableDirectory);
+    return [
+      { label: 'settings/app', app: join(usr, 'share/apparent/settings/app') },
+      { label: 'note-ui', app: join(usr, 'lib/apparent/note-ui') },
+    ];
+  }
+  throw new Error(`Unsupported renderer package platform: ${platform}`);
+}
+
+function validateOwnedDirectory(path: string, requiredFiles: string[] = []) {
+  const root = lstatSync(path);
+  assert(root.isDirectory() && !root.isSymbolicLink(), 'Unsafe packaged Electron resource directory');
+  const visit = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const child = join(directory, entry.name);
+      const stat = lstatSync(child);
+      assert(!stat.isSymbolicLink(), 'Symlink in packaged Electron resources');
+      if (stat.isDirectory()) visit(child);
+      else assert(stat.isFile(), 'Nonregular packaged Electron resource');
+    }
+  };
+  visit(path);
+  for (const file of requiredFiles) {
+    const stat = lstatSync(join(path, ...file.split('/')));
+    assert(stat.isFile() && !stat.isSymbolicLink(), `Existing Electron resource is missing ${file}`);
+  }
+}
+
+function copyPackageFiles(source: string, destination: string, files: string[]) {
+  mkdirSync(destination, { mode: 0o700 });
+  for (const file of files) {
+    const from = join(source, ...file.split('/'));
+    const stat = lstatSync(from);
+    assert(stat.isFile() && !stat.isSymbolicLink(), `Invalid renderer package source: ${file}`);
+    const to = join(destination, ...file.split('/'));
+    mkdirSync(dirname(to), { recursive: true, mode: 0o700 });
+    copyFileSync(from, to);
+    chmodSync(to, 0o644);
+  }
+  const normalize = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const child = join(directory, entry.name);
+      if (entry.isDirectory()) { normalize(child); chmodSync(child, 0o755); }
+      else chmodSync(child, 0o644);
+    }
+  };
+  normalize(destination);
+  chmodSync(destination, 0o755);
+}
+
+function installRendererConsumers(stage: string, archive: string, archiveDigest: string, sourceSha: string | undefined,
+  consumers: ReturnType<typeof rendererConsumerRoots>, temporary: string) {
+  const manifest = JSON.parse(readFileSync(join(stage, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.source.gitHead, sourceSha, 'Renderer stage source identity changed');
+  const rendererFiles = manifest.files.map((file: { path: string }) => file.path);
+  const hostFiles = manifest.hostFiles.map((file: { path: string }) => file.path);
+  const popupHostFiles = hostFiles.filter((path: string) => path === 'runtime.cjs' || path.startsWith('notes/') ||
+    path === 'share/main.cjs' || path === 'share/preload.cjs');
+  for (const required of ['runtime.cjs', 'notes/main.cjs', 'notes/preload.cjs', 'notes/protocol.cjs']) {
+    assert(popupHostFiles.includes(required), `Source-bound Electron host is missing ${required}`);
+  }
+  const record = { schema: 1, sourceGitHead: sourceSha, archiveSha256: archiveDigest,
+    inputInventorySha256: manifest.source.inputInventory.sha256, rendererFiles: rendererFiles.length,
+    hostFiles: hostFiles.length, consumers: consumers.map(item => item.label) };
+  for (const [index, consumer] of consumers.entries()) {
+    const dist = join(consumer.app, 'dist');
+    const electron = join(consumer.app, 'electron');
+    validateOwnedDirectory(dist, manifest.entries);
+    validateOwnedDirectory(electron, consumer.label === 'settings/app'
+      ? ['main.cjs', 'preload.cjs', 'settings.cjs', 'pill/main.cjs', 'pill/preload.cjs']
+      : ['notes/main.cjs', 'notes/preload.cjs']);
+    const nextDist = join(temporary, `renderer-dist-${index}`);
+    copyPackageFiles(join(stage, 'renderer'), nextDist, rendererFiles);
+    publishValidatedDirectory(nextDist, dist, path => validateOwnedDirectory(path, manifest.entries));
+    const nextElectron = join(temporary, `renderer-electron-${index}`);
+    const files = consumer.label === 'settings/app' ? hostFiles : popupHostFiles;
+    copyPackageFiles(join(stage, 'electron'), nextElectron, files);
+    publishValidatedDirectory(nextElectron, electron, path => validateOwnedDirectory(path,
+      consumer.label === 'settings/app'
+        ? ['main.cjs', 'preload.cjs', 'settings.cjs', 'pill/main.cjs', 'pill/preload.cjs']
+        : ['notes/main.cjs', 'notes/preload.cjs']));
+    const marker = join(consumer.app, 'apparent-renderer-manifest.json');
+    writeFileSync(marker, JSON.stringify(record, null, 2) + '\n', { mode: 0o644, flag: 'wx' });
   }
 }
 const signerWorkflows = ['verification-platform.yml', 'release-linux.yml', 'release-mac-preview.yml'].map(name => `tryapparent/apparent/.github/workflows/${name}`);

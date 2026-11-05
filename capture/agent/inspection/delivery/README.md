@@ -104,18 +104,21 @@ exact checked-out source, require a clean renderer input inventory, and pass its
 archive, digest and source revision as `APPARENT_DESKTOP_RENDERER_ARCHIVE`,
 `APPARENT_DESKTOP_RENDERER_SHA256` and `APPARENT_DESKTOP_RENDERER_SOURCE_SHA`.
 The digest comes from the real producer invocation; the embedded manifest and any
-adjacent checksum are not independent authentication sources. `renderer/assembly.ts` delegates archive
-validation and staging to the producer CLI, then normalizes the verified static
-tree to directories `0755` and files `0644` while the enclosing app candidate is
-private. The producer manifest remains beside `renderer/` as renderer metadata;
-it does not replace root or inspector receipt identity.
+adjacent checksum are not independent authentication sources. `renderer/assembly.ts`
+validates and stages the archive's Vite output and Electron host files. Ordinary
+packaging installs them over the existing Settings/Pill and Notes app resources:
+`usr/share/apparent/settings/app` plus `usr/lib/apparent/note-ui` in Linux, and
+`Contents/Resources/settings/app` plus `Contents/Resources/note-ui` on macOS.
+Those existing hosts load the sibling `dist/settings.html`, `dist/pill/index.html`
+and `dist/index.html`. The root composition receipt records the renderer source,
+archive digest and consumer paths separately from the original root source
+identity. A locally computed archive digest is sufficient only for local proof,
+never release admission.
 
-The packaged resource is `Contents/Resources/desktop-ui` on macOS and
-`usr/share/apparent/desktop-ui` in the Linux AppDir. It is part of the same app
-package; no second install is involved. This does not route any installed window
-to the renderer or change capture behavior: existing native and `note-ui` paths
-remain active. A locally computed archive digest is sufficient only for local
-proof, never release admission.
+Installed Notes resolution requires the admitted `dist/` and Electron host files
+and fails closed when they are missing. Only a development executable under
+`target/` may fall back to checkout assets. The archive producer and ordinary
+package consumer do not alter native capture behavior or install a second app.
 
 The existing platform verification job now retains source-bound root bundles and
 attested inspector archives on its existing runners/budgets; no new workflow,
