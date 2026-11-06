@@ -101,3 +101,34 @@ test("two concurrent no-replace publishers yield one winner and retain the losin
     assert.equal(await readFile(join(f.directory, loser + "/bundle.txt"), "utf8"), loser);
   } finally { await f.close(); }
 });
+
+test("publication preserves legitimate Unicode/space output names", async () => {
+  const f = await fixture(); try {
+    const source = "résumé stage", destination = "Sam's review 👋.apparent";
+    const before = await stage(f.directory, source, "unicode output");
+    assert.deepEqual(await resources.publish(await f.parent(), source, destination), { state: "published" });
+    const after = await stat(join(f.directory, destination)); assert.equal(after.ino, before.ino);
+    assert.equal(await readFile(join(f.directory, destination, "bundle.txt"), "utf8"), "unicode output");
+  } finally { await f.close(); }
+});
+test("native ACL facts cover descriptors and Darwin allow/deny entries", async () => {
+  const f = await fixture();
+  const chmodAcl = async (args: string[]) => { const { execFileSync } = await import("node:child_process"); execFileSync("/bin/chmod", args); };
+  try {
+    assert.deepEqual(await resources.checkAcl(await f.handle()), { state: "accepted" });
+    assert.deepEqual(await resources.checkAcl(await f.parent()), { state: "accepted" });
+    if (process.platform === "darwin") {
+      await chmodAcl(["+a", "everyone allow read", f.lock]);
+      assert.deepEqual(await resources.checkAcl(await f.handle()), { state: "refused" });
+      await chmodAcl(["-N", f.lock]);
+      await chmodAcl(["+a", "everyone deny delete", f.lock]);
+      assert.deepEqual(await resources.checkAcl(await f.handle()), { state: "accepted" });
+      await chmodAcl(["-N", f.lock]);
+      await chmodAcl(["+a", "everyone allow search", f.directory]);
+      assert.deepEqual(await resources.checkAcl(await f.parent()), { state: "refused" });
+    }
+  } finally {
+    if (process.platform === "darwin") { await chmodAcl(["-N", f.lock]); await chmodAcl(["-N", f.directory]); }
+    await f.close();
+  }
+});
