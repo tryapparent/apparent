@@ -431,8 +431,12 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   assert.equal(await page.getByText(/Press .* to start recording/).count(),0);
   await expect(page.locator('.native-setup')).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveCount(0);
-  await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,720]);
+  await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,520]);
   await expect(page.locator('.native-shortcut kbd')).toHaveText('⌃⌥⇧9');
+  const keys=await page.locator('.native-shortcut kbd').boundingBox();
+  assert.ok(Math.abs(keys.x+keys.width/2-380)<2,'keys are horizontally centered');
+  assert.ok(Math.abs(keys.y+keys.height/2-260)<60,'keys are vertically centered in the compact setup');
+  assert.equal(await page.locator('.native-setup section').evaluate(el=>el.scrollHeight>el.clientHeight),false);
   await expect(page.getByRole('button',{name:'Try a capture',exact:true})).toHaveCount(0);
   send({step:'try-it',practice:'screen',firstCaptureRequired:true});
   await expect(page.locator('.native-coach')).toBeVisible();
@@ -440,7 +444,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect.poll(()=>page.evaluate(()=>innerWidth)).toBeLessThan(760);
   send({step:'try-it',practice:null,firstCaptureRequired:true});
   await expect(page.getByRole('heading',{name:'Go again.',exact:true})).toBeVisible();
-  await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,720]);
+  await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,520]);
   send({step:'shortcut',shortcutEditor:{recording:true,externallyManaged:false}});
   await page.getByRole('group',{name:'Shortcut recorder'}).press('Control+Alt+k');
   await expect.poll(()=>output).toContain('"keyCode":40');

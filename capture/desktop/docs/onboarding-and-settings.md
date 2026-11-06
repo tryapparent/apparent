@@ -369,6 +369,6 @@ Attach/Enter → screen drawing → Finish, focus restoration,
 and bundle `notes.json`/semantic output. Renderer simulation is not native proof.
 
 The Electron first-capture start state keeps “Go again.” and the saved shortcut in
-the full setup window. It becomes the floating coach only after capture selection
+the setup window, shortened to 520 pixels with the keys centered in its content. It becomes the floating coach only after capture selection
 begins; the next shortcut still uses the existing native recording path. Returning
 to the start state restores the setup window. Native fallback routing is unchanged.

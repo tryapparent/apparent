@@ -101,7 +101,8 @@ function present(v,activate=false){
   const focal=v.practiceBoard||v.anchor;
   const target=focal?screen.getDisplayMatching({x:Math.round(focal[0]),y:Math.round(focal[1]),width:Math.max(1,Math.round(focal[2])),height:Math.max(1,Math.round(focal[3]))}):screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   const area=target.workArea;
-  const {width,height}=coach?coachDimensions(area,v.practice):{width:760,height:720};
+  const shortcut=v.step==='shortcut'||(v.step==='try-it'&&!coach);
+  const {width,height}=coach?coachDimensions(area,v.practice):{width:760,height:shortcut?520:720};
   const mode=`${coach}:${width}:${height}`;
   if(lastMode!==mode){
     window.setAlwaysOnTop(coach,'floating');
@@ -120,8 +121,8 @@ function present(v,activate=false){
     const actual=window.getBounds();
     v={...v,coachArrow:placement.arrow,coachPointsUp:placement.pointsUp&&actual.x===placement.x&&actual.y===placement.y};
   } else {
-    const key=JSON.stringify(['setup',area]);
-    if(key!==lastPlacement){window.setPosition(area.x+Math.max(0,Math.round((area.width-760)/2)),area.y+Math.max(0,Math.round((area.height-720)/2)),false);lastPlacement=key;}
+    const key=JSON.stringify(['setup',height,area]);
+    if(key!==lastPlacement){window.setPosition(area.x+Math.max(0,Math.round((area.width-760)/2)),area.y+Math.max(0,Math.round((area.height-height)/2)),false);lastPlacement=key;}
   }
   window.webContents.send('onboarding:state',v);
   if(!window.isVisible()||activate){if(coach)window.showInactive();else window.show();}
