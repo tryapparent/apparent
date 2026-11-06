@@ -23,6 +23,49 @@ impl Drop for Running {
     fn drop(&mut self) { let _ = self.0.kill(); let _ = self.0.wait(); }
 }
 
+struct FootprintGuard {
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+impl FootprintGuard {
+    fn start(helper_pid: u32) -> Self {
+        use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+        let stop = Arc::new(AtomicBool::new(false));
+        let done = stop.clone();
+        let thread = std::thread::spawn(move || {
+            let footprint = |pid| {
+                let mut usage: libc::rusage_info_v2 = unsafe { std::mem::zeroed() };
+                let result = unsafe { libc::proc_pid_rusage(pid, libc::RUSAGE_INFO_V2,
+                    (&mut usage as *mut libc::rusage_info_v2).cast()) };
+                if result == 0 { Ok(usage.ri_phys_footprint) }
+                else { Err(std::io::Error::last_os_error().raw_os_error()) }
+            };
+            while !done.load(Ordering::Acquire) {
+                let own = footprint(unsafe { libc::getpid() });
+                let helper = footprint(helper_pid as libc::pid_t);
+                if matches!(helper, Err(Some(libc::ESRCH))) { break }
+                let valid = match (own, helper) {
+                    (Ok(a), Ok(b)) => a.checked_add(b).is_some_and(|n| n <= 1536 * 1024 * 1024),
+                    _ => false,
+                };
+                if !valid {
+                    // Exit only this owned job. Closing its lifetime socket stops
+                    // the Swift bridge; never signal a potentially recycled PID.
+                    unsafe { libc::_exit(1) }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        });
+        Self { stop, thread: Some(thread) }
+    }
+}
+impl Drop for FootprintGuard {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Release);
+        if let Some(thread) = self.thread.take() { let _ = thread.join(); }
+    }
+}
+
 pub fn available() -> bool {
     let Some(path) = helper() else { return false };
     let Ok(child) = Command::new(path).arg("--version").env_clear()
@@ -66,6 +109,7 @@ pub fn decode(source: &File, times: &[u64], max_edge: u32, max_pixels: u64,
         });
     }
     let mut child = Running(command.spawn().map_err(|_| "decode_failed")?);
+    let _footprint = FootprintGuard::start(child.0.id());
     let request = serde_json::to_vec(&serde_json::json!({"times":times,"maxEdge":max_edge,"maxPixels":max_pixels}))
         .map_err(|_| "internal")?;
     child.0.stdin.take().ok_or("internal")?.write_all(&request).map_err(|_| "decode_failed")?;

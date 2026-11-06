@@ -134,8 +134,14 @@ impl Active {
                             return Err(std::io::Error::last_os_error());
                         }
                     }
+                    #[cfg(target_os = "linux")]
+                    let allocation_resource = libc::RLIMIT_AS;
+                    // Darwin rejects the Linux virtual-address-space limit.
+                    // The decoder additionally watches combined physical footprint.
+                    #[cfg(target_os = "macos")]
+                    let allocation_resource = libc::RLIMIT_DATA;
                     for (resource, limit) in [
-                        (libc::RLIMIT_AS, 1536 * 1024 * 1024),
+                        (allocation_resource, 1536 * 1024 * 1024),
                         (libc::RLIMIT_CPU, 65),
                         (libc::RLIMIT_FSIZE, 256 * 1024 * 1024),
                         (libc::RLIMIT_NOFILE, 128),
