@@ -238,3 +238,16 @@ Changing shell surfaces disconnects only the renderer's observations. Record
 Settings are not supplied by this contribution. The default shell remains the
 development foundation; this does not enable installed routing or claim native
 pill placement, focus, stacking, exclusion or capture-to-Saved behavior.
+
+Trusted Record shell assembly may select `presentation: 'pill'` in the existing
+build binding. This compiles a dedicated frameless, transparent control window;
+neither renderer input nor user config selects it. Main owns screen placement,
+bounded measurement, rounded hit regions and inactive showing. The old native
+pill geometry is retained in TypeScript, including pocket anchoring and
+transparent notes reserves. Window destruction revokes pending layout work.
+
+This is a presentation contract, not installed adoption. Focus/stacking and
+click-through require isolated Linux and Mac evidence. In particular,
+`setContentProtection(false)` does not exclude this window from capture: Engine's
+versioned standalone exclusion contract and whole-stream evidence are still
+required before native pill adoption. No legacy route is retired here.

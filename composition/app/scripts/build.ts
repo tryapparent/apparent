@@ -27,13 +27,16 @@ export interface RecordMainBindingInput {
   /** Trusted composition module exporting createRecordHostServices({ profilePath }). */
   module: string;
   resolvePaths?: string[];
+  /** Trusted assembly presentation; never selected by a renderer or user config. */
+  presentation?: 'pill';
 }
 export async function buildShell(output: string, onboarding?: OnboardingMainBindingInput, record?: RecordMainBindingInput) {
   if (onboarding && record) throw new Error('Owner host bindings must be assembled separately');
   await checkInstalled();
   if (onboarding && !/^[a-f0-9]{64}$/.test(onboarding.configHost.sha256)) throw new Error('Invalid admitted config host digest');
   await mkdir(join(output, 'vendor'), { recursive: true });
-  await build({ ...common, entryPoints: [join(root, 'src/renderer.tsx')], outfile: join(output, 'renderer.js'),
+  const presentation = { APPARENT_RECORD_PILL_WINDOW: JSON.stringify(record?.presentation === 'pill') };
+  await build({ ...common, define: { ...common.define, ...presentation }, entryPoints: [join(root, 'src/renderer.tsx')], outfile: join(output, 'renderer.js'),
     external: [...external, './registry.js'] });
   const require = createRequire(import.meta.url);
   const reactExports = Object.keys(require('react')).filter(name => /^[A-Za-z_$][\w$]*$/.test(name));
@@ -47,7 +50,7 @@ export async function buildShell(output: string, onboarding?: OnboardingMainBind
       ...(file === 'dom' ? { banner: { js: 'import * as sharedReact from "react"; const require = (name) => { if (name === "react") return sharedReact; throw new Error("Unsupported runtime dependency"); };' } } : {}) });
   }
   await build({ entryPoints: [join(root, 'src/main.cts')], bundle: true, platform: 'node',
-    format: 'cjs', target: 'node22', external: ['electron'], outfile: join(output, 'main.cjs') });
+    format: 'cjs', target: 'node22', external: ['electron'], define: presentation, outfile: join(output, 'main.cjs') });
   await build({ entryPoints: [join(root, 'src/preload.cts')], bundle: true, platform: 'node',
     format: 'cjs', target: 'node22', external: ['electron'], outfile: join(output, 'preload.cjs') });
   if (record) {
@@ -76,6 +79,7 @@ export async function buildShell(output: string, onboarding?: OnboardingMainBind
     await writeFile(join(output, 'owner-binding.mjs'), 'export {};\n');
   }
   let html = await readFile(join(root, 'src/index.html'), 'utf8');
+  if (record?.presentation === 'pill') html = html.replace('<html lang="en">', '<html lang="en" data-record-pill>');
   const importmap = html.match(/<script type="importmap">([^<]+)<\/script>/)![1];
   // CSP permits only this exact inline import map; no unsafe-inline or eval.
   const { createHash } = await import('node:crypto');

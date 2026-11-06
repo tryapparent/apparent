@@ -13,7 +13,7 @@ const { stopElectron } = createRequire(import.meta.url)('../../../../enablement/
   stopElectron(application: Awaited<ReturnType<typeof electron.launch>> | undefined): Promise<void>;
 };
 
-test('packaged public Record pill uses only its injected bridge, compiled styles and local font', { timeout: 180_000 }, async t => {
+for (const presentation of [undefined, 'pill'] as const) test(`packaged public Record pill uses its injected bridge and assets (${presentation ?? 'foundation'} presentation)`, { timeout: 180_000 }, async t => {
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'record-pill-electron-')));
   let application: Awaited<ReturnType<typeof electron.launch>> | undefined;
   let sandbox: { path: string; bytes: Buffer; mode: number } | undefined;
@@ -50,7 +50,7 @@ export async function createRecordHostServices({profilePath}) {
 }
 `);
   const shell = join(directory, 'shell');
-  await buildShell(shell, undefined, { module: binding });
+  await buildShell(shell, undefined, { module: binding, presentation });
   const stream = join(directory, 'record'); await buildRecordArtifact(stream);
   const assembled = await assemble(shell, [stream], join(directory, 'app'));
   const bundle = await packageApplication(assembled, join(directory, 'packages'));
@@ -82,19 +82,55 @@ export async function createRecordHostServices({profilePath}) {
   }), { minimumHeight: '56px', loaded: true });
   assert.deepEqual(await page.evaluate(() => ({require: typeof (window as any).require, process: typeof (window as any).process})),
     {require: 'undefined', process: 'undefined'});
-  if (process.env.APPARENT_RECORD_PILL_SCREENSHOT) await page.screenshot({ path: process.env.APPARENT_RECORD_PILL_SCREENSHOT });
+  if (presentation === 'pill') {
+    await expect(page.getByRole('heading', { name: 'Apparent Foundation' })).toHaveCount(0);
+    await application.evaluate(({ BrowserWindow }) => new Promise<void>((resolve, reject) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      if (window.isVisible()) { resolve(); return; }
+      const shown = () => { clearTimeout(timer); resolve(); };
+      const timer = setTimeout(() => { window.removeListener('show', shown); reject(new Error('Native pill never became visible')); }, 5000);
+      window.once('show', shown);
+    }));
+    const native = await application.evaluate(({ BrowserWindow, screen }) => {
+      const window = BrowserWindow.getAllWindows()[0]; const bounds = window.getBounds();
+      return { bounds, area: screen.getDisplayMatching(bounds).workArea, visible: window.isVisible(), top: window.isAlwaysOnTop(), focusable: window.isFocusable() };
+    });
+    t.diagnostic('Native presentation observations: ' + JSON.stringify(native));
+    assert.equal(native.visible, true); assert.equal(native.top, true);
+    if (process.platform === 'linux') assert.equal(native.focusable, false);
+    assert(native.bounds.width <= 1200 && native.bounds.height <= 360);
+    assert(native.bounds.x >= native.area.x && native.bounds.y >= native.area.y
+      && native.bounds.x + native.bounds.width <= native.area.x + native.area.width
+      && native.bounds.y + native.bounds.height <= native.area.y + native.area.height);
+  }
+  if (process.env.APPARENT_RECORD_PILL_SCREENSHOT) await page.screenshot({ path: process.env.APPARENT_RECORD_PILL_SCREENSHOT + (presentation ? '.native.png' : '') });
   // Changing shell surfaces unmounts and reconnects presentation only, not capture.
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('button', { name: 'Record', exact: true }).click();
-  await expect(controls.getByRole('button', { name: 'Finish', exact: true })).toBeVisible();
+  if (!presentation) {
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Record', exact: true }).click();
+    await expect(controls.getByRole('button', { name: 'Finish', exact: true })).toBeVisible();
+  }
   await controls.getByRole('button', { name: 'Finish', exact: true }).click();
   await expect(page.locator('main.pill')).toHaveAttribute('data-phase', 'selecting');
   const commands = JSON.parse(await readFile(join(profile, 'commands.json'), 'utf8'));
   assert.equal(commands.length, 1); assert.equal(commands[0].type, 'stop-capture'); assert.equal(commands[0].captureId, 'capture-active');
   assert.match(commands[0].requestId, /^[a-f0-9-]{36}$/);
   assert.deepEqual(errors, []);
-  const exited = application.waitForEvent('close');
+  const exited = application.waitForEvent('close', { timeout: 5000 });
+  await application.evaluate(({ BrowserWindow }) => {
+    const events: string[] = []; (globalThis as any).__pillCloseEvents = events;
+    const window = BrowserWindow.getAllWindows()[0];
+    window.on('close', event => events.push('close:' + event.defaultPrevented));
+    window.on('closed', () => events.push('closed'));
+  });
   await application.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].close(); });
-  await exited; application = undefined;
+  try { await exited; }
+  catch (error) {
+    t.diagnostic(JSON.stringify(await application.evaluate(({ BrowserWindow }) => ({events: (globalThis as any).__pillCloseEvents,
+      windows: BrowserWindow.getAllWindows().map(window => ({visible: window.isVisible(), destroyed: window.isDestroyed()}))}))));
+    t.diagnostic(await readFile(join(profile, 'closed.json'), 'utf8').catch(error => String(error)));
+    throw error;
+  }
+  application = undefined;
   assert.deepEqual(JSON.parse(await readFile(join(profile, 'closed.json'), 'utf8')), {detachCalls: 0});
 });
