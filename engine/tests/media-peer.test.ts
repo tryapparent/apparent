@@ -57,7 +57,10 @@ test('native media/1 decodes actual ordered PNGs, offsets, duplicates and end cl
     assert.deepEqual(result.frames.map(r => r.clampedToStart), [false, true, false, false]);
     assert.deepEqual(result.frames.map(r => r.clampedToEnd), [false, false, true, false]);
     assert.ok(result.frames[2].actualVideoMs! < result.frames[2].effectiveVideoMs);
-    if (process.platform === 'darwin') assert.equal(result.frames[2].actualVideoMs, 1900, 'end clamp returns the fixture last decodable frame');
+    if (process.platform === 'darwin') {
+      const last = await f.client.decode({ ...f.input, jobId: createMediaJobId(), outputDirectory: join(f.root, 'last-frame'), requestedBundleMs: [2150] });
+      assert.equal(result.frames[2].sha256, last.frames[0].sha256, 'end clamp returns the same pixels as the fixture last decodable frame');
+    }
     for (const frame of result.frames) {
       const bytes = await readFile(frame.path);
       assert.equal(bytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');

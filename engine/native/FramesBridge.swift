@@ -40,7 +40,10 @@ private struct Request: Decodable {
       var metadata = stat()
       guard fstat(3, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFREG,
             metadata.st_size > 0 else { throw HelperError("source_incomplete") }
-      let asset = AVURLAsset(url: URL(fileURLWithPath: "/dev/fd/3"))
+      let asset = AVURLAsset(url: URL(fileURLWithPath: "/dev/fd/3"), options: [
+        AVURLAssetReferenceRestrictionsKey: NSNumber(value: AVAssetReferenceRestrictions.forbidAll.rawValue),
+        AVURLAssetPreferPreciseDurationAndTimingKey: true,
+      ])
       let seconds = try await asset.load(.duration).seconds
       guard seconds.isFinite, seconds > 0, seconds * 1000 < Double(Int64.max),
             let track = try await asset.loadTracks(withMediaType: .video).first else { throw HelperError("source_incomplete") }
@@ -89,7 +92,10 @@ private struct Request: Decodable {
         withUnsafeBytes(of: &little) { header.append(contentsOf: $0) }
       }
       try? FileHandle.standardOutput.write(contentsOf: header)
-      FileHandle.standardError.write(Data("Native frame decode failed\n".utf8))
+      let native = error as NSError
+      let domains = ["AVFoundationErrorDomain", "NSOSStatusErrorDomain", "NSCocoaErrorDomain", "NSPOSIXErrorDomain"]
+      let domain = domains.contains(native.domain) ? native.domain : "NativeError"
+      FileHandle.standardError.write(Data("Native frame decode failed (\(domain):\(native.code))\n".utf8))
       exit(1)
     }
   }
