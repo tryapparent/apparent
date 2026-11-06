@@ -177,12 +177,51 @@ The active native caller remains authoritative migration debt. This source chang
 
 ## Queue and command adoption boundaries
 
+The `./sender-upload` export uploads an already prepared, consented plaintext
+snapshot through reservation, bounded asset PUTs, completion and exact ready-state
+manifest readback. It reuses the recipient asset validator and bounded transport
+reader. The caller supplies the stable snapshot, persisted manifest, fresh active
+guard, approved upload authorization and provider lifetime. Callback references,
+signal, identifier and manifest are detached before asynchronous work; returned
+asset bytes remain caller-owned. Each request runs once, refuses redirects, and
+exposes fixed error categories. Waiting for snapshot reads is cancellation/deadline
+bounded; the callback must honor its signal and own cleanup until its work settles.
+A failed operation may have left server-side effects; it does not roll them back.
+This is explicitly plaintext protocol preparation, with no encryption fallback,
+credential refresh/401 retry, filesystem snapshot, queue write, worker or installed
+route. Those adoption responsibilities remain with the parent migration.
+
+The `./local-status` export composes `readLocalStatus` from the existing private
+credential and queue readers under one queue lease. The caller supplies admitted
+fresh settings, approved server context, time and the resource provider lifetime.
+The result matches local `status(false)` fields and auth classifications, including
+renewable grants with expired access tokens, and excludes credential tokens and
+unknown queue fields. Invalid stored grants appear signed out; unsafe descriptor,
+ACL, directory or queue reads refuse the whole status. It makes no account request,
+renewal or product JSON write. It can create the existing stable empty lock file.
+`projectLocalStatus` also accepts already admitted secret-free facts. Neither API
+routes the installed CLI; Rust remains its sole live writer and command owner.
+
 The `./queue` export decodes legacy private queue records and proposes guarded
 transitions. Callers must supply fresh facts under the authoritative writer lock,
 including the captured cancellation epoch before applying upload results. These
-functions do not read private files, renew credentials, commit proposals or start
-a worker. Renewal-journal recovery and production state adoption remain with the
+transition functions do not read private files, renew credentials, commit proposals or start
+a worker. `readQueueSnapshot` reads the direct legacy `<id>.job` layout under the
+existing queue lease, with private descriptor/ACL admission and a 100-record bound.
+It preserves data-hardlink compatibility, returns detached frozen records, and fails
+the entire snapshot on unsafe or malformed entries. An admitted empty directory
+returns an empty queue; a missing directory is an admission failure. It may create
+the stable empty lock file, but never writes queue JSON. This library reader does
+not route installed status commands. Renewal-journal recovery and production state adoption remain with the
 parent migration; Rust remains the sole active writer.
+
+`projectUploadFailure` maps bounded structured root/descendant error facts to the
+existing queue transition codes and allowlisted diagnostic stage/reason values.
+Root and cause precedence match the donor. It never returns source messages;
+only the existing optional `sizeFailure` queue field retains its asset path.
+The caller supplies error facts; this function does not traverse arbitrary errors,
+persist a result, log diagnostics or run a worker. `completeUpload` remains the
+existing owner of guarded retry, waiting and terminal transition proposals.
 
 The `./recipient-command` export prepares headless fetch/remote-inspect behavior
 and invokes the verified retrieval API through injected credential/publication
