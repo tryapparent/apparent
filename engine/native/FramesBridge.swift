@@ -54,16 +54,26 @@ private struct Request: Decodable {
       guard natural.width > 0, natural.height > 0, natural.width <= 16_384, natural.height <= 16_384,
             natural.width * natural.height * 4 <= 256 * 1024 * 1024 else { throw HelperError("limits_exceeded") }
       let duration = UInt64((seconds * 1000).rounded(.up))
+      // Unlimited image-generator tolerance can return an earlier keyframe. Use
+      // AVFoundation's container sample index to identify the final presentation
+      // timestamp, then ask the reused generator for that exact sample.
+      var lastSample: CMTime?
+      if request.times.contains(where: { $0 >= duration }) {
+        guard try await asset.load(.providesPreciseDurationAndTiming),
+              let cursor = track.makeSampleCursor(presentationTimeStamp: CMTime(value: Int64(duration), timescale: 1000)) else { throw HelperError("source_incomplete") }
+        let time = cursor.currentSamplePresentationTimeStamp
+        guard time.seconds.isFinite, time.seconds >= 0, time.seconds < seconds else { throw HelperError("source_incomplete") }
+        lastSample = time
+      }
       var total: UInt64 = 0
       for requested in request.times {
         let clamped = requested >= duration
-        let target = min(requested, duration - 1)
-        // Preserve the donor's explicit-time tolerance. At the end, permit the
-        // decoder to return the last available frame rather than silently skip it.
+        let target = clamped ? lastSample! : CMTime(value: Int64(requested), timescale: 1000)
+        // Preserve the donor's explicit-time tolerance for ordinary selections.
         let tolerance = CMTime(value: 80, timescale: 1000)
         let generator = Media.frameGenerator(asset: asset, maxEdge: request.maxEdge,
-          before: clamped ? .positiveInfinity : tolerance, after: clamped ? .zero : tolerance)
-        let result = try await generator.image(at: CMTime(value: Int64(target), timescale: 1000))
+          before: clamped ? .zero : tolerance, after: clamped ? .zero : tolerance)
+        let result = try await generator.image(at: target)
         let image = result.image
         guard image.width > 0, image.height > 0, max(image.width, image.height) <= request.maxEdge else { throw HelperError("limits_exceeded") }
         let pixels = UInt64(image.width) * UInt64(image.height)

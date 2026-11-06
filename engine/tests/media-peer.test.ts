@@ -172,6 +172,10 @@ test('independent workers cannot both claim the same empty output', { skip: !bin
   const other = new MediaClient(launchMediaWorker(resolve(binary!), f.runtime));
   try {
     await other.handshake();
+    // Bootstrap the shared lease anchors before racing output admission. Core
+    // deliberately fails closed if a contender sees an incomplete first anchor;
+    // its separate cross-process bootstrap tests cover that boundary.
+    await f.client.decode({ ...f.input, jobId: createMediaJobId(), outputDirectory: join(f.root, 'warmup'), requestedBundleMs: [0] });
     await mkdir(f.input.outputDirectory, { mode: 0o700 });
     const outcomes = await Promise.allSettled([f.client.decode(f.input), other.decode({ ...f.input, jobId: createMediaJobId() })]);
     const winners = outcomes.filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<MediaClient['decode']>>> => r.status === 'fulfilled');
