@@ -212,6 +212,27 @@ class OnboardingAdmissionTests(unittest.TestCase):
         self.branch_sha = 'b'*40
         with self.assertRaisesRegex(ValueError, 'branch moved'): self.candidate()
 
+    def test_fixture_only_diagnostic_success_cannot_admit_a_candidate(self):
+        self.jobs['macos'] = [dict(name='installer-diagnostics', status='completed', conclusion='success'),
+                              dict(name='verify', status='completed', conclusion='skipped'),
+                              dict(name='onboarding-candidate', status='completed', conclusion='skipped')]
+        with self.assertRaises(ValueError): self.candidate()
+
+    def test_candidate_workflow_separates_diagnostics_from_production_gates(self):
+        workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/verification-mac.yml').read_text()
+        jobs = re.findall(r'^  ([a-z][a-z-]*):$', workflow.split('jobs:\n', 1)[1], re.M)
+        self.assertEqual(len(jobs), len(set(jobs)), 'duplicate job keys overwrite a required gate')
+        self.assertEqual(set(jobs), {'verify', 'installer-fixtures', 'installer-diagnostics', 'onboarding-candidate'})
+        sections = {name: re.search(r'^  ' + name + r':\n(.*?)(?=^  [a-z][a-z-]*:|\Z)', workflow, re.M | re.S)[1] for name in jobs}
+        self.assertIn('inputs.installer_fixtures_only == true', sections['installer-diagnostics'])
+        self.assertNotIn('secrets.', sections['installer-diagnostics'])
+        self.assertNotIn('upload-artifact', sections['installer-diagnostics'])
+        for name in ('verify', 'installer-fixtures', 'onboarding-candidate'):
+            self.assertIn('inputs.installer_fixtures_only != true', sections[name])
+        self.assertIn('needs: [verify, installer-fixtures]', sections['onboarding-candidate'])
+        self.assertIn('build-mac-preview.sh', sections['onboarding-candidate'])
+        self.assertIn('stapler', sections['onboarding-candidate'])
+
     def test_scoped_candidate_requires_published_baseline_ancestry(self):
         for status in ['behind', 'diverged', 'identical']:
             self.status = status

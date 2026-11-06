@@ -52,7 +52,7 @@ jobs:
           "$RUNNER_TEMP/installer-transaction-tests"
 
   # Manual diagnostics contain no signing secrets, artifacts or verification receipt.
-  installer-fixtures:
+  installer-diagnostics:
     if: github.event_name == 'workflow_dispatch' && inputs.installer_fixtures_only == true && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/codex/onboarding-complete-candidate'
     runs-on: macos-15-intel
     timeout-minutes: 10
@@ -71,7 +71,7 @@ jobs:
   # Private-to-authenticated-Actions artifact for installed testing. This job has
   # no release/feed write permission and does not produce a release receipt.
   onboarding-candidate:
-    if: github.event_name == 'workflow_dispatch' && github.repository == 'tryapparent/apparent' && (github.ref == 'refs/heads/t3/onboarding-mac-release-baseline' || github.ref == 'refs/heads/codex/onboarding-complete-candidate')
+    if: github.event_name == 'workflow_dispatch' && inputs.installer_fixtures_only != true && github.repository == 'tryapparent/apparent' && (github.ref == 'refs/heads/t3/onboarding-mac-release-baseline' || github.ref == 'refs/heads/codex/onboarding-complete-candidate')
     needs: [verify, installer-fixtures]
     # Use the stable Apple Silicon pool; latest repeatedly failed runner admission.
     runs-on: macos-15
