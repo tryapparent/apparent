@@ -233,6 +233,7 @@ test("recipient requests use the actual sole writer for due renewal, one GET ret
   const upload = JSON.stringify({ server: "https://other.example", token: "untouched-upload" });
   await writeFile(path.join(state, "upload.credential"), upload, { mode: 0o600 });
   let refreshes = 0, metadata = 0, calls = 0, rejectAll = false, midTransfer = false;
+  let cancelRefresh: AbortController | undefined;
   let access = "old-access", refresh = "old-refresh";
   const content = Buffer.from("synthetic renewal recipient\n");
   const assets = new Map([["summary.md", content], ["apparent.json", Buffer.from("{}")], ["contact-sheet.png", Buffer.from([1, 2, 3])]]);
@@ -243,6 +244,7 @@ test("recipient requests use the actual sole writer for due renewal, one GET ret
       assert.equal(request.method, "POST"); assert.equal(request.headers.authorization, undefined);
       let body = ""; for await (const chunk of request) body += chunk;
       assert.deepEqual(JSON.parse(body), { refreshToken: refresh });
+      if (cancelRefresh) { cancelRefresh.abort(); return; } // Hold response until cancellation stops the real writer.
       refreshes++; access = `access-${refreshes}`; refresh = `refresh-${refreshes}`;
       response.end(JSON.stringify({ scope: "read", grantId: "reader", accessToken: access, refreshToken: refresh, expiresIn: 3600, refreshExpiresIn: 7200 })); return;
     }
@@ -292,6 +294,14 @@ test("recipient requests use the actual sole writer for due renewal, one GET ret
     assert.deepEqual(await runRecipientCommandFromState(parseRecipientCommand(["fetch", id, "--out", path.join(root, "again.apparent")]), options), rejected);
     assert.equal(calls, beforeCalls, "authRequired never starts another request or renewal");
     assert.equal(await readFile(config, "utf8"), configBytes); assert.equal(await readFile(path.join(state, "upload.credential"), "utf8"), upload);
+    const expired = { ...JSON.parse(await readFile(credentialFile, "utf8")), expiresAt: 1, authRequired: false };
+    await writeFile(credentialFile, JSON.stringify(expired), { mode: 0o600 });
+    const beforeCancellation = await readFile(credentialFile), beforeMetadata = metadata;
+    cancelRefresh = new AbortController();
+    assert.deepEqual(await runRecipientCommandFromState(parseRecipientCommand(["fetch", id, "--out", path.join(root, "cancelled.apparent")]), {
+      ...options, signal: cancelRefresh.signal,
+    }), { ok: false, error: { category: "cancelled", message: "cancelled" } });
+    assert.deepEqual(await readFile(credentialFile), beforeCancellation); assert.equal(metadata, beforeMetadata);
   } finally { server.closeAllConnections(); server.close(); await once(server, "close"); }
 }));
 
