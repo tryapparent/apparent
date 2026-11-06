@@ -15,7 +15,7 @@ const output = resolve(pkg, 'dist')
 if (existsSync(output)) { if (lstatSync(output).isSymbolicLink() || !lstatSync(output).isDirectory()) throw new Error('unsafe dist'); if (readdirSync(output).length) { validateMacArtifact(output); rmSync(output, { recursive: true }) } }
 mkdirSync(resolve(output, 'libexec'), { recursive: true })
 const cargoTarget = resolve(pkg, '.build/cargo-target')
-execFileSync('cargo', ['build', '--manifest-path', resolve(root, 'engine/Cargo.toml'), '--features', 'media', '--bin', 'apparent-engine-frames', '--release', '--locked', '--target', 'x86_64-apple-darwin', '--target-dir', cargoTarget], { cwd: root, stdio: 'inherit', env: { ...process.env, CARGO_BUILD_JOBS: process.env.T3_BUILD_JOBS ?? '3', MACOSX_DEPLOYMENT_TARGET: '15.0' } })
+execFileSync('cargo', ['build', '--manifest-path', resolve(root, 'engine/Cargo.toml'), '--features', 'media', '--bin', 'apparent-engine-frames', '--release', '--locked', ...(process.env.APPARENT_CARGO_OFFLINE === '1' ? ['--offline'] : []), '--target', 'x86_64-apple-darwin', '--target-dir', cargoTarget], { cwd: root, stdio: 'inherit', env: { ...process.env, CARGO_BUILD_JOBS: process.env.T3_BUILD_JOBS ?? '3', MACOSX_DEPLOYMENT_TARGET: '15.0' } })
 const worker = resolve(output, 'libexec/apparent-engine-frames')
 const helper = resolve(output, 'libexec/apparent-engine-frames-native')
 copyFileSync(resolve(cargoTarget, 'x86_64-apple-darwin/release/apparent-engine-frames'), worker)
