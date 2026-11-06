@@ -15,22 +15,26 @@ import { publishRecipientCapture, RecipientPublicationError } from "../../src/re
 import type { RetrievedRecipientCapture } from "../../src/recipient/retrieve.ts";
 
 const target = process.platform === "linux" ? "linux-x64" : process.arch === "arm64" ? "macos-arm64" : "macos-x64";
-const sdkPath = process.env.APPARENT_RESOURCE_SDK;
 const artifactPath = process.env.APPARENT_RESOURCE_ARTIFACT;
 function absoluteEnv(name: string, value: string | undefined): string {
   assert.ok(value, `${name} must name the prebuilt native resource artifact`);
   assert.ok(path.isAbsolute(value), `${name} must be an absolute path`);
   return value;
 }
-const sdk = absoluteEnv("APPARENT_RESOURCE_SDK", sdkPath);
 const artifact = absoluteEnv("APPARENT_RESOURCE_ARTIFACT", artifactPath);
-const nativeModule = await import(pathToFileURL(sdk).href) as {
+async function packedResourceSdk() {
+  const consumer = process.env.APPARENT_RESOURCE_SDK_CONSUMER;
+  absoluteEnv("APPARENT_RESOURCE_SDK_CONSUMER", consumer);
+  const entry = `${consumer}/node_modules/@apparent/native-resources/dist/index.js`;
+  return await import(pathToFileURL(entry).href) as {
   NativeResources: new (provider: { executable: string; protocol: 1; target: string; sha256: string }) => {
     checkAcl(handle: import("node:fs/promises").FileHandle): Promise<{ state: "accepted" | "refused" }>;
     publish(parent: import("node:fs/promises").FileHandle, source: string, destination: string, options?: { signal?: AbortSignal }): Promise<{ state: "published" | "destination_exists" | "refused" | "publication_uncertain" }>;
   };
   validateResourceArtifact(directory: string, expectedTarget: string): { sourceSha: string; target: string; executable: string; sha256: string; protocol: number };
 };
+}
+const nativeModule = await packedResourceSdk();
 const manifest = nativeModule.validateResourceArtifact(artifact, target);
 const expectedSource = process.env.APPARENT_RESOURCE_SOURCE_SHA;
 assert.match(expectedSource ?? "", /^[a-f0-9]{40}$/, "APPARENT_RESOURCE_SOURCE_SHA must pin the reviewed producer source");

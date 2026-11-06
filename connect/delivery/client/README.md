@@ -214,7 +214,8 @@ is allowed. This library does not select the provider or switch installed caller
 
 The explicit native consumer suite is
 `node --experimental-strip-types --test test/integration/publication-native.test.ts`.
-Supply absolute `APPARENT_RESOURCE_SDK` (prebuilt SDK entry) and
+Supply absolute `APPARENT_RESOURCE_SDK_CONSUMER` (isolated npm consumer with the
+packed public `@apparent/native-resources` SDK installed) and
 `APPARENT_RESOURCE_ARTIFACT` (qualified binary/manifest directory), plus
 `APPARENT_RESOURCE_SOURCE_SHA` pinned to the reviewed producer. Admission must
 verify producer provenance separately. This suite compiles no Rust, uses only
