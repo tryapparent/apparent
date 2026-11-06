@@ -5,7 +5,12 @@
 //! bundle and hold the applicable bundle lease through validation and commit.
 //! This check is not full-profile validation, capture authorization, or Saved
 //! evidence; those remain responsibilities of the publication transaction owner.
+mod backend;
 mod movie;
 
+pub use backend::{
+    FileIdentity, MaterialsKey, PreparedPublication, PublicationBackend, PublicationEvidence,
+    SealedFile, TrustedPublicationContext, TrustedSource,
+};
 /// Validate a movie container and its video sample extents from an already-open file.
 pub use movie::validate_movie;
