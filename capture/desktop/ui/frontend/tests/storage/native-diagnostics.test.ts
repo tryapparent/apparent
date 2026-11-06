@@ -4,6 +4,16 @@ import { retainPickerFailure } from './native-diagnostics.ts';
 
 const identity = { pid: 4321, title: 'Apparent — UI foundation', bounds: { x: -10, y: 20, width: 900, height: 700 } };
 
+test('sampler termination retains exit metadata without copying command output', async () => {
+  const evidence = await retainPickerFailure(identity, 4321, '/private/evidence', async file => {
+    if (file.endsWith('sample')) throw Object.assign(new Error('sampler stopped'), {
+      code: null, signal: 'SIGKILL', killed: true, stdout: 'private synthetic payload', stderr: 'private synthetic payload',
+    });
+  }, cap => Math.min(cap, 1700), {});
+  assert.deepEqual(evidence.ownedProcessSampleFailure, { code: null, signal: 'SIGKILL', killed: true });
+  assert.ok(!JSON.stringify(evidence).includes('private synthetic payload'));
+});
+
 test('picker failure evidence uses cached owned identity without querying a hung Electron main', async () => {
   const calls: unknown[] = [];
   const evidence = await retainPickerFailure(identity, 4321, '/private/evidence', async (...args) => {
