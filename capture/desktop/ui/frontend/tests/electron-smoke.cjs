@@ -433,6 +433,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.locator('.native-coach')).toHaveCount(0);
   await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,520]);
   await expect(page.locator('.native-shortcut kbd')).toHaveText('⌃⌥⇧9');
+  await expect(page.locator('.native-shortcut kbd')).toHaveCSS('font-size','40px');
   const keys=await page.locator('.native-shortcut kbd').boundingBox();
   assert.ok(Math.abs(keys.x+keys.width/2-380)<2,'keys are horizontally centered');
   assert.ok(Math.abs(keys.y+keys.height/2-260)<60,'keys are vertically centered in the compact setup');
