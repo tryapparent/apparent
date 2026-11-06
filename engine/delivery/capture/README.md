@@ -23,11 +23,17 @@ until explicit release. Core keeps global live admission for actual capture.
 The closed runtime and real packaged SDK peer passed on private host Xvfb and
 in the isolated Linux guest. The current-base rebuilt worker has the same hash
 as the guest-tested worker; package metadata changes do not substitute for runtime
-proof. Producer registration/discovery and exact-main delivery admission remain
-open. X11 display and the advertised preset area are the supported sources; general picker/area selection, Wayland, macOS, audio,
-fact collectors, media/2 and publication are unavailable. Materials are never
-Saved. Existing native and installed behavior remains on its current route until
-verified consumer adoption.
+proof. Platform registered the producer in PR794 and returned an admitted Linux
+archive for main `5ed32afd4`; later candidates require their own normal admission.
+X11 display and the advertised preset area are the supported sources; general
+picker/area selection, Wayland, macOS, audio, fact collectors and media/2 remain
+unavailable. Capture/2 publication now uses Core's authenticated snapshot and
+absent-only commit adapter. Headless synthetic SDK/process tests cover cancellation
+before commit and recovery after committed caller sources disappear. Native
+derivatives remain unavailable until Engine-issued job authority is integrated.
+The real capture-to-Record-to-Saved path and this changed producer's packaged
+guest proof remain unverified. Materials alone are never Saved. Existing installed
+behavior remains on its current route until verified consumer adoption.
 
 Use `launchCaptureEngine(executable, runtimeDirectory, 40_000)` for this producer;
 `manifest.launch.shutdownTimeoutMs` declares this grace. SDK 0.3.x's default
