@@ -397,7 +397,7 @@ printf '${name}:%s\\n' "$*" >> "$CALLS"
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-test('PR and fresh main media builds share the bounded runtime dependency installer', () => {
+test('media runtime identity is qualified before admission with the bounded shared installer', () => {
   const action = readFileSync(new URL('../../.github/actions/delivery-component/action.yml', import.meta.url), 'utf8')
   const setup = action.match(/- name: Install Engine media runtime and fixture dependencies[\s\S]*?(?=\n    - uses: oven-sh)/)?.[0]
   assert.ok(setup)
@@ -406,7 +406,7 @@ test('PR and fresh main media builds share the bounded runtime dependency instal
     ['true', 'false', 'skipped', 'engine-media-native', true],
     ['true', 'true', 'failure', 'engine-media-native', true],
     ['true', 'true', 'cancelled', 'engine-media-native', true],
-    ['true', 'true', 'success', 'engine-media-native', false],
+    ['true', 'true', 'success', 'engine-media-native', true],
     ['true', 'false', 'skipped', 'engine', false],
     ['true', 'true', 'failure', 'agent', false],
     ['false', '', '', 'engine-media-native', true],
@@ -420,6 +420,11 @@ test('PR and fresh main media builds share the bounded runtime dependency instal
   }
   assert.match(setup, /run: node --experimental-strip-types composition\/delivery\/media-dependencies\.ts/)
   assert.doesNotMatch(setup, /apt-get|APPARENT_GST_PLUGIN_SOURCE/)
+  // Fingerprinting observes the installed native runtime before deciding reuse.
+  // The setup cannot depend on an admission result that does not exist yet.
+  assert.ok(action.indexOf('Install Engine media runtime and fixture dependencies')
+    < action.indexOf('Admit an unchanged verified component or request a fresh build'))
+  assert.doesNotMatch(condition, /steps\.(admit|reuse)|inputs\.publish/)
 })
 
 test('settled completion metadata still rejects the actual over-budget workload', async () => {

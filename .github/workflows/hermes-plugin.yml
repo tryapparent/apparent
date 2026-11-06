@@ -18,3 +18,18 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install 'Pillow>=10.2,<13'
       - run: python -m unittest discover -s hermes/tests -v
+
+  runtime-budget:
+    if: always()
+    needs: [python]
+    permissions:
+      contents: read
+      actions: read
+    name: Workflow runtime budget
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/runtime-budget
