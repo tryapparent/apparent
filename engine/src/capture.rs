@@ -20,6 +20,9 @@ use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::protocol::randr::ConnectionExt as RandrExt;
 
+#[path = "capture/publication.rs"]
+mod publication;
+
 const LIMIT: usize = 65_536;
 const MAX_CAPTURE_RECORDS: usize = 4096;
 const START_LIMIT: Duration = Duration::from_secs(10);
@@ -64,6 +67,8 @@ struct Journal {
     confirmed_at_ms: Option<u64>,
     #[serde(default)]
     cancel_requested: bool,
+    #[serde(default)]
+    publication: Option<publication::Journal>,
 }
 
 struct Shared {
@@ -406,7 +411,7 @@ fn available_sources() -> Result<(String, Vec<Source>), &'static str> {
 }
 
 fn capabilities(ready: bool) -> Value {
-    json!({"sourceDiscovery":ready,"displayCapture":ready,"areaCapture":ready,"audioCapture":false,"contextFacts":false,"interactionFacts":false,"candidates":false,"transcript":false,"strokes":false,"publication":false,"retainedMaterials":ready})
+    json!({"sourceDiscovery":ready,"displayCapture":ready,"areaCapture":ready,"audioCapture":false,"contextFacts":false,"interactionFacts":false,"candidates":false,"transcript":false,"strokes":false,"publication":ready,"retainedMaterials":ready})
 }
 fn handshake(ready: bool) -> Value {
     json!({"channel":"capture","protocolVersion":2,"implementation":"native","readiness":if ready {"ready"} else {"unavailable"},"capabilities":capabilities(ready)})
@@ -444,6 +449,9 @@ fn status(j: &Journal) -> Value {
     }
     if let Some(code) = &j.error {
         v["error"] = json!({"code":code});
+    }
+    if let Some(publication) = &j.publication {
+        publication::status_fields(&mut v, publication);
     }
     v
 }
@@ -844,7 +852,7 @@ fn process_request(
             refresh_catalog(generation, sources, ready);
             Ok(handshake(*ready && generation.len() == 32))
         }
-        "publish" | "inspectPublication" => Err("unavailable"),
+        "publish" | "inspectPublication" => publication::handle(&req, runtime, root, all),
         "discoverSources" => {
             refresh_catalog(generation, sources, ready);
             Ok(if sources.is_empty() {
@@ -1005,6 +1013,7 @@ fn process_request(
                 admitted_monotonic_ns: Some(admitted_ns),
                 confirmed_at_ms: Some(confirmed_at_ms),
                 cancel_requested: false,
+                publication: None,
             };
             let shared = Arc::new(Shared {
                 journal: Mutex::new(journal),
@@ -1163,16 +1172,18 @@ fn process_request(
                         drop(j);
                         Ok(active_status(&shared)?)
                     } else if j.state == "materials-ready" {
-                        j.state = "cancelled".into();
-                        j.error = None;
                         drop(j);
-                        persist(&shared).map_err(|_| "internal")?;
-                        Ok(active_status(&shared)?)
+                        publication::cancel(&shared, root)
                     } else {
                         Ok(status(&j))
                     }
                 }
                 "releaseMaterials" => {
+                    if j.publication.as_ref().is_some_and(|publication| {
+                        !["saved", "cancelled", "failed"].contains(&publication.state.as_str())
+                    }) {
+                        return Err("lease_busy");
+                    }
                     if j.materials_id.as_deref() != req["materialsId"].as_str()
                         || j.lease_id.as_deref() != req["leaseId"].as_str()
                     {
