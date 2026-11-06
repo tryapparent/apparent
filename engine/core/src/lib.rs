@@ -7,11 +7,11 @@ mod identity;
 mod lease;
 #[cfg(all(target_os = "linux", feature = "linux-media"))]
 pub mod linux;
-#[cfg(feature = "publication")]
-pub mod publication;
+mod locking;
 #[cfg(feature = "materials-media")]
 pub mod materials_media;
-mod locking;
+#[cfg(feature = "publication")]
+pub mod publication;
 mod receipt;
 mod secure;
 mod session;
