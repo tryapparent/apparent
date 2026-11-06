@@ -15,7 +15,7 @@ function fail(): never { throw new PeerAuthorityError("invalid_encryption_author
 function unhex(value: string): Uint8Array<ArrayBuffer> { return Uint8Array.from(value.match(/../g)!, byte => parseInt(byte, 16)); }
 const graphic = (value: unknown, maximum = 256): value is string => typeof value === "string" && value.length > 0 && value.length <= maximum && /^[\x21-\x7e]+$/.test(value);
 
-function validateKey(value: unknown): PeerAuthorityKey {
+export function validatePeerAuthorityKey(value: unknown): PeerAuthorityKey {
   if (!record(value) || !exact(value, ["version", "recipient", "signing"]) || value.version !== 1
     || typeof value.recipient !== "string" || value.recipient.length !== 62 || !/^age1[0-9a-z]+$/.test(value.recipient)
     || typeof value.signing !== "string" || !/^[a-f0-9]{64}$/.test(value.signing)) fail();
@@ -32,11 +32,11 @@ export function samePeerAuthorityKey(a: PeerAuthorityKey, b: PeerAuthorityKey): 
 
 /** Validate one already parsed, size-bounded /v1/encryption/peers response. */
 export function decodePeerAuthority(value: unknown, expected: {
-  scope: PeerAuthorityScope; grantId: string; ownPublicKey?: PeerAuthorityKey;
+  scope: PeerAuthorityScope; grantId: string; ownPublicKey: PeerAuthorityKey;
 }): PeerAuthority {
   if (expected.scope !== "read" && expected.scope !== "upload") fail();
   if (!graphic(expected.grantId, 512)) fail();
-  const ownKey = expected.ownPublicKey === undefined ? undefined : validateKey(expected.ownPublicKey);
+  const ownKey = validatePeerAuthorityKey(expected.ownPublicKey);
   if (!record(value) || !exact(value, ["accountId", "grantId", "scope", "devices"])
     || !graphic(value.accountId) || value.grantId !== expected.grantId || value.scope !== expected.scope
     || !Array.isArray(value.devices) || value.devices.length > 64) fail();
@@ -45,11 +45,11 @@ export function decodePeerAuthority(value: unknown, expected: {
     if (!record(raw) || !exact(raw, ["grantId", "scope", "key"]) || !graphic(raw.grantId, 512)
       || ids.has(raw.grantId) || (raw.scope !== "read" && raw.scope !== "upload")) fail();
     ids.add(raw.grantId);
-    devices.push(Object.freeze({ grantId: raw.grantId, scope: raw.scope, key: validateKey(raw.key) }));
+    devices.push(Object.freeze({ grantId: raw.grantId, scope: raw.scope, key: validatePeerAuthorityKey(raw.key) }));
   }
   const own = devices.find(peer => peer.grantId === expected.grantId);
   if (!own) throw new PeerAuthorityError("encryption_approval_required");
-  if (own.scope !== expected.scope || !ownKey || !samePeerAuthorityKey(own.key, ownKey))
+  if (own.scope !== expected.scope || !samePeerAuthorityKey(own.key, ownKey))
     throw new PeerAuthorityError("encryption_key_binding_mismatch");
   return Object.freeze({ accountId: value.accountId, grantId: expected.grantId, scope: expected.scope, devices: Object.freeze(devices) });
 }
