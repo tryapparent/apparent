@@ -16,7 +16,7 @@ export async function consumePrivateFile<T>(handle: FileHandle,
   const signal = options.signal, maximumBytes = options.maximumBytes;
   let owns = true, bytes: Buffer | undefined;
   try {
-    if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 0) fail("unavailable");
+    if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 0 || maximumBytes > 2_000_000) fail("unavailable");
     if (signal?.aborted) fail("cancelled");
     const before = await handle.stat({ bigint: true });
     if (typeof process.getuid !== "function" || !before.isFile() || before.uid !== BigInt(process.getuid())

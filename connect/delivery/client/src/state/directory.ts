@@ -22,6 +22,7 @@ export async function admitTrustedDirectory(pathInput: string, resources: Direct
   use: DirectoryUse, signal?: AbortSignal): Promise<{ handle: FileHandle; identity: string; path: string }> {
   let handle: FileHandle | undefined;
   try {
+    if (use !== "publication-parent" && use !== "private-state") fail("unsafe_directory");
     if (typeof pathInput !== "string" || badUnicode(pathInput) || pathInput.split(path.sep).includes("..")) fail("unsafe_directory");
     const full = path.resolve(pathInput);
     const parts = full.split(path.sep).filter(Boolean);
@@ -55,13 +56,12 @@ export async function admitTrustedDirectory(pathInput: string, resources: Direct
           continue;
         }
         // Retain the leaf handle: unlike the ACL adapter's ancestors, this is used by the caller.
-        handle = undefined;
         consumed = true;
         const acl = await resources.checkAcl(h);
         // ACL consumes this descriptor, so admission uses a second caller-owned descriptor below.
         if (acl.state !== "accepted") throw new Error();
         const namedAfter = await lstat(prefix, { bigint: true });
-        if (!namedAfter.isDirectory() || directoryIdentity(namedAfter) !== currentIdentity) { handle = undefined; throw new Error(); }
+        if (!namedAfter.isDirectory() || directoryIdentity(namedAfter) !== currentIdentity) { throw new Error(); }
         expected = currentIdentity;
         handle = await open(prefix, directoryFlags);
         const fdAfter = await handle.stat({ bigint: true });

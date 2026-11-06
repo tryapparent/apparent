@@ -25,9 +25,12 @@ export async function readStoredCredentialHandle(
   options: { signal?: AbortSignal } = {},
 ): Promise<StoredCredential> {
   const signal = options.signal;
+  let transferred = false;
   try {
+    if (signal?.aborted) fail("cancelled");
     if (!context || !["read", "upload"].includes(context.scope) || typeof context.approvedServer !== "string") fail("invalid_credential");
     const scope = context.scope, server = context.approvedServer;
+    transferred = true;
     return await consumePrivateFile(handle, { maximumBytes: LIMIT, signal }, resources,
       bytes => decodeStoredCredential(bytes, scope, server));
   } catch (error) {
@@ -38,5 +41,5 @@ export async function readStoredCredentialHandle(
     }
     if (signal?.aborted) return fail("cancelled");
     return fail("unavailable");
-  }
+  } finally { if (!transferred) await handle.close().catch(() => {}); }
 }

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { constants as C } from "node:fs";
-import { link, lstat, mkdir, mkdtemp, open, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, open, readdir, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { FileHandle } from "node:fs/promises";
@@ -17,18 +17,18 @@ function resources(overrides: Partial<NamespaceResources> = {}) {
   const value: NamespaceResources = {
     async checkAcl(handle: FileHandle) { await handle.close(); return { state: "accepted" }; },
     async lock(handle, { signal }) {
-      if (state.beforeAcquire) await state.beforeAcquire();
-      if (signal?.aborted) { await handle.close(); return { state: "cancelled" }; }
+      try { if (state.beforeAcquire) await state.beforeAcquire(); } finally { await handle.close(); }
+      if (signal?.aborted) return { state: "cancelled" };
       state.held = true;
-      return { state: "acquired" as const, signal, async assertHeld() { return state.held && !state.lose; },
-        async release() { state.held = false; await handle.close(); if (state.rejectRelease) throw new Error("fake release failure"); } };
+      return { state: "acquired" as const, lease: { signal: signal ?? new AbortController().signal, assertHeld() { if (!state.held || state.lose) throw new Error("lease_lost"); },
+        async release() { state.held = false; if (state.rejectRelease) throw new Error("fake release failure"); } } };
     },
     ...overrides,
   };
   return { port: value, state };
 }
 async function fixture() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "connect-state-"));
+  const root = await mkdtemp(path.join(await realpath(os.tmpdir()), "connect-state-"));
   await mkdir(path.join(root, "state"), { mode: 0o700 });
   const dir = path.join(root, "state");
   const put = async (name: string, value: unknown) => writeFile(path.join(dir, name), typeof value === "string" ? value : JSON.stringify(value), { mode: 0o600 });
@@ -134,3 +134,51 @@ test("directory and lock replacements fail closed", async () => {
   } finally { await f.close(); }
 });
 
+
+
+test("cancellation records require descriptor ACL approval under the queue lease", async () => {
+  const f = await fixture(); const r = resources(); let cancellationChecks = 0;
+  r.port.checkAcl = async handle => {
+    const metadata = await handle.stat({ bigint: true }); await handle.close();
+    if (metadata.isFile() && metadata.size < 128n) { cancellationChecks++; return { state: "refused" }; }
+    return { state: "accepted" };
+  };
+  try {
+    await f.put("cancellation", JSON.stringify("epoch"));
+    await category(snapshot(f, r.port), "unsafe_file");
+    assert.equal(cancellationChecks, 1); assert.equal(r.state.held, false);
+  } finally { await f.close(); }
+});
+
+test("a disappearing lock produces only a redacted error and releases its lease", async () => {
+  const f = await fixture(); const r = resources();
+  r.port.checkAcl = async handle => {
+    const metadata = await handle.stat(); await handle.close();
+    if (metadata.isFile()) await unlink(path.join(f.dir, "queue.lock"));
+    return { state: "accepted" };
+  };
+  try {
+    await assert.rejects(snapshot(f, r.port), error => {
+      assert.equal(String(error), "CredentialSnapshotError: unavailable"); return error instanceof CredentialSnapshotError;
+    });
+    assert.equal(r.state.held, false);
+  } finally { await f.close(); }
+});
+
+test("snapshot fields are pinned before waiting and lease loss during reads refuses a result", async () => {
+  const f = await fixture();
+  try {
+    const initial = await snapshot(f);
+    const mutable = { ...initial, credential: { ...initial.credential } }, r = resources();
+    r.state.beforeAcquire = async () => { mutable.cancellation = "changed by caller"; mutable.credential.generation = "d".repeat(32); };
+    await assertCredentialSnapshotCurrent(f.dir, mutable, r.port);
+    const lost = resources();
+    lost.port.checkAcl = async handle => {
+      const metadata = await handle.stat(); await handle.close();
+      if (metadata.isFile()) lost.state.lose = true;
+      return { state: "accepted" };
+    };
+    await category(snapshot(f, lost.port), "unavailable");
+    assert.equal(lost.state.held, false);
+  } finally { await f.close(); }
+});
