@@ -263,8 +263,7 @@ and uses `output.resolveHandoff` for the native clipboard adapter. That port own
 the existing durable publication authority; composition adds no Saved-facts store
 or substitute resolver. It does not provide shortcut-reservation authority:
 `nextShortcutAdmission: unavailable` still blocks host shutdown until the trusted
-assembly can establish authoritative clearance. Automatic processing orchestration
-and installed legacy-transition clearance remain separate prerequisites.
+assembly can establish authoritative clearance. Installed legacy-transition clearance remains a separate prerequisite.
 The trusted Record build may additionally provide `nativeArtifacts`, containing
 the Linux x64 Capture/2, Media/2 and config-helper payload directories, each with
 its externally admitted manifest SHA-256 and original build source SHA. Use the
@@ -303,3 +302,29 @@ Changing shell surfaces disconnects only the renderer's observations. Record
 Settings are not supplied by this contribution. The default shell remains the
 development foundation; this does not enable installed routing or claim native
 pill placement, focus, stacking, exclusion or capture-to-Saved behavior.
+
+
+## Record automatic coordinator assembly
+
+The pinned Record package is the admitted `ffbb5100` producer. Its public
+`@apparent/record/host/capture2-coordinator` export owns automatic retained-media
+processing and publication. Trusted composition supplies the existing Capture/2
+and Media/2 clients, private roots, source intent and one explicit processing
+selection; the shell supplies no default frame/layout policy or second journal.
+
+After constructing that public coordinator, create native bindings using its
+`resolveHandoff` and pass both to `bindRecordCoordinatorHost` in
+`src/record/coordinator-host.ts`. The host injects the coordinator's runtime,
+start and output-fact ports into the public Record provider. It awaits the
+coordinator's asynchronous disposal before closing caller-owned SDKs, then closes
+its config binding. Construction transfers exclusive command/lifetime ownership;
+do not continue issuing commands or reconciliation through the original handles.
+Read-only processing issues remain available to trusted host diagnostics.
+
+Current reservation facts remain `unavailable`, so this composition refuses
+shutdown clearance. Record owns the pending authoritative coordinator
+startup/media/publication ownership and admission contract; runtime IDs and a
+local disposal drain do not prove that clearance. This adapter does not relax the
+gate or activate the installed route. The packaged tests exercise the admitted
+package and transport with synthetic producers, separately from real native
+Saved/copy and native pill/exclusion acceptance.

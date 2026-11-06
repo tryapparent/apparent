@@ -32,6 +32,8 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CaptureClient, preflightCapturePublication } from '@apparent/engine-sdk/capture';
 import { createRecordPublicationOutput } from '@apparent/record/publication';
+import { createRecordCaptureCoordinator } from '@apparent/record/host/capture2-coordinator';
+import { bindRecordCoordinatorHost } from ${JSON.stringify(join(root, 'src/record/coordinator-host.ts'))};
 import { createRecordProviderHost } from ${JSON.stringify(join(root, 'src/record/provider-host.ts'))};
 export async function createRecordHostServices({profilePath}) {
   let outputDispatches = 0;
@@ -39,6 +41,21 @@ export async function createRecordHostServices({profilePath}) {
   const output = createRecordPublicationOutput(sdk,join(profilePath,'publication-output'),preflightCapturePublication);
   await writeFile(join(profilePath,'public-output.json'),JSON.stringify({facts:await output.captureFacts.readFacts(),handoff:await output.resolveHandoff({captureId:'unknown-request',artifactId:'unknown-bundle'}),outputDispatches}));
   await sdk.close();
+  const never = () => { throw new Error('No capture or processing dispatch admitted'); };
+  const flow = await createRecordCaptureCoordinator({
+    captureClient: {async handshake() {return {implementation:'native',readiness:'unavailable',capabilities:{}};}}, mediaClient:{},
+    mappingRoot:join(profilePath,'coordinator-mappings'),bundleRoot:join(profilePath,'bundles'),privateControlRoot:join(profilePath,'coordinator-control'),
+    createStartIntent:never,trustedMaterialsRoot:never,selectProcessing:never,preflight:preflightCapturePublication,
+  });
+  let unexpectedClose = false;
+  const coordinatedHost = bindRecordCoordinatorHost({coordinator:flow,nativeBindings:{
+    native:{async readFacts(){return {version:1,providerEpoch:'no-native',revision:0,readiness:[],shortcut:{effective:null,label:null,registration:'unknown',externallyManaged:false,draft:null}};}},
+    penConfig:{async read(){return {persisted:null,effective:null};},writeApplyAndReadBack:never},clipboard:{copyLocal:never},close:never,
+  },async closeEngine(){unexpectedClose=true;}});
+  await flow.reconcile();
+  await writeFile(join(profilePath,'public-coordinator.json'),JSON.stringify({issues:coordinatedHost.processingIssues(),canClose:await coordinatedHost.canClose(),unexpectedClose}));
+  coordinatedHost.record.detach();
+  await flow.dispose(); // Empty synthetic fixture teardown, never production close clearance.
   let reconciliation = 'pending';
   const counts = { dispatch: 0, dispose: 0, engine: 0, native: 0 };
   const listeners = new Set();
@@ -87,6 +104,7 @@ export async function createRecordHostServices({profilePath}) {
   assert.deepEqual(publicOutput.facts.nextShortcutAdmission, { state: 'unavailable' });
   assert.equal(publicOutput.handoff, null);
   assert.equal(publicOutput.outputDispatches, 0);
+  assert.deepEqual(JSON.parse(await readFile(join(profile, 'public-coordinator.json'), 'utf8')), {issues: [], canClose: false, unexpectedClose: false});
   await application.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].close(); });
   await expect(page.locator('body')).toHaveAttribute('data-close-reason', 'ownership-unresolved');
   assert.equal(await readFile(join(profile, 'closed.json')).then(() => true, () => false), false);
