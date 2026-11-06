@@ -25,7 +25,6 @@ import Foundation
     func scenario(_ body: (URL, URL) throws -> Void) throws {
       count += 1
       FileHandle.standardError.write(Data("Installer safe-copy fixture \(count)\n".utf8))
-      FileHandle.standardError.write(Data("Installer safe-copy fixture \(count)\n".utf8))
       let base = root.appendingPathComponent("case-\(count)")
       let source = base.appendingPathComponent("Payload.app"), applications = base.appendingPathComponent("Applications")
       try fm.createDirectory(at: applications, withIntermediateDirectories: true)
