@@ -12,6 +12,10 @@ pub mod publication;
 #[cfg(feature = "materials-media")]
 pub mod materials_media;
 mod locking;
+#[cfg(feature = "materials-media")]
+pub mod materials_media;
+#[cfg(feature = "publication")]
+pub mod publication;
 mod receipt;
 mod secure;
 mod session;

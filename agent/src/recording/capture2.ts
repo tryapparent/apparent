@@ -1,10 +1,10 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, realpath } from 'node:fs/promises';
 import { isAbsolute, join, parse, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { performance } from 'node:perf_hooks';
-import { CaptureClient, launchCaptureEngine } from '@apparent/engine-sdk/capture';
+import { CaptureClient, launchCaptureEngine, type CaptureTransport } from '@apparent/engine-sdk/capture';
 import type { Capture2Host, Capture2Receipt } from '@apparent/record/host/capture2';
 
 export type Capture2Clock = { now(): number; sleep(ms: number): Promise<void> };
@@ -63,7 +63,7 @@ async function defaultHostFactory(paths: Parameters<Capture2HostFactory>[0]) {
   const [{ AbsentDestinationAllocator, SqliteCaptureMappingStore }, { createCapture2Host }] = await Promise.all([
     import('@apparent/record/host'), import('@apparent/record/host/capture2'),
   ]);
-  const client = new CaptureClient(launchCaptureEngine(paths.executable, paths.runtime, 3000));
+  const client = new CaptureClient(launchCaptureEngine(paths.executable, paths.runtime, 40_000));
   try {
     const host = createCapture2Host({ client, mappings: new SqliteCaptureMappingStore(storeRoot), destinations: new AbsentDestinationAllocator(storeRoot, paths.destinationRoot) });
     return { host, close: () => client.close() };
@@ -131,7 +131,7 @@ export function parseCapture2ControlArgs(args: string[]): { method: 'inspect' | 
   return { method: method as 'inspect' | 'stop' | 'cancel', requestId };
 }
 
-/** V2 remains explicit until an installed capture/2 native provider is available. */
+/** Capture/2 stays explicit; its admitted production provider is Linux X11 only. */
 export function parseCapture2RecordArgs(args: string[]): { durationSeconds: number; out: string; sourceId: string } {
   let duration: number | undefined, out: string | undefined, sourceId: string | undefined, protocol = false;
   for (let i = 0; i < args.length; i++) {
@@ -187,7 +187,7 @@ export async function recordWithCapture2(
     await (config.persistIdentity ?? retainPublicIdentity)(controlRoot, requestId, parsed.out);
     if (interrupted()) throw new Error(`Interrupted after retaining capture/2 request ${requestId}; no start was dispatched`);
     process.stderr.write(`Capture/2 request ID: ${requestId}\n`);
-    let receipt = await composed.host.start({ requestId, source: matches[0], options: { audio: 'none', localOnly: true }, invocation: { invocationId: randomUUID(), observedAtMs: Date.now(), kind: 'explicit' }, destinationPath: parsed.out });
+    let receipt = await composed.host.start({ requestId, source: matches[0], options: { audio: 'none', localOnly: true }, invocation: { invocationId: randomBytes(16).toString('hex'), observedAtMs: Date.now(), kind: 'explicit' }, destinationPath: parsed.out });
     const startupBy = clock.now() + 30_000;
     while (receipt.phase === 'starting' && clock.now() < startupBy && !interrupted()) {
       await clock.sleep(200); receipt = await composed.host.inspect(requestId);
@@ -220,6 +220,41 @@ export async function recordWithCapture2(
   const outcome = !confirmedClose ? 'close-unverified' : finalPhase === 'failed' ? 'failed' : finalPhase === 'cancelled' ? 'cancelled' : finalPhase === 'unknown' ? 'uncertain' : finalPhase === 'processing' || finalPhase === 'materials-ready' ? 'pending-saved-capability-unavailable' : 'pending';
   process.stdout.write(`${JSON.stringify({ ...(requestId ? { requestId } : {}), state: finalPhase, outcome })}\n`);
   return ['failed', 'cancelled'].includes(finalPhase) ? 1 : 3;
+}
+
+export function parseCapture2SourcesArgs(args: string[]): { json: boolean } {
+  if (args.length > 1 || (args.length === 1 && args[0] !== '--json')) throw new Error('capture --protocol capture2 sources accepts only optional --json');
+  return { json: args[0] === '--json' };
+}
+
+/** Read-only source discovery through the published SDK; it never composes Record or submits capture authority. */
+export async function discoverCapture2Sources(args: string[], config: { executable?: string; runtime?: string; transportFactory?: (executable: string, runtime: string) => CaptureTransport } = {}): Promise<number> {
+  const { json } = parseCapture2SourcesArgs(args);
+  const executable = config.executable ?? process.env.APPARENT_ENGINE_CAPTURE_EXECUTABLE;
+  const runtime = config.runtime ?? process.env.APPARENT_ENGINE_RUNTIME;
+  if (!executable || !runtime || !isAbsolute(executable) || resolve(executable) !== executable || !isAbsolute(runtime) || resolve(runtime) !== runtime)
+    throw new Error('Capture/2 source discovery requires APPARENT_ENGINE_CAPTURE_EXECUTABLE and APPARENT_ENGINE_RUNTIME as normalized absolute paths; no protocol fallback is attempted');
+  await verifyCaptureRuntime(runtime);
+  await verifyCaptureExecutable(executable);
+  const client = new CaptureClient((config.transportFactory ?? ((bin, dir) => launchCaptureEngine(bin, dir, 40_000)))(executable, runtime));
+  let discovery;
+  let handshake;
+  let close = 'uncertain';
+  try {
+    handshake = await client.handshake(5000);
+    if (handshake.readiness !== 'ready' || !handshake.capabilities.sourceDiscovery) {
+      discovery = { state: 'unavailable', sources: [], reason: handshake.readiness !== 'ready' ? 'Capture provider is not ready' : 'Source discovery is unavailable' } as const;
+    } else discovery = await client.discoverSources(5000);
+  } finally { close = await client.close(); }
+  const confirmed = ['already-exited', 'eof-exited', 'exit-observed'].includes(close);
+  if (json) process.stdout.write(`${JSON.stringify({ state: discovery!.state, sources: discovery!.sources, ...(discovery!.reason ? { reason: discovery!.reason } : {}), transportClose: confirmed ? close : 'uncertain' })}\n`);
+  else {
+    if (discovery!.state === 'available' && discovery!.sources.length) {
+      for (const source of discovery!.sources) process.stdout.write(`${source.id}  ${source.kind}  ${source.bounds.width}×${source.bounds.height} at (${source.bounds.x}, ${source.bounds.y})${source.bounds.scale === undefined ? '' : ` scale ${source.bounds.scale}`}\n`);
+    } else process.stdout.write(`No sources available${discovery!.reason ? `: ${discovery!.reason}` : ''}\n`);
+    if (!confirmed) process.stderr.write(`Capture/2 transport close is uncertain (${close}).\n`);
+  }
+  return discovery!.state === 'available' && confirmed ? 0 : 3;
 }
 
 export async function controlCapture2(args: string[], config: { executable?: string; runtime?: string; controlRoot?: string; factory?: Capture2HostFactory } = {}): Promise<number> {

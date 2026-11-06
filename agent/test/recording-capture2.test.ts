@@ -1,12 +1,16 @@
 import { strict as assert } from 'node:assert';
-import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { CaptureClient } from '@apparent/engine-sdk/capture';
+import { AbsentDestinationAllocator, SqliteCaptureMappingStore } from '@apparent/record/host';
 import type { Capture2Host, Capture2Receipt } from '@apparent/record/host/capture2';
-import { controlCapture2, parseCapture2ControlArgs, parseCapture2RecordArgs, recordWithCapture2, retainPublicIdentity, type Capture2Clock, type Capture2HostFactory } from '../src/recording/capture2.ts';
+import { createCapture2Host } from '@apparent/record/host/capture2';
+import type { CaptureRequest, CaptureResponse, CaptureTransport } from '@apparent/engine-sdk/capture';
+import { controlCapture2, discoverCapture2Sources, parseCapture2ControlArgs, parseCapture2RecordArgs, parseCapture2SourcesArgs, recordWithCapture2, retainPublicIdentity, type Capture2Clock, type Capture2HostFactory } from '../src/recording/capture2.ts';
 
-const source = { id: 'display-actual', generation: 'generation-1', kind: 'display' as const, displayId: 0, bounds: { x: 0, y: 0, width: 800, height: 600, scale: 1 } };
+const source = { id: 'display-actual', generation: 'a'.repeat(32), kind: 'display' as const, displayId: 0, bounds: { x: 0, y: 0, width: 800, height: 600, scale: 1 } };
 const args = (out: string, ...extra: string[]) => ['--protocol', 'capture2', '--duration', '1', '--out', out, '--source', source.id, ...extra];
 function fixtureHost(out: string, outcome: 'publication-processing' | 'publication-materials-ready' | 'materials-ready' | 'unavailable' | 'unknown-source' | 'start-fails' = 'publication-processing', sleepHook?: () => void, closeOutcome = 'eof-exited') {
   const calls: Array<{ method: string; input?: unknown }> = [];
@@ -47,6 +51,37 @@ test('capture/2 requires explicit protocol, exact destination and source selecto
     assert.throws(() => parseCapture2ControlArgs(invalid));
 });
 
+test('capture/2 source args reject invalid options before transport creation', () => {
+  assert.deepEqual(parseCapture2SourcesArgs([]), { json: false });
+  assert.deepEqual(parseCapture2SourcesArgs(['--json']), { json: true });
+  for (const invalid of [['--bad'], ['--json', '--json'], ['source'], ['--out', '/tmp/a']]) assert.throws(() => parseCapture2SourcesArgs(invalid));
+});
+
+test('capture/2 sources uses the validated SDK handshake/discovery and closes without Record authority', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-capture2-sources-'));
+  try {
+    const runtime = join(root, 'runtime'), executable = join(root, 'engine');
+    await mkdir(runtime, { mode: 0o700 }); await writeFile(executable, 'fixture', { mode: 0o700 });
+    const requests: string[] = []; let closed = false;
+    const transport = {
+      async request(request: { method: string; rpcId: string }) {
+        requests.push(request.method);
+        const result = request.method === 'handshake'
+          ? { channel: 'capture', protocolVersion: 2, implementation: 'native', readiness: 'ready', capabilities: { sourceDiscovery: true, displayCapture: true, areaCapture: false, audioCapture: false, contextFacts: false, interactionFacts: false, candidates: false, transcript: false, strokes: false, publication: false, retainedMaterials: true } }
+          : { state: 'available', sources: [source] };
+        return { channel: 'capture', protocolVersion: 2, rpcId: request.rpcId, result };
+      },
+      async close() { closed = true; return 'eof-exited' as const; },
+    };
+    const output: string[] = [], originalWrite = process.stdout.write;
+    process.stdout.write = ((chunk: string | Uint8Array) => { output.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString()); return true; }) as typeof process.stdout.write;
+    try { assert.equal(await discoverCapture2Sources(['--json'], { executable, runtime, transportFactory: () => transport }), 0); }
+    finally { process.stdout.write = originalWrite; }
+    assert.deepEqual(requests, ['handshake', 'discoverSources']); assert.equal(closed, true);
+    assert.deepEqual(JSON.parse(output.join('')), { state: 'available', sources: [source], transportClose: 'eof-exited' });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('capture/2 readiness and fresh source discovery fail before start', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agent-capture2-'));
   try {
@@ -58,6 +93,60 @@ test('capture/2 readiness and fresh source discovery fail before start', async (
       assert.equal(fixture.calls.some(call => call.method === 'start'), false);
       assert.equal(fixture.calls.at(-1)?.method, 'close');
     }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('real packed SDK and Record host accept the generated invocation ID while retaining Agent UUID request identity', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-capture2-sdk-'));
+  try {
+    const sdkSource = { ...source, generation: 'a'.repeat(32) };
+    const requests: CaptureRequest[] = [];
+    const handshake = {
+      channel: 'capture', protocolVersion: 2, implementation: 'native', readiness: 'ready',
+      capabilities: { sourceDiscovery: true, displayCapture: true, areaCapture: false, audioCapture: false, contextFacts: false, interactionFacts: false, candidates: false, transcript: false, strokes: false, publication: false, retainedMaterials: true },
+    };
+    const transport: CaptureTransport = {
+      request: async (request): Promise<CaptureResponse> => {
+        requests.push(request);
+        if (request.method === 'start') throw new Error('test transport stopped after public SDK validation');
+        const result = request.method === 'handshake' ? handshake
+          : request.method === 'discoverSources' ? { state: 'available', sources: [sdkSource] }
+          : (() => { throw new Error(`Unexpected Engine request: ${request.method}`); })();
+        return { channel: 'capture', protocolVersion: 2, rpcId: request.rpcId, result };
+      },
+      close: async () => 'already-exited',
+    };
+    const client = new CaptureClient(transport);
+    const storeRoot = join(root, 'record-control');
+    await mkdir(storeRoot, { mode: 0o700 });
+    const host = createCapture2Host({
+      client,
+      mappings: new SqliteCaptureMappingStore(storeRoot),
+      destinations: new AbsentDestinationAllocator(storeRoot, root),
+    });
+    const factory: Capture2HostFactory = async () => ({ host, close: () => client.close() });
+    const out = join(root, 'exact.apparent');
+    const output: string[] = [], originalWrite = process.stdout.write, stderr: string[] = [], originalError = process.stderr.write;
+    process.stdout.write = ((chunk: string | Uint8Array) => { output.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString()); return true; }) as typeof process.stdout.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => { stderr.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString()); return true; }) as typeof process.stderr.write;
+    let rejected: unknown;
+    try {
+      await recordWithCapture2(args(out), {
+        executable: '/opt/apparent-engine', runtime: join(root, 'runtime'), controlRoot: join(root, 'control'), factory,
+      });
+    } catch (error) { rejected = error; }
+    finally { process.stdout.write = originalWrite; process.stderr.write = originalError; }
+    assert.match(String(rejected), /Capture start outcome is unknown/);
+    assert.deepEqual(requests.map(request => request.method), ['handshake', 'discoverSources', 'start']);
+    const start = requests.at(-1)!;
+    assert.equal(start.method, 'start');
+    assert.match(start.invocation.invocationId, /^[0-9a-f]{32}$/);
+    const requestId = /Capture\/2 request ID: ([0-9a-f-]{36})/.exec(stderr.join(''))?.[1];
+    assert.match(requestId ?? '', /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    const identity = JSON.parse(await readFile(join(root, 'control', 'capture2-requests-v1', `${requestId}.json`), 'utf8'));
+    assert.equal(identity.requestId, requestId);
+    assert.notEqual(start.invocation.invocationId, requestId);
+    assert.equal(identity.destinationPath, out);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
