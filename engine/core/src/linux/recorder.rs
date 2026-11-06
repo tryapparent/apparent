@@ -1,5 +1,6 @@
 //! GStreamer-backed Linux recording source and execution.
 use std::path::Path;
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -18,10 +19,45 @@ pub fn init_gstreamer() -> Result<()> {
     Ok(())
 }
 
-/// Native input descriptor. PipeWire `fd` is borrowed, never transferred or
-/// closed here. The caller must keep it open and retain the portal session until
-/// Recorder::finish() or stop() has completed, including EOS finalization.
-#[derive(Clone, Copy, Debug)]
+/// A PipeWire stream a compositor is sending, open until dropped.
+pub struct Stream {
+    pub node: u32,
+    /// The portal's PipeWire connection; Mutter's streams are on the user's own PipeWire.
+    fd: Option<OwnedFd>,
+    /// Portal compositor coordinates, not XWayland pixels; Hyprland reports (0, 0) for
+    /// every output, so do not use this to identify the selected output there.
+    pub rect: Option<[f64; 4]>,
+    /// The output name supplied by the portal (Hyprland reports this even when position is 0).
+    pub mapping_id: Option<String>,
+    stop: Option<flume::Sender<()>>,
+}
+
+impl Stream {
+    pub fn new(
+        node: u32,
+        fd: Option<OwnedFd>,
+        rect: Option<[f64; 4]>,
+        mapping_id: Option<String>,
+        stop: Option<flume::Sender<()>>,
+    ) -> Self {
+        Self { node, fd, rect, mapping_id, stop }
+    }
+
+    /// The PipeWire fd for `pipewiresrc fd=`, or -1 for the default PipeWire.
+    pub fn fd(&self) -> i32 {
+        self.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
+    }
+}
+
+impl Drop for Stream {
+    fn drop(&mut self) {
+        if let Some(stop) = self.stop.take() {
+            let _ = stop.send(());
+        }
+    }
+}
+
+/// Native source owns its portal stream through recorder finalization.
 pub enum Source {
     #[cfg(test)]
     Test,
@@ -32,8 +68,7 @@ pub enum Source {
         xid: u32,
     },
     PipeWire {
-        fd: i32,
-        node: u32,
+        session: Stream,
         crop: Option<[u32; 4]>,
     },
 }
@@ -114,10 +149,10 @@ fn source_launch(source: &Source) -> String {
         Source::X11Window { xid } => {
             format!("ximagesrc use-damage=false show-pointer=true xid={xid}")
         }
-        Source::PipeWire { fd, node, crop } => {
+        Source::PipeWire { session, crop } => {
             let mut launch = format!(
                 "pipewiresrc fd={} path={} do-timestamp=true keepalive-time=500 always-copy=true",
-                fd, node
+                session.fd(), session.node
             );
             if let Some([x, y, w, h]) = crop {
                 // `videocrop` trims from each edge; the stream's size is only known once it
@@ -388,6 +423,25 @@ pub fn rgba_of(sample: &gst::Sample, width: u32, height: u32) -> Option<Vec<u8>>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_owns_stream_fd_and_sends_close_only_when_dropped() {
+        use std::io::Read;
+        use std::os::unix::net::UnixStream;
+        let (fd, mut peer) = UnixStream::pair().unwrap();
+        peer.set_nonblocking(true).unwrap();
+        let (tx, rx) = flume::bounded(1);
+        let source = Source::PipeWire {
+            session: Stream::new(7, Some(fd.into()), None, None, Some(tx)),
+            crop: None,
+        };
+        // Native-handle unit coverage, not an OS portal consent/stream proof.
+        assert!(rx.try_recv().is_err());
+        assert_eq!(peer.read(&mut [0]).unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
+        drop(source);
+        assert_eq!(rx.try_recv(), Ok(()));
+        assert_eq!(peer.read(&mut [0]).unwrap(), 0);
+    }
 
     #[test]
     fn cached_frame_uses_current_masks_without_destroying_source_pixels() {

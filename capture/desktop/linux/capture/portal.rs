@@ -6,7 +6,7 @@
 //! (`source_for`).
 
 use std::collections::HashMap;
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::OwnedFd;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -14,61 +14,32 @@ use std::time::Duration;
 use anyhow::{Context, Result, anyhow, bail};
 use futures_lite::StreamExt as _;
 
-use apparent_capture_engine::linux::Source;
+use apparent_capture_engine::linux::{Source, Stream};
 use crate::capture::engine::runtime::apparent_log;
 use crate::shared::model::{CaptureMode, TargetInfo};
 
-/// A PipeWire stream a compositor is sending, open until dropped.
-pub struct Stream {
-    pub node: u32,
-    /// The portal's PipeWire connection; Mutter's streams are on the user's own PipeWire.
-    fd: Option<OwnedFd>,
-    /// Portal compositor coordinates, not XWayland pixels; Hyprland reports (0, 0) for
-    /// every output, so do not use this to identify the selected output there.
-    pub rect: Option<[f64; 4]>,
-    /// The output name supplied by the portal (Hyprland reports this even when position is 0).
-    pub mapping_id: Option<String>,
-    stop: Option<flume::Sender<()>>,
-}
-
-impl Stream {
-    /// The PipeWire fd for `pipewiresrc fd=`, or -1 for the default PipeWire.
-    pub fn fd(&self) -> i32 {
-        self.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
-    }
-}
-
-impl Drop for Stream {
-    fn drop(&mut self) {
-        if let Some(stop) = self.stop.take() {
-            let _ = stop.send(());
-        }
-    }
-}
-
 /// Where to record `target` from.
-pub fn source_for(target: &TargetInfo, stopping: &AtomicBool) -> Result<(Source, Option<Stream>)> {
+pub fn source_for(target: &TargetInfo, stopping: &AtomicBool) -> Result<Source> {
     let f = target.frame;
     let rect = [f.x, f.y, f.width, f.height];
     anyhow::ensure!(target.mode != CaptureMode::Window || target.window_id.is_some(),
         "Window capture has no selected window ID");
     if !super::super::wayland_session() {
-        return Ok((match (target.mode, target.window_id) {
+        return Ok(match (target.mode, target.window_id) {
             (CaptureMode::Window, Some(xid)) => Source::X11Window { xid },
             _ => Source::X11 { rect },
-        }, None));
+        });
     }
     // An X11 app's window on XWayland can be read like on X11.
     if target.mode == CaptureMode::Window
         && let Some(xid) = target.window_id
     {
-        return Ok((Source::X11Window { xid }, None));
+        return Ok(Source::X11Window { xid });
     }
     if super::super::gnome() && target.mode != CaptureMode::Window {
         match mutter_area(rect) {
             Ok(session) => {
-                let source = Source::PipeWire { fd: session.fd(), node: session.node, crop: None };
-                return Ok((source, Some(session)));
+                return Ok(Source::PipeWire { session, crop: None });
             }
             Err(error) => apparent_log(format!("GNOME screencast unavailable: {error:#}")),
         }
@@ -118,8 +89,7 @@ pub fn source_for(target: &TargetInfo, stopping: &AtomicBool) -> Result<(Source,
     if !window {
         save_token(&key, token.as_deref());
     }
-    let source = Source::PipeWire { fd: session.fd(), node: session.node, crop };
-    Ok((source, Some(session)))
+    Ok(Source::PipeWire { session, crop })
 }
 
 fn screencast_key(output: Option<&str>, count: usize) -> String {
@@ -348,13 +318,7 @@ fn mutter_area(rect: [f64; 4]) -> Result<Stream> {
     let node = ready_rx
         .recv_timeout(Duration::from_secs(5))
         .map_err(|_| anyhow!("GNOME's screencast didn't answer"))??;
-    Ok(Stream {
-        node,
-        fd: None,
-        rect: Some(rect),
-        mapping_id: None,
-        stop: Some(stop_tx),
-    })
+    Ok(Stream::new(node, None, Some(rect), None, Some(stop_tx)))
 }
 
 // MARK: The ScreenCast portal
@@ -476,13 +440,7 @@ fn portal_screencast(window: bool, key: &str, stopping: &AtomicBool) -> Result<(
             Err(error) => return Err(error.into()),
         }
     };
-    Ok((Stream {
-        node,
-        fd: Some(fd),
-        rect,
-        mapping_id,
-        stop: Some(stop_tx),
-    }, token))
+    Ok((Stream::new(node, Some(fd), rect, mapping_id, Some(stop_tx)), token))
 }
 
 // MARK: Shortcuts

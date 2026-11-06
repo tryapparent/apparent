@@ -206,11 +206,11 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
     };
     let candidate = crate::capture::engine::runtime::capture_size(&target, edge);
     let recorder =
-        super::portal::source_for(&target, &stopping).and_then(|(source, portal_guard)| {
+        super::portal::source_for(&target, &stopping).and_then(|source| {
             Recorder::new(&source, out, candidate, movie, started_at)
                 .map_err(|error| anyhow!("{error:#}"))
                 // The source (a portal session) lives as long as the recording.
-                .map(|recorder| (recorder, source, portal_guard))
+                .map(|recorder| (recorder, source))
         });
     let mut recorder = match recorder {
         Ok(recorder) => {
@@ -239,7 +239,7 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         .unwrap_or_else(Instant::now);
     let mut offset_set = false;
     let records_others = !matches!(
-        recorder.as_ref().map(|(_, source, _)| source),
+        recorder.as_ref().map(|(_, source)| source),
         Some(Source::X11Window { .. })
     );
     let f = target.frame;
@@ -266,12 +266,12 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
             );
             masks_read = true;
         }
-        if let Some((r, _, _)) = recorder.as_ref() {
+        if let Some((r, _)) = recorder.as_ref() {
             if let Some(error) = r.error() {
                 apparent_log(format!("Recording failed: {error}"));
                 // Publish before native teardown, which need not end the sampler thread.
                 startup_failed.store(true, Ordering::Release);
-                if let Some((r, _, _)) = recorder.take() {
+                if let Some((r, _)) = recorder.take() {
                     r.stop();
                 }
             } else if !offset_set {
@@ -291,7 +291,7 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
             let t_ms = started_at.elapsed().as_millis() as u64;
             let frame = match recorder.as_mut() {
                 // No frame from the compositor yet: look again on the next turn.
-                Some((r, _, _)) => r
+                Some((r, _)) => r
                     .candidate(|rgba, width, height| {
                         for &rect in &masks.1 {
                             mask(rgba, width, height, rect);
@@ -316,7 +316,7 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         }
         std::thread::park_timeout(Duration::from_millis(8));
     }
-    let (recorder, _source, _portal_guard) = recorder?;
+    let (recorder, _source) = recorder?;
     if recorder.finish(apparent_log) {
         video_output_path
     } else {

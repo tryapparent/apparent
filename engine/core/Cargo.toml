@@ -8,7 +8,7 @@ description = "Shared capture admission, bundle leases, and optional Linux recor
 
 [features]
 default = []
-linux-media = ["dep:anyhow", "dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video"]
+linux-media = ["dep:flume", "dep:anyhow", "dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video"]
 
 [dependencies]
 libc = "=0.2.189"
@@ -17,6 +17,7 @@ serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+flume = { version = "=0.12.0", optional = true }
 gstreamer = { version = "=0.25.4", optional = true }
 gstreamer-app = { version = "=0.25.2", optional = true }
 gstreamer-video = { version = "=0.25.4", optional = true }

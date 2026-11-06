@@ -273,6 +273,7 @@ name = "apparent-capture-engine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "flume 0.12.0",
  "gstreamer",
  "gstreamer-app",
  "gstreamer-video",
