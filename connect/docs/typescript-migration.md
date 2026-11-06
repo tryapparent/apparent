@@ -68,9 +68,9 @@ retries only a rejected GET once and delegates `authRequired` marking after a
 second 401. The writer pins server, generation, token and cancellation; it owns
 all journal/credential commits and cannot select upload scope or config effects.
 This is the temporary same-writer adapter permitted by step 2 below, not the
-zero-Rust target or installed adoption. Its source-bound joined Linux proof uses
+zero-Rust target or installed adoption. Its source-bound joined Linux/Mac proof uses
 a synthetic service, the real writer executable and the native resource adapter;
-Mac and installed proof remain required. Published resource/provider assembly
+installed proof remains required. Published resource/provider assembly
 and the separate legacy writer launch/admission are also required before routing
 production consumers. Rust still owns renewal product behavior in this bridge;
 move it with the coordinated writer and remove the bridge at that cutover.
