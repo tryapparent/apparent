@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -14,12 +14,6 @@ import { parseRecipientCommand, runRecipientCommand } from "../../src/cli/recipi
 import { publishRecipientCapture, RecipientPublicationError } from "../../src/recipient/publication.ts";
 import type { RetrievedRecipientCapture } from "../../src/recipient/retrieve.ts";
 
-const reviewedResourceSources = new Set([
-  // Native source is unchanged between this artifact-producing parent and PR824;
-  // PR824 tightens artifact admission (including setuid/setgid rejection).
-  "e17368aca927ceb037ffe985fb24216cfe83a81b",
-  "8a41c854bbe2235822d8a466b0dc168e36591b91",
-]);
 const target = process.platform === "linux" ? "linux-x64" : process.arch === "arm64" ? "macos-arm64" : "macos-x64";
 const sdkPath = process.env.APPARENT_RESOURCE_SDK;
 const artifactPath = process.env.APPARENT_RESOURCE_ARTIFACT;
@@ -38,7 +32,9 @@ const nativeModule = await import(pathToFileURL(sdk).href) as {
   validateResourceArtifact(directory: string, expectedTarget: string): { sourceSha: string; target: string; executable: string; sha256: string; protocol: number };
 };
 const manifest = nativeModule.validateResourceArtifact(artifact, target);
-assert.ok(reviewedResourceSources.has(manifest.sourceSha), `unexpected resource source SHA: ${manifest.sourceSha}`);
+const expectedSource = process.env.APPARENT_RESOURCE_SOURCE_SHA;
+assert.match(expectedSource ?? "", /^[a-f0-9]{40}$/, "APPARENT_RESOURCE_SOURCE_SHA must pin the reviewed producer source");
+assert.equal(manifest.sourceSha, expectedSource, "resource artifact must match the reviewed producer source");
 assert.equal(manifest.target, target, "resource artifact target must match the running platform");
 assert.equal(manifest.protocol, 1);
 assert.equal(manifest.executable, "apparent-resource-host");
@@ -62,7 +58,7 @@ function capture(evidenceOnly = false): RetrievedRecipientCapture {
   };
 }
 async function fixture<T>(fn: (root: string) => Promise<T>): Promise<T> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "apparent-connect-publication-native-"));
+  const root = await mkdtemp(path.join(await realpath(os.tmpdir()), "apparent-connect-publication-native-"));
   await chmod(root, 0o700);
   try { return await fn(root); } finally { await rm(root, { recursive: true, force: true }); }
 }
@@ -204,7 +200,6 @@ test("Darwin ACL allow entries refuse publication and deny-only entries remain a
     execFileSync("/bin/chmod", ["-N", root]);
     execFileSync("/bin/chmod", ["+a", "everyone deny delete", root]);
     assert.deepEqual(await resources.checkAcl(await import("node:fs/promises").then(fs => fs.open(root, constants.O_RDONLY | constants.O_DIRECTORY))), { state: "accepted" });
-    execFileSync("/bin/chmod", ["-N", root]);
     assert.deepEqual(await publishRecipientCapture(capture(), destination, resources), { state: "committed", path: destination });
   } finally { execFileSync("/bin/chmod", ["-N", root]); }
 }));

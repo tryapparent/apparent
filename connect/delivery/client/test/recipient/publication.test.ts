@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, lstat, readdir, rm, rename, symlink, chmod } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, lstat, readdir, realpath, rm, rename, symlink, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -48,7 +48,7 @@ function localResources(parentPath: string, mode: "published" | "publication_unc
   };
 }
 async function fixture<T>(fn: (root: string) => Promise<T>): Promise<T> {
-  const root = await mkdtemp(path.join(tmpdir(), "apparent-pub-"));
+  const root = await mkdtemp(path.join(await realpath(tmpdir()), "apparent-pub-"));
   try { return await fn(root); } finally { await rm(root, { recursive: true, force: true }); }
 }
 
