@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { constants as C } from "node:fs";
 import { lstat, mkdir, open, rmdir, unlink, type FileHandle } from "node:fs/promises";
 import path from "node:path";
@@ -19,7 +19,6 @@ export class PrivateDirectoryError extends Error {
 export type OwnedPrivateFile = { path: string; bytes: Uint8Array };
 export type PrivateDirectoryResult = { state: "committed"; path: string } | { state: "publication-uncertain" };
 const fail = (category: PrivateDirectoryFailure): never => { throw new PrivateDirectoryError(category); };
-const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const cancelled = (signal?: AbortSignal) => { if (signal?.aborted) fail("cancelled"); };
 const safeRelativePath = (name: string) => typeof name === "string" && !name.includes("\0") && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(name)
   && !name.startsWith("/") && !name.includes("\\") && name.split("/").every(part => part !== "" && part !== "." && part !== "..");
@@ -56,6 +55,7 @@ export async function publishPrivateDirectory(parentPath: string, destination: s
     cancelled(signal);
     if (!Array.isArray(files) || files.some(file => !file || !safeRelativePath(file.path) || !(file.bytes instanceof Uint8Array)) || new Set(files.map(file => file.path)).size !== files.length) fail("invalid_input");
     const requested = path.resolve(destination), basename = path.basename(destination);
+    if (path.dirname(requested) !== path.resolve(parentPath)) fail("invalid_input");
     const admitted = await admitTrustedDirectory(parentPath, resources, "publication-parent", signal); parent = admitted.handle;
     const parentBefore = await parent.stat({ bigint: true }); parentIdentity = dirStat(parentBefore); if (admitted.identity !== parentIdentity) fail("unsafe_directory");
     let target: boolean; try { await lstat(requested); target = true; } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") fail("unsafe_directory"); target = false; }
@@ -112,6 +112,6 @@ export async function publishPrivateDirectory(parentPath: string, destination: s
     if (error instanceof PrivateDirectoryError) throw error;
     if (error instanceof DirectoryAdmissionFailure) fail(error.category === "cancelled" ? "cancelled" : "unsafe_directory");
     fail("publication_refused");
-  } finally { await parent?.close().catch(() => {}); for (const file of files ?? []) file?.bytes?.fill(0); }
+  } finally { await parent?.close().catch(() => {}); if (Array.isArray(files)) for (const file of files) if (file?.bytes instanceof Uint8Array) file.bytes.fill(0); }
   return fail("publication_refused");
 }
