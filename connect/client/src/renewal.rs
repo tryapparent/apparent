@@ -94,6 +94,7 @@ struct Renewal {
     #[serde(default)]
     completed: bool,
 }
+enum RecipientAccessAction { Renew { force: bool }, Reject }
 impl Client {
     /// Temporary read-only consumer bridge to the sole durable credential writer.
     /// No token leaves this boundary; the caller must reload and fence disk state.
@@ -106,6 +107,16 @@ impl Client {
         cancellation: Option<&str>,
         force: bool,
         allowed: &dyn Fn() -> bool,
+    ) -> std::result::Result<(), settings::SafeError> {
+        self.recipient_access(server, generation, token, cancellation, RecipientAccessAction::Renew { force }, allowed)
+    }
+    /// Mark only the still-current rejected read token; never refresh or affect upload authority.
+    pub fn reject_recipient_access(&self, server: &str, generation: &str, token: &str,
+        cancellation: Option<&str>, allowed: &dyn Fn() -> bool) -> std::result::Result<(), settings::SafeError> {
+        self.recipient_access(server, generation, token, cancellation, RecipientAccessAction::Reject, allowed)
+    }
+    fn recipient_access(&self, server: &str, generation: &str, token: &str,
+        cancellation: Option<&str>, action: RecipientAccessAction, allowed: &dyn Fn() -> bool,
     ) -> std::result::Result<(), settings::SafeError> {
         use settings::SafeError;
         if server_url(server).ok().as_deref() != Some(server) {
@@ -129,9 +140,12 @@ impl Client {
             // an extra refresh on behalf of a request using the older token.
             if expected.token != token { return Ok(()); }
             let deadline = Instant::now() + Duration::from_secs(30);
-            self.renew(&expected,
-                force || expected.refresh_expires_at.is_some_and(|expiry| expiry <= now()),
-                &current, deadline, Some(deadline))?;
+            match action {
+                RecipientAccessAction::Renew { force } => { self.renew(&expected,
+                    force || expected.refresh_expires_at.is_some_and(|expiry| expiry <= now()),
+                    &current, deadline, Some(deadline))?; }
+                RecipientAccessAction::Reject => self.mark_auth_required(&expected, &current, Some(deadline))?,
+            }
             ensure!(current(), "cancelled");
             Ok(())
         })();

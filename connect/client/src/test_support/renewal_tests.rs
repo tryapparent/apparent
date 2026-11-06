@@ -222,6 +222,35 @@ fn renewable_read(f: &Fixture, server: &str) {
 }
 
 #[test]
+fn recipient_rejection_marks_only_the_exact_current_read_token_without_network() {
+    for mismatch in ["none", "token", "generation", "epoch", "revocation"] {
+        let f = Fixture::new();
+        let server = RenewalServer::new("read");
+        renewable_read(&f, &server.url);
+        let read = f.client.credential("read", &server.url).unwrap();
+        let before = read_private(&f.client.state.join("read.credential"), 32768).unwrap();
+        let upload = fs::read(f.client.state.join("upload.credential")).unwrap();
+        let config = fs::read(&f.client.config).unwrap();
+        if mismatch == "epoch" { atomic_json(&f.client.state.join("cancellation"), &"new").unwrap(); }
+        if mismatch == "revocation" { atomic_json(&f.client.state.join("revocation-test.intent"), &true).unwrap(); }
+        let result = f.client.reject_recipient_access(&server.url,
+            if mismatch == "generation" { "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" } else { &read.generation },
+            if mismatch == "token" { "previous-token" } else { &read.token }, None, &|| true);
+        if mismatch == "none" {
+            result.unwrap();
+            let rejected = f.client.credential("read", &server.url).unwrap();
+            assert!(rejected.auth_required); assert_eq!(rejected.token, read.token);
+        } else {
+            if mismatch != "token" { assert!(result.is_err()); } else { result.unwrap(); }
+            assert_eq!(read_private(&f.client.state.join("read.credential"), 32768).unwrap(), before);
+        }
+        assert_eq!(server.requests.load(Ordering::SeqCst), 0);
+        assert_eq!(fs::read(f.client.state.join("upload.credential")).unwrap(), upload);
+        assert_eq!(fs::read(&f.client.config).unwrap(), config);
+    }
+}
+
+#[test]
 fn recipient_renewal_due_and_forced_preserve_upload_authority_and_config() {
     for force in [false, true] {
         let f = Fixture::new();

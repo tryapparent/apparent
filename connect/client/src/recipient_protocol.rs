@@ -19,6 +19,7 @@ pub enum Operation {
     Fetch { id: String, out: PathBuf, wait: u64, evidence_only: bool },
     /// Temporary same-writer renewal; returns no private credential bytes.
     RenewRead { server: String, generation: String, token: String, cancellation: Option<String>, force: bool },
+    RejectRead { server: String, generation: String, token: String, cancellation: Option<String> },
 }
 
 impl Request {
@@ -28,7 +29,8 @@ impl Request {
         if let Operation::Fetch { out, .. } = &self.operation {
             anyhow::ensure!(out.is_absolute(), "Recipient output must be absolute");
         }
-        if let Operation::RenewRead { server, generation, token, cancellation, .. } = &self.operation {
+        if let Operation::RenewRead { server, generation, token, cancellation, .. }
+            | Operation::RejectRead { server, generation, token, cancellation } = &self.operation {
             anyhow::ensure!(crate::server_url(server).ok().as_deref() == Some(server.as_str()), "Invalid renewal context");
             anyhow::ensure!(generation.len() == 32 && generation.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)), "Invalid renewal context");
             anyhow::ensure!(!token.is_empty() && token.len() <= 8192 && token.bytes().all(|b| b.is_ascii_graphic()), "Invalid renewal context");
