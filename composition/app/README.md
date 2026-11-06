@@ -338,3 +338,22 @@ Runtime IDs or a local disposal drain alone do not prove clearance. This adapter
 does not activate installed routing. Packaged tests exercise the admitted package,
 terminal ordering and transport with synthetic producers, separately from real
 native Saved/copy and native pill/exclusion acceptance.
+
+Trusted binding modules can use `createRecordProductionHost` from
+`src/record/production-host.ts` to construct the owner coordinator, public
+native/config/pen/clipboard adapters and serialized host lifetime together.
+Supply already constructed admitted Capture/2 and Media/2 SDK clients sharing
+one private runtime, the explicit Record coordinator roots/source/processing
+policy, native permission/config inputs, and the ownership callbacks described
+above. The factory fixes publication preflight to the public SDK implementation
+and binds clipboard resolution to the coordinator's existing Saved authority.
+It supplies no default processing selection or shortcut-trial producer.
+
+SDK/process ownership remains with the caller until construction succeeds.
+`RecordHostSetupError` returns any constructed coordinator and native bindings
+when later setup fails: retain those exact handles, inspect terminal ownership
+through the owner contract and dispose only under the applicable policy. Setup
+failure alone never permits SDK closure, capture cancellation or deletion of
+private roots. Failure before coordinator construction likewise does not clear
+caller-owned SDK/runtime users. This composition function does not launch the
+privileged GUI, install a route or establish native effect/exclusion acceptance.
