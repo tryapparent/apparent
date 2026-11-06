@@ -61,7 +61,7 @@ private struct Request: Decodable {
       if request.times.contains(where: { $0 >= duration }) {
         guard try await asset.load(.providesPreciseDurationAndTiming),
               let cursor = track.makeSampleCursor(presentationTimeStamp: CMTime(value: Int64(duration), timescale: 1000)) else { throw HelperError("source_incomplete") }
-        let time = cursor.currentSamplePresentationTimeStamp
+        let time = cursor.presentationTimeStamp
         guard time.seconds.isFinite, time.seconds >= 0, time.seconds < seconds else { throw HelperError("source_incomplete") }
         lastSample = time
       }
