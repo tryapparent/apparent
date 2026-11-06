@@ -3,7 +3,7 @@ import { appendFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { supportsPrCandidate, assessPrior, buildOwner, catalog, inputDigest, makePlan, reusePayload, sealPayload, type Owner, type Target, workflowPathFor } from './core.ts'
+import { isTarget, supportsPrCandidate, assessPrior, buildOwner, catalog, inputDigest, makePlan, reusePayload, sealPayload, type Owner, type Target, workflowPathFor } from './core.ts'
 
 const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
 function output(values: Record<string, string | boolean | number | null>) {
@@ -36,7 +36,7 @@ function ownerFor(id: string): Owner {
   if (!owner) throw new Error(`Unknown or pending delivery owner: ${id}`)
   return owner
 }
-function targetArg(value: string): Target { if (value !== 'linux-x64' && value !== 'macos-x64' && value !== 'web') throw new Error('Invalid target'); return value }
+function targetArg(value: string): Target { if (!isTarget(value)) throw new Error('Invalid target'); return value }
 export function assertBuildWorkflowIdentity(env: NodeJS.ProcessEnv, ownerId: string) {
   if (env.GITHUB_EVENT_NAME !== 'pull_request') return
   const pullRef = /^refs\/pull\/([1-9][0-9]*)\/merge$/.exec(env.GITHUB_REF ?? '')

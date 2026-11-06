@@ -5,7 +5,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ResourceProvider, ResourceTarget } from "../src/index.ts";
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
-export const target = (): ResourceTarget => process.platform === "linux" ? "linux-x64" : process.arch === "arm64" ? "macos-arm64" : "macos-x64";
+export const target = (): ResourceTarget => {
+  if (process.platform === "linux" && process.arch === "x64") return "linux-x64";
+  if (process.platform === "linux" && process.arch === "arm64") return "linux-arm64";
+  if (process.platform === "darwin" && process.arch === "x64") return "macos-x64";
+  if (process.platform === "darwin" && process.arch === "arm64") return "macos-arm64";
+  throw new Error("Unsupported native resource test host");
+};
 export async function provider(executable: string): Promise<ResourceProvider> {
   return { executable, protocol: 1, target: target(), sha256: createHash("sha256").update(await readFile(executable)).digest("hex") };
 }
