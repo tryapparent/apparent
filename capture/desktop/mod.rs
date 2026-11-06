@@ -1591,9 +1591,9 @@ impl ApparentCoordinator {
         let screen=self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|s|!s.laser && s.pts.len()>9).count();
         let processing=self.is_processing();
         let note_saved=self.note_ui.as_ref().is_some_and(|notes|notes.has_saved_note());
-        let was_screen=self.onboarding.as_ref().unwrap().practice_screen_stage();
+        let was_desktop=self.onboarding.as_ref().unwrap().practice_desktop_stage();
         if let Some(session)=self.onboarding.as_mut() {session.practice_note_saved(note_saved);session.observe_practice(board,screen,processing,None);}
-        if !was_screen && self.onboarding.as_ref().is_some_and(|s|s.practice_screen_stage()) {cx.defer(whiteboard::close);}
+        if !was_desktop && self.onboarding.as_ref().is_some_and(|s|s.practice_desktop_stage()) {cx.defer(whiteboard::close);}
     }
 
     pub fn tick_gate(&mut self) {
