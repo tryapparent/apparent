@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as ed25519 from "@noble/ed25519";
-import { generateAgeIdentity, verifyEnvelope, joinAgeParts } from "../../src/recipient/crypto.ts";
+import { generateAgeIdentity, verifyEnvelope } from "../../src/recipient/crypto.ts";
 import { openRecipientArchive } from "../../src/recipient/archive.ts";
 import { validateRecipientEnvelopeBytesWithVerifier } from "../../src/recipient-envelope.ts";
 import type { SenderPeerAuthority } from "../../src/sender/authority.ts";
@@ -51,10 +51,36 @@ test("seals root and grouped bytes for read peers and sender self with verified 
           expected: group.context, trustedSenderSigningKey: new Uint8Array(Buffer.from(f.ownPublicKey.signing, "hex")) });
         assert.ok(opened.files.some(file => file.path === "summary.md") === (group.context.group !== "media"));
       }
+      await assert.rejects(openRecipientArchive({ envelope: envelopeBytes, parts: chunks, identity: f.other.identity,
+        expected: group.context, trustedSenderSigningKey: new Uint8Array(Buffer.from(f.ownPublicKey.signing, "hex")) }));
     }
     assert.ok(!sealed.assets.some(a => a.bytes === f.files[0]!.bytes));
     for (const asset of sealed.assets) asset.bytes.fill(0);
   }
+});
+
+test("grouped sealing preserves the donor's empty media archive", async () => {
+  const f = await fixture();
+  const sealed = await sealCapture({ ...input(f, "evidence-first-v1"), files: f.files.filter(file => !["audio.wav", "recording.mp4"].includes(file.path)) });
+  assert.equal(sealed.profile, "evidence-first-v1");
+  const media = sealed.groups.find(group => group.context.group === "media")!;
+  const opened = await openRecipientArchive({ envelope: sealed.assets.find(asset => asset.path === media.envelope.path)!.bytes,
+    parts: media.chunks.map(chunk => sealed.assets.find(asset => asset.path === chunk.path)!.bytes), identity: f.self.identity,
+    expected: media.context, trustedSenderSigningKey: new Uint8Array(Buffer.from(f.ownPublicKey.signing, "hex")) });
+  assert.deepEqual(opened.files, []);
+  sealed.assets.forEach(asset => asset.bytes.fill(0));
+});
+
+test("rejects over-limit file and peer inventories before copying plaintext", async () => {
+  const f = await fixture();
+  for (const bad of [
+    { ...input(f), files: Array.from({ length: 513 }, () => f.files[0]!) },
+    { ...input(f), files: f.files.map(file => file.path === "apparent.json" ? { ...file, bytes: new Uint8Array(2_000_001) } : file) },
+    { ...input(f), authority: { ...f.authority, devices: Array.from({ length: 65 }, () => f.authority.devices[0]!) } },
+  ]) await assert.rejects(sealCapture(bad), error => error instanceof SealError && ["invalid_manifest", "invalid_encryption_authorization"].includes(error.category));
+  await assert.rejects(sealCapture({ ...input(f), authority: { ...f.authority,
+    devices: f.authority.devices.map(peer => peer.grantId === "reader" ? { ...peer, grantId: "g".repeat(257) } : peer) } }),
+    error => error instanceof SealError && error.category === "invalid_encryption_recipients");
 });
 
 test("requires at least one read peer and rejects mismatched keys, contexts, paths, and cancellation", async () => {
@@ -82,4 +108,16 @@ test("detaches the file list and bytes before the first async crypto operation",
   assert.equal(new TextDecoder().decode(opened.files.find(file => file.path === "summary.md")!.bytes), "summary");
   assert.equal(f.files[0]!.bytes.every(b => b === 0), true);
   for (const asset of sealed.assets) asset.bytes.fill(0);
+});
+
+test("preserves safe manifest failure categories and caller-owned bytes and keys", async () => {
+  const f = await fixture(), original = f.files.map(file => new Uint8Array(file.bytes)), originalSeed = new Uint8Array(seed);
+  await assert.rejects(sealCapture({ ...input(f), files: f.files.filter(file => file.path !== "summary.md") }),
+    e => e instanceof SealError && e.category === "invalid_manifest" && e.message === "invalid_manifest");
+  const badReferences = f.files.map(file => file.path === "apparent.json"
+    ? { ...file, bytes: new TextEncoder().encode('{"contactSheet":"private-secret-path"}') } : file);
+  await assert.rejects(sealCapture({ ...input(f), files: badReferences }),
+    e => e instanceof SealError && e.category === "unsafe_bundle_reference" && e.message === "unsafe_bundle_reference");
+  f.files.forEach((file, index) => assert.deepEqual(file.bytes, original[index]));
+  assert.deepEqual(seed, originalSeed);
 });
