@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { publishRecipientCapture, RecipientPublicationError, type RecipientPublicationResources } from "../../src/recipient/publication.ts";
+import type { RecipientCliDependencies } from "../../src/cli/recipient.ts";
 
 const hash = (bytes: Uint8Array) => createHash(bytes);
 function createHash(bytes: Uint8Array) {
@@ -28,6 +29,11 @@ function capture(evidenceOnly = false) {
   return { captureId: "a".repeat(32), server: "https://connect.example", evidenceOnly,
     files: entries.map(([filePath, bytes]) => ({ path: filePath, bytes: new Uint8Array(bytes), size: bytes.length, sha256: hash(bytes) })) };
 }
+const publisherFitsCli: RecipientCliDependencies["publish"] = (value, destination) => publishRecipientCapture(value, destination, {
+  checkAcl: async h => { await h.close(); return { state: "accepted" }; },
+  publish: async h => { await h.close(); return { state: "publication_uncertain" }; },
+});
+void publisherFitsCli;
 function localResources(parentPath: string, mode: "published" | "publication_uncertain" | "refused" = "published", onDispatch?: () => void): RecipientPublicationResources {
   return {
     checkAcl: async (handle) => { await handle.close(); return { state: "accepted" }; },
@@ -56,7 +62,7 @@ test("publishes a complete validated capture and evidence carries the exact lega
   assert.deepEqual(evidence, { state: "committed", path: evidenceOut, evidenceOnlyReceipt: true });
   assert.deepEqual(JSON.parse(await readFile(path.join(evidenceOut, ".evidence-only.json"), "utf8")), {
     version: 1, captureId: "a".repeat(32), server: "https://connect.example", media: "not downloaded",
-    guidance: `Use apparent fetch ${"a".repeat(32)} --media --out <new-directory> for the complete recording`,
+    guidance: "Use apparent fetch <id> --media --out <new-directory> for the complete recording",
   });
 }));
 
@@ -97,7 +103,7 @@ test("cancellation stops before staging; native uncertainty retains private stag
     checkAcl: async h => { await h.close(); return { state: "accepted" }; },
     publish: async parent => { calls++; await parent.close(); return { state: "publication_uncertain" }; },
   });
-  assert.deepEqual(uncertain, { state: "publication_uncertain" }); assert.equal(calls, 1);
+  assert.deepEqual(uncertain, { state: "publication-uncertain" }); assert.equal(calls, 1);
   const stages = (await readdir(root)).filter(n => n.startsWith(".apparent-stage-")); assert.equal(stages.length, 1);
   const stage = path.join(root, stages[0]!);
   assert.equal((await lstat(stage)).mode & 0o777, 0o700);
@@ -117,7 +123,7 @@ test("a parent path replaced during native dispatch never reports committed", as
       } finally { await parent.close(); }
     },
   });
-  assert.deepEqual(result, { state: "publication_uncertain" });
+  assert.deepEqual(result, { state: "publication-uncertain" });
   assert.ok(await readFile(path.join(root, "moved", "capture", "summary.md")));
 }));
 
@@ -127,6 +133,94 @@ test("a native published result without matching destination readback is uncerta
     checkAcl: async h => { await h.close(); return { state: "accepted" }; },
     publish: async parent => { calls++; await parent.close(); return { state: "published" }; },
   });
-  assert.deepEqual(result, { state: "publication_uncertain" }); assert.equal(calls, 1);
+  assert.deepEqual(result, { state: "publication-uncertain" }); assert.equal(calls, 1);
   assert.equal((await readdir(root)).filter(n => n.startsWith(".apparent-stage-")).length, 1);
+}));
+
+test("typed exceptions after native dispatch are uncertain and preserve committed output", async () => fixture(async root => {
+  let calls = 0;
+  const out = path.join(root, "published-then-threw");
+  const result = await publishRecipientCapture(capture(), out, {
+    checkAcl: async h => { await h.close(); return { state: "accepted" }; },
+    publish: async (parent, source, destination) => {
+      calls++;
+      try { await rename(path.join(root, source), path.join(root, destination)); throw new RecipientPublicationError("cancelled"); }
+      finally { await parent.close(); }
+    },
+  });
+  assert.deepEqual(result, { state: "publication-uncertain" });
+  assert.equal(calls, 1);
+  assert.equal(await readFile(path.join(out, "summary.md"), "utf8"), "a synthetic summary");
+}));
+
+test("known refusal removes only the unchanged stage; replaced parent retains foreign data and stage", async () => fixture(async root => {
+  const parentPath = path.join(root, "out"); await mkdir(parentPath, { mode: 0o700 });
+  const result = await publishRecipientCapture(capture(), path.join(parentPath, "out.apparent"), {
+    checkAcl: async h => { await h.close(); return { state: "accepted" }; },
+    publish: async (parent, source) => {
+      try {
+        await rename(parentPath, path.join(root, "moved")); await mkdir(parentPath, { mode: 0o700 });
+        await (await import("node:fs/promises")).writeFile(path.join(parentPath, "foreign-sentinel"), "keep");
+        return { state: "refused" };
+      } finally { await parent.close(); }
+    },
+  });
+  assert.deepEqual(result, { state: "publication-uncertain" });
+  assert.equal(await readFile(path.join(parentPath, "foreign-sentinel"), "utf8"), "keep");
+  assert.equal((await readdir(path.join(root, "moved"))).filter(n => n.startsWith(".apparent-stage-")).length, 1);
+}));
+
+test("cancellation after staging removes its unchanged private stage", async () => fixture(async root => {
+  const controller = new AbortController();
+  let checked = 0;
+  const resources: RecipientPublicationResources = {
+    checkAcl: async h => { checked++; await h.close(); if (checked > 1) controller.abort(); return { state: "accepted" }; },
+    publish: async h => { await h.close(); return { state: "published" }; },
+  };
+  await assert.rejects(() => publishRecipientCapture(capture(), path.join(root, "cancel-stage"), resources, { signal: controller.signal }), RecipientPublicationError);
+  assert.deepEqual(await readdir(root), []);
+}));
+
+test("known native refusal removes its unchanged stage", async () => fixture(async root => {
+  await assert.rejects(() => publishRecipientCapture(capture(), path.join(root, "out"), localResources(root, "refused")),
+    (e: unknown) => e instanceof RecipientPublicationError && e.category === "publication_refused");
+  assert.deepEqual(await readdir(root), []);
+}));
+
+test("receipt uses the validated capture snapshot after caller mutation", async () => fixture(async root => {
+  const value = capture(true); let mutated = false;
+  const result = await publishRecipientCapture(value, path.join(root, "evidence"), {
+    checkAcl: async h => {
+      await h.close();
+      if (!mutated) { mutated = true; value.captureId = "b".repeat(32); value.server = "https://changed.invalid"; value.evidenceOnly = false; }
+      return { state: "accepted" };
+    },
+    publish: async (parent, source, destination) => { try { await rename(path.join(root, source), path.join(root, destination)); return { state: "published" }; } finally { await parent.close(); } },
+  });
+  assert.deepEqual(result, { state: "committed", path: path.join(root, "evidence"), evidenceOnlyReceipt: true });
+  assert.deepEqual(JSON.parse(await readFile(path.join(root, "evidence", ".evidence-only.json"), "utf8")), {
+    version: 1, captureId: "a".repeat(32), server: "https://connect.example", media: "not downloaded",
+    guidance: "Use apparent fetch <id> --media --out <new-directory> for the complete recording",
+  });
+}));
+
+test("replaced staged asset directory preserves foreign sentinel and uncertain stage", async () => fixture(async root => {
+  const foreign = path.join(root, "foreign"); await mkdir(foreign);
+  await (await import("node:fs/promises")).writeFile(path.join(foreign, "sentinel"), "keep");
+  const result = await publishRecipientCapture(capture(), path.join(root, "out"), {
+    checkAcl: async h => { await h.close(); return { state: "accepted" }; },
+    publish: async (parent, source) => {
+      try {
+        const stage = path.join(root, source);
+        await rename(path.join(stage, "frames"), path.join(root, "displaced-frames"));
+        await symlink(foreign, path.join(stage, "frames"));
+        return { state: "refused" };
+      } finally { await parent.close(); }
+    },
+  });
+  assert.deepEqual(result, { state: "publication-uncertain" });
+  assert.equal(await readFile(path.join(foreign, "sentinel"), "utf8"), "keep");
+  const stage = (await readdir(root)).find(n => n.startsWith(".apparent-stage-"));
+  assert.ok(stage);
+  assert.equal((await lstat(path.join(root, stage!, "frames"))).isSymbolicLink(), true);
 }));
