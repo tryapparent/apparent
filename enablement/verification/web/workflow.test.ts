@@ -176,6 +176,24 @@ test('Engine has one workflow containing exactly its registered component target
   const matrix = JSON.parse(source.match(/^\s+matrix: (.+)$/m)![1]).include
   assert.deepEqual(matrix.map((row: any) => [row.id, row.target]).sort(), [
     ['engine', 'linux-x64'], ['engine-native', 'linux-x64'], ['engine-native', 'macos-x64'],
-    ['engine-media-native', 'linux-x64'], ['engine-capture-native', 'linux-x64'],
+    ['engine-media-native', 'linux-x64'], ['engine-media-native', 'macos-x64'], ['engine-capture-native', 'linux-x64'],
   ].sort())
 })
+test('media native targets use the same producer with platform-specific fresh setup', () => {
+  const workflow = entry('engine-media-native');
+  const matrices = [...workflow.matchAll(/^\s+matrix: (.+)$/gm)].map(match => JSON.parse(match[1]).include);
+  assert.equal(matrices.length, 2);
+  for (const rows of matrices) assert.deepEqual(rows.filter((row: any) => row.id === 'engine-media-native').map((row: any) => [row.target, row.runner]), [['linux-x64', 'ubuntu-24.04'], ['macos-x64', 'macos-26-intel']]);
+  const linux = component.split('    - name: Install Engine media runtime and fixture dependencies')[1].split('    - name:')[0];
+  assert.match(linux, /inputs.target == 'linux-x64'/);
+  const mac = component.split('    - name: Qualify native Intel Mac media toolchain')[1].split('    - name:')[0];
+  assert.match(mac, /inputs.target == 'macos-x64'/);
+  assert.match(mac, /steps.admit.outputs.reuse != 'true'/);
+  assert.match(mac, /process.arch !== 'x64'/);
+  assert.match(mac, /Swift 6.2\+ and SDK 26\+ required/);
+  assert.doesNotMatch(mac, /apt-get|--target/);
+  assert.match(mac, /'brew', \['install', '--force-bottle', 'ffmpeg'\]/);
+  assert.match(mac, /timeout: 180_000/);
+  assert.match(mac, /error.code !== 'ENOENT'/);
+  assert.match(mac, /HOMEBREW_NO_AUTO_UPDATE: '1'/);
+});
