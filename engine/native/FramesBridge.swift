@@ -41,6 +41,9 @@ private struct Request: Decodable {
       guard fstat(3, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFREG,
             metadata.st_size > 0 else { throw HelperError("source_incomplete") }
       let asset = AVURLAsset(url: URL(fileURLWithPath: "/dev/fd/3"), options: [
+        // The descriptor has no extension. Give the ISO-BMFF parser its format
+        // explicitly; never fall back to reopening the original caller path.
+        AVURLAssetOverrideMIMETypeKey: "video/mp4",
         AVURLAssetReferenceRestrictionsKey: NSNumber(value: AVAssetReferenceRestrictions.forbidAll.rawValue),
         AVURLAssetPreferPreciseDurationAndTimingKey: true,
       ])
