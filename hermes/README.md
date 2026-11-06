@@ -49,6 +49,10 @@ CLI link and installed Mac application locations. Registration never launches
 the GUI, starts capture, makes a network request or changes settings. Removal
 does not delete installed Apparent or recordings.
 
+The standalone `Hermes plugin checks` workflow is manual/reusable, following the
+repository's workflow policy. Run the focused checks above before merging; the
+workflow does not publish the plugin or submit a catalog entry.
+
 ## Guided setup
 
 After installation, ask Hermes: **Set up Apparent for me.** The bundled
