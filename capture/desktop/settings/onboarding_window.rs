@@ -1453,7 +1453,6 @@ mod tests {
         };
         for (step, ready, input) in [
             (Step::Welcome, false, Input::Continue),
-            (Step::HowItWorks, false, Input::Continue),
             (
                 Step::Permissions,
                 false,

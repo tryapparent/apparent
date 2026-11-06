@@ -1822,7 +1822,8 @@ impl ApparentCoordinator {
         if let Some(session) = self.onboarding.as_ref() { return session.shortcut_policy(); }
         if !crate::shared::handoff::experiment("onboardingFirstCapture") { return ShortcutPolicy::Record; }
         if self.onboarding.is_none() {
-            let progress = Progress::load();
+            let mut progress = Progress::load();
+            if progress.prepare_current_tour() { progress.save(); }
             if !progress.seen {
                 self.open_onboarding(Flow::tour(progress.resume.unwrap_or(Step::Welcome), self.grants.clone()));
                 return ShortcutPolicy::Block;
