@@ -59,9 +59,17 @@ private struct Request: Decodable {
       // timestamp, then ask the reused generator for that exact sample.
       var lastSample: CMTime?
       if request.times.contains(where: { $0 >= duration }) {
-        guard try await asset.load(.providesPreciseDurationAndTiming),
-              let cursor = track.makeSampleCursor(presentationTimeStamp: CMTime(value: Int64(duration), timescale: 1000)) else { throw HelperError("source_incomplete") }
-        let time = cursor.presentationTimeStamp
+        guard try await asset.load(.providesPreciseDurationAndTiming) else { throw HelperError("source_incomplete") }
+        // Sample cursors use media PTS; image generation uses the edited track
+        // clock. Preserve edit-list offsets instead of treating raw PTS as seek.
+        let segments = try await track.load(.segments)
+        guard let segment = segments.filter({ !$0.isEmpty && $0.timeMapping.source.duration.seconds > 0 && $0.timeMapping.target.duration.seconds > 0 })
+          .max(by: { CMTimeRangeGetEnd($0.timeMapping.target).seconds < CMTimeRangeGetEnd($1.timeMapping.target).seconds }) else { throw HelperError("source_incomplete") }
+        let mapping = segment.timeMapping
+        let beforeEnd = CMTimeSubtract(CMTimeRangeGetEnd(mapping.source), CMTime(value: 1, timescale: 1_000_000_000))
+        guard let cursor = track.makeSampleCursor(presentationTimeStamp: beforeEnd),
+              CMTimeRangeContainsTime(mapping.source, time: cursor.presentationTimeStamp) else { throw HelperError("source_incomplete") }
+        let time = CMTimeMapTimeFromRangeToRange(cursor.presentationTimeStamp, fromRange: mapping.source, toRange: mapping.target)
         guard time.seconds.isFinite, time.seconds >= 0, time.seconds < seconds else { throw HelperError("source_incomplete") }
         lastSample = time
       }
