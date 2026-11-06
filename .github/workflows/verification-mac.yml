@@ -34,7 +34,8 @@ jobs:
   onboarding-candidate:
     if: github.event_name == 'workflow_dispatch' && github.repository == 'tryapparent/apparent' && (github.ref == 'refs/heads/t3/onboarding-mac-release-baseline' || github.ref == 'refs/heads/codex/onboarding-complete-candidate')
     needs: verify
-    runs-on: macos-latest
+    # Use the stable Apple Silicon pool; latest repeatedly failed runner admission.
+    runs-on: macos-15
     timeout-minutes: 90
     env:
       APPARENT_PREVIEW_NOTARIZE: 'true'
