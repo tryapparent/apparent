@@ -1450,10 +1450,24 @@ impl ApparentCoordinator {
                     let _ = crate::shared::handoff::open_path(std::path::Path::new(&url));
                 }
             }
-            Effect::Tour => self.open_onboarding(crate::capture::desktop::settings::onboarding::Flow::tour(
-                crate::capture::desktop::settings::onboarding::Step::Welcome,
-                self.grants.clone(),
-            )),
+            Effect::Tour => {
+                use crate::capture::desktop::settings::onboarding::{Flow, Progress, Step};
+                if self.capture_busy() {
+                    let message = "Finish or cancel the capture before replaying the welcome tour.";
+                    apparent_log(message);
+                    if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some(message.into()); }
+                    return;
+                }
+                let mut progress = Progress::load();
+                progress.reset_for_replay();
+                if let Err(error) = progress.save_to(&crate::shared::handoff::default_config_path()) {
+                    let message = format!("Could not save welcome tour progress: {error:#}");
+                    apparent_log(&message);
+                    if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some(message); }
+                    return;
+                }
+                self.open_onboarding(Flow::tour(Step::Welcome, self.grants.clone()));
+            }
             Effect::Relaunch => {
                 if self.refuse_capture_restart() { return; }
                 self.settings = None;

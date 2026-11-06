@@ -1330,12 +1330,12 @@
       "id": "onboarding",
       "group": "install",
       "name": "Welcome tour",
-      "says": "Branded setup with a pen choice, permissions checklist, Record shortcut editor and guided first capture; setup resumes after a quit.",
+      "says": "Branded setup with a pen choice, animated workflow demo, permissions checklist, Record shortcut editor and guided first capture; setup resumes after a quit.",
       "status": "main",
       "added": "2026-10-29",
       "platforms": ["mac", "linux"],
       "note": "Release-baseline candidate; installed Mac audio, focus, packaging and workflow acceptance remain required. Pen color persists and is carried into saved ink and export.",
-      "config": [{ "key": "penColor", "value": "coral|purple|blue|green", "does": "Saved drawing pigment; read at app startup or changed immediately by onboarding" }, { "key": "onboarding", "value": "{…}", "does": "Tour progress; delete it to replay the tour" }],
+      "config": [{ "key": "penColor", "value": "coral|purple|blue|green", "does": "Saved drawing pigment; read at app startup or changed immediately by onboarding" }, { "key": "onboarding", "value": "{…}", "does": "Tour progress; replay from Settings restarts choice and trial without clearing other settings" }],
       "docs": ["README.md#welcome-and-permissions", "capture/desktop/docs/onboarding-and-settings.md"]
     },
     {

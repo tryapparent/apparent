@@ -205,7 +205,7 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
 });
 
 // Rust state is synthetic; the main/preload/renderer and OS window resizing are real.
-for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coach and restores setup ${mode}`, { timeout: 30000 }, async (t) => {
+for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coach and restores setup ${mode}`, { timeout: 45000 }, async (t) => {
   const { spawn } = require('node:child_process');
   const { chromium } = require('@playwright/test');
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'onboarding-window-'));
@@ -402,6 +402,27 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('button',{name:'Try later',exact:true})).toBeInViewport();
   await page.evaluate(()=>document.documentElement.style.fontSize='');
 
+  send({step:'how-it-works',tutorial:null});
+  await expect(page.getByRole('heading',{name:'Show it. Say it. Send it.',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Skip',exact:true})).toBeVisible();
+  await expect(page.locator('.native-tour-demo')).toHaveAttribute('data-phase','mark',{timeout:4000});
+  await expect(page.locator('.native-tour-demo')).toHaveAttribute('data-phase','paste',{timeout:5000});
+  await expect(page.locator('.native-tour-demo')).toHaveAttribute('data-phase','fixed',{timeout:5000});
+  await expect.poll(()=>output).toContain('"action":"watched"');
+  if(process.env.APPARENT_TOUR_PROOF) await page.screenshot({path:process.env.APPARENT_TOUR_PROOF});
+  const reply=await page.locator('.tour-demo-reply').boundingBox(),agent=await page.locator('.tour-demo-agent').boundingBox();
+  assert.ok(reply.y+reply.height<=agent.y+agent.height,'demo reply must remain visible');
+  send({step:'how-it-works',tutorial:'watched'});
+  await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeVisible();
+  assert.equal(await page.locator('.native-setup section').evaluate(el=>el.scrollHeight>el.clientHeight),false,'demo fits without scrolling');
+  send({step:'welcome'});
+  await page.emulateMedia({reducedMotion:'reduce'});
+  send({step:'how-it-works',tutorial:null});
+  await expect(page.getByRole('button',{name:'4. Fix',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'4. Fix',exact:true}).click();
+  await expect(page.locator('.native-tour-demo')).toHaveAttribute('data-phase','fixed');
+  assert.equal(await page.locator('.native-tour-demo').evaluate(el=>el.getAnimations({subtree:true}).length),0);
+  await page.emulateMedia({reducedMotion:'no-preference'});
   send({ step:'permissions' });
   await expect(page.getByRole('heading', { name:'We need three things.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);

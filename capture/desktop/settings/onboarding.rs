@@ -317,7 +317,6 @@ pub struct Flow {
     first_capture_completed: bool,
     shortcut_pending: bool,
     practice_recording: bool,
-    skip_intro: bool,
 }
 
 /// The recording shortcut stays in setup until the user reaches guided practice.
@@ -333,12 +332,6 @@ impl Flow {
         } else {
             ShortcutPolicy::Block
         }
-    }
-    /// The shared pen picker is followed directly by permissions or shortcut setup.
-    fn with_intro_skipped(mut self, skipped: bool) -> Self {
-        self.skip_intro=skipped && self.mode==Mode::Tour;
-        if self.skip_intro && self.step==Step::HowItWorks { self.step=self.forward_from(self.step); }
-        self
     }
     /// Opt into the first-capture onboarding experiment, restoring durable milestones.
     pub fn with_first_capture(mut self, required: bool, chosen: bool, tested: bool, completed: bool) -> Self {
@@ -403,7 +396,6 @@ impl Flow {
             first_capture_completed: false,
             shortcut_pending: false,
             practice_recording: false,
-            skip_intro: false,
         }
     }
 
@@ -616,7 +608,7 @@ impl Flow {
 
     /// A step the tour passes: the permissions screen once everything on it works.
     fn passes(&self, step: Step) -> bool {
-        (step == Step::HowItWorks && self.skip_intro) || (step == Step::Permissions && self.done())
+        step == Step::Permissions && self.done()
     }
 
     fn forward_from(&self, mut step: Step) -> Step {
@@ -855,6 +847,17 @@ impl Progress {
             self.first_capture_completed = false;
         }
         true
+    }
+
+    /// Start the Settings replay from the beginning while retaining permission history,
+    /// relaunch throttling and the user's actual shortcut/pen/configuration choices.
+    pub fn reset_for_replay(&mut self) {
+        self.seen = false;
+        self.resume = Some(Step::Welcome);
+        self.tutorial = None;
+        self.shortcut_chosen = false;
+        self.shortcut_tested_for = None;
+        self.first_capture_completed = false;
     }
 
     /// Closing is allowed, but an experimental tour resumes until its capture succeeds.
@@ -1181,7 +1184,6 @@ impl Session {
             flow: flow
                 .with_auto_relaunch(allowed)
                 .with_tutorial(progress.tutorial)
-                .with_intro_skipped(shell)
                 .with_first_capture(
                     crate::shared::handoff::experiment("onboardingFirstCapture"),
                     progress.shortcut_chosen,
@@ -1816,22 +1818,24 @@ mod tests {
         session.practice=Some(super::super::practice::Practice::default());session
     }
     #[test]
-    fn shared_pen_setup_skips_retired_intro_in_both_directions_and_on_resume() {
-        let mut flow=Flow::tour(Step::Welcome,Some(grants(&[]))).with_intro_skipped(true);
-        flow.on(Input::Continue);assert_eq!(flow.step(),Step::Permissions);
-        flow.on(Input::Back);assert_eq!(flow.step(),Step::Welcome);
-        let resumed=Flow::tour(Step::HowItWorks,Some(grants(&[]))).with_intro_skipped(true);
-        assert_eq!(resumed.step(),Step::Permissions);
-        let mut ready=Flow::tour(Step::Welcome,Some(grants(&Permission::REQUIRED))).with_intro_skipped(true);
-        ready.on(Input::Continue);assert_eq!(ready.step(),Step::Shortcut);
-        ready.on(Input::Back);assert_eq!(ready.step(),Step::Welcome);
-        assert!(!ready.view().fix);
-        for skipped in [false,true] {
-            let resumed=Flow::tour(Step::Permissions,Some(grants(&Permission::REQUIRED))).with_intro_skipped(skipped);
-            assert_eq!(resumed.step(),Step::Permissions,"a ready resumed permission page stays visible");
-            let repair=Flow::fix(Permission::REQUIRED.to_vec(),Some(grants(&Permission::REQUIRED))).with_intro_skipped(skipped);
-            assert_eq!(repair.step(),Step::Permissions);assert!(repair.view().fix);
+    fn shared_tour_keeps_demo_between_pen_and_permission_or_shortcut() {
+        for ready in [false, true] {
+            let current = if ready { grants(&Permission::REQUIRED) } else { grants(&[]) };
+            let mut flow = Flow::tour(Step::Welcome, Some(current));
+            flow.on(Input::Continue);
+            assert_eq!(flow.step(), Step::HowItWorks);
+            flow.on(Input::Back);
+            assert_eq!(flow.step(), Step::Welcome);
+            flow.on(Input::Continue);
+            flow.on(Input::Continue);
+            assert_eq!(flow.step(), if ready { Step::Shortcut } else { Step::Permissions });
+            flow.on(Input::Back);
+            assert_eq!(flow.step(), Step::HowItWorks);
         }
+        assert_eq!(Flow::tour(Step::HowItWorks, None).step(), Step::HowItWorks);
+        let ready = Some(grants(&Permission::REQUIRED));
+        assert_eq!(Flow::tour(Step::Permissions, ready.clone()).step(), Step::Permissions);
+        assert_eq!(Flow::fix(Permission::REQUIRED.to_vec(), ready).step(), Step::Permissions);
     }
 
     #[test]
@@ -2603,6 +2607,74 @@ mod tests {
     }
 
     #[test]
+    fn replay_resets_only_tour_progress_and_config_writer_preserves_other_values() {
+        let mut progress = Progress {
+            tour_revision: 1,
+            seen: true,
+            resume: None,
+            granted: BTreeSet::from([Permission::ScreenRecording, Permission::Accessibility]),
+            relaunched_at: Some(123),
+            reopen_fix: true,
+            tutorial: Some(Tutorial::Practiced),
+            shortcut_chosen: true,
+            shortcut_tested_for: Some("⌥⇧R".into()),
+            first_capture_completed: true,
+        };
+        progress.reset_for_replay();
+        assert!(!progress.seen);
+        assert_eq!(progress.resume, Some(Step::Welcome));
+        assert_eq!(progress.tutorial, None);
+        assert!(!progress.shortcut_chosen);
+        assert_eq!(progress.shortcut_tested_for, None);
+        assert!(!progress.first_capture_completed);
+        assert_eq!(progress.granted, BTreeSet::from([Permission::ScreenRecording, Permission::Accessibility]));
+        assert_eq!(progress.relaunched_at, Some(123));
+        assert!(progress.reopen_fix);
+
+        let ready = Some(grants(&Permission::REQUIRED));
+        let mut replay = Flow::tour(progress.resume.unwrap(), ready).with_first_capture(
+            true,
+            progress.shortcut_chosen,
+            progress.tested_shortcut("⌥⇧R"),
+            progress.first_capture_completed,
+        );
+        assert_eq!(replay.step(), Step::Welcome);
+        replay.on(Input::Continue);
+        assert_eq!(replay.step(), Step::HowItWorks);
+        replay.on(Input::Watched);
+        replay.on(Input::Continue);
+        assert_eq!(replay.step(), Step::Shortcut);
+        assert!(!replay.view().shortcut_chosen);
+        replay.on(Input::ShortcutChosen);
+        replay.on(Input::ShortcutTrialStarted);
+        assert!(!replay.view().shortcut_tested);
+        assert!(!replay.local_practice(), "the trial cannot start a capture");
+        replay.on(Input::ShortcutTriggered);
+        assert!(replay.view().shortcut_tested);
+        assert_eq!(replay.step(), Step::Shortcut, "trial success still needs Continue");
+        replay.on(Input::Continue);
+        assert_eq!(replay.step(), Step::TryIt);
+
+        let dir = std::env::temp_dir().join(format!("apparent-onboarding-replay-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir(&dir).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let path = dir.join("config.json");
+        std::fs::write(&path, r#"{"unrelated":{"keep":true},"penColor":"green","onboarding":{"seen":true}}"#).unwrap();
+        progress.save_to(&path).unwrap();
+        let config: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(config["unrelated"]["keep"], true);
+        assert_eq!(config["penColor"], "green");
+        assert_eq!(config["onboarding"]["resume"], "welcome");
+        assert_eq!(config["onboarding"]["granted"], serde_json::json!(["screen-recording", "accessibility"]));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn a_tour_quit_midway_resumes_where_it_was() {
         let mut flow = Flow::tour(Step::Welcome, Some(grants(&[])));
         assert_eq!(flow.resume_point(), Some(Step::Welcome));
@@ -2950,10 +3022,10 @@ mod adapter_regressions {
     }
     #[test]
     fn back_from_permissions_cancels_guides_without_claiming_a_grant() {
-        let mut flow=Flow::tour(Step::Permissions,None).with_intro_skipped(true);
+        let mut flow=Flow::tour(Step::Permissions,None);
         assert!(permission_guide_messages(&flow.view()).is_empty());
         flow.on(Input::Back);
-        assert_eq!(flow.step(),Step::Welcome);
+        assert_eq!(flow.step(),Step::HowItWorks);
         assert_eq!(permission_guide_messages(&flow.view()),vec![serde_json::json!({"type":"cancel-guides"})]);
         let granted=Flow::tour(Step::Permissions,Some(Grants{statuses:BTreeMap::from([(Permission::Accessibility,Status::Granted)]),screen_needs_relaunch:false}));
         assert!(permission_guide_messages(&granted.view()).iter().any(|m|m["type"]=="close-guide"&&m["permission"]=="accessibility"));
