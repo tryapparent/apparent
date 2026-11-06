@@ -31,8 +31,10 @@ npm run pack
 Default tests use faithful protocol peers, not native-proof claims. The separate
 producer under `delivery/` compiles Rust, seals two files (helper + manifest), and
 runs the real TypeScript/native integration against those exact staged bytes.
-Its targets are Linux x64, macOS x64 and macOS arm64. Native artifacts are
-unsigned/unnotarized until an installer separately qualifies/signs its assembly.
+Its source producer and manifest schema support Linux x64, Linux arm64, macOS
+x64 and macOS arm64. Source support does not register or admit a delivery target;
+delivery registration and provenance admission remain separate. Native artifacts
+are unsigned/unnotarized until an installer separately qualifies/signs its assembly.
 Connect's installed Rust state/CLI implementation remains authoritative; adding
 this primitive does not adopt a new writer or retire any donor.
 
@@ -121,7 +123,7 @@ grants immediately before native effects. Ancestor validation remains caller-own
 Privileged composition imports `createInstalledNativeResources` from
 `@apparent/native-resources/installed`. Supply an absolute canonical admitted
 artifact directory, `trustedManifestSha256`, `expectedSourceSha`, and registered
-`target` (`linux-x64` or `macos-x64`). These identities must come from protected
+`target`. These identities must come from protected
 producer admission, not a manifest selected by untrusted input. The constructor
 verifies the exact manifest and executable, then stages a private immutable copy.
 It does not download, build, sign, notarize or activate an installed caller.
@@ -150,10 +152,10 @@ must provide admitted bytes and protect the returned lifetime. Native producer
 and joined-consumer evidence remain separate from protocol-peer tests; macOS
 signing/publication requirements still apply.
 
-The owner-local `macos-arm64` producer retains its existing native-adapter tests;
-it does not support this installed-provider API or run its installed lifetime test.
-Registered Linux x64 and Intel Mac producers build the public JavaScript package
-before testing the compiled installed provider against their exact staged helper.
+Linux arm64 and macOS arm64 producer runs include the installed lifetime test
+against their exact staged helper, as do x64 runs. This source-level path and its
+unit tests do not qualify ARM delivery; registered native jobs and admission
+evidence remain required.
 
 ## Locked file replacement prerequisite
 

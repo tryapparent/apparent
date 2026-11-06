@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
-export type ResourceTarget = "linux-x64" | "macos-x64" | "macos-arm64";
+export type ResourceTarget = "linux-x64" | "linux-arm64" | "macos-x64" | "macos-arm64";
 export type ResourceArtifact = {
   schema: 1; protocol: 1; sourceSha: string; target: ResourceTarget;
   executable: "apparent-resource-host"; sha256: string; mode: 493;
@@ -10,7 +10,7 @@ export type ResourceArtifact = {
   appleSigning: "unsigned-unnotarized";
 };
 export function resourceManifest(sourceSha: string, target: ResourceTarget, bytes: Uint8Array): ResourceArtifact {
-  if (!/^[a-f0-9]{40}$/.test(sourceSha) || !["linux-x64", "macos-x64", "macos-arm64"].includes(target) || !bytes.length) throw new Error("invalid_resource_artifact");
+  if (!/^[a-f0-9]{40}$/.test(sourceSha) || !["linux-x64", "linux-arm64", "macos-x64", "macos-arm64"].includes(target) || !bytes.length) throw new Error("invalid_resource_artifact");
   return { schema: 1, protocol: 1, sourceSha, target, executable: "apparent-resource-host",
     sha256: createHash("sha256").update(bytes).digest("hex"), mode: 0o755,
     runtimeFiles: [], runtime: { cargo: false, pathLookup: false }, appleSigning: "unsigned-unnotarized" };

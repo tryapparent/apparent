@@ -14,6 +14,12 @@ test('compiled installed provider preserves native flock/publication and its pro
   const artifactDirectory = await realpath(dirname(executable));
   const manifestBytes = await readFile(join(artifactDirectory, 'manifest.json'));
   const manifest = JSON.parse(manifestBytes.toString('utf8'));
+  const hostTarget = process.platform === 'linux'
+    ? process.arch === 'arm64' ? 'linux-arm64' : process.arch === 'x64' ? 'linux-x64' : undefined
+    : process.platform === 'darwin'
+      ? process.arch === 'arm64' ? 'macos-arm64' : process.arch === 'x64' ? 'macos-x64' : undefined
+      : undefined;
+  assert.equal(manifest.target, hostTarget, 'Native installed proof target must match the actual OS and architecture');
   const resources = await createInstalledNativeResources({ artifactDirectory,
     trustedManifestSha256: createHash('sha256').update(manifestBytes).digest('hex'),
     expectedSourceSha: manifest.sourceSha, target: manifest.target });

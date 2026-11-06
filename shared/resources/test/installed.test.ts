@@ -9,12 +9,16 @@ import { NativeResourceError, NativeResources, resourceManifest } from "../src/i
 import { createInstalledNativeResources, type InstalledResourceTarget } from "../src/installed.ts";
 import { fixture } from "./helpers.ts";
 
-const target: InstalledResourceTarget = process.platform === "linux" ? "linux-x64" : "macos-x64";
-const supportedHost = (process.platform === "linux" && process.arch === "x64")
-  || (process.platform === "darwin" && process.arch === "x64");
+const target: InstalledResourceTarget | undefined = process.platform === "linux"
+  ? process.arch === "x64" ? "linux-x64" : process.arch === "arm64" ? "linux-arm64" : undefined
+  : process.platform === "darwin"
+    ? process.arch === "x64" ? "macos-x64" : process.arch === "arm64" ? "macos-arm64" : undefined
+    : undefined;
+const supportedHost = target !== undefined;
 const hash = (bytes: Uint8Array | string) => createHash("sha256").update(bytes).digest("hex");
 
 async function admittedArtifact(scenario = "published") {
+  assert(target, "Installed wrapper tests require a supported native host target");
   const source = await fixture(scenario);
   const bytes = await readFile(source.executable);
   const manifest = Buffer.from(JSON.stringify(resourceManifest("a".repeat(40), target, bytes), null, 2) + "\n");

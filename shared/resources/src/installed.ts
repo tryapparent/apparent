@@ -11,7 +11,7 @@ import { resourceManifest, validateResourceArtifact } from "./artifact.ts";
 const EXECUTABLE = "apparent-resource-host";
 const MAX_HELPER_BYTES = 16 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 4096;
-const REGISTERED_TARGETS = ["linux-x64", "macos-x64"] as const;
+const REGISTERED_TARGETS = ["linux-x64", "linux-arm64", "macos-x64", "macos-arm64"] as const;
 
 export type InstalledResourceTarget = typeof REGISTERED_TARGETS[number];
 export interface InstalledNativeResourceOptions {
@@ -44,7 +44,9 @@ interface Snapshot {
 
 function hostTarget(): InstalledResourceTarget | undefined {
   if (process.platform === "linux" && process.arch === "x64") return "linux-x64";
+  if (process.platform === "linux" && process.arch === "arm64") return "linux-arm64";
   if (process.platform === "darwin" && process.arch === "x64") return "macos-x64";
+  if (process.platform === "darwin" && process.arch === "arm64") return "macos-arm64";
   return undefined;
 }
 
