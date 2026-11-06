@@ -29,6 +29,12 @@ fn fstat(fd: RawFd) -> io::Result<libc::stat> {
     }
 }
 
+fn publication_parent_metadata(st: &libc::stat) -> bool {
+    (st.st_mode & libc::S_IFMT) == libc::S_IFDIR
+        && (st.st_uid == 0 || st.st_uid == unsafe { libc::geteuid() })
+        && (st.st_mode & 0o022 == 0 || st.st_mode & libc::S_ISVTX as libc::mode_t != 0)
+}
+
 fn validate_fd(require_rw_regular: bool) -> Result<OwnedFd, &'static str> {
     validate_raw_fd(FD, require_rw_regular)
 }
@@ -42,7 +48,7 @@ fn validate_raw_fd(fd: RawFd, require_rw_regular: bool) -> Result<OwnedFd, &'sta
         return Err("refused");
     }
     let st = fstat(fd).map_err(|_| "refused")?;
-    if st.st_uid != unsafe { libc::geteuid() } {
+    if !no_allow_acl_fd(fd) || (require_rw_regular && st.st_uid != unsafe { libc::geteuid() }) {
         return Err("refused");
     }
     if require_rw_regular {
@@ -54,7 +60,7 @@ fn validate_raw_fd(fd: RawFd, require_rw_regular: bool) -> Result<OwnedFd, &'sta
         {
             return Err("refused");
         }
-    } else if (st.st_mode & libc::S_IFMT) != libc::S_IFDIR || st.st_mode & 0o022 != 0 {
+    } else if !publication_parent_metadata(&st) {
         return Err("refused");
     }
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
@@ -234,10 +240,7 @@ where
         Ok(s) => s,
         Err(_) => return "refused",
     };
-    if pst.st_mode & libc::S_IFMT != libc::S_IFDIR
-        || pst.st_uid != unsafe { libc::geteuid() }
-        || pst.st_mode & 0o022 != 0
-    {
+    if !publication_parent_metadata(&pst) || !no_allow_acl_fd(parent_fd) {
         return "refused";
     }
     let src = cstr(source);
@@ -257,7 +260,8 @@ where
         Ok(s) => s,
         Err(_) => return "refused",
     };
-    if sst.st_uid != unsafe { libc::geteuid() } || sst.st_mode & 0o077 != 0 {
+    if sst.st_uid != unsafe { libc::geteuid() } || sst.st_mode & 0o077 != 0 || !no_allow_acl_fd(raw)
+    {
         return "refused";
     }
     if sync(raw) != 0 {

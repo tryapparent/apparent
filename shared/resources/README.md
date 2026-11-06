@@ -75,7 +75,9 @@ request data, paths, errno messages or private contents appear in the protocol.
 ## Atomic directory publication
 
 `publish(parentHandle, sourceBasename, destinationBasename, options)` uses a
-caller-opened owned directory with no group/other write access. Source and
+caller-opened directory owned by the current UID or root. Group/other write
+access requires the sticky bit, preserving the legacy trusted shared-parent
+contract; the staged source remains owned and private. Source and
 candidate destination must share this parent; names are well-formed single UTF-8 POSIX components, excluding slash, NUL,
 dot/dot-dot and equal names. Spaces and Unicode remain valid. Inputs are bounded
 to 4,096 UTF-8 bytes; the kernel enforces its actual filesystem name limit.
@@ -110,3 +112,6 @@ Callers must independently validate ownership, private modes, inode identity and
 every ancestor. No contents or ACL principals are returned. The operation uses
 `apparent-resource-host acl` with fd 3; older helpers refuse this unknown operation
 and cannot satisfy callers requiring it. No credential or queue writer is added.
+
+Lock descriptors and publication parent/source descriptors also refuse Darwin ACL
+grants immediately before native effects. Ancestor validation remains caller-owned.

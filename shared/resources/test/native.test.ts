@@ -132,3 +132,13 @@ test("native ACL facts cover descriptors and Darwin allow/deny entries", async (
     await f.close();
   }
 });
+
+test("sticky shared output parents preserve the legacy no-replace contract", async () => {
+  const f = await fixture(); try {
+    await stage(f.directory, "stage", "sticky parent output"); await chmod(f.directory, 0o1777);
+    assert.deepEqual(await resources.publish(await f.parent(), "stage", "final"), { state: "published" });
+    await stage(f.directory, "second", "must remain staged"); await chmod(f.directory, 0o777);
+    assert.deepEqual(await resources.publish(await f.parent(), "second", "other"), { state: "refused" });
+    assert.equal(await readFile(join(f.directory, "second/bundle.txt"), "utf8"), "must remain staged");
+  } finally { await chmod(f.directory, 0o700); await f.close(); }
+});
