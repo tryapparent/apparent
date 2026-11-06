@@ -26,6 +26,17 @@ fn run() -> anyhow::Result<Value> {
         Operation::Fetch { id, out, wait, evidence_only } => {
             Ok(json!({"path": client.fetch_recipient(&id, &out, wait, evidence_only, &allowed)?}))
         }
+        Operation::RenewRead { server, generation, token, cancellation, force } => {
+            client.renew_recipient_access(&server, &generation, &token, cancellation.as_deref(), force, &allowed)
+                .map_err(|error| anyhow::anyhow!(match error {
+                    apparent_connect_client::settings::SafeError::Cancelled => "cancelled",
+                    apparent_connect_client::settings::SafeError::AuthRequired => "auth_required",
+                    apparent_connect_client::settings::SafeError::InvalidServer => "invalid_server",
+                    apparent_connect_client::settings::SafeError::Offline => "offline",
+                    _ => "state_unavailable",
+                }))?;
+            Ok(json!({"scope":"read","state":"current"}))
+        }
     }
 }
 fn main() {
