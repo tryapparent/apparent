@@ -27,7 +27,7 @@ async function verify(provider: ResourceProvider): Promise<void> {
     if (!parent.isDirectory() || parent.isSymbolicLink() || !owners.includes(parent.uid) || parent.mode & 0o022) throw new NativeResourceError("provider_mismatch");
     binary = await open(provider.executable, constants.O_RDONLY | constants.O_NOFOLLOW);
     const before = await binary.stat();
-    if (!before.isFile() || !owners.includes(before.uid) || before.nlink !== 1 || before.mode & 0o022 || !(before.mode & 0o100) || before.size > 16 * 1024 * 1024) throw new NativeResourceError("provider_mismatch");
+    if (!before.isFile() || !owners.includes(before.uid) || before.nlink !== 1 || before.mode & 0o022 || before.mode & 0o7000 || !(before.mode & 0o100) || before.size > 16 * 1024 * 1024) throw new NativeResourceError("provider_mismatch");
     const hash = createHash("sha256").update(await binary.readFile()).digest("hex"), after = await binary.stat();
     const path = await lstat(provider.executable);
     if (hash !== provider.sha256 || before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size || before.mtimeMs !== after.mtimeMs
