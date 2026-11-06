@@ -23,6 +23,8 @@ use std::{
 const PLAN_LIMIT: usize = 8 * 1024 * 1024;
 const ENTRY_LIMIT: usize = 4096;
 const ARTIFACT_LIMIT: u64 = 64 * 1024 * 1024 * 1024;
+// Bound the entire snapshot before creating its journal or sibling stage.
+const SNAPSHOT_LIMIT: u64 = 64 * 1024 * 1024 * 1024;
 const TREE_LIMIT: usize = 4096;
 const STAGE_PREFIX: &str = ".apparent-pub-";
 
@@ -400,6 +402,15 @@ fn checked_plan(context: &TrustedPublicationContext, bytes: &[u8], digest: &str)
     ensure!(
         plan.entries.len() >= 3 && plan.entries.len() <= ENTRY_LIMIT,
         "publication inventory size is invalid"
+    );
+    let total_bytes = plan.entries.iter().try_fold(0u64, |total, entry| {
+        total
+            .checked_add(entry.byte_length)
+            .context("publication aggregate size overflow")
+    })?;
+    ensure!(
+        total_bytes <= SNAPSHOT_LIMIT,
+        "publication aggregate snapshot exceeds byte limit"
     );
     let mut paths = BTreeSet::new();
     let mut sources = BTreeSet::new();
@@ -1366,6 +1377,29 @@ mod tests {
         writer.write_image_data(&[0, 0, 0, 255]).unwrap();
         drop(writer);
         out
+    }
+    #[test]
+    fn aggregate_snapshot_budget_rejects_before_any_publication_side_effect() {
+        let root = temp();
+        let (control, _, context, bytes, _) = fixture(&root);
+        let backend = PublicationBackend::new(control);
+        for (length, expected) in [
+            (ARTIFACT_LIMIT, "aggregate snapshot"),
+            (u64::MAX, "aggregate size overflow"),
+        ] {
+            let mut plan: Value = serde_json::from_slice(&bytes).unwrap();
+            plan["entries"][0]["byteLength"] = length.into();
+            plan["entries"][1]["byteLength"] = length.into();
+            let changed = serde_json::to_vec(&plan).unwrap();
+            let error = backend
+                .prepare(&context, &changed, &hash(&changed))
+                .err()
+                .unwrap();
+            assert!(error.to_string().contains(expected), "{error:#}");
+            assert!(fs::read_dir(root.join("bundles")).unwrap().next().is_none());
+            assert!(fs::read_dir(root.join("control")).unwrap().next().is_none());
+        }
+        fs::remove_dir_all(root).unwrap();
     }
     fn wav_bytes(tag: u16, bits: u16, samples: &[u8]) -> Vec<u8> {
         let channels = 1u16;
