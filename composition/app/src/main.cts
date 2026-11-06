@@ -1,10 +1,12 @@
-import { app, BrowserWindow, session } from 'electron';
+import { app, BrowserWindow, screen, session } from 'electron';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { registerOnboardingProgressBridge } from './onboarding-progress-bridge.cts';
 import { registerRecordBridge } from './record/bridge.cts';
 import { bindWindowShutdown } from './host-lifecycle.ts';
 import type { RecordHostServices } from './record/host.ts';
+import { bindRecordPillWindow, recordPillWindowOptions } from './record/window.ts';
+declare const APPARENT_RECORD_PILL_WINDOW: boolean;
 let recordBound = false;
 let hostShutdown: Promise<void> = Promise.resolve();
 
@@ -14,6 +16,7 @@ if (process.env.APPARENT_FOUNDATION_PROFILE) {
   app.setPath('userData', process.env.APPARENT_FOUNDATION_PROFILE);
 }
 app.whenReady().then(async () => {
+  if (APPARENT_RECORD_PILL_WINDOW && process.platform === 'darwin') app.setActivationPolicy('accessory');
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   const entry = pathToFileURL(join(__dirname, 'index.html')).href;
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
@@ -40,7 +43,7 @@ app.whenReady().then(async () => {
     }
   } catch (error) { console.error('Onboarding assembly binding unavailable', error); }
   const window = new BrowserWindow({
-    title: 'Apparent Foundation', width: 900, height: 620,
+    ...(APPARENT_RECORD_PILL_WINDOW ? recordPillWindowOptions() : { title: 'Apparent Foundation', width: 900, height: 620 }),
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true,
       preload: join(__dirname, 'preload.cjs') },
   });
@@ -62,6 +65,13 @@ app.whenReady().then(async () => {
     hostShutdown = closing ? Promise.resolve().then(() => closing.close()) : Promise.resolve();
     hostShutdown.catch(error => console.error('Onboarding progress shutdown failed', error));
   });
+  // Establish ownership-aware shutdown before native presentation setup: an OS
+  // setup failure must not leave an owned Record runtime with unguarded quit.
+  if (APPARENT_RECORD_PILL_WINDOW) {
+    try { bindRecordPillWindow({ window, screen, entryUrl: entry,
+      onError: error => console.error('Record pill native layout unavailable', error) }); }
+    catch (error) { console.error('Record pill native setup unavailable', error); }
+  }
   void window.loadURL(entry);
 });
 app.on('window-all-closed', () => {
