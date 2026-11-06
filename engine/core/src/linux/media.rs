@@ -27,7 +27,7 @@ pub struct Frame {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Probe {
-    duration_ms: u64,
+    pub duration_ms: u64,
     pub width: u32,
     pub height: u32,
     pub audio_tracks: u32,
@@ -37,7 +37,7 @@ pub struct Probe {
 struct VideoReader {
     pipeline: gst::Pipeline,
     sink: gst_app::AppSink,
-    pub duration_ms: u64,
+    duration_ms: u64,
 }
 
 impl VideoReader {
@@ -281,9 +281,8 @@ mod tests {
                 .as_nanos()
         ));
         let _cleanup = TempMovie(path.clone());
-        if !super::super::recorder::can_record_video() {
-            return;
-        }
+        assert!(super::super::recorder::can_record_video(),
+            "native media fixture requires GStreamer and a working H.264 encoder");
         super::super::recorder::encode_synthetic(&path).unwrap();
         let probe = probe(&path).unwrap();
         assert_eq!((probe.width, probe.height), (160, 90));
@@ -292,15 +291,23 @@ mod tests {
         assert!(frames.windows(2).all(|pair| pair[0].t_ms < pair[1].t_ms));
         assert!(frames.iter().all(|f| (f.width, f.height) == (160, 90)));
         assert!(frames.iter().all(|f| f.rgba.len() == 160 * 90 * 4));
+        let colors: std::collections::HashSet<_> = frames[0].rgba.chunks_exact(4)
+            .map(|pixel| [pixel[0], pixel[1], pixel[2]]).collect();
+        assert!(colors.len() > 4, "decoded SMPTE fixture must retain multiple colors");
+        assert!(frames[0].rgba.chunks_exact(4).all(|pixel| pixel[3] == 255));
+        let requested = [700, 0, 700];
+        let selected = super::frames(&path, FrameTimes::At(&requested), 0).unwrap();
+        assert_eq!(selected.iter().map(|frame| frame.t_ms).collect::<Vec<_>>(), requested);
+        assert_eq!(selected[0].rgba, selected[2].rgba);
     }
 
     #[test]
     fn audio_samples_preserve_leading_movie_time_silence() {
         use std::process::Command;
         use std::time::{SystemTime, UNIX_EPOCH};
-        if Command::new("ffmpeg").arg("-version").output().is_err() {
-            return;
-        }
+        let version = Command::new("ffmpeg").arg("-version").output()
+            .expect("native audio fixture requires FFmpeg with libx264 and AAC encoders");
+        assert!(version.status.success(), "FFmpeg fixture generator must be usable");
         let path = std::env::temp_dir().join(format!(
             "apparent-engine-audio-{}-{}.mp4",
             std::process::id(),
@@ -341,7 +348,7 @@ mod tests {
             .unwrap();
         assert!(
             status.success(),
-            "ffmpeg could not write the synthetic fixture"
+            "FFmpeg fixture generation requires libx264 and AAC encoder support"
         );
         let (first_ms, samples) = audio_samples(&path).unwrap();
         assert!(
