@@ -6,7 +6,8 @@ from pathlib import Path
 import re
 
 from .adapter import Adapter, executable
-from .process import AdapterError, execute
+from .process import AdapterError
+from .setup import status
 
 GUIDANCE = """This user message includes an Apparent recording reference. Load apparent:recordings
 and use apparent_inspect on the explicit local path or Connect ID supplied by the user.
@@ -54,10 +55,8 @@ def register(ctx):
           "frame": {"type": "integer", "minimum": 1}, "span": {"type": "number", "minimum": 0.1, "maximum": 60},
           "frames": {"type": "integer", "minimum": 1, "maximum": 24}, "full": {"type": "boolean"}},
          ["source"], lambda a: adapter().zoom(**a)),
-        ("apparent_status", "Read installed CLI version and inspect/zoom help. Does not launch the recorder, install software, authenticate or change settings.",
-         {}, [], lambda a: json.dumps({"cli": adapter().command,
-                                      "version": execute(adapter().command, ["--version"], timeout=10),
-                                      "zoom": execute(adapter().command, ["zoom", "--help"], timeout=10)})),
+        ("apparent_status", "Check Apparent setup: CLI capabilities and running recorder state. Returns the next unfinished checkpoint; never proves permissions or a working recording. Load apparent:setup for installation, onboarding or repair. Does not install, launch, record, authenticate or change settings.",
+         {}, [], lambda a: status(ctx.get_config("executable", ""))),
     ]
     for name, description, properties, required, action in definitions:
         ctx.register_tool(name=name, toolset="apparent", description=description,
@@ -67,4 +66,6 @@ def register(ctx):
                           handler=guarded(action))
     ctx.register_skill("recordings", Path(__file__).parent / "skills/recordings/SKILL.md",
                        description="Interpret and act on Apparent screen/voice/ink recordings; inspect images and investigate unclear moments.")
+    ctx.register_skill("setup", Path(__file__).parent / "skills/setup/SKILL.md",
+                       description="Set up the full Apparent recorder and CLI, resume existing onboarding and verify a recording handoff.")
     ctx.register_hook("pre_llm_call", recording_context)

@@ -30,7 +30,7 @@ def executable(configured: str = "") -> str:
     for candidate in candidates:
         if candidate.is_file():
             return str(candidate)
-    raise AdapterError("setup_required", "Apparent recorder/CLI is missing. Plugin installation is not complete; see the plugin setup instructions.")
+    raise AdapterError("setup_required", "Apparent CLI was not found. Load apparent:setup and run apparent_status to locate the recorder or guide installation; an absent CLI does not prove the recorder is missing.")
 
 
 class Adapter:

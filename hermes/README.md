@@ -49,21 +49,37 @@ CLI link and installed Mac application locations. Registration never launches
 the GUI, starts capture, makes a network request or changes settings. Removal
 does not delete installed Apparent or recordings.
 
-## Installation acceptance still open
+## Guided setup
 
-The product requirement is one plugin installation that provisions both the
-recorder and CLI and triggers existing onboarding. This candidate **does not yet
-meet that requirement** and is not ready for a catalog submission or release.
-The current documented Hermes plugin API has no native post-install callback;
-`register()` also runs for discovery/validation and is not an installation hook.
-Do not hide executable downloads or onboarding launch in plugin registration.
+After installation, ask Hermes: **Set up Apparent for me.** The bundled
+`apparent:setup` skill guides the agent through checking/reusing an installation,
+installing the full official recorder and CLI if missing, opening the existing
+onboarding, and inspecting a user-made recording in this chat. It uses the
+current official release/installation instructions with the user's normal agent
+tools and approvals; this plugin does not include a second native installer.
+`after-install.md` supplies the setup prompt where Hermes displays that note;
+it is guidance, not an executable post-install callback. Desktop presentation of
+the note and agent discovery of the setup skill still need live acceptance.
 
-The existing official Linux installer is headless CLI provisioning, not recorder
-installation/onboarding. The Mac preview has separate app identity/install rules.
-The supported setup trigger and official checksum-pinned recorder artifacts must
-be established and tested on affected platforms before claiming complete setup.
-No substitute installer, source build, binary bundling or privilege escalation
-is introduced by this first tool slice.
+`apparent_status` checks the selected CLI's version and inspect/zoom/app/capture
+capabilities, then reads `capture state`. It returns the next checkpoint:
+`needs_cli`, `needs_cli_repair`, `needs_cli_update`, `needs_recorder_check`,
+`recorder_busy`, `needs_recording_check` or `unsupported_platform`. Each call
+rechecks actual state. A busy recorder is preserved; an unavailable control
+connection does not prove the app is missing. No saved "setup complete" flag,
+config reader/writer, automatic download, app launch or capture is introduced.
+
+These checks run on the Hermes backend. Setup must establish the recording host
+before installing or launching a GUI, especially with a remote backend. CLI
+help or a running recorder does not establish permissions, audio, shortcuts or
+model vision. Only the user completing onboarding and making a recording whose
+transcript and pixels Hermes inspects establishes the guided journey's success.
+
+The Linux recipient installer is headless CLI provisioning, not recorder setup.
+Mac preview identity/install rules still apply. Native guided installation and
+onboarding on both platforms, Connect retrieval and a real Hermes Desktop model
+turn remain unverified acceptance gates. The candidate is not ready for catalog
+submission or release. No Hermes upstream/catalog PR is authorized yet.
 
 ## Distribution and releases
 
@@ -78,6 +94,10 @@ The recorder/CLI retains its own release lifecycle and compatibility proof.
 Disclosure for future catalog review: runs the local Apparent executable without
 a shell; reads only explicitly requested recording evidence; Connect inspection
 can use the CLI's existing network/authentication path; zoom writes derived PNGs
-through the CLI; fetched evidence is retained in private temporary directories.
+through the CLI; fetched evidence is retained in private temporary directories;
+status reads local recorder phase without returning another capture's identity.
+The setup skill instructs the agent to download verified official app artifacts,
+install/launch the recorder and guide existing onboarding through normal agent
+tools/approvals. It does not execute automatically when the plugin loads.
 No telemetry, background watcher, automatic send, conversation picker, recording
 control or Desktop UI is included in this slice. See issue #837 and auto-send #847.
