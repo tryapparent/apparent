@@ -306,7 +306,7 @@ pill placement, focus, stacking, exclusion or capture-to-Saved behavior.
 
 ## Record automatic coordinator assembly
 
-The pinned Record package is the admitted `ffbb5100` producer. Its public
+The pinned Record package is the admitted `830e5c1a` producer. Its public
 `@apparent/record/host/capture2-coordinator` export owns automatic retained-media
 processing and publication. Trusted composition supplies the existing Capture/2
 and Media/2 clients, private roots, source intent and one explicit processing
@@ -321,10 +321,10 @@ its config binding. Construction transfers exclusive command/lifetime ownership;
 do not continue issuing commands or reconciliation through the original handles.
 Read-only processing issues remain available to trusted host diagnostics.
 
-Current reservation facts remain `unavailable`, so this composition refuses
-shutdown clearance. Record owns the pending authoritative coordinator
-startup/media/publication ownership and admission contract; runtime IDs and a
-local disposal drain do not prove that clearance. This adapter does not relax the
+The package also supplies a terminal coordinator shutdown report. Reservation
+facts remain `unavailable`; this compatibility checkpoint retains close refusal
+until the host consumes that report with admission/drain ordering. Runtime IDs
+and a local disposal drain alone do not prove clearance. This adapter does not relax the
 gate or activate the installed route. The packaged tests exercise the admitted
 package and transport with synthetic producers, separately from real native
 Saved/copy and native pill/exclusion acceptance.
