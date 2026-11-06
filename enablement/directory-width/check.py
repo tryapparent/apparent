@@ -14,6 +14,7 @@ LIMIT = 10
 # This exact inventory is the sole file-count exception; unknown entries fail.
 WORKFLOW_DIRECTORY = b".github/workflows"
 WORKFLOW_FILES = {
+    b"hermes-plugin.yml",
     b"connect-delivery.yml", b"linux-updater-harness.yml", b"native-proof-mac.yml",
     b"release-linux.yml", b"release-mac-preview.yml", b"release-windows.yml",
     b"verification-mac.yml",
@@ -191,7 +192,7 @@ def main() -> int:
             if path == b"":
                 print(f"  <root>: {files} files, {dirs} subdirectories (limit 10 files; root directories unlimited)", file=sys.stderr)
             elif path == WORKFLOW_DIRECTORY:
-                print(f"  {decode_path(path)}: {files} files, {dirs} subdirectories (limit 11 listed files, 10 subdirectories)", file=sys.stderr)
+                print(f"  {decode_path(path)}: {files} files, {dirs} subdirectories (limit {len(WORKFLOW_FILES)} listed files, 10 subdirectories)", file=sys.stderr)
             else:
                 print(f"  {decode_path(path)}: {files} files, {dirs} subdirectories (limit 10 each)", file=sys.stderr)
         print("Split changes by responsibility and stage only the intended changes; this hook does not edit or stage files.", file=sys.stderr)

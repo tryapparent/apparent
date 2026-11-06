@@ -137,6 +137,7 @@ class DirectoryWidthHookTests(unittest.TestCase):
 
     def test_workflow_directory_allows_exact_workflow_files(self) -> None:
         workflows = (
+            "hermes-plugin.yml",
             "connect-delivery.yml", "linux-updater-harness.yml", "native-proof-mac.yml",
             "release-linux.yml", "release-mac-preview.yml", "release-windows.yml",
             "verification-mac.yml",
@@ -155,7 +156,7 @@ class DirectoryWidthHookTests(unittest.TestCase):
         self.stage(".github/workflows/unreviewed.yml")
         blocked = self.run_hook()
         self.assertEqual(blocked.returncode, 1)
-        self.assertIn(b".github/workflows: 19 files", blocked.stderr)
+        self.assertIn(b".github/workflows: 20 files", blocked.stderr)
 
     def test_workflow_directory_rejects_unknown_entry_within_file_limit(self) -> None:
         for name in (
