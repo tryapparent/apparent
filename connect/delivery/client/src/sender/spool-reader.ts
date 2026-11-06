@@ -1,15 +1,15 @@
 import { createHash } from "node:crypto";
-import { constants as C, type BigIntStats } from "node:fs";
-import { lstat, open } from "node:fs/promises";
+import { lstat } from "node:fs/promises";
 import path from "node:path";
 import type { Context } from "../recipient/crypto.ts";
 import { decodeJob, encodeJob, type Job } from "../queue/job.ts";
 import { admitTrustedDirectory, DirectoryAdmissionFailure } from "../state/directory.ts";
 import { readCancellation, readCredential, pendingIntent, readOptionalStateFile, readStateEvidence, stateFileStamp } from "../state/credential-files.ts";
-import { consumePrivateSealedAsset, PrivateFileError } from "../state/private-file.ts";
+import { PrivateFileError } from "../state/private-file.ts";
 import { checkSignal, samePathFd, withStateQueue, CredentialSnapshotError,
   type NamespaceResources, type NamespaceLease, type StateDirectory } from "../state/queue-transaction.ts";
 import { decodeStoredEncryptedSpool, StoredSpoolDecodeError, type StoredEncryptedSpool, type StoredSpoolProfile } from "./spool-record.ts";
+import { readPrivateSpoolAsset, spoolFileStamp } from "./spool-files.ts";
 
 type Failure = "invalid_encrypted_spool" | "stale_snapshot" | "revocation_pending" | "unsafe_file" | "unsafe_directory" | "cancelled" | "state_unavailable";
 const failures = new Set<Failure>(["invalid_encrypted_spool", "stale_snapshot", "revocation_pending", "unsafe_file", "unsafe_directory", "cancelled", "state_unavailable"]);
@@ -39,7 +39,7 @@ export type CommittedEncryptedSpool = Readonly<{
 }>;
 type Fence = { cancellation: string | null; identity: string | null; grant: string | null };
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
-const stamp = (s: BigIntStats) => stateFileStamp(s);
+const stamp = spoolFileStamp;
 function jobIdentity(job: Job): string {
   const c = job.encryption?.context;
   return JSON.stringify([job.id, job.bundle, job.server, job.generation, job.created, job.status, job.attempts,
@@ -122,21 +122,13 @@ export async function openCommittedEncryptedSpool(directoryPath: string, input: 
         if (!asset) return fail("invalid_encrypted_spool");
         return await transaction(baseline.root, signal, async (state, spool, lease) => {
           await assertBaseline(state, spool, lease, signal);
-          const full = path.join(spool.path, asset.path);
-          const parent = await admitTrustedDirectory(path.dirname(full), resources, "private-state", signal);
+          const read = await readPrivateSpoolAsset(spool, asset.path, asset.size, resources, signal);
+          owned = read.bytes;
           try {
-            let handle = await open(full, C.O_RDONLY | C.O_NOFOLLOW | C.O_NONBLOCK);
-            try {
-              const before = await handle.stat({ bigint: true }), named = await lstat(full, { bigint: true });
-              if (!named.isFile() || named.isSymbolicLink() || stamp(before) !== stamp(named)) return fail("unsafe_file");
-              const transferred = handle; handle = undefined as never;
-              owned = await consumePrivateSealedAsset(transferred, { maximumBytes: asset.size, signal }, resources);
-              if (owned.length !== asset.size || hash(owned) !== asset.sha256 || stamp(await lstat(full, { bigint: true })) !== stamp(before)) return fail("unsafe_file");
-            } finally { await handle?.close().catch(() => {}); }
-            if (!await samePathFd(parent)) return fail("stale_snapshot");
+            if (owned.length !== asset.size || hash(owned) !== asset.sha256) return fail("unsafe_file");
             await assertBaseline(state, spool, lease, signal);
             return owned!;
-          } finally { await parent.handle.close().catch(() => {}); }
+          } finally { if (owned && signal.aborted) owned.fill(0); }
         });
       } catch (error) { owned?.fill(0); return project(error, signal); }
     } });
