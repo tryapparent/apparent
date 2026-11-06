@@ -260,3 +260,17 @@ test("native snapshot reads obey real flock contention and fresh cancellation/re
   await writeFile(path.join(state, "revocation-synthetic.intent"), "false", { mode: 0o600 });
   await assert.rejects(readCredentialSnapshot(state, context, resources), error => error instanceof CredentialSnapshotError && error.category === "revocation_pending");
 }));
+
+
+test("native snapshots refuse Darwin cancellation-record ACL grants", { skip: process.platform !== "darwin" }, async () => fixture(async root => {
+  const { execFileSync } = await import("node:child_process");
+  const state = path.join(root, "state"), server = "https://app.tryapparent.com/connect";
+  await mkdir(state, { mode: 0o700 });
+  await writeFile(path.join(state, "read.credential"), JSON.stringify({ server, scope: "read", token: "synthetic-private-token", generation: "e".repeat(32) }), { mode: 0o600 });
+  const cancellation = path.join(state, "cancellation");
+  await writeFile(cancellation, JSON.stringify("epoch"), { mode: 0o600 });
+  try {
+    execFileSync("/bin/chmod", ["+a", "everyone allow read", cancellation]);
+    await assert.rejects(readCredentialSnapshot(state, { scope: "read", approvedServer: server }, resources), error => error instanceof CredentialSnapshotError && error.category === "unsafe_file");
+  } finally { execFileSync("/bin/chmod", ["-N", cancellation]); }
+}));
