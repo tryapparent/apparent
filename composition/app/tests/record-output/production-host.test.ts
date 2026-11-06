@@ -68,6 +68,7 @@ test('production composition uses the real admitted coordinator resolver and ter
   assert.deepEqual(f.counts(), { sdkClosed: 0, configClosed: 0, nativeDispatches: 0 });
   assert.equal(await host.canClose(), true);
   assert.equal(host.shutdownReport()?.runtimeClearance, 'clear');
+  await assert.rejects(supplied!.resolveHandoff({ captureId: 'unknown', artifactId: 'unknown' }), /closing|disposed/);
   await host.close(); await host.close();
   assert.deepEqual(f.counts(), { sdkClosed: 1, configClosed: 1, nativeDispatches: 0 });
 });
