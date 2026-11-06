@@ -13,10 +13,11 @@ use gstreamer_app as gst_app;
 const FPS: u32 = 30;
 
 pub fn init_gstreamer() -> Result<()> {
-    static READY: OnceLock<bool> = OnceLock::new();
-    let ready = *READY.get_or_init(|| gst::init().is_ok());
-    ensure!(ready, "GStreamer is not available");
-    Ok(())
+    static READY: OnceLock<std::result::Result<(), String>> = OnceLock::new();
+    match READY.get_or_init(|| gst::init().map_err(|error| error.to_string())) {
+        Ok(()) => Ok(()),
+        Err(error) => bail!("GStreamer is not available: {error}"),
+    }
 }
 
 /// A PipeWire stream a compositor is sending, open until dropped.
