@@ -54,7 +54,7 @@ test("SDK JSONL publish stays cancellable and inspectable during native snapshot
   const materialRoot = join(materialParent, captureId);
   const stagingRoot = join(base, "record-stage", publicationId);
   const oldReadiness = process.env.APPARENT_CAPTURE_TEST_READINESS_UNAVAILABLE;
-  const oldDelay = process.env.APPARENT_CAPTURE_TEST_PUBLICATION_PREPARE_DELAY_MS;
+  const oldDelay = process.env.APPARENT_CAPTURE_TEST_PUBLICATION_COMMIT_DECISION_DELAY_MS;
   let client: CaptureClient | undefined;
   try {
     privateDir(runtime);
@@ -174,7 +174,7 @@ test("SDK JSONL publish stays cancellable and inspectable during native snapshot
     })));
 
     process.env.APPARENT_CAPTURE_TEST_READINESS_UNAVAILABLE = "1";
-    process.env.APPARENT_CAPTURE_TEST_PUBLICATION_PREPARE_DELAY_MS = "600";
+    process.env.APPARENT_CAPTURE_TEST_PUBLICATION_COMMIT_DECISION_DELAY_MS = "600";
     client = new CaptureClient(launchCaptureEngine(resolve(binary!), runtime, 3000));
     const hello = await client.handshake(5000);
     assert.equal(hello.readiness, "unavailable");
@@ -224,8 +224,8 @@ test("SDK JSONL publish stays cancellable and inspectable during native snapshot
     await client?.close();
     if (oldReadiness === undefined) delete process.env.APPARENT_CAPTURE_TEST_READINESS_UNAVAILABLE;
     else process.env.APPARENT_CAPTURE_TEST_READINESS_UNAVAILABLE = oldReadiness;
-    if (oldDelay === undefined) delete process.env.APPARENT_CAPTURE_TEST_PUBLICATION_PREPARE_DELAY_MS;
-    else process.env.APPARENT_CAPTURE_TEST_PUBLICATION_PREPARE_DELAY_MS = oldDelay;
+    if (oldDelay === undefined) delete process.env.APPARENT_CAPTURE_TEST_PUBLICATION_COMMIT_DECISION_DELAY_MS;
+    else process.env.APPARENT_CAPTURE_TEST_PUBLICATION_COMMIT_DECISION_DELAY_MS = oldDelay;
     rmSync(base, { recursive: true, force: true });
   }
 });

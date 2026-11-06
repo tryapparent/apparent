@@ -181,12 +181,6 @@ pub(super) fn handle(
         Some(opened) => opened,
         None => open_publication(runtime, root, &journal, &publication)?,
     };
-    #[cfg(debug_assertions)]
-    if let Ok(delay) = std::env::var("APPARENT_CAPTURE_TEST_PUBLICATION_PREPARE_DELAY_MS")
-        && let Ok(delay) = delay.parse::<u64>()
-    {
-        std::thread::sleep(std::time::Duration::from_millis(delay.min(10_000)));
-    }
     let _preparation = runtime
         .acquire_capture_owner(capture)
         .map_err(|_| "internal")?
@@ -206,6 +200,12 @@ pub(super) fn handle(
         )
         .map_err(|_| "invalid_publication")?;
     let _ = prepared;
+    #[cfg(debug_assertions)]
+    if let Ok(delay) = std::env::var("APPARENT_CAPTURE_TEST_PUBLICATION_COMMIT_DECISION_DELAY_MS")
+        && let Ok(delay) = delay.parse::<u64>()
+    {
+        std::thread::sleep(std::time::Duration::from_millis(delay.min(10_000)));
+    }
     let _decision = runtime
         .acquire_capture_owner(capture)
         .map_err(|_| "internal")?
