@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import test from 'node:test'
@@ -7,7 +7,7 @@ import { inventory } from '../src/contract.ts'
 import { MAC_FILES, validateMacArtifact } from '../src/macos-contract.ts'
 
 test('Mac manifest binds helper inventory, native architecture and system closure', () => {
-  const root = mkdtempSync(resolve(tmpdir(), 'engine-mac-manifest-'))
+  const root = mkdtempSync(resolve(realpathSync(tmpdir()), 'engine-mac-manifest-'))
   try {
     mkdirSync(resolve(root, 'libexec'))
     const macho = Buffer.alloc(32); macho.writeUInt32LE(0xfeedfacf, 0); macho.writeUInt32LE(0x01000007, 4)
