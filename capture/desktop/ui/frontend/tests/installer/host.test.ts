@@ -42,7 +42,7 @@ test('installer actual host binds requests to its page and closes only after suc
     on(name:string,callback:any){if(name==='close')close=callback;}
     async loadURL(url:string){frame.url=url;}
   }
-  const electron={app:{setName:()=>{},dock:{setIcon:()=>{}},whenReady:()=>({then:(callback:any)=>{ready=callback;}}),on:()=>{},
+  const electron={app:{setName:()=>{},dock:{setIcon:(file:string)=>{if(file.endsWith('.icns'))throw Error('Failed to load image from path');}},whenReady:()=>({then:(callback:any)=>{ready=callback;}}),on:()=>{},
     quit:()=>{quit=true;close({preventDefault:()=>{blocked=true;}});}},BrowserWindow:Window,
     ipcMain:{handle:(_channel:string,handler:any)=>{invoke=handler;}},
     session:{defaultSession:{setPermissionRequestHandler:()=>{},setPermissionCheckHandler:()=>{}}}};

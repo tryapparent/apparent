@@ -11,7 +11,6 @@ if (!adapterFile.isFile() || adapterFile.isSymbolicLink()) throw Error('Installe
 app.setName('Install apparent');
 let busy = false;
 app.whenReady().then(async () => {
-  app.dock?.setIcon(path.resolve(__dirname, '../../../Apparent.icns'));
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
   const page = pathToFileURL(path.join(__dirname, 'ui/src/installer/index.html')).href;
