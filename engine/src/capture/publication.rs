@@ -3,8 +3,8 @@ use super::{Journal as CaptureJournal, Shared, persist, read_journal, sha};
 use apparent_capture_engine::{
     BundleLease, LeaseKind, Runtime, SecureStore,
     publication::{
-        MaterialsKey, PublicationBackend, PublicationEvidence, SealedFile,
-        TrustedPublicationContext, TrustedSource,
+        MaterialsKey, PublicationBackend, PublicationEvidence, PublicationRecoveryBinding,
+        SealedFile, TrustedPublicationContext, TrustedSource,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -64,8 +64,13 @@ struct Opened {
 
 pub(super) fn status_fields(status: &mut Value, publication: &Journal) {
     status["state"] = Value::String(publication.state.clone());
-    status["publicationId"] = Value::String(publication.publication_id.clone());
-    status["planSha256"] = Value::String(publication.plan_sha256.clone());
+    if matches!(
+        publication.state.as_str(),
+        "publishing" | "failed" | "cancelled"
+    ) {
+        status["publicationId"] = Value::String(publication.publication_id.clone());
+        status["planSha256"] = Value::String(publication.plan_sha256.clone());
+    }
     if publication.state == "saved" {
         if let Some(receipt) = &publication.evidence {
             status["publication"] = serde_json::to_value(receipt).unwrap_or(Value::Null);
@@ -133,6 +138,18 @@ pub(super) fn handle(
             }
             return Ok(status_value(&journal));
         }
+        if let Some(prior) = journal
+            .publication
+            .as_ref()
+            .filter(|publication| publication.commit_decided)
+        {
+            if !same_request_binding(request, prior)? {
+                return Err("identity_conflict");
+            }
+            if let Some(status) = recover_saved(runtime, root, capture, owner, all, prior)? {
+                return Ok(status);
+            }
+        }
         if journal.state != "materials-ready" || journal.cancel_requested {
             return Err(
                 if journal.state == "cancelled" || journal.cancel_requested {
@@ -175,6 +192,12 @@ pub(super) fn handle(
         || publication.state == "failed"
     {
         return Ok(status_value(&journal));
+    }
+
+    if publication.commit_decided
+        && let Some(status) = recover_saved(runtime, root, capture, owner, all, &publication)?
+    {
+        return Ok(status);
     }
 
     let opened = match opened {
@@ -239,6 +262,12 @@ pub(super) fn handle(
             &publication.plan_sha256,
         )
         .map_err(|_| "invalid_publication")?;
+    #[cfg(debug_assertions)]
+    if let Ok(delay) = std::env::var("APPARENT_CAPTURE_TEST_PUBLICATION_AFTER_COMMIT_DELAY_MS")
+        && let Ok(delay) = delay.parse::<u64>()
+    {
+        std::thread::sleep(std::time::Duration::from_millis(delay.min(10_000)));
+    }
     let _owner = runtime
         .acquire_capture_owner(capture)
         .map_err(|_| "internal")?
@@ -357,6 +386,73 @@ fn same_binding(left: &Journal, right: &Journal) -> bool {
         && left.lease_id == right.lease_id
         && left.bundle_id == right.bundle_id
         && left.bundle_path == right.bundle_path
+}
+
+fn same_request_binding(request: &Value, prior: &Journal) -> Result<bool, &'static str> {
+    Ok(
+        request["publicationId"].as_str() == Some(prior.publication_id.as_str())
+            && request["planSha256"].as_str() == Some(prior.plan_sha256.as_str())
+            && request["materials"]
+                == serde_json::to_value(&prior.materials).map_err(|_| "internal")?
+            && request["leaseId"].as_str() == Some(prior.lease_id.as_str())
+            && request["stagingRoot"].as_str() == Some(prior.staging_root.as_str())
+            && serde_json::from_value::<SealedFile>(request["planFile"].clone())
+                .ok()
+                .as_ref()
+                == Some(&prior.plan_file),
+    )
+}
+
+/// Try Core's committed-only recovery before opening any caller source. This is
+/// used only after the provider's authenticated durable record says the explicit
+/// commit decision was reached; a missing Core commit falls through to the
+/// ordinary source-validated preparation path.
+fn recover_saved(
+    runtime: &Runtime,
+    root: &Path,
+    capture: &str,
+    owner: &str,
+    all: &mut std::collections::HashMap<String, Arc<Shared>>,
+    publication: &Journal,
+) -> Result<Option<Value>, &'static str> {
+    let destination_parent_path = Path::new(&publication.bundle_path)
+        .parent()
+        .ok_or("invalid_publication")?;
+    let destination_parent = PublicationBackend::open_destination_parent(destination_parent_path)
+        .map_err(|_| "source_mismatch")?;
+    let control =
+        Arc::new(SecureStore::ensure(&root.join("publication-core")).map_err(|_| "internal")?);
+    let original = PublicationRecoveryBinding {
+        publication_id: publication.publication_id.clone(),
+        plan_sha256: publication.plan_sha256.clone(),
+        materials: publication.materials.clone(),
+        lease_id: publication.lease_id.clone(),
+        bundle_id: publication.bundle_id.clone(),
+        destination: publication.bundle_path.clone(),
+        manifest_sha256: publication.manifest_sha256.clone(),
+    };
+    let backend = PublicationBackend::new(control);
+    let Some(evidence) = backend
+        .inspect_committed(&original, destination_parent)
+        .map_err(|_| "invalid_publication")?
+    else {
+        return Ok(None);
+    };
+
+    let _owner = runtime
+        .acquire_capture_owner(capture)
+        .map_err(|_| "internal")?
+        .ok_or("busy")?;
+    let mut journal = read_journal(root, capture, owner)?;
+    let current = journal.publication.as_ref().ok_or("not_found")?;
+    if !current.commit_decided || !same_binding(current, publication) {
+        return Err("identity_conflict");
+    }
+    if current.state == "saved" {
+        return Ok(Some(status_value(&journal)));
+    }
+    finish_saved(runtime, root, &mut journal, all, evidence)?;
+    Ok(Some(status_value(&journal)))
 }
 
 fn open_publication(
