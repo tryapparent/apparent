@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      installer_fixtures_only:
+        description: 'Run only isolated installer diagnostics; produces no app or release receipt'
+        type: boolean
+        default: false
       candidate_version:
         description: 'Private candidate version (must be newer than the live feed; does not publish)'
         type: string
@@ -24,16 +28,51 @@ concurrency:
 
 jobs:
   verify:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.installer_fixtures_only != true }}
     uses: ./.github/workflows/verification-platform.yml
     with:
       # General Mac CI can use Intel capacity; arm64 packaging stays on Apple Silicon.
       runner: macos-15-intel
 
+  # Fail fast on native copy/replacement fixtures while full app verification runs.
+  installer-fixtures:
+    if: github.event_name == 'workflow_dispatch' && inputs.installer_fixtures_only != true && github.repository == 'tryapparent/apparent' && (github.ref == 'refs/heads/t3/onboarding-mac-release-baseline' || github.ref == 'refs/heads/codex/onboarding-complete-candidate')
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.0'
+      - name: Verify installer transactions without touching installed apps
+        run: |
+          xcrun swiftc -D INSTALLER_TEST -parse-as-library capture/desktop/native/installer/Installer.swift capture/desktop/native/installer/InstallerTests.swift -o "$RUNNER_TEMP/installer-transaction-tests"
+          "$RUNNER_TEMP/installer-transaction-tests"
+
+  # Manual diagnostics contain no signing secrets, artifacts or verification receipt.
+  installer-fixtures:
+    if: github.event_name == 'workflow_dispatch' && inputs.installer_fixtures_only == true && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/codex/onboarding-complete-candidate'
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.0'
+      - name: Run isolated installer transaction fixtures
+        run: |
+          xcrun swiftc -D INSTALLER_TEST -parse-as-library capture/desktop/native/installer/Installer.swift capture/desktop/native/installer/InstallerTests.swift -o "$RUNNER_TEMP/installer-transaction-tests"
+          "$RUNNER_TEMP/installer-transaction-tests"
+
   # Private-to-authenticated-Actions artifact for installed testing. This job has
   # no release/feed write permission and does not produce a release receipt.
   onboarding-candidate:
     if: github.event_name == 'workflow_dispatch' && github.repository == 'tryapparent/apparent' && (github.ref == 'refs/heads/t3/onboarding-mac-release-baseline' || github.ref == 'refs/heads/codex/onboarding-complete-candidate')
-    needs: verify
+    needs: [verify, installer-fixtures]
     # Use the stable Apple Silicon pool; latest repeatedly failed runner admission.
     runs-on: macos-15
     timeout-minutes: 90

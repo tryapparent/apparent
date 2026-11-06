@@ -9,9 +9,13 @@ import Foundation
     try PropertyListSerialization.data(fromPropertyList: p, format: .xml, options: 0).write(to: url.appendingPathComponent("Contents/Info.plist"))
     try Data(build.utf8).write(to: url.appendingPathComponent("Contents/MacOS/apparent"))
   }
-  static func check(_ value: Bool) { precondition(value) }
-  static func rejects(_ operation: () throws -> Void) {
-    do {try operation(); fatalError("Unsafe installation was accepted")} catch {}
+  static func check(_ value: Bool, file: StaticString = #filePath, line: UInt = #line) {
+    precondition(value, file: file, line: line)
+  }
+  static func rejects(expected: String? = nil, file: StaticString = #filePath, line: UInt = #line, _ operation: () throws -> Void) {
+    do {try operation(); fatalError("Unsafe installation was accepted", file: file, line: line)} catch {
+      if let expected {check(error.localizedDescription.contains(expected), file: file, line: line)}
+    }
   }
   static func main() throws {
     let root = fm.temporaryDirectory.appendingPathComponent("apparent-installer-\(UUID().uuidString)").resolvingSymlinksInPath()
@@ -20,6 +24,8 @@ import Foundation
     var count = 0
     func scenario(_ body: (URL, URL) throws -> Void) throws {
       count += 1
+      FileHandle.standardError.write(Data("Installer safe-copy fixture \(count)\n".utf8))
+      FileHandle.standardError.write(Data("Installer safe-copy fixture \(count)\n".utf8))
       let base = root.appendingPathComponent("case-\(count)")
       let source = base.appendingPathComponent("Payload.app"), applications = base.appendingPathComponent("Applications")
       try fm.createDirectory(at: applications, withIntermediateDirectories: true)
@@ -91,8 +97,17 @@ import Foundation
     }
     try scenario { source, folder in
       let target = folder.appendingPathComponent("Apparent Preview.app"); try app(target, build: "11.1")
-      let differentTeam: (URL) throws -> String? = { $0 == target ? "other-team" : "fixture-team" }
-      rejects { _ = try InstallTransaction(source: source, applications: folder, verify: differentTeam, running: {_ in false}).install(replace: true) }
+      var checkedExistingTeam = false
+      let differentTeam: (URL) throws -> String? = { url in
+        // URL directory hints can change once the fixture app exists. Match the path.
+        if url.standardizedFileURL.path == target.standardizedFileURL.path {
+          checkedExistingTeam = true
+          return "other-team"
+        }
+        return "fixture-team"
+      }
+      rejects(expected: "different signing identity") { _ = try InstallTransaction(source: source, applications: folder, verify: differentTeam, running: {_ in false}).install(replace: true) }
+      check(checkedExistingTeam)
       check(try appInfo(target, verify: signature).build == "11.1")
     }
     try scenario { _, folder in
