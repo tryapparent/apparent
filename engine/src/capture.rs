@@ -411,7 +411,7 @@ fn available_sources() -> Result<(String, Vec<Source>), &'static str> {
 }
 
 fn capabilities(ready: bool) -> Value {
-    json!({"sourceDiscovery":ready,"displayCapture":ready,"areaCapture":ready,"audioCapture":false,"contextFacts":false,"interactionFacts":false,"candidates":false,"transcript":false,"strokes":false,"publication":ready,"retainedMaterials":ready})
+    json!({"sourceDiscovery":ready,"displayCapture":ready,"areaCapture":ready,"audioCapture":false,"contextFacts":false,"interactionFacts":false,"candidates":false,"transcript":false,"strokes":false,"publication":true,"retainedMaterials":ready})
 }
 fn handshake(ready: bool) -> Value {
     json!({"channel":"capture","protocolVersion":2,"implementation":"native","readiness":if ready {"ready"} else {"unavailable"},"capabilities":capabilities(ready)})
@@ -1494,6 +1494,8 @@ fn main() {
     let mut stdout = std::io::stdout().lock();
     let mut active: HashMap<String, (Arc<Shared>, thread::JoinHandle<()>)> = HashMap::new();
     let mut all: HashMap<String, Arc<Shared>> = HashMap::new();
+    let (publication_tx, publication_rx) =
+        std::sync::mpsc::channel::<(String, Result<Value, &'static str>)>();
     let mut seen = VecDeque::new();
     let mut ids = std::collections::HashSet::new();
     loop {
@@ -1505,6 +1507,7 @@ fn main() {
                     .filter(|s| s.len() == 32)
                     .unwrap_or_default();
                 let result = parse_line(&line);
+                let mut deferred = false;
                 let (rpc, output) = match result {
                     Err(code) => (fallback.clone(), Err(code)),
                     Ok(req) => {
@@ -1518,21 +1521,96 @@ fn main() {
                                     ids.remove(&old);
                                 }
                             }
-                            let processed = process_request(
-                                req,
-                                &runtime,
-                                &root,
-                                &mut generation,
-                                &mut sources,
-                                &mut ready,
-                                &mut active,
-                                &mut all,
-                            );
+                            let processed = if matches!(
+                                req["method"].as_str(),
+                                Some("publish" | "inspectPublication")
+                            ) {
+                                let capture = req["captureId"].as_str().unwrap_or_default();
+                                let owner = req["ownerToken"].as_str().unwrap_or_default();
+                                let publication_key = format!("publication:{capture}");
+                                if req["method"] == "inspectPublication"
+                                    && active.contains_key(&publication_key)
+                                {
+                                    publication::observe(&req, &root)
+                                } else {
+                                    let shared = if let Some(shared) = all.get(capture) {
+                                        Ok(shared.clone())
+                                    } else {
+                                        read_journal(&root, capture, owner).map(|journal| {
+                                            let shared = Arc::new(Shared {
+                                                journal: Mutex::new(journal),
+                                                directory: root.clone(),
+                                                runtime: runtime.clone(),
+                                                stop: AtomicBool::new(false),
+                                                cancel: AtomicBool::new(false),
+                                                epoch: Instant::now(),
+                                            });
+                                            all.insert(capture.to_owned(), shared.clone());
+                                            shared
+                                        })
+                                    };
+                                    match shared {
+                                        Err(code) => Err(code),
+                                        Ok(shared) => {
+                                            if active.contains_key(&publication_key) {
+                                                Err("busy")
+                                            } else {
+                                                let mut worker_all = HashMap::new();
+                                                worker_all
+                                                    .insert(capture.to_owned(), shared.clone());
+                                                let request = req.clone();
+                                                let runtime = runtime.clone();
+                                                let root = root.clone();
+                                                let sender = publication_tx.clone();
+                                                let response_id = rpc.clone();
+                                                match thread::Builder::new()
+                                                    .name(format!(
+                                                        "capture-publish-{}",
+                                                        &capture[..8.min(capture.len())]
+                                                    ))
+                                                    .spawn(move || {
+                                                        let result = publication::handle(
+                                                            &request,
+                                                            &runtime,
+                                                            &root,
+                                                            &mut worker_all,
+                                                        );
+                                                        let _ = sender.send((response_id, result));
+                                                    }) {
+                                                    Ok(worker) => {
+                                                        active.insert(
+                                                            publication_key,
+                                                            (shared, worker),
+                                                        );
+                                                        deferred = true;
+                                                        Ok(Value::Null)
+                                                    }
+                                                    Err(_) => Err("internal"),
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                process_request(
+                                    req,
+                                    &runtime,
+                                    &root,
+                                    &mut generation,
+                                    &mut sources,
+                                    &mut ready,
+                                    &mut active,
+                                    &mut all,
+                                )
+                            };
                             (rpc, processed)
                         }
                     }
                 };
-                if !rpc.is_empty() && send(&mut stdout, response(&rpc, output)).is_err() {
+                if !deferred
+                    && !rpc.is_empty()
+                    && send(&mut stdout, response(&rpc, output)).is_err()
+                {
                     break;
                 }
             }
@@ -1550,6 +1628,17 @@ fn main() {
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => (),
         }
+        loop {
+            match publication_rx.try_recv() {
+                Ok((rpc, result)) => {
+                    if send(&mut stdout, response(&rpc, result)).is_err() {
+                        break;
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
+            }
+        }
         let completed: Vec<String> = active
             .iter()
             .filter_map(|(id, (_, h))| h.is_finished().then_some(id.clone()))
@@ -1558,8 +1647,15 @@ fn main() {
             if let Some((shared, handle)) = active.remove(&id) {
                 if handle.join().is_err() {
                     if let Ok(mut j) = shared.journal.lock() {
-                        j.state = "failed".into();
-                        j.error = Some("internal".into());
+                        if id.starts_with("publication:") {
+                            if let Some(publication) = &mut j.publication {
+                                publication.state = "failed".into();
+                                j.error = Some("internal".into());
+                            }
+                        } else {
+                            j.state = "failed".into();
+                            j.error = Some("internal".into());
+                        }
                     }
                     let _ = persist(&shared);
                 }
@@ -1568,5 +1664,15 @@ fn main() {
     }
     for (_, (_, handle)) in active {
         let _ = handle.join();
+    }
+}
+
+#[cfg(test)]
+mod publication_capability_tests {
+    #[test]
+    fn publication_reconciliation_is_advertised_when_screen_capture_is_unavailable() {
+        assert_eq!(super::capabilities(false)["publication"], true);
+        assert_eq!(super::capabilities(false)["displayCapture"], false);
+        assert_eq!(super::capabilities(false)["areaCapture"], false);
     }
 }

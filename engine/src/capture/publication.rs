@@ -35,6 +35,8 @@ pub(super) struct Journal {
     pub manifest_sha256: String,
     pub state: String,
     #[serde(default)]
+    pub commit_decided: bool,
+    #[serde(default)]
     pub evidence: Option<Receipt>,
 }
 
@@ -71,6 +73,21 @@ pub(super) fn status_fields(status: &mut Value, publication: &Journal) {
     }
 }
 
+/// Return the durable observation while a publication worker owns the slow
+/// snapshot/commit path. This keeps same-connection inspect responsive.
+pub(super) fn observe(request: &Value, root: &Path) -> Result<Value, &'static str> {
+    let capture = request["captureId"].as_str().ok_or("malformed_request")?;
+    let owner = request["ownerToken"].as_str().ok_or("malformed_request")?;
+    let journal = read_journal(root, capture, owner)?;
+    let publication = journal.publication.as_ref().ok_or("not_found")?;
+    if publication.publication_id != request["publicationId"].as_str().unwrap_or_default()
+        || publication.plan_sha256 != request["planSha256"].as_str().unwrap_or_default()
+    {
+        return Err("identity_conflict");
+    }
+    Ok(status_value(&journal))
+}
+
 pub(super) fn handle(
     request: &Value,
     runtime: &Runtime,
@@ -83,11 +100,13 @@ pub(super) fn handle(
 
     // Authenticate the durable owner before publication state, plan, or receipts are read.
     let authenticated = read_journal(root, capture, owner)?;
-    let _owner = runtime
-        .acquire_capture_owner(capture)
-        .map_err(|_| "internal")?
-        .ok_or("busy")?;
-    let mut journal = read_journal(root, capture, owner)?;
+    let mut journal = {
+        let _owner = runtime
+            .acquire_capture_owner(capture)
+            .map_err(|_| "internal")?
+            .ok_or("busy")?;
+        read_journal(root, capture, owner)?
+    };
     if journal.owner_token != authenticated.owner_token {
         return Err("permission_denied");
     }
@@ -129,6 +148,14 @@ pub(super) fn handle(
             Some(_) => (),
             None => {
                 opened = Some(open_publication(runtime, root, &journal, &incoming)?);
+                let _owner = runtime
+                    .acquire_capture_owner(capture)
+                    .map_err(|_| "internal")?
+                    .ok_or("busy")?;
+                journal = read_journal(root, capture, owner)?;
+                if journal.state != "materials-ready" || journal.cancel_requested {
+                    return Err("cancelled");
+                }
                 journal.publication = Some(incoming);
                 persist_owned(runtime, root, &mut journal, all)?;
             }
@@ -154,6 +181,22 @@ pub(super) fn handle(
         Some(opened) => opened,
         None => open_publication(runtime, root, &journal, &publication)?,
     };
+    #[cfg(debug_assertions)]
+    if let Ok(delay) = std::env::var("APPARENT_CAPTURE_TEST_PUBLICATION_PREPARE_DELAY_MS")
+        && let Ok(delay) = delay.parse::<u64>()
+    {
+        std::thread::sleep(std::time::Duration::from_millis(delay.min(10_000)));
+    }
+    let _preparation = runtime
+        .acquire_capture_owner(capture)
+        .map_err(|_| "internal")?
+        .ok_or("busy")?;
+    journal = read_journal(root, capture, owner)?;
+    let current = journal.publication.as_ref().ok_or("not_found")?;
+    if current.state == "cancelled" || journal.cancel_requested {
+        return Err("cancelled");
+    }
+    drop(_preparation);
     let prepared = opened
         .backend
         .prepare(
@@ -163,6 +206,29 @@ pub(super) fn handle(
         )
         .map_err(|_| "invalid_publication")?;
     let _ = prepared;
+    let _decision = runtime
+        .acquire_capture_owner(capture)
+        .map_err(|_| "internal")?
+        .ok_or("busy")?;
+    journal = read_journal(root, capture, owner)?;
+    let current = journal.publication.as_ref().ok_or("not_found")?;
+    if current.publication_id != publication.publication_id
+        || current.plan_sha256 != publication.plan_sha256
+    {
+        return Err("identity_conflict");
+    }
+    if current.state == "cancelled" || journal.cancel_requested {
+        return Err("cancelled");
+    }
+    if !current.commit_decided {
+        journal
+            .publication
+            .as_mut()
+            .ok_or("not_found")?
+            .commit_decided = true;
+        persist_owned(runtime, root, &mut journal, all)?;
+    }
+    drop(_decision);
     // Inspection resumes a durably requested publish after a worker restart. It
     // never reports Saved from `prepared`; only the actual Core commit can do so.
     let evidence = opened
@@ -173,6 +239,11 @@ pub(super) fn handle(
             &publication.plan_sha256,
         )
         .map_err(|_| "invalid_publication")?;
+    let _owner = runtime
+        .acquire_capture_owner(capture)
+        .map_err(|_| "internal")?
+        .ok_or("busy")?;
+    journal = read_journal(root, capture, owner)?;
     finish_saved(runtime, root, &mut journal, all, evidence)?;
     Ok(status_value(&journal))
 }
@@ -186,25 +257,10 @@ pub(super) fn cancel(shared: &Arc<Shared>, root: &Path) -> Result<Value, &'stati
         .ok_or("busy")?;
     let mut journal = read_journal(root, &prior.capture_id, &prior.owner_token)?;
     if let Some(publication) = journal.publication.clone() {
-        if publication.state == "saved" {
+        if publication.state == "saved" || publication.commit_decided {
             return Ok(status_value(&journal));
         }
         if publication.state != "cancelled" && publication.state != "failed" {
-            let opened = open_publication(&shared.runtime, root, &journal, &publication)?;
-            if let Some(evidence) = opened
-                .backend
-                .inspect(
-                    &opened.context,
-                    &opened.plan_bytes,
-                    &publication.plan_sha256,
-                )
-                .map_err(|_| "invalid_publication")?
-            {
-                let mut all = std::collections::HashMap::new();
-                finish_saved(&shared.runtime, root, &mut journal, &mut all, evidence)?;
-                *shared.journal.lock().map_err(|_| "internal")? = journal.clone();
-                return Ok(status_value(&journal));
-            }
             let pub_journal = journal.publication.as_mut().ok_or("internal")?;
             pub_journal.state = "cancelled".into();
         }
@@ -287,6 +343,7 @@ fn request_binding(request: &Value, journal: &CaptureJournal) -> Result<Journal,
         // `publishing` is the existing capture/2 public observation. Keep the
         // durable binding retryable until Core returns committed evidence.
         state: "publishing".into(),
+        commit_decided: false,
         evidence: None,
     })
 }
@@ -365,13 +422,8 @@ fn open_publication(
     let mut sources = Vec::new();
     let mut seen = HashSet::new();
     for entry in plan["entries"].as_array().ok_or("invalid_publication")? {
-        let (source_key, source_root, seal) = source_binding(
-            entry,
-            &payload,
-            &publication.materials,
-            &material_root,
-            &publication.staging_root,
-        )?;
+        let (source_key, source_root, seal) =
+            source_binding(entry, &payload, &material_root, &publication.staging_root)?;
         if seen.insert(source_key.clone()) {
             let file = open_sealed(&source_root, &seal).map_err(|_| "source_mismatch")?;
             validate_open_file(&file, &seal).map_err(|_| "source_mismatch")?;
@@ -418,7 +470,6 @@ fn open_publication(
 fn source_binding(
     entry: &Value,
     payload: &Value,
-    materials: &MaterialsKey,
     material_root: &Path,
     staging_root: &str,
 ) -> Result<(String, PathBuf, SealedFile), &'static str> {
@@ -446,253 +497,11 @@ fn source_binding(
                 seal,
             ))
         }
-        "derivative" => {
-            let receipt = &input["receipt"];
-            validate_derivative_receipt(
-                receipt,
-                materials,
-                payload["root"].as_str().ok_or("invalid_materials")?,
-                payload["clock"]["videoOffsetMs"]
-                    .as_u64()
-                    .ok_or("invalid_materials")?,
-            )?;
-            let receipt_id = receipt["receiptId"].as_str().ok_or("invalid_publication")?;
-            let derivative_root =
-                PathBuf::from(receipt["root"].as_str().ok_or("invalid_publication")?);
-            let file_index = input["fileIndex"].as_u64().ok_or("invalid_publication")?;
-            if file_index == 0 {
-                return Err("invalid_publication");
-            }
-            let frames = receipt["payload"]["frames"]
-                .as_array()
-                .ok_or("invalid_publication")?;
-            let frame = frames
-                .get(usize::try_from(file_index - 1).map_err(|_| "invalid_publication")?)
-                .ok_or("invalid_publication")?;
-            if frame["requestIndex"].as_u64() != Some(file_index) {
-                return Err("invalid_publication");
-            }
-            let seal: SealedFile =
-                serde_json::from_value(frame["file"].clone()).map_err(|_| "invalid_publication")?;
-            Ok((
-                format!("derivative:{receipt_id}:{}", seal.relative_path),
-                derivative_root,
-                seal,
-            ))
-        }
+        // The derivative envelope is caller-authored and has no committed
+        // Engine media-job authority. Do not classify it as native output.
+        "derivative" => Err("unavailable"),
         _ => Err("invalid_publication"),
     }
-}
-
-fn validate_derivative_receipt(
-    receipt: &Value,
-    materials: &MaterialsKey,
-    material_root: &str,
-    video_offset_ms: u64,
-) -> Result<(), &'static str> {
-    exact_fields(
-        receipt,
-        &[
-            "schema",
-            "materials",
-            "jobId",
-            "receiptId",
-            "root",
-            "receiptFile",
-            "payload",
-        ],
-        &[],
-    )?;
-    if receipt["schema"].as_str() != Some("apparent.media-derivative/1")
-        || !valid_id(receipt["jobId"].as_str().unwrap_or_default())
-        || !valid_id(receipt["receiptId"].as_str().unwrap_or_default())
-        || serde_json::from_value::<MaterialsKey>(receipt["materials"].clone())
-            .map_err(|_| "invalid_publication")?
-            != *materials
-        || receipt["payload"]["schema"].as_str() != Some("apparent.media-derivative-payload/1")
-        || receipt["payload"]["materials"] != receipt["materials"]
-        || receipt["payload"]["jobId"] != receipt["jobId"]
-        || receipt["payload"]["receiptId"] != receipt["receiptId"]
-        || receipt["payload"]["root"] != receipt["root"]
-    {
-        return Err("invalid_publication");
-    }
-    let root = Path::new(receipt["root"].as_str().ok_or("invalid_publication")?);
-    if !root.is_absolute()
-        || !absolute_normalized(root.to_str().ok_or("invalid_publication")?)
-        || root == Path::new(material_root)
-    {
-        return Err("invalid_publication");
-    }
-    let receipt_seal: SealedFile = serde_json::from_value(receipt["receiptFile"].clone())
-        .map_err(|_| "invalid_publication")?;
-    let file = open_sealed(root, &receipt_seal).map_err(|_| "source_mismatch")?;
-    let bytes = read_bounded(&file, DOCUMENT_LIMIT).map_err(|_| "source_mismatch")?;
-    validate_open_file(&file, &receipt_seal).map_err(|_| "source_mismatch")?;
-    if sha(&bytes) != receipt_seal.sha256 {
-        return Err("source_mismatch");
-    }
-    let detached: Value = serde_json::from_slice(&bytes).map_err(|_| "invalid_publication")?;
-    if detached != receipt["payload"] {
-        return Err("invalid_publication");
-    }
-    let payload = &receipt["payload"];
-    exact_fields(
-        payload,
-        &[
-            "schema",
-            "materials",
-            "jobId",
-            "receiptId",
-            "root",
-            "frames",
-        ],
-        &[],
-    )?;
-    let frames = payload["frames"].as_array().ok_or("invalid_publication")?;
-    if frames.is_empty() || frames.len() > 48 {
-        return Err("invalid_publication");
-    }
-    validate_native_derivative_manifest(root, payload, frames)?;
-    let mut total_pixels = 0u64;
-    for (index, frame) in frames.iter().enumerate() {
-        exact_fields(
-            frame,
-            &[
-                "requestIndex",
-                "requestedBundleMs",
-                "effectiveVideoMs",
-                "clampedToStart",
-                "clampedToEnd",
-                "width",
-                "height",
-                "file",
-            ],
-            &["actualVideoMs"],
-        )?;
-        let one_based = u64::try_from(index + 1).map_err(|_| "invalid_publication")?;
-        let requested = frame["requestedBundleMs"]
-            .as_u64()
-            .ok_or("invalid_publication")?;
-        if frame["requestIndex"].as_u64() != Some(one_based)
-            || frame["effectiveVideoMs"].as_u64() != Some(requested.saturating_sub(video_offset_ms))
-            || frame["clampedToStart"].as_bool() != Some(requested < video_offset_ms)
-            || frame["clampedToEnd"].as_bool().is_none()
-            || (frame["clampedToStart"] == true && frame["clampedToEnd"] == true)
-            || frame
-                .get("actualVideoMs")
-                .is_some_and(|v| v.as_u64().is_none())
-        {
-            return Err("invalid_publication");
-        }
-        let width = frame["width"].as_u64().ok_or("invalid_publication")?;
-        let height = frame["height"].as_u64().ok_or("invalid_publication")?;
-        total_pixels = total_pixels
-            .checked_add(width.checked_mul(height).ok_or("invalid_publication")?)
-            .ok_or("invalid_publication")?;
-        if width == 0 || height == 0 || width > 4096 || height > 4096 || total_pixels > 64_000_000 {
-            return Err("invalid_publication");
-        }
-        let frame_seal: SealedFile =
-            serde_json::from_value(frame["file"].clone()).map_err(|_| "invalid_publication")?;
-        if frame_seal.relative_path == receipt_seal.relative_path {
-            return Err("invalid_publication");
-        }
-    }
-    Ok(())
-}
-
-/// Tie the caller's derivative envelope to the completed manifest emitted by
-/// the native media worker. The detached envelope alone is caller-authored and
-/// cannot establish that the media job actually produced its declared frames.
-fn validate_native_derivative_manifest(
-    root: &Path,
-    payload: &Value,
-    frames: &[Value],
-) -> Result<(), &'static str> {
-    let directory = SecureStore::open(root).map_err(|_| "source_mismatch")?;
-    let manifest = directory
-        .file("manifest.json", false)
-        .map_err(|_| "source_mismatch")?;
-    let before = manifest.metadata().map_err(|_| "source_mismatch")?;
-    if !before.is_file()
-        || before.uid() != unsafe { libc::geteuid() }
-        || before.mode() & 0o777 != 0o600
-        || before.nlink() != 1
-        || before.len() == 0
-        || before.len() > DOCUMENT_LIMIT
-    {
-        return Err("source_mismatch");
-    }
-    let bytes = read_bounded(&manifest, DOCUMENT_LIMIT).map_err(|_| "source_mismatch")?;
-    let after = manifest.metadata().map_err(|_| "source_mismatch")?;
-    if before.dev() != after.dev()
-        || before.ino() != after.ino()
-        || before.len() != after.len()
-        || before.mtime() != after.mtime()
-        || before.mtime_nsec() != after.mtime_nsec()
-    {
-        return Err("source_mismatch");
-    }
-    let native: Value = serde_json::from_slice(&bytes).map_err(|_| "invalid_publication")?;
-    exact_fields(&native, &["jobId", "state", "frames"], &[])?;
-    let native_frames = native["frames"].as_array().ok_or("invalid_publication")?;
-    if native["jobId"] != payload["jobId"]
-        || native["state"].as_str() != Some("complete")
-        || native_frames.len() != frames.len()
-    {
-        return Err("invalid_publication");
-    }
-    for (index, (actual, declared)) in native_frames.iter().zip(frames).enumerate() {
-        exact_fields(
-            actual,
-            &[
-                "requestIndex",
-                "requestedBundleMs",
-                "effectiveVideoMs",
-                "actualVideoMs",
-                "clampedToStart",
-                "clampedToEnd",
-                "path",
-                "width",
-                "height",
-                "byteLength",
-                "sha256",
-            ],
-            &[],
-        )?;
-        let seal: SealedFile =
-            serde_json::from_value(declared["file"].clone()).map_err(|_| "invalid_publication")?;
-        let expected_path = root.join(&seal.relative_path);
-        if seal.relative_path != format!("frame-{:03}.png", index + 1)
-            || actual["requestIndex"] != declared["requestIndex"]
-            || actual["requestedBundleMs"] != declared["requestedBundleMs"]
-            || actual["effectiveVideoMs"] != declared["effectiveVideoMs"]
-            || actual["actualVideoMs"] != declared["actualVideoMs"]
-            || actual["clampedToStart"] != declared["clampedToStart"]
-            || actual["clampedToEnd"] != declared["clampedToEnd"]
-            || actual["width"] != declared["width"]
-            || actual["height"] != declared["height"]
-            || actual["path"].as_str() != expected_path.to_str()
-            || actual["byteLength"].as_u64() != Some(seal.identity.size)
-            || actual["sha256"].as_str() != Some(seal.sha256.as_str())
-        {
-            return Err("invalid_publication");
-        }
-    }
-    Ok(())
-}
-
-fn exact_fields(value: &Value, required: &[&str], optional: &[&str]) -> Result<(), &'static str> {
-    let object = value.as_object().ok_or("invalid_publication")?;
-    if required.iter().any(|field| !object.contains_key(*field))
-        || object
-            .keys()
-            .any(|field| !required.contains(&field.as_str()) && !optional.contains(&field.as_str()))
-    {
-        return Err("invalid_publication");
-    }
-    Ok(())
 }
 
 fn validate_manifest_binding(
@@ -1076,41 +885,6 @@ mod tests {
         write(&stage, "contact-sheet.png", FRAME);
         let summary = sealed(&stage, &staging_root, "summary.md");
         let contact = sealed(&stage, &staging_root, "contact-sheet.png");
-        let derivative_root = base.join("derivative-root");
-        private_dir(&derivative_root);
-        let derivatives = SecureStore::open(&derivative_root).unwrap();
-        write(&derivatives, "frame-001.png", FRAME);
-        let frame = sealed(&derivatives, &derivative_root, "frame-001.png");
-        let job_id = apparent_capture_engine::new_id().unwrap();
-        let receipt_id = apparent_capture_engine::new_id().unwrap();
-        let derivative_payload = json!({
-            "schema":"apparent.media-derivative-payload/1","materials":key,
-            "jobId":job_id,"receiptId":receipt_id,"root":derivative_root,
-            "frames":[{"requestIndex":1,"requestedBundleMs":0,"effectiveVideoMs":0,
-                "actualVideoMs":0,"clampedToStart":false,"clampedToEnd":false,"width":640,"height":360,"file":frame}]
-        });
-        let native_frame = json!({
-            "requestIndex":1,"requestedBundleMs":0,"effectiveVideoMs":0,"actualVideoMs":0,
-            "clampedToStart":false,"clampedToEnd":false,
-            "path":derivative_root.join("frame-001.png"),"width":640,"height":360,
-            "byteLength":frame.identity.size,"sha256":frame.sha256
-        });
-        write(
-            &derivatives,
-            "manifest.json",
-            &serde_json::to_vec(
-                &json!({"jobId":job_id,"state":"complete","frames":[native_frame]}),
-            )
-            .unwrap(),
-        );
-        let derivative_bytes = serde_json::to_vec(&derivative_payload).unwrap();
-        write(&derivatives, "receipt.json", &derivative_bytes);
-        let receipt_file = sealed(&derivatives, &derivative_root, "receipt.json");
-        let derivative_receipt = json!({
-            "schema":"apparent.media-derivative/1","materials":key,
-            "jobId":job_id,"receiptId":receipt_id,"root":derivative_root,
-            "receiptFile":receipt_file,"payload":derivative_payload
-        });
         let manifest_value = json!({
             "version":1,"id":bundle_id,"createdAtMs":1,"durationMs":1,
             "target":{"mode":"display","displayId":1,"frame":{"x":0,"y":0,"width":16,"height":16,"scale":1}},
@@ -1129,7 +903,7 @@ mod tests {
             "entries":[
                 {"relativePath":"apparent.json","sha256":bundle_manifest.sha256,"byteLength":bundle_manifest.identity.size,"role":"manifest","input":{"kind":"assembled","file":bundle_manifest}},
                 {"relativePath":"summary.md","sha256":summary.sha256,"byteLength":summary.identity.size,"role":"summary","input":{"kind":"assembled","file":summary}},
-                {"relativePath":"frames/frame-01.png","sha256":frame.sha256,"byteLength":frame.identity.size,"role":"frame","input":{"kind":"derivative","receipt":derivative_receipt,"fileIndex":1}},
+                {"relativePath":"frames/frame-01.png","sha256":contact.sha256,"byteLength":contact.identity.size,"role":"frame","input":{"kind":"assembled","file":contact}},
                 {"relativePath":"contact-sheet.png","sha256":contact.sha256,"byteLength":contact.identity.size,"role":"contact-sheet","input":{"kind":"assembled","file":contact}},
                 {"relativePath":"recording.mp4","sha256":movie.sha256,"byteLength":movie.identity.size,"role":"video","input":{"kind":"material","relativePath":"recording.mp4"}}
             ],"manifestPath":"apparent.json","summaryPath":"summary.md","profile":"apparent-bundle/1"
@@ -1248,10 +1022,32 @@ mod tests {
     }
 
     #[test]
-    fn caller_authored_derivative_receipt_without_native_job_manifest_is_rejected() {
+    fn derivative_input_is_unavailable_without_native_job_authority() {
         let f = fixture();
-        fs::remove_file(f.base.join("derivative-root/manifest.json")).unwrap();
-        assert_eq!(call(&f, &f.request).unwrap_err(), "source_mismatch");
+        let staging_root = Path::new(f.request["stagingRoot"].as_str().unwrap());
+        let plan_path = staging_root.join("publication-plan.json");
+        let mut plan: Value = serde_json::from_slice(&fs::read(&plan_path).unwrap()).unwrap();
+        let entry = plan["entries"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|entry| entry["relativePath"] == "frames/frame-01.png")
+            .unwrap();
+        entry["input"] = json!({"kind":"derivative","receipt":{"schema":"apparent.media-derivative/1"},"fileIndex":1});
+        let plan_bytes = serde_json::to_vec(&plan).unwrap();
+        SecureStore::open(staging_root)
+            .unwrap()
+            .replace_checked("publication-plan.json", &plan_bytes)
+            .unwrap();
+        let plan_file = sealed(
+            &SecureStore::open(staging_root).unwrap(),
+            staging_root,
+            "publication-plan.json",
+        );
+        let mut request = f.request.clone();
+        request["planFile"] = serde_json::to_value(plan_file).unwrap();
+        request["planSha256"] = Value::String(sha(&plan_bytes));
+        assert_eq!(call(&f, &request).unwrap_err(), "unavailable");
         assert!(!f.destination.exists());
         fs::remove_dir_all(f.base).unwrap();
     }

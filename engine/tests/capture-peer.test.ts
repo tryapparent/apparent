@@ -101,7 +101,7 @@ test("SDK capture/2 records a selected X11 output, seals materials, and releases
     }
     assert.equal(hello.implementation, "native");
     assert.equal(hello.readiness, "ready");
-    assert.equal(hello.capabilities.publication, false);
+    assert.equal(hello.capabilities.publication, true);
     assert.equal(hello.capabilities.audioCapture, false);
     const discovery = await client.discoverSources();
     assert.equal(discovery.state, "available");
