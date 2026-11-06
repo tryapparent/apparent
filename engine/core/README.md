@@ -150,7 +150,8 @@ cargo tree --manifest-path engine/core/Cargo.toml --offline
 
 The package pins cached libc/serde/serde_json dependencies and keeps its own
 Cargo-generated lockfile. The optional `linux-media` feature pins the existing
-GStreamer versions and is enabled only by the root Linux Desktop caller; macOS
+GStreamer versions and requires Rust 1.96 or newer; the default core retains its
+Rust 1.89 minimum. It is enabled only by the root Linux Desktop caller; macOS
 does not select it. The standalone `engine/` provider does not enable this core
 feature, so its default and `media` dependency closures remain separate. The
 default core build has no Agent, GPUI or recorder dependencies. Applicable

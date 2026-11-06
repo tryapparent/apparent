@@ -18,7 +18,9 @@ pub fn init_gstreamer() -> Result<()> {
     Ok(())
 }
 
-/// Native input descriptor. Portal ownership stays with the caller for the recorder lifetime.
+/// Native input descriptor. PipeWire `fd` is borrowed, never transferred or
+/// closed here. The caller must keep it open and retain the portal session until
+/// Recorder::finish() or stop() has completed, including EOS finalization.
 #[derive(Clone, Copy, Debug)]
 pub enum Source {
     #[cfg(test)]
@@ -247,12 +249,13 @@ impl Recorder {
     ) -> Option<CandidateFrame> {
         let (w, h) = self.candidate;
         if let Some(sample) = self.candidates.try_pull_sample(gst::ClockTime::ZERO)
-            && let Some(mut rgba) = rgba_of(&sample, w, h)
+            && let Some(rgba) = rgba_of(&sample, w, h)
         {
-            apply_masks(&mut rgba, w, h);
             self.last = Some(rgba);
         }
-        let rgba = self.last.clone()?;
+        // Keep source pixels intact: masks may change without a new source frame.
+        let mut rgba = self.last.clone()?;
+        apply_masks(&mut rgba, w, h);
         Some(CandidateFrame {
             width: w,
             height: h,
@@ -385,6 +388,27 @@ pub fn rgba_of(sample: &gst::Sample, width: u32, height: u32) -> Option<Vec<u8>>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cached_frame_uses_current_masks_without_destroying_source_pixels() {
+        init_gstreamer().unwrap();
+        let pixels = vec![10, 20, 30, 255, 40, 50, 60, 255];
+        let mut recorder = Recorder {
+            pipeline: gst::Pipeline::new(),
+            candidates: gst_app::AppSink::builder().build(),
+            candidate: (2, 1),
+            video: false,
+            first_frame_ms: Arc::new(AtomicU64::new(u64::MAX)),
+            last: Some(pixels.clone()),
+        };
+        let first = recorder.candidate(|rgba, _, _| rgba[..4].fill(0)).unwrap();
+        assert_eq!(&first.rgba[..4], &[0; 4]);
+        let second = recorder.candidate(|rgba, _, _| rgba[4..].fill(0)).unwrap();
+        assert_eq!(&second.rgba[..4], &pixels[..4]);
+        assert_eq!(&second.rgba[4..], &[0; 4]);
+        assert_eq!(recorder.candidate(|_, _, _| {}).unwrap().rgba, pixels);
+        assert_eq!(recorder.last.as_ref().unwrap(), &pixels);
+    }
 
     #[test]
     fn x11_sources_record_the_rect_they_are_given() {

@@ -14,9 +14,9 @@ use std::time::Duration;
 use anyhow::{Context, Result, anyhow, bail};
 use futures_lite::StreamExt as _;
 
+use apparent_capture_engine::linux::Source;
 use crate::capture::engine::runtime::apparent_log;
 use crate::shared::model::{CaptureMode, TargetInfo};
-use apparent_capture_engine::linux::Source;
 
 /// A PipeWire stream a compositor is sending, open until dropped.
 pub struct Stream {
@@ -50,18 +50,13 @@ impl Drop for Stream {
 pub fn source_for(target: &TargetInfo, stopping: &AtomicBool) -> Result<(Source, Option<Stream>)> {
     let f = target.frame;
     let rect = [f.x, f.y, f.width, f.height];
-    anyhow::ensure!(
-        target.mode != CaptureMode::Window || target.window_id.is_some(),
-        "Window capture has no selected window ID"
-    );
+    anyhow::ensure!(target.mode != CaptureMode::Window || target.window_id.is_some(),
+        "Window capture has no selected window ID");
     if !super::super::wayland_session() {
-        return Ok((
-            match (target.mode, target.window_id) {
-                (CaptureMode::Window, Some(xid)) => Source::X11Window { xid },
-                _ => Source::X11 { rect },
-            },
-            None,
-        ));
+        return Ok((match (target.mode, target.window_id) {
+            (CaptureMode::Window, Some(xid)) => Source::X11Window { xid },
+            _ => Source::X11 { rect },
+        }, None));
     }
     // An X11 app's window on XWayland can be read like on X11.
     if target.mode == CaptureMode::Window
@@ -72,22 +67,14 @@ pub fn source_for(target: &TargetInfo, stopping: &AtomicBool) -> Result<(Source,
     if super::super::gnome() && target.mode != CaptureMode::Window {
         match mutter_area(rect) {
             Ok(session) => {
-                let source = Source::PipeWire {
-                    fd: session.fd(),
-                    node: session.node,
-                    crop: None,
-                };
+                let source = Source::PipeWire { fd: session.fd(), node: session.node, crop: None };
                 return Ok((source, Some(session)));
             }
             Err(error) => apparent_log(format!("GNOME screencast unavailable: {error:#}")),
         }
     }
     let window = target.mode == CaptureMode::Window;
-    let monitors = if window {
-        Vec::new()
-    } else {
-        super::super::monitors()
-    };
+    let monitors = if window { Vec::new() } else { super::super::monitors() };
     let output = if window {
         None
     } else {
@@ -105,9 +92,7 @@ pub fn source_for(target: &TargetInfo, stopping: &AtomicBool) -> Result<(Source,
     if let Some(output) = output
         && !output_still_selected(output, &super::super::monitors(), monitors.len())
     {
-        bail!(
-            "The display layout changed while screen sharing was chosen; choose the target again"
-        );
+        bail!("The display layout changed while screen sharing was chosen; choose the target again");
     }
     if let Some(output) = output
         && super::super::hyprland()
@@ -116,11 +101,7 @@ pub fn source_for(target: &TargetInfo, stopping: &AtomicBool) -> Result<(Source,
         if !selected_output_matches(&output.name, session.mapping_id.as_deref()) {
             // Discard a stale restore token too, otherwise every retry restores the wrong screen.
             save_token(&key, None);
-            bail!(
-                "The sharing portal selected {:?}, not {}. Choose that screen in the sharing dialog and try again.",
-                session.mapping_id,
-                output.name
-            );
+            bail!("The sharing portal selected {:?}, not {}. Choose that screen in the sharing dialog and try again.", session.mapping_id, output.name);
         }
     }
     // Portal positions are in compositor coordinates, not XWayland pixels. Crop relative to
@@ -132,18 +113,12 @@ pub fn source_for(target: &TargetInfo, stopping: &AtomicBool) -> Result<(Source,
     };
     let crop = portal_crop(target.mode, rect, crop_rect);
     if target.mode == CaptureMode::Region && crop.is_none() {
-        bail!(
-            "The selected screen does not contain the capture region (or the portal did not report its position). Choose the screen containing the region and try again."
-        );
+        bail!("The selected screen does not contain the capture region (or the portal did not report its position). Choose the screen containing the region and try again.");
     }
     if !window {
         save_token(&key, token.as_deref());
     }
-    let source = Source::PipeWire {
-        fd: session.fd(),
-        node: session.node,
-        crop,
-    };
+    let source = Source::PipeWire { fd: session.fd(), node: session.node, crop };
     Ok((source, Some(session)))
 }
 
@@ -163,29 +138,18 @@ fn selected_monitor(monitors: &[super::super::Monitor], id: u32) -> Option<&supe
     monitors.iter().find(|m| super::super::monitor_id(m) == id)
 }
 
-fn output_still_selected(
-    selected: &super::super::Monitor,
-    now: &[super::super::Monitor],
-    count: usize,
-) -> bool {
+fn output_still_selected(selected: &super::super::Monitor, now: &[super::super::Monitor], count: usize) -> bool {
     now.len() == count
         && selected_monitor(now, super::super::monitor_id(selected)).is_some_and(|current| {
             current.name == selected.name
-                && current
-                    .rect
-                    .iter()
-                    .zip(selected.rect)
-                    .all(|(a, b)| (a - b).abs() <= 1.0)
+                && current.rect.iter().zip(selected.rect).all(|(a, b)| (a - b).abs() <= 1.0)
         })
 }
 
 fn target_fits_output(mode: CaptureMode, target: [f64; 4], output: [f64; 4]) -> bool {
     const EPSILON: f64 = 1.0;
     match mode {
-        CaptureMode::Display => target
-            .iter()
-            .zip(output)
-            .all(|(a, b)| (a - b).abs() <= EPSILON),
+        CaptureMode::Display => target.iter().zip(output).all(|(a, b)| (a - b).abs() <= EPSILON),
         CaptureMode::Region => {
             target[0] >= output[0] - EPSILON
                 && target[1] >= output[1] - EPSILON
@@ -222,10 +186,7 @@ mod display_tests {
     #[test]
     fn restore_tokens_are_scoped_to_the_selected_output() {
         assert_eq!(screencast_key(Some("Virtual-1"), 2), "screencast:Virtual-1");
-        assert_eq!(
-            screencast_key(Some("HEADLESS-1"), 2),
-            "screencast:HEADLESS-1"
-        );
+        assert_eq!(screencast_key(Some("HEADLESS-1"), 2), "screencast:HEADLESS-1");
         assert_eq!(screencast_key(Some("Virtual-1"), 1), "screencast");
         assert_eq!(screencast_key(None, 2), "screencast-window");
     }
@@ -241,21 +202,9 @@ mod display_tests {
     fn a_reordered_display_id_cannot_capture_a_different_output() {
         let chosen = [1280.0, 0.0, 1920.0, 1080.0];
         assert!(target_fits_output(CaptureMode::Display, chosen, chosen));
-        assert!(!target_fits_output(
-            CaptureMode::Display,
-            chosen,
-            [0.0, 0.0, 1280.0, 800.0]
-        ));
-        assert!(target_fits_output(
-            CaptureMode::Region,
-            [1480.0, 120.0, 300.0, 240.0],
-            chosen
-        ));
-        assert!(!target_fits_output(
-            CaptureMode::Region,
-            [1480.0, 120.0, 300.0, 240.0],
-            [0.0, 0.0, 1280.0, 800.0]
-        ));
+        assert!(!target_fits_output(CaptureMode::Display, chosen, [0.0, 0.0, 1280.0, 800.0]));
+        assert!(target_fits_output(CaptureMode::Region, [1480.0, 120.0, 300.0, 240.0], chosen));
+        assert!(!target_fits_output(CaptureMode::Region, [1480.0, 120.0, 300.0, 240.0], [0.0, 0.0, 1280.0, 800.0]));
     }
 
     #[test]
@@ -275,11 +224,7 @@ mod display_tests {
         assert_eq!(selected_monitor(&reordered, id).unwrap().name, "HEADLESS-1");
         assert!(selected_monitor(&reordered, 102).is_none());
         // Both rectangles contain this Region; geometry alone cannot identify its output.
-        assert!(target_fits_output(
-            CaptureMode::Region,
-            [20.0, 20.0, 100.0, 100.0],
-            reordered[0].rect
-        ));
+        assert!(target_fits_output(CaptureMode::Region, [20.0, 20.0, 100.0, 100.0], reordered[0].rect));
     }
 
     #[test]
@@ -297,11 +242,7 @@ mod display_tests {
         let mut replaced = selected.clone();
         replaced.handle = 101;
         assert!(output_still_selected(&selected, &[selected.clone()], 1));
-        assert!(!output_still_selected(
-            &selected,
-            &[selected.clone(), moved.clone()],
-            1
-        ));
+        assert!(!output_still_selected(&selected, &[selected.clone(), moved.clone()], 1));
         assert!(!output_still_selected(&selected, &[selected.clone()], 2));
         assert!(!output_still_selected(&selected, &[moved], 1));
         assert!(!output_still_selected(&selected, &[replaced], 1));
@@ -310,11 +251,7 @@ mod display_tests {
     #[test]
     fn a_region_on_another_output_cannot_crop_outside_the_portal_stream() {
         assert_eq!(
-            portal_crop(
-                CaptureMode::Region,
-                [2040.0, 80.0, 420.0, 320.0],
-                Some([0.0, 0.0, 1920.0, 1080.0])
-            ),
+            portal_crop(CaptureMode::Region, [2040.0, 80.0, 420.0, 320.0], Some([0.0, 0.0, 1920.0, 1080.0])),
             None,
             "an off-stream crop yields an empty frame and a PipeWire not-negotiated error"
         );
@@ -323,11 +260,7 @@ mod display_tests {
     #[test]
     fn a_region_is_trimmed_to_the_selected_stream_in_both_axes() {
         assert_eq!(
-            portal_crop(
-                CaptureMode::Region,
-                [2080.0, 600.0, 400.0, 300.0],
-                Some([1920.0, 0.0, 320.0, 720.0])
-            ),
+            portal_crop(CaptureMode::Region, [2080.0, 600.0, 400.0, 300.0], Some([1920.0, 0.0, 320.0, 720.0])),
             Some([160, 600, 160, 120])
         );
     }
@@ -335,11 +268,7 @@ mod display_tests {
     #[test]
     fn second_display_region_uses_the_selected_streams_origin() {
         assert_eq!(
-            portal_crop(
-                CaptureMode::Region,
-                [2070.0, 110.0, 400.0, 250.0],
-                Some([1920.0, 0.0, 1280.0, 720.0])
-            ),
+            portal_crop(CaptureMode::Region, [2070.0, 110.0, 400.0, 250.0], Some([1920.0, 0.0, 1280.0, 720.0])),
             Some([150, 110, 400, 250])
         );
         assert_eq!(
@@ -456,23 +385,11 @@ fn save_token(key: &str, token: Option<&str>) {
 /// A display (or a window, `window`) through the ScreenCast portal. The first time, the
 /// desktop asks which; the answer is remembered (a restore token), so later recordings start
 /// without asking.
-fn portal_screencast(
-    window: bool,
-    key: &str,
-    stopping: &AtomicBool,
-) -> Result<(Stream, Option<String>)> {
+fn portal_screencast(window: bool, key: &str, stopping: &AtomicBool) -> Result<(Stream, Option<String>)> {
     use ashpd::desktop::PersistMode;
     use ashpd::desktop::screencast::{CursorMode, Screencast, SourceType};
 
-    let (ready_tx, ready_rx) = flume::bounded::<
-        Result<(
-            u32,
-            OwnedFd,
-            Option<[f64; 4]>,
-            Option<String>,
-            Option<String>,
-        )>,
-    >(1);
+    let (ready_tx, ready_rx) = flume::bounded::<Result<(u32, OwnedFd, Option<[f64; 4]>, Option<String>, Option<String>)>>(1);
     let (stop_tx, stop_rx) = flume::bounded::<()>(1);
     let request_key = key.to_owned();
     std::thread::Builder::new()
@@ -523,9 +440,7 @@ fn portal_screencast(
                         bail!("Screen sharing was cancelled")
                     };
                     match futures_lite::future::race(request, cancelled).await {
-                        Ok((node, fd, rect, mapping_id, token)) => {
-                            anyhow::Ok((proxy, session, node, fd, rect, mapping_id, token))
-                        }
+                        Ok((node, fd, rect, mapping_id, token)) => anyhow::Ok((proxy, session, node, fd, rect, mapping_id, token)),
                         Err(error) => {
                             let _ = session.close().await;
                             Err(error)
@@ -561,16 +476,13 @@ fn portal_screencast(
             Err(error) => return Err(error.into()),
         }
     };
-    Ok((
-        Stream {
-            node,
-            fd: Some(fd),
-            rect,
-            mapping_id,
-            stop: Some(stop_tx),
-        },
-        token,
-    ))
+    Ok((Stream {
+        node,
+        fd: Some(fd),
+        rect,
+        mapping_id,
+        stop: Some(stop_tx),
+    }, token))
 }
 
 // MARK: Shortcuts
@@ -644,11 +556,7 @@ fn shortcuts_bound<'a>(
     paste: bool,
     shortcuts: impl Iterator<Item = (&'a str, &'a str)> + Clone,
 ) -> bool {
-    let ids: &[&str] = if paste {
-        &["record", "paste"]
-    } else {
-        &["record"]
-    };
+    let ids: &[&str] = if paste { &["record", "paste"] } else { &["record"] };
     ids.iter().all(|id| {
         shortcuts
             .clone()
@@ -658,9 +566,7 @@ fn shortcuts_bound<'a>(
 
 /// The portal's trigger syntax for a shortcut (`ALT+SHIFT+s`), from its Carbon bits and key.
 pub fn portal_trigger(carbon_modifiers: u32, key: &str) -> String {
-    use crate::capture::engine::runtime::{
-        CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY, CARBON_SHIFT_KEY,
-    };
+    use crate::capture::engine::runtime::{CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY, CARBON_SHIFT_KEY};
     let mut parts = Vec::new();
     for (bit, name) in [
         (CARBON_CONTROL_KEY, "CTRL"),
@@ -678,9 +584,7 @@ pub fn portal_trigger(carbon_modifiers: u32, key: &str) -> String {
 
 /// GNOME's keybinding syntax (`<Alt><Shift>s`).
 pub fn gnome_binding(carbon_modifiers: u32, key: &str) -> String {
-    use crate::capture::engine::runtime::{
-        CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY, CARBON_SHIFT_KEY,
-    };
+    use crate::capture::engine::runtime::{CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY, CARBON_SHIFT_KEY};
     let mut out = String::new();
     for (bit, name) in [
         (CARBON_CONTROL_KEY, "<Control>"),
