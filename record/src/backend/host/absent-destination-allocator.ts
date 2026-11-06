@@ -106,11 +106,15 @@ export class AbsentDestinationAllocator {
     try {
       db = new DatabaseSync(this.#databasePath);
       await initializePrivateSqlite(db);
+      // WAL setup is shared across processes, but schema discovery and creation
+      // must also be one serialized transition on a brand-new database.
+      db.exec("BEGIN IMMEDIATE");
       const version = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
       if (version === 0) db.exec("CREATE TABLE IF NOT EXISTS destination_binding (request_digest TEXT PRIMARY KEY, request_id TEXT NOT NULL, control_root TEXT NOT NULL, destination_root TEXT NOT NULL, bundle_id TEXT NOT NULL UNIQUE, bundle_path TEXT NOT NULL UNIQUE) STRICT; PRAGMA user_version = 1;");
       else if (version !== schemaVersion) throw hostError();
+      db.exec("COMMIT");
       return db;
-    } catch { try { db?.close(); } catch { /* sanitized */ } throw hostError(); }
+    } catch { try { db?.exec("ROLLBACK"); } catch { /* transaction may not have started */ } try { db?.close(); } catch { /* sanitized */ } throw hostError(); }
   }
 }
 
