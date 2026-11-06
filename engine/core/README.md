@@ -139,10 +139,10 @@ exclusion or production adoption.
 Run from the repository root:
 
 ```
-cargo test --manifest-path capture/engine/Cargo.toml --offline
-cargo build --manifest-path capture/engine/Cargo.toml --offline
-cargo fmt --manifest-path capture/engine/Cargo.toml -- --check
-cargo tree --manifest-path capture/engine/Cargo.toml --offline
+cargo test --manifest-path engine/core/Cargo.toml --offline
+cargo build --manifest-path engine/core/Cargo.toml --offline
+cargo fmt --manifest-path engine/core/Cargo.toml -- --check
+cargo tree --manifest-path engine/core/Cargo.toml --offline
 ```
 
 The package pins cached libc/serde/serde_json dependencies and has its own small,
