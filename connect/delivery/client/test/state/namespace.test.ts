@@ -182,3 +182,19 @@ test("snapshot fields are pinned before waiting and lease loss during reads refu
     assert.equal(lost.state.held, false);
   } finally { await f.close(); }
 });
+
+
+test("saved snapshot credentials are immutable before a later currentness check", async () => {
+  const f = await fixture();
+  try {
+    const saved = await snapshot(f);
+    assert.equal(Object.isFrozen(saved), true);
+    assert.equal(Object.isFrozen(saved.credential), true);
+    for (const [key, value] of [["generation", "f".repeat(32)], ["grantId", "different-grant"], ["encryption_identity", "different-identity"]] as const) {
+      assert.equal(Reflect.set(saved.credential, key, value), false);
+    }
+    await assertCredentialSnapshotCurrent(f.dir, saved, resources().port);
+    await f.put("read.credential", credential("f".repeat(32)));
+    await category(assertCredentialSnapshotCurrent(f.dir, saved, resources().port), "stale_snapshot");
+  } finally { await f.close(); }
+});
