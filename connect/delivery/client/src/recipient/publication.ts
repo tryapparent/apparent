@@ -40,11 +40,12 @@ export async function publishRecipientCapture(
     if (assets.length !== capture.files.length) fail("invalid_capture");
     for (let i = 0; i < capture.files.length; i++) {
       const file = capture.files[i]!;
-      if (!safeAssetPath(file.path) || file.path !== assets[i]!.path || !(file.bytes instanceof Uint8Array)) fail("invalid_capture");
-      const bytes = new Uint8Array(file.bytes); copies.push({ path: file.path, bytes });
-      if (bytes.length !== file.size || hash(bytes) !== file.sha256) fail("invalid_capture");
+      const asset = assets[i]!;
+      if (!safeAssetPath(file.path) || file.path !== asset.path || !(file.bytes instanceof Uint8Array) || file.bytes.length !== asset.size) fail("invalid_capture");
+      const bytes = new Uint8Array(file.bytes); copies.push({ path: asset.path, bytes });
+      if (hash(bytes) !== asset.sha256) fail("invalid_capture");
     }
-    try { validateRecipientReferences(copies.map((file, i) => ({ ...capture.files[i]!, ...file })), { origin: server, accountId: "", captureId, senderGrantId: "", ...(validationGroup ? { group: validationGroup } : {}) }); }
+    try { validateRecipientReferences(copies.map((file, i) => ({ ...assets[i]!, bytes: file.bytes })), { origin: server, accountId: "", captureId, senderGrantId: "", ...(validationGroup ? { group: validationGroup } : {}) }); }
     catch { fail("invalid_capture"); }
     if (evidenceOnly) {
       const marker = Buffer.from(JSON.stringify({ version: 1, captureId, server,

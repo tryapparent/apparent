@@ -211,6 +211,8 @@ never writes job, credential or config JSON. Uncertain effects retain the spool
 without retry. It has no public writer export or production caller. The synthetic
 native fixture performs the later job commit explicitly to test the existing
 committed-spool reader and uploader; that is not a live writer transition.
+Namespace cleanup assumes cooperating same-UID writers; identity checks do not
+make pathname unlink atomic against a process bypassing that protocol.
 
 `./sender-seal` seals an already admitted, stable and consented in-memory snapshot
 for a fresh capture. It reuses the legacy archive, AGE encryption and signed
