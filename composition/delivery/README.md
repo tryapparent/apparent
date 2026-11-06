@@ -223,3 +223,11 @@ run; component jobs still run independently with fail-fast disabled.
 The new canonical workflow path participates in fingerprints and admission;
 old workflow receipts are not promoted across the migration and the first new
 producer run builds fresh. Broad manual platform verification remains separate.
+
+`consume ID TARGET FULL_SHA` verifies the canonical main producer, exact receipt
+and protected source/workflow/run attestation before retaining an archive. Only
+Mac App Shell bundles may contain framework symlinks: their complete declared
+graph must remain inside the same `.app`, without cycles, dangling targets or
+entries beneath links. Other owners retain regular-file/directory inventories;
+hard links and unsupported filesystem types are refused. Admission does not
+extract an archive or activate installed routing.

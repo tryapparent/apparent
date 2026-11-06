@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { handoff, matchesInvocation } from './handoff.ts'
+import { handoff, matchesInvocation, validateTarInventory } from './handoff.ts'
 import { sourceDigest } from '../core.ts'
 
 const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
@@ -14,6 +14,62 @@ const owner = { schema: 1 as const, id: 'engine', kind: 'npm' as const, package:
 const digest = 'a'.repeat(64)
 const source = sourceDigest(root, owner, sha)
 const run = { id: 42, run_attempt: 2, head_sha: sha, head_branch: 'main', event: 'push', conclusion: 'success', path: '.github/workflows/stream-engine.yml' }
+
+function componentTar(prepare: (payload: string) => void, transform?: string): Buffer {
+  const directory = mkdtempSync(join(tmpdir(), 'delivery-link-inventory-'))
+  try {
+    const payload = join(directory, 'stream-payload/bundle/test-darwin-x64/Test.app/Contents/Frameworks'); mkdirSync(payload, { recursive: true })
+    prepare(payload)
+    execFileSync('tar', ['-czf', join(directory, 'component.tar.gz'), '-C', directory,
+      ...(transform ? [`--transform=${transform}`] : []), 'stream-payload'])
+    return readFileSync(join(directory, 'component.tar.gz'))
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+}
+
+test('App Shell admits internal framework link chains without relaxing other owner inventories', () => {
+  const bytes = componentTar(payload => {
+    const framework = join(payload, 'Electron Framework.framework')
+    mkdirSync(join(framework, 'Versions/A/Resources'), { recursive: true })
+    writeFileSync(join(framework, 'Versions/A/Resources/value'), 'sealed framework resource')
+    symlinkSync('A', join(framework, 'Versions/Current'))
+    symlinkSync('Versions/Current/Resources', join(framework, 'Resources'))
+  })
+  assert.doesNotThrow(() => validateTarInventory(bytes, 'app-shell', 'macos-x64'))
+  for (const kind of ['npm', 'directory'] as const)
+    assert.throws(() => validateTarInventory(bytes, kind, 'macos-x64'), /links or unsupported/)
+  assert.throws(() => validateTarInventory(bytes, 'app-shell', 'linux-x64'), /links or unsupported/)
+  const misplaced = componentTar(p => {
+    writeFileSync(join(p, 'value'), 'sealed')
+    symlinkSync('Frameworks/value', join(p, '../link'))
+  })
+  assert.throws(() => validateTarInventory(misplaced, 'app-shell', 'macos-x64'), /symlink location/)
+})
+
+test('App Shell link validation rejects escapes, dangling targets, cycles and non-directory traversal before extraction', () => {
+  const fixtures: Array<(payload: string) => void> = [
+    p => symlinkSync('/outside', join(p, 'link')),
+    p => symlinkSync('../../../outside', join(p, 'link')),
+    p => symlinkSync('missing', join(p, 'link')),
+    p => { symlinkSync('b', join(p, 'a')); symlinkSync('a', join(p, 'b')) },
+    p => { writeFileSync(join(p, 'file'), 'sealed'); symlinkSync('file/../file', join(p, 'link')) },
+    p => {
+      mkdirSync(join(p, 'deep')); writeFileSync(join(p, 'payload'), 'sealed')
+      symlinkSync('../..', join(p, 'deep/redirect'))
+      symlinkSync('deep/redirect/../../payload', join(p, 'link'))
+    },
+  ]
+  for (const prepare of fixtures)
+    assert.throws(() => validateTarInventory(componentTar(prepare), 'app-shell', 'macos-x64'), /symlink|non-directory/)
+  const children = componentTar(p => {
+    mkdirSync(join(p, 'real')); writeFileSync(join(p, 'real/value'), 'sealed')
+    symlinkSync('real', join(p, 'alias'))
+  }, 's|/real/value|/alias/value|')
+  assert.throws(() => validateTarInventory(children, 'app-shell', 'macos-x64'), /non-directory/)
+  const hardlinks = componentTar(p => {
+    writeFileSync(join(p, 'file'), 'sealed'); linkSync(join(p, 'file'), join(p, 'hardlink'))
+  })
+  assert.throws(() => validateTarInventory(hardlinks, 'app-shell', 'macos-x64'), /links or unsupported/)
+})
 
 test('attestation invocation binds the exact repository, run and attempt', () => {
   const expected = 'https://github.com/tryapparent/apparent/actions/runs/42/attempts/2'
