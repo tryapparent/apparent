@@ -15,6 +15,7 @@ LIMIT = 10
 WORKFLOW_DIRECTORY = b".github/workflows"
 WORKFLOW_FILES = {
     b"hermes-plugin.yml",
+    b"hermes-plugin-dispatch.yml",
     b"connect-delivery.yml", b"linux-updater-harness.yml", b"native-proof-mac.yml",
     b"release-linux.yml", b"release-mac-preview.yml", b"release-windows.yml",
     b"verification-mac.yml",

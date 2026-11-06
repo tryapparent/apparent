@@ -397,6 +397,17 @@ printf '${name}:%s\\n' "$*" >> "$CALLS"
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
+test('Hermes manual root owns auditing without expanding the callable payload permissions', () => {
+  const payload = readFileSync(new URL('../../.github/workflows/hermes-plugin.yml', import.meta.url), 'utf8')
+  const dispatch = readFileSync(new URL('../../.github/workflows/hermes-plugin-dispatch.yml', import.meta.url), 'utf8')
+  assert.match(payload, /^  workflow_call:$/m)
+  assert.doesNotMatch(payload, /^  workflow_dispatch:|^  runtime-budget:|actions: read/m)
+  assert.match(dispatch, /^  workflow_dispatch:$/m)
+  assert.match(dispatch, /uses: \.\/\.github\/workflows\/hermes-plugin\.yml/)
+  assert.match(dispatch, /needs: \[python\]/)
+  assert.match(dispatch, /actions: read/)
+})
+
 test('media runtime identity is qualified before admission with the bounded shared installer', () => {
   const action = readFileSync(new URL('../../.github/actions/delivery-component/action.yml', import.meta.url), 'utf8')
   const setup = action.match(/- name: Install Engine media runtime and fixture dependencies[\s\S]*?(?=\n    - uses: oven-sh)/)?.[0]
