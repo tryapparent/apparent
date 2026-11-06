@@ -31,7 +31,8 @@ Sparkle key and production appcast are unrelated. Test an actual update between 
 a Mac before announcing it; CI packaging and an appcast alone do not prove installation works.
 
 The DMG also contains **Install Apparent.app**. Double-click it to open the shared
-React/shadcn installer, then click the frog or drag its app icon onto Applications.
+React/shadcn installer, then click the app or its perched frog, or drag the combined item onto Applications.
+The frog and app hop into the folder together; there is no separate Install button.
 Downloading or mounting the DMG does not automatically execute the installer.
 The native adapter verifies the bundled app signature, identity and build number,
 requires explicit replacement confirmation, refuses running apps and downgrades,

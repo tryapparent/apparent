@@ -1253,7 +1253,7 @@
       "id": "mac-download",
       "group": "install",
       "name": "Mac download and Homebrew",
-      "says": "The follow-up Mac DMG candidate includes an interactive frog installer alongside the regular Finder drag installation.",
+      "says": "The follow-up Mac DMG candidate includes an interactive installer with the frog perched on the app: clicking either or dragging the combined item hops both into Applications, alongside the regular Finder drag installation.",
       "status": "main",
       "platforms": ["mac"],
       "added": "2026-10-28",
