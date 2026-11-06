@@ -224,3 +224,23 @@ test("replaced staged asset directory preserves foreign sentinel and uncertain s
   assert.ok(stage);
   assert.equal((await lstat(path.join(root, stage!, "frames"))).isSymbolicLink(), true);
 }));
+
+
+test("refusal cleanup preserves a replacement regular file", async () => fixture(async root => {
+  const result = await publishRecipientCapture(capture(), path.join(root, "out"), {
+    checkAcl: async h => { await h.close(); return { state: "accepted" }; },
+    publish: async (parent, source) => {
+      try {
+        const summary = path.join(root, source, "summary.md");
+        await rename(summary, path.join(root, "displaced-summary"));
+        await (await import("node:fs/promises")).writeFile(summary, "foreign replacement", { mode: 0o600 });
+        return { state: "refused" };
+      } finally { await parent.close(); }
+    },
+  });
+  assert.deepEqual(result, { state: "publication-uncertain" });
+  const stage = (await readdir(root)).find(n => n.startsWith(".apparent-stage-"));
+  assert.ok(stage);
+  assert.equal(await readFile(path.join(root, stage, "summary.md"), "utf8"), "foreign replacement");
+  assert.equal(await readFile(path.join(root, stage, "frames/frame-01.png")).then(b => b.length), 3);
+}));

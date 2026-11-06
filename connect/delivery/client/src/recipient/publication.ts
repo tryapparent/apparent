@@ -30,7 +30,7 @@ const safeAssetPath = (name: string) => !badUnicode(name) && !name.startsWith("/
 const flags = C.O_RDONLY | (C.O_NOFOLLOW ?? 0) | (C.O_DIRECTORY ?? 0);
 function dirStat(s: { dev: bigint; ino: bigint; mode: bigint; uid: bigint }) { return `${s.dev}:${s.ino}:${s.mode}:${s.uid}`; }
 async function openedDir(name: string): Promise<FileHandle> { return open(name, flags); }
-async function cleanupStage(parent: FileHandle, stagePath: string, parentIdentity: string, stageIdentity: string, created: string[], createdDirs: Map<string, string>): Promise<boolean> {
+async function cleanupStage(parent: FileHandle, stagePath: string, parentIdentity: string, stageIdentity: string, created: Map<string, string>, createdDirs: Map<string, string>): Promise<boolean> {
   try {
     const [parentNow, parentFd, stageNow] = await Promise.all([lstat(path.dirname(stagePath), { bigint: true }), parent.stat({ bigint: true }), lstat(stagePath, { bigint: true })]);
     if (!parentNow.isDirectory() || dirStat(parentNow) !== parentIdentity || dirStat(parentFd) !== parentIdentity
@@ -39,14 +39,18 @@ async function cleanupStage(parent: FileHandle, stagePath: string, parentIdentit
       const named = await lstat(path.join(stagePath, rel), { bigint: true });
       if (!named.isDirectory() || named.isSymbolicLink() || dirStat(named) !== identity) return false;
     }
-    for (const rel of [...created].reverse()) {
+    for (const [rel, identity] of created) {
+      const st = await lstat(path.join(stagePath, rel), { bigint: true });
+      if (!st.isFile() || dirStat(st) !== identity) return false;
+    }
+    for (const [rel, identity] of [...created].reverse()) {
       const target = path.join(stagePath, rel);
       const st = await lstat(target, { bigint: true }).catch(() => undefined);
       if (!st) continue;
-      if (!st.isFile() || st.isSymbolicLink()) return false;
+      if (!st.isFile() || st.isSymbolicLink() || dirStat(st) !== identity) return false;
       await unlink(target);
     }
-    const dirs = new Set(created.flatMap(rel => { const parts = rel.split("/"); const out: string[] = []; while (parts.length > 1) { parts.pop(); out.push(parts.join("/")); } return out; }));
+    const dirs = new Set([...created.keys()].flatMap(rel => { const parts = rel.split("/"); const out: string[] = []; while (parts.length > 1) { parts.pop(); out.push(parts.join("/")); } return out; }));
     for (const rel of [...dirs].sort((a,b) => b.length-a.length)) {
       const p = path.join(stagePath, rel); const st = await lstat(p, { bigint: true }).catch(() => undefined);
       if (st) { if (!st.isDirectory() || st.isSymbolicLink()) return false; await rmdir(p); }
@@ -93,7 +97,7 @@ export async function publishRecipientCapture(
 
   const requested = path.resolve(destination);
   let parent: FileHandle | undefined, stage: string | undefined, stagePath: string | undefined;
-  const created: string[] = []; const createdDirs = new Map<string, string>(); let phase: "preparing" | "dispatched" | "published" | "uncertain" = "preparing";
+  const created = new Map<string, string>(); const createdDirs = new Map<string, string>(); let phase: "preparing" | "dispatched" | "published" | "uncertain" = "preparing";
   let parentIdentity = "", stageIdentity = "";
   try {
     // Walk lexical components without following links, check ACL and compare descriptor identity.
@@ -167,13 +171,12 @@ export async function publishRecipientCapture(
         createdDirs.set(path.relative(stagePath, dir), dirStat(st));
       }
       const fh = await open(targetPath, C.O_WRONLY | C.O_CREAT | C.O_EXCL | (C.O_NOFOLLOW ?? 0), 0o600);
-      created.push(file.path);
-      try { await fh.writeFile(file.bytes); await fh.sync(); const st = await fh.stat(); if (!st.isFile() || (st.mode & 0o777) !== 0o600) fail("unsafe_directory"); }
+      try { created.set(file.path, dirStat(await fh.stat({ bigint: true }))); await fh.writeFile(file.bytes); await fh.sync(); const st = await fh.stat(); if (!st.isFile() || (st.mode & 0o777) !== 0o600) fail("unsafe_directory"); }
       finally { await fh.close(); }
     }
     if (marker) {
       const fh = await open(path.join(stagePath, ".evidence-only.json"), C.O_WRONLY | C.O_CREAT | C.O_EXCL | (C.O_NOFOLLOW ?? 0), 0o600);
-      created.push(".evidence-only.json"); try { await fh.writeFile(marker); await fh.sync(); } finally { await fh.close(); }
+      try { created.set(".evidence-only.json", dirStat(await fh.stat({ bigint: true }))); await fh.writeFile(marker); await fh.sync(); } finally { await fh.close(); }
     }
     // Flush every staged directory from leaves up, then its parent.
     const directories = new Set(["", ...copies.map(f => path.posix.dirname(f.path)).filter(d => d !== ".")]);
