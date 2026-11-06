@@ -47,15 +47,19 @@ export async function createRecordHostServices({profilePath}) {
     mappingRoot:join(profilePath,'coordinator-mappings'),bundleRoot:join(profilePath,'bundles'),privateControlRoot:join(profilePath,'coordinator-control'),
     createStartIntent:never,trustedMaterialsRoot:never,selectProcessing:never,preflight:preflightCapturePublication,
   });
-  let unexpectedClose = false;
+  const coordinatedCounts = {sdk:0,config:0};
   const coordinatedHost = bindRecordCoordinatorHost({coordinator:flow,nativeBindings:{
     native:{async readFacts(){return {version:1,providerEpoch:'no-native',revision:0,readiness:[],shortcut:{effective:null,label:null,registration:'unknown',externallyManaged:false,draft:null}};}},
-    penConfig:{async read(){return {persisted:null,effective:null};},writeApplyAndReadBack:never},clipboard:{copyLocal:never},close:never,
-  },async closeEngine(){unexpectedClose=true;}});
+    penConfig:{async read(){return {persisted:null,effective:null};},writeApplyAndReadBack:never},clipboard:{copyLocal:never},async close(){coordinatedCounts.config++;},
+  },async shutdownOtherRuntimeUsers(){return 'clear';},async closeEngine(){coordinatedCounts.sdk++;}});
   await flow.reconcile();
-  await writeFile(join(profilePath,'public-coordinator.json'),JSON.stringify({issues:coordinatedHost.processingIssues(),canClose:await coordinatedHost.canClose(),unexpectedClose}));
-  coordinatedHost.record.detach();
-  await flow.dispose(); // Empty synthetic fixture teardown, never production close clearance.
+  const coordinatorFacts = await flow.captureFacts.readFacts();
+  const canClose = await coordinatedHost.canClose();
+  const beforeClose = {...coordinatedCounts};
+  const report = coordinatedHost.shutdownReport();
+  await coordinatedHost.close();
+  await coordinatedHost.close();
+  await writeFile(join(profilePath,'public-coordinator.json'),JSON.stringify({canClose,beforeClose,afterClose:coordinatedCounts,report,reservation:coordinatorFacts.nextShortcutAdmission}));
   let reconciliation = 'pending';
   const counts = { dispatch: 0, dispose: 0, engine: 0, native: 0 };
   const listeners = new Set();
@@ -104,7 +108,17 @@ export async function createRecordHostServices({profilePath}) {
   assert.deepEqual(publicOutput.facts.nextShortcutAdmission, { state: 'unavailable' });
   assert.equal(publicOutput.handoff, null);
   assert.equal(publicOutput.outputDispatches, 0);
-  assert.deepEqual(JSON.parse(await readFile(join(profile, 'public-coordinator.json'), 'utf8')), {issues: [], canClose: false, unexpectedClose: false});
+  const coordinated = JSON.parse(await readFile(join(profile, 'public-coordinator.json'), 'utf8'));
+  assert.equal(coordinated.canClose, true);
+  assert.deepEqual(coordinated.beforeClose, {sdk:0,config:0});
+  assert.deepEqual(coordinated.afterClose, {sdk:1,config:1});
+  assert.deepEqual(coordinated.reservation, {state:'unavailable'});
+  assert.equal(coordinated.report.scope, 'record-coordinator');
+  assert.equal(coordinated.report.admission, 'closed');
+  assert.equal(coordinated.report.localDrain, 'complete');
+  assert.equal(coordinated.report.runtimeClearance, 'clear');
+  assert.equal(coordinated.report.nextShortcutAdmission.state, 'unsupported');
+  assert.deepEqual(coordinated.report.work, []);
   await application.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].close(); });
   await expect(page.locator('body')).toHaveAttribute('data-close-reason', 'ownership-unresolved');
   assert.equal(await readFile(join(profile, 'closed.json')).then(() => true, () => false), false);

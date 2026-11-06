@@ -262,8 +262,9 @@ SDK peer is packaged beside it. Trusted assembly injects `output.captureFacts`
 and uses `output.resolveHandoff` for the native clipboard adapter. That port owns
 the existing durable publication authority; composition adds no Saved-facts store
 or substitute resolver. It does not provide shortcut-reservation authority:
-`nextShortcutAdmission: unavailable` still blocks host shutdown until the trusted
-assembly can establish authoritative clearance. Installed legacy-transition clearance remains a separate prerequisite.
+`nextShortcutAdmission: unavailable` cannot establish shutdown clearance. The generic
+host refuses it; the coordinator binding below requires its explicit scoped shutdown
+report plus clearance of every other SDK/runtime user. Installed legacy-transition clearance remains a separate prerequisite.
 The trusted Record build may additionally provide `nativeArtifacts`, containing
 the Linux x64 Capture/2, Media/2 and config-helper payload directories, each with
 its externally admitted manifest SHA-256 and original build source SHA. Use the
@@ -321,10 +322,19 @@ its config binding. Construction transfers exclusive command/lifetime ownership;
 do not continue issuing commands or reconciliation through the original handles.
 Read-only processing issues remain available to trusted host diagnostics.
 
-The package also supplies a terminal coordinator shutdown report. Reservation
-facts remain `unavailable`; this compatibility checkpoint retains close refusal
-until the host consumes that report with admission/drain ordering. Runtime IDs
-and a local disposal drain alone do not prove clearance. This adapter does not relax the
-gate or activate the installed route. The packaged tests exercise the admitted
-package and transport with synthetic producers, separately from real native
-Saved/copy and native pill/exclusion acceptance.
+The host first seals its command admission and drains admitted native commands.
+A nonterminal preflight refuses known active captures and unreadable ownership,
+preserving Stop/Cancel controls. It then invokes the mandatory
+`shutdownOtherRuntimeUsers` callback, which must seal and drain every other user
+of the shared SDKs, and awaits the coordinator's terminal `shutdown()` report
+and `dispose()`. Only a clear `record-coordinator` report with empty work and
+explicit `nextShortcutAdmission: unsupported`, together with other-user clearance,
+admits SDK closure. The original reservation facts remain `unavailable`; they
+are never relabelled idle. Unknown, unresolved or inconsistent terminal reports
+retain SDK ownership and leave admission closed without retrying shutdown.
+`shutdownReport()` exposes a defensive copy to trusted-main diagnostics only.
+
+Runtime IDs or a local disposal drain alone do not prove clearance. This adapter
+does not activate installed routing. Packaged tests exercise the admitted package,
+terminal ordering and transport with synthetic producers, separately from real
+native Saved/copy and native pill/exclusion acceptance.
