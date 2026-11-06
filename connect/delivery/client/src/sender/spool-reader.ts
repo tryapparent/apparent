@@ -1,15 +1,14 @@
 import { createHash } from "node:crypto";
-import { lstat } from "node:fs/promises";
 import path from "node:path";
 import type { Context } from "../recipient/crypto.ts";
 import { decodeJob, encodeJob, type Job } from "../queue/job.ts";
 import { admitTrustedDirectory, DirectoryAdmissionFailure } from "../state/directory.ts";
-import { readCancellation, readCredential, pendingIntent, readOptionalStateFile, readStateEvidence, stateFileStamp } from "../state/credential-files.ts";
+import { readCancellation, readCredential, pendingIntent, readOptionalStateFile, readStateEvidence } from "../state/credential-files.ts";
 import { PrivateFileError } from "../state/private-file.ts";
 import { checkSignal, samePathFd, withStateQueue, CredentialSnapshotError,
   type NamespaceResources, type NamespaceLease, type StateDirectory } from "../state/queue-transaction.ts";
 import { decodeStoredEncryptedSpool, StoredSpoolDecodeError, type StoredEncryptedSpool, type StoredSpoolProfile } from "./spool-record.ts";
-import { readPrivateSpoolAsset, spoolFileStamp } from "./spool-files.ts";
+import { readPrivateSpoolAsset, SpoolAssetParentChanged } from "./spool-files.ts";
 
 type Failure = "invalid_encrypted_spool" | "stale_snapshot" | "revocation_pending" | "unsafe_file" | "unsafe_directory" | "cancelled" | "state_unavailable";
 const failures = new Set<Failure>(["invalid_encrypted_spool", "stale_snapshot", "revocation_pending", "unsafe_file", "unsafe_directory", "cancelled", "state_unavailable"]);
@@ -23,6 +22,7 @@ function project(error: unknown, signal?: AbortSignal): never {
   if (error instanceof EncryptedSpoolReadError && failures.has(error.category)) return fail(error.category);
   if (error instanceof DirectoryAdmissionFailure && (error.category === "unsafe_directory" || error.category === "cancelled")) return fail(error.category);
   if (error instanceof StoredSpoolDecodeError) return fail("invalid_encrypted_spool");
+  if (error instanceof SpoolAssetParentChanged) return fail("stale_snapshot");
   if (error instanceof PrivateFileError && error.category === "invalid_data") return fail("invalid_encrypted_spool");
   if (error instanceof PrivateFileError || error instanceof CredentialSnapshotError) {
     if (error.category === "cancelled" || error.category === "unsafe_file" || error.category === "unsafe_directory") return fail(error.category);
@@ -39,7 +39,6 @@ export type CommittedEncryptedSpool = Readonly<{
 }>;
 type Fence = { cancellation: string | null; identity: string | null; grant: string | null };
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
-const stamp = spoolFileStamp;
 function jobIdentity(job: Job): string {
   const c = job.encryption?.context;
   return JSON.stringify([job.id, job.bundle, job.server, job.generation, job.created, job.status, job.attempts,
@@ -124,11 +123,9 @@ export async function openCommittedEncryptedSpool(directoryPath: string, input: 
           await assertBaseline(state, spool, lease, signal);
           const read = await readPrivateSpoolAsset(spool, asset.path, asset.size, resources, signal);
           owned = read.bytes;
-          try {
-            if (owned.length !== asset.size || hash(owned) !== asset.sha256) return fail("unsafe_file");
-            await assertBaseline(state, spool, lease, signal);
-            return owned!;
-          } finally { if (owned && signal.aborted) owned.fill(0); }
+          if (owned.length !== asset.size || hash(owned) !== asset.sha256) return fail("unsafe_file");
+          await assertBaseline(state, spool, lease, signal);
+          return owned!;
         });
       } catch (error) { owned?.fill(0); return project(error, signal); }
     } });
