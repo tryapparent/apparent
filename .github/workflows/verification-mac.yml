@@ -4,6 +4,19 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      installer_fixtures_only:
+        description: 'Run only isolated installer diagnostics; produces no app or release receipt'
+        type: boolean
+        default: false
+      candidate_version:
+        description: 'Private candidate version (must be newer than the live feed; does not publish)'
+        type: string
+        default: '0.12.3'
+      candidate_build:
+        description: 'Private candidate build number'
+        type: string
+        default: '12.3'
 
 permissions:
   contents: read
@@ -15,22 +28,58 @@ concurrency:
 
 jobs:
   verify:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.installer_fixtures_only != true }}
     uses: ./.github/workflows/verification-platform.yml
     with:
       # General Mac CI can use Intel capacity; arm64 packaging stays on Apple Silicon.
       runner: macos-15-intel
 
+  # Fail fast on native copy/replacement fixtures while full app verification runs.
+  installer-fixtures:
+    if: github.event_name == 'workflow_dispatch' && inputs.installer_fixtures_only != true && github.repository == 'tryapparent/apparent' && (github.ref == 'refs/heads/t3/onboarding-mac-release-baseline' || github.ref == 'refs/heads/codex/onboarding-complete-candidate')
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.0'
+      - name: Verify installer transactions without touching installed apps
+        run: |
+          xcrun swiftc -D INSTALLER_TEST -parse-as-library capture/desktop/native/installer/Installer.swift capture/desktop/native/installer/InstallerTests.swift -o "$RUNNER_TEMP/installer-transaction-tests"
+          "$RUNNER_TEMP/installer-transaction-tests"
+
+  # Manual diagnostics contain no signing secrets, artifacts or verification receipt.
+  installer-diagnostics:
+    if: github.event_name == 'workflow_dispatch' && inputs.installer_fixtures_only == true && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/codex/onboarding-complete-candidate'
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.0'
+      - name: Run isolated installer transaction fixtures
+        run: |
+          xcrun swiftc -D INSTALLER_TEST -parse-as-library capture/desktop/native/installer/Installer.swift capture/desktop/native/installer/InstallerTests.swift -o "$RUNNER_TEMP/installer-transaction-tests"
+          "$RUNNER_TEMP/installer-transaction-tests"
+
   # Private-to-authenticated-Actions artifact for installed testing. This job has
   # no release/feed write permission and does not produce a release receipt.
   onboarding-candidate:
-    if: github.event_name == 'workflow_dispatch' && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/t3/onboarding-mac-release-baseline'
-    needs: verify
-    runs-on: macos-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.installer_fixtures_only != true && github.repository == 'tryapparent/apparent' && (github.ref == 'refs/heads/t3/onboarding-mac-release-baseline' || github.ref == 'refs/heads/codex/onboarding-complete-candidate')
+    needs: [verify, installer-fixtures]
+    # Use the stable Apple Silicon pool; latest repeatedly failed runner admission.
+    runs-on: macos-15
     timeout-minutes: 90
     env:
       APPARENT_PREVIEW_NOTARIZE: 'true'
-      APPARENT_PREVIEW_VERSION: '0.12.2'
-      APPARENT_PREVIEW_BUILD_NUMBER: '12.2'
+      APPARENT_PREVIEW_VERSION: ${{ inputs.candidate_version || '0.12.3' }}
+      APPARENT_PREVIEW_BUILD_NUMBER: ${{ inputs.candidate_build || '12.3' }}
       APPARENT_PREVIEW_PUBLIC_KEY: ${{ vars.SPARKLE_PREVIEW_PUBLIC_KEY }}
       APPARENT_APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
       APPARENT_APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
@@ -82,6 +131,8 @@ jobs:
           APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
         run: |
           python3 -m unittest discover -s capture/desktop/scripts/tests -p 'test_preview_*.py'
+          xcrun swiftc -D INSTALLER_TEST -parse-as-library capture/desktop/native/installer/Installer.swift capture/desktop/native/installer/InstallerTests.swift -o "$RUNNER_TEMP/installer-transaction-tests"
+          "$RUNNER_TEMP/installer-transaction-tests"
           bash capture/desktop/scripts/packaging/build-mac-preview.sh
           capture/desktop/scripts/support/check-ca-roots.sh target/release/apparent
           HELPER=target/release/apparent-helper capture/desktop/scripts/support/check-permission-panel-dock.sh
@@ -97,10 +148,19 @@ jobs:
           assert info['SUPublicEDKey'] == os.environ['APPARENT_PREVIEW_PUBLIC_KEY']
           assert info['SUFeedURL'] == 'https://raw.githubusercontent.com/tryapparent/apparent/preview-mac-feed/appcast.xml'
           resources = app / 'Contents/Resources'
-          for name in ['HostGrotesk-Variable.ttf', 'settings/app/dist/onboarding.html', 'settings/app/electron/onboarding.cjs']:
+          for name in ['HostGrotesk-Variable.ttf', 'settings/app/dist/onboarding.html', 'settings/app/electron/installer/ui/src/installer/index.html', 'settings/app/electron/onboarding.cjs', 'settings/app/electron/installer/main.cjs', 'settings/app/electron/installer/preload.cjs']:
               assert (resources / name).is_file(), name
           assert 'arm64' in subprocess.check_output(['lipo', '-archs', str(app / 'Contents/MacOS/apparent')], text=True)
-          assets = sorted(pathlib.Path('dist').glob('Apparent-Preview-0.12.2-arm64.*'))
+          installer = pathlib.Path('dist/Install Apparent.app')
+          installer_info = plistlib.loads((installer / 'Contents/Info.plist').read_bytes())
+          assert installer_info['CFBundleIdentifier'] == 'dev.simonvanlaak.apparent.preview.installer'
+          assert installer_info['CFBundleShortVersionString'] == info['CFBundleShortVersionString']
+          assert installer_info['CFBundleVersion'] == info['CFBundleVersion']
+          subprocess.run(['codesign', '--verify', '--deep', '--strict', str(installer)], check=True)
+          subprocess.run(['xcrun', 'stapler', 'validate', str(installer)], check=True)
+          payload = installer / 'Contents/SharedSupport/Apparent Preview.app'
+          assert (payload / 'Contents/MacOS/apparent').read_bytes() == (app / 'Contents/MacOS/apparent').read_bytes()
+          assets = sorted(pathlib.Path('dist').glob('Apparent-Preview-' + os.environ['APPARENT_PREVIEW_VERSION'] + '-arm64.*'))
           assert {p.suffix for p in assets} >= {'.dmg', '.zip', '.sha256'}
           manifest = {'commit': os.environ['GITHUB_SHA'], 'tree': subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip(),
                       'version': info['CFBundleShortVersionString'], 'build': info['CFBundleVersion'], 'nativeAcceptance': 'pending', 'releaseAdmission': 'held',
@@ -113,9 +173,9 @@ jobs:
           retention-days: 7
           if-no-files-found: error
           path: |
-            dist/Apparent-Preview-0.12.2-arm64.dmg
-            dist/Apparent-Preview-0.12.2-arm64.dmg.sha256
-            dist/Apparent-Preview-0.12.2-arm64.zip
+            dist/Apparent-Preview-${{ inputs.candidate_version || '0.12.3' }}-arm64.dmg
+            dist/Apparent-Preview-${{ inputs.candidate_version || '0.12.3' }}-arm64.dmg.sha256
+            dist/Apparent-Preview-${{ inputs.candidate_version || '0.12.3' }}-arm64.zip
             dist/candidate.json
       - name: Remove job-private signing material
         if: always()
