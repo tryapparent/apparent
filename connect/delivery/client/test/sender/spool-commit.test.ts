@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { link, lstat, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import * as ed25519 from "@noble/ed25519";
@@ -75,12 +75,15 @@ async function fixture(grouped = false) {
 test("recovers root and grouped orphan spools with exact job preservation and idempotence", async () => {
   for (const grouped of [false, true]) {
     const f = await fixture(grouped); try {
+      const originalJob = await readFile(path.join(f.root, `${id}.job`));
+      await link(path.join(f.root, `${id}.job`), path.join(f.root, "legacy-job-alias"));
       const names = ["upload.credential", "config.json", `${id}.sealed/spool-state.json`, ...f.sealed.assets.map(asset => `${id}.sealed/${asset.path}`)];
       const before = await Promise.all(names.map(name => readFile(path.join(f.root, name))));
       const result = await f.commit(); assert.equal(result.state, "committed"); if (result.state === "uncertain") return;
       assert.deepEqual(result.job, { ...f.job, files: result.record.files, encryption: result.record.metadata });
       assert.ok(Object.isFrozen(result.job.futureField)); assert.equal(f.replacements(), 1); assert.equal(f.assetReads(), f.sealed.assets.length);
       assert.deepEqual(JSON.parse(await readFile(path.join(f.root, `${id}.job`), "utf8")), result.job);
+      assert.deepEqual(await readFile(path.join(f.root, "legacy-job-alias")), originalJob);
       for (const [i, name] of names.entries()) assert.deepEqual(await readFile(path.join(f.root, name)), before[i]);
       const extra = { ...f.authority, devices: [...f.authority.devices, { ...f.authority.devices[0]!, grantId: "unrelated-new-peer" }] };
       assert.equal((await f.commit(result.job, extra)).state, "unchanged"); assert.equal(f.replacements(), 1);

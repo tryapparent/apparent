@@ -120,6 +120,7 @@ test("native spool publication feeds the committed reader and sender under the s
     await writeFile(path.join(root, "upload.credential"), JSON.stringify(credential), { mode: 0o600 });
     const credentialsBefore = await readFile(path.join(root, "upload.credential"));
     const pendingBefore = await readFile(path.join(root, `${id}.job`));
+    await link(path.join(root, `${id}.job`), path.join(root, "legacy-pending-job-alias"));
     const credentialSnapshot = await readCredentialSnapshot(root, { scope: "upload", approvedServer: origin }, resources);
     const publicationResources = { checkAcl: resources.checkAcl.bind(resources), lock: resources.lock.bind(resources),
       async publish(parent: import("node:fs/promises").FileHandle, stage: string, destination: string, options?: { signal?: AbortSignal }) {
@@ -154,6 +155,7 @@ test("native spool publication feeds the committed reader and sender under the s
     const job = recovered.job;
     assert.deepEqual(job.futurePrivateField, { preserve: true });
     assert.deepEqual(JSON.parse(await readFile(path.join(root, `${id}.job`), "utf8")), job);
+    assert.deepEqual(await readFile(path.join(root, "legacy-pending-job-alias")), pendingBefore);
     assert.deepEqual(await readFile(path.join(root, "upload.credential")), credentialsBefore);
     assert.equal((await commitEncryptedSpool(root, job, credentialSnapshot, authority, ownPublicKey, commitResources, { active: () => true })).state, "unchanged");
     assert.equal(replacements, 1);
