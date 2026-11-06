@@ -406,6 +406,8 @@ test('Hermes manual root owns auditing without expanding the callable payload pe
   assert.match(dispatch, /uses: \.\/\.github\/workflows\/hermes-plugin\.yml/)
   assert.match(dispatch, /needs: \[python\]/)
   assert.match(dispatch, /actions: read/)
+  const contracts = readFileSync(new URL('../../.github/actions/delivery-contracts/action.yml', import.meta.url), 'utf8')
+  assert.match(contracts, /run: node --experimental-strip-types --test [^\n]*enablement\/verification\/workflow-budget\.test\.ts/)
 })
 
 test('media runtime identity is qualified before admission with the bounded shared installer', () => {
