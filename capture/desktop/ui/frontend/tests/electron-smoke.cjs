@@ -300,7 +300,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('heading', { name:'apparent lives here.', exact:true })).toBeVisible();
   await expect(page.getByText('Click the a in your menu bar, then Open Latest Capture.', { exact:true })).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveAttribute('data-arrow','true');
-  for(const phase of ['start','screen','whiteboard','board-ink','note','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
+  for(const phase of ['screen','whiteboard','board-ink','note','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
     send({step:'try-it',practice:phase});
     await expect(page.locator('.native-coach')).toHaveAttribute('data-stage',phase);
     if(phase==='screen-ink'){
@@ -350,7 +350,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.locator('.native-control button')).toBeHidden();
   await page.emulateMedia({reducedMotion:'no-preference'});
   // Guides use the saved keys, finish once, and replay without invoking app actions.
-  send({step:'try-it',practice:'start',shortcut:'⌃⌘9',firstCaptureRequired:true});
+  send({step:'try-it',practice:'retry',shortcut:'⌃⌘9',firstCaptureRequired:true});
   await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','record');
   assert.deepEqual(await page.locator('.native-gesture kbd').allTextContents(),['⌃','⌘','9']);
   const strip=await page.locator('.native-gesture').boundingBox();
@@ -367,7 +367,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   send({step:'try-it',practice:'paste',platform:'linux',firstCaptureRequired:true});
   await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','paste');
   assert.deepEqual(await page.locator('.native-gesture kbd').allTextContents(),['Ctrl','V']);
-  send({step:'try-it',practice:'start',platform:'linux',shortcut:'Ctrl+Alt+K',firstCaptureRequired:true});
+  send({step:'try-it',practice:'retry',platform:'linux',shortcut:'Ctrl+Alt+K',firstCaptureRequired:true});
   await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','record');
   assert.deepEqual(await page.locator('.native-gesture kbd').allTextContents(),['Ctrl','Alt','K']);
   for(const [platform,shortcut,keys] of [
@@ -375,7 +375,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     ['macos','⌥⇧Space',['⌥','⇧','Space']],
     ['macos','⌥⇧+',['⌥','⇧','+']],
   ]){
-    send({step:'try-it',practice:'start',platform,shortcut,firstCaptureRequired:true});
+    send({step:'try-it',practice:'retry',platform,shortcut,firstCaptureRequired:true});
     await expect(page.locator('.native-gesture')).toHaveAttribute('aria-label','Record with '+shortcut);
     assert.deepEqual(await page.locator('.native-gesture kbd').allTextContents(),keys);
   }
@@ -429,6 +429,18 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   send({step:'try-it',practice:'start',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
   await expect(page.getByRole('heading',{name:'Go again.',exact:true})).toBeVisible();
   assert.equal(await page.getByText(/Press .* to start recording/).count(),0);
+  await expect(page.locator('.native-setup')).toBeVisible();
+  await expect(page.locator('.native-coach')).toHaveCount(0);
+  await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,720]);
+  await expect(page.locator('.native-shortcut kbd')).toHaveText('⌃⌥⇧9');
+  await expect(page.getByRole('button',{name:'Try a capture',exact:true})).toHaveCount(0);
+  send({step:'try-it',practice:'screen',firstCaptureRequired:true});
+  await expect(page.locator('.native-coach')).toBeVisible();
+  await expect(page.locator('.native-setup')).toHaveCount(0);
+  await expect.poll(()=>page.evaluate(()=>innerWidth)).toBeLessThan(760);
+  send({step:'try-it',practice:null,firstCaptureRequired:true});
+  await expect(page.getByRole('heading',{name:'Go again.',exact:true})).toBeVisible();
+  await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,720]);
   send({step:'shortcut',shortcutEditor:{recording:true,externallyManaged:false}});
   await page.getByRole('group',{name:'Shortcut recorder'}).press('Control+Alt+k');
   await expect.poll(()=>output).toContain('"keyCode":40');

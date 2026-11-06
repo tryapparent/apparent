@@ -367,3 +367,8 @@ illustration, rather than rendering a competing surface. Installed Mac acceptanc
 must verify Whiteboard drawing → close Whiteboard → Shift-click → real editor →
 Attach/Enter → screen drawing → Finish, focus restoration,
 and bundle `notes.json`/semantic output. Renderer simulation is not native proof.
+
+The Electron first-capture start state keeps “Go again.” and the saved shortcut in
+the full setup window. It becomes the floating coach only after capture selection
+begins; the next shortcut still uses the existing native recording path. Returning
+to the start state restores the setup window. Native fallback routing is unchanged.

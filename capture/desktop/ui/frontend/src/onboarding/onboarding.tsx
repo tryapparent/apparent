@@ -65,7 +65,8 @@ export function NativeOnboarding(){
   const shortcutRecorder=useRef<HTMLDivElement|null>(null);
   useEffect(()=>{if(state?.shortcutEditor?.recording)shortcutRecorder.current?.focus()},[state?.shortcutEditor?.recording]);
   if(!state)return <main className="native-setup"><p>Connecting to apparent…</p></main>;
-  const practice=state.step==='try-it',penPage=state.step==='welcome'&&state.penPicker;
+  const goAgain=state.step==='try-it'&&(!state.practice||state.practice==='start');
+  const practice=state.step==='try-it'&&!goAgain,penPage=state.step==='welcome'&&state.penPicker;
   const boardName='Whiteboard';
   const trackpadHint=state.practice==='screen-ink';
   const helper=<aside className="native-trackpad-helper" aria-label="Trackpad drawing hint"><div className="native-trackpad-helper-content"><strong>Pressing down on your trackpad?</strong><p>No need. Just hold Shift and glide.</p></div></aside>;
@@ -106,7 +107,8 @@ export function NativeOnboarding(){
         {state.shortcutChosen?<kbd>{state.shortcut}</kbd>:<p>No shortcut selected.</p>}
         {state.shortcutEditor?.externallyManaged?<Button onClick={()=>void action('use-desktop-shortcut')}>Use desktop shortcut</Button>:<Button variant="outline" onClick={()=>void action('change-shortcut')}>{state.shortcutChosen?'Change shortcut':'Choose shortcut'}</Button>}
       </>}{state.shortcutEditor?.error&&<p role="alert">{state.shortcutEditor.error}</p>}</div></>}
+    {goAgain&&<><h1>Go again.</h1><div className="native-shortcut"><kbd>{state.shortcut}</kbd></div></>}
     {state.step==='done'&&<><h1>Ready for your next idea.</h1><div className="native-explain"><img src={frog} alt=""/></div><p>apparent stays in the menu bar, ready when you are.</p></>}
     {error&&<p role="alert">{error}</p>}
-    </section><footer className={penPage?'native-pen-footer':undefined}><Button variant="ghost" onClick={()=>void action('back')} disabled={state.index===0||penBusy}>Back</Button>{!penPage&&<span>{state.index+1} / {state.count}</span>}<Button aria-busy={penPage&&penBusy} onClick={()=>penPage?confirmPen():void action('continue')} disabled={(penPage&&(!state.penSelected||penBusy||state.penError))||(state.step==='permissions'&&!state.ready)||(state.step==='shortcut'&&state.firstCaptureRequired&&(!state.shortcutChosen||!state.shortcutTested||state.shortcutEditor?.recording))}>{state.step==='welcome'?(state.penPicker?'Use this pen':'Choose a pen'):state.step==='done'?'Finish setup':state.step==='permissions'?(state.fix?'Finish permission setup':'Choose recording shortcut'):state.step==='shortcut'?'Continue':'Try a capture'}</Button></footer></main>;
+    </section><footer className={penPage?'native-pen-footer':undefined}><Button variant="ghost" onClick={()=>void action('back')} disabled={state.index===0||penBusy}>Back</Button>{!penPage&&<span>{state.index+1} / {state.count}</span>}{!goAgain&&<Button aria-busy={penPage&&penBusy} onClick={()=>penPage?confirmPen():void action('continue')} disabled={(penPage&&(!state.penSelected||penBusy||state.penError))||(state.step==='permissions'&&!state.ready)||(state.step==='shortcut'&&state.firstCaptureRequired&&(!state.shortcutChosen||!state.shortcutTested||state.shortcutEditor?.recording))}>{state.step==='welcome'?(state.penPicker?'Use this pen':'Choose a pen'):state.step==='done'?'Finish setup':state.step==='permissions'?(state.fix?'Finish permission setup':'Choose recording shortcut'):state.step==='shortcut'?'Continue':'Try a capture'}</Button>}</footer></main>;
 }

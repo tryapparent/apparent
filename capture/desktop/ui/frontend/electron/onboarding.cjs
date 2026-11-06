@@ -97,7 +97,7 @@ app.whenReady().then(()=>{
 });
 function present(v,activate=false){
   if(closing||!window||window.isDestroyed())return;
-  const coach=v.step==='try-it';
+  const coach=v.step==='try-it'&&v.practice!==null&&v.practice!=='start';
   const focal=v.practiceBoard||v.anchor;
   const target=focal?screen.getDisplayMatching({x:Math.round(focal[0]),y:Math.round(focal[1]),width:Math.max(1,Math.round(focal[2])),height:Math.max(1,Math.round(focal[3]))}):screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   const area=target.workArea;
