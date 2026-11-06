@@ -6,7 +6,7 @@ use std::fs::File;
 fn extracted_movie_validator_accepts_real_mp4_and_mov_fixtures() {
     for fixture in ["tiny.mp4", "tiny.mov"] {
         let path = format!(
-            "{}/../../capture/engine/bundle/bundle_processing/publication/fixtures/{fixture}",
+            "{}/tests/fixtures/{fixture}",
             env!("CARGO_MANIFEST_DIR")
         );
         let file = File::open(path).unwrap();
@@ -17,7 +17,7 @@ fn extracted_movie_validator_accepts_real_mp4_and_mov_fixtures() {
 #[test]
 fn extracted_movie_validator_rejects_truncated_container() {
     let path = format!(
-        "{}/../../capture/engine/bundle/bundle_processing/publication/fixtures/tiny.mp4",
+        "{}/tests/fixtures/tiny.mp4",
         env!("CARGO_MANIFEST_DIR")
     );
     let bytes = std::fs::read(path).unwrap();
