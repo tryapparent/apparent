@@ -67,6 +67,20 @@ export type NativeClipboardWriteResult =
   | { status: 'refused'; reason: 'stale' | 'busy' | 'unavailable' | 'invalid-text' | 'too-large' }
   | { status: 'outcome-unknown' };
 
+/** Combined offers preserve the exact PNG bytes; no image re-encoding or text fallback. */
+export const MAX_PNG_BYTES = 4_194_304;
+export const MAX_PNG_DIMENSION = 4096;
+export const MAX_PNG_DECODED_BYTES = 67_108_864;
+/** PNG uses canonical lowercase hex on the private wire; this bound includes LF. */
+export const MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES = 9_000_000;
+export interface NativeClipboardPngTextPort {
+  writePngAndText(png: Uint8Array, text: string, observed: { processEpoch: string; revision: number }): Promise<NativeClipboardPngTextWriteResult>;
+}
+export type NativeClipboardPngTextWriteResult =
+  | { status: 'applied'; text: { digest: string; byteLength: number }; png: { digest: string; byteLength: number } }
+  | { status: 'refused'; reason: 'stale' | 'busy' | 'unavailable' | 'invalid-text' | 'invalid-png' | 'too-large' }
+  | { status: 'outcome-unknown' };
+
 /** Record's narrow compatibility access to its compiled `penColor` config key. */
 export interface RecordPenColorConfig {
   read(): Promise<LegacyConfigValue>;

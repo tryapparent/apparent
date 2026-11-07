@@ -26,10 +26,15 @@ enum VerifiedTextOwnerBackend {
 }
 
 struct VerifiedTextOwnerRequest {
-    text: String,
+    offer: VerifiedTextOwnerOffer,
     deadline: std::time::Instant,
     backend: VerifiedTextOwnerBackend,
     reply: std::sync::mpsc::SyncSender<VerifiedTextWrite>,
+}
+
+enum VerifiedTextOwnerOffer {
+    Text(String),
+    PngAndText { png: Vec<u8>, text: String },
 }
 
 fn with<T>(f: impl FnOnce(&mut arboard::Clipboard) -> Result<T, arboard::Error>) -> Result<T> {
@@ -54,6 +59,10 @@ pub fn combined_offer_supported() -> bool {
     native_wayland_clipboard() && owner_backend_ready()
 }
 
+fn combined_wayland_backend_available(native_wayland: bool, owner_ready: bool, readback_ready: bool) -> bool {
+    native_wayland && owner_ready && readback_ready
+}
+
 // Probe the actual replacement in a bounded child, without claiming a selection.
 // A successful wl-paste probe does not establish that this backend can start.
 fn owner_backend_ready() -> bool {
@@ -64,6 +73,21 @@ fn owner_backend_ready() -> bool {
     let mut command = Command::new(executable);
     command.args([OWNER_ARGUMENT, "--check"]).env("WAYLAND_DISPLAY", display);
     run_bounded_command(command, std::time::Instant::now() + std::time::Duration::from_secs(3), 1024)
+        .is_ok_and(|(status, stdout)| status.success() && stdout == b"READY\n")
+}
+
+fn owner_backend_ready_until(deadline: std::time::Instant) -> bool {
+    if std::time::Instant::now() >= deadline {
+        return false;
+    }
+    let (Ok(executable), Some(display)) = (owner_executable(), super::super::wayland_display())
+    else {
+        return false;
+    };
+    let mut command = Command::new(executable);
+    command.args([OWNER_ARGUMENT, "--check"]).env("WAYLAND_DISPLAY", display);
+    let probe_deadline = deadline.min(std::time::Instant::now() + std::time::Duration::from_secs(3));
+    run_bounded_command(command, probe_deadline, 1024)
         .is_ok_and(|(status, stdout)| status.success() && stdout == b"READY\n")
 }
 
@@ -544,7 +568,41 @@ pub fn set_text_verified_until(text: &str, deadline: std::time::Instant) -> Veri
     } else {
         VerifiedTextOwnerBackend::X11(executable)
     };
-    submit_verified_text_owner(text, deadline, backend)
+    submit_verified_text_owner(VerifiedTextOwnerOffer::Text(text.to_owned()), deadline, backend)
+}
+
+/// Verified combined offer is supported only on native Wayland. It shares the existing persistent
+/// owner worker with verified text so the new selection replaces the prior helper in one lane.
+pub fn set_png_and_text_verified_until(
+    png_bytes: &[u8],
+    text: &str,
+    deadline: std::time::Instant,
+) -> VerifiedTextWrite {
+    if crate::capture::desktop::workflow::native_host::clipboard_png_refusal(png_bytes).is_some()
+        || crate::capture::desktop::workflow::native_host::clipboard_text_refusal(text).is_some()
+        || std::time::Instant::now() >= deadline
+    {
+        return VerifiedTextWrite::Unavailable;
+    }
+    let native_wayland = native_wayland_clipboard();
+    if !native_wayland {
+        return VerifiedTextWrite::Unavailable;
+    }
+    let owner_ready = owner_backend_ready_until(deadline);
+    let readback_ready = clipboard_tool("wl-paste").is_some();
+    if !combined_wayland_backend_available(native_wayland, owner_ready, readback_ready)
+        || std::time::Instant::now() >= deadline
+    {
+        return VerifiedTextWrite::Unavailable;
+    }
+    let (Some(executable), Some(display)) = (owner_executable().ok(), super::super::wayland_display()) else {
+        return VerifiedTextWrite::Unavailable;
+    };
+    submit_verified_text_owner(
+        VerifiedTextOwnerOffer::PngAndText { png: png_bytes.to_vec(), text: text.to_owned() },
+        deadline,
+        VerifiedTextOwnerBackend::Wayland(executable, display),
+    )
 }
 
 #[cfg(target_os = "linux")]
@@ -575,7 +633,7 @@ fn clipboard_tool_from(
 }
 
 fn submit_verified_text_owner(
-    text: &str,
+    offer: VerifiedTextOwnerOffer,
     deadline: std::time::Instant,
     backend: VerifiedTextOwnerBackend,
 ) -> VerifiedTextWrite {
@@ -586,7 +644,7 @@ fn submit_verified_text_owner(
     };
     let (reply, receiver) = sync_channel(1);
     let request = VerifiedTextOwnerRequest {
-        text: text.to_owned(),
+        offer,
         deadline,
         backend,
         reply,
@@ -626,18 +684,18 @@ fn verified_text_owner_loop(receiver: std::sync::mpsc::Receiver<VerifiedTextOwne
         let result = if std::time::Instant::now() >= request.deadline {
             VerifiedTextWrite::Unavailable
         } else {
-            match request.backend {
-                VerifiedTextOwnerBackend::X11(executable) => {
-                    set_text_x11_verified(&request.text, request.deadline, executable, &mut owner)
+            match (request.offer, request.backend) {
+                (VerifiedTextOwnerOffer::Text(text), VerifiedTextOwnerBackend::X11(executable)) => {
+                    set_text_x11_verified(&text, request.deadline, executable, &mut owner)
                 }
-                VerifiedTextOwnerBackend::Wayland(executable, display) => {
-                    set_text_wayland_verified(
-                        &request.text,
-                        request.deadline,
-                        executable,
-                        display,
-                        &mut owner,
-                    )
+                (VerifiedTextOwnerOffer::Text(text), VerifiedTextOwnerBackend::Wayland(executable, display)) => {
+                    set_text_wayland_verified(&text, request.deadline, executable, display, &mut owner)
+                }
+                (VerifiedTextOwnerOffer::PngAndText { png, text }, VerifiedTextOwnerBackend::Wayland(executable, display)) => {
+                    set_png_and_text_wayland_verified(&png, &text, request.deadline, executable, display, &mut owner)
+                }
+                (VerifiedTextOwnerOffer::PngAndText { .. }, VerifiedTextOwnerBackend::X11(_)) => {
+                    VerifiedTextWrite::Unavailable
                 }
             }
         };
@@ -778,6 +836,48 @@ fn set_text_wayland_verified(
     wayland_verified_result(true, true)
 }
 
+fn set_png_and_text_wayland_verified(
+    png_bytes: &[u8],
+    text: &str,
+    deadline: std::time::Instant,
+    executable: std::path::PathBuf,
+    display: std::ffi::OsString,
+    owner: &mut Option<Child>,
+) -> VerifiedTextWrite {
+    if std::time::Instant::now() >= deadline {
+        return VerifiedTextWrite::Unavailable;
+    }
+    let entries = vec![
+        ("image/png".to_owned(), png_bytes.to_vec()),
+        ("text/plain;charset=utf-8".to_owned(), text.as_bytes().to_vec()),
+    ];
+    let child = match copy_multi_wayland_checked(
+        &entries,
+        executable,
+        display,
+        deadline.saturating_duration_since(std::time::Instant::now()),
+        |mime, bytes| still_ours_until(mime, bytes, deadline),
+    ) {
+        Ok(child) => child,
+        Err(_) => return VerifiedTextWrite::OutcomeUnknown,
+    };
+    if std::time::Instant::now() >= deadline {
+        let mut child = child;
+        stop_owner(&mut child);
+        return VerifiedTextWrite::OutcomeUnknown;
+    }
+    let mut child = child;
+    if !matches!(child.try_wait(), Ok(None)) {
+        stop_owner(&mut child);
+        return VerifiedTextWrite::OutcomeUnknown;
+    }
+    if let Some(mut previous) = owner.replace(child) {
+        stop_owner(&mut previous);
+    }
+    // MIME presence and exact bytes do not identify the Wayland owner.
+    wayland_verified_result(true, true)
+}
+
 fn x11_write_confirmed(owner_before: Option<u32>, exact_readback: bool, owner_after: Option<u32>, pid: u32) -> bool {
     owner_before == Some(pid) && exact_readback && owner_after == Some(pid)
 }
@@ -902,6 +1002,15 @@ mod tests {
         assert_eq!(wayland_verified_result(true, true), VerifiedTextWrite::OutcomeUnknown);
         assert_eq!(wayland_verified_result(true, false), VerifiedTextWrite::OutcomeUnknown);
         assert_eq!(wayland_verified_result(false, true), VerifiedTextWrite::OutcomeUnknown);
+    }
+
+    #[test]
+    fn combined_offer_refuses_x11_and_wayland_never_claims_owner_identity() {
+        assert!(!combined_wayland_backend_available(false, true, true));
+        assert!(!combined_wayland_backend_available(true, false, true));
+        assert!(!combined_wayland_backend_available(true, true, false));
+        assert!(combined_wayland_backend_available(true, true, true));
+        assert_eq!(wayland_verified_result(true, true), VerifiedTextWrite::OutcomeUnknown);
     }
 
     #[test]
@@ -1241,7 +1350,14 @@ mod tests {
                 .unwrap();
         }
         let text = "test summary";
-        set_png_and_text(&png, text).unwrap();
+        assert_eq!(
+            set_png_and_text_verified_until(
+                &png,
+                text,
+                std::time::Instant::now() + std::time::Duration::from_secs(3),
+            ),
+            VerifiedTextWrite::OutcomeUnknown,
+        );
         assert!(still_ours("image/png", &png).unwrap());
         assert!(still_ours("text/plain;charset=utf-8", text.as_bytes()).unwrap());
         restore_text_wayland(
