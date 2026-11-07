@@ -95,6 +95,8 @@ export interface ProcessingInput {
   autocrop?: { label: string; fullFramesDirectory: string };
   contactSheetPath?: string;
   videoPath?: string;
+  /** Original sealed accepted-stroke document; canonical v1 arrays omit source IDs. */
+  acceptedStrokeDocument?: { path: string; strokeCount: number };
 }
 
 export interface ProcessingOutput {
@@ -335,7 +337,7 @@ export function assembleProcessingOutput(
   if (input.note?.trim()) lines.push(`Note: ${input.note.trim()}`);
   for (const warning of input.warnings ?? []) {
     if (warning.kind === "videoOnlyInteractionTelemetry")
-      lines.push("Interaction context: timed CLI video only; clicks and Shift ink were not collected. A visible click in the video will not appear in events, marks or click keyframes. Use the app's recording shortcut for interaction context.");
+      lines.push("Interaction context: video only; clicks and Shift ink were not collected. A visible click in the video will not appear in events, marks or click keyframes.");
     else if (warning.kind === "imageQuality") lines.push(`Image quality: ${warning.message}`);
     else if (warning.kind === "noMicrophoneAudio") lines.push("No microphone audio was saved. Check the microphone and try again.");
     else if (warning.kind === "audioInitialGap") lines.push(audioInitialGapText(warning.atMs));
@@ -396,6 +398,13 @@ export function assembleProcessingOutput(
     if (!isAbsolute(input.videoPath) || resolve(input.videoPath) !== input.videoPath)
       throw new TypeError("videoPath must be absolute and normalized");
     if (!clipboard) lines.push(`Video: ${input.videoPath}`);
+  }
+  if (input.acceptedStrokeDocument) {
+    const annotation = input.acceptedStrokeDocument;
+    if (!Number.isSafeInteger(annotation.strokeCount) || annotation.strokeCount < 0 || !isAbsolute(annotation.path)
+      || relative(input.bundlePath, annotation.path).split(sep).includes("..") || /[\r\n\0]/u.test(annotation.path))
+      throw new TypeError("Invalid original accepted-stroke document reference");
+    lines.push(`Accepted strokes: ${annotation.strokeCount}. Original annotation data: ${annotation.path}`);
   }
   if (!clipboard && input.contactSheetPath) lines.push(`Contact sheet: ${input.contactSheetPath}`);
   if (!clipboard) lines.push(`Bundle: ${input.bundlePath}`);
