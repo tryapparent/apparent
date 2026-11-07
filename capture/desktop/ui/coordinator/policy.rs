@@ -621,7 +621,8 @@ impl ApparentCoordinator {
         if crate::capture::desktop::workflow::agent_capture::storage_clock_ms() >= request.deadline {
             return Some(refusal("unavailable"));
         }
-        if let Operation::WriteClipboardText(text) = &request.operation {
+        if let Operation::WriteClipboardText(text) | Operation::WriteClipboardTextReadback(text) = &request.operation {
+            let readback = matches!(&request.operation, Operation::WriteClipboardTextReadback(_));
             use std::sync::atomic::Ordering;
             use sha2::{Digest, Sha256};
             if let Some(reason) = crate::capture::desktop::workflow::native_host::clipboard_text_refusal(text) {
@@ -654,16 +655,28 @@ impl ApparentCoordinator {
                 } else if NATIVE_HOST_REVISION_FOR_WORKER.load(Ordering::Acquire) != expected_revision {
                     refused("stale")
                 } else {
-                    match crate::shared::handoff::copy_string_to_clipboard_verified_until(&text, deadline_instant) {
-                        crate::shared::handoff::VerifiedClipboardTextWrite::Applied
-                            if crate::capture::desktop::workflow::agent_capture::storage_clock_ms() < deadline => {
+                    let result = if readback {
+                        match crate::shared::handoff::copy_string_to_clipboard_readback_until(&text, deadline_instant) {
+                            crate::shared::handoff::VerifiedClipboardTextReadbackWrite::WrittenReadback => {
+                                let digest = Sha256::digest(text.as_bytes());
+                                serde_json::json!({"status":"written-readback","digest":format!("{digest:x}"),"byteLength":text.len()})
+                            }
+                            crate::shared::handoff::VerifiedClipboardTextReadbackWrite::Unavailable => refused("unavailable"),
+                            crate::shared::handoff::VerifiedClipboardTextReadbackWrite::OutcomeUnknown => serde_json::json!({"status":"outcome-unknown"}),
+                        }
+                    } else {
+                        match crate::shared::handoff::copy_string_to_clipboard_verified_until(&text, deadline_instant) {
+                            crate::shared::handoff::VerifiedClipboardTextWrite::Applied => {
                                 let digest = Sha256::digest(text.as_bytes());
                                 serde_json::json!({"status":"applied","digest":format!("{digest:x}"),"byteLength":text.len()})
                             }
-                        crate::shared::handoff::VerifiedClipboardTextWrite::Unavailable
-                            if crate::capture::desktop::workflow::agent_capture::storage_clock_ms() < deadline => refused("unavailable"),
-                        _ => serde_json::json!({"status":"outcome-unknown"}),
-                    }
+                            crate::shared::handoff::VerifiedClipboardTextWrite::Unavailable => refused("unavailable"),
+                            crate::shared::handoff::VerifiedClipboardTextWrite::OutcomeUnknown => serde_json::json!({"status":"outcome-unknown"}),
+                        }
+                    };
+                    if crate::capture::desktop::workflow::agent_capture::storage_clock_ms() < deadline {
+                        result
+                    } else { serde_json::json!({"status":"outcome-unknown"}) }
                 };
                 let _ = reply.send(result.to_string());
             });
@@ -786,6 +799,7 @@ impl ApparentCoordinator {
             }
             Operation::ReadStrokeColor => unreachable!("pen read was handled before config observation"),
             Operation::WriteClipboardText(_) => unreachable!("clipboard write was dispatched to its bounded worker"),
+            Operation::WriteClipboardTextReadback(_) => unreachable!("clipboard readback write was dispatched to its bounded worker"),
             Operation::SaveRecordShortcut(value) => self.native_host_save_shortcut(value, &observation, request.deadline),
         })
     }

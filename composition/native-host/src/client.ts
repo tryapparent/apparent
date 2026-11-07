@@ -3,7 +3,7 @@ import { lstat } from 'node:fs/promises';
 import { connect } from 'node:net';
 import { homedir } from 'node:os';
 import { join, normalize } from 'node:path';
-import { MAX_SERIALIZED_FRAME_BYTES, MAX_UTF8_TEXT_BYTES, type NativeClipboardPort, type NativeClipboardWriteResult, type NativeHostPort, type NativeHostSnapshot, type NativeHostRefusal, type NativeMutationResult, type NativePenPort, type NativePenResult, type NativePenSnapshot } from '@apparent/app-contracts/native';
+import { MAX_SERIALIZED_FRAME_BYTES, MAX_UTF8_TEXT_BYTES, type NativeClipboardPort, type NativeClipboardWriteResult, type NativeClipboardTextReadbackPort, type NativeClipboardTextReadbackResult, type NativeHostPort, type NativeHostSnapshot, type NativeHostRefusal, type NativeMutationResult, type NativePenPort, type NativePenResult, type NativePenSnapshot } from '@apparent/app-contracts/native';
 
 type LegacyConfigValue = Parameters<NativePenPort['applyStrokeColor']>[1];
 
@@ -85,7 +85,7 @@ async function request(target: ReturnType<typeof endpoint>, operation: string, f
   const id = randomUUID();
   const deadline = Number(process.hrtime.bigint() / 1_000_000n) + TIMEOUT_MS;
   const frame = Buffer.from(`${JSON.stringify({ protocol: 1, id, owner: 'record', operation, ...fields, deadline })}\n`);
-  const maxFrame = operation === 'writeClipboardText' ? MAX_SERIALIZED_FRAME_BYTES : MAX_FRAME;
+  const maxFrame = operation === 'writeClipboardText' || operation === 'writeClipboardTextReadback' ? MAX_SERIALIZED_FRAME_BYTES : MAX_FRAME;
   if (frame.length > maxFrame) throw new RequestFrameTooLarge('Native host request exceeds limit');
   const identity = await verifySocket(target);
   return await new Promise((resolve, reject) => {
@@ -237,6 +237,7 @@ function clipboardResult(value: unknown, expectedBytes: number, expectedDigest: 
 }
 
 let clipboardWriteInFlight = false;
+let clipboardReadbackInFlight = false;
 
 /** Privileged typed clipboard facade. It exposes no read or arbitrary host operation. */
 export function createNativeClipboardPort(): NativeClipboardPort {
@@ -261,6 +262,36 @@ export function createNativeClipboardPort(): NativeClipboardPort {
       } finally { clipboardWriteInFlight = false; }
     },
   };
+}
+
+/** Linux Wayland local write submission plus exact bounded observation, not owner identity. */
+export function createNativeClipboardTextReadbackPort(): NativeClipboardTextReadbackPort {
+  const target = endpoint();
+  return { async writeTextReadback(text, observed) {
+    const encoded = exactUtf8(text);
+    if ('reason' in encoded) return { status: 'refused', reason: encoded.reason };
+    const epoch = observed?.processEpoch, revision = observed?.revision;
+    if (typeof epoch !== 'string' || !/^[a-zA-Z0-9-]{1,64}$/.test(epoch)
+      || !Number.isSafeInteger(revision) || revision < 0) throw new TypeError('Invalid native host revision');
+    if (clipboardReadbackInFlight) return { status: 'refused', reason: 'busy' };
+    clipboardReadbackInFlight = true;
+    try {
+      const value = await request(target, 'writeClipboardTextReadback', { observed: { processEpoch: epoch, revision }, text });
+      const digest = createHash('sha256').update(encoded.bytes).digest('hex');
+      if (exact(value, ['status', 'digest', 'byteLength']) && value.status === 'written-readback'
+        && value.digest === digest && Number.isSafeInteger(value.byteLength) && value.byteLength === encoded.bytes.length) {
+        return { status: 'written-readback', digest, byteLength: encoded.bytes.length };
+      }
+      if (exact(value, ['status', 'reason']) && value.status === 'refused'
+        && ['stale', 'busy', 'unavailable', 'invalid-text', 'too-large'].includes(String(value.reason))) {
+        return { status: 'refused', reason: value.reason as Extract<NativeClipboardTextReadbackResult, {status:'refused'}>['reason'] };
+      }
+      return { status: 'outcome-unknown' };
+    } catch (error) {
+      if (error instanceof RequestFrameTooLarge) return { status: 'refused', reason: 'too-large' };
+      return { status: 'outcome-unknown' };
+    } finally { clipboardReadbackInFlight = false; }
+  } };
 }
 
 /** Privileged typed pen facade. Renderer composition should pass this only to Record. */

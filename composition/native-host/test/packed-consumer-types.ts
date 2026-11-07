@@ -1,9 +1,11 @@
 import { createNativeHostPort } from '@apparent/native-host';
-import { createNativeClipboardPort, MAX_SERIALIZED_FRAME_BYTES, MAX_UTF8_TEXT_BYTES } from '@apparent/native-host/clipboard';
+import { createNativeClipboardPort, createNativeClipboardTextReadbackPort, MAX_SERIALIZED_FRAME_BYTES, MAX_UTF8_TEXT_BYTES } from '@apparent/native-host/clipboard';
 import { createNativePenPort } from '@apparent/native-host/pen';
 import type {
   NativeClipboardPort,
   NativeClipboardWriteResult,
+  NativeClipboardTextReadbackPort,
+  NativeClipboardTextReadbackResult,
   NativeHostPort,
   NativeHostSnapshot,
   NativePenPort,
@@ -14,6 +16,7 @@ import type {
 const host: NativeHostPort = createNativeHostPort();
 const pen: NativePenPort = createNativePenPort();
 const clipboard: NativeClipboardPort = createNativeClipboardPort();
+const readback: NativeClipboardTextReadbackPort = createNativeClipboardTextReadbackPort();
 const limits: readonly number[] = [MAX_UTF8_TEXT_BYTES, MAX_SERIALIZED_FRAME_BYTES];
 
 async function consumerContract(): Promise<NativeClipboardWriteResult> {
@@ -29,3 +32,9 @@ async function consumerContract(): Promise<NativeClipboardWriteResult> {
 }
 
 void consumerContract;
+
+async function readbackContract(): Promise<NativeClipboardTextReadbackResult> {
+  const snapshot = await host.readSnapshot();
+  return readback.writeTextReadback('strict readback consumer', { processEpoch: snapshot.processEpoch, revision: snapshot.revision });
+}
+void readbackContract;

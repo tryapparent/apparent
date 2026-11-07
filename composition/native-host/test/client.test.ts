@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
 import { MAX_SERIALIZED_FRAME_BYTES, MAX_UTF8_TEXT_BYTES } from '@apparent/app-contracts/native';
-import { createNativeHostPort, createNativeClipboardPort, createNativePenPort } from '../src/client.ts';
+import { createNativeHostPort, createNativeClipboardPort, createNativeClipboardTextReadbackPort, createNativePenPort } from '../src/client.ts';
 
 const facts = {
   api: 1, processEpoch: 'epoch-a', revision: 4, scope: 'running-desktop-process', freshness: 'cached-gui-observation',
@@ -355,5 +355,74 @@ test('clipboard stale, busy, unavailable, malformed receipt, and lost reply stay
 test('clipboard refuses a different digest even when its byte length matches', async () => {
   await withSocket(() => ({ status: 'applied', digest: '0'.repeat(64), byteLength: 5 }), async () => {
     assert.deepEqual(await createNativeClipboardPort().writeText('exact', expected), { status: 'outcome-unknown' });
+  });
+});
+
+test('readback clipboard operation is distinct and accepts only exact receipts once', async () => {
+  const text = 'same exact bytes λ';
+  const bytes = Buffer.from(text, 'utf8');
+  const digest = createHash('sha256').update(bytes).digest('hex');
+  let dispatches = 0;
+  await withSocket(request => {
+    dispatches++;
+    assert.equal(request.operation, 'writeClipboardTextReadback');
+    assert.equal(request.owner, 'record');
+    assert.deepEqual(Object.keys(request).sort(), ['deadline', 'id', 'observed', 'operation', 'owner', 'protocol', 'text']);
+    return { status: 'written-readback', digest, byteLength: bytes.length };
+  }, async () => {
+    assert.deepEqual(await createNativeClipboardTextReadbackPort().writeTextReadback(text, expected), {
+      status: 'written-readback', digest, byteLength: bytes.length,
+    });
+  });
+  assert.equal(dispatches, 1);
+  await withSocket(() => ({ status: 'applied', digest, byteLength: bytes.length }), async () => {
+    assert.deepEqual(await createNativeClipboardTextReadbackPort().writeTextReadback(text, expected), { status: 'outcome-unknown' });
+  });
+});
+
+test('readback rejects wrong receipts and lost replies without retrying or accepting legacy applied', async () => {
+  for (const result of [
+    { status: 'written-readback', digest: '0'.repeat(64), byteLength: 5 },
+    { status: 'written-readback', digest: createHash('sha256').update('exact').digest('hex'), byteLength: 4 },
+    { status: 'written-readback', digest: createHash('sha256').update('exact').digest('hex'), byteLength: 5, owner: true },
+    { status: 'applied', digest: createHash('sha256').update('exact').digest('hex'), byteLength: 5 },
+    DROP,
+  ]) {
+    let calls = 0;
+    await withSocket(() => { calls++; return result; }, async () => {
+      assert.deepEqual(await createNativeClipboardTextReadbackPort().writeTextReadback('exact', expected), { status: 'outcome-unknown' });
+    });
+    assert.equal(calls, 1);
+  }
+});
+
+test('readback preserves pre-effect refusals and enforces the same exact-text bounds', async () => {
+  for (const reason of ['stale', 'busy', 'unavailable'] as const) {
+    await withSocket(() => ({ status: 'refused', reason }), async () => {
+      assert.deepEqual(await createNativeClipboardTextReadbackPort().writeTextReadback('exact', expected), { status: 'refused', reason });
+    });
+  }
+  let calls = 0;
+  await withSocket(() => { calls++; return DROP; }, async () => {
+    const port = createNativeClipboardTextReadbackPort();
+    for (const text of ['nul\0', '\ud800', '\udc00']) {
+      assert.deepEqual(await port.writeTextReadback(text, expected), { status: 'refused', reason: 'invalid-text' });
+    }
+    assert.deepEqual(await port.writeTextReadback('x'.repeat(MAX_UTF8_TEXT_BYTES + 1), expected), { status: 'refused', reason: 'too-large' });
+  });
+  assert.equal(calls, 0);
+});
+
+test('readback bounds include escaped text, largest GUI selectors and terminating LF', async () => {
+  const text = '\u0001'.repeat(MAX_UTF8_TEXT_BYTES);
+  const digest = createHash('sha256').update(text).digest('hex');
+  await withSocket(request => {
+    assert(Buffer.byteLength(JSON.stringify(request) + '\n') <= MAX_SERIALIZED_FRAME_BYTES);
+    assert.equal(request.text, text);
+    return { status: 'written-readback', digest, byteLength: MAX_UTF8_TEXT_BYTES };
+  }, async () => {
+    assert.deepEqual(await createNativeClipboardTextReadbackPort().writeTextReadback(text, {
+      processEpoch: 'e'.repeat(64), revision: Number.MAX_SAFE_INTEGER,
+    }), { status: 'written-readback', digest, byteLength: MAX_UTF8_TEXT_BYTES });
   });
 });

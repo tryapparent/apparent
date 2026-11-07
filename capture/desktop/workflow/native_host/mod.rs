@@ -90,6 +90,7 @@ pub(crate) enum Operation {
     ApplyStrokeColor(Option<[u8; 3]>, ExpectedPenColor),
     ReadStrokeColor,
     WriteClipboardText(String),
+    WriteClipboardTextReadback(String),
 }
 
 #[derive(Clone, Debug)]
@@ -158,12 +159,15 @@ pub(crate) fn parse(line: &str, now: u64) -> Option<Admitted> {
         "writeClipboardText" => &[
             "protocol", "id", "owner", "operation", "deadline", "observed", "text",
         ],
+        "writeClipboardTextReadback" => &[
+            "protocol", "id", "owner", "operation", "deadline", "observed", "text",
+        ],
         _ => return None,
     };
     if object.len() != fields.len() || object.keys().any(|key| !fields.contains(&key.as_str())) {
         return None;
     }
-    let max_frame = if request.operation == "writeClipboardText" {
+    let max_frame = if request.operation == "writeClipboardText" || request.operation == "writeClipboardTextReadback" {
         MAX_SERIALIZED_FRAME_BYTES
     } else {
         LEGACY_MAX_FRAME_BYTES
@@ -219,6 +223,19 @@ pub(crate) fn parse(line: &str, now: u64) -> Option<Admitted> {
                 && request.expected_pen_color.is_none() =>
         {
             Operation::WriteClipboardText(request.text.clone()?)
+        }
+        "writeClipboardTextReadback"
+            if request.expected.is_none()
+                && request.observed.is_some()
+                && request.text.is_some()
+                && request.permission_id.is_none()
+                && request.key.is_none()
+                && request.modifiers.is_none()
+                && request.shortcut.is_none()
+                && matches!(&request.rgb, Field::Missing)
+                && request.expected_pen_color.is_none() =>
+        {
+            Operation::WriteClipboardTextReadback(request.text.clone()?)
         }
         "requestPermission"
             if request.expected.is_some()
@@ -464,5 +481,15 @@ mod tests {
         assert!(matches!(parse(&line, 1000).unwrap().operation,
             Operation::WriteClipboardText(ref value) if value == &"x".repeat(MAX_UTF8_TEXT_BYTES + 1)));
         assert!(parse(&"x".repeat(LEGACY_MAX_FRAME_BYTES), 1000).is_none());
+    }
+
+    #[test]
+    fn readback_operation_is_distinct_and_record_bound() {
+        let line = serde_json::json!({"protocol":1,"id":"req-1","owner":"record","operation":"writeClipboardTextReadback","deadline":3000,
+            "observed":{"processEpoch":"epoch","revision":2},"text":"proof"}).to_string();
+        assert!(matches!(parse(&line, 1000).unwrap().operation, Operation::WriteClipboardTextReadback(ref text) if text == "proof"));
+        let mut wrong_owner: serde_json::Value = serde_json::from_str(&line).unwrap();
+        wrong_owner["owner"] = serde_json::json!("desktop");
+        assert!(parse(&wrong_owner.to_string(), 1000).is_none());
     }
 }

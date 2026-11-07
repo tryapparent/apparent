@@ -119,8 +119,8 @@ try {
   const sourceTests = await readFile(join(nativeRoot, 'test/client.test.ts'), 'utf8');
   const packedTests = sourceTests
     .replace(
-      "import { createNativeHostPort, createNativeClipboardPort, createNativePenPort } from '../src/client.ts';",
-      "import { createNativeHostPort } from '@apparent/native-host';\nimport { createNativeClipboardPort } from '@apparent/native-host/clipboard';\nimport { createNativePenPort } from '@apparent/native-host/pen';",
+      "import { createNativeHostPort, createNativeClipboardPort, createNativeClipboardTextReadbackPort, createNativePenPort } from '../src/client.ts';",
+      "import { createNativeHostPort } from '@apparent/native-host';\nimport { createNativeClipboardPort, createNativeClipboardTextReadbackPort } from '@apparent/native-host/clipboard';\nimport { createNativePenPort } from '@apparent/native-host/pen';",
     );
   assert.notEqual(packedTests, sourceTests, 'packed test copy must switch to the installed public exports');
   assert.ok(!packedTests.includes("'../src/"), 'packed test copy must not import TypeScript source');
@@ -148,7 +148,7 @@ try {
     install: 'normal npm install from paired tarballs; scripts enabled; cargo/rustc/tsc/esbuild denied on PATH',
     runtime: 'plain Node ESM import of root, pen, and clipboard; invalid and oversize refusal; no TS flags',
     types: 'strict fresh consumer compile; no React ambient types',
-    socketTests: 'existing 18 tests against the installed compiled package',
+    socketTests: 'complete client protocol suite against the installed compiled package',
   };
   await writeFile(join(root, 'proof.json'), JSON.stringify(proof, null, 2), { mode: 0o600 });
   passed = true;

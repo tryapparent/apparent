@@ -67,6 +67,16 @@ export type NativeClipboardWriteResult =
   | { status: 'refused'; reason: 'stale' | 'busy' | 'unavailable' | 'invalid-text' | 'too-large' }
   | { status: 'outcome-unknown' };
 
+/** Native Wayland write submission accepted locally, then exact bounded readback.
+ * This proves neither compositor acquisition nor the readback's owner/origin, persistence or paste. */
+export interface NativeClipboardTextReadbackPort {
+  writeTextReadback(text: string, observed: { processEpoch: string; revision: number }): Promise<NativeClipboardTextReadbackResult>;
+}
+export type NativeClipboardTextReadbackResult =
+  | { status: 'written-readback'; digest: string; byteLength: number }
+  | { status: 'refused'; reason: 'stale' | 'busy' | 'unavailable' | 'invalid-text' | 'too-large' }
+  | { status: 'outcome-unknown' };
+
 /** Record's narrow compatibility access to its compiled `penColor` config key. */
 export interface RecordPenColorConfig {
   read(): Promise<LegacyConfigValue>;

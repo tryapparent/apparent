@@ -108,6 +108,21 @@ refuse before writing. A mismatch, timeout after possible effect, or lost reply 
 `outcome-unknown`; this port has no read operation and never restores or returns
 ambient clipboard contents. The bounded native worker admits one write at a time.
 
+The separate `createNativeClipboardTextReadbackPort()` factory exports
+`writeTextReadback(text, observed)` for native Wayland. Its exact success receipt
+is `{status:'written-readback',digest,byteLength}`: the native helper accepted this
+request's selection-write submission and bounded native readback matched the
+supplied UTF-8 bytes. Helper `READY` is local acceptance, not a compositor ACK.
+It does not prove acquisition, the readback's origin or owner, persistence, a
+paste or delivery. Identical preexisting/foreign text can satisfy that transient
+byte observation even when the observed bytes did not originate from this helper.
+Different/unreadable replacement, timeout or lost/malformed replies remain
+`outcome-unknown`, with no retry. The same text/frame limits and pre-effect
+refusals apply. Other backends refuse the new operation before effect. Existing
+`writeText`, `applied` and Wayland unknown semantics are unchanged; callers must
+explicitly choose the new port rather than fall back between guarantees.
+The facade exposes neither ambient contents nor a clipboard read operation.
+
 The package build removes its own generated `dist` directory before compilation,
 refusing an output-directory symlink or non-directory. Packing verifies that
 only outputs from the current source files remain; ignored modules from a
