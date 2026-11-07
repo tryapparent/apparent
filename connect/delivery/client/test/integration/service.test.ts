@@ -15,6 +15,9 @@ import { RecipientTransportError } from "../../src/recipient/transport.ts";
 import { uploadPreparedPlainCapture } from "../../src/sender/transport.ts";
 import { uploadPreparedEncryptedCapture } from "../../src/sender/encrypted-transport.ts";
 import { readSenderPeerAuthority } from "../../src/sender/authority.ts";
+import { revokeDeviceGrant } from "../../src/account/revoke.ts";
+import { decodeStoredCredential } from "../../src/credentials/wire.ts";
+import { requestDeviceStart, requestDevicePoll } from "../../src/account/device.ts";
 import { readAccountStatus } from "../../src/account/status.ts";
 import { listShares, revokeShare } from "../../src/account/shares.ts";
 import { sealCapture } from "../../src/sender/seal.ts";
@@ -27,7 +30,7 @@ const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest(
 type Account = {
   id: string; token: string; read: string; cookie: string; csrf: string; origin: string;
 };
-type DeviceCredential = { accessToken: string; grantId: string; scope: string };
+type DeviceCredential = { accessToken: string; grantId: string; scope: string; refreshToken: string; expiresIn: number; refreshExpiresIn: number };
 
 async function fixtureAt(serviceOrigin: string) {
   const cwd = process.cwd();
@@ -101,29 +104,24 @@ async function proxy(
 async function authorize(
   service: Awaited<ReturnType<typeof fixtureAt>>,
   account: Account,
+  approvedServer: string,
   scope: "read" | "upload",
   age: { identity: string; recipient: string },
   signing: Uint8Array,
 ): Promise<DeviceCredential> {
   const publicKey = await ed25519.getPublicKeyAsync(signing);
   const encryptionKey = {
-    version: 1,
+    version: 1 as const,
     recipient: age.recipient,
     signing: Array.from(publicKey, byte => byte.toString(16).padStart(2, "0")).join(""),
   };
-  const started = await service.call("/v1/device/start", {
-    method: "POST", body: { scope, encryptionKey },
-  });
-  assert.equal(started.status, 200, "device authorization starts in the real Worker");
-  const device = await started.json() as { deviceCode: string; userCode: string };
+  const device = await requestDeviceStart({ approvedServer, scope, encryptionKey }) as { deviceCode: string; userCode: string };
   const approved = await service.call("/v1/device/approve", {
     method: "POST", body: { userCode: device.userCode },
     cookie: account.cookie, csrf: account.csrf, origin: account.origin,
   });
   assert.equal(approved.status, 200, "synthetic account approves the pending device via cookie and CSRF");
-  const polled = await service.call("/v1/device/poll", { method: "POST", body: { deviceCode: device.deviceCode } });
-  assert.equal(polled.status, 200);
-  const credential = await polled.json() as DeviceCredential & { status: string };
+  const credential = await requestDevicePoll({ approvedServer, deviceCode: device.deviceCode }) as DeviceCredential & { status: string };
   assert.equal(credential.status, "approved");
   assert.equal(credential.scope, scope);
   return credential;
@@ -168,15 +166,15 @@ async function uploadEncryptedCapture(
 
 async function exerciseProfile(mount: "" | "/connect", profile: "root" | "evidence-first-v1") {
   const server = `${mount}`;
-  await proxy(mount, async ({ origin, request, service }) => {
+  await proxy(mount, async ({ origin, service }) => {
     const serviceOrigin = origin + server;
     const account = await service.identity(`recipient-integration-${mount || "root"}`);
     const reader = await generateAgeIdentity();
     const sender = await generateAgeIdentity();
     const readerSeed = Uint8Array.from({ length: 32 }, (_, index) => index + 31);
     const senderSeed = Uint8Array.from({ length: 32 }, (_, index) => index + 91);
-    const readCredential = await authorize(service, account, "read", reader, readerSeed);
-    const uploadCredential = await authorize(service, account, "upload", sender, senderSeed);
+    const readCredential = await authorize(service, account, serviceOrigin, "read", reader, readerSeed);
+    const uploadCredential = await authorize(service, account, serviceOrigin, "upload", sender, senderSeed);
     const contents = await uploadEncryptedCapture(serviceOrigin, uploadCredential, senderSeed, sender.recipient, profile);
     const result = await retrieveRecipientCapture({
       credential: {
@@ -198,10 +196,15 @@ async function exerciseProfile(mount: "" | "/connect", profile: "root" | "eviden
       assert.ok(evidence.files.every(file => file.path !== "audio.wav"));
     }
 
-    const revoked = await request(`${server}/v1/token/revoke`, {
-      method: "POST", headers: { Authorization: `Bearer ${readCredential.accessToken}` },
-    });
-    assert.equal(revoked.status, 200, "the real Worker revokes the read grant");
+    const stored = (grant: DeviceCredential, renewable: boolean) => decodeStoredCredential(encoder.encode(JSON.stringify({
+      server: serviceOrigin, scope: grant.scope, token: grant.accessToken, generation: "c".repeat(32), authRequired: true,
+      ...(renewable ? { refreshToken: grant.refreshToken, expiresAt: 1, refreshExpiresAt: 2, grantId: grant.grantId } : {}),
+    })), grant.scope, serviceOrigin);
+    assert.deepEqual(await revokeDeviceGrant(stored(readCredential, true), { approvedServer: serviceOrigin }), { ok: true });
+    const accountOptions = (grant: DeviceCredential) => ({ server: serviceOrigin, scope: grant.scope as "read" | "upload",
+      generation: "c".repeat(32), active: () => true,
+      authorize: async (approvedServer: string, scope: "read" | "upload") => ({ approvedServer, scope, generation: "c".repeat(32), token: grant.accessToken }) });
+    assert.equal((await readAccountStatus(accountOptions(uploadCredential))).beta, "active", "revoking the read device preserves the sibling upload grant");
     await assert.rejects(
       retrieveRecipientCapture({
         credential: {
@@ -214,6 +217,8 @@ async function exerciseProfile(mount: "" | "/connect", profile: "root" | "eviden
       }),
       (error: unknown) => error instanceof RecipientTransportError && error.category === "unauthorized",
     );
+    assert.deepEqual(await revokeDeviceGrant(stored(uploadCredential, false), { approvedServer: serviceOrigin }), { ok: true });
+    await assert.rejects(readAccountStatus(accountOptions(uploadCredential)), { category: "unauthorized" });
   });
 }
 
