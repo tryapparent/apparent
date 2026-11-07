@@ -45,7 +45,14 @@ export async function launchNativeHost(profilePath: string, nativeRoot: string) 
   if (!homeStat.isDirectory() || homeStat.isSymbolicLink() || homeStat.uid !== uid || (homeStat.mode & 0o077)
     || await realpath(home) !== home) throw new Error('Native GUI home is not private');
   const socket = join(home, '.config/apparent/agent-control/capture.sock');
-  try { await lstat(socket); throw new Error('Native GUI socket already exists; reconcile its owner before restart'); }
+  // The existing native listener owns lock-checked stale-socket recovery. Do
+  // not unlink it here or contact it before joining our own child below.
+  try {
+    const previous = await lstat(socket);
+    if (!previous.isSocket() || previous.uid !== uid || (previous.mode & 0o777) !== 0o600) {
+      throw new Error('Unsafe existing Native GUI socket');
+    }
+  }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   const manifest = JSON.parse(await readFile(join(nativeRoot, 'gui/manifest.json'), 'utf8'));
   if (manifest.schema !== 1 || manifest.role !== 'native-host-only' || manifest.entry !== 'Apparent.AppImage'
