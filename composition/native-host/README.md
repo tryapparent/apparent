@@ -168,3 +168,20 @@ does not prove either native input or Engine registration is absent: the owning
 host retains those lifetimes, seals the native source safely, and preserves unknown
 work under its normal shutdown contract. The relay does not cancel capture or
 release ownership automatically.
+
+The native-only source now installs the existing Board callback tap in that same
+capture scope. `readBoard` observes its current stack and local revision; fixed
+`controlBoard` intents (`open`, `undo`, `clear`, `close`) use that revision.
+`requested` acknowledges dispatch only. Actual callbacks retain native windows,
+transforms, coordinates and monotonic stamps. Undo/clear preserve accepted
+history; close/reopen preserves the current completed stack with a new window
+incarnation. The source closes and observes Board closure before sealing input.
+An open window, changed geometry, missing callback or uncertain effect cannot
+become successful empty collection.
+
+Input remains prepared while the native coordinator creates the donor overlay;
+only the matching continuation arms the scoped collector. Paint uses a separate
+observer-derived projection, never the legacy recorder's active flag. A Stop
+drain joins an already-issued exact batch under its original bounded deadline,
+sealing further forwards first. Application/native qualification is still a
+separate gate; these source operations do not establish recorded pixels.

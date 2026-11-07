@@ -352,6 +352,8 @@ pub struct ApparentCoordinator {
     pub(super) native_host_fingerprint: Option<String>,
     #[cfg(target_os="linux")]
     native_ink_session: Option<workflow::native_host::ink_source::NativeInkSession>,
+    #[cfg(target_os="linux")]
+    native_ink_overlay: Option<LaserOverlay>,
     note_ui: Option<workflow::notes::Session>,
     admitted_microphone: Option<bool>,
     whiteboard: Rc<RefCell<whiteboard::Board>>,

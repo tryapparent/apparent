@@ -1,4 +1,4 @@
-import type {NativeInkSourcePort,NativeInkBinding,NativeInkObservation} from './ink.js';
+import type {NativeInkSourcePort,NativeInkBinding,NativeInkObservation,NativeBoardState,NativeBoardIntent} from './ink.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
 import { connect } from 'node:net';
@@ -81,31 +81,39 @@ function snapshot(value: unknown): NativeHostSnapshot {
 
 class RequestFrameTooLarge extends Error {}
 
-async function request(target: ReturnType<typeof endpoint>, operation: string, fields: Record<string, unknown> = {}): Promise<unknown> {
+async function request(target: ReturnType<typeof endpoint>, operation: string, fields: Record<string, unknown> = {}, timeoutMs=TIMEOUT_MS): Promise<unknown> {
+  if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>TIMEOUT_MS)throw new TypeError('Invalid native deadline');
   const { path } = target;
   const id = randomUUID();
-  const deadline = Number(process.hrtime.bigint() / 1_000_000n) + TIMEOUT_MS;
+  const deadline = Number(process.hrtime.bigint() / 1_000_000n) + timeoutMs;
   const frame = Buffer.from(`${JSON.stringify({ protocol: 1, id, owner: 'record', operation, ...fields, deadline })}\n`);
   const maxFrame = operation === 'writeClipboardText' || operation === 'writeClipboardTextReadback' ? MAX_SERIALIZED_FRAME_BYTES : MAX_FRAME;
   if (frame.length > maxFrame) throw new RequestFrameTooLarge('Native host request exceeds limit');
   const identity = await verifySocket(target);
+  const remaining=deadline-Number(process.hrtime.bigint()/1_000_000n);
+  if(remaining<=0)throw new Error('Native host deadline expired');
   return await new Promise((resolve, reject) => {
     const socket = connect(path);
     let buffer = Buffer.alloc(0);
     let settled = false;
-    const timer = setTimeout(() => finish(new Error('Native host unavailable')), TIMEOUT_MS);
+    const timer = setTimeout(() => finish(new Error('Native host unavailable')), remaining);
     const finish = (error?: Error, result?: unknown) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       socket.destroy();
-      if (error) reject(error); else resolve(result);
+      if (error) reject(error);
+      else if(Number(process.hrtime.bigint()/1_000_000n)>=deadline)reject(new Error('Native host deadline expired'));
+      else resolve(result);
     };
     socket.once('connect', async () => {
       try {
         const current = await verifySocket(target);
         if (current.dev !== identity.dev || current.ino !== identity.ino) throw new Error('Native host unavailable');
-        if (!settled) socket.write(frame);
+        if (!settled) {
+          if(Number(process.hrtime.bigint()/1_000_000n)>=deadline)return finish(new Error('Native host deadline expired'));
+          socket.write(frame);
+        }
       } catch { finish(new Error('Native host unavailable')); }
     });
     socket.on('data', chunk => {
@@ -346,12 +354,26 @@ export function createNativeInkSourcePort(options: {
   if (!id(original.captureId)||!id(host.processEpoch)||!Number.isSafeInteger(host.revision)||host.revision<0||!Number.isSafeInteger(host.pid)||host.pid<=0||!/^[1-9][0-9]*$/.test(host.startTicks))throw new TypeError('Invalid owned native ink identity');
   let seen: {producerId:string;generation:number}|undefined;
   const expected={processEpoch:host.processEpoch,revision:host.revision};
-  const call=(ink:Record<string,unknown>)=>request(target,'inkSource',{expected,ink});
+  const call=(ink:Record<string,unknown>,timeoutMs=TIMEOUT_MS)=>request(target,'inkSource',{expected,ink},timeoutMs);
   const binding=(b:NativeInkBinding)=>{
     if (!seen||b.captureId!==original.captureId||b.producerId!==seen.producerId||b.generation!==seen.generation)throw new TypeError('Foreign native ink binding');
     return structuredClone(b);
   };
+  const readBoard=async(b:NativeInkBinding,timeoutMs=TIMEOUT_MS):Promise<NativeBoardState>=>{
+    const v=await call({action:'readBoard',binding:binding(b)},timeoutMs);
+    if(!exact(v,['status','value'])||v.status!=='board'||!exact(v.value,['nativeRevision','open','strokeCount','activeGesture'])
+      ||!Number.isSafeInteger(v.value.nativeRevision)||Number(v.value.nativeRevision)<0||typeof v.value.open!=='boolean'
+      ||!Number.isSafeInteger(v.value.strokeCount)||Number(v.value.strokeCount)<0||Number(v.value.strokeCount)>4096||typeof v.value.activeGesture!=='boolean')throw Error('Native Board observation unavailable');
+    return structuredClone(v.value) as unknown as NativeBoardState;
+  };
+  const controlBoard=async(b:NativeInkBinding,intent:NativeBoardIntent,expectedNativeRevision:number,timeoutMs=TIMEOUT_MS):Promise<'requested'|'refused'|'outcome-unknown'>=>{
+    if(!['open','undo','clear','close'].includes(intent)||!Number.isSafeInteger(expectedNativeRevision)||expectedNativeRevision<0)throw TypeError('Invalid Board action');
+    try{const v=await call({action:'boardControl',binding:binding(b),intent,expectedNativeRevision},timeoutMs);
+      if(exact(v,['status'])&&['requested','refused'].includes(String(v.status)))return v.status as 'requested'|'refused';
+    }catch{}return 'outcome-unknown';
+  };
   return {
+    readBoard,controlBoard,
     async readObservation(){
       if(seen)throw Error('Native source observation already bound');
       const result=await call({action:'observe',...original});
@@ -377,8 +399,15 @@ export function createNativeInkSourcePort(options: {
         if(exact(v,['status','sequence','batchSha256'])&&v.status==='acknowledged'&&v.sequence===batch.sequence&&v.batchSha256===batch.batchSha256)return {status:'acknowledged',...batch};
       }catch{}return {status:'outcome-unknown'};
     },
-    async sealInputAndDrain(b){
-      const v=await call({action:'sealInputAndDrain',binding:binding(b)});
+    async sealInputAndDrain(b,timeoutMs=TIMEOUT_MS){
+      const deadline=performance.now()+timeoutMs;
+      const remaining=()=>{const n=Math.floor(deadline-performance.now());if(n<1)throw Error('Native input drain deadline');return Math.min(n,TIMEOUT_MS);};
+      let board=await readBoard(b,remaining());
+      if(board.open){
+        if(await controlBoard(b,'close',board.nativeRevision,remaining())!=='requested')throw Error('Native Board close unknown');
+        while(board.open){await new Promise(resolve=>setTimeout(resolve,5));board=await readBoard(b,remaining());}
+      }
+      const v=await call({action:'sealInputAndDrain',binding:binding(b)},remaining());
       if(!exact(v,['finalSequence','seal'])||!(v.finalSequence===null||(Number.isSafeInteger(v.finalSequence)&&Number(v.finalSequence)>=0&&Number(v.finalSequence)<4096))||!exact(v.seal,['state','observedAtNs','nativeRevision'])||v.seal.state!=='sealed-and-drained'||typeof v.seal.observedAtNs!=='string'||!/^(0|[1-9][0-9]*)$/.test(v.seal.observedAtNs)||BigInt(v.seal.observedAtNs)>18446744073709551615n||!Number.isSafeInteger(v.seal.nativeRevision)||Number(v.seal.nativeRevision)<0)throw Error('Native input drain unavailable');
       return {finalSequence:v.finalSequence as number|null,seal:{state:'sealed-and-drained',observedAtNs:v.seal.observedAtNs,nativeRevision:v.seal.nativeRevision as number}};
     },

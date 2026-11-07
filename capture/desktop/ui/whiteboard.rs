@@ -166,6 +166,11 @@ impl WhiteboardWindow {
     }
     #[cfg(target_os = "linux")]
     fn observe_closed(&self) {
+        if self.board.borrow().native_paper.active() {
+            // A provisional gesture cannot cross native window incarnations.
+            // Keep the accepted current stack; do not invent a mouse release.
+            self.board.borrow_mut().active = None;
+        }
         self.board.borrow().native_paper.emit(
             self.last_native_window.clone(),
             crate::capture::engine::runtime::native_ink_monotonic_ns(),
@@ -378,10 +383,39 @@ pub(in crate::capture::desktop) fn open(coord: &Entity<ApparentCoordinator>, cx:
     if !coord.read(cx).is_recording() {
         return;
     }
+    let _ = open_owned(coord, cx);
+}
+
+/// Only the native-only coordinator calls this after its original authenticated
+/// input scope positively admits the fixed action. It never starts a recorder.
+#[cfg(target_os = "linux")]
+pub(in crate::capture::desktop) fn native_control(
+    coord: &Entity<ApparentCoordinator>,
+    intent: &crate::capture::desktop::workflow::native_host::ink_wire::PaperIntent,
+    cx: &mut App,
+) -> bool {
+    use crate::capture::desktop::workflow::native_host::ink_wire::PaperIntent;
+    if matches!(intent, PaperIntent::Open) { return open_owned(coord, cx); }
+    for handle in cx.windows() {
+        if let Some(board) = handle.downcast::<WhiteboardWindow>() {
+            return board.update(cx, |view, window, cx| {
+                let active=view.board.borrow().active.is_some();
+                match intent {
+                    PaperIntent::Undo => { view.board.borrow_mut().undo(); view.observe_paper(window, observations::PaperAction::Undo {active}); cx.notify(); },
+                    PaperIntent::Clear => { view.board.borrow_mut().clear(); view.observe_paper(window, observations::PaperAction::Clear {active}); cx.notify(); },
+                    PaperIntent::Close => window.remove_window(),
+                    PaperIntent::Open => unreachable!(),
+                }
+            }).is_ok();
+        }
+    }
+    matches!(intent, PaperIntent::Close)
+}
+fn open_owned(coord: &Entity<ApparentCoordinator>, cx: &mut App) -> bool {
     for handle in cx.windows() {
         if let Some(board) = handle.downcast::<WhiteboardWindow>() {
             let _ = board.update(cx, |_, window, _| window.activate_window());
-            return;
+            return true;
         }
     }
     let shared = coord.read(cx).whiteboard.clone();
@@ -443,6 +477,7 @@ pub(in crate::capture::desktop) fn open(coord: &Entity<ApparentCoordinator>, cx:
         platform::float_whiteboard(cx);
         platform::take_keys(cx);
     }
+    opened.is_ok()
 }
 
 /// Snapshot the paper at Stop before the UI is dismissed; the bundle worker uses this copy.

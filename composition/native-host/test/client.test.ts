@@ -441,6 +441,7 @@ test('fixed native ink source port joins original identity, exact >4KiB bytes an
       case'activate':assert.deepEqual(ink.binding,binding);return {status:'active'};
       case'readBatch':return {status:'batch',batch:{sequence:0,eventsJson:raw,batchSha256:digest}};
       case'acknowledgeBatch':return {status:'acknowledged',sequence:0,batchSha256:digest};
+      case'readBoard':return {status:'board',value:{nativeRevision:0,open:false,strokeCount:0,activeGesture:false}};
       case'sealInputAndDrain':return {finalSequence:0,seal:{state:'sealed-and-drained',observedAtNs:'1000',nativeRevision:1}};
     }throw Error('unexpected ink operation');
   },async()=>{
@@ -449,7 +450,7 @@ test('fixed native ink source port joins original identity, exact >4KiB bytes an
     const b=await port.readBatch(binding,0);assert.equal(b.status,'batch');if(b.status==='batch')assert.equal(b.batch.eventsJson,raw);
     assert.equal((await port.acknowledgeBatch(binding,{sequence:0,batchSha256:digest})).status,'acknowledged');
     assert.equal((await port.sealInputAndDrain(binding)).finalSequence,0);
-  });assert.deepEqual(actions,['observe','activate','readBatch','acknowledgeBatch','sealInputAndDrain']);
+  });assert.deepEqual(actions,['observe','activate','readBatch','acknowledgeBatch','readBoard','sealInputAndDrain']);
 });
 test('native ink observation refuses changed process identity and lost ACK remains unknown',async()=>{
   const {createNativeInkSourcePort}=await import('../src/client.ts');
@@ -465,4 +466,28 @@ test('native ink observation refuses changed process identity and lost ACK remai
     const result=await p.acknowledgeBatch({captureId:original.captureId,producerId:'c'.repeat(32),generation:1},{sequence:0,batchSha256:'d'.repeat(64)});
     assert.equal(result.status,'outcome-unknown');
   });
+});
+
+test('actual native source socket closes observed Board before seal and retains unknown close',async()=>{
+  const {createNativeInkSourcePort}=await import('../src/client.ts');
+  const host={processEpoch:'a'.repeat(32),revision:0,pid:42,startTicks:'123'};
+  const original={captureId:'b'.repeat(32),source:{id:'original',generation:'generation'}};
+  const binding={captureId:original.captureId,producerId:'c'.repeat(32),generation:1};
+  for(const unknown of [false,true]){
+    let open=true;const actions:string[]=[];
+    await withSocket(req=>{
+      const ink=req.ink as Record<string,unknown>;actions.push(String(ink.action));
+      if(ink.action==='observe')return {status:'observed',value:{...original,observation:{host,...binding}}};
+      if(ink.action==='readBoard')return {status:'board',value:{nativeRevision:4,open,strokeCount:2,activeGesture:false}};
+      if(ink.action==='boardControl'){assert.equal(ink.intent,'close');assert.equal(ink.expectedNativeRevision,4);if(unknown)return {status:'outcome-unknown'};open=false;return{status:'requested'};}
+      if(ink.action==='sealInputAndDrain'){assert.equal(open,false);return {finalSequence:null,seal:{state:'sealed-and-drained',observedAtNs:'1000',nativeRevision:5}};}
+      throw Error('Unexpected control');
+    },async()=>{
+      const source=createNativeInkSourcePort({original,ownedHost:host});await source.readObservation();
+      if(unknown)await assert.rejects(source.sealInputAndDrain(binding,100));
+      else assert.equal((await source.sealInputAndDrain(binding,100)).finalSequence,null);
+    });
+    assert.equal(actions.includes('sealInputAndDrain'),!unknown);
+    assert.equal(actions.filter(x=>x==='boardControl').length,1,'unknown control never retries');
+  }
 });

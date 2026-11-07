@@ -44,18 +44,27 @@ impl InkOverlay {
         on: Option<[f64; 4]>,
         cx: &mut Context<T>,
     ) -> Result<Self, String> {
+        Self::open_impl(telemetry,on,cx,false)
+    }
+    /// Exact native-only scale1 source already joined by the source worker.
+    /// Compositor placement while drawing remains on the input worker.
+    pub(crate) fn open_native<T:'static>(telemetry:Arc<SharedCaptureTelemetry>,rect:[f64;4],cx:&mut Context<T>)->Result<Self,String>{
+        Self::open_impl(telemetry,Some(rect),cx,true)
+    }
+    fn open_impl<T:'static>(telemetry:Arc<SharedCaptureTelemetry>,on:Option<[f64;4]>,cx:&mut Context<T>,native:bool)->Result<Self,String>{
         let monitor = on
             .and_then(|[x, y, w, h]| super::super::monitor_at(x + w / 2.0, y + h / 2.0))
             .or_else(super::super::primary_monitor)
             .ok_or("No display")?;
         let rect = monitor.rect;
-        let surface = surface_rect(&monitor);
+        if native && (on!=Some(rect)||monitor.scale!=1.0){return Err("Native ink output changed".into());}
+        let surface = if native {rect}else{surface_rect(&monitor)};
         let scale = (rect[2] / surface[2]) as f32;
         let bounds = Bounds {
             origin: point(px(rect[0] as f32 / scale), px(rect[1] as f32 / scale)),
             size: size(px(rect[2] as f32 / scale), px(rect[3] as f32 / scale)),
         };
-        let placement = Arc::new(Mutex::new(Placement { rect, scale, ink_only: false }));
+        let placement = Arc::new(Mutex::new(Placement { rect, scale, ink_only: native }));
         let view_placement = Arc::clone(&placement);
         // KWin 5's XWayland overlay intercepts native Wayland clicks even with an empty
         // X input shape, and so does Hyprland's, which also sends the pill's and the picker's

@@ -1,7 +1,7 @@
 //! Observations at the existing native paper callbacks, never reconstructed from
 //! Board arrays or supplied by a renderer. Installing an observer is privileged;
 //! it does not open a window, admit input, or establish Engine registration.
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::capture::desktop) struct PaperWindow {
@@ -41,32 +41,42 @@ pub(in crate::capture::desktop) trait PaperObserver:
 }
 #[derive(Clone, Default)]
 pub(in crate::capture::desktop) struct PaperTap {
-    observer: Option<Arc<dyn PaperObserver>>,
+    observer: Arc<Mutex<Option<Arc<dyn PaperObserver>>>>,
 }
 impl PaperTap {
-    pub fn install(&mut self, observer: Arc<dyn PaperObserver>) -> bool {
-        if self.observer.is_some() {
+    pub fn install(&self, observer: Arc<dyn PaperObserver>) -> bool {
+        let Ok(mut slot) = self.observer.lock() else {
+            return false;
+        };
+        if slot.is_some() {
             return false;
         }
-        self.observer = Some(observer);
+        *slot = Some(observer);
         true
     }
-    pub fn remove(&mut self, observer: &Arc<dyn PaperObserver>) -> bool {
-        if !self
-            .observer
+    pub fn remove(&self, observer: &Arc<dyn PaperObserver>) -> bool {
+        let Ok(mut slot) = self.observer.lock() else {
+            return false;
+        };
+        if !slot
             .as_ref()
             .is_some_and(|current| Arc::ptr_eq(current, observer))
         {
             return false;
         }
-        self.observer = None;
+        *slot = None;
         true
     }
     pub fn active(&self) -> bool {
-        self.observer.is_some()
+        self.observer.lock().map_or(true, |slot| slot.is_some())
     }
     pub fn emit(&self, window: Option<PaperWindow>, at_ns: Option<u64>, action: PaperAction) {
-        let Some(observer) = self.observer.as_ref() else {
+        // This gate stays held through the bounded callback. Removal therefore
+        // positively drains actual in-flight callbacks, not merely a flag.
+        let Ok(slot) = self.observer.lock() else {
+            return;
+        };
+        let Some(observer) = slot.as_ref() else {
             return;
         };
         let value = match (window, at_ns) {

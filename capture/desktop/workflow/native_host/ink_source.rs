@@ -2,12 +2,15 @@
 //! No renderer points or inferred Board geometry enter this source. The existing
 //! input owner must supply the real donor callbacks; this is not a new recorder.
 use super::ink::{InkBatch, InkSourceBuffer, InkSourceState, NativeSeal};
+use crate::capture::desktop::ui::whiteboard::observations::{PaperObserver, PaperTap};
 use crate::capture::engine::runtime::{
     NativeInkObservation, NativeInkObserver, SharedCaptureTelemetry,
 };
 use serde_json::{Value, json};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+mod paper;
 
 #[derive(Clone, Debug, PartialEq)]
 struct Output {
@@ -81,6 +84,7 @@ struct Gesture {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Phase {
     Observed,
+    Prepared,
     Active,
     Sealed,
     Unavailable,
@@ -94,15 +98,20 @@ struct State {
     revision: u64,
     gestures: usize,
     points: usize,
+    paper: paper::History,
 }
 struct Observer {
     state: Arc<Mutex<State>>,
     surface: Value,
     probe: Probe,
     output: Output,
+    invalid: Arc<AtomicBool>,
 }
 impl NativeInkObserver for Observer {
     fn observe(&self, observation: NativeInkObservation) {
+        // A native probe must not hold the shared state mutex against Board's
+        // GUI callback. Both sources retain one original event ordering.
+        let source_matches = (self.probe)().as_ref() == Ok(&self.output);
         let mut s = self
             .state
             .lock()
@@ -110,7 +119,7 @@ impl NativeInkObserver for Observer {
         if s.phase != Phase::Active {
             return;
         }
-        if (self.probe)().as_ref() != Ok(&self.output) {
+        if !source_matches || self.invalid.load(Ordering::Acquire) {
             s.phase = Phase::Unavailable;
             return;
         }
@@ -144,7 +153,7 @@ fn accept(
                 return Err("invalid-point");
             }
             if first {
-                if s.gesture.is_some() {
+                if s.gesture.is_some() || s.paper.gesture_active() {
                     return Err("gesture-overlap");
                 }
                 s.gesture = Some(Gesture {
@@ -172,42 +181,60 @@ fn accept(
             if !accepted {
                 return Ok(());
             }
-            if gesture.points.len() < 2
-                || s.gestures >= 4096
-                || s.points.saturating_add(gesture.points.len()) > 65_536
-            {
-                return Err("history-bound");
-            }
-            let gesture_id = id()?;
-            let first = &gesture.points[0];
-            let mut begin = json!({"kind":"begin","gestureId":gesture_id,
-                "surfaceId":surface["surfaceId"],"transformId":surface["transformId"],
-                "nativeIncarnation":surface["nativeIncarnation"],"timeNs":first.time.to_string(),
-                "x":first.position[0],"y":first.position[1]});
-            if let Some(rgb) = gesture.rgb {
-                begin["rgb"] = json!(rgb);
-            }
-            let mut groups = vec![vec![begin]];
-            for points in gesture.points[1..].chunks(64) {
-                let points: Vec<_> = points.iter().map(|p| json!({"timeNs":p.time.to_string(),"x":p.position[0],"y":p.position[1]})).collect();
-                groups.push(vec![
-                    json!({"kind":"points","gestureId":gesture_id,"points":points}),
-                ]);
-            }
-            groups.push(vec![json!({"kind":"commit","gestureId":gesture_id,"acceptedAtNs":observed_at_ns.to_string()})]);
-            if s.buffer.retain_group(&groups).is_err() {
+            if let Err(error) = retain_gesture(s, surface, &gesture, observed_at_ns, 2) {
                 s.gesture = Some(gesture);
-                return Err("retention-bound");
+                return Err(error);
             }
-            s.gestures += 1;
-            s.points += gesture.points.len();
-            s.revision = s.revision.checked_add(1).ok_or("revision-bound")?;
         }
         NativeInkObservation::ClockUnavailable | NativeInkObservation::CapacityExceeded => {
             return Err("native-input-unavailable");
         }
     }
     Ok(())
+}
+
+fn retain_gesture(
+    s: &mut State,
+    surface: &Value,
+    gesture: &Gesture,
+    accepted_at: u64,
+    minimum: usize,
+) -> Result<String, &'static str> {
+    if gesture.points.len() < minimum
+        || s.gestures >= 4096
+        || s.points.saturating_add(gesture.points.len()) > 65_536
+    {
+        return Err("history-bound");
+    }
+    let gesture_id = id()?;
+    let first = &gesture.points[0];
+    let mut begin = json!({"kind":"begin","gestureId":gesture_id,
+                "surfaceId":surface["surfaceId"],"transformId":surface["transformId"],
+                "nativeIncarnation":surface["nativeIncarnation"],"timeNs":first.time.to_string(),
+                "x":first.position[0],"y":first.position[1]});
+    if let Some(rgb) = gesture.rgb {
+        begin["rgb"] = json!(rgb);
+    }
+    let mut groups = vec![vec![begin]];
+    for points in gesture.points[1..].chunks(64) {
+        let points: Vec<_> = points
+            .iter()
+            .map(|p| json!({"timeNs":p.time.to_string(),"x":p.position[0],"y":p.position[1]}))
+            .collect();
+        groups.push(vec![
+            json!({"kind":"points","gestureId":gesture_id,"points":points}),
+        ]);
+    }
+    groups.push(vec![
+        json!({"kind":"commit","gestureId":gesture_id,"acceptedAtNs":accepted_at.to_string()}),
+    ]);
+    if s.buffer.retain_group(&groups).is_err() {
+        return Err("retention-bound");
+    }
+    s.gestures += 1;
+    s.points += gesture.points.len();
+    s.revision = s.revision.checked_add(1).ok_or("revision-bound")?;
+    Ok(gesture_id)
 }
 
 /// Owns one capture-scoped real donor observer. There is deliberately no Drop
@@ -217,6 +244,9 @@ pub(crate) struct NativeInkSource {
     state: Arc<Mutex<State>>,
     observer: Arc<dyn NativeInkObserver>,
     installed: Mutex<bool>,
+    invalid: Arc<AtomicBool>,
+    paper_tap: PaperTap,
+    paper_observer: Arc<dyn PaperObserver>,
     capture_id: String,
     producer_id: String,
     boot: String,
@@ -298,18 +328,28 @@ impl NativeInkSource {
             revision: 0,
             gestures: 0,
             points: 0,
+            paper: paper::History::new()?,
         }));
+        let invalid = Arc::new(AtomicBool::new(false));
+        let paper_observer = Arc::new(paper::Observer {
+            state: state.clone(),
+            invalid: invalid.clone(),
+        });
         let observer = Arc::new(Observer {
             state: state.clone(),
             surface: observation["observation"]["surfaces"][0].clone(),
             probe: probe.clone(),
             output: observed_output.clone(),
+            invalid: invalid.clone(),
         });
         Ok(Self {
             telemetry,
             state,
             observer,
             installed: Mutex::new(false),
+            invalid,
+            paper_tap: PaperTap::default(),
+            paper_observer,
             capture_id: capture.into(),
             producer_id,
             boot,
@@ -321,6 +361,10 @@ impl NativeInkSource {
     }
     pub(crate) fn observation(&self) -> &Value {
         &self.observation
+    }
+    fn attach_paper(mut self, tap: PaperTap) -> Self {
+        self.paper_tap = tap;
+        self
     }
     #[cfg(test)]
     fn activate(
@@ -388,10 +432,14 @@ impl NativeInkSource {
             }
             s.admission = admission;
             s.last_time = admission;
+            if !self.paper_tap.install(self.paper_observer.clone()) {
+                return Err("paper-input-owned");
+            }
             if !self
                 .telemetry
                 .install_native_ink_observer(self.observer.clone())
             {
+                self.paper_tap.remove(&self.paper_observer);
                 return Err("input-already-owned");
             }
             *installed = true;
@@ -405,14 +453,14 @@ impl NativeInkSource {
     }
     pub(crate) fn read_batch(&self) -> Result<Option<InkBatch>, &'static str> {
         let s = self.state.lock().map_err(|_| "source-unavailable")?;
-        if s.phase == Phase::Unavailable {
+        if s.phase == Phase::Unavailable || self.invalid.load(Ordering::Acquire) {
             return Err("source-unavailable");
         }
         Ok(s.buffer.read_pending().cloned())
     }
     pub(crate) fn acknowledge(&self, sequence: u32, digest: &str) -> Result<(), &'static str> {
         let mut s = self.state.lock().map_err(|_| "source-unavailable")?;
-        if s.phase == Phase::Unavailable {
+        if s.phase == Phase::Unavailable || self.invalid.load(Ordering::Acquire) {
             return Err("source-unavailable");
         }
         s.buffer
@@ -433,15 +481,24 @@ impl NativeInkSource {
             self.state.lock().map_err(|_| "source-unavailable")?.phase = Phase::Unavailable;
             return Err("input-ownership-unresolved");
         }
+        if !self.state.lock().is_ok_and(|s| s.paper.closed()) {
+            if let Ok(mut s) = self.state.lock() {
+                s.phase = Phase::Unavailable;
+            }
+            return Err("paper-window-not-drained");
+        }
         // NEVER hold the state mutex while acquiring the donor callback gate:
         // an in-flight callback holds the gate and needs the state mutex.
-        if !self.telemetry.remove_native_ink_observer(&self.observer) {
+        if !self.paper_tap.remove(&self.paper_observer)
+            || !self.telemetry.remove_native_ink_observer(&self.observer)
+        {
             self.state.lock().map_err(|_| "source-unavailable")?.phase = Phase::Unavailable;
             return Err("input-ownership-unresolved");
         }
         *installed = false;
         let mut s = self.state.lock().map_err(|_| "source-unavailable")?;
-        if s.phase != Phase::Active {
+        if s.phase != Phase::Active || self.invalid.load(Ordering::Acquire) {
+            s.phase = Phase::Unavailable;
             return Err("source-unavailable");
         }
         let result = (|| {
@@ -674,6 +731,22 @@ mod tests {
         let (s, _) = fixture();
         activate(&s);
         gesture(&s);
+        use crate::capture::desktop::ui::whiteboard::observations::{PaperAction, PaperWindow};
+        let window = PaperWindow {
+            handle: 42,
+            incarnation: "synthetic-native-paper".into(),
+            content_rectangle: [10., 10., 40., 40.],
+        };
+        for (time, action) in [
+            (400, PaperAction::Surface),
+            (410, PaperAction::Begin([1.25, 2.5])),
+            (420, PaperAction::Point([3.5, 4.75])),
+            (430, PaperAction::Commit),
+            (440, PaperAction::Undo { active: false }),
+            (450, PaperAction::Closed),
+        ] {
+            s.paper_tap.emit(Some(window.clone()), Some(time), action);
+        }
         let mut batches = Vec::new();
         while let Some(b) = s.read_batch().unwrap() {
             batches.push(json!({"sequence":b.sequence,"eventsJson":b.events_json,"batchSha256":b.batch_sha256}));
@@ -897,6 +970,50 @@ mod tests {
             false,
         )
         .unwrap()
+    }
+    #[test]
+    fn input_stays_prepared_until_presentation_and_original_binding_are_acknowledged() {
+        use super::super::ink_wire::{Binding, Clock};
+        let (source, _) = fixture();
+        let _prior = prior_donor(&source);
+        let b = Binding {
+            capture_id: source.capture_id.clone(),
+            producer_id: source.producer_id.clone(),
+            generation: 1,
+        };
+        let c = Clock {
+            boot_id: source.boot.clone(),
+            admission_monotonic_ns: "0".into(),
+        };
+        let collector = super::super::ink_collector::NativeInkCollector::spawn_with_admission(
+            || Ok(([false; 4], [1., 2.], 1)),
+            |_, _, _, _| {},
+            || {},
+            false,
+            false,
+        )
+        .unwrap();
+        let mut s = InkSessionState {
+            source,
+            collector: None,
+            prepared: None,
+        };
+        s.activate_ready(&b, &c, Instant::now() + Duration::from_secs(1), collector)
+            .unwrap();
+        assert_eq!(s.source.state.lock().unwrap().phase, Phase::Prepared);
+        let mut foreign = b.clone();
+        foreign.producer_id = "f".repeat(32);
+        assert!(
+            s.arm_presentation(&foreign, Instant::now() + Duration::from_secs(1))
+                .is_err()
+        );
+        assert_eq!(s.source.state.lock().unwrap().phase, Phase::Prepared);
+        s.arm_presentation(&b, Instant::now() + Duration::from_secs(1))
+            .unwrap();
+        assert_eq!(s.source.state.lock().unwrap().phase, Phase::Active);
+        assert!(!s.source.telemetry.active.load(Ordering::Acquire));
+        s.seal(Instant::now() + Duration::from_secs(1)).unwrap();
+        assert!(s.input_clear());
     }
     fn prior_donor(
         source: &NativeInkSource,
@@ -1182,6 +1299,8 @@ impl InkSessionState {
     fn input_clear(&self) -> bool {
         self.collector.is_none()
             && self.prepared.is_none()
+            && !self.source.invalid.load(Ordering::Acquire)
+            && !self.source.paper_tap.active()
             && self.source.installed.lock().is_ok_and(|i| !*i)
             && self.source.state.lock().is_ok_and(|state| {
                 matches!(state.phase, Phase::Observed | Phase::Sealed)
@@ -1198,12 +1317,11 @@ impl InkSessionState {
         Ok(())
     }
     fn replaceable(&self) -> bool {
-        self.collector.is_none()
-            && self
-                .source
-                .state
-                .lock()
-                .is_ok_and(|s| s.phase == Phase::Sealed && s.buffer.read_pending().is_none())
+        self.input_clear()
+            && self.source.state.lock().is_ok_and(|s| {
+                matches!(s.phase, Phase::Observed | Phase::Sealed)
+                    && s.buffer.read_pending().is_none()
+            })
     }
     fn fail(&self) {
         if let Ok(mut s) = self.source.state.lock() {
@@ -1267,7 +1385,11 @@ impl InkSessionState {
                 &c.admission_monotonic_ns,
                 deadline,
             )?;
-            self.collector.as_ref().unwrap().arm(deadline)?;
+            self.source
+                .state
+                .lock()
+                .map_err(|_| "source-unavailable")?
+                .phase = Phase::Prepared;
             Ok(())
         })();
         if result.is_err() {
@@ -1281,10 +1403,11 @@ impl InkSessionState {
                 .lock()
                 .map_err(|_| "input-ownership-unresolved")?;
             if *installed {
-                if !self
-                    .source
-                    .telemetry
-                    .remove_native_ink_observer(&self.source.observer)
+                if !self.source.paper_tap.remove(&self.source.paper_observer)
+                    || !self
+                        .source
+                        .telemetry
+                        .remove_native_ink_observer(&self.source.observer)
                 {
                     return Err("input-ownership-unresolved");
                 }
@@ -1294,6 +1417,23 @@ impl InkSessionState {
             self.restore_target()?;
         }
         result
+    }
+    fn arm_presentation(
+        &mut self,
+        b: &super::ink_wire::Binding,
+        deadline: Instant,
+    ) -> Result<(), &'static str> {
+        self.binding(b)?;
+        let mut state = self.source.state.lock().map_err(|_| "source-unavailable")?;
+        if state.phase != Phase::Prepared || self.source.invalid.load(Ordering::Acquire) {
+            return Err("presentation-not-prepared");
+        }
+        self.collector
+            .as_ref()
+            .ok_or("collector-unavailable")?
+            .arm(deadline)?;
+        state.phase = Phase::Active;
+        Ok(())
     }
     fn seal(&mut self, deadline: std::time::Instant) -> Result<Value, &'static str> {
         let Some(collector) = self.collector.as_mut() else {
@@ -1321,9 +1461,29 @@ impl InkSessionState {
         )
     }
 }
+#[cfg(test)]
 fn execute_source_command(
     session: &mut Option<InkSessionState>,
     telemetry: Arc<SharedCaptureTelemetry>,
+    epoch: &str,
+    revision: u64,
+    command: &super::ink_wire::Command,
+    deadline: Instant,
+) -> Value {
+    execute_source_command_with_paper(
+        session,
+        telemetry,
+        PaperTap::default(),
+        epoch,
+        revision,
+        command,
+        deadline,
+    )
+}
+fn execute_source_command_with_paper(
+    session: &mut Option<InkSessionState>,
+    telemetry: Arc<SharedCaptureTelemetry>,
+    paper: PaperTap,
     epoch: &str,
     revision: u64,
     command: &super::ink_wire::Command,
@@ -1345,7 +1505,8 @@ fn execute_source_command(
                 capture_id,
                 &source.id,
                 &source.generation,
-            )?;
+            )?
+            .attach_paper(paper);
             let value = observed.observation().clone();
             *session = Some(InkSessionState {
                 source: observed,
@@ -1361,6 +1522,10 @@ fn execute_source_command(
         match command {
             Command::Activate { binding, clock } => {
                 s.activate(binding, clock, deadline)?;
+                Ok(json!({"status":"input-prepared"}))
+            }
+            Command::ArmInput { binding } => {
+                s.arm_presentation(binding, deadline)?;
                 Ok(json!({"status":"active"}))
             }
             Command::ReadBatch { binding, sequence } => {
@@ -1385,6 +1550,36 @@ fn execute_source_command(
             Command::SealInputAndDrain { binding } => {
                 s.binding(binding)?;
                 s.seal(deadline)
+            }
+            Command::ReadBoard { binding } => {
+                s.binding(binding)?;
+                let state = s.source.state.lock().map_err(|_| "paper-unavailable")?;
+                if state.phase != Phase::Active || s.source.invalid.load(Ordering::Acquire) {
+                    return Err("paper-unavailable");
+                }
+                Ok(json!({"status":"board","value":state.paper.view(state.revision)}))
+            }
+            Command::BoardControl {
+                binding,
+                intent,
+                expected_native_revision,
+            } => {
+                s.binding(binding)?;
+                let state = s.source.state.lock().map_err(|_| "paper-unavailable")?;
+                if state.phase != Phase::Active
+                    || s.source.invalid.load(Ordering::Acquire)
+                    || state.paper.revision() != *expected_native_revision
+                {
+                    return Err("paper-control-stale");
+                }
+                if !matches!(
+                    intent,
+                    super::ink_wire::PaperIntent::Open | super::ink_wire::PaperIntent::Close
+                ) && state.paper.closed()
+                {
+                    return Err("paper-not-open");
+                }
+                Ok(json!({"status":"board-admitted"}))
             }
             Command::Observe { .. } => unreachable!(),
         }
@@ -1492,6 +1687,7 @@ fn unknown_source() -> Value {
 pub(crate) fn native_source_command(
     session: &mut Option<NativeInkSession>,
     telemetry: Arc<SharedCaptureTelemetry>,
+    paper: PaperTap,
     epoch: &str,
     revision: u64,
     command: &super::ink_wire::Command,
@@ -1517,9 +1713,10 @@ pub(crate) fn native_source_command(
                 let Ok(mut s) = state.lock() else {
                     return unknown_source();
                 };
-                execute_source_command(
+                execute_source_command_with_paper(
                     &mut s,
                     telemetry.clone(),
+                    paper.clone(),
                     &epoch,
                     revision,
                     command,

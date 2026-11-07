@@ -525,6 +525,12 @@ mod ink_wire_tests {
             let mut injected=observed.clone();injected[key]=serde_json::json!([]);assert!(parse(&frame(injected),1000).is_none());
         }
         let binding=serde_json::json!({"captureId":"b".repeat(32),"producerId":"c".repeat(32),"generation":1});
+        let board=serde_json::json!({"action":"boardControl","binding":binding,"intent":"undo","expectedNativeRevision":3});
+        assert!(parse(&frame(serde_json::json!({"action":"armInput","binding":binding})),1000).is_none());
+        assert!(parse(&frame(board.clone()),1000).is_some());
+        for extra in [serde_json::json!({"points":[[1,2]]}),serde_json::json!({"expectedNativeRevision":-1}),serde_json::json!({"intent":"start-capture"})]{
+            let mut bad=board.clone();bad.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());assert!(parse(&frame(bad),1000).is_none());
+        }
         for ink in [serde_json::json!({"action":"readBatch","binding":binding,"sequence":4096}),serde_json::json!({"action":"activate","binding":binding,"clock":{"bootId":"11111111-1111-4111-8111-111111111111","admissionMonotonicNs":"+1"}}),serde_json::json!({"action":"anything","binding":binding})] {
             assert!(parse(&frame(ink),1000).is_none());
         }

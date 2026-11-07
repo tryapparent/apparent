@@ -16,6 +16,14 @@ pub(crate) struct NativeInkCollector {
     worker: Option<JoinHandle<Result<(), &'static str>>>,
     ready: std::sync::mpsc::Receiver<Result<(), &'static str>>,
 }
+struct PointerRelease(Arc<AtomicBool>);
+impl Drop for PointerRelease {
+    fn drop(&mut self) {
+        if self.0.swap(false, Ordering::AcqRel) {
+            crate::capture::desktop::linux::overlay::take_pointer(false);
+        }
+    }
+}
 impl NativeInkCollector {
     pub(crate) fn start(
         telemetry: Arc<SharedCaptureTelemetry>,
@@ -26,8 +34,11 @@ impl NativeInkCollector {
         let keyboard = crate::capture::desktop::linux::input::NativeInkKeyboard::open()?;
         // Capture the initial state synchronously before acknowledging activation.
         let initial = keyboard.modifiers()?;
+        let pointer = Arc::new(AtomicBool::new(false));
+        let release = PointerRelease(pointer.clone());
         Self::spawn_with_admission(
             move || {
+                let _owned_pointer = &release;
                 let modifiers = keyboard.modifiers()?;
                 let position = crate::capture::desktop::linux::hyprland::ink_pointer(&name, rect)
                     .ok_or("pointer-unavailable")?;
@@ -48,6 +59,10 @@ impl NativeInkCollector {
                 Ok((modifiers, position, time))
             },
             move |pure, previous, position, time| {
+                if pure != previous {
+                    pointer.store(pure, Ordering::Release);
+                    crate::capture::desktop::linux::overlay::take_pointer(pure);
+                }
                 track_shift_ink_observed(
                     &telemetry,
                     (position[0], position[1]),

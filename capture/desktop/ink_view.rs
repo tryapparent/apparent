@@ -94,6 +94,8 @@ impl OverlayView {
     fn scene(&self, screen: [f32; 2], viewport_scale: f32) -> Option<Scene> {
         let t = &self.telemetry;
         let active = t.active.load(Ordering::Acquire);
+        #[cfg(target_os = "linux")]
+        let active = active || t.native_ink_visible_scope.load(Ordering::Acquire);
         let selecting = t.selecting.load(Ordering::Acquire);
         let mode = t.capture_mode.load(Ordering::Acquire);
         if !active && !selecting && mode != 3 {

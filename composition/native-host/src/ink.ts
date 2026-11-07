@@ -21,6 +21,8 @@ export interface NativeInkSeal {
   finalSequence: number | null;
   seal: { state: 'sealed-and-drained'; observedAtNs: string; nativeRevision: number };
 }
+export type NativeBoardIntent = 'open' | 'undo' | 'clear' | 'close';
+export interface NativeBoardState { nativeRevision: number; open: boolean; strokeCount: number; activeGesture: boolean }
 /** Native retains exact bytes until this exact digest is acknowledged. Unknown is terminal for this relay. */
 export interface NativeInkSourcePort {
   /** Observation/binding alone must leave native input admission closed. */
@@ -33,7 +35,10 @@ export interface NativeInkSourcePort {
   acknowledgeBatch(binding: NativeInkBinding, batch: Pick<NativeInkBatch, 'sequence' | 'batchSha256'>): Promise<
     { status: 'acknowledged'; sequence: number; batchSha256: string } | { status: 'outcome-unknown' }>;
   /** Seal callback admission, resolve active gesture, drain callbacks into retained batches; do not erase them. */
-  sealInputAndDrain(binding: NativeInkBinding): Promise<NativeInkSeal>;
+  sealInputAndDrain(binding: NativeInkBinding, timeoutMs?: number): Promise<NativeInkSeal>;
+  /** Optional on older native sources. These are native effects, never point ingress. */
+  readBoard?(binding: NativeInkBinding, timeoutMs?: number): Promise<NativeBoardState>;
+  controlBoard?(binding: NativeInkBinding, intent: NativeBoardIntent, expectedNativeRevision: number, timeoutMs?: number): Promise<'requested' | 'refused' | 'outcome-unknown'>;
 }
 interface InkAuthority { ingressVersion: 1; ownerToken: string; captureId: string; registrationId: string; producerToken: string }
 /** Structural view of committed Engine aa17795f CaptureInkPort; no SDK implementation imported. */
@@ -73,6 +78,7 @@ export function createNativeInkRelay(options: {
   let phase: NativeInkRelayPhase = 'unregistered';
   let authority: InkAuthority | undefined, binding: NativeInkBinding | undefined;
   let sequence = 0, busy = false;
+  let inFlight: Promise<void> | undefined;
   const now = () => performance.now();
   async function bounded<T>(call: () => Promise<T>, deadline: number): Promise<T> {
     const remaining = deadline - now(); ensure(remaining > 0);
@@ -86,9 +92,10 @@ export function createNativeInkRelay(options: {
   }
   async function exclusive<T>(expected: NativeInkRelayPhase, next: NativeInkRelayPhase, body: () => Promise<T>): Promise<T> {
     ensure(!busy && phase === expected); busy = true; phase = next;
+    let settle!:()=>void;inFlight=new Promise<void>(resolve=>{settle=resolve;});
     try { return await body(); }
     catch (error) { phase = 'unavailable'; throw error; }
-    finally { busy = false; }
+    finally { busy = false; settle(); }
   }
   async function forward(deadline: number): Promise<boolean> {
     ensure(authority && binding && sequence < NATIVE_INK_LIMITS.batches);
@@ -115,6 +122,16 @@ export function createNativeInkRelay(options: {
   }
   return {
     phase: (): NativeInkRelayPhase => phase,
+    async readBoard() {
+      ensure(phase==='ready' && binding && options.source.readBoard);
+      return options.source.readBoard(binding!);
+    },
+    async controlBoard(intent:NativeBoardIntent) {
+      ensure(phase==='ready' && binding && options.source.readBoard && options.source.controlBoard);
+      const state=await options.source.readBoard(binding!);
+      ensure(phase==='ready');
+      return options.source.controlBoard(binding!,intent,state.nativeRevision);
+    },
     register() { return exclusive('unregistered', 'registering', async () => {
       const deadline = now() + NATIVE_INK_LIMITS.finishMs;
       ensure(id(original.captureId) && original.ownerToken.length > 0 && original.ownerToken.length <= 4096);
@@ -150,9 +167,15 @@ export function createNativeInkRelay(options: {
       phase = 'ready';
     }); },
     forwardNext() { return exclusive('ready', 'ready', () => forward(now() + NATIVE_INK_LIMITS.finishMs)); },
-    finish() { return exclusive('ready', 'draining', async () => {
-      const deadline = now() + NATIVE_INK_LIMITS.finishMs; ensure(authority && binding);
-      const seal = clone(await bounded(() => options.source.sealInputAndDrain(binding!), deadline));
+    async finish(timeoutMs=NATIVE_INK_LIMITS.finishMs) {
+      ensure(Number.isSafeInteger(timeoutMs)&&timeoutMs>0&&timeoutMs<=NATIVE_INK_LIMITS.finishMs);
+      ensure(phase==='ready');phase='draining';
+      const deadline = now() + timeoutMs;
+      try{
+      if(busy)await bounded(()=>inFlight!,deadline);
+      return await exclusive('draining', 'draining', async () => {
+      ensure(authority && binding);
+      const seal = clone(await bounded(() => options.source.sealInputAndDrain(binding!,Math.max(1,Math.floor(deadline-now()))), deadline));
       ensure((seal.finalSequence === null || (uint(seal.finalSequence) && seal.finalSequence < NATIVE_INK_LIMITS.batches))
         && seal.seal.state === 'sealed-and-drained' && ns(seal.seal.observedAtNs) && uint(seal.seal.nativeRevision));
       ensure(seal.finalSequence === null ? sequence === 0 : sequence <= seal.finalSequence + 1);
@@ -163,6 +186,8 @@ export function createNativeInkRelay(options: {
       ensure(receipt.ingressVersion === 1 && receipt.captureId === original.captureId && receipt.registrationId === authority.registrationId
         && receipt.finalSequence === seal.finalSequence && receipt.state === 'complete');
       phase = 'complete';
-    }); },
+    });
+      }catch(error){phase='unavailable';throw error;}
+    },
   };
 }

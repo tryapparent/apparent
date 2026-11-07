@@ -38,6 +38,17 @@ test('native seal/drain queues original retained batches before Engine final com
   const f=fixture([raw,raw]);f.setAvailable(0);await f.relay.register();assert.equal(await f.relay.forwardNext(),false);await f.relay.finish();
   assert.deepEqual(f.actions.slice(4),['native-seal','read:0','submit:0','ack:0','read:1','submit:1','ack:1','engine-finish']);
 });
+
+test('Stop drain admits no more forwards but joins the already-issued exact batch before finish',async()=>{
+  const f=fixture([raw]);let release!:()=>void;
+  const waiting=new Promise<void>(resolve=>{release=resolve;});
+  const submit=f.sink.submitInkEvents;f.sink.submitInkEvents=async(input)=>{await waiting;return submit(input);};
+  await f.relay.register();const forward=f.relay.forwardNext();
+  const finish=f.relay.finish();assert.equal(f.relay.phase(),'draining');
+  await assert.rejects(f.relay.forwardNext());release();await forward;await finish;
+  assert.equal(f.relay.phase(),'complete');assert.equal(f.actions.filter(x=>x==='submit:0').length,1);
+  assert(f.actions.indexOf('ack:0')<f.actions.indexOf('engine-finish'));
+});
 test('genuine zero-batch seal uses null, never invented empty collected batches',async()=>{
   const f=fixture();await f.relay.register();await f.relay.finish();assert.equal(f.relay.phase(),'complete');assert.ok(!f.actions.some(x=>x.startsWith('submit')));
 });

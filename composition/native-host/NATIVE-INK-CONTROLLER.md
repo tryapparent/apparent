@@ -1,4 +1,4 @@
-# Native Shift source controller
+# Native Shift and Board source controller
 
 `capture/desktop/workflow/native_host/ink_source.rs` observes the current Linux
 owner PID/start ticks, boot ID, strong host epoch and one unrotated scale1
@@ -54,20 +54,27 @@ The existing native termination guard also includes this source's active,
 in-flight, retained-unacknowledged and unknown work. Its nonblocking local
 clearance projection cannot replace the coordinator/Engine shutdown report.
 
-Board's existing native listeners now expose an optional privileged tap at
-accepted begin/extension/finish, undo, clear, render and entity release. Points
-come directly from the donor's acceptance return, with native monotonic stamps;
-they are not recovered from stored arrays. The actual GPUI window handle,
-per-open native nonce and GPUI-reported global scale1 viewport (minus the donor
-64-point toolbar) stay raw native observations, not independently verified XIDs
-or compositor effect. Close retains the original observed tuple; the owner-held
-Board stack survives. RGB remains absent rather than inferred from its HSLA
-paint. No observer is installed by this tap alone.
+Board's existing native listeners supply an exact privileged tap at accepted
+begin/extension/finish, undo, clear, render and entity release. The real Linux
+window association is captured with the supported X11 adapter when the window
+opens; no panicking GPUI raw-handle call or internal entity ID is used. Native
+paper-local points, monotonic stamps, the per-open incarnation and the scale1
+viewport below the 64-point toolbar remain original observations. RGB is absent
+rather than inferred from HSLA paint. Accepted history is immutable; undo/clear
+change the donor's current stack, and close/reopen preserves completed marks.
 
-This is the screen-source factory and Board callback preparation, not an enabled
-drawing route or complete application adoption. Board ingress registration/tap
-installation, recorded overlay presentation and Electron controls still need
-integration. No competing legacy recording may be started to obtain input.
-Actual native effects, latency of per-callback monitor joins, original sealed
-facts and full Saved/Copy/Agent journey remain acceptance gates. Installed
-routing and advertised capabilities are unchanged. Mac is unsupported here.
+Matching Engine registration installs both observer gates. The collector stays
+paused until the coordinator opens the existing ink-only overlay and privately
+arms that same prepared source. This continuation is refused on the wire. Board
+open/undo/clear/close are fixed commands with original binding and native revision
+CAS; requested is not an observed effect. NativeHost seal first observes Board
+closed, then drains the same collector/callback gates and retained batch ACKs.
+The donor target and prior visual state are restored only after positive drain.
+No legacy recorder, global input poller or shortcut owner is started.
+
+The source/SDK fixtures exercise original accepted-history bytes and lifecycle,
+including close/reopen and in-flight forwarding at Stop. They do not qualify
+Hyprland focus, input, window placement, recorded pixels or source geometry.
+Electron control adoption, original sealed facts and the real Saved/Copy/Agent
+journey remain acceptance gates. Installed routing and advertised capabilities
+are unchanged. Mac is unsupported by this native source.

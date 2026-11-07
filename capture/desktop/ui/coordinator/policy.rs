@@ -111,6 +111,8 @@ impl ApparentCoordinator {
             native_host_fingerprint: None,
             #[cfg(target_os="linux")]
             native_ink_session: None,
+            #[cfg(target_os="linux")]
+            native_ink_overlay: None,
             note_ui: None,
             admitted_microphone: None,
             whiteboard: Rc::new(RefCell::new(whiteboard::Board::default())),
@@ -387,7 +389,41 @@ impl ApparentCoordinator {
     ) {
         use crate::capture::desktop::workflow::agent_capture::{Action, Outcome};
         if let Some(native_host) = request.native_host.as_ref() {
-            if let Some(response) = self.native_host_request(native_host, request.expired(), request.reply.clone()) {
+            if let Some(mut response) = self.native_host_request(native_host, request.expired(), request.reply.clone()) {
+                #[cfg(target_os="linux")]
+                if let crate::capture::desktop::workflow::native_host::Operation::InkSource(command)=&native_host.operation {
+                    use crate::capture::desktop::workflow::native_host::ink_wire::Command;
+                    if response["status"]=="board-admitted" {
+                        if let Command::BoardControl {intent,..}=command {
+                            // Authorization was performed by the retained source
+                            // worker against binding + native revision. This ACK
+                            // is request dispatch, never an observed window effect.
+                            if crate::capture::desktop::workflow::agent_capture::storage_clock_ms()>=native_host.deadline {
+                                response=serde_json::json!({"status":"refused"});
+                            }else{
+                                let requested=whiteboard::native_control(&cx.entity(),intent,cx);
+                                let late=crate::capture::desktop::workflow::agent_capture::storage_clock_ms()>=native_host.deadline;
+                                response=serde_json::json!({"status":if late{"outcome-unknown"}else if requested{"requested"}else{"refused"}});
+                            }
+                        }
+                    } else if let Command::Activate{binding,..}=command && response["status"]=="input-prepared" {
+                        let frame=*self.telemetry.target_frame.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        let overlay=crate::capture::desktop::linux::overlay::InkOverlay::open_native(self.telemetry.clone(),[frame.x,frame.y,frame.width,frame.height],cx);
+                        match overlay {
+                            Ok(overlay)=>{
+                                self.native_ink_overlay=Some(overlay);
+                                response=crate::capture::desktop::workflow::native_host::ink_source::native_source_command(
+                                    &mut self.native_ink_session,self.telemetry.clone(),self.whiteboard.borrow().native_paper.clone(),&self.native_host_epoch,self.native_host_revision,&Command::ArmInput{binding:binding.clone()},native_host.deadline);
+                                if response["status"]=="active" {whiteboard::reset_for_capture(&self.whiteboard);}
+                            },
+                            Err(_)=>response=serde_json::json!({"status":"outcome-unknown"})
+                        }
+                        if crate::capture::desktop::workflow::agent_capture::storage_clock_ms()>=native_host.deadline {response=serde_json::json!({"status":"outcome-unknown"});}
+                    } else if matches!(command,Command::SealInputAndDrain{..}) && response["seal"]["state"]=="sealed-and-drained" {
+                        self.native_ink_overlay=None;
+                    }
+                    self.publish_capture_busy();
+                }
                 let _ = request.reply.send(response.to_string());
             }
             return;
@@ -647,7 +683,7 @@ impl ApparentCoordinator {
             if expected.process_epoch!=self.native_host_epoch || expected.revision!=self.native_host_revision {return Some(refusal("stale"));}
             #[cfg(target_os="linux")]
             return Some(crate::capture::desktop::workflow::native_host::ink_source::native_source_command(
-                &mut self.native_ink_session,self.telemetry.clone(),&self.native_host_epoch,self.native_host_revision,command,request.deadline));
+                &mut self.native_ink_session,self.telemetry.clone(),self.whiteboard.borrow().native_paper.clone(),&self.native_host_epoch,self.native_host_revision,command,request.deadline));
             #[cfg(not(target_os="linux"))]
             return Some(refusal("unavailable"));
         }
@@ -1181,7 +1217,7 @@ impl ApparentCoordinator {
     /// UI-thread snapshot for restart/termination admission, not just visible UI.
     pub(crate) fn capture_busy(&self) -> bool {
         #[cfg(target_os="linux")]
-        if self.native_ink_session.as_ref().is_some_and(|source|source.input_busy()) {
+        if self.native_ink_overlay.is_some() || self.native_ink_session.as_ref().is_some_and(|source|source.input_busy()) {
             return true;
         }
         if NATIVE_CLIPBOARD_EFFECT_BUSY.load(std::sync::atomic::Ordering::Acquire)

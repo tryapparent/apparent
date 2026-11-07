@@ -748,6 +748,9 @@ pub(crate) fn native_ink_monotonic_ns() -> Option<u64> {
 pub struct SharedCaptureTelemetry {
     #[cfg(target_os = "linux")]
     native_ink_observer: Mutex<Option<Arc<dyn NativeInkObserver>>>,
+    /// Paint projection only; never legacy capture admission or clearance.
+    #[cfg(target_os = "linux")]
+    pub(crate) native_ink_visible_scope: AtomicBool,
     /// Unclipped desktop ink, never serialized into the recording bundle.
     pub desktop_ink: Mutex<Vec<Stroke>>,
     pub active: AtomicBool,
@@ -824,6 +827,8 @@ pub(crate) struct NativeInkTargetSnapshot {
     prepared:TargetFrame,
     previous:TargetFrame,
     live:Option<Stroke>,
+    ink:Vec<Stroke>,
+    desktop:Vec<Stroke>,
 }
 
 impl SharedCaptureTelemetry {
@@ -832,6 +837,7 @@ impl SharedCaptureTelemetry {
         let mut current = self.native_ink_observer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if current.is_some() { return false; }
         *current = Some(observer);
+        self.native_ink_visible_scope.store(true, Ordering::Release);
         true
     }
 
@@ -840,18 +846,22 @@ impl SharedCaptureTelemetry {
         let mut current = self.native_ink_observer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if !current.as_ref().is_some_and(|installed| Arc::ptr_eq(installed, observer)) { return false; }
         *current = None;
+        self.native_ink_visible_scope.store(false, Ordering::Release);
         true
     }
 
     /// Exclusive native-only preparation; snapshot is retained until commit or
-    /// positive rollback. Accepted history and legacy active state are untouched.
+    /// positive rollback. Prior visual stacks are restored; original sealed
+    /// facts and legacy capture admission are never rewritten here.
     #[cfg(target_os="linux")]
     pub(crate) fn prepare_native_ink_target(&self,frame:TargetFrame)->Result<NativeInkTargetSnapshot, &'static str>{
         let gate=self.native_ink_observer.lock().map_err(|_|"input-ownership-unresolved")?;
         if gate.is_some() || self.active.load(Ordering::Acquire){return Err("input-already-owned");}
         let mut target=self.target_frame.lock().map_err(|_|"source-unavailable")?;
         let mut live=self.live_ink.lock().map_err(|_|"source-unavailable")?;
-        let snapshot=NativeInkTargetSnapshot { prepared:frame,previous:*target,live:live.take() };
+        let mut ink=self.strokes.lock().map_err(|_|"source-unavailable")?;
+        let mut desktop=self.desktop_ink.lock().map_err(|_|"source-unavailable")?;
+        let snapshot=NativeInkTargetSnapshot { prepared:frame,previous:*target,live:live.take(),ink:std::mem::take(&mut *ink),desktop:std::mem::take(&mut *desktop) };
         *target=frame;
         Ok(snapshot)
     }
@@ -861,9 +871,13 @@ impl SharedCaptureTelemetry {
         if gate.is_some() || self.active.load(Ordering::Acquire){return Err("input-ownership-unresolved");}
         let mut target=self.target_frame.lock().map_err(|_|"source-unavailable")?;
         let mut live=self.live_ink.lock().map_err(|_|"source-unavailable")?;
+        let mut ink=self.strokes.lock().map_err(|_|"source-unavailable")?;
+        let mut desktop=self.desktop_ink.lock().map_err(|_|"source-unavailable")?;
         if *target!=snapshot.prepared {return Err("target-changed");}
         *target=snapshot.previous;
         *live=snapshot.live.take();
+        *ink=std::mem::take(&mut snapshot.ink);
+        *desktop=std::mem::take(&mut snapshot.desktop);
         Ok(())
     }
 
@@ -885,6 +899,8 @@ impl SharedCaptureTelemetry {
         Arc::new(Self {
             #[cfg(target_os = "linux")]
             native_ink_observer: Mutex::new(None),
+            #[cfg(target_os = "linux")]
+            native_ink_visible_scope: AtomicBool::new(false),
             active: AtomicBool::new(false),
             selecting: AtomicBool::new(false),
             shift_held: AtomicBool::new(false),

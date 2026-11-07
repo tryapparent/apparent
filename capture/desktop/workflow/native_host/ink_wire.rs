@@ -20,6 +20,14 @@ pub(crate) struct Source {
     pub generation: String,
 }
 #[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum PaperIntent {
+    Open,
+    Undo,
+    Clear,
+    Close,
+}
+#[derive(Clone, Debug, Deserialize)]
 #[serde(
     tag = "action",
     rename_all = "camelCase",
@@ -35,6 +43,10 @@ pub(crate) enum Command {
         binding: Binding,
         clock: Clock,
     },
+    /// Coordinator-only continuation after opening the real donor overlay.
+    ArmInput {
+        binding: Binding,
+    },
     ReadBatch {
         binding: Binding,
         sequence: u32,
@@ -46,6 +58,14 @@ pub(crate) enum Command {
     },
     SealInputAndDrain {
         binding: Binding,
+    },
+    ReadBoard {
+        binding: Binding,
+    },
+    BoardControl {
+        binding: Binding,
+        intent: PaperIntent,
+        expected_native_revision: u64,
     },
 }
 fn hex(s: &str, n: usize) -> bool {
@@ -94,6 +114,20 @@ impl Command {
                 binding
             }
             Self::SealInputAndDrain { binding } => binding,
+            Self::ReadBoard { binding } => binding,
+            // Only the coordinator constructs this continuation after the real
+            // presentation is prepared. It is never an admitted wire command.
+            Self::ArmInput { .. } => return false,
+            Self::BoardControl {
+                binding,
+                expected_native_revision,
+                ..
+            } => {
+                if *expected_native_revision > 9_007_199_254_740_991 {
+                    return false;
+                }
+                binding
+            }
         };
         hex(&binding.capture_id, 32) && hex(&binding.producer_id, 32) && binding.generation == 1
     }
