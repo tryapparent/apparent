@@ -477,14 +477,14 @@ async function reconcileStandardCapture(requestId: string, expectedPath: string,
       while (options.clock.now() < deadline) {
         try { await composed.coordinator.reconcile(); } catch { /* durable Record state remains authoritative */ }
         const facts = await composed.coordinator.captureFacts.readFacts().catch(() => undefined);
-        const matching = facts?.captures.filter(fact => fact.captureId === mapping.captureId) ?? [];
+        const matching = facts?.captures.filter(fact => fact.captureId === requestId) ?? [];
         if (matching.length === 1) {
           const fact = matching[0];
           state = fact.phase;
           if (fact.phase === 'saved' && fact.artifactId === mapping.bundleId) {
-            const resolved = await composed.coordinator.resolveHandoff({ captureId: mapping.captureId, artifactId: fact.artifactId }).catch(() => undefined);
+            const resolved = await composed.coordinator.resolveHandoff({ captureId: requestId, artifactId: fact.artifactId }).catch(() => undefined);
             const saved = resolved?.handoff?.savedBundle;
-            if (resolved?.captureId === mapping.captureId && resolved.artifactId === mapping.bundleId && saved?.status === 'saved' && saved.bundlePath === expectedPath && await realpath(saved.bundlePath).catch(() => '') === expectedPath)
+            if (resolved?.captureId === requestId && resolved.artifactId === mapping.bundleId && saved?.status === 'saved' && saved.bundlePath === expectedPath && await realpath(saved.bundlePath).catch(() => '') === expectedPath)
               bundlePath = expectedPath;
           }
           if (['saved', 'failed', 'cancelled', 'unknown'].includes(fact.phase) && (!bundlePath || fact.phase !== 'saved')) break;
@@ -583,7 +583,7 @@ export async function controlCapture2(args: string[], config: { executable?: str
 async function authenticatedSavedBundlePath(output: Capture2PublicOutput, requestId: string, expectedPath: string, mapping?: { requestId: string; captureId: string; bundleId: string; bundlePath: string }): Promise<string | undefined> {
   try {
     if (mapping && (mapping.requestId !== requestId || mapping.bundlePath !== expectedPath)) return undefined;
-    const captureId = mapping?.captureId ?? requestId;
+    const captureId = requestId;
     const facts = await output.captureFacts.readFacts();
     const matches = facts.captures.filter(capture => capture.captureId === captureId);
     if (matches.length !== 1 || matches[0].phase !== 'saved' || typeof matches[0].artifactId !== 'string' || !matches[0].artifactId) return undefined;

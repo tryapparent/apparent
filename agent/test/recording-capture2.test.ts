@@ -481,7 +481,7 @@ test('capture/2 standard coordinator starts only after terminal capture close an
         mappingForRequest: async requestId => ({ requestId, captureId: 'record-capture', bundleId: 'record-artifact', bundlePath: out }),
         coordinator: {
           reconcile: async () => { sequence.push('reconcile'); await mkdir(out); },
-          captureFacts: { readFacts: async () => ({ captures: [{ captureId: 'record-capture', phase: 'saved', artifactId: 'record-artifact', outcomes: [] }] }) },
+          captureFacts: { readFacts: async () => ({ captures: [{ captureId: (fixture.calls.find(call => call.method === 'start')?.input as any).requestId, phase: 'saved', artifactId: 'record-artifact', outcomes: [] }] }) },
           resolveHandoff: async input => ({ captureId: input.captureId, artifactId: input.artifactId, handoff: { savedBundle: { status: 'saved', bundlePath: out } } }),
           processingIssues: () => [],
           shutdown: async () => { sequence.push('shutdown'); return { scope: 'record-coordinator', admission: 'closed', localDrain: 'complete', runtimeClearance: 'clear', nextShortcutAdmission: { state: 'unsupported', reason: 'fixture' }, work: [] }; },
@@ -511,7 +511,7 @@ test('capture/2 standard unknown remains pathless and releases peers only after 
       mappingForRequest: async requestId => ({ requestId, captureId: 'record-capture', bundleId: 'record-artifact', bundlePath: out }),
       coordinator: {
         reconcile: async () => { sequence.push('reconcile'); },
-        captureFacts: { readFacts: async () => ({ captures: [{ captureId: 'record-capture', phase: 'unknown', outcomes: [] }] }) },
+        captureFacts: { readFacts: async () => ({ captures: [{ captureId: (fixture.calls.find(call => call.method === 'start')?.input as any).requestId, phase: 'unknown', outcomes: [] }] }) },
         resolveHandoff: async () => { throw new Error('unknown has no handoff'); },
         processingIssues: () => [{ state: 'outcome-unknown', code: 'media-outcome-unknown' }],
         shutdown: async () => { sequence.push('shutdown'); return { scope: 'record-coordinator', admission: 'closed', localDrain: 'complete', runtimeClearance: 'unknown', nextShortcutAdmission: { state: 'unsupported', reason: 'fixture' }, work: [{ owner: 'media', state: 'unknown', reason: 'media-outcome-unknown' }] }; },
@@ -542,7 +542,7 @@ test('capture/2 standard processing keeps peers owned when shutdown or disposal 
         mappingForRequest: async requestId => ({ requestId, captureId: 'record-capture', bundleId: 'record-artifact', bundlePath: out }),
         coordinator: {
           reconcile: async () => undefined,
-          captureFacts: { readFacts: async () => ({ captures: [{ captureId: 'record-capture', phase: 'unknown', outcomes: [] }] }) },
+          captureFacts: { readFacts: async () => ({ captures: [{ captureId: (fixture.calls.find(call => call.method === 'start')?.input as any).requestId, phase: 'unknown', outcomes: [] }] }) },
           resolveHandoff: async () => null, processingIssues: () => [],
           shutdown: async () => { sequence.push('shutdown'); if (failAt === 'shutdown') throw new Error('unresolved'); return { scope: 'record-coordinator', admission: 'closed', localDrain: 'complete', runtimeClearance: 'clear', nextShortcutAdmission: { state: 'unsupported', reason: 'fixture' }, work: [] }; },
           dispose: async () => { sequence.push('dispose'); if (failAt === 'dispose') throw new Error('dispose failed'); },
