@@ -11,7 +11,7 @@ SCRIPTS = Path(__file__).resolve().parent
 
 
 class InstallerGuardTests(unittest.TestCase):
-    def run_installer(self, remote, running=None, ps_status=0, no_launch=False, prebuilt=None):
+    def run_installer(self, remote, running=None, ps_status=0, no_launch=False, prebuilt=None, stage_only=False, corrupt_copy=False):
         with tempfile.TemporaryDirectory(prefix="installer-guard-") as temporary:
             root = Path(temporary)
             home = root / "Test User"
@@ -69,6 +69,10 @@ esac
                 tool = tools / name
                 tool.write_text(mock)
                 tool.chmod(0o755)
+            if corrupt_copy:
+                cp = tools / "cp"
+                cp.write_text('#!/usr/bin/env bash\n/bin/cp "$@"\nprintf corrupt >> "${@: -1}"\n')
+                cp.chmod(0o755)
             for relative in ("target/debug/apparent", "target/debug/apparent-helper",
                              "capture/desktop/assets/Apparent.icns",
                              "shared/assets/fonts/HostGrotesk-Variable.ttf",
@@ -102,10 +106,20 @@ esac
                     (binary_inputs / name).write_text("synthetic verified input")
                 env.update(APPARENT_PREBUILT_DIR=str(binary_inputs), MOCK_PREBUILT=prebuilt)
             script = packaging / ("install-app-remote.sh" if remote else "install-app.sh")
-            result = subprocess.run(["bash", str(script)], env=env, text=True,
+            command = ["bash", str(script)]
+            if stage_only:
+                command = ["bash", "-c", 'source "$1"; apparent_stage_built_app "$2" "$3" "$4" ""',
+                           "fixture-stage", str(script), str(repo), str(repo / "target/debug"), str(app)]
+            result = subprocess.run(command, env=env, text=True,
                                     capture_output=True, timeout=10)
             calls = log.read_text() if log.exists() else ""
             self.assertNotIn("pkill ", calls, result.stderr)
+            if corrupt_copy:
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("stage-settings", calls)
+                self.assertNotIn("codesign ", calls)
+                self.assertNotIn("open ", calls)
+                return
             refused = running is not None or ps_status != 0 or prebuilt == "rejected"
             if prebuilt:
                 self.assertNotIn("cargo build", calls, "Explicit artifact selection must never rebuild")
@@ -134,7 +148,16 @@ esac
                     self.assertNotIn("package-notes.mjs", calls)
                     self.assertEqual(calls.count("stage-settings"), 1)
                     self.assertIn("--popups-destination " + str(app / "Contents/Resources/note-ui"), calls)
-                self.assertEqual("open " in calls, remote or not no_launch)
+                self.assertEqual("open " in calls, (remote or not no_launch) and not stage_only)
+            if stage_only:
+                for forbidden in ("cargo ", "taskpolicy ", "node ", "open "):
+                    self.assertNotIn(forbidden, calls)
+                self.assertFalse((home / "bin").exists())
+
+    def test_internal_stager_packages_exact_inputs_without_build_admission_or_launch(self):
+        self.run_installer(False, stage_only=True)
+        self.run_installer(False, stage_only=True, corrupt_copy=True)
+        self.run_installer(False, running="Contents/MacOS/apparent", stage_only=True)
 
     def test_explicit_prebuilt_admission_selects_inputs_or_refuses_without_fallback(self):
         for prebuilt in ("accepted", "rejected"):

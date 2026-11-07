@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "id": "platform-native-host",
+  "kind": "directory",
+  "package": "composition/native-host/delivery",
+  "inputs": [
+    ".cargo/", ".githooks/", ".github/", "agent/", "capture/", "composition/",
+    "connect/", "enablement/", "engine/", "hermes/", "onboarding/", "public/",
+    "record/", "shared/"
+  ],
+  "files": [
+    "AGENTS.md", "CONTRIBUTING.md", "Cargo.lock", "Cargo.toml", "LICENSE",
+    "README.md", "build.rs", "main.rs", ".gitignore"
+  ],
+  "verify": ["verify"],
+  "build": "build",
+  "environment": ["APPARENT_PACKAGING_TOOLS_SHA256", "APPARENT_POSTHOG_TOKEN", "APPARENT_HELPER_BUNDLE_ID", "APPARENT_PREVIEW_BUILD"],
+  "targets": ["linux-x64", "macos-x64"],
+  "stage": "development-app",
+  "language": "native",
+  "artifactPath": "dist"
+}

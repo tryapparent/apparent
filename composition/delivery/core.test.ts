@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process'
 import { stripTypeScriptTypes } from 'node:module'
 import { after, test } from 'node:test'
 import { matchPrCandidateInputs, assertBuildWorkflowIdentity } from './cli.ts'
-import { prInputsMatch, sourceDigest, mediaBuildIdentity, supportsPrCandidate, packageBuildEnvironment, nativeBuildIdentity, assessPrior, catalog, inputDigest, makePlan, optionalVerificationPeers, reusePayload, sealPayload, verifyPublicExports, type Owner, workflowPathFor } from './core.ts'
+import { prInputsMatch, sourceDigest, mediaBuildIdentity, supportsPrCandidate, packageBuildEnvironment, nativeBuildIdentity, assessPrior, catalog, inputDigest, makePlan, optionalVerificationPeers, reusePayload, sealPayload, verifyPublicExports, type Owner, workflowPathFor, nativeHostInputRoots, nativeHostInputFiles } from './core.ts'
 
 // Hooks export repository-local Git variables. Synthetic repositories must not
 // accidentally use the hook caller's index, object database or worktree.
@@ -49,7 +49,7 @@ test('catalog reports absent owners pending and blocks present owners without re
   mkdirSync(resolve(path, 'composition/app'), { recursive: true })
   const missing = catalog(path)
   assert.deepEqual(missing.blocked, ['app-shell: source exists without delivery registration'])
-  assert.deepEqual(missing.pending, ['record', 'connect-client', 'connect-browser', 'engine', 'engine-native', 'engine-capture-native', 'engine-media-native', 'platform-config', 'platform-resources', 'onboarding', 'agent', 'public'])
+  assert.deepEqual(missing.pending, ['record', 'connect-client', 'connect-browser', 'engine', 'engine-native', 'engine-capture-native', 'engine-media-native', 'platform-config', 'platform-native-host', 'platform-resources', 'onboarding', 'agent', 'public'])
   mkdirSync(resolve(path, 'record')); mkdirSync(resolve(path, 'shared/ui'), { recursive: true })
   writeFileSync(resolve(path, 'record/delivery.json'), JSON.stringify({ ...owner, inputs: ['shared/ui/'] }))
   assert.match(catalog(path).blocked.join(';'), /Package source must be covered/)
@@ -436,6 +436,9 @@ test('App Shell reuse fingerprints packaging overrides without unrelated workflo
   assert.equal(supportsPrCandidate('app-shell', 'linux-x64'), true)
   assert.equal(supportsPrCandidate('app-shell', 'macos-x64'), true)
   assert.equal(supportsPrCandidate('app-shell', 'web'), false)
+  assert.equal(supportsPrCandidate('platform-native-host', 'linux-x64'), true)
+  assert.equal(supportsPrCandidate('platform-native-host', 'macos-x64'), true)
+  assert.equal(supportsPrCandidate('platform-native-host', 'web'), false)
 })
 
 test('App Shell promotion retains the exact packaged archive and original build provenance', () => {
@@ -606,4 +609,25 @@ test('App Shell fingerprints its external verification inputs', () => {
     git(root, 'add', '.'); git(root, 'commit', '-qm', 'external verification input')
     assert.notEqual(sourceDigest(root, app), before, name)
   }
+})
+
+test('native GUI catalog binds development profile, complete root closure and literal Platform identity', () => {
+  const path = resolve(temp, 'native-gui-closure')
+  const owner: Owner = { schema: 1, id: 'platform-native-host', kind: 'directory', language: 'native',
+    package: 'composition/native-host/delivery', stage: 'development-app', artifactPath: 'dist',
+    inputs: [...nativeHostInputRoots], files: [...nativeHostInputFiles], verify: ['verify'], build: 'build',
+    environment: ['APPARENT_PACKAGING_TOOLS_SHA256'], targets: ['linux-x64', 'macos-x64'] }
+  for (const input of owner.inputs) mkdirSync(resolve(path, input), { recursive: true })
+  mkdirSync(resolve(path, owner.package), { recursive: true })
+  const registration = resolve(path, 'composition/native-host/delivery/delivery.json')
+  writeFileSync(registration, JSON.stringify(owner))
+  assert.deepEqual(catalog(path).owners.find(item => item.id === owner.id), { ...owner, packageManager: 'npm' })
+  assert.equal(workflowPathFor(owner.id), '.github/workflows/stream-platform.yml')
+  assert.deepEqual(makePlan(path).matrix.include.filter(row => row.id === owner.id).map(row => row.architecture_owner), ['composition', 'composition'])
+  for (const missing of ['capture/', '.cargo/', 'engine/']) {
+    writeFileSync(registration, JSON.stringify({ ...owner, inputs: owner.inputs.filter(input => input !== missing) }))
+    assert.match(catalog(path).blocked.join(';'), /complete root GUI and packaging closure/)
+  }
+  writeFileSync(registration, JSON.stringify({ ...owner, files: owner.files!.filter(file => file !== 'build.rs') }))
+  assert.match(catalog(path).blocked.join(';'), /complete root GUI and packaging closure/)
 })

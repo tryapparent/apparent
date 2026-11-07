@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { installMediaDependencies, mediaPackages, installCaptureDependencies, capturePackages } from './media-dependencies.ts'
+import { installMediaDependencies, mediaPackages, installCaptureDependencies, capturePackages, installNativeHostDependencies, nativeHostPackages } from './media-dependencies.ts'
 
 const environment = { GITHUB_ACTIONS: 'true', RUNNER_OS: 'Linux', ImageOS: 'ubuntu24' }
 const osRelease = 'ID=ubuntu\nVERSION_CODENAME=noble\n'
@@ -72,4 +72,17 @@ test('capture dependency profile includes X11 source and H264 encoding without c
   assert.deepEqual(calls[1].slice(-capturePackages.length), [...capturePackages])
   for (const name of ['gstreamer1.0-x', 'gstreamer1.0-plugins-bad', 'gstreamer1.0-plugins-ugly']) assert(capturePackages.includes(name as typeof capturePackages[number]))
   assert(!mediaPackages.includes('gstreamer1.0-plugins-ugly' as typeof mediaPackages[number]))
+})
+
+test('root GUI setup preserves the existing package list through bounded apt admission', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'native-host-apt-contract-'))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const donor = readFileSync(new URL('../../capture/desktop/scripts/linux/appimage/dependencies.sh', import.meta.url), 'utf8')
+  const packages = donor.split('sudo apt-get install -y --no-install-recommends')[1]!.replace(/\\/g, ' ').trim().split(/\s+/)
+  assert.deepEqual([...nativeHostPackages], packages)
+  const calls: string[][] = []
+  installNativeHostDependencies({ directory, environment, osRelease, root: false, run(_command, args) { calls.push(args) } })
+  assert.equal(calls.length, 2)
+  assert(calls[0].includes('60s')); assert(calls[1].includes('180s'))
+  assert.deepEqual(calls[1].slice(-nativeHostPackages.length), [...nativeHostPackages])
 })

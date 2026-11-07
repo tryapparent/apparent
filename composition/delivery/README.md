@@ -223,3 +223,25 @@ run; component jobs still run independently with fail-fast disabled.
 The new canonical workflow path participates in fingerprints and admission;
 old workflow receipts are not promoted across the migration and the first new
 producer run builds fresh. Broad manual platform verification remains separate.
+
+`consume ID TARGET FULL_SHA` verifies the canonical main producer, exact receipt
+and protected source/workflow/run attestation before retaining an archive. Mac App Shell and the fixed native GUI bundle locations below may contain
+framework symlinks: their complete declared
+graph must remain inside the same `.app`, without cycles, dangling targets or
+entries beneath links. Other owners retain regular-file/directory inventories;
+hard links and unsupported filesystem types are refused. Admission does not
+extract an archive or activate installed routing.
+
+
+The `platform-native-host` component stages the existing root GUI as a Linux x64
+AppImage or complete Intel Mac app. It shares the canonical Platform workflow but
+has its own literal owner job, target fingerprint and fresh PR candidate. Root
+monolith and packaging inputs remain conservatively selected. Linux setup uses
+the existing dependency list through bounded apt admission and resolves official
+packaging tool bytes before fingerprinting; Mac uses the existing tested compiler
+and SDK setup. This component's Mac framework links under
+`stream-payload/payload/Apparent.app/Contents/Frameworks/` and its fixed
+`Contents/Resources/settings/runtime/Electron.app/Contents/Frameworks/` receive
+the same bounded app-contained link-graph validation as App Shell. Other owners and targets retain
+their existing restrictions. A build, archive or receipt does not launch the GUI,
+prove native effects, switch installed routes or retire legacy writers.

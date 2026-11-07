@@ -11,18 +11,20 @@ for (const name of execFileSync('git', ['rev-parse', '--local-env-vars'], { enco
 
 
 test('maps owned inputs, shared inputs, broad inputs and unknown paths', () => {
-  assert.deepEqual(selectComponents(null), ['platform-config', 'platform-resources', 'app-shell'])
-  assert.deepEqual(selectComponents(['composition/config/a.ts']), ['platform-config', 'app-shell'])
-  assert.deepEqual(selectComponents(['shared/resources/a.ts']), ['platform-resources'])
-  for (const path of ['composition/app/a.ts', 'enablement/native/owned-processes.ts', '.github/workflows/verification-platform.yml']) assert.deepEqual(selectComponents([path]), ['app-shell'])
-  assert.deepEqual(selectComponents(['shared/contracts/a.ts']), ['platform-config', 'app-shell'])
-  assert.deepEqual(selectComponents(['.cargo/config.toml']), ['platform-config', 'platform-resources'])
-  assert.deepEqual(selectComponents(['shared/ui/button.tsx']), ['app-shell'])
-  assert.deepEqual(selectComponents(['shared/config-native/a.rs']), ['platform-config'])
-  assert.deepEqual(selectComponents(['composition/native-host/a.ts']), ['app-shell'])
+  assert.deepEqual(selectComponents(null), ['platform-config', 'platform-resources', 'app-shell', 'platform-native-host'])
+  assert.deepEqual(selectComponents(['composition/config/a.ts']), ['platform-config', 'app-shell', 'platform-native-host'])
+  assert.deepEqual(selectComponents(['shared/resources/a.ts']), ['platform-resources', 'platform-native-host'])
+  for (const path of ['composition/app/a.ts', 'enablement/native/owned-processes.ts', '.github/workflows/verification-platform.yml']) assert.deepEqual(selectComponents([path]), ['app-shell', 'platform-native-host'])
+  assert.deepEqual(selectComponents(['shared/contracts/a.ts']), ['platform-config', 'app-shell', 'platform-native-host'])
+  assert.deepEqual(selectComponents(['.cargo/config.toml']), ['platform-config', 'platform-resources', 'platform-native-host'])
+  assert.deepEqual(selectComponents(['shared/ui/button.tsx']), ['app-shell', 'platform-native-host'])
+  assert.deepEqual(selectComponents(['shared/config-native/a.rs']), ['platform-config', 'platform-native-host'])
+  assert.deepEqual(selectComponents(['composition/native-host/a.ts']), ['app-shell', 'platform-native-host'])
+  for (const path of ['capture/desktop/native/laser.rs', 'engine/core/src/lib.rs', 'Cargo.toml', 'build.rs', 'main.rs', 'connect/client.rs'])
+    assert.deepEqual(selectComponents([path]), ['platform-native-host'], path)
   assert.deepEqual(selectComponents(['unrelated/file.ts']), [])
   for (const path of ['LICENSE', 'composition/delivery/cli.ts', 'composition/architecture/a.ts', '.github/actions/runtime-budget/action.yml', 'enablement/verification/workflow-budget.ts', '.github/workflows/stream-platform-config.yml', '.github/workflows/stream-platform.yml', '.github/workflows/stream-app-shell.yml', '.github/actions/delivery-contracts/action.yml', '.github/actions/delivery-component/action.yml'])
-    assert.deepEqual(selectComponents([path]), ['platform-config', 'platform-resources', 'app-shell'], path)
+    assert.deepEqual(selectComponents([path]), ['platform-config', 'platform-resources', 'app-shell', 'platform-native-host'], path)
 })
 
 function fixture(callback: (ctx: { root: string; git: (...args: string[]) => void; commit: (message: string) => string }) => void) {
@@ -43,8 +45,8 @@ test('selects PR changes from merge-base to head', () => fixture(({ root, git, c
   mkdirSync(join(root, 'shared/resources'), { recursive: true })
   writeFileSync(join(root, 'shared/resources/unrelated-main'), 'main')
   const advanced = commit('main advanced')
-  assert.deepEqual(selectFromEvent(root, 'pull_request', { pull_request: { base: { sha: advanced }, head: { sha: head } } }), ['app-shell'])
-  assert.deepEqual(selectFromEvent(root, 'pull_request', { pull_request: { base: { sha: base }, head: { sha: head } } }), ['app-shell'])
+  assert.deepEqual(selectFromEvent(root, 'pull_request', { pull_request: { base: { sha: advanced }, head: { sha: head } } }), ['app-shell', 'platform-native-host'])
+  assert.deepEqual(selectFromEvent(root, 'pull_request', { pull_request: { base: { sha: base }, head: { sha: head } } }), ['app-shell', 'platform-native-host'])
 }))
 
 test('push diff sees deletions and rename sides; invalid history selects all', () => fixture(({ root, commit }) => {
@@ -53,6 +55,6 @@ test('push diff sees deletions and rename sides; invalid history selects all', (
   rmSync(join(root, 'shared/resources/item'))
   mkdirSync(join(root, 'composition/app'), { recursive: true }); writeFileSync(join(root, 'composition/app/item'), 'v')
   const after = commit('rename')
-  assert.deepEqual(selectFromEvent(root, 'push', { before, after }), ['platform-resources', 'app-shell'])
-  assert.deepEqual(selectFromEvent(root, 'push', { before: 'f'.repeat(40), after }), ['platform-config', 'platform-resources', 'app-shell'])
+  assert.deepEqual(selectFromEvent(root, 'push', { before, after }), ['platform-resources', 'app-shell', 'platform-native-host'])
+  assert.deepEqual(selectFromEvent(root, 'push', { before: 'f'.repeat(40), after }), ['platform-config', 'platform-resources', 'app-shell', 'platform-native-host'])
 }))

@@ -3,49 +3,39 @@ set -euo pipefail
 # Keep process inspection independent of the caller's locale.
 export LC_ALL=C
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
-# APPARENT_APP_DIR builds the signed bundle somewhere else (staging for remote installs, see
-# install-app-remote.sh); APPARENT_NO_LAUNCH=1 skips the ~/bin link and launch,
-# but never permits replacement of a running app.
-APP_DIR="${APPARENT_APP_DIR:-${HOME}/Applications/Apparent.app}"
-CONTENTS_DIR="${APP_DIR}/Contents"
-MACOS_DIR="${CONTENTS_DIR}/MacOS"
-RESOURCES_DIR="${CONTENTS_DIR}/Resources"
-FRAMEWORKS_DIR="${CONTENTS_DIR}/Frameworks"
-SIGN_ID="Developer ID Application: Christopher Langton (QC99C9JE59)"
-SPARKLE_PUBLIC_KEY="mIek27lttJe8cIBqVZFhh6reRKjpTx1h9ZY9OKWPtuM="
-
-cd "${REPO_DIR}"
-chmod +x "${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh" "${REPO_DIR}/capture/desktop/scripts/release/release-app.sh" 2>/dev/null || true
-SPARKLE_DIR="$("${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh" 2>/dev/null || true)"
-BINARY_DIR="${REPO_DIR}/target/debug"
-if [[ -n "${APPARENT_PREBUILT_DIR:-}" ]]; then
-  # An explicit immutable, successful main producer is required. Never rebuild
-  # automatically after failed admission or silently consume a cached binary.
-  node "${REPO_DIR}/enablement/verification/mac-artifact-consumer.ts" prepare "${APPARENT_PREBUILT_DIR}"
-  BINARY_DIR="${APPARENT_PREBUILT_DIR}"
-else
-  taskpolicy -c utility cargo build -j 3
-fi
+# Internal staging primitive for an already built, caller-owned binary snapshot.
+# Does not build, admit downloads, link ~/bin, or launch. The executable wrapper
+# below retains the normal build/immutable-artifact admission boundary.
+apparent_stage_built_app() {
+  local REPO_DIR="$1" BINARY_DIR="$2" APP_DIR="$3" SPARKLE_DIR="$4"
+  local CONTENTS_DIR="${APP_DIR}/Contents"
+  local MACOS_DIR="${CONTENTS_DIR}/MacOS"
+  local RESOURCES_DIR="${CONTENTS_DIR}/Resources"
+  local FRAMEWORKS_DIR="${CONTENTS_DIR}/Frameworks"
+  local SIGN_ID="Developer ID Application: Christopher Langton (QC99C9JE59)"
+  local PROCESSES PID EXECUTABLE IDENTITY SPARKLE_VER
+  local SPARKLE_PUBLIC_KEY="mIek27lttJe8cIBqVZFhh6reRKjpTx1h9ZY9OKWPtuM="
 
 # Inspect executable paths, not argv: other installations and CLI commands that
 # merely mention this app are not ours. Helpers inside this bundle count too.
 if ! PROCESSES="$(ps -axww -o pid= -o comm=)"; then
   echo "can't inspect running processes; destination app is untouched; retry when process inspection works" >&2
-  exit 1
+  return 1
 fi
 while read -r PID EXECUTABLE; do
   if [[ "${EXECUTABLE}" == "${APP_DIR}/Contents/"* ]]; then
     echo "${APP_DIR} is in use (pid ${PID}: ${EXECUTABLE}); finish any capture, quit the app and its helpers, then retry" >&2
-    exit 1
+    return 1
   fi
 done <<< "${PROCESSES}"
 
-mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}" "${FRAMEWORKS_DIR}" "${HOME}/bin"
+mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}" "${FRAMEWORKS_DIR}"
 
 rm -f "${MACOS_DIR}/apparent" "${MACOS_DIR}/apparent-helper"
 cp -f "${BINARY_DIR}/apparent" "${MACOS_DIR}/apparent"
 cp -f "${BINARY_DIR}/apparent-helper" "${MACOS_DIR}/apparent-helper"
+cmp -s "${BINARY_DIR}/apparent" "${MACOS_DIR}/apparent"
+cmp -s "${BINARY_DIR}/apparent-helper" "${MACOS_DIR}/apparent-helper"
 chmod +x "${MACOS_DIR}/apparent" "${MACOS_DIR}/apparent-helper"
 
 cp -f "${REPO_DIR}/capture/desktop/assets/Apparent.icns" "${RESOURCES_DIR}/Apparent.icns"
@@ -139,14 +129,38 @@ fi
 codesign --force --sign "${IDENTITY}" --identifier "dev.kitlangton.apparent.helper" "${MACOS_DIR}/apparent-helper"
 codesign --force --sign "${IDENTITY}" --identifier "dev.kitlangton.apparent" "${APP_DIR}"
 
-if [[ "${APPARENT_NO_LAUNCH:-0}" == "1" ]]; then
-  exit 0
+}
+
+apparent_install_app() {
+  local REPO_DIR
+  REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
+  local APP_DIR="${APPARENT_APP_DIR:-${HOME}/Applications/Apparent.app}"
+  local MACOS_DIR="${APP_DIR}/Contents/MacOS"
+  local SPARKLE_DIR BINARY_DIR
+cd "${REPO_DIR}"
+chmod +x "${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh" "${REPO_DIR}/capture/desktop/scripts/release/release-app.sh" 2>/dev/null || true
+SPARKLE_DIR="$("${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh" 2>/dev/null || true)"
+BINARY_DIR="${REPO_DIR}/target/debug"
+if [[ -n "${APPARENT_PREBUILT_DIR:-}" ]]; then
+  # An explicit immutable, successful main producer is required. Never rebuild
+  # automatically after failed admission or silently consume a cached binary.
+  node "${REPO_DIR}/enablement/verification/mac-artifact-consumer.ts" prepare "${APPARENT_PREBUILT_DIR}"
+  BINARY_DIR="${APPARENT_PREBUILT_DIR}"
+else
+  taskpolicy -c utility cargo build -j 3
 fi
 
+apparent_stage_built_app "${REPO_DIR}" "${BINARY_DIR}" "${APP_DIR}" "${SPARKLE_DIR}"
+
+if [[ "${APPARENT_NO_LAUNCH:-0}" == "1" ]]; then
+  return 0
+fi
+
+mkdir -p "${HOME}/bin"
 if [[ -e "${HOME}/bin/apparent" || -L "${HOME}/bin/apparent" ]]; then
   if [[ ! -L "${HOME}/bin/apparent" ]] || [[ "$(readlink "${HOME}/bin/apparent")" != "${MACOS_DIR}/apparent" ]]; then
     echo "${HOME}/bin/apparent belongs to another program; leaving it alone" >&2
-    exit 1
+    return 1
   fi
 fi
 ln -sfn "${MACOS_DIR}/apparent" "${HOME}/bin/apparent"
@@ -156,3 +170,8 @@ sleep 0.3
 ps -axww -o pid= -o comm= | while read -r PID EXECUTABLE; do
   [[ "${EXECUTABLE}" != "${MACOS_DIR}/apparent" ]] || echo "${PID} ${EXECUTABLE}"
 done
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  apparent_install_app "$@"
+fi
