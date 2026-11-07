@@ -37,7 +37,7 @@
     "@apparent/record": "file:vendor/record-0.1.0-c43a7182.tgz",
     "@apparent/native-host": "file:vendor/native-host-0.1.0-713f1591.tgz",
     "@apparent/config-host": "file:../config",
-    "@apparent/engine-sdk": "file:vendor/engine-sdk-0.4.3.tgz"
+    "@apparent/engine-sdk": "file:vendor/engine-sdk-0.4.5.tgz"
   },
   "overrides": {
     "minimatch": "11.0.1"
