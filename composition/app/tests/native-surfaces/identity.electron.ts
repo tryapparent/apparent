@@ -11,6 +11,7 @@ import { buildShell, root } from '../../scripts/build.ts';
 import { assemble } from '../../scripts/assemble.ts';
 import { packageApplication } from '../../scripts/package.ts';
 import { linuxStartTicks } from '../../src/native-surfaces/identity.ts';
+import { createMacWindowObserver } from './mac-observer.ts';
 import type { NativeControlSurfaceIdentity } from '@apparent/app-contracts/native';
 const run = promisify(execFile);
 const { stopElectron } = createRequire(import.meta.url)('../../../../enablement/native/owned-processes.ts') as {
@@ -72,6 +73,18 @@ export async function createRecordHostServices({profilePath}) {
   assert.equal(identity.owner.pid, application.process().pid);
   assert.equal(identity.api, 1); assert(identity.generation > 0);
   assert.notEqual(identity.hostEpoch, identity.surfaceId);
+  const macObserver = process.platform === 'darwin' ? await createMacWindowObserver(directory) : undefined;
+  const verifyMac = async (surface: NativeControlSurfaceIdentity) => {
+    assert(macObserver);
+    assert.equal(surface.window.kind, 'cg-window');
+    assert.equal(surface.owner.incarnation.kind, 'electron-process-creation-unix-ms');
+    if (surface.owner.incarnation.kind !== 'electron-process-creation-unix-ms') throw new Error('Wrong process clock');
+    const native = await macObserver(surface.owner.pid, surface.window.id);
+    assert.equal(native.pid, surface.owner.pid); assert.equal(native.windowId, surface.window.id);
+    assert.equal(native.creationTime, surface.owner.incarnation.value);
+    assert.equal(native.onScreen, false);
+    return native;
+  };
   if (process.platform === 'linux') {
     assert.equal(identity.window.kind, 'x11');
     assert.equal(identity.owner.incarnation.kind, 'linux-proc-start');
@@ -83,9 +96,9 @@ export async function createRecordHostServices({profilePath}) {
     const map = await run('xwininfo', ['-id', String(identity.window.id)]);
     assert.match(map.stdout, /Map State: IsUnMapped/);
   } else {
-    assert.equal(identity.window.kind, 'cg-window');
-    assert.equal(identity.owner.incarnation.kind, 'electron-process-creation-unix-ms');
-    // Independent native CGWindow owner/incarnation proof remains a separate Mac gate.
+    const native = await verifyMac(identity);
+    console.log('Mac hidden control identity:', JSON.stringify({ identity, native }));
+    await assert.rejects(macObserver!(identity.owner.pid + 1, identity.window.id));
   }
   const visibleRefusal = await application.evaluate(() => {
     const proof = (globalThis as any).__surfaceProof; proof.surface.showInactive();
@@ -98,6 +111,7 @@ export async function createRecordHostServices({profilePath}) {
   });
   assert.equal(destroyedRefusal, true);
   if (process.platform === 'linux') await assert.rejects(run('xwininfo', ['-id', String(identity.window.id)]));
+  else await assert.rejects(macObserver!(identity.owner.pid, identity.window.id));
   const replacement = await application.evaluate(async ({ BrowserWindow }) => {
     const previous = (globalThis as any).__surfaceProof;
     const surface = new BrowserWindow({ show: false,
@@ -105,11 +119,15 @@ export async function createRecordHostServices({profilePath}) {
     try {
       await surface.loadURL('about:blank');
       // The trusted fixture retains the same production observer for this owner.
+      previous.replacement = surface;
       return previous.identify(surface);
-    } finally { surface.destroy(); }
+    } catch (error) { surface.destroy(); throw error; }
   });
   assert.equal(replacement.hostEpoch, identity.hostEpoch);
   assert.deepEqual(replacement.owner, identity.owner);
   assert.notEqual(replacement.surfaceId, identity.surfaceId);
   assert(replacement.generation > identity.generation);
+  if (macObserver) await verifyMac(replacement);
+  await application.evaluate(() => (globalThis as any).__surfaceProof.replacement.destroy());
+  if (macObserver) await assert.rejects(macObserver(replacement.owner.pid, replacement.window.id));
 });
