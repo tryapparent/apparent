@@ -14,7 +14,7 @@
   ],
   "verify": ["verify"],
   "build": "build",
-  "environment": ["APPARENT_PACKAGING_TOOLS_SHA256"],
+  "environment": ["APPARENT_PACKAGING_TOOLS_SHA256", "APPARENT_POSTHOG_TOKEN", "APPARENT_HELPER_BUNDLE_ID", "APPARENT_PREVIEW_BUILD"],
   "targets": ["linux-x64", "macos-x64"],
   "stage": "development-app",
   "language": "native",

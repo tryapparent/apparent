@@ -1,6 +1,7 @@
+import { nativeHostInputRoots, nativeHostInputFiles } from '../core.ts'
 import { execFileSync } from 'node:child_process'
 
-export const COMPONENTS = ['platform-config', 'platform-resources', 'app-shell'] as const
+export const COMPONENTS = ['platform-config', 'platform-resources', 'app-shell', 'platform-native-host'] as const
 
 const config = ['composition/config/', 'shared/config-native/', 'shared/contracts/', '.cargo/']
 const resources = ['shared/resources/', '.cargo/']
@@ -14,6 +15,7 @@ export function selectComponents(paths: string[] | null): string[] {
   const selected = new Set<string>()
   for (const path of paths) {
     if (path === 'LICENSE' || path === 'enablement/verification/workflow-budget.ts' || ['.github/workflows/stream-platform.yml', '.github/workflows/stream-platform-config.yml', '.github/workflows/stream-platform-resources.yml', '.github/workflows/stream-app-shell.yml'].includes(path) || starts(path, allPrefixes)) return [...COMPONENTS]
+    if (nativeHostInputFiles.includes(path) || starts(path, nativeHostInputRoots)) selected.add('platform-native-host')
     if (starts(path, config)) selected.add('platform-config')
     if (starts(path, resources)) selected.add('platform-resources')
     if (['enablement/native/owned-processes.ts', '.github/workflows/verification-platform.yml'].includes(path) || starts(path, shell)) selected.add('app-shell')

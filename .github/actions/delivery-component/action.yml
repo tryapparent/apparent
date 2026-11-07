@@ -50,6 +50,8 @@ runs:
       run: npm --prefix composition/architecture run check -- --owner "$ARCHITECTURE_OWNER"
     - uses: dtolnay/rust-toolchain@stable
       if: inputs.language == 'native' && steps.candidate-support.outputs.supported == 'true'
+      with:
+        toolchain: ${{ inputs.id == 'platform-native-host' && inputs.target == 'macos-x64' && '1.99.1' || 'stable' }}
     - name: Install Engine media runtime and fixture dependencies
       if: inputs.id == 'engine-media-native' && inputs.target == 'linux-x64'
       shell: bash
@@ -76,6 +78,56 @@ runs:
           execFileSync('ffmpeg', ['-version'], { stdio: 'inherit', timeout: 10_000 });
         }
         NODE
+    - name: Install existing GUI Linux dependencies with bounded apt admission
+      if: inputs.id == 'platform-native-host' && inputs.target == 'linux-x64'
+      shell: bash
+      run: node --experimental-strip-types composition/delivery/media-dependencies.ts --native-host
+    - name: Resolve official GUI packaging tools before fingerprinting
+      if: inputs.id == 'platform-native-host' && inputs.target == 'linux-x64'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      shell: bash
+      run: |
+        umask 077
+        manifest="$RUNNER_TEMP/native-host-packaging-tools.json"
+        node --experimental-strip-types capture/desktop/scripts/linux/appimage/packaging-tools.ts resolve "$manifest"
+        printf 'APPARENT_PACKAGING_TOOLS_MANIFEST=%s\n' "$manifest" >> "$GITHUB_ENV"
+        printf 'APPARENT_PACKAGING_TOOLS_SHA256=%s\n' "$(sha256sum "$manifest" | cut -d ' ' -f 1)" >> "$GITHUB_ENV"
+    - name: Select existing GUI Mac SDK
+      if: inputs.id == 'platform-native-host' && inputs.target == 'macos-x64'
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: '26.0'
+    - name: Qualify and prepare the existing GUI Mac compiler environment
+      if: inputs.id == 'platform-native-host' && inputs.target == 'macos-x64'
+      shell: bash
+      run: |
+        test "$RUNNER_OS" = macOS
+        test "$RUNNER_ARCH" = X64
+        test "$(rustc -V)" = 'rustc 1.99.1 (58cf8f9c3 2026-10-13)'
+        selected_developer=$(xcode-select -p)
+        case "$selected_developer" in
+          /Applications/Xcode*.app/Contents/Developer) ;;
+          *) echo 'Unexpected Xcode developer directory' >&2; exit 1 ;;
+        esac
+        test -d "$selected_developer"
+        export DEVELOPER_DIR="$selected_developer"
+        printf 'DEVELOPER_DIR=%s\n' "$DEVELOPER_DIR" >> "$GITHUB_ENV"
+        umask 077
+        node --experimental-strip-types enablement/native/mac-setup.ts
+    - name: Normalize existing GUI Intel Mac compiler inventory
+      if: inputs.id == 'platform-native-host' && inputs.target == 'macos-x64'
+      uses: ./.github/actions/mac-rust-cache
+    - name: Restore existing GUI Cargo dependency cache
+      if: inputs.id == 'platform-native-host'
+      uses: Swatinem/rust-cache@v2
+      with:
+        cmd-format: ${{ runner.os == 'macOS' && format('node --experimental-strip-types "{0}/enablement/native/cache-command-timing.ts" {{0}}', github.workspace) || '{0}' }}
+        workspaces: |
+          . -> target
+          capture/engine -> target
+          connect/client -> target
+          capture/agent/control-client -> target
     - name: Admit an unchanged verified component or request a fresh build
       if: inputs.publish == 'true'
       id: admit

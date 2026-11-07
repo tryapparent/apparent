@@ -20,11 +20,11 @@ const registrations: Record<string, string> = {
   'app-shell': 'composition/app/delivery.json', record: 'record/delivery.json',
   'connect-browser': 'connect/tooling/hosting/delivery.json', 'connect-client': 'connect/delivery.json', engine: 'engine/delivery.json',
   'engine-native': 'engine/delivery/native/delivery.json', 'engine-capture-native': 'engine/delivery/capture/delivery.json', 'engine-media-native': 'engine/delivery/media/delivery.json',
-  'platform-config': 'composition/config/native/delivery.json', 'platform-resources': 'shared/resources/delivery/delivery.json', onboarding: 'onboarding/delivery.json',
+  'platform-native-host': 'composition/native-host/delivery/delivery.json', 'platform-config': 'composition/config/native/delivery.json', 'platform-resources': 'shared/resources/delivery/delivery.json', onboarding: 'onboarding/delivery.json',
   agent: 'agent/delivery.json', public: 'public/delivery.json',
 }
 const owners = Object.keys(registrations)
-const platformIds = ['platform-config', 'platform-resources', 'app-shell']
+const platformIds = ['platform-config', 'platform-resources', 'app-shell', 'platform-native-host']
 const platformRows = platformPlan(fileURLToPath(new URL('../../../', import.meta.url)), platformIds).matrix.include
 const matricesFor = (source: string) => source.includes('name: platform delivery')
   ? [platformRows, platformRows]
@@ -261,4 +261,24 @@ test('Onboarding keeps its TypeScript-only package lanes and authenticates PR ca
   assert(matrix.every((row: any) => row.language === 'typescript' && row.kind === 'npm'))
   assert.match(section(source, 'stream'), /pull-requests: read/)
   assert.match(component, /inputs\.language == 'native' && steps\.candidate-support\.outputs\.supported == 'true'/)
+})
+
+test('existing GUI producer qualifies compilers, runtime and official tool bytes before admission', () => {
+  const admit = component.indexOf('    - name: Admit an unchanged')
+  for (const title of ['Install existing GUI Linux dependencies', 'Resolve official GUI packaging tools',
+    'Select existing GUI Mac SDK', 'Qualify and prepare the existing GUI Mac compiler environment',
+    'Normalize existing GUI Intel Mac compiler inventory', 'Restore existing GUI Cargo dependency cache']) {
+    const offset = component.indexOf('    - name: ' + title)
+    assert(offset > 0 && offset < admit, title)
+  }
+  assert.match(component, /media-dependencies.ts --native-host/)
+  assert.match(component, /APPARENT_PACKAGING_TOOLS_SHA256/)
+  assert.match(component, /mac-setup.ts/)
+  assert.equal(workflowPathFor('platform-native-host'), '.github/workflows/stream-platform.yml')
+  for (const event of ['pull_request', 'push']) {
+    const configured = eventPaths(entry('platform-native-host'), event)
+    const owner = JSON.parse(readFileSync(new URL('../../../composition/native-host/delivery/delivery.json', import.meta.url), 'utf8'))
+    for (const input of owner.inputs) assert(configured.includes(input + '**'), input)
+    for (const file of owner.files) assert(configured.includes(file), file)
+  }
 })

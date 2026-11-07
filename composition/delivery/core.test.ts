@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import './runtime/pr-candidate.test.ts'
 import './consumer/handoff.test.ts'
 import assert from 'node:assert/strict'
@@ -49,7 +50,7 @@ test('catalog reports absent owners pending and blocks present owners without re
   mkdirSync(resolve(path, 'composition/app'), { recursive: true })
   const missing = catalog(path)
   assert.deepEqual(missing.blocked, ['app-shell: source exists without delivery registration'])
-  assert.deepEqual(missing.pending, ['record', 'connect-client', 'connect-browser', 'engine', 'engine-native', 'engine-capture-native', 'engine-media-native', 'platform-config', 'platform-resources', 'onboarding', 'agent', 'public'])
+  assert.deepEqual(missing.pending, ['record', 'connect-client', 'connect-browser', 'engine', 'engine-native', 'engine-capture-native', 'engine-media-native', 'platform-config', 'platform-native-host', 'platform-resources', 'onboarding', 'agent', 'public'])
   mkdirSync(resolve(path, 'record')); mkdirSync(resolve(path, 'shared/ui'), { recursive: true })
   writeFileSync(resolve(path, 'record/delivery.json'), JSON.stringify({ ...owner, inputs: ['shared/ui/'] }))
   assert.match(catalog(path).blocked.join(';'), /Package source must be covered/)
@@ -436,6 +437,9 @@ test('App Shell reuse fingerprints packaging overrides without unrelated workflo
   assert.equal(supportsPrCandidate('app-shell', 'linux-x64'), true)
   assert.equal(supportsPrCandidate('app-shell', 'macos-x64'), true)
   assert.equal(supportsPrCandidate('app-shell', 'web'), false)
+  assert.equal(supportsPrCandidate('platform-native-host', 'linux-x64'), true)
+  assert.equal(supportsPrCandidate('platform-native-host', 'macos-x64'), true)
+  assert.equal(supportsPrCandidate('platform-native-host', 'web'), false)
 })
 
 test('App Shell promotion retains the exact packaged archive and original build provenance', () => {
@@ -606,4 +610,26 @@ test('App Shell fingerprints its external verification inputs', () => {
     git(root, 'add', '.'); git(root, 'commit', '-qm', 'external verification input')
     assert.notEqual(sourceDigest(root, app), before, name)
   }
+})
+
+test('native GUI catalog binds development profile, complete root closure and literal Platform identity', () => {
+  const root = fileURLToPath(new URL('../../', import.meta.url))
+  const owner = catalog(root).owners.find(owner => owner.id === 'platform-native-host')!
+  assert(owner)
+  assert.equal(owner.kind, 'directory'); assert.equal(owner.language, 'native'); assert.equal(owner.stage, 'development-app')
+  assert.equal(owner.package, 'composition/native-host/delivery')
+  assert.deepEqual(owner.targets, ['linux-x64', 'macos-x64'])
+  assert.equal(workflowPathFor(owner.id), '.github/workflows/stream-platform.yml')
+  assert(owner.environment!.includes('APPARENT_PACKAGING_TOOLS_SHA256'))
+  assert.deepEqual(makePlan(root).matrix.include.filter(row => row.id === owner.id).map(row => row.architecture_owner), ['composition', 'composition'])
+  const path = resolve(temp, 'native-gui-closure')
+  for (const input of owner.inputs) mkdirSync(resolve(path, input), { recursive: true })
+  mkdirSync(resolve(path, owner.package), { recursive: true })
+  const registration = resolve(path, 'composition/native-host/delivery/delivery.json')
+  for (const missing of ['capture/', '.cargo/', 'engine/']) {
+    writeFileSync(registration, JSON.stringify({ ...owner, inputs: owner.inputs.filter(input => input !== missing) }))
+    assert.match(catalog(path).blocked.join(';'), /complete root GUI and packaging closure/)
+  }
+  writeFileSync(registration, JSON.stringify({ ...owner, files: owner.files!.filter(file => file !== 'build.rs') }))
+  assert.match(catalog(path).blocked.join(';'), /complete root GUI and packaging closure/)
 })
