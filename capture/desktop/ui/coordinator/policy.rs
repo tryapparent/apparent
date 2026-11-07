@@ -1180,6 +1180,10 @@ impl ApparentCoordinator {
 
     /// UI-thread snapshot for restart/termination admission, not just visible UI.
     pub(crate) fn capture_busy(&self) -> bool {
+        #[cfg(target_os="linux")]
+        if self.native_ink_session.as_ref().is_some_and(|source|source.input_busy()) {
+            return true;
+        }
         if NATIVE_CLIPBOARD_EFFECT_BUSY.load(std::sync::atomic::Ordering::Acquire)
             || NATIVE_PEN_EFFECT_BUSY.load(std::sync::atomic::Ordering::Acquire) {
             return true;

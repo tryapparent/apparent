@@ -774,9 +774,9 @@ mod tests {
             collector: Some(collector),
             prepared: None,
         });
-        let mut command = |c: Command| {
+        let command = |session: &mut Option<InkSessionState>, c: Command| {
             execute_source_command(
-                &mut session,
+                session,
                 telemetry.clone(),
                 &"b".repeat(32),
                 0,
@@ -784,54 +784,84 @@ mod tests {
                 Instant::now() + Duration::from_secs(2),
             )
         };
-        let first = command(Command::ReadBatch {
-            binding: binding.clone(),
-            sequence: 0,
-        });
-        assert_eq!(first["status"], "batch");
-        assert_eq!(
-            command(Command::AcknowledgeBatch {
+        let first = command(
+            &mut session,
+            Command::ReadBatch {
                 binding: binding.clone(),
                 sequence: 0,
-                batch_sha256: "0".repeat(64)
-            })["status"],
+            },
+        );
+        assert_eq!(first["status"], "batch");
+        assert_eq!(
+            command(
+                &mut session,
+                Command::AcknowledgeBatch {
+                    binding: binding.clone(),
+                    sequence: 0,
+                    batch_sha256: "0".repeat(64)
+                }
+            )["status"],
             "refused"
         );
         assert_eq!(
-            command(Command::ReadBatch {
-                binding: binding.clone(),
-                sequence: 0
-            }),
+            command(
+                &mut session,
+                Command::ReadBatch {
+                    binding: binding.clone(),
+                    sequence: 0
+                }
+            ),
             first
         );
-        let seal = command(Command::SealInputAndDrain {
-            binding: binding.clone(),
-        });
+        assert!(
+            !session.as_ref().unwrap().input_clear(),
+            "active source is a native termination borrower"
+        );
+        let seal = command(
+            &mut session,
+            Command::SealInputAndDrain {
+                binding: binding.clone(),
+            },
+        );
+        assert!(
+            !session.as_ref().unwrap().input_clear(),
+            "positive local drain cannot erase unacknowledged original history"
+        );
         assert_eq!(seal["finalSequence"], 2);
         assert_eq!(seal["seal"]["state"], "sealed-and-drained");
         for sequence in 0..3 {
-            let batch = command(Command::ReadBatch {
-                binding: binding.clone(),
-                sequence,
-            });
-            assert_eq!(batch["status"], "batch");
-            assert_eq!(
-                command(Command::AcknowledgeBatch {
+            let batch = command(
+                &mut session,
+                Command::ReadBatch {
                     binding: binding.clone(),
                     sequence,
-                    batch_sha256: batch["batch"]["batchSha256"].as_str().unwrap().into()
-                })["status"],
+                },
+            );
+            assert_eq!(batch["status"], "batch");
+            assert_eq!(
+                command(
+                    &mut session,
+                    Command::AcknowledgeBatch {
+                        binding: binding.clone(),
+                        sequence,
+                        batch_sha256: batch["batch"]["batchSha256"].as_str().unwrap().into()
+                    }
+                )["status"],
                 "acknowledged"
             );
         }
         assert_eq!(
-            command(Command::ReadBatch {
-                binding,
-                sequence: 3
-            })["status"],
+            command(
+                &mut session,
+                Command::ReadBatch {
+                    binding,
+                    sequence: 3
+                }
+            )["status"],
             "pending"
         );
         assert!(session.as_ref().unwrap().replaceable());
+        assert!(session.as_ref().unwrap().input_clear());
     }
     #[test]
     fn session_without_started_input_never_claims_successful_empty_drain() {
@@ -1004,11 +1034,20 @@ mod tests {
                     c.request_stop();
                 }
             },
+            || false,
         )
         .unwrap();
         let start = Instant::now();
         let result = worker.request(command.clone(), start + Duration::from_millis(60));
         assert_eq!(result, unknown_source());
+        assert!(
+            worker.input_busy(),
+            "timeout cannot clear native termination admission"
+        );
+        assert_eq!(
+            result["status"], "outcome-unknown",
+            "timeout is not positive refusal or absence"
+        );
         assert!(
             start.elapsed() < Duration::from_millis(300),
             "coordinator waited for blocked native probe"
@@ -1081,6 +1120,7 @@ mod tests {
             move || {
                 abandoned.lock().unwrap().as_ref().unwrap().fail();
             },
+            || false,
         )
         .unwrap();
         let start = Instant::now();
@@ -1139,6 +1179,15 @@ struct InkSessionState {
     prepared: Option<crate::capture::engine::runtime::NativeInkTargetSnapshot>,
 }
 impl InkSessionState {
+    fn input_clear(&self) -> bool {
+        self.collector.is_none()
+            && self.prepared.is_none()
+            && self.source.installed.lock().is_ok_and(|i| !*i)
+            && self.source.state.lock().is_ok_and(|state| {
+                matches!(state.phase, Phase::Observed | Phase::Sealed)
+                    && state.buffer.read_pending().is_none()
+            })
+    }
     fn binding(&self, b: &super::ink_wire::Binding) -> Result<(), &'static str> {
         if b.capture_id != self.source.capture_id
             || b.producer_id != self.source.producer_id
@@ -1353,6 +1402,7 @@ fn execute_source_command(
 pub(crate) struct NativeInkSession {
     sender: std::sync::mpsc::SyncSender<SourceWork>,
     failed: Arc<std::sync::atomic::AtomicBool>,
+    busy: Arc<std::sync::atomic::AtomicBool>,
     _worker: std::thread::JoinHandle<()>,
 }
 struct SourceWork {
@@ -1364,11 +1414,14 @@ impl NativeInkSession {
     fn spawn(
         mut operation: impl FnMut(&super::ink_wire::Command, Instant) -> Value + Send + 'static,
         mut abandoned: impl FnMut() + Send + 'static,
+        mut input_clear: impl FnMut() -> bool + Send + 'static,
     ) -> Result<Self, &'static str> {
         use std::sync::atomic::{AtomicBool, Ordering};
         let (sender, receiver) = std::sync::mpsc::sync_channel::<SourceWork>(1);
         let failed = Arc::new(AtomicBool::new(false));
         let failure = failed.clone();
+        let busy = Arc::new(AtomicBool::new(true));
+        let activity = busy.clone();
         let worker = std::thread::Builder::new()
             .name("apparent-native-ink-source".into())
             .spawn(move || {
@@ -1380,6 +1433,7 @@ impl NativeInkSession {
                         continue;
                     }
                     let result = operation(&work.command, work.deadline);
+                    let clear = input_clear();
                     if failure.load(Ordering::Acquire) || Instant::now() >= work.deadline {
                         failure.store(true, Ordering::Release);
                         abandoned();
@@ -1387,6 +1441,8 @@ impl NativeInkSession {
                     } else if work.response.send(result).is_err() {
                         failure.store(true, Ordering::Release);
                         abandoned();
+                    } else {
+                        activity.store(!clear, Ordering::Release);
                     }
                 }
             })
@@ -1394,8 +1450,13 @@ impl NativeInkSession {
         Ok(Self {
             sender,
             failed,
+            busy,
             _worker: worker,
         })
+    }
+    pub(crate) fn input_busy(&self) -> bool {
+        use std::sync::atomic::Ordering;
+        self.failed.load(Ordering::Acquire) || self.busy.load(Ordering::Acquire)
     }
     fn request(&self, command: super::ink_wire::Command, deadline: Instant) -> Value {
         use std::sync::atomic::Ordering;
@@ -1403,6 +1464,7 @@ impl NativeInkSession {
             return unknown_source();
         }
         let (response, receiver) = std::sync::mpsc::sync_channel(1);
+        self.busy.store(true, Ordering::Release);
         if self
             .sender
             .try_send(SourceWork {
@@ -1425,7 +1487,7 @@ impl NativeInkSession {
     }
 }
 fn unknown_source() -> Value {
-    json!({"status":"refused","reason":"unavailable"})
+    json!({"status":"outcome-unknown"})
 }
 pub(crate) fn native_source_command(
     session: &mut Option<NativeInkSession>,
@@ -1448,6 +1510,7 @@ pub(crate) fn native_source_command(
         }
         let state = Arc::new(Mutex::new(None::<InkSessionState>));
         let cleanup = state.clone();
+        let clearance = state.clone();
         let epoch = epoch.to_owned();
         let created = NativeInkSession::spawn(
             move |command, deadline| {
@@ -1472,6 +1535,11 @@ pub(crate) fn native_source_command(
                         s.fail();
                     }
                 }
+            },
+            move || {
+                clearance
+                    .lock()
+                    .is_ok_and(|s| s.as_ref().is_none_or(InkSessionState::input_clear))
             },
         );
         let Ok(created) = created else {

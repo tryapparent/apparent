@@ -50,6 +50,9 @@ target untouched; later refusal restores its previous frame and provisional ink
 only after removal of the exact observer. Positive source seal restores that
 snapshot after collector drain. These are local source facts, never Engine
 runtime clearance or permission to discard unknown capture work.
+The existing native termination guard also includes this source's active,
+in-flight, retained-unacknowledged and unknown work. Its nonblocking local
+clearance projection cannot replace the coordinator/Engine shutdown report.
 
 Board's existing native listeners now expose an optional privileged tap at
 accepted begin/extension/finish, undo, clear, render and entity release. Points
