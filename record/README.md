@@ -53,11 +53,19 @@ collection states, plus the validated original materials/fact documents. It
 does not write or publish files, make a Saved claim, copy native materials,
 create a final destination, or perform clipboard/network/cleanup effects.
 
-The headless source install pins SDK 0.4.1 from the committed
-`vendor/engine-sdk-0.4.1.tgz` for development and declares `^0.4.1` as an
+The headless source install pins SDK 0.4.2 from the committed
+`vendor/engine-sdk-0.4.2.tgz` for development and declares `^0.4.2` as an
 optional peer. A host importing the bundle subpath must install that peer. The
 verified tarball SHA-256 is
-`f0c4b9777033bcde0463e0442074e5af714cddaed1c45452802012e66d21c156`.
+`62b1b2e103a585dbf10b848c9538ddcf888b3643b85d7eb89db8c1a61647066c`.
+
+The SDK `/observations` subpath exposes `readFrameVisualObservations` and its
+public input/result/source types. Reader callers supply the original validated
+materials, completed derivative/2 document, 1-based request index, exact sealed
+PNG bytes, and explicit byte budget. The typed result is either unavailable
+(profile absent or unsupported) or measured against the decoded derivative
+RGBA8 plane. These offline consistency measurements do not authenticate native
+issuance or establish selection, candidate collection, Saved, or publication.
 
 Assembly requires at least one selected frame, one contact sheet, and exact
 sealed media references. Hosts may supply video/audio as `materialReferences`
@@ -93,12 +101,16 @@ assembly returns an exact unsupported error. This API is fixture-ready only;
 it does not decode raw materials, choose frames/marks, produce contact sheets,
 or establish native provenance/full-profile acceptance.
 
-`@apparent/record/processing/media2-consumer` exports `RecordMedia2Job` over the published SDK 0.4.1 client. It durably binds the original retained-material request, layout and hash before dispatch; ambiguous jobs inspect the same identity, and cancellation remains explicit. A packed Linux Xvfb qualification now exercises that job against the admitted native Media/2 worker using retained Capture/2 materials, then reads its sealed frames/contact sheet into canonical assembly and a prepared staging plan. Selection times/layout are explicit caller input; validated derivatives remain processing inputs, never Saved. The producer has no publication capability, and this proof does not authenticate a published bundle or establish copy.
+`@apparent/record/processing/media2-consumer` exports `RecordMedia2Job` over the published SDK 0.4.2 client. It durably binds the original retained-material request, layout and hash before dispatch; ambiguous jobs inspect the same identity, and cancellation remains explicit.
+
+The retained packed Linux Xvfb qualification used SDK 0.4.1 and the admitted `0570f775` native Media/2 worker with retained Capture/2 materials, then read its sealed frames/contact sheet into canonical assembly and a prepared staging plan. SDK 0.4.2's capture, media/1 and media/2 core client modules are byte-identical, so that interface evidence is reused; this dependency upgrade did not run a new native Record observation/selection qualification. Selection times/layout in that proof were explicit caller input; validated derivatives were processing inputs, never Saved. That earlier producer had no publication capability. The later authenticated publication continuation is tracked below; the staged-plan proof alone does not authenticate a published bundle or establish copy.
+
+The packed qualification runner prepares the standard coordinator with the admitted SDK 0.4.4 root helper and separately owned Capture/2 publication and Media/2 recovery clients on the same runtime. Its private child IPC requests coordinator admission closure and local drain on a supervisor deadline or output limit; it preserves the coordinator work report and never sends process-group signals. After successful shutdown/disposal, recovery client connections may be released even when runtime clearance remains unknown; that release does not prove peer exit or publication. The ordinary capture owner is retained because its exact SDK 0.4.5 normal-close local-resource contract is not yet admitted. Offline preparation checks packed imports/types and freezes hashes for the generated runner and supervisor helper; it does not execute the runner's archive admission routine or launch native processes. A later separately authorized runner performs archive/attestation admission before launch. The runner remains blocked until the SDK 0.4.5 lifecycle input, consumer review and a separate native attempt/resource admission are accepted. Standard selection, authenticated Saved and restart resolution remain unqualified; clipboard copy is outside the run.
 
 The publication subpath has an optional SDK peer: hosts using it supply the
 published SDK. Other Record consumers do not need to install that peer. Source
-checks use the pinned `record/vendor/engine-sdk-0.4.1.tgz` package (SHA256
-`f0c4b9777033bcde0463e0442074e5af714cddaed1c45452802012e66d21c156`),
+checks use the pinned `record/vendor/engine-sdk-0.4.2.tgz` package (SHA256
+`62b1b2e103a585dbf10b848c9538ddcf888b3643b85d7eb89db8c1a61647066c`),
 without importing or building an adjacent Engine checkout. Publication remains
 separate from the package root.
 
@@ -117,6 +129,15 @@ contents. Record stores control metadata privately and never creates or
 replaces the final bundle path. After an ambiguous reply, `reconcile` restores
 its expected receipt from that original binding and calls `inspectPublication`;
 changed bindings fail closed and a repeated command does not allocate new IDs.
+New reserved publications retain the exact preflighted dispatch metadata without
+`ownerToken`. Reconciliation can claim a still-undispatched reservation once through
+the existing dispatch CAS; an ambiguous dispatched publication remains inspect-only.
+Record limits each recovery descriptor to 2 MiB of serialized JSON and all retained
+recovery descriptors in one control store to 16 MiB, including terminal rows.
+These are Record operational limits, smaller than SDK document maxima. Admission
+checks the aggregate under the SQLite write lock; capacity exhaustion refuses a
+new reservation before dispatch and never evicts history or changes the bundle.
+This bounds recovery metadata, not the entire SQLite database or filesystem.
 The API does not assemble canonical bundles, release retained materials, or
 claim native capture/publication availability. SDK0.4's testing peer remains a
 test double and cannot produce native Saved.
@@ -192,6 +213,60 @@ jobs retain their original journals and are never redispatched by inspection.
 Issue observations are reconstructed during startup; Saved facts still have only
 the publication store as authority. Await `dispose()` before deleting owned private
 control data; it drains coordinator work without cancelling or closing SDK clients.
+Hosts first close their own UI/provider command admission and drain commands to injected native ports.
+They may then call the coordinator’s `shutdown()`: it closes coordinator
+admission, drains already admitted calls, and returns native/durable ownership
+items separately from local drain completion. Pending or unknown items are not
+idle proof; this coordinator does not produce next-shortcut admission facts.
+The report covers `scope: "record-coordinator"`; it cannot clear other users of a shared SDK/runtime.
+Await `shutdown()` and then `dispose()` before closing caller-owned SDK clients, and
+require any other SDK owners to clear their own work. Background capture observation
+is drained even when the final mapping read fails. A reserved publication discovered
+after shutdown admission closes remains undispatched for recovery on the next owner.
+
+`createStandardRecordCaptureCoordinator` from the same export supplies Record's
+bounded visual-only processing policy instead of a caller frame/layout callback:
+
+```ts
+const flow = await createStandardRecordCaptureCoordinator({
+  ...hostOptions, // same admitted capture/media clients, stores, source/consent and trusted root ports
+  standardProcessing: { requestVideoProof: true },
+});
+// flow.createProvider(...), flow.captureFacts and flow.resolveHandoff use the existing Saved authority.
+```
+
+It persists original sampling jobs before dispatch, reads their exact sealed PNGs
+through SDK 0.4.2 observations, then freezes one final selection in the same
+publication database before deriving the publication images and sheet. Restart
+reuses those jobs and decisions. Missing observation profiles are observable
+unavailable outcomes; uncertain jobs inspect only their original request. The
+standard path requires interaction, transcript and accepted-stroke collections to
+be unavailable; collected rich facts need the explicit policy path rather than
+being silently discarded. Context and collection availability remain in the bundle.
+Source selection, permission/consent, trusted runtime roots and client ownership
+remain host inputs. An optional `publicationClient` can supply a separately owned
+SDK recovery peer for the same private runtime and original capture authority;
+otherwise publication uses `captureClient` as before. Media already has its own
+injected client. The coordinator borrows these clients and never converts their
+roles or closes/releases them. Its shutdown report and disposal must positively
+drain local work before the composition owner applies each peer's public lifetime
+contract. An owning capture client still uses ending semantics, not recovery
+release. This separation does not make unresolved runtime work clear or authorize
+cancellation, process-group termination, or an unapproved native qualification. `createdAtMs` defaults to the original invocation's
+`observedAtMs`; trusted composition can supply it explicitly, along with optional
+destination metadata. No native candidate collection is claimed.
+
+Sampling uses the donor 220 ms interval and 640-pixel edge, bounded to 480 samples
+in jobs of at most 48. Longer recordings use a coarser interval with a warning.
+Selection uses the visual transition/settling, novelty, spacing and duration
+budget policy. Final whole-frame images have a 24-million-pixel aggregate bound;
+the integer aspect-preserving sheet has at most three columns and no rasterized
+captions. Downscaling is warned and the original sealed video is retained. These
+bounds and layout are not unrestricted legacy rendering parity. Shutdown accounts
+for every sampling job and the final media/publication job without dispatching new
+work. Synthetic packed-client recovery tests establish this composition; a native
+standard-selector capture-to-copy run and rendered/installed adoption remain unrun.
+The earlier same-recording explicit-selection proof is unchanged.
 
 Binary inputs are fingerprinted by digest and length. Supplied derivative receipts
 are forwarded to the existing stager and SDK validation without asserting provenance.
@@ -298,13 +373,13 @@ fallback route remains authoritative.
 | Scoped next-shortcut admission | Record refusal policy implemented; native reservation producer unavailable | Current installed capture-v1 does not expose reservation enforcement. Record refuses to arm when the producer reports unavailable. The producer must publish reservation consumption, cancellation or expiry before an explicit Start can proceed; the admitted capture/2 start/control path does not implement this next-shortcut reservation contract. |
 | Local-only admission | Capture/2 request contract requires `localOnly: true`; whole Record pipeline enforcement unavailable | A local-only request bit and the separate `nativeRemoteDelivery` prohibition do not establish that the complete capture, processing, publication and handoff pipeline is local-only. Installed V1 lacks effective per-capture delivery readback, and the bounded capture/2 producer evidence is not whole-pipeline or installed-route proof. Record must keep unsupported local-only admission unavailable until a producer reports effective enforcement for the requested capture. |
 | Transcript association | Implemented in the headless package | `associateTranscriptWithSelectedFrames` partitions supplied word/segment facts across existing selected frames using measured clause/anchor rules. Source-derived Rust parity tests cover Unicode whitespace, punctuation, gaps and boundary timing. This does not select images or supply missing native visual metrics. |
-| Semantic processing assembly and frame decode | Media/1 and retained Media/2 consumers implemented; default visual selection unavailable | Record consumes completed-bundle media/1 and retained-material media/2 through the published SDK 0.4.1. The admitted Linux paired capture/media artifacts from source `0570f775` passed the packed consumer processing path on owned Xvfb. Completed-bundle media/1 also passed on macOS 26.6.2 using an x64 worker through Rosetta, not an Intel-CPU or Mac capture/media2 claim. `RecordMedia2Job` retains original request/material/lease identities and inspects uncertain work without redispatch. No producer supplies the measured candidate/visual facts required by the legacy default selector; explicit selection is required. |
-| Capture/2 retained payload and fact bytes | Reader implemented; admitted Linux X11 producer path consumed by Record on synthetic Xvfb | SDK 0.4.1 public validators and `@apparent/record/host/materials` provide the packed consumer. Engine #788/#794 source (`5ed32afd`) supplies the earlier bounded capture/2 producer; the newly admitted paired Capture/2 and Media/2 artifacts from source `0570f775` were consumed through the packed Record host and retained-material reader. Record then passed the original retained video to media/2 without copying it into JavaScript staging. This is a synthetic Xvfb consumer qualification, not installed Record routing or cross-platform proof. Mac, Wayland, audio, picker, drawing, shortcut admission, candidate selection and general-purpose frame policy remain unavailable or unproven. |
-| Capture material to Record bundle assembly and authenticated publication | Automatic public coordinator implemented for explicit processing decisions; installed adoption pending | `createRecordCaptureCoordinator` composes the existing capture2 runtime, retained media job/readers, canonical assembler, stager, recovery and Saved output. Its immutable processing plan is stored in the existing private publication database before media dispatch. Engine publication source `d60dd82b` provides the admitted Linux native publisher. The original retained recording reached authenticated Saved and cold inspection of its original publication tuple, followed by one confirmed native copy through the public provider/PillHost API. That proof used explicit host composition; the new automatic coordinator has synthetic packed-client/identity/recovery checks, not a fresh native capture/copy run. Saved context and exact handoff resolution survive restart through `createRecordPublicationOutput`; raw materials-ready remains processing. |
-| Keyframes, transcript, bundle contents, warnings and default output | Canonical assembly and durable output implemented; default visual selection and installed adoption pending | Record preserves supplied semantic context, interaction/mark facts, warnings and sealed media references. The coordinator persists explicit frame/layout/admission decisions; it does not invent missing visual measurements or a legacy-equivalent default selector. Only an authenticated native publication receipt matching the original Record binding produces Saved output and its handoff context. Full default selection still requires Engine-observed candidate metrics and Record policy adoption. |
+| Semantic processing assembly and frame decode | Media/1, retained Media/2 and bounded standard visual policy implemented; native standard-path qualification pending | The source-`0570f775` Xvfb run used explicit caller-selected times/layout and proved sealed derivative staging only; it did not qualify standard visual selection or Saved. `RecordMedia2Job` retains original request/material/lease identities and inspects uncertain work without redispatch. Admitted SDK 0.4.2 observations provide the standard selector's measured input contract. The packed runner now prepares the standard coordinator with SDK 0.4.4; that native path remains unrun. Completed-bundle media/1 also passed on macOS 26.6.2 using an x64 worker through Rosetta, not an Intel-CPU or Mac capture/media2 claim. |
+| Capture/2 retained payload and fact bytes | Reader implemented; Linux X11 consumer path previously qualified; standard coordinator path pending | The earlier synthetic Xvfb run consumed the source-`0570f775` Capture/2 and Media/2 closures through the packed Record host and retained-material reader, then passed the original retained video without copying it into JavaScript staging. SDK 0.4.4 and the root-bound Capture/2 producer are admitted inputs for the prepared standard runner, but this Record coordinator path has not yet been run. Neither result establishes installed Record routing or cross-platform proof. Mac, Wayland, audio, picker, drawing, shortcut admission, candidate selection and general-purpose frame policy remain unavailable or unproven. |
+| Capture material to Record bundle assembly and authenticated publication | Automatic public coordinator with explicit and standard visual policies implemented; installed adoption pending | `createRecordCaptureCoordinator` composes the existing capture2 runtime, retained media job/readers, canonical assembler, stager, recovery and Saved output. Its immutable processing plan is stored in the existing private publication database before media dispatch. Engine publication source `d60dd82b` provides the admitted Linux native publisher. The original retained recording reached authenticated Saved and cold inspection of its original publication tuple, followed by one confirmed native copy through the public provider/PillHost API. That proof used explicit host composition; the new automatic coordinator has synthetic packed-client/identity/recovery checks, not a fresh native capture/copy run. Saved context and exact handoff resolution survive restart through `createRecordPublicationOutput`; raw materials-ready remains processing. |
+| Keyframes, transcript, bundle contents, warnings and default output | Canonical assembly, durable output and bounded visual defaults implemented; native standard-path and installed adoption pending | Record preserves supplied semantic context, interaction/mark facts, warnings and sealed media references. The coordinator persists explicit decisions or standard visual sampling and final frame/layout decisions; missing measurements remain unavailable. Only an authenticated native publication receipt matching the original Record binding produces Saved output and its handoff context. The visual-only standard path consumes admitted Engine PNG observations. Collected semantic/mark selection and native standard-path acceptance remain open. |
 | Clipboard copy, link and artifact open | Exact-text clipboard adapter, provider receipt mapping and pill action implemented; installed adoption and other receipts remain gated | Platform #833 supplies the privileged clipboard write/readback port. `createRecordLocalClipboardPort` from `@apparent/record/host/native` formats the full handoff resolved for the exact authenticated Saved capture/artifact tuple, preflights Unicode and the injected producer byte limit, reads fresh native admission and performs one write. Only an exact digest/UTF-8-length readback becomes a `copy` outcome with `evidence: "native-write-readback"`, artifact and command IDs; dispatch acceptance, refusal and unknown never become copy success. The public client pill offers Copy handoff for a saved artifact and presents unknown/refusal without retry. Native producer Linux X11/Mac seam evidence is separate from this injected consumer and installed host assembly. The resolver does not authenticate publication; the public automatic coordinator and durable resolver now compose that output path; installed host adoption remains a separate gate. Link needs its existing producer; artifact open still needs exact-artifact viewer acknowledgement or supported OS observation. |
 | Pill/runtime installed binding | Runtime and public pill client composition implemented; native installed routing pending | Runtime #803 (`6f62dcb6`) and public `RecordClientPillHost` #807 are merged. The public pill API can compose the client/runtime with the provider; this is package-level integration, not installed renderer/native permissions or proof of full output. The existing fallback-aware route remains authoritative pending platform composition and affected native proof. |
-| Independent packaging and builds | Record TypeScript package and public exports implemented; end-to-end installed adoption incomplete | `record/package.json` exposes the headless host, capture/2 runtime, native host adapter, processing, publication and UI package entrypoints. The Record package build and packed-consumer checks use TypeScript/Node and do not invoke Cargo; SDK 0.4.1 is a published optional peer and is explicitly installed by relevant packed consumers. These package contracts do not establish a production executable selection, installed route, release or complete Desktop/Engine delivery. |
+| Independent packaging and builds | Record TypeScript package and public exports implemented; end-to-end installed adoption incomplete | `record/package.json` exposes the headless host, capture/2 runtime, native host adapter, processing, publication and UI package entrypoints. The Record package build and packed-consumer checks use TypeScript/Node and do not invoke Cargo; SDK 0.4.2 is a published optional peer and is explicitly installed by relevant packed consumers. These package contracts do not establish a production executable selection, installed route, release or complete Desktop/Engine delivery. |
 | Platform proof | Bounded Linux capture→media2→Saved→native copy passed through public APIs; automatic and installed-route limits remain | The original synthetic Xvfb recording used admitted `0570f775` capture/media closures, the admitted Linux `d60dd82b` publisher and the source-identified Platform X11 clipboard GUI. Its full 62-frame H.264 decode, selected images/sheet and final seven-file inventory were inspected. Authenticated Saved and cold tuple reconciliation preceded one exact-text native write/readback; the public provider/PillHost API reported it. No rendered React/Electron click, installed routing, paste or viewer-open proof is implied. The automatic coordinator is separately tested with synthetic ports and the packed Media2Client. No capture/copy was repeated for that code slice. Wayland/Mac capture, Mac media2/publication consumer proof, audio and full-video control-surface exclusion remain outside this evidence. |
 | Windows | Excluded | Apparent supports macOS and Linux only. |
 

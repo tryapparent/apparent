@@ -4,3 +4,7 @@ export { retry, cancel, expire, recover, completeUpload } from "./transitions.ts
 export type { FreshQueueSnapshot, Decision } from "./transitions.ts";
 export { readQueueSnapshot, QueueStoreError } from "./store.ts";
 export type { QueueSnapshotError } from "./store.ts";
+export { projectUploadFailure } from "./upload-failure.ts";
+export type { UploadErrorFacts, UploadCauseFact, UploadFailureProjection, UploadErrorCode, DiagnosticStage, DiagnosticReason } from "./upload-failure.ts";
+export { planAdmission, ADMISSION_MAX_JOBS, ADMISSION_RETENTION_SECONDS } from "./admission.ts";
+export type { AdmissionInput, AdmissionIntent, AdmissionProposal, AdmissionResult } from "./admission.ts";

@@ -6,10 +6,46 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { Media2Client, launchMedia2Worker, validateDerivative2Document, type Media2JobInput } from '../sdk/src/media2/index.ts';
+import { readFrameVisualObservations } from '../sdk/src/observations/index.ts';
 import { validateMaterialsDocument } from '../sdk/src/capture-documents/index.ts';
+import { launchMedia2RecoveryPeer } from '../sdk/src/recovery/index.ts';
 import { createMediaJobId, launchMediaWorker, MediaChildProcessTransport, MediaClient, MediaRpcError, type DecodeRequest, type MediaJobStatus } from '../sdk/src/media.ts';
 
 const binary = process.env.APPARENT_ENGINE_FRAMES_BIN;
+
+// Qualification-only process observation, never an SDK/consumer close workaround.
+// A released recovery peer may still finalize/reap after its receipt is complete.
+async function fixturePeerExited(pid: number, timeoutMs = 2000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try { process.kill(pid, 0); }
+    catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH'; }
+    if (Date.now() >= deadline) return false;
+    await pause(10);
+  }
+}
+const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+
+test('fixture cleanup requires observed process exit rather than a terminal receipt', async () => {
+  const child = spawn(process.execPath, ['-e', 'process.stdout.write("ready"); process.stdin.resume();'], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const done = new Promise<void>((resolve, reject) => {
+    child.once('error', reject);
+    child.once('close', code => code === 0 ? resolve() : reject(new Error(`fixture process exit ${code}`)));
+  });
+  void done.catch(() => {});
+  try {
+    await new Promise<void>((resolve, reject) => { child.once('error', reject); child.stdout.once('data', () => resolve()); });
+    assert.equal(await fixturePeerExited(child.pid!, 20), false, 'a live process is not cleanup permission');
+    child.stdin.end();
+    await done;
+    assert.equal(await fixturePeerExited(child.pid!, 0), true);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+    // The main path already checks success. Await cleanup without replacing a
+    // failed assertion/readiness error with the expected signal-exit rejection.
+    await done.catch(() => {});
+  }
+});
 type Input = Omit<DecodeRequest, 'channel' | 'protocolVersion' | 'clientId' | 'rpcId' | 'method'>;
 const pause = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
@@ -37,7 +73,7 @@ async function fixture() {
   const client = new MediaClient(transport);
   const handshake = await client.handshake();
   assert.equal(handshake.implementation, 'native'); assert.equal(handshake.capabilities.decodeFrames, true);
-  return { root, runtime, bundle, video, input, client, transport, async close() { await client.close(); await rm(root, { recursive: true, force: true }); } };
+  return { root, runtime, bundle, video, input, client, transport, async close(retain = false) { await client.close(); if (!retain) await rm(root, { recursive: true, force: true }); } };
 }
 async function terminal(client: MediaClient, input: Input): Promise<MediaJobStatus> {
   const until = Date.now() + 12000;
@@ -336,6 +372,9 @@ test('packaged retained media/2 decodes H264 with native seals and cold recovery
     contactSheet: { schema: 'apparent.contact-sheet-layout/1', width: 64, height: 16, backgroundRgb: [11, 22, 33], fit: 'stretch', sampling: 'legacy-bilinear', clipping: 'reject', tiles: [1, 2, 3, 4].map((requestIndex, index) => ({ requestIndex, x: index * 16, y: 0, width: 16, height: 16 })) },
   } };
   let media = new Media2Client(launchMedia2Worker(resolve(binary!), f.runtime));
+  let recovery: Awaited<ReturnType<typeof launchMedia2RecoveryPeer>> | undefined;
+  let recoveryPending = false;
+  let recoveryPidPath: string | undefined;
   try {
     const hello = await media.handshake();
     assert.deepEqual(hello.capabilities, { retainedFrames: true, contactSheet: true, nativeJobAuthority: true });
@@ -359,6 +398,23 @@ test('packaged retained media/2 decodes H264 with native seals and cold recovery
       const info = await stat(join(input.request.outputDirectory, image.file.relativePath), { bigint: true });
       assert.deepEqual({ device: String(info.dev), inode: String(info.ino), size: Number(info.size), modifiedNs: String(info.mtimeNs) }, image.file.identity);
     }
+    const observations = [];
+    for (const frame of envelope.payload.frames) {
+      const pngBytes = await readFile(join(input.request.outputDirectory, frame.file.relativePath));
+      const observation = readFrameVisualObservations({ document: status.derivative, materials, requestIndex: frame.requestIndex, pngBytes, maxFileBytes: 4 * 1024 * 1024 });
+      assert.equal(observation.state, 'measured', 'new native frame PNGs carry the sealed observation profile');
+      if (observation.state !== 'measured') assert.fail('native observations missing');
+      assert.equal(observation.source.jobId, input.request.jobId);
+      assert.equal(observation.source.leaseId, input.request.leaseId);
+      assert.deepEqual(observation.source.materials, input.request.materials);
+      assert.deepEqual(observation.source.clock, materials.payload.clock);
+      assert.deepEqual(observation.pixels, { width: frame.width, height: frame.height, origin: 'decoded-derivative-rgba8', alpha: 'ignored' });
+      assert.equal(observation.regions.columns, Math.min(frame.width, 128));
+      assert.equal(observation.regions.rows, Math.min(frame.height, 128));
+      observations.push(observation);
+    }
+    assert.deepEqual(observations[0].thumbnail, observations[3].thumbnail, 'duplicate decoded planes retain the same raw measurements');
+    assert.deepEqual(observations[0].regions, observations[3].regions);
     await media.close();
     media = new Media2Client(launchMedia2Worker(resolve(binary!), f.runtime));
     await media.handshake();
@@ -376,6 +432,7 @@ test('packaged retained media/2 decodes H264 with native seals and cold recovery
     assert.equal((await media.derive(cancelledInput)).state, 'running');
     assert.equal((await media.cancel(cancelledInput)).state, 'cancelled');
     assert.equal((await media.inspect(cancelledInput)).state, 'cancelled');
+    assert.deepEqual(await readdir(cancelledInput.request.outputDirectory), [], 'cancelled native partial outputs are removed after worker reaping; the caller root remains');
     const lostInput = busyInput(id(), join(f.root, 'retained-owner-lost'));
     assert.equal((await media.derive(lostInput)).state, 'running');
     const owned = (media as unknown as { transport: { child: import('node:child_process').ChildProcess } }).transport.child;
@@ -391,7 +448,47 @@ test('packaged retained media/2 decodes H264 with native seals and cold recovery
     assert.equal(lost.state, 'failed');
     if (lost.state !== 'failed') assert.fail('lost job was not reconciled');
     assert.equal(lost.error.code, 'owner_lost');
+    assert.deepEqual(await readdir(lostInput.request.outputDirectory), [], 'cold owner-loss reconciliation removes only native partial output after reaping');
+    assert.equal(createHash('sha256').update(await readFile(join(input.request.outputDirectory, envelope.payload.frames[0].file.relativePath))).digest('hex'), envelope.payload.frames[0].file.sha256, 'cleanup of other jobs preserves completed output');
     assert.equal((await stat(materialRoot)).isDirectory(), true, 'cancel/process loss retains original materials');
-
-  } finally { await media.close(); await f.close(); }
+    // Record only our fixture-owned exec PID. This transparent wrapper forwards
+    // the exact argv to the packaged binary and does not proxy or signal it.
+    const recoveryEntry = join(f.root, 'observed-recovery.sh');
+    recoveryPidPath = join(f.root, 'observed-recovery.pid');
+    await writeFile(recoveryEntry, `#!/bin/sh\nset -e\numask 077\nprintf '%s\\n' "$$" > ${shellQuote(recoveryPidPath)}\nexec ${shellQuote(resolve(binary!))} "$@"\n`, { mode: 0o700, flag: 'wx' });
+    recovery = await launchMedia2RecoveryPeer(recoveryEntry, f.runtime);
+    await recovery.client.handshake();
+    const releasedInput = busyInput(id(), join(f.root, 'retained-released'));
+    recoveryPending = true;
+    assert.equal((await recovery.client.derive(releasedInput)).state, 'running');
+    const release = await recovery.release();
+    assert.equal(release.connection, 'released');
+    assert.equal(release.runtimeClearance, 'not-established');
+    await assert.rejects(recovery.client.close(), /peer.release/);
+    let retained = await media.inspect(releasedInput);
+    const retainedDeadline = Date.now() + 25_000;
+    while (retained.state === 'running' && Date.now() < retainedDeadline) { await pause(20); retained = await media.inspect(releasedInput); }
+    assert.equal(retained.state, 'complete', `released job original tuple: ${JSON.stringify(retained)}`);
+    if (retained.state !== 'complete') assert.fail('release lost native derivative authority');
+    const retainedEnvelope = validateDerivative2Document(retained.derivative, materials);
+    assert.equal(retainedEnvelope.payload.jobId, releasedInput.request.jobId);
+    const image = retainedEnvelope.payload.frames[0];
+    assert.equal(createHash('sha256').update(await readFile(join(releasedInput.request.outputDirectory, image.file.relativePath))).digest('hex'), image.file.sha256);
+    recoveryPending = false;
+  } finally {
+    await recovery?.release();
+    await media.close();
+    let peerExitObserved = recoveryPidPath === undefined;
+    if (recoveryPidPath) {
+      const pidText = await readFile(recoveryPidPath, 'utf8').catch(() => '');
+      const pid = Number(pidText.trim());
+      if (/^[1-9][0-9]*\n$/.test(pidText) && Number.isSafeInteger(pid) && pid !== process.pid) peerExitObserved = await fixturePeerExited(pid);
+    }
+    // Neither a complete receipt nor EOF acknowledgement grants runtime cleanup.
+    // Keep uncertain fixtures intact rather than race native journal replacement.
+    const retain = recoveryPending || !peerExitObserved;
+    await f.close(retain);
+    if (retain) console.error(`Unresolved synthetic retained recovery fixture: ${f.root}; native peer exit observed=${peerExitObserved}`);
+    if (!recoveryPending) assert.equal(peerExitObserved, true, 'released native peer did not exit; fixture retained');
+  }
 });

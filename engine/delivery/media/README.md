@@ -6,6 +6,17 @@ GStreamer runtime; Mac reuses the moved AVFoundation implementation. Registratio
 does not activate or route an application. Each target requires its actual native
 producer verification and Platform artifact admission before consumer adoption.
 
+New media/2 frame PNGs include the sealed optional `apOB` raw visual-observation
+profile; the manifest advertises `visualObservations` separately from channel
+capabilities. SDK0.4.2 `@apparent/engine-sdk/observations` validates and reads it
+offline against the original derivative/material/request tuple. Old artifacts
+without that advertisement remain valid, and old frame outputs return unavailable.
+These are measurements of the final sized derivative pixels, not a native frame
+selector or a claim of parity with unscaled input. Record owns selection policy.
+The existing packaged media/2 H.264 peer checks profile seals and dimensions on
+each native target. Capture candidates remain unavailable; installed routing and
+macOS15 runtime qualification are separate gates.
+
 The Linux build requires Node 22.6+, Rust 1.96+, an x86_64 host, GStreamer development
 libraries discoverable through `pkg-config`, `ldd`, and FFmpeg only to generate
 synthetic test fixtures. From this directory run `npm ci`, `npm run verify`,
@@ -79,5 +90,21 @@ at `/tmp/m2proof-23aec-UvQjX3/package-receipt.json` and
 `/tmp/m2proof-23aec-UvQjX3/guest-run-23aec/result.json`; the guest artifact
 manifest is `/tmp/m2proof-23aec-UvQjX3/guest-artifacts-manifest.json`. This proof
 used an explicit plugin override from archive 463 and is local-only: it cannot
-be reused as CI evidence or artifact admission. Media/2 remains unadmitted and
-has no installed or Saved claim.
+be reused as CI evidence or artifact admission. That historical candidate did
+not establish admission; current admitted routes are recorded in the owning
+[implementation inventory](../../IMPLEMENTATION.md). No installed route is implied.
+
+Recovery-capable archives additionally declare the exact `recoveryLaunch`
+schema/channel/argv. SDK0.4.3 `/recovery` negotiates that role before exposing a
+client; missing metadata or an old artifact never becomes a safe-close fallback.
+The peer retains finite jobs under their original deadlines when the caller
+releases its connection. See [SDK ownership semantics](../../sdk/README-recovery.md).
+Recovery artifact admission and affected-platform proof remain separate gates.
+
+Media/2 records native-created output identities before writing image or receipt
+bytes. After the supervised worker is reaped, cancellation, deadline, failure
+and owner-loss reconciliation remove only those recorded files and the matching
+empty `frames` directory. The caller's output root stays in place. Completed
+output is preserved; unknown entries, replacements and reservations interrupted
+before identity binding remain private and fail closed. Cleanup reuses Core's
+pinned Store and no-replace leaf quarantine, not recursive pathname deletion.

@@ -12,6 +12,15 @@ Launch with `--runtime-directory DIR --capture-channel capture
 --capture-protocol-version 2`. Provision a persistent private 0700 runtime root.
 No PATH lookup, Node, npm or Cargo is needed at runtime.
 
+Capture/2's supported retained-material path is
+`<canonical-private-runtime>/capture-v2/materials/<original-captureId>`.
+SDK0.4.4's public `capture2MaterialsRoot(runtimeDirectory, captureId)` derives this
+expected root from independently owned launch/admission inputs; consumers must
+still authenticate native observations and validate exact material/lease/sealed
+file bindings before reading. The helper creates nothing and does not discover
+authority from a manifest. Keep the owning runtime and durable capture mapping;
+never adopt another runtime or infer Saved/cleanup permission from this path.
+
 The build executes a headless public SDK publication/reconnect check through the
 closed release entry, with display and session-bus variables removed. It uses
 Engine-owned synthetic media and caller-attested images. This checks the actual
@@ -51,3 +60,10 @@ capture and recover/reprocess remain full Engine acceptance gates.
 
 RPC duplicate detection covers the latest 4,096 accepted IDs with bounded memory.
 Use fresh RPC IDs; durable capture/request replay is a separate journal binding.
+
+New recovery-capable archives declare `recoveryLaunch` with the exact
+`apparent.engine-recovery-peer/1` identity and eight-argument launch. Use SDK
+0.4.3's separately negotiated recovery peer, not legacy close, to relinquish an
+unresolved recovery connection after local operations drain. Absent metadata
+does not imply support. See [SDK ownership semantics](../../sdk/README-recovery.md).
+Archive admission and native per-platform qualification remain separate gates.
