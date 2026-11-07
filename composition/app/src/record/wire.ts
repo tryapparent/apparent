@@ -226,18 +226,36 @@ function validOutcome(value: unknown): boolean {
     && (value.detail === undefined || text(value.detail, 4_096));
 }
 
+function validTranscriptStatus(value: unknown): value is Dict {
+  return (exact(value, ['state']) && value.state === 'unavailable')
+    || (exact(value, ['state', 'content', 'segmentCount']) && value.state === 'collected'
+      && oneOf(value.content, ['empty', 'nonempty'] as const)
+      && revision(value.segmentCount) && value.segmentCount <= 100_000);
+}
+function validWarnings(value: unknown): boolean {
+  if (!plainArray(value, 2)) return false;
+  const kinds = new Set<string>();
+  return value.every(warning => {
+    if (!(exact(warning, ['kind', 'atMs']) && warning.kind === 'audioInitialGap' && revision(warning.atMs))
+      && !(exact(warning, ['kind']) && warning.kind === 'transcriptUnavailable')) return false;
+    if (kinds.has(warning.kind)) return false;
+    kinds.add(warning.kind); return true;
+  });
+}
 function validCapture(value: unknown): boolean {
-  if (!exact(value, ['captureId', 'delivery', 'phase', 'outcomes'], ['invocationId', 'shortcutAdmissionId', 'artifactId', 'warnings'])) return false;
+  if (!exact(value, ['captureId', 'delivery', 'phase', 'outcomes'], ['invocationId', 'shortcutAdmissionId', 'artifactId', 'warnings', 'transcriptStatus'])) return false;
   return text(value.captureId, 256, true)
     && (value.invocationId === undefined || text(value.invocationId, 256, true))
     && oneOf(value.delivery, ['local-only', 'host-default', 'unknown'] as const)
     && (value.shortcutAdmissionId === undefined || text(value.shortcutAdmissionId, 256, true))
     && (value.artifactId === undefined || text(value.artifactId, 256, true))
-    // Public Record warning: a padded, unobserved interval is not recorded silence.
-    // Preserve the original interval; transport validation never invents one.
-    && (!Object.hasOwn(value, 'warnings') || (plainArray(value.warnings, 256)
-      && value.warnings.every(warning => exact(warning, ['kind', 'atMs'])
-        && warning.kind === 'audioInitialGap' && revision(warning.atMs))))
+    // Preserve original facts only. Neither Saved nor microphone readiness
+    // supplies a transcript status or an observed interval.
+    && (!Object.hasOwn(value, 'warnings') || validWarnings(value.warnings))
+    && (!Object.hasOwn(value, 'transcriptStatus') || (value.phase === 'saved'
+      && text(value.artifactId, 256, true) && validTranscriptStatus(value.transcriptStatus)
+      && !(value.transcriptStatus.state === 'collected' && Array.isArray(value.warnings)
+        && value.warnings.some(warning => warning.kind === 'transcriptUnavailable'))))
     && oneOf(value.phase, ['starting', 'recording', 'processing', 'saved', 'cancelled', 'failed', 'unknown'] as const)
     && plainArray(value.outcomes, 256) && value.outcomes.every(validOutcome);
 }

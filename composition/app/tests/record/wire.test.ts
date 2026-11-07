@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRecordFixture } from '@apparent/record/fixtures';
+import type { TranscriptStatus } from '@apparent/record/capabilities';
 import {
   cloneCapabilitySnapshot, cloneCommandResult, cloneJsonDto, cloneRecordCommand,
 } from '../../src/record/wire.ts';
@@ -21,6 +22,45 @@ test('preserves exact optional public initial-audio-gap warnings without implyin
     Array.from({ length: 257 }, () => ({ kind: 'audioInitialGap', atMs: 3 }))]) {
     current.captures[0].warnings = warnings;
     assert.equal(cloneCapabilitySnapshot(current), undefined);
+  }
+});
+
+test('preserves exact Saved transcript status with independent text/count and legacy absence',()=>{
+  const snapshot=createRecordFixture('unsubscribe-during-recording').driver.current();
+  const capture=snapshot.captures[0];capture.phase='saved';capture.artifactId='original-artifact';
+  const statuses:TranscriptStatus[]=[{state:'unavailable'},
+    {state:'collected',content:'nonempty',segmentCount:0},
+    {state:'collected',content:'empty',segmentCount:12},
+    {state:'collected',content:'empty',segmentCount:0},
+    {state:'collected',content:'nonempty',segmentCount:100_000}];
+  assert.deepEqual(cloneCapabilitySnapshot(snapshot),snapshot,'legacy absence is not populated');
+  for(const status of statuses){
+    capture.transcriptStatus=status;
+    capture.warnings=[{kind:'audioInitialGap',atMs:140},...(status.state==='unavailable'?[{kind:'transcriptUnavailable'} as const]:[])];
+    const result=cloneCapabilitySnapshot(snapshot);assert.deepEqual(result,snapshot);
+    assert.notEqual(result!.captures[0].transcriptStatus,capture.transcriptStatus,'defensive clone retains no caller alias');
+  }
+});
+
+test('refuses invented transcript progress, private fields, invalid bounds and contradictory or duplicate warnings',()=>{
+  const snapshot=createRecordFixture('unsubscribe-during-recording').driver.current() as any;
+  const capture=snapshot.captures[0];capture.phase='saved';capture.artifactId='original-artifact';
+  for(const status of [undefined,null,[],{state:'transcribing'},{state:'unavailable',reason:'/private/error'},
+    {state:'collected',content:'nonempty',segmentCount:-1},{state:'collected',content:'empty',segmentCount:1.5},
+    {state:'collected',content:'empty',segmentCount:100_001},{state:'collected',content:'unknown',segmentCount:0},
+    {state:'collected',content:'nonempty',segmentCount:0,text:'private text'}]){
+    capture.transcriptStatus=status;assert.equal(cloneCapabilitySnapshot(snapshot),undefined);
+  }
+  capture.transcriptStatus={state:'collected',content:'nonempty',segmentCount:0};
+  for(const phase of ['recording','processing','unknown']){capture.phase=phase;assert.equal(cloneCapabilitySnapshot(snapshot),undefined);}
+  capture.phase='saved';delete capture.artifactId;assert.equal(cloneCapabilitySnapshot(snapshot),undefined);capture.artifactId='original-artifact';
+  capture.warnings=[{kind:'transcriptUnavailable'}];assert.equal(cloneCapabilitySnapshot(snapshot),undefined,'collected cannot contradict sealed unavailable');
+  capture.transcriptStatus={state:'unavailable'};
+  for(const warnings of [[{kind:'transcriptUnavailable'},{kind:'transcriptUnavailable'}],
+    [{kind:'audioInitialGap',atMs:1},{kind:'audioInitialGap',atMs:2}],
+    [{kind:'transcriptUnavailable',text:'private error'}],
+    [{kind:'audioInitialGap',atMs:0},{kind:'transcriptUnavailable'},{kind:'audioInitialGap',atMs:1}]]){
+    capture.warnings=warnings;assert.equal(cloneCapabilitySnapshot(snapshot),undefined);
   }
 });
 

@@ -307,7 +307,7 @@ pill placement, focus, stacking, exclusion or capture-to-Saved behavior.
 
 ## Record automatic coordinator assembly
 
-The pinned Record package is the admitted `60a7a5cf` producer with the compatible SDK 0.4.6 peer. Its public
+The pinned Record package is the admitted `ed1ef061` producer with the compatible SDK 0.4.6 peer. Its public
 `@apparent/record/host/capture2-coordinator` export owns automatic retained-media
 processing and publication. Trusted composition supplies the existing Capture/2
 and Media/2 clients, private roots, source intent and explicit proof/destination
@@ -424,6 +424,12 @@ silent recording. **Record** remains the separate silent action. **Check
 microphone** refreshes readiness without requesting capture. Support is neither
 microphone consent nor successful transcription. The c008 qualification producer
 and this app binding still need real joined native qualification before release.
+
+The strict bridge preserves Record's optional Saved `transcriptStatus` and its
+fixed sealed-unavailable warning. Collected text may be empty or nonempty,
+independently of segment count (including untimed nonempty text with count zero).
+Absent legacy status remains unknown. The public Record pill owns its Saved/Copy
+notice; the app supplies no inferred “transcribing” or model-success state.
 Supply already constructed admitted Capture/2 and Media/2 SDK clients sharing
 one private runtime, explicit roots/source intent and `standardProcessing` proof
 and destination preferences, native permission/config inputs, and the ownership callbacks described

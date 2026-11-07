@@ -1,0 +1,12 @@
+{
+  "package": "@apparent/record",
+  "version": "0.1.0",
+  "sourceSha": "ed1ef06170c02f78a86f4df1c96a6f36605abded",
+  "runId": 42419251246,
+  "runAttempt": 1,
+  "artifactId": 13591884944,
+  "componentSha256": "357d906c49949559bb29b51629a264162c9da9a453b58c068747e7b50014ee21",
+  "attestationVerified": true,
+  "packageSha256": "ed2f3f57005c66ec7abc951e3b5610f3d624b0a8c60121563ebe13faec901c14",
+  "usage": "Authoritative optional Saved transcript status and sealed unavailable warning; retains accepted-history companion, neutral formatter, Saved resolver and truthful clipboard semantics. Native assembled voice/ink acceptance remains required."
+}

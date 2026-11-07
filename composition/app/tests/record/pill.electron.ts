@@ -32,6 +32,7 @@ import { createRecordFixture } from '@apparent/record/fixtures';
 export async function createRecordHostServices({profilePath}) {
   const fixture = createRecordFixture('unsubscribe-during-recording');
   let detachCalls = 0;
+  let statusCase = 0;
   return { record: {
     observe: fixture.client.observe.bind(fixture.client),
     async execute(command) {
@@ -40,6 +41,21 @@ export async function createRecordHostServices({profilePath}) {
         const current = fixture.driver.current();
         fixture.driver.publish({...current, revision: current.revision + 1,
           captures: current.captures.map(capture => ({...capture, phase: 'cancelled'}))});
+      }
+      if (result.status === 'accepted' && command.type === 'refresh') {
+        // Explicit public fixture facts test presentation/transport only, not
+        // native Saved authentication, microphone or transcript production.
+        const statuses = [null, {state:'collected',content:'nonempty',segmentCount:0},
+          {state:'collected',content:'empty',segmentCount:4}, {state:'unavailable'}];
+        const status = statuses[statusCase++];
+        const current = fixture.driver.current();
+        fixture.driver.publish({...current, revision:current.revision+1,captures:current.captures.map(capture=>{
+          const next={...capture,phase:'saved',artifactId:'fixture-original-artifact'};
+          delete next.transcriptStatus;delete next.warnings;
+          if(status)next.transcriptStatus=status;
+          if(status?.state==='unavailable')next.warnings=[{kind:'transcriptUnavailable'},{kind:'audioInitialGap',atMs:140}];
+          return next;
+        })});
       }
       await writeFile(join(profilePath, 'commands.json'), JSON.stringify(fixture.driver.commands()));
       return {...result, snapshot: fixture.driver.current()};
@@ -92,6 +108,18 @@ export async function createRecordHostServices({profilePath}) {
   const commands = JSON.parse(await readFile(join(profile, 'commands.json'), 'utf8'));
   assert.equal(commands.length, 1); assert.equal(commands[0].type, 'stop-capture'); assert.equal(commands[0].captureId, 'capture-active');
   assert.match(commands[0].requestId, /^[a-f0-9-]{36}$/);
+  for(const notice of ['Saved locally','Saved locally · Transcript collected; 0 segments',
+    'Saved locally · Transcript collected; no words','Saved locally · Transcript unavailable']){
+    await page.evaluate(async()=>{
+      const port=(window as any).apparent.record;const snapshot=await port.read();
+      return port.execute({type:'refresh',requestId:crypto.randomUUID(),expected:{providerEpoch:snapshot.providerEpoch,revision:snapshot.revision}});
+    });
+    await expect(page.locator('main.pill')).toHaveAttribute('data-phase','completed');
+    await expect(page.getByText(notice,{exact:true})).toBeVisible();
+    await expect(controls.getByRole('button',{name:'Copy handoff',exact:true})).toBeEnabled();
+  }
+  await expect(page.getByText(/140/)).toBeVisible();
+  if(process.env.APPARENT_RECORD_PILL_SCREENSHOT)await page.screenshot({path:process.env.APPARENT_RECORD_PILL_SCREENSHOT+'.transcript.png'});
   assert.deepEqual(errors, []);
   const exited = application.waitForEvent('close');
   await application.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].close(); });
