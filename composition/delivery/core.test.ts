@@ -1,4 +1,3 @@
-import { fileURLToPath } from 'node:url'
 import './runtime/pr-candidate.test.ts'
 import './consumer/handoff.test.ts'
 import assert from 'node:assert/strict'
@@ -11,7 +10,7 @@ import { spawnSync } from 'node:child_process'
 import { stripTypeScriptTypes } from 'node:module'
 import { after, test } from 'node:test'
 import { matchPrCandidateInputs, assertBuildWorkflowIdentity } from './cli.ts'
-import { prInputsMatch, sourceDigest, mediaBuildIdentity, supportsPrCandidate, packageBuildEnvironment, nativeBuildIdentity, assessPrior, catalog, inputDigest, makePlan, optionalVerificationPeers, reusePayload, sealPayload, verifyPublicExports, type Owner, workflowPathFor } from './core.ts'
+import { prInputsMatch, sourceDigest, mediaBuildIdentity, supportsPrCandidate, packageBuildEnvironment, nativeBuildIdentity, assessPrior, catalog, inputDigest, makePlan, optionalVerificationPeers, reusePayload, sealPayload, verifyPublicExports, type Owner, workflowPathFor, nativeHostInputRoots, nativeHostInputFiles } from './core.ts'
 
 // Hooks export repository-local Git variables. Synthetic repositories must not
 // accidentally use the hook caller's index, object database or worktree.
@@ -613,19 +612,18 @@ test('App Shell fingerprints its external verification inputs', () => {
 })
 
 test('native GUI catalog binds development profile, complete root closure and literal Platform identity', () => {
-  const root = fileURLToPath(new URL('../../', import.meta.url))
-  const owner = catalog(root).owners.find(owner => owner.id === 'platform-native-host')!
-  assert(owner)
-  assert.equal(owner.kind, 'directory'); assert.equal(owner.language, 'native'); assert.equal(owner.stage, 'development-app')
-  assert.equal(owner.package, 'composition/native-host/delivery')
-  assert.deepEqual(owner.targets, ['linux-x64', 'macos-x64'])
-  assert.equal(workflowPathFor(owner.id), '.github/workflows/stream-platform.yml')
-  assert(owner.environment!.includes('APPARENT_PACKAGING_TOOLS_SHA256'))
-  assert.deepEqual(makePlan(root).matrix.include.filter(row => row.id === owner.id).map(row => row.architecture_owner), ['composition', 'composition'])
   const path = resolve(temp, 'native-gui-closure')
+  const owner: Owner = { schema: 1, id: 'platform-native-host', kind: 'directory', language: 'native',
+    package: 'composition/native-host/delivery', stage: 'development-app', artifactPath: 'dist',
+    inputs: [...nativeHostInputRoots], files: [...nativeHostInputFiles], verify: ['verify'], build: 'build',
+    environment: ['APPARENT_PACKAGING_TOOLS_SHA256'], targets: ['linux-x64', 'macos-x64'] }
   for (const input of owner.inputs) mkdirSync(resolve(path, input), { recursive: true })
   mkdirSync(resolve(path, owner.package), { recursive: true })
   const registration = resolve(path, 'composition/native-host/delivery/delivery.json')
+  writeFileSync(registration, JSON.stringify(owner))
+  assert.deepEqual(catalog(path).owners.find(item => item.id === owner.id), { ...owner, packageManager: 'npm' })
+  assert.equal(workflowPathFor(owner.id), '.github/workflows/stream-platform.yml')
+  assert.deepEqual(makePlan(path).matrix.include.filter(row => row.id === owner.id).map(row => row.architecture_owner), ['composition', 'composition'])
   for (const missing of ['capture/', '.cargo/', 'engine/']) {
     writeFileSync(registration, JSON.stringify({ ...owner, inputs: owner.inputs.filter(input => input !== missing) }))
     assert.match(catalog(path).blocked.join(';'), /complete root GUI and packaging closure/)
