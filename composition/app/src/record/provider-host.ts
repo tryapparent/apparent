@@ -7,7 +7,7 @@ import {
 import type { RecordCaptureCoordinator, RecordCaptureCoordinatorShutdownReport } from '@apparent/record/host/capture2-coordinator';
 import type { RecordHostServices } from './host.ts';
 import type { RecordNativeBindings } from './native-bindings.ts';
-import { recordShutdownEvent } from './omarchy/shutdown-diagnostic.ts';
+import { recordShutdownEvent, shutdownReportDiagnostic } from './omarchy/shutdown-diagnostic.ts';
 
 type Runtime = RecordCapabilityProviderOptions['runtime'];
 export interface RecordProviderHostOptions {
@@ -113,7 +113,9 @@ export function createRecordProviderHost(options: RecordProviderHostOptions): Re
         const admission = facts?.nextShortcutAdmission;
         const ownership = runtime.unresolvedOwnership();
         const current = provider.current();
-        recordShutdownEvent('coordinator-preflight', { phase, ownership,
+        recordShutdownEvent('coordinator-preflight', { phase, ownership: ownership && {
+          storageUnavailable: ownership.storageUnavailable, reconciliation: ownership.reconciliation,
+          unresolvedRequests: Array.isArray(ownership.requestIds) ? ownership.requestIds.length : null },
           captureFactsAvailable: !!facts, factPhases: facts?.captures?.map(capture => capture.phase),
           shortcutAdmission: admission?.state, providerPhases: current.captures.map(capture => capture.phase),
           providerShortcutAdmission: current.nextShortcutAdmission.state });
@@ -138,7 +140,7 @@ export function createRecordProviderHost(options: RecordProviderHostOptions): Re
         recordShutdownEvent('coordinator-shutdown-start', { phase, otherRuntimeUsers: other });
         const report = structuredClone(await coordinator!.shutdown());
         shutdownReport = report;
-        recordShutdownEvent('coordinator-shutdown-report', { report });
+        recordShutdownEvent('coordinator-shutdown-report', { report: shutdownReportDiagnostic(report) });
         await coordinator!.dispose();
         recordShutdownEvent('coordinator-disposed', { phase });
         const localDrain = report?.scope === 'record-coordinator'

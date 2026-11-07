@@ -6,10 +6,10 @@ import type { RecordCaptureCoordinator } from '@apparent/record/host/capture2-co
 import { createRecordCapabilityProvider } from '@apparent/record/capabilities';
 import { bindRecordCoordinatorHost } from '../../src/record/coordinator-host.ts';
 import type { RecordNativeBindings } from '../../src/record/native-bindings.ts';
-import { recordShutdownEvent } from '../../src/record/omarchy/shutdown-diagnostic.ts';
+import { recordShutdownEvent, shutdownReportDiagnostic } from '../../src/record/omarchy/shutdown-diagnostic.ts';
 
 test('installed runtime reproduces cached ownership refusal after asynchronous Stop completion and records the exact preflight', async t => {
-  const events: Array<{ stage: string; ownership?: { requestIds: string[] } }> = [];
+  const events: Array<{ stage: string; ownership?: { unresolvedRequests: number } }> = [];
   t.mock.method(console, 'error', (prefix: string, value: string) => {
     assert.equal(prefix, '[record-shutdown]'); events.push(JSON.parse(value));
   });
@@ -60,7 +60,8 @@ test('installed runtime reproduces cached ownership refusal after asynchronous S
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(await host.canClose(), false);
   assert.equal(shutdownCalls, 0); assert.equal(host.shutdownReport(), undefined);
-  assert(events.find(event => event.stage === 'coordinator-preflight')?.ownership?.requestIds.includes(receipt.requestId));
+  assert((events.find(event => event.stage === 'coordinator-preflight')?.ownership?.unresolvedRequests ?? 0) > 0);
+  assert(!JSON.stringify(events).includes(receipt.requestId), 'local diagnostics omit request identities');
   assert(events.some(event => event.stage === 'preflight-refused'));
   // This establishes a causal offline case, not attribution of the retained native
   // run: that run did not log whether close reached this boundary.
@@ -72,4 +73,15 @@ test('diagnostic serialization and output failures never change ownership decisi
   assert.doesNotThrow(() => recordShutdownEvent('synthetic-log-failure'));
   const circular: { self?: unknown } = {}; circular.self = circular;
   assert.doesNotThrow(() => recordShutdownEvent('synthetic-serialization-failure', circular));
+});
+
+test('shutdown report log keeps clearance and work states while omitting identities and free text', () => {
+  const report = { scope: 'record-coordinator', admission: 'closed', localDrain: 'complete', runtimeClearance: 'unknown',
+    nextShortcutAdmission: { state: 'unsupported', reason: 'private-reason' },
+    work: [{ owner: 'publication', state: 'unknown', requestId: 'private-request', captureId: 'private-capture',
+      publicationId: 'private-publication', reason: 'private-error-detail' }] } as const;
+  const summary = shutdownReportDiagnostic(report);
+  assert.deepEqual(summary, { scope: 'record-coordinator', admission: 'closed', localDrain: 'complete',
+    runtimeClearance: 'unknown', nextShortcutAdmission: 'unsupported', work: [{ owner: 'publication', state: 'unknown' }] });
+  assert(!JSON.stringify(summary).includes('private-'));
 });
