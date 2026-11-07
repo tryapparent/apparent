@@ -10,7 +10,7 @@
     "./clipboard": { "types": "./dist/clipboard.d.ts", "import": "./dist/clipboard.js" }
   },
   "scripts": {
-    "build": "npm --prefix ../../shared/contracts run build && tsc -p tsconfig.build.json",
+    "build": "npm --prefix ../../shared/contracts run build && node --experimental-strip-types scripts/clean-dist.ts && tsc -p tsconfig.build.json",
     "prepare": "npm run build",
     "prepack": "npm run build",
     "pretest": "npm run build",
