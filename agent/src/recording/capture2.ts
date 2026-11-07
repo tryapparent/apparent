@@ -28,7 +28,7 @@ export type RecoveryCoordinatorFactory = (paths: { controlRoot: string; destinat
   release(): Promise<[RecoveryPeerRelease, RecoveryPeerRelease]>;
 }>;
 
-export type StandardCoordinatorFactory = (paths: { controlRoot: string; destinationRoot: string; runtime: string; captureExecutable: string; mediaExecutable: string }) => Promise<{
+export type StandardCoordinatorFactory = (paths: { createdAtMs: number; controlRoot: string; destinationRoot: string; runtime: string; captureExecutable: string; mediaExecutable: string }) => Promise<{
   coordinator: RecordCaptureCoordinator;
   mappingForRequest(requestId: string): Promise<{ requestId: string; captureId: string; bundleId: string; bundlePath: string } | undefined>;
   release(): Promise<[RecoveryPeerRelease, RecoveryPeerRelease]>;
@@ -57,7 +57,7 @@ async function defaultStandardCoordinatorFactory(paths: Parameters<StandardCoord
       mappings, destinations: new AbsentDestinationAllocator(storeRoot, paths.destinationRoot),
       createStartIntent() { throw new Error('Standard processing cannot start a fresh capture'); },
       trustedMaterialsRoot(mapping) { return capture2MaterialsRoot(paths.runtime, mapping.captureId); },
-      standardProcessing: { requestVideoProof }, preflight: preflightCapturePublication,
+      standardProcessing: { requestVideoProof, createdAtMs: paths.createdAtMs }, preflight: preflightCapturePublication,
     });
     return { coordinator, mappingForRequest: (requestId: string) => mappings.getByRequestId(requestId), async release() {
       const settled = await Promise.allSettled([capturePeer.release(), mediaPeer!.release()]);
@@ -271,6 +271,10 @@ async function defaultHostFactory(paths: Parameters<Capture2HostFactory>[0]) {
 }
 
 async function loadPublicIdentity(controlRoot: string, requestId: string): Promise<string> {
+  return (await loadPublicRequest(controlRoot, requestId)).destinationPath;
+}
+
+async function loadPublicRequest(controlRoot: string, requestId: string): Promise<{ destinationPath: string; createdAtMs: number }> {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId)) throw new Error('Expected an Agent capture/2 request ID');
   if (await realpath(controlRoot).catch(() => '') !== controlRoot) throw new Error('Agent capture/2 control directory is unavailable');
   const directory = resolve(controlRoot, 'capture2-requests-v1');
@@ -300,7 +304,7 @@ async function loadPublicIdentity(controlRoot: string, requestId: string): Promi
       throw new Error('Agent capture/2 identity metadata changed while reading');
     const entry = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, bytesRead)));
     if (Object.keys(entry).some(key => !['schema', 'requestId', 'destinationPath', 'createdAtMs'].includes(key)) || entry.schema !== 'apparent.agent-capture2-request/1' || entry.requestId !== requestId || !Number.isSafeInteger(entry.createdAtMs) || typeof entry.destinationPath !== 'string' || !isAbsolute(entry.destinationPath) || resolve(entry.destinationPath) !== entry.destinationPath || !entry.destinationPath.endsWith('.apparent')) throw new Error('Invalid Agent capture/2 identity metadata');
-    return entry.destinationPath as string;
+    return { destinationPath: entry.destinationPath as string, createdAtMs: entry.createdAtMs as number };
   } finally { await file.close(); }
 }
 
@@ -458,7 +462,9 @@ export async function recordWithCapture2(
   }
   if (requestId && finalPhase === 'materials-ready' && confirmedClose && mediaExecutable && (config.standardFactory || !config.factory)) {
     try {
-      const standard = await reconcileStandardCapture(requestId, await loadPublicIdentity(controlRoot, requestId), {
+      const identity = await loadPublicRequest(controlRoot, requestId);
+      const standard = await reconcileStandardCapture(requestId, identity.destinationPath, {
+        createdAtMs: identity.createdAtMs,
         controlRoot, destinationRoot, runtime, captureExecutable: executable, mediaExecutable,
         factory: config.standardFactory ?? defaultStandardCoordinatorFactory, clock,
       });
@@ -476,10 +482,10 @@ export async function recordWithCapture2(
 }
 
 async function reconcileStandardCapture(requestId: string, expectedPath: string, options: {
-  controlRoot: string; destinationRoot: string; runtime: string; captureExecutable: string; mediaExecutable: string;
+  createdAtMs: number; controlRoot: string; destinationRoot: string; runtime: string; captureExecutable: string; mediaExecutable: string;
   factory: StandardCoordinatorFactory; clock: Capture2Clock;
 }): Promise<{ state: string; outcome: string; bundlePath?: string; exitCode: number; processingIssues?: readonly unknown[]; shutdown?: unknown; peerRelease?: readonly unknown[] }> {
-  const composed = await options.factory({ controlRoot: options.controlRoot, destinationRoot: options.destinationRoot, runtime: options.runtime, captureExecutable: options.captureExecutable, mediaExecutable: options.mediaExecutable });
+  const composed = await options.factory({ createdAtMs: options.createdAtMs, controlRoot: options.controlRoot, destinationRoot: options.destinationRoot, runtime: options.runtime, captureExecutable: options.captureExecutable, mediaExecutable: options.mediaExecutable });
   let state = 'unknown';
   let bundlePath: string | undefined;
   let processingIssues: readonly unknown[] = [];

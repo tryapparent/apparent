@@ -602,6 +602,10 @@ test('capture/2 standard coordinator starts only after terminal capture close an
     const standardFactory: StandardCoordinatorFactory = async paths => {
       assert.equal(paths.runtime, join(root, 'runtime'));
       assert.equal(originalClose.at(-1)?.method, 'close');
+      const requestId = (fixture.calls.find(call => call.method === 'start')!.input as { requestId: string }).requestId;
+      const identity = JSON.parse(await readFile(join(root, 'control', 'capture2-requests-v1', `${requestId}.json`), 'utf8'));
+      assert(paths.createdAtMs > 0);
+      assert.equal(paths.createdAtMs, identity.createdAtMs);
       sequence.push('compose');
       return {
         mappingForRequest: async requestId => ({ requestId, captureId: 'record-capture', bundleId: 'record-artifact', bundlePath: out }),
