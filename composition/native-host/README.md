@@ -157,3 +157,12 @@ process exit or ownership clearance. Runtime SDK methods/artifact, actual native
 callback/geometry/clock source, fixed UI controls and affected native acceptance
 remain required before enabling or advertising drawing. Old snapshot ABI and
 existing native producers are unchanged.
+
+Binding/observation leaves native input admission closed. Only a matching Engine
+registration opens it via `activateInput`, carrying the verified boot identity and
+original admission monotonic timestamp. This extra native step is not an Engine
+protocol change. Refused/unknown activation never becomes ready. Relay failure
+does not prove either native input or Engine registration is absent: the owning
+host retains those lifetimes, seals the native source safely, and preserves unknown
+work under its normal shutdown contract. The relay does not cancel capture or
+release ownership automatically.

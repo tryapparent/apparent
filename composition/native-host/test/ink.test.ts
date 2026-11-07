@@ -15,6 +15,7 @@ function fixture(raw: string[] = []) {
   const actions:string[]=[];let available=raw.length;let acked=0;
   const native:NativeInkSourcePort={
     async readObservation(){actions.push('observe');return {captureId:cid,source:sourceRef,observation:structuredClone(observation)};},
+    async activateInput(binding,clock){assert.equal(binding.captureId,cid);assert.deepEqual(clock,{bootId:observation.bootId,admissionMonotonicNs:'2000000000'});actions.push('activate');return {status:'active'};},
     async readBatch(binding,sequence){assert.equal(binding.captureId,cid);assert.equal(sequence,acked);actions.push('read:'+sequence);
       if(sequence>=available)return {status:'pending'};return {status:'batch',batch:{sequence,eventsJson:raw[sequence],batchSha256:sha(raw[sequence])}};},
     async acknowledgeBatch(binding,batch){assert.equal(batch.sequence,acked);assert.equal(batch.batchSha256,sha(raw[acked]));acked++;actions.push('ack:'+batch.sequence);return {status:'acknowledged',...batch};},
@@ -31,11 +32,11 @@ function fixture(raw: string[] = []) {
 const raw='[ {"kind":"points","gestureId":"'+'5'.repeat(32)+'","points":[{"timeNs":"2000000001","x":1.0000000000000002,"y":2.0}]} ]';
 test('exact retained JSON survives forwarding and native ACK follows matching Engine receipt',async()=>{
   const f=fixture([raw]);await f.relay.register();assert.equal(await f.relay.forwardNext(),true);await f.relay.finish();
-  assert.equal(f.relay.phase(),'complete');assert.deepEqual(f.actions,['observe','register','read:0','submit:0','ack:0','native-seal','engine-finish']);
+  assert.equal(f.relay.phase(),'complete');assert.deepEqual(f.actions,['observe','register','activate','read:0','submit:0','ack:0','native-seal','engine-finish']);
 });
 test('native seal/drain queues original retained batches before Engine final completion',async()=>{
   const f=fixture([raw,raw]);f.setAvailable(0);await f.relay.register();assert.equal(await f.relay.forwardNext(),false);await f.relay.finish();
-  assert.deepEqual(f.actions.slice(3),['native-seal','read:0','submit:0','ack:0','read:1','submit:1','ack:1','engine-finish']);
+  assert.deepEqual(f.actions.slice(4),['native-seal','read:0','submit:0','ack:0','read:1','submit:1','ack:1','engine-finish']);
 });
 test('genuine zero-batch seal uses null, never invented empty collected batches',async()=>{
   const f=fixture();await f.relay.register();await f.relay.finish();assert.equal(f.relay.phase(),'complete');assert.ok(!f.actions.some(x=>x.startsWith('submit')));
@@ -87,4 +88,9 @@ test('deadline failure stays latched when the original native read resolves late
   await assert.rejects(f.relay.register(),/deadline/);assert.equal(f.relay.phase(),'unavailable');
   release();await new Promise<void>(r=>setImmediate(r));
   assert.equal(f.relay.phase(),'unavailable');assert.ok(!f.actions.includes('register'));
+});
+
+test('read observation never activates input before valid Engine admission; unknown activation stays unavailable',async()=>{
+  for(const status of ['refused','outcome-unknown'] as const){const f=fixture();let activations=0;f.native.activateInput=async()=>{activations++;return {status};};await assert.rejects(f.relay.register());assert.equal(activations,1);assert.equal(f.relay.phase(),'unavailable');assert.ok(!f.actions.some(x=>x.startsWith('read:')||x.startsWith('ack:')));}
+  const f=fixture();f.sink.registerInkProducer=async()=>{throw new Error('lost-registration');};await assert.rejects(f.relay.register());assert.ok(!f.actions.includes('activate'));
 });

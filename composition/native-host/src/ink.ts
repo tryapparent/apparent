@@ -22,7 +22,11 @@ export interface NativeInkSeal {
 }
 /** Native retains exact bytes until this exact digest is acknowledged. Unknown is terminal for this relay. */
 export interface NativeInkSourcePort {
+  /** Observation/binding alone must leave native input admission closed. */
   readObservation(): Promise<{ captureId: string; source: { id: string; generation: string }; observation: NativeInkObservation }>;
+  /** Open input only after matching Engine registration; recheck native boot/clock and binding. */
+  activateInput(binding: NativeInkBinding, clock: { bootId: string; admissionMonotonicNs: string }): Promise<
+    { status: 'active' } | { status: 'refused' | 'outcome-unknown' }>;
   readBatch(binding: NativeInkBinding, sequence: number): Promise<
     { status: 'batch'; batch: NativeInkBatch } | { status: 'pending' } | { status: 'unavailable' }>;
   acknowledgeBatch(binding: NativeInkBinding, batch: Pick<NativeInkBatch, 'sequence' | 'batchSha256'>): Promise<
@@ -138,6 +142,10 @@ export function createNativeInkRelay(options: {
       authority = { ingressVersion: 1, ownerToken: original.ownerToken, captureId: original.captureId,
         registrationId: receipt.registrationId, producerToken: receipt.producerToken };
       binding = { captureId: original.captureId, producerId: o.producerId, generation: o.generation };
+      const active = await bounded(() => options.source.activateInput(binding!, {
+        bootId: receipt.clock.bootId, admissionMonotonicNs: receipt.clock.admissionMonotonicNs,
+      }), deadline);
+      ensure(active.status === 'active');
       phase = 'ready';
     }); },
     forwardNext() { return exclusive('ready', 'ready', () => forward(now() + NATIVE_INK_LIMITS.finishMs)); },
