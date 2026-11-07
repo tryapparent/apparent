@@ -379,3 +379,23 @@ Status account probes retain the existing bounded timeout. No sender operation
 is admitted. APPARENT_CONFIG selects the same config as root callers; both use
 the same sidecar lock, durable transaction and publication-uncertain error type.
 Packaging and root command routing have not switched to this executable.
+
+### Staged root recipient package adapter
+
+`connect/hosted/recipient.rs` validates schema 1 / protocol 1 recipient packages
+and invokes their JSON subprocess protocol. It resolves only
+`apparent-connect-recipient` and `manifest.json` beside the root executable:
+`Contents/MacOS` on macOS and the packaged executable directory on Linux.
+There is no PATH lookup, repository discovery, download or source-build fallback.
+The caller must provide the authenticated published executable SHA256 from package
+assembly; an adjacent manifest alone is not a trust anchor. No pin is fabricated.
+Missing packages, incompatible targets/protocols and digest mismatch fail closed.
+
+This adapter is staged and has no production callers. Root login/status/fetch
+continue through the existing client until the bundle dependency and pin land in
+one coherent adoption. Ordinary status retains uploader facts and queue semantics;
+local Agent/Engine inspection, upload, Settings and worker routing remain as before.
+The adoption must render approval events, connect cancellation and preserve the
+existing CLI output contract. Package installation and native seam proof remain
+required before switching routing or merging that switch. The executable emits
+fixed public errors rather than arbitrary underlying HTTP/config errors.

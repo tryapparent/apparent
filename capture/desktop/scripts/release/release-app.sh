@@ -114,6 +114,9 @@ fi
 
 python3 "${REPO_DIR}/capture/desktop/scripts/packaging/stage-settings.py" "${APP_BUNDLE}/Contents/Resources/settings" --sign "${IDENTITY}"
 
+mkdir -p "${APP_BUNDLE}/Contents/MacOS"
+node --experimental-strip-types "${REPO_DIR}/connect/delivery/recipient/package.ts" "${REPO_DIR}/connect/delivery/recipient/pins.json" "$(uname -m | sed 's/^arm64$/aarch64/')-apple-darwin" "${APP_BUNDLE}/Contents/MacOS" "${SIGN[@]}"
+
 SPARKLE_VER="${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework/Versions/B"
 "${SIGN[@]}" "${SPARKLE_VER}/XPCServices/Installer.xpc"
 "${SIGN[@]}" --preserve-metadata=entitlements "${SPARKLE_VER}/XPCServices/Downloader.xpc"
