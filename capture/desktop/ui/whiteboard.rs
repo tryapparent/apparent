@@ -129,6 +129,8 @@ pub(in crate::capture::desktop) struct WhiteboardWindow {
     #[cfg(target_os = "linux")]
     native_incarnation: Option<String>,
     #[cfg(target_os = "linux")]
+    native_x11_id: Option<u32>,
+    #[cfg(target_os = "linux")]
     last_native_window: Option<observations::PaperWindow>,
 }
 
@@ -145,11 +147,7 @@ impl WhiteboardWindow {
                 return None;
             }
             Some(observations::PaperWindow {
-                handle: observations::x11_window_id(
-                    raw_window_handle::HasWindowHandle::window_handle(window)
-                        .ok()?
-                        .as_raw(),
-                )?,
+                handle: u64::from(self.native_x11_id?),
                 incarnation: self.native_incarnation.clone()?,
                 content_rectangle: [
                     f64::from(f32::from(b.origin.x)),
@@ -406,6 +404,12 @@ pub(in crate::capture::desktop) fn open(coord: &Entity<ApparentCoordinator>, cx:
         },
         move |window, cx| {
             platform::decorate_app_window(window);
+            // GPUI0.2.2's X11 HasWindowHandle panics. Use the existing native
+            // association immediately in the build callback, before another
+            // GPUI window can be opened; retain that ID for later observations.
+            #[cfg(target_os = "linux")]
+            let native_x11_id = crate::capture::desktop::linux::x11::window_id(window)
+                .filter(|id| *id > 0);
             let focus = cx.focus_handle();
             window.focus(&focus);
             cx.new(|cx| {
@@ -418,6 +422,8 @@ pub(in crate::capture::desktop) fn open(coord: &Entity<ApparentCoordinator>, cx:
                     #[cfg(target_os = "linux")]
                     native_incarnation: crate::capture::desktop::workflow::agent_capture::new_id()
                         .ok(),
+                    #[cfg(target_os = "linux")]
+                    native_x11_id,
                     #[cfg(target_os = "linux")]
                     last_native_window: None,
                     focus,

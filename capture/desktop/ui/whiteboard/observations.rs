@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::capture::desktop) struct PaperWindow {
-    /// Actual X11/XWayland window ID from GPUI's platform handle on its callback.
+    /// Actual X11/XWayland ID associated by the existing native adapter at open.
     /// GPUI's internal entity/window ID is not an operating-system window ID.
     pub handle: u64,
     /// Fresh native owner nonce for this opened window; logical Board survives it.
@@ -38,18 +38,6 @@ pub(in crate::capture::desktop) trait PaperObserver:
     Send + Sync
 {
     fn observe(&self, observation: PaperObservation);
-}
-/// The shipped Linux GPUI adapter uses X11/XWayland. Other handle kinds cannot
-/// establish this native identity; do not reinterpret a Wayland pointer or an
-/// internal GPUI ID as a compositor/X11 window.
-pub(super) fn x11_window_id(handle: raw_window_handle::RawWindowHandle) -> Option<u64> {
-    use raw_window_handle::RawWindowHandle;
-    let value = match handle {
-        RawWindowHandle::Xlib(handle) => handle.window,
-        RawWindowHandle::Xcb(handle) => u64::from(handle.window.get()),
-        _ => return None,
-    };
-    (value > 0).then_some(value)
 }
 #[derive(Clone, Default)]
 pub(in crate::capture::desktop) struct PaperTap {
@@ -112,14 +100,6 @@ impl PaperTap {
 mod tests {
     use super::*;
     use std::sync::Mutex;
-    #[test]
-    fn paper_identity_uses_real_platform_window_id_and_refuses_other_handle_kinds() {
-        use raw_window_handle::{RawWindowHandle, WebWindowHandle, XcbWindowHandle, XlibWindowHandle};
-        assert_eq!(x11_window_id(RawWindowHandle::Xlib(XlibWindowHandle::new(47))), Some(47));
-        assert_eq!(x11_window_id(RawWindowHandle::Xcb(XcbWindowHandle::new(std::num::NonZeroU32::new(81).unwrap()))), Some(81));
-        assert_eq!(x11_window_id(RawWindowHandle::Xlib(XlibWindowHandle::new(0))), None);
-        assert_eq!(x11_window_id(RawWindowHandle::Web(WebWindowHandle::new(47))), None);
-    }
     struct Observer(Mutex<Vec<PaperObservation>>);
     impl PaperObserver for Observer {
         fn observe(&self, o: PaperObservation) {
@@ -178,6 +158,15 @@ mod tests {
         tap.emit(None, None, PaperAction::Closed);
         tap.emit(
             Some(PaperWindow {
+                handle: 0,
+                incarnation: "native".into(),
+                content_rectangle: [0., 64., 720., 476.],
+            }),
+            Some(2),
+            PaperAction::Surface,
+        );
+        tap.emit(
+            Some(PaperWindow {
                 handle: 17,
                 incarnation: "native".into(),
                 content_rectangle: [0., 64., 720., 476.],
@@ -188,6 +177,7 @@ mod tests {
         assert_eq!(
             *observer.0.lock().unwrap(),
             vec![
+                PaperObservation::Unavailable,
                 PaperObservation::Unavailable,
                 PaperObservation::Unavailable,
                 PaperObservation::Unavailable
