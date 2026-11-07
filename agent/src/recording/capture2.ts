@@ -383,7 +383,9 @@ export async function recordWithCapture2(
   const interrupted = () => signalRequested || config.interrupted?.() === true;
   process.on('SIGINT', signal); process.on('SIGTERM', signal);
   let confirmedClose = false;
+  let closeAttempted = false;
   let startDispatched = false;
+  let explicitEndIntent = false;
   let finalPhase: Capture2Receipt['phase'] = 'unknown';
   let requestId: string | undefined;
   try {
@@ -414,8 +416,15 @@ export async function recordWithCapture2(
         receipt = await composed.host.inspect(requestId);
         if (receipt.phase !== 'recording') break;
       }
-      if (receipt.phase === 'recording') receipt = await composed.host.stop(requestId);
+      const finishReached = clock.now() >= stopAt;
+      const explicitInterrupt = interrupted();
+      if (finishReached || explicitInterrupt) {
+        explicitEndIntent = true;
+        if (!['materials-ready', 'processing', 'failed', 'cancelled'].includes(receipt.phase))
+          receipt = await composed.host.stop(requestId);
+      }
     } else if (interrupted() && ['starting', 'submitted-unknown', 'unknown'].includes(receipt.phase)) {
+      explicitEndIntent = true;
       receipt = await composed.host.cancel(requestId);
     }
     const finishBy = clock.now() + 60_000;
@@ -426,13 +435,20 @@ export async function recordWithCapture2(
     finalPhase = receipt.phase;
   } catch (error) {
     if (!startDispatched) throw error;
+    if (interrupted()) explicitEndIntent = true;
     finalPhase = 'unknown';
     process.stderr.write(`Capture/2 request ${requestId ?? 'unknown'} has an ambiguous native outcome; retain its identity and inspect before retrying.\n`);
   } finally {
     process.removeListener('SIGINT', signal); process.removeListener('SIGTERM', signal);
     composed.host.dispose();
     const terminalCapture = ['materials-ready', 'cancelled', 'failed'].includes(finalPhase);
-    if (!startDispatched || terminalCapture) {
+    // This foreground owner has not dispatched media/publication work or been
+    // shared. After explicit finish/interrupt, awaited host calls have settled
+    // and the host is disposed, so SDK 0.4.5 may release local process refs
+    // even if Stop remains unknown. Close is not phase, runtime-clearance, or
+    // Saved evidence.
+    if (!startDispatched || terminalCapture || explicitEndIntent) {
+      closeAttempted = true;
       const closed = await composed.close();
       confirmedClose = ['already-exited', 'eof-exited', 'exit-observed'].includes(closed);
       if (!confirmedClose) process.stderr.write(`Capture/2 transport close is uncertain (${closed}); retain the request identity for reconciliation.\n`);
@@ -454,7 +470,7 @@ export async function recordWithCapture2(
       return 3;
     }
   }
-  const outcome = !confirmedClose ? 'close-unverified' : finalPhase === 'failed' ? 'failed' : finalPhase === 'cancelled' ? 'cancelled' : finalPhase === 'unknown' ? 'uncertain' : finalPhase === 'processing' || finalPhase === 'materials-ready' ? 'pending-standard-processing-unavailable' : 'pending';
+  const outcome = !closeAttempted ? 'ownership-retained' : !confirmedClose ? 'close-unverified' : finalPhase === 'failed' ? 'failed' : finalPhase === 'cancelled' ? 'cancelled' : finalPhase === 'unknown' ? 'uncertain' : finalPhase === 'processing' || finalPhase === 'materials-ready' ? 'pending-standard-processing-unavailable' : 'pending';
   process.stdout.write(`${JSON.stringify({ ...(requestId ? { requestId } : {}), state: finalPhase, outcome })}\n`);
   return ['failed', 'cancelled'].includes(finalPhase) ? 1 : 3;
 }

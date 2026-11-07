@@ -1,4 +1,5 @@
 import { strict as assert } from 'node:assert';
+import { spawnSync } from 'node:child_process';
 import { access, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -222,7 +223,7 @@ test('capture/2 omitted destination uses read-only configured capturesDir and le
     assert.equal((await stat(captures)).mode & 0o777, 0o700);
     await assert.rejects(access(identity.destinationPath), { code: 'ENOENT' });
     const outcome = JSON.parse(output.join(''));
-    assert.equal(outcome.state, 'processing'); assert.equal(outcome.outcome, 'close-unverified');
+    assert.equal(outcome.state, 'processing'); assert.equal(outcome.outcome, 'pending-standard-processing-unavailable');
     assert.equal(JSON.stringify(outcome).includes(captures), false);
   } finally {
     if (previousHome === undefined) delete process.env.HOME; else process.env.HOME = previousHome;
@@ -408,12 +409,11 @@ test('capture/2 processing with publication metadata remains pending, never Save
     }); } finally { process.stdout.write = originalWrite; }
     assert.equal(code, 3);
     const result = JSON.parse(output.join(''));
-    assert.equal(result.outcome, 'close-unverified');
+    assert.equal(result.outcome, 'pending-standard-processing-unavailable');
     assert.equal(result.state, 'processing');
     assert.equal(output.join('').includes(out), false);
-    assert.equal(fixture.calls.some(call => call.method === 'close'), false);
+    assert.equal(fixture.calls.filter(call => call.method === 'close').length, 1);
     assert(fixture.calls.some(call => call.method === 'stop'));
-    assert.equal(fixture.calls.some(call => call.method === 'close'), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -429,8 +429,11 @@ test('capture/2 retains the original public identity after an ambiguous start an
     }); } finally { process.stdout.write = originalWrite; }
     assert.equal(code, 3);
     assert.equal(JSON.parse(output.join('')).state, 'unknown');
+    assert.equal(JSON.parse(output.join('')).outcome, 'ownership-retained');
     const starts = fixture.calls.filter(call => call.method === 'start');
     assert.equal(starts.length, 1);
+    assert.equal(fixture.calls.some(call => call.method === 'cancel'), false);
+    assert.equal(fixture.calls.some(call => call.method === 'close'), false);
     const requestId = (starts[0].input as { requestId: string }).requestId;
     const identityPath = join(root, 'control', 'capture2-requests-v1', `${requestId}.json`);
     const metadata = JSON.parse(await readFile(identityPath, 'utf8'));
@@ -449,6 +452,129 @@ test('capture/2 signal stops an observed recording and does not discard it with 
     });
     assert.equal(code, 3); assert(fixture.calls.some(call => call.method === 'stop'));
     assert.equal(fixture.calls.some(call => call.method === 'cancel'), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('capture/2 explicit duration Stop uncertainty closes only after host disposal and stays status 3', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-capture2-stop-unknown-'));
+  try {
+    const out = join(root, 'exact.apparent'), fixture = fixtureHost(out);
+    const factory: Capture2HostFactory = async paths => {
+      const composed = await fixture.factory(paths);
+      composed.host.stop = async requestId => { fixture.calls.push({ method: 'stop', input: requestId }); throw new Error('Stop reply was lost'); };
+      composed.host.dispose = () => { fixture.calls.push({ method: 'dispose' }); };
+      return composed;
+    };
+    let processingStarted = false;
+    const output: string[] = [], originalWrite = process.stdout.write;
+    process.stdout.write = ((chunk: string | Uint8Array) => { output.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString()); return true; }) as typeof process.stdout.write;
+    let code: number;
+    try {
+      code = await recordWithCapture2(args(out), {
+        executable: '/opt/apparent-engine', mediaExecutable: '/opt/media', runtime: join(root, 'runtime'), controlRoot: join(root, 'control'),
+        factory, standardFactory: async () => { processingStarted = true; throw new Error('uncertain Stop must not dispatch processing'); }, clock: fixture.clock,
+      });
+    } finally { process.stdout.write = originalWrite; }
+    assert.equal(code, 3);
+    const result = JSON.parse(output.join(''));
+    assert.equal(result.state, 'unknown'); assert.equal(result.outcome, 'uncertain');
+    assert.equal('bundlePath' in result, false);
+    assert.equal(processingStarted, false);
+    assert.equal(fixture.calls.filter(call => call.method === 'stop').length, 1);
+    assert.equal(fixture.calls.some(call => call.method === 'cancel'), false);
+    assert(fixture.calls.indexOf(fixture.calls.find(call => call.method === 'stop')!) < fixture.calls.findIndex(call => call.method === 'dispose'));
+    assert(fixture.calls.findIndex(call => call.method === 'dispose') < fixture.calls.findIndex(call => call.method === 'close'));
+    const requestId = (fixture.calls.find(call => call.method === 'start')!.input as { requestId: string }).requestId;
+    assert.equal(JSON.parse(await readFile(join(root, 'control', 'capture2-requests-v1', `${requestId}.json`), 'utf8')).requestId, requestId);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('SDK 0.4.5 lets the explicit-finish Agent subprocess exit naturally while synthetic peer output remains held', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-capture2-owning-close-'));
+  const agentModule = join(process.cwd(), 'dist', 'recording', 'capture2.js');
+const script = String.raw`
+import { spawn } from 'node:child_process';
+import { existsSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+const [mode, root, agentPath] = process.argv.slice(1);
+const self = process.env.AGENT_CLOSE_FIXTURE;
+if (mode === 'pipe-holder') {
+  const deadline = Date.now() + 6000;
+  const timer = setInterval(() => {
+    const released = existsSync(join(root, 'release'));
+    if (released || Date.now() >= deadline) {
+      clearInterval(timer);
+      writeFileSync(join(root, 'finished'), JSON.stringify({ finished: released }));
+    }
+  }, 20);
+} else if (mode === 'peer') {
+  process.stdin.resume();
+  process.stdin.once('end', () => {
+    const holder = spawn(process.execPath, ['--input-type=module', '-e', self, 'pipe-holder', root], { stdio: ['ignore', process.stdout, process.stderr] });
+    holder.once('spawn', () => process.exit(0));
+  });
+  writeFileSync(join(root, 'ready'), 'ready');
+} else if (mode === 'caller') {
+  const { CaptureClient, ChildProcessCaptureTransport } = await import('@apparent/engine-sdk/capture');
+  const { recordWithCapture2 } = await import(pathToFileURL(agentPath).href);
+  const calls = [];
+  const descriptor = { id: 'display-actual', generation: 'a'.repeat(32), kind: 'display', displayId: 0, bounds: { x: 0, y: 0, width: 800, height: 600, scale: 1 } };
+  const child = spawn(process.execPath, ['--input-type=module', '-e', self, 'peer', root], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const deadline = Date.now() + 3000;
+  while (!existsSync(join(root, 'ready'))) {
+    if (Date.now() >= deadline) throw new Error('synthetic SDK peer did not become ready');
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  const client = new CaptureClient(new ChildProcessCaptureTransport(child, 100));
+  let closeOutcome = 'not-closed';
+  const host = {
+    readiness: async () => ({ ready: true }),
+    discoverSources: async () => ({ state: 'available', sources: [descriptor] }),
+    start: async input => { calls.push('start'); return { requestId: input.requestId, phase: 'recording' }; },
+    inspect: async requestId => { calls.push('inspect'); return { requestId, phase: 'recording' }; },
+    stop: async () => { calls.push('stop'); throw new Error('synthetic Stop reply lost'); },
+    cancel: async () => { calls.push('cancel'); throw new Error('cancel is forbidden after finish uncertainty'); },
+    dispose: () => { calls.push('dispose'); },
+    reconcile: async () => [], subscribe: () => () => undefined,
+  };
+  let now = 0;
+  const cliOutput = [];
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk) => { cliOutput.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString()); return true; };
+  const code = await recordWithCapture2(['--protocol', 'capture2', '--duration', '1', '--out', join(root, 'exact.apparent'), '--source', descriptor.id], {
+    executable: '/synthetic/capture', runtime: join(root, 'runtime'), controlRoot: join(root, 'control'),
+    factory: async () => ({ host, allocateDestination: async (_requestId, exact) => exact, close: async () => { calls.push('close'); closeOutcome = await client.close(); return closeOutcome; } }),
+    clock: { now: () => now, sleep: async ms => { now += ms; } },
+  });
+  process.stdout.write = originalWrite;
+  process.stdout.write(JSON.stringify({ code, result: JSON.parse(cliOutput.join('')), calls, closeOutcome }) + '\n');
+} else throw new Error('unknown synthetic SDK close mode');
+`;
+  // Pass the fixture source to real child processes through the environment;
+  // the synthetic peer and finite pipe-holder need no repository JS files.
+  try {
+    const caller = spawnSync(process.execPath, ['--input-type=module', '-e', script, 'caller', root, agentModule], {
+      encoding: 'utf8', timeout: 5000, env: { ...process.env, AGENT_CLOSE_FIXTURE: script },
+    });
+    await writeFile(join(root, 'release'), 'release synthetic holder', { flag: 'wx', mode: 0o600 });
+    let finished: { finished: boolean } | undefined;
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      try { finished = JSON.parse(await readFile(join(root, 'finished'), 'utf8')); break; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.equal(caller.error, undefined, `consumer must exit without process exit/unref/kill: ${caller.stderr}`);
+    assert.equal(caller.status, 0, caller.stderr);
+    const result = JSON.parse(caller.stdout);
+    assert.equal(result.code, 3);
+    assert.equal(result.result.state, 'unknown');
+    assert.equal(result.result.outcome, 'uncertain');
+    assert.equal('bundlePath' in result.result, false);
+    assert.equal(result.closeOutcome, 'eof-exited');
+    assert.deepEqual(result.calls, ['start', 'inspect', 'inspect', 'inspect', 'inspect', 'stop', 'dispose', 'close']);
+    assert.equal(finished?.finished, true, 'finite synthetic descendant outlives local SDK close and then finishes');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
