@@ -139,7 +139,7 @@ Later artifact reuse still requires normal input admission.
 the published Host clipboard port. `copy [BUNDLE|latest] --preview` instead
 prints the exact same Record-formatted text to stdout and leaves the clipboard
 unchanged; it does not open Host, validate clipboard limits, or truncate output.
-Use `--delimiter BUNDLE` to pass a path beginning with a dash. Preview labels
+Use `-- BUNDLE` to pass a path beginning with a dash. Preview labels
 itself on stderr, and an evidence-only receipt additionally reports that
 video/audio were not downloaded. These messages describe the local artifact;
 they do not authenticate native Saved publication or deliver a link. Preview

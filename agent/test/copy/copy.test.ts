@@ -75,11 +75,11 @@ test('copy --preview prints exact local handoff text without Host access or inpu
     const preview=await run(process.execPath,[cli,'copy',bundle,'--preview'],{env:{...process.env,HOME:root,PATH:'/nonexistent',APPARENT_ENGINE_FRAMES_EXECUTABLE:'/missing/provider',APPARENT_ENGINE_RUNTIME:'/missing/runtime'},timeout:15000});
     assert.equal(preview.stdout,expected);assert.match(preview.stderr,/Preview only; clipboard unchanged/);assert.match(preview.stderr,/video\/audio not downloaded/);assert.equal(connections,0);
     assert.deepEqual(await readdir(bundle),before);assert.deepEqual(await readFile(join(bundle,'apparent.json')),manifestBytes);assert.deepEqual(await readFile(join(bundle,'.evidence-only.json')),receipt);assert.deepEqual(await readFile(configPath),configBytes);
-    const plainPreview=await run(process.execPath,[cli,'copy','--preview','--delimiter','-Evidence with spaces 👋'],{env:{...process.env,HOME:root,PATH:'/nonexistent'},cwd:root,timeout:15000});assert.equal(plainPreview.stdout,expected);assert.equal(connections,0);
+    const plainPreview=await run(process.execPath,[cli,'copy','--preview','--','-Evidence with spaces 👋'],{env:{...process.env,HOME:root,PATH:'/nonexistent'},cwd:root,timeout:15000});assert.equal(plainPreview.stdout,expected);assert.equal(connections,0);
     await writeFile(join(bundle,'.media-pending'),'pending');
     const pending=await run(process.execPath,[cli,'copy',bundle,'--preview'],{env:{...process.env,HOME:root},timeout:10000}).then(()=>null,(error:any)=>error);assert.equal(pending?.code,2);assert.equal(pending?.stdout,'');assert.match(pending?.stderr??'',/media is pending/);assert.equal(connections,0);
     await rm(join(bundle,'.media-pending'));
-    const badArgs=[['/does/not/exist','--preview','--preview'],['/does/not/exist','--unknown'],['--delimiter'],['/does/not/exist','--delimiter',bundle,'extra'],['/does/not/exist','another']];
+    const badArgs=[['/does/not/exist','--preview','--preview'],['/does/not/exist','--unknown'],['--'],['/does/not/exist','--',bundle,'extra'],['/does/not/exist','another']];
     for(const args of badArgs){const result=await run(process.execPath,[cli,'copy',...args],{env:{...process.env,HOME:root},timeout:10000}).then(()=>null,(error:any)=>error);assert.equal(result?.code,2);assert.equal(result?.stdout,'');assert.doesNotMatch(result?.stderr??'',/Local bundle directory not found/);}
     assert.equal(connections,0);assert.deepEqual(await readFile(configPath),configBytes);
   }finally{if(originalHome===undefined)delete process.env.HOME;else process.env.HOME=originalHome;await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(root,{recursive:true,force:true});}
