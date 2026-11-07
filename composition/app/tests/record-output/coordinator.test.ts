@@ -63,6 +63,7 @@ function fixture(options: {
   dispose?(): Promise<void>;
   other?(): Promise<'clear' | 'unresolved' | 'unknown'>;
   releaseRecovery?(): Promise<void>;
+  reconcile?(): Promise<void>;
 } = {}) {
   const events: string[] = [];
   let active = options.active ?? false;
@@ -78,7 +79,7 @@ function fixture(options: {
       for (const listener of listeners) listener(state);
       return state;
     },
-    async reconcileStartup() { return this.startup; },
+    async reconcileStartup() { await options.reconcile?.(); return this.startup; },
     unresolvedOwnership() { return { requestIds: active ? ['active-capture'] : [], storageUnavailable: false, reconciliation: 'complete' }; },
     dispose() { events.push('runtime-detach'); return this.unresolvedOwnership(); },
     async startCapture() { throw new Error('Unexpected start'); },
@@ -153,6 +154,33 @@ test('known active capture refuses nonterminal preflight and preserves Stop cont
   assert.equal(result.status, 'accepted');
   assert.equal(await f.host.canClose(), true);
   await f.host.close(); assert(f.events.includes('sdk-close'));
+});
+
+test('fresh reconciliation seals host commands and does not use terminal shutdown as a readiness poll', async () => {
+  let entered!: () => void, release!: () => void;
+  const atReconcile = new Promise<void>(resolve => { entered = resolve; });
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const f = fixture({ async reconcile() { entered(); await pending; } });
+  const snapshot = f.snapshot();
+  const closing = f.host.canClose(); await atReconcile;
+  assert.equal(f.events.length, 0);
+  const result = await f.host.record.execute({ type: 'refresh', requestId: 'sealed-during-inspection',
+    expected: { providerEpoch: snapshot.providerEpoch, revision: snapshot.revision } });
+  assert.equal(result.status, 'refused');
+  release(); assert.equal(await closing, true);
+  assert.equal(f.events.filter(event => event === 'shutdown-start').length, 1);
+  assert(!f.events.includes('sdk-close'));
+});
+
+test('failed fresh reconciliation refuses nonterminally and leaves owned controls available', async () => {
+  const f = fixture({ async reconcile() { throw new Error('native inspection unavailable'); } });
+  assert.equal(await f.host.canClose(), false);
+  assert.equal(f.events.length, 0); assert.equal(f.host.shutdownReport(), undefined);
+  const snapshot = f.snapshot();
+  const result = await f.host.record.execute({ type: 'refresh', requestId: 'after-inspection-refusal',
+    expected: { providerEpoch: snapshot.providerEpoch, revision: snapshot.revision } });
+  assert.notEqual(result.status, 'refused', 'host admission reopens only because terminal shutdown never began');
+  assert(!f.events.includes('sdk-close'));
 });
 
 test('unknown or inconsistent coordinator reports retain SDKs without reopening terminal admission', async () => {

@@ -109,6 +109,12 @@ export function createRecordProviderHost(options: RecordProviderHostOptions): Re
     const inspect = async () => {
       if (commands) await new Promise<void>(resolve => commandDrain.add(resolve));
       try {
+        // A later materials-ready observation can leave startup ownership cached
+        // from the earlier stopping reply. Refresh through the owner port while
+        // commands are sealed; Saved facts alone cannot clear that ownership.
+        recordShutdownEvent('capture-reconciliation-start', { phase });
+        await runtime.reconcileStartup();
+        recordShutdownEvent('capture-reconciliation-complete', { phase });
         const facts = await captureFacts!.readFacts();
         const admission = facts?.nextShortcutAdmission;
         const ownership = runtime.unresolvedOwnership();
