@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto'
-import { lstat, readFile, readdir, readlink, realpath } from 'node:fs/promises'
+import { lstat, open, readdir, readlink, realpath } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { isDeepStrictEqual } from 'node:util'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 
 export type Target = 'linux-x64' | 'macos-x64'
@@ -17,7 +19,10 @@ export interface DeliveryManifest {
   buildProfile: 'debug'
   entry: string
   launch: 'execute-appimage' | 'launch-services-open'
-  buildEnvironment: { os: 'linux' | 'darwin'; arch: 'x64'; cargo: string; rustc: string }
+  argv: ['--appimage-extract-and-run', 'app'] | ['app']
+  nativeHostProtocol: 1
+  guiExecutable: { container: 'appimage' | 'artifact'; path: string; mode: number; sha256: string }
+  buildEnvironment: { os: 'linux' | 'darwin'; arch: 'x64'; cargo: string; rustc: string; packagingToolsSha256: string | null }
   packagingInput: null | { path: 'target/debug/apparent'; mode: number; sha256: string }
   processProfile: {
     home: 'trusted-launch-home'
@@ -30,7 +35,28 @@ export interface DeliveryManifest {
 const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
 const normalizedRelative = (path: string) => !isAbsolute(path) &&
   !path.split(/[\\/]/).some((part) => part === '..' || part === '.' || part === '') &&
-  !path.includes('\\')
+  !path.includes('\\') && !/[\0\r\n]/.test(path) && !/^[A-Za-z]:/.test(path)
+
+export async function readProducerFile(path: string, maximumBytes = 1024 * 1024 * 1024) {
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+  try {
+    const before = await handle.stat({ bigint: true })
+    if (!before.isFile() || before.nlink !== 1n || before.size > BigInt(maximumBytes) || (Number(before.mode) & 0o7000)) {
+      throw new Error('artifact data must be bounded, single-link regular files without special modes')
+    }
+    const bytes = await handle.readFile()
+    const after = await handle.stat({ bigint: true })
+    const named = await lstat(path, { bigint: true })
+    for (const stat of [after, named]) {
+      if (!stat.isFile() || ['dev', 'ino', 'nlink', 'size', 'mode', 'mtimeNs', 'ctimeNs'].some(
+        key => stat[key as keyof typeof stat] !== before[key as keyof typeof before])) {
+        throw new Error('artifact changed while being inspected')
+      }
+    }
+    if (BigInt(bytes.length) !== before.size) throw new Error('artifact changed while being read')
+    return { bytes, mode: Number(before.mode) & 0o777 }
+  } finally { await handle.close() }
+}
 
 export function selectTarget(envTarget: string | undefined, platform: string, arch: string): Target {
   const host = platform === 'linux' && arch === 'x64' ? 'linux-x64'
@@ -45,6 +71,8 @@ export function selectTarget(envTarget: string | undefined, platform: string, ar
 export async function inventoryTree(root: string, prefix = ''): Promise<InventoryEntry[]> {
   const result: InventoryEntry[] = []
   for (const name of (await readdir(resolve(root, prefix))).sort()) {
+    // The required top-level manifest is checked separately; it cannot hash itself.
+    if (!prefix && name === 'manifest.json') continue
     const path = prefix ? `${prefix}/${name}` : name
     if (!normalizedRelative(path)) throw new Error(`unsafe inventory path: ${path}`)
     const absolute = resolve(root, path)
@@ -59,7 +87,8 @@ export async function inventoryTree(root: string, prefix = ''): Promise<Inventor
       result.push({ path, kind: 'directory', mode })
       result.push(...await inventoryTree(root, path))
     } else if (info.isFile()) {
-      result.push({ path, kind: 'file', mode, sha256: digest(await readFile(absolute)) })
+      const file = await readProducerFile(absolute)
+      result.push({ path, kind: 'file', mode: file.mode, sha256: digest(file.bytes) })
     } else {
       throw new Error(`unsupported artifact entry: ${path}`)
     }
@@ -68,21 +97,34 @@ export async function inventoryTree(root: string, prefix = ''): Promise<Inventor
 }
 
 function safeLinkTarget(path: string, target: string): boolean {
-  if (!target || isAbsolute(target) || target.includes('\\')) return false
+  if (!path.startsWith('Apparent.app/') || !target || isAbsolute(target) || target.includes('\\') || /[\0\r\n]/.test(target)) return false
   const resolved = resolve('/', 'bundle', path, '..', target)
-  return resolved === '/bundle' || resolved.startsWith('/bundle/')
+  return resolved === '/bundle/Apparent.app' || resolved.startsWith('/bundle/Apparent.app/')
 }
 
 export async function validateArtifact(root: string, manifest: DeliveryManifest): Promise<void> {
+  const rootInfo = await lstat(root)
+  if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw new Error('artifact root must be a real directory')
   if (manifest.schema !== 1 || manifest.id !== 'platform-native-host') throw new Error('unsupported delivery manifest')
   const expectedTarget = manifest.target === 'linux-x64' ? 'execute-appimage'
     : manifest.target === 'macos-x64' ? 'launch-services-open' : undefined
   if (!expectedTarget || manifest.launch !== expectedTarget) throw new Error('target launch mechanism mismatch')
+  if (manifest.nativeHostProtocol !== 1 || !isDeepStrictEqual(manifest.argv,
+    manifest.target === 'linux-x64' ? ['--appimage-extract-and-run', 'app'] : ['app'])) {
+    throw new Error('unsupported native host launch protocol or arguments')
+  }
+  if (!/^[a-f0-9]{40}$/.test(manifest.source?.commit) || !/^[a-f0-9]{40}$/.test(manifest.source?.tree)
+      || manifest.profile !== 'development-app' || manifest.buildProfile !== 'debug'
+      || !isDeepStrictEqual(manifest.processProfile, { home: 'trusted-launch-home',
+        config: 'APPARENT_CONFIG-or-HOME/.config/apparent/config.json', socket: 'HOME/.config/apparent/agent-control/capture.sock' })) {
+    throw new Error('unsupported source, profile or native endpoint identity')
+  }
   if (manifest.buildEnvironment.arch !== 'x64' ||
       (manifest.target === 'linux-x64' && (manifest.buildEnvironment.os !== 'linux' ||
+        !/^[a-f0-9]{64}$/.test(manifest.buildEnvironment.packagingToolsSha256 ?? '') ||
         !manifest.packagingInput || manifest.packagingInput.path !== 'target/debug/apparent' ||
         !/^[a-f0-9]{64}$/.test(manifest.packagingInput.sha256) || manifest.packagingInput.mode < 0 || manifest.packagingInput.mode > 0o777)) ||
-      (manifest.target === 'macos-x64' && (manifest.buildEnvironment.os !== 'darwin' || manifest.packagingInput !== null))) {
+      (manifest.target === 'macos-x64' && (manifest.buildEnvironment.os !== 'darwin' || manifest.buildEnvironment.packagingToolsSha256 !== null || manifest.packagingInput !== null))) {
     throw new Error('build environment or packaging input does not match target')
   }
   if (!normalizedRelative(manifest.entry) || manifest.entry.startsWith('.')) {
@@ -117,12 +159,33 @@ export async function validateArtifact(root: string, manifest: DeliveryManifest)
   }
   const entry = expected.get(manifest.entry)
   if (!entry || entry.kind !== 'file' || (entry.mode & 0o111) === 0) throw new Error('launch entry is missing or not executable')
+  if (manifest.target === 'linux-x64') {
+    if (manifest.entry !== 'Apparent-x86_64.AppImage' || actualEntries.length !== 1 || entry.mode !== 0o755) {
+      throw new Error('unsupported Linux GUI inventory')
+    }
+    if (manifest.guiExecutable?.container !== 'appimage' || manifest.guiExecutable.path !== 'usr/bin/apparent'
+        || !/^[a-f0-9]{64}$/.test(manifest.guiExecutable.sha256)
+        || !Number.isInteger(manifest.guiExecutable.mode) || manifest.guiExecutable.mode < 0
+        || manifest.guiExecutable.mode > 0o777 || !(manifest.guiExecutable.mode & 0o111)) {
+      throw new Error('missing packaged AppImage GUI identity')
+    }
+  } else if (manifest.entry !== 'Apparent.app/Contents/MacOS/apparent'
+      || expected.get('Apparent.app')?.kind !== 'directory'
+      || actualEntries.some(item => item.path !== 'Apparent.app' && !item.path.startsWith('Apparent.app/'))) {
+    throw new Error('unsupported Mac GUI inventory')
+  } else if (!isDeepStrictEqual(manifest.guiExecutable, { container: 'artifact',
+    path: manifest.entry, mode: entry.mode, sha256: entry.sha256 })) {
+    throw new Error('packaged Mac GUI identity does not match inventory')
+  }
   for (const item of manifest.inventory) {
     if (item.kind !== 'symlink') continue
     const resolvedPath = resolve(root, item.path, '..', item.target)
-    const realRoot = await realpath(root)
+    const realRoot = await realpath(resolve(root, 'Apparent.app'))
     const resolvedReal = await realpath(resolvedPath)
     const rel = relative(realRoot, resolvedReal)
     if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error(`symlink escapes artifact: ${item.path}`)
   }
+  const header = await readProducerFile(resolve(root, 'manifest.json'), 4 * 1024 * 1024)
+  const stored = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(header.bytes))
+  if (!isDeepStrictEqual(stored, manifest)) throw new Error('staged manifest does not match expected identity')
 }

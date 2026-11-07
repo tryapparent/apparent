@@ -10,21 +10,38 @@ catalogs; it is not installed, activated, launched, or accepted as GUI/native
 proof by building or packaging it.
 
 Run `npm ci`, `npm run verify`, then `OWNER_TARGET=linux-x64 npm run build` or
-`OWNER_TARGET=macos-x64 npm run build` on the matching x64 host. The producer
-refuses target relabeling, non-x64 hosts, dirty/untracked source and an existing
-nonempty `dist/`. The Mac build uses fresh private `HOME`, app staging and
-Sparkle staging paths and invokes the existing installer with
-`APPARENT_NO_LAUNCH=1`; it never writes the user's `~/bin` route or launches the
-app. Linux uses the existing AppImage packager and its encoder check. It refuses
+`OWNER_TARGET=macos-x64 npm run build` on the matching x64 host. Linux requires
+the official packaging-tools manifest to be resolved before delivery
+fingerprinting, with its absolute path in `APPARENT_PACKAGING_TOOLS_MANIFEST`
+and exact file SHA-256 in `APPARENT_PACKAGING_TOOLS_SHA256`. The build snapshots
+those prepared bytes and refuses missing or changed inputs; it does not resolve
+a moving release after admission. The existing tool installer verifies the
+official URLs and digests before use.
+
+The producer refuses target relabeling, non-x64 hosts, dirty/untracked source,
+custom/cross Cargo output paths and any existing `dist/`. Cargo's JSON artifact
+output must identify the current native executable, preventing a stale
+`target/debug/apparent` from being packaged after compilation went elsewhere.
+The Mac build preserves the real compiler/user environment, uses fresh app and
+Sparkle staging paths, and calls the existing installer's internal staging function
+with private snapshots of the validated executable and the same package's Cargo
+build-script helper output. Cached Cargo builds still identify that helper's
+`OUT_DIR`. Staging checks exact copied bytes before signing, performs no second
+build, and creates no `~/bin` link or launch. The executable installer retains its
+normal compile or immutable-main artifact admission gate. Linux uses the existing AppImage packager and encoder check. It refuses
 to run if `target/appimage` already exists, because that script removes/replaces
 its `AppDir` and owns that output directory. The generated AppImage is inventoried
-as a single opaque executable; this manifest does not claim its internal files
-are byte-identical to the source executable (linuxdeploy may patch ELF files).
+as a single opaque executable. `guiExecutable` separately pins the actual ELF
+at `usr/bin/apparent` after extraction, because linuxdeploy may patch the original
+Cargo output. On Mac it pins the signed staged executable. Neither build path
+launches the GUI.
 
 `dist/manifest.json` pins the full source commit and Git tree, native target,
 development build profile, entry point, launch mechanism, process profile rules,
 and the closed staged inventory. Inventory records every regular file's SHA-256
-and mode and every symlink's relative target and mode. Validation rejects path
+and mode and every symlink's relative target and mode. The required manifest is
+validated separately from the inventory that it describes. File bytes and mode
+are read from one stable no-follow handle. Validation rejects path
 escape, missing/extra entries, hash or mode drift, and links that escape or do
 not resolve within the bundle. The complete tracked Git tree is the declared
 source input closure: root `Cargo.toml`/`Cargo.lock`, root `build.rs`, its
@@ -38,6 +55,9 @@ identity but does not replace Platform's source fingerprint or build attestation
 
 At launch, use the packaged entry and the platform mechanism in the manifest:
 execute the Linux AppImage, or open the Mac app through LaunchServices. The
+manifest fixes Linux arguments to `--appimage-extract-and-run app` and Mac
+LaunchServices arguments to `app`, avoiding terminal-dependent default CLI
+selection. Native-host transport is protocol 1. The
 launcher must supply one trusted `HOME`/profile. `HOME/.config/apparent/` owns
 the GUI socket at `agent-control/capture.sock`; `APPARENT_CONFIG`, if set, must
 point to the config file whose revision/CAS the GUI process actually uses. Do

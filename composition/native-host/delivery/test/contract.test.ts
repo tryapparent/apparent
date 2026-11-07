@@ -22,11 +22,15 @@ async function fixture() {
     buildProfile: 'debug',
     entry: 'Apparent.app/Contents/MacOS/apparent',
     launch: 'launch-services-open',
-    buildEnvironment: { os: 'darwin', arch: 'x64', cargo: 'cargo 1.90.0', rustc: 'rustc 1.90.0' },
+    argv: ['app'],
+    nativeHostProtocol: 1,
+    guiExecutable: { container: 'artifact', path: 'Apparent.app/Contents/MacOS/apparent', mode: 0o755, sha256: sha('gui') },
+    buildEnvironment: { os: 'darwin', arch: 'x64', cargo: 'cargo 1.90.0', rustc: 'rustc 1.90.0', packagingToolsSha256: null },
     packagingInput: null,
     processProfile: { home: 'trusted-launch-home', config: 'APPARENT_CONFIG-or-HOME/.config/apparent/config.json', socket: 'HOME/.config/apparent/agent-control/capture.sock' },
     inventory: await inventoryTree(root),
   }
+  await writeFile(join(root, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
   return { root, manifest }
 }
 
@@ -36,11 +40,20 @@ test('target selection rejects cross-target and unsupported host builds', () => 
   assert.throws(() => selectTarget(undefined, 'linux', 'arm64'), /unsupported native build host/)
 })
 
+test('the actual staged artifact includes its manifest without self-hashing', async () => {
+  const { root, manifest } = await fixture()
+  try {
+    await writeFile(join(root, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
+    await validateArtifact(root, manifest)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
 test('closed inventory validates exact file hashes, modes, and contained relative links', async () => {
   const { root, manifest } = await fixture()
   try {
     await symlink('MacOS/apparent', join(root, 'Apparent.app', 'Contents', 'current'))
     manifest.inventory = await inventoryTree(root)
+    await writeFile(join(root, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
     await validateArtifact(root, manifest)
     await writeFile(join(root, 'extra'), 'unexpected')
     await assert.rejects(validateArtifact(root, manifest), /not closed/)
@@ -57,6 +70,19 @@ test('closed inventory validates exact file hashes, modes, and contained relativ
     await rm(join(root, 'Apparent.app', 'Contents', 'current'))
     await symlink('MacOS/./apparent', join(root, 'Apparent.app', 'Contents', 'current'))
     await assert.rejects(validateArtifact(root, manifest), /symlink mismatch/)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+test('manifest identity is required and cannot select a different launch profile', async () => {
+  const { root, manifest } = await fixture()
+  try {
+    await rm(join(root, 'manifest.json'))
+    await assert.rejects(validateArtifact(root, manifest), /ENOENT/)
+    await writeFile(join(root, 'manifest.json'), '{}')
+    await assert.rejects(validateArtifact(root, manifest), /manifest does not match/)
+    await assert.rejects(validateArtifact(root, { ...manifest, profile: 'release' as never }), /unsupported source, profile/)
+    await assert.rejects(validateArtifact(root, { ...manifest, argv: [] as never }), /launch protocol or arguments/)
+    await assert.rejects(validateArtifact(root, { ...manifest, processProfile: { ...manifest.processProfile, socket: 'other.sock' as never } }), /unsupported source, profile/)
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 
