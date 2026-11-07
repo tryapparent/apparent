@@ -737,3 +737,25 @@ test('default capture collection cannot overlap Agent control storage before all
     await rm(root, { recursive: true, force: true });
   }
 });
+
+
+test('capture/2 startup timeout retains authority without implicit cancellation or owning close', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-capture2-startup-'));
+  try {
+    const out = join(root, 'exact.apparent'), fixture = fixtureHost(out);
+    const factory: Capture2HostFactory = async paths => {
+      const composed = await fixture.factory(paths);
+      composed.host.start = async input => { fixture.calls.push({ method: 'start', input }); return { requestId: input.requestId, phase: 'starting' }; };
+      composed.host.inspect = async requestId => { fixture.calls.push({ method: 'inspect', input: requestId }); return { requestId, phase: 'starting' }; };
+      return composed;
+    };
+    assert.equal(await recordWithCapture2(args(out), {
+      executable: '/opt/apparent-engine', runtime: join(root, 'runtime'), controlRoot: join(root, 'control'), factory, clock: fixture.clock,
+    }), 3);
+    assert.equal(fixture.calls.filter(call => call.method === 'start').length, 1);
+    assert.equal(fixture.calls.some(call => ['cancel', 'stop', 'close'].includes(call.method)), false);
+    const requestId = (fixture.calls.find(call => call.method === 'start')!.input as { requestId: string }).requestId;
+    const retained = JSON.parse(await readFile(join(root, 'control', 'capture2-requests-v1', `${requestId}.json`), 'utf8'));
+    assert.equal(retained.requestId, requestId);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

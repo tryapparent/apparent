@@ -404,7 +404,9 @@ export async function recordWithCapture2(
     while (receipt.phase === 'starting' && clock.now() < startupBy && !interrupted()) {
       await clock.sleep(200); receipt = await composed.host.inspect(requestId);
     }
-    if (receipt.phase === 'starting' && !interrupted()) receipt = await composed.host.cancel(requestId);
+    // A readiness deadline is not user cancel/discard intent. Retain the
+    // original request when startup remains unresolved; only explicit
+    // interruption below may request cancellation before recording.
     if (receipt.phase === 'recording') {
       const stopAt = clock.now() + parsed.durationSeconds * 1000;
       while (clock.now() < stopAt && !interrupted()) {
