@@ -107,3 +107,33 @@ change count to advance and remain stable across exact string readback. Unsuppor
 refuse before writing. A mismatch, timeout after possible effect, or lost reply is
 `outcome-unknown`; this port has no read operation and never restores or returns
 ambient clipboard contents. The bounded native worker admits one write at a time.
+
+`@apparent/native-host/legacy-capture` exports the privileged
+`createNativeLegacyCaptureWriterPort()` adoption fence. `readSnapshot()` reports
+the GUI epoch/revision, tracked busy state and one of `open`, `retired-observed`,
+`retired` or `unknown`, scoped only to `legacy-gui-capture-writer`. It does not
+report Engine runtime clearance, permission readiness or control-surface exclusion.
+`retire(expected)` requires the current GUI epoch/revision and refuses while a
+capture, picker, pending shortcut admission or finalizer remains owned. The GUI
+seals new legacy starts before acquiring the existing config writer lock, then
+durably publishes the fixed host-managed marker
+`legacyCaptureWriter: {schema: 1, state: "retired"}`. Queued starts, screen/phone/lab
+entry points and subsequent process restarts check that fence. No existing capture
+is stopped, cancelled, released or deleted by this operation.
+
+Only a `retired` receipt with the same process epoch and an advanced revision
+confirms that transaction. A lost reply or failed/uncertain publication is unknown
+and is never retried automatically; this process remains sealed. A marker read
+after restart is `retired-observed`, not a new durability receipt. An explicitly
+admitted later retirement republishes and syncs the marker, including after an
+uncertain earlier directory sync. Ordinary config writers cannot remove or
+replace this marker. Malformed/unreadable ownership metadata fails closed for
+new legacy captures; unrelated settings are preserved.
+
+Production assembly must qualify the exact GUI binary as enforcing this fence,
+exclude older unfenced writers, and retain all other runtime/SDK ownership gates.
+This API does not release hotkey registration, provide the new owner's shortcut
+dispatch, close SDKs, switch installed routing or activate adoption. Rollback is
+a separate explicit operation after the new owner and its native work are stopped;
+there is no automatic reset or public marker-removal operation. Linux/Mac native
+effect and exact delivery gates remain required before relying on this capability.

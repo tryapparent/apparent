@@ -80,11 +80,15 @@ try {
     import assert from 'node:assert/strict';
     import { createNativeHostPort } from '@apparent/native-host';
     import { createNativePenPort } from '@apparent/native-host/pen';
+    import { createNativeLegacyCaptureWriterPort } from '@apparent/native-host/legacy-capture';
     import { createNativeClipboardPort, MAX_UTF8_TEXT_BYTES, MAX_SERIALIZED_FRAME_BYTES } from '@apparent/native-host/clipboard';
     assert.equal(MAX_UTF8_TEXT_BYTES, 21800);
     assert.equal(MAX_SERIALIZED_FRAME_BYTES, 131072);
     assert.equal(typeof createNativeHostPort().readSnapshot, 'function');
     assert.equal(typeof createNativePenPort().readStrokeColor, 'function');
+    const writer = createNativeLegacyCaptureWriterPort();
+    assert.equal(typeof writer.readSnapshot, 'function');
+    await assert.rejects(writer.retire({processEpoch:'',revision:0}), /Invalid native host revision/);
     const clipboard = createNativeClipboardPort();
     assert.deepEqual(await clipboard.writeText('bad\\0text', { processEpoch: 'epoch', revision: 1 }), { status: 'refused', reason: 'invalid-text' });
     assert.deepEqual(await clipboard.writeText('x'.repeat(21801), { processEpoch: 'epoch', revision: 1 }), { status: 'refused', reason: 'too-large' });
@@ -110,8 +114,8 @@ try {
   const sourceTests = await readFile(join(nativeRoot, 'test/client.test.ts'), 'utf8');
   const packedTests = sourceTests
     .replace(
-      "import { createNativeHostPort, createNativeClipboardPort, createNativePenPort } from '../src/client.ts';",
-      "import { createNativeHostPort } from '@apparent/native-host';\nimport { createNativeClipboardPort } from '@apparent/native-host/clipboard';\nimport { createNativePenPort } from '@apparent/native-host/pen';",
+      "import { createNativeHostPort, createNativeClipboardPort, createNativePenPort, createNativeLegacyCaptureWriterPort } from '../src/client.ts';",
+      "import { createNativeHostPort } from '@apparent/native-host';\nimport { createNativeClipboardPort } from '@apparent/native-host/clipboard';\nimport { createNativePenPort } from '@apparent/native-host/pen';\nimport { createNativeLegacyCaptureWriterPort } from '@apparent/native-host/legacy-capture';",
     );
   assert.notEqual(packedTests, sourceTests, 'packed test copy must switch to the installed public exports');
   assert.ok(!packedTests.includes("'../src/"), 'packed test copy must not import TypeScript source');
@@ -120,11 +124,11 @@ try {
 
   const sourceFiles = [
     'package.json', 'package-lock.json', 'README.md', 'tsconfig.build.json',
-    'src/client.ts', 'src/pen.ts', 'src/clipboard.ts',
+    'src/client.ts', 'src/pen.ts', 'src/clipboard.ts', 'src/legacy-capture.ts',
     'test/client.test.ts', 'test/packed-consumer-types.ts', 'test/packed-consumer.ts',
   ];
   const sourceSha = Object.fromEntries(await Promise.all(sourceFiles.map(async file => [file, await digestFile(join(nativeRoot, file))])));
-  const distFiles = ['client.js', 'client.d.ts', 'pen.js', 'pen.d.ts', 'clipboard.js', 'clipboard.d.ts'];
+  const distFiles = ['client.js', 'client.d.ts', 'pen.js', 'pen.d.ts', 'clipboard.js', 'clipboard.d.ts', 'legacy-capture.js', 'legacy-capture.d.ts'];
   const distSha = Object.fromEntries(await Promise.all(distFiles.map(async file => [file, await digestFile(join(nativeRoot, 'dist', file))])));
   const proof = {
     node: process.version,
@@ -134,12 +138,12 @@ try {
       appContracts: { path: 'packages/apparent-app-contracts-0.1.0.tgz', sha256: await digestFile(contractsTar) },
       nativeHost: { path: 'packages/apparent-native-host-0.1.0.tgz', sha256: await digestFile(nativeTar) },
     },
-    publicExports: ['@apparent/native-host', '@apparent/native-host/pen', '@apparent/native-host/clipboard'],
+    publicExports: ['@apparent/native-host', '@apparent/native-host/pen', '@apparent/native-host/clipboard', '@apparent/native-host/legacy-capture'],
     engineFloor: '>=22.18',
     install: 'normal npm install from paired tarballs; scripts enabled; cargo/rustc/tsc/esbuild denied on PATH',
-    runtime: 'plain Node ESM import of root, pen, and clipboard; invalid and oversize refusal; no TS flags',
+    runtime: 'plain Node ESM import of root, pen, clipboard and legacy-capture; local invalid/oversize refusals; no TS flags',
     types: 'strict fresh consumer compile; no React ambient types',
-    socketTests: 'existing 18 tests against the installed compiled package',
+    socketTests: 'public socket suite against the installed compiled package',
   };
   await writeFile(join(root, 'proof.json'), JSON.stringify(proof, null, 2), { mode: 0o600 });
   passed = true;

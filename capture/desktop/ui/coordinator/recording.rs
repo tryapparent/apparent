@@ -3,6 +3,8 @@ use super::*;
 impl ApparentCoordinator {
     /// The menu bar's picker, opening on the mode the last recording used.
     pub fn begin_target_selection(&mut self, cx: &mut Context<Self>) {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if !self.legacy_capture_start_allowed() { return; }
         if self.ready_to_record() {
             self.open_picker(None, cx);
         }
@@ -14,6 +16,8 @@ impl ApparentCoordinator {
         mode: Option<SelectionMode>,
         cx: &mut Context<Self>,
     ) {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if !self.legacy_capture_start_allowed() { return; }
         if mode == Some(SelectionMode::Window) {
             self.report_window_recording_disabled(cx);
             return;
@@ -163,6 +167,8 @@ impl ApparentCoordinator {
     }
 
     pub fn start_recording_with_target(&mut self, target: TargetInfo, cx: &mut Context<Self>) {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if !self.legacy_capture_start_allowed() { return; }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         self.reconcile_electron_pill();
         if crate::capture::desktop::workflow::shutdown::requested() {
@@ -516,6 +522,8 @@ impl ApparentCoordinator {
         target: TargetInfo,
         cx: &mut Context<Self>,
     ) {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if !self.legacy_capture_start_allowed() { return; }
         whiteboard::reset_for_capture(&self.whiteboard);
         if let IslandPhase::Selecting { mode } = self.presentation.island_phase {
             motion::trace_event(format!("record:{}", mode.label()));
@@ -539,6 +547,8 @@ impl ApparentCoordinator {
     /// window's on-screen rect is the capture target, so the laser, ink, pins and clicks over it
     /// normalize straight into phone-screen coordinates (kept current as the window moves).
     pub fn start_recording_iphone(&mut self, cx: &mut Context<Self>) {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if !self.legacy_capture_start_allowed() { return; }
         if self.is_recording() || self.is_processing() {
             return;
         }
