@@ -7,6 +7,7 @@ import { AbsentDestinationAllocator, SqliteCaptureMappingStore } from '@apparent
 import type { SourceDiscovery } from '@apparent/engine-sdk/capture';
 import { createRecordProductionHost } from '../production-host.ts';
 import type { RecordHostServices } from '../host.ts';
+import { recordShutdownEvent } from './shutdown-diagnostic.ts';
 
 interface NativeManifest {
   schema: 1;
@@ -125,6 +126,7 @@ export async function createRecordHostServices(input: { profilePath: string; nat
       shutdownOtherRuntimeUsers: async () => 'clear',
       closeEngine: async () => {
         recoveryRelease ??= (async () => {
+          recordShutdownEvent('recovery-release-start');
           const settled = await Promise.allSettled([capturePeer!.release(), mediaPeer!.release()]);
           const expected = [capturePeer!.lifetime.peerId, mediaPeer!.lifetime.peerId];
           const valid = settled.every((result, index) => result.status === 'fulfilled'
@@ -134,12 +136,15 @@ export async function createRecordHostServices(input: { profilePath: string; nat
             && result.value.runtimeClearance === 'not-established'
             && result.value.reconcile === 'original-capture-materials-job-publication-bindings');
           if (!valid) throw new Error('Recovery peer connection release remains unknown');
+          recordShutdownEvent('recovery-release-complete');
         })();
         await recoveryRelease;
         // Reached only after explicit user close and clear coordinator shutdown.
         // A requested signal is not observed exit; never retry unknown ending.
+        recordShutdownEvent('capture-owner-close-start');
         ownerClose ??= owner.close();
         const outcome = await ownerClose;
+        recordShutdownEvent('capture-owner-close-result', { outcome });
         if (!['already-exited', 'eof-exited', 'exit-observed', 'signal-exited', 'kill-exited'].includes(outcome)) {
           throw new Error('Capture owner exit remains unconfirmed');
         }

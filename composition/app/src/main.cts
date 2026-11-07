@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { registerOnboardingProgressBridge } from './onboarding-progress-bridge.cts';
 import { registerRecordBridge } from './record/bridge.cts';
 import { bindWindowShutdown } from './host-lifecycle.ts';
+import { recordShutdownEvent } from './record/omarchy/shutdown-diagnostic.ts';
 import type { RecordHostServices } from './record/host.ts';
 import { bindSilentRecordControls } from './record/omarchy/controls.ts';
 declare const APPARENT_OMARCHY: boolean;
@@ -116,10 +117,17 @@ app.whenReady().then(async () => {
       }, reportError: error => console.error('Record Stop remains unresolved', error) });
     }
     const disposeRecord = registerRecordBridge({ window, entryUrl: entry, client: ownedHost.record });
+    window.on('close', () => recordShutdownEvent('window-close-request'));
     const lifecycle = bindWindowShutdown({ window,
-      canClose: async () => typeof ownedHost.canClose === 'function' && await ownedHost.canClose() === true,
+      canClose: async () => {
+        const clear = typeof ownedHost.canClose === 'function' && await ownedHost.canClose() === true;
+        recordShutdownEvent('window-close-decision', { clear }); return clear;
+      },
       close: () => ownedHost.close(), revoke: disposeRecord,
-      refused: reason => { if (!window.isDestroyed()) window.webContents.send('apparent:host:close-refused', reason); },
+      refused: reason => {
+        recordShutdownEvent('window-close-refused', { reason });
+        if (!window.isDestroyed()) window.webContents.send('apparent:host:close-refused', reason);
+      },
     });
     window.once('closed', () => { hostShutdown = lifecycle.settled(); });
   } else if (APPARENT_OMARCHY) {

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { CapabilitySnapshot, RecordClient, RecordCommand, CommandResult } from '@apparent/record/capabilities';
 import type { RecordHostServices } from '../host.ts';
+import { recordShutdownEvent } from './shutdown-diagnostic.ts';
 
 export interface SilentRecordWindow {
   hide(): void;
@@ -78,8 +79,12 @@ export function bindSilentRecordControls(options: {
     },
   };
   return { record,
-    canClose: () => preparingStart || stopping || uncertainStart || active().length
-      ? Promise.resolve(false) : host.canClose(),
+    canClose: () => {
+      const blocked = !!(preparingStart || stopping || uncertainStart || active().length);
+      recordShutdownEvent('silent-controls-close-check', { blocked, preparingStart, stopping,
+        uncertainStart: !!uncertainStart, activePhases: active().map(capture => capture.phase) });
+      return blocked ? Promise.resolve(false) : host.canClose();
+    },
     async close() {
       await host.close();
       closed = true;

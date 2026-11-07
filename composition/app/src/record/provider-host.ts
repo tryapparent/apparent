@@ -7,6 +7,7 @@ import {
 import type { RecordCaptureCoordinator, RecordCaptureCoordinatorShutdownReport } from '@apparent/record/host/capture2-coordinator';
 import type { RecordHostServices } from './host.ts';
 import type { RecordNativeBindings } from './native-bindings.ts';
+import { recordShutdownEvent } from './omarchy/shutdown-diagnostic.ts';
 
 type Runtime = RecordCapabilityProviderOptions['runtime'];
 export interface RecordProviderHostOptions {
@@ -104,6 +105,7 @@ export function createRecordProviderHost(options: RecordProviderHostOptions): Re
     // Seal this host first. Already admitted native commands retain their results;
     // later renderer commands cannot enter while either scope is inspected.
     phase = 'draining';
+    recordShutdownEvent('command-drain', { phase, commands });
     const inspect = async () => {
       if (commands) await new Promise<void>(resolve => commandDrain.add(resolve));
       try {
@@ -111,6 +113,10 @@ export function createRecordProviderHost(options: RecordProviderHostOptions): Re
         const admission = facts?.nextShortcutAdmission;
         const ownership = runtime.unresolvedOwnership();
         const current = provider.current();
+        recordShutdownEvent('coordinator-preflight', { phase, ownership,
+          captureFactsAvailable: !!facts, factPhases: facts?.captures?.map(capture => capture.phase),
+          shortcutAdmission: admission?.state, providerPhases: current.captures.map(capture => capture.phase),
+          providerShortcutAdmission: current.nextShortcutAdmission.state });
         // Keep Stop/Cancel available for known active or unreadable captures.
         // This preflight is nonterminal; unavailable reservation facts are not clearance.
         if (!facts || facts.version !== 1 || !Array.isArray(facts.captures)
@@ -122,16 +128,19 @@ export function createRecordProviderHost(options: RecordProviderHostOptions): Re
           || !Array.isArray(ownership.requestIds) || ownership.requestIds.length
           || current.captures.some(capture => unresolved.has(capture.phase))
           || current.nextShortcutAdmission.state === 'armed') {
-          phase = 'open'; return false;
+          phase = 'open'; recordShutdownEvent('preflight-refused', { phase }); return false;
         }
-      } catch { phase = 'open'; return false; }
+      } catch { phase = 'open'; recordShutdownEvent('preflight-unreadable', { phase }); return false; }
       phase = 'inspecting';
       try {
         let other: 'clear' | 'unresolved' | 'unknown' = 'unknown';
         try { other = await shutdownOtherRuntimeUsers!(); } catch { /* Unknown retains shared SDK ownership. */ }
+        recordShutdownEvent('coordinator-shutdown-start', { phase, otherRuntimeUsers: other });
         const report = structuredClone(await coordinator!.shutdown());
         shutdownReport = report;
+        recordShutdownEvent('coordinator-shutdown-report', { report });
         await coordinator!.dispose();
+        recordShutdownEvent('coordinator-disposed', { phase });
         const localDrain = report?.scope === 'record-coordinator'
           && report.admission === 'closed' && report.localDrain === 'complete';
         if (other === 'clear' && localDrain && releaseRecoveryPeersAfterDrain) {
@@ -145,8 +154,9 @@ export function createRecordProviderHost(options: RecordProviderHostOptions): Re
           && typeof report.nextShortcutAdmission.reason === 'string' && report.nextShortcutAdmission.reason.length > 0
           && Array.isArray(report.work) && report.work.length === 0;
         phase = clear ? 'admitted-close' : 'ownership-retained';
+        recordShutdownEvent('coordinator-close-decision', { phase, clear });
         return clear;
-      } catch { phase = 'ownership-retained'; return false; }
+      } catch { phase = 'ownership-retained'; recordShutdownEvent('coordinator-shutdown-failed', { phase }); return false; }
     };
     inspecting = inspect().finally(() => { inspecting = undefined; });
     return inspecting;
@@ -204,8 +214,14 @@ export function createRecordProviderHost(options: RecordProviderHostOptions): Re
           try { record.detach(); provider.detach(); phase = 'provider-detached'; }
           catch (error) { phase = 'cleanup-unknown'; throw error; }
         }
-        if (phase === 'provider-detached') { await closeEngine(); phase = 'engine-closed'; }
-        if (phase === 'engine-closed') { await bindings.close(); phase = 'closed'; }
+        if (phase === 'provider-detached') {
+          recordShutdownEvent('engine-close-start', { phase });
+          await closeEngine(); phase = 'engine-closed'; recordShutdownEvent('engine-close-complete', { phase });
+        }
+        if (phase === 'engine-closed') {
+          recordShutdownEvent('bindings-close-start', { phase });
+          await bindings.close(); phase = 'closed'; recordShutdownEvent('bindings-close-complete', { phase });
+        }
       };
       closing = cleanup();
       try { await closing; }
