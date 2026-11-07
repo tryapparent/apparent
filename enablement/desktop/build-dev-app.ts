@@ -5,7 +5,8 @@ import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export type Options = { sourceRoot: string; inputs?: string; output?: string; plan: boolean };
-const usage = `Build a complete Linux x64 development desktop bundle using the repository's admitted builder.
+const defaultSourceRoot = resolve(fileURLToPath(new URL('../..', import.meta.url)));
+const usage = `Build a complete Linux x64 development desktop bundle using the repository's existing builder.
 
 Usage:
   node --experimental-strip-types enablement/desktop/build-dev-app.ts [options]
@@ -17,15 +18,15 @@ Options:
   --plan              Show builder and prerequisites without starting a build
   -h, --help          Show this help
 
-Prerequisites: Linux x64; Node.js 22+ with the source checkout's dependencies installed;
+Prerequisites: Linux x64; Node.js 22.18+ with the source checkout's dependencies installed;
 the existing build-omarchy.ts builder and its accepted app dependencies; admitted native
 artifact input JSON. The builder rejects dirty source and refuses an existing output.
-The result is a real packaged desktop bundle only when the input includes the admitted
+The result is a real packaged desktop bundle only when the input includes the pinned
 GUI closure. This command never substitutes a synthetic shell. It does not install or launch.
 `;
 
 export function parseArgs(argv: string[], cwd = process.cwd()): Options | 'help' {
-  const options: Options = { sourceRoot: cwd, plan: false };
+  const options: Options = { sourceRoot: defaultSourceRoot, plan: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '-h' || arg === '--help') return 'help';
@@ -33,9 +34,9 @@ export function parseArgs(argv: string[], cwd = process.cwd()): Options | 'help'
     if (arg === '--source-root' || arg === '--inputs' || arg === '--output') {
       const value = argv[++i];
       if (!value || value.startsWith('--')) throw new Error(`${arg} requires a value`);
-      if (arg === '--source-root') options.sourceRoot = resolve(value);
-      else if (arg === '--inputs') options.inputs = resolve(value);
-      else options.output = resolve(value);
+      if (arg === '--source-root') options.sourceRoot = resolve(cwd, value);
+      else if (arg === '--inputs') options.inputs = resolve(cwd, value);
+      else options.output = resolve(cwd, value);
       continue;
     }
     throw new Error(`Unknown option: ${arg}\n\n${usage}`);
@@ -50,7 +51,7 @@ export async function run(options: Options, runProcess = spawn) {
   catch { throw new Error(`Full desktop builder not found at ${builder}. Use --source-root for a checkout that contains the accepted build-omarchy.ts; this command will not fall back to a synthetic shell.`); }
   if (process.platform !== 'linux' || process.arch !== 'x64') throw new Error('The complete Omarchy desktop builder currently requires Linux x64.');
   if (options.plan) {
-    return { builder, sourceRoot, inputs: options.inputs ?? '(required admitted native input JSON)', output: options.output ?? '(required fresh output directory)', requires: ['clean committed source checkout', 'Linux x64', 'Node.js 22+ and source dependencies', 'admitted Capture/Media/config inputs', 'admitted GUI AppImage closure for a full desktop'] };
+    return { builder, sourceRoot, inputs: options.inputs ?? '(required admitted native input JSON)', output: options.output ?? '(required fresh output directory)', requires: ['clean committed source checkout', 'Linux x64', 'Node.js 22.18+ and source dependencies', 'admitted Capture/Media/config inputs', 'pinned GUI AppImage closure with source/executable hashes'] };
   }
   if (!options.inputs || !options.output) throw new Error(`--inputs and --output are required. See --help for prerequisites.`);
   if (!isAbsolute(options.inputs) || !isAbsolute(options.output)) throw new Error('Inputs and output paths must resolve to absolute paths.');
