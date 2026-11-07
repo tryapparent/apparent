@@ -167,7 +167,7 @@ export function createNativeInkRelay(options: {
       phase = 'ready';
     }); },
     forwardNext() { return exclusive('ready', 'ready', () => forward(now() + NATIVE_INK_LIMITS.finishMs)); },
-    async finish(timeoutMs=NATIVE_INK_LIMITS.finishMs) {
+    async finish(timeoutMs:number=NATIVE_INK_LIMITS.finishMs) {
       ensure(Number.isSafeInteger(timeoutMs)&&timeoutMs>0&&timeoutMs<=NATIVE_INK_LIMITS.finishMs);
       ensure(phase==='ready');phase='draining';
       const deadline = now() + timeoutMs;
