@@ -308,6 +308,12 @@ impl ApparentCoordinator {
 
     pub(in crate::capture::desktop) fn request_quit(&mut self, cx: &mut Context<Self>) {
         crate::capture::desktop::workflow::shutdown::request();
+        if self.runtime_role == crate::capture::desktop::RuntimeRole::NativeHostOnly {
+            // Refuse later requests through the existing shutdown flag, drain
+            // admitted native effects, and never invoke legacy capture cleanup.
+            if !self.capture_busy() { cx.quit(); }
+            return;
+        }
         self.lab = false;
         self.recording_shortcut_key = false;
         self.iphone_preview.take();
@@ -1159,6 +1165,10 @@ impl ApparentCoordinator {
 
     /// UI-thread snapshot for restart/termination admission, not just visible UI.
     pub(crate) fn capture_busy(&self) -> bool {
+        if NATIVE_CLIPBOARD_EFFECT_BUSY.load(std::sync::atomic::Ordering::Acquire)
+            || NATIVE_PEN_EFFECT_BUSY.load(std::sync::atomic::Ordering::Acquire) {
+            return true;
+        }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         if self.agent_capture_id.is_some() {
             return true;
@@ -1671,6 +1681,19 @@ mod native_pen_snapshot_tests {
         let mut coordinator = ApparentCoordinator::new_with_role(telemetry, None, RuntimeRole::NativeHostOnly);
         coordinator.native_host_epoch = "native-host-only-test".into();
         assert!(!coordinator.legacy_capture_admitted());
+        assert!(!coordinator.capture_busy());
+        // A terminal signal must drain an admitted clipboard worker even when
+        // its caller has timed out; visible capture state alone is insufficient.
+        struct RestoreClipboardBusy(bool);
+        impl Drop for RestoreClipboardBusy {
+            fn drop(&mut self) {
+                NATIVE_CLIPBOARD_EFFECT_BUSY.store(self.0, std::sync::atomic::Ordering::Release);
+            }
+        }
+        let busy = RestoreClipboardBusy(NATIVE_CLIPBOARD_EFFECT_BUSY.swap(true, std::sync::atomic::Ordering::AcqRel));
+        assert!(coordinator.capture_busy());
+        drop(busy);
+        assert!(!coordinator.capture_busy());
         for operation in [
             Operation::RequestPermission("microphone".into()),
             Operation::OpenSystemSettings("screen-recording".into()),
