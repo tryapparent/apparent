@@ -641,7 +641,52 @@ usage is below it. Local status composition and renewal-owner adoption remain
 host work. Synthetic Worker checks cover both scopes and API mounts, not live auth.
 
 
+## Endpoint identity preparation
+
+`./endpoint-identity` exposes the same bounded codec and explicit
+`generateStoredIdentityRecord` for a new login identity only. It returns canonical
+caller-owned private record bytes and the matching frozen public key; it performs
+no filesystem access, approval, fallback, caching or replacement of existing keys.
+The privileged host must persist privately, verify readback and bind the identity
+to its current login before approval. Raw private bytes must never enter a renderer
+and must be wiped when the caller finishes. Owned mutable seeds and failed output
+buffers are cleared; immutable JavaScript strings have no erasure guarantee.
+Actual local Worker fixtures consume the generated public key for device enrollment
+and the decoded private record for encrypted root/grouped transfers on both API
+bases. This is synthetic protocol evidence, not durable or installed identity proof.
+
+The internal `beginLoginState` phase creates a new scope-bound login marker
+under one queue lease. Upload scope requires explicit consent first. It snapshots
+cancellation and pins the root before waiting, then reads the current marker after
+acquisition so a legitimate preceding login can be superseded. It changes no
+config, credentials, identities or other-scope marker. The frozen begun receipt
+carries the root identity, nonce and cancellation facts required by the identity
+publisher; uncertain outcomes return no usable begun receipt. Native Linux tests
+join both phases and exercise real queue waits across cancellation/revocation.
+
+The internal `publishLoginIdentity` seam privately publishes a supplied record
+only when its original root, scope/login marker, cancellation epoch and current
+queue lease still match and no revocation intent is pending. It uses expected-absent replacement,
+then validates exact readback and the stored public binding before returning a
+key. An existing valid identity wins without rewriting, including supported JSON
+whitespace/order and data-hardlink aliases; damaged or unsafe files fail closed.
+Uncertainty exposes no approval key and never triggers retry. The caller's input
+bytes stay untouched; owned mutable copies are wiped. This seam changes no login
+markers, credentials or config and has no public writer export or live caller.
+Linux installed-provider tests cover these filesystem cases; installed Mac/ARM,
+full login publication and coordinated writer adoption remain separate gates.
+
+
 ## Anonymous device protocol transport
+
+The internal `prepareLoginCredential` validates a private approved reply into a
+frozen stored-credential proposal. It pins the caller-approved API, separate
+approval-site origin, scope, fresh generation and endpoint identity, and reuses
+the credential lifecycle validator with the original poll issue time. The local
+Worker fixtures use these proposals for encrypted transfers on both API mounts.
+It grants no consent or freshness authority and writes no files. Tokens remain
+private strings without an erasure guarantee; durable config/credential commit,
+one-shot transaction ownership and installed login remain host work.
 
 `./device-transport` supplies `requestDeviceStart` and `requestDevicePoll` for
 the existing device authorization policy. Each call sends one anonymous POST to
@@ -680,3 +725,35 @@ The existing writer must commit durable cancellation and local logout first,
 release its locks, and bound subsequent remote cleanup. A failed request may have
 revoked the remote grant; it authorizes neither blind repetition nor local
 settlement. Installed adoption and the coordinated writer cutover remain open.
+
+
+The internal revocation-intent preparation publishes a fresh immutable private
+boolean before acquiring `queue.lock`, using the existing expected-absent native
+file replacement and readback. Concurrent disable/logout intents coexist. A
+queue-held reader returns stamped, frozen observations of all matching legacy
+names; malformed, unsafe or more than 1,024 matching records fail closed. It
+never removes intents or authorizes work. Uncertain publication remains uncertain
+even after a root replacement. Linux installed-provider tests cover publication
+while the queue is held and rejection of subsequent credential reads.
+
+This is not a production logout writer. Config-gate publication, cancellation,
+job/credential settlement and deletion of only covered intents remain host work.
+The config host currently exposes no Connect cloud-gate update operation. Rust
+remains authoritative; first installed Mac/ARM and writer-cutover gates remain.
+
+
+`prepareRevocationState` is an internal follow-on phase, not a logout command.
+With valid pending intents and one current queue lease, it rotates the cancellation
+epoch and removes the captured upload/read login markers only after confirmed
+epoch readback. It keeps credentials, jobs, config, identities, renewal evidence
+and every intent. Its frozen prepared receipt covers only the original stamped
+intents; concurrent new intents remain pending and uncovered. Publication, partial
+removal, directory-sync or lease-release uncertainty stops the phase without retry.
+A marker appearing where absence was captured prevents a prepared receipt.
+
+Linux installed-provider tests verify the real queue lease and replacement path,
+retained inputs and injected lost-ack handling. They do not prove crash durability
+or installed adoption. Path check/unlink assumes cooperating same-UID writers
+honor the queue lock; it is not inode-atomic deletion. The existing Rust writer
+remains authoritative until the coordinated cutover; config gates and full local
+logout settlement still require their separate capability and acceptance.

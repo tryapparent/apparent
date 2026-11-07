@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
 import { resolve } from "node:path";
@@ -7,9 +7,8 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import * as ed25519 from "@noble/ed25519";
-import {
-  generateAgeIdentity,
-} from "../../src/recipient/crypto.ts";
+import { generateStoredIdentityRecord, decodeStoredIdentityRecord, validateStoredIdentityRecord } from "../../src/credentials/recipient-identity.ts";
+import type { PeerAuthorityKey } from "../../src/recipient/peer-authority.ts";
 import { retrieveRecipientCapture } from "../../src/recipient/retrieve.ts";
 import { RecipientTransportError } from "../../src/recipient/transport.ts";
 import { uploadPreparedPlainCapture } from "../../src/sender/transport.ts";
@@ -17,6 +16,7 @@ import { uploadPreparedEncryptedCapture } from "../../src/sender/encrypted-trans
 import { readSenderPeerAuthority } from "../../src/sender/authority.ts";
 import { revokeDeviceGrant } from "../../src/account/revoke.ts";
 import { decodeStoredCredential } from "../../src/credentials/wire.ts";
+import { prepareLoginCredential } from "../../src/credentials/login-grant.ts";
 import { requestDeviceStart, requestDevicePoll } from "../../src/account/device.ts";
 import { readAccountStatus } from "../../src/account/status.ts";
 import { listShares, revokeShare } from "../../src/account/shares.ts";
@@ -106,25 +106,25 @@ async function authorize(
   account: Account,
   approvedServer: string,
   scope: "read" | "upload",
-  age: { identity: string; recipient: string },
-  signing: Uint8Array,
+  encryptionKey: PeerAuthorityKey,
 ): Promise<DeviceCredential> {
-  const publicKey = await ed25519.getPublicKeyAsync(signing);
-  const encryptionKey = {
-    version: 1 as const,
-    recipient: age.recipient,
-    signing: Array.from(publicKey, byte => byte.toString(16).padStart(2, "0")).join(""),
-  };
   const device = await requestDeviceStart({ approvedServer, scope, encryptionKey }) as { deviceCode: string; userCode: string };
   const approved = await service.call("/v1/device/approve", {
     method: "POST", body: { userCode: device.userCode },
     cookie: account.cookie, csrf: account.csrf, origin: account.origin,
   });
   assert.equal(approved.status, 200, "synthetic account approves the pending device via cookie and CSRF");
-  const credential = await requestDevicePoll({ approvedServer, deviceCode: device.deviceCode }) as DeviceCredential & { status: string };
-  assert.equal(credential.status, "approved");
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const reply = await requestDevicePoll({ approvedServer, deviceCode: device.deviceCode });
+  const credential = prepareLoginCredential(reply, { approvedServer, scope, issuedAt,
+    siteOrigin: account.origin, generation: randomBytes(16).toString("hex"),
+    encryptionIdentity: randomBytes(16).toString("hex") });
+  assert.equal(credential.site, account.origin);
   assert.equal(credential.scope, scope);
-  return credential;
+  assert.equal(Object.isFrozen(credential), true);
+  assert.deepEqual(decodeStoredCredential(encoder.encode(JSON.stringify(credential)), scope, approvedServer), credential);
+  return { accessToken: credential.token, refreshToken: credential.refreshToken!, grantId: credential.grantId!, scope,
+    expiresIn: credential.expiresAt! - issuedAt, refreshExpiresIn: credential.refreshExpiresAt! - issuedAt };
 }
 
 async function uploadEncryptedCapture(
@@ -169,56 +169,65 @@ async function exerciseProfile(mount: "" | "/connect", profile: "root" | "eviden
   await proxy(mount, async ({ origin, service }) => {
     const serviceOrigin = origin + server;
     const account = await service.identity(`recipient-integration-${mount || "root"}`);
-    const reader = await generateAgeIdentity();
-    const sender = await generateAgeIdentity();
-    const readerSeed = Uint8Array.from({ length: 32 }, (_, index) => index + 31);
-    const senderSeed = Uint8Array.from({ length: 32 }, (_, index) => index + 91);
-    const readCredential = await authorize(service, account, serviceOrigin, "read", reader, readerSeed);
-    const uploadCredential = await authorize(service, account, serviceOrigin, "upload", sender, senderSeed);
-    const contents = await uploadEncryptedCapture(serviceOrigin, uploadCredential, senderSeed, sender.recipient, profile);
-    const result = await retrieveRecipientCapture({
-      credential: {
-        server: serviceOrigin,
-        token: readCredential.accessToken,
-        grantId: readCredential.grantId,
-        identity: { age: reader.identity, signing: readerSeed },
-      },
-      captureId,
-    });
-    assert.equal(result.server, serviceOrigin);
-    assert.equal(result.captureId, captureId);
-    assert.deepEqual(result.files.map(file => file.path).sort(), contents.map(file => file.path).sort());
-    for (const file of result.files) assert.deepEqual(file.bytes, contents.find(entry => entry.path === file.path)!.bytes);
-    if (profile === "evidence-first-v1") {
-      const evidence = await retrieveRecipientCapture({ credential: { server: serviceOrigin, token: readCredential.accessToken,
-        grantId: readCredential.grantId, identity: { age: reader.identity, signing: readerSeed } }, captureId, evidenceOnly: true });
-      assert.equal(evidence.evidenceOnly, true);
-      assert.ok(evidence.files.every(file => file.path !== "audio.wav"));
-    }
-
-    const stored = (grant: DeviceCredential, renewable: boolean) => decodeStoredCredential(encoder.encode(JSON.stringify({
-      server: serviceOrigin, scope: grant.scope, token: grant.accessToken, generation: "c".repeat(32), authRequired: true,
-      ...(renewable ? { refreshToken: grant.refreshToken, expiresAt: 1, refreshExpiresAt: 2, grantId: grant.grantId } : {}),
-    })), grant.scope, serviceOrigin);
-    assert.deepEqual(await revokeDeviceGrant(stored(readCredential, true), { approvedServer: serviceOrigin }), { ok: true });
-    const accountOptions = (grant: DeviceCredential) => ({ server: serviceOrigin, scope: grant.scope as "read" | "upload",
-      generation: "c".repeat(32), active: () => true,
-      authorize: async (approvedServer: string, scope: "read" | "upload") => ({ approvedServer, scope, generation: "c".repeat(32), token: grant.accessToken }) });
-    assert.equal((await readAccountStatus(accountOptions(uploadCredential))).beta, "active", "revoking the read device preserves the sibling upload grant");
-    await assert.rejects(
-      retrieveRecipientCapture({
+    const ownedSeeds: Uint8Array[] = [];
+    try {
+      const endpoint = async () => {
+        const generated = await generateStoredIdentityRecord();
+        try {
+          const privateIdentity = await validateStoredIdentityRecord(decodeStoredIdentityRecord(generated.privateRecord));
+          ownedSeeds.push(privateIdentity.signing);
+          return { ...privateIdentity, publicKey: generated.publicKey };
+        } finally { generated.privateRecord.fill(0); }
+      };
+      const reader = await endpoint(), sender = await endpoint();
+      const readerSeed = reader.signing, senderSeed = sender.signing;
+      const readCredential = await authorize(service, account, serviceOrigin, "read", reader.publicKey);
+      const uploadCredential = await authorize(service, account, serviceOrigin, "upload", sender.publicKey);
+      const contents = await uploadEncryptedCapture(serviceOrigin, uploadCredential, senderSeed, sender.publicKey.recipient, profile);
+      const result = await retrieveRecipientCapture({
         credential: {
           server: serviceOrigin,
           token: readCredential.accessToken,
           grantId: readCredential.grantId,
-          identity: { age: reader.identity, signing: readerSeed },
+          identity: { age: reader.age, signing: readerSeed },
         },
         captureId,
-      }),
-      (error: unknown) => error instanceof RecipientTransportError && error.category === "unauthorized",
-    );
-    assert.deepEqual(await revokeDeviceGrant(stored(uploadCredential, false), { approvedServer: serviceOrigin }), { ok: true });
-    await assert.rejects(readAccountStatus(accountOptions(uploadCredential)), { category: "unauthorized" });
+      });
+      assert.equal(result.server, serviceOrigin);
+      assert.equal(result.captureId, captureId);
+      assert.deepEqual(result.files.map(file => file.path).sort(), contents.map(file => file.path).sort());
+      for (const file of result.files) assert.deepEqual(file.bytes, contents.find(entry => entry.path === file.path)!.bytes);
+      if (profile === "evidence-first-v1") {
+        const evidence = await retrieveRecipientCapture({ credential: { server: serviceOrigin, token: readCredential.accessToken,
+          grantId: readCredential.grantId, identity: { age: reader.age, signing: readerSeed } }, captureId, evidenceOnly: true });
+        assert.equal(evidence.evidenceOnly, true);
+        assert.ok(evidence.files.every(file => file.path !== "audio.wav"));
+      }
+
+      const stored = (grant: DeviceCredential, renewable: boolean) => decodeStoredCredential(encoder.encode(JSON.stringify({
+        server: serviceOrigin, scope: grant.scope, token: grant.accessToken, generation: "c".repeat(32), authRequired: true,
+        ...(renewable ? { refreshToken: grant.refreshToken, expiresAt: 1, refreshExpiresAt: 2, grantId: grant.grantId } : {}),
+      })), grant.scope, serviceOrigin);
+      assert.deepEqual(await revokeDeviceGrant(stored(readCredential, true), { approvedServer: serviceOrigin }), { ok: true });
+      const accountOptions = (grant: DeviceCredential) => ({ server: serviceOrigin, scope: grant.scope as "read" | "upload",
+        generation: "c".repeat(32), active: () => true,
+        authorize: async (approvedServer: string, scope: "read" | "upload") => ({ approvedServer, scope, generation: "c".repeat(32), token: grant.accessToken }) });
+      assert.equal((await readAccountStatus(accountOptions(uploadCredential))).beta, "active", "revoking the read device preserves the sibling upload grant");
+      await assert.rejects(
+        retrieveRecipientCapture({
+          credential: {
+            server: serviceOrigin,
+            token: readCredential.accessToken,
+            grantId: readCredential.grantId,
+            identity: { age: reader.age, signing: readerSeed },
+          },
+          captureId,
+        }),
+        (error: unknown) => error instanceof RecipientTransportError && error.category === "unauthorized",
+      );
+      assert.deepEqual(await revokeDeviceGrant(stored(uploadCredential, false), { approvedServer: serviceOrigin }), { ok: true });
+      await assert.rejects(readAccountStatus(accountOptions(uploadCredential)), { category: "unauthorized" });
+    } finally { for (const seed of ownedSeeds) seed.fill(0); }
   });
 }
 

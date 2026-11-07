@@ -1,8 +1,11 @@
-use super::recording::{PixelBufferEvidence, has_usable_capture_sample};
+use super::recording::{
+    CheckedStopOutcome, PixelBufferEvidence, RecordingFinalization, StopOperation,
+    has_usable_capture_sample, recording_finalization,
+};
 use super::*;
 use screencapturekit::cm::SCFrameStatus;
 use std::fs;
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, Write};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -20,6 +23,36 @@ struct PrivateFixture {
 struct OwnedPath {
     path: PathBuf,
     identity: Option<(u64, u64)>,
+}
+
+fn base64_profile(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let first = chunk[0] as usize;
+        let second = chunk.get(1).copied().unwrap_or(0) as usize;
+        let third = chunk.get(2).copied().unwrap_or(0) as usize;
+        encoded.push(TABLE[first >> 2] as char);
+        encoded.push(TABLE[((first & 0x03) << 4) | (second >> 4)] as char);
+        encoded.push(if chunk.len() > 1 {
+            TABLE[((second & 0x0f) << 2) | (third >> 6)] as char
+        } else {
+            '='
+        });
+        encoded.push(if chunk.len() > 2 {
+            TABLE[third & 0x3f] as char
+        } else {
+            '='
+        });
+    }
+    encoded
+}
+
+#[test]
+fn sck_icc_profile_base64_has_standard_padding() {
+    assert_eq!(base64_profile(b"f"), "Zg==");
+    assert_eq!(base64_profile(b"fo"), "Zm8=");
+    assert_eq!(base64_profile(b"foo"), "Zm9v");
 }
 
 impl PrivateFixture {
@@ -265,6 +298,64 @@ fn first_frame_readiness_requires_complete_nonempty_pixel_data() {
         })
     ));
 }
+
+#[test]
+fn checked_stop_requires_successful_native_operations_and_finish_callback() {
+    let successful = CheckedStopOutcome {
+        stop_capture: StopOperation::Succeeded,
+        remove_recording_output: StopOperation::Succeeded,
+        recording_finalization: RecordingFinalization::Finished,
+    };
+    assert!(successful.is_finalized());
+
+    for outcome in [
+        CheckedStopOutcome {
+            recording_finalization: RecordingFinalization::Pending,
+            ..successful.clone()
+        },
+        CheckedStopOutcome {
+            recording_finalization: RecordingFinalization::Failed,
+            ..successful.clone()
+        },
+        CheckedStopOutcome {
+            stop_capture: StopOperation::Failed("stop failed".into()),
+            ..successful.clone()
+        },
+        CheckedStopOutcome {
+            remove_recording_output: StopOperation::Failed("remove failed".into()),
+            ..successful.clone()
+        },
+        CheckedStopOutcome {
+            stop_capture: StopOperation::NotAttempted,
+            ..successful.clone()
+        },
+        CheckedStopOutcome {
+            remove_recording_output: StopOperation::NotAttempted,
+            ..successful.clone()
+        },
+    ] {
+        assert!(
+            !outcome.is_finalized(),
+            "unexpected finalization: {outcome:?}"
+        );
+    }
+}
+
+#[test]
+fn recording_failure_dominates_finish_and_untracked_output_stays_unproven() {
+    assert_eq!(
+        recording_finalization(true, true, true),
+        RecordingFinalization::Failed
+    );
+    assert_eq!(
+        recording_finalization(true, false, false),
+        RecordingFinalization::Pending
+    );
+    assert_eq!(
+        recording_finalization(false, true, false),
+        RecordingFinalization::NotApplicable
+    );
+}
 fn admitted_synthetic_display() -> u32 {
     assert_eq!(
         std::env::var("APPARENT_TEST_SCK_SYNTHETIC_CAPTURE_ACK").as_deref(),
@@ -343,8 +434,10 @@ fn run_sck_output_observing(
         sample.pixel_bytes_per_row,
         sample.pixel_data_size
     );
-    let observe_deadline = Instant::now() + Duration::from_millis(500);
-    while Instant::now() < observe_deadline {
+    let observe_deadline = Instant::now() + Duration::from_millis(1_500);
+    while Instant::now() < observe_deadline
+        && stream.test_sample_count().is_ok_and(|count| count < 12)
+    {
         fixture.bind_file_if_present(expected_file_path);
         observe().unwrap_or_else(|error| {
             fixture.bind_file_if_present(expected_file_path);
@@ -352,17 +445,150 @@ fn run_sck_output_observing(
         });
         thread::sleep(Duration::from_millis(20));
     }
+    let observations = stream
+        .test_sample_pixels()
+        .expect("bounded supported SCK pixel observations");
+    assert!(
+        observations.len() >= 8,
+        "too few source samples to disambiguate the movie"
+    );
+    let mappings: Vec<_> = observations
+        .iter()
+        .map(|sample| {
+            stream
+                .test_sample_clock(sample.pts)
+                .expect("source sample clock conversion")
+        })
+        .collect();
+    let source_span_ms = mappings
+        .last()
+        .unwrap()
+        .capture_relative_ms
+        .saturating_sub(mappings[0].capture_relative_ms);
+    assert!(
+        source_span_ms >= 500,
+        "source observations do not span scene changes"
+    );
+
+    let evidence_path = fixture.own_file(fixture.root.join("sck-source-pixels.bgra"));
+    let mut pixel_file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&evidence_path)
+        .expect("exclusive source sample evidence file");
+    let mut entries = Vec::with_capacity(observations.len());
+    let mut byte_offset = 0usize;
+    let timestamp_json = |timestamp: ClockTimestamp| {
+        serde_json::json!({
+            "value": timestamp.value,
+            "timescale": timestamp.timescale,
+            "flags": timestamp.flags,
+            "epoch": timestamp.epoch,
+        })
+    };
+    for (sample, mapping) in observations.iter().zip(&mappings) {
+        pixel_file
+            .write_all(&sample.bytes)
+            .expect("write bounded source pixel bytes");
+        entries.push(serde_json::json!({
+            "sourcePts": timestamp_json(mapping.source_pts),
+            "hostPts": timestamp_json(mapping.host_pts),
+            "captureRelativeMs": mapping.capture_relative_ms,
+            "width": sample.width,
+            "height": sample.height,
+            "pixelFormat": format!("{:08x}", sample.pixel_format),
+            "planar": sample.planar,
+            "colorAttachments": {
+                "primaries": sample.color.primaries.as_deref(),
+                "transferFunction": sample.color.transfer_function.as_deref(),
+                "ycbcrMatrix": sample.color.ycbcr_matrix.as_deref(),
+                "cgColorSpace": sample.color.cg_color_space.as_deref(),
+            },
+            "bytesPerRow": sample.bytes_per_row,
+            "dataSize": sample.data_size,
+            "byteOffset": byte_offset,
+            "byteLength": sample.bytes.len(),
+        }));
+        byte_offset = byte_offset
+            .checked_add(sample.bytes.len())
+            .expect("bounded observation byte offset");
+    }
+    pixel_file.sync_all().expect("sync source sample evidence");
+    let metadata_path = fixture.own_file(fixture.root.join("sck-source-samples.json"));
+    let first_profile = observations
+        .first()
+        .and_then(|sample| sample.color.cg_color_space_icc.as_deref());
+    let shared_profile = first_profile.filter(|profile| {
+        observations
+            .iter()
+            .all(|sample| sample.color.cg_color_space_icc.as_deref() == Some(*profile))
+    });
+    let profile_status = if shared_profile.is_some() {
+        "shared-identical-icc-profile"
+    } else if observations
+        .iter()
+        .any(|sample| sample.color.cg_color_space_icc.is_some())
+    {
+        "varying-or-incomplete-icc-profile"
+    } else {
+        "missing-or-unsupported-icc-profile"
+    };
+    let metadata = serde_json::json!({
+        "schema": "apparent.test-sck-source-samples/3",
+        "admission": timestamp_json(admission.timestamp()),
+        "deliberateSetupDelayMs": setup_delay.as_millis(),
+        "sourceSpanMs": source_span_ms,
+        "pixelBytesFile": evidence_path.file_name().unwrap().to_string_lossy(),
+        "sourceColorSpaceProfileStatus": profile_status,
+        "sourceColorSpaceICC": shared_profile.map(|profile| serde_json::json!({
+            "encoding": "base64",
+            "byteLength": profile.len(),
+            "data": base64_profile(profile),
+        })),
+        "samples": entries,
+        "encodedOrigin": "unproven-until-AVAssetReader-correspondence",
+    });
+    let metadata_file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&metadata_path)
+        .expect("exclusive source sample metadata file");
+    let metadata_bytes = serde_json::to_vec(&metadata).expect("serialize source sample metadata");
+    assert!(
+        metadata_bytes.len() <= 128 * 1024,
+        "source metadata exceeds file-only observer bound"
+    );
+    let mut metadata_file = metadata_file;
+    metadata_file
+        .write_all(&metadata_bytes)
+        .expect("write bounded source sample metadata");
+    fixture.bind_file(&evidence_path);
+    fixture.bind_file(&metadata_path);
+    eprintln!(
+        "SCK_SOURCE_CORRESPONDENCE_INPUT samples={} source_span_ms={} sample_bytes={} metadata={} pixels={} encoded_origin=unproven",
+        observations.len(),
+        source_span_ms,
+        byte_offset,
+        metadata_path.display(),
+        evidence_path.display()
+    );
     stream
 }
 
 fn finish_sck_output(mut stream: CaptureStream) {
-    stream.stop();
+    let stopped = stream.stop_checked();
+    assert_eq!(stopped.stop_capture, StopOperation::Succeeded);
+    assert_eq!(stopped.remove_recording_output, StopOperation::Succeeded);
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !stream.recording_finished() && !stream.recording_failed() {
+    while stream.recording_finalization() == RecordingFinalization::Pending {
         assert!(Instant::now() < deadline, "SCK stop did not finish output");
         thread::sleep(Duration::from_millis(20));
     }
-    assert!(stream.recording_finished(), "SCK output did not finalize");
+    let outcome = stream.checked_stop_outcome();
+    assert!(
+        outcome.is_finalized(),
+        "SCK checked stop did not prove output finalization: {outcome:?}"
+    );
 }
 /// Exercises the Store-backed output guard with an absent leaf. This remains an ignored
 /// synthetic-display diagnostic; it does not make SCK output available to capture/2.

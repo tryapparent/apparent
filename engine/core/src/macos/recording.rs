@@ -2,6 +2,8 @@
 //! The legacy `start` path below retains its existing fallback, filter and timestamp behavior.
 
 use std::path::PathBuf;
+#[cfg(test)]
+use std::slice;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -31,6 +33,66 @@ pub struct CaptureStream {
     first_sample: Option<Arc<Mutex<Option<FirstSample>>>>,
     recording_state: Option<Arc<RecordingState>>,
     clock_capture: Option<ClockCapture>,
+    #[cfg(test)]
+    test_samples: Option<Arc<Mutex<TestSampleCollection>>>,
+    checked_stop: Option<(StopOperation, StopOperation)>,
+}
+
+/// Result of one native teardown operation. `NotAttempted` is never successful evidence.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StopOperation {
+    NotAttempted,
+    Succeeded,
+    Failed(String),
+}
+
+/// Current status of the recording-output delegate. A missing finish callback remains pending.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecordingFinalization {
+    NotApplicable,
+    Pending,
+    Finished,
+    Failed,
+}
+
+/// Checked result for the existing stop-then-remove native sequence.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CheckedStopOutcome {
+    pub stop_capture: StopOperation,
+    pub remove_recording_output: StopOperation,
+    pub recording_finalization: RecordingFinalization,
+}
+
+impl CheckedStopOutcome {
+    /// Success requires both native calls and the recording output's successful finish callback.
+    pub fn is_finalized(&self) -> bool {
+        self.stop_capture == StopOperation::Succeeded
+            && self.remove_recording_output == StopOperation::Succeeded
+            && self.recording_finalization == RecordingFinalization::Finished
+    }
+}
+
+fn operation_outcome(result: Result<(), screencapturekit::error::SCError>) -> StopOperation {
+    match result {
+        Ok(()) => StopOperation::Succeeded,
+        Err(error) => StopOperation::Failed(format!("{error:?}")),
+    }
+}
+
+pub(super) fn recording_finalization(
+    has_recording_output: bool,
+    finished: bool,
+    failed: bool,
+) -> RecordingFinalization {
+    if !has_recording_output {
+        RecordingFinalization::NotApplicable
+    } else if failed {
+        RecordingFinalization::Failed
+    } else if finished {
+        RecordingFinalization::Finished
+    } else {
+        RecordingFinalization::Pending
+    }
 }
 
 struct ClockCapture {
@@ -53,6 +115,45 @@ pub struct FirstSample {
     pub pixel_bytes_per_row: usize,
     pub pixel_data_size: usize,
 }
+
+#[cfg(test)]
+#[derive(Clone)]
+pub(super) struct TestSamplePixels {
+    pub(super) pts: screencapturekit::cm::CMTime,
+    pub(super) width: usize,
+    pub(super) height: usize,
+    pub(super) pixel_format: u32,
+    pub(super) planar: bool,
+    pub(super) bytes_per_row: usize,
+    pub(super) data_size: usize,
+    pub(super) color: TestPixelColorAttachments,
+    pub(super) bytes: Vec<u8>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug)]
+pub(super) struct TestPixelColorAttachments {
+    pub(super) primaries: Option<String>,
+    pub(super) transfer_function: Option<String>,
+    pub(super) ycbcr_matrix: Option<String>,
+    pub(super) cg_color_space: Option<String>,
+    pub(super) cg_color_space_icc: Option<Vec<u8>>,
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct TestSampleCollection {
+    samples: Vec<TestSamplePixels>,
+    last_pts: Option<screencapturekit::cm::CMTime>,
+    refusal: Option<String>,
+}
+
+#[cfg(test)]
+const TEST_SAMPLE_LIMIT: usize = 12;
+#[cfg(test)]
+const TEST_SAMPLE_MAX_BYTES: usize = 2 * 1024 * 1024;
+#[cfg(test)]
+const TEST_SAMPLE_SPACING_MS: u64 = 100;
 
 #[derive(Default)]
 struct RecordingState {
@@ -123,6 +224,181 @@ pub(super) fn has_usable_capture_sample(
         })
 }
 
+#[cfg(test)]
+fn copy_test_sample_pixels(
+    buffer: &screencapturekit::cv::CVPixelBuffer,
+    pts: screencapturekit::cm::CMTime,
+) -> Result<TestSamplePixels, String> {
+    const PIXEL_FORMAT_32_BGRA: u32 = u32::from_be_bytes(*b"BGRA");
+    if buffer.is_planar() {
+        return Err(
+            "source sample is planar; correspondence observer only accepts packed BGRA".into(),
+        );
+    }
+    let pixel_format = buffer.pixel_format();
+    if pixel_format != PIXEL_FORMAT_32_BGRA {
+        return Err(format!(
+            "unsupported source pixel format {pixel_format:#010x}; expected 32BGRA"
+        ));
+    }
+    let width = buffer.width();
+    let height = buffer.height();
+    let bytes_per_row = buffer.bytes_per_row();
+    let minimum_row = width
+        .checked_mul(4)
+        .ok_or_else(|| "source pixel row size overflow".to_owned())?;
+    if width == 0 || height == 0 || bytes_per_row < minimum_row {
+        return Err("invalid source pixel dimensions or stride".into());
+    }
+    let byte_count = bytes_per_row
+        .checked_mul(height)
+        .filter(|size| *size <= TEST_SAMPLE_MAX_BYTES && *size <= buffer.data_size())
+        .ok_or_else(|| "source pixel sample exceeds bounded copy budget".to_owned())?;
+    let lock = buffer
+        .lock_read_only()
+        .map_err(|error| format!("source pixel lock failed: {error}"))?;
+    let address = lock.base_address();
+    if address.is_null() {
+        return Err("source pixel buffer has no mapped base address".into());
+    }
+    // SAFETY: CVPixelBuffer is read-locked; checked dimensions/stride bound the copied extent.
+    let bytes = unsafe { slice::from_raw_parts(address, byte_count) }.to_vec();
+    Ok(TestSamplePixels {
+        pts,
+        width,
+        height,
+        pixel_format,
+        planar: false,
+        bytes_per_row,
+        data_size: buffer.data_size(),
+        color: test_pixel_color_attachments(buffer),
+        bytes,
+    })
+}
+
+/// Retain color declarations and bounded ICC bytes from the exact callback buffer used by the
+/// correspondence diagnostic. The locked SCK crate does not expose the attachment wrapper, so
+/// this test-only copy uses CoreVideo's retained copy API and checks CF object type/lifetime.
+#[cfg(test)]
+fn test_pixel_color_attachments(
+    buffer: &screencapturekit::cv::CVPixelBuffer,
+) -> TestPixelColorAttachments {
+    use std::ffi::{CStr, c_char, c_void};
+
+    type CfRef = *const c_void;
+    const UTF8_ENCODING: u32 = 0x0800_0100;
+
+    #[link(name = "CoreVideo", kind = "framework")]
+    unsafe extern "C" {
+        static kCVImageBufferColorPrimariesKey: CfRef;
+        static kCVImageBufferTransferFunctionKey: CfRef;
+        static kCVImageBufferYCbCrMatrixKey: CfRef;
+        static kCVImageBufferCGColorSpaceKey: CfRef;
+        fn CVBufferCopyAttachment(buffer: *mut c_void, key: CfRef, mode: *mut u32)
+        -> *const c_void;
+    }
+    #[link(name = "CoreFoundation", kind = "framework")]
+    unsafe extern "C" {
+        fn CFGetTypeID(value: CfRef) -> usize;
+        fn CFCopyDescription(value: CfRef) -> CfRef;
+        fn CFStringGetCString(
+            value: CfRef,
+            buffer: *mut c_char,
+            capacity: isize,
+            encoding: u32,
+        ) -> bool;
+        fn CFDataGetLength(data: CfRef) -> isize;
+        fn CFDataGetBytePtr(data: CfRef) -> *const u8;
+        fn CFRelease(value: CfRef);
+    }
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        fn CGColorSpaceGetTypeID() -> usize;
+        fn CGColorSpaceCopyICCData(color_space: CfRef) -> CfRef;
+    }
+
+    unsafe fn read(buffer: *mut c_void, key: CfRef, describe: bool) -> Option<String> {
+        let value = unsafe { CVBufferCopyAttachment(buffer, key, std::ptr::null_mut()) };
+        if value.is_null() {
+            return None;
+        }
+        let string = if describe {
+            unsafe { CFCopyDescription(value) }
+        } else {
+            value
+        };
+        if string.is_null() {
+            unsafe { CFRelease(value) };
+            return None;
+        }
+        let mut output = [0i8; 512];
+        let copied = unsafe {
+            CFStringGetCString(
+                string,
+                output.as_mut_ptr(),
+                output.len() as isize,
+                UTF8_ENCODING,
+            )
+        };
+        let result = copied.then(|| {
+            // SAFETY: successful CFStringGetCString writes a NUL-terminated UTF-8 buffer.
+            unsafe { CStr::from_ptr(output.as_ptr()) }
+                .to_string_lossy()
+                .into_owned()
+        });
+        if describe {
+            unsafe { CFRelease(string) };
+        }
+        unsafe { CFRelease(value) };
+        result
+    }
+
+    unsafe fn read_icc(buffer: *mut c_void, key: CfRef) -> Option<Vec<u8>> {
+        const MAX_ICC_PROFILE_BYTES: usize = 32 * 1024;
+        let color_space = unsafe { CVBufferCopyAttachment(buffer, key, std::ptr::null_mut()) };
+        if color_space.is_null() {
+            return None;
+        }
+        // Accept only a genuine Core Graphics color-space object, not a textual description.
+        let is_color_space = unsafe { CFGetTypeID(color_space) == CGColorSpaceGetTypeID() };
+        if !is_color_space {
+            unsafe { CFRelease(color_space) };
+            return None;
+        }
+        let data = unsafe { CGColorSpaceCopyICCData(color_space) };
+        unsafe { CFRelease(color_space) };
+        if data.is_null() {
+            return None;
+        }
+        let length = unsafe { CFDataGetLength(data) };
+        if length <= 0 || length as usize > MAX_ICC_PROFILE_BYTES {
+            unsafe { CFRelease(data) };
+            return None;
+        }
+        let bytes = unsafe { CFDataGetBytePtr(data) };
+        if bytes.is_null() {
+            unsafe { CFRelease(data) };
+            return None;
+        }
+        // SAFETY: CFData owns a live allocation of the checked positive length until release.
+        let copied = unsafe { slice::from_raw_parts(bytes, length as usize) }.to_vec();
+        unsafe { CFRelease(data) };
+        Some(copied)
+    }
+
+    // SAFETY: CoreVideo exports these static CFString keys for process lifetime.
+    unsafe {
+        let buffer = buffer.as_ptr();
+        TestPixelColorAttachments {
+            primaries: read(buffer, kCVImageBufferColorPrimariesKey, false),
+            transfer_function: read(buffer, kCVImageBufferTransferFunctionKey, false),
+            ycbcr_matrix: read(buffer, kCVImageBufferYCbCrMatrixKey, false),
+            cg_color_space: read(buffer, kCVImageBufferCGColorSpaceKey, true),
+            cg_color_space_icc: read_icc(buffer, kCVImageBufferCGColorSpaceKey),
+        }
+    }
+}
+
 impl CaptureStream {
     /// Builds the initial filter before creating the stream. A missing/stale target yields a
     /// session without a filter; a shareable-content query failure remains distinguishable for
@@ -162,6 +438,9 @@ impl CaptureStream {
                         first_sample: None,
                         recording_state: None,
                         clock_capture: None,
+                        #[cfg(test)]
+                        test_samples: None,
+                        checked_stop: None,
                     });
                 }
             }
@@ -176,6 +455,9 @@ impl CaptureStream {
             first_sample: None,
             recording_state: None,
             clock_capture: None,
+            #[cfg(test)]
+            test_samples: None,
+            checked_stop: None,
         })
     }
 
@@ -188,6 +470,9 @@ impl CaptureStream {
             first_sample: None,
             recording_state: None,
             clock_capture: None,
+            #[cfg(test)]
+            test_samples: None,
+            checked_stop: None,
         }
     }
 
@@ -222,6 +507,10 @@ impl CaptureStream {
         let stream_config = stream_configuration(configuration);
         let first_sample = Arc::new(Mutex::new(None));
         let callback_sample = first_sample.clone();
+        #[cfg(test)]
+        let test_samples = Arc::new(Mutex::new(TestSampleCollection::default()));
+        #[cfg(test)]
+        let callback_test_samples = test_samples.clone();
         let recording_state = Arc::new(RecordingState::default());
         let recording_started = recording_state.clone();
         let recording_failed = recording_state.clone();
@@ -249,10 +538,8 @@ impl CaptureStream {
         stream
             .add_output_handler(
                 move |sample: screencapturekit::cm::CMSampleBuffer, kind: SCStreamOutputType| {
-                    let pixels = sample
-                        .pixel_buffer()
-                        .as_ref()
-                        .and_then(inspect_pixel_buffer);
+                    let pixel_buffer = sample.pixel_buffer();
+                    let pixels = pixel_buffer.as_ref().and_then(inspect_pixel_buffer);
                     if kind == SCStreamOutputType::Screen
                         && has_usable_capture_sample(
                             sample.frame_status(),
@@ -281,6 +568,37 @@ impl CaptureStream {
                                 pixel_data_size: pixel.data_size,
                             });
                         }
+                        #[cfg(test)]
+                        if let Some(buffer) = pixel_buffer.as_ref()
+                            && let Ok(mut observations) = callback_test_samples.lock()
+                            && observations.refusal.is_none()
+                            && observations.samples.len() < TEST_SAMPLE_LIMIT
+                        {
+                            let due = match observations.last_pts {
+                                None => true,
+                                Some(previous) => {
+                                    match super::clock::checked_relative_milliseconds(previous, pts)
+                                    {
+                                        Ok(elapsed) => elapsed >= TEST_SAMPLE_SPACING_MS,
+                                        Err(error) => {
+                                            observations.refusal = Some(format!(
+                                                "source sample PTS sequence is invalid: {error}"
+                                            ));
+                                            false
+                                        }
+                                    }
+                                }
+                            };
+                            if due {
+                                match copy_test_sample_pixels(buffer, pts) {
+                                    Ok(observation) => {
+                                        observations.last_pts = Some(pts);
+                                        observations.samples.push(observation);
+                                    }
+                                    Err(error) => observations.refusal = Some(error),
+                                }
+                            }
+                        }
                     }
                 },
                 SCStreamOutputType::Screen,
@@ -300,6 +618,9 @@ impl CaptureStream {
             first_sample: Some(first_sample),
             recording_state: Some(recording_state),
             clock_capture: None,
+            #[cfg(test)]
+            test_samples: Some(test_samples),
+            checked_stop: None,
         })
     }
 
@@ -374,6 +695,52 @@ impl CaptureStream {
         .map(Some)
     }
 
+    #[cfg(test)]
+    pub(super) fn test_sample_pixels(&self) -> Result<Vec<TestSamplePixels>, String> {
+        let state = self
+            .test_samples
+            .as_ref()
+            .ok_or_else(|| "strict SCK sample observer unavailable".to_owned())?;
+        let state = state
+            .lock()
+            .map_err(|_| "strict SCK sample observer poisoned".to_owned())?;
+        if let Some(refusal) = &state.refusal {
+            return Err(refusal.clone());
+        }
+        Ok(state.samples.clone())
+    }
+
+    #[cfg(test)]
+    pub(super) fn test_sample_count(&self) -> Result<usize, String> {
+        let state = self
+            .test_samples
+            .as_ref()
+            .ok_or_else(|| "strict SCK sample observer unavailable".to_owned())?;
+        let state = state
+            .lock()
+            .map_err(|_| "strict SCK sample observer poisoned".to_owned())?;
+        if let Some(refusal) = &state.refusal {
+            return Err(refusal.clone());
+        }
+        Ok(state.samples.len())
+    }
+
+    #[cfg(test)]
+    pub(super) fn test_sample_clock(
+        &self,
+        pts: screencapturekit::cm::CMTime,
+    ) -> Result<CaptureClockSample, ClockError> {
+        let Some(clock_capture) = &self.clock_capture else {
+            return Err(ClockError::ClockUnavailable);
+        };
+        map_sample_to_capture_clock(
+            pts,
+            &clock_capture.stream_clock,
+            &clock_capture.host_clock,
+            clock_capture.admission,
+        )
+    }
+
     /// A `true` result means the recording output delegate finished successfully; `false`
     /// includes an output failure or a stop that did not produce a finish callback.
     pub fn recording_finished(&self) -> bool {
@@ -392,6 +759,50 @@ impl CaptureStream {
         self.recording_state
             .as_ref()
             .is_some_and(|state| state.failed.load(Ordering::Acquire))
+    }
+
+    /// Reports the latest callback state without inferring completion from stop return or
+    /// callback order. The output object remains owned until this CaptureStream is dropped.
+    pub fn recording_finalization(&self) -> RecordingFinalization {
+        recording_finalization(
+            self.recording_output.is_some(),
+            self.recording_state
+                .as_ref()
+                .is_some_and(|state| state.finished.load(Ordering::Acquire)),
+            self.recording_failed(),
+        )
+    }
+
+    /// Performs the existing blocking `stop_capture` then `remove_recording_output` sequence,
+    /// preserving each result. Taking the stream before either call ensures `Drop` cannot
+    /// retry native teardown after an error. The output/delegate remains owned by `self` so the
+    /// caller can retain its pinned file guard while finalization is pending or failed.
+    pub fn stop_checked(&mut self) -> CheckedStopOutcome {
+        if self.checked_stop.is_none()
+            && let Some(stream) = self.stream.take()
+        {
+            let stopped = operation_outcome(stream.stop_capture());
+            let removed = self
+                .recording_output
+                .as_ref()
+                .map(|output| operation_outcome(stream.remove_recording_output(output)))
+                .unwrap_or(StopOperation::NotAttempted);
+            self.checked_stop = Some((stopped, removed));
+        }
+        self.checked_stop_outcome()
+    }
+
+    /// Re-reads callbacks after a caller's own bounded wait; this performs no native operation.
+    pub fn checked_stop_outcome(&self) -> CheckedStopOutcome {
+        let (stop_capture, remove_recording_output) = self
+            .checked_stop
+            .clone()
+            .unwrap_or((StopOperation::NotAttempted, StopOperation::NotAttempted));
+        CheckedStopOutcome {
+            stop_capture,
+            remove_recording_output,
+            recording_finalization: self.recording_finalization(),
+        }
     }
 
     /// An empty session used by the legacy caller to preserve its previous start-failure loop.
