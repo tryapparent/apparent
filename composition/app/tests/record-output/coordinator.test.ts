@@ -62,6 +62,7 @@ function fixture(options: {
   shutdown?(): Promise<void>;
   dispose?(): Promise<void>;
   other?(): Promise<'clear' | 'unresolved' | 'unknown'>;
+  releaseRecovery?(): Promise<void>;
 } = {}) {
   const events: string[] = [];
   let active = options.active ?? false;
@@ -98,6 +99,7 @@ function fixture(options: {
   native.native.readFacts = async () => { await options.nativeRead?.(); return read(); };
   const host = bindRecordCoordinatorHost({ coordinator: flow, nativeBindings: native,
     async shutdownOtherRuntimeUsers() { events.push('other-users'); return options.other ? options.other() : 'clear'; },
+    ...(options.releaseRecovery ? { async releaseRecoveryPeersAfterDrain() { events.push('recovery-release'); await options.releaseRecovery!(); } } : {}),
     async closeEngine() { events.push('sdk-close'); } });
   const snapshot = (): CapabilitySnapshot => {
     let current!: CapabilitySnapshot;
@@ -177,4 +179,77 @@ test('Record-only clear report never clears another SDK or runtime owner', async
     assert(!f.events.includes('sdk-close')); assert(!f.events.includes('config-close'));
     await assert.rejects(f.host.close(), /retains unresolved runtime ownership/);
   }
+});
+
+test('positive local drain releases recovery connections while preserving unresolved native ownership', async () => {
+  for (const runtimeClearance of ['unresolved', 'unknown'] as const) {
+    const report = { ...clearReport(), runtimeClearance,
+      work: [{ owner: 'publication' as const, state: 'unknown' as const, publicationId: 'original-publication', reason: 'unresolved original binding' }] };
+    let releases = 0;
+    const f = fixture({ report, async releaseRecovery() { releases++; } });
+    assert.equal(await f.host.canClose(), false);
+    assert.deepEqual(f.host.shutdownReport(), report);
+    assert.deepEqual(f.events, ['other-users', 'shutdown-start', 'shutdown-end', 'dispose-start', 'dispose-end', 'recovery-release']);
+    await assert.rejects(f.host.close(), /retains unresolved runtime ownership/);
+    assert.equal(await f.host.canClose(), false);
+    assert.equal(releases, 1);
+    assert(!f.events.includes('sdk-close')); assert(!f.events.includes('config-close'));
+  }
+});
+
+test('missing positive scope/drain, disposal failure and external borrowers prevent recovery release', async () => {
+  for (const options of [
+    { report: { ...clearReport(), scope: 'other-owner' } as unknown as RecordCaptureCoordinatorShutdownReport },
+    { report: { ...clearReport(), admission: 'open' } as unknown as RecordCaptureCoordinatorShutdownReport },
+    { report: { ...clearReport(), localDrain: 'pending' } as unknown as RecordCaptureCoordinatorShutdownReport },
+    { async shutdown() { throw new Error('shutdown failed'); } },
+    { async dispose() { throw new Error('dispose failed'); } },
+    { async other() { return 'unknown' as const; } },
+    { async other() { return 'unresolved' as const; } },
+    { async other() { throw new Error('external drain failed'); } },
+  ]) {
+    let releases = 0;
+    const f = fixture({ ...options, async releaseRecovery() { releases++; } });
+    assert.equal(await f.host.canClose(), false);
+    assert.equal(releases, 0);
+    assert(!f.events.includes('sdk-close'));
+  }
+});
+
+test('recovery release waits for admitted commands and disposal, and a failed release is not retried', { timeout: 2000 }, async () => {
+  let block = false, release!: () => void, entered!: () => void;
+  const enteredRead = new Promise<void>(resolve => { entered = resolve; });
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  let releases = 0;
+  const f = fixture({ async nativeRead() { if (block) { entered(); await pending; } },
+    async releaseRecovery() { releases++; throw new Error('local release uncertain'); } });
+  await new Promise(resolve => setImmediate(resolve));
+  const snapshot = f.snapshot(); block = true;
+  const operation = f.host.record.execute({ type: 'refresh', requestId: 'admitted-before-recovery-release',
+    expected: { providerEpoch: snapshot.providerEpoch, revision: snapshot.revision } });
+  await enteredRead;
+  const closing = f.host.canClose();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(releases, 0); assert.equal(f.events.length, 0);
+  release(); await operation;
+  assert.equal(await closing, false);
+  assert(f.events.indexOf('dispose-end') < f.events.indexOf('recovery-release'));
+  assert.equal(await f.host.canClose(), false);
+  assert.equal(releases, 1); assert(!f.events.includes('sdk-close'));
+});
+
+test('shutdown admission uses the resolved report snapshot across asynchronous disposal', async () => {
+  const report: RecordCaptureCoordinatorShutdownReport = { ...clearReport(), runtimeClearance: 'unknown',
+    work: [{ owner: 'storage', state: 'unknown', reason: 'original uncertainty' }] };
+  let releases = 0;
+  const f = fixture({ report, async releaseRecovery() { releases++; }, async dispose() {
+    // A changing external object must not turn the already-returned uncertainty into clearance.
+    (report as { runtimeClearance: string }).runtimeClearance = 'clear';
+    (report as unknown as { work: unknown[] }).work = [];
+  } });
+  assert.equal(await f.host.canClose(), false);
+  assert.equal(f.host.shutdownReport()?.runtimeClearance, 'unknown');
+  assert.equal(f.host.shutdownReport()?.work[0]?.reason, 'original uncertainty');
+  assert.equal(releases, 1, 'positive local drain still permits connection release');
+  assert(!f.events.includes('sdk-close'));
 });

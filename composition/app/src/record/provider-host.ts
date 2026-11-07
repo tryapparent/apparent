@@ -19,6 +19,8 @@ export interface RecordProviderHostOptions {
   coordinator?: RecordCaptureCoordinator;
   /** Seal other SDK/runtime users' admission and drain their work; never infer clear from missing facts. */
   shutdownOtherRuntimeUsers?(): Promise<'clear' | 'unresolved' | 'unknown'>;
+  /** Local recovery-connection release only, after exact coordinator and external-user drain. */
+  releaseRecoveryPeersAfterDrain?(): Promise<void>;
   nativeBindings: RecordNativeBindings;
   /** Releases only this host's Engine resources after clearance. Must be idempotent; failure is not clearance. */
   closeEngine(): Promise<void>;
@@ -42,6 +44,11 @@ export function createRecordProviderHost(options: RecordProviderHostOptions): Re
   const captureFacts = options.captureFacts;
   const coordinator = options.coordinator;
   const shutdownOtherRuntimeUsers = options.shutdownOtherRuntimeUsers;
+  const releaseRecoveryPeersAfterDrain = options.releaseRecoveryPeersAfterDrain;
+  if (releaseRecoveryPeersAfterDrain !== undefined
+    && (!coordinator || typeof releaseRecoveryPeersAfterDrain !== 'function')) {
+    throw new TypeError('Recovery release requires an exact coordinator drain');
+  }
   if (coordinator && (runtime !== coordinator.runtime || options.capture2Start !== coordinator.capture2Start
     || captureFacts !== coordinator.captureFacts || typeof coordinator.shutdown !== 'function'
     || typeof coordinator.dispose !== 'function' || typeof coordinator.createProvider !== 'function'
@@ -120,9 +127,16 @@ export function createRecordProviderHost(options: RecordProviderHostOptions): Re
       try {
         let other: 'clear' | 'unresolved' | 'unknown' = 'unknown';
         try { other = await shutdownOtherRuntimeUsers!(); } catch { /* Unknown retains shared SDK ownership. */ }
-        const report = await coordinator!.shutdown();
-        shutdownReport = structuredClone(report);
+        const report = structuredClone(await coordinator!.shutdown());
+        shutdownReport = report;
         await coordinator!.dispose();
+        const localDrain = report?.scope === 'record-coordinator'
+          && report.admission === 'closed' && report.localDrain === 'complete';
+        if (other === 'clear' && localDrain && releaseRecoveryPeersAfterDrain) {
+          // Releasing a separately launched recovery connection does not cancel
+          // native work or establish runtime clearance. Keep the original report.
+          await releaseRecoveryPeersAfterDrain();
+        }
         const clear = other === 'clear' && report?.scope === 'record-coordinator'
           && report.admission === 'closed' && report.localDrain === 'complete' && report.runtimeClearance === 'clear'
           && report.nextShortcutAdmission?.state === 'unsupported'

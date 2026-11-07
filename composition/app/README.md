@@ -362,3 +362,23 @@ failure alone never permits SDK closure, capture cancellation or deletion of
 private roots. Failure before coordinator construction likewise does not clear
 caller-owned SDK/runtime users. This composition function does not launch the
 privileged GUI, install a route or establish native effect/exclusion acceptance.
+
+
+Recovery-only SDK connections have a separate lifetime from owning clients.
+`createRecordRecoveryProductionHost` accepts the separately retained public
+`RecoveryPeer` handles and injects their exact clients into Record. The caller
+must have launched both against the same configured private runtime and original
+authority; peer IDs and lifetime facts alone cannot establish that join. It never
+converts an owning client or calls `client.close()`. The host first seals and
+drains its admitted commands and requires positive external-borrower clearance.
+Only an exact `record-coordinator` report with closed admission and complete
+local drain, followed by successful coordinator disposal, permits the peer
+release callbacks. `connection: released` with an unconfirmed input closure is
+local Node-handle release, not worker exit, cancellation or native completion.
+
+That release may happen while the original report remains unresolved or unknown.
+The host preserves that report and work list, keeps normal close refused, and
+never retries an uncertain release. Failed/pending shutdown or disposal, invalid
+drain scope, or an undrained external borrower prevents release. Trusted-main
+release diagnostics are separate from renderer capability facts. The ordinary
+owning-client factory and its global-clearance requirement remain unchanged.

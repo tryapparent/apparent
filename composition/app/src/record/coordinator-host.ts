@@ -7,6 +7,8 @@ export interface RecordCoordinatorHostOptions {
   coordinator: RecordCaptureCoordinator;
   /** Must use coordinator.resolveHandoff; composition adds no parallel Saved authority. */
   nativeBindings: RecordNativeBindings;
+  /** Scoped recovery peer release; never an owning-client close or global clearance. */
+  releaseRecoveryPeersAfterDrain?(): Promise<void>;
   /** Closes admission and drains every other user of these SDKs/runtime; exclusive assembly returns clear. */
   shutdownOtherRuntimeUsers(): Promise<'clear' | 'unresolved' | 'unknown'>;
   /** SDK ownership transfers on success; invoked only after coordinator drainage. */
@@ -24,7 +26,7 @@ export function bindRecordCoordinatorHost(options: RecordCoordinatorHostOptions)
   const host = createRecordProviderHost({ runtime: flow.runtime, capture2Start: flow.capture2Start,
     captureFacts: flow.captureFacts, nativeBindings: options.nativeBindings, coordinator: flow,
     shutdownOtherRuntimeUsers: options.shutdownOtherRuntimeUsers,
-    closeEngine });
+    releaseRecoveryPeersAfterDrain: options.releaseRecoveryPeersAfterDrain, closeEngine });
   return { ...host,
     processingIssues: () => flow.processingIssues(),
     observeProcessingIssues: (listener: () => void) => flow.observeProcessingIssues(listener),
