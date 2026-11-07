@@ -626,7 +626,7 @@ test('capture/2 inspect reports Saved only from an exact public Record fact and 
         inspect: async (id: string) => { hostCalls.push(`inspect:${id}`); return { requestId: id, phase, publication: { phase: 'saved', bundlePath: expectedPath } }; },
         dispose: () => hostCalls.push('dispose'),
       } as unknown as Capture2Host;
-      const factory: Capture2HostFactory = async () => ({ host, allocateDestination: async () => expectedPath, close: async () => closeOutcome, ...(publicationOutput ? { publicationOutput } : {}) });
+      const factory: Capture2HostFactory = async () => ({ host, allocateDestination: async () => expectedPath, close: async () => closeOutcome, mappingForRequest: async () => ({ requestId, captureId: 'distinct-private-native-capture', bundleId: 'public-artifact', bundlePath: expectedPath }), ...(publicationOutput ? { publicationOutput } : {}) });
       const output: string[] = [], originalWrite = process.stdout.write;
       process.stdout.write = ((chunk: string | Uint8Array) => { output.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString()); return true; }) as typeof process.stdout.write;
       let code: number;
