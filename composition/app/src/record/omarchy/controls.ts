@@ -37,7 +37,7 @@ export function bindSilentRecordControls(options: {
   window.hide();
   const unsubscribe = host.record.observe(snapshot => { current = snapshot; present(); });
   const removeActivation = stopControl.onActivate(() => {
-    if (closed || stopping || preparingStart || !current) return;
+    if (closed || stopping || !current) return;
     const captures = active();
     // Ambiguous ownership is never resolved by choosing an arbitrary capture.
     if (captures.length !== 1) return;

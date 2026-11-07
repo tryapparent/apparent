@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session, Tray, nativeImage } from 'electron';
+import { app, BrowserWindow, session, Tray, nativeImage, dialog } from 'electron';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { registerOnboardingProgressBridge } from './onboarding-progress-bridge.cts';
@@ -15,21 +15,30 @@ let hostShutdown: Promise<void> = Promise.resolve();
 let retainedSetupFailure: unknown;
 let retainedRecordHost: RecordHostServices | undefined;
 let ownedWindow: BrowserWindow | undefined;
-let entryStarted = false;
-function loadEntry() {
-  if (entryStarted || !ownedWindow || ownedWindow.isDestroyed()) return;
-  entryStarted = true;
-  void ownedWindow.loadURL(pathToFileURL(join(__dirname, 'index.html')).href)
+let entryStarted: 'normal' | 'failure' | undefined;
+let bindingStarted = false;
+function loadEntry(failure = false) {
+  const target = failure ? 'failure' : 'normal';
+  if (entryStarted === 'failure' || entryStarted === target || !ownedWindow || ownedWindow.isDestroyed()) return;
+  entryStarted = target;
+  void ownedWindow.loadURL(pathToFileURL(join(__dirname, 'index.html')).href + (failure ? '#startup-incomplete' : ''))
     .catch(error => console.error('Desktop page unavailable', error));
 }
 function retainSetupFailure(error: unknown) {
+  if (!bindingStarted && !ownedWindow) {
+    // Failure before the fixed binding is entered owns no native resources.
+    console.error('Desktop could not initialize before native setup', error);
+    dialog.showErrorBox('Apparent could not start', 'The desktop could not initialize. No native recording services were started.');
+    app.quit();
+    return;
+  }
   retainedSetupFailure = { error, recordHost: retainedRecordHost };
   console.error('Desktop startup incomplete; native ownership retained', error);
   if (ownedWindow && !ownedWindow.isDestroyed()) {
     ownedWindow.setTitle('Apparent — startup incomplete; ownership retained');
     ownedWindow.on('close', event => event.preventDefault());
     ownedWindow.show();
-    loadEntry();
+    loadEntry(true);
   }
 }
 
@@ -45,6 +54,22 @@ app.whenReady().then(async () => {
     const allowed = details.url.startsWith(pathToFileURL(__dirname + '/').href);
     callback({ cancel: !allowed });
   });
+  const createHostWindow = () => {
+    const window = new BrowserWindow({
+    title: APPARENT_OMARCHY ? 'Apparent' : 'Apparent Foundation', width: 900, height: 620,
+    show: !APPARENT_OMARCHY,
+    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true,
+      preload: join(__dirname, 'preload.cjs') },
+    });
+    ownedWindow = window;
+    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    window.webContents.on('will-navigate', (event, url) => {
+      if (url !== entry && url !== entry + '#startup-incomplete') event.preventDefault();
+    });
+    return window;
+  };
+  // Only this package creates its hidden recovery surface before native setup.
+  const earlyWindow = APPARENT_OMARCHY ? createHostWindow() : undefined;
   let host: { store: import('@apparent/app-contracts/host').ProgressStore<unknown>; close(): Promise<void> } | undefined;
   let recordHost: RecordHostServices | undefined;
   try {
@@ -53,6 +78,7 @@ app.whenReady().then(async () => {
       createOnboardingProgressStore?: (input: { configPath: string; configHostPath: string }) => Promise<typeof host>;
     };
     if (typeof ownerBinding.createRecordHostServices === 'function') {
+      bindingStarted = true;
       recordHost = await ownerBinding.createRecordHostServices({ profilePath: app.getPath('userData'), nativeRoot: join(__dirname, 'native-record') });
       retainedRecordHost = recordHost;
       recordBound = true;
@@ -68,15 +94,7 @@ app.whenReady().then(async () => {
     if (APPARENT_OMARCHY) retainedSetupFailure = error;
     else console.error('Onboarding assembly binding unavailable', error);
   }
-  const window = new BrowserWindow({
-    title: APPARENT_OMARCHY ? 'Apparent' : 'Apparent Foundation', width: 900, height: 620,
-    show: !APPARENT_OMARCHY,
-    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true,
-      preload: join(__dirname, 'preload.cjs') },
-  });
-  ownedWindow = window;
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  window.webContents.on('will-navigate', (event, url) => { if (url !== entry) event.preventDefault(); });
+  const window = earlyWindow ?? createHostWindow();
   const disposeProgress = host ? registerOnboardingProgressBridge({ window, entryUrl: entry, store: host.store }) : undefined;
   if (recordHost) {
     let ownedHost = recordHost;

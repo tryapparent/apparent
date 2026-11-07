@@ -18,7 +18,7 @@ function fixture() {
     stopControl: { onActivate(listener) { activation = listener; return () => { activation = undefined; }; }, dispose() {} },
     createRequestId: () => 'tray-stop',
   });
-  const publish = (phase: 'starting' | 'recording' | 'processing' | 'saved' | 'unknown') => {
+  const publish = (phase: 'starting' | 'recording' | 'processing' | 'saved' | 'unknown' | 'cancelled') => {
     const snapshot = f.driver.current();
     f.driver.publish({ ...snapshot, revision: snapshot.revision + 1,
       captures: [{ captureId: 'capture-one', invocationId: 'start-one', phase, outcomes: [], delivery: 'unknown' }] });
@@ -71,4 +71,25 @@ test('unknown Start remains hidden and close refuses; tray inspection never retr
   assert.equal(f.driver.commands().filter(c => c.type === 'start-capture').length, 1);
   assert.equal(f.driver.commands().at(-1)?.type, 'inspect-capture');
   assert.equal(f.visible(), false);
+});
+
+test('tray Cancel remains available for known starting capture while Start is awaiting its result', async () => {
+  const f = fixture();
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const execute = f.client.execute.bind(f.client);
+  f.client.execute = async command => {
+    const result = await execute(command);
+    if (command.type === 'start-capture') await pending;
+    return result;
+  };
+  const start = f.start();
+  f.publish('starting');
+  f.activate();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.driver.commands().at(-1)?.type, 'cancel-capture');
+  assert.equal(await f.host.canClose(), false, 'admitted Start must still settle');
+  f.publish('cancelled'); release(); await start;
+  assert.equal(f.visible(), true);
+  assert.equal(f.driver.current().captures.some(capture => capture.phase === 'saved'), false);
 });

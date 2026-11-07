@@ -11,7 +11,10 @@ export async function verifyNativeModes(directory: string, modes: NativeFileMode
   assert(modes && typeof modes === 'object' && !Array.isArray(modes), 'Invalid native mode inventory');
   assert(Object.keys(modes).length > 0 && Object.keys(modes).length <= 3075, 'Invalid native mode inventory');
   for (const [path, mode] of Object.entries(modes)) {
-    assert(safeNativePath(path) && /^native-record\/(capture|media|config)\//.test(path)
+    const slot = /^native-record\/(capture|media|config)\//.test(path)
+      || (path === 'native-record/gui/Apparent.AppImage' && mode === 0o755)
+      || (path === 'native-record/gui/manifest.json' && mode === 0o644);
+    assert(safeNativePath(path) && slot
       && (mode === 0o644 || mode === 0o755), 'Invalid native mode entry');
     const file = await lstat(join(directory, path));
     assert(file.isFile() && !file.isSymbolicLink() && (file.mode & 0o7777) === mode, 'Native runtime mode mismatch');

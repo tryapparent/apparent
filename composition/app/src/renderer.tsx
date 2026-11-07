@@ -50,6 +50,14 @@ function Shell({ streams }: { streams: Loaded[] }) {
   </>;
 }
 async function start() {
+  if (APPARENT_OMARCHY && location.hash === '#startup-incomplete') {
+    createRoot(document.getElementById('root')!).render(<main role="alert">
+      <h1>Apparent could not finish startup</h1>
+      <p>Recording controls are unavailable. Native ownership is retained for recovery.</p>
+      <p>Keep this profile and its logs; unresolved work has not been cancelled.</p>
+    </main>);
+    return;
+  }
   // Registry is generated from pinned artifacts, not discovered from user input.
   const registry = await import('./registry.js');
   const streams: Loaded[] = await Promise.all(registry.streams.map(async (input: unknown) => {

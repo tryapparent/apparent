@@ -115,4 +115,12 @@ test('desktop GUI closure is sealed with its actual executable identity and reje
   const manifest = JSON.parse(await readFile(join(f.output, 'native-record/gui/manifest.json'), 'utf8'));
   assert.equal(manifest.executableSha256, gui.executableSha256);
   assert.equal(manifest.role, 'native-host-only');
+  const binding = join(f.work, 'gui-binding.ts');
+  await writeFile(binding, 'export function createRecordHostServices() { throw new Error("build only"); }');
+  const shell = join(f.work, 'gui-shell');
+  await buildShell(shell, undefined, { module: binding, presentation: 'omarchy', nativeArtifacts: { ...f.input, gui } });
+  const sealed = await readShell(shell);
+  assert.equal(sealed.nativeFiles!['native-record/gui/Apparent.AppImage'], 0o755);
+  const assembly = await assemble(shell, [], join(f.work, 'gui-assembly'));
+  await verifyAssembly(assembly);
 });
