@@ -15,16 +15,17 @@ for (const name of execFileSync('git', ['rev-parse', '--local-env-vars'], { enco
 const root = fileURLToPath(new URL('../../../', import.meta.url))
 const ids = ['platform-config', 'platform-resources', 'app-shell']
 
-test('selected registrations retain component identities, toolchains and both native targets', () => {
+test('selected registrations retain component identities and only resource targets expand to ARM', () => {
   for (const id of ids) {
     const rows = platformPlan(root, [id]).matrix.include
     assert.deepEqual(rows.map(row => [row.id, row.target, row.runner]), [
       [id, 'linux-x64', 'ubuntu-24.04'], [id, 'macos-x64', 'macos-26-intel'],
+      ...(id === 'platform-resources' ? [[id, 'linux-arm64', 'ubuntu-24.04-arm'], [id, 'macos-arm64', 'macos-15']] : []),
     ])
     assert(rows.every(row => row.language === (id === 'app-shell' ? 'typescript' : 'native')))
     assert.equal(workflowPathFor(id), '.github/workflows/stream-platform.yml')
   }
-  assert.equal(platformPlan(root, ids).matrix.include.length, 6)
+  assert.equal(platformPlan(root, ids).matrix.include.length, 8)
   assert.deepEqual(platformPlan(root, []), { matrix: { include: [] }, has_ready: false })
   assert.throws(() => platformPlan(root, ['missing']), /unavailable/)
 })
@@ -65,7 +66,7 @@ test('workflow CLI emits usable matrix outputs for empty selection and unavailab
     assert.deepEqual(run({ before: sha, after: sha }), { ready: 'false', rows: [] })
     const fallback = run({ before: 'f'.repeat(40), after: sha })
     assert.equal(fallback.ready, 'true')
-    assert.equal(fallback.rows.length, 6)
+    assert.equal(fallback.rows.length, 8)
     assert.deepEqual([...new Set(fallback.rows.map((row: { id: string }) => row.id))].sort(), [...ids].sort())
   } finally { rmSync(temp, { recursive: true, force: true }) }
 })

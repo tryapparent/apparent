@@ -3,7 +3,7 @@ import { appendFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { prInputsMatch, supportsPrCandidate, assessPrior, buildOwner, catalog, inputDigest, makePlan, reusePayload, sealPayload, type Owner, type Target, workflowPathFor } from './core.ts'
+import { isTarget, prInputsMatch, supportsPrCandidate, assessPrior, buildOwner, catalog, inputDigest, makePlan, reusePayload, sealPayload, type Owner, type Target, workflowPathFor } from './core.ts'
 
 const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
 function output(values: Record<string, string | boolean | number | null>) {
@@ -36,7 +36,7 @@ function ownerFor(id: string): Owner {
   if (!owner) throw new Error(`Unknown or pending delivery owner: ${id}`)
   return owner
 }
-function targetArg(value: string): Target { if (value !== 'linux-x64' && value !== 'macos-x64' && value !== 'web') throw new Error('Invalid target'); return value }
+function targetArg(value: string): Target { if (!isTarget(value)) throw new Error('Invalid target'); return value }
 export function matchPrCandidateInputs(checkout: string, owner: Owner, testedSha: string, testedBase: string, landedBase: string): boolean {
   // Full main history does not necessarily contain GitHub's synthetic merge.
   // Fetch only the authenticated candidate object, without changing refs/worktree.

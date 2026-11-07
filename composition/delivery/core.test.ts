@@ -67,23 +67,35 @@ test('platform config native lane declares its complete source closure and compo
   assert.deepEqual(native.map(row => row.target), ['linux-x64', 'macos-x64'])
 })
 
-test('platform resources fixture has only public Linux and Mac targets and fingerprints inherited Cargo config', () => {
+test('platform resources use native runners and distinct identities for each Linux and Mac architecture', () => {
   const path = resolve(temp, 'platform-resources-plan')
   for (const dir of ['shared/resources/src', 'shared/resources/delivery', 'shared/resources/native', '.cargo']) mkdirSync(resolve(path, dir), { recursive: true })
-  const registration = { schema: 1, id: 'platform-resources', kind: 'directory', package: 'shared/resources/delivery', inputs: ['shared/resources/', '.cargo/'], verify: ['verify'], build: 'build', targets: ['linux-x64', 'macos-x64'], stage: 'library', language: 'native', artifactPath: 'dist' }
+  const registration = { schema: 1, id: 'platform-resources', kind: 'directory', package: 'shared/resources/delivery', inputs: ['shared/resources/', '.cargo/'], verify: ['verify'], build: 'build', targets: ['linux-x64', 'macos-x64', 'linux-arm64', 'macos-arm64'], stage: 'library', language: 'native', artifactPath: 'dist' }
   writeFileSync(resolve(path, 'shared/resources/delivery/delivery.json'), JSON.stringify(registration))
   writeFileSync(resolve(path, 'shared/resources/delivery/index.ts'), 'fixture\n')
   writeFileSync(resolve(path, '.cargo/config.toml'), '[build]\njobs = 3\n')
   const plan = makePlan(path)
   const native = plan.matrix.include.filter(row => row.id === 'platform-resources')
   assert.deepEqual(plan.blocked, [])
-  assert.deepEqual(native.map(row => row.target), ['linux-x64', 'macos-x64'])
+  assert.deepEqual(native.map(row => [row.target, row.runner]), [
+    ['linux-x64', 'ubuntu-24.04'], ['macos-x64', 'macos-26-intel'],
+    ['linux-arm64', 'ubuntu-24.04-arm'], ['macos-arm64', 'macos-15'],
+  ])
   assert(native.every(row => row.kind === 'directory' && row.language === 'native' && row.stage === 'library' && row.architecture_owner === 'shared'))
   assert.deepEqual(catalog(path).owners.find(item => item.id === 'platform-resources')?.inputs, ['shared/resources/', '.cargo/'])
   writeFileSync(resolve(path, 'shared/resources/delivery/delivery.json'), JSON.stringify({ ...registration, inputs: ['shared/resources/'] }))
   assert.match(catalog(path).blocked.join(';'), /must fingerprint shared\/resources\/ and \.cargo\//)
-  writeFileSync(resolve(path, 'shared/resources/delivery/delivery.json'), JSON.stringify({ ...registration, targets: ['linux-x64', 'macos-x64', 'macos-arm64'] }))
+  writeFileSync(resolve(path, 'shared/resources/delivery/delivery.json'), JSON.stringify({ ...registration, targets: ['linux-ppc64'] }))
   assert.match(catalog(path).blocked.join(';'), /Unsupported target/)
+  writeFileSync(resolve(path, 'shared/resources/delivery/delivery.json'), JSON.stringify(registration))
+  git(path, 'init', '-q'); git(path, 'config', 'user.email', 'delivery-test@example.invalid'); git(path, 'config', 'user.name', 'delivery test')
+  git(path, 'add', '.'); git(path, 'commit', '-qm', 'registered native resources')
+  const resources = catalog(path).owners.find(item => item.id === 'platform-resources')!
+  assert.equal(new Set(resources.targets.map(target => inputDigest(path, resources, target))).size, 4)
+  assert(resources.targets.every(target => !supportsPrCandidate(resources.id, target)), 'all resource PR targets still require a fresh producer')
+  mkdirSync(resolve(path, 'record'))
+  writeFileSync(resolve(path, 'record/delivery.json'), JSON.stringify({ ...owner, targets: ['linux-arm64'] }))
+  assert.match(catalog(path).blocked.join(';'), /Unsupported target/, 'resource compatibility does not register ARM for other owners')
 })
 
 test('native Engine and SDK are independent lanes with the same architectural owner', () => {

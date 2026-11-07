@@ -4,7 +4,14 @@ import { closeSync, openSync, cpSync, existsSync, lstatSync, mkdirSync, readlink
 import { arch, platform } from 'node:os'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
-export type Target = 'linux-x64' | 'macos-x64' | 'web'
+export type Target = 'linux-x64' | 'macos-x64' | 'linux-arm64' | 'macos-arm64' | 'web'
+const targetRunners: Record<Target, string> = {
+  'linux-x64': 'ubuntu-24.04', 'macos-x64': 'macos-26-intel',
+  'linux-arm64': 'ubuntu-24.04-arm', 'macos-arm64': 'macos-15', web: 'ubuntu-24.04',
+}
+export function isTarget(value: unknown): value is Target {
+  return typeof value === 'string' && Object.hasOwn(targetRunners, value)
+}
 export type Kind = 'npm' | 'app-shell' | 'directory'
 export type Stage = 'library' | 'contract' | 'development-app' | 'website'
 export type Owner = { schema: 1; id: string; kind: Kind; package: string; inputs: string[]; verify: string[]; build: string; targets: Target[]; stage: Stage; language: 'typescript' | 'native'; artifactPath?: string; packageManager?: 'npm' | 'bun'; files?: string[]; environment?: string[] }
@@ -41,7 +48,10 @@ function readOwner(path: string): Owner {
   const raw = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
   if (raw.schema !== 1 || typeof raw.id !== 'string' || !/^[a-z][a-z0-9-]*$/.test(raw.id) || !['npm', 'app-shell', 'directory'].includes(String(raw.kind)) || !['library', 'contract', 'development-app', 'website'].includes(String(raw.stage)) || typeof raw.package !== 'string' || typeof raw.build !== 'string' || !Array.isArray(raw.inputs) || !Array.isArray(raw.verify) || !Array.isArray(raw.targets)) throw new Error(`Invalid delivery registration: ${path}`)
   const inputs = raw.inputs.map(x => safeRepoPath(x, true))
-  const targets = raw.targets.map(x => { if (x !== 'linux-x64' && x !== 'macos-x64' && x !== 'web') throw new Error(`Unsupported target in ${path}`); return x })
+  const targets = raw.targets.map(x => {
+    if (!isTarget(x) || (x.endsWith('-arm64') && raw.id !== 'platform-resources')) throw new Error(`Unsupported target in ${path}`)
+    return x
+  })
   if (!inputs.length || new Set(inputs).size !== inputs.length || !targets.length || new Set(targets).size !== targets.length || raw.verify.some(x => typeof x !== 'string' || !/^[a-z][a-z0-9:_-]*$/.test(x))) throw new Error(`Invalid delivery registration: ${path}`)
   if (raw.packageManager !== undefined && !['npm', 'bun'].includes(String(raw.packageManager))) throw new Error(`Invalid package manager: ${path}`)
   if (raw.files !== undefined && (!Array.isArray(raw.files) || raw.files.some(x => typeof x !== 'string'))) throw new Error(`Invalid file inputs: ${path}`)
@@ -144,7 +154,7 @@ export function packageBuildEnvironment(env = process.env, electron = false) {
   return [...new Set(['NODE_OPTIONS', 'NODE_ENV', 'NODE_PATH', 'ESBUILD_BINARY_PATH', 'ESBUILD_WORKER_THREADS', ...Object.keys(env).filter(key => /^(npm_config_|NPM_CONFIG_)/.test(key) || (electron && key.startsWith('ELECTRON_')))])].sort().map(key => [key, env[key] ?? ''])
 }
 function fingerprint(root: string, owner: Owner, target: Target, revision = 'HEAD') {
-  if (target !== 'linux-x64' && target !== 'macos-x64' && target !== 'web' || !owner.targets.includes(target)) throw new Error('Owner is not registered for this target')
+  if (!isTarget(target) || !owner.targets.includes(target)) throw new Error('Owner is not registered for this target')
   const source = trackedInputs(root, owner, revision).digest
   const imageOS = process.env.ImageOS ?? ''
   const imageVersion = process.env.ImageVersion ?? ''
@@ -166,7 +176,7 @@ export function inputDigest(root: string, owner: Owner, target: Target = owner.t
 export function makePlan(root: string) {
   const { owners, pending, blocked } = catalog(root)
   const guardOwners: Record<string, string> = { 'app-shell': 'composition', engine: 'engine', 'engine-native': 'engine', 'engine-capture-native': 'engine', 'engine-media-native': 'engine', 'platform-config': 'composition', 'platform-resources': 'shared', record: 'record', 'connect-client': 'connect', 'connect-browser': 'connect', agent: 'agent', onboarding: 'onboarding' }
-  const include = owners.flatMap(owner => owner.targets.map(target => ({ id: owner.id, target, runner: target === 'linux-x64' || target === 'web' ? 'ubuntu-24.04' : 'macos-26-intel', kind: owner.kind, stage: owner.stage, package: owner.package, verify: owner.verify, build: owner.build, language: owner.language, packageManager: owner.packageManager ?? 'npm', architecture_owner: guardOwners[owner.id] ?? '' })))
+  const include = owners.flatMap(owner => owner.targets.map(target => ({ id: owner.id, target, runner: targetRunners[target], kind: owner.kind, stage: owner.stage, package: owner.package, verify: owner.verify, build: owner.build, language: owner.language, packageManager: owner.packageManager ?? 'npm', architecture_owner: guardOwners[owner.id] ?? '' })))
   return { matrix: { include }, has_ready: include.length > 0, pending, blocked }
 }
 
@@ -297,7 +307,7 @@ export function assessPrior(root: string, owner: Owner, target: Target, currentS
 }
 
 export function sealPayload(root: string, owner: Owner, target: Target, inputDir: string, outputDir: string, inputDigestValue: string, env = process.env, candidate = false) {
-  if (!/^[0-9a-f]{64}$/.test(inputDigestValue) || (target !== 'linux-x64' && target !== 'macos-x64' && target !== 'web') || !owner.targets.includes(target)) throw new Error('Invalid input digest or target')
+  if (!/^[0-9a-f]{64}$/.test(inputDigestValue) || !isTarget(target) || !owner.targets.includes(target)) throw new Error('Invalid input digest or target')
   const source = realpathSync(inputDir)
   if (!statSync(source).isDirectory()) throw new Error('Payload input is not a directory')
   const check = (dir: string) => { for (const name of readdirSync(dir)) { const p = resolve(dir, name); const stat = lstatSync(p); if (stat.isSymbolicLink()) { const link = readlinkSync(p); if (isAbsolute(link) || windows(link)) throw new Error('Unsafe payload symlink'); const resolved = resolve(dirname(p), link); const rel = relative(source, resolved); if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error('Payload symlink escapes input directory'); let actual: string; try { actual = realpathSync(p) } catch { throw new Error('Broken payload symlink') } const actualRel = relative(source, actual); if (actualRel === '..' || actualRel.startsWith(`..${sep}`) || isAbsolute(actualRel)) throw new Error('Payload symlink escapes input directory'); } else if (stat.isDirectory()) check(p); else if (!stat.isFile()) throw new Error('Unsupported payload filesystem entry') } }
