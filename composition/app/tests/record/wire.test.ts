@@ -147,8 +147,12 @@ test('preserves authenticated native copy receipts from the public Record contra
   for (const evidence of ['native-write-readback', 'native-text-readback']) {
     const snapshot = withReceipt({ ...receipt, evidence });
     assert.deepEqual(cloneCapabilitySnapshot(snapshot), snapshot, evidence);
-    const result = { status: 'accepted', requestId: receipt.requestId, snapshot };
+    const result = { status: evidence === 'native-write-readback' ? 'applied' : 'written-readback',
+      requestId: receipt.requestId, snapshot };
     assert.deepEqual(cloneCommandResult(result, receipt.requestId), result, evidence);
+    if (evidence === 'native-text-readback') {
+      assert.equal(cloneCommandResult({ ...result, receipt: { captureId: 'unexpected' } }, receipt.requestId), undefined);
+    }
   }
   for (const invalid of [
     { ...receipt, evidence: 'dispatch' }, { ...receipt, ok: false },

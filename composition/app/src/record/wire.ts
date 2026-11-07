@@ -314,7 +314,8 @@ export function cloneCommandResult(value: unknown, requestId: string): CommandRe
   const cloned = cloneJson(value);
   if (!object(cloned) || cloned.requestId !== requestId || !text(cloned.requestId, 128, true)
     || !cloneCapabilitySnapshot(cloned.snapshot)) return undefined;
-  if (cloned.status === 'accepted' || cloned.status === 'cancelled' || cloned.status === 'outcome-unknown') {
+  if (cloned.status === 'accepted' || cloned.status === 'cancelled' || cloned.status === 'outcome-unknown'
+    || cloned.status === 'written-readback') {
     return exact(cloned, ['status', 'requestId', 'snapshot']) ? cloned as unknown as CommandResult : undefined;
   }
   if (cloned.status === 'refused') return exact(cloned, ['status', 'requestId', 'reason', 'snapshot'])
