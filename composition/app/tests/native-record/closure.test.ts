@@ -99,7 +99,7 @@ test('mode changed after handle validation cannot repair an invalid source snaps
   await assert.rejects(stat(join(f.output, 'native-record')), { code: 'ENOENT' });
 });
 
-test('desktop GUI closure is sealed with its actual executable identity and rejects changed package bytes', async t => {
+test('desktop GUI closure is sealed with its actual executable identity and rejects changed package bytes', { skip: process.platform !== 'linux' || process.arch !== 'x64' }, async t => {
   const f = await fixture(); t.after(() => rm(f.work, { recursive: true, force: true }));
   const path = join(f.work, 'Apparent.AppImage');
   const data = Buffer.from('synthetic package; never executed');
