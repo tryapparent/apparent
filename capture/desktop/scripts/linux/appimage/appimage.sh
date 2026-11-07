@@ -20,6 +20,12 @@ out="$root/target/appimage"
 tools="${APPARENT_PACKAGING_TOOLS_DIR:-$out/tools}"
 appdir="$out/AppDir"
 mkdir -p "$tools"
+# AppImage tools re-execute helpers from their extracted runtime. Keep those
+# live files inside this owned build tree instead of shared /tmp maintenance.
+# Failed runs retain their private runtime for diagnosis; remove only on success
+# after every foreground packaging/encoder child has exited.
+runtime_tmp="$(mktemp -d "$out/.tool-runtime.XXXXXXXX")"
+export TMPDIR="$runtime_tmp"
 manifest="${APPARENT_PACKAGING_TOOLS_MANIFEST:-$out/packaging-tools.json}"
 if [[ -z "${APPARENT_PACKAGING_TOOLS_MANIFEST:-}" ]]; then
   node --experimental-strip-types "$root/capture/desktop/scripts/linux/appimage/packaging-tools.ts" resolve "$manifest"
@@ -57,4 +63,5 @@ LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy \
   --plugin gstreamer \
   --output appimage
 bash "$root/capture/desktop/scripts/linux/appimage/check-appimage-encoder.sh" "$out/Apparent-$arch.AppImage"
+rm -rf -- "$runtime_tmp"
 echo "$out/Apparent-$arch.AppImage"
