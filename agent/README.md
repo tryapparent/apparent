@@ -34,11 +34,11 @@ Synthetic demo generation owns its fresh private output directory until the mani
 
 `latest` reads the configured `APPARENT_CAPTURES_DIR`, then the read-only `capturesDir` in `~/.config/apparent/config.json`, then the OS default. It skips malformed, incomplete, and unsupported bundles. Manifest and explicit stored-summary reads are strict UTF-8, capped at 64 MiB, and reject symlink files. Invalid relative config values are skipped; a valid explicitly selected but unavailable capture directory produces a read error instead of creating storage or silently selecting another recording. Linux defaults honor XDG_DATA_HOME. `--marks` retains ids, timestamps, frame references, stroke counts, labels, and numbering metadata. `--images` lists safe relative references, including uncropped frames when present; it does not inspect image contents. Raw JSON preserves the manifest bytes.
 
-Install the packed package locally with `npm install -g ./apparent-agent-0.1.0.tgz`; it provides `apparent-agent`, leaving the existing `apparent` command unchanged. Build requires Node 22.18+ and TypeScript dev dependencies. The package bundles the authenticated compiled `@apparent/record@0.1.0` and `@apparent/engine-sdk@0.4.3` tarballs. Agent install, build, typecheck, tests and packing compile only Agent source and work from an Agent-only checkout; the SDK's public `/testing` subpaths remain fixtures only. This proves TypeScript source/build isolation, not native recording or media availability, which still require their separately installed Engine provider. Each vendored tarball's receipt and provenance identity are recorded beside it under `vendor/`.
+Install the packed package locally with `npm install -g ./apparent-agent-0.1.0.tgz`; it provides `apparent-agent`, leaving the existing `apparent` command unchanged. Build requires Node 22.18+ and TypeScript dev dependencies. The package bundles the authenticated compiled `@apparent/record@0.1.0` and `@apparent/engine-sdk@0.4.5` tarballs. Agent install, build, typecheck, tests and packing compile only Agent source and work from an Agent-only checkout; the SDK's public `/testing` subpaths remain fixtures only. This proves TypeScript source/build isolation, not native recording or media availability, which still require their separately installed Engine provider. Each vendored tarball's receipt and provenance identity are recorded beside it under `vendor/`.
 
-Both record routes default an omitted `--duration` to 5 seconds; an explicit value must remain greater than 0 and at most 3600 seconds. Timing begins after the native recording readiness receipt, not at process startup. The original `record [--duration] --out` form retains its V1 provider route. Capture/2 is selected only with `record --protocol capture2`; it requires `APPARENT_ENGINE_CAPTURE_EXECUTABLE`, `APPARENT_ENGINE_RUNTIME`, an exact `--source` ID from current discovery; omitted `--out` allocates through Record in configured capture storage, while a normalized absolute `--out` remains supported. Use `capture --protocol capture2 sources [--json]` for read-only public SDK discovery; it prints exact IDs/kind/geometry or validated descriptors and never creates Record authority or starts capture. It sends `{audio: "none", localOnly: true}` and never retries through V1. Record owns the durable request mapping, opaque bundle identity and exact destination reservation. Agent retains only versioned public request identity/path metadata under its private control root and prints the public request ID to stderr before start, so `apparent-agent capture --protocol capture2 inspect|stop|cancel <request-id>` can reconnect with the same identity. The requested duration begins after observed recording readiness; startup has a 30-second deadline. SIGINT/SIGTERM request cancellation before recording or stop the observed recording; they do not prove cleanup. The published Capture2Host phases end at `materials-ready`, `processing`, `cancelled`, `failed`, or `unknown`; it exposes no `Saved` phase. Agent therefore always returns a pending/unavailable outcome for materials-ready and processing, even if the receipt contains publication-shaped metadata. No output path or zero exit is inferred from that metadata. A standard Saved terminal outcome remains a producer requirement before Agent can report completion. A separately staged Linux x64 native provider is available for explicit X11 display capture; it is not installed or activated by default, advertises only X11 display sources and half-area selection, and supports silent local capture only. This qualifies the explicit Capture/2 consumer on Linux X11; it does not establish Wayland, macOS, context facts, strokes, transcript, Saved processing, publication, or default CLI routing. V1 recovery remains `apparent-agent capture inspect|stop|cancel <capture-id>` and keeps its existing token journal; capture/2 uses the same command family with explicit protocol selection and no Agent V1 authority journal.
+Both record routes default an omitted `--duration` to 5 seconds; an explicit value must remain greater than 0 and at most 3600 seconds. Timing begins after the native recording readiness receipt, not at process startup. The original `record [--duration] --out` form retains its V1 provider route. Capture/2 is selected only with `record --protocol capture2`; it requires `APPARENT_ENGINE_CAPTURE_EXECUTABLE`, `APPARENT_ENGINE_MEDIA2_BIN`, `APPARENT_ENGINE_RUNTIME`, and an exact `--source` ID from current discovery; omitted `--out` allocates through Record in configured capture storage, while a normalized absolute `--out` remains supported. Use `capture --protocol capture2 sources [--json]` for read-only public SDK discovery; it prints exact IDs/kind/geometry or validated descriptors and never creates Record authority or starts capture. It sends `{audio: "none", localOnly: true}` and never retries through V1. Agent retains the public request UUID and destination identity, then prints the request ID to stderr before start. The requested duration begins after observed recording readiness; startup has a 30-second deadline. Once terminal `materials-ready` and ordinary capture-client close are confirmed, the command starts Record's standard visual coordinator over the same durable request mapping and runtime using separate recovery peers. Record owns visual sampling/selection, media jobs, assembly, publication and Saved facts. Only exact public Saved facts and resolved handoff matching the retained request, artifact and destination can produce a bundle path; zero exit also requires clear coordinator shutdown and confirmed peer release. Pending/unknown outcomes return 3 and retain the original identity. SIGINT/SIGTERM request cancellation before recording or stop the observed recording; they do not prove cleanup. This bounded standard visual path does not add legacy marks, strokes, transcript or complete context/delivery parity; unavailable context remains unavailable and delivery remains unknown. The staged Linux X11 provider does not qualify this standard Saved path, Wayland/macOS, or default CLI routing. V1 recovery remains `apparent-agent capture inspect|stop|cancel <capture-id>` and keeps its existing token journal; capture/2 uses the same command family with explicit protocol selection and no Agent V1 authority journal.
 
-The legacy Rust implementation can be removed only after all supported installed/package-manager consumers use this CLI and its inspection compatibility is accepted. V1 recording still requires a production Engine executable and complete native recorder/media artifact API. Explicit Capture/2 can use a separately staged Linux X11 provider when configured; it retains native materials but does not produce a Saved bundle or complete recording parity.
+The legacy Rust implementation can be removed only after all supported installed/package-manager consumers use this CLI and its inspection compatibility is accepted. V1 recording still requires a production Engine executable and complete native recorder/media artifact API. Explicit Capture/2 can use a separately staged Linux X11 provider when configured; standard visual processing is Record-owned, while legacy marks, strokes, transcript and full recording parity remain incomplete.
 
 `frames BUNDLE --from TIME --to TIME [--fps 4] [--json]` selects up to 48 timestamps (1–240 fps). With an installed provider it requests actual decoded frames through `@apparent/engine-sdk/media`; output goes to a fresh job-owned directory under `APPARENT_ENGINE_RUNTIME`. Without provider paths, or for a point range (`from == to`), it can return already-saved manifest keyframes when their timestamps fall within an inclusive range plus half-frame margin. Saved mode only accepts regular PNG-signature files under `frames/`; it preserves manifest timestamps and never describes them as decoded video frames. JSON tags `mode` and `source`; plain output remains paths and stderr identifies saved mode. If no saved images match while the provider is unavailable, it reports that video extraction is unavailable rather than implying success. A configured provider's decode, failed-job or uncertain-job errors remain authoritative; they do not fall back to saved images. Both modes leave the bundle and config unchanged; provider decode writes its owned job output under Engine runtime, while saved mode is read-only. The package does not search PATH, build Engine, decode video itself, open images, or send/network anything.
 
@@ -49,18 +49,27 @@ With an explicitly configured native Engine media provider, zoom requests the ex
 `delivery.json` registers Agent with the independent value-stream producer. Its inputs track the Agent owner, including its vendored SDK artifact and lockfile; sibling Engine SDK source, Engine Rust/native implementation and Desktop are not producer inputs. The Linux producer builds/tests/packs and verifies a fresh public API import. This stages a reusable npm artifact; it does not publish to npm or switch the installed app CLI. The package root exports application helpers without running a CLI. Agent's Capture/2 launch supplies the admitted provider's 40-second shutdown bound for native finalization; close remains bounded and an unconfirmed exit is reported as uncertain with the request identity retained.
 
 Agent-only TypeScript, JSON, Markdown and package-control changes run the installed owner suite without legacy Rust compilation. Engine SDK changes also run Agent tests but retain conservative native selection; unknown/native Agent file types, mixed shared changes and unknown history remain conservative. Hooks never install dependencies.
-# Offline local installation with native Linux media
+# Offline local installation with native Linux Engine closures
 
 `apparent-agent-install-local` installs an already-built Agent npm tarball and
 an already-built complete Engine media root into a fresh private Linux x64
 prefix. It performs no download, authentication, build, global npm install or
-OS routing change. The two SHA-256 values must come from a trusted upstream
-admission or receipt; a native manifest hash proves integrity only, not who
+OS routing change. The Agent and media SHA-256 values, and the optional Capture
+manifest SHA-256, must come from a trusted upstream admission or receipt; a
+native manifest hash proves integrity only, not who
 produced it. The installer checks the package hash before npm, validates the
 entire native inventory against its manifest before and after copying, and
 requires the installed Agent 0.1.0 and a stable SDK 0.2.x, 0.3.x or qualified 0.4.x media export.
 It accepts plain patch releases in those lines and stable 0.4.x after media/1 contract qualification; other new minor lines and prereleases are refused.
-The media/1 handshake remains mandatory. An exact dual `media/1` + `media/2`
+The media/1 handshake remains mandatory. An optional `--capture-root` plus
+`--capture-manifest-sha256` pair installs a separately admitted complete
+Capture/2 tree alongside the media closure. Its exact manifest and full
+no-follow inventory are checked before prefix creation and after copying;
+the installed SDK must expose its published Capture API, whose native public
+handshake and confirmed close gate the receipt without starting a capture.
+Capture/2 and media/2 receive the installer's one owner-private persistent
+runtime directory. Readiness is recorded only as returned by the handshake
+and is not implied by successful installation. An exact dual `media/1` + `media/2`
 manifest is retained as part of the full runtime closure, while the launcher
 still uses only media/1. This does not activate media/2 or configure native
 recording. For dual-capability manifests, the installer also accepts the exact
@@ -72,7 +81,9 @@ preserved on dual-capability manifests (`apparent.engine-recovery-peer/1`,
 `media/2`, the fixed recovery-peer argv, `startsFreshCapture: false` and
 `onInputEof: retain-admitted-finite-work`). It is descriptive only: this
 installer still launches and handshakes over media/1 and never starts a
-recovery peer. Node 22.18+ and an existing npm are required.
+recovery peer. The wrapper sets explicit Capture/2 and media/2 executable
+paths when those closures are present; Agent's default protocol and routing
+remain unchanged. Node 22.18+ and an existing npm are required.
 
 ```sh
 node /absolute/path/to/extracted-agent-package/dist/install-local.js \
@@ -80,6 +91,8 @@ node /absolute/path/to/extracted-agent-package/dist/install-local.js \
   --agent-sha256 c9e87015dee2ff2c35dcd72bc4627733e21b427e468318888ed29beafca4f3aa \
   --native-root /absolute/path/to/native-payload \
   --manifest-sha256 98ef787ed53c430e074484de806bd4de4b08893aba21fb1c34ab36f238a6da20 \
+  --capture-root /absolute/path/to/capture-payload \
+  --capture-manifest-sha256 '<trusted-capture-manifest-sha256>' \
   --prefix /absolute/fresh/private-prefix
 /absolute/fresh/private-prefix/apparent-agent --version
 /absolute/fresh/private-prefix/apparent-agent frames /absolute/capture.apparent --from 0 --to 2
@@ -89,9 +102,13 @@ The example digests identify the locally retained 463f0053908 artifact pair;
 they do not bypass the normal current-tree admission/reuse gate. The launcher
 keeps both native entry and worker in the copied tree, supplies only the
 explicit media executable and private runtime paths, and invokes the installed
-Agent CLI. Install success requires a native media/1 handshake and confirmed
-worker exit. This is not codec proof. Native media decode is available here
-through this installer only for Linux x64; capture, export and inference remain unavailable in this install path.
+Agent CLI. Install success requires native media/1 and, when a Capture/2
+closure is provided, native Capture/2 handshakes with confirmed worker exits.
+These are protocol and close checks, not codec or capture-readiness proof.
+Native media decode is available here through this installer only for Linux
+x64; Capture/2 is installed for existing explicit commands and does not add
+discovery, capture, Saved, export or inference guarantees. Without the optional
+closure, the previous media-only install form remains supported.
 Connect is deferred. Standalone Node CLI inspection remains portable without
 the native tree. A failure retains a clearly named private partial prefix and
 never emits a success receipt. Paths are private to cooperating same-UID
