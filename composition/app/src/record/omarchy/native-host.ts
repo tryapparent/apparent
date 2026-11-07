@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createNativeHostPort } from '@apparent/native-host';
+import { confirmsForeignOwner, ForeignOwnerRefusal } from './startup-refusal.ts';
 
 async function startTicks(pid: number): Promise<string> {
   const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
@@ -81,7 +82,16 @@ export async function launchNativeHost(profilePath: string, nativeRoot: string) 
   const executable = join(nativeRoot, 'gui/Apparent.AppImage');
   if (hash(await readFile(executable)) !== manifest.sha256) throw new Error('Native GUI package changed');
   const child: ChildProcess = spawn(executable, ['--appimage-extract-and-run', 'app', '--native-host-only'], {
-    stdio: ['ignore', 'inherit', 'inherit'], env: { ...process.env },
+    stdio: ['ignore', 'inherit', 'pipe'], env: { ...process.env },
+  });
+  let stderr = '', truncated = false;
+  child.stderr!.on('data', (bytes: Buffer) => {
+    process.stderr.write(bytes);
+    if (Buffer.byteLength(stderr) + bytes.length <= 16_384) stderr += bytes.toString('utf8');
+    else truncated = true;
+  });
+  const closed = new Promise<{ exitCode: number | null; signal: string | null }>(resolve => {
+    child.once('close', (exitCode, signal) => resolve({ exitCode, signal }));
   });
   let exited = false;
   let launchError: Error | undefined;
@@ -116,6 +126,18 @@ export async function launchNativeHost(profilePath: string, nativeRoot: string) 
   }, () => {
     if (launchError || exited || !child.pid) throw new Error('Native GUI exited before readiness', { cause: launchError });
   }); } catch (error) {
+    // Only inspect after positive process exit; timeout/launch error/partial
+    // initialization never waits for exit or becomes a safe-to-quit refusal.
+    if (exited) {
+      const terminal = await Promise.race([closed, delay(100).then(() => undefined)]);
+      let profileWorkAbsent = true;
+      for (const path of [socket, join(profilePath, 'record-private'), join(profilePath, 'record-engine-runtime'), join(profilePath, 'Record')]) {
+        try { await lstat(path); profileWorkAbsent = false; }
+        catch (failure) { if ((failure as NodeJS.ErrnoException).code !== 'ENOENT') profileWorkAbsent = false; }
+      }
+      if (terminal && confirmsForeignOwner({ executableSha256: manifest.executableSha256, stderr, truncated,
+        ...terminal, profileWorkAbsent })) throw new ForeignOwnerRefusal();
+    }
     throw new Error('Native GUI bootstrap unresolved; retained launch requires cleanup', { cause: { error, child } });
   }
   const identity = Object.freeze({ ...owned });

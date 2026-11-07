@@ -7,6 +7,7 @@ import { bindWindowShutdown } from './host-lifecycle.ts';
 import { recordShutdownEvent } from './record/omarchy/shutdown-diagnostic.ts';
 import type { RecordHostServices } from './record/host.ts';
 import { bindSilentRecordControls } from './record/omarchy/controls.ts';
+import { persistStartupFailure } from './record/omarchy/startup-refusal.ts';
 declare const APPARENT_OMARCHY: boolean;
 declare const APPARENT_TRAY_ICON: string;
 let recordBound = false;
@@ -18,14 +19,25 @@ let retainedRecordHost: RecordHostServices | undefined;
 let ownedWindow: BrowserWindow | undefined;
 let entryStarted: 'normal' | 'failure' | undefined;
 let bindingStarted = false;
+let preOwnershipRefusal = false;
 function loadEntry(failure = false) {
   const target = failure ? 'failure' : 'normal';
   if (entryStarted === 'failure' || entryStarted === target || !ownedWindow || ownedWindow.isDestroyed()) return;
   entryStarted = target;
-  void ownedWindow.loadURL(pathToFileURL(join(__dirname, 'index.html')).href + (failure ? '#startup-incomplete' : ''))
+  void ownedWindow.loadURL(pathToFileURL(join(__dirname, 'index.html')).href + (failure ? (preOwnershipRefusal ? '#startup-owner-conflict' : '#startup-incomplete') : ''))
     .catch(error => console.error('Desktop page unavailable', error));
 }
 function retainSetupFailure(error: unknown) {
+  try { persistStartupFailure(app.getPath('userData'), error); }
+  catch { console.error('Private startup diagnostic could not be persisted'); }
+  if (preOwnershipRefusal && !recordBound && !retainedRecordHost) {
+    retainedSetupFailure = undefined;
+    if (ownedWindow && !ownedWindow.isDestroyed()) {
+      ownedWindow.setTitle('Apparent — another Apparent is running');
+      ownedWindow.show(); loadEntry(true);
+    }
+    return;
+  }
   if (!bindingStarted) {
     // Failure before the fixed binding is entered owns no native resources.
     console.error('Desktop could not initialize before native setup', error);
@@ -71,7 +83,7 @@ app.whenReady().then(async () => {
     ownedWindow = window;
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', (event, url) => {
-      if (url !== entry && url !== entry + '#startup-incomplete') event.preventDefault();
+      if (url !== entry && url !== entry + '#startup-incomplete' && url !== entry + '#startup-owner-conflict') event.preventDefault();
     });
     return window;
   };
@@ -79,12 +91,15 @@ app.whenReady().then(async () => {
   const earlyWindow = APPARENT_OMARCHY ? createHostWindow() : undefined;
   let host: { store: import('@apparent/app-contracts/host').ProgressStore<unknown>; close(): Promise<void> } | undefined;
   let recordHost: RecordHostServices | undefined;
+  let classifyRefusal: ((error: unknown) => boolean) | undefined;
   try {
     const ownerBinding = await import(pathToFileURL(join(__dirname, 'owner-binding.mjs')).href) as {
       createRecordHostServices?: (input: { profilePath: string; nativeRoot: string }) => Promise<RecordHostServices>;
+      isPreOwnershipRefusal?: (error: unknown) => boolean;
       createOnboardingProgressStore?: (input: { configPath: string; configHostPath: string }) => Promise<typeof host>;
     };
     if (typeof ownerBinding.createRecordHostServices === 'function') {
+      classifyRefusal = ownerBinding.isPreOwnershipRefusal;
       bindingStarted = true;
       recordHost = await ownerBinding.createRecordHostServices({ profilePath: app.getPath('userData'), nativeRoot: join(__dirname, 'native-record') });
       retainedRecordHost = recordHost;
@@ -98,6 +113,7 @@ app.whenReady().then(async () => {
       } catch (error) { console.error('Onboarding progress host unavailable', error); }
     }
   } catch (error) {
+    preOwnershipRefusal = !recordBound && !retainedRecordHost && classifyRefusal?.(error) === true;
     if (APPARENT_OMARCHY) retainedSetupFailure = error;
     else console.error('Onboarding assembly binding unavailable', error);
   }

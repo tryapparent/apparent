@@ -1,6 +1,7 @@
 import { launchNativeHost } from './native-host.ts';
 import { createRecordHostServices as createHost } from './host.ts';
 import { recordShutdownEvent } from './shutdown-diagnostic.ts';
+export { isPreOwnershipRefusal } from './startup-refusal.ts';
 
 /** Trusted package entry. The existing native GUI supplies OS effects only;
  * Record and Engine retain all recording/output authority. */

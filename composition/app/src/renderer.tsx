@@ -50,6 +50,14 @@ function Shell({ streams }: { streams: Loaded[] }) {
   </>;
 }
 async function start() {
+  if (APPARENT_OMARCHY && location.hash === '#startup-owner-conflict') {
+    createRoot(document.getElementById('root')!).render(<main role="alert">
+      <h1>Another Apparent is running</h1>
+      <p>Quit the other Apparent from its tray, then launch this version again.</p>
+      <p>This instance started no native recording services. You can quit this window normally.</p>
+    </main>);
+    return;
+  }
   if (APPARENT_OMARCHY && location.hash === '#startup-incomplete') {
     createRoot(document.getElementById('root')!).render(<main role="alert">
       <h1>Apparent could not finish startup</h1>

@@ -13,11 +13,12 @@ const compiled = await build({ entryPoints: [fileURLToPath(new URL('../src/main.
   define: { APPARENT_OMARCHY: 'true', APPARENT_TRAY_ICON: '""' } });
 const require = createRequire(import.meta.url);
 
-async function startup(t: { after(cleanup: () => Promise<void>): void }, kind: 'missing-binding' | 'partial-binding' | 'window-failure' | 'second-instance') {
+async function startup(t: { after(cleanup: () => Promise<void>): void }, kind: 'missing-binding' | 'partial-binding' | 'owner-conflict' | 'window-failure' | 'second-instance') {
   const root = await mkdtemp(join(tmpdir(), 'app-startup-owner-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  if (kind === 'partial-binding') {
+  if (kind === 'partial-binding' || kind === 'owner-conflict') {
     const binding = await build({ stdin: { contents:
+      kind === 'owner-conflict' ? 'const refusal = new Error("Another Apparent is running"); export function isPreOwnershipRefusal(error) { return error === refusal; } export async function createRecordHostServices() { throw refusal; }' :
       'export async function createRecordHostServices() { throw new Error("synthetic partial ownership"); }', loader: 'ts' },
       format: 'esm', platform: 'node', write: false });
     await writeFile(join(root, 'owner-binding.mjs'), binding.outputFiles[0].text);
@@ -51,6 +52,14 @@ async function startup(t: { after(cleanup: () => Promise<void>): void }, kind: '
   window?.emit('close', close);
   return { result, exitCode, url, title, dialogs, quit, close };
 }
+
+test('trusted pre-ownership refusal permits ordinary close and quit with actionable page; partial ownership stays blocked', async t => {
+  const result = await startup(t, 'owner-conflict');
+  assert.match(result.url, /#startup-owner-conflict$/);
+  assert.match(result.title, /another Apparent is running/);
+  assert.equal(result.quit.blocked, false);
+  assert.equal(result.close.blocked, false);
+});
 
 test('pre-binding import or window failure exits without inventing native ownership', async t => {
   for (const kind of ['missing-binding', 'window-failure'] as const) {
