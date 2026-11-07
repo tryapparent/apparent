@@ -1,6 +1,7 @@
 name: Hermes plugin checks
+# Callable payload only; hermes-plugin-dispatch.yml owns manual whole-run auditing.
+# A caller retains responsibility for auditing its complete workflow after all jobs.
 on:
-  workflow_dispatch:
   workflow_call:
 permissions:
   contents: read
