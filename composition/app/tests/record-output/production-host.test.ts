@@ -134,7 +134,14 @@ test('trusted roots, config and permission records are snapshotted before asynch
     input => { observed = input as RecordProductionHostOptions['coordinator']; },
     flow => { ownedFlow = flow; return flow; });
   f.options.coordinator.standardProcessing.destination = { session: 'original-session', title: 'original title', via: 'explicit-host' };
+  const captureClient = f.options.coordinator.captureClient;
+  const mediaClient = f.options.coordinator.mediaClient;
+  const publicationClient = { publish() { throw new Error('No publication authorized'); } } as unknown as CaptureClient;
+  f.options.coordinator.publicationClient = publicationClient;
   const creating = module.createRecordProductionHost(f.options);
+  f.options.coordinator.publicationClient = {} as CaptureClient;
+  f.options.coordinator.captureClient = {} as CaptureClient;
+  f.options.coordinator.mediaClient = {} as Media2Client;
   const originalControl = f.options.coordinator.privateControlRoot;
   f.options.coordinator.privateControlRoot = join(root, 'substituted-control');
   f.options.coordinator.standardProcessing.requestVideoProof = false;
@@ -147,6 +154,10 @@ test('trusted roots, config and permission records are snapshotted before asynch
   assert.equal(supplied.config.executable, '/admitted/config-host');
   assert.deepEqual(supplied.requiredPermissionIds, ['screen-recording']);
   assert.equal(observed.privateControlRoot, originalControl);
+  assert.equal(observed.captureClient, captureClient);
+  assert.equal(observed.mediaClient, mediaClient);
+  assert.equal(observed.publicationClient, publicationClient);
+  assert.notEqual(observed.publicationClient, observed.captureClient);
   assert.equal(observed.standardProcessing.requestVideoProof, true);
   assert.equal(observed.standardProcessing.destination?.title, 'original title');
   await assert.rejects(stat(join(root, 'substituted-control')), { code: 'ENOENT' });

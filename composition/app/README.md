@@ -307,13 +307,23 @@ pill placement, focus, stacking, exclusion or capture-to-Saved behavior.
 
 ## Record automatic coordinator assembly
 
-The pinned Record package is the admitted `62010646` producer with the accepted SDK 0.4.3 peer. Its public
+The pinned Record package is the admitted `c43a7182` producer with the accepted SDK 0.4.3 peer. Its public
 `@apparent/record/host/capture2-coordinator` export owns automatic retained-media
 processing and publication. Trusted composition supplies the existing Capture/2
 and Media/2 clients, private roots, source intent and explicit proof/destination
 preferences. `createStandardRecordCaptureCoordinator` owns sampling, sealed-PNG
 observations, frame/layout selection and publication; the shell supplies no
 selection loop or second journal.
+
+Trusted owning composition may also supply a distinct `publicationClient` from an
+already admitted recovery peer, sharing the capture client's configured private
+runtime and original authority. The factory retains that exact capability before
+asynchronous native setup. Record routes publication and recovery through it;
+capture start, stop and inspection stay with `captureClient`. This does not grant
+release or close authority: drain every borrower under the existing shutdown
+policy before releasing recovery peers, and retain the separate owning-client
+close gate. The two-peer recovery factory continues to reject an extra publication
+client rather than acquire an untracked third lifetime.
 
 After constructing that public coordinator, create native bindings using its
 `resolveHandoff` and pass both to `bindRecordCoordinatorHost` in
