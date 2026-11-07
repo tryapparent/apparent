@@ -25,11 +25,12 @@ function loadEntry(failure = false) {
     .catch(error => console.error('Desktop page unavailable', error));
 }
 function retainSetupFailure(error: unknown) {
-  if (!bindingStarted && !ownedWindow) {
+  if (!bindingStarted) {
     // Failure before the fixed binding is entered owns no native resources.
     console.error('Desktop could not initialize before native setup', error);
+    retainedSetupFailure = undefined;
     dialog.showErrorBox('Apparent could not start', 'The desktop could not initialize. No native recording services were started.');
-    app.quit();
+    app.exit(1);
     return;
   }
   retainedSetupFailure = { error, recordHost: retainedRecordHost };
@@ -47,7 +48,12 @@ app.setName('Apparent Foundation');
 if (process.env.APPARENT_FOUNDATION_PROFILE) {
   app.setPath('userData', process.env.APPARENT_FOUNDATION_PROFILE);
 }
+// This dedicated profile has exactly one SDK borrower assembly, including if
+// its native adapter crashes. A second launch must not create another owner.
+const primaryInstance = !APPARENT_OMARCHY || app.requestSingleInstanceLock();
+if (!primaryInstance) app.exit(0);
 app.whenReady().then(async () => {
+  if (!primaryInstance) return;
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   const entry = pathToFileURL(join(__dirname, 'index.html')).href;
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
