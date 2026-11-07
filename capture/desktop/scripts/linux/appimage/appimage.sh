@@ -8,6 +8,10 @@
 # (gstreamer1.0-plugins-{base,good,bad,ugly}, gstreamer1.0-pipewire) and patchelf; linuxdeploy and its
 # GStreamer plugin are downloaded into target/appimage/tools the first time.
 set -euo pipefail
+# Distribution members must be readable by the installing user even when the
+# build was launched from a private evidence scope. This affects newly staged
+# package files only; never chmod an existing source/profile or global setting.
+umask 0022
 
 root="$(cd "$(dirname "$0")/../../../../.." && pwd)"
 binary="$(realpath "${1:-$root/target/release/apparent}")"
