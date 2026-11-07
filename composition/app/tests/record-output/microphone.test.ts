@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, mkdir, open, chmod, symlink, link, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, open, chmod, symlink, link, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRecordFixture } from '@apparent/record/fixtures';
@@ -12,7 +12,7 @@ const result = (requestId:string) => ({status:'accepted' as const,requestId,snap
 const deferred = <T>()=>{let resolve!:(value:T)=>void;const promise=new Promise<T>(r=>resolve=r);return{promise,resolve};};
 
 test('fixed private resource is metadata only; absent/unsafe model never becomes configured voice',async t=>{
-  const root=await mkdtemp(join(tmpdir(),'microphone-resource-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const root=await realpath(await mkdtemp(join(tmpdir(),'microphone-resource-')));t.after(()=>rm(root,{recursive:true,force:true}));
   await chmod(root,0o700);assert.equal(await speechLaunchResource(root),undefined);
   await mkdir(join(root,'resources'),{mode:0o700});const path=join(root,'resources',SPEECH_PROFILE+'.gguf');
   const file=await open(path,'wx',0o600);t.after(()=>file.close());
@@ -20,6 +20,12 @@ test('fixed private resource is metadata only; absent/unsafe model never becomes
   // Sparse synthetic metadata fixture, NOT an accepted model or inference test.
   await file.truncate(SPEECH_MODEL_BYTES);
   assert.deepEqual(await speechLaunchResource(root),{localSpeech:{profile:SPEECH_PROFILE,modelFile:path}});
+  // macOS tmpdir() commonly begins /var while its canonical path is /private/var.
+  // The fixture must satisfy the production canonical-profile contract; keep
+  // rejection of an alias intact rather than weakening it to fix the test.
+  const alias=root+'-alias';await symlink(root,alias);t.after(()=>rm(alias));
+  assert.equal(await speechLaunchResource(alias),undefined);
+  assert.deepEqual(await speechLaunchResource(await realpath(alias)),{localSpeech:{profile:SPEECH_PROFILE,modelFile:path}});
   await chmod(path,0o664);assert.equal(await speechLaunchResource(root),undefined);await chmod(path,0o600);
   await link(path,join(root,'hardlink'));assert.equal(await speechLaunchResource(root),undefined);await rm(join(root,'hardlink'));
   await rm(path);await symlink('/unknown-model',path);assert.equal(await speechLaunchResource(root),undefined);
