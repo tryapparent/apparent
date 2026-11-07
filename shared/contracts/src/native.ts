@@ -1,4 +1,5 @@
 import type { LegacyConfigValue } from './values.js';
+export type { LegacyConfigValue } from './values.js';
 
 /** Public, consumer-neutral view of OS facts owned by the running Desktop GUI. */
 export type NativePermissionStatus = 'granted' | 'denied' | 'not-determined' | 'unavailable';
@@ -69,6 +70,17 @@ export type NativeClipboardWriteResult =
 
 /** Record's narrow compatibility access to its compiled `penColor` config key. */
 export interface RecordPenColorConfig {
+  read(): Promise<LegacyConfigValue>;
+  compareAndSwap(expected: LegacyConfigValue, next: LegacyConfigValue): Promise<
+    | { status: 'saved' }
+    | { status: 'conflict'; current: LegacyConfigValue }
+    | { status: 'unknown'; message: string }
+  >;
+}
+
+/** Fixed cloud-group storage only. Connect owns consent/server policy and nested preservation. */
+export const MAX_CONNECT_CLOUD_VALUE_BYTES = 16_384;
+export interface ConnectCloudConfig {
   read(): Promise<LegacyConfigValue>;
   compareAndSwap(expected: LegacyConfigValue, next: LegacyConfigValue): Promise<
     | { status: 'saved' }
