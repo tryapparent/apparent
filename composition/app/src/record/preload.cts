@@ -7,6 +7,7 @@ import {
 } from './wire.js';
 
 import { MICROPHONE_CHANNELS, microphoneReadiness, type MicrophoneRendererPort, type MicrophoneStart } from './omarchy/microphone-wire.ts';
+import { DRAWING_CHANNELS, drawingAction, drawingSnapshot, type DrawingRendererPort } from './omarchy/drawing/wire.ts';
 
 const READ_TIMEOUT_MS = 10_000;
 const COMMAND_TIMEOUT_MS = 30_000;
@@ -192,6 +193,27 @@ export function createMicrophonePreloadPort():MicrophoneRendererPort{
       const reply=cloneJsonDto(await invoke(MICROPHONE_CHANNELS.start,{requestId:safe.requestId,command:safe},COMMAND_TIMEOUT_MS));
       if(!exact(reply,['requestId','result'])||reply.requestId!==safe.requestId)throw new Error('Invalid microphone command correlation');
       const result=cloneCommandResult(reply.result,safe.requestId);if(!result)throw new Error('Invalid microphone result');return result;
+    },
+  });
+}
+
+/** Fixed intents only. No renderer-supplied points, native identity or resource paths. */
+export function createDrawingPreloadPort():DrawingRendererPort{
+  return Object.freeze({
+    async read(...extra:unknown[]){
+      if(extra.length)throw new TypeError('Invalid drawing read');
+      const id=requestId(),reply=cloneJsonDto(await invoke(DRAWING_CHANNELS.read,{requestId:id},READ_TIMEOUT_MS));
+      if(!exact(reply,['requestId','snapshot'])||reply.requestId!==id)throw new Error('Invalid drawing correlation');
+      const snapshot=drawingSnapshot(reply.snapshot);if(!snapshot)throw new Error('Invalid drawing snapshot');return snapshot;
+    },
+    async act(value:unknown,...extra:unknown[]){
+      const action=drawingAction(value);if(extra.length||!action)throw new TypeError('Invalid drawing action');
+      const id=requestId();
+      try{
+        const reply=cloneJsonDto(await invoke(DRAWING_CHANNELS.act,{requestId:id,action},CONTROL_TIMEOUT_MS));
+        if(!exact(reply,['requestId','outcome'])||reply.requestId!==id||!['requested','refused','outcome-unknown'].includes(String(reply.outcome)))throw new Error('Invalid drawing outcome');
+        return reply.outcome as 'requested'|'refused'|'outcome-unknown';
+      }catch{return 'outcome-unknown' as const;}
     },
   });
 }

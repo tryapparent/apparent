@@ -99,7 +99,7 @@ export async function launchNativeHost(profilePath: string, nativeRoot: string) 
   child.once('exit', () => { exited = true; });
   const port = createNativeHostPort();
   // Bounded readiness on this private socket; no clipboard write or permission action.
-  let owned: { pid: number; ticks: string };
+  let owned: { pid: number; ticks: string; processEpoch:string };
   try { owned = await awaitNativeHostReadiness(async () => {
       const candidates: Array<{ pid: number; ticks: string }> = [];
       const unix = await readFile('/proc/net/unix', 'utf8');
@@ -120,7 +120,7 @@ export async function launchNativeHost(profilePath: string, nativeRoot: string) 
       if (candidates.length === 1) {
         const snapshot = await port.readSnapshot();
         if (snapshot.processEpoch.startsWith('process-')) throw new Error('Native GUI has weak incarnation');
-        return candidates[0];
+        return {...candidates[0],processEpoch:snapshot.processEpoch};
       }
       return undefined;
   }, () => {
@@ -143,6 +143,20 @@ export async function launchNativeHost(profilePath: string, nativeRoot: string) 
   const identity = Object.freeze({ ...owned });
   let close: Promise<void> | undefined;
   return { identity,
+    async inkIdentity(){
+      if(await startTicks(identity.pid)!==identity.ticks||hash(await readFile(`/proc/${identity.pid}/exe`))!==manifest.executableSha256)throw Error('Native input owner changed');
+      const unix=await readFile('/proc/net/unix','utf8');
+      const inode=unix.split('\n').find(line=>line.trim().split(/\s+/).at(-1)===socket)?.trim().split(/\s+/)[6];
+      if(!inode)throw Error('Native input socket absent');
+      let joined=false;
+      for(const fd of await readdir(`/proc/${identity.pid}/fd`)){
+        try{if(await readlink(`/proc/${identity.pid}/fd/${fd}`)===`socket:[${inode}]`)joined=true;}
+        catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+      }
+      const snapshot=await port.readSnapshot();
+      if(!joined||snapshot.processEpoch!==identity.processEpoch||await startTicks(identity.pid)!==identity.ticks)throw Error('Native input identity unavailable');
+      return {processEpoch:snapshot.processEpoch,revision:snapshot.revision,pid:identity.pid,startTicks:identity.ticks};
+    },
     close() {
       close ??= (async () => {
         if (await startTicks(identity.pid) !== identity.ticks

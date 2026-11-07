@@ -480,3 +480,8 @@ write failure does not change ownership decisions. The renderer promises no
 successful log write. The existing global GUI guard is unchanged. This source
 path still requires its affected packaged startup/refusal/Quit native check;
 unit/compiled-main tests do not establish that OS effect.
+
+The Omarchy qualification app's fixed drawing controls, native-source admission,
+accepted-history semantics and remaining OS gates are documented beside the
+[actual drawing join](src/record/omarchy/drawing/README.md). Its ordinary tray
+Stop continues through the existing Record command independently of ink drain.

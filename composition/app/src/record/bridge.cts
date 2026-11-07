@@ -7,6 +7,7 @@ import {
 
 import { MICROPHONE_CHANNELS, microphoneReadiness } from './omarchy/microphone-wire.ts';
 import type { MicrophoneHostPort } from './omarchy/microphone.ts';
+import { DRAWING_CHANNELS, drawingAction, drawingSnapshot, type DrawingHostPort } from './omarchy/drawing/wire.ts';
 
 const MAX_ACTIVE = 8;
 const MAX_WAITING = 16;
@@ -31,6 +32,7 @@ export function registerRecordBridge(options: {
   entryUrl: string;
   client: RecordClient;
   microphone?: MicrophoneHostPort;
+  drawing?: DrawingHostPort;
 }): () => void {
   if (registrations.has(ipcMain)) throw new Error('Record bridge already registered');
   const token = Symbol('record-bridge');
@@ -194,6 +196,32 @@ export function registerRecordBridge(options: {
     }finally{if(acquired)release();}
   };
 
+  const drawingRequest = (act: boolean) => async (event:IpcMainInvokeEvent,...args:unknown[]) => {
+    if(!allowed(event))throw new Error('Record bridge request refused');
+    const request=args.length===1?cloneJsonDto(args[0]):undefined;
+    if(!exact(request,act?['requestId','action']:['requestId'])||!isRequestId(request.requestId))throw new TypeError('Invalid drawing request');
+    const action=act?drawingAction(request.action):undefined;
+    if(act&&!action)throw new TypeError('Invalid drawing action');
+    let acquired=false,dispatched=false;
+    try{
+      await acquire(event);acquired=true;
+      if(!allowed(event))throw new Error('Record bridge revoked');
+      if(!options.drawing)throw new Error('Drawing source unavailable');
+      if(!act){const snapshot=drawingSnapshot(await options.drawing.read());
+        if(!allowed(event)||!snapshot)throw new Error('Drawing state unavailable');
+        return {requestId:request.requestId,snapshot};}
+      const operation=Promise.resolve().then(()=>{
+        if(!allowed(event))throw new Error('Record bridge revoked');
+        dispatched=true;return options.drawing!.act(action!);
+      });
+      operation.catch(()=>{});
+      let outcome:unknown;
+      try{outcome=await Promise.race([operation,revoked]);}catch{outcome=dispatched?'outcome-unknown':'refused';}
+      if(!allowed(event)||!['requested','refused','outcome-unknown'].includes(String(outcome)))outcome=dispatched?'outcome-unknown':'refused';
+      return {requestId:request.requestId,outcome};
+    }finally{if(acquired)release();}
+  };
+
   const subscribe = async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
     if (!allowed(event)) throw new Error('Record bridge request refused');
     if (args.length !== 1) throw new TypeError('Invalid Record subscription request');
@@ -251,6 +279,7 @@ export function registerRecordBridge(options: {
       [RECORD_CHANNELS.read, read], [RECORD_CHANNELS.execute, execute],
       [RECORD_CHANNELS.subscribe, subscribe], [RECORD_CHANNELS.unsubscribe, unsubscribe],
       [MICROPHONE_CHANNELS.read, microphoneRead], [MICROPHONE_CHANNELS.start, microphoneStart],
+      [DRAWING_CHANNELS.read, drawingRequest(false)], [DRAWING_CHANNELS.act, drawingRequest(true)],
     ] as const) {
       ipcMain.handle(channel, handler);
       installed.push(channel);

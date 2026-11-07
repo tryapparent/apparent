@@ -38,6 +38,8 @@ async function fixture() {
         const result = await source.client.execute(payload.command);
         return { requestId: replyMode === 'bad-correlation' ? 'other-request' : payload.requestId, result };
       }
+      if(channel==='apparent:record:drawing:read')return {requestId:payload.requestId,snapshot:{phase:'ready',revision:3,captureRequestId:'original'}};
+      if(channel==='apparent:record:drawing:act'){if(replyMode==='reject-command')throw Error('Lost drawing reply');return {requestId:replyMode==='bad-correlation'?'foreign':payload.requestId,outcome:'requested'};}
       throw new Error(`Unexpected channel ${channel}`);
     },
   };
@@ -53,7 +55,7 @@ async function fixture() {
     } }] });
   const module = await import(`data:text/javascript;base64,${Buffer.from(output.outputFiles[0].text).toString('base64')}#${Math.random()}`);
   delete (globalThis as any).__recordPreloadTestIpc;
-  return { port: module.createRecordPreloadPort(), source, listeners, calls, payloads, emit, unsubscribed,
+  return { port: module.createRecordPreloadPort(), drawing:module.createDrawingPreloadPort(), source, listeners, calls, payloads, emit, unsubscribed,
     setMode(value: typeof replyMode) { replyMode = value; } };
 }
 
@@ -102,3 +104,11 @@ test('observer exceptions are isolated and last unsubscribe never cancels captur
   assert.equal(f.source.driver.captureContinues(), true);
   assert.deepEqual(f.source.driver.commands(), []);
 });
+
+ test('drawing preload exposes only correlated fixed intents and never retries an unknown write',async()=>{
+ const f=await fixture();assert.equal((await f.drawing.read()).phase,'ready');
+ const action={intent:'open',captureRequestId:'original',revision:3};
+ const n=f.calls.length;await assert.rejects(f.drawing.act({...action,ownerToken:'private'}));assert.equal(f.calls.length,n);
+ assert.equal(await f.drawing.act(action),'requested');f.setMode('bad-correlation');assert.equal(await f.drawing.act(action),'outcome-unknown');
+ f.setMode('reject-command');const before=f.calls.length;assert.equal(await f.drawing.act(action),'outcome-unknown');assert.equal(f.calls.length,before+1);
+ });

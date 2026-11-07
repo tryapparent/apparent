@@ -140,7 +140,7 @@ test('generation cleanup removes only its own handlers and permits a successor r
   const second = createRecordFixture();
   const dispose = f.register({ window: f.window, entryUrl: f.entryUrl, client: second.client });
   oldDispose();
-  assert.deepEqual([...f.handlers.keys()].sort(),[RECORD_CHANNELS.read,RECORD_CHANNELS.execute,RECORD_CHANNELS.subscribe,RECORD_CHANNELS.unsubscribe,...Object.values(MICROPHONE_CHANNELS)].sort());
+  assert.deepEqual([...f.handlers.keys()].sort(),[RECORD_CHANNELS.read,RECORD_CHANNELS.execute,RECORD_CHANNELS.subscribe,RECORD_CHANNELS.unsubscribe,...Object.values(MICROPHONE_CHANNELS),'apparent:record:drawing:read','apparent:record:drawing:act'].sort());
   const reply = await f.handlers.get(RECORD_CHANNELS.read)!(f.event, { requestId: 'successor-read' });
   assert.deepEqual(reply.snapshot, second.driver.current());
   dispose();
@@ -186,4 +186,21 @@ test('revoked microphone preparation cannot dispatch late; original borrower fin
   const pending=f.handlers.get(MICROPHONE_CHANNELS.start)!(f.event,{requestId:command.requestId,command});await ready;dispose();
   assert.equal((await pending).result.status,'refused');assert.equal(dispatches,0);assert.equal(abandoned,0,'unresolved preparation was not claimed cancelled');
   release();await new Promise(resolve=>setImmediate(resolve));assert.equal(dispatches,0);assert.equal(abandoned,1);
+});
+
+test('drawing IPC retains exact window authority, validates fixed public intents and keeps revoked dispatch unknown',async()=>{
+  const f=await fixture(),source=createRecordFixture();
+  const channels={read:'apparent:record:drawing:read',act:'apparent:record:drawing:act'};
+  let actions:any[]=[],resolve!:(v:string)=>void;
+  const pending=new Promise<string>(r=>{resolve=r;});
+  const drawing={async read(){return{phase:'ready',revision:3,captureRequestId:'original',board:{open:false,strokeCount:0,activeGesture:false}};},observe(){return()=>{};},async act(action:any){actions.push(action);return pending;}};
+  const dispose=f.register({window:f.window,entryUrl:f.entryUrl,client:source.client,drawing});
+  const read=f.handlers.get(channels.read)!,act=f.handlers.get(channels.act)!;
+  assert.equal((await read(f.event,{requestId:'read-drawing'})).snapshot.captureRequestId,'original');
+  await assert.rejects(read({...f.event,senderFrame:{url:f.entryUrl}},{requestId:'foreign-frame'}));
+  await assert.rejects(act(f.event,{requestId:'bad',action:{intent:'open',captureRequestId:'original',revision:3,points:[]}}));assert.equal(actions.length,0);
+  const request=act(f.event,{requestId:'open-board',action:{intent:'open',captureRequestId:'original',revision:3}});
+  while(!actions.length)await new Promise<void>(r=>setImmediate(r));
+  dispose();const result=await request;assert.equal(result.outcome,'outcome-unknown');resolve('requested');
+  assert.deepEqual(actions,[{intent:'open',captureRequestId:'original',revision:3}]);assert.equal(f.handlers.size,0);
 });

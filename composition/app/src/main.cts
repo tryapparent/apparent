@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session, Tray, nativeImage, dialog } from 'electron';
+import { app, BrowserWindow, session, Tray, nativeImage, dialog, Menu } from 'electron';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { registerOnboardingProgressBridge } from './onboarding-progress-bridge.cts';
@@ -6,6 +6,7 @@ import { registerRecordBridge } from './record/bridge.cts';
 import { bindWindowShutdown } from './host-lifecycle.ts';
 import { recordShutdownEvent } from './record/omarchy/shutdown-diagnostic.ts';
 import type { RecordHostServices } from './record/host.ts';
+import { bindDrawingTray } from './record/omarchy/drawing/tray.ts';
 import { bindSilentRecordControls } from './record/omarchy/controls.ts';
 import { persistStartupFailure } from './record/omarchy/startup-refusal.ts';
 declare const APPARENT_OMARCHY: boolean;
@@ -126,13 +127,16 @@ app.whenReady().then(async () => {
       if (icon.isEmpty()) throw new Error('Stop control icon unavailable');
       const tray = new Tray(icon);
       tray.setToolTip('Apparent — activate to Stop recording');
-      tray.setContextMenu(null);
+      let activateStop:(()=>void)|undefined;
+      let disposeDrawing:(()=>void)|undefined;
       ownedHost = bindSilentRecordControls({ host: ownedHost, window, stopControl: {
-        onActivate(listener) { tray.on('click', listener); return () => tray.removeListener('click', listener); },
-        dispose() { tray.destroy(); },
+        onActivate(listener) { activateStop=listener;tray.on('click', listener); return () => {activateStop=undefined;tray.removeListener('click', listener);}; },
+        dispose() { disposeDrawing?.();tray.destroy(); },
       }, reportError: error => console.error('Record Stop remains unresolved', error) });
+      disposeDrawing=bindDrawingTray({record:ownedHost.record,drawing:ownedHost.drawing,stop:()=>activateStop?.(),
+        menu:items=>tray.setContextMenu(Menu.buildFromTemplate(items)),notice:text=>tray.setToolTip(text)});
     }
-    const disposeRecord = registerRecordBridge({ window, entryUrl: entry, client: ownedHost.record, microphone: ownedHost.microphone });
+    const disposeRecord = registerRecordBridge({ window, entryUrl: entry, client: ownedHost.record, microphone: ownedHost.microphone, drawing:ownedHost.drawing });
     window.on('close', () => recordShutdownEvent('window-close-request'));
     const lifecycle = bindWindowShutdown({ window,
       canClose: async () => {

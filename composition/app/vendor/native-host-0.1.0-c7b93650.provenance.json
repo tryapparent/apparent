@@ -1,0 +1,10 @@
+{
+  "package": "@apparent/native-host",
+  "version": "0.1.0",
+  "sourceSha": "c7b93650cf7d70faabe5655db68a6654b3dc265d",
+  "nativeSourceCheckpoint": "24c350d305ca91f1c0c2e4b3c8142f1417565896",
+  "packageSha256": "a9aa3d40e894585f709ffa12b0d8af35b0d4ea487327e5c3b986040104cd5c23",
+  "admission": "LOCAL compiled qualification artifact, not exact-main/CI admission or native qualification; large joined source review pending",
+  "checks": "39 NativeHost tests/types, 34 native-source focused tests and Linux build; fresh actual SDK046 installed public validation with original controller synthetic Screen+Paper bytes; app typecheck and124 checks; five packaged Electron fixture cases",
+  "usage": "Compile/qualification app preparation. No proof of OS input/presentation, original sealed output or release availability."
+}

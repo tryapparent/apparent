@@ -6,9 +6,11 @@ import type { OnboardingProgressPort } from '@apparent/app-contracts/host';
 import type { RecordRendererPort } from './record/wire.js';
 import { MicrophoneControl } from './record/omarchy/microphone-control.tsx';
 import type { MicrophoneRendererPort } from './record/omarchy/microphone-wire.ts';
+import { DrawingControl } from './record/omarchy/drawing/control.tsx';
+import type { DrawingRendererPort } from './record/omarchy/drawing/wire.ts';
 declare const APPARENT_OMARCHY: boolean;
 
-declare global { interface Window { apparent: { onboardingProgress: OnboardingProgressPort; record: RecordRendererPort; microphone?: MicrophoneRendererPort } } }
+declare global { interface Window { apparent: { onboardingProgress: OnboardingProgressPort; record: RecordRendererPort; microphone?: MicrophoneRendererPort; drawing?:DrawingRendererPort } } }
 
 type Loaded = { manifest: StreamManifest; module: StreamModule };
 function bindRecord(module: StreamModule, port: RecordRendererPort): StreamModule {
@@ -37,6 +39,7 @@ function Shell({ streams }: { streams: Loaded[] }) {
   if (APPARENT_OMARCHY) return <>
     <header><h1>Apparent</h1><p>Record a monitor. Controls hide during capture; activate the Apparent tray icon to Stop.</p></header>
     <MicrophoneControl record={window.apparent.record} microphone={window.apparent.microphone} />
+    <DrawingControl drawing={window.apparent.drawing} />
     <main>{active ? <Boundary><active.module.Screen /></Boundary> : <p>Recording unavailable.</p>}</main>
   </>;
   return <>

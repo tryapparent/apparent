@@ -35,7 +35,7 @@
     "esbuild": "0.25.12",
     "typescript": "5.9.3",
     "@apparent/record": "file:vendor/record-0.1.0-ed1ef061.tgz",
-    "@apparent/native-host": "file:vendor/native-host-0.1.0-c949f4b7.tgz",
+    "@apparent/native-host": "file:vendor/native-host-0.1.0-c7b93650.tgz",
     "@apparent/config-host": "file:../config",
     "@apparent/engine-sdk": "file:vendor/engine-sdk-0.4.6.tgz"
   },

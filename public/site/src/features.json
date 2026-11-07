@@ -420,7 +420,7 @@
       "says": "Hold ⇧ and move to draw red ink over any app; it fades after release and is redrawn on the keyframes.",
       "status": "stable@0.3.4",
       "platforms": ["mac", "linux"],
-      "note": "Desktop ink can cross displays without expanding the recording source; bundle marks are clipped to the selected recording. Linux uses a spanning overlay and macOS uses per-display panels. The Electron development window offers live drawing status and Undo last mark through the Rust controller; native input and overlays remain authoritative. Installed routing is unchanged. Native cross-display acceptance remains pending in issue #355. On Wayland the Linux preview needs the input group for ink outside its own windows.",
+      "note": "Desktop ink can cross displays without expanding the recording source; bundle marks are clipped to the selected recording. Linux uses a spanning overlay and macOS uses per-display panels. The Electron development window offers live drawing status and Undo last mark through the Rust controller; native input and overlays remain authoritative. Installed routing is unchanged. Native cross-display acceptance remains pending in issue #355. On Wayland the Linux preview needs the input group for ink outside its own windows. The separate Omarchy qualification app joins an authenticated native-only Shift/Board source to public SDK046; actual input, recorded pixels and original sealed history remain native qualification gates, not released availability.",
       "shortcuts": [{ "keys": "⇧ + move", "does": "Draw" }],
       "docs": ["README.md#capture-controls"]
     },
@@ -432,7 +432,7 @@
       "status": "main",
       "added": "2026-10-27",
       "platforms": ["mac", "linux"],
-      "note": "Available from the recording controls by default on macOS and Linux. Carbon toolbar, lilac controls and mark, Host Grotesk type, and warm Paper canvas; the final drawing tile stays plain white without UI chrome. The board is captured as a window in the video, not a separate desktop-ink mark.",
+      "note": "Available from the recording controls by default on macOS and Linux. Carbon toolbar, lilac controls and mark, Host Grotesk type, and warm Paper canvas; the final drawing tile stays plain white without UI chrome. The board is captured as a window in the video, not a separate desktop-ink mark. The Omarchy qualification app adds fixed tray Open/Undo/Clear/Close controls with original native Board identity and retained current stack; sealed facts preserve accepted history including undone/cleared gestures, not time-exact canvas replay. Actual Hyprland controls/geometry/effect remain unqualified.",
       "docs": ["capture/engine/docs/capture.md", "capture/desktop/docs/linux/linux.md"]
     },
     {

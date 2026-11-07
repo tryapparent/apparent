@@ -102,6 +102,7 @@ export function createMicrophonePolicy(options: {
       return mode;
     },
     idle: () => preparing === 0 && !supportFlight && flights.size === 0,
+    commandAdmission: ():'open'|'closed'=>phase==='open'?'open':'closed',
     closeAdmission() { phase = 'closed'; prepared.clear(); },
     canClose(check: () => Promise<boolean>, commandAdmission: () => 'open' | 'closed'): Promise<boolean> {
       if (closeFlight) return closeFlight;

@@ -8,7 +8,7 @@ export { isPreOwnershipRefusal } from './startup-refusal.ts';
 export async function createRecordHostServices(input: { profilePath: string; nativeRoot: string }) {
   const native = await launchNativeHost(input.profilePath, input.nativeRoot);
   try {
-    const host = await createHost(input);
+    const host = await createHost({...input,nativeInkIdentity:()=>native.inkIdentity()});
     return { ...host, async close() {
       await host.close(); recordShutdownEvent('native-host-close-start');
       await native.close(); recordShutdownEvent('native-host-close-complete');

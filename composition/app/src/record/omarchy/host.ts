@@ -9,6 +9,8 @@ import { createRecordProductionHost } from '../production-host.ts';
 import type { RecordHostServices } from '../host.ts';
 import { recordShutdownEvent } from './shutdown-diagnostic.ts';
 import { createMicrophonePolicy, speechLaunchResource, type RecordingAudio } from './microphone.ts';
+import { createNativeInkSourcePort, type NativeInkObservation } from '@apparent/native-host/ink';
+import { createDrawingController } from './drawing/controller.ts';
 
 interface NativeManifest {
   schema: 1;
@@ -76,7 +78,7 @@ export function omarchyStartIntent(requestId: string, discovery: SourceDiscovery
  * Linux packaged Record host. Main supplies only its private profile and the
  * fixed native closure already verified by App Shell packaging.
  */
-export async function createRecordHostServices(input: { profilePath: string; nativeRoot: string }): Promise<RecordHostServices> {
+export async function createRecordHostServices(input: { profilePath: string; nativeRoot: string; nativeInkIdentity?():Promise<NativeInkObservation['host']> }): Promise<RecordHostServices> {
   const profilePath = absoluteRoot(input?.profilePath, 'profilePath');
   const nativeRoot = absoluteRoot(input?.nativeRoot, 'nativeRoot');
   await privateDirectory(profilePath);
@@ -96,6 +98,9 @@ export async function createRecordHostServices(input: { profilePath: string; nat
   const ownerTransport = launchCaptureEngine(capture.path, runtimeRoot, 40_000, speech);
 
   const owner = new CaptureClient(ownerTransport);
+  const drawing=createDrawingController({capture:owner,mapping:id=>mappings.getByRequestId(id),
+    nativeIdentity:async()=>{if(!input.nativeInkIdentity)throw Error('Native source owner unavailable');return input.nativeInkIdentity();},
+    source:(original,ownedHost)=>createNativeInkSourcePort({original,ownedHost})});
   const microphone = createMicrophonePolicy({
     resourceConfigured: !!speech,
     querySupport: async () => {
@@ -146,7 +151,7 @@ export async function createRecordHostServices(input: { profilePath: string; nat
         config: { executable: config.path, executableSha256: config.sha256,
           configPath: join(profilePath, 'home', '.config', 'apparent', 'config.json') },
       },
-      shutdownOtherRuntimeUsers: async () => 'clear',
+      shutdownOtherRuntimeUsers: async () => drawing.localDrain(),
       closeEngine: async () => {
         recoveryRelease ??= (async () => {
           recordShutdownEvent('recovery-release-start');
@@ -173,8 +178,14 @@ export async function createRecordHostServices(input: { profilePath: string; nat
         }
       },
     });
-    return { ...host, microphone: microphone.port,
+    const removeDrawing=host.record.observe(snapshot=>drawing.observe(snapshot));
+    return { ...host, microphone: microphone.port, drawing:drawing.port,
       record: { ...host.record, async execute(command) {
+        if(command.type==='stop-capture'||command.type==='cancel-capture'){
+          const videoControl=host.record.execute(command);
+          void drawing.finish(command.captureId);
+          return videoControl;
+        }
         if (command.type !== 'start-capture') return host.record.execute(command);
         let dispatched = false;
         try {
@@ -188,7 +199,13 @@ export async function createRecordHostServices(input: { profilePath: string; nat
             reason: 'Recording intent could not be prepared', snapshot };
         }
       } },
-      canClose: () => microphone.canClose(() => host.canClose(), () => host.commandAdmission()),
+      canClose: async () => {
+        if(!drawing.beginClose())return false;
+        const clear=await microphone.canClose(()=>host.canClose(),()=>host.commandAdmission());
+        drawing.settleClose(clear,host.commandAdmission()==='open'&&microphone.commandAdmission()==='open'?'open':'closed');
+        return clear;
+      },
+      async close(){await host.close();removeDrawing();},
     };
   } catch (error) {
     // No automatic cancellation, generic close, or inferred ownership release
