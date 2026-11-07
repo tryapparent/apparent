@@ -707,7 +707,7 @@ pub(crate) fn run_app_with_role(
                     .timer(Duration::from_millis(8))
                     .await;
                 let _ = cx.update(|cx| {
-                    if last_login_check.elapsed() >= Duration::from_secs(2) {
+                    if runtime_role == RuntimeRole::Desktop && last_login_check.elapsed() >= Duration::from_secs(2) {
                         crate::capture::desktop::settings::reconcile_login_item();
                         last_login_check = std::time::Instant::now();
                     }
