@@ -30,6 +30,10 @@ import { uploadPreparedEncryptedCapture } from "../../src/sender/encrypted-trans
 import { sealCapture } from "../../src/sender/seal.ts";
 import { publishEncryptedSpool } from "../../src/sender/spool-publication.ts";
 import { commitEncryptedSpool } from "../../src/sender/spool-commit.ts";
+import { admitQueuedUpload } from "../../src/queue/admission-store.ts";
+import { retireQueuedJob, resumeQueuedRetirement } from "../../src/queue/prune.ts";
+import { withStateQueue } from "../../src/state/queue-transaction.ts";
+import { stateFileStamp } from "../../src/state/credential-files.ts";
 import { retryQueuedUploads, RetryError } from "../../src/queue/retry.ts";
 import { runUploadWorkerOnce } from "../../src/queue/worker.ts";
 
@@ -207,7 +211,118 @@ test("native upload worker spans spool recovery and transfer with independent qu
     const snapshot = await openCommittedEncryptedSpool(root, readyJob, resources);
     await writeFile(path.join(root, "upload.credential"), JSON.stringify({ ...credential, generation: "e".repeat(32) }));
     await assert.rejects(snapshot.readAsset("envelope.json"), e => e instanceof EncryptedSpoolReadError && e.category === "stale_snapshot");
+    // Retirement policy is explicit synthetic caller authority, never inferred
+    // from the stored receipt or from signature validity alone.
+    const jobFile = path.join(root, `${id}.job`), spoolPath = path.join(root, `${id}.sealed`);
+    const originalJob = await readFile(jobFile), originalEnvelope = await readFile(path.join(spoolPath, "envelope.json"));
+    const recoveryReceipt = await readFile(path.join(spoolPath, "spool-state.json"));
+    await link(jobFile, path.join(root, "retained-ready-job"));
+    await link(path.join(spoolPath, "envelope.json"), path.join(root, "retained-envelope"));
+    const expectedStamp = stateFileStamp(await lstat(jobFile, { bigint: true }));
+    const credentialBytes = await readFile(path.join(root, "upload.credential"));
+    const originalBundle = path.join(root, "original.apparent");
+    await mkdir(originalBundle, { mode: 0o700 }); await writeFile(path.join(originalBundle, "summary.md"), "keep original");
+    let checkedLease = false;
+    const retire = () => withStateQueue(root, { scope: "upload", approvedServer: origin }, resources, {}, (state, lease) =>
+      retireQueuedJob(state, lease, resources, { job: readyJob, expectedStamp, assertFresh: async () => {
+        const current = decodeJob(await readFile(jobFile));
+        assert.equal(current.status, "ready"); assert.equal(current.shared, false);
+        if (!checkedLease) {
+          const contender = await resources.lock(await open(path.join(root, "queue.lock"), constants.O_RDWR | constants.O_NOFOLLOW), { timeoutMs: 0 });
+          if (contender.state === "acquired") await contender.lease.release();
+          assert.equal(contender.state, "busy", "retirement must retain the actual queue lease");
+          checkedLease = true;
+        }
+      } }));
+    const extra = path.join(spoolPath, "unexpected-private-file");
+    await writeFile(extra, "retained unsafe inventory", { mode: 0o600 });
+    assert.deepEqual(await retire(), { state: "refused" });
+    assert.deepEqual(await readFile(jobFile), originalJob); assert.deepEqual(await readFile(path.join(spoolPath, "envelope.json")), originalEnvelope);
+    // Remove only our identified negative-case fixture before the valid case.
+    await rm(extra);
+    assert.deepEqual(await retire(), { state: "retired" });
+    assert.equal(checkedLease, true);
+    await assert.rejects(lstat(jobFile), { code: "ENOENT" }); await assert.rejects(lstat(spoolPath), { code: "ENOENT" });
+    assert.deepEqual(await readFile(path.join(root, "retained-ready-job")), originalJob);
+    assert.deepEqual(await readFile(path.join(root, "retained-envelope")), originalEnvelope);
+    assert.deepEqual(await readFile(path.join(root, "upload.credential")), credentialBytes);
+    assert.equal(await readFile(path.join(originalBundle, "summary.md"), "utf8"), "keep original");
+    for (const cut of ["asset", "empty-directories"] as const) {
+      // Recreate an isolated persisted layout using the actual encrypted bytes
+      // and committed job/receipt, then model a known cleanup interruption.
+      await writeFile(jobFile, originalJob, { mode: 0o600 });
+      await mkdir(spoolPath, { mode: 0o700 });
+      for (const asset of readyJob.files) {
+        await mkdir(path.dirname(path.join(spoolPath, asset.path)), { recursive: true, mode: 0o700 });
+        await writeFile(path.join(spoolPath, asset.path), received.get(asset.path)!, { mode: 0o600 });
+      }
+      await writeFile(path.join(spoolPath, "spool-state.json"), recoveryReceipt, { mode: 0o600 });
+      const kept = path.join(root, `recovery-envelope-alias-${cut}`);
+      await link(path.join(spoolPath, "envelope.json"), kept);
+      if (cut === "asset") await rm(path.join(spoolPath, readyJob.files.find(asset => asset.path.endsWith(".age"))!.path));
+      else {
+        for (const asset of readyJob.files) await rm(path.join(spoolPath, asset.path));
+        await rm(path.join(spoolPath, "spool-state.json"));
+      }
+      await withStateQueue(root, { scope: "upload", approvedServer: origin }, resources, {}, async (state, lease) => {
+        const input = { job: readyJob, expectedStamp: stateFileStamp(await lstat(jobFile, { bigint: true })),
+          assertFresh: async () => { const current = decodeJob(await readFile(jobFile)); assert.equal(current.status, "ready"); assert.equal(current.shared, false); } };
+        assert.deepEqual(await retireQueuedJob(state, lease, resources, input), { state: "refused" });
+        assert.deepEqual(await resumeQueuedRetirement(state, lease, resources, input), { state: "retired" }, cut);
+      });
+      await assert.rejects(lstat(jobFile), { code: "ENOENT" }); await assert.rejects(lstat(spoolPath), { code: "ENOENT" });
+      assert.deepEqual(await readFile(kept), originalEnvelope);
+      assert.deepEqual(await readFile(path.join(root, "upload.credential")), credentialBytes);
+      assert.equal(await readFile(path.join(originalBundle, "summary.md"), "utf8"), "keep original");
+    }
+
+
   } finally { borrowed.forEach(bytes => bytes.fill(0)); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+}));
+
+test("native admission applies reuse cancellation retirement and expected-absent creation", async () => fixture(async root => {
+  const server = "https://connect.example/connect", generation = "b".repeat(32), first = "a".repeat(32), next = "c".repeat(32);
+  const bundle = path.join(root, "original.apparent"), alias = path.join(root, "bundle-alias");
+  await mkdir(bundle, { mode: 0o755 }); await writeFile(path.join(bundle, "apparent.json"), "{}", { mode: 0o644 });
+  await symlink(bundle, alias);
+  const credential = JSON.stringify({ server, scope: "upload", token: "synthetic-upload-token", generation });
+  await writeFile(path.join(root, "upload.credential"), credential, { mode: 0o600 });
+  await writeFile(path.join(root, "config.json"), "synthetic-unrelated-config", { mode: 0o600 });
+  let time = 100;
+  const input = { directory: root, approvedServer: server, bundle: alias, candidateId: first, intent: "automatic-private" as const,
+    readSettings: async () => ({ enabled: true, server, encryptionEnabled: false, sharingEnabled: true, nowSeconds: time++, retentionSeconds: 1000 }) };
+  let replacements = 0;
+  const ports = { checkAcl: resources.checkAcl.bind(resources), lock: resources.lock.bind(resources),
+    async replaceFile(...args: Parameters<typeof resources.replaceFile>) {
+      const contender = await resources.lock(await open(path.join(root, "queue.lock"), constants.O_RDWR | constants.O_NOFOLLOW), { timeoutMs: 0 });
+      if (contender.state === "acquired") await contender.lease.release();
+      assert.equal(contender.state, "busy", "admission retains the actual queue lease");
+      replacements++; return resources.replaceFile(...args);
+    } };
+  assert.equal((await admitQueuedUpload(input, ports)).state, "admitted");
+  const initialBytes = await readFile(path.join(root, `${first}.job`));
+  const initialJob = decodeJob(initialBytes);
+  assert.equal(initialJob.bundle, await realpath(bundle)); assert.equal(initialJob.status, "pending"); assert.equal(initialJob.generation, generation);
+  const reused = await admitQueuedUpload({ ...input, candidateId: next }, ports);
+  assert.equal(reused.state, "reusable"); if (reused.state === "reusable") assert.equal(reused.id, first);
+  assert.equal(replacements, 1);
+  await link(path.join(root, `${first}.job`), path.join(root, "retained-pending-alias"));
+  const fresh = await admitQueuedUpload({ ...input, candidateId: next, intent: "explicit-private" }, ports);
+  assert.equal(fresh.state, "admitted"); assert.deepEqual(fresh.cancelledJobIds, [first]); assert.deepEqual(fresh.retiredJobIds, [first]);
+  await assert.rejects(lstat(path.join(root, `${first}.job`)), { code: "ENOENT" });
+  assert.deepEqual(await readFile(path.join(root, "retained-pending-alias")), initialBytes);
+  const publicId = "d".repeat(32), privateBefore = await readFile(path.join(root, `${next}.job`));
+  assert.equal((await admitQueuedUpload({ ...input, candidateId: publicId, intent: "public-copy" }, ports)).state, "admitted");
+  const shared = decodeJob(await readFile(path.join(root, `${publicId}.job`)));
+  assert.equal(shared.status, "awaiting_share"); assert.equal(shared.shared, true); assert.equal(shared.encrypted, false);
+  assert.deepEqual(await readFile(path.join(root, `${next}.job`)), privateBefore);
+  const orphan = "e".repeat(32); await mkdir(path.join(root, `${orphan}.sealed`), { mode: 0o700 });
+  const before = replacements;
+  assert.equal((await admitQueuedUpload({ ...input, candidateId: orphan }, ports)).state, "refused");
+  assert.equal(replacements, before);
+  assert.equal(await readFile(path.join(bundle, "apparent.json"), "utf8"), "{}");
+  assert.equal(await readFile(path.join(root, "upload.credential"), "utf8"), credential);
+  assert.equal(await readFile(path.join(root, "config.json"), "utf8"), "synthetic-unrelated-config");
 }));
 
 test("native queue snapshot uses the stable lease and preserves private job data", async () => fixture(async root => {
