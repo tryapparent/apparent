@@ -18,6 +18,8 @@ use super::pill_theme::{CARBON, PAPER};
 pub(in crate::capture::desktop) const PAPER_WIDTH: f32 = 1600.0;
 pub(in crate::capture::desktop) const PAPER_HEIGHT: f32 = 1100.0;
 const TOOLBAR_HEIGHT: f32 = 64.0;
+#[cfg(target_os = "linux")]
+pub(in crate::capture::desktop) mod observations;
 const LILAC: u32 = 0xb7a5d8;
 
 fn toolbar_button(id: &'static str, label: &'static str, close: bool) -> gpui::Stateful<gpui::Div> {
@@ -59,28 +61,35 @@ fn toolbar_button(id: &'static str, label: &'static str, close: bool) -> gpui::S
 pub(in crate::capture::desktop) struct Board {
     pub strokes: Vec<Vec<[f32; 2]>>,
     pub active: Option<Vec<[f32; 2]>>,
+    #[cfg(target_os = "linux")]
+    pub native_paper: observations::PaperTap,
 }
 
 impl Board {
-    pub fn start(&mut self, point: [f32; 2]) {
-        if on_paper(point) {
-            self.active = Some(vec![point]);
+    pub fn start(&mut self, point: [f32; 2]) -> bool {
+        if !on_paper(point) {
+            return false;
         }
+        self.active = Some(vec![point]);
+        true
     }
 
-    pub fn extend(&mut self, point: [f32; 2]) {
-        if let Some(stroke) = self.active.as_mut() {
-            stroke.push([
-                point[0].clamp(0.0, PAPER_WIDTH),
-                point[1].clamp(0.0, PAPER_HEIGHT),
-            ]);
-        }
+    pub fn extend(&mut self, point: [f32; 2]) -> Option<[f32; 2]> {
+        let stroke = self.active.as_mut()?;
+        let accepted = [
+            point[0].clamp(0.0, PAPER_WIDTH),
+            point[1].clamp(0.0, PAPER_HEIGHT),
+        ];
+        stroke.push(accepted);
+        Some(accepted)
     }
 
-    pub fn finish(&mut self) {
-        if let Some(stroke) = self.active.take() {
-            self.strokes.push(stroke);
-        }
+    pub fn finish(&mut self) -> bool {
+        let Some(stroke) = self.active.take() else {
+            return false;
+        };
+        self.strokes.push(stroke);
+        true
     }
 
     pub fn undo(&mut self) {
@@ -117,9 +126,50 @@ pub(in crate::capture::desktop) struct WhiteboardWindow {
     coordinator: Entity<ApparentCoordinator>,
     focus: FocusHandle,
     mark: Arc<Image>,
+    #[cfg(target_os = "linux")]
+    native_incarnation: Option<String>,
+    #[cfg(target_os = "linux")]
+    last_native_window: Option<observations::PaperWindow>,
 }
 
 impl WhiteboardWindow {
+    #[cfg(target_os = "linux")]
+    fn observe_paper(&mut self, window: &Window, action: observations::PaperAction) {
+        let board = self.board.borrow();
+        if !board.native_paper.active() {
+            return;
+        }
+        let b = window.bounds();
+        let current = (|| {
+            if window.scale_factor() != 1.0 {
+                return None;
+            }
+            Some(observations::PaperWindow {
+                handle: window.window_handle().window_id().as_u64(),
+                incarnation: self.native_incarnation.clone()?,
+                content_rectangle: [
+                    f64::from(f32::from(b.origin.x)),
+                    f64::from(f32::from(b.origin.y)) + f64::from(TOOLBAR_HEIGHT),
+                    f64::from(f32::from(b.size.width)),
+                    f64::from(f32::from(b.size.height)) - f64::from(TOOLBAR_HEIGHT),
+                ],
+            })
+        })();
+        self.last_native_window = current.clone();
+        board.native_paper.emit(
+            current,
+            crate::capture::engine::runtime::native_ink_monotonic_ns(),
+            action,
+        );
+    }
+    #[cfg(target_os = "linux")]
+    fn observe_closed(&self) {
+        self.board.borrow().native_paper.emit(
+            self.last_native_window.clone(),
+            crate::capture::engine::runtime::native_ink_monotonic_ns(),
+            observations::PaperAction::Closed,
+        );
+    }
     fn snapshot_soon(&self, cx: &mut Context<Self>) {
         let coordinator = self.coordinator.clone();
         cx.spawn(async move |_, cx| {
@@ -153,6 +203,8 @@ fn paint_stroke(window: &mut Window, points: &[[f32; 2]], origin: Point<Pixels>)
 
 impl Render for WhiteboardWindow {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(target_os = "linux")]
+        self.observe_paper(_window, observations::PaperAction::Surface);
         let board = self.board.borrow().clone();
         div()
             .track_focus(&self.focus)
@@ -171,7 +223,11 @@ impl Render for WhiteboardWindow {
                 }
                 let undo = key.eq_ignore_ascii_case("z") && event.keystroke.modifiers.platform;
                 if undo {
+                    #[cfg(target_os = "linux")]
+                    let active = view.board.borrow().active.is_some();
                     view.board.borrow_mut().undo();
+                    #[cfg(target_os = "linux")]
+                    view.observe_paper(window, observations::PaperAction::Undo { active });
                     view.snapshot_soon(cx);
                     cx.notify();
                     cx.stop_propagation();
@@ -214,16 +270,27 @@ impl Render for WhiteboardWindow {
                     )
                     .child(
                         toolbar_button("whiteboard-undo", "Undo", false).on_click(cx.listener(
-                            |view, _, _, cx| {
+                            |view, _, window, cx| {
+                                #[cfg(target_os = "linux")]
+                                let active = view.board.borrow().active.is_some();
                                 view.board.borrow_mut().undo();
+                                #[cfg(target_os = "linux")]
+                                view.observe_paper(
+                                    window,
+                                    observations::PaperAction::Undo { active },
+                                );
                                 view.snapshot_soon(cx);
                                 cx.notify();
                             },
                         )),
                     )
                     .child(toolbar_button("whiteboard-clear", "Clear", false).on_click(
-                        cx.listener(|view, _, _, cx| {
+                        cx.listener(|view, _, window, cx| {
+                            #[cfg(target_os = "linux")]
+                            let active = view.board.borrow().active.is_some();
                             view.board.borrow_mut().clear();
+                            #[cfg(target_os = "linux")]
+                            view.observe_paper(window, observations::PaperAction::Clear { active });
                             view.snapshot_soon(cx);
                             cx.notify();
                         }),
@@ -242,29 +309,47 @@ impl Render for WhiteboardWindow {
                     .cursor_crosshair()
                     .on_mouse_down(
                         MouseButton::Left,
-                        cx.listener(|view, event: &MouseDownEvent, _, cx| {
-                            view.board.borrow_mut().start(paper_point(event.position));
+                        cx.listener(|view, event: &MouseDownEvent, window, cx| {
+                            let point = paper_point(event.position);
+                            let _accepted = view.board.borrow_mut().start(point);
+                            #[cfg(target_os = "linux")]
+                            if _accepted {
+                                view.observe_paper(window, observations::PaperAction::Begin(point));
+                            }
                             cx.notify();
                         }),
                     )
-                    .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, _, cx| {
+                    .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
                         if view.board.borrow().active.is_some() {
-                            view.board.borrow_mut().extend(paper_point(event.position));
+                            let _accepted =
+                                view.board.borrow_mut().extend(paper_point(event.position));
+                            #[cfg(target_os = "linux")]
+                            if let Some(point) = _accepted {
+                                view.observe_paper(window, observations::PaperAction::Point(point));
+                            }
                             cx.notify();
                         }
                     }))
                     .on_mouse_up(
                         MouseButton::Left,
-                        cx.listener(|view, _: &MouseUpEvent, _, cx| {
-                            view.board.borrow_mut().finish();
+                        cx.listener(|view, _: &MouseUpEvent, window, cx| {
+                            let _accepted = view.board.borrow_mut().finish();
+                            #[cfg(target_os = "linux")]
+                            if _accepted {
+                                view.observe_paper(window, observations::PaperAction::Commit);
+                            }
                             view.snapshot_soon(cx);
                             cx.notify();
                         }),
                     )
                     .on_mouse_up_out(
                         MouseButton::Left,
-                        cx.listener(|view, _: &MouseUpEvent, _, cx| {
-                            view.board.borrow_mut().finish();
+                        cx.listener(|view, _: &MouseUpEvent, window, cx| {
+                            let _accepted = view.board.borrow_mut().finish();
+                            #[cfg(target_os = "linux")]
+                            if _accepted {
+                                view.observe_paper(window, observations::PaperAction::Commit);
+                            }
                             view.snapshot_soon(cx);
                             cx.notify();
                         }),
@@ -319,18 +404,28 @@ pub(in crate::capture::desktop) fn open(coord: &Entity<ApparentCoordinator>, cx:
             platform::decorate_app_window(window);
             let focus = cx.focus_handle();
             window.focus(&focus);
-            cx.new(|_| WhiteboardWindow {
-                board: shared,
-                coordinator,
-                focus,
-                mark: Arc::new(Image::from_bytes(
-                    ImageFormat::Png,
-                    include_bytes!(concat!(
-                        env!("CARGO_MANIFEST_DIR"),
-                        "/shared/assets/brand/apparent-a.png"
-                    ))
-                    .to_vec(),
-                )),
+            cx.new(|cx| {
+                #[cfg(target_os = "linux")]
+                cx.on_release(|view: &mut WhiteboardWindow, _| view.observe_closed())
+                    .detach();
+                WhiteboardWindow {
+                    board: shared,
+                    coordinator,
+                    #[cfg(target_os = "linux")]
+                    native_incarnation: crate::capture::desktop::workflow::agent_capture::new_id()
+                        .ok(),
+                    #[cfg(target_os = "linux")]
+                    last_native_window: None,
+                    focus,
+                    mark: Arc::new(Image::from_bytes(
+                        ImageFormat::Png,
+                        include_bytes!(concat!(
+                            env!("CARGO_MANIFEST_DIR"),
+                            "/shared/assets/brand/apparent-a.png"
+                        ))
+                        .to_vec(),
+                    )),
+                }
             })
         },
     );
@@ -639,6 +734,20 @@ mod tests {
         }
     }
 
+    #[test]
+    fn native_callback_results_are_the_donor_acceptance_not_inferred_from_stored_arrays() {
+        let mut board = Board::default();
+        assert!(!board.start([-1., 20.]));
+        assert_eq!(board.extend([3., 4.]), None);
+        assert!(!board.finish());
+        assert!(board.start([3.25, 4.5]));
+        assert_eq!(board.extend([1700., -10.]), Some([PAPER_WIDTH, 0.]));
+        assert!(board.finish());
+        assert!(!board.finish());
+        assert_eq!(board.strokes, vec![vec![[3.25, 4.5], [PAPER_WIDTH, 0.]]]);
+        board.undo();
+        assert!(board.strokes.is_empty());
+    }
     #[test]
     fn branded_toolbar_keeps_pointer_coordinates_on_the_paper() {
         let mut board = Board::default();

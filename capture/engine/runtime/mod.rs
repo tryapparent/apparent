@@ -735,7 +735,7 @@ pub(crate) trait NativeInkObserver: Send + Sync {
 }
 
 #[cfg(target_os = "linux")]
-fn native_ink_monotonic_ns() -> Option<u64> {
+pub(crate) fn native_ink_monotonic_ns() -> Option<u64> {
     let mut time = libc::timespec { tv_sec: 0, tv_nsec: 0 };
     if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut time) } != 0
         || time.tv_sec < 0 || !(0..1_000_000_000).contains(&time.tv_nsec) {

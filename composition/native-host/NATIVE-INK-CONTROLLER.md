@@ -51,10 +51,20 @@ only after removal of the exact observer. Positive source seal restores that
 snapshot after collector drain. These are local source facts, never Engine
 runtime clearance or permission to discard unknown capture work.
 
-This is the screen-source factory, not an enabled drawing route or complete
-application adoption. Board callback stamps/incarnations, recorded overlay
-presentation and Electron controls still need integration. No competing legacy
-recording may be started to obtain input.
+Board's existing native listeners now expose an optional privileged tap at
+accepted begin/extension/finish, undo, clear, render and entity release. Points
+come directly from the donor's acceptance return, with native monotonic stamps;
+they are not recovered from stored arrays. The actual GPUI window handle,
+per-open native nonce and GPUI-reported global scale1 viewport (minus the donor
+64-point toolbar) stay raw native observations, not independently verified XIDs
+or compositor effect. Close retains the original observed tuple; the owner-held
+Board stack survives. RGB remains absent rather than inferred from its HSLA
+paint. No observer is installed by this tap alone.
+
+This is the screen-source factory and Board callback preparation, not an enabled
+drawing route or complete application adoption. Board ingress registration/tap
+installation, recorded overlay presentation and Electron controls still need
+integration. No competing legacy recording may be started to obtain input.
 Actual native effects, latency of per-callback monitor joins, original sealed
 facts and full Saved/Copy/Agent journey remain acceptance gates. Installed
 routing and advertised capabilities are unchanged. Mac is unsupported here.
