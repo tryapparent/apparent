@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { chmod, open, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { readShell } from '../../scripts/artifacts.ts';
+import { digest, readShell } from '../../scripts/artifacts.ts';
 import { stageRecordNative } from '../../scripts/record-native.ts';
 import { buildShell } from '../../scripts/build.ts';
 import { assemble, verifyAssembly } from '../../scripts/assemble.ts';
@@ -97,4 +97,22 @@ test('mode changed after handle validation cannot repair an invalid source snaps
   await assert.rejects(stageRecordNative(f.output, f.input), /changed during read|mode mismatch/);
   assert.equal(observations, 2, 'the actual read/validation boundary was exercised');
   await assert.rejects(stat(join(f.output, 'native-record')), { code: 'ENOENT' });
+});
+
+test('desktop GUI closure is sealed with its actual executable identity and rejects changed package bytes', async t => {
+  const f = await fixture(); t.after(() => rm(f.work, { recursive: true, force: true }));
+  const path = join(f.work, 'Apparent.AppImage');
+  const data = Buffer.from('synthetic package; never executed');
+  await writeFile(path, data, { mode: 0o755 });
+  await chmod(path, 0o755);
+  const gui = { path, sha256: digest(data), executableSha256: 'b'.repeat(64), sourceSha: 'c'.repeat(40) };
+  await assert.rejects(stageRecordNative(f.output, { ...f.input, gui: { ...gui, sha256: 'd'.repeat(64) } }), /GUI AppImage checksum/);
+  await assert.rejects(stat(join(f.output, 'native-record')), { code: 'ENOENT' });
+  const modes = await stageRecordNative(f.output, { ...f.input, gui });
+  assert.equal(modes['native-record/gui/Apparent.AppImage'], 0o755);
+  assert.equal(modes['native-record/gui/manifest.json'], 0o644);
+  assert.deepEqual(await readFile(join(f.output, 'native-record/gui/Apparent.AppImage')), data);
+  const manifest = JSON.parse(await readFile(join(f.output, 'native-record/gui/manifest.json'), 'utf8'));
+  assert.equal(manifest.executableSha256, gui.executableSha256);
+  assert.equal(manifest.role, 'native-host-only');
 });

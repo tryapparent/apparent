@@ -30,6 +30,8 @@ export interface RecordMainBindingInput {
   resolvePaths?: string[];
   /** Complete externally admitted native payloads, staged without building owner source. */
   nativeArtifacts?: RecordNativeArtifacts;
+  /** Trusted package choice for the silent, single-monitor Omarchy user path. */
+  presentation?: 'omarchy';
 }
 export async function buildShell(output: string, onboarding?: OnboardingMainBindingInput, record?: RecordMainBindingInput) {
   if (onboarding && record) throw new Error('Owner host bindings must be assembled separately');
@@ -41,7 +43,8 @@ export async function buildShell(output: string, onboarding?: OnboardingMainBind
   await mkdir(join(output, 'vendor'), { recursive: true });
   const nativeFiles = record?.nativeArtifacts ? await stageRecordNative(output, record.nativeArtifacts) : undefined;
   await build({ ...common, entryPoints: [join(root, 'src/renderer.tsx')], outfile: join(output, 'renderer.js'),
-    external: [...external, './registry.js'] });
+    external: [...external, './registry.js'],
+    define: { ...common.define, APPARENT_OMARCHY: JSON.stringify(record?.presentation === 'omarchy') } });
   const require = createRequire(import.meta.url);
   const reactExports = Object.keys(require('react')).filter(name => /^[A-Za-z_$][\w$]*$/.test(name));
   for (const [file, contents, dependencies] of [
@@ -54,7 +57,10 @@ export async function buildShell(output: string, onboarding?: OnboardingMainBind
       ...(file === 'dom' ? { banner: { js: 'import * as sharedReact from "react"; const require = (name) => { if (name === "react") return sharedReact; throw new Error("Unsupported runtime dependency"); };' } } : {}) });
   }
   await build({ entryPoints: [join(root, 'src/main.cts')], bundle: true, platform: 'node',
-    format: 'cjs', target: 'node22', external: ['electron'], outfile: join(output, 'main.cjs') });
+    format: 'cjs', target: 'node22', external: ['electron'], outfile: join(output, 'main.cjs'),
+    define: { APPARENT_OMARCHY: JSON.stringify(record?.presentation === 'omarchy'),
+      APPARENT_TRAY_ICON: JSON.stringify(record?.presentation === 'omarchy'
+        ? 'data:image/png;base64,' + (await readFile(join(root, '../../shared/assets/brand/apparent-a.png'))).toString('base64') : '') } });
   await build({ entryPoints: [join(root, 'src/preload.cts')], bundle: true, platform: 'node',
     format: 'cjs', target: 'node22', external: ['electron'], outfile: join(output, 'preload.cjs') });
   if (record) {

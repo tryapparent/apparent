@@ -1,10 +1,13 @@
-import { app, BrowserWindow, session } from 'electron';
+import { app, BrowserWindow, session, Tray, nativeImage } from 'electron';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { registerOnboardingProgressBridge } from './onboarding-progress-bridge.cts';
 import { registerRecordBridge } from './record/bridge.cts';
 import { bindWindowShutdown } from './host-lifecycle.ts';
 import type { RecordHostServices } from './record/host.ts';
+import { bindSilentRecordControls } from './record/omarchy/controls.ts';
+declare const APPARENT_OMARCHY: boolean;
+declare const APPARENT_TRAY_ICON: string;
 let recordBound = false;
 let hostShutdown: Promise<void> = Promise.resolve();
 
@@ -40,7 +43,8 @@ app.whenReady().then(async () => {
     }
   } catch (error) { console.error('Onboarding assembly binding unavailable', error); }
   const window = new BrowserWindow({
-    title: 'Apparent Foundation', width: 900, height: 620,
+    title: APPARENT_OMARCHY ? 'Apparent' : 'Apparent Foundation', width: 900, height: 620,
+    show: !APPARENT_OMARCHY,
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true,
       preload: join(__dirname, 'preload.cjs') },
   });
@@ -48,7 +52,18 @@ app.whenReady().then(async () => {
   window.webContents.on('will-navigate', (event, url) => { if (url !== entry) event.preventDefault(); });
   const disposeProgress = host ? registerOnboardingProgressBridge({ window, entryUrl: entry, store: host.store }) : undefined;
   if (recordHost) {
-    const ownedHost = recordHost;
+    let ownedHost = recordHost;
+    if (APPARENT_OMARCHY) {
+      const icon = nativeImage.createFromDataURL(APPARENT_TRAY_ICON).resize({ width: 24, height: 24 });
+      if (icon.isEmpty()) throw new Error('Stop control icon unavailable');
+      const tray = new Tray(icon);
+      tray.setToolTip('Apparent — activate to Stop recording');
+      tray.setContextMenu(null);
+      ownedHost = bindSilentRecordControls({ host: ownedHost, window, stopControl: {
+        onActivate(listener) { tray.on('click', listener); return () => tray.removeListener('click', listener); },
+        dispose() { tray.destroy(); },
+      }, reportError: error => console.error('Record Stop remains unresolved', error) });
+    }
     const disposeRecord = registerRecordBridge({ window, entryUrl: entry, client: ownedHost.record });
     const lifecycle = bindWindowShutdown({ window,
       canClose: async () => typeof ownedHost.canClose === 'function' && await ownedHost.canClose() === true,
@@ -56,6 +71,9 @@ app.whenReady().then(async () => {
       refused: reason => { if (!window.isDestroyed()) window.webContents.send('apparent:host:close-refused', reason); },
     });
     window.once('closed', () => { hostShutdown = lifecycle.settled(); });
+  } else if (APPARENT_OMARCHY) {
+    // An ordinary Foundation surface must never substitute for a failed real binding.
+    throw new Error('Omarchy Record host unavailable');
   } else window.once('closed', () => {
     disposeProgress?.();
     const closing = host;

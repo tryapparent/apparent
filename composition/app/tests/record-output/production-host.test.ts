@@ -353,8 +353,13 @@ test('failed local recovery release cannot admit close when the native report it
       attempts++; return peerReceipt('clear-media', 'unconfirmed');
     }),
   };
-  const module = await controlledNative(async () => f.native);
+  let flow!: RecordCaptureCoordinator;
+  const module = await controlledNative(async () => f.native, undefined, value => { flow = value; return value; });
   const host = await module.createRecordRecoveryProductionHost(recoveryOptions(f, peers));
+  // Construction intentionally leaves startup recovery live so Stop stays
+  // available. This case exercises release failure after a clear native scope,
+  // so await the public reconciliation barrier rather than racing that startup.
+  await flow.reconcile();
   assert.equal(await host.canClose(), false);
   assert.equal(host.shutdownReport()?.runtimeClearance, 'clear', 'native report remains unchanged');
   assert.equal(host.recoveryRelease().state, 'unknown');

@@ -363,6 +363,40 @@ clipboard text observed”: local queued submission and an independent exact-byt
 observation establish neither compositor acknowledgement nor write origin,
 continued ownership, paste or delivery. The packaged desktop and scratch-target
 paste checks remain separate acceptance gates.
+
+`scripts/build-omarchy.ts <admitted-native-inputs.json> <fresh-output>` builds
+the complete Linux x64 candidate from a clean committed checkout. It combines
+the public Record stream, the trusted `src/record/omarchy/entry.ts` binding,
+admitted Capture/2, Media/2 and config closures, and the exact source-built GUI
+AppImage. The `gui` input names its package hash, packaged executable hash and
+source commit. The existing AppImage packager supplies that closure; do not
+substitute an unbundled host executable.
+
+The generated `apparent-omarchy/apparent` launcher preserves the Wayland/DBus
+session and creates one persistent dedicated home/profile. The existing GUI
+runs `app --native-host-only`; its private socket is joined to an actual child
+process, start ticks and executable hash before Record uses it. The role has
+no legacy recorder, status menu or product windows. Root GUI and config host
+use the same profile's `home/.config/apparent/config.json`. Record's runtime,
+control database and Saved bundles remain in that profile across restart.
+
+The main window hides before Start. Tray activation only requests Stop (or
+Cancel while starting / inspection while unknown) for the sole current capture
+and provider revision; it never toggles Start. Unknown Start retains hidden
+controls and blocks close. A renderer disconnect cannot remove Stop. The
+normal close route requires scoped coordinator shutdown and disposal, exact
+recovery connection releases and observed owning-client exit before signaling
+the identity-checked adapter GUI. A failed or unknown stage retains ownership;
+do not remove the profile or force an owner close to make a test pass.
+
+Before accepting this candidate, the existing single Omarchy executor must
+prove its tray is visible and physical activation reaches Stop, then inspect
+the real portal recording, authenticated Saved, cold restart and explicit text
+submission/readback plus one scratch-target paste. No recording may begin if
+the tray control is absent. Chromium sandbox support is required; package
+preparation must not add `--no-sandbox`. Packaging/tests alone establish none
+of those effects. Mac, audio, drawing, region/window capture, floating controls,
+uploads and installed routing are outside this candidate.
 Supply already constructed admitted Capture/2 and Media/2 SDK clients sharing
 one private runtime, explicit roots/source intent and `standardProcessing` proof
 and destination preferences, native permission/config inputs, and the ownership callbacks described
