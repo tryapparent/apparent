@@ -3,7 +3,9 @@ import { test } from 'node:test';
 import { createRecordFixture } from '@apparent/record/fixtures';
 import { bindSilentRecordControls } from '../../src/record/omarchy/controls.ts';
 
-function fixture() {
+function fixture(identity: { captureId: string; invocationId?: string } = {
+  captureId: 'capture-one', invocationId: 'start-one',
+}) {
   const f = createRecordFixture();
   f.driver.publish({ ...f.driver.current(), revision: f.driver.current().revision + 1, captures: [],
     readiness: { requirements: [] } });
@@ -21,7 +23,7 @@ function fixture() {
   const publish = (phase: 'starting' | 'recording' | 'processing' | 'saved' | 'unknown' | 'cancelled') => {
     const snapshot = f.driver.current();
     f.driver.publish({ ...snapshot, revision: snapshot.revision + 1,
-      captures: [{ captureId: 'capture-one', invocationId: 'start-one', phase, outcomes: [], delivery: 'unknown' }] });
+      captures: [{ ...identity, phase, outcomes: [], delivery: 'unknown' }] });
   };
   return { ...f, host, publish, activate: () => activation?.(), visible: () => visible,
     breakHide() { hideWorks = false; }, counts: () => ({ closed, closeChecks }),
@@ -59,6 +61,20 @@ test('cannot start when controls fail to hide; no native dispatch', async () => 
   const f = fixture(); f.breakHide();
   assert.equal((await f.start()).status, 'refused');
   assert.equal(f.driver.commands().length, 0);
+});
+
+test('the public request capture ID restores controls without the native invocation ID', async () => {
+  // Record projects receipt.requestId as public CaptureFact.captureId. The
+  // separate native invocation ID need not be present in that public snapshot.
+  const f = fixture({ captureId: 'start-one' });
+  await f.start();
+  f.publish('recording');
+  assert.equal(f.visible(), false);
+  f.publish('processing');
+  assert.equal(f.visible(), true);
+  f.publish('saved');
+  assert.equal(await f.host.canClose(), true);
+  assert.equal(f.driver.commands().filter(command => command.type === 'start-capture').length, 1);
 });
 
 test('unknown Start remains hidden and close refuses; tray inspection never retries Start', async () => {
