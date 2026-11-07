@@ -607,6 +607,8 @@ impl ApparentCoordinator {
             return Some(refusal("unavailable"));
         }
         if self.native_host_epoch.is_empty() { return Some(refusal("unavailable")); }
+        if matches!(&request.operation, Operation::ReadLegacyCaptureWriter | Operation::RetireLegacyCaptureWriter)
+            && !self.native_host_epoch_strong { return Some(refusal("unavailable")); }
         if matches!(&request.operation, Operation::ReadStrokeColor) {
             if crate::capture::desktop::workflow::agent_capture::storage_clock_ms() >= request.deadline {
                 return Some(refusal("unavailable"));
@@ -865,6 +867,8 @@ impl ApparentCoordinator {
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     fn native_host_observation(&self) -> NativeHostObservation {
+        #[cfg(test)]
+        native_legacy_capture_writer_tests::assert_observation_allowed();
         use crate::capture::desktop::settings::onboarding::Permission;
         let (record, paste) = self.telemetry.shortcuts();
         let config_path = crate::shared::handoff::default_config_path();
@@ -1692,6 +1696,19 @@ mod native_legacy_capture_writer_tests {
     use super::*;
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 
+    thread_local! {
+        static OBSERVATION_FORBIDDEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
+    pub(super) fn assert_observation_allowed() {
+        OBSERVATION_FORBIDDEN.with(|value| assert!(!value.get(), "unqualified request reached shared config observation"));
+    }
+
+    struct ForbidObservation;
+    impl Drop for ForbidObservation {
+        fn drop(&mut self) { OBSERVATION_FORBIDDEN.with(|value| value.set(false)); }
+    }
+
     fn coordinator() -> ApparentCoordinator {
         let (sender, _receiver) = flume::unbounded();
         ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None)
@@ -1710,6 +1727,36 @@ mod native_legacy_capture_writer_tests {
 
     fn deadline() -> u64 {
         crate::capture::desktop::workflow::agent_capture::storage_clock_ms() + 3000
+    }
+
+    #[test]
+    fn legacy_capture_weak_epoch_refuses_at_dispatch_before_shared_observation() {
+        use crate::capture::desktop::workflow::native_host::{Admitted, Expected, Operation, legacy_capture::process_epoch};
+        let (directory, config) = fixture();
+        let before = std::fs::read(&config).unwrap();
+        let mut coord = coordinator();
+        (coord.native_host_epoch, coord.native_host_epoch_strong) = process_epoch(Err(()), 7);
+        for operation in [Operation::ReadLegacyCaptureWriter, Operation::RetireLegacyCaptureWriter] {
+            let expected = matches!(operation, Operation::RetireLegacyCaptureWriter).then(|| Expected {
+                process_epoch: coord.native_host_epoch.clone(), revision: coord.native_host_revision,
+            });
+            let (reply, _receiver) = std::sync::mpsc::sync_channel(1);
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                OBSERVATION_FORBIDDEN.with(|value| value.set(true));
+                let _guard = ForbidObservation;
+                coord.native_host_request(&Admitted {
+                    id: "unqualified".into(), deadline: deadline(), expected, operation,
+                }, false, reply)
+            }));
+            if outcome.is_err() { std::fs::remove_dir_all(&directory).unwrap(); }
+            assert_eq!(outcome.expect("qualification must precede shared config observation"),
+                Some(serde_json::json!({"status":"refused","reason":"unavailable"})));
+            assert!(coord.native_host_fingerprint.is_none());
+            assert_eq!(coord.native_host_revision, 0);
+        }
+        assert_eq!(std::fs::read(&config).unwrap(), before);
+        assert!(coord.legacy_capture_start_allowed_in(&config));
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
