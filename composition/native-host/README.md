@@ -1,5 +1,9 @@
 # Native host client
 
+The [ink-source v1 obligation](INK-SOURCE-V1.md) records the joint drawing
+registration/input/lifecycle boundary. It is not an implemented native port;
+current pen RGB support alone does not establish accepted ink.
+
 This package ships compiled ESM and declaration files for Node.js 22.18 or newer.
 Its runtime has no React, Electron, TypeScript, Rust, or source-tree dependency.
 Install a matching `@apparent/app-contracts` package beside it; the contracts
