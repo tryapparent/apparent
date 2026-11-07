@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
-import { inventoryTree, readProducerFile, selectTarget, validateArtifact, type DeliveryManifest } from './contract.ts'
+import { inventoryTree, readCargoBuildFile, readProducerFile, selectTarget, validateArtifact, type DeliveryManifest } from './contract.ts'
 import { checkNativeExecutable, compiledGuiPath, compiledHelperPath, preparedLinuxTools } from './build-input.ts'
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -44,7 +44,7 @@ try {
     env: { ...process.env, CARGO_BUILD_JOBS: process.env.T3_BUILD_JOBS ?? process.env.CARGO_BUILD_JOBS ?? '3' },
   })
   const binary = compiledGuiPath(repo, transcript)
-  const built = await readProducerFile(binary)
+  const built = await readCargoBuildFile(binary)
   checkNativeExecutable(built.bytes, target)
 
   if (target === 'linux-x64') {
@@ -78,7 +78,7 @@ try {
   } else {
     const app = join(temporary, 'Apparent.app')
     const sparkle = join(temporary, 'sparkle')
-    const helper = await readProducerFile(compiledHelperPath(repo, transcript))
+    const helper = await readCargoBuildFile(compiledHelperPath(repo, transcript))
     checkNativeExecutable(helper.bytes, target)
     const inputs = join(temporary, 'validated-inputs')
     mkdirSync(inputs, { mode: 0o700 })

@@ -1,10 +1,28 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, link, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 import { checkNativeExecutable, compiledGuiPath, compiledHelperPath, preparedLinuxTools } from '../src/build-input.ts'
+import { inventoryTree, readCargoBuildFile, readProducerFile } from '../src/contract.ts'
+
+test('Cargo hard-linked outputs can be snapshotted without admitting hard-linked artifacts', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'gui-cargo-hardlink-'))
+  try {
+    const binary = join(root, 'apparent'), alias = join(root, 'cargo-deps-apparent')
+    const bytes = Buffer.from('compiler output')
+    await writeFile(binary, bytes, { mode: 0o755 })
+    await link(binary, alias)
+    assert.deepEqual(await readCargoBuildFile(binary), { bytes, mode: 0o755 })
+    await assert.rejects(readProducerFile(binary), /single link/)
+    await assert.rejects(inventoryTree(root), /single link/)
+    await symlink(binary, join(root, 'symlink'))
+    await assert.rejects(readCargoBuildFile(join(root, 'symlink')))
+    await chmod(binary, 0o4755)
+    await assert.rejects(readCargoBuildFile(binary), /special modes/)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
 
 test('packaging selects the actual Cargo executable and refuses stale fixed output', () => {
   const artifact = (executable: string) => JSON.stringify({ reason: 'compiler-artifact',

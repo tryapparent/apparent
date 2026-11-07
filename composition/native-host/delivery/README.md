@@ -22,6 +22,9 @@ The producer refuses target relabeling, non-x64 hosts, dirty/untracked source,
 custom/cross Cargo output paths and any existing `dist/`. Cargo's JSON artifact
 output must identify the current native executable, preventing a stale
 `target/debug/apparent` from being packaged after compilation went elsewhere.
+Compiler-selected inputs permit Cargo's hard links while retaining stable
+no-follow reads and metadata checks. Staged artifacts and prepared tool inputs
+still require single-link regular files; Mac snapshots are fresh private copies.
 The Mac build preserves the real compiler/user environment, uses fresh app and
 Sparkle staging paths, and calls the existing installer's internal staging function
 with private snapshots of the validated executable and the same package's Cargo

@@ -38,11 +38,22 @@ const normalizedRelative = (path: string) => !isAbsolute(path) &&
   !path.includes('\\') && !/[\0\r\n]/.test(path) && !/^[A-Za-z]:/.test(path)
 
 export async function readProducerFile(path: string, maximumBytes = 1024 * 1024 * 1024) {
+  return readStableFile(path, maximumBytes, true)
+}
+
+/** Cargo hard-links its executable into target/debug. This exception is only
+ * for compiler-selected inputs, never staged artifacts or prepared tool data. */
+export async function readCargoBuildFile(path: string) {
+  return readStableFile(path, 1024 * 1024 * 1024, false)
+}
+
+async function readStableFile(path: string, maximumBytes: number, singleLink: boolean) {
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
   try {
     const before = await handle.stat({ bigint: true })
-    if (!before.isFile() || before.nlink !== 1n || before.size > BigInt(maximumBytes) || (Number(before.mode) & 0o7000)) {
-      throw new Error('artifact data must be bounded, single-link regular files without special modes')
+    if (!before.isFile() || before.nlink < 1n || (singleLink && before.nlink !== 1n)
+      || before.size > BigInt(maximumBytes) || (Number(before.mode) & 0o7000)) {
+      throw new Error('artifact data must be bounded regular files without special modes; staged inputs require a single link')
     }
     const bytes = await handle.readFile()
     const after = await handle.stat({ bigint: true })
