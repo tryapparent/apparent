@@ -3,6 +3,12 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) const MAX_SERIALIZED_FRAME_BYTES: usize = 131_072;
 pub(crate) const MAX_UTF8_TEXT_BYTES: usize = 21_800;
+pub(crate) const MAX_PNG_BYTES: usize = 4_194_304;
+pub(crate) const MAX_PNG_DIMENSION: u32 = 4096;
+pub(crate) const MAX_PNG_DECODED_BYTES: usize = 67_108_864;
+pub(crate) const MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES: usize = 9_000_000;
+mod png_text;
+pub(crate) use png_text::{clipboard_png_refusal, decode_png_hex};
 const LEGACY_MAX_FRAME_BYTES: usize = 4096;
 
 pub(crate) fn clipboard_text_refusal(text: &str) -> Option<&'static str> {
@@ -41,6 +47,8 @@ pub(crate) struct Request {
     pub(crate) expected_pen_color: Option<ExpectedPenColor>,
     #[serde(default)]
     pub(crate) text: Option<String>,
+    #[serde(default, rename = "pngHex")]
+    pub(crate) png_hex: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -90,6 +98,7 @@ pub(crate) enum Operation {
     ApplyStrokeColor(Option<[u8; 3]>, ExpectedPenColor),
     ReadStrokeColor,
     WriteClipboardText(String),
+    WriteClipboardPngText { png_hex: String, text: String },
 }
 
 #[derive(Clone, Debug)]
@@ -109,7 +118,7 @@ const PERMISSIONS: &[&str] = &[
 ];
 
 pub(crate) fn parse(line: &str, now: u64) -> Option<Admitted> {
-    if line.len().saturating_add(1) > MAX_SERIALIZED_FRAME_BYTES {
+    if line.len().saturating_add(1) > MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES {
         return None;
     }
     let request: Request = serde_json::from_str(line).ok()?;
@@ -158,15 +167,18 @@ pub(crate) fn parse(line: &str, now: u64) -> Option<Admitted> {
         "writeClipboardText" => &[
             "protocol", "id", "owner", "operation", "deadline", "observed", "text",
         ],
+        "writeClipboardPngText" => &[
+            "protocol", "id", "owner", "operation", "deadline", "observed", "text", "pngHex",
+        ],
         _ => return None,
     };
     if object.len() != fields.len() || object.keys().any(|key| !fields.contains(&key.as_str())) {
         return None;
     }
-    let max_frame = if request.operation == "writeClipboardText" {
-        MAX_SERIALIZED_FRAME_BYTES
-    } else {
-        LEGACY_MAX_FRAME_BYTES
+    let max_frame = match request.operation.as_str() {
+        "writeClipboardPngText" => MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES,
+        "writeClipboardText" => MAX_SERIALIZED_FRAME_BYTES,
+        _ => LEGACY_MAX_FRAME_BYTES,
     };
     if line.len().saturating_add(1) > max_frame {
         return None;
@@ -219,6 +231,10 @@ pub(crate) fn parse(line: &str, now: u64) -> Option<Admitted> {
                 && request.expected_pen_color.is_none() =>
         {
             Operation::WriteClipboardText(request.text.clone()?)
+        }
+        "writeClipboardPngText" if request.expected.is_none() && request.observed.is_some()
+            && request.text.is_some() && request.png_hex.is_some() => {
+            Operation::WriteClipboardPngText { png_hex: request.png_hex.clone()?, text: request.text.clone()? }
         }
         "requestPermission"
             if request.expected.is_some()
@@ -306,6 +322,16 @@ pub(crate) fn parse(line: &str, now: u64) -> Option<Admitted> {
         expected: request.expected.or(request.observed),
         operation,
     })
+}
+
+impl Admitted {
+    pub(crate) fn maximum_frame_bytes(&self) -> usize {
+        match self.operation {
+            Operation::WriteClipboardPngText { .. } => MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES,
+            Operation::WriteClipboardText(_) => MAX_SERIALIZED_FRAME_BYTES,
+            _ => LEGACY_MAX_FRAME_BYTES,
+        }
+    }
 }
 
 fn valid_permission(value: &str) -> bool {
@@ -464,5 +490,58 @@ mod tests {
         assert!(matches!(parse(&line, 1000).unwrap().operation,
             Operation::WriteClipboardText(ref value) if value == &"x".repeat(MAX_UTF8_TEXT_BYTES + 1)));
         assert!(parse(&"x".repeat(LEGACY_MAX_FRAME_BYTES), 1000).is_none());
+    }
+}
+
+#[cfg(test)]
+mod png_text_protocol_tests {
+    use super::*;
+
+    fn request() -> serde_json::Value {
+        serde_json::json!({"protocol":1,"id":"png-text","owner":"record",
+            "operation":"writeClipboardPngText","deadline":3000,
+            "observed":{"processEpoch":"epoch","revision":4},"text":"exact","pngHex":"89504e470d0a1a0a"})
+    }
+
+    #[test]
+    fn combined_operation_has_fixed_fields_and_observed_cas_without_a_path_selector() {
+        let admitted = parse(&request().to_string(), 1000).unwrap();
+        assert!(matches!(admitted.operation, Operation::WriteClipboardPngText { ref png_hex, ref text }
+            if png_hex == "89504e470d0a1a0a" && text == "exact"));
+        assert_eq!(admitted.maximum_frame_bytes(), MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES);
+        for (key, value) in [("path", serde_json::json!("/not-allowed")),
+            ("expected", serde_json::json!({"processEpoch":"epoch","revision":4})),
+            ("mime", serde_json::json!("image/png"))] {
+            let mut invalid = request(); invalid[key] = value;
+            assert!(parse(&invalid.to_string(), 1000).is_none());
+        }
+        let mut wrong_owner = request(); wrong_owner["owner"] = "other".into();
+        assert!(parse(&wrong_owner.to_string(), 1000).is_none());
+        let mut missing = request(); missing.as_object_mut().unwrap().remove("observed");
+        assert!(parse(&missing.to_string(), 1000).is_none());
+        let mut wrong_operation = request(); wrong_operation["operation"] = "writeClipboardText".into();
+        assert!(parse(&wrong_operation.to_string(), 1000).is_none());
+    }
+
+    #[test]
+    fn combined_maximum_frame_preserves_text_and_legacy_frame_limits() {
+        let mut largest = request();
+        largest["pngHex"] = "00".repeat(MAX_PNG_BYTES).into();
+        largest["text"] = "\u{1}".repeat(MAX_UTF8_TEXT_BYTES).into();
+        largest["observed"]["processEpoch"] = "e".repeat(64).into();
+        largest["observed"]["revision"] = 9_007_199_254_740_991_u64.into();
+        let line = largest.to_string();
+        assert!(line.len() + 1 <= MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES);
+        assert!(parse(&line, 1000).is_some());
+        let too_large = format!("{line}{}", " ".repeat(MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES - line.len()));
+        assert!(parse(&too_large, 1000).is_none());
+        let mut text = request();
+        text.as_object_mut().unwrap().remove("pngHex");
+        text["operation"] = "writeClipboardText".into();
+        let text = format!("{}{}", text, " ".repeat(MAX_SERIALIZED_FRAME_BYTES));
+        assert!(text.len() < MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES);
+        assert!(parse(&text, 1000).is_none());
+        let read = serde_json::json!({"protocol":1,"id":"read","owner":"record","operation":"readSnapshot","deadline":3000});
+        assert!(parse(&format!("{read}{}", " ".repeat(LEGACY_MAX_FRAME_BYTES)), 1000).is_none());
     }
 }

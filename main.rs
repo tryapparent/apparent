@@ -12,8 +12,12 @@ fn main() -> anyhow::Result<()> {
         let mut args = std::env::args_os();
         let _program = args.next();
         if args.next().as_deref() == Some(std::ffi::OsStr::new("--internal-native-clipboard-text-owner")) {
-            anyhow::ensure!(args.next().is_none(), "Unexpected clipboard owner argument");
-            return crate::shared::handoff::run_native_clipboard_text_owner();
+            return match args.next() {
+                None => crate::shared::handoff::run_native_clipboard_text_owner(),
+                Some(mode) if mode == "--png-and-text" && args.next().is_none() =>
+                    crate::shared::handoff::run_native_clipboard_png_text_owner(),
+                _ => anyhow::bail!("Unexpected clipboard owner argument"),
+            };
         }
     }
     #[cfg(target_os = "linux")]

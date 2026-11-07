@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
-import { MAX_SERIALIZED_FRAME_BYTES, MAX_UTF8_TEXT_BYTES } from '@apparent/app-contracts/native';
-import { createNativeHostPort, createNativeClipboardPort, createNativePenPort } from '../src/client.ts';
+import { MAX_PNG_BYTES, MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES, MAX_SERIALIZED_FRAME_BYTES, MAX_UTF8_TEXT_BYTES } from '@apparent/app-contracts/native';
+import { createNativeHostPort, createNativeClipboardPort, createNativeClipboardPngTextPort, createNativePenPort } from '../src/client.ts';
 
 const facts = {
   api: 1, processEpoch: 'epoch-a', revision: 4, scope: 'running-desktop-process', freshness: 'cached-gui-observation',
@@ -356,4 +356,99 @@ test('clipboard refuses a different digest even when its byte length matches', a
   await withSocket(() => ({ status: 'applied', digest: '0'.repeat(64), byteLength: 5 }), async () => {
     assert.deepEqual(await createNativeClipboardPort().writeText('exact', expected), { status: 'outcome-unknown' });
   });
+});
+
+const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const clipboardDigest = (bytes: Uint8Array) => ({ digest: createHash('sha256').update(bytes).digest('hex'), byteLength: bytes.byteLength });
+
+test('combined clipboard snapshots exact PNG and text and accepts only their correlated receipts', async () => {
+  const png = Buffer.concat([pngSignature, Buffer.from('synthetic socket payload')]);
+  const original = Buffer.from(png);
+  const text = 'exact café\n\t\u0001';
+  const receipt = { status: 'applied', png: clipboardDigest(original), text: clipboardDigest(Buffer.from(text)) };
+  await withSocket(request => {
+    assert.equal(request.operation, 'writeClipboardPngText');
+    assert.deepEqual(request.observed, expected);
+    assert.equal(request.pngHex, original.toString('hex'));
+    assert.equal(request.text, text);
+    return receipt;
+  }, async () => {
+    const write = createNativeClipboardPngTextPort().writePngAndText(png, text, expected);
+    png.fill(0);
+    assert.deepEqual(await write, receipt);
+  });
+});
+
+test('combined frame ceiling covers maximum PNG, escaped text, selectors and LF without changing text limits', async () => {
+  const png = Buffer.alloc(MAX_PNG_BYTES);
+  pngSignature.copy(png);
+  const text = '\u0001'.repeat(MAX_UTF8_TEXT_BYTES);
+  const receipt = { status: 'applied', png: clipboardDigest(png), text: clipboardDigest(Buffer.from(text)) };
+  await withSocket(request => {
+    assert.equal(Buffer.byteLength(`${JSON.stringify(request)}\n`) <= MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES, true);
+    assert.equal(MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES, 9_000_000);
+    assert.equal(MAX_SERIALIZED_FRAME_BYTES, 131_072);
+    assert.equal(MAX_UTF8_TEXT_BYTES, 21_800);
+    return receipt;
+  }, async () => {
+    assert.deepEqual(await createNativeClipboardPngTextPort().writePngAndText(png, text, {
+      processEpoch: 'e'.repeat(64), revision: Number.MAX_SAFE_INTEGER,
+    }), receipt);
+  });
+});
+
+test('combined invalid PNG, NUL, malformed Unicode and oversize data are refused before dispatch', async () => {
+  let dispatches = 0;
+  await withSocket(() => { dispatches++; return DROP; }, async () => {
+    const port = createNativeClipboardPngTextPort();
+    for (const png of [new Uint8Array(), Buffer.from('not a PNG')]) {
+      assert.deepEqual(await port.writePngAndText(png, 'text', expected), { status: 'refused', reason: 'invalid-png' });
+    }
+    assert.deepEqual(await port.writePngAndText(Buffer.alloc(MAX_PNG_BYTES + 1), 'text', expected), { status: 'refused', reason: 'too-large' });
+    for (const text of ['bad\0text', '\ud800', '\udc00']) {
+      assert.deepEqual(await port.writePngAndText(pngSignature, text, expected), { status: 'refused', reason: 'invalid-text' });
+    }
+    assert.deepEqual(await port.writePngAndText(pngSignature, 'a'.repeat(MAX_UTF8_TEXT_BYTES + 1), expected), { status: 'refused', reason: 'too-large' });
+    await assert.rejects(port.writePngAndText(pngSignature, 'valid', { processEpoch: '', revision: 0 }), /Invalid native host revision/);
+  });
+  assert.equal(dispatches, 0);
+});
+
+test('text and combined ports share one effect lane in both directions', async () => {
+  for (const combinedFirst of [false, true]) {
+    let release!: () => void, started!: () => void, dispatches = 0;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const dispatched = new Promise<void>(resolve => { started = resolve; });
+    await withSocket(async () => { dispatches++; started(); await gate; return { status: 'outcome-unknown' }; }, async () => {
+      const text = createNativeClipboardPort();
+      const combined = createNativeClipboardPngTextPort();
+      const first = combinedFirst ? combined.writePngAndText(pngSignature, 'first', expected) : text.writeText('first', expected);
+      await dispatched;
+      try {
+        const second = combinedFirst ? await text.writeText('second', expected) : await combined.writePngAndText(pngSignature, 'second', expected);
+        assert.deepEqual(second, { status: 'refused', reason: 'busy' });
+      } finally { release(); }
+      assert.deepEqual(await first, { status: 'outcome-unknown' });
+    });
+    assert.equal(dispatches, 1);
+  }
+});
+
+test('combined partial, mismatched and lost receipts never become applied or trigger retry', async () => {
+  const png = Buffer.from(pngSignature), text = 'exact';
+  const good = { status: 'applied', png: clipboardDigest(png), text: clipboardDigest(Buffer.from(text)) };
+  for (const reply of [DROP, { ...good, png: { ...good.png, digest: '0'.repeat(64) } },
+    { ...good, text: { ...good.text, byteLength: 999 } }, { status: 'applied', text: good.text },
+    { ...good, ambientClipboard: 'must not be accepted' }]) {
+    let dispatches = 0;
+    await withSocket(() => { dispatches++; return reply; }, async () => {
+      assert.deepEqual(await createNativeClipboardPngTextPort().writePngAndText(png, text, expected), { status: 'outcome-unknown' });
+    });
+    assert.equal(dispatches, 1);
+  }
+  for (const reason of ['stale', 'busy', 'unavailable', 'invalid-text', 'invalid-png', 'too-large']) {
+    await withSocket(() => ({ status: 'refused', reason }), async () => {
+      assert.deepEqual(await createNativeClipboardPngTextPort().writePngAndText(png, text, expected), { status: 'refused', reason });
+    });
+  }
 });
