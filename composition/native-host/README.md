@@ -107,3 +107,8 @@ change count to advance and remain stable across exact string readback. Unsuppor
 refuse before writing. A mismatch, timeout after possible effect, or lost reply is
 `outcome-unknown`; this port has no read operation and never restores or returns
 ambient clipboard contents. The bounded native worker admits one write at a time.
+
+The package build removes its own generated `dist` directory before compilation,
+refusing an output-directory symlink or non-directory. Packing verifies that
+only outputs from the current source files remain; ignored modules from a
+previous branch cannot enter the public tarball.
