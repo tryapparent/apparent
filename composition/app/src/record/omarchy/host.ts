@@ -188,11 +188,7 @@ export async function createRecordHostServices(input: { profilePath: string; nat
             reason: 'Recording intent could not be prepared', snapshot };
         }
       } },
-      canClose: () => {
-        if (!microphone.idle()) return Promise.resolve(false);
-        microphone.closeAdmission();
-        return host.canClose();
-      },
+      canClose: () => microphone.canClose(() => host.canClose(), () => host.commandAdmission()),
     };
   } catch (error) {
     // No automatic cancellation, generic close, or inferred ownership release

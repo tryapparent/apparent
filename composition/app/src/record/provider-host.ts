@@ -30,6 +30,8 @@ export interface RecordProviderHostOptions {
 type Phase = 'open' | 'draining' | 'inspecting' | 'ownership-retained' | 'admitted-close' | 'provider-detached' | 'engine-closed' | 'closed' | 'cleanup-unknown';
 const unresolved = new Set(['starting', 'recording', 'processing', 'unknown']);
 export interface RecordProviderHost extends RecordHostServices {
+  /** Trusted composition only: positive command admission, never runtime clearance. */
+  commandAdmission(): 'open' | 'closed';
   /** Trusted-main diagnostics only; this is not a renderer capability or retry instruction. */
   shutdownReport(): RecordCaptureCoordinatorShutdownReport | undefined;
 }
@@ -208,6 +210,7 @@ export function createRecordProviderHost(options: RecordProviderHostOptions): Re
   return {
     record,
     canClose,
+    commandAdmission: () => phase === 'open' ? 'open' : 'closed',
     shutdownReport: () => shutdownReport && structuredClone(shutdownReport),
     async close() {
       if (phase === 'closed') return;

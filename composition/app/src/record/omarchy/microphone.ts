@@ -45,7 +45,8 @@ export function createMicrophonePolicy(options: {
   querySupport(): Promise<boolean>;
   readRetainedAudio(requestId: string): Promise<RecordingAudio | undefined>;
 }) {
-  let phase: 'open' | 'closed' = 'open';
+  let phase: 'open' | 'checking-close' | 'closed' = 'open';
+  let closeFlight: Promise<boolean> | undefined;
   let supportFlight: Promise<boolean> | undefined;
   let preparing = 0;
   const prepared = new Set<string>();
@@ -102,5 +103,20 @@ export function createMicrophonePolicy(options: {
     },
     idle: () => preparing === 0 && !supportFlight && flights.size === 0,
     closeAdmission() { phase = 'closed'; prepared.clear(); },
+    canClose(check: () => Promise<boolean>, commandAdmission: () => 'open' | 'closed'): Promise<boolean> {
+      if (closeFlight) return closeFlight;
+      if (phase !== 'open' || preparing || supportFlight || flights.size) return Promise.resolve(false);
+      // Seal local admission without an await. A positive nonterminal Record
+      // preflight refusal may resume it; irreversible/unknown shutdown cannot.
+      phase = 'checking-close';
+      closeFlight = Promise.resolve().then(check).then(clear => {
+        phase = clear || commandAdmission() !== 'open' ? 'closed' : 'open';
+        if (phase === 'closed') prepared.clear();
+        return clear;
+      }).catch(() => { phase = 'closed'; prepared.clear(); return false; }).finally(() => {
+        if (phase === 'open') closeFlight = undefined;
+      });
+      return closeFlight;
+    },
   };
 }

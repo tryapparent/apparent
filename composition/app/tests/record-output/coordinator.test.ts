@@ -10,6 +10,7 @@ import { createRecordCaptureCoordinator, type RecordCaptureCoordinator, type Rec
 import { createRecordCapabilityProvider, type CapabilitySnapshot } from '@apparent/record/capabilities';
 import { bindRecordCoordinatorHost } from '../../src/record/coordinator-host.ts';
 import type { RecordNativeBindings } from '../../src/record/native-bindings.ts';
+import { createMicrophonePolicy } from '../../src/record/omarchy/microphone.ts';
 
 function bindings(closed = () => {}) : RecordNativeBindings {
   return {
@@ -154,6 +155,29 @@ test('known active capture refuses nonterminal preflight and preserves Stop cont
   assert.equal(result.status, 'accepted');
   assert.equal(await f.host.canClose(), true);
   await f.host.close(); assert(f.events.includes('sdk-close'));
+});
+
+test('microphone close gate resumes only after actual Record nonterminal preflight reopens command admission',async()=>{
+  const f=fixture({active:true});
+  const mic=createMicrophonePolicy({resourceConfigured:true,querySupport:async()=>true,readRetainedAudio:async()=>undefined});
+  assert.equal(await mic.canClose(()=>f.host.canClose(),()=>f.host.commandAdmission()),false);
+  assert.equal(f.host.commandAdmission(),'open');assert.equal(f.events.length,0);
+  assert.deepEqual(await mic.port.read(),{support:'available'});
+  await mic.port.prepare('new-mic-intent');
+  await mic.runStart('new-mic-intent',async()=>{
+    assert.equal(mic.audioFor('new-mic-intent'),'microphone');
+    return {status:'refused',requestId:'new-mic-intent',reason:'Synthetic no dispatch',snapshot:f.snapshot()};
+  });
+  const snap=f.snapshot();
+  await f.host.record.execute({type:'stop-capture',captureId:'active-capture',requestId:'owned-stop',expected:{providerEpoch:snap.providerEpoch,revision:snap.revision}});
+  assert.equal(await mic.canClose(()=>f.host.canClose(),()=>f.host.commandAdmission()),true);
+  assert.equal(f.host.commandAdmission(),'closed');await assert.rejects(mic.port.prepare('after-shutdown'));
+  await f.host.close();
+  const retained=fixture({report:{...clearReport(),runtimeClearance:'unknown'}});
+  const blocked=createMicrophonePolicy({resourceConfigured:true,querySupport:async()=>true,readRetainedAudio:async()=>undefined});
+  assert.equal(await blocked.canClose(()=>retained.host.canClose(),()=>retained.host.commandAdmission()),false);
+  assert.equal(retained.host.commandAdmission(),'closed');await assert.rejects(blocked.port.prepare('after-terminal-refusal'));
+  assert.equal(retained.events.filter(e=>e==='shutdown-start').length,1);
 });
 
 test('fresh reconciliation seals host commands and does not use terminal shutdown as a readiness poll', async () => {

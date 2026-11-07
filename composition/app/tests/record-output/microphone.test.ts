@@ -82,3 +82,21 @@ test('renderer readiness is a bounded support DTO, never model/path/secret autho
   assert.deepEqual(microphoneReadiness({support:'available'}),{support:'available'});
   for(const bad of [{support:true},{support:'available',modelFile:'/model'},{support:'collected'},null,{support:'available',ownerToken:'secret'}])assert.equal(microphoneReadiness(bad),undefined);
 });
+
+test('close inspection seals preparation until positive nonterminal refusal, never after terminal or unknown close',async()=>{
+  const policy=createMicrophonePolicy({resourceConfigured:true,querySupport:async()=>true,readRetainedAudio:async()=>undefined});
+  const decision=deferred<boolean>();let checks=0;
+  const close=policy.canClose(()=>{checks++;return decision.promise;},()=> 'open');
+  assert.equal(policy.canClose(async()=>true,()=> 'closed'),close);
+  await assert.rejects(policy.port.prepare('during-close'));
+  decision.resolve(false);assert.equal(await close,false);assert.equal(checks,1);
+  assert.deepEqual(await policy.port.read(),{support:'available'});
+  await policy.port.prepare('after-refused-close');
+  await policy.runStart('after-refused-close',async()=>{assert.equal(policy.audioFor('after-refused-close'),'microphone');return result('after-refused-close');});
+  assert.equal(await policy.canClose(async()=>false,()=> 'closed'),false);
+  await assert.rejects(policy.port.prepare('after-terminal'));
+  assert.equal(await policy.canClose(async()=>true,()=> 'open'),false,'terminal refusal cannot reopen or rerun shutdown');
+  const unknown=createMicrophonePolicy({resourceConfigured:true,querySupport:async()=>true,readRetainedAudio:async()=>undefined});
+  assert.equal(await unknown.canClose(async()=>{throw Error('unknown');},()=> 'open'),false);
+  await assert.rejects(unknown.port.prepare('unknown-close'));
+});
