@@ -203,3 +203,19 @@ fn native_fragment_fixture_decodes_and_seeks_through_pinned_linux_reader() {
         );
     }
 }
+
+#[cfg(all(target_os = "linux", feature = "linux-media"))]
+#[test]
+fn native_fragment_fixture_preserves_legacy_probe_and_frame_callers() {
+    use apparent_capture_engine::linux::media::{self, FrameTimes};
+    let path = std::path::PathBuf::from(format!(
+        "{}/tests/fixtures/fragmented.mp4",
+        env!("CARGO_MANIFEST_DIR")
+    ));
+    assert_eq!(media::probe(&path).unwrap().duration_ms, 1000);
+    let frames = media::frames(&path, FrameTimes::At(&[0, 400, 800]), 64).unwrap();
+    for (channel, frame) in frames.iter().enumerate() {
+        assert_eq!((frame.width, frame.height), (64, 64));
+        assert!(frame.rgba[(32 * 64 + 32) * 4 + channel] > 140);
+    }
+}
