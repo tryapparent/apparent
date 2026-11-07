@@ -307,7 +307,7 @@ pill placement, focus, stacking, exclusion or capture-to-Saved behavior.
 
 ## Record automatic coordinator assembly
 
-The pinned Record package is the admitted `c43a7182` producer with the accepted SDK 0.4.3 peer. Its public
+The pinned Record package is the admitted `60a7a5cf` producer with the compatible SDK 0.4.6 peer. Its public
 `@apparent/record/host/capture2-coordinator` export owns automatic retained-media
 processing and publication. Trusted composition supplies the existing Capture/2
 and Media/2 clients, private roots, source intent and explicit proof/destination
@@ -355,7 +355,7 @@ Trusted binding modules can use `createRecordProductionHost` from
 `src/record/production-host.ts` to construct the standard visual owner coordinator, public
 native/config/pen/clipboard adapters and serialized host lifetime together.
 
-The Omarchy screen-only composition explicitly selects `clipboardProof:
+The Omarchy composition explicitly selects `clipboardProof:
 'submission-readback'`. This uses the separate native `writeTextReadback` port
 and Record's `clipboardTextReadback` adapter, with no fallback to the older
 ownership receipt. The pinned Record package says “Handoff submitted; matching
@@ -395,8 +395,35 @@ the real portal recording, authenticated Saved, cold restart and explicit text
 submission/readback plus one scratch-target paste. No recording may begin if
 the tray control is absent. Chromium sandbox support is required; package
 preparation must not add `--no-sandbox`. Packaging/tests alone establish none
-of those effects. Mac, audio, drawing, region/window capture, floating controls,
-uploads and installed routing are outside this candidate.
+of those effects. Mac, region/window capture, floating controls, uploads and
+installed routing remain outside this qualification candidate. Microphone and
+drawing require their original-fact and affected native acceptance; source
+adoption does not establish released availability.
+
+### Explicit local microphone resource
+
+The ordinary Omarchy entry uses a fixed optional resource at
+`<profile>/resources/parakeet-unified-en-0.6b-Q8_0.gguf`, where `<profile>` is the
+launcher's existing `APPARENT_OMARCHY_PROFILE` or its documented default.
+Before launching, explicitly place the independently obtained model there in a
+user-owned mode-0700 `resources` directory. Require a regular, single-link file,
+731357568 bytes, SHA256
+`4b50b6dd862bf6e346929aaf4f5eaacec003bfa3f56462d6c874b41ef2f38795`;
+mode 0400 is suitable. Verify the bytes before installing the resource. No model
+is bundled, downloaded or selected through renderer input or ambient model
+environment. Apply resource changes on the next ordinary launch; do not replace
+an input used by live work.
+
+Main passes the fixed profile and absolute path as the SDK's explicit
+`localSpeech` launch option. Metadata checks permit a support query only; the
+Engine child still verifies a write-sealed expected-hash snapshot before load.
+The explicit **Record with microphone** action requires the real native peer's
+microphone support and uses the existing Record request and immutable intent.
+Missing resources or native support refuse that action without falling back to
+silent recording. **Record** remains the separate silent action. **Check
+microphone** refreshes readiness without requesting capture. Support is neither
+microphone consent nor successful transcription. The c008 qualification producer
+and this app binding still need real joined native qualification before release.
 Supply already constructed admitted Capture/2 and Media/2 SDK clients sharing
 one private runtime, explicit roots/source intent and `standardProcessing` proof
 and destination preferences, native permission/config inputs, and the ownership callbacks described

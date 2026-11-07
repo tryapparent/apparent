@@ -62,3 +62,15 @@ test('permissive existing profile refuses before native manifest read or worker 
   await chmod(root, 0o755);
   await assert.rejects(createRecordHostServices({ profilePath: root, nativeRoot: join(root, 'absent-native') }), /not private/);
 });
+
+test('ordinary microphone intent preserves source and invocation while refusing a silent fallback',()=>{
+  const source={id:'display:1',generation:'c'.repeat(32),kind:'display' as const,displayId:1,bounds:{x:0,y:0,width:1280,height:800,scale:1}};
+  const discovery:SourceDiscovery={state:'available',sources:[source]};
+  const requestId='3d214f90-c9ed-49d8-b3b1-1ed92d1cf939';
+  const silent=omarchyStartIntent(requestId,discovery);
+  const voice=omarchyStartIntent(requestId,discovery,'microphone');
+  assert.deepEqual(voice.options,{audio:'microphone',localOnly:true});assert.equal(voice.source,source);
+  assert.equal(voice.invocation.invocationId,silent.invocation.invocationId);
+  validateCaptureRequest({channel:'capture',protocolVersion:2,clientId:'a'.repeat(32),rpcId:'b'.repeat(32),method:'start',
+    captureId:'c'.repeat(32),ownerToken:'d'.repeat(64),bundleId:'original.apparent',bundlePath:'/private/original.apparent',...voice});
+});

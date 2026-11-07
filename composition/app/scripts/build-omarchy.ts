@@ -49,7 +49,8 @@ exec env HOME="$profile/home" XDG_CONFIG_HOME="$profile/home/.config" XDG_CACHE_
   await chmod(join(install, 'apparent'), 0o755);
   await writeFile(join(install, 'README.txt'),
     'Apparent Omarchy MVP candidate\n\nLaunch ./apparent from an extracted, user-owned directory. Keep the directory intact.\n'
-    + 'One silent monitor only. Choose the monitor in the real portal. Controls hide during capture; activate the Apparent tray icon to Stop.\n'
+    + 'Choose one monitor in the real portal. Record starts silent video; Record with microphone requires a configured local model and actual native support. Controls hide during capture; activate the Apparent tray icon to Stop.\n'
+    + 'Optional microphone resource: place the explicit, verified parakeet-unified-en-0.6b-Q8_0.gguf (731357568 bytes, SHA256 4b50b6dd862bf6e346929aaf4f5eaacec003bfa3f56462d6c874b41ef2f38795) in <profile>/resources/ before launch. The resources directory must be user-owned mode 0700; the regular model must have one link and no group/world write. No automatic download or microphone fallback is supplied. Native support is not transcript success.\n'
     + 'Only authenticated Saved enables text handoff. Submission/matching bytes do not prove ownership or paste.\n'
     + 'State persists in ~/.local/share/apparent-omarchy by default. Never delete this profile to clear unknown work.\n'
     + 'Chromium user-namespace sandbox support is required. The launcher disables only the SUID helper; never use --no-sandbox or disable namespace/seccomp protection.\n'

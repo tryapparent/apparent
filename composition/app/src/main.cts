@@ -132,7 +132,7 @@ app.whenReady().then(async () => {
         dispose() { tray.destroy(); },
       }, reportError: error => console.error('Record Stop remains unresolved', error) });
     }
-    const disposeRecord = registerRecordBridge({ window, entryUrl: entry, client: ownedHost.record });
+    const disposeRecord = registerRecordBridge({ window, entryUrl: entry, client: ownedHost.record, microphone: ownedHost.microphone });
     window.on('close', () => recordShutdownEvent('window-close-request'));
     const lifecycle = bindWindowShutdown({ window,
       canClose: async () => {

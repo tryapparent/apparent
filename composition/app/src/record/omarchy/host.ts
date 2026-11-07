@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
-import { CaptureClient, capture2MaterialsRoot, launchCaptureEngine } from '@apparent/engine-sdk/capture';
+import { CaptureClient, capture2MaterialsRoot, launchCaptureEngine, validateCaptureRequest } from '@apparent/engine-sdk/capture';
 import { launchCaptureRecoveryPeer, launchMedia2RecoveryPeer } from '@apparent/engine-sdk/recovery';
 import { AbsentDestinationAllocator, SqliteCaptureMappingStore } from '@apparent/record/host';
 import type { SourceDiscovery } from '@apparent/engine-sdk/capture';
 import { createRecordProductionHost } from '../production-host.ts';
 import type { RecordHostServices } from '../host.ts';
 import { recordShutdownEvent } from './shutdown-diagnostic.ts';
+import { createMicrophonePolicy, speechLaunchResource, type RecordingAudio } from './microphone.ts';
 
 interface NativeManifest {
   schema: 1;
@@ -60,10 +61,10 @@ function screenSource(discovery: SourceDiscovery) {
   return screens[0]!;
 }
 
-export function omarchyStartIntent(requestId: string, discovery: SourceDiscovery) {
+export function omarchyStartIntent(requestId: string, discovery: SourceDiscovery, audio: RecordingAudio = 'none') {
   return {
     source: screenSource(discovery),
-    options: { audio: 'none' as const, localOnly: true as const },
+    options: { audio, localOnly: true as const },
     // Public requests are opaque strings; the native invocation contract is
     // lowercase 128-bit hex. Keep the public mapping/destination key intact.
     invocation: { kind: 'explicit' as const,
@@ -91,8 +92,30 @@ export async function createRecordHostServices(input: { profilePath: string; nat
 
   // The owning SDK connection remains alive for fresh capture admission. The
   // two recovery peers share this exact runtime and never start fresh work.
-  const ownerTransport = launchCaptureEngine(capture.path, runtimeRoot, 40_000);
+  const speech = await speechLaunchResource(profilePath);
+  const ownerTransport = launchCaptureEngine(capture.path, runtimeRoot, 40_000, speech);
+
   const owner = new CaptureClient(ownerTransport);
+  const microphone = createMicrophonePolicy({
+    resourceConfigured: !!speech,
+    querySupport: async () => {
+      const peer = await owner.handshake();
+      return peer.readiness === 'ready' && peer.capabilities.audioCapture;
+    },
+    readRetainedAudio: async requestId => {
+      const mapping = await mappings.getByRequestId(requestId);
+      if (!mapping) return undefined;
+      if (!mapping.capture2Intent) throw new Error('Original capture intent unavailable');
+      const intent = JSON.parse(mapping.capture2Intent);
+      // Read only the published original SDK intent from Record's public store.
+      // No canonical mapping, mutation, second journal or detached authority.
+      validateCaptureRequest({ channel: 'capture', protocolVersion: 2, clientId: 'a'.repeat(32), rpcId: 'b'.repeat(32),
+        method: 'start', captureId: mapping.captureId, ownerToken: mapping.ownerToken,
+        bundleId: mapping.bundleId, bundlePath: mapping.bundlePath,
+        source: intent.source, options: intent.options, invocation: intent.invocation });
+      return intent.options.audio as RecordingAudio;
+    },
+  });
   let capturePeer: Awaited<ReturnType<typeof launchCaptureRecoveryPeer>> | undefined;
   let mediaPeer: Awaited<ReturnType<typeof launchMedia2RecoveryPeer>> | undefined;
   try {
@@ -109,7 +132,7 @@ export async function createRecordHostServices(input: { profilePath: string; nat
         destinations,
         privateControlRoot,
         createStartIntent: (requestId, discovery) => {
-          const intent = omarchyStartIntent(requestId, discovery);
+          const intent = omarchyStartIntent(requestId, discovery, microphone.audioFor(requestId));
           const digest = createHash('sha256').update(requestId, 'utf8').digest('hex');
           return { source: intent.source, options: intent.options, invocation: intent.invocation,
             destinationPath: join(bundleRoot, `record-${digest}.apparent`) };
@@ -150,7 +173,27 @@ export async function createRecordHostServices(input: { profilePath: string; nat
         }
       },
     });
-    return host;
+    return { ...host, microphone: microphone.port,
+      record: { ...host.record, async execute(command) {
+        if (command.type !== 'start-capture') return host.record.execute(command);
+        let dispatched = false;
+        try {
+          return await microphone.runStart(command.requestId, () => { dispatched = true; return host.record.execute(command); });
+        } catch(error) {
+          if (dispatched) throw error;
+          let snapshot: import('@apparent/record/capabilities').CapabilitySnapshot | undefined;
+          const remove = host.record.observe(value => { snapshot = value; }); remove();
+          if (!snapshot) throw error;
+          return { status: 'refused' as const, requestId: command.requestId,
+            reason: 'Recording intent could not be prepared', snapshot };
+        }
+      } },
+      canClose: () => {
+        if (!microphone.idle()) return Promise.resolve(false);
+        microphone.closeAdmission();
+        return host.canClose();
+      },
+    };
   } catch (error) {
     // No automatic cancellation, generic close, or inferred ownership release
     // on uncertain setup. Keep every partial native handle attached to the error.

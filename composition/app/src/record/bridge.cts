@@ -5,6 +5,9 @@ import {
   cloneRecordCommand, isRequestId,
 } from './wire.js';
 
+import { MICROPHONE_CHANNELS, microphoneReadiness } from './omarchy/microphone-wire.ts';
+import type { MicrophoneHostPort } from './omarchy/microphone.ts';
+
 const MAX_ACTIVE = 8;
 const MAX_WAITING = 16;
 const registrations = new WeakMap<object, symbol>();
@@ -27,6 +30,7 @@ export function registerRecordBridge(options: {
   window: BrowserWindow;
   entryUrl: string;
   client: RecordClient;
+  microphone?: MicrophoneHostPort;
 }): () => void {
   if (registrations.has(ipcMain)) throw new Error('Record bridge already registered');
   const token = Symbol('record-bridge');
@@ -118,13 +122,14 @@ export function registerRecordBridge(options: {
     } finally { if (acquired) release(); }
   };
 
-  const execute = async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+  const executeKind = (withMicrophone: boolean) => async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
     if (!allowed(event)) throw new Error('Record bridge request refused');
     if (args.length !== 1) throw new TypeError('Invalid Record command request');
     const request = cloneJsonDto(args[0]);
     if (!exact(request, ['requestId', 'command']) || !isRequestId(request.requestId)) throw new TypeError('Invalid Record command request');
     const command = cloneRecordCommand(request.command);
-    if (!command || command.requestId !== request.requestId) throw new TypeError('Invalid Record command DTO');
+    if (!command || command.requestId !== request.requestId
+      || (withMicrophone && command.type !== 'start-capture')) throw new TypeError('Invalid Record command DTO');
     let acquired = false;
     let dispatched = false;
     try {
@@ -136,17 +141,25 @@ export function registerRecordBridge(options: {
         throw error;
       }
       if (!active || !allowed(event)) return { requestId: request.requestId, result: refusal(request.requestId, 'Record bridge was revoked before dispatch') };
-      const operation = Promise.resolve().then(() => {
+      let preparationFailed = false;
+      const operation = Promise.resolve().then(async () => {
+        if (withMicrophone) {
+          try {
+            if (!options.microphone) throw new Error('Microphone unavailable');
+            await options.microphone.prepare(command.requestId);
+          } catch { preparationFailed = true; throw new Error('Microphone unavailable'); }
+        }
         // Queue promotion and provider dispatch are separate turns; authorize again at the final boundary.
         if (!active || !allowed(event)) throw new Error('Record bridge was revoked before dispatch');
         dispatched = true;
         return options.client.execute(command);
-      });
+      }).finally(() => { if (withMicrophone) options.microphone?.abandonPreparation(command.requestId); });
       operation.catch(() => {}); // A provider may finish after its IPC reply has become uncertain.
       let raw: CommandResult | symbol;
       try { raw = await Promise.race([operation, revoked]); }
       catch {
-        const result = dispatched ? unknown(request.requestId) : refusal(request.requestId, 'Record bridge was revoked before dispatch');
+        const result = dispatched ? unknown(request.requestId) : refusal(request.requestId, preparationFailed
+          ? 'Microphone recording is unavailable' : 'Record bridge was revoked before dispatch');
         return { requestId: request.requestId, result };
       }
       if (raw === revokedSentinel || !active || !allowed(event)) {
@@ -161,6 +174,24 @@ export function registerRecordBridge(options: {
       if (!active || !allowed(event)) return { requestId: request.requestId, result: unknown(request.requestId) };
       return { requestId: request.requestId, result: { ...validated, snapshot } };
     } finally { if (acquired) release(); }
+  };
+
+  const execute = executeKind(false);
+  const microphoneStart = executeKind(true);
+  const microphoneRead = async (event:IpcMainInvokeEvent,...args:unknown[]) => {
+    if (!allowed(event)) throw new Error('Record bridge request refused');
+    if (args.length!==1) throw new TypeError('Invalid microphone read');
+    const request=cloneJsonDto(args[0]);
+    if (!exact(request,['requestId'])||!isRequestId(request.requestId)) throw new TypeError('Invalid microphone read');
+    let acquired=false;
+    try{
+      await acquire(event);acquired=true;
+      if(!allowed(event))throw new Error('Record bridge revoked');
+      const raw=options.microphone?await options.microphone.read():{support:'unavailable'};
+      const readiness=microphoneReadiness(raw);
+      if(!allowed(event)||!readiness)throw new Error('Microphone readiness unavailable');
+      return {requestId:request.requestId,readiness};
+    }finally{if(acquired)release();}
   };
 
   const subscribe = async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
@@ -219,6 +250,7 @@ export function registerRecordBridge(options: {
     for (const [channel, handler] of [
       [RECORD_CHANNELS.read, read], [RECORD_CHANNELS.execute, execute],
       [RECORD_CHANNELS.subscribe, subscribe], [RECORD_CHANNELS.unsubscribe, unsubscribe],
+      [MICROPHONE_CHANNELS.read, microphoneRead], [MICROPHONE_CHANNELS.start, microphoneStart],
     ] as const) {
       ipcMain.handle(channel, handler);
       installed.push(channel);

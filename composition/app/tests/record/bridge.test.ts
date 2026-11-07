@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createRecordFixture } from '@apparent/record/fixtures';
 import type { CapabilitySnapshot, CommandResult, RecordClient, RecordCommand } from '@apparent/record/capabilities';
+import { MICROPHONE_CHANNELS } from '../../src/record/omarchy/microphone-wire.ts';
 import { RECORD_CHANNELS } from '../../src/record/wire.ts';
 
 async function fixture() {
@@ -139,9 +140,50 @@ test('generation cleanup removes only its own handlers and permits a successor r
   const second = createRecordFixture();
   const dispose = f.register({ window: f.window, entryUrl: f.entryUrl, client: second.client });
   oldDispose();
-  assert.equal(f.handlers.size, 4);
+  assert.deepEqual([...f.handlers.keys()].sort(),[RECORD_CHANNELS.read,RECORD_CHANNELS.execute,RECORD_CHANNELS.subscribe,RECORD_CHANNELS.unsubscribe,...Object.values(MICROPHONE_CHANNELS)].sort());
   const reply = await f.handlers.get(RECORD_CHANNELS.read)!(f.event, { requestId: 'successor-read' });
   assert.deepEqual(reply.snapshot, second.driver.current());
   dispose();
   assert.equal(f.handlers.size, 0);
+});
+
+test('microphone channel is fixed, window-bound, original-request correlated and never accepts model authority',async()=>{
+  const f=await fixture(),source=createRecordFixture();const prepared:string[]=[],commands:RecordCommand[]=[],abandoned:string[]=[];
+  const client:RecordClient={observe:source.client.observe.bind(source.client),detach(){throw Error('owner detach forbidden');},
+    async execute(command){commands.push(command);return {status:'refused',requestId:command.requestId,reason:'provider refusal',snapshot:source.driver.current()};}};
+  const dispose=f.register({window:f.window,entryUrl:f.entryUrl,client,microphone:{async read(){return{support:'available'};},async prepare(id:string){prepared.push(id);},abandonPreparation(id:string){abandoned.push(id);}}});
+  try{
+    const read=f.handlers.get(MICROPHONE_CHANNELS.read)!,start=f.handlers.get(MICROPHONE_CHANNELS.start)!;
+    assert.deepEqual(await read(f.event,{requestId:'ready'}),{requestId:'ready',readiness:{support:'available'}});
+    const snapshot=source.driver.current(),command:RecordCommand={type:'start-capture',delivery:'host-default',requestId:'original-mic',expected:{providerEpoch:snapshot.providerEpoch,revision:snapshot.revision}};
+    await assert.rejects(start({...f.event,senderFrame:{url:f.entryUrl}},{requestId:command.requestId,command}));
+    await assert.rejects(read({...f.event,sender:new EventEmitter()},{requestId:'foreign'}));
+    await assert.rejects(start(f.event,{requestId:command.requestId,command:{...command,modelFile:'/forbidden'}}));
+    await assert.rejects(start(f.event,{requestId:'not-start',command:refresh(snapshot,'not-start')}));
+    assert.deepEqual(prepared,[]);assert.deepEqual(commands,[]);
+    const reply=await start(f.event,{requestId:command.requestId,command});assert.equal(reply.result.status,'refused');
+    assert.deepEqual(prepared,['original-mic']);assert.deepEqual(commands,[command]);assert.deepEqual(abandoned,['original-mic']);
+  }finally{dispose();}
+});
+
+test('unavailable microphone preparation refuses before any ordinary Record dispatch or silent fallback',async()=>{
+  const f=await fixture(),source=createRecordFixture();let dispatches=0;
+  const client:RecordClient={observe:source.client.observe.bind(source.client),detach(){},async execute(){dispatches++;throw Error('forbidden fallback');}};
+  const dispose=f.register({window:f.window,entryUrl:f.entryUrl,client,microphone:{async read(){return{support:'unavailable'};},async prepare(){throw Error('private model path must not leak');},abandonPreparation(){}}});
+  try{
+    const snapshot=source.driver.current(),command={type:'start-capture',delivery:'host-default',requestId:'unavailable',expected:{providerEpoch:snapshot.providerEpoch,revision:snapshot.revision}};
+    const reply=await f.handlers.get(MICROPHONE_CHANNELS.start)!(f.event,{requestId:command.requestId,command});
+    assert.equal(reply.result.status,'refused');assert.equal(reply.result.reason,'Microphone recording is unavailable');assert.equal(dispatches,0);
+  }finally{dispose();}
+});
+
+test('revoked microphone preparation cannot dispatch late; original borrower finishes without fabricated cleanup',async()=>{
+  const f=await fixture(),source=createRecordFixture();let release!:()=>void,entered!:()=>void,abandoned=0,dispatches=0;
+  const ready=new Promise<void>(r=>entered=r),wait=new Promise<void>(r=>release=r);
+  const client:RecordClient={observe:source.client.observe.bind(source.client),detach(){},async execute(){dispatches++;throw Error('late dispatch forbidden');}};
+  const dispose=f.register({window:f.window,entryUrl:f.entryUrl,client,microphone:{async read(){return{support:'available'};},async prepare(){entered();await wait;},abandonPreparation(){abandoned++;}}});
+  const snapshot=source.driver.current(),command={type:'start-capture',delivery:'host-default',requestId:'revoked-mic',expected:{providerEpoch:snapshot.providerEpoch,revision:snapshot.revision}};
+  const pending=f.handlers.get(MICROPHONE_CHANNELS.start)!(f.event,{requestId:command.requestId,command});await ready;dispose();
+  assert.equal((await pending).result.status,'refused');assert.equal(dispatches,0);assert.equal(abandoned,0,'unresolved preparation was not claimed cancelled');
+  release();await new Promise(resolve=>setImmediate(resolve));assert.equal(dispatches,0);assert.equal(abandoned,1);
 });

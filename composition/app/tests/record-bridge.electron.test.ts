@@ -23,8 +23,10 @@ async function buildSyntheticRecordStream(source: string, output: string) {
   await mkdir(output, { recursive: true });
   await writeFile(join(source, 'stream.json'), JSON.stringify({ id: 'record-test', label: 'Record Test', version: '1.0.0' }));
   const adapter = JSON.stringify(join(root, 'src/record/renderer-client.ts'));
+  const microphoneControl=JSON.stringify(join(root,'src/record/omarchy/microphone-control.tsx'));
   await writeFile(join(source, 'index.tsx'), `import * as React from 'react';
 import { connectRecordClient } from ${adapter};
+import {MicrophoneControl} from ${microphoneControl};
 function Screen() {
   const [client, setClient] = React.useState<any>(null);
   const [snapshot, setSnapshot] = React.useState<any>(null);
@@ -60,7 +62,7 @@ function Screen() {
     <output data-testid="snapshot">{snapshot ? snapshot.revision + ':' + snapshot.connection + ':' + (snapshot.captures[0]?.phase ?? 'no-capture') : 'none'}</output>
     <button onClick={() => run('refresh')}>Refresh</button><button onClick={() => run('stale')}>Stale command</button>
     <button onClick={() => run('invalid')}>Invalid command</button><button onClick={() => run('uncertain-stop')}>Lose stop reply</button>
-    <button onClick={() => run('reconcile')}>Reconcile provider</button><button onClick={close}>Close window</button></section>;
+    <button onClick={() => run('reconcile')}>Reconcile provider</button><button onClick={close}>Close window</button><MicrophoneControl record={(window as any).apparent.record} microphone={(window as any).apparent.microphone}/></section>;
 }
 export default { id: 'record-test', Screen, Settings: Screen };
 `);
@@ -107,12 +109,17 @@ export async function createRecordHostServices({profilePath}: {profilePath:strin
   const fixture = createRecordFixture('unsubscribe-during-recording');
   let uncertain = false;
   let detachCalls = 0;
+  const microphonePrepared=new Set<string>();
   const commandLog = join(profilePath, 'provider-commands.json');
   const record = {
     observe: fixture.client.observe.bind(fixture.client),
     async execute(command: any) {
       let reply: any;
       try {
+        if(microphonePrepared.has(command.requestId)){
+          await writeFile(join(profilePath,'microphone-dispatch.json'),JSON.stringify(command));
+          return {status:'refused',requestId:command.requestId,reason:'Synthetic microphone refusal',snapshot:fixture.driver.current()};
+        }
         reply = await fixture.client.execute(command);
         if (command.type === 'refresh' && reply.status === 'accepted') {
           const current = fixture.driver.current();
@@ -134,6 +141,11 @@ export async function createRecordHostServices({profilePath}: {profilePath:strin
   };
   return {
     record,
+    microphone:{
+      async read(){return {support:'available'};},
+      async prepare(id:string){microphonePrepared.add(id);await writeFile(join(profilePath,'microphone-prepared'),id);},
+      abandonPreparation(id:string){microphonePrepared.delete(id);},
+    },
     async canClose() { return !uncertain && !fixture.driver.captureContinues(); },
     async close() { await writeFile(join(profilePath, 'host-closed'), JSON.stringify({ detachCalls })); },
   };
@@ -208,6 +220,7 @@ export async function createRecordHostServices({profilePath}: {profilePath:strin
   assert.equal(await unauthorized.evaluate(async () => {
     try { await (window as any).apparent.record.read(); return false; } catch { return true; }
   }), true, 'A second BrowserWindow cannot read the registered window’s provider');
+  assert.equal(await unauthorized.evaluate(async()=>{try{await(window as any).apparent.microphone.read();return false;}catch{return true;}}),true,'Foreign window cannot read microphone support');
   assert.equal(await page.evaluate(() => {
     const frame = document.createElement('iframe'); document.body.append(frame);
     return typeof (frame.contentWindow as any).apparent?.record;
@@ -221,6 +234,19 @@ export async function createRecordHostServices({profilePath}: {profilePath:strin
   await page.getByRole('button', { name: 'Reconcile provider' }).click();
   await expect(state).toHaveText('reconcile:accepted:3:cancelled');
   await expect(snapshot).toHaveText('3:connected:cancelled');
+  const microphone=page.getByRole('region',{name:'Microphone recording'});
+  await expect(microphone.getByRole('button',{name:'Record with microphone'})).toBeEnabled();
+  assert.equal(await page.evaluate(async()=>{
+    const snap=await(window as any).apparent.record.read();
+    try{await(window as any).apparent.microphone.start({type:'start-capture',delivery:'host-default',requestId:'bad-mic',
+      expected:{providerEpoch:snap.providerEpoch,revision:snap.revision},modelFile:'/forbidden-renderer-model'});return false;}catch{return true;}
+  }),true,'Renderer cannot select model paths or inject extra mic command fields');
+  await microphone.getByRole('button',{name:'Record with microphone'}).click();
+  await expect(microphone.getByRole('status')).toHaveText('Synthetic microphone refusal');
+  const micCommand=JSON.parse(await readFile(join(profile,'microphone-dispatch.json'),'utf8'));
+  assert.equal(micCommand.type,'start-capture');assert.equal(micCommand.delivery,'host-default');
+  assert.match(micCommand.requestId,/^[a-f0-9-]{36}$/);
+  assert.equal(await readFile(join(profile,'microphone-prepared'),'utf8'),micCommand.requestId,'One explicit UI action keeps original request correlation through prepare and provider');
   const finishedProcess = application.process();
   const finished = new Promise<void>(resolve => finishedProcess.once('exit', () => resolve()));
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());

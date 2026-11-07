@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { createRecordPreloadPort } from './record/preload.cts';
+import { createRecordPreloadPort, createMicrophonePreloadPort } from './record/preload.cts';
 import type { OnboardingProgressPort, Revision, SaveResult } from '@apparent/app-contracts/host';
 
 const MAX_BYTES = 64 * 1024;
@@ -86,7 +86,7 @@ const progress: OnboardingProgressPort = Object.freeze({
     }
   },
 });
-const api = Object.freeze({ onboardingProgress: progress, record: createRecordPreloadPort(),
+const api = Object.freeze({ onboardingProgress: progress, record: createRecordPreloadPort(), microphone: createMicrophonePreloadPort(),
   host: Object.freeze({ observeCloseRefusal(listener: (reason: string) => void) {
     if (typeof listener !== 'function') throw new TypeError('Invalid close observer');
     const receive = (_event: unknown, reason: unknown) => {

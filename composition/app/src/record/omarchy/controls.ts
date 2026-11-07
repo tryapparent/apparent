@@ -78,7 +78,7 @@ export function bindSilentRecordControls(options: {
       } finally { preparingStart = false; present(); }
     },
   };
-  return { record,
+  return { record, microphone: host.microphone,
     canClose: () => {
       const blocked = !!(preparingStart || stopping || uncertainStart || active().length);
       recordShutdownEvent('silent-controls-close-check', { blocked, preparingStart, stopping,

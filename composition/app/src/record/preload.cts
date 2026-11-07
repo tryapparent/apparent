@@ -6,6 +6,8 @@ import {
   cloneRecordCommand, isRequestId,
 } from './wire.js';
 
+import { MICROPHONE_CHANNELS, microphoneReadiness, type MicrophoneRendererPort, type MicrophoneStart } from './omarchy/microphone-wire.ts';
+
 const READ_TIMEOUT_MS = 10_000;
 const COMMAND_TIMEOUT_MS = 30_000;
 const CONTROL_TIMEOUT_MS = 5_000;
@@ -172,4 +174,24 @@ export function createRecordPreloadPort(): RecordRendererPort {
   };
 
   return Object.freeze({ read, execute, observe });
+}
+
+/** Explicit microphone action only; renderer never supplies model/source paths. */
+export function createMicrophonePreloadPort():MicrophoneRendererPort{
+  return Object.freeze({
+    async read(...extra:unknown[]){
+      if(extra.length)throw new TypeError('Invalid microphone read');
+      const id=requestId(),reply=cloneJsonDto(await invoke(MICROPHONE_CHANNELS.read,{requestId:id},READ_TIMEOUT_MS));
+      if(!exact(reply,['requestId','readiness'])||reply.requestId!==id)throw new Error('Invalid microphone readiness');
+      const ready=microphoneReadiness(reply.readiness);if(!ready)throw new Error('Invalid microphone readiness');return ready;
+    },
+    async start(command:MicrophoneStart,...extra:unknown[]){
+      if(extra.length)throw new TypeError('Invalid microphone command');
+      const safe=cloneRecordCommand(command);if(!safe||safe.type!=='start-capture')throw new TypeError('Invalid microphone command');
+      // Rejection after invoke stays unknown; the renderer must not retry.
+      const reply=cloneJsonDto(await invoke(MICROPHONE_CHANNELS.start,{requestId:safe.requestId,command:safe},COMMAND_TIMEOUT_MS));
+      if(!exact(reply,['requestId','result'])||reply.requestId!==safe.requestId)throw new Error('Invalid microphone command correlation');
+      const result=cloneCommandResult(reply.result,safe.requestId);if(!result)throw new Error('Invalid microphone result');return result;
+    },
+  });
 }
