@@ -1,0 +1,23 @@
+name: Hermes plugin checks
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  python:
+    uses: ./.github/workflows/hermes-plugin.yml
+
+  runtime-budget:
+    if: always()
+    needs: [python]
+    permissions:
+      contents: read
+      actions: read
+    name: Workflow runtime budget
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/runtime-budget
