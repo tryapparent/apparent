@@ -41,7 +41,7 @@ test('public Start IDs map deterministically to valid native invocation IDs with
       source: intent.source, options: intent.options, invocation: intent.invocation };
     assert.throws(() => validateCaptureRequest({ ...envelope,
       invocation: { ...intent.invocation, invocationId: requestId } }), /invalid invocation invocationId/);
-    assert.doesNotThrow(() => validateCaptureRequest(envelope), 'actual installed SDK045 preflight accepts adapted invocation');
+    assert.doesNotThrow(() => validateCaptureRequest(envelope), 'actual installed SDK preflight accepts adapted invocation');
     assert.match(intent.invocation.invocationId, /^[a-f0-9]{32}$/);
     assert.equal(intent.invocation.invocationId, omarchyStartIntent(requestId, discovery).invocation.invocationId);
     nativeIds.add(intent.invocation.invocationId);
