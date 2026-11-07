@@ -1,0 +1,12 @@
+{
+  "package": "@apparent/record",
+  "version": "0.1.0",
+  "sourceSha": "2a69dc79af527df9d30cdc43dee6e2fc9a1bace9",
+  "runId": 42357214681,
+  "runAttempt": 1,
+  "artifactId": 13567914047,
+  "componentSha256": "82de9a175016d9b96f0f28a1ec3bba937886c879e92c2893d4d1f2e1b92ebd3d",
+  "attestationVerified": true,
+  "usage": "Standard coordinator, scoped shutdown, authenticated Saved resolver, distinct native text-readback adapter and corrected submission/observation notice. No native or installed host acceptance inferred.",
+  "packageSha256": "770ad8575780331c303c88bd69777c2b161b845b0d7d9fe5201d2d6cce5d794f"
+}

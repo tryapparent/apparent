@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { build } from 'esbuild';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +11,7 @@ type Calls = {
   hostFactories: number;
   penFactories: number;
   clipboardFactories: number;
+  readbackFactories: number;
   configOptions: unknown[];
   configCreates: number;
   configCloses: number;
@@ -37,7 +39,7 @@ const hostSnapshot = {
 
 async function loadBinding(clipboardResult: unknown = { status: 'outcome-unknown' }) {
   const calls: Calls = {
-    hostFactories: 0, penFactories: 0, clipboardFactories: 0, configOptions: [],
+    hostFactories: 0, penFactories: 0, clipboardFactories: 0, readbackFactories: 0, configOptions: [],
     configCreates: 0, configCloses: 0, configReads: 0, configWrites: 0,
     penConfigValue: { present: false, value: null }, penReads: 0, penApplies: [], clipboardWrites: [],
   };
@@ -77,6 +79,13 @@ async function loadBinding(clipboardResult: unknown = { status: 'outcome-unknown
         },
       };
     },
+    readbackFactory() {
+      calls.readbackFactories++;
+      return { async writeTextReadback(text: string, observed: unknown) {
+        calls.clipboardWrites.push({ text, observed });
+        return typeof clipboardResult === 'function' ? clipboardResult(text) : clipboardResult;
+      } };
+    },
     async configFactory(options: unknown) {
       calls.configCreates++;
       calls.configOptions.push(options);
@@ -106,7 +115,7 @@ async function loadBinding(clipboardResult: unknown = { status: 'outcome-unknown
         const contents = method === 'configFactory'
           ? `export async function createRecordPenColorConfig(options) { return globalThis.__recordNativeBindingMocks.configFactory(options); }`
           : method === 'clipboardFactory'
-            ? `export const MAX_UTF8_TEXT_BYTES = 21800; export function createNativeClipboardPort() { return globalThis.__recordNativeBindingMocks.clipboardFactory(); }`
+            ? `export const MAX_UTF8_TEXT_BYTES = 21800; export function createNativeClipboardPort() { return globalThis.__recordNativeBindingMocks.clipboardFactory(); } export function createNativeClipboardTextReadbackPort() { return globalThis.__recordNativeBindingMocks.readbackFactory(); }`
             : `export function ${method === 'hostFactory' ? 'createNativeHostPort' : 'createNativePenPort'}() { return globalThis.__recordNativeBindingMocks.${method}(); }`;
         return { contents, loader: 'js' };
       });
@@ -154,6 +163,7 @@ test('binds real Record adapters to public producer facades and closes only its 
   assert.equal(calls.configWrites, 0, 'binding/readback setup does not change the authoritative config');
   assert.equal(calls.penApplies.length, 0, 'binding/readback setup does not change runtime telemetry');
 
+  assert(bindings.clipboard);
   const result = await bindings.clipboard.copyLocal(identity);
   assert.equal(result.status, 'outcome-unknown');
   assert.equal(resolverCalls.length, 1);
@@ -188,6 +198,7 @@ test('public Record clipboard adapter enforces the producer byte bound before an
     } }),
     config: { executable: '/verified/config-host', executableSha256: 'b'.repeat(64), configPath: '/synthetic/config.json' },
   });
+  assert(bindings.clipboard);
   const result = await bindings.clipboard.copyLocal(identity);
   assert.equal(result.status, 'refused');
   assert.equal(result.reason, 'too-large');
@@ -204,11 +215,46 @@ test('uses the public byte limit and preserves an explicit native unavailable re
     resolveHandoff: async requested => ({ ...requested, handoff }),
     config: { executable: '/verified/config-host', executableSha256: 'd'.repeat(64), configPath: '/synthetic/config.json' },
   });
+  assert(bindings.clipboard);
   assert.deepEqual(await bindings.clipboard.copyLocal(identity), {
     status: 'refused', ...identity, reason: 'unavailable',
   });
   assert.equal(calls.clipboardWrites.length, 1);
   await bindings.close();
+});
+
+test('submission-readback selects only the distinct public producer and exact Record adapter', async () => {
+  const { createRecordNativeBindings, calls } = await loadBinding((text: string) => ({
+    status: 'written-readback', digest: createHash('sha256').update(text).digest('hex'), byteLength: Buffer.byteLength(text),
+  }));
+  const options: RecordNativeBindingOptions = { requiredPermissionIds: [], clipboardProof: 'submission-readback',
+    resolveHandoff: async requested => ({ ...requested, handoff }),
+    config: { executable: '/verified/config-host', executableSha256: 'a'.repeat(64), configPath: '/synthetic/config.json' } };
+  const pending = createRecordNativeBindings(options);
+  options.clipboardProof = 'ownership-readback';
+  const bindings = await pending;
+  assert.equal(bindings.clipboard, undefined);
+  assert(bindings.clipboardTextReadback);
+  const result = await bindings.clipboardTextReadback.copyLocal(identity);
+  assert.equal(result.status, 'written-readback');
+  assert.equal(calls.clipboardFactories, 0);
+  assert.equal(calls.readbackFactories, 1);
+  assert.equal(calls.clipboardWrites.length, 1);
+  await bindings.close();
+});
+
+test('submission-readback never falls back to legacy applied or retries unknown', async () => {
+  for (const receipt of [{ status: 'applied', digest: '0'.repeat(64), byteLength: 1 }, { status: 'outcome-unknown' }]) {
+    const { createRecordNativeBindings, calls } = await loadBinding(receipt);
+    const bindings = await createRecordNativeBindings({ requiredPermissionIds: [], clipboardProof: 'submission-readback',
+      resolveHandoff: async requested => ({ ...requested, handoff }),
+      config: { executable: '/verified/config-host', executableSha256: 'b'.repeat(64), configPath: '/synthetic/config.json' } });
+    assert(bindings.clipboardTextReadback);
+    assert.deepEqual(await bindings.clipboardTextReadback.copyLocal(identity), { status: 'outcome-unknown', ...identity });
+    assert.equal(calls.clipboardWrites.length, 1);
+    assert.equal(calls.clipboardFactories, 0);
+    await bindings.close();
+  }
 });
 
 test('adapter setup failure closes the config backend before rejecting construction', async () => {

@@ -34,8 +34,8 @@
     "electron": "45.2.1",
     "esbuild": "0.25.12",
     "typescript": "5.9.3",
-    "@apparent/record": "file:vendor/record-0.1.0-c43a7182.tgz",
-    "@apparent/native-host": "file:vendor/native-host-0.1.0-713f1591.tgz",
+    "@apparent/record": "file:vendor/record-0.1.0-2a69dc79.tgz",
+    "@apparent/native-host": "file:vendor/native-host-0.1.0-c949f4b7.tgz",
     "@apparent/config-host": "file:../config",
     "@apparent/engine-sdk": "file:vendor/engine-sdk-0.4.5.tgz"
   },

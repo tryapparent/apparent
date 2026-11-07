@@ -55,7 +55,9 @@ export function createRecordProviderHost(options: RecordProviderHostOptions): Re
     || typeof shutdownOtherRuntimeUsers !== 'function')) {
     throw new TypeError('Coordinator clearance must cover the exact injected ports and all other runtime users');
   }
-  const ports = { native: bindings.native, penConfig: bindings.penConfig, clipboard: bindings.clipboard, providerEpoch: randomUUID() };
+  if (!!bindings.clipboard === !!bindings.clipboardTextReadback) throw new TypeError('Choose one exact clipboard proof contract');
+  const ports = { native: bindings.native, penConfig: bindings.penConfig, providerEpoch: randomUUID(),
+    ...(bindings.clipboardTextReadback ? { clipboardTextReadback: bindings.clipboardTextReadback } : { clipboard: bindings.clipboard }) };
   const provider = coordinator ? coordinator.createProvider(ports)
     : createRecordCapabilityProvider({ runtime, capture2Start: options.capture2Start, captureFacts, ...ports });
   let phase: Phase = 'open';

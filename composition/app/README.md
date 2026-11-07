@@ -354,6 +354,15 @@ native Saved/copy and native pill/exclusion acceptance.
 Trusted binding modules can use `createRecordProductionHost` from
 `src/record/production-host.ts` to construct the standard visual owner coordinator, public
 native/config/pen/clipboard adapters and serialized host lifetime together.
+
+The Omarchy screen-only composition explicitly selects `clipboardProof:
+'submission-readback'`. This uses the separate native `writeTextReadback` port
+and Record's `clipboardTextReadback` adapter, with no fallback to the older
+ownership receipt. The pinned Record package says “Handoff submitted; matching
+clipboard text observed”: local queued submission and an independent exact-byte
+observation establish neither compositor acknowledgement nor write origin,
+continued ownership, paste or delivery. The packaged desktop and scratch-target
+paste checks remain separate acceptance gates.
 Supply already constructed admitted Capture/2 and Media/2 SDK clients sharing
 one private runtime, explicit roots/source intent and `standardProcessing` proof
 and destination preferences, native permission/config inputs, and the ownership callbacks described
