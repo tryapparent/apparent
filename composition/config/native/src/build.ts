@@ -41,6 +41,8 @@ if (frozenSourceSha() !== sourceSha) throw new Error('Frozen source changed duri
 if (createHash('sha256').update(readFileSync(staged)).digest('hex') !== manifest.sha256) throw new Error('Staged config helper hash mismatch')
 validateArtifact(output, target)
 
+// Compile the public adapter explicitly: a clean producer has no ignored dist output.
+execFileSync('npm', ['--prefix', 'composition/config', 'run', 'build'], { cwd: repositoryRoot, stdio: 'inherit' })
 const suite = spawnSync('node', ['--experimental-strip-types', '--test', 'composition/config/test/native.test.ts'], {
   cwd: repositoryRoot,
   encoding: 'utf8',

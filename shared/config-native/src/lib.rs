@@ -179,18 +179,47 @@ pub fn compare_and_swap_pen_color_in(
     expected: LegacyValue,
     next: LegacyValue,
 ) -> Result<LegacyCasResult> {
+    compare_and_swap_fixed_value_in(path, "penColor", expected, next)
+}
+
+/// Read Connect's fixed cloud group without interpreting consent or server policy.
+/// Missing and stored null remain distinct; unrelated config is never returned.
+pub fn read_connect_cloud_in(path: &Path) -> Result<LegacyValue> {
+    let writer = ConfigWriter::acquire(path, None)?;
+    let config = read_snapshot(&writer, path)?;
+    top_level_value(&config, "cloud")
+}
+
+/// Exact presence/value CAS for the fixed cloud group through the existing writer lock.
+/// Connect constructs the next opaque value, preserving nested fields under its policy.
+/// This native resource never infers consent, credentials, defaults or activation.
+pub fn compare_and_swap_connect_cloud_in(
+    path: &Path,
+    expected: LegacyValue,
+    next: LegacyValue,
+) -> Result<LegacyCasResult> {
+    compare_and_swap_fixed_value_in(path, "cloud", expected, next)
+}
+
+// Private mechanism; only the compiled penColor and cloud wrappers choose a key.
+fn compare_and_swap_fixed_value_in(
+    path: &Path,
+    key: &str,
+    expected: LegacyValue,
+    next: LegacyValue,
+) -> Result<LegacyCasResult> {
     validate_legacy_value(&expected)?;
     validate_legacy_value(&next)?;
     let mut outcome = None;
     update_config_checked_in(path, None, ConfigMutationAuthority::Ordinary, |config| {
-        let current = top_level_value(config, "penColor")?;
+        let current = top_level_value(config, key)?;
         if current != expected {
             outcome = Some(LegacyCasResult::Conflict(current));
             return Ok(false);
         }
         let top = config.as_object_mut().context("Config must be an object")?;
-        if next.present { top.insert("penColor".to_owned(), next.value.clone()); }
-        else { top.remove("penColor"); }
+        if next.present { top.insert(key.to_owned(), next.value.clone()); }
+        else { top.remove(key); }
         outcome = Some(LegacyCasResult::Saved);
         Ok(true)
     })?;
@@ -608,4 +637,34 @@ mod tests {
         assert_eq!(compare_and_swap_stream_state_in(&path, "desktop", 0, serde_json::json!({"step":2})).unwrap(), CasResult::Conflict { revision: 1, current: serde_json::json!({"step":1}) });
         fs::remove_dir_all(dir).unwrap();
     }
+    #[test]
+    fn cloud_uncertain_publication_keeps_bytes_and_explicit_matching_cas_republishes() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("apparent-cloud-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir(&dir).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+        let path = dir.canonicalize().unwrap().join("config.json");
+        let absent = LegacyValue { present: false, value: serde_json::Value::Null };
+        let next = LegacyValue { present: true, value: serde_json::json!({"enabled":false,"server":"synthetic","secret":"synthetic-only"}) };
+        set_config_directory_sync_failure(true);
+        let error = compare_and_swap_connect_cloud_in(&path, absent.clone(), next.clone()).unwrap_err();
+        assert!(error.downcast_ref::<ConfigPublicationUncertain>().is_some());
+        assert_eq!(read_connect_cloud_in(&path).unwrap(), next);
+        assert_eq!(compare_and_swap_connect_cloud_in(&path, absent, next.clone()).unwrap(), LegacyCasResult::Conflict(next.clone()));
+        // A same-value CAS must still publish: uncertainty cannot be repaired by an equality shortcut.
+        set_config_directory_sync_failure(true);
+        assert!(compare_and_swap_connect_cloud_in(&path, next.clone(), next.clone()).unwrap_err().downcast_ref::<ConfigPublicationUncertain>().is_some());
+        assert_eq!(compare_and_swap_connect_cloud_in(&path, next.clone(), next.clone()).unwrap(), LegacyCasResult::Saved);
+        assert_eq!(read_connect_cloud_in(&path).unwrap(), next);
+        let bytes = fs::read(&path).unwrap();
+        for invalid in [
+            LegacyValue { present: false, value: serde_json::json!({}) },
+            LegacyValue { present: true, value: serde_json::Value::String("x".repeat(16 * 1024)) },
+        ] {
+            assert!(compare_and_swap_connect_cloud_in(&path, next.clone(), invalid).is_err());
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
 }

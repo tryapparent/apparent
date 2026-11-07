@@ -146,3 +146,44 @@ test('staged native helper performs Record-only penColor presence CAS with fresh
     assert.deepEqual(raw.streamState.agent, { revision: 8, value: { keep: true } });
   } finally { await f.close(); }
 });
+
+test('compiled Connect cloud facade uses native fixed-key CAS and preserves unrelated and pass-through fields', async () => {
+  const { createConnectCloudConfig } = await import('../dist/cloud.js');
+  const f = await fixture();
+  const options = { executable: executable!, executableSha256, configPath: f.configPath };
+  const left = await createConnectCloudConfig(options), right = await createConnectCloudConfig(options);
+  try {
+    const cloud = { enabled: true, uploadEnabled: true, server: 'https://synthetic.invalid', token: 'synthetic-secret', unknown: { keep: ['opaque', 4] } };
+    const root = { cloud, secret: 'synthetic-root-secret', streamState: { agent: { revision: 8, value: { keep: true } } }, unknown: [2] };
+    await writeFile(f.configPath, JSON.stringify(root), { mode: 0o600 });
+    const before = await readFile(f.configPath);
+    const observed = await left.read();
+    assert.deepEqual(observed, { present: true, value: cloud });
+    assert.deepEqual(await readFile(f.configPath), before, 'read must not rewrite');
+    // Connect, not native storage, constructs the policy update with opaque fields retained.
+    const results = await Promise.all([
+      left.compareAndSwap(observed, { present: true, value: { ...cloud, enabled: false, uploadEnabled: false } }),
+      right.compareAndSwap(observed, { present: true, value: { ...cloud, enabled: false } }),
+    ]);
+    assert.equal(results.filter(r => r.status === 'saved').length, 1);
+    const conflict = results.find(r => r.status === 'conflict');
+    assert(conflict?.status === 'conflict');
+    assert.deepEqual(conflict.current, await left.read());
+    const raw = JSON.parse(await readFile(f.configPath, 'utf8'));
+    assert.deepEqual({ ...raw, cloud }, root);
+    assert.equal(raw.cloud.server, cloud.server);
+    assert.equal(raw.cloud.token, cloud.token);
+    assert.deepEqual(raw.cloud.unknown, cloud.unknown);
+    const bytes = await readFile(f.configPath);
+    assert.equal((await left.compareAndSwap(observed, { present: false, value: null })).status, 'conflict');
+    assert.deepEqual(await readFile(f.configPath), bytes, 'conflict must not rewrite');
+    const current = await left.read();
+    assert.deepEqual(await left.compareAndSwap(current, { present: true, value: null }), { status: 'saved' });
+    assert.deepEqual(await left.read(), { present: true, value: null });
+    assert.deepEqual(await left.compareAndSwap({ present: true, value: null }, { present: false, value: null }), { status: 'saved' });
+    assert.deepEqual(await right.read(), { present: false, value: null });
+    const ordinary = await f.peer('agent');
+    assert.equal((await ordinary.compareAndSwap('agent', 8, { keep: false })).status, 'saved');
+    assert.deepEqual(await left.read(), { present: false, value: null });
+  } finally { await Promise.all([left.close(), right.close()]); await f.close(); }
+});

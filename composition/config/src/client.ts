@@ -62,6 +62,12 @@ export interface ConfigBackend extends LegacyAdoptionBackend {
   /** Explicitly and durably retire only the legacy onboarding progress writer. */
   retireOnboardingLegacyWriter(): Promise<{ status: 'retired' } | { status: 'unknown'; message: string }>;
   close(): Promise<void>;
+  readConnectCloud(): Promise<LegacyConfigValue>;
+  compareAndSwapConnectCloud(expected: LegacyConfigValue, next: LegacyConfigValue): Promise<
+    | { status: 'saved' }
+    | { status: 'conflict'; current: LegacyConfigValue }
+    | { status: 'unknown'; message: string }
+  >;
   readPenColor(): Promise<LegacyConfigValue>;
   compareAndSwapPenColor(expected: LegacyConfigValue, next: LegacyConfigValue): Promise<
     | { status: 'saved' }
@@ -159,6 +165,7 @@ export async function createConfigBackend(options: ConfigHostOptions): Promise<C
   }
   function owner(id: string) { if (id !== options.ownerId) throw new TypeError('Config owner does not match binding'); }
   function recordOnly() { if (options.ownerId !== 'record') throw new TypeError('penColor config access requires the compiled record owner'); }
+  function connectOnly() { if (options.ownerId !== 'connect') throw new TypeError('Cloud config access requires the compiled connect owner'); }
   return {
     async read(id) {
       owner(id);
@@ -177,6 +184,26 @@ export async function createConfigBackend(options: ConfigHostOptions): Promise<C
       try {
         const result = await request('retireOnboardingLegacyWriter');
         if (exact(result, ['status']) && result.status === 'retired') return { status: 'retired' as const };
+        fail();
+        return unknown();
+      } catch { return unknown(); }
+    },
+    async readConnectCloud() {
+      connectOnly();
+      try { return legacyValue(await request('readConnectCloud')); }
+      catch { fail(); throw unavailable(); }
+    },
+    async compareAndSwapConnectCloud(expected, next) {
+      connectOnly();
+      const before = legacyValue(expected), after = legacyValue(next);
+      if ([before, after].some(value => Buffer.byteLength(JSON.stringify(value.value)) > 16_384)) {
+        throw new TypeError('Cloud config value exceeds size limit');
+      }
+      try {
+        const result = await request('compareAndSwapConnectCloud', { expectedLegacy: before, next: after });
+        if (exact(result, ['status']) && result.status === 'saved') return { status: 'saved' as const };
+        if (exact(result, ['status', 'current']) && result.status === 'conflict') return { status: 'conflict' as const, current: legacyValue(result.current) };
+        if (exact(result, ['status', 'message']) && result.status === 'unknown' && typeof result.message === 'string') return unknown();
         fail();
         return unknown();
       } catch { return unknown(); }
