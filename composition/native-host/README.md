@@ -115,6 +115,9 @@ the GUI epoch/revision, tracked busy state and one of `open`, `retired-observed`
 report Engine runtime clearance, permission readiness or control-surface exclusion.
 `retire(expected)` requires the current GUI epoch/revision and refuses while a
 capture, picker, pending shortcut admission or finalizer remains owned. The GUI
+also refuses this adoption port if nonce generation failed: the historical
+PID-based epoch fallback is not incarnation authority for retirement. No admission
+or config change occurs in that case. The GUI
 seals new legacy starts before acquiring the existing config writer lock, then
 durably publishes the fixed host-managed marker
 `legacyCaptureWriter: {schema: 1, state: "retired"}`. Queued starts, screen/phone/lab

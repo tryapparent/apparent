@@ -1,5 +1,17 @@
 //! Admission safety for the existing GUI writer, not Engine runtime clearance.
 
+/// Preserve the historical epoch fallback, but retain whether a nonce actually
+/// established an incarnation suitable for irreversible adoption.
+pub(crate) fn process_epoch(nonce: Result<String, ()>, pid: u32) -> (String, bool) {
+    match nonce {
+        Ok(epoch) => {
+            let qualified = !epoch.is_empty();
+            (epoch, qualified)
+        }
+        Err(()) => (format!("process-{pid}"), false),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Phase {
     #[default]
@@ -48,6 +60,16 @@ impl Fence {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reused_pid_fallback_never_qualifies_as_a_nonce_incarnation() {
+        let first = process_epoch(Err(()), 7);
+        let restarted = process_epoch(Err(()), 7);
+        assert_eq!(first, restarted, "PID fallback may repeat across a restart");
+        assert_eq!(first, ("process-7".into(), false));
+        assert_eq!(process_epoch(Ok(String::new()), 7), (String::new(), false));
+        assert_eq!(process_epoch(Ok("fresh-nonce".into()), 7), ("fresh-nonce".into(), true));
+    }
 
     #[test]
     fn only_open_with_an_authoritative_absent_marker_admits_capture() {

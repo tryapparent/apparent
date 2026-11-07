@@ -70,13 +70,18 @@ impl ApparentCoordinator {
     ) -> Self {
         crate::capture::desktop::playback::warm_up();
         #[cfg(any(target_os = "macos", target_os = "linux"))]
-        let native_host_epoch = crate::capture::desktop::workflow::agent_capture::new_id()
-            .unwrap_or_else(|_| format!("process-{}", std::process::id()));
+        let (native_host_epoch, native_host_epoch_strong) =
+            crate::capture::desktop::workflow::native_host::legacy_capture::process_epoch(
+                crate::capture::desktop::workflow::agent_capture::new_id().map_err(|_| ()),
+                std::process::id(),
+            );
         NATIVE_HOST_REVISION_FOR_WORKER.store(0, std::sync::atomic::Ordering::Release);
         Self {
             telemetry,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             native_host_epoch,
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            native_host_epoch_strong,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             native_host_revision: 0,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -804,6 +809,9 @@ impl ApparentCoordinator {
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     fn legacy_capture_writer_snapshot(&self, config_path: &std::path::Path, deadline: u64) -> serde_json::Value {
+        if !self.native_host_epoch_strong || self.native_host_epoch.is_empty() {
+            return serde_json::json!({"status":"refused","reason":"unavailable"});
+        }
         let marker = crate::shared::handoff::legacy_capture_writer_retired_allowed_in(
             config_path,
             &|| crate::capture::desktop::workflow::agent_capture::storage_clock_ms() < deadline,
@@ -816,7 +824,8 @@ impl ApparentCoordinator {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     fn retire_legacy_capture_writer(&mut self, config_path: &std::path::Path, deadline: u64) -> serde_json::Value {
         let live = || crate::capture::desktop::workflow::agent_capture::storage_clock_ms() < deadline;
-        if !live() || self.native_host_revision >= 9_007_199_254_740_991 {
+        if !live() || !self.native_host_epoch_strong || self.native_host_epoch.is_empty()
+            || self.native_host_revision >= 9_007_199_254_740_991 {
             return serde_json::json!({"status":"refused","reason":"unavailable"});
         }
         let busy = self.legacy_capture_writer_busy();
@@ -1701,6 +1710,28 @@ mod native_legacy_capture_writer_tests {
 
     fn deadline() -> u64 {
         crate::capture::desktop::workflow::agent_capture::storage_clock_ms() + 3000
+    }
+
+    #[test]
+    fn legacy_capture_reused_pid_epoch_is_not_adoption_authority() {
+        use crate::capture::desktop::workflow::native_host::legacy_capture::process_epoch;
+        let (directory, config) = fixture();
+        let before = std::fs::read(&config).unwrap();
+        let mut previous = coordinator();
+        (previous.native_host_epoch, previous.native_host_epoch_strong) = process_epoch(Err(()), 7);
+        let mut restarted = coordinator();
+        (restarted.native_host_epoch, restarted.native_host_epoch_strong) = process_epoch(Err(()), 7);
+        assert_eq!(previous.native_host_epoch, restarted.native_host_epoch);
+        assert_eq!(previous.native_host_revision, restarted.native_host_revision);
+        let snapshot = restarted.legacy_capture_writer_snapshot(&config, deadline());
+        let result = restarted.retire_legacy_capture_writer(&config, deadline());
+        let unchanged = std::fs::read(&config).unwrap() == before;
+        let legacy_still_open = restarted.legacy_capture_start_allowed_in(&config);
+        std::fs::remove_dir_all(directory).unwrap();
+        assert_eq!(result, serde_json::json!({"status":"refused","reason":"unavailable"}));
+        assert_eq!(snapshot, serde_json::json!({"status":"refused","reason":"unavailable"}));
+        assert!(unchanged, "weak epoch must refuse before persistence");
+        assert!(legacy_still_open, "weak epoch must refuse before sealing legacy admission");
     }
 
     #[test]
