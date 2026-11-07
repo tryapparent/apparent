@@ -1,6 +1,6 @@
 //! Bounded ISO-BMFF validation, independent of optional platform video decoders.
 //! Checks the complete container and video sample/chunk extents, not codec quality.
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use std::{fs::File, os::unix::fs::FileExt};
 
 #[derive(Clone, Copy)]
@@ -414,6 +414,11 @@ fn validate_fragment(
         sample_at == mdat.start,
         "fragment data offset does not start at its media payload"
     );
+    // This supported native profile has one fixed-cadence video run per fragment.
+    // Reordered H.264 samples may permute presentation slots, but cannot duplicate,
+    // omit or move a slot outside this fragment. The global sample budget also bounds
+    // this temporary occupancy vector; decode times remain checked below.
+    let mut presentation_slots = vec![false; usize::try_from(samples)?];
     let mut time = decode_time;
     for index in 0..usize::try_from(samples)? {
         let at = 12 + index * 12;
@@ -430,6 +435,24 @@ fn validate_fragment(
             presentation_time >= 0 && presentation_time <= i128::from(u64::MAX),
             "fragment composition time overflow"
         );
+        let relative_presentation = u64::try_from(presentation_time)?
+            .checked_sub(decode_time)
+            .context("fragment presentation precedes its decode interval")?;
+        let duration = u64::from(sample_duration);
+        ensure!(
+            relative_presentation % duration == 0,
+            "fragment presentation is off its declared sample cadence"
+        );
+        let slot = usize::try_from(relative_presentation / duration)?;
+        ensure!(
+            slot < presentation_slots.len(),
+            "fragment presentation exceeds its completed decode interval"
+        );
+        ensure!(
+            !presentation_slots[slot],
+            "duplicate fragment presentation slot"
+        );
+        presentation_slots[slot] = true;
         let sample_end = sample_at
             .checked_add(size)
             .context("fragment sample extent overflow")?;

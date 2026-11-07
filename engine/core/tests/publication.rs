@@ -44,6 +44,8 @@ fn extracted_movie_validator_rejects_truncated_container() {
     std::fs::remove_file(movie).unwrap();
 }
 
+// Returns the fourcc position, not the box or full-box payload start. The full-box
+// payload begins four bytes later; mutations below use field offsets from this position.
 fn first_fourcc(bytes: &[u8], kind: &[u8; 4]) -> usize {
     bytes.windows(4).position(|window| window == kind).unwrap()
 }
@@ -112,32 +114,43 @@ fn fragmented_movie_rejects_incomplete_or_unsupported_structure() {
 
     let mut invalid_default = bytes.clone();
     let tfhd = first_fourcc(&invalid_default, b"tfhd");
-    invalid_default[tfhd + 24..tfhd + 28].copy_from_slice(&0u32.to_be_bytes());
+    invalid_default[tfhd + 12..tfhd + 16].copy_from_slice(&0u32.to_be_bytes());
     cases.push(("invalid-default", invalid_default));
 
     let mut invalid_offset = bytes.clone();
     let trun = first_fourcc(&invalid_offset, b"trun");
-    invalid_offset[trun + 16..trun + 20].copy_from_slice(&i32::MAX.to_be_bytes());
+    invalid_offset[trun + 12..trun + 16].copy_from_slice(&i32::MAX.to_be_bytes());
     cases.push(("invalid-offset", invalid_offset));
 
     let mut offset_underflow = bytes.clone();
     let trun = first_fourcc(&offset_underflow, b"trun");
-    offset_underflow[trun + 16..trun + 20].copy_from_slice(&i32::MIN.to_be_bytes());
+    offset_underflow[trun + 12..trun + 16].copy_from_slice(&i32::MIN.to_be_bytes());
     cases.push(("offset-underflow", offset_underflow));
 
     let mut composition_overflow = bytes.clone();
     let trun = first_fourcc(&composition_overflow, b"trun");
-    composition_overflow[trun + 28..trun + 32].copy_from_slice(&i32::MIN.to_be_bytes());
+    composition_overflow[trun + 24..trun + 28].copy_from_slice(&i32::MIN.to_be_bytes());
     cases.push(("composition-overflow", composition_overflow));
+
+    for (label, offset) in [
+        ("composition-outside-fragment", i32::MAX),
+        ("composition-duplicate-slot", 20),
+        ("composition-off-cadence", 1),
+    ] {
+        let mut shifted = bytes.clone();
+        let trun = first_fourcc(&shifted, b"trun");
+        shifted[trun + 24..trun + 28].copy_from_slice(&offset.to_be_bytes());
+        cases.push((label, shifted));
+    }
 
     let mut invalid_count = bytes.clone();
     let trun = first_fourcc(&invalid_count, b"trun");
-    invalid_count[trun + 12..trun + 16].copy_from_slice(&u32::MAX.to_be_bytes());
+    invalid_count[trun + 8..trun + 12].copy_from_slice(&u32::MAX.to_be_bytes());
     cases.push(("invalid-count", invalid_count));
 
     let mut decode_overflow = bytes.clone();
     let tfdt = first_fourcc(&decode_overflow, b"tfdt");
-    decode_overflow[tfdt + 12..tfdt + 20].copy_from_slice(&u64::MAX.to_be_bytes());
+    decode_overflow[tfdt + 8..tfdt + 16].copy_from_slice(&u64::MAX.to_be_bytes());
     cases.push(("max-decode-time", decode_overflow));
 
     let moof = top_level_box_start(&bytes, b"moof", 0);
