@@ -6,9 +6,22 @@ export type NativeManifest = {
   target: 'linux-x64';
   rustTriple: 'x86_64-unknown-linux-gnu';
   capabilities: ['media/1'] | ['media/1', 'media/2'];
+  visualObservations?: {
+    schema: 'apparent.frame-observation-profile/1';
+    appliesTo: 'media/2-frame-png';
+    chunkType: 'apOB';
+    algorithm: 'apparent.visual-luma/1';
+  };
   media2Launch?: {
     argv: ['--media-runtime-directory', '<capture-runtime-dir>', '--media-channel', 'media', '--media-protocol-version', '2'];
     sharesCaptureRuntime: true;
+  };
+  recoveryLaunch?: {
+    schema: 'apparent.engine-recovery-peer/1';
+    channel: 'media/2';
+    argv: ['--media-runtime-directory', '<capture-runtime-dir>', '--media-channel', 'media', '--media-protocol-version', '2', '--recovery-peer-v1', '<private-peer-nonce>'];
+    startsFreshCapture: false;
+    onInputEof: 'retain-admitted-finite-work';
   };
   launch: {
     entry: 'apparent-engine-frames';

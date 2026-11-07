@@ -177,6 +177,111 @@ The active native caller remains authoritative migration debt. This source chang
 
 ## Queue and command adoption boundaries
 
+The internal `queue/worker` runner retains the existing single-link `worker.lock`
+across one upload pass and rechecks its original inode before queue transactions
+and transfer guards. It releases `queue.lock` for network work so foreground
+cancellation can proceed, then uses the existing expiry, retry/backoff and failure
+policies with fresh job/credential/cancellation/consent facts before replacement.
+Unknown effects stop the pass without replay. The host must settle uncertainty
+before scheduling another pass. Fresh bounded local settings, transfer execution
+and deadline-aware status-only progress ports are required; callbacks retain
+ownership until their promises settle and transfers must use the fresh guard.
+This supplies no filesystem snapshot admission, auth renewal or progress HTTP
+implementation by itself. It has no public worker export or production caller;
+Rust remains the sole live worker until coordinated adoption and platform gates.
+
+The internal `queue/retry` operation resets eligible pending/failed jobs under one
+queue lease using the existing retry policy and private replacement port. It pins
+login and cancellation, rechecks current settings, retention, job stamps and the
+original queue inode immediately before dispatch, and preserves other metadata.
+Uncertain effects stop the pass and retain observed committed IDs; the caller must
+settle them before retrying. It changes no credential or config, performs no HTTP
+or deletion, and has no public export or production command route. Local settings
+and sole-writer admission remain host responsibilities; Rust still owns live retry.
+
+The internal `queue/prune` mechanism retires only a caller-authorized, stamped job
+and its exact bounded legacy spool inventory. It reuses private-directory cleanup,
+checks ACLs and original identities, and calls the held queue lease and fresh policy
+fence before each effect. Metadata is removed last; unknown or damaged spool
+contents are retained. Partial cleanup reports uncertainty and must be settled by
+the host before admission proceeds; this API supplies no restart-recovery journal.
+Pathname checks rely on cooperating same-UID writers honoring the locks and do not
+promise inode-atomic unlink against a process bypassing them. This has no public
+export or production caller and does not authorize pruning beside the Rust writer.
+
+The queue API's `planAdmission` returns a detached, frozen plan for automatic
+private, explicit private or public-copy admission. It preserves first-match
+deduplication in supplied queue order and the donor's cancellation → pruning →
+capacity order; a full result retains earlier cancellation proposals. Fresh IDs
+cannot collide with any supplied record, including pruning candidates. Older
+history is not available to this planner. The caller must admit the completed
+canonical bundle, current settings, server, credential generation and queue facts
+under the authoritative lease. String validation grants no consent or authority.
+Proposals write or delete nothing; a writer may not apply a stale plan. Installed
+adoption must preserve the supplied queue-order behavior and sole-writer boundary.
+
+`./sender-spool` opens an existing committed encrypted job and its Rust-format
+`<id>.sealed/spool-state.json`. It never repairs or regenerates a spool. Every
+receipt/asset read uses the existing queue lease, private descriptor/ACL admission,
+job and credential-generation checks, cancellation/revocation fences, directory
+identity and immutable receipt checks. Assets must match the saved size and hash.
+The caller owns provider lifetime and returned ciphertext buffers, and must wipe
+each buffer after its consumer settles. The sealed-asset reader has a separate
+32 MiB ceiling; existing credential/JSON readers keep their 2 MB ceiling. This
+local handle is not service authorization or cryptographic envelope validation;
+the prepared uploader and its trusted authorization caller retain those checks.
+An incomplete job/spool publication fails rather than triggering a second writer.
+No installed command or worker uses this API yet; Rust remains the sole writer.
+
+The internal `sender/spool-publication` preparation path uses the same private
+directory publisher as recipient output. It validates detached ciphertext and
+signed metadata, stages outside the queue lease, and rechecks the pending job,
+credential incarnation, cancellation, revocation intent and caller-supplied fresh
+consent under the existing lease before one native no-replace publication. A
+verified receipt is returned for a later authoritative job commit; this path
+never writes job, credential or config JSON. Uncertain effects retain the spool
+without retry. It has no public writer export or production caller. The synthetic
+native fixture performs the later job commit explicitly to test the existing
+committed-spool reader and uploader; that is not a live writer transition.
+Namespace cleanup assumes cooperating same-UID writers; identity checks do not
+make pathname unlink atomic against a process bypassing that protocol.
+
+The internal `sender/spool-commit` capability recovers a published immutable spool
+whose job metadata commit was interrupted. It validates current caller-admitted
+peer facts against the local endpoint public key, verifies signatures and every
+asset outside the queue lease, then rechecks consumed stamps and local incarnation
+fences before one descriptor-bound job replacement. It preserves unrelated job
+fields and returns unchanged only for identical committed metadata. A revoked
+selected recipient requires a fresh capture; unrelated new peers are harmless.
+Missing or corrupt spools fail without regeneration. It retains uncertain effects
+without retry or evidence cleanup. This has no public writer export or production
+caller: the isolated native fixture invokes it, while live adoption still requires
+coordinated sole-writer authority, installed routing and applicable platform proof.
+
+`./sender-seal` seals an already admitted, stable and consented in-memory snapshot
+for a fresh capture. It reuses the legacy archive, AGE encryption and signed
+envelope format, selecting current read grants plus the sender's own upload grant.
+It requires a read recipient, deduplicates shared AGE keys while retaining every
+selected grant, and supports root or evidence-first grouped output. Its frozen
+descriptors adapt to the prepared uploader. Returned ciphertext buffers belong to
+the caller and must be wiped after all consumers settle; internal plaintext and
+seed copies are wiped without clearing caller-owned input. Cancellation and
+freshness checks surround asynchronous crypto but cannot interrupt an already
+running crypto operation. This API does not establish consent, snapshot filesystem
+safety or durable spool publication, and must never regenerate committed spools.
+The local Worker fixture uses it, while installed workers and Rust writer ownership
+remain unchanged.
+
+`./sender-upload/authority` reads the authenticated peer registry with one bounded
+GET, reusing the recipient decoder. The caller supplies an already approved server,
+upload grant and public key derived from its current local endpoint identity.
+It validates exact scope, own-key binding, unique peers and classical AGE/Ed25519
+keys, returning detached frozen public facts after rechecking caller freshness.
+This is point-in-time service evidence, not cached authorization for later requests.
+It does not refresh tokens, write state or switch installed callers. The local
+Worker sender fixture uses this reader before every encrypted upload request;
+production worker adoption and credential ownership remain separate gates.
+
 `./sender-upload/encrypted` transfers an already sealed root or grouped
 evidence/media snapshot. Discriminated profile options prevent mixed layouts.
 Before reservation it verifies envelope hashes, signatures, exact signed context

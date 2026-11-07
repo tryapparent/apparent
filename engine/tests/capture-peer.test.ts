@@ -6,9 +6,10 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
-import { CaptureClient, launchCaptureEngine, type CaptureStatus } from "../sdk/src/capture.ts";
+import { CaptureClient, capture2MaterialsRoot, launchCaptureEngine, type CaptureStatus } from "../sdk/src/capture.ts";
 import { validateMaterialsDocument } from "../sdk/src/capture-documents/index.ts";
 import { Media2Client, Media2RpcError, Media2TransportError, launchMedia2Worker, type Media2JobInput } from "../sdk/src/media2/index.ts";
+import { launchCaptureRecoveryPeer } from "../sdk/src/recovery/index.ts";
 
 const id = () => randomBytes(16).toString("hex");
 const token = () => randomBytes(32).toString("hex");
@@ -346,6 +347,16 @@ test("SDK capture/2 records a selected X11 output, seals materials, and releases
     assert.ok(["starting", "recording"].includes(started.state));
     const recording = await until(client, { captureId, ownerToken }, ["recording"]);
     assert.equal(recording.state, "recording");
+    const recoveryObserver = await launchCaptureRecoveryPeer(resolve(binary!), runtime);
+    try {
+      assert.equal((await recoveryObserver.client.handshake()).readiness, "unavailable");
+      assert.equal((await recoveryObserver.client.inspect({ captureId, ownerToken })).state, "recording");
+    } finally {
+      const released = await recoveryObserver.release();
+      assert.equal(released.connection, "released");
+      assert.equal(released.runtimeClearance, "not-established");
+    }
+    assert.equal((await client.inspect({ captureId, ownerToken })).state, "recording", "recovery EOF must leave another peer's actual native capture running");
     for (const color of ["#11bb44", "#2244dd", "#e6d22a", "#cc2211"]) {
       execFileSync(xsetrootCommand, ["-solid", color]);
       await delay(180);
@@ -367,7 +378,9 @@ test("SDK capture/2 records a selected X11 output, seals materials, and releases
     const ready = await until(client, { captureId, ownerToken }, ["materials-ready"]);
     assert.equal(ready.state, "materials-ready");
     const manifest = ready.materials!;
-    const payloadPath = join(manifest.root, manifest.payloadFile.relativePath);
+    const trustedMaterialsRoot = capture2MaterialsRoot(runtime, captureId);
+    assert.equal(manifest.root, trustedMaterialsRoot, "native materials root matches the independently configured runtime and admitted capture");
+    const payloadPath = join(trustedMaterialsRoot, manifest.payloadFile.relativePath);
     const payloadBytes = readFileSync(payloadPath);
     const payloadStat = statSync(payloadPath, { bigint: true });
     assert.equal(createHash("sha256").update(payloadBytes).digest("hex"), manifest.payloadFile.sha256);
@@ -386,7 +399,10 @@ test("SDK capture/2 records a selected X11 output, seals materials, and releases
     assert.ok(payload.confirmedSource.confirmedAtMs > 0, "source confirmation time is measured after native source revalidation");
     assert.equal(payload.clock.epoch, "capture-admission-monotonic");
     assert.equal(payload.clock.units, "integer-milliseconds");
-    assert.ok(payload.clock.durationMs >= payload.video.durationMs, "capture clock ends at native-source stop while media duration comes from finalized MP4 timing");
+    assert.ok(
+      payload.clock.durationMs >= payload.video.durationMs,
+      `capture clock ends at native-source stop while media duration comes from finalized MP4 timing (clock=${payload.clock.durationMs}ms, videoOffset=${payload.clock.videoOffsetMs}ms, video=${payload.video.durationMs}ms, clockMinusVideo=${payload.clock.durationMs - payload.video.durationMs}ms)`,
+    );
     assert.ok(payload.clock.videoOffsetMs > 0, "video offset is the first native source-buffer arrival, not a fabricated zero");
     assert.ok(Math.abs(payload.clock.durationMs - payload.video.durationMs) < 500, "controlled post-EOS finalization delay is excluded from both capture and encoded-video duration");
     assert.equal(payload.video.width, 1366);
@@ -445,7 +461,9 @@ test("SDK capture/2 records a selected X11 output, seals materials, and releases
     }
     await client.stop({ captureId: second.captureId, ownerToken: second.ownerToken });
     const areaReady = await until(client, { captureId: second.captureId, ownerToken: second.ownerToken }, ["materials-ready"]);
-    const areaDocument = validateMaterialsDocument(areaReady.materials!, readFileSync(join(areaReady.materials!.root, areaReady.materials!.payloadFile.relativePath)));
+    const areaRoot = capture2MaterialsRoot(runtime, second.captureId);
+    assert.equal(areaReady.materials!.root, areaRoot);
+    const areaDocument = validateMaterialsDocument(areaReady.materials!, readFileSync(join(areaRoot, areaReady.materials!.payloadFile.relativePath)));
     assert.equal(areaDocument.payload.confirmedSource.rectangle.width, 683, "confirmed source keeps the actual physical area");
     assert.equal(areaDocument.payload.video.width, 682, "manifest reports the actual even encoded width");
     assert.equal(areaDocument.payload.video.height, 384);
