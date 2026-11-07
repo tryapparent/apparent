@@ -1,11 +1,12 @@
 //! Bounded ISO-BMFF validation, independent of optional platform video decoders.
 //! Checks the complete container and video sample/chunk extents, not codec quality.
-use anyhow::{Context, Result, ensure};
+use anyhow::{ensure, Context, Result};
 use std::{fs::File, os::unix::fs::FileExt};
 
 #[derive(Clone, Copy)]
 struct Atom {
     kind: [u8; 4],
+    box_start: u64,
     start: u64,
     end: u64,
 }
@@ -22,6 +23,14 @@ fn u32_at(bytes: &[u8], at: usize) -> Result<u32> {
     Ok(u32::from_be_bytes(
         bytes
             .get(at..at + 4)
+            .context("truncated movie table")?
+            .try_into()?,
+    ))
+}
+fn u16_at(bytes: &[u8], at: usize) -> Result<u16> {
+    Ok(u16::from_be_bytes(
+        bytes
+            .get(at..at + 2)
             .context("truncated movie table")?
             .try_into()?,
     ))
@@ -43,6 +52,7 @@ fn atoms(file: &File, mut at: u64, end: u64) -> Result<Vec<Atom>> {
         ensure!(size >= head && size <= end - at, "invalid movie box extent");
         out.push(Atom {
             kind: header[4..8].try_into().unwrap(),
+            box_start: at,
             start: at + head,
             end: at + size,
         });
@@ -67,8 +77,436 @@ fn data(file: &File, atom: Atom) -> Result<Vec<u8>> {
     read(file, atom.start, usize::try_from(atom.end - atom.start)?)
 }
 
+const FRAGMENT_METADATA_BUDGET: u64 = 64 * 1024 * 1024;
+const FRAGMENT_BOX_BUDGET: usize = 16_384;
+const FRAGMENT_COUNT_BUDGET: usize = 1_024;
+const FRAGMENT_SAMPLE_BUDGET: u64 = 10_000_000;
+const TFHD_FRAGMENT_RELATIVE_FLAGS: u32 = 0x020038;
+const TRUN_FRAGMENT_FLAGS: u32 = 0x000e01;
+const NATIVE_DEFAULT_SAMPLE_FLAGS: u32 = 0x01010000;
+
+#[derive(Default)]
+struct FragmentBudget {
+    metadata_bytes: u64,
+    box_count: usize,
+    sample_count: u64,
+}
+
+fn fragment_atoms(
+    file: &File,
+    at: u64,
+    end: u64,
+    budget: &mut FragmentBudget,
+) -> Result<Vec<Atom>> {
+    let children = atoms(file, at, end)?;
+    budget.box_count = budget
+        .box_count
+        .checked_add(children.len())
+        .context("fragment box count overflow")?;
+    ensure!(
+        budget.box_count <= FRAGMENT_BOX_BUDGET,
+        "fragment box work exceeds budget"
+    );
+    Ok(children)
+}
+
+fn fragment_data(file: &File, atom: Atom, budget: &mut FragmentBudget) -> Result<Vec<u8>> {
+    let len = atom.end - atom.start;
+    budget.metadata_bytes = budget
+        .metadata_bytes
+        .checked_add(len)
+        .context("fragment metadata length overflow")?;
+    ensure!(
+        budget.metadata_bytes <= FRAGMENT_METADATA_BUDGET,
+        "fragment metadata exceeds validation budget"
+    );
+    data(file, atom)
+}
+
+fn fullbox(bytes: &[u8], version: u8, flags: u32) -> Result<()> {
+    ensure!(bytes.len() >= 4, "truncated fragment full box");
+    ensure!(
+        bytes[0] == version && u32_at(bytes, 0)? & 0x00ff_ffff == flags,
+        "unsupported fragment box version or flags"
+    );
+    Ok(())
+}
+
+fn exact_children(
+    file: &File,
+    parent: Atom,
+    kinds: &[[u8; 4]],
+    budget: &mut FragmentBudget,
+) -> Result<Vec<Atom>> {
+    let children = fragment_atoms(file, parent.start, parent.end, budget)?;
+    ensure!(
+        children.len() == kinds.len()
+            && children
+                .iter()
+                .zip(kinds)
+                .all(|(atom, kind)| &atom.kind == kind),
+        "unsupported fragmented movie box layout"
+    );
+    Ok(children)
+}
+
+fn empty_table(file: &File, atom: Atom, budget: &mut FragmentBudget) -> Result<()> {
+    let bytes = fragment_data(file, atom, budget)?;
+    ensure!(
+        bytes.len() == 8,
+        "fragment initialization table must be empty"
+    );
+    fullbox(&bytes, 0, 0)?;
+    ensure!(
+        u32_at(&bytes, 4)? == 0,
+        "fragment initialization table has samples"
+    );
+    Ok(())
+}
+
+fn fragmented_track(file: &File, moov: Atom, budget: &mut FragmentBudget) -> Result<(u32, u32)> {
+    let moov_children = exact_children(
+        file,
+        moov,
+        [*b"mvhd", *b"trak", *b"mvex"].as_slice(),
+        budget,
+    )?;
+    let mvhd = fragment_data(file, moov_children[0], budget)?;
+    ensure!(mvhd.len() >= 20, "truncated fragmented movie header");
+    fullbox(&mvhd, 0, 0)?;
+    ensure!(
+        u32_at(&mvhd, 12)? != 0,
+        "fragmented movie timescale is zero"
+    );
+    let trak = moov_children[1];
+    let trak_children = exact_children(file, trak, [*b"tkhd", *b"mdia"].as_slice(), budget)?;
+    let tkhd = fragment_data(file, trak_children[0], budget)?;
+    ensure!(tkhd.len() >= 24, "truncated fragmented track header");
+    fullbox(&tkhd, 0, 1)?;
+    let track_id = u32_at(&tkhd, 12)?;
+    ensure!(track_id != 0, "fragmented movie has an invalid track ID");
+
+    let mdia = trak_children[1];
+    let mdia_children = exact_children(
+        file,
+        mdia,
+        [*b"mdhd", *b"hdlr", *b"minf"].as_slice(),
+        budget,
+    )?;
+    let mdhd = fragment_data(file, mdia_children[0], budget)?;
+    ensure!(mdhd.len() >= 16, "truncated fragmented media header");
+    fullbox(&mdhd, 0, 0)?;
+    let timescale = u32_at(&mdhd, 12)?;
+    ensure!(timescale == 600, "unsupported fragmented video timescale");
+    let hdlr = fragment_data(file, mdia_children[1], budget)?;
+    fullbox(&hdlr, 0, 0)?;
+    ensure!(
+        hdlr.get(8..12) == Some(b"vide"),
+        "fragmented movie must contain only video"
+    );
+
+    let minf = mdia_children[2];
+    let minf_children = exact_children(
+        file,
+        minf,
+        [*b"vmhd", *b"dinf", *b"stbl"].as_slice(),
+        budget,
+    )?;
+    let vmhd = fragment_data(file, minf_children[0], budget)?;
+    ensure!(vmhd.len() == 12, "invalid fragmented video media header");
+    fullbox(&vmhd, 0, 1)?;
+    let dinf = minf_children[1];
+    let dref = exact_children(file, dinf, [*b"dref"].as_slice(), budget)?[0];
+    let dref_bytes = fragment_data(file, dref, budget)?;
+    fullbox(&dref_bytes, 0, 0)?;
+    ensure!(
+        u32_at(&dref_bytes, 4)? == 1,
+        "fragmented movie requires one local data reference"
+    );
+    let references = fragment_atoms(file, dref.start + 8, dref.end, budget)?;
+    ensure!(
+        references.len() == 1 && references[0].kind == *b"url ",
+        "unsupported fragmented data reference"
+    );
+    let url = fragment_data(file, references[0], budget)?;
+    fullbox(&url, 0, 1)?;
+    ensure!(url.len() == 4, "invalid self-contained data reference");
+
+    let stbl = minf_children[2];
+    let tables = exact_children(
+        file,
+        stbl,
+        [*b"stsd", *b"stts", *b"stsc", *b"stsz", *b"stco"].as_slice(),
+        budget,
+    )?;
+    let stsd = fragment_data(file, tables[0], budget)?;
+    fullbox(&stsd, 0, 0)?;
+    ensure!(
+        u32_at(&stsd, 4)? == 1,
+        "fragmented movie requires one video sample description"
+    );
+    let descriptions = fragment_atoms(file, tables[0].start + 8, tables[0].end, budget)?;
+    ensure!(
+        descriptions.len() == 1 && descriptions[0].kind == *b"avc1",
+        "unsupported fragmented video sample description"
+    );
+    let description = fragment_data(file, descriptions[0], budget)?;
+    ensure!(
+        description.len() >= 78 && u16_at(&description, 6)? == 1,
+        "external or invalid fragmented sample description"
+    );
+    ensure!(
+        u16_at(&description, 24)? != 0 && u16_at(&description, 26)? != 0,
+        "empty fragmented movie dimensions"
+    );
+    let sample_entry_boxes = fragment_atoms(
+        file,
+        descriptions[0].start + 78,
+        descriptions[0].end,
+        budget,
+    )?;
+    ensure!(
+        sample_entry_boxes
+            .iter()
+            .filter(|atom| atom.kind == *b"avcC")
+            .count()
+            == 1,
+        "fragmented AVC description lacks one configuration"
+    );
+    let avcc = sample_entry_boxes
+        .iter()
+        .find(|atom| atom.kind == *b"avcC")
+        .unwrap();
+    ensure!(
+        fragment_data(file, *avcc, budget)?.first() == Some(&1),
+        "unsupported AVC configuration version"
+    );
+    for atom in &sample_entry_boxes {
+        ensure!(
+            matches!(&atom.kind, b"avcC" | b"colr" | b"fiel" | b"chrm"),
+            "unsupported fragmented AVC sample entry box"
+        );
+    }
+    for table in [&tables[1], &tables[2], &tables[4]] {
+        empty_table(file, *table, budget)?;
+    }
+    let sizes = fragment_data(file, tables[3], budget)?;
+    ensure!(
+        sizes.len() == 12,
+        "fragment initialization sizes must be empty"
+    );
+    fullbox(&sizes, 0, 0)?;
+    ensure!(
+        u32_at(&sizes, 4)? == 0 && u32_at(&sizes, 8)? == 0,
+        "fragment initialization sizes contain samples"
+    );
+
+    let mvex = moov_children[2];
+    let trex = exact_children(file, mvex, [*b"trex"].as_slice(), budget)?[0];
+    let defaults = fragment_data(file, trex, budget)?;
+    ensure!(defaults.len() == 24, "invalid fragmented track defaults");
+    fullbox(&defaults, 0, 0)?;
+    ensure!(
+        u32_at(&defaults, 4)? == track_id
+            && u32_at(&defaults, 8)? == 1
+            && u32_at(&defaults, 12)? == 0
+            && u32_at(&defaults, 16)? == 0
+            && u32_at(&defaults, 20)? == 0,
+        "unsupported fragmented track defaults"
+    );
+    Ok((track_id, timescale))
+}
+
+fn validate_fragment(
+    file: &File,
+    moof: Atom,
+    mdat: Atom,
+    expected_sequence: u32,
+    expected_decode_time: u64,
+    track_id: u32,
+    budget: &mut FragmentBudget,
+) -> Result<u64> {
+    budget.box_count = budget
+        .box_count
+        .checked_add(1)
+        .context("fragment box count overflow")?;
+    budget.metadata_bytes = budget
+        .metadata_bytes
+        .checked_add((moof.end - moof.start) + (mdat.start - mdat.box_start))
+        .context("fragment metadata length overflow")?;
+    ensure!(
+        budget.box_count <= FRAGMENT_BOX_BUDGET,
+        "fragment box work exceeds budget"
+    );
+    ensure!(
+        budget.metadata_bytes <= FRAGMENT_METADATA_BUDGET,
+        "fragment metadata exceeds validation budget"
+    );
+    ensure!(mdat.end > mdat.start, "fragment has an empty media payload");
+
+    let moof_children = exact_children(file, moof, [*b"mfhd", *b"traf"].as_slice(), budget)?;
+    let mfhd = fragment_data(file, moof_children[0], budget)?;
+    ensure!(mfhd.len() == 8, "invalid movie fragment header");
+    fullbox(&mfhd, 0, 0)?;
+    ensure!(
+        u32_at(&mfhd, 4)? == expected_sequence,
+        "unordered movie fragment sequence"
+    );
+
+    let traf = moof_children[1];
+    let traf_children = exact_children(
+        file,
+        traf,
+        [*b"tfhd", *b"tfdt", *b"trun"].as_slice(),
+        budget,
+    )?;
+    let tfhd = fragment_data(file, traf_children[0], budget)?;
+    ensure!(tfhd.len() == 20, "invalid movie track fragment header");
+    fullbox(&tfhd, 0, TFHD_FRAGMENT_RELATIVE_FLAGS)?;
+    ensure!(u32_at(&tfhd, 4)? == track_id, "fragment track mismatch");
+    let sample_duration = u32_at(&tfhd, 8)?;
+    ensure!(
+        sample_duration == 20 && u32_at(&tfhd, 12)? > 0,
+        "fragment has invalid sample defaults"
+    );
+    ensure!(
+        u32_at(&tfhd, 16)? == NATIVE_DEFAULT_SAMPLE_FLAGS,
+        "unsupported fragment sample flags"
+    );
+
+    let tfdt = fragment_data(file, traf_children[1], budget)?;
+    ensure!(tfdt.len() == 12, "invalid track fragment decode time");
+    fullbox(&tfdt, 1, 0)?;
+    let decode_time = u64::from_be_bytes(tfdt[4..12].try_into()?);
+    ensure!(
+        decode_time == expected_decode_time,
+        "fragment decode timeline is discontinuous"
+    );
+
+    let trun_atom = traf_children[2];
+    let trun = fragment_data(file, trun_atom, budget)?;
+    ensure!(trun.len() >= 12, "truncated track fragment run");
+    fullbox(&trun, 1, TRUN_FRAGMENT_FLAGS)?;
+    let samples = u32_at(&trun, 4)? as u64;
+    ensure!(samples > 0, "empty track fragment run");
+    budget.sample_count = budget
+        .sample_count
+        .checked_add(samples)
+        .context("fragment sample count overflow")?;
+    ensure!(
+        budget.sample_count <= FRAGMENT_SAMPLE_BUDGET,
+        "fragment sample work exceeds budget"
+    );
+    let run_bytes = samples
+        .checked_mul(12)
+        .and_then(|bytes| bytes.checked_add(12))
+        .context("fragment run length overflow")?;
+    ensure!(
+        run_bytes == trun.len() as u64,
+        "invalid track fragment run length"
+    );
+    let data_offset = i64::from(i32::from_be_bytes(trun[8..12].try_into()?));
+    let mut sample_at = moof
+        .box_start
+        .checked_add_signed(data_offset)
+        .context("fragment data offset overflow")?;
+    ensure!(
+        sample_at == mdat.start,
+        "fragment data offset does not start at its media payload"
+    );
+    let mut time = decode_time;
+    for index in 0..usize::try_from(samples)? {
+        let at = 12 + index * 12;
+        let size = u64::from(u32_at(&trun, at)?);
+        let sample_flags = u32_at(&trun, at + 4)?;
+        ensure!(
+            sample_flags & 0xfc00_0000 == 0,
+            "unsupported reserved sample flags"
+        );
+        let composition_offset = i64::from(i32::from_be_bytes(trun[at + 8..at + 12].try_into()?));
+        ensure!(size > 0, "empty fragmented video sample");
+        let presentation_time = i128::from(time) + i128::from(composition_offset);
+        ensure!(
+            presentation_time >= 0 && presentation_time <= i128::from(u64::MAX),
+            "fragment composition time overflow"
+        );
+        let sample_end = sample_at
+            .checked_add(size)
+            .context("fragment sample extent overflow")?;
+        ensure!(
+            sample_at >= mdat.start && sample_end <= mdat.end,
+            "fragment sample outside its media payload"
+        );
+        sample_at = sample_end;
+        time = time
+            .checked_add(u64::from(sample_duration))
+            .context("fragment decode time overflow")?;
+    }
+    ensure!(sample_at == mdat.end, "unreferenced fragment media bytes");
+    Ok(time)
+}
+
+fn validate_fragmented_movie(file: &File, top: &[Atom]) -> Result<()> {
+    ensure!(
+        top.len() >= 4 && top[0].kind == *b"ftyp" && top[1].kind == *b"moov",
+        "invalid fragmented movie initialization segment"
+    );
+    ensure!(
+        (top.len() - 2) % 2 == 0,
+        "truncated fragmented movie segment"
+    );
+    let mut budget = FragmentBudget {
+        box_count: top.len(),
+        ..FragmentBudget::default()
+    };
+    ensure!(
+        budget.box_count <= FRAGMENT_BOX_BUDGET,
+        "fragment box work exceeds budget"
+    );
+    let ftyp = fragment_data(file, top[0], &mut budget)?;
+    ensure!(
+        ftyp.as_slice() == b"iso5\x00\x00\x00\x01isomiso5hlsf",
+        "unsupported fragmented movie file type"
+    );
+    let moov = top[1];
+    ensure!(
+        moov.end - moov.start <= FRAGMENT_METADATA_BUDGET,
+        "fragment initialization metadata exceeds budget"
+    );
+    let (track_id, _timescale) = fragmented_track(file, moov, &mut budget)?;
+    let mut expected_decode_time = 0;
+    let fragment_count = (top.len() - 2) / 2;
+    ensure!(
+        fragment_count <= FRAGMENT_COUNT_BUDGET,
+        "fragment count exceeds validation budget"
+    );
+    for (index, pair) in top[2..].chunks_exact(2).enumerate() {
+        ensure!(
+            pair[0].kind == *b"moof" && pair[1].kind == *b"mdat",
+            "unsupported fragmented movie segment layout"
+        );
+        expected_decode_time = validate_fragment(
+            file,
+            pair[0],
+            pair[1],
+            u32::try_from(index + 1)?,
+            expected_decode_time,
+            track_id,
+            &mut budget,
+        )?;
+    }
+    Ok(())
+}
+
 pub fn validate_movie(file: &File) -> Result<()> {
     let top = atoms(file, 0, file.metadata()?.len())?;
+    if top.iter().any(|atom| atom.kind == *b"moof") {
+        return validate_fragmented_movie(file, &top);
+    }
+    validate_completed_movie(file, &top)
+}
+
+fn validate_completed_movie(file: &File, top: &[Atom]) -> Result<()> {
     let moovs: Vec<_> = top.iter().filter(|a| &a.kind == b"moov").collect();
     ensure!(moovs.len() == 1, "movie has no unique completed moov");
     let mdats: Vec<_> = top
