@@ -177,6 +177,28 @@ The active native caller remains authoritative migration debt. This source chang
 
 ## Queue and command adoption boundaries
 
+The internal `queue/worker` runner retains the existing single-link `worker.lock`
+across one upload pass and rechecks its original inode before queue transactions
+and transfer guards. It releases `queue.lock` for network work so foreground
+cancellation can proceed, then uses the existing expiry, retry/backoff and failure
+policies with fresh job/credential/cancellation/consent facts before replacement.
+Unknown effects stop the pass without replay. The host must settle uncertainty
+before scheduling another pass. Fresh bounded local settings, transfer execution
+and deadline-aware status-only progress ports are required; callbacks retain
+ownership until their promises settle and transfers must use the fresh guard.
+This supplies no filesystem snapshot admission, auth renewal or progress HTTP
+implementation by itself. It has no public worker export or production caller;
+Rust remains the sole live worker until coordinated adoption and platform gates.
+
+The internal `queue/retry` operation resets eligible pending/failed jobs under one
+queue lease using the existing retry policy and private replacement port. It pins
+login and cancellation, rechecks current settings, retention, job stamps and the
+original queue inode immediately before dispatch, and preserves other metadata.
+Uncertain effects stop the pass and retain observed committed IDs; the caller must
+settle them before retrying. It changes no credential or config, performs no HTTP
+or deletion, and has no public export or production command route. Local settings
+and sole-writer admission remain host responsibilities; Rust still owns live retry.
+
 The queue API's `planAdmission` returns a detached, frozen plan for automatic
 private, explicit private or public-copy admission. It preserves first-match
 deduplication in supplied queue order and the donor's cancellation → pruning →
