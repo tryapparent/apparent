@@ -214,7 +214,8 @@ function validOutcome(value: unknown): boolean {
   }
   if (value.kind === 'copy' && 'evidence' in value) {
     return exact(value, ['kind', 'at', 'ok', 'evidence', 'artifactId', 'requestId', 'digest', 'byteLength'])
-      && value.ok === true && value.evidence === 'native-write-readback' && text(value.at, 128, true)
+      && value.ok === true && oneOf(value.evidence, ['native-write-readback', 'native-text-readback'] as const)
+      && text(value.at, 128, true)
       && text(value.artifactId, 256, true) && isRequestId(value.requestId)
       && typeof value.digest === 'string' && /^[0-9a-f]{64}$/.test(value.digest)
       && revision(value.byteLength) && value.byteLength > 0;

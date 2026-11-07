@@ -144,8 +144,12 @@ test('preserves authenticated native copy receipts from the public Record contra
   const withReceipt = (outcome: unknown) => ({ ...current, captures: current.captures.map(capture => ({
     ...capture, phase: 'saved', artifactId: receipt.artifactId, outcomes: [outcome],
   })) });
-  const snapshot = withReceipt(receipt);
-  assert.deepEqual(cloneCapabilitySnapshot(snapshot), snapshot);
+  for (const evidence of ['native-write-readback', 'native-text-readback']) {
+    const snapshot = withReceipt({ ...receipt, evidence });
+    assert.deepEqual(cloneCapabilitySnapshot(snapshot), snapshot, evidence);
+    const result = { status: 'accepted', requestId: receipt.requestId, snapshot };
+    assert.deepEqual(cloneCommandResult(result, receipt.requestId), result, evidence);
+  }
   for (const invalid of [
     { ...receipt, evidence: 'dispatch' }, { ...receipt, ok: false },
     { ...receipt, digest: 'A'.repeat(64) }, { ...receipt, byteLength: 0 },
