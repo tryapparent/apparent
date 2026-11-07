@@ -15,9 +15,11 @@ export function relevant(owner: Owner, path: string): boolean {
       path==='enablement/verification/web/inputs.ts' || path==='enablement/verification/web/baseline.ts' ||
       path==='.github/workflows/connect-delivery.yml') return true
   if (publicExternal.has(path)) return owner==='public' || (owner==='connect' && path==='enablement/release_gate.py')
+  if (path === 'public/delivery.json' || path.startsWith('composition/delivery/') || path.startsWith('.github/actions/delivery-contracts/') || path.startsWith('.github/actions/delivery-component/') || path === '.github/workflows/stream-public.yml') return owner === 'public'
   if (path.startsWith('public/site/')) return owner==='public' || (owner==='connect' && browserAssets.has(path))
   if (path.startsWith('connect/web/') || path.startsWith('connect/service/')) return owner==='connect' || (owner==='public' && path.startsWith('connect/web/'))
   if (path.startsWith('connect/client/')) return owner==='recipient'
+  if (path.startsWith('shared/config-native/')) return owner==='recipient'
   if (path.startsWith('connect/delivery/recipient/')) return owner==='recipient'
   if (path.startsWith('connect/delivery/')) return owner!=='recipient'
   if (path.startsWith('shared/ui/') || path.startsWith('shared/analytics/') || path.startsWith('shared/assets/')) return owner!=='recipient'

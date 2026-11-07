@@ -36,7 +36,7 @@ jobs:
         with:
           node-version: '22'
       - name: Verification receipt contracts
-        run: node --experimental-strip-types --test enablement/verification/*.test.ts enablement/file-length/*.test.ts enablement/native/mac-setup.test.ts enablement/native/owned-processes.test.ts enablement/native/cache-command-timing.test.ts
+        run: node --experimental-strip-types --test enablement/verification/*.test.ts enablement/verification/native-baseline/*.test.ts enablement/file-length/*.test.ts enablement/native/mac-setup.test.ts enablement/native/owned-processes.test.ts enablement/native/cache-command-timing.test.ts capture/agent/control-client/delivery/workflow.test.ts
       - name: Recipient CLI installation contracts
         run: node --experimental-strip-types --test capture/agent/scripts/tests/install-cli.test.ts
       - name: Linux release download cache contracts
@@ -53,7 +53,7 @@ jobs:
       - name: Validate workflow syntax and job dependencies
         uses: docker://rhysd/actionlint:1.7.12
         with:
-          args: -shellcheck= -pyflakes= .github/workflows/verification.yml .github/workflows/verification-mac.yml .github/workflows/verification-platform.yml .github/workflows/release-linux.yml .github/workflows/release-mac-preview.yml .github/workflows/web-delivery.yml
+          args: -shellcheck= -pyflakes= .github/workflows/verification.yml .github/workflows/verification-mac.yml .github/workflows/verification-platform.yml .github/workflows/release-linux.yml .github/workflows/release-mac-preview.yml .github/workflows/web-delivery.yml .github/workflows/connect-delivery.yml .github/workflows/stream-agent.yml .github/workflows/stream-app-shell.yml .github/workflows/stream-connect-client.yml .github/workflows/stream-connect-browser.yml .github/workflows/stream-engine.yml .github/workflows/stream-onboarding.yml .github/workflows/stream-platform-config.yml .github/workflows/stream-public.yml .github/workflows/stream-record.yml
       - name: Release admission contracts
         run: python3 -m unittest discover -s enablement/tests -p 'test_release_gate.py'
       - name: Advisory owner dependency report (does not select execution)
@@ -94,6 +94,13 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: capture/desktop/ui/frontend/package-lock.json
+      - name: Build independent Record artifact before installing its consumer
+        working-directory: record
+        run: |
+          npm ci --no-audit --no-fund
+          npm run typecheck
+          npm test
+          npm run test:package
       - run: npm ci --no-audit --no-fund
       - name: Prepare Electron before timed renderer tests
         run: node node_modules/electron/install.js
@@ -207,6 +214,10 @@ jobs:
           retention-days: 14
 
   rust:
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     needs: select
     if: github.ref == 'refs/heads/main'
     name: rust (${{ inputs.runner }})
@@ -230,29 +241,6 @@ jobs:
           node-version: '22'
           cache: ${{ needs.select.outputs.root == 'true' && 'npm' || '' }}
           cache-dependency-path: capture/desktop/ui/frontend/package-lock.json
-      - name: Build and test the standalone capture-control client
-        if: needs.select.outputs.root == 'true' && (inputs.revision == '' || inputs.revision == github.sha)
-        shell: bash
-        run: |
-          cargo test --locked --offline --manifest-path capture/agent/control-client/Cargo.toml
-          cargo build --locked --offline --manifest-path capture/agent/control-client/Cargo.toml --bin apparent-capture
-          target=$(rustc -vV | sed -n 's/^host: //p')
-          node --experimental-strip-types capture/agent/control-client/delivery/package.ts pack \
-            capture/agent/control-client/target/debug/apparent-capture "$GITHUB_SHA" "$target" \
-            "$RUNNER_TEMP/capture-client-producer"
-      - uses: actions/attest-build-provenance@v2
-        if: needs.select.outputs.root == 'true' && (inputs.revision == '' || inputs.revision == github.sha)
-        with:
-          subject-path: ${{ runner.temp }}/capture-client-producer/*.tar.gz
-      - uses: actions/upload-artifact@v4
-        if: needs.select.outputs.root == 'true' && (inputs.revision == '' || inputs.revision == github.sha)
-        with:
-          name: capture-client-${{ inputs.runner }}-${{ github.sha }}
-          path: |
-            ${{ runner.temp }}/capture-client-producer/*.tar.gz
-            ${{ runner.temp }}/capture-client-producer/*.sha256
-          if-no-files-found: error
-          retention-days: 14
       - name: Linux application dependencies
         if: runner.os == 'Linux' && needs.select.outputs.root == 'true'
         run: ./capture/desktop/scripts/linux/appimage/dependencies.sh
@@ -308,6 +296,33 @@ jobs:
             . -> target
             capture/engine -> target
             connect/client -> target
+            capture/agent/control-client -> target
+      - name: Prepare locked capture-client dependencies for cold cache
+        if: needs.select.outputs.root == 'true' && (inputs.revision == '' || inputs.revision == github.sha)
+        run: cargo fetch --locked --manifest-path capture/agent/control-client/Cargo.toml
+      - name: Build and test the standalone capture-control client
+        if: needs.select.outputs.root == 'true' && (inputs.revision == '' || inputs.revision == github.sha)
+        shell: bash
+        run: |
+          cargo test --locked --offline --manifest-path capture/agent/control-client/Cargo.toml
+          cargo build --locked --offline --manifest-path capture/agent/control-client/Cargo.toml --bin apparent-capture
+          target=$(rustc -vV | sed -n 's/^host: //p')
+          node --experimental-strip-types capture/agent/control-client/delivery/package.ts pack \
+            capture/agent/control-client/target/debug/apparent-capture "$GITHUB_SHA" "$target" \
+            "$RUNNER_TEMP/capture-client-producer"
+      - uses: actions/attest-build-provenance@v2
+        if: needs.select.outputs.root == 'true' && (inputs.revision == '' || inputs.revision == github.sha)
+        with:
+          subject-path: ${{ runner.temp }}/capture-client-producer/*.tar.gz
+      - uses: actions/upload-artifact@v4
+        if: needs.select.outputs.root == 'true' && (inputs.revision == '' || inputs.revision == github.sha)
+        with:
+          name: capture-client-${{ inputs.runner }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/capture-client-producer/*.tar.gz
+            ${{ runner.temp }}/capture-client-producer/*.sha256
+          if-no-files-found: error
+          retention-days: 14
       - name: Require macOS compiler dependencies before Cargo
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
         shell: bash
@@ -365,6 +380,7 @@ jobs:
         if: needs.select.outputs.root == 'true'
         shell: bash
         run: |
+          npm --prefix record ci --no-audit --no-fund
           npm --prefix capture/desktop/ui/frontend ci --no-audit --no-fund
           npm --prefix capture/desktop/ui/frontend run build
           # Electron 45 downloads lazily. Resolve it once before the test;
@@ -570,6 +586,22 @@ jobs:
           path: ${{ runner.temp }}/mac-dev-executables/
           if-no-files-found: error
           retention-days: 7
+      - name: Seal completed native verification baseline
+        if: success() && needs.select.outputs.root == 'true' && (inputs.revision == '' || inputs.revision == github.sha)
+        run: node --experimental-strip-types enablement/verification/native-baseline/producer.ts "$RUNNER_TEMP/native-baseline"
+      - name: Attest native verification baseline
+        if: success() && needs.select.outputs.root == 'true' && (inputs.revision == '' || inputs.revision == github.sha)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ runner.temp }}/native-baseline/native-baseline.json
+      - name: Upload native verification baseline
+        if: success() && needs.select.outputs.root == 'true' && (inputs.revision == '' || inputs.revision == github.sha)
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-baseline-${{ inputs.runner }}-${{ github.sha }}
+          path: ${{ runner.temp }}/native-baseline/
+          if-no-files-found: error
+          retention-days: 14
 
   release-ready:
     name: ${{ inputs.revision && format('Release verification ({0})', inputs.revision) || 'Release verification' }}

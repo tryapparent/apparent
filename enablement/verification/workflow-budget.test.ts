@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { executionSeconds, enforceBudget, enforcePublicationReservation, workflowBudgetSeconds, loadJobs, auditName, type Job } from './workflow-budget.ts'
+import { executionSeconds, enforceBudget, enforcePublicationReservation, workflowBudgetSeconds, loadJobs, loadTerminalJobs, auditName, type Job } from './workflow-budget.ts'
 import { readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -148,6 +148,65 @@ test('API denial and incomplete inventories cannot pass', async () => {
   for (const response of [new Response('', { status: 403 }), new Response(JSON.stringify({total_count: 1, jobs: []})), new Response('{}'), new Response(JSON.stringify({total_count: 0, jobs: []})), new Response(JSON.stringify({total_count: 1, jobs: [job(0, 1), job(1, 2)]}))])
     await assert.rejects(loadJobs('https://api.github.com', 'owner/repo', '42', '1', 'token', (async () => response) as typeof fetch))
 })
+test('completion audit retries only valid nonterminal metadata and uses bounded injected waits', async () => {
+  const pending: Job = { name: 'deliver / stream (record, linux-x64)', status: 'in_progress', conclusion: null,
+    started_at: new Date(0).toISOString(), completed_at: null }
+  const terminal = job(0, 30, pending.name)
+  let now = 0
+  let calls = 0
+  const waits: number[] = []
+  const request = async (_url: string | URL | Request, init?: RequestInit) => {
+    calls++
+    assert.ok(init?.signal, 'each request has an abort timeout')
+    const jobs = calls === 1 ? [pending] : [terminal]
+    return new Response(JSON.stringify({ total_count: 1, jobs }))
+  }
+  const jobs = await loadTerminalJobs('https://api.github.com', 'owner/repo', '42', '1', 'synthetic-token', request as typeof fetch, {
+    clock: () => now,
+    delay: async ms => { waits.push(ms); now += ms },
+  })
+  assert.deepEqual(jobs, [terminal])
+  assert.equal(calls, 2)
+  assert.deepEqual(waits, [1_000])
+})
+test('completion audit exhaustion remains a failure and malformed/API errors are not retried', async () => {
+  const pending: Job = { name: 'deliver / stream (record, linux-x64)', status: 'in_progress', conclusion: null,
+    started_at: new Date(0).toISOString(), completed_at: null }
+  let calls = 0
+  let now = 0
+  const waits: number[] = []
+  const request = async () => {
+    calls++
+    return new Response(JSON.stringify({ total_count: 1, jobs: [pending] }))
+  }
+  await assert.rejects(loadTerminalJobs('https://api.github.com', 'owner/repo', '42', '1', 'token', request as typeof fetch, {
+    clock: () => now, delay: async ms => { waits.push(ms); now += ms },
+  }), /Workflow job is not terminal: deliver \/ stream \(record, linux-x64\)/)
+  assert.equal(calls, 5)
+  assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000])
+
+  calls = 0
+  await assert.rejects(loadTerminalJobs('https://api.github.com', 'owner/repo', '42', '1', 'token', (async () => {
+    calls++
+    return new Response(JSON.stringify({ total_count: 1, jobs: [{ ...pending, status: 'mystery' }] }))
+  }) as typeof fetch, { clock: () => 0, delay: async () => { throw new Error('must not wait') } }), /Invalid workflow job metadata/)
+  assert.equal(calls, 1)
+
+  calls = 0
+  await assert.rejects(loadTerminalJobs('https://api.github.com', 'owner/repo', '42', '1', 'token', (async () => {
+    calls++
+    return new Response('', { status: 403 })
+  }) as typeof fetch, { clock: () => 0, delay: async () => { throw new Error('must not wait') } }), /HTTP 403/)
+  assert.equal(calls, 1)
+
+  calls = 0
+  now = 0
+  await assert.rejects(loadTerminalJobs('https://api.github.com', 'owner/repo', '42', '1', 'token', (async () => {
+    calls++
+    return new Response(JSON.stringify({ total_count: 1, jobs: [pending] }))
+  }) as typeof fetch, { clock: () => now, delay: async () => { now = 25_000 } }), /Workflow job is not terminal/)
+  assert.equal(calls, 1, 'deadline overrun must not start another API request')
+})
 test('Mac no-work followers skip the audit while every executed outcome remains audited', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/verification-mac.yml', import.meta.url), 'utf8')
   const condition = workflow.split('  runtime-budget:\n')[1].match(/^    if: (.+)$/m)![1]
@@ -166,6 +225,7 @@ test('every supported root workflow waits for all payload jobs before auditing',
   for (const name of readdirSync(folder)) {
     const text = readFileSync(new URL(name, folder), 'utf8')
     if (name === 'release-windows.yml' || name === 'runtime-budget.yml') continue
+    if (name.startsWith('stream-')) continue
     // Only root workflows: callable platform verification is covered by caller.
     if (!/^  (push|workflow_dispatch|workflow_run|schedule):/m.test(text)) continue
     const jobs = [...text.split('jobs:\n')[1].matchAll(/^  ([\w-]+):$/gm)].map(m => m[1])
@@ -306,16 +366,17 @@ printf '${name}:%s\\n' "$*" >> "$CALLS"
         env: { ...process.env, PATH: `${root}:${process.env.PATH}`, CALLS: calls, BUILD_STATUS: status, HOME: root, RUNNER_OS: os, GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', HELPER_STAT: '0:0:4755' } })
       assert.equal(result.status, Number(status), result.stderr)
       const lines = readFileSync(calls, 'utf8').trim().split('\n')
-      assert.equal(lines[0], 'npm:--prefix capture/desktop/ui/frontend ci --no-audit --no-fund')
-      assert.equal(lines[1], 'npm:--prefix capture/desktop/ui/frontend run build')
+      assert.equal(lines[0], 'npm:--prefix record ci --no-audit --no-fund')
+      assert.equal(lines[1], 'npm:--prefix capture/desktop/ui/frontend ci --no-audit --no-fund')
+      assert.equal(lines[2], 'npm:--prefix capture/desktop/ui/frontend run build')
       if (status === '0') {
-        assert.match(lines[2], /^node:-e /)
-        assert.deepEqual(lines.slice(3), os === 'Linux' ? [
+        assert.match(lines[3], /^node:-e /)
+        assert.deepEqual(lines.slice(4), os === 'Linux' ? [
           `sudo:chown root:root -- ${sandbox}`, `sudo:chmod 4755 -- ${sandbox}`,
           'xvfb:-a cargo test -j 3 --locked _electron_rust_roundtrip -- --ignored --nocapture --test-threads=1',
           'cargo:test -j 3 --locked _electron_rust_roundtrip -- --ignored --nocapture --test-threads=1',
         ] : ['cargo:test -j 3 --locked _electron_rust_roundtrip -- --ignored --nocapture --test-threads=1'])
-      } else assert.equal(lines.length, 2, 'build failure must stop before Electron or Cargo')
+      } else assert.equal(lines.length, 3, 'build failure must stop before Electron or Cargo')
     }
     for (const scenario of ['not-hosted', 'wrong-mode', 'sudo-failure', 'symlink', 'missing']) {
       writeFileSync(calls, '')
@@ -335,3 +396,46 @@ printf '${name}:%s\\n' "$*" >> "$CALLS"
     }
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
+
+test('PR and fresh main media builds share the bounded runtime dependency installer', () => {
+  const action = readFileSync(new URL('../../.github/actions/delivery-component/action.yml', import.meta.url), 'utf8')
+  const setup = action.match(/- name: Install Engine media runtime and fixture dependencies[\s\S]*?(?=\n    - uses: oven-sh)/)?.[0]
+  assert.ok(setup)
+  const condition = setup.match(/if: (.+)/)![1]
+  for (const [publish, reuse, outcome, id, expected] of [
+    ['true', 'false', 'skipped', 'engine-media-native', true],
+    ['true', 'true', 'failure', 'engine-media-native', true],
+    ['true', 'true', 'cancelled', 'engine-media-native', true],
+    ['true', 'true', 'success', 'engine-media-native', false],
+    ['true', 'false', 'skipped', 'engine', false],
+    ['true', 'true', 'failure', 'agent', false],
+    ['false', '', '', 'engine-media-native', true],
+    ['false', '', '', 'engine', false],
+  ] as const) {
+    const expression = condition.replaceAll('steps.admit.outputs.reuse', JSON.stringify(reuse))
+      .replaceAll('steps.reuse.outcome', JSON.stringify(outcome)).replaceAll('inputs.id', JSON.stringify(id))
+      .replaceAll('inputs.publish', JSON.stringify(publish))
+    assert.equal(Function(`return (${expression.replaceAll('inputs.target', JSON.stringify('linux-x64'))})`)(), expected)
+    assert.equal(Function(`return (${expression.replaceAll('inputs.target', JSON.stringify('macos-x64'))})`)(), false)
+  }
+  assert.match(setup, /run: node --experimental-strip-types composition\/delivery\/media-dependencies\.ts/)
+  assert.doesNotMatch(setup, /apt-get|APPARENT_GST_PLUGIN_SOURCE/)
+})
+
+test('settled completion metadata still rejects the actual over-budget workload', async () => {
+  let reads = 0;
+  let now = 0;
+  const name = 'deliver / stream (record, linux-x64)';
+  const request = async () => {
+    reads++;
+    const entry = reads === 1
+      ? { ...job(0, 901, name), status: 'in_progress', conclusion: null, completed_at: null }
+      : job(0, 901, name);
+    return new Response(JSON.stringify({ total_count: 2, jobs: [entry, pendingAudit] }));
+  };
+  const jobs = await loadTerminalJobs('https://api.github.com', 'owner/repo', '42', '1', 'synthetic-token', request as typeof fetch,
+    { clock: () => now, delay: async ms => { now += ms; } });
+  assert.equal(reads, 2);
+  assert.equal(executionSeconds(jobs), 901);
+  assert.throws(() => enforceBudget(jobs), /901.0s \/ 900s/);
+});

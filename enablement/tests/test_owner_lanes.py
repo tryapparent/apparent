@@ -24,6 +24,8 @@ class OwnerTests(unittest.TestCase):
             'capture/desktop/ui/frontend/src/App.tsx': {'desktop-ui', 'capture'},
             'capture/desktop/settings.rs': {'capture', 'engine-staged', 'desktop-ui'},
             'capture/engine/bundle/mod.rs': {'capture', 'engine-staged'},
+            'engine/core/src/secure.rs': {'capture', 'engine-staged'},
+            'engine/src/capture.rs': {'capture', 'engine-staged'},
             'shared/ui/src/index.ts': {'desktop-ui', 'connect-service', 'capture'},
         }
         for path, expected in cases.items():
@@ -164,13 +166,14 @@ class OwnerTests(unittest.TestCase):
                 path = root / command
                 path.write_text(stub); path.chmod(0o755)
             env = dict(os.environ, PATH=str(root), CALL_LOG=str(log))
-            script = lanes.ROOT / 'public/site/scripts/site-build/verify.mjs'
+            env.pop('VITE_HOSTED_API_ORIGIN', None)
+            script = lanes.ROOT / 'public/site/scripts/site-build/verify.ts'
             result = subprocess.run([node, str(script)], env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             calls = [json.loads(line) for line in log.read_text().splitlines()]
-            self.assertEqual(len(calls), 5)
-            self.assertTrue(all(call[2:] == ['1', 'https://hosted.tryapparent.com'] for call in calls))
-            self.assertIn('scripts/site-build/package-apparent.mjs', calls[2][1])
+            self.assertEqual(len(calls), 8)
+            self.assertTrue(all(call[2:] == ['1', None] for call in calls))
+            self.assertIn('scripts/site-build/package-apparent.ts', calls[2][1])
             log.unlink()
             result = subprocess.run([node, str(script)], env=dict(env, FAIL_COMMAND='npm'), capture_output=True)
             self.assertEqual(result.returncode, 7)

@@ -1,17 +1,73 @@
 # Website and Connect continuous delivery
 
-GitHub Actions do not run automatically on PRs or feature-branch pushes. Feature
-pushes run inexpensive selector, push-hook and release-admission contracts locally;
-they do not rebuild the application.
+Value streams use native GitHub paths-filtered workflows; Platform groups config, resources and App Shell behind component selection.
+Engine SDK, native core, media and capture components share `stream-engine.yml`
+with separate component/target matrix jobs and artifacts. Linux/macOS targets
+remain defined by each component registration.
+Platform's selector preserves separate config/resources/App Shell jobs and artifacts;
+missing history selects all. Its shared audit requires selected jobs to succeed.
+The canonical workflow path changes, so prior producer receipts rebuild once.
+See [delivery core](../../composition/delivery/README.md) for selection and reuse rules.
+Owner entrypoints in `.github/workflows/stream-<owner>.yml` own their PR and main
+jobs, permissions, fixed owner/target matrix and runtime audit. Small composite
+actions under `.github/actions/delivery-contracts` and `delivery-component` share
+repeatable steps while leaving job ownership and receipt identity in each workflow.
+An owner workflow schedules only its registered targets. Changed owners run fresh
+PR checks/builds with read-only permissions and synthetic analytics settings. PR
+jobs do not reuse, seal, attest or publish deployment artifacts; main producer jobs
+may admit verified unchanged artifacts and then seal, attest and upload. Public
+owns the only Pages publisher and has no Connect completion trigger. The independent Worker publisher remains manual under its existing
+activation contract. Other standalone workflows remain manual-only.
+This trigger policy supersedes other automatic pipeline descriptions below.
+Existing release admission still rejects diagnostic manual verification receipts;
+manual triggering does not waive publication gates.
+
+Feature-branch pushes without a PR retain affected-owner checks, applicable
+boundary contracts, and exact-HEAD/clean-tree/index/runtime-budget enforcement.
+The hook regression suites for push guards, verification selection, release
+admission, temporary-environment checks and owner lanes run when their test or
+production input closure changes. A change to the shared `verification.py`
+selector runs the complete machinery matrix; unknown history and uncertain
+verification/tooling inputs do the same. Owner-only and documentation-only
+changes keep their owner checks without rerunning unrelated machinery suites.
+Install the architecture checker once with `npm --prefix composition/architecture ci`
+when a selected architecture check needs it; the hook fails clearly if it is
+unavailable and never installs packages. Before contract checks in either PR or
+changed-tree verification, a read-only dependency
+preflight checks selected architecture, Record/renderer, Agent, App Shell,
+onboarding, resources, Connect client and Public packages for required locked
+installs and npm lock freshness. Existing package selectors control the check:
+docs-only and unaffected owners stay skipped, and unknown history remains
+conservative. Missing or stale installs stop before contracts/builds and print a
+package-specific locked-install repair command. App Shell's existing check still
+compares copied shared contracts/UI against source; Record/Desktop checks reuse the
+frontend's read-only shared UI and Record snapshot guard. Public checks reuse the
+build's manifest, input and installed-package prerequisites. The changed-tree
+browser lane checks its Bun executable and lock inputs before the existing selected
+`bun install --frozen-lockfile` step. The preflight itself performs no install,
+fetch or dependency mutation.
+Applicable Value-stream PR checks must pass
+before merge; standalone Linux/macOS and Connect workflows remain manual-only.
 Use `python3 enablement/verification.py --base <base> --run` for explicit affected
 local checks. Dirty-tree, hidden-index and exact-HEAD push guards remain enforced.
 
-`Linux verification` runs on main pushes. Running verification finishes; only
-pending work is replaced. `Mac verification` follows successful Linux runs and
-checks their exact SHA, so every automatic Mac candidate retains matching Linux
-proof even while main advances. Mac's running work also finishes and its pending
-candidates coalesce; slow Mac capacity never blocks Linux. Manual main dispatches
-remain diagnostic and cannot substitute for automatic release receipts.
+`.github/workflows/stream-*.yml` are the independent main producer workflows for
+registered components (Engine components share one workflow), including Public's Bun-built web artifact and native Engine
+providers. Each paths filter includes its owner source, shared consumed inputs,
+registration/build contracts and its own workflow. The registry records each
+owner's supported targets and artifact stage; missing registrations remain
+explicitly pending or blocked. A component artifact does not certify installed
+capture routing or native readiness. Public's website pipeline validates and publishes only its
+verified Public component. Connect retains its separate
+browser/Worker producer with explicit manual/reusable invocation; the registered
+Connect client package has its own path-filtered component workflow. Feature-push selection runs the App Shell installed
+check for its package inputs. Changes under `composition/delivery/` run that
+check plus the dependency-free Node delivery contracts. Neither hook path
+installs packages.
+
+`Linux verification` and `Mac verification` are manual diagnostic entrypoints.
+The retained verification and release contracts below do not enable automatic
+platform verification or publication.
 Both use `verification-platform.yml` and retain full Rust, Engine/client, browser,
 Electron and applicable native checks against the entire selected tree. Cancelled
 pending runs cannot hide changes. Full verification is main-only; feature branches
@@ -31,17 +87,16 @@ CI is not Apple Silicon runtime proof. An image change must still pass the same
 checks before Mac publication.
 
 Linux delivery triggers only after successful `Linux verification`.
-Web delivery runs on main pushes, manual main dispatches and successful trusted
-Connect producer completions, independently of native application receipts.
-Its full-delta input selector includes Public, Connect browser, shared UI/analytics/assets,
-root README and the Agent skill consumed by generated pages, publisher policy and
-web delivery inputs. It starts from a successful run with actual owner verification
-and a successful budget audit; selector-only successes never advance that baseline.
-A same-source successful Public verification can make a later Connect follower
-unnecessary. Missing, incomplete or uncertain history and unknown inputs broaden
-checks. Its terminal gate accepts
-only required/success or explicitly unnecessary/skipped verification. Manual refresh
-forces checks. Native-only changes can report web checks not applicable.
+Public delivery runs through `stream-public.yml` on matching main pushes.
+Its dedicated producer builds or reuses only the Public website component. Its
+`deploy (public, web)` job needs only that producer, validates the same-run artifact
+and Public-only resource/browser/theme/movie seams, then seals and publishes under
+existing Pages environment/CD/lock/readback gates. It never fetches, composes,
+tests or publishes Connect browser bytes and has no Connect completion trigger.
+Connect independently owns canonical /connect UI, API, authentication, recording
+links and resources through its existing Worker. Its verified live cutover clears
+the former composition dependency. Retain the app Worker routes after Public-only
+publication; restore combined Pages before removing them during rollback.
 Connect's paired browser/Worker producer combines that input selection with existing
 authenticated artifact compatibility checks; missing compatible bytes still requires
 production. Its recipient matrix has an independent cheap selector, so web artifact
@@ -54,13 +109,11 @@ require their real reviewed artifacts and applicable platform acceptance.
 Public and Connect builds invoke the color guard for their own frontend surfaces
 plus shared sources. The default repository-wide color guard still checks all
 owners, including Desktop; no fixed-color allowances or global checks were removed.
-Public consumes immutable independently verified Connect browser artifacts after
-trusted producer/run/digest, candidate input and current build-configuration checks.
-No compatible retained artifact means fail-closed admission, never a Connect rebuild.
-The Public verifier builds/tests/packages Public and checks composition/browser seams;
-the website publisher consumes its revision-named sealed artifact. The separate
-Worker call invokes Connect's reusable publisher after producer completion; it does
-not depend on Public checks. Existing activation/environment gates remain.
+Public produces and publishes only its website artifact. Connect browser bytes,
+route/resource/auth/privacy verification and gateway Worker publication belong to
+Connect. Public neither admits nor republishes Connect artifacts. The separate
+Worker call invokes Connect's reusable publisher through its manual entrypoint;
+it does not depend on Public checks. Existing activation/environment gates remain.
 Pages and Worker publication have independent job locks, respectively
 `website-production-eligible` and `web-delivery-production-eligible`; no caller
 workflow lock nests around the reusable Worker lock.
@@ -163,29 +216,104 @@ directory with `core.hooksPath` pointing there. Restore the previous hooks path
 to roll that installation back; switch to `.githooks` after all active worktrees
 contain the new hook. Server-side policy is separate.
 
+## PR verification reuse
+
+The Engine SDK Linux lane, native Engine/media Linux/Intel Mac lanes and App Shell
+Linux/Intel Mac lanes, Config Linux/Intel Mac lanes and Onboarding Linux/Intel Mac
+lanes retain seven-day PR candidates after their fresh checks and build. Main jobs first try existing verified-main reuse, then a same-repository
+merged PR candidate. Admission authenticates the merged PR, exact workflow/run and
+successful attempt jobs (including contracts and runtime audit), then checks the
+synthetic merge commit's base/head parents and requires its complete Git tree to
+equal the landed main tree. Component/environment/Node/runner-image digests and
+archive hash/size/run-attempt checks still apply. Forks, missing metadata, changed
+trees, expired artifacts and failed retrieval/validation fall back to fresh work.
+The run API's head SHA identifies the PR head, not its tested synthetic merge.
+
+Candidates use separate `pr-ID-TARGET-MERGE_SHA-DIGEST` artifact names;
+retention is not publication authority. Main reissues an exact-main receipt with
+original-run provenance, then attests/uploads through the existing path. Main job
+summaries distinguish reuse from fresh verification. No workflows, skipped jobs or
+cancellation rules are added. Other owner lanes retain their existing
+behavior; production configuration and platform/native acceptance remain required.
+These Engine exceptions supersede the general statement that PR jobs do not archive
+artifacts. Changed-tree or per-component PR matching is deliberately not enabled.
+
+Native Engine and media admission install Rust before fingerprinting on PRs and main,
+including reuse hits. Its digest additionally covers actual rustc/Cargo/C compiler
+versions, macOS SDK/Clang where applicable, and compiler/linker environment
+overrides. Empty/missing identities and unknown Rust compiler wrappers fail closed.
+The archived native manifest retains its original build source SHA. The outer
+receipt records the admitted main SHA in `sourceSha` and the unchanged payload
+build SHA in `buildSourceSha`, plus original-run provenance; promotion never
+rewrites native bytes or their embedded manifest. Prior fingerprints lacking this
+identity rebuild once. Native runtime, GUI routes and deployment authority do not
+change; existing native producer checks run fresh on both supported PR targets.
+
+App Shell candidates are archived only after the exact packaged Electron app
+passes the existing platform tests. Promotion retains the complete package and
+its archive hash; it does not repackage or change installed routing, bridge
+contracts, Electron versions or package layout. Its fingerprint additionally
+covers Electron/npm overrides and Node options/environment; locked Electron and
+packager inputs remain in the source closure. The original package source is
+retained in `buildSourceSha`. The shared TypeScript allowlist selects retention,
+sealing and admission consistently for enabled owner/target pairs. Both existing
+platform PR lanes keep their fresh checks; main authenticates only its own owner
+workflow and target. No new Desktop GUI/native behavior is introduced.
+
+Media qualifies its dependencies before admission even on a reuse hit: the
+existing bounded signed Ubuntu installer on Linux, and existing Swift/SDK/FFmpeg
+qualification on Intel Mac. The media digest adds the installed Linux package
+versions, GStreamer version/link flags and glibc, or Mac Swift and OS version,
+plus FFmpeg and relevant media loader/pkg-config overrides. Version or override
+changes invalidate reuse; missing identity fails closed. Qualification setup is
+retained, while compilation and packaged media tests are reused from the exact
+successful PR archive. Both platform PR producers continue their real staged
+H264/SDK checks. Embedded build manifests and all archived runtime bytes remain
+unchanged; main retains original build provenance. Capture is not enabled for PR
+reuse by this media slice.
+
+Config uses the same actual native compiler/SDK/flag identity and conservative
+whole-tree admission on both supported targets. Supported native candidates
+install Rust before admission; unsupported native lanes keep fresh-only setup.
+The Config helper, its embedded source SHA and protocol manifest are promoted
+byte-for-byte with original build provenance. Its workflow retains fresh staged
+helper/client integration tests on PRs. No config writer, permission, activation,
+installed routing or native-helper implementation changes in this reuse slice.
+
+Onboarding promotes the exact packed TypeScript library only after its existing
+fresh checks/build and disposable public-export consumer verification. Its
+committed vendor tarballs and lockfile remain the complete package dependency
+inputs. Node/npm/esbuild overrides join its fingerprint; Electron-only overrides
+remain App Shell-specific. Shared package-build identity also captures esbuild
+overrides for App Shell. Onboarding gains no Rust dependency or native setup, and
+this delivery change does not activate or alter any installed onboarding route.
+
 ## Checks and artifact identity
 
 Public's credential-free verification runs its source build, owner tests,
-allowlisted package, Pages movie HTTP tests, immutable Connect artifact composition
-and artifact-only browser/analytics seam tests. Connect's independently verified
+allowlisted package, Public resource graph/byte-preservation checks, Pages movie
+HTTP tests and Public browser/analytics seam tests. Connect's independently verified
 producer owns service workerd/D1/R2, account/device/sharing browser and consent
 product tests. Shared inputs fan out through complete candidate input validation.
 
-Node 22.23.0 and Bun 1.3.10 are pinned. Public browser installation and Pages tools
-come from its lockfile. Production uses the existing API origin. Synthetic Public
-analytics output stays in private temporary directories and reuses Connect bytes;
+Public/common delivery pins Node 22.23.4; Connect retains its declared Node pin.
+Bun 1.3.10 is pinned. Public browser installation and Pages tools
+come from its lockfile. Public has no Connect API-origin dependency. Synthetic Public
+analytics output stays in private producer temporary directories without Connect;
 it is never uploaded. Pages artifacts include the compiled Function, provider
 configuration and complete checksum manifest outside the served tree, retained
-for 90 days. Source-built Public bytes and Connect resource graphs survive
-composition without overlays. The publisher uses `--no-bundle`, verifies downloaded
+for 90 days. Source-built Public bytes survive metadata preparation without
+overlays. The publisher uses `--no-bundle`, verifies downloaded
 bytes and reads back the immutable and canonical deployment. Older/equal revisions
 cannot replace newer published source. Provider readback and remote errors still
 fail; a superseded Pages candidate reports an intentional successful skip.
 
 ## Website activation: Cloudflare Pages
 
-The active website job now publishes only the sealed source-built `dist-apparent` to the isolated
-`apparent-capture` Pages project, using `public/site/scripts/cd/publish_pages.py` and
+The `deploy (public, web)` job in `stream-public.yml` is the only Public
+production entrypoint. The publisher rejects other workflows and job identities.
+It publishes only the sealed source-built `dist-apparent` to the isolated
+`apparent-capture` Pages project, using `public/site/scripts/cd/publish-pages.ts` and
 `public/site/wrangler.pages.jsonc`. It does not execute `public/site/wrangler.jsonc`, deploy the
 hosted Worker, or connect to Clanker. See
 [`../../public/site/docs/pages-deploy.md`](../../public/site/docs/pages-deploy.md) for the current build,
@@ -337,6 +465,15 @@ dependencies as those workflows; they do not install OS dependencies. The Linux
 `desktop-ui-integration` lane supplies shared renderer/real-bridge proof under the
 Desktop policy, not proof of Mac or Linux OS effects. Run heavy local commands
 through the existing build runner.
+
+App Shell foundation checks are selected for changes under `composition/app/`,
+`shared/contracts/` or `shared/ui/`; delivery contract changes under
+`composition/delivery/` select the App Shell package check and pure Node tests
+without selecting the Rust root build. Feature pushes run `npm run check` in
+`composition/app/` only when its locked dependencies are already installed; the
+hook never installs them. The main value-stream workflow runs this stream on
+Linux and Mac. These checks do not route the installed application or prove
+native OS behavior.
 
 Client edits also select Capture: root tests intentionally reuse client scenarios
 with the real AppConfig provider. Renderer edits select Capture for Rust bridge
@@ -554,7 +691,7 @@ improvement or an increase to the separate NoMac spending/session limits.
 ### Connect client TypeScript feedback before feature pushes
 
 Feature pre-push runs the existing `npm test` command in
-`connect/client/typescript` when the full merge-base delta changes its
+`connect/delivery/client` when the full merge-base delta changes its
 `package.json`, `package-lock.json`, `tsconfig.json`, `src/**`, or direct
 `test/*.test.ts` inputs. The command's declared `pretest` builds the package
 before running its Node tests. Node and the locked npm dependencies must already

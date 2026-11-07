@@ -293,7 +293,7 @@ fn merge_capture_notes(directory: &Path, events: &mut Vec<InteractionEvent>) -> 
     if !directory.join("notes.json").try_exists()? {
         return Ok(());
     }
-    let notes = crate::capture::engine::runtime::recording::notes::read(directory)?;
+    let notes = apparent_capture_engine::recording::notes::read(directory)?;
     events.retain(|e| !matches!(e, InteractionEvent::Note { .. }));
     events.extend(notes.into_iter().map(|n| InteractionEvent::Note {
         t: n.t,
@@ -1080,6 +1080,7 @@ mod tests {
             on: None,
             pin: Some(1),
             laser: false,
+            rgb: None,
             pts: vec![3000, 4000, 0],
         }];
         let (_, bundle, summary) = build_bundle_from_parts(

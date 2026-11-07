@@ -84,7 +84,7 @@ Electron main owns one persistent, same-user backend socket. Opening and
 one-second local refreshes never initiate network access. Each bounded request
 uses Electron's monotonic clock; a ten-second idle lease, EOF, renderer reload,
 crash or window close closes the lease and cancels pending authorization.
-Connect-owned TypeScript (`connect/client/typescript/src/settings-controller.cts`
+Connect-owned TypeScript (`connect/delivery/client/src/settings-controller.cts`
 and `settings-presentation.ts`) owns the asynchronous controller, consent and
 confirmation workflow, receipt ownership, activation intent and presentation.
 Rust retains local snapshots, auth/renewal, credentials, health probes and durable
@@ -618,10 +618,11 @@ fixtures alone are not proof of native effects.
 
 ## Recording pill replacement candidate
 
-`pill/index.html`, `src/pill`, `electron/pill` and `../electron_pill` implement the
-shared pill presentation and parent-owned Rust transport. This candidate is
-not evidence of accepted installed/native behavior. Do not remove the old
-pill or treat the synthetic tests as native capture proof.
+`pill/index.html` and the thin `src/pill` legacy mount consume the reusable
+presentation from `record/src/ui`; `electron/pill` and `../electron_pill` retain
+the parent-owned Rust transport and lifecycle. Moving the presentation does not
+change installed/native behavior. Do not remove the old pill or treat the
+synthetic tests as native capture proof.
 
 Rust launches the packaged pill alongside the existing Settings runtime; no
 new config key or off-by-default product feature is introduced. Missing assets,
@@ -834,3 +835,10 @@ It typechecks the existing onboarding entry and transitive imports, then builds
 shared CSS/Tailwind scanning and font inputs. It does not generate Connect
 adapters or check Settings/pill TypeScript. This developer command is not a
 packaging, bridge, native or release check; the full build remains authoritative.
+
+The Record pill dependency publishes bundled shared controls and precompiled CSS;
+its legacy mount imports `@apparent/record/ui/style.css`. Install/build `record/`
+before installing this consumer. Source producer inputs remain checked for
+freshness; packed artifacts need no adjacent repository. The focused
+`tests/pill/host-swap.smoke.ts` exercises lower-revision host replacement and late
+old-host replies; it does not start capture or establish OS/native acceptance.

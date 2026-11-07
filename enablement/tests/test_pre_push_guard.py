@@ -1,8 +1,10 @@
 """Exercise the actual pre-push hook in disposable Git repositories."""
 
 import os
+import json
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -22,6 +24,46 @@ def run(*args, cwd, env=None, input=None):
 
 
 class PrePushGuardTests(unittest.TestCase):
+    def prepare_npm_install(self, package, source):
+        """Copy a real npm manifest/lock and model npm's prepared install metadata."""
+        source = Path(source)
+        package.mkdir(parents=True, exist_ok=True)
+        for name in ("package.json", "package-lock.json"):
+            if (source / name).resolve() != (package / name).resolve():
+                shutil.copy2(source / name, package / name)
+        manifest = json.loads((package / "package.json").read_text())
+        lock = json.loads((package / "package-lock.json").read_text())
+        installed = {"packages": {}}
+        dependencies = manifest.get("dependencies", {}) | manifest.get("devDependencies", {})
+        for name in dependencies:
+            key = "node_modules/" + name
+            entry = dict(lock["packages"][key])
+            installed["packages"][key] = entry
+            dependency = package / key
+            dependency.mkdir(parents=True, exist_ok=True)
+            if entry.get("link"):
+                target = lock["packages"][entry["resolved"]]
+                version = target["version"]
+            else:
+                version = entry["version"]
+            (dependency / "package.json").write_text(json.dumps({"version": version}))
+            resolved = entry.get("resolved", "")
+            if resolved.startswith("file:"):
+                artifact = package / resolved[5:]
+                if not artifact.exists():
+                    artifact.mkdir(parents=True, exist_ok=True)
+                    (artifact / "package.json").write_text(json.dumps({"version": version}))
+        (package / "node_modules/.package-lock.json").write_text(json.dumps(installed))
+
+    @classmethod
+    def setUpClass(cls):
+        # Verify the real width matrix once, not inside every nested hook.
+        result = run("python3", "-m", "unittest", "discover", "-s",
+                     "enablement/directory-width/tests", "-p", "test_*.py",
+                     cwd=HOOK.parents[1])
+        if result.returncode:
+            raise RuntimeError(result.stdout + result.stderr)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix=".pf-", dir=Path.home())
         self.addCleanup(self.tmp.cleanup)
@@ -36,20 +78,75 @@ class PrePushGuardTests(unittest.TestCase):
         # The driver runs tests as well as Cargo. Keep this fixture finite:
         # copying the real hook tests here would recursively invoke itself.
         fixture_test = "import unittest\nclass Fixture(unittest.TestCase):\n    def test_fixture(self):\n        self.assertTrue(True)\n"
-        for name in ("test_fixture_push.py", "test_verification.py", "test_release_gate.py",
-                     "test_temp_preflight.py", "test_owner_lanes.py"):
+        for name in ("test_pre_push_guard.py", "test_commit_push_checkpoint.py",
+                     "test_signing_push.py", "test_mac_prepare_push.py",
+                     "test_mac_cache_push.py", "test_verification.py",
+                     "test_release_gate.py", "test_temp_preflight.py",
+                     "test_owner_lanes.py"):
             (self.repo / "enablement" / "tests" / name).write_text(fixture_test)
-        client = self.repo / "connect/client/typescript"
+        for name in ("enablement/verification/dependencies/preflight.test.ts",
+                     "capture/desktop/ui/frontend/scripts/check-dependency-freshness.test.ts",
+                     "capture/desktop/ui/frontend/scripts/check-dependency-freshness.ts"):
+            target = self.repo / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(HOOK.parents[1] / name, target)
+        client = self.repo / "connect/delivery/client"
         for name in ("package.json", "package-lock.json", "tsconfig.json"):
             destination = client / name
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(HOOK.parents[1] / "connect/client/typescript" / name, destination)
+            shutil.copy2(HOOK.parents[1] / "connect/delivery/client" / name, destination)
         (client / ".gitignore").write_text("node_modules/\n")
         (client / "src").mkdir()
         (client / "src/index.ts").write_text("export const value = 1;\n")
         (client / "test").mkdir()
         (client / "test/index.test.ts").write_text("// package test input\n")
+        self.prepare_npm_install(client, HOOK.parents[1] / "connect/delivery/client")
+        app_shell = self.repo / "composition/app"
+        source_app_shell = SELECTOR.parents[1] / "composition/app"
+        for name in ("package.json", "package-lock.json", "tsconfig.json", ".gitignore", "delivery.json"):
+            destination = app_shell / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_app_shell / name, destination)
+        self.prepare_npm_install(app_shell, source_app_shell)
+        architecture = self.repo / "composition/architecture"
+        architecture.mkdir(parents=True, exist_ok=True)
+        self.prepare_npm_install(architecture, SELECTOR.parents[1] / "composition/architecture")
+        # Unknown history includes Record's independent renderer. Provision
+        # dependency markers as for the shell; npm itself remains mocked.
+        for package, names in (
+            ("record", ("typescript/bin/tsc", "@types/node/package.json",
+                        "@types/react/package.json", "@apparent/ui/package.json",
+                        "lucide-react/package.json", "esbuild/package.json",
+                        "@tailwindcss/cli/package.json")),
+            ("capture/desktop/ui/frontend", ("typescript/bin/tsc", "vite/bin/vite.js",
+                         "@apparent/record/package.json", "@apparent/ui/package.json")),
+        ):
+            root = self.repo / package
+            root.mkdir(parents=True, exist_ok=True)
+            (root / ".gitignore").write_text("node_modules/\ndist/\n")
+            for name in names:
+                dependency = root / "node_modules" / name
+                dependency.parent.mkdir(parents=True, exist_ok=True)
+                dependency.write_text("fixture\n")
+        for relative in ("record", "capture/desktop/ui/frontend"):
+            self.prepare_npm_install(self.repo / relative, SELECTOR.parents[1] / relative)
         shutil.copy2(SELECTOR, self.repo / "enablement" / "verification.py")
+        # The independent top-level owner is selected on unknown history too.
+        # Copy its tracked input closure, not its generated/dependency trees.
+        for name in run("git", "ls-files", "onboarding", cwd=HOOK.parents[1]).stdout.splitlines():
+            target = self.repo / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(HOOK.parents[1] / name, target)
+        package = self.repo / "onboarding"
+        self.prepare_npm_install(package, package)
+        # Preserve the dependency-free delivery check closure for conservative
+        # unknown-history selection; it never invokes this hook suite.
+        delivery = self.repo / "composition/delivery"
+        delivery.mkdir(parents=True)
+        for name in ("core.ts", "cli.ts", "core.test.ts", "runtime/pr-candidate.ts", "runtime/pr-candidate.test.ts",
+                     "consumer/handoff.ts", "consumer/handoff.test.ts"):
+            (delivery / name).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(SELECTOR.parents[1] / "composition/delivery" / name, delivery / name)
         # File-length tests exercise pre-commit only, so this closure stays
         # finite and never recursively invokes the pre-push test suite.
         for name in (".githooks/pre-commit", "enablement/directory-width/check.py",
@@ -57,25 +154,41 @@ class PrePushGuardTests(unittest.TestCase):
             destination = self.repo / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(HOOK.parents[1] / name, destination)
+        # The outer verifier already runs the real file-length suite once.
+        # Nested hook invocations test command admission, not the scanner again:
+        # rerunning its Git fixtures for every push scenario exhausts the hook budget.
+        (self.repo / "enablement/file-length/check.test.ts").write_text(
+            'import test from "node:test"; import assert from "node:assert/strict";\n'
+            'test("hook fixture", () => assert.ok(true));\n'
+        )
         width_tests = self.repo / "enablement/directory-width/tests"
         width_tests.mkdir(parents=True)
-        shutil.copy2(HOOK.parents[1] / "enablement/directory-width/tests/test_hook.py",
-                     width_tests / "test_hook.py")
+        # setUpClass runs the real matrix; this nested suite is an admission marker.
+        (width_tests / "test_hook.py").write_text(fixture_test)
         # The real verifier now runs the shared frontend color guard. Preserve
         # its actual dependency closure in this disposable hook repository.
         theme = self.repo / "shared/ui/scripts"
         theme.mkdir(parents=True)
-        for name in ("check-theme.py", "legacy-colors.json"):
+        for name in ("check-theme.py", "check-theme.ts", "legacy-colors.json"):
             shutil.copy2(SELECTOR.parents[1] / "shared/ui/scripts" / name, theme / name)
+        # This hook fixture stubs package execution (npm/Cargo) rather than
+        # reproducing all owner sources. Architecture behavior has a separate
+        # real cross-owner regression in test_verification.py.
+        architecture = self.repo / "composition/architecture"
+        (architecture / "src").mkdir(parents=True)
+        (architecture / "node_modules/typescript").mkdir(parents=True, exist_ok=True)
+        (architecture / ".gitignore").write_text("node_modules/\n")
+        (architecture / "src/cli.ts").write_text("// Hook fixture package boundary; actual scanner is tested separately.\n")
         run("git", "add", ".", cwd=self.repo)
         run("git", "commit", "-qm", "original", cwd=self.repo)
         self.head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
-        self.client = self.repo / "connect/client/typescript"
+        self.client = self.repo / "connect/delivery/client"
         for name in ("typescript/bin/tsc", "@types/node/package.json",
                      "age-encryption/package.json", "@noble/ed25519/package.json"):
             dependency = self.client / "node_modules" / name
             dependency.parent.mkdir(parents=True, exist_ok=True)
-            dependency.write_text("fixture\n")
+            if not dependency.name == "package.json" or not dependency.exists():
+                dependency.write_text("fixture\n")
         self.bin = Path(self.tmp.name) / "bin"
         self.bin.mkdir()
         self.log = Path(self.tmp.name) / "commands"
@@ -83,6 +196,9 @@ class PrePushGuardTests(unittest.TestCase):
         taskpolicy = self.bin / "taskpolicy"
         taskpolicy.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$COMMAND_LOG\"\nexit \"${MOCK_STATUS:-0}\"\n")
         taskpolicy.chmod(0o755)
+        node = self.bin / "node"
+        node.write_text("#!/bin/sh\ncase \"$*\" in *check-dependency-freshness.ts*|*composition/app/scripts/check-installed.ts*) exit 0;; esac\nexec " + shlex.quote(shutil.which("node")) + " \"$@\"\n")
+        node.chmod(0o755)
         npm = self.bin / "npm"
         npm.write_text('#!/bin/sh\nprintf "%s:%s\\n" "$PWD" "$*" >> "$NPM_COMMAND_LOG"\nexit "${NPM_STATUS:-0}"\n')
         npm.chmod(0o755)
@@ -112,17 +228,46 @@ class PrePushGuardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.log.exists())
         self.assertIn(f"{site}:run build\n", self.npm_log.read_text())
+        self.assertIn(f"{self.repo / 'composition/app'}:run check\n", self.npm_log.read_text())
+
+    def test_top_level_onboarding_feature_push_runs_only_owner_commands(self):
+        run("git", "update-ref", "refs/remotes/origin/main", "HEAD", cwd=self.repo)
+        entry = self.repo / 'onboarding/src/controller.ts'
+        entry.write_text(entry.read_text() + '\n// owner-only fixture change\n')
+        run('git', 'add', '.', cwd=self.repo)
+        run('git', 'commit', '-qm', 'standalone onboarding change', cwd=self.repo)
+        self.head = run('git', 'rev-parse', 'HEAD', cwd=self.repo).stdout.strip()
+        result = self.push(remote='refs/heads/feature')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.log.exists(), 'no Cargo may run for this owner-only delta')
+        self.assertEqual(self.npm_log.read_text().splitlines(), [
+            f"{self.repo / 'onboarding'}:run typecheck",
+            f"{self.repo / 'onboarding'}:test",
+        ])
+
+    def test_deleted_top_level_onboarding_entry_rejects_push(self):
+        run('git', 'update-ref', 'refs/remotes/origin/main', 'HEAD', cwd=self.repo)
+        (self.repo / 'onboarding/src/controller.ts').unlink()
+        run('git', 'add', '-A', cwd=self.repo)
+        run('git', 'commit', '-qm', 'deleted standalone entry', cwd=self.repo)
+        self.head = run('git', 'rev-parse', 'HEAD', cwd=self.repo).stdout.strip()
+        result = self.push(remote='refs/heads/feature')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('missing or deleted', result.stderr)
 
     def onboarding_delta(self, dependencies=True, delete=False, rename=False):
         frontend = self.repo / "capture/desktop/ui/frontend"
         entry = frontend / "src/onboarding/main.tsx"
         entry.parent.mkdir(parents=True, exist_ok=True)
         entry.write_text("// original entry\n")
+        if not dependencies:
+            shutil.rmtree(frontend / "node_modules", ignore_errors=True)
         if dependencies:
             for name in ("typescript/bin/tsc", "vite/bin/vite.js", "@apparent/ui/package.json"):
                 target = frontend / "node_modules" / name
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text("fixture\n")
+                if not name.endswith("package.json") or not target.exists():
+                    target.write_text("fixture\n")
         run("git", "add", ".", cwd=self.repo)
         run("git", "commit", "-qm", "entry baseline", cwd=self.repo)
         run("git", "update-ref", "refs/remotes/origin/main", "HEAD", cwd=self.repo)
@@ -166,7 +311,7 @@ class PrePushGuardTests(unittest.TestCase):
         for name in (*manifest.get("dependencies", {}), *manifest.get("devDependencies", {})):
             dependency = site / "node_modules" / name / "package.json"
             dependency.parent.mkdir(parents=True, exist_ok=True)
-            dependency.write_text("fixture\n")
+            dependency.write_text(json.dumps({"version": "fixture"}))
         (site / ".gitignore").write_text("node_modules/\n")
         target = site / path
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -248,13 +393,22 @@ class PrePushGuardTests(unittest.TestCase):
                 "shared/ui/src/button.tsx"):
             target = self.repo / path
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text("// changed transitive input\n")
+            target.write_text(target.read_text() + "\n" if path.endswith("package.json")
+                              else "// changed transitive input\n")
         run("git", "add", "-A", cwd=self.repo)
         run("git", "commit", "-qm", "transitive inputs", cwd=self.repo)
         self.head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
         result = self.push(remote="refs/heads/feature")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.log.read_text(), f"{frontend}:run check:onboarding\n")
+        self.assertEqual(self.log.read_text(),
+                         f"{self.repo / 'composition/app'}:run check\n"
+                         f"{self.repo / 'record'}:run typecheck\n"
+                         f"{self.repo / 'record'}:test\n"
+                         f"{self.repo / 'record'}:run build\n"
+                         f"{self.repo / 'record'}:pack --dry-run\n"
+                         f"{frontend}:run build\n"
+                         f"{frontend}:test\n"
+                         f"{frontend}:run check:onboarding\n")
 
     def test_unrelated_public_owner_skips_onboarding_renderer_check(self):
         site = self.public_site_delta()
@@ -267,7 +421,7 @@ class PrePushGuardTests(unittest.TestCase):
         self.onboarding_delta(dependencies=False)
         result = self.push(remote="refs/heads/feature")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("run npm ci in capture/desktop/ui/frontend", result.stderr)
+        self.assertIn("run npm ci --no-audit --no-fund in capture/desktop/ui/frontend", result.stderr)
         self.assertFalse(self.log.exists())
 
     def test_onboarding_deleted_or_renamed_entry_requires_contract_update(self):
@@ -312,7 +466,7 @@ class PrePushGuardTests(unittest.TestCase):
         result = self.push(remote="refs/heads/feature")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("package-lock.json", result.stderr)
-        self.assertIn("restore them or update the pre-push contract", result.stderr)
+        self.assertIn("run npm ci --no-audit --no-fund in connect/delivery/client", result.stderr)
         self.assertFalse(self.npm_log.exists())
 
     def test_connect_client_missing_dependencies_never_install(self):
@@ -320,7 +474,7 @@ class PrePushGuardTests(unittest.TestCase):
         self.connect_client_delta()
         result = self.push(remote="refs/heads/feature")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("run `npm ci --no-audit --no-fund` in connect/client/typescript", result.stderr)
+        self.assertIn("run `npm ci --no-audit --no-fund` in connect/delivery/client", result.stderr)
         self.assertIn("never installs dependencies", result.stderr)
         self.assertFalse(self.npm_log.exists())
 
@@ -357,8 +511,10 @@ class PrePushGuardTests(unittest.TestCase):
         result = self.push()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.log.read_text().splitlines(), [
-            "-c utility cargo build --manifest-path capture/engine/Cargo.toml -j 3 --offline",
-            "-c utility cargo test --manifest-path capture/engine/Cargo.toml -j 3 --offline -- --test-threads=2",
+            "-c utility cargo build --manifest-path engine/core/Cargo.toml -j 3 --offline",
+            "-c utility cargo test --manifest-path engine/core/Cargo.toml -j 3 --offline -- --test-threads=2",
+            "-c utility cargo build --manifest-path engine/Cargo.toml -j 3 --offline",
+            "-c utility cargo test --manifest-path engine/Cargo.toml -j 3 --offline -- --test-threads=2",
             "-c utility cargo test -j 3 --offline -- --test-threads=2",
             "-c utility cargo build -j 3 --offline",
         ])
@@ -372,8 +528,10 @@ class PrePushGuardTests(unittest.TestCase):
         result = self.push(env=dict(self.env, T3_BUILD_JOBS="7"))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.log.read_text().splitlines(), [
-            "-c utility cargo build --manifest-path capture/engine/Cargo.toml -j 7 --offline",
-            "-c utility cargo test --manifest-path capture/engine/Cargo.toml -j 7 --offline -- --test-threads=2",
+            "-c utility cargo build --manifest-path engine/core/Cargo.toml -j 7 --offline",
+            "-c utility cargo test --manifest-path engine/core/Cargo.toml -j 7 --offline -- --test-threads=2",
+            "-c utility cargo build --manifest-path engine/Cargo.toml -j 7 --offline",
+            "-c utility cargo test --manifest-path engine/Cargo.toml -j 7 --offline -- --test-threads=2",
             "-c utility cargo test -j 7 --offline -- --test-threads=2",
             "-c utility cargo build -j 7 --offline",
         ])
@@ -403,7 +561,7 @@ class PrePushGuardTests(unittest.TestCase):
 
     def test_engine_only_push_does_not_build_root(self):
         run("git", "update-ref", "refs/remotes/origin/main", self.head, cwd=self.repo)
-        tests = self.repo / "capture" / "engine" / "tests"
+        tests = self.repo / "engine" / "core" / "tests"
         tests.mkdir(parents=True)
         (tests / "process.rs").write_text("// Engine-only change\n")
         run("git", "add", ".", cwd=self.repo)
@@ -412,8 +570,10 @@ class PrePushGuardTests(unittest.TestCase):
         result = self.push()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.log.read_text().splitlines(), [
-            "-c utility cargo build --manifest-path capture/engine/Cargo.toml -j 3 --offline",
-            "-c utility cargo test --manifest-path capture/engine/Cargo.toml -j 3 --offline -- --test-threads=2",
+            "-c utility cargo build --manifest-path engine/core/Cargo.toml -j 3 --offline",
+            "-c utility cargo test --manifest-path engine/core/Cargo.toml -j 3 --offline -- --test-threads=2",
+            "-c utility cargo build --manifest-path engine/Cargo.toml -j 3 --offline",
+            "-c utility cargo test --manifest-path engine/Cargo.toml -j 3 --offline -- --test-threads=2",
         ])
 
     def test_browser_only_push_runs_existing_package_checks_not_rust(self):
@@ -421,6 +581,7 @@ class PrePushGuardTests(unittest.TestCase):
         browser = self.repo / "connect/web"
         browser.mkdir(parents=True)
         (browser / "package.json").write_text('{}\n')
+        (browser / "bun.lock").write_text('{}\n')
         run("git", "add", ".", cwd=self.repo)
         run("git", "commit", "-qm", "independent browser", cwd=self.repo)
         self.head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
@@ -431,6 +592,8 @@ class PrePushGuardTests(unittest.TestCase):
         result = self.push()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.log.read_text().splitlines(), [
+            f"node {self.repo}/shared/ui/scripts/check-theme.ts",
+            "node --experimental-strip-types --test enablement/verification/dependencies/preflight.test.ts capture/desktop/ui/frontend/scripts/check-dependency-freshness.test.ts",
             "bun install --frozen-lockfile", "bun run build",
             "node --test test/artifact.test.mjs test/closure.test.mjs test/routes.test.mjs",
             "node scripts/test-browser.mjs",
@@ -444,7 +607,7 @@ class PrePushGuardTests(unittest.TestCase):
         result = run(*args, cwd=self.repo, env=self.env)
         self.assertEqual(result.returncode, 0, result.stderr)
         commands = self.log.read_text().splitlines()
-        self.assertEqual(len(commands), 4)
+        self.assertEqual(len(commands), 6)
         self.assertTrue(all("--locked" in line and "--offline" not in line for line in commands))
         self.log.unlink()
         result = run(*args, cwd=self.repo, env=dict(self.env, MOCK_STATUS="1"))

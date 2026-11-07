@@ -1,5 +1,6 @@
 """Selector contracts and real Git deltas; no compiler/native work in fixtures."""
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -18,8 +19,408 @@ spec.loader.exec_module(verification)
 
 
 class SelectionTests(unittest.TestCase):
+    def test_architecture_check_selects_changed_owners_and_scans_all_for_uncertain_paths(self):
+        self.assertEqual(verification.architecture_owners(["record/src/index.ts", "agent/src/main.ts"]),
+                         ["agent", "record"])
+        self.assertEqual(verification.architecture_owners(["README.md"]), [])
+        self.assertIsNone(verification.architecture_owners(["shared/contracts/src/index.ts"]))
+        self.assertIsNone(verification.architecture_owners(["composition/architecture/src/guard.ts"]))
+        self.architecture_patch.stop()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "composition/architecture/node_modules/typescript").mkdir(parents=True)
+            with patch.object(verification, "ROOT", root), patch.object(verification.subprocess, "run") as run:
+                verification.run_architecture_check(["composition/app/src/main.tsx"])
+        run.assert_called_once_with(
+            ["node", "--experimental-strip-types", "composition/architecture/src/cli.ts",
+             "--root", ".", "--owner", "composition"], cwd=root, check=True)
+
+    def test_architecture_check_fails_actionably_without_installed_typescript(self):
+        self.architecture_patch.stop()
+        self.preflight_patch.stop()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "composition/architecture").mkdir(parents=True)
+            with patch.object(verification, "ROOT", root):
+                with patch.object(verification.subprocess, "run") as run:
+                    with self.assertRaisesRegex(RuntimeError, "npm ci.*composition/architecture"):
+                        verification.run_pr_checks({"paths": ["record/src/index.ts"]})
+                    run.assert_not_called()
+                with self.assertRaisesRegex(RuntimeError, "run npm ci in composition/architecture"):
+                    verification.run_architecture_check(["record/src/index.ts"])
+
+    def test_top_level_onboarding_isolated_inputs_and_unknown_fallback(self):
+        for path in verification.ONBOARDING_PACKAGE_INPUTS:
+            selected = verification.select([path])
+            self.assertTrue(selected['onboarding_package'], path)
+            self.assertEqual(selected['root'], path in verification.ONBOARDING_PACKAGE_BUILD_INPUTS, path)
+            self.assertEqual(selected['engine'], path in verification.ONBOARDING_PACKAGE_BUILD_INPUTS, path)
+        for paths in (['onboarding/native.rs'], ['onboarding/src/new.ts'],
+                      ['onboarding/src/controller.ts', 'build.rs']):
+            selected = verification.select(paths)
+            self.assertTrue(selected['onboarding_package'])
+            self.assertTrue(selected['root'])
+        self.assertTrue(verification.select([], history_known=False)['onboarding_package'])
+        # Legacy shared frontend manifests must retain their original broad lane.
+        self.assertTrue(verification.select(['capture/desktop/ui/frontend/package.json'])['root'])
+
+    def test_top_level_onboarding_runs_its_own_checks_without_cargo(self):
+        selection = verification.select(['onboarding/src/controller.ts'])
+        with patch.object(verification, 'run_onboarding_package_check') as owner, patch.object(verification.subprocess, 'run') as commands:
+            verification.run_selected_checks(selection)
+        owner.assert_called_once_with()
+        self.assertFalse(any(call.args[0][0] == 'cargo' for call in commands.call_args_list))
+
+    def test_top_level_onboarding_preflight_fails_closed_then_executes(self):
+        self.preflight_patch.stop()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = SCRIPT.parents[1]
+            for path in verification.ONBOARDING_PACKAGE_INPUTS:
+                target = root / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((source / path).read_bytes())
+            package = root / 'onboarding'
+            manifest = json.loads((package / 'package.json').read_text())
+            dependencies = {**manifest.get('dependencies', {}), **manifest.get('devDependencies', {})}
+            lock = json.loads((package / 'package-lock.json').read_text())
+            with patch.object(verification, 'ROOT', root), patch.object(verification.subprocess, 'run') as run:
+                with self.assertRaisesRegex(RuntimeError, 'npm ci in onboarding'):
+                    verification.run_onboarding_package_check()
+                run.assert_not_called()
+                for name in dependencies:
+                    target = package / 'node_modules' / name / 'package.json'
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(json.dumps({'version': lock['packages']['node_modules/' + name]['version']}))
+                (package / 'node_modules/.package-lock.json').write_text(json.dumps(lock))
+                verification.preflight_dependencies({"paths": ["onboarding/src/controller.ts"],
+                                                     "onboarding_package": True})
+                verification.run_onboarding_package_check()
+                self.assertEqual([call.args[0] for call in run.call_args_list], [['npm', 'run', 'typecheck'], ['npm', 'test']])
+                self.assertTrue(all(call.kwargs['cwd'] == package and call.kwargs['check'] for call in run.call_args_list))
+                run.reset_mock()
+                (package / 'node_modules/.package-lock.json').write_text('{}')
+                with self.assertRaisesRegex(RuntimeError, 'stale locked install'):
+                    verification.preflight_dependencies({"paths": ["onboarding/src/controller.ts"],
+                                                         "onboarding_package": True})
+                with self.assertRaisesRegex(RuntimeError, 'stale or missing'):
+                    verification.run_onboarding_package_check()
+                run.assert_not_called()
+                (package / 'node_modules/.package-lock.json').write_text(json.dumps(lock))
+                artifact = package / 'vendor/record-0.1.0-afd73fb.tgz'
+                original_artifact = artifact.read_bytes()
+                artifact.write_bytes(b'changed public artifact')
+                with self.assertRaisesRegex(RuntimeError, 'stale or missing'):
+                    verification.run_onboarding_package_check()
+                run.assert_not_called()
+                artifact.write_bytes(original_artifact)
+                (package / 'src/controller.ts').unlink()
+                with self.assertRaisesRegex(RuntimeError, 'missing or deleted'):
+                    verification.run_onboarding_package_check()
+                run.assert_not_called()
+
+    def test_record_package_and_pill_consumer_select_owner_checks_without_cargo(self):
+        paths = [
+            "record/package.json", "record/src/ui/recording-pill.tsx",
+            "record/scripts/copy-ui-assets.ts",
+            "capture/desktop/ui/frontend/pill/index.html",
+            "capture/desktop/ui/frontend/src/pill/legacy-mount.tsx",
+            "capture/desktop/ui/frontend/tests/pill/smoke.cjs",
+        ]
+        for path in paths:
+            with self.subTest(path=path):
+                selected = verification.select([path])
+                self.assertTrue(selected["record"])
+                self.assertFalse(selected["root"])
+                self.assertFalse(selected["engine"])
+        for path in (
+            "capture/desktop/ui/frontend/package.json",
+            "capture/desktop/ui/frontend/package-lock.json",
+            "capture/desktop/ui/frontend/vite.config.ts",
+        ):
+            with self.subTest(path=path):
+                selected = verification.select([path])
+                self.assertFalse(selected["record"])
+                self.assertTrue(selected["root"])
+                self.assertTrue(selected["engine"])
+        self.assertFalse(verification.select(["record/README.md"])["record"])
+        self.assertTrue(verification.record_typescript_selected([]))
+        shared = verification.select(["shared/ui/src/button.tsx"])
+        self.assertTrue(shared["record"])
+        self.assertTrue(shared["root"])
+
+    def test_unknown_record_inputs_and_missing_history_remain_conservative(self):
+        for path in ("record/native.rs", "record/build.rs", "record/src/security.ts",
+                     "record/.cargo/config.toml", "record/scripts/new-build.ts"):
+            with self.subTest(path=path):
+                selected = verification.select([path])
+                self.assertTrue(selected["root"])
+                self.assertTrue(selected["engine"])
+                self.assertTrue(selected["record"])
+        for paths in ([], ["README.md"]):
+            selected = verification.select(paths, history_known=False)
+            self.assertTrue(selected["root"])
+            self.assertTrue(selected["record"])
+
+    def test_record_owner_check_uses_both_packages_without_cargo(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = root / "record"
+            frontend = root / "capture/desktop/ui/frontend"
+            for name in (
+                "node_modules/typescript/bin/tsc",
+                "node_modules/@types/node/package.json",
+                "node_modules/@types/react/package.json",
+                "node_modules/@apparent/ui/package.json",
+                "node_modules/lucide-react/package.json",
+                "node_modules/esbuild/package.json",
+                "node_modules/@tailwindcss/cli/package.json",
+            ):
+                target = record / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.touch()
+            for name in (
+                "node_modules/typescript/bin/tsc", "node_modules/vite/bin/vite.js",
+                "node_modules/@apparent/record/package.json", "node_modules/@apparent/ui/package.json",
+            ):
+                target = frontend / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.touch()
+            with patch.object(verification, "ROOT", root), patch.object(
+                    verification.subprocess, "run") as run:
+                verification.run_record_typescript_check()
+            commands = [call.args[0] for call in run.call_args_list]
+            self.assertEqual(commands, [
+                ["npm", "run", "typecheck"], ["npm", "test"], ["npm", "run", "build"],
+                ["npm", "pack", "--dry-run"], ["npm", "run", "build"], ["npm", "test"],
+            ])
+            self.assertEqual([call.kwargs["cwd"] for call in run.call_args_list],
+                             [record] * 4 + [frontend] * 2)
+            self.assertFalse(any("cargo" in str(command) for command in commands))
+
+    def test_record_owner_check_fails_closed_without_installing_dependencies(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = root / "record"
+            record.mkdir()
+            with patch.object(verification, "ROOT", root), patch.object(
+                    verification.subprocess, "run") as run:
+                with self.assertRaisesRegex(RuntimeError, "pre-push hook never installs dependencies"):
+                    verification.run_record_typescript_check()
+                run.assert_not_called()
+    def test_agent_proven_typescript_inputs_are_isolated_but_sdk_and_native_inputs_stay_broad(self):
+        for path in ("agent/src/cli.ts", "agent/src/ownership.ts", "agent/test/fixtures/current.json",
+                     "agent/package.json", "agent/package-lock.json", "agent/delivery.json",
+                     "agent/.gitignore", "agent/LICENSE", "agent/README.md"):
+            with self.subTest(path=path):
+                selected = verification.select([path])
+                self.assertTrue(selected["agent"])
+                self.assertFalse(selected["root"])
+                self.assertFalse(selected["engine"])
+        for path in ("engine/sdk/src/index.ts", "agent/native.rs", "agent/build.sh", "agent-other/src/index.ts"):
+            with self.subTest(path=path):
+                self.assertTrue(verification.select([path])["root"])
+        self.assertTrue(verification.select(["engine/sdk/src/index.ts"])["agent"])
+        self.assertTrue(verification.select(["agent/src/cli.ts", "build.rs"])["root"])
+        self.assertTrue(verification.select(["agent/src/cli.ts"], history_known=False)["root"])
+        self.assertTrue(verification.select([])["root"])
+
+    def test_agent_owner_suite_runs_on_push_and_changed_tree_without_native_commands(self):
+        selection = verification.select(["agent/src/cli.ts"])
+        with patch.object(verification, "run_agent_tests") as owner, patch.object(
+                verification.subprocess, "run") as run:
+            verification.run_pr_checks(selection)
+            owner.assert_called_once_with()
+            owner.reset_mock()
+            verification.run_selected_checks(selection)
+            owner.assert_called_once_with()
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertFalse(any("cargo" in command or "rustc" in command for command in commands))
+        self.assertFalse(any(command[:2] == ["npm", "ci"] for command in commands))
+
+    def test_agent_installed_entrypoint_checks_controls_and_never_installs_dependencies(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "agent"
+            package.mkdir()
+            with patch.object(verification, "ROOT", root):
+                with self.assertRaisesRegex(RuntimeError, "inputs are missing"):
+                    verification.run_agent_tests()
+                for name in ("package.json", "package-lock.json", "tsconfig.json"):
+                    (package / name).write_text("{}")
+                with self.assertRaisesRegex(RuntimeError, "installed locked dependencies"):
+                    verification.run_agent_tests()
+                for name in ("typescript/bin/tsc", "@types/node/package.json", "@apparent/engine-sdk/package.json"):
+                    target = package / "node_modules" / name
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.touch()
+                with patch.object(verification.subprocess, "run") as run:
+                    verification.run_agent_tests()
+                run.assert_called_once_with(["npm", "test"], cwd=package, check=True)
+
+
+    def test_app_shell_changed_tree_runs_owner_check_without_cargo(self):
+        with patch.object(verification, "run_app_shell_check") as check, patch.object(
+                verification.subprocess, "run") as run:
+            verification.run_selected_checks(verification.select(["composition/app/src/renderer.tsx"]))
+        check.assert_called_once_with()
+        self.assertFalse(any("cargo" in str(call.args[0]) for call in run.call_args_list))
+
+    def test_app_shell_foundation_closure_selects_check_without_narrowing_shared_ui(self):
+        for path in (
+            "composition/app/package.json", "composition/app/src/main.tsx",
+            "composition/app/test/independence.test.ts",
+            "shared/contracts/src/index.ts", "shared/contracts/test/manifest.test.ts",
+        ):
+            with self.subTest(path=path):
+                selected = verification.select([path])
+                self.assertTrue(selected["app_shell"])
+                self.assertFalse(selected["root"])
+        shared_ui = verification.select(["shared/ui/src/button.tsx"])
+        self.assertTrue(shared_ui["app_shell"])
+        self.assertTrue(shared_ui["root"])
+        workflow = verification.select([".github/workflows/verification-platform.yml"])
+        self.assertFalse(workflow["app_shell"])
+        self.assertTrue(workflow["root"])
+        for action in (".github/actions/delivery-contracts/action.yml", ".github/actions/delivery-component/action.yml"):
+            delivery_action = verification.select([action])
+            self.assertTrue(delivery_action["app_shell"])
+            self.assertFalse(delivery_action["root"])
+        entry_workflow = verification.select([".github/workflows/stream-platform.yml"])
+        self.assertTrue(entry_workflow["app_shell"])
+        self.assertFalse(entry_workflow["root"])
+        self.assertFalse(verification.select(["composition/cli.rs"])["app_shell"])
+
+    def test_delivery_sources_select_app_shell_and_dependency_free_node_contracts_only(self):
+        for path in ("composition/delivery/core.ts", "composition/delivery/cli.ts",
+                     "composition/delivery/contracts.test.ts"):
+            with self.subTest(path=path):
+                selected = verification.select([path])
+                self.assertTrue(selected["app_shell"])
+                self.assertTrue(selected["delivery"])
+                self.assertFalse(selected["root"])
+                self.assertFalse(selected["engine"])
+        self.assertFalse(verification.delivery_tests_selected(["composition/app/src/main.tsx"]))
+        self.assertTrue(verification.delivery_tests_selected([]))
+
+    def test_platform_resources_source_selects_owner_lane_without_root_rust_and_connect_stays_conservative(self):
+        selected = verification.select(["shared/resources/native/src/main.rs", "shared/resources/src/index.ts"])
+        self.assertTrue(selected["platform_resources"])
+        self.assertFalse(selected["root"])
+        self.assertFalse(selected["engine"])
+        unknown = verification.select(["shared/resources/src/new-unreviewed.ts"])
+        self.assertTrue(unknown["root"])
+        self.assertFalse(unknown["platform_resources"])
+        connect = verification.select(["connect/delivery/client/src/index.ts"])
+        self.assertFalse(connect["platform_resources"])
+        self.assertTrue(connect["root"])
+
+    def test_platform_resources_owner_feedback_uses_reviewed_typescript_commands_without_npm_hooks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / "shared/resources"
+            compiler = package / "node_modules/typescript/bin/tsc"
+            compiler.parent.mkdir(parents=True)
+            compiler.touch()
+            for name in ("package.json", "package-lock.json", "tsconfig.json"):
+                (package / name).touch()
+            (package / "package.json").write_text('{"scripts":{"pretest":"cargo build","test":"cargo test"}}')
+            for name in ("client.test.ts", "artifact.test.ts"):
+                target = package / "test" / name
+                target.parent.mkdir(exist_ok=True)
+                target.touch()
+            def check(command, **options):
+                self.assertNotIn("APPARENT_RESOURCE_HOST_BIN", options["env"])
+                guard = Path(options["env"]["PATH"].split(os.pathsep)[0])
+                for tool in ("cargo", "rustc"):
+                    self.assertIn("exit 97", (guard / tool).read_text())
+            with patch.object(verification, "ROOT", Path(directory)), patch.dict(os.environ, {"APPARENT_RESOURCE_HOST_BIN": "/ambient/helper"}), patch.object(verification.subprocess, "run", side_effect=check) as run:
+                verification.run_platform_resources_tests()
+            self.assertEqual(run.call_args_list[0].args[0], ["node", str(compiler)])
+            self.assertEqual(run.call_args_list[1].args[0], ["node", "--experimental-strip-types", "--test", "test/client.test.ts", "test/artifact.test.ts"])
+            self.assertEqual(run.call_count, 2)
+
+    def test_platform_resources_typescript_tests_cannot_spawn_ambient_rust(self):
+        real_run = subprocess.run
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "shared/resources"
+            compiler = package / "node_modules/typescript/bin/tsc"
+            compiler.parent.mkdir(parents=True)
+            compiler.touch()
+            (package / "package.json").write_text('{"type":"module"}')
+            for name in ("package-lock.json", "tsconfig.json"):
+                (package / name).write_text("{}")
+            (package / "test").mkdir()
+            (package / "test/client.test.ts").write_text("import { execFileSync } from 'node:child_process'; execFileSync('cargo', ['--version']);")
+            (package / "test/artifact.test.ts").touch()
+            ambient = root / "ambient-bin"
+            ambient.mkdir()
+            marker = root / "native-invoked"
+            (ambient / "cargo").write_text('#!/bin/sh\ntouch "$CARGO_TEST_MARKER"\n')
+            (ambient / "cargo").chmod(0o755)
+            def captured(*args, **kwargs):
+                return real_run(*args, **kwargs, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            with patch.object(verification, "ROOT", root), patch.dict(os.environ, {"PATH": str(ambient) + os.pathsep + os.environ["PATH"], "CARGO_TEST_MARKER": str(marker)}), patch.object(verification.subprocess, "run", side_effect=captured):
+                with self.assertRaises(subprocess.CalledProcessError) as failure:
+                    verification.run_platform_resources_tests()
+            self.assertIn(b"Native compilation belongs to the resource producer", failure.exception.stdout + failure.exception.stderr)
+            self.assertFalse(marker.exists())
+
+    def test_delivery_feature_check_runs_node_tests_without_installing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "composition/delivery"
+            package.mkdir(parents=True)
+            (package / "delivery.test.ts").touch()
+            (package / "platform").mkdir()
+            (package / "platform/selector.test.ts").touch()
+            with patch.object(verification, "ROOT", root), patch.object(
+                    verification, "run_app_shell_check") as app_shell, patch.object(
+                    verification.subprocess, "run") as run:
+                verification.run_pr_checks({"paths": ["composition/delivery/core.ts"]})
+            command = ["node", "--experimental-strip-types", "--test",
+                       "composition/delivery/delivery.test.ts", "composition/delivery/platform/selector.test.ts"]
+            app_shell.assert_called_once_with()
+            self.assertIn(command, [call.args[0] for call in run.call_args_list])
+            self.assertFalse(any(call.args[0][:2] == ["npm", "ci"] for call in run.call_args_list))
+
+    def test_app_shell_pr_check_runs_installed_package_script_without_installing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "composition/app"
+            package.mkdir(parents=True)
+            (package / "package.json").write_text('{"devDependencies":{"typescript":"1"}}')
+            (package / "package-lock.json").touch()
+            (package / "tsconfig.json").touch()
+            dependency = package / "node_modules/typescript/package.json"
+            dependency.parent.mkdir(parents=True)
+            dependency.touch()
+            with patch.object(verification, "ROOT", root), patch.object(
+                    verification.subprocess, "run") as run:
+                verification.run_pr_checks({"paths": ["composition/app/src/main.tsx"], "app_shell": True})
+            calls = [call.args[0] for call in run.call_args_list]
+            self.assertIn(["npm", "run", "check"], calls)
+            self.assertFalse(any(command[:2] == ["npm", "ci"] for command in calls))
+            check = next(call for call in run.call_args_list if call.args[0] == ["npm", "run", "check"])
+            self.assertEqual(check.kwargs["cwd"], package)
+            self.assertTrue(check.kwargs["check"])
+
+    def test_app_shell_pr_check_fails_closed_when_dependencies_are_not_installed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "composition/app"
+            package.mkdir(parents=True)
+            (package / "package.json").write_text('{"dependencies":{"react":"1"}}')
+            (package / "package-lock.json").touch()
+            (package / "tsconfig.json").touch()
+            with patch.object(verification, "ROOT", root), patch.object(
+                    verification.subprocess, "run") as run:
+                with self.assertRaisesRegex(RuntimeError, "the hook never installs dependencies"):
+                    verification.run_app_shell_check()
+                run.assert_not_called()
+
     def test_connect_client_typescript_inputs_select_package_tests_without_narrowing_rust(self):
-        prefix = "connect/client/typescript/"
+        prefix = "connect/delivery/client/"
         selected = (
             "package.json", "package-lock.json", "tsconfig.json",
             "src/settings-controller.cts", "src/device-flow.cts",
@@ -45,7 +446,7 @@ class SelectionTests(unittest.TestCase):
     def test_connect_client_check_uses_declared_npm_test_from_owner_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            package = root / "connect/client/typescript"
+            package = root / "connect/delivery/client"
             for name in ("package.json", "package-lock.json", "tsconfig.json",
                          "node_modules/typescript/bin/tsc",
                          "node_modules/@types/node/package.json",
@@ -57,7 +458,7 @@ class SelectionTests(unittest.TestCase):
             with patch.object(verification, "ROOT", root), patch.object(
                     verification.subprocess, "run") as run:
                 verification.run_pr_checks({"paths": [
-                    "connect/client/typescript/src/settings-controller.cts"]})
+                    "connect/delivery/client/src/settings-controller.cts"]})
             command = ["npm", "test"]
             calls = [call for call in run.call_args_list if call.args[0] == command]
             self.assertEqual(len(calls), 1)
@@ -65,15 +466,12 @@ class SelectionTests(unittest.TestCase):
             self.assertTrue(calls[0].kwargs["check"])
             patterns = [call.args[0][-1] for call in run.call_args_list
                         if call.args[0][:4] == ["python3", "-m", "unittest", "discover"]]
-            self.assertLess(run.call_args_list.index(calls[0]), next(
-                index for index, call in enumerate(run.call_args_list)
-                if call.args[0][:4] == ["python3", "-m", "unittest", "discover"]))
-            self.assertIn("test_*push*.py", patterns)
+            self.assertNotIn("test_*push*.py", patterns)
 
     def test_connect_client_missing_locked_dependencies_fails_without_install(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            package = root / "connect/client/typescript"
+            package = root / "connect/delivery/client"
             package.mkdir(parents=True)
             for name in ("package.json", "package-lock.json", "tsconfig.json"):
                 (package / name).touch()
@@ -90,7 +488,7 @@ class SelectionTests(unittest.TestCase):
             "public/site/public/assets/brand/icon.svg",
             "public/site/index.html", "public/site/package.json", "public/site/bun.lock",
             "public/site/tsconfig.json", "public/site/vite.config.ts",
-            "public/site/lib/public-assets.mjs",
+            "public/site/lib/public-assets.ts",
             "public/site/scripts/site-build/agent-files.ts",
             "public/site/scripts/site-build/feature-audit.ts",
             "public/site/scripts/site-build/prerender.ts",
@@ -106,11 +504,11 @@ class SelectionTests(unittest.TestCase):
                 self.assertTrue(verification.public_site_build_selected([path]))
         for path in (
             "public/site/docs/pages-deploy.md",
-            "public/site/scripts/cd/publish_pages.py",
-            "public/site/scripts/site-build/verify.mjs",
-            "public/site/functions/Apparent-ghost-demo-v4-lilac.mp4.js",
+            "public/site/scripts/cd/publish-pages.ts",
+            "public/site/scripts/site-build/verify.ts",
+            "public/site/functions/Apparent-ghost-demo-v4-lilac.mp4.ts",
             "public/site/video-demo/Cargo.toml",
-            "connect/client/typescript/src/index.ts", "connect/web/src/Hosted.tsx",
+            "connect/delivery/client/src/index.ts", "connect/web/src/Hosted.tsx",
             "connect/service/src/worker.ts", "capture/desktop/native/linux.rs",
         ):
             with self.subTest(path=path):
@@ -129,10 +527,16 @@ class SelectionTests(unittest.TestCase):
         for paths in ([], ["capture/desktop/native/linux.rs"]):
             with self.subTest(paths=paths), patch.object(verification.subprocess, "run"), patch.object(
                     verification, "run_connect_client_typescript_tests"), patch.object(
-                    verification, "run_public_site_build") as build:
+                    verification, "run_public_site_build") as build, patch.object(
+                    verification, "run_app_shell_check") as app_check, patch.object(
+                    verification, "run_record_typescript_check") as record_check, patch.object(
+                    verification, "run_onboarding_package_check") as onboarding_check:
                 selection = verification.select(paths, history_known=False)
                 verification.run_pr_checks(selection)
                 build.assert_called_once_with()
+                app_check.assert_called_once_with()
+                record_check.assert_called_once_with()
+                onboarding_check.assert_called_once_with()
         self.assertTrue(verification.public_site_build_selected([]))
 
     def test_public_site_build_runs_declared_build_and_only_after_locked_dependencies_exist(self):
@@ -194,16 +598,26 @@ class SelectionTests(unittest.TestCase):
                 target.touch()
             for name in inputs + ["public/site/docs/features.md"]:
                 with self.subTest(path=name), patch.object(verification, "ROOT", root), patch.object(
-                        verification.subprocess, "run") as run:
+                        verification.subprocess, "run") as run, patch.object(
+                        verification, "run_app_shell_check"), patch.object(
+                        verification, "run_record_typescript_check") as record_check:
                     verification.run_pr_checks({"paths": [name]})
                     selected = any(call.args[0] == ["npm", "run", "check:onboarding"]
                                    for call in run.call_args_list)
                     self.assertEqual(selected, name in inputs)
+                    self.assertEqual(record_check.called, name in (
+                        "shared/assets/fonts/HostGrotesk-Variable.ttf", "shared/ui/theme.css"))
 
     def setUp(self):
         guard = patch.object(verification, "check_temp_environment")
         guard.start()
         self.addCleanup(guard.stop)
+        self.architecture_patch = patch.object(verification, "run_architecture_check")
+        self.architecture_patch.start()
+        self.addCleanup(self.architecture_patch.stop)
+        self.preflight_patch = patch.object(verification, "preflight_dependencies")
+        self.preflight_patch.start()
+        self.addCleanup(self.preflight_patch.stop)
 
     def test_documents_do_not_compile_app(self):
         result = verification.select(["enablement/refactor.md", "AGENTS.md", "docs/capture.md"])
@@ -215,14 +629,16 @@ class SelectionTests(unittest.TestCase):
             args = ['verification.py', '--base', 'unknown', '--run']
             if suite != 'all': args += ['--suite', suite]
             with self.subTest(suite=suite), patch.object(verification.sys, 'argv', args), patch.object(
-                    verification, 'plan', return_value=verification.select(['build.rs', 'connect/web/package.json'])), patch.object(
+                    verification, 'plan', return_value=verification.select(['build.rs', 'connect/web/package.json', 'shared/contracts/src/index.ts'])), patch.object(
+                    verification, 'run_app_shell_check') as app_check, patch.object(
                     verification.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, stdout='test result: ok. 1 passed; 0 failed\n')) as run:
                 verification.main()
                 commands = [call.args[0] for call in run.call_args_list]
                 self.assertEqual(any('cargo' in command for command in commands), cargo)
                 self.assertEqual(any(command[0] == 'bun' for command in commands), browser)
                 self.assertEqual(['node', 'scripts/test-browser.mjs'] in commands, browser)
-                self.assertEqual(any('capture/engine/Cargo.toml' in command for command in commands), cargo)
+                self.assertEqual(any('engine/core/Cargo.toml' in command for command in commands), cargo)
+                self.assertEqual(app_check.call_count, 1 if suite == 'all' else 0)
 
     def test_receipt_wrapper_preserves_explicit_suite(self):
         args = ['verification.py', '--base', 'unknown', '--run', '--online',
@@ -319,11 +735,15 @@ class SelectionTests(unittest.TestCase):
         with patch.object(verification.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run:
             verification.run_selected_checks(selection, offline=False, cargo_timings=True)
         commands = [call.args[0] for call in run.call_args_list if 'cargo' in call.args[0]]
-        self.assertEqual(len(commands), 4)
+        self.assertEqual(len(commands), 6)
         self.assertEqual([next(c for c in command if c in ('build', 'test')) for command in commands],
-                         ['build', 'test', 'test', 'build'])
-        self.assertTrue(all('capture/engine/Cargo.toml' in command for command in commands[:2]))
-        self.assertTrue(all('capture/engine/Cargo.toml' not in command for command in commands[2:]))
+                         ['build', 'test', 'build', 'test', 'test', 'build'])
+        self.assertEqual([next(value for value in command if value.endswith('Cargo.toml'))
+                          for command in commands[:4]],
+                         ['engine/core/Cargo.toml', 'engine/core/Cargo.toml',
+                          'engine/Cargo.toml', 'engine/Cargo.toml'])
+        self.assertTrue(all('engine/core/Cargo.toml' not in command and 'engine/Cargo.toml' not in command
+                            for command in commands[4:]))
         for command in commands:
             self.assertEqual(command.count('--timings'), 1)
             self.assertIn('--locked', command)
@@ -635,7 +1055,7 @@ class SelectionTests(unittest.TestCase):
                     if 'cargo' in command:
                         commands.append(command)
                         self.assertTrue(kwargs['check'])
-                        if 'capture/engine/Cargo.toml' not in command and failure in command:
+                        if 'engine/core/Cargo.toml' not in command and 'engine/Cargo.toml' not in command and failure in command:
                             raise subprocess.CalledProcessError(7, command)
                     return subprocess.CompletedProcess(command, 0, stdout='test result: ok. 2 passed; 0 failed\n')
                 with self.subTest(focused=focused, failure=failure), patch.object(
@@ -643,12 +1063,14 @@ class SelectionTests(unittest.TestCase):
                     with self.assertRaises(subprocess.CalledProcessError):
                         verification.run_selected_checks({'root': True, 'engine': True,
                                                           'browser': False, 'focused': focused})
-                self.assertEqual(len(commands), 3 if failure == 'test' else 4)
-                self.assertTrue(all('capture/engine/Cargo.toml' in command for command in commands[:2]))
-                self.assertIn('test', commands[2])
+                self.assertEqual(len(commands), 5 if failure == 'test' else 6)
+                self.assertTrue(all('engine/core/Cargo.toml' in command or 'engine/Cargo.toml' in command
+                                    for command in commands[:4]))
+                self.assertIn('test', commands[4])
                 if failure == 'build':
-                    self.assertIn('build', commands[3])
-                self.assertFalse(any('capture/engine/Cargo.toml' in c for c in commands[2:]))
+                    self.assertIn('build', commands[5])
+                self.assertFalse(any('engine/core/Cargo.toml' in c or 'engine/Cargo.toml' in c
+                                     for c in commands[4:]))
 
     def test_explicit_platform_suites_execute_even_when_changed_tree_has_no_matching_inputs(self):
         for suite in ('rust', 'browser'):
@@ -661,27 +1083,33 @@ class SelectionTests(unittest.TestCase):
                 self.assertEqual(['node', 'scripts/test-browser.mjs'] in commands, suite == 'browser')
                 self.assertEqual(any('cargo' in command for command in commands), suite == 'rust')
 
-    def test_engine_tests_compile_and_test_package(self):
-        result = verification.select(["capture/engine/tests/process.rs"])
-        self.assertFalse(result["root"])
-        self.assertTrue(result["engine"])
+    def test_engine_core_tests_and_legacy_capture_sources_select_their_owners(self):
+        core = verification.select(["engine/core/tests/process.rs"])
+        self.assertFalse(core["root"])
+        self.assertTrue(core["engine"])
+        legacy = verification.select(["capture/engine/runtime/recording/recorder.rs"])
+        self.assertTrue(legacy["root"])
+        self.assertTrue(legacy["engine"])
+        moved_native = verification.select(["engine/native/Export.swift"])
+        self.assertTrue(moved_native["root"])
+        self.assertTrue(moved_native["engine"])
 
     def test_engine_package_source_and_metadata_get_fast_feedback_and_root_when_needed(self):
-        for path in ("capture/engine/src/session.rs", "capture/engine/src/lib.rs"):
+        for path in ("engine/core/src/session.rs", "engine/core/src/lib.rs"):
             with self.subTest(path=path):
                 result = verification.select([path])
-                self.assertTrue(result["root"])
+                self.assertFalse(result["root"])
                 self.assertTrue(result["engine"])
-        for path in ("capture/engine/Cargo.toml", "capture/engine/Cargo.lock"):
+        for path in ("engine/core/Cargo.toml", "engine/core/Cargo.lock", "engine/Cargo.toml", "engine/Cargo.lock"):
             with self.subTest(path=path):
                 result = verification.select([path])
-                self.assertTrue(result["root"])
+                self.assertFalse(result["root"])
                 self.assertTrue(result["engine"])
 
     def test_engine_deletions_and_unrelated_owners_select_conservatively(self):
         # The selector consumes both sides of a deletion/rename diff, so a
         # deleted package test still keeps the standalone package route.
-        self.assertTrue(verification.select(["capture/engine/tests/process.rs"])["engine"])
+        self.assertTrue(verification.select(["engine/core/tests/process.rs"])["engine"])
         unrelated = verification.select(["README.md"])
         self.assertFalse(unrelated["root"])
         self.assertFalse(unrelated["engine"])
@@ -693,25 +1121,25 @@ class SelectionTests(unittest.TestCase):
         def fail_engine(command, **kwargs):
             if cargo_command(command):
                 commands.append(command)
-            if cargo_command(command) and "capture/engine/Cargo.toml" in command:
+            if cargo_command(command) and "engine/core/Cargo.toml" in command:
                 raise subprocess.CalledProcessError(1, command)
             return subprocess.CompletedProcess(command, 0)
         with patch.object(verification.subprocess, "run", side_effect=fail_engine):
             with self.assertRaises(subprocess.CalledProcessError):
-                verification.run_selected_checks(verification.select(["capture/engine/tests/process.rs"]))
+                verification.run_selected_checks(verification.select(["engine/core/tests/process.rs"]))
         self.assertEqual(len(commands), 1)
-        self.assertIn("capture/engine/Cargo.toml", commands[0])
+        self.assertIn("engine/core/Cargo.toml", commands[0])
 
     def test_engine_source_failure_stops_before_selected_root_compile(self):
         commands = []
-        selection = verification.select(["capture/engine/src/session.rs"])
-        self.assertTrue(selection["root"])
+        selection = verification.select(["engine/core/src/session.rs"])
+        self.assertFalse(selection["root"])
         self.assertTrue(selection["engine"])
 
         def fail_package(command, **kwargs):
             if command[0] == "cargo":
                 commands.append(command)
-            if "cargo" in command and "capture/engine/Cargo.toml" in command:
+            if "cargo" in command and "engine/core/Cargo.toml" in command:
                 if command not in commands:
                     commands.append(command)
                 raise subprocess.CalledProcessError(9, command)
@@ -722,18 +1150,18 @@ class SelectionTests(unittest.TestCase):
                 verification.run_selected_checks(selection)
         self.assertEqual(failure.exception.returncode, 9)
         self.assertEqual(len(commands), 1)
-        self.assertIn("capture/engine/Cargo.toml", commands[0])
+        self.assertIn("engine/core/Cargo.toml", commands[0])
         self.assertNotIn("--", commands[0])
 
     def test_directory_width_hook_contracts_follow_their_input_closure(self):
         for path in (".githooks/pre-commit", "enablement/verification.py",
                      "enablement/directory-width/check.py",
                      "enablement/directory-width/tests/test_hook.py",
+                     "enablement/directory-width/README.md",
                      "enablement/file-length/check.ts"):
             with self.subTest(path=path):
                 self.assertTrue(verification.directory_width_contract_selected([path]))
         for path in ("README.md", "capture/desktop/ui/frontend/src/main.tsx",
-                     "enablement/directory-width/README.md",
                      "enablement/file-length/check.test.ts"):
             with self.subTest(path=path):
                 self.assertFalse(verification.directory_width_contract_selected([path]))
@@ -750,12 +1178,106 @@ class SelectionTests(unittest.TestCase):
                 if expected:
                     self.assertLess(commands.index(command), commands.index(
                         ["python3", "-m", "unittest", "discover", "-s", "enablement/tests",
-                         "-p", "test_*push*.py"]))
+                         "-p", "test_verification.py"]))
+
+    def test_machinery_regressions_follow_changed_test_and_input_closures(self):
+        expected = {
+            "README.md": [],
+            "enablement/docs/continuous-delivery.md": [],
+            "record/src/index.ts": [],
+            ".githooks/pre-push": ["test_pre_push_guard.py"],
+            "enablement/verification.py": list(verification.MACHINERY_TEST_INPUTS),
+            "enablement/verification/dependencies/preflight.test.ts": [
+                "test_pre_push_guard.py", "test_verification.py", "test_temp_preflight.py",
+            ],
+            "enablement/tests/test_pre_push_guard.py": ["test_pre_push_guard.py"],
+            "enablement/tests/test_commit_push_checkpoint.py": ["test_commit_push_checkpoint.py"],
+            "enablement/tests/test_signing_push.py": ["test_signing_push.py"],
+            "enablement/tests/test_mac_prepare_push.py": ["test_mac_prepare_push.py"],
+            "enablement/tests/test_mac_cache_push.py": ["test_mac_cache_push.py"],
+            "enablement/tests/test_verification.py": ["test_verification.py"],
+            ".githooks/post-commit": ["test_commit_push_checkpoint.py"],
+            ".githooks/reference-transaction": ["test_signing_push.py"],
+            "capture/desktop/scripts/mac/prepare.py": ["test_mac_prepare_push.py"],
+            "capture/desktop/scripts/mac/cache.py": ["test_mac_cache_push.py"],
+            "enablement/release_gate.py": ["test_release_gate.py"],
+            "enablement/owner_lanes.py": ["test_owner_lanes.py"],
+            ".github/workflows/release-linux.yml": ["test_verification.py", "test_release_gate.py"],
+            ".github/workflows/verification-platform.yml": ["test_verification.py", "test_release_gate.py", "test_owner_lanes.py"],
+            ".github/workflows/verification.yml": ["test_verification.py", "test_release_gate.py"],
+            "composition/architecture/src/cli.ts": ["test_verification.py"],
+            "enablement/tests/test_temp_preflight.py": ["test_temp_preflight.py"],
+            "enablement/tests/test_release_gate.py": ["test_release_gate.py"],
+            "enablement/verification/new_helper.py": list(verification.MACHINERY_TEST_INPUTS),
+        }
+        for path, suites in expected.items():
+            with self.subTest(path=path):
+                self.assertEqual(verification.machinery_tests_selected([path]), suites)
+        self.assertEqual(verification.machinery_tests_selected([], history_known=False),
+                         list(verification.MACHINERY_TEST_INPUTS))
+        self.assertEqual(verification.machinery_tests_selected(
+            [".githooks/post-commit", ".githooks/new-hook"]),
+            list(verification.MACHINERY_TEST_INPUTS))
+        self.assertEqual(verification.machinery_tests_selected(
+            ["enablement/tests/test_mac_cache_push.py", "enablement/tests/test_cache.py"]),
+            list(verification.MACHINERY_TEST_INPUTS))
+
+    def test_live_machinery_fixture_inputs_select_their_consumers(self):
+        for package in ("composition/app", "composition/architecture", "record",
+                        "capture/desktop/ui/frontend", "connect/delivery/client", "onboarding"):
+            for name in ("package.json", "package-lock.json"):
+                path = f"{package}/{name}"
+                with self.subTest(path=path):
+                    self.assertIn("test_pre_push_guard.py", verification.machinery_tests_selected([path]))
+        for path in ("composition/app/package.json", "composition/app/package-lock.json",
+                     "onboarding/vendor/replacement.tgz", "onboarding/src/controller.ts",
+                     "public/site/package.json", ".github/workflows/verification-mac.yml"):
+            with self.subTest(path=path):
+                self.assertIn("test_verification.py", verification.machinery_tests_selected([path]))
+        for path in ("shared/ui/scripts/check-theme.ts", "composition/delivery/core.ts",
+                     "capture/desktop/ui/frontend/scripts/check-dependency-freshness.ts"):
+            with self.subTest(path=path):
+                self.assertIn("test_pre_push_guard.py", verification.machinery_tests_selected([path]))
+        self.assertEqual(verification.machinery_tests_selected(["record/src/ui/recording-pill.tsx"]), [])
+
+    def test_skipped_machinery_does_not_admit_architecture_install_for_docs_or_mac_script(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                verification, "ROOT", Path(directory)), patch.object(
+                verification.subprocess, "run") as run:
+            for paths in (["README.md"], ["capture/desktop/scripts/mac/cache.py"]):
+                verification.preflight_dependencies({"paths": paths}, include_architecture=True)
+            run.assert_not_called()
+
+    def test_pr_command_plan_omits_unrelated_machinery_but_keeps_actual_guards(self):
+        with patch.object(verification, "preflight_dependencies"), patch.object(
+                verification, "run_dependency_contracts") as dependency_contracts, patch.object(
+                verification, "run_architecture_check") as architecture, patch.object(
+                verification.subprocess, "run") as run:
+            verification.run_pr_checks({"paths": ["README.md"]})
+        dependency_contracts.assert_called_once_with()
+        architecture.assert_called_once_with(["README.md"])
+        commands = [call.args[0] for call in run.call_args_list]
+        patterns = [command[-1] for command in commands
+                    if command[:4] == ["python3", "-m", "unittest", "discover"]]
+        self.assertEqual(patterns, [])
+        self.assertIn(["node", "--experimental-strip-types", "--test",
+                       "enablement/file-length/check.test.ts"], commands)
+        self.assertIn(["python3", "shared/ui/scripts/check-theme.py"], commands)
+
+    def test_explicit_main_or_full_changed_tree_keeps_full_contract_suite(self):
+        selection = verification.select(["README.md"])
+        with patch.object(verification, "preflight_dependencies"), patch.object(
+                verification, "run_contract_checks") as contracts, patch.object(
+                verification, "run_selected_checks") as selected, patch.object(
+                verification.subprocess, "run"):
+            verification.run_checks(selection)
+        contracts.assert_called_once_with()
+        selected.assert_called_once()
 
     def test_unknown_shared_build_security_lifecycle_and_tooling_broaden(self):
         for path in ["new-owner/foo.rs", "Cargo.toml", "Cargo.lock", "build.rs",
                      "assets/icon.png", "src/ui/recording_completion.rs", "src/handoff.rs",
-                     "capture/engine/src/session.rs", "capture/desktop/native/Settings.swift",
+                     "capture/engine/runtime/recording/recorder.rs", "capture/desktop/native/Settings.swift",
                      "enablement/verification.py", ".githooks/pre-push",
                      ".github/workflows/verification.yml", "connect/service/src/auth.ts"]:
             with self.subTest(path=path):
@@ -767,7 +1289,7 @@ class SelectionTests(unittest.TestCase):
         selected = verification.select(["public/site/package.json"])
         self.assertEqual((selected["root"], selected["engine"], selected["public_site"]),
                          (False, False, True))
-        for path in ("public/site/scripts/cd/publish_pages.py", "public/site/functions/worker.ts",
+        for path in ("public/site/scripts/cd/publish-pages.ts", "public/site/functions/worker.ts",
                      "public/site/video-demo/Cargo.toml"):
             with self.subTest(path=path):
                 self.assertTrue(verification.select([path])["root"])
@@ -797,7 +1319,7 @@ class SelectionTests(unittest.TestCase):
     def test_selected_absent_browser_package_fails_closed(self):
         real_run = subprocess.run
         def execute(command, **kwargs):
-            if command[0] in ("python3", "sh"):
+            if command[0] in ("python3", "sh") or "--test" in command:
                 return subprocess.CompletedProcess(command, 0)
             return real_run(command, **kwargs)
         with tempfile.TemporaryDirectory() as tmp, patch.object(verification, "ROOT", Path(tmp)), patch.object(
@@ -828,7 +1350,7 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual((selected["root"], selected["engine"], selected["browser"]),
                          (False, False, True))
         for path in ["connect/web/src/Other.tsx", "connect/web/src/sharedlinks.tsx",
-                     "public/site/scripts/cd/publish_pages.py",
+                     "public/site/scripts/cd/publish-pages.ts",
                      "public/site/public/assets/hosted/source-pond-v4.png",
                      "public/site/public/assets/hosted/agent-pond-v4.png",
                      "public/site/public/assets/hosted/agent-reading-v4.png",
@@ -874,7 +1396,7 @@ class SelectionTests(unittest.TestCase):
             commands = [call.args[0] for call in run.call_args_list]
             self.assertTrue(any("build" in c for c in commands))
             self.assertTrue(any("capture::" in c for c in commands))
-            self.assertFalse(any("capture/engine/Cargo.toml" in c for c in commands))
+            self.assertFalse(any("engine/core/Cargo.toml" in c or "engine/Cargo.toml" in c for c in commands))
             self.assertFalse(any("test" in c and "capture::" not in c for c in commands))
         result.stdout = "test result: ok. 0 passed; 0 failed; 90 filtered out\n"
         with patch.object(verification.subprocess, "run", return_value=result):
@@ -1047,7 +1569,7 @@ class SelectionTests(unittest.TestCase):
                                 changed = commit()
                                 broad(base, changed)
                     for path in ["Cargo.lock", "build.rs", "src/unknown.rs",
-                                 "enablement/tests/test_verification.py", "public/site/scripts/cd/publish_pages.py"]:
+                                 "enablement/tests/test_verification.py", "public/site/scripts/cd/publish-pages.ts"]:
                         git("read-tree", head)
                         oid = git("hash-object", "-w", "--stdin", input="mixed input\n")
                         git("update-index", "--add", "--cacheinfo", "100644", oid, path)
@@ -1175,13 +1697,21 @@ sys.exit(watchdog(30, ['sh', '-c', command]))
                         expected = '60'
                     elif bounded_publication:
                         expected = '2'
+                    elif workflow.name.startswith('stream-'):
+                        expected = '5' if '    name: deliver / Delivery contracts\n' in job else '15'
+                        if '    name: deliver / stream (' in job or '    name: verify-pr / pr-stream (' in job:
+                            expected = "${{ matrix.target == 'web' && 10 || 15 }}"
+                        if '    name: deploy (public, web)' in job:
+                            expected = '10'
+                        if '    name: Workflow runtime budget\n' in job:
+                            expected = '15'
                     self.assertIn(f'    timeout-minutes: {expected}\n', job, str(workflow))
                     if bounded_publication:
                         self.assertIn("WORKFLOW_BUDGET_RESERVE_SECONDS: '120'", job)
                         self.assertIn('2 minute execution budget', job)
                     if temporary_mac or temporary_platform:
                         self.assertIn('Simon-authorized Mac release', job)
-                    elif '    name: Workflow runtime budget\n' not in job:
+                    elif 'Workflow runtime budget\n' not in job:
                         self.assertIn('agent whose run hits the limit owns optimization', job)
 
 

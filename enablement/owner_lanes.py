@@ -32,7 +32,8 @@ def consumers(path):
         ('shared/ui/', {'desktop-ui', 'connect-service', 'capture'}, 'shared Desktop and service recipient UI; Rust bridge integration'),
         ('capture/desktop/ui/frontend/', {'desktop-ui', 'capture'}, 'renderer/Electron and real Rust bridge integration'),
         ('capture/desktop/', {'capture', 'desktop-ui', 'engine-staged'}, 'Desktop native/Rust bridge and renderer consumers'),
-        ('capture/engine/src/', {'engine-staged', 'capture'}, 'staged package is not production Engine coverage'),
+        ('engine/core/', {'engine-staged', 'capture'}, 'standalone Engine core package consumed by Engine'),
+        ('engine/', {'engine-staged', 'capture'}, 'standalone Engine provider, SDK and native delivery inputs'),
         ('capture/', {'capture', 'engine-staged'}, 'whole application: Engine/Desktop/Agent reverse dependencies remain'),
         ('connect/', {'capture', 'connect-client', 'connect-service', 'connect-web', 'public-site'}, 'root application Connect integration'),
         ('shared/', set(LANES), 'shared contracts and build/native inputs'),
@@ -148,7 +149,7 @@ def run_lane(lane, online=False):
         run(['npm', 'test'], directory)
         run((['xvfb-run', '-a'] if sys.platform == 'linux' else []) + ['npm', 'run', 'test:electron'], directory)
     elif lane == 'public-site':
-        run(['node', 'scripts/site-build/verify.mjs'], 'public/site')
+        run(['node', 'scripts/site-build/verify.ts'], 'public/site')
 
 
 def main():

@@ -22,6 +22,33 @@
   ],
   "features": [
     {
+      "id": "public-demo-viewing",
+      "added": "2026-11-06",
+      "group": "agent",
+      "name": "Public recording demo views",
+      "says": "The public homepage has a segmented keyboard-seekable timeline and named chapters. On phones, an enlarged viewport smoothly follows the approved recording’s observed cursor track with captions outside the moving crop. Desktop, reduced-motion and fullscreen playback retain the complete frame. The QR splash wash is 90% opaque while the QR image stays opaque.",
+      "status": "main",
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "note": "Public browser presentation only; no desktop capture or platform support change. Local review candidate; not deployment evidence.",
+      "docs": [
+        "public/site/docs/feature-grid.md"
+      ]
+    },
+    {
+      "id": "hermes-recording-tools",
+      "added": "2026-11-06",
+      "group": "cli",
+      "name": "Hermes recording inspection plugin candidate",
+      "says": "Native Hermes tools read Apparent transcripts with contact-sheet and keyframe images and zoom into moments or marks through an installed full Apparent CLI. A bundled setup skill guides installation and existing onboarding; read-only status checks identify the next unfinished checkpoint.",
+      "status": "main",
+      "platforms": ["mac", "linux"],
+      "note": "Unreleased candidate. Linux installed-CLI synthetic-file inspection and zoom are checked; guided native recorder/CLI installation and onboarding on both platforms, native Hermes Desktop/model vision and Connect retrieval remain acceptance gates. Setup does not run automatically on plugin installation. No automatic send or conversation picker.",
+      "docs": ["hermes/README.md"]
+    },
+    {
       "id": "connect-aggregate-daily-activity",
       "added": "2026-11-04",
       "group": "settings",
@@ -48,7 +75,7 @@
       "added": "2026-11-02",
       "group": "platforms",
       "name": "System light and dark appearance",
-      "says": "Frontend surfaces share one semantic theme and follow system light/dark appearance while open: Electron frontend, Connect account and recording recipient pages, and public pages. Native legacy surfaces and captured media keep their existing rendering. Browser checks cover Chromium and Firefox; native platform acceptance remains separate.",
+      "says": "Frontend surfaces share one semantic theme and follow system light/dark appearance while open: Electron frontend, Connect account and recording recipient pages, and public pages. Public uses Paper/Carbon with Stock grouped fields in light mode, and Carbon/Paper with muted Lilac/Carbon grouped fields in dark mode. Feature illustration chrome shares those semantic roles; original media keeps its pixels. Native legacy surfaces and captured media keep their existing rendering. Browser checks cover Chromium and Firefox; native platform acceptance remains separate.",
       "status": "main",
       "platforms": [
         "mac",
@@ -124,7 +151,7 @@
       "id": "site-feature-grid",
       "group": "install",
       "name": "Animated homepage feature explanations",
-      "says": "Four illustrative animations after the product video explain whiteboard feedback, the multimedia timeline, clipboard handoff, and an agent showing its changes in a captioned walkthrough. Animations pause offscreen and respect reduced motion.",
+      "says": "Four illustrative explanations after the product video cover whiteboard feedback, the multimedia timeline, clipboard handoff, and an agent showing its changes in a captioned walkthrough. Desktop animations have a visible pause control, pause offscreen and respect reduced motion. Phones use static semantic examples with readable labels instead of scaled desktop canvases.",
       "status": "main",
       "added": "2026-10-30",
       "platforms": [
@@ -161,7 +188,7 @@
         { "key": "cloud.uploadConsent", "value": "boolean; false by default", "does": "Record explicit permission to share capture contents" },
         { "key": "cloud.server", "value": "HTTPS API origin; loopback HTTP for development", "does": "Select the Connect account API, not a token or preference store" }
       ],
-      "docs": ["connect/docs/hosted-client.md", "connect/docs/hosted-api.md", "public/site/docs/hosted-design.md"]
+      "docs": ["connect/docs/hosted-client.md", "connect/docs/hosted-api.md", "connect/web/docs/design.md"]
 
     },
     {
@@ -236,10 +263,25 @@
       "docs": ["public/site/docs/feature-grid.md"]
     },
     {
+      "id": "site-frog-water-qr",
+      "group": "install",
+      "name": "Homepage frog water QR Easter egg",
+      "says": "Two quick clicks, taps or keyboard activations on the greeting frog trigger a backflip, belly-flop and water ripple QR reveal for app.tryapparent.com. A single click still waves. Escape and Back to the pond restore focus and scrolling. Reduced motion reveals the QR immediately.",
+      "status": "main",
+      "added": "2026-11-06",
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "docs": [
+        "public/site/docs/feature-grid.md"
+      ]
+    },
+    {
       "id": "site-frog-footer",
       "group": "install",
       "name": "Homepage feedback footer",
-      "says": "A compact invitation beneath the photos offers Try apparent and a LinkedIn chooser. Try first attempts apparent://open, then the same button offers an explicit second-click platform download; no installation detection or automatic download. The footer retains its lilac rounded button style. The LinkedIn chooser includes the accepted speech-bubble interaction and does not record or send feedback.",
+      "says": "A playful Try apparent invitation beneath the photos first requests apparent://open, then offers an explicit second-click download using the hero platform/CPU selection. The LinkedIn chooser links directly to both profiles. There is no installation detection, automatic download, capture or feedback submission. Actions use square brand frames.",
       "status": "main",
       "added": "2026-10-30",
       "platforms": ["mac", "linux"],
@@ -333,6 +375,17 @@
       "platforms": ["linux"],
       "note": "Mixed-scale Region and separate Cancel/Finish actions after output crossings were verified on an Omarchy VM and X1. A Region selected on the VM's 1.25x output also saved visible content in its movie and keyframe. The earlier X1 synthetic Cancel-to-Finish misdispatch did not recur; other Wayland portal backends and mirrored layouts are unverified.",
       "docs": ["capture/desktop/docs/linux/linux.md", "capture/engine/docs/capture.md"]
+    },
+    {
+      "id": "engine-hyprland-capture2",
+      "group": "start",
+      "name": "Independent one-monitor Hyprland capture",
+      "says": "The independent Engine capture/2 provider can record one Hyprland monitor through the native sharing portal and produce authenticated retained materials.",
+      "status": "main",
+      "added": "2026-11-07",
+      "platforms": ["linux"],
+      "note": "Source-bound package and SDK 0.4.5 proof passed in a disposable Omarchy guest at 1280×800 scale 1: native monitor consent, first-frame readiness, Stop, sealed H.264 readback and cold materials inspection. XWayland is required for source discovery. Other Wayland backends, multiple monitors, regions/windows, audio and fact collectors are unsupported. Exact-main archive admission and desktop Saved/Copy integration remain separate; installed routing is unchanged. No control-surface exclusion or clean initial frames is claimed.",
+      "docs": ["engine/delivery/capture/README.md"]
     },
     {
       "id": "recent-area",
@@ -957,7 +1010,7 @@
       "says": "Pick iPhone with a phone plugged in: a mirror opens, the phone's own video records with your narration, and ink works over the mirror.",
       "status": "stable@0.3.4",
       "platforms": ["mac"],
-      "note": "Needs AVFoundation's screen capture devices.",
+      "note": "Deferred; no current maintenance or rebuild-adoption commitment. The version records historical availability. Legacy implementation needs AVFoundation's screen capture devices.",
       "shortcuts": [{ "keys": "M", "does": "Flag a moment (iPhone mirror focused)" }],
       "docs": ["README.md#iphone", "capture/engine/docs/iphone-and-routing.md"]
     },
@@ -980,6 +1033,18 @@
       "status": "stable@0.3.4",
       "platforms": ["mac", "linux"],
       "docs": ["README.md#settings", "capture/desktop/docs/onboarding-and-settings.md"]
+    },
+    {
+      "id": "owner-settings-storage",
+      "added": "2026-11-05",
+      "group": "settings",
+      "name": "Owner-scoped settings storage foundation",
+      "says": "A development helper updates one stream's stored state atomically while preserving other preferences and secrets. Installed Settings and onboarding keep their existing storage until their replacement is adopted.",
+      "status": "main",
+      "platforms": ["mac", "linux"],
+      "config": [{ "key": "streamState", "value": "{owner: {revision, value}}", "does": "Versioned state used only by explicitly composed new-shell consumers" }],
+      "note": "No installed route or new Settings control is enabled. Owner schemas remain separate. Native artifacts require successful verification for their own platform before admission; packaged-app adoption requires its affected native checks.",
+      "docs": ["shared/config-native/README.md", "composition/config/README.md"]
     },
     {
       "id": "about-build-identity",
@@ -1071,7 +1136,7 @@
       "says": "A minute after a cabled capture, its video is re-encoded to HEVC at 1600 px (750 MB to 72 MB in one test).",
       "status": "stable@0.3.4",
       "platforms": ["mac"],
-      "note": "The iPhone path is Mac only.",
+      "note": "iPhone support, including phone-specific shrinking, is deferred and need not be maintained or adopted in the current rebuild. The version records historical availability; the legacy path is Mac only.",
       "docs": ["README.md#keeping-captures-small"]
     },
     {
@@ -1127,14 +1192,14 @@
       "id": "cli-issue-reporting",
       "group": "cli",
       "name": "Agent GitHub issue reporting",
-      "says": "apparent issue previews exact text as JSON; explicit --submit publishes to tryapparent/apparent using the caller's GitHub CLI login and verifies the issue before returning its URL. No automatic capture or log attachments.",
+      "says": "apparent issue and apparent-agent issue preview exact text as JSON; explicit --submit publishes to tryapparent/apparent using the caller's GitHub CLI login and verifies the issue before returning its URL. No automatic capture or log attachments.",
       "status": "main",
       "added": "2026-11-01",
       "platforms": [
         "mac",
         "linux"
       ],
-      "note": "Available by default; preview stays offline unless --submit is supplied. Agents must get approval of the exact repository and text before submitting. No automatic implementation or merge.",
+      "note": "Available by default in the legacy apparent CLI and the standalone apparent-agent package; preview stays offline unless --submit is supplied. Agents must search for duplicates and get approval of the exact repository and text before submitting. No automatic attachments, implementation or merge.",
       "docs": [
         "capture/desktop/docs/issue-reporting.md"
       ]
@@ -1173,11 +1238,55 @@
       "id": "cli-zoom",
       "group": "cli",
       "name": "apparent zoom",
-      "says": "A dense sheet of frames around a time, a phrase that was said, or a numbered mark.",
+      "says": "apparent-agent zoom builds a visual PNG sheet around a time, spoken phrase or numbered mark, with semantic timing in companion JSON.",
       "status": "main",
       "added": "2026-10-28",
       "platforms": ["mac", "linux"],
       "docs": ["capture/agent/skills/apparent/SKILL.md"]
+    },
+    {
+      "id": "agent-local-demo-cli",
+      "group": "cli",
+      "name": "apparent-agent demo",
+      "says": "Creates a private local synthetic .apparent example with annotated PNG keyframes, semantic marks, interactions and timed illustrative transcript. It is not a recording or native artifact.",
+      "status": "main",
+      "added": "2026-11-05",
+      "platforms": ["mac", "linux"],
+      "note": "No screen, window, session, microphone, provider, UI, Engine or network is read or launched. Default output follows configured capture storage; --out requires a fresh absolute .apparent directory. PNG and semantic files are private, the manifest is published last, and synthetic provenance is explicit. --clipboard requires a compatible already-running GUI before generation, copies only Record-formatted semantic text, and never launches the GUI or copies images. Refusal or unknown retains the valid bundle and reports its path; unknown exits 3 without retry. Native effect, GUI archive and installed activation remain separate platform gates.",
+      "docs": ["agent/README.md", "agent/docs/cli-parity.md"]
+    },
+    {
+      "id": "agent-local-inspection-cli",
+      "group": "cli",
+      "name": "Local TypeScript bundle inspection CLI",
+      "says": "The independently installable apparent-agent command inspects local .apparent manifests, explicitly orchestrates Engine capture contracts v1 and capture/2, and recovers Record-owned jobs with persisted processing selection. Fresh explicit capture/2 may continue through Record standard visual processing after terminal capture close; Saved is reported only with exact facts, handoff and lifecycle clearance. Inspection has no Desktop, Cargo, network, or Connect dependency.",
+      "status": "main",
+      "added": "2026-11-05",
+      "platforms": ["mac", "linux"],
+      "note": "`apparent-agent recover` reconciles only persisted Record-owned capture/2 plans and publication tuples; fresh capture, new selection and new trusted-root admission are refused. Unselected materials and legacy reservations remain unavailable. Pending, unknown, issue, unresolved ownership, or unconfirmed peer input closure returns status 3; after Record confirms local drain and disposal, recovery connections release even when runtime clearance remains unresolved; released input closure is reported separately and status remains 3. The packed idle-empty Linux run covers peer release and process exit only; no retained-job, capture, processing, publication or route-activation proof is claimed. Local copy uses the published Host text-only clipboard port and Record semantic policy, requires a compatible running GUI and Node 22.18+, never launches the GUI, and returns success only for an exact Applied digest/UTF8 length. Unknown writes return exit 3 without retry; no image, paste, session-forwarding or Saved claim. The compatible GUI supplies the native effect; GUI artifact admission and installed routing remain separate. latest honors APPARENT_CAPTURES_DIR and read-only capturesDir config, with bounded validated manifest reads. Default inspect text is regenerated from manifest semantics when summary.md is missing or stale; --stored-summary selects producer text, --experiment agentContext enriches the local timeline, and --json preserves raw manifest bytes. Image mode lists safe references without inspecting pixels. Both Agent record routes default omitted --duration to 5 seconds; an explicit value remains bounded to greater than 0 and at most 3600 seconds, and timing begins after native recording readiness. The existing record syntax retains explicit Engine V1 readiness. `record --protocol capture2` separately requires APPARENT_ENGINE_CAPTURE_EXECUTABLE and current exact source discovery; omitted --out uses Record absent-destination allocation in configured capture storage, while explicit --out remains supported; it sends silent local-only options and does not fall back to V1. `capture --protocol capture2 sources [--json]` performs read-only public SDK discovery with exact IDs, kind, geometry, validated descriptors, truthful availability and confirmed bounded close; it creates no Record authority, output directory or capture. `capture --protocol capture2 inspect|stop|cancel <request-id>` is the explicit recovery route in the existing capture command family; default recovery remains V1. Cold inspect reports Saved only when persisted Record facts and handoff resolution match the retained Agent request, artifact and canonical destination with confirmed transport close; otherwise it omits the bundle path. It does not dispatch processing or publication. Record owns request mappings, destination reservation/replay and publication. Agent owns CLI timing, signals, public request identity and transport cleanup. The separately admitted Linux x64 X11 capture/2 provider qualifies explicit display capture and cold controls with silent local-only options; it is not installed or activated by default. Wayland and macOS capture/2 remain unavailable. Fresh standard capture/2 can reach Saved through Record after terminal capture close; Saved still requires exact facts, handoff, and lifecycle confirmation. Frames and zoom use the media SDK when a decoder is explicitly configured; without that capability they may select retained PNG keyframes, clearly labeled with bundle-manifest source and original timestamps. Zoom uses bounded bundled PNG decoding for image composition and writes a fresh private PNG sheet with semantic timing/mark context; decoded-frame ink, pins and laser trails honor exact optional sRGB stroke RGB byte triplets, with malformed values rejected before decode. Saved keyframes remain baked and unchanged; PNG composition is not native video decoding. Standalone Agent requires Node 22.18+ and bundles the authenticated compiled headless Record backend without React or Electron; the tarball contains no source prepare step. An explicit offline installer accepts local Agent and complete Linux x64 media artifacts with externally trusted digests, verifies the full native inventory, and requires a native media/1 handshake and confirmed close. An optional separately authenticated Capture/2 closure is installed alongside media; its public native handshake and confirmed close gate the receipt without starting capture, and readiness remains explicit. Capture/2 and media/2 use a shared private runtime through explicit wrapper paths; default protocol selection and routing remain unchanged. It accepts stable SDK 0.2.x and 0.3.x media exports, including compatible patch releases, plus the separately qualified stable 0.4.x media/1 line; other new minor lines and prereleases are refused. Its receipt does not claim codec proof, current-main admission, or global routing; ordinary current-tree admission remains required. Completed-bundle media/1 frames and zoom are qualified on macOS 26.6.2 Apple Silicon/Rosetta with the explicitly configured admitted macos-x64 worker; the producer separately passed native Intel macOS 26.6.1. No ARM-native artifact, macOS 15 runtime, capture, raw-material media2, or Saved claim. The offline native installer remains Linux x64 only. No network, source build, FFmpeg fallback, Connect, authentication, or standalone Engine runtime archive is included. Existing apparent routing is unchanged.",
+      "docs": ["agent/README.md", "agent/docs/cli-parity.md"]
+    },
+    {
+      "id": "agent-frames-media-cli",
+      "group": "cli",
+      "name": "Agent local frame range selection",
+      "says": "apparent-agent frames requests local decoding through the Engine media SDK, or selects matching saved keyframes without a provider.",
+      "status": "main",
+      "added": "2026-11-05",
+      "platforms": ["mac", "linux"],
+      "note": "With a configured provider, consumer orchestration requests decoded frames and preserves provider errors. Without provider paths, or for point ranges, it can select existing PNG-signature manifest keyframes under frames/ using an inclusive range and half-frame margin. JSON distinguishes saved-keyframe mode from decoded frames; timestamps remain the manifest timestamps. If the provider is unavailable and no saved image matches, it reports video extraction unavailable. This read-only fallback makes no pixel-decoding or native-proof claim. No ffmpeg, PATH fallback, bundle mutation, image opening, or network behavior.",
+      "docs": ["agent/README.md", "agent/docs/cli-parity.md", "capture/agent/skills/apparent/SKILL.md", "engine/sdk/README-media.md"]
+    },
+    {
+      "id": "agent-standalone-skill",
+      "group": "cli",
+      "name": "Standalone apparent-agent skill guide",
+      "says": "apparent-agent skill prints the package's bundled capture-reading guide to stdout for agents using the standalone local inspection CLI.",
+      "status": "main",
+      "added": "2026-11-05",
+      "platforms": ["mac", "linux"],
+      "note": "The command reads only package-relative guide text, takes no operands, and does not start Engine, read settings, access bundles, or use the network. It documents local inspection only and makes no recording, media, or Connect capability claim. Legacy apparent skill and routing remain unchanged.",
+      "docs": ["agent/skills/apparent/SKILL.md", "agent/docs/cli-parity.md"]
     },
     {
       "id": "cli-read",
@@ -1192,7 +1301,7 @@
       "id": "cli-copy",
       "group": "cli",
       "name": "copy",
-      "says": "Copy a saved capture to the clipboard without contacting an agent session. The confirmation explains that copy is text-only by default and points to the contact sheet; the user checks the unsent draft for an image.",
+      "says": "Copy a saved capture to the clipboard without contacting an agent session. The local handoff honors the configured agentContext preference and remains text-only; the user checks the unsent draft for an image.",
       "status": "main",
       "added": "2026-10-28",
       "platforms": ["mac", "linux"],

@@ -1,5 +1,93 @@
 # Connect TypeScript migration inventory (#529)
 
+## Accepted rebuild and current checkpoint
+
+Connect has Delivery and Viewing modules under one accountable owner during the
+rebuild. Delivery owns account authority, consent, transfers, access and retrieval;
+Viewing owns the browser recipient/account experience. TypeScript owns product
+behavior, CLI, tests and tooling; React/shared controls supply UI. Worker/D1/R2
+remain the hosted runtime. Cross-module consumers use published contracts.
+
+The first replacement checkpoint moves the adopted account/crypto package to
+`connect/delivery/client` and registers its independent value-stream artifact.
+Desktop still consumes the same emitted controller. The service, viewer and
+independent browser delivery are TypeScript; the canonical combined Worker at
+`app.tryapparent.com/connect` has verified live sign-in and shared-link management.
+The remaining Rust state/queue/CLI and their production consumers remain migration
+work; this does not establish whole-Connect independence. Subsequent
+slices must adopt those callers, preserve one writer and retire replaced donors.
+
+Current acceptance inventory (library/fixture capability is not installed adoption):
+
+| Workflow | Implemented checkpoint | Remaining acceptance |
+|---|---|---|
+| Browser and hosted API | Canonical combined TypeScript Worker, live sign-in and shared-link management | Preserve live routing/auth/privacy contracts during later changes |
+| Account and Settings | TypeScript account/device policy and receipt-fenced private session; device/revoke HTTP, approved credential preparation, login-marker and private identity publication plus revocation-state preparation | Rust still supplies installed HTTP/private facts and durable effects; login/logout/config adoption remains |
+| CLI and recipients | Grammar, local and remote account-status reads, share-management transport, state-backed retrieval/publication and callable Node host | Installed argv/host/resource/writer admission and platform proof |
+| Renewal | Compatible journals, exchange, completed recovery and coordinator library | Live sole-writer adoption, installed recovery and removal of temporary Rust bridge |
+| Queue and sender | Planner, fenced admission/retirement/retry/worker and encrypted spool/HTTP capabilities | Host settings and stable snapshots, host recovery integration and uncommitted-spool settlement, worker/caller adoption |
+| Native resources | Protected x64 factory and qualified Linux/Mac helper inputs | Supported-target installed assembly, including ARM, remains an adoption gate |
+| Removal and release | TypeScript owner CI and qualified library artifacts | All live callers, packaging/build inputs and Rust donors must be migrated and audited |
+
+The TypeScript recipient boundary now decodes bounded raw JSON without duplicate
+keys, validates signed envelopes, decrypts bounded age streams through final EOF,
+and checks inner manifests, content hashes and bundle references. This is an
+in-memory integrity capability. The authenticated recipient retrieval API now
+uses bounded bearer-only HTTP, resolves the current read identity and approved
+upload sender from the service peer registry, pins context, verifies downloaded
+bytes and rechecks sender authorization after decryption. It has explicit legacy
+plaintext opt-in and supports grouped evidence-only reads. It is not a credential
+store or filesystem publisher. The migration-only Rust producer
+interop lane exercises the same boundary; installed retrieval still uses the
+Rust client until transport, durable state and safe publication are adopted.
+
+The recipient publication library now privately stages verified bytes and uses
+the admitted native resource adapter for ACL checks and atomic no-replace
+publication. Linux and Mac consumer tests cover the full filesystem path and a
+synthetic encrypted CLI fetch; uncertain outcomes retain their data without retry
+or deletion. This is an injected library capability, not installed adoption:
+installed credential loading/renewal, provider assembly and the production CLI route still
+use the authoritative legacy path until their separate acceptance gates pass.
+
+Stored credential wire decoding, private-descriptor reading and queue-locked
+credential snapshots are TypeScript capabilities with Linux/Mac native consumer
+proof. Directory admission, inode/ACL checks, cancellation, revocation and local
+login-incarnation fences preserve the legacy lock protocol; stored facts do not
+authorize transport or clear `authRequired`. Completed legacy renewal responses
+can now be read under the same queue lock when the full journal base matches;
+recovery uses the original issue time and leaves all durable files unchanged.
+Active renewal and durable journal publication, service authorization policy,
+installed caller adoption and writer cutover remain parent integration work.
+Rust remains the sole credential and queue JSON writer.
+
+The state-backed recipient command now joins these read capabilities with the
+legacy `<login-id>.identity` format, authenticated retrieval and native private
+publication. It checks local credential lifetime, lazily reads keys only for
+encrypted manifests and rechecks the local snapshot before publication. Explicit
+legacy plaintext policy remains separate. Expired renewable access reports
+`renewal_required` unless a matching completed response supplies a usable token.
+A 401 permits one reload/retry only if writer state supplies a different token in
+the same login. No refresh request or durable write occurs; active renewal and
+installed routing remain open.
+The package API has Linux/Mac native joined-consumer proof, not installed CLI
+adoption or writer-cutover proof.
+
+
+The next recipient adoption prerequisite adds a bounded private request to the
+existing writer for read-grant renewal and terminal rejection. The TypeScript
+transport prepares fresh authority for each GET, renews within 30 seconds,
+retries only a rejected GET once and delegates `authRequired` marking after a
+second 401. The writer pins server, generation, token and cancellation; it owns
+all journal/credential commits and cannot select upload scope or config effects.
+This is the temporary same-writer adapter permitted by step 2 below, not the
+zero-Rust target or installed adoption. Its source-bound joined Linux/Mac proof uses
+a synthetic service, the real writer executable and the native resource adapter;
+installed proof remains required. Published resource/provider assembly
+and the separate legacy writer launch/admission are also required before routing
+production consumers. Rust still owns renewal product behavior in this bridge;
+move it with the coordinated writer and remove the bridge at that cutover.
+
+
 Read with [hosted-client.md](hosted-client.md), [hosted-api.md](hosted-api.md),
 and [hosted-encryption.md](hosted-encryption.md). This is a source inventory,
 not proof that the TypeScript replacement or routing has been adopted.
@@ -17,7 +105,7 @@ sharing state/progress/size helpers, `account_view_in`, `command`, `fetch`,
 `inspect_source`, and `start_worker`.
 
 The adopted Electron account workflow additionally enters Connect's
-`client/typescript/src/settings-controller.cts` through the generated Desktop
+`delivery/client/src/settings-controller.cts` through the generated Desktop
 entry. Its backend RPC uses the existing Connect socket worker for Rust local
 private-record facts/renewal/durable operations. `settings-state.cts` owns
 local account-state meaning from `stateFacts: 1`; the old snapshot remains only
