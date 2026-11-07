@@ -61,6 +61,101 @@ fn resolve_record_target(
 mod record_target_tests {
     use super::*;
 
+    #[cfg(target_os = "linux")]
+    #[derive(Default)]
+    struct InkObserver(Mutex<Vec<NativeInkObservation>>);
+    #[cfg(target_os = "linux")]
+    impl NativeInkObserver for InkObserver {
+        fn observe(&self, observation: NativeInkObservation) {
+            self.0.lock().unwrap().push(observation);
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn native_ink_tap_keeps_observed_positions_times_and_frozen_rgb() {
+        let (sender, _) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        telemetry.reset_for_session(TargetFrame { x: 0.0, y: 0.0, width: 100.0, height: 100.0, scale: 1.0 });
+        let observer = Arc::new(InkObserver::default());
+        let installed: Arc<dyn NativeInkObserver> = observer.clone();
+        assert!(telemetry.install_native_ink_observer(installed.clone()));
+        assert!(!telemetry.install_native_ink_observer(Arc::new(InkObserver::default())));
+        telemetry.set_stroke_rgb(Some([0, 203, 255]));
+        track_shift_ink_observed(&telemetry, (10.25, 20.5), true, false, Some(100));
+        telemetry.set_stroke_rgb(Some([255, 0, 0]));
+        track_shift_ink_observed(&telemetry, (10.5, 20.75), true, true, Some(101)); // donor thinning
+        track_shift_ink_observed(&telemetry, (40.75, 50.25), true, true, Some(102));
+        track_shift_ink_observed(&telemetry, (40.75, 50.25), false, true, Some(103));
+        assert_eq!(*observer.0.lock().unwrap(), vec![
+            NativeInkObservation::Point { first: true, position: [10.25, 20.5], observed_at_ns: 100, rgb: Some([0, 203, 255]) },
+            NativeInkObservation::Point { first: false, position: [40.75, 50.25], observed_at_ns: 102, rgb: Some([0, 203, 255]) },
+            NativeInkObservation::End { accepted: true, observed_at_ns: 103 },
+        ]);
+        assert!(!telemetry.remove_native_ink_observer(&(Arc::new(InkObserver::default()) as Arc<dyn NativeInkObserver>)));
+        assert!(telemetry.remove_native_ink_observer(&installed));
+        assert!(!telemetry.remove_native_ink_observer(&installed));
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn native_ink_tap_stationary_shift_is_not_accepted_and_clock_failure_is_explicit() {
+        let (sender, _) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        let observer = Arc::new(InkObserver::default());
+        assert!(telemetry.install_native_ink_observer(observer.clone()));
+        track_shift_ink_observed(&telemetry, (10.0, 20.0), true, false, Some(100));
+        track_shift_ink_observed(&telemetry, (10.0, 20.0), false, true, Some(101));
+        assert_eq!(observer.0.lock().unwrap().last(), Some(&NativeInkObservation::End { accepted: false, observed_at_ns: 101 }));
+        track_shift_ink_observed(&telemetry, (20.0, 30.0), true, false, None);
+        assert_eq!(observer.0.lock().unwrap().last(), Some(&NativeInkObservation::ClockUnavailable));
+        let before = native_ink_monotonic_ns().unwrap();
+        let after = native_ink_monotonic_ns().unwrap();
+        assert!(before > 0 && after >= before);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn native_ink_tap_overflow_is_explicit_after_the_exact_donor_limit() {
+        let (sender, _) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        let observer = Arc::new(InkObserver::default());
+        assert!(telemetry.install_native_ink_observer(observer.clone()));
+        for i in 0..2400 { track_shift_ink_observed(&telemetry, (i as f64 * 3.0, 20.0), true, i > 0, Some(i + 1)); }
+        assert_eq!(observer.0.lock().unwrap().len(), 2400);
+        assert!(!observer.0.lock().unwrap().contains(&NativeInkObservation::CapacityExceeded));
+        track_shift_ink_observed(&telemetry, (7200.0, 20.0), true, true, Some(2401));
+        assert_eq!(observer.0.lock().unwrap().last(), Some(&NativeInkObservation::CapacityExceeded));
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn native_ink_tap_removal_waits_for_the_original_callback() {
+        struct Blocking { entered: flume::Sender<()>, release: flume::Receiver<()> }
+        impl NativeInkObserver for Blocking {
+            fn observe(&self, _: NativeInkObservation) {
+                self.entered.send(()).unwrap();
+                self.release.recv_timeout(Duration::from_secs(2)).unwrap();
+            }
+        }
+        let (sender, _) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        let (entered_tx, entered_rx) = flume::bounded(1);
+        let (release_tx, release_rx) = flume::bounded(1);
+        let observer: Arc<dyn NativeInkObserver> = Arc::new(Blocking { entered: entered_tx, release: release_rx });
+        assert!(telemetry.install_native_ink_observer(observer.clone()));
+        let drawing = Arc::clone(&telemetry);
+        let callback = thread::spawn(move || track_shift_ink_observed(&drawing, (10.0, 20.0), true, false, Some(100)));
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let (removed_tx, removed_rx) = flume::bounded(1);
+        let removal = thread::spawn(move || removed_tx.send(telemetry.remove_native_ink_observer(&observer)).unwrap());
+        assert!(removed_rx.recv_timeout(Duration::from_millis(20)).is_err());
+        release_tx.send(()).unwrap();
+        assert!(removed_rx.recv_timeout(Duration::from_secs(2)).unwrap());
+        callback.join().unwrap();
+        removal.join().unwrap();
+    }
+
     #[test]
     fn desktop_ink_crosses_target_and_only_visible_segments_are_saved() {
         let (sender, _) = flume::unbounded();
@@ -622,8 +717,37 @@ pub fn region_target(
     }
 }
 
+/// Native input observations, before normalized storage. No renderer may supply these.
+#[cfg(target_os = "linux")]
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum NativeInkObservation {
+    Point { first: bool, position: [f64; 2], observed_at_ns: u64, rgb: Option<[u8; 3]> },
+    End { accepted: bool, observed_at_ns: u64 },
+    ClockUnavailable,
+    CapacityExceeded,
+}
+
+/// Called synchronously under the input gate; implementations must not reenter
+/// tap installation/removal. Removing the exact observer waits for callbacks.
+#[cfg(target_os = "linux")]
+pub(crate) trait NativeInkObserver: Send + Sync {
+    fn observe(&self, observation: NativeInkObservation);
+}
+
+#[cfg(target_os = "linux")]
+fn native_ink_monotonic_ns() -> Option<u64> {
+    let mut time = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut time) } != 0
+        || time.tv_sec < 0 || !(0..1_000_000_000).contains(&time.tv_nsec) {
+        return None;
+    }
+    (time.tv_sec as u64).checked_mul(1_000_000_000)?.checked_add(time.tv_nsec as u64)
+}
+
 /// Shared state collected by the global input monitor during an active capture session.
 pub struct SharedCaptureTelemetry {
+    #[cfg(target_os = "linux")]
+    native_ink_observer: Mutex<Option<Arc<dyn NativeInkObserver>>>,
     /// Unclipped desktop ink, never serialized into the recording bundle.
     pub desktop_ink: Mutex<Vec<Stroke>>,
     pub active: AtomicBool,
@@ -696,6 +820,22 @@ pub struct SharedCaptureTelemetry {
 }
 
 impl SharedCaptureTelemetry {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn install_native_ink_observer(&self, observer: Arc<dyn NativeInkObserver>) -> bool {
+        let mut current = self.native_ink_observer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if current.is_some() { return false; }
+        *current = Some(observer);
+        true
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn remove_native_ink_observer(&self, observer: &Arc<dyn NativeInkObserver>) -> bool {
+        let mut current = self.native_ink_observer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !current.as_ref().is_some_and(|installed| Arc::ptr_eq(installed, observer)) { return false; }
+        *current = None;
+        true
+    }
+
     /// Select exact bytes for subsequent accepted strokes. Does not recolor existing strokes.
     /// The caller owns settings serialization and process-scoped apply/readback ordering.
     pub fn set_stroke_rgb(&self, rgb: Option<[u8; 3]>) {
@@ -712,6 +852,8 @@ impl SharedCaptureTelemetry {
         let shortcuts = crate::capture::desktop::settings::Shortcuts::load();
         crate::capture::desktop::settings::note_paste_label(&shortcuts.paste.label);
         Arc::new(Self {
+            #[cfg(target_os = "linux")]
+            native_ink_observer: Mutex::new(None),
             active: AtomicBool::new(false),
             selecting: AtomicBool::new(false),
             shift_held: AtomicBool::new(false),
@@ -1540,6 +1682,18 @@ fn track_shift_ink(
     pure_shift: bool,
     prev_shift_ink: bool,
 ) {
+    track_shift_ink_observed(telemetry, (x, y), pure_shift, prev_shift_ink, None);
+}
+
+fn track_shift_ink_observed(
+    telemetry: &SharedCaptureTelemetry,
+    (x, y): (f64, f64),
+    pure_shift: bool,
+    prev_shift_ink: bool,
+    _observed_at_ns: Option<u64>,
+) {
+    #[cfg(target_os = "linux")]
+    let native_input = telemetry.native_ink_observer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if pure_shift && !telemetry.notes_editing.load(Ordering::Acquire) && x.is_finite() && y.is_finite() {
         telemetry.shift_held.store(true, Ordering::Release);
         let t_ms = telemetry.elapsed_ms();
@@ -1561,6 +1715,8 @@ fn track_shift_ink(
             .live_ink
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        #[cfg(target_os = "linux")]
+        let first = guard.is_none();
         if guard.is_none() {
             telemetry.window_log_request.store(true, Ordering::Release);
         }
@@ -1581,17 +1737,44 @@ fn track_shift_ink(
             let dy = (sy - prev[1]) as f32 / SCALE as f32 * fh as f32;
             dx.hypot(dy) >= 1.5
         });
+        #[cfg(target_os = "linux")]
+        let native_capacity_exceeded = should_push && stroke.pts.len() / 3 >= 2_400;
         if should_push && stroke.pts.len() / 3 < 2_400 {
             stroke.pts.extend_from_slice(&[sx, sy, dt]);
             stroke.t1 = t_ms;
+            #[cfg(target_os = "linux")]
+            if let Some(observer) = native_input.as_ref() {
+                observer.observe(match _observed_at_ns {
+                    Some(observed_at_ns) => NativeInkObservation::Point {
+                        first, position: [x, y], observed_at_ns, rgb: stroke.rgb,
+                    },
+                    None => NativeInkObservation::ClockUnavailable,
+                });
+            }
+        }
+        #[cfg(target_os = "linux")]
+        if native_capacity_exceeded {
+            // Reaching the donor's cap must not become a silently truncated
+            // complete collection. The native source latches unavailable.
+            if let Some(observer) = native_input.as_ref() {
+                observer.observe(NativeInkObservation::CapacityExceeded);
+            }
         }
     } else if !pure_shift && prev_shift_ink {
         telemetry.shift_held.store(false, Ordering::Release);
-        if let Some(stroke) = telemetry
+        let completed = telemetry
             .live_ink
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
+            .take();
+        #[cfg(target_os = "linux")]
+        if let (Some(stroke), Some(observer)) = (completed.as_ref(), native_input.as_ref()) {
+            observer.observe(match _observed_at_ns {
+                Some(observed_at_ns) => NativeInkObservation::End { accepted: is_real_ink(stroke), observed_at_ns },
+                None => NativeInkObservation::ClockUnavailable,
+            });
+        }
+        if let Some(stroke) = completed
             // Ignore stationary Shift taps (e.g. typing a capital letter without moving the mouse).
             && is_real_ink(&stroke)
         {

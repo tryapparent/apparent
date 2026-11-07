@@ -30,7 +30,7 @@ use super::super::{
     CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY, CARBON_SHIFT_KEY, LiveOverlayEvent,
     Sampler, SharedCaptureTelemetry, ShortcutConfig, ShortcutKind, clean_label, hotkey_combos,
     layout_default_keycode, pick_display, poll_clicks, apparent_log, shortcut_label,
-    shortcut_matches, track_shift_ink,
+    shortcut_matches, track_shift_ink_observed, native_ink_monotonic_ns,
 };
 use crate::capture::desktop::linux::{self, input, x11};
 use crate::shared::model::{CaptureMode, InteractionEvent, TargetFrame, TargetInfo};
@@ -1175,6 +1175,9 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
         let Some((x, y)) = linux::cursor_position() else {
             continue;
         };
+        // Stamp the actual native pointer observation, never a later array read
+        // or renderer clock. Missing native time is explicit to the observer.
+        let ink_observed_at_ns = native_ink_monotonic_ns();
         if stale_pointer.is_some_and(|stale| stale == (x, y)) {
             // Not where the pointer is yet: wait for it to move over the overlay.
             pure_shift = false;
@@ -1199,7 +1202,7 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
         );
 
         // Hold Shift + move the pointer inside the capture target = draw a persistent stroke.
-        track_shift_ink(&telemetry, (x, y), pure_shift, prev_shift_ink);
+        track_shift_ink_observed(&telemetry, (x, y), pure_shift, prev_shift_ink, ink_observed_at_ns);
         prev_shift_ink = pure_shift;
     }
 }
