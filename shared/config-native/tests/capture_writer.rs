@@ -16,17 +16,30 @@ use std::{
     },
 };
 
+static NEXT_FIXTURE: AtomicUsize = AtomicUsize::new(0);
+
 fn temp() -> PathBuf {
+    temp_at(std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos())
+}
+
+fn temp_at(stamp: u128) -> PathBuf {
+    let sequence = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!(
-        "apparent-config-capture-writer-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos(),
+        "apparent-config-capture-writer-{}-{stamp}-{sequence}", std::process::id(),
     ));
     fs::DirBuilder::new().mode(0o700).create(&path).unwrap();
     path.canonicalize().unwrap()
+}
+
+#[test]
+fn capture_writer_fixtures_are_distinct_when_the_clock_repeats() {
+    let first = temp_at(7);
+    let second = std::panic::catch_unwind(|| temp_at(7));
+    fs::remove_dir_all(&first).unwrap();
+    let second = second.expect("repeated clock samples must not alias fixture state");
+    assert_ne!(first, second);
+    fs::remove_dir_all(second).unwrap();
 }
 
 fn config(path: &PathBuf) -> Value {
