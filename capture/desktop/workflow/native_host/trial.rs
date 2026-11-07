@@ -626,7 +626,12 @@ impl ShortcutTrialGuard {
                         };
                     }
                     EdgeKind::Release => {
-                        if edge.monotonic_time_ms < retiring.retired_at_monotonic_ms {
+                        if edge.monotonic_time_ms < retiring.retired_at_monotonic_ms
+                            || self
+                                .held
+                                .as_ref()
+                                .is_some_and(|held| edge.wall_time_ms < held.pressed_at_wall_ms)
+                        {
                             return CaptureDisposition::SuppressUntilPhysicalRelease;
                         }
                         let known_chord =
@@ -676,6 +681,10 @@ impl ShortcutTrialGuard {
                 self.invalidate_reservation(edge.monotonic_time_ms);
                 return CaptureDisposition::SuppressUntilPhysicalRelease;
             }
+            if edge.kind == EdgeKind::Release && edge.wall_time_ms < held.pressed_at_wall_ms {
+                self.invalidate_reservation(edge.monotonic_time_ms);
+                return CaptureDisposition::SuppressUntilPhysicalRelease;
+            }
             match edge.kind {
                 EdgeKind::Press => return CaptureDisposition::SuppressUntilPhysicalRelease,
                 EdgeKind::Release => {
@@ -699,9 +708,12 @@ impl ShortcutTrialGuard {
                             };
                         } else {
                             self.fact = TrialFact::Unknown {
-                                binding: reservation.binding,
-                                reservation_id: reservation.reservation_id,
+                                binding: reservation.binding.clone(),
+                                reservation_id: reservation.reservation_id.clone(),
                             };
+                            self.held = Some(held);
+                            self.retire_input(reservation, edge.monotonic_time_ms);
+                            return CaptureDisposition::SuppressUntilPhysicalRelease;
                         }
                     }
                     return CaptureDisposition::Suppress;
@@ -1361,8 +1373,12 @@ mod tests {
             WALL + 99,
             MONO + 200,
         );
-        assert_eq!(guard.physical_edge(&up), CaptureDisposition::Suppress);
-        assert!(!guard.has_unresolved_press());
+        assert_eq!(
+            guard.physical_edge(&up),
+            CaptureDisposition::SuppressUntilPhysicalRelease
+        );
+        assert!(guard.has_unresolved_press());
+        assert!(guard.has_unconfirmed_retirement());
         assert_eq!(
             guard.fact(),
             &TrialFact::Unknown {

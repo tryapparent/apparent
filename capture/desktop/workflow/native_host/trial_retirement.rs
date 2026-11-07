@@ -275,3 +275,44 @@ fn retired_edge_context_keeps_original_selectors_after_source_refresh() {
     );
     assert_eq!(guard.current_begin_binding(), None);
 }
+
+#[test]
+fn inconsistent_wall_release_retires_without_clearing_input_or_allowing_rearm() {
+    let (mut guard, source) = admitted();
+    guard.physical_edge(&edge(&source, EdgeKind::Press, "chord", MONO + 10));
+    let mut invalid_up = edge(&source, EdgeKind::Release, "chord", MONO + 20);
+    invalid_up.wall_time_ms = WALL + 9;
+    assert_eq!(
+        guard.physical_edge(&invalid_up),
+        CaptureDisposition::SuppressUntilPhysicalRelease
+    );
+    assert!(guard.has_unresolved_press());
+    assert!(guard.has_unconfirmed_retirement());
+    assert_eq!(guard.current_begin_binding(), None);
+    let terminal = guard.fact().clone();
+    assert!(matches!(terminal, TrialFact::Unknown { .. }));
+    assert_eq!(
+        guard.legacy_capture_disposition_at("epoch", 1, "registration", "chord", Some(MONO + 21)),
+        CaptureDisposition::SuppressUntilPhysicalRelease
+    );
+    invalid_up.monotonic_time_ms = MONO + 25;
+    assert_eq!(
+        guard.physical_edge(&invalid_up),
+        CaptureDisposition::SuppressUntilPhysicalRelease,
+        "an invalid release cannot clear held ownership through the retirement branch either"
+    );
+    assert!(guard.has_unresolved_press());
+    assert_eq!(
+        guard.physical_edge(&edge(&source, EdgeKind::Release, "chord", MONO + 30)),
+        CaptureDisposition::Suppress
+    );
+    assert!(!guard.has_unresolved_press());
+    assert_eq!(guard.fact(), &terminal);
+    let mut replacement = request(&source);
+    replacement.reservation_id = "new".into();
+    replacement.replaces = Some(terminal_identity(&terminal));
+    assert_eq!(
+        guard.begin(&replacement, MONO + 40, WALL + 40),
+        BeginOutcome::Refused(Refusal::RetirementUnconfirmed)
+    );
+}
