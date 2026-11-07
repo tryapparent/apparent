@@ -63,7 +63,10 @@ export function omarchyStartIntent(requestId: string, discovery: SourceDiscovery
   return {
     source: screenSource(discovery),
     options: { audio: 'none' as const, localOnly: true as const },
-    invocation: { kind: 'explicit' as const, invocationId: requestId, observedAtMs: Date.now() },
+    // Public requests are opaque strings; the native invocation contract is
+    // lowercase 128-bit hex. Keep the public mapping/destination key intact.
+    invocation: { kind: 'explicit' as const,
+      invocationId: createHash('sha256').update(requestId, 'utf8').digest('hex').slice(0, 32), observedAtMs: Date.now() },
   };
 }
 

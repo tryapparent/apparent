@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
-import type { SourceDiscovery } from '@apparent/engine-sdk/capture';
+import { validateCaptureRequest, type SourceDiscovery } from '@apparent/engine-sdk/capture';
+import { cloneRecordCommand } from '../../src/record/wire.ts';
 
 // Match the packaged main's compilation rather than Node's strip-only parser
 // (the existing setup error class has TypeScript parameter properties).
@@ -19,14 +20,38 @@ const compiled = await build({ entryPoints: [fileURLToPath(new URL('../../src/re
 const { createRecordHostServices, omarchyStartIntent } = await import(
   `data:text/javascript;base64,${Buffer.from(compiled.outputFiles[0].text).toString('base64')}`) as typeof import('../../src/record/omarchy/host.ts');
 
-test('real host intent preserves public Start identity and exact native source with silent options', () => {
-  const source = { id: 'native-monitor', generation: 'native-generation', kind: 'display' as const, displayId: 1,
+test('public Start IDs map deterministically to valid native invocation IDs without changing public identity', () => {
+  const source = { id: 'display:1', generation: 'c'.repeat(32), kind: 'display' as const, displayId: 1,
     bounds: { x: 0, y: 0, width: 1280, height: 800, scale: 1 } };
   const discovery: SourceDiscovery = { state: 'available', sources: [source] };
-  const intent = omarchyStartIntent('original-start-request', discovery);
-  assert.equal(intent.invocation.invocationId, 'original-start-request');
-  assert.equal(intent.source, source);
-  assert.deepEqual(intent.options, { audio: 'none', localOnly: true });
+  const originalDiscovery = structuredClone(discovery);
+  // First value is emitted by the real renderer's crypto.randomUUID(). The
+  // other accepted public IDs ensure this boundary is not UUID stripping.
+  const requestIds = ['9e2f4cea-4386-4b08-b6c1-1c6c142b7482', 'request-42', 'request42'];
+  const nativeIds = new Set<string>();
+  for (const requestId of requestIds) {
+    const command = cloneRecordCommand({ type: 'start-capture', requestId,
+      expected: { providerEpoch: 'provider-test', revision: 1 }, delivery: 'host-default' });
+    assert(command, 'the public command accepts this opaque request ID');
+    const originalCommand = structuredClone(command);
+    const intent = omarchyStartIntent(command.requestId, discovery);
+    const envelope = { channel: 'capture', protocolVersion: 2, clientId: 'a'.repeat(32), rpcId: 'b'.repeat(32),
+      method: 'start', ownerToken: '0'.repeat(64), captureId: '0'.repeat(32),
+      bundleId: 'record-preflight.apparent', bundlePath: '/record-preflight.apparent',
+      source: intent.source, options: intent.options, invocation: intent.invocation };
+    assert.throws(() => validateCaptureRequest({ ...envelope,
+      invocation: { ...intent.invocation, invocationId: requestId } }), /invalid invocation invocationId/);
+    assert.doesNotThrow(() => validateCaptureRequest(envelope), 'actual installed SDK045 preflight accepts adapted invocation');
+    assert.match(intent.invocation.invocationId, /^[a-f0-9]{32}$/);
+    assert.equal(intent.invocation.invocationId, omarchyStartIntent(requestId, discovery).invocation.invocationId);
+    nativeIds.add(intent.invocation.invocationId);
+    assert.deepEqual(command, originalCommand);
+    assert.equal(command.requestId, requestId);
+    assert.equal(intent.source, source);
+    assert.deepEqual(intent.options, { audio: 'none', localOnly: true });
+  }
+  assert.equal(nativeIds.size, requestIds.length);
+  assert.deepEqual(discovery, originalDiscovery);
   assert.throws(() => omarchyStartIntent('request', { state: 'available', sources: [source, { ...source, id: 'other' }] }), /exactly one/);
   assert.throws(() => omarchyStartIntent('request', { state: 'unavailable', sources: [] }), /exactly one/);
 });
