@@ -4,6 +4,7 @@ import { Button } from '@apparent/ui/button';
 import { parseStreamManifest, type StreamModule, type StreamManifest } from '@apparent/app-contracts';
 import type { OnboardingProgressPort } from '@apparent/app-contracts/host';
 import type { RecordRendererPort } from './record/wire.js';
+declare const APPARENT_OMARCHY: boolean;
 
 declare global { interface Window { apparent: { onboardingProgress: OnboardingProgressPort; record: RecordRendererPort } } }
 
@@ -31,6 +32,10 @@ function Shell({ streams }: { streams: Loaded[] }) {
   const [selected, select] = React.useState(streams[0]?.manifest.id);
   const [settings, showSettings] = React.useState(false);
   const active = streams.find(stream => stream.manifest.id === selected);
+  if (APPARENT_OMARCHY) return <>
+    <header><h1>Apparent</h1><p>Silent monitor recording. Controls hide during capture; activate the Apparent tray icon to Stop.</p></header>
+    <main>{active ? <Boundary><active.module.Screen /></Boundary> : <p>Recording unavailable.</p>}</main>
+  </>;
   return <>
     <header><h1>Apparent Foundation</h1><p>Synthetic modules · no recording or account access</p></header>
     <nav aria-label="Streams">{streams.map(({ manifest }) =>
@@ -45,6 +50,14 @@ function Shell({ streams }: { streams: Loaded[] }) {
   </>;
 }
 async function start() {
+  if (APPARENT_OMARCHY && location.hash === '#startup-incomplete') {
+    createRoot(document.getElementById('root')!).render(<main role="alert">
+      <h1>Apparent could not finish startup</h1>
+      <p>Recording controls are unavailable. Native ownership is retained for recovery.</p>
+      <p>Keep this profile and its logs; unresolved work has not been cancelled.</p>
+    </main>);
+    return;
+  }
   // Registry is generated from pinned artifacts, not discovered from user input.
   const registry = await import('./registry.js');
   const streams: Loaded[] = await Promise.all(registry.streams.map(async (input: unknown) => {

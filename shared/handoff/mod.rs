@@ -255,6 +255,22 @@ pub enum VerifiedClipboardTextWrite {
     OutcomeUnknown,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VerifiedClipboardTextReadbackWrite { WrittenReadback, Unavailable, OutcomeUnknown }
+
+/// Separate Wayland proof mode: locally accepted submission plus exact bounded readback.
+/// READY is not a compositor acquisition acknowledgement or readback-origin proof.
+pub fn copy_string_to_clipboard_readback_until(content: &str, deadline: std::time::Instant) -> VerifiedClipboardTextReadbackWrite {
+    #[cfg(target_os = "linux")]
+    { return match crate::capture::desktop::linux::clipboard::set_text_readback_until(content, deadline) {
+        crate::capture::desktop::linux::clipboard::VerifiedTextReadbackWrite::WrittenReadback => VerifiedClipboardTextReadbackWrite::WrittenReadback,
+        crate::capture::desktop::linux::clipboard::VerifiedTextReadbackWrite::Unavailable => VerifiedClipboardTextReadbackWrite::Unavailable,
+        crate::capture::desktop::linux::clipboard::VerifiedTextReadbackWrite::OutcomeUnknown => VerifiedClipboardTextReadbackWrite::OutcomeUnknown,
+    }; }
+    #[cfg(not(target_os = "linux"))]
+    { let _ = (content, deadline); VerifiedClipboardTextReadbackWrite::Unavailable }
+}
+
 /// Single-operation private child entry point used to put potentially blocking native clipboard
 /// calls behind the caller's deadline. Linux X11 keeps the child alive as its selection owner;
 /// macOS returns after its pasteboard write and stable readback.

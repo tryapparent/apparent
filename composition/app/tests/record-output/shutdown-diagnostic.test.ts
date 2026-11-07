@@ -1,0 +1,101 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { createCapture2RecordRuntime } from '@apparent/record/host/capture2-runtime';
+import type { Capture2Event, Capture2Host, Capture2Receipt } from '@apparent/record/host/capture2';
+import type { RecordCaptureCoordinator } from '@apparent/record/host/capture2-coordinator';
+import { createRecordCapabilityProvider } from '@apparent/record/capabilities';
+import { bindRecordCoordinatorHost } from '../../src/record/coordinator-host.ts';
+import type { RecordNativeBindings } from '../../src/record/native-bindings.ts';
+import { recordShutdownEvent, shutdownReportDiagnostic } from '../../src/record/omarchy/shutdown-diagnostic.ts';
+
+test('close refreshes installed runtime ownership after asynchronous Stop completion without inferring clearance from Saved', async t => {
+  const events: Array<{ stage: string; ownership?: { unresolvedRequests: number } }> = [];
+  t.mock.method(console, 'error', (prefix: string, value: string) => {
+    assert.equal(prefix, '[record-shutdown]'); events.push(JSON.parse(value));
+  });
+  const source = { id: 'a'.repeat(32), generation: 'b'.repeat(32), kind: 'display' as const,
+    displayId: 1, bounds: { x: 0, y: 0, width: 1280, height: 800, scale: 1 } };
+  let receipt: Capture2Receipt = { requestId: 'public-request', phase: 'recording' };
+  let observe!: (event: Capture2Event) => void, reconciliations = 0;
+  let inspectUnavailable = false;
+  const producer: Capture2Host = {
+    async readiness() { return { ready: true }; },
+    async discoverSources() { return { state: 'available', sources: [source] }; },
+    async start() { return receipt; }, async inspect() { return receipt; },
+    async stop() { receipt = { ...receipt, phase: 'stopping' }; return receipt; },
+    async cancel() { throw new Error('No cancellation authorized'); },
+    async reconcile() {
+      if (inspectUnavailable) throw new Error('Authoritative inspection unavailable');
+      return ++reconciliations === 1 ? [] : [receipt];
+    },
+    subscribe(listener) { observe = listener; return () => {}; }, dispose() {},
+  };
+  const runtime = await createCapture2RecordRuntime({ host: producer, pollIntervalMs: 10000,
+    createStartIntent: () => ({ source, options: { audio: 'none', localOnly: true },
+      invocation: { kind: 'explicit', invocationId: 'c'.repeat(32), observedAtMs: 1000 },
+      destinationPath: '/synthetic/not-created.apparent' }) });
+  t.after(async () => { runtime.dispose(); await runtime.drainObservation(); });
+  await runtime.startCapture(receipt.requestId); await runtime.dispatch({ type: 'stop' });
+  receipt = { ...receipt, phase: 'materials-ready' }; observe({ type: 'capture-changed', receipt });
+  assert.equal(runtime.state.phase, 'processing');
+  assert(runtime.unresolvedOwnership().requestIds.includes(receipt.requestId));
+  let shutdownCalls = 0, sdkClosed = 0, bindingsClosed = 0;
+  const captureFacts: RecordCaptureCoordinator['captureFacts'] = { async readFacts() {
+    return { version: 1, providerEpoch: 'synthetic-output', revision: 1, nextShortcutAdmission: { state: 'unavailable' },
+      captures: [{ captureId: receipt.requestId, phase: 'saved', artifactId: 'synthetic-bundle', delivery: 'unknown',
+        outcomes: [{ kind: 'save', at: '2026-11-07T00:00:00.000Z', ok: true }] }] };
+  } };
+  const flow: RecordCaptureCoordinator = {
+    runtime, capture2Start: runtime, captureFacts,
+    createProvider(ports) { return createRecordCapabilityProvider({ ...ports, runtime, capture2Start: runtime, captureFacts }); },
+    async shutdown() {
+      shutdownCalls++; assert.deepEqual(runtime.unresolvedOwnership().requestIds, []);
+      return { scope: 'record-coordinator', admission: 'closed', localDrain: 'complete', runtimeClearance: 'clear',
+        nextShortcutAdmission: { state: 'unsupported', reason: 'No shortcut producer in this fixture' }, work: [] };
+    },
+    async dispose() { runtime.dispose(); await runtime.drainObservation(); },
+    async resolveHandoff() { return null; }, async reconcile() {},
+    processingIssues: () => [], observeProcessingIssues() { return () => {}; },
+  };
+  const bindings: RecordNativeBindings = {
+    native: { async readFacts() { return { version: 1, providerEpoch: 'synthetic-native', revision: 0, readiness: [],
+      shortcut: { effective: null, label: null, registration: 'unknown', externallyManaged: false, draft: null } }; } },
+    penConfig: { async read() { return { persisted: null, effective: null }; }, async writeApplyAndReadBack() { throw new Error('No effect authorized'); } },
+    clipboard: { async copyLocal() { throw new Error('No clipboard effect authorized'); } }, async close() { bindingsClosed++; },
+  };
+  const host = bindRecordCoordinatorHost({ coordinator: flow, nativeBindings: bindings,
+    async shutdownOtherRuntimeUsers() { return 'clear'; }, async closeEngine() { sdkClosed++; } });
+  t.after(() => host.record.detach());
+  await new Promise(resolve => setImmediate(resolve));
+  inspectUnavailable = true;
+  assert.equal(await host.canClose(), false, 'Saved cannot clear unreadable native ownership');
+  assert.equal(shutdownCalls, 0); assert.equal(host.shutdownReport(), undefined);
+  assert.equal(sdkClosed, 0); assert.equal(bindingsClosed, 0);
+  inspectUnavailable = false;
+  assert.equal(await host.canClose(), true, 'fresh native reconciliation permits terminal coordinator inspection');
+  assert.equal(shutdownCalls, 1); assert.equal(host.shutdownReport()?.runtimeClearance, 'clear');
+  assert.equal(sdkClosed, 0, 'readiness itself does not close SDKs');
+  await host.close(); await host.close();
+  assert.equal(sdkClosed, 1); assert.equal(bindingsClosed, 1);
+  assert(!JSON.stringify(events).includes(receipt.requestId), 'local diagnostics omit request identities');
+  assert(events.some(event => event.stage === 'preflight-refused'));
+  assert.deepEqual(runtime.unresolvedOwnership().requestIds, []);
+});
+
+test('diagnostic serialization and output failures never change ownership decisions', t => {
+  t.mock.method(console, 'error', () => { throw new Error('closed log stream'); });
+  assert.doesNotThrow(() => recordShutdownEvent('synthetic-log-failure'));
+  const circular: { self?: unknown } = {}; circular.self = circular;
+  assert.doesNotThrow(() => recordShutdownEvent('synthetic-serialization-failure', circular));
+});
+
+test('shutdown report log keeps clearance and work states while omitting identities and free text', () => {
+  const report = { scope: 'record-coordinator', admission: 'closed', localDrain: 'complete', runtimeClearance: 'unknown',
+    nextShortcutAdmission: { state: 'unsupported', reason: 'private-reason' },
+    work: [{ owner: 'publication', state: 'unknown', requestId: 'private-request', captureId: 'private-capture',
+      publicationId: 'private-publication', reason: 'private-error-detail' }] } as const;
+  const summary = shutdownReportDiagnostic(report);
+  assert.deepEqual(summary, { scope: 'record-coordinator', admission: 'closed', localDrain: 'complete',
+    runtimeClearance: 'unknown', nextShortcutAdmission: 'unsupported', work: [{ owner: 'publication', state: 'unknown' }] });
+  assert(!JSON.stringify(summary).includes('private-'));
+});

@@ -4,6 +4,15 @@ static NATIVE_PEN_EFFECT_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic
 static NATIVE_CLIPBOARD_EFFECT_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static NATIVE_HOST_REVISION_FOR_WORKER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+fn native_host_process_epoch(role: crate::capture::desktop::RuntimeRole, nonce: Option<String>) -> String {
+    nonce.unwrap_or_else(|| match role {
+        crate::capture::desktop::RuntimeRole::Desktop => format!("process-{}", std::process::id()),
+        // This role supplies privileged effects to a separate owner. A recycled
+        // PID cannot provide the incarnation fence required by that owner.
+        crate::capture::desktop::RuntimeRole::NativeHostOnly => String::new(),
+    })
+}
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 struct NativeHostObservation {
     configured: crate::capture::desktop::settings::Shortcuts,
@@ -64,16 +73,35 @@ fn restore_runtime_shortcut(
 }
 
 impl ApparentCoordinator {
+    pub(in crate::capture::desktop) fn legacy_capture_admitted(&self) -> bool {
+        self.runtime_role == crate::capture::desktop::RuntimeRole::Desktop
+    }
+
     pub(in crate::capture::desktop) fn new(
         telemetry: Arc<SharedCaptureTelemetry>,
         initial_bundle: Option<(PathBuf, ApparentBundle)>,
     ) -> Self {
-        crate::capture::desktop::playback::warm_up();
+        Self::new_with_role(
+            telemetry,
+            initial_bundle,
+            crate::capture::desktop::RuntimeRole::Desktop,
+        )
+    }
+
+    pub(in crate::capture::desktop) fn new_with_role(
+        telemetry: Arc<SharedCaptureTelemetry>,
+        initial_bundle: Option<(PathBuf, ApparentBundle)>,
+        runtime_role: crate::capture::desktop::RuntimeRole,
+    ) -> Self {
+        if runtime_role == crate::capture::desktop::RuntimeRole::Desktop {
+            crate::capture::desktop::playback::warm_up();
+        }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
-        let native_host_epoch = crate::capture::desktop::workflow::agent_capture::new_id()
-            .unwrap_or_else(|_| format!("process-{}", std::process::id()));
+        let native_host_epoch = native_host_process_epoch(runtime_role,
+            crate::capture::desktop::workflow::agent_capture::new_id().ok());
         NATIVE_HOST_REVISION_FOR_WORKER.store(0, std::sync::atomic::Ordering::Release);
         Self {
+            runtime_role,
             telemetry,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             native_host_epoch,
@@ -280,6 +308,12 @@ impl ApparentCoordinator {
 
     pub(in crate::capture::desktop) fn request_quit(&mut self, cx: &mut Context<Self>) {
         crate::capture::desktop::workflow::shutdown::request();
+        if self.runtime_role == crate::capture::desktop::RuntimeRole::NativeHostOnly {
+            // Refuse later requests through the existing shutdown flag, drain
+            // admitted native effects, and never invoke legacy capture cleanup.
+            if !self.capture_busy() { cx.quit(); }
+            return;
+        }
         self.lab = false;
         self.recording_shortcut_key = false;
         self.iphone_preview.take();
@@ -354,6 +388,10 @@ impl ApparentCoordinator {
             if let Some(response) = self.native_host_request(native_host, request.expired(), request.reply.clone()) {
                 let _ = request.reply.send(response.to_string());
             }
+            return;
+        }
+        if self.runtime_role == crate::capture::desktop::RuntimeRole::NativeHostOnly {
+            let _ = request.reply.send(r#"{"error":"unavailable"}"#.to_owned());
             return;
         }
         if let Some((
@@ -599,6 +637,15 @@ impl ApparentCoordinator {
             return Some(refusal("unavailable"));
         }
         if self.native_host_epoch.is_empty() { return Some(refusal("unavailable")); }
+        if self.runtime_role == crate::capture::desktop::RuntimeRole::NativeHostOnly
+            && !matches!(&request.operation,
+                Operation::ReadSnapshot
+                    | Operation::ReadStrokeColor
+                    | Operation::WriteClipboardText(_)
+                    | Operation::WriteClipboardTextReadback(_))
+        {
+            return Some(refusal("unavailable"));
+        }
         if matches!(&request.operation, Operation::ReadStrokeColor) {
             if crate::capture::desktop::workflow::agent_capture::storage_clock_ms() >= request.deadline {
                 return Some(refusal("unavailable"));
@@ -621,7 +668,8 @@ impl ApparentCoordinator {
         if crate::capture::desktop::workflow::agent_capture::storage_clock_ms() >= request.deadline {
             return Some(refusal("unavailable"));
         }
-        if let Operation::WriteClipboardText(text) = &request.operation {
+        if let Operation::WriteClipboardText(text) | Operation::WriteClipboardTextReadback(text) = &request.operation {
+            let readback = matches!(&request.operation, Operation::WriteClipboardTextReadback(_));
             use std::sync::atomic::Ordering;
             use sha2::{Digest, Sha256};
             if let Some(reason) = crate::capture::desktop::workflow::native_host::clipboard_text_refusal(text) {
@@ -654,16 +702,28 @@ impl ApparentCoordinator {
                 } else if NATIVE_HOST_REVISION_FOR_WORKER.load(Ordering::Acquire) != expected_revision {
                     refused("stale")
                 } else {
-                    match crate::shared::handoff::copy_string_to_clipboard_verified_until(&text, deadline_instant) {
-                        crate::shared::handoff::VerifiedClipboardTextWrite::Applied
-                            if crate::capture::desktop::workflow::agent_capture::storage_clock_ms() < deadline => {
+                    let result = if readback {
+                        match crate::shared::handoff::copy_string_to_clipboard_readback_until(&text, deadline_instant) {
+                            crate::shared::handoff::VerifiedClipboardTextReadbackWrite::WrittenReadback => {
+                                let digest = Sha256::digest(text.as_bytes());
+                                serde_json::json!({"status":"written-readback","digest":format!("{digest:x}"),"byteLength":text.len()})
+                            }
+                            crate::shared::handoff::VerifiedClipboardTextReadbackWrite::Unavailable => refused("unavailable"),
+                            crate::shared::handoff::VerifiedClipboardTextReadbackWrite::OutcomeUnknown => serde_json::json!({"status":"outcome-unknown"}),
+                        }
+                    } else {
+                        match crate::shared::handoff::copy_string_to_clipboard_verified_until(&text, deadline_instant) {
+                            crate::shared::handoff::VerifiedClipboardTextWrite::Applied => {
                                 let digest = Sha256::digest(text.as_bytes());
                                 serde_json::json!({"status":"applied","digest":format!("{digest:x}"),"byteLength":text.len()})
                             }
-                        crate::shared::handoff::VerifiedClipboardTextWrite::Unavailable
-                            if crate::capture::desktop::workflow::agent_capture::storage_clock_ms() < deadline => refused("unavailable"),
-                        _ => serde_json::json!({"status":"outcome-unknown"}),
-                    }
+                            crate::shared::handoff::VerifiedClipboardTextWrite::Unavailable => refused("unavailable"),
+                            crate::shared::handoff::VerifiedClipboardTextWrite::OutcomeUnknown => serde_json::json!({"status":"outcome-unknown"}),
+                        }
+                    };
+                    if crate::capture::desktop::workflow::agent_capture::storage_clock_ms() < deadline {
+                        result
+                    } else { serde_json::json!({"status":"outcome-unknown"}) }
                 };
                 let _ = reply.send(result.to_string());
             });
@@ -786,6 +846,7 @@ impl ApparentCoordinator {
             }
             Operation::ReadStrokeColor => unreachable!("pen read was handled before config observation"),
             Operation::WriteClipboardText(_) => unreachable!("clipboard write was dispatched to its bounded worker"),
+            Operation::WriteClipboardTextReadback(_) => unreachable!("clipboard readback write was dispatched to its bounded worker"),
             Operation::SaveRecordShortcut(value) => self.native_host_save_shortcut(value, &observation, request.deadline),
         })
     }
@@ -796,11 +857,24 @@ impl ApparentCoordinator {
         let (record, paste) = self.telemetry.shortcuts();
         let config_path = crate::shared::handoff::default_config_path();
         let (configured, _) = crate::capture::desktop::settings::Shortcuts::load_from(&config_path, std::path::Path::new("/dev/null"));
-        let registration = crate::capture::engine::runtime::shortcut_registration_status(&self.telemetry);
-        let can_save = registration == "registered" && !self.is_recording() && !self.is_processing() && !self.is_selecting();
+        let registration = if self.runtime_role == crate::capture::desktop::RuntimeRole::NativeHostOnly {
+            "unavailable"
+        } else {
+            crate::capture::engine::runtime::shortcut_registration_status(&self.telemetry)
+        };
+        let native_actions_available = self.runtime_role == crate::capture::desktop::RuntimeRole::Desktop;
+        let can_save = native_actions_available
+            && registration == "registered"
+            && !self.is_recording()
+            && !self.is_processing()
+            && !self.is_selecting();
         let permission_actions = [Permission::ScreenRecording, Permission::Microphone, Permission::Accessibility, Permission::Camera, Permission::SpeechRecognition]
             .into_iter().map(|permission| {
-                let actions = native_host_permission_actions(permission, self.onboarding.is_some());
+                let actions = if native_actions_available {
+                    native_host_permission_actions(permission, self.onboarding.is_some())
+                } else {
+                    Vec::new()
+                };
                 (permission_id(permission), actions)
             }).collect::<Vec<_>>();
         let fingerprint = format!("{}|{}|{}|{}|{}|{}|{:?}|{:?}|{:?}",
@@ -817,7 +891,7 @@ impl ApparentCoordinator {
             let value = serde_json::json!({"keyCode":cfg.key_code,"modifiers":cfg.carbon_modifiers,"label":cfg.label});
             let effective_value = serde_json::json!({"keyCode":effective.key_code,"modifiers":effective.carbon_modifiers,"label":effective.label});
             serde_json::json!({"configured":value,"effective":if observation.registration == "registered" { effective_value } else { serde_json::Value::Null },
-                "registration":observation.registration,"canValidate":true,"canSave":observation.can_save})
+                "registration":observation.registration,"canValidate":self.runtime_role == crate::capture::desktop::RuntimeRole::Desktop,"canSave":observation.can_save})
         };
         let permissions = [Permission::ScreenRecording, Permission::Microphone, Permission::Accessibility, Permission::Camera, Permission::SpeechRecognition]
             .into_iter().map(|permission| {
@@ -1091,6 +1165,10 @@ impl ApparentCoordinator {
 
     /// UI-thread snapshot for restart/termination admission, not just visible UI.
     pub(crate) fn capture_busy(&self) -> bool {
+        if NATIVE_CLIPBOARD_EFFECT_BUSY.load(std::sync::atomic::Ordering::Acquire)
+            || NATIVE_PEN_EFFECT_BUSY.load(std::sync::atomic::Ordering::Acquire) {
+            return true;
+        }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         if self.agent_capture_id.is_some() {
             return true;
@@ -1251,6 +1329,16 @@ impl ApparentCoordinator {
         event: crate::capture::desktop::settings::onboarding::Event,
         cx: &mut Context<Self>,
     ) {
+        if self.runtime_role == crate::capture::desktop::RuntimeRole::NativeHostOnly {
+            if let crate::capture::desktop::settings::onboarding::Event::Grants(grants) = event
+                && self.grants.as_ref() != Some(&grants)
+            {
+                self.grants = Some(grants);
+                self.native_host_revision = self.native_host_revision.saturating_add(1);
+                NATIVE_HOST_REVISION_FOR_WORKER.store(self.native_host_revision, std::sync::atomic::Ordering::Release);
+            }
+            return;
+        }
         use crate::capture::desktop::settings::onboarding::{Effect, Event, Progress};
         let effect = match event {
             Event::Launch(grants) => {
@@ -1462,6 +1550,7 @@ impl ApparentCoordinator {
 
     /// The capture shortcut went down (from Carbon, the event tap or the HID poller).
     pub fn press_shortcut(&mut self, cx: &mut Context<Self>) {
+        if !self.legacy_capture_admitted() { return; }
         let activity = self.activity();
         if self.gate.is_pending() {
             return;
@@ -1546,6 +1635,7 @@ impl ApparentCoordinator {
 
     /// The menu's Record Screen item, the review window's Record button and `app --record`.
     pub fn record_or_finish(&mut self, cx: &mut Context<Self>) {
+        if !self.legacy_capture_admitted() { return; }
         if self.is_recording() {
             self.finish_recording(cx);
         } else if self.is_selecting() {
@@ -1557,6 +1647,7 @@ impl ApparentCoordinator {
 
     /// Records the display under the cursor straight away (no picker), auto-cropped.
     pub fn record_screen_now(&mut self, cx: &mut Context<Self>) {
+        if !self.legacy_capture_admitted() { return; }
         let target = if self.lab {
             lab::target()
         } else {
@@ -1572,6 +1663,55 @@ impl ApparentCoordinator {
 #[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
 mod native_pen_snapshot_tests {
     use super::*;
+
+    #[test]
+    fn native_host_only_requires_strong_incarnation() {
+        use crate::capture::desktop::RuntimeRole;
+        assert_eq!(native_host_process_epoch(RuntimeRole::NativeHostOnly, None), "");
+        assert_eq!(native_host_process_epoch(RuntimeRole::NativeHostOnly, Some("nonce".into())), "nonce");
+        assert_eq!(native_host_process_epoch(RuntimeRole::Desktop, None), format!("process-{}", std::process::id()));
+    }
+
+    #[test]
+    fn native_host_only_refuses_gui_mutations_without_observing_config() {
+        use crate::capture::desktop::RuntimeRole;
+        use crate::capture::desktop::workflow::native_host::{Admitted, Operation, Shortcut, ExpectedPenColor};
+        let (sender, _receiver) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        let mut coordinator = ApparentCoordinator::new_with_role(telemetry, None, RuntimeRole::NativeHostOnly);
+        coordinator.native_host_epoch = "native-host-only-test".into();
+        assert!(!coordinator.legacy_capture_admitted());
+        assert!(!coordinator.capture_busy());
+        // A terminal signal must drain an admitted clipboard worker even when
+        // its caller has timed out; visible capture state alone is insufficient.
+        struct RestoreClipboardBusy(bool);
+        impl Drop for RestoreClipboardBusy {
+            fn drop(&mut self) {
+                NATIVE_CLIPBOARD_EFFECT_BUSY.store(self.0, std::sync::atomic::Ordering::Release);
+            }
+        }
+        let busy = RestoreClipboardBusy(NATIVE_CLIPBOARD_EFFECT_BUSY.swap(true, std::sync::atomic::Ordering::AcqRel));
+        assert!(coordinator.capture_busy());
+        drop(busy);
+        assert!(!coordinator.capture_busy());
+        for operation in [
+            Operation::RequestPermission("microphone".into()),
+            Operation::OpenSystemSettings("screen-recording".into()),
+            Operation::ValidateRecordShortcut("S".into(), 0),
+            Operation::SaveRecordShortcut(Shortcut { key_code: 1, modifiers: 0, label: "S".into() }),
+            Operation::ApplyStrokeColor(Some([1, 2, 3]), ExpectedPenColor { present: false, value: serde_json::Value::Null }),
+        ] {
+            let (reply, _receiver) = std::sync::mpsc::sync_channel(1);
+            let result = coordinator.native_host_request(&Admitted {
+                id: "refused-gui-effect".into(),
+                deadline: crate::capture::desktop::workflow::agent_capture::storage_clock_ms() + 1000,
+                expected: None, operation,
+            }, false, reply).unwrap();
+            assert_eq!(result, serde_json::json!({"status":"refused","reason":"unavailable"}));
+            assert_eq!(coordinator.native_host_revision, 0);
+            assert!(coordinator.native_host_fingerprint.is_none());
+        }
+    }
 
     #[test]
     fn read_stroke_color_returns_process_telemetry_without_changing_it() {

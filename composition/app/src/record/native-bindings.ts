@@ -1,8 +1,9 @@
 import { createNativeHostPort } from '@apparent/native-host';
 import { createNativePenPort } from '@apparent/native-host/pen';
-import { createNativeClipboardPort, MAX_UTF8_TEXT_BYTES } from '@apparent/native-host/clipboard';
+import { createNativeClipboardPort, createNativeClipboardTextReadbackPort, MAX_UTF8_TEXT_BYTES } from '@apparent/native-host/clipboard';
 import {
   createRecordLocalClipboardPort,
+  createRecordLocalClipboardTextReadbackPort,
   createRecordNativePort,
   createRecordPenConfigPort,
   type RecordLocalHandoffResolution,
@@ -16,15 +17,20 @@ export interface RecordNativeBindingOptions {
   resolveHandoff(identity: Readonly<{ captureId: string; artifactId: string }>): Promise<RecordLocalHandoffResolution | null>;
   /** The admitted executable and config path for Record's sole existing writer. */
   config: { executable: string; executableSha256: string; configPath: string };
+  /** Explicit proof contract; no automatic fallback between clipboard guarantees. */
+  clipboardProof?: 'ownership-readback' | 'submission-readback';
 }
 
-export interface RecordNativeBindings {
+interface SharedRecordNativeBindings {
   native: ReturnType<typeof createRecordNativePort>;
   penConfig: ReturnType<typeof createRecordPenConfigPort>;
-  clipboard: ReturnType<typeof createRecordLocalClipboardPort>;
   /** Closes only the config backend created by this binding. Safe to call repeatedly. */
   close(): Promise<void>;
 }
+export type RecordNativeBindings = SharedRecordNativeBindings & (
+  | { clipboard: ReturnType<typeof createRecordLocalClipboardPort>; clipboardTextReadback?: never }
+  | { clipboard?: never; clipboardTextReadback: ReturnType<typeof createRecordLocalClipboardTextReadbackPort> }
+);
 
 /**
  * Binds the public native/config producers to Record's public owner adapters.
@@ -36,13 +42,15 @@ export async function createRecordNativeBindings(options: RecordNativeBindingOpt
     || typeof options.resolveHandoff !== 'function' || !options.config
     || typeof options.config.executable !== 'string'
     || typeof options.config.executableSha256 !== 'string'
-    || typeof options.config.configPath !== 'string') {
+    || typeof options.config.configPath !== 'string'
+    || (options.clipboardProof !== undefined && !['ownership-readback', 'submission-readback'].includes(options.clipboardProof))) {
     throw new TypeError('Invalid Record native binding options');
   }
 
   // Snapshot all caller-controlled values before config setup yields.
   const requiredPermissionIds = Object.freeze([...options.requiredPermissionIds]);
   const resolveHandoff = options.resolveHandoff;
+  const clipboardProof = options.clipboardProof ?? 'ownership-readback';
   const configOptions = Object.freeze({
     executable: options.config.executable,
     executableSha256: options.config.executableSha256,
@@ -51,25 +59,23 @@ export async function createRecordNativeBindings(options: RecordNativeBindingOpt
 
   const nativeHost = createNativeHostPort();
   const nativePen = createNativePenPort();
-  const clipboardProducer = createNativeClipboardPort();
 
   let config: Awaited<ReturnType<typeof createRecordPenColorConfig>> | undefined;
   try {
     config = await createRecordPenColorConfig(configOptions);
     const native = createRecordNativePort(nativeHost, { requiredPermissionIds });
     const penConfig = createRecordPenConfigPort({ config, nativePen, nativeHost });
-    const clipboard = createRecordLocalClipboardPort({
-      clipboard: clipboardProducer,
-      nativeHost,
-      resolveHandoff,
-      maximumTextBytes: MAX_UTF8_TEXT_BYTES,
-    });
+    const clipboardPorts = clipboardProof === 'submission-readback'
+      ? { clipboardTextReadback: createRecordLocalClipboardTextReadbackPort({ clipboard: createNativeClipboardTextReadbackPort(),
+          nativeHost, resolveHandoff, maximumTextBytes: MAX_UTF8_TEXT_BYTES }) }
+      : { clipboard: createRecordLocalClipboardPort({ clipboard: createNativeClipboardPort(),
+          nativeHost, resolveHandoff, maximumTextBytes: MAX_UTF8_TEXT_BYTES }) };
 
     let closing: Promise<void> | undefined;
     return {
       native,
       penConfig,
-      clipboard,
+      ...clipboardPorts,
       close() {
         closing ??= Promise.resolve().then(() => config!.close());
         return closing;

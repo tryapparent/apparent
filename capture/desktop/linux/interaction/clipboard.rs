@@ -29,8 +29,10 @@ struct VerifiedTextOwnerRequest {
     text: String,
     deadline: std::time::Instant,
     backend: VerifiedTextOwnerBackend,
-    reply: std::sync::mpsc::SyncSender<VerifiedTextWrite>,
+    readback: bool,
+    reply: std::sync::mpsc::SyncSender<VerifiedTextOwnerResult>,
 }
+enum VerifiedTextOwnerResult { Legacy(VerifiedTextWrite), Readback(VerifiedTextReadbackWrite) }
 
 fn with<T>(f: impl FnOnce(&mut arboard::Clipboard) -> Result<T, arboard::Error>) -> Result<T> {
     let mut slot = CLIPBOARD
@@ -519,6 +521,29 @@ pub enum VerifiedTextWrite {
     OutcomeUnknown,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VerifiedTextReadbackWrite { WrittenReadback, Unavailable, OutcomeUnknown }
+
+/// Distinct proof mode for the Record receipt: local write submission and exact readback.
+/// Wayland has no owner identity query, so this proves only the transient observation.
+pub fn set_text_readback_until(text: &str, deadline: std::time::Instant) -> VerifiedTextReadbackWrite {
+    if text.contains('\0') || text.len() > crate::capture::desktop::workflow::native_host::MAX_UTF8_TEXT_BYTES {
+        return VerifiedTextReadbackWrite::Unavailable;
+    }
+    if !native_wayland_clipboard() || std::time::Instant::now() >= deadline {
+        return VerifiedTextReadbackWrite::Unavailable;
+    }
+    let Some(display) = super::super::wayland_display() else { return VerifiedTextReadbackWrite::Unavailable; };
+    if clipboard_tool("wl-paste").is_none() || !owner_backend_ready() {
+        return VerifiedTextReadbackWrite::Unavailable;
+    }
+    let executable = match std::env::current_exe() { Ok(path) => path, Err(_) => return VerifiedTextReadbackWrite::Unavailable };
+    match submit_verified_text_owner(text, deadline, VerifiedTextOwnerBackend::Wayland(executable, display), true) {
+        VerifiedTextOwnerResult::Readback(result) => result,
+        _ => VerifiedTextReadbackWrite::OutcomeUnknown,
+    }
+}
+
 /// Writes through the existing clipboard backend and confirms both its owner and exact text.
 /// The text is never returned or logged. Unknown leaves whatever owner currently has the
 /// selection untouched.
@@ -544,7 +569,10 @@ pub fn set_text_verified_until(text: &str, deadline: std::time::Instant) -> Veri
     } else {
         VerifiedTextOwnerBackend::X11(executable)
     };
-    submit_verified_text_owner(text, deadline, backend)
+    match submit_verified_text_owner(text, deadline, backend, false) {
+        VerifiedTextOwnerResult::Legacy(result) => result,
+        _ => VerifiedTextWrite::OutcomeUnknown,
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -578,28 +606,30 @@ fn submit_verified_text_owner(
     text: &str,
     deadline: std::time::Instant,
     backend: VerifiedTextOwnerBackend,
-) -> VerifiedTextWrite {
+    readback: bool,
+) -> VerifiedTextOwnerResult {
     use std::sync::mpsc::{TrySendError, sync_channel};
 
     let Some(sender) = verified_text_owner_worker() else {
-        return VerifiedTextWrite::Unavailable;
+        return if readback { VerifiedTextOwnerResult::Readback(VerifiedTextReadbackWrite::Unavailable) } else { VerifiedTextOwnerResult::Legacy(VerifiedTextWrite::Unavailable) };
     };
     let (reply, receiver) = sync_channel(1);
     let request = VerifiedTextOwnerRequest {
         text: text.to_owned(),
         deadline,
         backend,
+        readback,
         reply,
     };
     match sender.try_send(request) {
         Ok(()) => {}
         Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => {
-            return VerifiedTextWrite::Unavailable;
+            return if readback { VerifiedTextOwnerResult::Readback(VerifiedTextReadbackWrite::Unavailable) } else { VerifiedTextOwnerResult::Legacy(VerifiedTextWrite::Unavailable) };
         }
     }
     receiver
         .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
-        .unwrap_or(VerifiedTextWrite::OutcomeUnknown)
+        .unwrap_or(if readback { VerifiedTextOwnerResult::Readback(VerifiedTextReadbackWrite::OutcomeUnknown) } else { VerifiedTextOwnerResult::Legacy(VerifiedTextWrite::OutcomeUnknown) })
 }
 
 /// The persistent owner lane spawns clipboard helpers from a thread that lives
@@ -624,20 +654,22 @@ fn verified_text_owner_loop(receiver: std::sync::mpsc::Receiver<VerifiedTextOwne
     let mut owner: Option<Child> = None;
     while let Ok(request) = receiver.recv() {
         let result = if std::time::Instant::now() >= request.deadline {
-            VerifiedTextWrite::Unavailable
+            if request.readback { VerifiedTextOwnerResult::Readback(VerifiedTextReadbackWrite::Unavailable) } else { VerifiedTextOwnerResult::Legacy(VerifiedTextWrite::Unavailable) }
         } else {
             match request.backend {
                 VerifiedTextOwnerBackend::X11(executable) => {
-                    set_text_x11_verified(&request.text, request.deadline, executable, &mut owner)
+                    if request.readback { VerifiedTextOwnerResult::Readback(VerifiedTextReadbackWrite::Unavailable) } else { VerifiedTextOwnerResult::Legacy(set_text_x11_verified(&request.text, request.deadline, executable, &mut owner)) }
                 }
                 VerifiedTextOwnerBackend::Wayland(executable, display) => {
-                    set_text_wayland_verified(
+                    if request.readback { VerifiedTextOwnerResult::Readback(set_text_wayland_readback(
+                        &request.text, request.deadline, executable, display, &mut owner,
+                    )) } else { VerifiedTextOwnerResult::Legacy(set_text_wayland_verified(
                         &request.text,
                         request.deadline,
                         executable,
                         display,
                         &mut owner,
-                    )
+                    )) }
                 }
             }
         };
@@ -747,35 +779,49 @@ fn set_text_wayland_verified(
     display: std::ffi::OsString,
     owner: &mut Option<Child>,
 ) -> VerifiedTextWrite {
-    if std::time::Instant::now() >= deadline { return VerifiedTextWrite::Unavailable; }
+    match set_text_wayland_readback(text, deadline, executable, display, owner) {
+        VerifiedTextReadbackWrite::Unavailable => VerifiedTextWrite::Unavailable,
+        // Even exact transient readback does not establish Wayland ownership.
+        _ => VerifiedTextWrite::OutcomeUnknown,
+    }
+}
+
+fn set_text_wayland_readback(
+    text: &str,
+    deadline: std::time::Instant,
+    executable: std::path::PathBuf,
+    display: std::ffi::OsString,
+    owner: &mut Option<Child>,
+) -> VerifiedTextReadbackWrite {
+    set_text_wayland_readback_with(text, deadline, executable, display, owner,
+        |mime, bytes| still_ours_until(mime, bytes, deadline))
+}
+
+fn set_text_wayland_readback_with(
+    text: &str,
+    deadline: std::time::Instant,
+    executable: std::path::PathBuf,
+    display: std::ffi::OsString,
+    owner: &mut Option<Child>,
+    readback: impl FnMut(&str, &[u8]) -> Result<bool>,
+) -> VerifiedTextReadbackWrite {
+    if std::time::Instant::now() >= deadline { return VerifiedTextReadbackWrite::Unavailable; }
     let entries = vec![("text/plain;charset=utf-8".to_owned(), text.as_bytes().to_vec())];
-    let child = match copy_multi_wayland_checked(
-        &entries,
-        executable,
-        display,
+    let mut child = match copy_multi_wayland_checked(
+        &entries, executable, display,
         deadline.saturating_duration_since(std::time::Instant::now()),
-        |mime, bytes| still_ours_until(mime, bytes, deadline),
+        readback,
     ) {
         Ok(child) => child,
-        Err(_) => return VerifiedTextWrite::OutcomeUnknown,
+        Err(_) => return VerifiedTextReadbackWrite::OutcomeUnknown,
     };
-    if std::time::Instant::now() >= deadline {
+    if std::time::Instant::now() >= deadline || !matches!(child.try_wait(), Ok(None)) {
         let mut child = child;
         stop_owner(&mut child);
-        return VerifiedTextWrite::OutcomeUnknown;
+        return VerifiedTextReadbackWrite::OutcomeUnknown;
     }
-    let mut child = child;
-    if !matches!(child.try_wait(), Ok(None)) {
-        stop_owner(&mut child);
-        return VerifiedTextWrite::OutcomeUnknown;
-    }
-    if let Some(mut previous) = owner.replace(child) {
-        stop_owner(&mut previous);
-    }
-    // Wayland has no supported selection-owner identity query. The owner helper's READY event
-    // proves acquisition and wl-paste proves bytes, but an identical-content foreign owner can
-    // replace it before the helper processes the loss event. Never upgrade that to Applied.
-    wayland_verified_result(true, true)
+    if let Some(mut previous) = owner.replace(child) { stop_owner(&mut previous); }
+    VerifiedTextReadbackWrite::WrittenReadback
 }
 
 fn x11_write_confirmed(owner_before: Option<u32>, exact_readback: bool, owner_after: Option<u32>, pid: u32) -> bool {
@@ -1031,6 +1077,35 @@ mod tests {
         std::fs::write(&executable, format!("#!/bin/sh\n{script}\n")).unwrap();
         std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
         (root, executable)
+    }
+
+    #[test]
+    fn text_readback_requires_submission_and_exact_observation_and_retains_one_owner() {
+        let (root, executable) = owner_fixture("cat >/dev/null; printf 'READY\\n'; exec sleep 5");
+        let mut owner = None;
+        let result = set_text_wayland_readback_with("synthetic text", std::time::Instant::now() + std::time::Duration::from_secs(1),
+            executable, "unused-test-display".into(), &mut owner, |mime, bytes| {
+                assert_eq!(mime, "text/plain;charset=utf-8");
+                assert_eq!(bytes, b"synthetic text");
+                Ok(true)
+            });
+        assert_eq!(result, VerifiedTextReadbackWrite::WrittenReadback);
+        assert!(owner.as_mut().unwrap().try_wait().unwrap().is_none());
+        stop_owner(owner.as_mut().unwrap());
+        assert_eq!(wayland_verified_result(true, true), VerifiedTextWrite::OutcomeUnknown);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn text_readback_missing_ack_or_nonmatching_selection_stays_unknown_and_reaps_helper() {
+        for (script, matches) in [("exit 17", true), ("cat >/dev/null; printf 'READY\\n'; exec sleep 5", false)] {
+            let (root, executable) = owner_fixture(script);
+            let mut owner = None;
+            assert_eq!(set_text_wayland_readback_with("synthetic text", std::time::Instant::now() + std::time::Duration::from_millis(100),
+                executable, "unused-test-display".into(), &mut owner, |_, _| Ok(matches)), VerifiedTextReadbackWrite::OutcomeUnknown);
+            assert!(owner.is_none());
+            std::fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[cfg(unix)]

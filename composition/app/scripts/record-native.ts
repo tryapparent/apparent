@@ -17,6 +17,8 @@ export interface RecordNativeArtifacts {
   capture: AdmittedRecordArtifact;
   media: AdmittedRecordArtifact;
   config: AdmittedRecordArtifact;
+  /** This candidate's source-built, reviewed adapter-only root GUI closure. */
+  gui?: { path: string; sha256: string; executableSha256: string; sourceSha: string };
 }
 
 async function bytes(path: string, maximum: number): Promise<{ data: Buffer; mode: number }> {
@@ -91,6 +93,21 @@ export async function stageRecordNative(output: string, input: RecordNativeArtif
       assert(total <= 512 * 1024 * 1024, 'Native Record closure exceeds assembly limit');
       staged.push({ path: `native-record/${slot}/${file.path}`, data, mode: file.mode as 0o644 | 0o755 });
     }
+  }
+  if (inputs.gui) {
+    const gui = inputs.gui;
+    assert(isAbsolute(gui.path) && /^[a-f0-9]{64}$/.test(gui.sha256)
+      && /^[a-f0-9]{64}$/.test(gui.executableSha256) && /^[a-f0-9]{40}$/.test(gui.sourceSha), 'Invalid GUI closure identity');
+    const snapshot = await bytes(gui.path, 512 * 1024 * 1024);
+    assert.equal(digest(snapshot.data), gui.sha256, 'GUI AppImage checksum mismatch');
+    assert.equal(snapshot.mode, 0o755, 'GUI AppImage must be executable');
+    const manifest = Buffer.from(JSON.stringify({ schema: 1, sourceSha: gui.sourceSha,
+      entry: 'Apparent.AppImage', sha256: gui.sha256, executableSha256: gui.executableSha256,
+      role: 'native-host-only' }) + '\n');
+    total += snapshot.data.length + manifest.length;
+    assert(total <= 1024 * 1024 * 1024, 'Complete desktop native closure exceeds assembly limit');
+    staged.push({ path: 'native-record/gui/Apparent.AppImage', data: snapshot.data, mode: 0o755 },
+      { path: 'native-record/gui/manifest.json', data: manifest, mode: 0o644 });
   }
   // Refuse an existing destination. No partial native closure is published on validation failure.
   await mkdir(join(output, 'native-record'));

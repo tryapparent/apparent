@@ -1,0 +1,9 @@
+{
+  "package": "@apparent/native-host",
+  "version": "0.1.0",
+  "sourceSha": "c949f4b7e7d575ec10ca2be93530823c46995ce7",
+  "admission": "source-reviewed local compiled-package candidate; production native GUI artifact and OS-effect qualification pending",
+  "checks": "Strict typecheck, 22 source and installed socket tests, ordinary scripts-enabled headless paired-tar install with compiler/native tools denied",
+  "usage": "Compile and pinned package preparation only; written-readback means local submission acceptance plus exact independent matching bytes, not compositor acquisition/origin/ownership/paste.",
+  "packageSha256": "2a29f8cec7f8d7cf821399b793873178d363df3486841911b6da9d4eea65640e"
+}
