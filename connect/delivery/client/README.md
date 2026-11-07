@@ -664,6 +664,18 @@ carries the root identity, nonce and cancellation facts required by the identity
 publisher; uncertain outcomes return no usable begun receipt. Native Linux tests
 join both phases and exercise real queue waits across cancellation/revocation.
 
+The internal `assertLoginStateCurrent` consumes that receipt under one queue
+lease, checking the original root, scoped marker, cancellation and pending intent
+without changing JSON state. `createStateBackedDeviceLoginTransport` binds it to
+the private session's request and commit boundaries, along with the host's fresh
+consent/settings check outside the queue lease. The published identity result
+must name the receipt's login. Native Linux tests join real marker/identity
+publication with compiled device HTTP and a memory-only commit sink, including
+supersession, cancellation, intent, root replacement and late commit fences.
+Queue access remains available during HTTP. This does not grant a durable write
+lease: the eventual host commit must repeat its checks inside the sole-writer
+transaction, and config publication and installed adoption remain outstanding.
+
 The internal `publishLoginIdentity` seam privately publishes a supplied record
 only when its original root, scope/login marker, cancellation epoch and current
 queue lease still match and no revocation intent is pending. It uses expected-absent replacement,
@@ -678,6 +690,19 @@ full login publication and coordinated writer adoption remain separate gates.
 
 
 ## Anonymous device protocol transport
+
+The internal `createDeviceLoginTransport` joins the existing device policy and
+HTTP ports into one private session. It binds polls to the started code, retains
+the original poll issue time, and consumes approval before one host commit
+attempt. Its 15-minute lifetime includes idle time before start. Disposal aborts
+requests; cancellation or a lost host fence after possible commit effects returns
+`unverified-commit`. The host must implement the injected current-login fence
+and credential/config commit under the sole-writer protocol. Neither shapes nor
+this adapter establish consent, durable identity linkage or installed authority.
+The compiled local Worker fixture exercises both scopes/API mounts with synthetic
+fences and a memory-only commit sink. Disposal drops private references, without
+claiming erasure of immutable strings. Callbacks that ignore cancellation remain
+awaited and responsible for their effects; no uncertain commit is retried.
 
 The internal `prepareLoginCredential` validates a private approved reply into a
 frozen stored-credential proposal. It pins the caller-approved API, separate
