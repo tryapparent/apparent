@@ -61,6 +61,7 @@ fn atoms(file: &File, mut at: u64, end: u64) -> Result<Vec<Atom>> {
     }
     Ok(out)
 }
+#[cfg(feature = "publication")]
 fn child(file: &File, parent: Atom, kind: &[u8; 4]) -> Result<Atom> {
     let matches: Vec<_> = atoms(file, parent.start, parent.end)?
         .into_iter()
@@ -469,7 +470,7 @@ fn validate_fragment(
     Ok(time)
 }
 
-fn validate_fragmented_movie(file: &File, top: &[Atom]) -> Result<()> {
+fn validate_fragmented_movie(file: &File, top: &[Atom]) -> Result<u64> {
     ensure!(
         top.len() >= 4 && top[0].kind == *b"ftyp" && top[1].kind == *b"moov",
         "invalid fragmented movie initialization segment"
@@ -496,7 +497,7 @@ fn validate_fragmented_movie(file: &File, top: &[Atom]) -> Result<()> {
         moov.end - moov.start <= FRAGMENT_METADATA_BUDGET,
         "fragment initialization metadata exceeds budget"
     );
-    let (track_id, _timescale) = fragmented_track(file, moov, &mut budget)?;
+    let (track_id, timescale) = fragmented_track(file, moov, &mut budget)?;
     let mut expected_decode_time = 0;
     let fragment_count = (top.len() - 2) / 2;
     ensure!(
@@ -518,17 +519,39 @@ fn validate_fragmented_movie(file: &File, top: &[Atom]) -> Result<()> {
             &mut budget,
         )?;
     }
-    Ok(())
+    expected_decode_time
+        .checked_mul(1000)
+        .and_then(|value| value.checked_add(u64::from(timescale) - 1))
+        .map(|value| value / u64::from(timescale))
+        .context("fragmented movie duration overflow")
 }
 
+/// Complete duration for the supported native fragmented profile, not a provenance claim.
+/// GStreamer can initially report only its first fragment. Other formats retain their
+/// existing decoder path; matching bytes still undergo the full bounded fragment validation.
+#[cfg(all(target_os = "linux", feature = "linux-media"))]
+pub(crate) fn native_fragment_duration_ms(file: &File) -> Result<Option<u64>> {
+    if file.metadata()?.len() < 28 {
+        return Ok(None);
+    }
+    let header = read(file, 0, 28)?;
+    if &header[4..8] != b"ftyp" || &header[8..28] != b"iso5\x00\x00\x00\x01isomiso5hlsf" {
+        return Ok(None);
+    }
+    let top = atoms(file, 0, file.metadata()?.len())?;
+    validate_fragmented_movie(file, &top).map(Some)
+}
+
+#[cfg(feature = "publication")]
 pub fn validate_movie(file: &File) -> Result<()> {
     let top = atoms(file, 0, file.metadata()?.len())?;
     if top.iter().any(|atom| atom.kind == *b"moof") {
-        return validate_fragmented_movie(file, &top);
+        return validate_fragmented_movie(file, &top).map(|_| ());
     }
     validate_completed_movie(file, &top)
 }
 
+#[cfg(feature = "publication")]
 fn validate_completed_movie(file: &File, top: &[Atom]) -> Result<()> {
     let moovs: Vec<_> = top.iter().filter(|a| &a.kind == b"moov").collect();
     ensure!(moovs.len() == 1, "movie has no unique completed moov");

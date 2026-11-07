@@ -163,3 +163,43 @@ fn fragmented_movie_rejects_incomplete_or_unsupported_structure() {
         );
     }
 }
+
+#[cfg(all(target_os = "linux", feature = "linux-media"))]
+#[test]
+fn native_fragment_fixture_decodes_and_seeks_through_pinned_linux_reader() {
+    use apparent_capture_engine::linux::media::PinnedVideoReader;
+    let file = File::open(format!(
+        "{}/tests/fixtures/fragmented.mp4",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    apparent_capture_engine::publication::validate_movie(&file).unwrap();
+    let reader = PinnedVideoReader::open(&file).unwrap();
+    assert_eq!(reader.duration_ms(), 1000);
+    for (requested, channel) in [(0, 0), (400, 1), (800, 2), (5000, 2)] {
+        let frame = reader.frame(requested, 64, 64 * 64 * 4).unwrap();
+        assert_eq!(
+            (frame.width, frame.height, frame.rgba.len()),
+            (64, 64, 64 * 64 * 4)
+        );
+        let center = &frame.rgba[(32 * 64 + 32) * 4..][..4];
+        assert!(
+            center[channel] > 140,
+            "missing channel {channel} at {requested}: {center:?}"
+        );
+        assert!(
+            center[..3]
+                .iter()
+                .enumerate()
+                .all(|(index, &value)| index == channel || value < 100)
+        );
+        assert_eq!(center[3], 255);
+        // The public derivative contract retains the decoder's observed PTS, including
+        // edit-list/B-frame offsets; it is not normalized to the container's first PTS.
+        eprintln!(
+            "native fragment seek requested={requested} decoder_pts={} duration={}",
+            frame.t_ms,
+            reader.duration_ms()
+        );
+    }
+}
