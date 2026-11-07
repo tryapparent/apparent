@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "id": "platform-native-host",
+  "kind": "directory",
+  "package": "composition/native-host/delivery",
+  "inputs": [
+    ".cargo/", ".githooks/", ".github/", "agent/", "capture/", "composition/",
+    "connect/", "enablement/", "engine/", "hermes/", "onboarding/", "public/",
+    "record/", "shared/"
+  ],
+  "files": [
+    "AGENTS.md", "CONTRIBUTING.md", "Cargo.lock", "Cargo.toml", "LICENSE",
+    "README.md", "build.rs", "main.rs", ".gitignore"
+  ],
+  "verify": ["verify"],
+  "build": "build",
+  "targets": ["linux-x64", "macos-x64"],
+  "stage": "development-app",
+  "language": "native",
+  "artifactPath": "dist"
+}
