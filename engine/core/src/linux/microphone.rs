@@ -60,6 +60,58 @@ fn local_pulse_server(runtime: &std::path::Path) -> Result<String> {
     ))
 }
 
+/// Backend support only: no source selection, input open, audio samples or daemon
+/// autospawn. Actual input/timestamp readiness is still required by start_inner.
+pub fn default_source_available() -> bool {
+    let Some(runtime) = std::env::var_os("XDG_RUNTIME_DIR") else {
+        return false;
+    };
+    gst::init().is_ok()
+        && ["pulsesrc", "audioconvert", "audioresample", "appsink"]
+            .iter()
+            .all(|name| gst::ElementFactory::find(name).is_some())
+        && local_pulse_server(std::path::Path::new(&runtime))
+            .and_then(|server| probe_local_server(&server))
+            .is_ok()
+}
+
+fn probe_local_server(server: &str) -> Result<()> {
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+    let path = server
+        .strip_prefix("unix:")
+        .context("Not a local Pulse server")?;
+    let mut address: libc::sockaddr_un = unsafe { std::mem::zeroed() };
+    anyhow::ensure!(
+        path.len() < address.sun_path.len(),
+        "Pulse socket path bound"
+    );
+    address.sun_family = libc::AF_UNIX as libc::sa_family_t;
+    for (to, from) in address.sun_path.iter_mut().zip(path.bytes()) {
+        *to = from as libc::c_char;
+    }
+    let raw = unsafe {
+        libc::socket(
+            libc::AF_UNIX,
+            libc::SOCK_STREAM | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
+            0,
+        )
+    };
+    anyhow::ensure!(raw >= 0, "Pulse probe socket unavailable");
+    let socket = unsafe { OwnedFd::from_raw_fd(raw) };
+    let length = std::mem::offset_of!(libc::sockaddr_un, sun_path) + path.len() + 1;
+    if unsafe {
+        libc::connect(
+            socket.as_raw_fd(),
+            (&address as *const libc::sockaddr_un).cast(),
+            length as libc::socklen_t,
+        )
+    } != 0
+    {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(())
+}
+
 impl Stream {
     pub fn start(name: &str, on_samples: impl Fn(&[f32]) + Send + Sync + 'static) -> Result<Self> {
         Self::start_inner(Some(name), None, None, move |samples, _| {
@@ -260,6 +312,7 @@ mod local_server_tests {
             local_pulse_server(&root).unwrap(),
             format!("unix:{}", pulse.join("native").display())
         );
+        probe_local_server(&local_pulse_server(&root).unwrap()).unwrap();
         std::fs::set_permissions(&pulse, std::fs::Permissions::from_mode(0o777)).unwrap();
         assert!(local_pulse_server(&root).is_err());
         std::fs::set_permissions(&pulse, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -267,6 +320,27 @@ mod local_server_tests {
         symlink(pulse.join("held"), pulse.join("native")).unwrap();
         assert!(local_pulse_server(&root).is_err());
         drop(socket);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn support_probe_refuses_a_stale_socket_and_never_selects_or_reads_input() {
+        let root = std::env::temp_dir().join(format!("pulse-probe-{}", crate::new_id().unwrap()));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let path = root.join("native");
+        let listener = UnixListener::bind(&path).unwrap();
+        let server = format!("unix:{}", path.display());
+        probe_local_server(&server).unwrap();
+        let (mut peer, _) = listener.accept().unwrap();
+        peer.set_read_timeout(Some(std::time::Duration::from_millis(100)))
+            .unwrap();
+        let mut bytes = [0u8; 1];
+        assert_eq!(std::io::Read::read(&mut peer, &mut bytes).unwrap(), 0);
+        drop((peer, listener));
+        assert!(probe_local_server(&server).is_err());
+        assert!(probe_local_server("tcp:remote-server").is_err());
+        assert!(probe_local_server(&format!("unix:/{}", "x".repeat(108))).is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 }

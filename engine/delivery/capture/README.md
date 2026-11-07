@@ -25,6 +25,35 @@ library names; the closed package seeds ELF closure inspection from every listed
 runtime/module as well as the worker and media plugins. It contains no model and
 does not load a recognizer during build or capture readiness.
 
+The unmerged voice qualification candidate makes the ordinary SDK microphone
+request reachable without another protocol or a handshake override. Its support
+bits require screen readiness, the explicit fixed `localSpeech` profile, an
+absolute no-follow regular model source matching the native size/owner/mode/link
+rules, all four audio plugin factories, and a successful nonblocking connection
+to the existing owned private local Pulse socket. This probe sends no protocol
+bytes, selects no source, opens no microphone and never spawns a server.
+These are configured implementation-support checks, not a capture grant or
+successful inference claim. They do not read/hash/load model bytes in the RPC
+loop: actual execution still requires the expected-SHA write-sealed snapshot,
+first real timed PCM, checked original WAV, and bounded native transcription.
+Missing/changed input or a same-sized wrong model must fail honestly at execution;
+no facts are manufactured from the support bits. Released main remains false
+until this candidate passes its pre-merge native qualification.
+
+Qualification uses the ordinary unchanged SDK and explicit screen+microphone
+intent in one reviewed isolated synthetic guest. CI supplies an existing owned
+silent Pulse loopback input and the pinned731357568B model (SHA
+`4b50b6dd862bf6e346929aaf4f5eaacec003bfa3f56462d6c874b41ef2f38795`),
+with no host microphone or implicit download. Preserve real source PTS/admission
+mapping, real sample order/count, the single declared initial zero gap, no internal
+fill, original WAV/transcript/stroke seals before immutable revision, cancellation
+and child reaping. Native word/segment times remain bundle-clock milliseconds;
+Record must not shift them again. Collected-empty needs positive completion and
+is different from unavailable. Platform's registered Shift/Board source and
+ordinary Saved/Copy/Agent path still need joined native proof; neither this probe
+nor a model filename qualifies them. Final live absence/ACK belongs in that
+coherent next case, not another historical silent cold retry.
+
 Capture/2's supported retained-material path is
 `<canonical-private-runtime>/capture-v2/materials/<original-captureId>`.
 SDK0.4.4's public `capture2MaterialsRoot(runtimeDirectory, captureId)` derives this

@@ -39,6 +39,34 @@ fn readonly(fd: RawFd) -> Result<File, &'static str> {
 pub fn configured() -> bool {
     std::env::var(PROFILE_ENV).as_deref() == Ok(PROFILE) && std::env::var_os(MODEL_ENV).is_some()
 }
+
+fn model_source(path: &Path) -> Result<File, &'static str> {
+    if !path.is_absolute() {
+        return Err("unavailable");
+    }
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
+        .open(path)
+        .map_err(|_| "unavailable")?;
+    let meta = file.metadata().map_err(|_| "unavailable")?;
+    if !meta.is_file()
+        || meta.len() != MODEL_BYTES
+        || meta.nlink() != 1
+        || (meta.uid() != unsafe { libc::geteuid() } && meta.uid() != 0)
+        || meta.mode() & 0o022 != 0
+    {
+        return Err("unavailable");
+    }
+    Ok(file)
+}
+
+/// Cheap configured-input support check, not a model load or byte attestation.
+/// Expected SHA verification remains mandatory on the immutable child snapshot.
+pub fn configured_source_available() -> bool {
+    configured()
+        && std::env::var_os(MODEL_ENV).is_some_and(|path| model_source(Path::new(&path)).is_ok())
+}
 pub fn transcribe(
     shared: &Shared,
     audio: &audio::Completed,
@@ -53,17 +81,7 @@ pub fn transcribe(
         return Err("unavailable");
     }
     let path = PathBuf::from(std::env::var_os(MODEL_ENV).ok_or("unavailable")?);
-    if !path.is_absolute() {
-        return Err("unavailable");
-    }
-    let model = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
-        .open(path)
-        .map_err(|_| "unavailable")?;
-    if !model.metadata().map_err(|_| "unavailable")?.is_file() {
-        return Err("unavailable");
-    }
+    let model = model_source(&path)?;
     let wav = readonly(audio.file.as_raw_fd())?;
     let m = wav.metadata().map_err(|_| "invalid_materials")?;
     if m.len() > MAX_WAV
@@ -291,6 +309,34 @@ pub fn child() -> Result<(), &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn configured_model_metadata_is_checked_without_loading_or_reading_its_bytes() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let root = std::env::temp_dir().join(format!("speech-support-{}", new_id().unwrap()));
+        fs::create_dir(&root).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
+        let path = root.join("model.bin");
+        assert!(model_source(&path).is_err());
+        let file = File::create(&path).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(model_source(&path).is_err());
+        // Sparse synthetic file: validates only bounded metadata. Native expected-
+        // hash verification would refuse these bytes, and no model is loaded here.
+        file.set_len(MODEL_BYTES).unwrap();
+        assert!(model_source(&path).is_ok());
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o666)).unwrap();
+        assert!(model_source(&path).is_err());
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        fs::hard_link(&path, root.join("hardlink")).unwrap();
+        assert!(model_source(&path).is_err());
+        fs::remove_file(root.join("hardlink")).unwrap();
+        symlink(&path, root.join("symlink")).unwrap();
+        assert!(model_source(&root.join("symlink")).is_err());
+        assert!(model_source(Path::new("relative-model")).is_err());
+        assert!(model_source(&root).is_err());
+        drop(file);
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn empty_is_distinct_from_unavailable_and_native_timing_is_never_clamped() {
         let empty =

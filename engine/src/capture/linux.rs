@@ -280,9 +280,9 @@ pub(super) fn worker(
         // drained the recorder pipeline.
         let (recorder, _native_source) = recording_start(&source, &movie, &shared, shared.epoch)?;
         let video_origin_ns = recorder.video_origin_ns().ok_or("invalid_materials")?;
-        // Public admission still refuses microphone requests until the exact
-        // runtime clock/seal/package qualification gate is closed. Keep its
-        // owner-local execution in this same lifecycle, not a second recorder.
+        // An explicit configured microphone request uses the SAME original
+        // lifecycle. First actual timed PCM and durable sealing remain required;
+        // advertised support does not turn missing input into recorded silence.
         let audio = if shared.journal.lock().map_err(|_| "internal")?.request["options"]["audio"]
             == "microphone"
         {
