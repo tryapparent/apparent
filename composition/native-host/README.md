@@ -131,3 +131,29 @@ The package build removes its own generated `dist` directory before compilation,
 refusing an output-directory symlink or non-directory. Packing verifies that
 only outputs from the current source files remain; ignored modules from a
 previous branch cannot enter the public tarball.
+
+## Privileged accepted-ink relay (source preparation)
+
+`@apparent/native-host/ink` exports `createNativeInkRelay` and the separate
+`NativeInkSourcePort` DTO. It requires an already identity-joined native source
+and an authenticated Engine ink sink; **there is no native source factory or
+installed drawing capability in this slice**. The source observations match the
+committed Engine contract `aa17795f` and [native source obligation](INK-SOURCE-V1.md).
+No renderer may supply this port, accepted events, geometry, tokens or timestamps.
+
+The relay joins the original capture/source and owned host incarnation, forwards
+native `eventsJson` bytes without reserialization, and ACKs the retained native
+batch only after a matching Engine receipt. A lost reply, digest/sequence change,
+ambiguous ACK or timeout latches unavailable; it never rebinds or automatically
+resends. Native input sealing resolves callback admission and drains callbacks
+into retained batches; Engine finish follows exact batch acknowledgement, including
+`finalSequence: null` only for genuine zero-batch completion. Accepted history is
+separate from Board's current stack and never proves surviving canvas pixels.
+
+Finish has one two-second monotonic deadline. Dispatch video Stop independently,
+concurrently with this drain; never put Stop behind it. A complete ingress finish
+is not an original material/Saved receipt, native effect qualification, permission,
+process exit or ownership clearance. Runtime SDK methods/artifact, actual native
+callback/geometry/clock source, fixed UI controls and affected native acceptance
+remain required before enabling or advertising drawing. Old snapshot ABI and
+existing native producers are unchanged.

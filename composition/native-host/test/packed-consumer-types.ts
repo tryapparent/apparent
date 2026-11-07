@@ -38,3 +38,12 @@ async function readbackContract(): Promise<NativeClipboardTextReadbackResult> {
   return readback.writeTextReadback('strict readback consumer', { processEpoch: snapshot.processEpoch, revision: snapshot.revision });
 }
 void readbackContract;
+
+// No live source is manufactured by importing the separate privileged relay.
+import { createNativeInkRelay, type NativeInkSourcePort, type NativeInkSink } from '@apparent/native-host/ink';
+function inkContract(source: NativeInkSourcePort, sink: NativeInkSink) {
+  return createNativeInkRelay({ source, sink,
+    original: { captureId: '1'.repeat(32), source: { id: 'original', generation: '2'.repeat(32) }, ownerToken: 'private' },
+    ownedHost: { processEpoch: 'observed', revision: 1, pid: 42, startTicks: '123' } });
+}
+void inkContract;

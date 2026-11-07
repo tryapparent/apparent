@@ -76,7 +76,7 @@ try {
   assert.equal((await lstat(installedHost)).isSymbolicLink(), false, 'host package must be installed from its tarball');
   assert.equal((await lstat(installedContracts)).isSymbolicLink(), false, 'contracts package must be installed from its tarball');
   const hostEntries = await readdir(installedHost);
-  assert.deepEqual(hostEntries.sort(), ['README.md', 'dist', 'package.json']);
+  assert.deepEqual(hostEntries.sort(), ['INK-SOURCE-V1.md', 'README.md', 'dist', 'package.json']);
   const hostPackage = JSON.parse(await readFile(join(installedHost, 'package.json'), 'utf8')) as Record<string, unknown>;
   assert.equal(hostPackage.dependencies, undefined, 'runtime package must not have a source-tree dependency');
   assert.equal((hostPackage.peerDependencies as Record<string, string>)['@apparent/app-contracts'], '0.1.0');
@@ -88,6 +88,9 @@ try {
   const runtimeSmoke = `
     import assert from 'node:assert/strict';
     import { createNativeHostPort } from '@apparent/native-host';
+    import { createNativeInkRelay, NATIVE_INK_LIMITS } from '@apparent/native-host/ink';
+    assert.equal(typeof createNativeInkRelay, 'function');
+    assert.equal(NATIVE_INK_LIMITS.batchBytes, 16384);
     import { createNativePenPort } from '@apparent/native-host/pen';
     import { createNativeClipboardPort, MAX_UTF8_TEXT_BYTES, MAX_SERIALIZED_FRAME_BYTES } from '@apparent/native-host/clipboard';
     assert.equal(MAX_UTF8_TEXT_BYTES, 21800);
@@ -143,10 +146,10 @@ try {
       appContracts: { path: 'packages/apparent-app-contracts-0.1.0.tgz', sha256: await digestFile(contractsTar) },
       nativeHost: { path: 'packages/apparent-native-host-0.1.0.tgz', sha256: await digestFile(nativeTar) },
     },
-    publicExports: ['@apparent/native-host', '@apparent/native-host/pen', '@apparent/native-host/clipboard'],
+    publicExports: ['@apparent/native-host', '@apparent/native-host/pen', '@apparent/native-host/clipboard', '@apparent/native-host/ink'],
     engineFloor: '>=22.18',
     install: 'normal npm install from paired tarballs; scripts enabled; cargo/rustc/tsc/esbuild denied on PATH',
-    runtime: 'plain Node ESM import of root, pen, and clipboard; invalid and oversize refusal; no TS flags',
+    runtime: 'plain Node ESM import of root, pen, clipboard and injected ink relay; invalid and oversize refusal; no TS flags',
     types: 'strict fresh consumer compile; no React ambient types',
     socketTests: 'complete client protocol suite against the installed compiled package',
   };
