@@ -332,3 +332,43 @@ mod tests {
         assert_eq!(vk_for_evdev_code(code::KEY_LEFTSHIFT), None);
     }
 }
+
+/// Read-only modifier observations for one admitted native ink source. Unlike
+/// `start`, this owns no global reader or shortcut state; dropping closes all
+/// selected keyboard descriptors after its owning collector is joined.
+pub(crate) struct NativeInkKeyboard {
+    devices: Vec<(OwnedFd, u64, u64)>,
+}
+impl NativeInkKeyboard {
+    pub(crate) fn open() -> Result<Self, &'static str> {
+        use std::os::unix::fs::MetadataExt;
+        let mut devices=Vec::new();
+        for path in event_devices() {
+            let fd=open(&path).ok_or("keyboard-unavailable")?;
+            let bits=key_bits(&fd).ok_or("keyboard-unavailable")?;
+            if !has_key(&bits,code::KEY_LEFTSHIFT) && !has_key(&bits,code::KEY_RIGHTSHIFT) { continue; }
+            if devices.len()>=32 { return Err("keyboard-bound"); }
+            let meta=std::fs::metadata(format!("/proc/self/fd/{}",fd.as_raw_fd())).map_err(|_|"keyboard-unavailable")?;
+            devices.push((fd,meta.dev(),meta.ino()));
+        }
+        if devices.is_empty() { return Err("keyboard-unavailable"); }
+        Ok(Self { devices })
+    }
+    /// shift/control/alt/super only. Ordinary typed keys are not retained.
+    pub(crate) fn modifiers(&self) -> Result<[bool;4], &'static str> {
+        use std::os::unix::fs::MetadataExt;
+        let mut result=[false;4];
+        for (fd,dev,ino) in &self.devices {
+            let meta=std::fs::metadata(format!("/proc/self/fd/{}",fd.as_raw_fd())).map_err(|_|"keyboard-unavailable")?;
+            if meta.dev()!=*dev || meta.ino()!=*ino { return Err("keyboard-changed"); }
+            let mut bits=[0u8;96];
+            // EVIOCGKEY: current native modifier state, not pointer geometry.
+            let request=(2_u64<<30)|(96_u64<<16)|(u64::from(b'E')<<8)|0x18;
+            if unsafe { libc::ioctl(fd.as_raw_fd(),request as _,bits.as_mut_ptr()) }<0 { return Err("keyboard-unavailable"); }
+            for (i,codes) in [[code::KEY_LEFTSHIFT,code::KEY_RIGHTSHIFT],[code::KEY_LEFTCTRL,code::KEY_RIGHTCTRL],[code::KEY_LEFTALT,code::KEY_RIGHTALT],[code::KEY_LEFTMETA,code::KEY_RIGHTMETA]].iter().enumerate() {
+                result[i] |= codes.iter().any(|&code|has_key(&bits,code));
+            }
+        }
+        Ok(result)
+    }
+}

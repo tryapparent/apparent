@@ -736,6 +736,14 @@ pub(crate) fn ink_output_rect(name: &str) -> Option<[f64; 4]> {
         .then_some([m.x, m.y, m.width, m.height])
 }
 
+/// Actual compositor pointer observation for the already joined single scale1
+/// output. Never use an absolute point reconstructed from Held key facts.
+pub(crate) fn ink_pointer(name: &str, expected: [f64;4]) -> Option<[f64;2]> {
+    if ink_output_rect(name)? != expected { return None; }
+    let cursor: CursorPos=serde_json::from_str(&request("j/cursorpos").ok()?).ok()?;
+    (cursor.x.is_finite() && cursor.y.is_finite()).then_some([cursor.x,cursor.y])
+}
+
 /// Override-redirect surfaces are placed in compositor layout units on Hyprland.
 /// Keep this separate from the X output rectangle used by telemetry and capture.
 pub fn overlay_rect(name: &str) -> Option<[f64; 4]> {
