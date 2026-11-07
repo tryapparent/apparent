@@ -34,6 +34,9 @@ node --experimental-strip-types "$root/capture/desktop/scripts/linux/appimage/pa
 rm -rf "$appdir"
 python3 "$root/capture/desktop/scripts/packaging/stage-settings.py" "$appdir/usr/share/apparent/settings" \
   --popups-destination "$appdir/usr/lib/apparent/note-ui"
+# Copies preserve cached frontend modes. Normalize only this freshly recreated
+# distribution tree; recursive chmod ignores symlinks encountered within it.
+chmod -R a+rX "$appdir"
 
 multiarch="$(gcc -print-multiarch 2>/dev/null || echo "$arch-linux-gnu")"
 export GSTREAMER_PLUGINS_DIR="/usr/lib/$multiarch/gstreamer-1.0"
