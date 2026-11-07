@@ -42,7 +42,7 @@ export async function createRecordHostServices({profilePath}) {
   const backend = process.platform === 'darwin' ? 'appkit' : 'x11';
   const identity = identifyHiddenControlSurface(surface,backend);
   const stable = identity === identifyHiddenControlSurface(surface,backend);
-  globalThis.__surfaceProof = {surface,identify:()=>identifyHiddenControlSurface(surface,backend)};
+  globalThis.__surfaceProof = {surface,identify:(target=surface)=>identifyHiddenControlSurface(target,backend)};
   await writeFile(join(profilePath,'identity.json'),JSON.stringify({identity,stable,hidden:!surface.isVisible(),frozen:Object.isFrozen(identity)&&Object.isFrozen(identity.owner)&&Object.isFrozen(identity.owner.incarnation)&&Object.isFrozen(identity.window)}));
   const fixture = createRecordFixture('unsubscribe-during-recording');
   return {record:fixture.client,async canClose(){return true;},async close(){if(!surface.isDestroyed())surface.destroy();}};
@@ -98,4 +98,18 @@ export async function createRecordHostServices({profilePath}) {
   });
   assert.equal(destroyedRefusal, true);
   if (process.platform === 'linux') await assert.rejects(run('xwininfo', ['-id', String(identity.window.id)]));
+  const replacement = await application.evaluate(async ({ BrowserWindow }) => {
+    const previous = (globalThis as any).__surfaceProof;
+    const surface = new BrowserWindow({ show: false,
+      webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true } });
+    try {
+      await surface.loadURL('about:blank');
+      // The trusted fixture retains the same production observer for this owner.
+      return previous.identify(surface);
+    } finally { surface.destroy(); }
+  });
+  assert.equal(replacement.hostEpoch, identity.hostEpoch);
+  assert.deepEqual(replacement.owner, identity.owner);
+  assert.notEqual(replacement.surfaceId, identity.surfaceId);
+  assert(replacement.generation > identity.generation);
 });
