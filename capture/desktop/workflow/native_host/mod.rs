@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 // Internal callback retention only; no source factory, RPC or drawing route yet.
 #[allow(dead_code)]
 pub(crate) mod ink;
+#[cfg(target_os = "linux")]
+#[allow(dead_code)]
+pub(crate) mod ink_source;
 
 pub(crate) const MAX_SERIALIZED_FRAME_BYTES: usize = 131_072;
 pub(crate) const MAX_UTF8_TEXT_BYTES: usize = 21_800;

@@ -6,7 +6,8 @@
   "files": [
     "dist",
     "README.md",
-    "INK-SOURCE-V1.md"
+    "INK-SOURCE-V1.md",
+    "NATIVE-INK-CONTROLLER.md"
   ],
   "exports": {
     ".": {
@@ -34,7 +35,8 @@
     "pretypecheck": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test test/client.test.ts test/ink.test.ts",
-    "test:packed": "node --experimental-strip-types test/packed-consumer.ts"
+    "test:packed": "node --experimental-strip-types test/packed-consumer.ts",
+    "test:ink-sdk": "node --experimental-strip-types scripts/check-ink-sdk.ts"
   },
   "peerDependencies": {
     "@apparent/app-contracts": "0.1.0"

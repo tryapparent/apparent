@@ -726,6 +726,16 @@ fn place_overlay_once(xid: u32, rect: [f64; 4]) -> Result<()> {
     Ok(())
 }
 
+/// Exact single-output unrotated scale1 join for the native ink source.
+/// Do not infer scale/rotation from a same-sized layout rectangle.
+pub(crate) fn ink_output_rect(name: &str) -> Option<[f64; 4]> {
+    let layout: Vec<Monitor> = serde_json::from_str(&request("j/monitors").ok()?).ok()?;
+    if layout.len() != 1 { return None; }
+    let m = &layout[0];
+    (m.name == name && m.scale == 1.0 && m.transform == 0)
+        .then_some([m.x, m.y, m.width, m.height])
+}
+
 /// Override-redirect surfaces are placed in compositor layout units on Hyprland.
 /// Keep this separate from the X output rectangle used by telemetry and capture.
 pub fn overlay_rect(name: &str) -> Option<[f64; 4]> {

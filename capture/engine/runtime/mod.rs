@@ -1685,7 +1685,7 @@ fn track_shift_ink(
     track_shift_ink_observed(telemetry, (x, y), pure_shift, prev_shift_ink, None);
 }
 
-fn track_shift_ink_observed(
+pub(crate) fn track_shift_ink_observed(
     telemetry: &SharedCaptureTelemetry,
     (x, y): (f64, f64),
     pure_shift: bool,
