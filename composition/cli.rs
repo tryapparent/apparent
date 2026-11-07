@@ -237,6 +237,10 @@ enum Command {
         /// Start capturing the cabled iPhone immediately on launch.
         #[arg(long, conflicts_with = "record")]
         iphone: bool,
+        /// Run only the existing native-host adapter in the owned GPUI process.
+        #[cfg(target_os = "linux")]
+        #[arg(long, hide = true, conflicts_with_all = ["record", "iphone"])]
+        native_host_only: bool,
     },
     /// Inspect or manage Linux AppImage updates.
     #[cfg(target_os = "linux")]
@@ -615,8 +619,20 @@ enum LaunchHandlerCommand {
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn run_owned_app(record: bool, iphone: bool) -> Result<()> {
+fn run_owned_app(
+    record: bool,
+    iphone: bool,
+    role: crate::capture::desktop::RuntimeRole,
+) -> Result<()> {
+    ensure!(
+        role == crate::capture::desktop::RuntimeRole::Desktop || (!record && !iphone),
+        "native-host-only cannot start a capture"
+    );
     let Some(owner) = launch_instance::acquire()? else {
+        ensure!(
+            role == crate::capture::desktop::RuntimeRole::Desktop,
+            "Apparent is already running; native-host-only requires its own GUI owner"
+        );
         #[cfg(target_os = "linux")]
         if record {
             let deadline = std::time::Instant::now() + Duration::from_secs(3);
@@ -642,12 +658,14 @@ fn run_owned_app(record: bool, iphone: bool) -> Result<()> {
         "another Apparent GUI is running; update and restart it first"
     );
     owner.listen()?;
-    hosted::start_worker();
-    #[cfg(target_os = "linux")]
-    if let Err(error) = linux::update::record_running() {
-        eprintln!("Apparent could not record its running version in config: {error:#}");
+    if role == crate::capture::desktop::RuntimeRole::Desktop {
+        hosted::start_worker();
+        #[cfg(target_os = "linux")]
+        if let Err(error) = linux::update::record_running() {
+            eprintln!("Apparent could not record its running version in config: {error:#}");
+        }
     }
-    ui::run_app(None, record, iphone, None);
+    ui::run_app_with_role(None, record, iphone, None, role);
     Ok(())
 }
 
@@ -674,6 +692,8 @@ pub(crate) fn run() -> Result<()> {
         None => Command::App {
             record: false,
             iphone: false,
+            #[cfg(target_os = "linux")]
+            native_host_only: false,
         },
     };
     match command {
@@ -698,7 +718,7 @@ pub(crate) fn run() -> Result<()> {
             } else {
                 launch_instance::request_open();
             }
-            run_owned_app(false, false)
+            run_owned_app(false, false, crate::capture::desktop::RuntimeRole::Desktop)
         }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Capture { command } => {
@@ -746,21 +766,33 @@ pub(crate) fn run() -> Result<()> {
             );
             Ok(())
         }
-        Command::App { record, iphone } => {
+        Command::App { record, iphone, #[cfg(target_os = "linux")] native_host_only } => {
             #[cfg(target_os = "windows")]
             {
                 win::shell::release_own_console();
                 win::shell::wait_for_relauncher();
             }
+            #[cfg(target_os = "linux")]
+            let role = if native_host_only {
+                crate::capture::desktop::RuntimeRole::NativeHostOnly
+            } else {
+                crate::capture::desktop::RuntimeRole::Desktop
+            };
+            #[cfg(not(target_os = "linux"))]
+            let role = crate::capture::desktop::RuntimeRole::Desktop;
             // Launching Apparent again (from the app grid) opens the running one's Settings: GNOME
             // shows no tray icon without the AppIndicator extension.
             #[cfg(target_os = "linux")]
             if linux::ipc::running() {
+                ensure!(
+                    role == crate::capture::desktop::RuntimeRole::Desktop,
+                    "native-host-only requires its own GUI owner"
+                );
                 linux::ipc::send(if record { "shortcut record" } else { "open" })?;
                 return Ok(());
             }
             #[cfg(any(target_os = "macos", target_os = "linux"))]
-            return run_owned_app(record, iphone);
+            return run_owned_app(record, iphone, role);
             #[cfg(target_os = "windows")]
             {
                 ui::run_app(None, record, iphone, None);
@@ -1665,6 +1697,18 @@ fn copy_confirmation(dir: &std::path::Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn native_host_only_cli_cannot_request_legacy_recording() {
+        assert!(matches!(Cli::try_parse_from(["apparent", "app", "--native-host-only"]).unwrap().command,
+            Some(Command::App { native_host_only: true, record: false, iphone: false })));
+        for conflicting in ["--record", "--iphone"] {
+            assert!(Cli::try_parse_from(["apparent", "app", "--native-host-only", conflicting]).is_err());
+        }
+        assert!(matches!(Cli::try_parse_from(["apparent", "app"]).unwrap().command,
+            Some(Command::App { native_host_only: false, record: false, iphone: false })));
+    }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]

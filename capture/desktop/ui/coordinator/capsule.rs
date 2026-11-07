@@ -945,6 +945,7 @@ impl ApparentCoordinator {
     /// Return, `s`, the capture shortcut, or Record: iPhone records the phone, anything else
     /// records the full screen.
     pub fn record_selected_mode(&mut self, cx: &mut Context<Self>) {
+        if !self.legacy_capture_admitted() { return; }
         match self.selection_mode() {
             Some(SelectionMode::Iphone) => self.start_recording_iphone(cx),
             Some(_) => self.start_recording_full_screen(cx),

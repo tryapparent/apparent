@@ -145,6 +145,13 @@ use ui::pill_theme::{PillTheme, SIGNAL, SIGNAL_HOVER, WARNING};
 pub use ui::lab::{Options as LabOptions, Scene as LabScene, run as run_lab};
 pub(crate) use ui::motion::{TuneAction, tune_command};
 
+/// Fixed for the lifetime of one owned GUI process.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RuntimeRole {
+    Desktop,
+    NativeHostOnly,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SelectionMode {
     Area,
@@ -335,6 +342,7 @@ impl ActiveRecording {
 
 /// Shared coordinator owned by the GPUI app.
 pub struct ApparentCoordinator {
+    runtime_role: RuntimeRole,
     telemetry: Arc<SharedCaptureTelemetry>,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub(super) native_host_epoch: String,
@@ -511,6 +519,29 @@ pub fn run_app(
     start_iphone_immediately: bool,
     screenshot_out: Option<PathBuf>,
 ) {
+    run_app_with_role(
+        initial_bundle,
+        start_recording_immediately,
+        start_iphone_immediately,
+        screenshot_out,
+        RuntimeRole::Desktop,
+    );
+}
+
+pub(crate) fn run_app_with_role(
+    initial_bundle: Option<(PathBuf, ApparentBundle)>,
+    start_recording_immediately: bool,
+    start_iphone_immediately: bool,
+    screenshot_out: Option<PathBuf>,
+    runtime_role: RuntimeRole,
+) {
+    assert!(
+        runtime_role == RuntimeRole::Desktop
+            || (!start_recording_immediately
+                && !start_iphone_immediately
+                && initial_bundle.is_none()
+                && screenshot_out.is_none())
+    );
     let _signals = crate::capture::desktop::workflow::shutdown::Signals::install()
         .inspect_err(|error| {
             apparent_log(format!("Graceful signal handling unavailable: {error:#}"))
@@ -537,21 +568,27 @@ pub fn run_app(
         }
         apparent_log(format!("run_app started pid={}", std::process::id()));
         platform::keep_alive(cx);
-        crate::capture::desktop::settings::reconcile_login_item();
+        if runtime_role == RuntimeRole::Desktop {
+            crate::capture::desktop::settings::reconcile_login_item();
+        }
         // ⌘W, Esc, the close button or Apparent itself: every way a window closes ends up here.
         cx.on_window_closed(|cx| cx.defer(platform::hand_back_keys))
             .detach();
         let (ui_sender, ui_receiver) = flume::unbounded();
-        crate::capture::desktop::web::start_server();
+        if runtime_role == RuntimeRole::Desktop {
+            crate::capture::desktop::web::start_server();
+        }
         let telemetry = SharedCaptureTelemetry::new(ui_sender);
-        install_global_hotkeys(&telemetry);
-        start_global_input_tap(Arc::clone(&telemetry));
-        platform::start_updates();
-        crate::capture::engine::bundle::retention::start();
-        crate::capture::engine::bundle::recover::start();
-        crate::shared::hex::watch();
-        crate::capture::engine::runtime::audio::transcription::speech_model::ensure();
-        let menu_rx = install_status_bar();
+        if runtime_role == RuntimeRole::Desktop {
+            install_global_hotkeys(&telemetry);
+            start_global_input_tap(Arc::clone(&telemetry));
+            platform::start_updates();
+            crate::capture::engine::bundle::retention::start();
+            crate::capture::engine::bundle::recover::start();
+            crate::shared::hex::watch();
+            crate::capture::engine::runtime::audio::transcription::speech_model::ensure();
+        }
+        let menu_rx = (runtime_role == RuntimeRole::Desktop).then(install_status_bar).flatten();
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         let agent_rx = crate::capture::desktop::workflow::agent_capture::listen().map_err(|error| apparent_log(format!("Agent capture control unavailable: {error:#}"))).ok();
 
@@ -560,7 +597,7 @@ pub fn run_app(
         // Keep the Mac gate fresh even with Settings/onboarding closed. Helper processes
         // run off the UI thread; only the first successful read may open onboarding.
         #[cfg(target_os = "macos")]
-        if screenshot_out.is_none() {
+        if screenshot_out.is_none() && runtime_role == RuntimeRole::Desktop {
             let sender = telemetry.ui_sender.clone();
             let initialized_sender = sender.clone();
             let mut first_poll = true;
@@ -590,7 +627,16 @@ pub fn run_app(
         }
         // Onboarding opens on first launch, or for a permission that went away.
         #[cfg(not(target_os = "macos"))]
-        if !onboarding_initialized {
+        if runtime_role == RuntimeRole::NativeHostOnly {
+            let sender = telemetry.ui_sender.clone();
+            std::thread::spawn(move || {
+                if let Some(grants) = read_native_host_grants() {
+                    let _ = sender.send(LiveOverlayEvent::Onboarding(
+                        crate::capture::desktop::settings::onboarding::Event::Grants(grants),
+                    ));
+                }
+            });
+        } else if !onboarding_initialized {
             let sender = telemetry.ui_sender.clone();
             std::thread::spawn(move || {
                 if let Some(grants) = crate::capture::desktop::settings::onboarding::read_grants() {
@@ -601,25 +647,33 @@ pub fn run_app(
             });
         }
         let has_initial = initial_bundle.is_some();
-        let coordinator = cx.new(|_| ApparentCoordinator::new(telemetry, initial_bundle));
+        let coordinator = cx.new(|_| {
+            ApparentCoordinator::new_with_role(telemetry, initial_bundle, runtime_role)
+        });
         // Warm the hidden Linux controls before the first capture. Capture
         // admission and shortcuts do not wait for renderer startup.
         #[cfg(target_os = "linux")]
-        coordinator.update(cx, |coord, _| coord.ensure_electron_pill());
-        set_status_inbox_count(coordinator.read(cx).inbox.len());
+        if runtime_role == RuntimeRole::Desktop {
+            coordinator.update(cx, |coord, _| coord.ensure_electron_pill());
+        }
+        if runtime_role == RuntimeRole::Desktop {
+            set_status_inbox_count(coordinator.read(cx).inbox.len());
+        }
         #[cfg(target_os = "linux")]
-        if let Err(error) = crate::capture::desktop::linux::update::mark_relaunch_ready() {
+        if runtime_role == RuntimeRole::Desktop
+            && let Err(error) = crate::capture::desktop::linux::update::mark_relaunch_ready()
+        {
             apparent_log(format!("Linux update relaunch readiness: {error:#}"));
         }
 
-        if has_initial {
+        if has_initial && runtime_role == RuntimeRole::Desktop {
             open_review_window(&coordinator, cx);
         }
-        if start_recording_immediately {
+        if start_recording_immediately && runtime_role == RuntimeRole::Desktop {
             let coord_clone = coordinator.clone();
             coord_clone.update(cx, |coord, cx| coord.record_or_finish(cx));
         }
-        if start_iphone_immediately {
+        if start_iphone_immediately && runtime_role == RuntimeRole::Desktop {
             coordinator.update(cx, |coord, cx| coord.start_recording_iphone(cx));
         }
 
@@ -659,19 +713,23 @@ pub fn run_app(
                     }
                     let status = current_status_bar_text();
                     let export_busy = EXPORTING.load(std::sync::atomic::Ordering::Acquire);
-                    if status != shown_status
+                    if runtime_role == RuntimeRole::Desktop && (status != shown_status
                         || (cfg!(target_os = "linux") && export_busy != shown_export_busy)
-                    {
+                    ) {
                         refresh_status_bar(loop_coord.read(cx).inbox.len());
                         shown_status = status;
                         shown_export_busy = export_busy;
                     }
-                    loop_coord.read(cx).publish_capture_busy();
-                    platform::poll_status_bar();
-                    crate::capture::desktop::settings::onboarding_window::poll(cx);
-                    crate::capture::desktop::settings::settings_window::poll(cx);
+                    if runtime_role == RuntimeRole::Desktop {
+                        loop_coord.read(cx).publish_capture_busy();
+                        platform::poll_status_bar();
+                        crate::capture::desktop::settings::onboarding_window::poll(cx);
+                        crate::capture::desktop::settings::settings_window::poll(cx);
+                    }
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
-                    if crate::capture::desktop::workflow::launch_instance::take_open(onboarding_initialized) {
+                    if runtime_role == RuntimeRole::Desktop
+                        && crate::capture::desktop::workflow::launch_instance::take_open(onboarding_initialized)
+                    {
                         loop_coord.update(cx, |coord, _| {
                             if !crate::capture::desktop::workflow::launch_url::can_present(
                                 coord.is_recording(),
@@ -755,6 +813,20 @@ pub fn run_app(
                     }
 
                     while let Ok(ev) = ui_receiver.try_recv() {
+                        if runtime_role == RuntimeRole::NativeHostOnly {
+                            if let LiveOverlayEvent::Onboarding(
+                                crate::capture::desktop::settings::onboarding::Event::Grants(grants),
+                            ) = ev
+                            {
+                                loop_coord.update(cx, |coord, cx| {
+                                    coord.onboarding_event(
+                                        crate::capture::desktop::settings::onboarding::Event::Grants(grants),
+                                        cx,
+                                    )
+                                });
+                            }
+                            continue;
+                        }
                         loop_coord.update(cx, |coord, cx| match ev {
                             LiveOverlayEvent::CaptureShortcut => coord.press_shortcut(cx),
                             LiveOverlayEvent::PasteLatestShortcut => {
@@ -792,23 +864,28 @@ pub fn run_app(
                         });
                     }
 
-                    motion::poll_tune();
+                    if runtime_role == RuntimeRole::Desktop {
+                        motion::poll_tune();
+                    }
                     if crate::capture::desktop::workflow::shutdown::requested() {
                         loop_coord.update(cx, |coord, cx| coord.request_quit(cx));
                     }
-                    if loop_coord.read(cx).shortcut.is_pending() {
+                    if runtime_role == RuntimeRole::Desktop
+                        && loop_coord.read(cx).shortcut.is_pending()
+                    {
                         loop_coord.update(cx, |coord, cx| coord.tick_shortcut(cx));
-                    } else if loop_coord.read(cx).telemetry.take_escape()
+                    } else if runtime_role == RuntimeRole::Desktop
+                        && loop_coord.read(cx).telemetry.take_escape()
                         && loop_coord.read(cx).is_selecting()
                     {
                         // The picker may not have the keys (another app is active), but the
                         // key tap sees Esc anyway.
                         loop_coord.update(cx, |coord, cx| coord.cancel_recording(cx));
                     }
-                    if loop_coord.read(cx).gate.is_pending() {
+                    if runtime_role == RuntimeRole::Desktop && loop_coord.read(cx).gate.is_pending() {
                         loop_coord.update(cx, |coord, _| coord.tick_gate());
                     }
-                    if loop_coord.read(cx).is_island_visible() {
+                    if runtime_role == RuntimeRole::Desktop && loop_coord.read(cx).is_island_visible() {
                         record_external_frontmost_app();
                         loop_coord.update(cx, |coord, cx| coord.island_tick(cx));
                     }
@@ -818,4 +895,14 @@ pub fn run_app(
         })
         .detach();
     });
+}
+
+fn read_native_host_grants() -> Option<crate::capture::desktop::settings::onboarding::Grants> {
+    let statuses = crate::capture::desktop::helper::permissions().ok()?;
+    let screen = statuses.get(&crate::capture::desktop::settings::onboarding::Permission::ScreenRecording)
+        == Some(&crate::capture::desktop::settings::onboarding::Status::Granted);
+    Some(crate::capture::desktop::settings::onboarding::Grants {
+        statuses,
+        screen_needs_relaunch: screen && !crate::capture::engine::runtime::screen_capture_usable(true),
+    })
 }
