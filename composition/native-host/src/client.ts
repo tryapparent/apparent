@@ -3,7 +3,7 @@ import { lstat } from 'node:fs/promises';
 import { connect } from 'node:net';
 import { homedir } from 'node:os';
 import { join, normalize } from 'node:path';
-import { MAX_SERIALIZED_FRAME_BYTES, MAX_UTF8_TEXT_BYTES, type NativeClipboardPort, type NativeClipboardWriteResult, type NativeHostPort, type NativeHostSnapshot, type NativeHostRefusal, type NativeMutationResult, type NativePenPort, type NativePenResult, type NativePenSnapshot } from '@apparent/app-contracts/native';
+import { MAX_SERIALIZED_FRAME_BYTES, MAX_UTF8_TEXT_BYTES, type NativeClipboardPort, type NativeClipboardWriteResult, type NativeHostPort, type NativeHostSnapshot, type NativeHostRefusal, type NativeMutationResult, type NativePenPort, type NativePenResult, type NativePenSnapshot, type NativeLegacyCaptureWriterPort, type NativeLegacyCaptureWriterSnapshot, type NativeLegacyCaptureWriterResult } from '@apparent/app-contracts/native';
 
 type LegacyConfigValue = Parameters<NativePenPort['applyStrokeColor']>[1];
 
@@ -172,6 +172,52 @@ export function createNativeHostPort(): NativeHostPort {
       return mutate('saveRecordShortcut', {
         shortcut: { keyCode: shortcut.keyCode, modifiers: shortcut.modifiers, label: shortcut.label }, expected: expected(state),
       });
+    },
+  };
+}
+
+const writerScope = 'legacy-gui-capture-writer';
+let retirementInFlight = false;
+let writerReadsInFlight = 0;
+function writerSnapshot(value: unknown): NativeLegacyCaptureWriterSnapshot {
+  if (!exact(value, ['api', 'processEpoch', 'revision', 'scope', 'state', 'busy']) || value.api !== 1
+    || typeof value.processEpoch !== 'string' || !/^[a-zA-Z0-9-]{1,64}$/.test(value.processEpoch)
+    || !Number.isSafeInteger(value.revision) || Number(value.revision) < 0 || value.scope !== writerScope
+    || !['open', 'retired-observed', 'retired', 'unknown'].includes(String(value.state))
+    || typeof value.busy !== 'boolean') throw new Error('Native legacy capture writer unavailable');
+  return value as unknown as NativeLegacyCaptureWriterSnapshot;
+}
+
+/** Privileged adoption fence. Never closes clients, cancels work or switches an installed route. */
+export function createNativeLegacyCaptureWriterPort(): NativeLegacyCaptureWriterPort {
+  const target = endpoint();
+  return {
+    async readSnapshot() {
+      if (writerReadsInFlight >= 8) throw new Error('Native legacy capture writer unavailable');
+      writerReadsInFlight++;
+      try { return writerSnapshot(await request(target, 'readLegacyCaptureWriter')); }
+      finally { writerReadsInFlight--; }
+    },
+    async retire(expected) {
+      const processEpoch = expected?.processEpoch, revision = expected?.revision;
+      if (typeof processEpoch !== 'string' || !/^[a-zA-Z0-9-]{1,64}$/.test(processEpoch)
+        || !Number.isSafeInteger(revision) || revision < 0) throw new TypeError('Invalid native host revision');
+      if (retirementInFlight) return { status: 'refused', reason: 'busy' };
+      retirementInFlight = true;
+      try {
+        const value = await request(target, 'retireLegacyCaptureWriter', { expected: { processEpoch, revision } });
+        if (exact(value, ['status', 'scope', 'processEpoch', 'revision']) && value.status === 'retired'
+          && value.scope === writerScope && value.processEpoch === processEpoch
+          && Number.isSafeInteger(value.revision) && Number(value.revision) > revision) {
+          return value as unknown as NativeLegacyCaptureWriterResult;
+        }
+        if (exact(value, ['status', 'reason']) && value.status === 'refused'
+          && ['stale', 'busy', 'unavailable', 'invalid'].includes(String(value.reason))) {
+          return value as unknown as NativeLegacyCaptureWriterResult;
+        }
+        return { status: 'outcome-unknown' };
+      } catch { return { status: 'outcome-unknown' }; }
+      finally { retirementInFlight = false; }
     },
   };
 }

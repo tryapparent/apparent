@@ -1,6 +1,7 @@
 import { createNativeHostPort } from '@apparent/native-host';
 import { createNativeClipboardPort, MAX_SERIALIZED_FRAME_BYTES, MAX_UTF8_TEXT_BYTES } from '@apparent/native-host/clipboard';
 import { createNativePenPort } from '@apparent/native-host/pen';
+import { createNativeLegacyCaptureWriterPort, type NativeLegacyCaptureWriterPort } from '@apparent/native-host/legacy-capture';
 import type {
   NativeClipboardPort,
   NativeClipboardWriteResult,
@@ -14,9 +15,13 @@ import type {
 const host: NativeHostPort = createNativeHostPort();
 const pen: NativePenPort = createNativePenPort();
 const clipboard: NativeClipboardPort = createNativeClipboardPort();
+const writer: NativeLegacyCaptureWriterPort = createNativeLegacyCaptureWriterPort();
 const limits: readonly number[] = [MAX_UTF8_TEXT_BYTES, MAX_SERIALIZED_FRAME_BYTES];
 
 async function consumerContract(): Promise<NativeClipboardWriteResult> {
+  const writerSnapshot = await writer.readSnapshot();
+  const retirement = await writer.retire({ processEpoch: writerSnapshot.processEpoch, revision: writerSnapshot.revision });
+  void retirement;
   const snapshot: NativeHostSnapshot = await host.readSnapshot();
   const penSnapshot: NativePenSnapshot = await pen.readStrokeColor();
   const penResult: NativePenResult = await pen.applyStrokeColor(null, { present: false, value: null }, {

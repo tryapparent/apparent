@@ -70,17 +70,24 @@ impl ApparentCoordinator {
     ) -> Self {
         crate::capture::desktop::playback::warm_up();
         #[cfg(any(target_os = "macos", target_os = "linux"))]
-        let native_host_epoch = crate::capture::desktop::workflow::agent_capture::new_id()
-            .unwrap_or_else(|_| format!("process-{}", std::process::id()));
+        let (native_host_epoch, native_host_epoch_strong) =
+            crate::capture::desktop::workflow::native_host::legacy_capture::process_epoch(
+                crate::capture::desktop::workflow::agent_capture::new_id().map_err(|_| ()),
+                std::process::id(),
+            );
         NATIVE_HOST_REVISION_FOR_WORKER.store(0, std::sync::atomic::Ordering::Release);
         Self {
             telemetry,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             native_host_epoch,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
+            native_host_epoch_strong,
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
             native_host_revision: 0,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             native_host_fingerprint: None,
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            legacy_capture_fence: Default::default(),
             note_ui: None,
             admitted_microphone: None,
             whiteboard: Rc::new(RefCell::new(whiteboard::Board::default())),
@@ -523,6 +530,7 @@ impl ApparentCoordinator {
                 || self.iphone_preview.is_some()
                 || self.agent_capture_id.is_some()
                 || self.recording_shortcut_key
+                || !self.legacy_capture_start_allowed()
                 || crate::capture::desktop::workflow::shutdown::requested();
             if self.agent_captures.admit(id, occupied, request.expired()) {
                 self.agent_capture_id = Some(id.clone());
@@ -599,6 +607,8 @@ impl ApparentCoordinator {
             return Some(refusal("unavailable"));
         }
         if self.native_host_epoch.is_empty() { return Some(refusal("unavailable")); }
+        if matches!(&request.operation, Operation::ReadLegacyCaptureWriter | Operation::RetireLegacyCaptureWriter)
+            && !self.native_host_epoch_strong { return Some(refusal("unavailable")); }
         if matches!(&request.operation, Operation::ReadStrokeColor) {
             if crate::capture::desktop::workflow::agent_capture::storage_clock_ms() >= request.deadline {
                 return Some(refusal("unavailable"));
@@ -612,7 +622,7 @@ impl ApparentCoordinator {
         }
         let observation = self.native_host_observation();
         self.refresh_native_host_revision(&observation.fingerprint);
-        if !matches!(&request.operation, Operation::ReadSnapshot) {
+        if !matches!(&request.operation, Operation::ReadSnapshot | Operation::ReadLegacyCaptureWriter) {
             let Some(expected) = request.expected.as_ref() else { return Some(refusal("invalid")); };
             if expected.process_epoch != self.native_host_epoch || expected.revision != self.native_host_revision {
                 return Some(refusal("stale"));
@@ -677,6 +687,10 @@ impl ApparentCoordinator {
         }
         Some(match &request.operation {
             Operation::ReadSnapshot => self.native_host_snapshot(&observation),
+            Operation::ReadLegacyCaptureWriter => self.legacy_capture_writer_snapshot(
+                &crate::shared::handoff::default_config_path(), request.deadline),
+            Operation::RetireLegacyCaptureWriter => self.retire_legacy_capture_writer(
+                &crate::shared::handoff::default_config_path(), request.deadline),
             Operation::RequestPermission(id) | Operation::OpenSystemSettings(id) => {
                 let permission = match id.as_str() {
                     "screen-recording" => Permission::ScreenRecording,
@@ -791,7 +805,70 @@ impl ApparentCoordinator {
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn legacy_capture_writer_busy(&self) -> bool {
+        self.capture_busy() || self.shortcut.is_pending() || self.gate.is_pending()
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn legacy_capture_writer_snapshot(&self, config_path: &std::path::Path, deadline: u64) -> serde_json::Value {
+        if !self.native_host_epoch_strong || self.native_host_epoch.is_empty() {
+            return serde_json::json!({"status":"refused","reason":"unavailable"});
+        }
+        let marker = crate::shared::handoff::legacy_capture_writer_retired_allowed_in(
+            config_path,
+            &|| crate::capture::desktop::workflow::agent_capture::storage_clock_ms() < deadline,
+        ).map_err(|_| ());
+        serde_json::json!({"api":1,"processEpoch":self.native_host_epoch,"revision":self.native_host_revision,
+            "scope":"legacy-gui-capture-writer","state":self.legacy_capture_fence.state(marker),
+            "busy":self.legacy_capture_writer_busy()})
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn retire_legacy_capture_writer(&mut self, config_path: &std::path::Path, deadline: u64) -> serde_json::Value {
+        let live = || crate::capture::desktop::workflow::agent_capture::storage_clock_ms() < deadline;
+        if !live() || !self.native_host_epoch_strong || self.native_host_epoch.is_empty()
+            || self.native_host_revision >= 9_007_199_254_740_991 {
+            return serde_json::json!({"status":"refused","reason":"unavailable"});
+        }
+        let busy = self.legacy_capture_writer_busy();
+        if !self.legacy_capture_fence.seal(busy) {
+            return serde_json::json!({"status":"refused","reason":"busy"});
+        }
+        // Admission closes on the GUI thread before the config lock can wait.
+        // A failed write keeps this process sealed; queued old starts cannot escape.
+        self.native_host_revision += 1;
+        NATIVE_HOST_REVISION_FOR_WORKER.store(self.native_host_revision, std::sync::atomic::Ordering::Release);
+        let durable = crate::shared::handoff::retire_legacy_capture_writer_allowed_in(
+            config_path, &live,
+        ).is_ok();
+        self.legacy_capture_fence.complete(durable);
+        if durable && live() {
+            serde_json::json!({"status":"retired","scope":"legacy-gui-capture-writer",
+                "processEpoch":self.native_host_epoch,"revision":self.native_host_revision})
+        } else {
+            serde_json::json!({"status":"outcome-unknown"})
+        }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    pub(in crate::capture::desktop) fn legacy_capture_start_allowed(&self) -> bool {
+        self.legacy_capture_start_allowed_in(&crate::shared::handoff::default_config_path())
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn legacy_capture_start_allowed_in(&self, config_path: &std::path::Path) -> bool {
+        if !self.legacy_capture_fence.allows_start(Ok(false)) { return false; }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(250);
+        let marker = crate::shared::handoff::legacy_capture_writer_retired_allowed_in(
+            config_path, &|| std::time::Instant::now() < deadline,
+        ).map_err(|_| ());
+        self.legacy_capture_fence.allows_start(marker)
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     fn native_host_observation(&self) -> NativeHostObservation {
+        #[cfg(test)]
+        native_legacy_capture_writer_tests::assert_observation_allowed();
         use crate::capture::desktop::settings::onboarding::Permission;
         let (record, paste) = self.telemetry.shortcuts();
         let config_path = crate::shared::handoff::default_config_path();
@@ -1462,6 +1539,9 @@ impl ApparentCoordinator {
 
     /// The capture shortcut went down (from Carbon, the event tap or the HID poller).
     pub fn press_shortcut(&mut self, cx: &mut Context<Self>) {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if self.active_recording.is_none() && !self.shortcut.is_pending()
+            && !self.legacy_capture_start_allowed() { return; }
         let activity = self.activity();
         if self.gate.is_pending() {
             return;
@@ -1557,6 +1637,8 @@ impl ApparentCoordinator {
 
     /// Records the display under the cursor straight away (no picker), auto-cropped.
     pub fn record_screen_now(&mut self, cx: &mut Context<Self>) {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if !self.legacy_capture_start_allowed() { return; }
         let target = if self.lab {
             lab::target()
         } else {
@@ -1606,5 +1688,146 @@ mod native_pen_snapshot_tests {
         telemetry.set_stroke_rgb(Some([0, 0, 0]));
         assert_eq!(read(&mut coordinator)["rgb"], serde_json::json!([0, 0, 0]));
         assert_eq!(telemetry.stroke_rgb(), Some([0, 0, 0]));
+    }
+}
+
+#[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
+mod native_legacy_capture_writer_tests {
+    use super::*;
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+
+    thread_local! {
+        static OBSERVATION_FORBIDDEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
+    pub(super) fn assert_observation_allowed() {
+        OBSERVATION_FORBIDDEN.with(|value| assert!(!value.get(), "unqualified request reached shared config observation"));
+    }
+
+    struct ForbidObservation;
+    impl Drop for ForbidObservation {
+        fn drop(&mut self) { OBSERVATION_FORBIDDEN.with(|value| value.set(false)); }
+    }
+
+    fn coordinator() -> ApparentCoordinator {
+        let (sender, _receiver) = flume::unbounded();
+        ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None)
+    }
+
+    fn fixture() -> (std::path::PathBuf, std::path::PathBuf) {
+        let directory = std::env::temp_dir().join(format!("legacy-writer-{}",
+            crate::capture::desktop::workflow::agent_capture::new_id().unwrap()));
+        std::fs::DirBuilder::new().mode(0o700).create(&directory).unwrap();
+        let directory = directory.canonicalize().unwrap();
+        let config = directory.join("config.json");
+        std::fs::write(&config, br#"{"synthetic":"keep"}"#).unwrap();
+        std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o600)).unwrap();
+        (directory, config)
+    }
+
+    fn deadline() -> u64 {
+        crate::capture::desktop::workflow::agent_capture::storage_clock_ms() + 3000
+    }
+
+    #[test]
+    fn legacy_capture_weak_epoch_refuses_at_dispatch_before_shared_observation() {
+        use crate::capture::desktop::workflow::native_host::{Admitted, Expected, Operation, legacy_capture::process_epoch};
+        let (directory, config) = fixture();
+        let before = std::fs::read(&config).unwrap();
+        let mut coord = coordinator();
+        (coord.native_host_epoch, coord.native_host_epoch_strong) = process_epoch(Err(()), 7);
+        for operation in [Operation::ReadLegacyCaptureWriter, Operation::RetireLegacyCaptureWriter] {
+            let expected = matches!(operation, Operation::RetireLegacyCaptureWriter).then(|| Expected {
+                process_epoch: coord.native_host_epoch.clone(), revision: coord.native_host_revision,
+            });
+            let (reply, _receiver) = std::sync::mpsc::sync_channel(1);
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                OBSERVATION_FORBIDDEN.with(|value| value.set(true));
+                let _guard = ForbidObservation;
+                coord.native_host_request(&Admitted {
+                    id: "unqualified".into(), deadline: deadline(), expected, operation,
+                }, false, reply)
+            }));
+            if outcome.is_err() { std::fs::remove_dir_all(&directory).unwrap(); }
+            assert_eq!(outcome.expect("qualification must precede shared config observation"),
+                Some(serde_json::json!({"status":"refused","reason":"unavailable"})));
+            assert!(coord.native_host_fingerprint.is_none());
+            assert_eq!(coord.native_host_revision, 0);
+        }
+        assert_eq!(std::fs::read(&config).unwrap(), before);
+        assert!(coord.legacy_capture_start_allowed_in(&config));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn legacy_capture_reused_pid_epoch_is_not_adoption_authority() {
+        use crate::capture::desktop::workflow::native_host::legacy_capture::process_epoch;
+        let (directory, config) = fixture();
+        let before = std::fs::read(&config).unwrap();
+        let mut previous = coordinator();
+        (previous.native_host_epoch, previous.native_host_epoch_strong) = process_epoch(Err(()), 7);
+        let mut restarted = coordinator();
+        (restarted.native_host_epoch, restarted.native_host_epoch_strong) = process_epoch(Err(()), 7);
+        assert_eq!(previous.native_host_epoch, restarted.native_host_epoch);
+        assert_eq!(previous.native_host_revision, restarted.native_host_revision);
+        let snapshot = restarted.legacy_capture_writer_snapshot(&config, deadline());
+        let result = restarted.retire_legacy_capture_writer(&config, deadline());
+        let unchanged = std::fs::read(&config).unwrap() == before;
+        let legacy_still_open = restarted.legacy_capture_start_allowed_in(&config);
+        std::fs::remove_dir_all(directory).unwrap();
+        assert_eq!(result, serde_json::json!({"status":"refused","reason":"unavailable"}));
+        assert_eq!(snapshot, serde_json::json!({"status":"refused","reason":"unavailable"}));
+        assert!(unchanged, "weak epoch must refuse before persistence");
+        assert!(legacy_still_open, "weak epoch must refuse before sealing legacy admission");
+    }
+
+    #[test]
+    fn legacy_capture_retirement_refuses_hidden_finalizers_and_pending_admission() {
+        let (directory, config) = fixture();
+        let before = std::fs::read(&config).unwrap();
+        let mut coord = coordinator();
+        coord.pending_finalizers = 1;
+        assert_eq!(coord.retire_legacy_capture_writer(&config, deadline())["reason"], "busy");
+        coord.pending_finalizers = 0;
+        coord.agent_capture_id = Some("synthetic-admitted".into());
+        assert_eq!(coord.retire_legacy_capture_writer(&config, deadline())["reason"], "busy");
+        coord.agent_capture_id = None;
+        coord.recording_shortcut_key = true;
+        assert_eq!(coord.retire_legacy_capture_writer(&config, deadline())["reason"], "busy");
+        assert_eq!(std::fs::read(&config).unwrap(), before);
+        assert_eq!(coord.native_host_revision, 0);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn legacy_capture_retirement_fences_this_process_and_restart_without_claiming_runtime_clearance() {
+        let (directory, config) = fixture();
+        let mut coord = coordinator();
+        assert!(coord.legacy_capture_start_allowed_in(&config));
+        let result = coord.retire_legacy_capture_writer(&config, deadline());
+        assert_eq!(result["status"], "retired");
+        assert_eq!(result["scope"], "legacy-gui-capture-writer");
+        assert_eq!(result["processEpoch"], coord.native_host_epoch);
+        assert_eq!(result["revision"], 1);
+        assert!(!coord.legacy_capture_start_allowed_in(&config));
+        assert_eq!(coord.legacy_capture_writer_snapshot(&config, deadline())["state"], "retired");
+        let restarted = coordinator();
+        assert!(!restarted.legacy_capture_start_allowed_in(&config));
+        assert_eq!(restarted.legacy_capture_writer_snapshot(&config, deadline())["state"], "retired-observed");
+        assert!(!result.as_object().unwrap().contains_key("runtimeClearance"));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn legacy_capture_uncertain_publication_stays_sealed_until_explicit_durable_operation() {
+        let (directory, config) = fixture();
+        let mut coord = coordinator();
+        crate::shared::handoff::set_config_directory_sync_failure(true);
+        assert_eq!(coord.retire_legacy_capture_writer(&config, deadline())["status"], "outcome-unknown");
+        assert!(!coord.legacy_capture_start_allowed_in(&config));
+        assert_eq!(coord.legacy_capture_writer_snapshot(&config, deadline())["state"], "unknown");
+        assert_eq!(coord.retire_legacy_capture_writer(&config, deadline())["status"], "retired");
+        assert_eq!(coord.legacy_capture_writer_snapshot(&config, deadline())["state"], "retired");
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

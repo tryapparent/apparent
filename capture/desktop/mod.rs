@@ -339,9 +339,13 @@ pub struct ApparentCoordinator {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub(super) native_host_epoch: String,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
+    pub(super) native_host_epoch_strong: bool,
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub(super) native_host_revision: u64,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub(super) native_host_fingerprint: Option<String>,
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    pub(super) legacy_capture_fence: workflow::native_host::legacy_capture::Fence,
     note_ui: Option<workflow::notes::Session>,
     admitted_microphone: Option<bool>,
     whiteboard: Rc<RefCell<whiteboard::Board>>,

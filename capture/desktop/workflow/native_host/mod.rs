@@ -1,4 +1,5 @@
 //! Strict, Record-bound protocol carried by the existing same-user GUI socket.
+pub(crate) mod legacy_capture;
 use serde::{Deserialize, Serialize};
 
 pub(crate) const MAX_SERIALIZED_FRAME_BYTES: usize = 131_072;
@@ -83,6 +84,8 @@ pub(crate) struct ExpectedPenColor {
 #[derive(Clone, Debug)]
 pub(crate) enum Operation {
     ReadSnapshot,
+    ReadLegacyCaptureWriter,
+    RetireLegacyCaptureWriter,
     RequestPermission(String),
     OpenSystemSettings(String),
     ValidateRecordShortcut(String, u32),
@@ -116,7 +119,8 @@ pub(crate) fn parse(line: &str, now: u64) -> Option<Admitted> {
     let value: serde_json::Value = serde_json::from_str(line).ok()?;
     let object = value.as_object()?;
     let fields: &[&str] = match request.operation.as_str() {
-        "readSnapshot" | "readStrokeColor" => &["protocol", "id", "owner", "operation", "deadline"],
+        "readSnapshot" | "readStrokeColor" | "readLegacyCaptureWriter" => &["protocol", "id", "owner", "operation", "deadline"],
+        "retireLegacyCaptureWriter" => &["protocol", "id", "owner", "operation", "deadline", "expected"],
         "requestPermission" | "openSystemSettings" => &[
             "protocol",
             "id",
@@ -185,6 +189,8 @@ pub(crate) fn parse(line: &str, now: u64) -> Option<Admitted> {
         return None;
     }
     let operation = match request.operation.as_str() {
+        "readLegacyCaptureWriter" if request.expected.is_none() => Operation::ReadLegacyCaptureWriter,
+        "retireLegacyCaptureWriter" if request.expected.is_some() => Operation::RetireLegacyCaptureWriter,
         "readSnapshot"
             if request.expected.is_none()
                 && request.permission_id.is_none()
@@ -358,6 +364,22 @@ mod tests {
         format!(
             r#"{{"protocol":1,"id":"req-1","owner":"record","operation":"{operation}","deadline":3000{extra}}}"#
         )
+    }
+    #[test]
+    fn legacy_capture_retirement_requires_gui_cas_and_never_accepts_a_path_selector() {
+        assert!(matches!(parse(&req("readLegacyCaptureWriter", ""), 1000).unwrap().operation,
+            Operation::ReadLegacyCaptureWriter));
+        let expected = r#","expected":{"processEpoch":"epoch-a","revision":4}"#;
+        assert!(matches!(parse(&req("retireLegacyCaptureWriter", &expected), 1000).unwrap().operation,
+            Operation::RetireLegacyCaptureWriter));
+        for line in [
+            req("retireLegacyCaptureWriter", ""),
+            req("readLegacyCaptureWriter", &expected),
+            req("retireLegacyCaptureWriter", r#", "expected":null"#),
+            req("retireLegacyCaptureWriter", &format!("{expected},\"path\":\"/tmp/other.json\"")),
+            req("readLegacyCaptureWriter", r#", "owner":"platform""#),
+        ] { assert!(parse(&line, 1000).is_none(), "{line}"); }
+        assert!(parse(&req("retireLegacyCaptureWriter", &expected), 3000).is_none());
     }
     #[test]
     fn protocol_is_versioned_correlated_owner_bound_and_strict() {

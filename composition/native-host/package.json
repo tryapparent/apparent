@@ -7,7 +7,8 @@
   "exports": {
     ".": { "types": "./dist/client.d.ts", "import": "./dist/client.js" },
     "./pen": { "types": "./dist/pen.d.ts", "import": "./dist/pen.js" },
-    "./clipboard": { "types": "./dist/clipboard.d.ts", "import": "./dist/clipboard.js" }
+    "./clipboard": { "types": "./dist/clipboard.d.ts", "import": "./dist/clipboard.js" },
+    "./legacy-capture": { "types": "./dist/legacy-capture.d.ts", "import": "./dist/legacy-capture.js" }
   },
   "scripts": {
     "build": "npm --prefix ../../shared/contracts run build && tsc -p tsconfig.build.json",

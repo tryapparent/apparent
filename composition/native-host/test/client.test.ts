@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
 import { MAX_SERIALIZED_FRAME_BYTES, MAX_UTF8_TEXT_BYTES } from '@apparent/app-contracts/native';
-import { createNativeHostPort, createNativeClipboardPort, createNativePenPort } from '../src/client.ts';
+import { createNativeHostPort, createNativeClipboardPort, createNativePenPort, createNativeLegacyCaptureWriterPort } from '../src/client.ts';
 
 const facts = {
   api: 1, processEpoch: 'epoch-a', revision: 4, scope: 'running-desktop-process', freshness: 'cached-gui-observation',
@@ -91,6 +91,67 @@ test('rejects unsupported operations and permission identifiers before connectin
 
 
 const expected = { processEpoch: 'epoch-a', revision: 4 };
+const writerFacts = {
+  api: 1, ...expected, scope: 'legacy-gui-capture-writer', state: 'open', busy: false,
+};
+
+test('legacy capture writer snapshots preserve observed retirement and uncertainty without inferring clearance', async () => {
+  let state = 'open';
+  await withSocket(request => {
+    assert.equal(request.operation, 'readLegacyCaptureWriter');
+    assert.equal(Object.hasOwn(request, 'expected'), false);
+    return { ...writerFacts, state };
+  }, async () => {
+    const port = createNativeLegacyCaptureWriterPort();
+    for (state of ['open', 'retired-observed', 'retired', 'unknown']) {
+      assert.equal((await port.readSnapshot()).state, state);
+    }
+    state = 'idle';
+    await assert.rejects(port.readSnapshot(), /unavailable/);
+  });
+});
+
+test('legacy capture retirement requires a correlated advanced durable receipt and never retries lost or malformed replies', async () => {
+  for (const result of [
+    { status: 'retired', scope: writerFacts.scope, processEpoch: 'foreign', revision: 5 },
+    { status: 'retired', scope: writerFacts.scope, processEpoch: expected.processEpoch, revision: 4 },
+    { status: 'retired', scope: 'global-runtime', processEpoch: expected.processEpoch, revision: 5 },
+    { status: 'accepted' }, DROP,
+  ]) {
+    let calls = 0;
+    await withSocket(request => {
+      calls++;
+      assert.equal(request.operation, 'retireLegacyCaptureWriter');
+      assert.deepEqual(request.expected, expected);
+      return result;
+    }, async () => {
+      assert.deepEqual(await createNativeLegacyCaptureWriterPort().retire(expected), { status: 'outcome-unknown' });
+    });
+    assert.equal(calls, 1);
+  }
+  await withSocket(() => ({ status: 'retired', scope: writerFacts.scope, processEpoch: expected.processEpoch, revision: 5 }), async () => {
+    assert.equal((await createNativeLegacyCaptureWriterPort().retire(expected)).status, 'retired');
+  });
+});
+
+test('legacy capture retirement refuses invalid inputs and concurrent effects before a second dispatch', async () => {
+  let resolve!: (value: unknown) => void;
+  let received!: () => void;
+  const arrived = new Promise<void>(done => { received = done; });
+  let calls = 0;
+  await withSocket(() => { calls++; received(); return new Promise(done => { resolve = done; }); }, async () => {
+    const first = createNativeLegacyCaptureWriterPort();
+    await assert.rejects(first.retire({ processEpoch: '', revision: 4 }), /Invalid/);
+    assert.equal(calls, 0);
+    const pending = first.retire(expected);
+    await arrived;
+    assert.deepEqual(await createNativeLegacyCaptureWriterPort().retire(expected), { status: 'refused', reason: 'busy' });
+    assert.equal(calls, 1);
+    resolve({ status: 'refused', reason: 'stale' });
+    assert.deepEqual(await pending, { status: 'refused', reason: 'stale' });
+  });
+});
+
 const shortcut = { keyCode: 1, modifiers: 2560, label: '⌥⇧S' };
 
 test('lost, mismatched, oversized and invalid mutation replies remain unknown without retry', async () => {
