@@ -7,6 +7,7 @@ use crate::capture::engine::runtime::{
 };
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, PartialEq)]
 struct Output {
@@ -321,13 +322,32 @@ impl NativeInkSource {
     pub(crate) fn observation(&self) -> &Value {
         &self.observation
     }
-    pub(crate) fn activate(
+    #[cfg(test)]
+    fn activate(
         &self,
         capture: &str,
         producer: &str,
         generation: u64,
         boot: &str,
         admission_ns: &str,
+    ) -> Result<(), &'static str> {
+        self.activate_before(
+            capture,
+            producer,
+            generation,
+            boot,
+            admission_ns,
+            Instant::now() + Duration::from_secs(2),
+        )
+    }
+    fn activate_before(
+        &self,
+        capture: &str,
+        producer: &str,
+        generation: u64,
+        boot: &str,
+        admission_ns: &str,
+        deadline: Instant,
     ) -> Result<(), &'static str> {
         let mut installed = self
             .installed
@@ -363,6 +383,9 @@ impl NativeInkSource {
                 return Err("target-mismatch");
             }
             drop(f);
+            if Instant::now() >= deadline {
+                return Err("activation-deadline");
+            }
             s.admission = admission;
             s.last_time = admission;
             if !self
@@ -396,7 +419,11 @@ impl NativeInkSource {
             .acknowledge(sequence, digest)
             .map_err(|_| "ack-mismatch")
     }
-    pub(crate) fn seal_and_drain(&self) -> Result<(Option<u32>, NativeSeal), &'static str> {
+    #[cfg(test)]
+    fn seal_and_drain(&self) -> Result<(Option<u32>, NativeSeal), &'static str> {
+        self.seal_before(Instant::now() + Duration::from_secs(2))
+    }
+    fn seal_before(&self, deadline: Instant) -> Result<(Option<u32>, NativeSeal), &'static str> {
         // Serialize activation/seal without blocking callbacks on this mutex.
         let mut installed = self
             .installed
@@ -425,6 +452,9 @@ impl NativeInkSource {
             let time = (self.clock)()?;
             if time < s.last_time {
                 return Err("clock-mismatch");
+            }
+            if Instant::now() >= deadline {
+                return Err("seal-deadline");
             }
             s.buffer
                 .seal_after_native_drain(time.to_string(), revision)
@@ -739,18 +769,19 @@ mod tests {
         collector
             .wait_ready(Instant::now() + Duration::from_secs(1))
             .unwrap();
-        let mut session = Some(NativeInkSession {
+        let mut session = Some(InkSessionState {
             source,
             collector: Some(collector),
+            prepared: None,
         });
         let mut command = |c: Command| {
-            native_source_command(
+            execute_source_command(
                 &mut session,
                 telemetry.clone(),
                 &"b".repeat(32),
                 0,
                 &c,
-                crate::capture::desktop::workflow::agent_capture::storage_clock_ms() + 3000,
+                Instant::now() + Duration::from_secs(2),
             )
         };
         let first = command(Command::ReadBatch {
@@ -805,9 +836,10 @@ mod tests {
     #[test]
     fn session_without_started_input_never_claims_successful_empty_drain() {
         let (source, _) = fixture();
-        let mut session = NativeInkSession {
+        let mut session = InkSessionState {
             source,
             collector: None,
+            prepared: None,
         };
         assert!(
             session
@@ -819,6 +851,264 @@ mod tests {
             session.source.state.lock().unwrap().phase,
             Phase::Unavailable
         );
+    }
+    fn synthetic_collector(fail: bool) -> super::super::ink_collector::NativeInkCollector {
+        super::super::ink_collector::NativeInkCollector::spawn_with_admission(
+            move || {
+                if fail {
+                    Err("fixture-input-refused")
+                } else {
+                    Ok(([false; 4], [1., 2.], 1))
+                }
+            },
+            |_, _, _, _| panic!("input must stay closed before successful activation"),
+            || {},
+            false,
+            false,
+        )
+        .unwrap()
+    }
+    fn prior_donor(
+        source: &NativeInkSource,
+    ) -> (
+        crate::shared::model::TargetFrame,
+        Option<crate::shared::model::Stroke>,
+    ) {
+        // fixture() also supports the legacy donor tests via reset_for_session;
+        // this case represents the exclusive native-only role, with no legacy
+        // recorder active. Keep the production ownership refusal unchanged.
+        source.telemetry.active.store(false, Ordering::Release);
+        let frame = crate::shared::model::TargetFrame {
+            x: 700.,
+            y: 800.,
+            width: 900.,
+            height: 600.,
+            scale: 1.,
+        };
+        *source.telemetry.target_frame.lock().unwrap() = frame;
+        let stroke = crate::shared::model::Stroke {
+            t0: 17,
+            t1: 18,
+            fw: 900,
+            fh: 600,
+            on: None,
+            pin: None,
+            laser: false,
+            rgb: Some([1, 2, 3]),
+            pts: vec![1, 2, 0, 3, 4, 1],
+        };
+        *source.telemetry.live_ink.lock().unwrap() = Some(stroke.clone());
+        (frame, Some(stroke))
+    }
+    #[test]
+    fn failed_readiness_or_post_preparation_refusal_preserves_exact_previous_donor() {
+        use super::super::ink_wire::{Binding, Clock};
+        for readiness_failure in [true, false] {
+            let (source, _) = fixture();
+            let old = prior_donor(&source);
+            let b = Binding {
+                capture_id: source.capture_id.clone(),
+                producer_id: source.producer_id.clone(),
+                generation: 1,
+            };
+            let c = Clock {
+                boot_id: if readiness_failure {
+                    source.boot.clone()
+                } else {
+                    "wrong-boot".into()
+                },
+                admission_monotonic_ns: "0".into(),
+            };
+            let mut state = InkSessionState {
+                source,
+                collector: None,
+                prepared: None,
+            };
+            assert!(
+                state
+                    .activate_ready(
+                        &b,
+                        &c,
+                        Instant::now() + Duration::from_secs(1),
+                        synthetic_collector(readiness_failure)
+                    )
+                    .is_err()
+            );
+            assert_eq!(*state.source.telemetry.target_frame.lock().unwrap(), old.0);
+            assert_eq!(*state.source.telemetry.live_ink.lock().unwrap(), old.1);
+            assert!(!*state.source.installed.lock().unwrap());
+            assert!(state.prepared.is_none());
+            state
+                .collector
+                .as_mut()
+                .unwrap()
+                .stop_and_drain(Instant::now() + Duration::from_secs(1))
+                .ok();
+        }
+    }
+    #[test]
+    fn controlled_slow_activation_probe_returns_at_deadline_and_cannot_later_install_input() {
+        use super::super::ink_wire::{Binding, Clock, Command};
+        use std::sync::mpsc;
+        let (mut source, _) = fixture();
+        let old = prior_donor(&source);
+        let b = Binding {
+            capture_id: source.capture_id.clone(),
+            producer_id: source.producer_id.clone(),
+            generation: 1,
+        };
+        let c = Clock {
+            boot_id: source.boot.clone(),
+            admission_monotonic_ns: "0".into(),
+        };
+        let command = Command::Activate {
+            binding: b,
+            clock: c,
+        };
+        let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+        let (release_tx, release_rx) = mpsc::sync_channel(1);
+        let release = Mutex::new(release_rx);
+        let observed = source.observed_output.clone();
+        source.probe = Arc::new(move || {
+            entered_tx.send(()).unwrap();
+            release
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap();
+            Ok(observed.clone())
+        });
+        let state = Arc::new(Mutex::new(InkSessionState {
+            source,
+            collector: None,
+            prepared: None,
+        }));
+        let run = state.clone();
+        let abandoned = state.clone();
+        let worker = NativeInkSession::spawn(
+            move |command, deadline| {
+                let Command::Activate { binding, clock } = command else {
+                    panic!("wrong command")
+                };
+                let mut s = run.lock().unwrap();
+                s.binding(binding).unwrap();
+                match s.activate_ready(binding, clock, deadline, synthetic_collector(false)) {
+                    Ok(()) => json!({"status":"active"}),
+                    Err(_) => unknown_source(),
+                }
+            },
+            move || {
+                let s = abandoned.lock().unwrap();
+                s.fail();
+                if let Some(c) = s.collector.as_ref() {
+                    c.request_stop();
+                }
+            },
+        )
+        .unwrap();
+        let start = Instant::now();
+        let result = worker.request(command.clone(), start + Duration::from_millis(60));
+        assert_eq!(result, unknown_source());
+        assert!(
+            start.elapsed() < Duration::from_millis(300),
+            "coordinator waited for blocked native probe"
+        );
+        entered_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(
+            worker.request(command, Instant::now() + Duration::from_secs(1)),
+            unknown_source(),
+            "late/busy source cannot be re-admitted"
+        );
+        release_tx.send(()).unwrap();
+        drop(worker.sender);
+        worker._worker.join().unwrap();
+        let mut s = state.lock().unwrap();
+        assert_eq!(s.source.state.lock().unwrap().phase, Phase::Unavailable);
+        assert!(!*s.source.installed.lock().unwrap());
+        assert_eq!(*s.source.telemetry.target_frame.lock().unwrap(), old.0);
+        assert_eq!(*s.source.telemetry.live_ink.lock().unwrap(), old.1);
+        s.collector
+            .as_mut()
+            .unwrap()
+            .stop_and_drain(Instant::now() + Duration::from_secs(1))
+            .unwrap();
+    }
+    #[test]
+    fn controlled_slow_seal_probe_cannot_block_coordinator_or_publish_late_drain() {
+        use super::super::ink_wire::{Binding, Command};
+        use std::sync::mpsc;
+        let (mut source, _) = fixture();
+        activate(&source);
+        gesture(&source);
+        let b = Binding {
+            capture_id: source.capture_id.clone(),
+            producer_id: source.producer_id.clone(),
+            generation: 1,
+        };
+        let before = source.read_batch().unwrap().unwrap();
+        let telemetry = source.telemetry.clone();
+        let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+        let (release_tx, release_rx) = mpsc::sync_channel(1);
+        let release = Mutex::new(release_rx);
+        let observed = source.observed_output.clone();
+        source.probe = Arc::new(move || {
+            entered_tx.send(()).unwrap();
+            release
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap();
+            Ok(observed.clone())
+        });
+        let state = Arc::new(Mutex::new(Some(InkSessionState {
+            source,
+            collector: Some(synthetic_collector(false)),
+            prepared: None,
+        })));
+        let run = state.clone();
+        let abandoned = state.clone();
+        let worker = NativeInkSession::spawn(
+            move |command, deadline| {
+                execute_source_command(
+                    &mut run.lock().unwrap(),
+                    telemetry.clone(),
+                    &"b".repeat(32),
+                    0,
+                    command,
+                    deadline,
+                )
+            },
+            move || {
+                abandoned.lock().unwrap().as_ref().unwrap().fail();
+            },
+        )
+        .unwrap();
+        let start = Instant::now();
+        assert_eq!(
+            worker.request(
+                Command::SealInputAndDrain { binding: b },
+                start + Duration::from_millis(60)
+            ),
+            unknown_source()
+        );
+        assert!(
+            start.elapsed() < Duration::from_millis(300),
+            "coordinator waited for slow seal probe"
+        );
+        entered_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        release_tx.send(()).unwrap();
+        drop(worker.sender);
+        worker._worker.join().unwrap();
+        let s = state.lock().unwrap();
+        let s = s.as_ref().unwrap();
+        let original = s.source.state.lock().unwrap();
+        assert_eq!(original.phase, Phase::Unavailable);
+        assert_eq!(original.buffer.read_pending(), Some(&before));
+        assert!(!matches!(
+            original.buffer.state(),
+            InkSourceState::SealedAndDrained(_)
+        ));
+        assert!(s.collector.is_none());
     }
     #[test]
     fn foreign_observer_is_not_removed_and_ownership_failure_is_immediately_unknown() {
@@ -843,11 +1133,12 @@ mod tests {
 
 /// One source-local input scope, owned by the existing NativeHost coordinator.
 /// Positive replacement here says nothing about Engine owning-close clearance.
-pub(crate) struct NativeInkSession {
+struct InkSessionState {
     source: NativeInkSource,
     collector: Option<super::ink_collector::NativeInkCollector>,
+    prepared: Option<crate::capture::engine::runtime::NativeInkTargetSnapshot>,
 }
-impl NativeInkSession {
+impl InkSessionState {
     fn binding(&self, b: &super::ink_wire::Binding) -> Result<(), &'static str> {
         if b.capture_id != self.source.capture_id
             || b.producer_id != self.source.producer_id
@@ -881,45 +1172,79 @@ impl NativeInkSession {
             return Err("input-already-owned");
         }
         let r = self.source.observed_output.rect;
-        self.source
-            .telemetry
-            .prepare_native_ink_target(crate::shared::model::TargetFrame {
-                x: r[0],
-                y: r[1],
-                width: r[2],
-                height: r[3],
-                scale: 1.0,
-            })?;
-        self.source.activate(
-            &b.capture_id,
-            &b.producer_id,
-            b.generation,
-            &c.boot_id,
-            &c.admission_monotonic_ns,
-        )?;
-        let collector = match super::ink_collector::NativeInkCollector::start(
+        // Start/readiness are still outside native input admission. No donor
+        // target or provisional data is touched if evdev/compositor fails.
+        let collector = super::ink_collector::NativeInkCollector::start(
             self.source.telemetry.clone(),
             self.source.observer.clone(),
             self.source.observed_output.name.clone(),
             r,
-        ) {
-            Ok(c) => c,
-            Err(e) => {
-                self.fail();
-                // No collector was created. Remove only our installed observer;
-                // the unavailable phase still prevents a successful empty seal.
-                let _ = self.source.seal_and_drain();
-                return Err(e);
-            }
-        };
-        // Retain the lifetime BEFORE any readiness wait or unknown response.
-        self.collector = Some(collector);
-        if let Err(e) = self.collector.as_ref().unwrap().wait_ready(deadline) {
-            self.collector.as_ref().unwrap().request_stop();
-            self.fail();
-            return Err(e);
+        )?;
+        self.activate_ready(b, c, deadline, collector)
+    }
+    fn restore_target(&mut self) -> Result<(), &'static str> {
+        if let Some(snapshot) = self.prepared.as_mut() {
+            self.source.telemetry.restore_native_ink_target(snapshot)?;
+            self.prepared = None;
         }
         Ok(())
+    }
+    fn activate_ready(
+        &mut self,
+        b: &super::ink_wire::Binding,
+        c: &super::ink_wire::Clock,
+        deadline: Instant,
+        collector: super::ink_collector::NativeInkCollector,
+    ) -> Result<(), &'static str> {
+        // Retain the lifetime BEFORE any readiness wait or unknown response.
+        self.collector = Some(collector);
+        let result = (|| {
+            self.collector.as_ref().unwrap().wait_ready(deadline)?;
+            let r = self.source.observed_output.rect;
+            self.prepared = Some(self.source.telemetry.prepare_native_ink_target(
+                crate::shared::model::TargetFrame {
+                    x: r[0],
+                    y: r[1],
+                    width: r[2],
+                    height: r[3],
+                    scale: 1.0,
+                },
+            )?);
+            self.source.activate_before(
+                &b.capture_id,
+                &b.producer_id,
+                b.generation,
+                &c.boot_id,
+                &c.admission_monotonic_ns,
+                deadline,
+            )?;
+            self.collector.as_ref().unwrap().arm(deadline)?;
+            Ok(())
+        })();
+        if result.is_err() {
+            self.collector.as_ref().unwrap().request_stop();
+            self.fail();
+            // The collector has not been armed on failure. Remove only our
+            // observer before restoring the exact prior donor snapshot.
+            let mut installed = self
+                .source
+                .installed
+                .lock()
+                .map_err(|_| "input-ownership-unresolved")?;
+            if *installed {
+                if !self
+                    .source
+                    .telemetry
+                    .remove_native_ink_observer(&self.source.observer)
+                {
+                    return Err("input-ownership-unresolved");
+                }
+                *installed = false;
+            }
+            drop(installed);
+            self.restore_target()?;
+        }
+        result
     }
     fn seal(&mut self, deadline: std::time::Instant) -> Result<Value, &'static str> {
         let Some(collector) = self.collector.as_mut() else {
@@ -931,7 +1256,13 @@ impl NativeInkSession {
             return Err(e);
         }
         self.collector = None;
-        let (final_sequence, seal) = self.source.seal_and_drain()?;
+        let result = self.source.seal_before(deadline);
+        if !self.source.installed.lock().is_ok_and(|i| !*i) {
+            self.fail();
+            return Err("input-ownership-unresolved");
+        }
+        self.restore_target()?;
+        let (final_sequence, seal) = result?;
         if std::time::Instant::now() >= deadline {
             self.fail();
             return Err("source-drain-unknown");
@@ -941,23 +1272,19 @@ impl NativeInkSession {
         )
     }
 }
-pub(crate) fn native_source_command(
-    session: &mut Option<NativeInkSession>,
+fn execute_source_command(
+    session: &mut Option<InkSessionState>,
     telemetry: Arc<SharedCaptureTelemetry>,
     epoch: &str,
     revision: u64,
     command: &super::ink_wire::Command,
-    request_deadline: u64,
+    deadline: Instant,
 ) -> Value {
     use super::ink_wire::Command;
     let result = (|| -> Result<Value, &'static str> {
-        let remaining = request_deadline
-            .saturating_sub(crate::capture::desktop::workflow::agent_capture::storage_clock_ms())
-            .min(2000);
-        if remaining == 0 {
+        if Instant::now() >= deadline {
             return Err("deadline-expired");
         }
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(remaining);
         if let Command::Observe { capture_id, source } = command {
             if session.as_ref().is_some_and(|s| !s.replaceable()) {
                 return Err("source-already-owned");
@@ -971,9 +1298,10 @@ pub(crate) fn native_source_command(
                 &source.generation,
             )?;
             let value = observed.observation().clone();
-            *session = Some(NativeInkSession {
+            *session = Some(InkSessionState {
                 source: observed,
                 collector: None,
+                prepared: None,
             });
             if std::time::Instant::now() >= deadline {
                 return Err("source-observation-unknown");
@@ -1016,4 +1344,140 @@ pub(crate) fn native_source_command(
         Ok(v) => v,
         Err(_) => json!({"status":"refused","reason":"unavailable"}),
     }
+}
+
+/// One retained executor per native-only coordinator, never one detached thread
+/// per request. Blocking OS probes cannot hold the GUI/coordinator past the
+/// request deadline. Timeout permanently closes further source admission;
+/// the existing executor, state and native handles remain owned, not cleared.
+pub(crate) struct NativeInkSession {
+    sender: std::sync::mpsc::SyncSender<SourceWork>,
+    failed: Arc<std::sync::atomic::AtomicBool>,
+    _worker: std::thread::JoinHandle<()>,
+}
+struct SourceWork {
+    command: super::ink_wire::Command,
+    deadline: Instant,
+    response: std::sync::mpsc::SyncSender<Value>,
+}
+impl NativeInkSession {
+    fn spawn(
+        mut operation: impl FnMut(&super::ink_wire::Command, Instant) -> Value + Send + 'static,
+        mut abandoned: impl FnMut() + Send + 'static,
+    ) -> Result<Self, &'static str> {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let (sender, receiver) = std::sync::mpsc::sync_channel::<SourceWork>(1);
+        let failed = Arc::new(AtomicBool::new(false));
+        let failure = failed.clone();
+        let worker = std::thread::Builder::new()
+            .name("apparent-native-ink-source".into())
+            .spawn(move || {
+                while let Ok(work) = receiver.recv() {
+                    if failure.load(Ordering::Acquire) || Instant::now() >= work.deadline {
+                        failure.store(true, Ordering::Release);
+                        abandoned();
+                        let _ = work.response.send(unknown_source());
+                        continue;
+                    }
+                    let result = operation(&work.command, work.deadline);
+                    if failure.load(Ordering::Acquire) || Instant::now() >= work.deadline {
+                        failure.store(true, Ordering::Release);
+                        abandoned();
+                        let _ = work.response.send(unknown_source());
+                    } else if work.response.send(result).is_err() {
+                        failure.store(true, Ordering::Release);
+                        abandoned();
+                    }
+                }
+            })
+            .map_err(|_| "source-worker-unavailable")?;
+        Ok(Self {
+            sender,
+            failed,
+            _worker: worker,
+        })
+    }
+    fn request(&self, command: super::ink_wire::Command, deadline: Instant) -> Value {
+        use std::sync::atomic::Ordering;
+        if self.failed.load(Ordering::Acquire) || Instant::now() >= deadline {
+            return unknown_source();
+        }
+        let (response, receiver) = std::sync::mpsc::sync_channel(1);
+        if self
+            .sender
+            .try_send(SourceWork {
+                command,
+                deadline,
+                response,
+            })
+            .is_err()
+        {
+            self.failed.store(true, Ordering::Release);
+            return unknown_source();
+        }
+        match receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(value) if Instant::now() < deadline => value,
+            _ => {
+                self.failed.store(true, Ordering::Release);
+                unknown_source()
+            }
+        }
+    }
+}
+fn unknown_source() -> Value {
+    json!({"status":"refused","reason":"unavailable"})
+}
+pub(crate) fn native_source_command(
+    session: &mut Option<NativeInkSession>,
+    telemetry: Arc<SharedCaptureTelemetry>,
+    epoch: &str,
+    revision: u64,
+    command: &super::ink_wire::Command,
+    request_deadline: u64,
+) -> Value {
+    let remaining = request_deadline
+        .saturating_sub(crate::capture::desktop::workflow::agent_capture::storage_clock_ms())
+        .min(2000);
+    if remaining == 0 {
+        return unknown_source();
+    }
+    let deadline = Instant::now() + Duration::from_millis(remaining);
+    if session.is_none() {
+        if !matches!(command, super::ink_wire::Command::Observe { .. }) {
+            return unknown_source();
+        }
+        let state = Arc::new(Mutex::new(None::<InkSessionState>));
+        let cleanup = state.clone();
+        let epoch = epoch.to_owned();
+        let created = NativeInkSession::spawn(
+            move |command, deadline| {
+                let Ok(mut s) = state.lock() else {
+                    return unknown_source();
+                };
+                execute_source_command(
+                    &mut s,
+                    telemetry.clone(),
+                    &epoch,
+                    revision,
+                    command,
+                    deadline,
+                )
+            },
+            move || {
+                if let Ok(mut s) = cleanup.lock() {
+                    if let Some(s) = s.as_mut() {
+                        if let Some(c) = s.collector.as_ref() {
+                            c.request_stop();
+                        }
+                        s.fail();
+                    }
+                }
+            },
+        );
+        let Ok(created) = created else {
+            return unknown_source();
+        };
+        *session = Some(created);
+    }
+    session.as_ref().unwrap().request(command.clone(), deadline)
 }

@@ -41,6 +41,16 @@ The native-only role owns a dedicated read-only modifier sampler and actual
 Hyprland cursor/output observations; it does not start the legacy global input
 poller, shortcuts or recorder. Other roles and platforms refuse this operation.
 
+One retained source executor isolates potentially blocking OS reads from the
+coordinator. The request's original deadline bounds the coordinator response;
+expiry closes source admission and retains the executor/native lifetimes rather
+than accepting a late success. Activation samples readiness with input paused,
+then prepares the donor target transactionally. Failed readiness leaves the
+target untouched; later refusal restores its previous frame and provisional ink
+only after removal of the exact observer. Positive source seal restores that
+snapshot after collector drain. These are local source facts, never Engine
+runtime clearance or permission to discard unknown capture work.
+
 This is the screen-source factory, not an enabled drawing route or complete
 application adoption. Board callback stamps/incarnations, recorded overlay
 presentation and Electron controls still need integration. No competing legacy

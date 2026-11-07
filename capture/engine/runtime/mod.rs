@@ -819,6 +819,13 @@ pub struct SharedCaptureTelemetry {
     shift_press: Mutex<Option<(u64, f64, f64, TargetFrame)>>,
 }
 
+#[cfg(target_os="linux")]
+pub(crate) struct NativeInkTargetSnapshot {
+    prepared:TargetFrame,
+    previous:TargetFrame,
+    live:Option<Stroke>,
+}
+
 impl SharedCaptureTelemetry {
     #[cfg(target_os = "linux")]
     pub(crate) fn install_native_ink_observer(&self, observer: Arc<dyn NativeInkObserver>) -> bool {
@@ -836,14 +843,27 @@ impl SharedCaptureTelemetry {
         true
     }
 
-    /// Exclusive native-only source preparation. Does not start a recorder,
-    /// set legacy active, register shortcuts, or clear accepted history.
+    /// Exclusive native-only preparation; snapshot is retained until commit or
+    /// positive rollback. Accepted history and legacy active state are untouched.
     #[cfg(target_os="linux")]
-    pub(crate) fn prepare_native_ink_target(&self,frame:TargetFrame)->Result<(), &'static str>{
+    pub(crate) fn prepare_native_ink_target(&self,frame:TargetFrame)->Result<NativeInkTargetSnapshot, &'static str>{
         let gate=self.native_ink_observer.lock().map_err(|_|"input-ownership-unresolved")?;
         if gate.is_some() || self.active.load(Ordering::Acquire){return Err("input-already-owned");}
-        *self.target_frame.lock().map_err(|_|"source-unavailable")?=frame;
-        *self.live_ink.lock().map_err(|_|"source-unavailable")?=None;
+        let mut target=self.target_frame.lock().map_err(|_|"source-unavailable")?;
+        let mut live=self.live_ink.lock().map_err(|_|"source-unavailable")?;
+        let snapshot=NativeInkTargetSnapshot { prepared:frame,previous:*target,live:live.take() };
+        *target=frame;
+        Ok(snapshot)
+    }
+    #[cfg(target_os="linux")]
+    pub(crate) fn restore_native_ink_target(&self,snapshot:&mut NativeInkTargetSnapshot)->Result<(), &'static str>{
+        let gate=self.native_ink_observer.lock().map_err(|_|"input-ownership-unresolved")?;
+        if gate.is_some() || self.active.load(Ordering::Acquire){return Err("input-ownership-unresolved");}
+        let mut target=self.target_frame.lock().map_err(|_|"source-unavailable")?;
+        let mut live=self.live_ink.lock().map_err(|_|"source-unavailable")?;
+        if *target!=snapshot.prepared {return Err("target-changed");}
+        *target=snapshot.previous;
+        *live=snapshot.live.take();
         Ok(())
     }
 

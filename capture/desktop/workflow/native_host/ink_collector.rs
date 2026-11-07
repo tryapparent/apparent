@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 pub(crate) struct NativeInkCollector {
     stop: Arc<AtomicBool>,
+    armed: Arc<AtomicBool>,
     worker: Option<JoinHandle<Result<(), &'static str>>>,
     ready: std::sync::mpsc::Receiver<Result<(), &'static str>>,
 }
@@ -25,7 +26,7 @@ impl NativeInkCollector {
         let keyboard = crate::capture::desktop::linux::input::NativeInkKeyboard::open()?;
         // Capture the initial state synchronously before acknowledging activation.
         let initial = keyboard.modifiers()?;
-        Self::spawn(
+        Self::spawn_with_admission(
             move || {
                 let modifiers = keyboard.modifiers()?;
                 let position = crate::capture::desktop::linux::hyprland::ink_pointer(&name, rect)
@@ -57,17 +58,30 @@ impl NativeInkCollector {
             },
             move || observer.observe(NativeInkObservation::ClockUnavailable),
             initial[0],
+            false,
         )
     }
+    #[cfg(test)]
     pub(super) fn spawn(
+        sample: impl FnMut() -> Result<([bool; 4], [f64; 2], u64), &'static str> + Send + 'static,
+        observe: impl FnMut(bool, bool, [f64; 2], u64) + Send + 'static,
+        failed: impl Fn() + Send + 'static,
+        initially_held: bool,
+    ) -> Result<Self, &'static str> {
+        Self::spawn_with_admission(sample, observe, failed, initially_held, true)
+    }
+    pub(super) fn spawn_with_admission(
         mut sample: impl FnMut() -> Result<([bool; 4], [f64; 2], u64), &'static str> + Send + 'static,
         mut observe: impl FnMut(bool, bool, [f64; 2], u64) + Send + 'static,
         failed: impl Fn() + Send + 'static,
         initially_held: bool,
+        initially_armed: bool,
     ) -> Result<Self, &'static str> {
         let (ready_tx, ready) = std::sync::mpsc::sync_channel(1);
         let stop = Arc::new(AtomicBool::new(false));
         let signal = stop.clone();
+        let armed = Arc::new(AtomicBool::new(initially_armed));
+        let admission = armed.clone();
         let worker = std::thread::Builder::new()
             .name("apparent-native-ink".into())
             .spawn(move || {
@@ -92,6 +106,13 @@ impl NativeInkCollector {
                     if signal.load(Ordering::Acquire) {
                         break;
                     }
+                    if !admission.load(Ordering::Acquire) {
+                        if mods[0] {
+                            await_release = true;
+                        }
+                        std::thread::sleep(Duration::from_millis(8));
+                        continue;
+                    }
                     if !mods[0] {
                         await_release = false;
                     } else if mods[1..].iter().any(|v| *v) {
@@ -109,6 +130,7 @@ impl NativeInkCollector {
             .map_err(|_| "collector-unavailable")?;
         Ok(Self {
             stop,
+            armed,
             worker: Some(worker),
             ready,
         })
@@ -128,6 +150,16 @@ impl NativeInkCollector {
             return Err("collector-ready-unknown");
         }
         result
+    }
+    pub(crate) fn arm(&self, deadline: Instant) -> Result<(), &'static str> {
+        if Instant::now() >= deadline
+            || self.stop.load(Ordering::Acquire)
+            || self.worker.as_ref().is_none_or(|w| w.is_finished())
+        {
+            return Err("collector-ready-unknown");
+        }
+        self.armed.store(true, Ordering::Release);
+        Ok(())
     }
     /// Timeout retains the owning handle and does not claim drain or clearance.
     pub(crate) fn request_stop(&self) {

@@ -134,10 +134,11 @@ previous branch cannot enter the public tarball.
 
 ## Privileged accepted-ink relay (source preparation)
 
-`@apparent/native-host/ink` exports `createNativeInkRelay` and the separate
-`NativeInkSourcePort` DTO. It requires an already identity-joined native source
-and an authenticated Engine ink sink; **there is no native source factory or
-installed drawing capability in this slice**. The source observations match the
+`@apparent/native-host/ink` exports `createNativeInkRelay`,
+`createNativeInkSourcePort` and the separate `NativeInkSourcePort` DTO. The
+factory binds the original capture/source reference and owned NativeHost
+identity to fixed socket operations. It requires an authenticated Engine ink
+sink; **installed drawing remains unqualified**. The source observations match the
 committed Engine contract `aa17795f` and [native source obligation](INK-SOURCE-V1.md).
 No renderer may supply this port, accepted events, geometry, tokens or timestamps.
 
@@ -153,9 +154,10 @@ separate from Board's current stack and never proves surviving canvas pixels.
 Finish has one two-second monotonic deadline. Dispatch video Stop independently,
 concurrently with this drain; never put Stop behind it. A complete ingress finish
 is not an original material/Saved receipt, native effect qualification, permission,
-process exit or ownership clearance. Runtime SDK methods/artifact, actual native
-callback/geometry/clock source, fixed UI controls and affected native acceptance
-remain required before enabling or advertising drawing. Old snapshot ABI and
+process exit or ownership clearance. See the [controller and collector](NATIVE-INK-CONTROLLER.md)
+for implemented source mechanics and static proof. Application adoption, actual
+recorded overlay/Board effects and affected native acceptance remain required
+before enabling or advertising drawing. Old snapshot ABI and
 existing native producers are unchanged.
 
 Binding/observation leaves native input admission closed. Only a matching Engine
