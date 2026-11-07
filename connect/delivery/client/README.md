@@ -609,3 +609,133 @@ The joined Linux host fixture uses the public installed-resource factory and the
 hash-pinned existing Rust writer against synthetic state and loopback HTTP. It
 does not admit that writer for installation or supply the production Agent
 inspection adapter. Joined host proof on Mac and installed routing remain open.
+
+
+## CLI share-management transport
+
+`./share-management` lists every share page and returns only the known, frozen
+service fields. The caller selects read or upload scope from approved local state
+and pins its login generation; every request obtains fresh bearer authority for
+that same server, scope and generation. The API performs no credential writes,
+refresh, scope fallback or installed routing. Lists fail without a partial result
+above 1,000 pages, 10,000 rows or 16 MB of raw response bytes.
+
+`revokeShare` requires upload scope and a 32-character management ID, sends DELETE
+once, then checks the complete list. An absent, revoked or expired row confirms;
+an acknowledged DELETE without valid readback raises `ShareRevocationError` with
+`effect: "acknowledged_unverified"`. Other failures have an unknown effect; neither
+case authorizes an automatic repeat. Share secrets are never management IDs.
+The service remains authoritative. Installed command and renewal-owner adoption
+remain separate; root and `/connect` loopback Worker tests do not prove live auth.
+
+
+## Scoped account-status transport
+
+`./account-status` exposes `readAccountStatus` for the existing `status --account`
+workflow. One bounded GET returns only frozen `beta`, `quotaBytes` and `usedBytes`
+facts. It reuses the share transport's approved server, scope and local generation
+binding; the caller selects upload credentials first or a read credential locally.
+There is no network fallback, refresh, credential mutation or installed route.
+The service supplies the quota; the client does not hardcode a limit or assume
+usage is below it. Local status composition and renewal-owner adoption remain
+host work. Synthetic Worker checks cover both scopes and API mounts, not live auth.
+
+
+## Endpoint identity preparation
+
+`./endpoint-identity` exposes the same bounded codec and explicit
+`generateStoredIdentityRecord` for a new login identity only. It returns canonical
+caller-owned private record bytes and the matching frozen public key; it performs
+no filesystem access, approval, fallback, caching or replacement of existing keys.
+The privileged host must persist privately, verify readback and bind the identity
+to its current login before approval. Raw private bytes must never enter a renderer
+and must be wiped when the caller finishes. Owned mutable seeds and failed output
+buffers are cleared; immutable JavaScript strings have no erasure guarantee.
+Actual local Worker fixtures consume the generated public key for device enrollment
+and the decoded private record for encrypted root/grouped transfers on both API
+bases. This is synthetic protocol evidence, not durable or installed identity proof.
+
+The internal `publishLoginIdentity` seam privately publishes a supplied record
+only when its scope/login marker, cancellation epoch and current queue lease still
+match and no revocation intent is pending. It uses expected-absent replacement,
+then validates exact readback and the stored public binding before returning a
+key. An existing valid identity wins without rewriting, including supported JSON
+whitespace/order and data-hardlink aliases; damaged or unsafe files fail closed.
+Uncertainty exposes no approval key and never triggers retry. The caller's input
+bytes stay untouched; owned mutable copies are wiped. This seam changes no login
+markers, credentials or config and has no public writer export or live caller.
+Linux installed-provider tests cover these filesystem cases; installed Mac/ARM,
+full login publication and coordinated writer adoption remain separate gates.
+
+
+## Anonymous device protocol transport
+
+`./device-transport` supplies `requestDeviceStart` and `requestDevicePoll` for
+the existing device authorization policy. Each call sends one anonymous POST to
+the caller-approved root or `/connect` API base, without redirects, bearer
+credentials or cookies. Start pins an explicit read/upload scope and an optional
+validated public encryption key; poll sends the caller's transaction-bound device
+code. A single deadline covers headers and the bounded, duplicate-key-checked
+JSON response. Errors contain fixed categories, and neither operation retries.
+
+Replies remain private, untrusted protocol data. The existing `authorizeDevice`
+policy must validate approval details and matching grant scope before presentation
+or commit. The host must preserve consent, login incarnation, cancellation,
+original issue time and one-shot commit ownership; HTTP success alone proves none
+of those facts. The transport creates no keys and writes no credential or config
+state. Its actual local Worker checks cover both scopes and API mounts, while
+installed Settings/CLI HTTP and durable mutation still belong to Rust. Adoption
+and the coordinated sole-writer transition remain separate acceptance gates.
+
+
+## Device grant revocation
+
+`./grant-revocation` exposes `revokeDeviceGrant` for one stored grant and its
+caller-approved server. It revalidates and snapshots the credential, then sends
+one bounded revoke POST. Renewable grants use only the refresh credential;
+legacy records use their bearer and omit the optional refresh field. Expired or
+`authRequired` local facts do not prevent this cleanup request. There is no
+refresh, sibling-credential fallback or retry, and errors contain fixed categories.
+Only the service's exact `{ok:true}` acknowledgement produces a frozen success.
+
+The shared internal POST code keeps device start/poll anonymous; only the fixed
+revocation route can send a bearer. Local Worker tests revoke a read device while
+checking its upload sibling remains usable, then revoke that upload device through
+the legacy bearer path on both API bases. These are synthetic service checks.
+The API does not settle logout, clear credentials or intents, or disable uploads.
+The existing writer must commit durable cancellation and local logout first,
+release its locks, and bound subsequent remote cleanup. A failed request may have
+revoked the remote grant; it authorizes neither blind repetition nor local
+settlement. Installed adoption and the coordinated writer cutover remain open.
+
+
+The internal revocation-intent preparation publishes a fresh immutable private
+boolean before acquiring `queue.lock`, using the existing expected-absent native
+file replacement and readback. Concurrent disable/logout intents coexist. A
+queue-held reader returns stamped, frozen observations of all matching legacy
+names; malformed, unsafe or more than 1,024 matching records fail closed. It
+never removes intents or authorizes work. Uncertain publication remains uncertain
+even after a root replacement. Linux installed-provider tests cover publication
+while the queue is held and rejection of subsequent credential reads.
+
+This is not a production logout writer. Config-gate publication, cancellation,
+job/credential settlement and deletion of only covered intents remain host work.
+The config host currently exposes no Connect cloud-gate update operation. Rust
+remains authoritative; first installed Mac/ARM and writer-cutover gates remain.
+
+
+`prepareRevocationState` is an internal follow-on phase, not a logout command.
+With valid pending intents and one current queue lease, it rotates the cancellation
+epoch and removes the captured upload/read login markers only after confirmed
+epoch readback. It keeps credentials, jobs, config, identities, renewal evidence
+and every intent. Its frozen prepared receipt covers only the original stamped
+intents; concurrent new intents remain pending and uncovered. Publication, partial
+removal, directory-sync or lease-release uncertainty stops the phase without retry.
+A marker appearing where absence was captured prevents a prepared receipt.
+
+Linux installed-provider tests verify the real queue lease and replacement path,
+retained inputs and injected lost-ack handling. They do not prove crash durability
+or installed adoption. Path check/unlink assumes cooperating same-UID writers
+honor the queue lock; it is not inode-atomic deletion. The existing Rust writer
+remains authoritative until the coordinated cutover; config gates and full local
+logout settlement still require their separate capability and acceptance.
