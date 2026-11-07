@@ -76,7 +76,7 @@ try {
   assert.equal((await lstat(installedHost)).isSymbolicLink(), false, 'host package must be installed from its tarball');
   assert.equal((await lstat(installedContracts)).isSymbolicLink(), false, 'contracts package must be installed from its tarball');
   const hostEntries = await readdir(installedHost);
-  assert.deepEqual(hostEntries.sort(), ['INK-SOURCE-V1.md', 'README.md', 'dist', 'package.json']);
+  assert.deepEqual(hostEntries.sort(), ['INK-SOURCE-V1.md', 'NATIVE-INK-CONTROLLER.md', 'README.md', 'dist', 'package.json']);
   const hostPackage = JSON.parse(await readFile(join(installedHost, 'package.json'), 'utf8')) as Record<string, unknown>;
   assert.equal(hostPackage.dependencies, undefined, 'runtime package must not have a source-tree dependency');
   assert.equal((hostPackage.peerDependencies as Record<string, string>)['@apparent/app-contracts'], '0.1.0');
@@ -88,8 +88,9 @@ try {
   const runtimeSmoke = `
     import assert from 'node:assert/strict';
     import { createNativeHostPort } from '@apparent/native-host';
-    import { createNativeInkRelay, NATIVE_INK_LIMITS } from '@apparent/native-host/ink';
+    import { createNativeInkRelay, createNativeInkSourcePort, NATIVE_INK_LIMITS } from '@apparent/native-host/ink';
     assert.equal(typeof createNativeInkRelay, 'function');
+    assert.equal(typeof createNativeInkSourcePort, 'function');
     assert.equal(NATIVE_INK_LIMITS.batchBytes, 16384);
     import { createNativePenPort } from '@apparent/native-host/pen';
     import { createNativeClipboardPort, MAX_UTF8_TEXT_BYTES, MAX_SERIALIZED_FRAME_BYTES } from '@apparent/native-host/clipboard';
@@ -124,7 +125,7 @@ try {
     .replace(
       "import { createNativeHostPort, createNativeClipboardPort, createNativeClipboardTextReadbackPort, createNativePenPort } from '../src/client.ts';",
       "import { createNativeHostPort } from '@apparent/native-host';\nimport { createNativeClipboardPort, createNativeClipboardTextReadbackPort } from '@apparent/native-host/clipboard';\nimport { createNativePenPort } from '@apparent/native-host/pen';",
-    );
+    ).replaceAll("import('../src/client.ts')", "import('@apparent/native-host/ink')");
   assert.notEqual(packedTests, sourceTests, 'packed test copy must switch to the installed public exports');
   assert.ok(!packedTests.includes("'../src/"), 'packed test copy must not import TypeScript source');
   await writeFile(join(consumerTests, 'client.test.ts'), packedTests);
@@ -132,11 +133,11 @@ try {
 
   const sourceFiles = [
     'package.json', 'package-lock.json', 'README.md', 'tsconfig.json', 'tsconfig.build.json', 'scripts/clean-dist.ts',
-    'src/client.ts', 'src/pen.ts', 'src/clipboard.ts',
+    'src/client.ts', 'src/pen.ts', 'src/clipboard.ts', 'src/ink.ts',
     'test/client.test.ts', 'test/packed-consumer-types.ts', 'test/packed-consumer.ts',
   ];
   const sourceSha = Object.fromEntries(await Promise.all(sourceFiles.map(async file => [file, await digestFile(join(nativeRoot, file))])));
-  const distFiles = ['client.js', 'client.d.ts', 'pen.js', 'pen.d.ts', 'clipboard.js', 'clipboard.d.ts'];
+  const distFiles = ['client.js', 'client.d.ts', 'pen.js', 'pen.d.ts', 'clipboard.js', 'clipboard.d.ts', 'ink.js', 'ink.d.ts'];
   const distSha = Object.fromEntries(await Promise.all(distFiles.map(async file => [file, await digestFile(join(nativeRoot, 'dist', file))])));
   const proof = {
     node: process.version,

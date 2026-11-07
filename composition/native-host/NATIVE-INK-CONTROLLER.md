@@ -30,10 +30,21 @@ exports, and optionally passes the actual controller's synthetic unit fixture
 through public SDK046 validation and the NativeHost relay. It starts no worker,
 socket, GUI, input listener or model. Fixture evidence is not OS acceptance.
 
-This is the screen-source controller, not an enabled drawing route or complete
-native factory adoption. Existing NativeHost socket dispatch, native-only input
-owner activation, Board callback stamps/incarnations and Electron controls still
-need integration. No competing legacy recording may be started to obtain input.
+`createNativeInkSourcePort({original,ownedHost})` uses the existing private
+NativeHost socket and fixed Record-bound `inkSource` operation. Observe accepts
+only original capture/source references. Activate accepts only the matching
+native binding and Engine registration boot/admission clock. Neither operation
+accepts points, geometry or an owner secret from the renderer. Read/ACK retain
+the exact batch bytes; explicit seal stops and joins the scoped collector before
+removing its callback and sealing. Unknown readiness or drain stays unavailable.
+The native-only role owns a dedicated read-only modifier sampler and actual
+Hyprland cursor/output observations; it does not start the legacy global input
+poller, shortcuts or recorder. Other roles and platforms refuse this operation.
+
+This is the screen-source factory, not an enabled drawing route or complete
+application adoption. Board callback stamps/incarnations, recorded overlay
+presentation and Electron controls still need integration. No competing legacy
+recording may be started to obtain input.
 Actual native effects, latency of per-callback monitor joins, original sealed
 facts and full Saved/Copy/Agent journey remain acceptance gates. Installed
 routing and advertised capabilities are unchanged. Mac is unsupported here.

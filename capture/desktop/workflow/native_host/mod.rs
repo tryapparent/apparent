@@ -1,9 +1,10 @@
 //! Strict, Record-bound protocol carried by the existing same-user GUI socket.
 use serde::{Deserialize, Serialize};
 
-// Internal callback retention only; no source factory, RPC or drawing route yet.
+// Fixed privileged native source operations; no renderer observations or enabled UI route.
 #[allow(dead_code)]
 pub(crate) mod ink;
+pub(crate) mod ink_wire;
 #[cfg(target_os = "linux")]
 #[allow(dead_code)]
 pub(crate) mod ink_source;
@@ -51,6 +52,8 @@ pub(crate) struct Request {
     pub(crate) expected_pen_color: Option<ExpectedPenColor>,
     #[serde(default)]
     pub(crate) text: Option<String>,
+    #[serde(default)]
+    pub(crate) ink: Option<ink_wire::Command>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -92,6 +95,7 @@ pub(crate) struct ExpectedPenColor {
 
 #[derive(Clone, Debug)]
 pub(crate) enum Operation {
+    InkSource(ink_wire::Command),
     ReadSnapshot,
     RequestPermission(String),
     OpenSystemSettings(String),
@@ -127,6 +131,7 @@ pub(crate) fn parse(line: &str, now: u64) -> Option<Admitted> {
     let value: serde_json::Value = serde_json::from_str(line).ok()?;
     let object = value.as_object()?;
     let fields: &[&str] = match request.operation.as_str() {
+        "inkSource" => &["protocol","id","owner","operation","deadline","expected","ink"],
         "readSnapshot" | "readStrokeColor" => &["protocol", "id", "owner", "operation", "deadline"],
         "requestPermission" | "openSystemSettings" => &[
             "protocol",
@@ -199,6 +204,7 @@ pub(crate) fn parse(line: &str, now: u64) -> Option<Admitted> {
         return None;
     }
     let operation = match request.operation.as_str() {
+        "inkSource" if request.expected.is_some() && request.ink.as_ref().is_some_and(ink_wire::Command::valid) => Operation::InkSource(request.ink.clone()?),
         "readSnapshot"
             if request.expected.is_none()
                 && request.permission_id.is_none()
@@ -501,5 +507,26 @@ mod tests {
         let mut wrong_owner: serde_json::Value = serde_json::from_str(&line).unwrap();
         wrong_owner["owner"] = serde_json::json!("desktop");
         assert!(parse(&wrong_owner.to_string(), 1000).is_none());
+    }
+}
+
+#[cfg(test)]
+mod ink_wire_tests {
+    use super::*;
+    fn frame(ink:serde_json::Value)->String {
+        serde_json::json!({"protocol":1,"id":"ink-test","owner":"record","operation":"inkSource","deadline":2000,
+            "expected":{"processEpoch":"a".repeat(32),"revision":0},"ink":ink}).to_string()
+    }
+    #[test]
+    fn fixed_ink_commands_refuse_renderer_geometry_points_and_foreign_shapes(){
+        let observed=serde_json::json!({"action":"observe","captureId":"b".repeat(32),"source":{"id":"original-portal","generation":"original-generation"}});
+        assert!(matches!(parse(&frame(observed.clone()),1000).unwrap().operation,Operation::InkSource(_)));
+        for key in ["points","geometry","ownerToken","surface","timestamp"] {
+            let mut injected=observed.clone();injected[key]=serde_json::json!([]);assert!(parse(&frame(injected),1000).is_none());
+        }
+        let binding=serde_json::json!({"captureId":"b".repeat(32),"producerId":"c".repeat(32),"generation":1});
+        for ink in [serde_json::json!({"action":"readBatch","binding":binding,"sequence":4096}),serde_json::json!({"action":"activate","binding":binding,"clock":{"bootId":"11111111-1111-4111-8111-111111111111","admissionMonotonicNs":"+1"}}),serde_json::json!({"action":"anything","binding":binding})] {
+            assert!(parse(&frame(ink),1000).is_none());
+        }
     }
 }

@@ -59,7 +59,7 @@ impl NativeInkCollector {
             initial[0],
         )
     }
-    fn spawn(
+    pub(super) fn spawn(
         mut sample: impl FnMut() -> Result<([bool; 4], [f64; 2], u64), &'static str> + Send + 'static,
         mut observe: impl FnMut(bool, bool, [f64; 2], u64) + Send + 'static,
         failed: impl Fn() + Send + 'static,
@@ -130,8 +130,11 @@ impl NativeInkCollector {
         result
     }
     /// Timeout retains the owning handle and does not claim drain or clearance.
-    pub(crate) fn stop_and_drain(&mut self, deadline: Instant) -> Result<(), &'static str> {
+    pub(crate) fn request_stop(&self) {
         self.stop.store(true, Ordering::Release);
+    }
+    pub(crate) fn stop_and_drain(&mut self, deadline: Instant) -> Result<(), &'static str> {
+        self.request_stop();
         let worker = self.worker.as_ref().ok_or("collector-already-drained")?;
         while !worker.is_finished() {
             if Instant::now() >= deadline {

@@ -716,6 +716,111 @@ mod tests {
         assert_eq!(state.gesture.as_ref().unwrap().points.len(), 2);
     }
     #[test]
+    fn native_session_commands_preserve_original_batches_until_exact_ack_and_positive_drain() {
+        use super::super::ink_wire::{Binding, Command};
+        use std::time::{Duration, Instant};
+        let (source, _) = fixture();
+        activate(&source);
+        gesture(&source);
+        let telemetry = source.telemetry.clone();
+        let binding = Binding {
+            capture_id: source.capture_id.clone(),
+            producer_id: source.producer_id.clone(),
+            generation: 1,
+        };
+        // Synthetic sample owner only: production sampling/evdev/Hyprland are NOT invoked.
+        let collector = super::super::ink_collector::NativeInkCollector::spawn(
+            || Ok(([false; 4], [0., 0.], 1)),
+            |_, _, _, _| {},
+            || panic!("fixture sampler failed"),
+            false,
+        )
+        .unwrap();
+        collector
+            .wait_ready(Instant::now() + Duration::from_secs(1))
+            .unwrap();
+        let mut session = Some(NativeInkSession {
+            source,
+            collector: Some(collector),
+        });
+        let mut command = |c: Command| {
+            native_source_command(
+                &mut session,
+                telemetry.clone(),
+                &"b".repeat(32),
+                0,
+                &c,
+                crate::capture::desktop::workflow::agent_capture::storage_clock_ms() + 3000,
+            )
+        };
+        let first = command(Command::ReadBatch {
+            binding: binding.clone(),
+            sequence: 0,
+        });
+        assert_eq!(first["status"], "batch");
+        assert_eq!(
+            command(Command::AcknowledgeBatch {
+                binding: binding.clone(),
+                sequence: 0,
+                batch_sha256: "0".repeat(64)
+            })["status"],
+            "refused"
+        );
+        assert_eq!(
+            command(Command::ReadBatch {
+                binding: binding.clone(),
+                sequence: 0
+            }),
+            first
+        );
+        let seal = command(Command::SealInputAndDrain {
+            binding: binding.clone(),
+        });
+        assert_eq!(seal["finalSequence"], 2);
+        assert_eq!(seal["seal"]["state"], "sealed-and-drained");
+        for sequence in 0..3 {
+            let batch = command(Command::ReadBatch {
+                binding: binding.clone(),
+                sequence,
+            });
+            assert_eq!(batch["status"], "batch");
+            assert_eq!(
+                command(Command::AcknowledgeBatch {
+                    binding: binding.clone(),
+                    sequence,
+                    batch_sha256: batch["batch"]["batchSha256"].as_str().unwrap().into()
+                })["status"],
+                "acknowledged"
+            );
+        }
+        assert_eq!(
+            command(Command::ReadBatch {
+                binding,
+                sequence: 3
+            })["status"],
+            "pending"
+        );
+        assert!(session.as_ref().unwrap().replaceable());
+    }
+    #[test]
+    fn session_without_started_input_never_claims_successful_empty_drain() {
+        let (source, _) = fixture();
+        let mut session = NativeInkSession {
+            source,
+            collector: None,
+        };
+        assert!(
+            session
+                .seal(std::time::Instant::now() + std::time::Duration::from_secs(1))
+                .is_err()
+        );
+        assert!(!session.replaceable());
+        assert_eq!(
+            session.source.state.lock().unwrap().phase,
+            Phase::Unavailable
+        );
+    }
+    #[test]
     fn foreign_observer_is_not_removed_and_ownership_failure_is_immediately_unknown() {
         let (s, _) = fixture();
         activate(&s);
@@ -733,5 +838,182 @@ mod tests {
             *s.installed.lock().unwrap(),
             "uncertain ownership is retained, not cleared"
         );
+    }
+}
+
+/// One source-local input scope, owned by the existing NativeHost coordinator.
+/// Positive replacement here says nothing about Engine owning-close clearance.
+pub(crate) struct NativeInkSession {
+    source: NativeInkSource,
+    collector: Option<super::ink_collector::NativeInkCollector>,
+}
+impl NativeInkSession {
+    fn binding(&self, b: &super::ink_wire::Binding) -> Result<(), &'static str> {
+        if b.capture_id != self.source.capture_id
+            || b.producer_id != self.source.producer_id
+            || b.generation != 1
+        {
+            return Err("binding-mismatch");
+        }
+        Ok(())
+    }
+    fn replaceable(&self) -> bool {
+        self.collector.is_none()
+            && self
+                .source
+                .state
+                .lock()
+                .is_ok_and(|s| s.phase == Phase::Sealed && s.buffer.read_pending().is_none())
+    }
+    fn fail(&self) {
+        if let Ok(mut s) = self.source.state.lock() {
+            s.phase = Phase::Unavailable;
+        }
+    }
+    fn activate(
+        &mut self,
+        b: &super::ink_wire::Binding,
+        c: &super::ink_wire::Clock,
+        deadline: std::time::Instant,
+    ) -> Result<(), &'static str> {
+        self.binding(b)?;
+        if self.collector.is_some() {
+            return Err("input-already-owned");
+        }
+        let r = self.source.observed_output.rect;
+        self.source
+            .telemetry
+            .prepare_native_ink_target(crate::shared::model::TargetFrame {
+                x: r[0],
+                y: r[1],
+                width: r[2],
+                height: r[3],
+                scale: 1.0,
+            })?;
+        self.source.activate(
+            &b.capture_id,
+            &b.producer_id,
+            b.generation,
+            &c.boot_id,
+            &c.admission_monotonic_ns,
+        )?;
+        let collector = match super::ink_collector::NativeInkCollector::start(
+            self.source.telemetry.clone(),
+            self.source.observer.clone(),
+            self.source.observed_output.name.clone(),
+            r,
+        ) {
+            Ok(c) => c,
+            Err(e) => {
+                self.fail();
+                // No collector was created. Remove only our installed observer;
+                // the unavailable phase still prevents a successful empty seal.
+                let _ = self.source.seal_and_drain();
+                return Err(e);
+            }
+        };
+        // Retain the lifetime BEFORE any readiness wait or unknown response.
+        self.collector = Some(collector);
+        if let Err(e) = self.collector.as_ref().unwrap().wait_ready(deadline) {
+            self.collector.as_ref().unwrap().request_stop();
+            self.fail();
+            return Err(e);
+        }
+        Ok(())
+    }
+    fn seal(&mut self, deadline: std::time::Instant) -> Result<Value, &'static str> {
+        let Some(collector) = self.collector.as_mut() else {
+            self.fail();
+            return Err("input-not-ready");
+        };
+        if let Err(e) = collector.stop_and_drain(deadline) {
+            self.fail();
+            return Err(e);
+        }
+        self.collector = None;
+        let (final_sequence, seal) = self.source.seal_and_drain()?;
+        if std::time::Instant::now() >= deadline {
+            self.fail();
+            return Err("source-drain-unknown");
+        }
+        Ok(
+            json!({"finalSequence":final_sequence,"seal":{"state":"sealed-and-drained","observedAtNs":seal.observed_at_ns,"nativeRevision":seal.native_revision}}),
+        )
+    }
+}
+pub(crate) fn native_source_command(
+    session: &mut Option<NativeInkSession>,
+    telemetry: Arc<SharedCaptureTelemetry>,
+    epoch: &str,
+    revision: u64,
+    command: &super::ink_wire::Command,
+    request_deadline: u64,
+) -> Value {
+    use super::ink_wire::Command;
+    let result = (|| -> Result<Value, &'static str> {
+        let remaining = request_deadline
+            .saturating_sub(crate::capture::desktop::workflow::agent_capture::storage_clock_ms())
+            .min(2000);
+        if remaining == 0 {
+            return Err("deadline-expired");
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(remaining);
+        if let Command::Observe { capture_id, source } = command {
+            if session.as_ref().is_some_and(|s| !s.replaceable()) {
+                return Err("source-already-owned");
+            }
+            let observed = NativeInkSource::observe(
+                telemetry,
+                epoch,
+                revision,
+                capture_id,
+                &source.id,
+                &source.generation,
+            )?;
+            let value = observed.observation().clone();
+            *session = Some(NativeInkSession {
+                source: observed,
+                collector: None,
+            });
+            if std::time::Instant::now() >= deadline {
+                return Err("source-observation-unknown");
+            }
+            return Ok(json!({"status":"observed","value":value}));
+        }
+        let s = session.as_mut().ok_or("source-unavailable")?;
+        match command {
+            Command::Activate { binding, clock } => {
+                s.activate(binding, clock, deadline)?;
+                Ok(json!({"status":"active"}))
+            }
+            Command::ReadBatch { binding, sequence } => {
+                s.binding(binding)?;
+                match s.source.read_batch()? {
+                    Some(b) if b.sequence == *sequence => Ok(
+                        json!({"status":"batch","batch":{"sequence":b.sequence,"eventsJson":b.events_json,"batchSha256":b.batch_sha256}}),
+                    ),
+                    Some(_) => Err("sequence-mismatch"),
+                    None => Ok(json!({"status":"pending"})),
+                }
+            }
+            Command::AcknowledgeBatch {
+                binding,
+                sequence,
+                batch_sha256,
+            } => {
+                s.binding(binding)?;
+                s.source.acknowledge(*sequence, batch_sha256)?;
+                Ok(json!({"status":"acknowledged","sequence":sequence,"batchSha256":batch_sha256}))
+            }
+            Command::SealInputAndDrain { binding } => {
+                s.binding(binding)?;
+                s.seal(deadline)
+            }
+            Command::Observe { .. } => unreachable!(),
+        }
+    })();
+    match result {
+        Ok(v) => v,
+        Err(_) => json!({"status":"refused","reason":"unavailable"}),
     }
 }

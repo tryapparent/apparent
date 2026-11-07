@@ -38,8 +38,8 @@ run('types', process.execPath, [join(root, 'composition/app/node_modules/typescr
 run('plain-node', process.execPath, ['--input-type=module', '-e', `import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto'; import {readFileSync} from 'node:fs';
 import {CaptureClient,CAPTURE_INK_LIMITS} from '@apparent/engine-sdk/capture';
-import {createNativeInkRelay} from '@apparent/native-host/ink';
-assert.equal(typeof createNativeInkRelay,'function');
+import {createNativeInkRelay,createNativeInkSourcePort} from '@apparent/native-host/ink';
+assert.equal(typeof createNativeInkRelay,'function');assert.equal(typeof createNativeInkSourcePort,'function');
 for(const name of ['registerInkProducer','submitInkEvents','finishInkProducer'])assert.equal(typeof CaptureClient.prototype[name],'function');
 assert.equal(CAPTURE_INK_LIMITS.maxBatchJsonBytes,16384);
 assert.equal(JSON.parse(readFileSync('node_modules/@apparent/engine-sdk/package.json','utf8')).version,'0.4.6');
@@ -50,7 +50,7 @@ if (fixturePath) {
   run('actual-sdk-protocol', process.execPath, ['--input-type=module', '-e', `
 import assert from 'node:assert/strict'; import {readFileSync} from 'node:fs';
 import {CaptureClient,CAPTURE_INK_LIMITS} from '@apparent/engine-sdk/capture';
-import {createNativeInkRelay} from '@apparent/native-host/ink';
+import {createNativeInkRelay,createNativeInkSourcePort} from '@apparent/native-host/ink';
 const f=JSON.parse(readFileSync('native-controller-fixture.json','utf8'));
 const original={captureId:f.observed.captureId,source:f.observed.source,ownerToken:'a'.repeat(64)};
 const registrationId='c'.repeat(32), producerToken='d'.repeat(64), methods=[];

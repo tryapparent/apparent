@@ -1,3 +1,4 @@
+import type {NativeInkSourcePort,NativeInkBinding,NativeInkObservation} from './ink.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
 import { connect } from 'node:net';
@@ -109,7 +110,7 @@ async function request(target: ReturnType<typeof endpoint>, operation: string, f
     });
     socket.on('data', chunk => {
       buffer = Buffer.concat([buffer, chunk]);
-      if (buffer.length > MAX_FRAME) return finish(new Error('Native host unavailable'));
+      if (buffer.length > (operation === 'inkSource' ? 65_536 : MAX_FRAME)) return finish(new Error('Native host unavailable'));
       const end = buffer.indexOf(10);
       if (end < 0) return;
       if (end !== buffer.length - 1) return finish(new Error('Native host unavailable'));
@@ -331,6 +332,55 @@ export function createNativePenPort(): NativePenPort {
       } catch { /* A lost reply does not prove whether the effect ran. */ }
       finally { penEffectInFlight = false; }
       return { status: 'outcome-unknown' };
+    },
+  };
+}
+
+/** Privileged fixed-operation binding to this owned native-only process. */
+export function createNativeInkSourcePort(options: {
+  original: {captureId:string;source:{id:string;generation:string}};
+  ownedHost: NativeInkObservation['host'];
+}): NativeInkSourcePort {
+  const target=endpoint(), original=structuredClone(options.original), host=structuredClone(options.ownedHost);
+  const id=(s:unknown,n=32):s is string=>typeof s==='string'&&new RegExp('^[a-f0-9]{'+n+'}$').test(s);
+  if (!id(original.captureId)||!id(host.processEpoch)||!Number.isSafeInteger(host.revision)||host.revision<0||!Number.isSafeInteger(host.pid)||host.pid<=0||!/^[1-9][0-9]*$/.test(host.startTicks))throw new TypeError('Invalid owned native ink identity');
+  let seen: {producerId:string;generation:number}|undefined;
+  const expected={processEpoch:host.processEpoch,revision:host.revision};
+  const call=(ink:Record<string,unknown>)=>request(target,'inkSource',{expected,ink});
+  const binding=(b:NativeInkBinding)=>{
+    if (!seen||b.captureId!==original.captureId||b.producerId!==seen.producerId||b.generation!==seen.generation)throw new TypeError('Foreign native ink binding');
+    return structuredClone(b);
+  };
+  return {
+    async readObservation(){
+      if(seen)throw Error('Native source observation already bound');
+      const result=await call({action:'observe',...original});
+      if(!exact(result,['status','value'])||result.status!=='observed'||!exact(result.value,['captureId','source','observation']))throw Error('Native source unavailable');
+      const value=result.value as unknown as Awaited<ReturnType<NativeInkSourcePort['readObservation']>>;
+      const o=value.observation;
+      if(value.captureId!==original.captureId||value.source.id!==original.source.id||value.source.generation!==original.source.generation||!id(o.producerId)||o.generation!==1||!exact(o.host,['processEpoch','revision','pid','startTicks'])||Object.entries(host).some(([k,v])=>o.host[k as keyof typeof host]!==v))throw Error('Native source identity changed');
+      seen={producerId:o.producerId,generation:o.generation};return structuredClone(value);
+    },
+    async activateInput(b,clock){
+      try {const v=await call({action:'activate',binding:binding(b),clock});return exact(v,['status'])&&v.status==='active'?{status:'active'}:exact(v,['status','reason'])&&v.status==='refused'?{status:'refused'}:{status:'outcome-unknown'};}
+      catch{return {status:'outcome-unknown'};}
+    },
+    async readBatch(b,sequence){
+      if(!Number.isSafeInteger(sequence)||sequence<0||sequence>=4096)throw TypeError('Invalid native sequence');
+      const v=await call({action:'readBatch',binding:binding(b),sequence});
+      if(exact(v,['status'])&&v.status==='pending')return {status:'pending'};
+      if(exact(v,['status','batch'])&&v.status==='batch'&&exact(v.batch,['sequence','eventsJson','batchSha256'])&&v.batch.sequence===sequence&&typeof v.batch.eventsJson==='string'&&Buffer.byteLength(v.batch.eventsJson,'utf8')<=16384&&id(v.batch.batchSha256,64)&&createHash('sha256').update(v.batch.eventsJson,'utf8').digest('hex')===v.batch.batchSha256)return {status:'batch',batch:{sequence,eventsJson:v.batch.eventsJson,batchSha256:v.batch.batchSha256}};
+      return {status:'unavailable'};
+    },
+    async acknowledgeBatch(b,batch){
+      try {const v=await call({action:'acknowledgeBatch',binding:binding(b),...batch});
+        if(exact(v,['status','sequence','batchSha256'])&&v.status==='acknowledged'&&v.sequence===batch.sequence&&v.batchSha256===batch.batchSha256)return {status:'acknowledged',...batch};
+      }catch{}return {status:'outcome-unknown'};
+    },
+    async sealInputAndDrain(b){
+      const v=await call({action:'sealInputAndDrain',binding:binding(b)});
+      if(!exact(v,['finalSequence','seal'])||!(v.finalSequence===null||(Number.isSafeInteger(v.finalSequence)&&Number(v.finalSequence)>=0&&Number(v.finalSequence)<4096))||!exact(v.seal,['state','observedAtNs','nativeRevision'])||v.seal.state!=='sealed-and-drained'||typeof v.seal.observedAtNs!=='string'||!/^(0|[1-9][0-9]*)$/.test(v.seal.observedAtNs)||BigInt(v.seal.observedAtNs)>18446744073709551615n||!Number.isSafeInteger(v.seal.nativeRevision)||Number(v.seal.nativeRevision)<0)throw Error('Native input drain unavailable');
+      return {finalSequence:v.finalSequence as number|null,seal:{state:'sealed-and-drained',observedAtNs:v.seal.observedAtNs,nativeRevision:v.seal.nativeRevision as number}};
     },
   };
 }

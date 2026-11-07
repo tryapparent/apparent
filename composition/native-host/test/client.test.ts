@@ -426,3 +426,43 @@ test('readback bounds include escaped text, largest GUI selectors and terminatin
     }), { status: 'written-readback', digest, byteLength: MAX_UTF8_TEXT_BYTES });
   });
 });
+
+test('fixed native ink source port joins original identity, exact >4KiB bytes and ACK/seal',async()=>{
+  const {createNativeInkSourcePort}=await import('../src/client.ts');
+  const host={processEpoch:'a'.repeat(32),revision:0,pid:42,startTicks:'123'};
+  const original={captureId:'b'.repeat(32),source:{id:'original-portal',generation:'original-generation'}};
+  const observation={host,producerId:'c'.repeat(32),generation:1,bootId:'11111111-1111-4111-8111-111111111111',clock:'linux-clock-monotonic-observation',output:{},surfaces:[]};
+  const binding={captureId:original.captureId,producerId:observation.producerId,generation:1};
+  const raw='[ '+ ' '.repeat(7000)+'{"kind":"commit"} ]';const digest=createHash('sha256').update(raw).digest('hex');const actions:string[]=[];
+  await withSocket(req=>{
+    assert.equal(req.operation,'inkSource');assert.deepEqual(req.expected,{processEpoch:host.processEpoch,revision:0});const ink=req.ink as Record<string,unknown>;actions.push(String(ink.action));
+    switch(ink.action){
+      case'observe':assert.equal(ink.captureId,original.captureId);return {status:'observed',value:{...original,observation}};
+      case'activate':assert.deepEqual(ink.binding,binding);return {status:'active'};
+      case'readBatch':return {status:'batch',batch:{sequence:0,eventsJson:raw,batchSha256:digest}};
+      case'acknowledgeBatch':return {status:'acknowledged',sequence:0,batchSha256:digest};
+      case'sealInputAndDrain':return {finalSequence:0,seal:{state:'sealed-and-drained',observedAtNs:'1000',nativeRevision:1}};
+    }throw Error('unexpected ink operation');
+  },async()=>{
+    const port=createNativeInkSourcePort({original,ownedHost:host});await port.readObservation();
+    assert.deepEqual(await port.activateInput(binding,{bootId:observation.bootId,admissionMonotonicNs:'0'}),{status:'active'});
+    const b=await port.readBatch(binding,0);assert.equal(b.status,'batch');if(b.status==='batch')assert.equal(b.batch.eventsJson,raw);
+    assert.equal((await port.acknowledgeBatch(binding,{sequence:0,batchSha256:digest})).status,'acknowledged');
+    assert.equal((await port.sealInputAndDrain(binding)).finalSequence,0);
+  });assert.deepEqual(actions,['observe','activate','readBatch','acknowledgeBatch','sealInputAndDrain']);
+});
+test('native ink observation refuses changed process identity and lost ACK remains unknown',async()=>{
+  const {createNativeInkSourcePort}=await import('../src/client.ts');
+  const host={processEpoch:'a'.repeat(32),revision:0,pid:42,startTicks:'123'},original={captureId:'b'.repeat(32),source:{id:'original',generation:'generation'}};
+  for(const changed of [true,false])await withSocket(req=>{
+    const ink=req.ink as Record<string,unknown>;
+    if(ink.action==='observe')return {status:'observed',value:{...original,observation:{host:{...host,pid:changed?43:42},producerId:'c'.repeat(32),generation:1}}};
+    return DROP;
+  },async()=>{
+    const p=createNativeInkSourcePort({original,ownedHost:host});
+    if(changed){await assert.rejects(p.readObservation(),/identity changed/);return;}
+    await p.readObservation();
+    const result=await p.acknowledgeBatch({captureId:original.captureId,producerId:'c'.repeat(32),generation:1},{sequence:0,batchSha256:'d'.repeat(64)});
+    assert.equal(result.status,'outcome-unknown');
+  });
+});

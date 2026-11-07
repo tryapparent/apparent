@@ -836,6 +836,17 @@ impl SharedCaptureTelemetry {
         true
     }
 
+    /// Exclusive native-only source preparation. Does not start a recorder,
+    /// set legacy active, register shortcuts, or clear accepted history.
+    #[cfg(target_os="linux")]
+    pub(crate) fn prepare_native_ink_target(&self,frame:TargetFrame)->Result<(), &'static str>{
+        let gate=self.native_ink_observer.lock().map_err(|_|"input-ownership-unresolved")?;
+        if gate.is_some() || self.active.load(Ordering::Acquire){return Err("input-already-owned");}
+        *self.target_frame.lock().map_err(|_|"source-unavailable")?=frame;
+        *self.live_ink.lock().map_err(|_|"source-unavailable")?=None;
+        Ok(())
+    }
+
     /// Select exact bytes for subsequent accepted strokes. Does not recolor existing strokes.
     /// The caller owns settings serialization and process-scoped apply/readback ordering.
     pub fn set_stroke_rgb(&self, rgb: Option<[u8; 3]>) {

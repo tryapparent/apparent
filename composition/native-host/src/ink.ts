@@ -1,3 +1,4 @@
+export {createNativeInkSourcePort} from './client.ts';
 import { createHash } from 'node:crypto';
 
 /** Trusted native-source seam. Not renderer data, a source factory, or availability. */

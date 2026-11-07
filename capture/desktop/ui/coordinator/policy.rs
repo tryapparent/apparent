@@ -109,6 +109,8 @@ impl ApparentCoordinator {
             native_host_revision: 0,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             native_host_fingerprint: None,
+            #[cfg(target_os="linux")]
+            native_ink_session: None,
             note_ui: None,
             admitted_microphone: None,
             whiteboard: Rc::new(RefCell::new(whiteboard::Board::default())),
@@ -637,6 +639,18 @@ impl ApparentCoordinator {
             return Some(refusal("unavailable"));
         }
         if self.native_host_epoch.is_empty() { return Some(refusal("unavailable")); }
+        if let Operation::InkSource(command)=&request.operation {
+            // Fixed source operations never load shared config or admit legacy
+            // capture/presentation. Only the exclusive native-only role owns it.
+            if self.runtime_role != crate::capture::desktop::RuntimeRole::NativeHostOnly { return Some(refusal("unavailable")); }
+            let Some(expected)=&request.expected else {return Some(refusal("invalid"));};
+            if expected.process_epoch!=self.native_host_epoch || expected.revision!=self.native_host_revision {return Some(refusal("stale"));}
+            #[cfg(target_os="linux")]
+            return Some(crate::capture::desktop::workflow::native_host::ink_source::native_source_command(
+                &mut self.native_ink_session,self.telemetry.clone(),&self.native_host_epoch,self.native_host_revision,command,request.deadline));
+            #[cfg(not(target_os="linux"))]
+            return Some(refusal("unavailable"));
+        }
         if self.runtime_role == crate::capture::desktop::RuntimeRole::NativeHostOnly
             && !matches!(&request.operation,
                 Operation::ReadSnapshot
@@ -736,6 +750,7 @@ impl ApparentCoordinator {
             };
         }
         Some(match &request.operation {
+            Operation::InkSource(_) => refusal("unavailable"),
             Operation::ReadSnapshot => self.native_host_snapshot(&observation),
             Operation::RequestPermission(id) | Operation::OpenSystemSettings(id) => {
                 let permission = match id.as_str() {
