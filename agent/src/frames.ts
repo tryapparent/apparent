@@ -139,11 +139,11 @@ async function isEvidenceOnlySnapshot(bundlePath: string): Promise<boolean> {
     if (after.dev !== stat.dev || after.ino !== stat.ino || after.size !== stat.size || after.mtimeNs !== stat.mtimeNs)
       throw new Error('Evidence-only receipt changed while being read');
     let receipt: any;
-    try { receipt = JSON.parse(bytes.toString('utf8')); } catch { throw new Error('Evidence-only receipt is invalid JSON'); }
+    try { receipt = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); } catch { throw new Error('Evidence-only receipt is invalid JSON'); }
     const keys = ['version', 'captureId', 'server', 'media', 'guidance'];
     if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt) || Object.keys(receipt).sort().join(',') !== keys.sort().join(',') ||
         receipt.version !== 1 || typeof receipt.captureId !== 'string' || !/^[0-9a-f]{32}$/.test(receipt.captureId) ||
-        typeof receipt.server !== 'string' || !/^https:\/\//.test(receipt.server) || receipt.media !== 'not downloaded' ||
+        typeof receipt.server !== 'string' || !/^(?:https:\/\/|http:\/\/(?:localhost|127\.0\.0\.1)(?::[0-9]+)?(?:\/|$))/.test(receipt.server) || receipt.media !== 'not downloaded' ||
         receipt.guidance !== 'Use apparent fetch <id> --media --out <new-directory> for the complete recording')
       throw new Error('Evidence-only receipt does not match the published snapshot format');
     return true;

@@ -204,6 +204,10 @@ test('valid evidence snapshot is never decoded, even when an unexpected video co
   await client.close();
   await writeFile(video,'unexpected copy');
   assert.equal(await hasSourceVideo(bundle), false);
+  for (const server of ['http://localhost:8787/connect', 'http://127.0.0.1:8080']) {
+    await writeFile(join(bundle,'.evidence-only.json'),JSON.stringify({version:1,captureId:'a'.repeat(32),server,media:'not downloaded',guidance:'Use apparent fetch <id> --media --out <new-directory> for the complete recording'}));
+    assert.equal(await hasSourceVideo(bundle),false);
+  }
   const malformed=join(bundle,'.evidence-only.json'); await writeFile(malformed,'{}');
   await assert.rejects(()=>hasSourceVideo(bundle),/published snapshot format/);
 }));
