@@ -8,7 +8,7 @@ import { AbsentDestinationAllocator, SqliteCaptureMappingStore } from '@apparent
 import type { Capture2Host, Capture2Receipt } from '@apparent/record/host/capture2';
 import { createCapture2Host } from '@apparent/record/host/capture2';
 import type { CaptureRequest, CaptureResponse, CaptureTransport } from '@apparent/engine-sdk/capture';
-import { controlCapture2, discoverCapture2Sources, parseCapture2ControlArgs, parseCapture2RecordArgs, parseCapture2SourcesArgs, recordWithCapture2, recoverRecordCaptures, retainPublicIdentity, type Capture2Clock, type Capture2HostFactory, type Capture2PublicOutput, type RecoveryCoordinatorFactory } from '../dist/recording/capture2.js';
+import { controlCapture2, discoverCapture2Sources, parseCapture2ControlArgs, parseCapture2RecordArgs, parseCapture2SourcesArgs, recordWithCapture2, recoverRecordCaptures, retainPublicIdentity, type Capture2Clock, type Capture2HostFactory, type Capture2PublicOutput, type RecoveryCoordinatorFactory, type StandardCoordinatorFactory } from '../dist/recording/capture2.js';
 
 const source = { id: 'display-actual', generation: 'a'.repeat(32), kind: 'display' as const, displayId: 0, bounds: { x: 0, y: 0, width: 800, height: 600, scale: 1 } };
 const args = (out: string, ...extra: string[]) => ['--protocol', 'capture2', '--duration', '1', '--out', out, '--source', source.id, ...extra];
@@ -222,7 +222,7 @@ test('capture/2 omitted destination uses read-only configured capturesDir and le
     assert.equal((await stat(captures)).mode & 0o777, 0o700);
     await assert.rejects(access(identity.destinationPath), { code: 'ENOENT' });
     const outcome = JSON.parse(output.join(''));
-    assert.equal(outcome.state, 'processing'); assert.equal(outcome.outcome, 'pending-saved-capability-unavailable');
+    assert.equal(outcome.state, 'processing'); assert.equal(outcome.outcome, 'close-unverified');
     assert.equal(JSON.stringify(outcome).includes(captures), false);
   } finally {
     if (previousHome === undefined) delete process.env.HOME; else process.env.HOME = previousHome;
@@ -343,14 +343,15 @@ test('real packed SDK and Record host accept the generated invocation ID while r
     const output: string[] = [], originalWrite = process.stdout.write, stderr: string[] = [], originalError = process.stderr.write;
     process.stdout.write = ((chunk: string | Uint8Array) => { output.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString()); return true; }) as typeof process.stdout.write;
     process.stderr.write = ((chunk: string | Uint8Array) => { stderr.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString()); return true; }) as typeof process.stderr.write;
-    let rejected: unknown;
+    let code: number;
     try {
-      await recordWithCapture2(defaultArgs(), {
+      code = await recordWithCapture2(defaultArgs(), {
         executable: '/opt/apparent-engine', runtime: join(root, 'runtime'), controlRoot: join(root, 'control'), factory,
       });
-    } catch (error) { rejected = error; }
+    }
     finally { process.stdout.write = originalWrite; process.stderr.write = originalError; }
-    assert.match(String(rejected), /Capture start outcome is unknown/);
+    assert.equal(code, 3);
+    assert.equal(JSON.parse(output.join('')).state, 'unknown');
     assert.deepEqual(requests.map(request => request.method), ['handshake', 'discoverSources', 'start']);
     const start = requests.at(-1)!;
     assert.equal(start.method, 'start');
@@ -372,7 +373,7 @@ test('real packed SDK and Record host accept the generated invocation ID while r
   }
 });
 
-test('capture/2 binds exact --out, uses explicit local-only options and keeps publication-shaped materials-ready pending', async () => {
+test('capture/2 binds exact --out and retains identity when no standard coordinator is configured in the fixture', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agent-capture2-'));
   try {
     const out = join(root, 'exact.apparent'), fixture = fixtureHost(out, 'publication-materials-ready');
@@ -383,7 +384,7 @@ test('capture/2 binds exact --out, uses explicit local-only options and keeps pu
       executable: '/opt/apparent-engine', runtime: join(root, 'runtime'), controlRoot: join(root, 'control'), factory: fixture.factory, clock: fixture.clock,
     }); } finally { process.stdout.write = originalWrite; }
     assert.equal(code, 3);
-    assert.equal(JSON.parse(output.join('')).outcome, 'pending-saved-capability-unavailable');
+    assert.equal(JSON.parse(output.join('')).outcome, 'pending-standard-processing-unavailable');
     assert.equal(output.join('').includes(out), false);
     const start = fixture.calls.find(call => call.method === 'start')!.input as { requestId: string; source: typeof source; options: { localOnly: true; audio: string }; destinationPath: string };
     assert.equal(start.source.id, source.id); assert.deepEqual(start.options, { audio: 'none', localOnly: true }); assert.equal(start.destinationPath, out);
@@ -407,12 +408,12 @@ test('capture/2 processing with publication metadata remains pending, never Save
     }); } finally { process.stdout.write = originalWrite; }
     assert.equal(code, 3);
     const result = JSON.parse(output.join(''));
-    assert.equal(result.outcome, 'pending-saved-capability-unavailable');
+    assert.equal(result.outcome, 'close-unverified');
     assert.equal(result.state, 'processing');
     assert.equal(output.join('').includes(out), false);
-    assert.equal(fixture.calls.some(call => call.method === 'close'), true);
+    assert.equal(fixture.calls.some(call => call.method === 'close'), false);
     assert(fixture.calls.some(call => call.method === 'stop'));
-    assert.equal(fixture.calls.at(-1)?.method, 'close');
+    assert.equal(fixture.calls.some(call => call.method === 'close'), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -420,16 +421,21 @@ test('capture/2 retains the original public identity after an ambiguous start an
   const root = await mkdtemp(join(tmpdir(), 'agent-capture2-'));
   try {
     const out = join(root, 'exact.apparent'), fixture = fixtureHost(out, 'start-fails');
-    await assert.rejects(recordWithCapture2(args(out), {
+    const output: string[] = [], originalWrite = process.stdout.write;
+    process.stdout.write = ((chunk: string | Uint8Array) => { output.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString()); return true; }) as typeof process.stdout.write;
+    let code: number;
+    try { code = await recordWithCapture2(args(out), {
       executable: '/opt/apparent-engine', runtime: join(root, 'runtime'), controlRoot: join(root, 'control'), factory: fixture.factory, clock: fixture.clock,
-    }), /start outcome is unknown/);
+    }); } finally { process.stdout.write = originalWrite; }
+    assert.equal(code, 3);
+    assert.equal(JSON.parse(output.join('')).state, 'unknown');
     const starts = fixture.calls.filter(call => call.method === 'start');
     assert.equal(starts.length, 1);
     const requestId = (starts[0].input as { requestId: string }).requestId;
     const identityPath = join(root, 'control', 'capture2-requests-v1', `${requestId}.json`);
     const metadata = JSON.parse(await readFile(identityPath, 'utf8'));
     assert.equal(metadata.requestId, requestId); assert.equal(metadata.schema, 'apparent.agent-capture2-request/1');
-    assert.equal(fixture.calls.at(-1)?.method, 'close');
+    assert.equal(fixture.calls.some(call => call.method === 'close'), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -446,16 +452,111 @@ test('capture/2 signal stops an observed recording and does not discard it with 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('capture/2 never reports path success when transport close is unverified', async () => {
+test('capture/2 never reports path success or starts processing when terminal capture close is unverified', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agent-capture2-'));
   try {
-    const out = join(root, 'exact.apparent'), fixture = fixtureHost(out, 'publication-processing', undefined, 'signal-requested-after-timeout');
+    const out = join(root, 'exact.apparent'), fixture = fixtureHost(out, 'materials-ready', undefined, 'signal-requested-after-timeout');
+    let standardStarted = false;
     const code = await recordWithCapture2(args(out), {
       executable: '/opt/apparent-engine', runtime: join(root, 'runtime'), controlRoot: join(root, 'control'), factory: fixture.factory, clock: fixture.clock,
+      mediaExecutable: '/opt/media', standardFactory: async () => { standardStarted = true; throw new Error('must not process before capture close'); },
     });
     assert.equal(code, 3);
     assert.equal(fixture.calls.at(-1)?.method, 'close');
+    assert.equal(standardStarted, false);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('capture/2 standard coordinator starts only after terminal capture close and returns only exact Saved binding', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-capture2-standard-'));
+  try {
+    const out = join(root, 'exact.apparent'), fixture = fixtureHost(out, 'materials-ready');
+    const sequence: string[] = [];
+    const originalClose = fixture.calls;
+    const standardFactory: StandardCoordinatorFactory = async paths => {
+      assert.equal(paths.runtime, join(root, 'runtime'));
+      assert.equal(originalClose.at(-1)?.method, 'close');
+      sequence.push('compose');
+      return {
+        mappingForRequest: async requestId => ({ requestId, captureId: 'record-capture', bundleId: 'record-artifact', bundlePath: out }),
+        coordinator: {
+          reconcile: async () => { sequence.push('reconcile'); await mkdir(out); },
+          captureFacts: { readFacts: async () => ({ captures: [{ captureId: 'record-capture', phase: 'saved', artifactId: 'record-artifact', outcomes: [] }] }) },
+          resolveHandoff: async input => ({ captureId: input.captureId, artifactId: input.artifactId, handoff: { savedBundle: { status: 'saved', bundlePath: out } } }),
+          processingIssues: () => [],
+          shutdown: async () => { sequence.push('shutdown'); return { scope: 'record-coordinator', admission: 'closed', localDrain: 'complete', runtimeClearance: 'clear', nextShortcutAdmission: { state: 'unsupported', reason: 'fixture' }, work: [] }; },
+          dispose: async () => { sequence.push('dispose'); },
+        } as unknown as import('@apparent/record/host/capture2-coordinator').RecordCaptureCoordinator,
+        release: async () => { sequence.push('release'); return [recoveryRelease('capture'), recoveryRelease('media')]; },
+      };
+    };
+    const output: string[] = [], originalWrite = process.stdout.write;
+    process.stdout.write = ((chunk: string | Uint8Array) => { output.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString()); return true; }) as typeof process.stdout.write;
+    let code: number;
+    try { code = await recordWithCapture2(args(out), { executable: '/opt/capture', mediaExecutable: '/opt/media', runtime: join(root, 'runtime'), controlRoot: join(root, 'control'), factory: fixture.factory, standardFactory, clock: fixture.clock }); }
+    finally { process.stdout.write = originalWrite; }
+    assert.equal(code, 0, `${output.join('')} ${JSON.stringify(sequence)}`);
+    const result = JSON.parse(output.join(''));
+    assert.equal(result.state, 'saved'); assert.equal(result.bundlePath, out);
+    assert.deepEqual(sequence, ['compose', 'reconcile', 'shutdown', 'dispose', 'release']);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('capture/2 standard unknown remains pathless and releases peers only after positive Record drain', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-capture2-standard-unknown-'));
+  try {
+    const out = join(root, 'exact.apparent'), fixture = fixtureHost(out, 'materials-ready');
+    const sequence: string[] = [];
+    const standardFactory: StandardCoordinatorFactory = async () => ({
+      mappingForRequest: async requestId => ({ requestId, captureId: 'record-capture', bundleId: 'record-artifact', bundlePath: out }),
+      coordinator: {
+        reconcile: async () => { sequence.push('reconcile'); },
+        captureFacts: { readFacts: async () => ({ captures: [{ captureId: 'record-capture', phase: 'unknown', outcomes: [] }] }) },
+        resolveHandoff: async () => { throw new Error('unknown has no handoff'); },
+        processingIssues: () => [{ state: 'outcome-unknown', code: 'media-outcome-unknown' }],
+        shutdown: async () => { sequence.push('shutdown'); return { scope: 'record-coordinator', admission: 'closed', localDrain: 'complete', runtimeClearance: 'unknown', nextShortcutAdmission: { state: 'unsupported', reason: 'fixture' }, work: [{ owner: 'media', state: 'unknown', reason: 'media-outcome-unknown' }] }; },
+        dispose: async () => { sequence.push('dispose'); },
+      } as unknown as import('@apparent/record/host/capture2-coordinator').RecordCaptureCoordinator,
+      release: async () => { sequence.push('release'); return [recoveryRelease('capture'), recoveryRelease('media')]; },
+    });
+    const output: string[] = [], originalWrite = process.stdout.write;
+    process.stdout.write = ((chunk: string | Uint8Array) => { output.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString()); return true; }) as typeof process.stdout.write;
+    let code: number;
+    try { code = await recordWithCapture2(args(out), { executable: '/opt/capture', mediaExecutable: '/opt/media', runtime: join(root, 'runtime'), controlRoot: join(root, 'control'), factory: fixture.factory, standardFactory, clock: fixture.clock }); }
+    finally { process.stdout.write = originalWrite; }
+    assert.equal(code, 3);
+    const result = JSON.parse(output.join(''));
+    assert.equal(result.outcome, 'pending-runtime-uncertain');
+    assert.equal('bundlePath' in result, false);
+    assert.deepEqual(sequence, ['reconcile', 'shutdown', 'dispose', 'release']);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('capture/2 standard processing keeps peers owned when shutdown or disposal is rejected', async () => {
+  for (const failAt of ['shutdown', 'dispose'] as const) {
+    const root = await mkdtemp(join(tmpdir(), 'agent-capture2-standard-drain-'));
+    try {
+      const out = join(root, 'exact.apparent'), fixture = fixtureHost(out, 'materials-ready');
+      const sequence: string[] = [];
+      const standardFactory: StandardCoordinatorFactory = async () => ({
+        mappingForRequest: async requestId => ({ requestId, captureId: 'record-capture', bundleId: 'record-artifact', bundlePath: out }),
+        coordinator: {
+          reconcile: async () => undefined,
+          captureFacts: { readFacts: async () => ({ captures: [{ captureId: 'record-capture', phase: 'unknown', outcomes: [] }] }) },
+          resolveHandoff: async () => null, processingIssues: () => [],
+          shutdown: async () => { sequence.push('shutdown'); if (failAt === 'shutdown') throw new Error('unresolved'); return { scope: 'record-coordinator', admission: 'closed', localDrain: 'complete', runtimeClearance: 'clear', nextShortcutAdmission: { state: 'unsupported', reason: 'fixture' }, work: [] }; },
+          dispose: async () => { sequence.push('dispose'); if (failAt === 'dispose') throw new Error('dispose failed'); },
+        } as unknown as import('@apparent/record/host/capture2-coordinator').RecordCaptureCoordinator,
+        release: async () => { sequence.push('release'); return [recoveryRelease('capture'), recoveryRelease('media')]; },
+      });
+      const originalWrite = process.stdout.write; process.stdout.write = (() => true) as typeof process.stdout.write;
+      let code: number;
+      try { code = await recordWithCapture2(args(out), { executable: '/opt/capture', mediaExecutable: '/opt/media', runtime: join(root, 'runtime'), controlRoot: join(root, 'control'), factory: fixture.factory, standardFactory, clock: fixture.clock }); }
+      finally { process.stdout.write = originalWrite; }
+      assert.equal(code, 3, failAt);
+      assert.equal(sequence.includes('release'), false, failAt);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
 });
 
 test('capture/2 controls require retained Agent identity and reuse the same public request ID', async () => {
