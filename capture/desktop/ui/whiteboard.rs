@@ -145,7 +145,11 @@ impl WhiteboardWindow {
                 return None;
             }
             Some(observations::PaperWindow {
-                handle: window.window_handle().window_id().as_u64(),
+                handle: observations::x11_window_id(
+                    raw_window_handle::HasWindowHandle::window_handle(window)
+                        .ok()?
+                        .as_raw(),
+                )?,
                 incarnation: self.native_incarnation.clone()?,
                 content_rectangle: [
                     f64::from(f32::from(b.origin.x)),
