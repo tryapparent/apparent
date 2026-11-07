@@ -126,6 +126,59 @@ impl InkSourceBuffer {
         Ok(sequence)
     }
 
+    /// Preflight and serialize a complete accepted gesture before publishing any
+    /// of its batches. Failure preserves earlier evidence, never a new prefix.
+    pub(crate) fn retain_group<T: Serialize>(
+        &mut self,
+        groups: &[Vec<T>],
+    ) -> Result<(), InkBufferError> {
+        if self.state != InkSourceState::Accepting {
+            return Err(InkBufferError::Unavailable);
+        }
+        if groups.is_empty() || groups.iter().any(Vec::is_empty) {
+            return self.fail(InkBufferError::EmptyBatch);
+        }
+        if groups.len() > MAX_BATCHES.saturating_sub(self.total_batches) {
+            return self.fail(InkBufferError::BatchLimit);
+        }
+        let mut staged = Vec::new();
+        let mut bytes = 0usize;
+        let mut next = self.next_sequence;
+        for group in groups {
+            let events_json = match serde_json::to_string(group) {
+                Ok(value) => value,
+                Err(_) => return self.fail(InkBufferError::Serialization),
+            };
+            if events_json.len() > MAX_BATCH_BYTES {
+                return self.fail(InkBufferError::BatchTooLarge);
+            }
+            bytes = bytes.saturating_add(events_json.len());
+            if bytes > MAX_RETAINED_BYTES.saturating_sub(self.retained_bytes) {
+                return self.fail(InkBufferError::RetentionLimit);
+            }
+            let sequence = next;
+            next = match next.checked_add(1) {
+                Some(v) => v,
+                None => return self.fail(InkBufferError::SequenceExhausted),
+            };
+            let batch_sha256 = Sha256::digest(events_json.as_bytes())
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            staged.push(InkBatch {
+                sequence,
+                events_json,
+                batch_sha256,
+            });
+        }
+        self.last_sequence = staged.last().map(|b| b.sequence);
+        self.total_batches += staged.len();
+        self.retained_bytes += bytes;
+        self.next_sequence = next;
+        self.pending.extend(staged);
+        Ok(())
+    }
+
     /// Returns the first unacknowledged batch. Repeated reads return identical
     /// bytes until that exact batch is acknowledged.
     pub(crate) fn read_pending(&self) -> Option<&InkBatch> {

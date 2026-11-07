@@ -14,6 +14,7 @@ struct Output {
     rect: [f64; 4],
     monitor: isize,
 }
+type Clock = Arc<dyn Fn() -> Result<u64, &'static str> + Send + Sync>;
 type Probe = Arc<dyn Fn() -> Result<Output, &'static str> + Send + Sync>;
 fn output() -> Result<Output, &'static str> {
     let monitors = crate::capture::desktop::linux::monitors();
@@ -185,15 +186,18 @@ fn accept(
             if let Some(rgb) = gesture.rgb {
                 begin["rgb"] = json!(rgb);
             }
-            s.buffer.retain(&[begin]).map_err(|_| "retention-bound")?;
-            // Conservative chunking also bounds textual f64/u64 expansion.
+            let mut groups = vec![vec![begin]];
             for points in gesture.points[1..].chunks(64) {
                 let points: Vec<_> = points.iter().map(|p| json!({"timeNs":p.time.to_string(),"x":p.position[0],"y":p.position[1]})).collect();
-                s.buffer
-                    .retain(&[json!({"kind":"points","gestureId":gesture_id,"points":points})])
-                    .map_err(|_| "retention-bound")?;
+                groups.push(vec![
+                    json!({"kind":"points","gestureId":gesture_id,"points":points}),
+                ]);
             }
-            s.buffer.retain(&[json!({"kind":"commit","gestureId":gesture_id,"acceptedAtNs":observed_at_ns.to_string()})]).map_err(|_| "retention-bound")?;
+            groups.push(vec![json!({"kind":"commit","gestureId":gesture_id,"acceptedAtNs":observed_at_ns.to_string()})]);
+            if s.buffer.retain_group(&groups).is_err() {
+                s.gesture = Some(gesture);
+                return Err("retention-bound");
+            }
             s.gestures += 1;
             s.points += gesture.points.len();
             s.revision = s.revision.checked_add(1).ok_or("revision-bound")?;
@@ -217,6 +221,7 @@ pub(crate) struct NativeInkSource {
     boot: String,
     observed_output: Output,
     probe: Probe,
+    clock: Clock,
     observation: Value,
 }
 impl NativeInkSource {
@@ -309,6 +314,7 @@ impl NativeInkSource {
             boot,
             observed_output,
             probe,
+            clock: Arc::new(now),
             observation,
         })
     }
@@ -343,7 +349,7 @@ impl NativeInkSource {
                 return Err("binding-mismatch");
             }
             let admission = admission_ns.parse::<u64>().map_err(|_| "clock-mismatch")?;
-            if admission > now()? || (self.probe)()? != self.observed_output {
+            if admission > (self.clock)()? || (self.probe)()? != self.observed_output {
                 return Err("source-changed");
             }
             // The donor's acceptance frame must be the real joined source, not
@@ -403,6 +409,7 @@ impl NativeInkSource {
         // NEVER hold the state mutex while acquiring the donor callback gate:
         // an in-flight callback holds the gate and needs the state mutex.
         if !self.telemetry.remove_native_ink_observer(&self.observer) {
+            self.state.lock().map_err(|_| "source-unavailable")?.phase = Phase::Unavailable;
             return Err("input-ownership-unresolved");
         }
         *installed = false;
@@ -410,26 +417,30 @@ impl NativeInkSource {
         if s.phase != Phase::Active {
             return Err("source-unavailable");
         }
-        if (self.probe)()? != self.observed_output {
+        let result = (|| {
+            if (self.probe)()? != self.observed_output {
+                return Err("source-changed");
+            }
+            let revision = s.revision.checked_add(1).ok_or("revision-bound")?;
+            let time = (self.clock)()?;
+            if time < s.last_time {
+                return Err("clock-mismatch");
+            }
+            s.buffer
+                .seal_after_native_drain(time.to_string(), revision)
+                .map_err(|_| "source-unavailable")?;
+            s.gesture = None; // Discard provisional data only after positive drain seal.
+            s.revision = revision;
+            s.phase = Phase::Sealed;
+            let InkSourceState::SealedAndDrained(seal) = s.buffer.state() else {
+                return Err("source-unavailable");
+            };
+            Ok((s.buffer.final_sequence(), seal.clone()))
+        })();
+        if result.is_err() {
             s.phase = Phase::Unavailable;
-            return Err("source-changed");
         }
-        s.gesture = None; // Never publish an unfinished provisional gesture.
-        s.revision = s.revision.checked_add(1).ok_or("revision-bound")?;
-        let time = now()?;
-        if time < s.last_time {
-            s.phase = Phase::Unavailable;
-            return Err("clock-mismatch");
-        }
-        let revision = s.revision;
-        s.buffer
-            .seal_after_native_drain(time.to_string(), revision)
-            .map_err(|_| "source-unavailable")?;
-        s.phase = Phase::Sealed;
-        let InkSourceState::SealedAndDrained(seal) = s.buffer.state() else {
-            return Err("source-unavailable");
-        };
-        Ok((s.buffer.final_sequence(), seal.clone()))
+        result
     }
 }
 
@@ -654,5 +665,73 @@ mod tests {
                 .unwrap();
             f.sync_all().unwrap();
         }
+    }
+    #[test]
+    fn first_seal_probe_or_clock_failure_latches_unavailable_and_preserves_batches() {
+        for failed_clock in [false, true] {
+            let (mut s, _) = fixture();
+            activate(&s);
+            gesture(&s);
+            let before = s.read_batch().unwrap().unwrap();
+            if failed_clock {
+                s.clock = Arc::new(|| Err("fixture-clock-failure"));
+            } else {
+                s.probe = Arc::new(|| Err("fixture-output-failure"));
+            }
+            assert!(s.seal_and_drain().is_err());
+            assert_eq!(s.state.lock().unwrap().phase, Phase::Unavailable);
+            assert!(s.read_batch().is_err());
+            assert!(
+                s.acknowledge(before.sequence, &before.batch_sha256)
+                    .is_err()
+            );
+            assert_eq!(s.state.lock().unwrap().buffer.read_pending(), Some(&before));
+            assert!(!*s.installed.lock().unwrap());
+        }
+    }
+    #[test]
+    fn retention_failure_never_publishes_a_prefix_of_the_new_accepted_gesture() {
+        let (s, _) = fixture();
+        activate(&s);
+        gesture(&s);
+        let first = s.read_batch().unwrap().unwrap();
+        {
+            let mut state = s.state.lock().unwrap();
+            for _ in 3..4095 {
+                state
+                    .buffer
+                    .retain(&[json!({"fixture":"earlier retained bytes"})])
+                    .unwrap();
+            }
+            assert_eq!(state.buffer.final_sequence(), Some(4094));
+        }
+        track_shift_ink_observed(&s.telemetry, (10.25, 20.5), true, false, Some(400));
+        track_shift_ink_observed(&s.telemetry, (15.75, 25.5), true, true, Some(500));
+        track_shift_ink_observed(&s.telemetry, (15.75, 25.5), false, true, Some(600));
+        assert!(s.read_batch().is_err());
+        let state = s.state.lock().unwrap();
+        assert_eq!(state.phase, Phase::Unavailable);
+        assert_eq!(state.buffer.final_sequence(), Some(4094));
+        assert_eq!(state.buffer.read_pending(), Some(&first));
+        assert_eq!(state.gesture.as_ref().unwrap().points.len(), 2);
+    }
+    #[test]
+    fn foreign_observer_is_not_removed_and_ownership_failure_is_immediately_unknown() {
+        let (s, _) = fixture();
+        activate(&s);
+        gesture(&s);
+        assert!(s.telemetry.remove_native_ink_observer(&s.observer));
+        let (foreign, _) = fixture();
+        assert!(
+            s.telemetry
+                .install_native_ink_observer(foreign.observer.clone())
+        );
+        assert!(s.seal_and_drain().is_err());
+        assert!(s.read_batch().is_err());
+        assert!(s.telemetry.remove_native_ink_observer(&foreign.observer));
+        assert!(
+            *s.installed.lock().unwrap(),
+            "uncertain ownership is retained, not cleared"
+        );
     }
 }
