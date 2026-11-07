@@ -112,16 +112,56 @@ function validRequirement(value: unknown): boolean {
 }
 
 function validShortcut(value: unknown): boolean {
-  if (!exact(value, ['effective', 'label', 'registration', 'externallyManaged', 'draft'], ['configured'])) return false;
+  if (!exact(value, ['effective', 'label', 'registration', 'externallyManaged', 'draft'], ['configured', 'bindingId'])) return false;
   const nullableText = (item: unknown, max = 256) => item === null || text(item, max);
   if (!nullableText(value.effective) || !nullableText(value.label)
     || (value.configured !== undefined && !nullableText(value.configured))
+    || (value.bindingId !== undefined && !text(value.bindingId, 256, true))
     || !oneOf(value.registration, ['registered', 'unregistered', 'externally-managed', 'unknown', 'unavailable'] as const)
     || !bool(value.externallyManaged)) return false;
   if (value.draft === null) return true;
   return exact(value.draft, ['sessionId', 'value'], ['error'])
     && text(value.draft.sessionId, 256, true) && text(value.draft.value, 256, true)
     && (value.draft.error === undefined || text(value.draft.error, 4_096));
+}
+
+const trialBindingFields = ['sourceEpoch', 'sourceRevision', 'bindingId', 'effectiveBinding'];
+function validTrialBindingValues(value: Dict): boolean {
+  return text(value.sourceEpoch, 256, true) && revision(value.sourceRevision)
+    && text(value.bindingId, 256, true) && text(value.effectiveBinding, 256, true);
+}
+function validTrialBeginBinding(value: unknown): boolean {
+  return exact(value, trialBindingFields) && validTrialBindingValues(value);
+}
+function validTrialPredecessor(value: unknown): value is Dict {
+  return exact(value, [...trialBindingFields, 'reservationId']) && validTrialBindingValues(value)
+    && text(value.reservationId, 256, true);
+}
+
+function validShortcutTrial(value: unknown): boolean {
+  if (!object(value)) return false;
+  if (value.state === 'unavailable') return exact(value, ['state']);
+
+  const binding = ['sourceEpoch', 'sourceRevision', 'bindingId', 'effectiveBinding'];
+  if (!text(value.sourceEpoch, 256, true) || !revision(value.sourceRevision)
+    || !text(value.bindingId, 256, true) || !text(value.effectiveBinding, 256, true)) return false;
+  const validTime = (item: unknown) => text(item, 128, true) && Number.isFinite(Date.parse(item));
+
+  if (value.state === 'idle') return exact(value, ['state', ...binding]);
+  if (value.state === 'reserved' || value.state === 'pressing') {
+    return exact(value, ['state', ...binding, 'reservationId', 'expiresAt'])
+      && text(value.reservationId, 256, true) && validTime(value.expiresAt);
+  }
+  if (value.state === 'observed') {
+    if (!exact(value, ['state', ...binding, 'reservationId', 'pressId', 'pressedAt', 'releasedAt'])
+      || !text(value.reservationId, 256, true) || !text(value.pressId, 256, true)
+      || !validTime(value.pressedAt) || !validTime(value.releasedAt)) return false;
+    return Date.parse(value.releasedAt as string) >= Date.parse(value.pressedAt as string);
+  }
+  if (value.state === 'expired' || value.state === 'cancelled' || value.state === 'unknown') {
+    return exact(value, ['state', ...binding, 'reservationId']) && text(value.reservationId, 256, true);
+  }
+  return false;
 }
 
 function validPen(value: unknown): boolean {
@@ -139,10 +179,15 @@ function validPicker(value: Dict): boolean {
     && text(value.at, 128, true) && oneOf(value.reason, ['cancelled', 'failed', 'unavailable'] as const);
 }
 
+function validStrokeCursor(value: unknown): boolean {
+  return exact(value, ['historyId', 'sequence']) && text(value.historyId, 256, true) && revision(value.sequence);
+}
+
 function validStroke(value: Dict): boolean {
-  if (value.ok === true) return exact(value, ['kind', 'at', 'ok', 'surface', 'strokeId'])
+  if (value.ok === true) return exact(value, ['kind', 'at', 'ok', 'surface', 'strokeId'], ['cursor'])
     && value.kind === 'accepted-stroke' && text(value.at, 128, true)
-    && oneOf(value.surface, ['screen', 'whiteboard'] as const) && text(value.strokeId, 256, true);
+    && oneOf(value.surface, ['screen', 'whiteboard'] as const) && text(value.strokeId, 256, true)
+    && (value.cursor === undefined || (value.surface === 'screen' && validStrokeCursor(value.cursor)));
   return exact(value, ['kind', 'at', 'ok', 'surface', 'reason']) && value.kind === 'accepted-stroke' && value.ok === false
     && text(value.at, 128, true) && oneOf(value.surface, ['screen', 'whiteboard'] as const)
     && oneOf(value.reason, ['rejected', 'failed'] as const);
@@ -152,6 +197,13 @@ function validOutcome(value: unknown): boolean {
   if (!object(value)) return false;
   if (value.kind === 'picker') return validPicker(value);
   if (value.kind === 'accepted-stroke') return validStroke(value);
+  if (value.kind === 'note-save') {
+    if (value.ok === true) return exact(value, ['kind', 'at', 'ok', 'noteId', 'receiptId', 'screenStrokeBarrier'])
+      && text(value.at, 128, true) && text(value.noteId, 256, true) && text(value.receiptId, 256, true)
+      && validStrokeCursor(value.screenStrokeBarrier);
+    return exact(value, ['kind', 'at', 'ok', 'reason']) && value.ok === false
+      && text(value.at, 128, true) && oneOf(value.reason, ['draft', 'empty', 'failed', 'cancelled'] as const);
+  }
   if (value.kind === 'artifact-open') {
     if (value.ok === true) return exact(value, ['kind', 'at', 'artifactId', 'ok', 'evidence'])
       && text(value.at, 128, true) && text(value.artifactId, 256, true)
@@ -198,12 +250,14 @@ function validAdmission(value: unknown): boolean {
 }
 
 function validSnapshotShape(value: unknown): value is CapabilitySnapshot {
-  return exact(value, ['version', 'providerEpoch', 'revision', 'connection', 'readiness', 'shortcut', 'pen', 'captures', 'nextShortcutAdmission'])
+  return exact(value, ['version', 'providerEpoch', 'revision', 'connection', 'readiness', 'shortcut', 'pen', 'captures', 'nextShortcutAdmission'], ['shortcutTrial', 'shortcutTrialBeginBinding'])
     && value.version === 2 && text(value.providerEpoch, 256, true) && revision(value.revision)
     && oneOf(value.connection, ['connected', 'disconnected'] as const)
     && exact(value.readiness, ['requirements']) && plainArray(value.readiness.requirements, 256)
     && value.readiness.requirements.every(validRequirement) && validShortcut(value.shortcut) && validPen(value.pen)
-    && plainArray(value.captures, 1_024) && value.captures.every(validCapture) && validAdmission(value.nextShortcutAdmission);
+    && plainArray(value.captures, 1_024) && value.captures.every(validCapture) && validAdmission(value.nextShortcutAdmission)
+    && (value.shortcutTrial === undefined || validShortcutTrial(value.shortcutTrial))
+    && (value.shortcutTrialBeginBinding === undefined || validTrialBeginBinding(value.shortcutTrialBeginBinding));
 }
 
 export function cloneCapabilitySnapshot(value: unknown): CapabilitySnapshot | undefined {
@@ -220,16 +274,25 @@ function commandShape(value: unknown): value is RecordCommand {
     'request-safe-relaunch': [], 'shortcut-begin-edit': [], 'shortcut-submit': ['sessionId', 'value'],
     'shortcut-save': ['sessionId'], 'shortcut-cancel': ['sessionId'], 'shortcut-reset': [],
     'shortcut-open-desktop-config': [], 'select-pen': ['value'], 'start-capture': ['delivery'],
+    'begin-shortcut-trial': ['reservationId', 'bindingId', 'effectiveBinding', 'sourceEpoch', 'sourceRevision', 'expiresAt'],
+    'cancel-shortcut-trial': ['reservationId'],
     'arm-next-shortcut': ['admissionId', 'delivery', 'expiresAt'], 'cancel-next-shortcut': ['admissionId'],
     'stop-capture': ['captureId'], 'cancel-capture': ['captureId'], 'inspect-capture': ['captureId'],
     'copy-local': ['captureId'], 'open-capture': ['captureId'],
   };
   if (typeof value.type !== 'string' || !Object.hasOwn(fields, value.type)) return false;
-  if (!exact(value, ['type', 'requestId', 'expected', ...fields[value.type]])) return false;
+  if (!exact(value, ['type', 'requestId', 'expected', ...fields[value.type]],
+    value.type === 'begin-shortcut-trial' ? ['replaces'] : [])) return false;
   switch (value.type) {
     case 'request-permission': case 'open-system-settings': return text(value.requirementId, 256, true);
     case 'shortcut-submit': return text(value.sessionId, 256, true) && text(value.value, 256, true);
     case 'shortcut-save': case 'shortcut-cancel': return text(value.sessionId, 256, true);
+    case 'begin-shortcut-trial': return text(value.reservationId, 256, true) && text(value.bindingId, 256, true)
+      && text(value.effectiveBinding, 256, true) && text(value.sourceEpoch, 256, true)
+      && revision(value.sourceRevision) && text(value.expiresAt, 128, true) && Number.isFinite(Date.parse(value.expiresAt))
+      && (value.replaces === undefined || (validTrialPredecessor(value.replaces)
+        && value.replaces.reservationId !== value.reservationId));
+    case 'cancel-shortcut-trial': return text(value.reservationId, 256, true);
     case 'select-pen': return oneOf(value.value, colors);
     case 'start-capture': return oneOf(value.delivery, ['local-only', 'host-default'] as const);
     case 'arm-next-shortcut': return text(value.admissionId, 256, true)
