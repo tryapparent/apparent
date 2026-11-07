@@ -36,6 +36,11 @@ export async function launchNativeHost(profilePath: string, nativeRoot: string) 
     throw new Error('Launch with the packaged private-profile launcher');
   }
   const uid = process.getuid!();
+  const profileStat = await lstat(profilePath);
+  if (!profileStat.isDirectory() || profileStat.isSymbolicLink() || profileStat.uid !== uid
+    || (profileStat.mode & 0o077) || await realpath(profilePath) !== profilePath) {
+    throw new Error('Native GUI profile is not private');
+  }
   const homeStat = await lstat(home);
   if (!homeStat.isDirectory() || homeStat.isSymbolicLink() || homeStat.uid !== uid || (homeStat.mode & 0o077)
     || await realpath(home) !== home) throw new Error('Native GUI home is not private');

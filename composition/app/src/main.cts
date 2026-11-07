@@ -10,6 +10,28 @@ declare const APPARENT_OMARCHY: boolean;
 declare const APPARENT_TRAY_ICON: string;
 let recordBound = false;
 let hostShutdown: Promise<void> = Promise.resolve();
+// Setup can inspect retained native work. Keep partial handles strongly owned
+// after failure; logging an error is never SDK/GUI lifetime clearance.
+let retainedSetupFailure: unknown;
+let retainedRecordHost: RecordHostServices | undefined;
+let ownedWindow: BrowserWindow | undefined;
+let entryStarted = false;
+function loadEntry() {
+  if (entryStarted || !ownedWindow || ownedWindow.isDestroyed()) return;
+  entryStarted = true;
+  void ownedWindow.loadURL(pathToFileURL(join(__dirname, 'index.html')).href)
+    .catch(error => console.error('Desktop page unavailable', error));
+}
+function retainSetupFailure(error: unknown) {
+  retainedSetupFailure = { error, recordHost: retainedRecordHost };
+  console.error('Desktop startup incomplete; native ownership retained', error);
+  if (ownedWindow && !ownedWindow.isDestroyed()) {
+    ownedWindow.setTitle('Apparent — startup incomplete; ownership retained');
+    ownedWindow.on('close', event => event.preventDefault());
+    ownedWindow.show();
+    loadEntry();
+  }
+}
 
 // Separate development identity; never touch the installed Apparent profile.
 app.setName('Apparent Foundation');
@@ -32,6 +54,7 @@ app.whenReady().then(async () => {
     };
     if (typeof ownerBinding.createRecordHostServices === 'function') {
       recordHost = await ownerBinding.createRecordHostServices({ profilePath: app.getPath('userData'), nativeRoot: join(__dirname, 'native-record') });
+      retainedRecordHost = recordHost;
       recordBound = true;
     } else if (typeof ownerBinding.createOnboardingProgressStore === 'function') {
       try {
@@ -41,13 +64,17 @@ app.whenReady().then(async () => {
         });
       } catch (error) { console.error('Onboarding progress host unavailable', error); }
     }
-  } catch (error) { console.error('Onboarding assembly binding unavailable', error); }
+  } catch (error) {
+    if (APPARENT_OMARCHY) retainedSetupFailure = error;
+    else console.error('Onboarding assembly binding unavailable', error);
+  }
   const window = new BrowserWindow({
     title: APPARENT_OMARCHY ? 'Apparent' : 'Apparent Foundation', width: 900, height: 620,
     show: !APPARENT_OMARCHY,
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true,
       preload: join(__dirname, 'preload.cjs') },
   });
+  ownedWindow = window;
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event, url) => { if (url !== entry) event.preventDefault(); });
   const disposeProgress = host ? registerOnboardingProgressBridge({ window, entryUrl: entry, store: host.store }) : undefined;
@@ -73,15 +100,19 @@ app.whenReady().then(async () => {
     window.once('closed', () => { hostShutdown = lifecycle.settled(); });
   } else if (APPARENT_OMARCHY) {
     // An ordinary Foundation surface must never substitute for a failed real binding.
-    throw new Error('Omarchy Record host unavailable');
+    retainSetupFailure(retainedSetupFailure ?? new Error('Omarchy Record host unavailable'));
   } else window.once('closed', () => {
     disposeProgress?.();
     const closing = host;
     hostShutdown = closing ? Promise.resolve().then(() => closing.close()) : Promise.resolve();
     hostShutdown.catch(error => console.error('Onboarding progress shutdown failed', error));
   });
-  void window.loadURL(entry);
+  loadEntry();
+}).catch(error => {
+  if (APPARENT_OMARCHY) retainSetupFailure(error);
+  else console.error('Foundation startup failed', error);
 });
+app.on('before-quit', event => { if (retainedSetupFailure) event.preventDefault(); });
 app.on('window-all-closed', () => {
   if (recordBound) void hostShutdown.then(() => app.quit()).catch(error => console.error('Record ownership unresolved; refusing quit', error));
   else void hostShutdown.catch(() => {}).finally(() => app.quit());

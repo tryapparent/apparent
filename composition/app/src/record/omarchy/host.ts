@@ -1,5 +1,5 @@
-import { randomUUID, createHash } from 'node:crypto';
-import { mkdir, readFile, realpath } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { lstat, mkdir, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { CaptureClient, capture2MaterialsRoot, launchCaptureEngine } from '@apparent/engine-sdk/capture';
 import { launchCaptureRecoveryPeer, launchMedia2RecoveryPeer } from '@apparent/engine-sdk/recovery';
@@ -25,7 +25,9 @@ function absoluteRoot(value: string, name: string): string {
 
 async function privateDirectory(path: string): Promise<void> {
   await mkdir(path, { recursive: true, mode: 0o700 });
-  if (await realpath(path) !== path) throw new Error('Record profile directory is aliased');
+  const stat = await lstat(path);
+  if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid?.()
+    || (stat.mode & 0o077) || await realpath(path) !== path) throw new Error('Record profile directory is not private');
 }
 
 async function nativeExecutable(root: string, slot: 'capture' | 'media' | 'config', entry: string): Promise<{ path: string; sha256: string }> {
@@ -57,11 +59,11 @@ function screenSource(discovery: SourceDiscovery) {
   return screens[0]!;
 }
 
-function startIntent(discovery: SourceDiscovery) {
+export function omarchyStartIntent(requestId: string, discovery: SourceDiscovery) {
   return {
     source: screenSource(discovery),
     options: { audio: 'none' as const, localOnly: true as const },
-    invocation: { kind: 'explicit' as const, invocationId: randomUUID(), observedAtMs: Date.now() },
+    invocation: { kind: 'explicit' as const, invocationId: requestId, observedAtMs: Date.now() },
   };
 }
 
@@ -72,6 +74,7 @@ function startIntent(discovery: SourceDiscovery) {
 export async function createRecordHostServices(input: { profilePath: string; nativeRoot: string }): Promise<RecordHostServices> {
   const profilePath = absoluteRoot(input?.profilePath, 'profilePath');
   const nativeRoot = absoluteRoot(input?.nativeRoot, 'nativeRoot');
+  await privateDirectory(profilePath);
   const capture = await nativeExecutable(nativeRoot, 'capture', 'apparent-engine-capture-launch');
   const media = await nativeExecutable(nativeRoot, 'media', 'apparent-engine-frames');
   const config = await nativeExecutable(nativeRoot, 'config', 'apparent-config-host');
@@ -102,7 +105,7 @@ export async function createRecordHostServices(input: { profilePath: string; nat
         destinations,
         privateControlRoot,
         createStartIntent: (requestId, discovery) => {
-          const intent = startIntent(discovery);
+          const intent = omarchyStartIntent(requestId, discovery);
           const digest = createHash('sha256').update(requestId, 'utf8').digest('hex');
           return { source: intent.source, options: intent.options, invocation: intent.invocation,
             destinationPath: join(bundleRoot, `record-${digest}.apparent`) };
