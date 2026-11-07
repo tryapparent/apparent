@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -92,31 +93,89 @@ export async function reconcileAndCancel(mappings: any, client: any, deadline: n
   }
 }
 
-/** Linux qualification owns a process group so its hard deadline also covers descendants. */
-export async function runQualification(command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv; timeout: number }): Promise<{ stdout: string; stderr: string }> {
-  const child = spawn(command, args, { cwd: options.cwd, env: options.env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
-  let stdout = '', stderr = '', failure: Error | undefined;
-  const signal = (value: NodeJS.Signals) => {
-    if (!child.pid) return;
-    try { process.kill(-child.pid, value); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
-  };
-  let escalation: ReturnType<typeof setTimeout> | undefined;
-  const abort = (error: Error) => {
-    failure ??= error;
-    signal('SIGTERM');
-    escalation ??= setTimeout(() => signal('SIGKILL'), 500);
-  };
-  const timer = setTimeout(() => abort(new Error('native qualification deadline exceeded')), options.timeout);
-  try {
-    await new Promise<void>((resolve, reject) => {
-      child.stdout.setEncoding('utf8').on('data', value => { stdout += value; if (stdout.length > 8 * 1024 * 1024) abort(new Error('qualification output limit')); });
-      child.stderr.setEncoding('utf8').on('data', value => { stderr += value; if (stderr.length > 8 * 1024 * 1024) abort(new Error('qualification output limit')); });
-      child.once('error', reject);
-      child.once('close', code => failure ? reject(new Error(`${failure.message}\nstdout:\n${stdout}\nstderr:\n${stderr}`)) : code === 0 ? resolve() : reject(new Error(`native qualification failed (${code}):\nstdout:\n${stdout}\nstderr:\n${stderr}`)));
+export const QUALIFICATION_IPC_SCHEMA = 'apparent.record-native-qualification/1';
+
+/** A native run cannot start until the supervisor can request and observe local owner drain. */
+export function assertQualificationShutdownProtocol(available: boolean): void {
+  if (!available) throw new Error('native qualification launch refused: the exact SDK 0.4.5 normal-close local-resource contract is not yet admitted for the owning capture client after explicit finish intent and borrower drain');
+}
+
+/** The native supervisor never kills an SDK-owning group without positive local clearance. */
+export async function runQualification(command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv; timeout: number; shutdownReportTimeout?: number; outputLimitBytes?: number }): Promise<{ stdout: string; stderr: string; shutdownReport?: unknown }> {
+  const child = spawn(command, args, { cwd: options.cwd, env: options.env, detached: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+  let stdout = '', stderr = '', capturedBytes = 0, failure: Error | undefined, childExited = false, childExitCode: number | null = null, childExitSignal: NodeJS.Signals | null = null, abortPromise: Promise<void> | undefined;
+  const outputLimit = options.outputLimitBytes ?? 8 * 1024 * 1024;
+  let rejectAbort!: (error: Error) => void;
+  let requestedId: string | undefined, shutdownReport: unknown, resolveReport!: (value: unknown) => void;
+  const reportPromise = new Promise<unknown>(resolve => { resolveReport = resolve; });
+  child.on('message', message => {
+    if (!message || typeof message !== 'object' || Array.isArray(message)) return;
+    const value = message as Record<string, unknown>;
+    if (value.schema !== QUALIFICATION_IPC_SCHEMA || value.kind !== 'shutdown-report' || value.requestId !== requestedId || !('report' in value)) return;
+    shutdownReport = value.report;
+    resolveReport(shutdownReport);
+  });
+  const requestShutdown = async (reason: 'deadline' | 'output-limit'): Promise<unknown> => {
+    requestedId = randomUUID();
+    if (!child.connected) return undefined;
+    try {
+      child.send({ schema: QUALIFICATION_IPC_SCHEMA, kind: 'shutdown-request', requestId: requestedId, reason }, error => {
+        if (error && failure) Object.assign(failure, { shutdownRequestError: error.message });
+      });
+    } catch (error) {
+      Object.assign(failure!, { shutdownRequestError: error instanceof Error ? error.message : String(error) });
+      return undefined;
+    }
+    return new Promise(resolve => {
+      const timer = setTimeout(() => resolve(undefined), options.shutdownReportTimeout ?? 3000);
+      void reportPromise.then(value => { clearTimeout(timer); resolve(value); });
     });
-    return { stdout, stderr };
+  };
+  const abort = (error: Error, reason: 'deadline' | 'output-limit') => {
+    if (failure) return;
+    failure = error;
+    abortPromise = (async () => {
+      const report = await requestShutdown(reason);
+      Object.assign(error, {
+        shutdownRequestId: requestedId,
+        shutdownReport: report ?? null,
+        ownedProcessGroupPid: child.pid,
+        processGroupRetained: !childExited,
+        exitCode: childExitCode,
+        signal: childExitSignal,
+        stdout,
+        stderr,
+      });
+      rejectAbort(error);
+    })();
+  };
+  const aborted = new Promise<never>((_, reject) => { rejectAbort = reject; });
+  const timer = setTimeout(() => abort(new Error('native qualification deadline exceeded'), 'deadline'), options.timeout);
+  try {
+    await Promise.race([new Promise<void>((resolve, reject) => {
+      const collect = (current: string, value: string, assign: (next: string) => void) => {
+        if (failure) return;
+        const bytes = Buffer.from(value);
+        const remaining = Math.max(0, outputLimit - capturedBytes);
+        capturedBytes += Math.min(remaining, bytes.length);
+        assign(current + bytes.subarray(0, remaining).toString('utf8'));
+        if (bytes.length > remaining) abort(new Error('qualification output limit'), 'output-limit');
+      };
+      child.stdout.setEncoding('utf8').on('data', value => collect(stdout, value, next => { stdout = next; }));
+      child.stderr.setEncoding('utf8').on('data', value => collect(stderr, value, next => { stderr = next; }));
+      child.once('error', reject);
+      child.once('close', (code, signal) => {
+        childExited = true;
+        childExitCode = code;
+        childExitSignal = signal;
+        if (failure) {
+          if (!abortPromise) reject(Object.assign(new Error(`${failure.message}\nstdout:\n${stdout}\nstderr:\n${stderr}`), { exitCode: code, signal, shutdownReport }));
+        } else if (code === 0) resolve();
+        else reject(Object.assign(new Error(`native qualification failed (${code ?? signal}):\nstdout:\n${stdout}\nstderr:\n${stderr}`), { exitCode: code, signal, shutdownReport }));
+      });
+    }), aborted]);
+    return { stdout, stderr, ...(shutdownReport === undefined ? {} : { shutdownReport }) };
   } finally {
-    clearTimeout(timer); clearTimeout(escalation);
-    signal('SIGKILL'); // Includes descendants left after an early parent exit.
+    clearTimeout(timer);
   }
 }
