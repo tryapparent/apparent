@@ -14,6 +14,25 @@ async function startTicks(pid: number): Promise<string> {
   return fields[19];
 }
 const hash = (data: Uint8Array) => createHash('sha256').update(data).digest('hex');
+/** Cold AppImage extraction is part of bootstrap. Retry count is not readiness. */
+export async function awaitNativeHostReadiness<T>(probe: () => Promise<T | undefined>,
+  alive: () => void, now: () => number = () => performance.now(),
+  sleep: (ms: number) => Promise<unknown> = delay): Promise<T> {
+  const deadline = now() + 30_000;
+  let lastError: unknown;
+  while (now() < deadline) {
+    alive();
+    try {
+      const result = await probe();
+      if (now() >= deadline) break;
+      alive();
+      if (result !== undefined) return result;
+    } catch (error) { lastError = error; }
+    const remaining = deadline - now();
+    if (remaining > 0) await sleep(Math.min(100, remaining));
+  }
+  throw new Error('Native GUI readiness timed out; retained launch requires cleanup', { cause: lastError });
+}
 async function descendants(pid: number, depth = 0): Promise<number[]> {
   if (depth > 8) throw new Error('Native GUI launch tree exceeds bound');
   const path = `/proc/${pid}/task/${pid}/children`;
@@ -68,17 +87,15 @@ export async function launchNativeHost(profilePath: string, nativeRoot: string) 
   let launchError: Error | undefined;
   child.once('error', error => { launchError = error; });
   child.once('exit', () => { exited = true; });
-  let owned: { pid: number; ticks: string } | undefined;
   const port = createNativeHostPort();
   // Bounded readiness on this private socket; no clipboard write or permission action.
-  for (let attempt = 0; attempt < 30 && !owned; attempt++) {
-    if (launchError || exited || !child.pid) throw new Error('Native GUI exited before readiness', { cause: launchError });
-    try {
+  let owned: { pid: number; ticks: string };
+  try { owned = await awaitNativeHostReadiness(async () => {
       const candidates: Array<{ pid: number; ticks: string }> = [];
       const unix = await readFile('/proc/net/unix', 'utf8');
       const line = unix.split('\n').find(line => line.trim().split(/\s+/).at(-1) === socket);
       const inode = line?.trim().split(/\s+/)[6];
-      if (inode) for (const pid of await descendants(child.pid)) {
+      if (inode) for (const pid of await descendants(child.pid!)) {
         const ticks = await startTicks(pid);
         const fds = await readdir(`/proc/${pid}/fd`);
         let ownsSocket = false;
@@ -93,14 +110,14 @@ export async function launchNativeHost(profilePath: string, nativeRoot: string) 
       if (candidates.length === 1) {
         const snapshot = await port.readSnapshot();
         if (snapshot.processEpoch.startsWith('process-')) throw new Error('Native GUI has weak incarnation');
-        owned = candidates[0];
+        return candidates[0];
       }
-    } catch (error) {
-      if (attempt === 29) throw new Error('Native GUI readiness unresolved; retained launch requires cleanup', { cause: { error, child } });
-    }
-    if (!owned) await delay(100);
+      return undefined;
+  }, () => {
+    if (launchError || exited || !child.pid) throw new Error('Native GUI exited before readiness', { cause: launchError });
+  }); } catch (error) {
+    throw new Error('Native GUI bootstrap unresolved; retained launch requires cleanup', { cause: { error, child } });
   }
-  if (!owned) throw new Error('Native GUI readiness timed out; retained launch requires cleanup', { cause: child });
   const identity = Object.freeze({ ...owned });
   let close: Promise<void> | undefined;
   return { identity,
