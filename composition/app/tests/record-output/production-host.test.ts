@@ -23,7 +23,7 @@ async function controlledNative(create: (input: RecordNativeBindingOptions) => P
       if (inspectCoordinator) {
         builder.onResolve({ filter: /^@apparent\/record\/host\/capture2-coordinator$/ }, () => ({ path: 'coordinator', namespace: key }));
         builder.onLoad({ filter: /^coordinator$/, namespace: key }, () => ({ loader: 'js', contents:
-          `import {createRecordCaptureCoordinator as actual} from ${JSON.stringify(actualCoordinator)}; export function createRecordCaptureCoordinator(input) { globalThis[${JSON.stringify(observerKey)}](input); return actual(input); }` }));
+          `import {createStandardRecordCaptureCoordinator as actual} from ${JSON.stringify(actualCoordinator)}; export function createStandardRecordCaptureCoordinator(input) { globalThis[${JSON.stringify(observerKey)}](input); return actual(input); }` }));
       }
       builder.onResolve({ filter: /^\.\/native-bindings\.ts$/ }, () => ({ path: 'binding', namespace: key }));
       builder.onLoad({ filter: /.*/, namespace: key }, () => ({ loader: 'js',
@@ -45,7 +45,7 @@ function fixture(root: string) {
       captureClient: { async handshake() { return { implementation: 'native', readiness: 'unavailable', capabilities: {} }; } } as never,
       mediaClient: {} as never,
       mappingRoot: join(root, 'mappings'), bundleRoot: join(root, 'bundles'), privateControlRoot: join(root, 'control'),
-      createStartIntent: never, trustedMaterialsRoot: never, selectProcessing: never,
+      createStartIntent: never, trustedMaterialsRoot: never, standardProcessing: { requestVideoProof: true },
     },
     native: { requiredPermissionIds: ['screen-recording'], config: {
       executable: '/admitted/config-host', executableSha256: 'a'.repeat(64), configPath: join(root, 'config.json'),
@@ -99,9 +99,12 @@ test('trusted roots, config and permission records are snapshotted before asynch
   let supplied!: RecordNativeBindingOptions, observed!: RecordProductionHostOptions['coordinator'], release!: () => void;
   const barrier = new Promise<void>(resolve => { release = resolve; });
   const module = await controlledNative(async input => { supplied = input; await barrier; return f.native; }, input => { observed = input; });
+  f.options.coordinator.standardProcessing.destination = { session: 'original-session', title: 'original title', via: 'explicit-host' };
   const creating = module.createRecordProductionHost(f.options);
   const originalControl = f.options.coordinator.privateControlRoot;
   f.options.coordinator.privateControlRoot = join(root, 'substituted-control');
+  f.options.coordinator.standardProcessing.requestVideoProof = false;
+  f.options.coordinator.standardProcessing.destination!.title = 'substituted title';
   f.options.native.config.executable = '/substituted/helper';
   (f.options.native.requiredPermissionIds as string[]).push('substituted-permission');
   f.options.closeEngine = async () => { throw new Error('substituted close must not run'); };
@@ -110,6 +113,8 @@ test('trusted roots, config and permission records are snapshotted before asynch
   assert.equal(supplied.config.executable, '/admitted/config-host');
   assert.deepEqual(supplied.requiredPermissionIds, ['screen-recording']);
   assert.equal(observed.privateControlRoot, originalControl);
+  assert.equal(observed.standardProcessing.requestVideoProof, true);
+  assert.equal(observed.standardProcessing.destination?.title, 'original title');
   await assert.rejects(stat(join(root, 'substituted-control')), { code: 'ENOENT' });
   assert.equal(await host.canClose(), true); await host.close();
   assert.equal(f.counts().sdkClosed, 1);

@@ -1,7 +1,7 @@
 import {
-  createRecordCaptureCoordinator,
+  createStandardRecordCaptureCoordinator,
   type RecordCaptureCoordinator,
-  type RecordCaptureCoordinatorOptions,
+  type StandardRecordCaptureCoordinatorOptions,
 } from '@apparent/record/host/capture2-coordinator';
 import { preflightCapturePublication } from '@apparent/engine-sdk/capture';
 import { bindRecordCoordinatorHost, type RecordCoordinatorHostOptions } from './coordinator-host.ts';
@@ -9,7 +9,7 @@ import { createRecordNativeBindings, type RecordNativeBindingOptions, type Recor
 
 export interface RecordProductionHostOptions {
   /** Already constructed, admitted public SDK clients and explicit owner policy. */
-  coordinator: Omit<RecordCaptureCoordinatorOptions, 'preflight'>;
+  coordinator: Omit<StandardRecordCaptureCoordinatorOptions, 'preflight'>;
   /** Privileged native/config inputs; the resolver always comes from Record. */
   native: Omit<RecordNativeBindingOptions, 'resolveHandoff'>;
   shutdownOtherRuntimeUsers: RecordCoordinatorHostOptions['shutdownOtherRuntimeUsers'];
@@ -35,7 +35,8 @@ export async function createRecordProductionHost(options: RecordProductionHostOp
   }
   // Snapshot records before native config setup yields. SDKs and policy callbacks
   // are capabilities: preserve their identities rather than cloning implementations.
-  const coordinatorOptions = { ...options.coordinator, preflight: preflightCapturePublication };
+  const coordinatorOptions = { ...options.coordinator, standardProcessing: structuredClone(options.coordinator.standardProcessing),
+    preflight: preflightCapturePublication };
   const shutdownOtherRuntimeUsers = options.shutdownOtherRuntimeUsers;
   const closeEngine = options.closeEngine;
   let coordinator: RecordCaptureCoordinator | undefined;
@@ -44,7 +45,7 @@ export async function createRecordProductionHost(options: RecordProductionHostOp
     resolveHandoff: identity => coordinator ? coordinator.resolveHandoff(identity) : Promise.resolve(null),
   });
   try {
-    coordinator = await createRecordCaptureCoordinator(coordinatorOptions);
+    coordinator = await createStandardRecordCaptureCoordinator(coordinatorOptions);
     return bindRecordCoordinatorHost({ coordinator, nativeBindings, shutdownOtherRuntimeUsers, closeEngine });
   } catch (cause) {
     // A coordinator may have inspected or recovered persisted native work during

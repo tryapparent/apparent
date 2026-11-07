@@ -175,3 +175,27 @@ test('preserves public durable-note and screen-stroke cursor facts without deriv
   delete forged.captures[0].outcomes.find((outcome: any) => outcome.kind === 'note-save').receiptId;
   assert.equal(cloneCapabilitySnapshot(forged), undefined, 'a generic success cannot replace a durable note receipt');
 });
+
+test('preserves current begin binding separately from terminal predecessor and rejects malformed replacement DTOs', () => {
+  const snapshot = createRecordFixture('shortcut-trial-physical-press-release').driver.current();
+  assert(snapshot.shortcutTrial && snapshot.shortcutTrial.state === 'observed');
+  const { sourceEpoch, sourceRevision, bindingId, effectiveBinding, reservationId } = snapshot.shortcutTrial;
+  const replaces = { sourceEpoch, sourceRevision, bindingId, effectiveBinding, reservationId };
+  const fresh = { sourceEpoch, sourceRevision: sourceRevision + 1, bindingId: bindingId + '-new', effectiveBinding };
+  const current = { ...snapshot, shortcutTrialBeginBinding: fresh };
+  assert.deepEqual(cloneCapabilitySnapshot(current), current);
+  assert.equal(cloneCapabilitySnapshot(current)?.shortcutTrial?.state, 'observed');
+  for (const invalid of [null, { ...fresh, sourceRevision: -1 }, { ...fresh, bindingId: '' }, { ...fresh, extra: true }]) {
+    assert.equal(cloneCapabilitySnapshot({ ...snapshot, shortcutTrialBeginBinding: invalid }), undefined);
+  }
+  const command = { type: 'begin-shortcut-trial', requestId: 'rearm-transport',
+    expected: { providerEpoch: snapshot.providerEpoch, revision: snapshot.revision },
+    ...fresh, reservationId: reservationId + '-new', expiresAt: '2026-11-07T12:00:00.000Z', replaces };
+  assert.deepEqual(cloneRecordCommand(command), command);
+  for (const invalid of [null, { ...replaces, sourceRevision: -1 }, { ...replaces, extra: true },
+    { ...replaces, reservationId: command.reservationId }]) {
+    assert.equal(cloneRecordCommand({ ...command, replaces: invalid }), undefined);
+  }
+  assert.equal(cloneRecordCommand({ type: 'cancel-shortcut-trial', requestId: 'cancel-transport',
+    expected: command.expected, reservationId, replaces }), undefined);
+})

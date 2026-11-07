@@ -125,6 +125,19 @@ function validShortcut(value: unknown): boolean {
     && (value.draft.error === undefined || text(value.draft.error, 4_096));
 }
 
+const trialBindingFields = ['sourceEpoch', 'sourceRevision', 'bindingId', 'effectiveBinding'];
+function validTrialBindingValues(value: Dict): boolean {
+  return text(value.sourceEpoch, 256, true) && revision(value.sourceRevision)
+    && text(value.bindingId, 256, true) && text(value.effectiveBinding, 256, true);
+}
+function validTrialBeginBinding(value: unknown): boolean {
+  return exact(value, trialBindingFields) && validTrialBindingValues(value);
+}
+function validTrialPredecessor(value: unknown): value is Dict {
+  return exact(value, [...trialBindingFields, 'reservationId']) && validTrialBindingValues(value)
+    && text(value.reservationId, 256, true);
+}
+
 function validShortcutTrial(value: unknown): boolean {
   if (!object(value)) return false;
   if (value.state === 'unavailable') return exact(value, ['state']);
@@ -237,13 +250,14 @@ function validAdmission(value: unknown): boolean {
 }
 
 function validSnapshotShape(value: unknown): value is CapabilitySnapshot {
-  return exact(value, ['version', 'providerEpoch', 'revision', 'connection', 'readiness', 'shortcut', 'pen', 'captures', 'nextShortcutAdmission'], ['shortcutTrial'])
+  return exact(value, ['version', 'providerEpoch', 'revision', 'connection', 'readiness', 'shortcut', 'pen', 'captures', 'nextShortcutAdmission'], ['shortcutTrial', 'shortcutTrialBeginBinding'])
     && value.version === 2 && text(value.providerEpoch, 256, true) && revision(value.revision)
     && oneOf(value.connection, ['connected', 'disconnected'] as const)
     && exact(value.readiness, ['requirements']) && plainArray(value.readiness.requirements, 256)
     && value.readiness.requirements.every(validRequirement) && validShortcut(value.shortcut) && validPen(value.pen)
     && plainArray(value.captures, 1_024) && value.captures.every(validCapture) && validAdmission(value.nextShortcutAdmission)
-    && (value.shortcutTrial === undefined || validShortcutTrial(value.shortcutTrial));
+    && (value.shortcutTrial === undefined || validShortcutTrial(value.shortcutTrial))
+    && (value.shortcutTrialBeginBinding === undefined || validTrialBeginBinding(value.shortcutTrialBeginBinding));
 }
 
 export function cloneCapabilitySnapshot(value: unknown): CapabilitySnapshot | undefined {
@@ -267,14 +281,17 @@ function commandShape(value: unknown): value is RecordCommand {
     'copy-local': ['captureId'], 'open-capture': ['captureId'],
   };
   if (typeof value.type !== 'string' || !Object.hasOwn(fields, value.type)) return false;
-  if (!exact(value, ['type', 'requestId', 'expected', ...fields[value.type]])) return false;
+  if (!exact(value, ['type', 'requestId', 'expected', ...fields[value.type]],
+    value.type === 'begin-shortcut-trial' ? ['replaces'] : [])) return false;
   switch (value.type) {
     case 'request-permission': case 'open-system-settings': return text(value.requirementId, 256, true);
     case 'shortcut-submit': return text(value.sessionId, 256, true) && text(value.value, 256, true);
     case 'shortcut-save': case 'shortcut-cancel': return text(value.sessionId, 256, true);
     case 'begin-shortcut-trial': return text(value.reservationId, 256, true) && text(value.bindingId, 256, true)
       && text(value.effectiveBinding, 256, true) && text(value.sourceEpoch, 256, true)
-      && revision(value.sourceRevision) && text(value.expiresAt, 128, true) && Number.isFinite(Date.parse(value.expiresAt));
+      && revision(value.sourceRevision) && text(value.expiresAt, 128, true) && Number.isFinite(Date.parse(value.expiresAt))
+      && (value.replaces === undefined || (validTrialPredecessor(value.replaces)
+        && value.replaces.reservationId !== value.reservationId));
     case 'cancel-shortcut-trial': return text(value.reservationId, 256, true);
     case 'select-pen': return oneOf(value.value, colors);
     case 'start-capture': return oneOf(value.delivery, ['local-only', 'host-default'] as const);

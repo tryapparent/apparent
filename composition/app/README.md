@@ -307,11 +307,13 @@ pill placement, focus, stacking, exclusion or capture-to-Saved behavior.
 
 ## Record automatic coordinator assembly
 
-The pinned Record package is the admitted `830e5c1a` producer. Its public
+The pinned Record package is the admitted `62010646` producer with the accepted SDK 0.4.3 peer. Its public
 `@apparent/record/host/capture2-coordinator` export owns automatic retained-media
 processing and publication. Trusted composition supplies the existing Capture/2
-and Media/2 clients, private roots, source intent and one explicit processing
-selection; the shell supplies no default frame/layout policy or second journal.
+and Media/2 clients, private roots, source intent and explicit proof/destination
+preferences. `createStandardRecordCaptureCoordinator` owns sampling, sealed-PNG
+observations, frame/layout selection and publication; the shell supplies no
+selection loop or second journal.
 
 After constructing that public coordinator, create native bindings using its
 `resolveHandoff` and pass both to `bindRecordCoordinatorHost` in
@@ -340,14 +342,17 @@ terminal ordering and transport with synthetic producers, separately from real
 native Saved/copy and native pill/exclusion acceptance.
 
 Trusted binding modules can use `createRecordProductionHost` from
-`src/record/production-host.ts` to construct the owner coordinator, public
+`src/record/production-host.ts` to construct the standard visual owner coordinator, public
 native/config/pen/clipboard adapters and serialized host lifetime together.
 Supply already constructed admitted Capture/2 and Media/2 SDK clients sharing
-one private runtime, the explicit Record coordinator roots/source/processing
-policy, native permission/config inputs, and the ownership callbacks described
+one private runtime, explicit roots/source intent and `standardProcessing` proof
+and destination preferences, native permission/config inputs, and the ownership callbacks described
 above. The factory fixes publication preflight to the public SDK implementation
 and binds clipboard resolution to the coordinator's existing Saved authority.
-It supplies no default processing selection or shortcut-trial producer.
+Record owns the standard visual selection and recovery; this factory supplies
+no parallel selector or shortcut-trial producer. Renderer transport preserves the
+current `shortcutTrialBeginBinding` separately from the old terminal identity and
+the explicit `begin-shortcut-trial.replaces` tuple without changing either fact.
 
 SDK/process ownership remains with the caller until construction succeeds.
 `RecordHostSetupError` returns any constructed coordinator and native bindings

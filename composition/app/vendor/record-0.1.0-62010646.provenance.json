@@ -1,0 +1,11 @@
+{
+  "package": "@apparent/record",
+  "version": "0.1.0",
+  "sourceSha": "62010646fe954d72e2502a2403e6e3ad2fbe2017",
+  "runId": "42315302146",
+  "artifactId": 13550173286,
+  "componentSha256": "b4d20fa79ba334f806a994e10420b6f9c9b4b3f1b1533da892a6c4a41f8b655e",
+  "packageSha256": "1addc6531bd3cc827eb700edaeb6fd23df4e01dbe3abfbd76ee0ddda172e5349",
+  "verified": "Owner-qualified protected-main receipt/hash/attestation; package bytes independently checked",
+  "usage": "Public standard visual coordinator, terminal shutdown report and authenticated Saved resolver. No fresh native standard-path or installed-adoption claim."
+}
