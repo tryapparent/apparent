@@ -186,6 +186,14 @@ The allowlist exactly matches the API: summary, metadata, contact sheets includi
 
 The server quota is **500,000,000 bytes per account**. Separately, v1 accepts at most 512 files and **90,000,000 bytes per file**, with a 128KiB manifest request. `file_too_large` is reported in queue status; the capture stays local. There is no multipart/chunk protocol and the client never drops a large recording/audio asset to fit. Real larger recordings therefore need a future coordinated protocol change. Server retention is seven days after reservation, with incomplete reservations reclaimed after 24 hours; a tombstoned ID requires a fresh explicit `apparent connect upload`, not a retry of that ID.
 
+Local machinery is excluded before building either plaintext or encrypted
+snapshots: Engine's empty `.publication.lock` and Desktop's `notes-ui.log`
+(Chromium stderr). Both must be owned regular files with one link and no
+group/other write permission. Neither is an allowed remote asset or evidence
+reference; originals stay local. Unknown files still fail the upload. Known
+asset failures retain their safe queue codes through encryption's snapshot
+context rather than being misreported as an endpoint-key problem.
+
 ## Verification
 
 `encrypted_settings_future_capture_restart_retry_and_disconnect` exercises one

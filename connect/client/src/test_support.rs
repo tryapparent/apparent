@@ -1613,6 +1613,7 @@ pub fn hosted_transport_network_timeout_and_cancellation() {
 }
 #[cfg_attr(test, test)]
 pub fn hosted_paths_symlinks_oversize_and_unknown_assets() {
+    use std::os::unix::fs::PermissionsExt;
     let f = Fixture::new();
     let bundle = f.bundle();
     let publication_lock = bundle.join(".publication.lock");
@@ -1636,6 +1637,42 @@ pub fn hosted_paths_symlinks_oversize_and_unknown_assets() {
     let stage = Scratch::new(&f.client.state).unwrap();
     assert!(snapshot(&bundle, &stage.0).is_err());
     fs::remove_file(&publication_lock).unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
+    let notes_log = bundle.join("notes-ui.log");
+    let mut diagnostic = OpenOptions::new().write(true).create_new(true).mode(0o600)
+        .open(&notes_log).unwrap();
+    diagnostic.write_all(b"synthetic Chromium diagnostic\n").unwrap();
+    drop(diagnostic);
+    let files = snapshot(&bundle, &stage.0).expect("notes stderr is local diagnostics");
+    assert!(!files.iter().any(|file| file.path == "notes-ui.log"));
+    assert!(!stage.0.join("notes-ui.log").exists());
+    assert_eq!(fs::read(&notes_log).unwrap(), b"synthetic Chromium diagnostic\n");
+    fs::set_permissions(&notes_log, fs::Permissions::from_mode(0o620)).unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
+    assert!(snapshot(&bundle, &stage.0).is_err());
+    fs::remove_file(&notes_log).unwrap();
+    std::os::unix::fs::symlink(&outside_lock, &notes_log).unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
+    assert!(snapshot(&bundle, &stage.0).is_err());
+    fs::remove_file(&notes_log).unwrap();
+    fs::hard_link(&outside_lock, &notes_log).unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
+    assert!(snapshot(&bundle, &stage.0).is_err());
+    fs::remove_file(&notes_log).unwrap();
+    fs::create_dir(&notes_log).unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
+    assert!(snapshot(&bundle, &stage.0).is_err());
+    fs::remove_dir(&notes_log).unwrap();
+    // A local-only sidecar must not satisfy a manifest's evidence reference.
+    fs::write(&notes_log, b"diagnostic").unwrap();
+    fs::set_permissions(&notes_log, fs::Permissions::from_mode(0o600)).unwrap();
+    let metadata = fs::read(bundle.join("apparent.json")).unwrap();
+    fs::write(bundle.join("apparent.json"), br#"{"video":"notes-ui.log"}"#).unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
+    assert!(snapshot(&bundle, &stage.0).unwrap_err().to_string()
+        .contains("Unsafe or missing bundle asset reference"));
+    fs::write(bundle.join("apparent.json"), metadata).unwrap();
+    fs::remove_file(&notes_log).unwrap();
     let stage = Scratch::new(&f.client.state).unwrap();
     fs::write(bundle.join("unexpected.svg"), b"asset").unwrap();
     assert!(

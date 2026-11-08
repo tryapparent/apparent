@@ -1669,12 +1669,12 @@ impl Client {
                     job.error = None;
                 }
                 Err(error) => {
-                    let text = error.to_string();
+                    // Inspect causes for known codes, but persist only the allowlisted
+                    // classification below. Snapshot context is not a key failure.
+                    let text = format!("{error:#}");
                     job.error = Some(
                         if text.contains("encryption_pending_recipient") {
                             "encryption_pending_recipient"
-                        } else if text.contains("encryption_") || text.contains("encrypted_") {
-                            "encryption_action_required"
                         } else if text.contains("file_too_large") {
                             "file_too_large"
                         } else if text.contains("quota_exceeded") {
@@ -1686,6 +1686,8 @@ impl Client {
                             || text.contains("forbidden")
                         {
                             "auth_required"
+                        } else if text.contains("encryption_") || text.contains("encrypted_") {
+                            "encryption_action_required"
                         } else {
                             "upload_failed"
                         }
@@ -2028,17 +2030,17 @@ fn snapshot(bundle: &Path, stage: &Path) -> Result<Vec<Asset>> {
             .file_name()
             .into_string()
             .map_err(|_| anyhow::anyhow!("Invalid asset name"))?;
-        if name == ".publication.lock" {
-            // Engine keeps this empty coordination inode after publication. It
-            // is local machinery, never capture evidence or a remotely served asset.
+        if matches!(name.as_str(), ".publication.lock" | "notes-ui.log") {
+            // Engine's empty publication lock and Desktop's notes stderr are
+            // local machinery, never capture evidence or remotely served assets.
             let metadata = fs::symlink_metadata(entry.path())?;
             ensure!(
                 metadata.is_file()
                     && metadata.uid() == unsafe { libc::geteuid() }
                     && metadata.mode() & 0o022 == 0
                     && metadata.nlink() == 1
-                    && metadata.len() == 0,
-                "Unsafe bundle publication lock"
+                    && (name != ".publication.lock" || metadata.len() == 0),
+                "Unsafe bundle publication lock or notes diagnostic"
             );
             continue;
         }
