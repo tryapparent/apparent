@@ -110,9 +110,13 @@ export async function createRecordHostServices({profilePath}) {
   await expect(controls.getByRole('button', { name: 'Finish', exact: true })).toBeVisible();
   await controls.getByRole('button', { name: 'Finish', exact: true }).click();
   await expect(page.locator('main.pill')).toHaveAttribute('data-phase', 'selecting');
-  const commands = JSON.parse(await readFile(join(profile, 'commands.json'), 'utf8'));
-  assert.equal(commands.length, 1); assert.equal(commands[0].type, 'stop-capture'); assert.equal(commands[0].captureId, 'capture-active');
-  assert.match(commands[0].requestId, /^[a-f0-9-]{36}$/);
+  // Observed facts can render before execute() finishes writing its fixture log.
+  // Retry reads/assertions only; the physical action above is never repeated.
+  await expect(async () => {
+    const commands = JSON.parse(await readFile(join(profile, 'commands.json'), 'utf8'));
+    assert.equal(commands.length, 1); assert.equal(commands[0].type, 'stop-capture'); assert.equal(commands[0].captureId, 'capture-active');
+    assert.match(commands[0].requestId, /^[a-f0-9-]{36}$/);
+  }).toPass({ timeout: 5000 });
   for(const notice of ['Saved locally','Saved locally · Transcript collected; 0 segments',
     'Saved locally · Transcript collected; no words','Saved locally · Transcript unavailable']){
     await page.evaluate(async()=>{
@@ -145,10 +149,12 @@ export async function createRecordHostServices({profilePath}) {
   await expect(controls.getByRole('button',{name:'Copy handoff',exact:true})).toBeEnabled();
   if(process.env.APPARENT_RECORD_PILL_SCREENSHOT)await page.screenshot({path:process.env.APPARENT_RECORD_PILL_SCREENSHOT+'.cancelled.png'});
   await controls.getByRole('button',{name:'Copy handoff',exact:true}).click();
-  const afterCancelCommands=JSON.parse(await readFile(join(profile,'commands.json'),'utf8'));
-  assert.equal(afterCancelCommands.find((command:any)=>command.type==='cancel-capture').captureId,'fixture-current-cancel');
-  assert.equal(afterCancelCommands.at(-1).type,'copy-local');
-  assert.equal(afterCancelCommands.at(-1).captureId,previous.captureId);
+  await expect(async () => {
+    const afterCancelCommands=JSON.parse(await readFile(join(profile,'commands.json'),'utf8'));
+    assert.equal(afterCancelCommands.find((command:any)=>command.type==='cancel-capture').captureId,'fixture-current-cancel');
+    assert.equal(afterCancelCommands.at(-1).type,'copy-local');
+    assert.equal(afterCancelCommands.at(-1).captureId,previous.captureId);
+  }).toPass({ timeout: 5000 });
   assert.deepEqual(await page.evaluate(async()=>((await (window as any).apparent.record.read()).captures[0])),previous);
   assert.deepEqual(errors, []);
   const exited = application.waitForEvent('close');
