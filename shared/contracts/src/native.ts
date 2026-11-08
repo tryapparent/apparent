@@ -1,5 +1,24 @@
 import type { LegacyConfigValue } from './values.js';
 
+/** New-start admission for one legacy GUI, never Engine/runtime shutdown clearance. */
+export interface NativeLegacyCaptureWriterSnapshot {
+  api: 1;
+  processEpoch: string;
+  revision: number;
+  scope: 'legacy-gui-capture-writer';
+  /** Observing a persisted marker after restart does not confirm a new durable transaction. */
+  state: 'open' | 'retired-observed' | 'retired' | 'unknown';
+  busy: boolean;
+}
+export type NativeLegacyCaptureWriterResult =
+  | { status: 'retired'; scope: 'legacy-gui-capture-writer'; processEpoch: string; revision: number }
+  | { status: 'refused'; reason: 'stale' | 'busy' | 'unavailable' | 'invalid' }
+  | { status: 'outcome-unknown' };
+export interface NativeLegacyCaptureWriterPort {
+  readSnapshot(): Promise<NativeLegacyCaptureWriterSnapshot>;
+  retire(expected: { processEpoch: string; revision: number }): Promise<NativeLegacyCaptureWriterResult>;
+}
+
 /** Public, consumer-neutral view of OS facts owned by the running Desktop GUI. */
 export type NativePermissionStatus = 'granted' | 'denied' | 'not-determined' | 'unavailable';
 export type NativePermissionAction = 'request-permission' | 'open-system-settings';

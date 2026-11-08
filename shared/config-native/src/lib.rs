@@ -18,6 +18,7 @@ impl std::error::Error for ConfigPublicationUncertain {}
 /// since it holds the ingest token).
 pub fn set_config_value_in(path: &Path, key: &str, value: serde_json::Value) -> Result<()> {
     ensure!(key != ONBOARDING_WRITER_OWNER_KEY, "onboarding writer ownership is host-managed");
+    ensure!(key != CAPTURE_WRITER_OWNER_KEY, "legacy capture writer ownership is host-managed");
     update_config_checked_in(path, None, ConfigMutationAuthority::Ordinary, |config| {
         ensure!(key != "onboarding" || !onboarding_legacy_writer_retired(config)?, "legacy onboarding progress writer has been retired");
         if value.is_null() {
@@ -30,9 +31,52 @@ pub fn set_config_value_in(path: &Path, key: &str, value: serde_json::Value) -> 
 }
 
 const ONBOARDING_WRITER_OWNER_KEY: &str = "onboardingLegacyWriter";
+const CAPTURE_WRITER_OWNER_KEY: &str = "legacyCaptureWriter";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum ConfigMutationAuthority { Ordinary, OnboardingOwnership }
+enum ConfigMutationAuthority { Ordinary, OnboardingOwnership, CaptureOwnership }
+
+fn legacy_capture_writer_retired(config: &serde_json::Value) -> Result<bool> {
+    let top = config.as_object().context("Config must be an object")?;
+    match top.get(CAPTURE_WRITER_OWNER_KEY) {
+        None => Ok(false),
+        Some(value) => {
+            ensure!(value == &serde_json::json!({"schema":1,"state":"retired"}), "Invalid legacy capture writer ownership marker");
+            Ok(true)
+        }
+    }
+}
+
+/// Reads the host-managed legacy capture writer marker under the shared writer lock.
+pub fn legacy_capture_writer_retired_in(path: &Path) -> Result<bool> {
+    legacy_capture_writer_retired_allowed_in(path, &|| true)
+}
+
+/// Reads the retirement marker while observing the caller's lock-wait deadline.
+pub fn legacy_capture_writer_retired_allowed_in(path: &Path, allowed: &dyn Fn() -> bool) -> Result<bool> {
+    let writer = ConfigWriter::acquire(path, Some(allowed))?;
+    let config = read_snapshot(&writer, path)?;
+    ensure!(allowed(), "cancelled");
+    legacy_capture_writer_retired(&config)
+}
+
+/// Durably retires the legacy capture writer. Repeated calls rewrite and sync the
+/// marker so a prior uncertain directory publication is never treated as proof.
+pub fn retire_legacy_capture_writer_in(path: &Path) -> Result<()> {
+    retire_legacy_capture_writer_allowed_in(path, &|| true)
+}
+
+/// Durably retires the legacy capture writer subject to caller admission/deadline checks.
+pub fn retire_legacy_capture_writer_allowed_in(path: &Path, allowed: &dyn Fn() -> bool) -> Result<()> {
+    update_config_checked_in(path, Some(allowed), ConfigMutationAuthority::CaptureOwnership, |config| {
+        let top = config.as_object_mut().context("Config must be an object")?;
+        if let Some(value) = top.get(CAPTURE_WRITER_OWNER_KEY) {
+            ensure!(value == &serde_json::json!({"schema":1,"state":"retired"}), "Invalid legacy capture writer ownership marker");
+        }
+        top.insert(CAPTURE_WRITER_OWNER_KEY.to_owned(), serde_json::json!({"schema":1,"state":"retired"}));
+        Ok(true)
+    })
+}
 
 fn onboarding_legacy_writer_retired(config: &serde_json::Value) -> Result<bool> {
     let top = config.as_object().context("Config must be an object")?;
@@ -90,6 +134,7 @@ fn update_config_checked_in(
     let mut config = read_snapshot(&writer, path)?;
     let previous_onboarding_marker = config.get(ONBOARDING_WRITER_OWNER_KEY).cloned();
     let previous_onboarding = config.get("onboarding").cloned();
+    let previous_capture_marker = config.get(CAPTURE_WRITER_OWNER_KEY).cloned();
     #[cfg(any(test, feature = "test-support"))]
     config_write_hook("snapshot", path);
     ensure!(allowed.is_none_or(|check| check()), "cancelled");
@@ -98,6 +143,7 @@ fn update_config_checked_in(
     if authority == ConfigMutationAuthority::Ordinary && previous_onboarding_marker.is_some() {
         ensure!(config.get("onboarding").cloned() == previous_onboarding, "legacy onboarding progress writer has been retired");
     }
+    ensure!(authority == ConfigMutationAuthority::CaptureOwnership || config.get(CAPTURE_WRITER_OWNER_KEY).cloned() == previous_capture_marker, "legacy capture writer ownership is host-managed");
     let tmp = std::ffi::CString::new(format!(".config-{}.tmp", random_id()?))?;
     let mut body = serde_json::to_vec_pretty(&config)?;
     body.push(b'\n');
