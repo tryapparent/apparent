@@ -46,7 +46,7 @@ jobs:
         run: |
           node --experimental-strip-types composition/delivery/cli.ts consume app-shell linux-x64 '${{ steps.source.outputs.sha }}' "$RUNNER_TEMP/admitted"
           mkdir "$RUNNER_TEMP/payload"
-          tar -xzf "$RUNNER_TEMP/admitted/component.tar.gz" -C "$RUNNER_TEMP/payload" --no-same-owner
+          tar -xzf "$RUNNER_TEMP/admitted/component.tar.gz" -C "$RUNNER_TEMP/payload" --strip-components=1 --no-same-owner
       - name: Install packaging tools
         run: |
           npm --prefix shared/contracts ci --no-audit --no-fund

@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 import { platformPlan } from '../../../composition/delivery/platform/plan.ts'
 import { fileURLToPath } from 'node:url'
-import { workflowPathFor } from '../../../composition/delivery/core.ts'
+import { catalog, sealPayload, workflowPathFor } from '../../../composition/delivery/core.ts'
 
 const root = new URL('../../../.github/workflows/', import.meta.url)
 const contracts = readFileSync(new URL('../actions/delivery-contracts/action.yml', root), 'utf8')
@@ -187,6 +190,28 @@ test('non-stream workflows are manual/reusable except the gated Main AppImage fo
       assert.match(contracts, /\.github\/workflows\/app-shell-main\.yml/)
     } else assert(events.every(event => ['workflow_dispatch', 'workflow_call'].includes(event)), `${file} has no automatic event`)
   }
+})
+
+test('Main follower extracts the producer archive at the actual AppImage packaging input', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'main-appimage-layout-'))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const checkout = fileURLToPath(new URL('../../../', import.meta.url))
+  const owner = catalog(checkout).owners.find(owner => owner.id === 'app-shell')!
+  const source = readFileSync(new URL('app-shell-main.yml', root), 'utf8')
+  const input = join(directory, 'stream-payload')
+  const helper = 'resources/app/updater-helper.cjs'
+  mkdirSync(join(input, 'bundle/apparent-foundation-linux-x64/resources/app'), { recursive: true })
+  writeFileSync(join(input, 'bundle/apparent-foundation-linux-x64', helper), 'verified producer bytes')
+  sealPayload(checkout, owner, 'linux-x64', input, join(directory, 'admitted'), 'a'.repeat(64), {
+    ...process.env, ImageOS: 'ubuntu24', ImageVersion: 'test-layout', GITHUB_REPOSITORY: 'tryapparent/apparent',
+    GITHUB_REF: 'refs/heads/main', GITHUB_WORKFLOW_REF: 'tryapparent/apparent/.github/workflows/stream-platform.yml@refs/heads/main',
+    GITHUB_RUN_ID: '1', GITHUB_RUN_ATTEMPT: '1',
+  })
+  mkdirSync(join(directory, 'payload'))
+  const extract = source.match(/^\s+tar -xzf .*$/m)![0].trim()
+  execFileSync('bash', ['-eu', '-c', extract], { env: { ...process.env, RUNNER_TEMP: directory } })
+  const bundle = source.match(/"(\$RUNNER_TEMP\/payload\/bundle\/[^"\n]+)"/)![1].replace('$RUNNER_TEMP', directory)
+  assert.equal(readFileSync(join(bundle, helper), 'utf8'), 'verified producer bytes')
 })
 
 test('Engine has one workflow containing exactly its registered component targets', () => {
