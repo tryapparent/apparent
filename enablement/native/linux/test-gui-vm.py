@@ -916,6 +916,19 @@ reaper = load_reaper()
 
 
 class OriginalClockTests(unittest.TestCase):
+    def test_actual_main_expiry_call_preserves_relative_default_and_explicit_origin(self):
+        tree = ast.parse(MODULE.read_text())
+        call = next(n for n in ast.walk(tree) if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name) and n.targets[0].id == 'expiry_unit' and isinstance(n.value, ast.Call))
+        code = compile(ast.Module(body=[call], type_ignores=[]), '<actual-main-expiry>', 'exec')
+        for original, expected in ((None, [90, None]), (10, [40, 100])):
+            calls = []
+            ns = {'args': SimpleNamespace(job_timeout=90, job_start_monotonic=original),
+                  'directory': Path('/inert-owned-job'), 'deadline': 100,
+                  'time': SimpleNamespace(monotonic=lambda: 60),
+                  'arm_expiry': lambda *args: calls.append(args)}
+            exec(code, ns)
+            self.assertEqual(list(calls[0][1:]), expected)
+
     def test_actual_absolute_expiry_keeps_original_origin_and_opted_in_caps(self):
         with tempfile.TemporaryDirectory() as root:
             directory, _ = HostFDObservationTests().setup_job(root)

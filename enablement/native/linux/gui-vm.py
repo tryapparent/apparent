@@ -390,7 +390,9 @@ def main():
         command = qemu_command(overlay, vars_copy, directory, port, args.memory, args.isolated_network)
         # The user manager survives a SIGKILL or OOM kill of this runner.
         # Refuse to boot at all if that independent expiry cannot be armed.
-        expiry_unit = arm_expiry(directory, max(1, int(deadline - time.monotonic())), deadline if args.job_start_monotonic is not None else None)
+        expiry_unit = arm_expiry(directory,
+                                 args.job_timeout if args.job_start_monotonic is None else max(1, int(deadline - time.monotonic())),
+                                 deadline if args.job_start_monotonic is not None else None)
         status['cleanup']['expiry'] = 'armed'
         stage('boot')
         if deadline - time.monotonic() <= 25:
