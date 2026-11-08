@@ -11,7 +11,7 @@ use crate::capture::desktop::settings::onboarding::{Permission, Status};
 pub const INPUT_COMMAND: &str = "sudo usermod -aG input \"$USER\"";
 
 /// Native facts only. Presentation and setup guidance belong to the shared UI.
-#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InputAccess {
     pub keyboard: bool,

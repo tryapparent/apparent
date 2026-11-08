@@ -376,6 +376,8 @@ pub struct SettingsWindow {
     events: Events,
     focus: FocusHandle,
     appearance_revision: u64,
+    #[cfg(target_os = "linux")]
+    input_access: Option<crate::capture::desktop::linux::privacy::InputAccess>,
     update_later_focus: FocusHandle,
     update_now_focus: FocusHandle,
     update_dismiss_focus: FocusHandle,
@@ -482,7 +484,21 @@ fn open(request: Request, cx: &mut App) {
                                     #[cfg(not(target_os = "linux"))]
                                     { false }
                                 };
-                                if changed || appearance_changed || view.pane == Pane::Recording && view.meter.is_some() {
+                                // Device facts can change while the permission remains denied
+                                // (for example, a partial reader needs restart after a grant).
+                                // Those facts are refreshed off-thread, outside ViewState.
+                                let input_access_changed = {
+                                    #[cfg(target_os = "linux")]
+                                    {
+                                        let access = crate::capture::desktop::linux::privacy::input_access();
+                                        let changed = view.input_access != access;
+                                        view.input_access = access;
+                                        changed && view.pane == Pane::Permissions
+                                    }
+                                    #[cfg(not(target_os = "linux"))]
+                                    { false }
+                                };
+                                if changed || appearance_changed || input_access_changed || view.pane == Pane::Recording && view.meter.is_some() {
                                     cx.notify();
                                 }
                                 true
@@ -505,6 +521,8 @@ fn open(request: Request, cx: &mut App) {
                         #[cfg(not(target_os = "linux"))]
                         { 0 }
                     },
+                    #[cfg(target_os = "linux")]
+                    input_access: crate::capture::desktop::linux::privacy::input_access(),
                     update_later_focus: cx.focus_handle(),
                     update_now_focus: cx.focus_handle(),
                     update_dismiss_focus: cx.focus_handle(),
