@@ -305,7 +305,10 @@ impl OverlayPointer {
             self.request = request;
             self.point = None;
             self.connection = None;
-            if let Some((id, _)) = request {
+            if let Some((id, generation)) = request {
+                crate::capture::engine::runtime::apparent_log(format!(
+                    "ink pointer request: window={id:#x} generation={generation}"
+                ));
                 let (conn, screen) = RustConnection::connect(None).ok()?;
                 let root = conn.setup().roots.get(screen)?.root;
                 conn.change_window_attributes(id, &ChangeWindowAttributesAux::new().event_mask(
@@ -322,7 +325,14 @@ impl OverlayPointer {
                 Ok(None) => break,
                 Err(_) => { self.point = None; break; }
             };
+            let acquired = self.point.is_some();
             observe_overlay_event(&mut self.point, event, id, *root);
+            if acquired != self.point.is_some() {
+                crate::capture::engine::runtime::apparent_log(format!(
+                    "ink pointer {}: window={id:#x}",
+                    if self.point.is_some() { "acquired" } else { "invalidated" },
+                ));
+            }
         }
         self.point
     }
