@@ -108,8 +108,8 @@ and a cold native build still invokes the compilers.
 staging, independent expiry and private evidence retention. Its sibling
 `gui-vm-reaper.py` survives controller/worktree loss by being copied into each
 owned job. Run `python3 enablement/native/linux/test-gui-vm.py` for launch-free
-contracts. The three files were relocated unchanged; this is not a new VM
-controller or a claim of additional platform support.
+contracts. These are the existing maintained lifecycle and cleanup entrypoints,
+not a second VM controller or a claim of additional platform support.
 
 Desktop owns scenario behavior and assertions under
 `capture/desktop/scripts/linux/{gui,updater}`. Follow the
