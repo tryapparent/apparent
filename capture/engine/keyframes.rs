@@ -935,7 +935,7 @@ mod tests {
     #[test]
     fn unavailable_click_selects_action_frame_without_a_cursor() {
         let frames = vec![frame(0, 100), frame(1000, 100), frame(1250, 100), frame(2000, 100)];
-        let events = vec![InteractionEvent::ClickUnavailable { t: 1000, button: "left".into() }];
+        let events = vec![InteractionEvent::ClickUnavailable { t: 1000, button: "left".into(), time_source: None }];
         let selected = select_keyframes(&frames, &[], &mut [], &events, &TranscriptData::default(), 6);
         let (action, _) = selected.iter().find(|(k, _)| k.reason == KeyframeReason::ClickUnavailable).expect("unlocated press retained");
         assert_eq!(action.t, 1250);

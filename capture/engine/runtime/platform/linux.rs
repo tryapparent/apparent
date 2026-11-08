@@ -119,6 +119,7 @@ struct Held {
     left: bool,
     right: bool,
     keys: HashSet<u16>,
+    button_presses: Vec<input::ButtonPress>,
 }
 
 impl Modifiers {
@@ -200,6 +201,7 @@ fn held_from(devices: Option<input::Held>) -> Held {
                 .iter()
                 .filter_map(|&code| input::vk_for_evdev_code(code))
                 .collect(),
+            button_presses: devices.button_presses,
         };
     }
     let pointer = x11::pointer_state().unwrap_or_default();
@@ -221,6 +223,7 @@ fn held_from(devices: Option<input::Held>) -> Held {
         left: pointer.left,
         right: pointer.right,
         keys,
+        button_presses: Vec::new(),
     }
 }
 
@@ -1068,6 +1071,7 @@ fn poll_unlocated_clicks(
     telemetry: &SharedCaptureTelemetry,
     prev: &mut [bool; 2],
     now: [bool; 2],
+    presses: Option<&[input::ButtonPress]>,
 ) {
     let was = std::mem::replace(prev, now);
     // A known press cannot become a located drag when position disappears and
@@ -1079,7 +1083,20 @@ fn poll_unlocated_clicks(
     }
     if let Some((t, ..)) = interrupted {
         telemetry.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push(InteractionEvent::ClickUnavailable { t, button: "unknown".into() });
+            .push(InteractionEvent::ClickUnavailable { t, button: "unknown".into(), time_source: Some("polled".into()) });
+    }
+    if let Some(presses) = presses {
+        let started = *telemetry.started_at.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        for press in presses {
+            let Some(elapsed) = press.at.checked_duration_since(started) else { continue; };
+            telemetry.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(InteractionEvent::ClickUnavailable {
+                    t: elapsed.as_millis() as u64,
+                    button: if press.button == input::code::BTN_LEFT { "left" } else { "right" }.into(),
+                    time_source: Some(press.time_source.into()),
+                });
+        }
+        return;
     }
     for (i, (&down, &before)) in now.iter().zip(&was).enumerate() {
         if down && !before {
@@ -1087,9 +1104,20 @@ fn poll_unlocated_clicks(
                 .push(InteractionEvent::ClickUnavailable {
                     t: telemetry.elapsed_ms(),
                     button: if i == 0 { "left" } else { "right" }.into(),
+                    time_source: Some("polled".into()),
                 });
         }
     }
+}
+
+/// Discard a point if the UI moved/released/replaced its overlay during acquisition.
+fn validated_overlay_position(
+    request: impl Fn() -> Option<(u32, u64)>,
+    acquire: impl FnOnce(Option<(u32, u64)>) -> Option<(f64, f64)>,
+) -> Option<(f64, f64)> {
+    let before = request();
+    let point = acquire(before);
+    (before == request()).then_some(point).flatten()
 }
 
 /// 125 Hz shortcut, button and Shift-ink collector.
@@ -1099,10 +1127,10 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
     let mut await_shift_release = false;
     let mut prev_buttons = [false; 2];
     let mut last_tap_check = Instant::now() - Duration::from_secs(1);
-    // On Wayland: whether the overlay has the pointer, and where XWayland last saw it before
-    // it did (stale until the pointer moves over the overlay).
+    // A pointer request does not prove mapping or acquisition. Only an event
+    // delivered to the current exact overlay generation establishes its point.
     let mut pointer_taken = false;
-    let mut stale_pointer: Option<(f64, f64)> = None;
+    let mut overlay_pointer = x11::OverlayPointer::default();
     loop {
         thread::sleep(Duration::from_millis(8));
         if last_tap_check.elapsed() >= Duration::from_millis(500) {
@@ -1166,6 +1194,7 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
                 linux::overlay::take_pointer(false);
                 pointer_taken = false;
             }
+            overlay_pointer.poll(None);
             continue;
         }
 
@@ -1175,7 +1204,6 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
         // while ⇧ is held (`linux::overlay::take_pointer`).
         pure_shift &= !telemetry.notes_editing.load(Ordering::Acquire);
         if from_devices() && pure_shift != pointer_taken {
-            stale_pointer = pure_shift.then(x11::cursor_position).flatten();
             linux::overlay::take_pointer(pure_shift);
             pointer_taken = pure_shift;
         }
@@ -1183,37 +1211,39 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
         // Overlay acquisition is a separate, local X11 interaction while Shift
         // is held; ordinary clicks must never use the placement fallback.
         let position = if pointer_taken {
-            x11::cursor_position().filter(|point| stale_pointer != Some(*point))
+            validated_overlay_position(linux::overlay::pointer_request,
+                |request| overlay_pointer.poll(request))
         } else {
+            overlay_pointer.poll(None);
             linux::interaction_position()
         };
         let Some((x, y)) = position else {
-            poll_unlocated_clicks(&telemetry, &mut prev_buttons, buttons);
+            poll_unlocated_clicks(&telemetry, &mut prev_buttons, buttons,
+                from_devices().then_some(held.button_presses.as_slice()));
             if prev_shift_ink {
                 track_shift_ink(&telemetry, (0.0, 0.0), false, true);
                 prev_shift_ink = false;
             }
             continue;
         };
-        if stale_pointer.is_some_and(|stale| stale == (x, y)) {
-            // Not where the pointer is yet: wait for it to move over the overlay.
-            pure_shift = false;
-        } else {
-            stale_pointer = None;
-        }
         *telemetry
             .pointer_screen
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = [x as f32, y as f32];
 
-        poll_clicks(
-            &telemetry,
-            &mut prev_buttons,
-            buttons,
-            (x, y),
-            mods.shift && !mods.super_key && !mods.ctrl && !mods.alt,
-            |x, y| telemetry.on_capture_input_ui(x, y),
-        );
+        if linux::wayland_session() && !linux::hyprland::running() {
+            // A motion event locates ink, not an evdev button that may have
+            // arrived before that motion. Keep the button's own event time and
+            // report it unlocated rather than pinning at a later cursor point.
+            poll_unlocated_clicks(&telemetry, &mut prev_buttons, buttons,
+                from_devices().then_some(held.button_presses.as_slice()));
+        } else {
+            poll_clicks(
+                &telemetry, &mut prev_buttons, buttons, (x, y),
+                mods.shift && !mods.super_key && !mods.ctrl && !mods.alt,
+                |x, y| telemetry.on_capture_input_ui(x, y),
+            );
+        }
 
         // Hold Shift + move the pointer inside the capture target = draw a persistent stroke.
         track_shift_ink(&telemetry, (x, y), pure_shift, prev_shift_ink);
@@ -1246,12 +1276,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn overlay_generation_change_during_acquisition_discards_the_point() {
+        let generation = std::cell::Cell::new(Some((7, 1)));
+        let point = validated_overlay_position(|| generation.get(), |_| {
+            generation.set(Some((7, 2)));
+            Some((10.0, 20.0))
+        });
+        assert!(point.is_none());
+        let point = validated_overlay_position(|| generation.get(), |_| {
+            generation.set(None);
+            Some((10.0, 20.0))
+        });
+        assert!(point.is_none());
+    }
+
+    #[test]
     fn unavailable_position_keeps_press_without_replaying_it_on_recovery() {
         let (tx, _) = flume::unbounded();
         let telemetry = SharedCaptureTelemetry::new(tx);
         let mut previous = [false; 2];
-        poll_unlocated_clicks(&telemetry, &mut previous, [true, false]);
-        poll_unlocated_clicks(&telemetry, &mut previous, [true, false]);
+        poll_unlocated_clicks(&telemetry, &mut previous, [true, false], None);
+        poll_unlocated_clicks(&telemetry, &mut previous, [true, false], None);
         poll_clicks(&telemetry, &mut previous, [true, false], (100.0, 100.0), false, |_, _| false);
         poll_clicks(&telemetry, &mut previous, [false, false], (100.0, 100.0), false, |_, _| false);
         let events = telemetry.events.lock().unwrap();
@@ -1260,7 +1305,7 @@ mod tests {
         assert!(json.get("x").is_none() && json.get("y").is_none());
         let mut restored: InteractionEvent = serde_json::from_value(json).unwrap();
         assert!(restored.rebase(0));
-        assert_eq!(crate::capture::engine::sketch::describe_event(&restored), "clicked (position unavailable)");
+        assert_eq!(crate::capture::engine::sketch::describe_event(&restored), "clicked (position unavailable; time estimated)");
     }
 
     #[test]
@@ -1270,10 +1315,28 @@ mod tests {
         let frame = *telemetry.target_frame.lock().unwrap();
         *telemetry.drag_start.lock().unwrap() = Some((42, 0.2, 0.3, None, frame));
         let mut previous = [true, false];
-        poll_unlocated_clicks(&telemetry, &mut previous, [false, false]);
+        poll_unlocated_clicks(&telemetry, &mut previous, [false, false], None);
         let events = telemetry.events.lock().unwrap();
         assert!(matches!(events[..], [InteractionEvent::ClickUnavailable { t: 42, .. }]));
         assert!(telemetry.drag_start.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn unavailable_short_presses_keep_event_times_and_do_not_replay() {
+        let (tx, _) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(tx);
+        let start = Instant::now() - Duration::from_secs(1);
+        *telemetry.started_at.lock().unwrap() = start;
+        let presses = [
+            input::ButtonPress { at: start - Duration::from_millis(1), button: input::code::BTN_LEFT, time_source: "evdev_monotonic" },
+            input::ButtonPress { at: start + Duration::from_millis(10), button: input::code::BTN_LEFT, time_source: "evdev_monotonic" },
+            input::ButtonPress { at: start + Duration::from_millis(15), button: input::code::BTN_RIGHT, time_source: "evdev_monotonic" },
+        ];
+        let mut previous = [false; 2];
+        poll_unlocated_clicks(&telemetry, &mut previous, [false; 2], Some(&presses));
+        poll_unlocated_clicks(&telemetry, &mut previous, [false; 2], Some(&[]));
+        let events = telemetry.events.lock().unwrap();
+        assert!(matches!(&events[..], [InteractionEvent::ClickUnavailable { t: 10, button: left, .. }, InteractionEvent::ClickUnavailable { t: 15, button: right, .. }] if left == "left" && right == "right"));
     }
 
     #[test]

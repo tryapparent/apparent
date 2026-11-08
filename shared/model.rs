@@ -509,7 +509,12 @@ pub struct Mark {
 pub enum InteractionEvent {
     /// A button press was observed, but the platform could not locate it reliably.
     /// No target, normalized point or ripple may be inferred from this event.
-    ClickUnavailable { t: u64, button: String },
+    ClickUnavailable {
+        t: u64,
+        button: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        time_source: Option<String>,
+    },
     /// Typed explanation, anchored to a Shift-click rather than transcription time.
     Note { t: u64, pin: u32, x: f32, y: f32, text: String },
     Click {

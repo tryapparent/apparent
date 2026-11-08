@@ -289,6 +289,61 @@ pub fn cursor_position() -> Option<(f64, f64)> {
     pointer_state().map(|p| (p.x, p.y))
 }
 
+/// Coordinates delivered to the exact owned ink window, never a root-pointer
+/// query. A new connection per request generation excludes queued events from
+/// an earlier Shift stroke or window placement.
+#[derive(Default)]
+pub struct OverlayPointer {
+    request: Option<(Window, u64)>,
+    connection: Option<(RustConnection, Window)>,
+    point: Option<(f64, f64)>,
+}
+
+impl OverlayPointer {
+    pub fn poll(&mut self, request: Option<(Window, u64)>) -> Option<(f64, f64)> {
+        if self.request != request {
+            self.request = request;
+            self.point = None;
+            self.connection = None;
+            if let Some((id, _)) = request {
+                let (conn, screen) = RustConnection::connect(None).ok()?;
+                let root = conn.setup().roots.get(screen)?.root;
+                conn.change_window_attributes(id, &ChangeWindowAttributesAux::new().event_mask(
+                    EventMask::POINTER_MOTION | EventMask::LEAVE_WINDOW | EventMask::STRUCTURE_NOTIFY,
+                )).ok()?.check().ok()?;
+                self.connection = Some((conn, root));
+            }
+        }
+        let (id, _) = request?;
+        let (conn, root) = self.connection.as_ref()?;
+        loop {
+            let event = match conn.poll_for_event() {
+                Ok(Some(event)) => event,
+                Ok(None) => break,
+                Err(_) => { self.point = None; break; }
+            };
+            observe_overlay_event(&mut self.point, event, id, *root);
+        }
+        self.point
+    }
+}
+
+fn observe_overlay_event(point: &mut Option<(f64, f64)>, event: x11rb::protocol::Event,
+    id: Window, root: Window) {
+    use x11rb::protocol::Event;
+    match event {
+        Event::MotionNotify(event) if event.event == id && event.root == root
+            && event.same_screen && event.response_type & 0x80 == 0 => {
+            *point = Some((f64::from(event.root_x), f64::from(event.root_y)));
+        }
+        Event::LeaveNotify(event) if event.event == id => *point = None,
+        Event::UnmapNotify(event) if event.window == id => *point = None,
+        Event::DestroyNotify(event) if event.window == id => *point = None,
+        Event::ConfigureNotify(event) if event.window == id => *point = None,
+        _ => {}
+    }
+}
+
 /// Keysyms by keycode, read once (and again when the layout changes, `refresh_keymap`).
 struct Keymap {
     min: u8,
@@ -949,6 +1004,27 @@ pub fn capture_rect(rect: [f64; 4]) -> anyhow::Result<crate::shared::model::Rgba
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overlay_position_requires_owned_motion_and_expires_on_leave_or_move() {
+        use x11rb::protocol::{Event, xproto::{MotionNotifyEvent, LeaveNotifyEvent, ConfigureNotifyEvent}};
+        let motion = MotionNotifyEvent { response_type: 6, event: 7, root: 3,
+            root_x: -120, root_y: 240, same_screen: true, ..Default::default() };
+        let mut point = None;
+        observe_overlay_event(&mut point, Event::MotionNotify(MotionNotifyEvent { event: 8, ..motion }), 7, 3);
+        assert!(point.is_none());
+        observe_overlay_event(&mut point, Event::MotionNotify(MotionNotifyEvent { response_type: 0x86, ..motion }), 7, 3);
+        assert!(point.is_none());
+        observe_overlay_event(&mut point, Event::MotionNotify(motion), 7, 3);
+        assert_eq!(point, Some((-120.0, 240.0)));
+        observe_overlay_event(&mut point, Event::LeaveNotify(LeaveNotifyEvent { event: 7, ..Default::default() }), 7, 3);
+        assert!(point.is_none());
+        observe_overlay_event(&mut point, Event::MotionNotify(motion), 7, 3);
+        observe_overlay_event(&mut point, Event::ConfigureNotify(ConfigureNotifyEvent { window: 7, ..Default::default() }), 7, 3);
+        assert!(point.is_none());
+        let mut tracker = OverlayPointer { request: Some((7, 1)), connection: None, point: Some((1.0, 2.0)) };
+        assert!(tracker.poll(None).is_none());
+    }
 
     #[test]
     #[ignore = "requires an isolated X server; run under xvfb-run"]

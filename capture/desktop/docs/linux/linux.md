@@ -79,8 +79,11 @@ a supported current-position source can distinguish them reliably. No GNOME
 extension or privileged input component is installed. Hyprland retains its
 existing compositor adapter; native X11 retains its X-server source.
 
-Shift ink uses the overlay's X11 pointer only after it moves from the stale
-pre-acquisition point; a Shift-click before acquisition cannot place a pin.
+Shift ink uses fresh motion events delivered to the exact current overlay
+generation, invalidating the point on leave, unmap, movement or replacement.
+An overlay motion sample cannot locate a button press that occurred earlier;
+on GNOME/KDE Wayland Shift-clicks therefore also report unavailable rather than
+placing a pin or opening a note at a guessed point. Ink drawing remains separate.
 The window-placement fallback is separate and remains unchanged. GNOME/KDE
 relative-pointer, scaled-output and actual bundle/movie acceptance for this
 fallback is pending; source checks and unit tests are not native proof.

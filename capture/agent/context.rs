@@ -1306,7 +1306,7 @@ mod tests {
             keyframe(1, 500, KeyframeReason::SceneChange, ""),
             keyframe(2, 9250, KeyframeReason::ClickUnavailable, ""),
         ]);
-        b.events = vec![InteractionEvent::ClickUnavailable { t: 9000, button: "left".into() }];
+        b.events = vec![InteractionEvent::ClickUnavailable { t: 9000, button: "left".into(), time_source: None }];
         let texts = keyframe_texts(&b);
         assert!(texts[0].lines.is_empty());
         assert_eq!(texts[1].lines, vec!["· 0:09 clicked (position unavailable)"]);
