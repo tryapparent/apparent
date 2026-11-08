@@ -30,7 +30,7 @@
     "@apparent/engine-sdk": "file:vendor/engine-sdk-0.4.6.tgz",
     "@apparent/native-host": "file:vendor/native-host-0.1.0-c7b93650.tgz",
     "@apparent/onboarding": "file:vendor/onboarding-0.1.0-623a4c3a.tgz",
-    "@apparent/record": "file:vendor/record-0.1.0-f42f98c8.tgz",
+    "@apparent/record": "file:vendor/record-0.1.0-2c82de38.tgz",
     "@electron/packager": "20.3.0",
     "@playwright/test": "1.56.1",
     "@types/node": "22.19.1",
