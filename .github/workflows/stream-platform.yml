@@ -188,7 +188,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    needs: [contracts, stream, verify-pr, native-driver-contracts]
+    needs: [native-driver-contracts, contracts, stream, verify-pr]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 15
