@@ -47,9 +47,14 @@ export async function createRecordHostServices({profilePath}) {
         // native Saved authentication, microphone or transcript production.
         const statuses = [null, {state:'collected',content:'nonempty',segmentCount:0},
           {state:'collected',content:'empty',segmentCount:4}, {state:'unavailable'}];
-        const status = statuses[statusCase++];
+        const step = statusCase++;
+        const status = statuses[step];
         const current = fixture.driver.current();
-        fixture.driver.publish({...current, revision:current.revision+1,captures:current.captures.map(capture=>{
+        if(step===4)fixture.driver.publish({...current,revision:current.revision+1,captures:[...current.captures,
+          {captureId:'fixture-current-cancel',phase:'recording',delivery:'unknown',outcomes:[]}]});
+        else if(step===5)fixture.driver.publish({...current,revision:current.revision+1,captures:current.captures.map(capture=>
+          capture.captureId==='fixture-current-cancel'?{...capture,phase:'cancelled'}:capture)});
+        else fixture.driver.publish({...current, revision:current.revision+1,captures:current.captures.map(capture=>{
           const next={...capture,phase:'saved',artifactId:'fixture-original-artifact'};
           delete next.transcriptStatus;delete next.warnings;
           if(status)next.transcriptStatus=status;
@@ -120,6 +125,31 @@ export async function createRecordHostServices({profilePath}) {
   }
   await expect(page.getByText(/140/)).toBeVisible();
   if(process.env.APPARENT_RECORD_PILL_SCREENSHOT)await page.screenshot({path:process.env.APPARENT_RECORD_PILL_SCREENSHOT+'.transcript.png'});
+  // Actual installed Record1015 presentation travels through the packaged
+  // main/preload/renderer. These are public synthetic facts, not native Cancel
+  // or authenticated Saved proof. ACK alone must leave the capture active.
+  const refresh=()=>page.evaluate(async()=>{
+    const port=(window as any).apparent.record,snapshot=await port.read();
+    return port.execute({type:'refresh',requestId:crypto.randomUUID(),expected:{providerEpoch:snapshot.providerEpoch,revision:snapshot.revision}});
+  });
+  const previous=await page.evaluate(async()=>((await (window as any).apparent.record.read()).captures[0]));
+  await refresh();
+  await expect(controls.getByRole('button',{name:'Cancel',exact:true})).toBeVisible();
+  await controls.getByRole('button',{name:'Cancel',exact:true}).click();
+  await expect(page.locator('main.pill')).toHaveAttribute('data-phase','recording');
+  await expect(page.getByText('Current capture cancelled.',{exact:true})).toHaveCount(0);
+  await refresh();
+  await expect(page.getByText('Capture cancelled',{exact:true})).toBeVisible();
+  await expect(page.getByText(/Current capture cancelled\. Previous recording remains saved\./)).toBeVisible();
+  await expect(page.getByText(/Transcript unavailable/).first()).toBeVisible();
+  await expect(controls.getByRole('button',{name:'Copy handoff',exact:true})).toBeEnabled();
+  if(process.env.APPARENT_RECORD_PILL_SCREENSHOT)await page.screenshot({path:process.env.APPARENT_RECORD_PILL_SCREENSHOT+'.cancelled.png'});
+  await controls.getByRole('button',{name:'Copy handoff',exact:true}).click();
+  const afterCancelCommands=JSON.parse(await readFile(join(profile,'commands.json'),'utf8'));
+  assert.equal(afterCancelCommands.find((command:any)=>command.type==='cancel-capture').captureId,'fixture-current-cancel');
+  assert.equal(afterCancelCommands.at(-1).type,'copy-local');
+  assert.equal(afterCancelCommands.at(-1).captureId,previous.captureId);
+  assert.deepEqual(await page.evaluate(async()=>((await (window as any).apparent.record.read()).captures[0])),previous);
   assert.deepEqual(errors, []);
   const exited = application.waitForEvent('close');
   await application.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].close(); });
