@@ -4,6 +4,7 @@ import { mkdtemp, readFile, writeFile, rm, symlink, access } from 'node:fs/promi
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { createHash } from 'node:crypto';
 import { feed, MAIN_FEED, RELEASE_PREFIX, type MainFeed } from '../../src/update/contract.ts';
 import { stage, restart } from '../../src/update/helper.ts';
@@ -137,12 +138,26 @@ test('cooperative startup timeout rolls back; a still-live child is never killed
   await assert.rejects(restart(image, old, 2147483647, '1', { readinessMs: 50, launch: () => spawn('/bin/sleep', ['5']) }), /restored/);
   assert.equal(await readFile(image, 'utf8'), original);
   await rm(p.failed); await stage(image, old, fetcher(publication()));
-  let child: ReturnType<typeof spawn> | undefined;
+  const child = spawn(process.execPath, ['-e',
+    'process.on("SIGTERM",()=>{});setInterval(()=>{},1000);process.send("ready")'],
+  { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+  const done = new Promise<void>(resolve => { child.once('exit', () => resolve()); child.once('error', () => resolve()); });
   try {
+    // The timeout exercises a child that has installed its signal handler,
+    // independent of how long Node startup takes on this runner.
+    const [message] = await Promise.race([
+      once(child, 'message', { signal: AbortSignal.timeout(5_000) }),
+      done.then(() => { throw new Error('Fixture exited before its signal handler was ready'); }),
+    ]);
+    assert.equal(message, 'ready');
     await assert.rejects(restart(image, old, 2147483647, '1', { readinessMs: 75,
-      launch: () => { child = spawn(process.execPath, ['-e', 'process.on("SIGTERM",()=>{});setInterval(()=>{},1000)']); return child; } }), /still live/);
+      launch: () => child }), /still live/);
     assert.equal(await readFile(image, 'utf8'), updated);
     assert.equal(await readFile(p.backup, 'utf8'), original);
     await assert.rejects(access(p.failed));
-  } finally { if (child && child.exitCode === null) { child.ref(); const done = new Promise(resolve => child!.once('exit', resolve)); child.kill('SIGKILL'); await done; } }
+  } finally {
+    child.ref();
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    await done;
+  }
 });
