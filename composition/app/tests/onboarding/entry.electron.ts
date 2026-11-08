@@ -57,6 +57,23 @@ export async function createRecordHostServices({profilePath}) {
     const page = await application.firstWindow();
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     await expect(page.getByRole('heading', { name: 'Apparent', exact: true })).toBeVisible();
+    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle()), 'Apparent');
+    assert.equal(await page.title(), 'Apparent', 'the Omarchy HTML uses the actual app name');
+    // Exercise the real Electron title-update event, including trusted main's
+    // distinct failure titles. This is a synthetic window, not a refusal proof.
+    for (const title of ['Apparent', 'Apparent — another Apparent is running', 'Apparent — startup incomplete; ownership retained']) {
+      assert.equal(await application.evaluate(async ({ BrowserWindow }, expected) => {
+        const window = BrowserWindow.getAllWindows()[0];
+        window.setTitle(expected);
+        if (window.getTitle() !== expected) throw new Error('Main title was not applied');
+        const contentTitle = 'Document attempted to replace ' + expected;
+        const changed = new Promise<string>(resolve => window.once('page-title-updated', (_event, value) => resolve(value)));
+        await window.webContents.executeJavaScript('document.title = ' + JSON.stringify(contentTitle));
+        if (await changed !== contentTitle) throw new Error('Expected actual document title event');
+        return window.getTitle();
+      }, title), title);
+    }
+    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setTitle('Apparent'));
     await expect(page.getByRole('heading', { name: 'Welcome.', exact: true })).toHaveCount(0);
     await assert.rejects(readFile(join(profile, 'synthetic-progress.json')), { code: 'ENOENT' });
     const windowId = await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].id);

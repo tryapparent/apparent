@@ -89,6 +89,9 @@ app.whenReady().then(async () => {
       preload: join(__dirname, 'preload.cjs') },
     });
     ownedWindow = window;
+    // Main owns normal and startup-failure identities. Loading shared HTML or
+    // changing document.title must not replace either native window title.
+    if (APPARENT_OMARCHY) window.on('page-title-updated', event => event.preventDefault());
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', (event, url) => {
       if (url !== entry && url !== entry + '#startup-incomplete' && url !== entry + '#startup-owner-conflict') event.preventDefault();

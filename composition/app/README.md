@@ -223,6 +223,13 @@ Remaining Platform acceptance: bind the real Record/native runtime and trusted
 artifact discovery; verify the pill-to-capture/processing/authenticated-Saved/copy
 composition; qualify native window and clipboard boundaries and legacy-writer
 compatibility; then complete delivery/adoption under existing explicit gates.
+
+The Omarchy main process owns its native entry title: `Apparent` normally,
+`Apparent — another Apparent is running` for confirmed pre-ownership refusal,
+and `Apparent — startup incomplete; ownership retained` for partial startup.
+Document titles cannot overwrite those identities. A native-adapter socket or
+a hidden entry window does not establish a mapped, visible, ready entry; native
+cases must observe the exact owned window and retain failure observations.
 This Record-only slice does not include Onboarding factory, journey, adoption or
 activation work.
 

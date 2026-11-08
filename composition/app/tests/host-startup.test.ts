@@ -44,14 +44,21 @@ async function startup(t: { after(cleanup: () => Promise<void>): void }, kind: '
   let url = '', title = '', dialogs = 0, focused = 0, visible = false;
   class Window extends EventEmitter {
     webContents = Object.assign(new EventEmitter(), { setWindowOpenHandler() {}, isDestroyed: () => false, send() {} });
-    constructor() { super(); if (kind === 'window-failure') throw new Error('synthetic window failure'); window = this; }
+    constructor(options: { title: string }) { super(); if (kind === 'window-failure') throw new Error('synthetic window failure'); title = options.title; window = this; }
     setTitle(value: string) { title = value; }
     show() { visible = true; }
     hide() { visible = false; }
     isVisible() { return visible; }
     focus() { focused++; }
     isDestroyed() { return false; }
-    async loadURL(value: string) { url = value; complete('failure-window'); }
+    async loadURL(value: string) {
+      url = value;
+      // Electron applies a document title after the constructor/default title.
+      const event = { blocked: false, preventDefault() { this.blocked = true; } };
+      this.emit('page-title-updated', event, 'Apparent Foundation', true);
+      if (!event.blocked) title = 'Apparent Foundation';
+      complete('failure-window');
+    }
   }
   const electron = { app, BrowserWindow: Window, ipcMain: Object.assign(new EventEmitter(), {handle() {},removeHandler() {}}),
     nativeImage: { createFromDataURL: () => ({resize: () => ({isEmpty: () => false})}) },
@@ -106,6 +113,7 @@ test('compiled main routes normal and early second-instance requests to the exis
   for (const kind of ['ready', 'ready-early'] as const) {
     const f = await startup(t, kind);
     assert.equal(f.exitCode, undefined); assert.doesNotMatch(f.url, /#startup/);
+    assert.equal(f.title, 'Apparent', 'the normal native title is owned by main, not document content');
     assert.equal(f.focused(), kind === 'ready-early' ? 1 : 0);
     const prior = f.focused(); f.hide(); f.reenter();
     assert.equal(f.visible(), true); assert.equal(f.focused(), prior + 1);

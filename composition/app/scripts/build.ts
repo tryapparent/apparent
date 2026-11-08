@@ -110,6 +110,7 @@ export async function buildShell(output: string, onboarding?: OnboardingMainBind
     }
   }
   let html = await readFile(join(root, 'src/index.html'), 'utf8');
+  if (omarchyOnboarding) html = html.replace('<title>Apparent Foundation</title>', '<title>Apparent</title>');
   const importmap = html.match(/<script type="importmap">([^<]+)<\/script>/)![1];
   // CSP permits only this exact inline import map; no unsafe-inline or eval.
   const { createHash } = await import('node:crypto');
