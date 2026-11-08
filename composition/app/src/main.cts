@@ -5,6 +5,7 @@ import { registerOnboardingProgressBridge } from './onboarding-progress-bridge.c
 import { registerRecordBridge } from './record/bridge.cts';
 import { bindWindowShutdown } from './host-lifecycle.ts';
 import type { RecordHostServices } from './record/host.ts';
+import { applyPendingAtLaunch, bindUpdater } from './update/service.cts';
 let recordBound = false;
 let hostShutdown: Promise<void> = Promise.resolve();
 
@@ -14,6 +15,8 @@ if (process.env.APPARENT_FOUNDATION_PROFILE) {
   app.setPath('userData', process.env.APPARENT_FOUNDATION_PROFILE);
 }
 app.whenReady().then(async () => {
+  if (process.env.APPIMAGE && !app.requestSingleInstanceLock()) { app.quit(); return; }
+  if (await applyPendingAtLaunch()) { app.quit(); return; }
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   const entry = pathToFileURL(join(__dirname, 'index.html')).href;
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
@@ -47,21 +50,21 @@ app.whenReady().then(async () => {
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event, url) => { if (url !== entry) event.preventDefault(); });
   const disposeProgress = host ? registerOnboardingProgressBridge({ window, entryUrl: entry, store: host.store }) : undefined;
+  const updater = await bindUpdater(window, entry);
   if (recordHost) {
     const ownedHost = recordHost;
     const disposeRecord = registerRecordBridge({ window, entryUrl: entry, client: ownedHost.record });
     const lifecycle = bindWindowShutdown({ window,
       canClose: async () => typeof ownedHost.canClose === 'function' && await ownedHost.canClose() === true,
       close: () => ownedHost.close(), revoke: disposeRecord,
-      refused: reason => { if (!window.isDestroyed()) window.webContents.send('apparent:host:close-refused', reason); },
+      refused: reason => { updater.refused(); if (!window.isDestroyed()) window.webContents.send('apparent:host:close-refused', reason); },
     });
-    window.once('closed', () => { hostShutdown = lifecycle.settled(); });
-  } else window.once('closed', () => {
-    disposeProgress?.();
-    const closing = host;
-    hostShutdown = closing ? Promise.resolve().then(() => closing.close()) : Promise.resolve();
-    hostShutdown.catch(error => console.error('Onboarding progress shutdown failed', error));
-  });
+    window.once('closed', () => { hostShutdown = lifecycle.settled().then(() => updater.closed()); });
+  } else {
+    const lifecycle = bindWindowShutdown({ window, canClose: async () => true,
+      close: async () => { await host?.close(); }, revoke: () => disposeProgress?.(), refused: () => updater.refused() });
+    window.once('closed', () => { hostShutdown = lifecycle.settled().then(() => updater.closed()); });
+  }
   void window.loadURL(entry);
 });
 app.on('window-all-closed', () => {

@@ -54,7 +54,9 @@ export async function buildShell(output: string, onboarding?: OnboardingMainBind
       ...(file === 'dom' ? { banner: { js: 'import * as sharedReact from "react"; const require = (name) => { if (name === "react") return sharedReact; throw new Error("Unsupported runtime dependency"); };' } } : {}) });
   }
   await build({ entryPoints: [join(root, 'src/main.cts')], bundle: true, platform: 'node',
-    format: 'cjs', target: 'node22', external: ['electron'], outfile: join(output, 'main.cjs') });
+    format: 'cjs', target: 'node22', external: ['electron'], define: { APPARENT_UPDATER_ENTRY: 'false' }, outfile: join(output, 'main.cjs') });
+  await build({ entryPoints: [join(root, 'src/update/helper.ts')], bundle: true, platform: 'node',
+    format: 'cjs', target: 'node22', define: { APPARENT_UPDATER_ENTRY: 'true' }, outfile: join(output, 'updater-helper.cjs') });
   await build({ entryPoints: [join(root, 'src/preload.cts')], bundle: true, platform: 'node',
     format: 'cjs', target: 'node22', external: ['electron'], outfile: join(output, 'preload.cjs') });
   if (record) {

@@ -1689,8 +1689,9 @@ sys.exit(watchdog(30, ['sh', '-c', command]))
                     expected = ('15' if workflow.name in {'verification.yml', 'verification-platform.yml', 'release-linux.yml', 'linux-updater-harness.yml', 'verification-mac.yml', 'native-proof-mac.yml', 'release-mac-preview.yml'} else '10')
                     temporary_mac = (workflow.name == 'release-mac-preview.yml' and '    runs-on: macos-latest\n' in job)
                     temporary_platform = (workflow.name == 'verification-platform.yml' and '    name: rust (' in job)
-                    bounded_publication = (workflow.name == 'connect-delivery.yml' and
+                    bounded_publication = ((workflow.name == 'connect-delivery.yml' and
                                            '    name: Recipient target release and aggregate\n' in job)
+                                           or (workflow.name == 'app-shell-main.yml' and '    name: Publish Main\n' in job))
                     if temporary_platform:
                         expected = "${{ startsWith(inputs.runner, 'macos-') && 60 || 15 }}"
                     elif temporary_mac:

@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 import { platformPlan } from '../../../composition/delivery/platform/plan.ts'
 import { fileURLToPath } from 'node:url'
-import { workflowPathFor } from '../../../composition/delivery/core.ts'
+import { catalog, sealPayload, workflowPathFor } from '../../../composition/delivery/core.ts'
 
 const root = new URL('../../../.github/workflows/', import.meta.url)
 const contracts = readFileSync(new URL('../actions/delivery-contracts/action.yml', root), 'utf8')
@@ -136,11 +139,13 @@ test('Connect producer and client retain separate invocation and path ownership'
   assert.deepEqual(streamWorkflows.sort(), [...new Set(owners.map(name => workflowPathFor(name).split('/').at(-1)!))].sort())
 })
 
-test('PR and main events share path filters, fixed target matrices and least privilege', () => {
+test('owner events preserve scoped PR checks, Main channel delivery and least privilege', () => {
   for (const name of owners) {
     const source = entry(name)
     assert(eventPaths(source, 'pull_request').length > 0, `${name} has PR paths`)
-    assert.deepEqual(eventPaths(source, 'pull_request'), eventPaths(source, 'push'), `${name} PR paths match main paths`)
+    if (platformIds.includes(name)) {
+      assert.match(source, /\n  push:\n    branches: \[main\]\npermissions:/, 'every main push can advance the Linux App Shell channel')
+    } else assert.deepEqual(eventPaths(source, 'pull_request'), eventPaths(source, 'push'), `${name} PR paths match main paths`)
     assert.match(source, /verify-pr:\n[\s\S]*?if: github\.event_name == 'pull_request'/)
     const pr = section(source, 'verify-pr')
     assert.match(pr, /permissions:\n      contents: read\n      actions: read/)
@@ -167,14 +172,46 @@ test('owner component checks are fresh on PRs; only main producer jobs admit, at
   }
 })
 
-test('non-stream workflows remain manual or reusable', () => {
+test('non-stream workflows are manual/reusable except the gated Main AppImage follower', () => {
   const files = readdirSync(root).filter(name => /\.ya?ml$/.test(name))
   for (const file of files.filter(name => !name.startsWith('stream-'))) {
     const source = readFileSync(new URL(file, root), 'utf8')
     const triggers = source.split('\non:\n')[1]?.split(/\n[^\s#]/)[0] ?? ''
     const events = [...triggers.matchAll(/^  ([a-z_]+):/gm)].map(match => match[1])
-    assert(events.every(event => ['workflow_dispatch', 'workflow_call'].includes(event)), `${file} has no automatic event`)
+    if (file === 'app-shell-main.yml') {
+      assert.deepEqual(events, ['workflow_run'])
+      assert.match(triggers, /workflows: \[platform delivery\]\n    types: \[completed\]/)
+      assert.match(section(source, 'package'), /github\.event\.workflow_run\.event == 'push'/)
+      assert.match(section(source, 'package'), /github\.event\.workflow_run\.head_branch == 'main'/)
+      assert.match(section(source, 'package'), /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/)
+      assert.match(section(source, 'package'), /github\.event\.workflow_run\.conclusion == 'success'/)
+      assert.match(section(source, 'package'), /cli\.ts consume app-shell linux-x64/)
+      assert.match(section(source, 'publish'), /needs: package/)
+      assert.match(contracts, /\.github\/workflows\/app-shell-main\.yml/)
+    } else assert(events.every(event => ['workflow_dispatch', 'workflow_call'].includes(event)), `${file} has no automatic event`)
   }
+})
+
+test('Main follower extracts the producer archive at the actual AppImage packaging input', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'main-appimage-layout-'))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const checkout = fileURLToPath(new URL('../../../', import.meta.url))
+  const owner = catalog(checkout).owners.find(owner => owner.id === 'app-shell')!
+  const source = readFileSync(new URL('app-shell-main.yml', root), 'utf8')
+  const input = join(directory, 'stream-payload')
+  const helper = 'resources/app/updater-helper.cjs'
+  mkdirSync(join(input, 'bundle/apparent-foundation-linux-x64/resources/app'), { recursive: true })
+  writeFileSync(join(input, 'bundle/apparent-foundation-linux-x64', helper), 'verified producer bytes')
+  sealPayload(checkout, owner, 'linux-x64', input, join(directory, 'admitted'), 'a'.repeat(64), {
+    ...process.env, ImageOS: 'ubuntu24', ImageVersion: 'test-layout', GITHUB_REPOSITORY: 'tryapparent/apparent',
+    GITHUB_REF: 'refs/heads/main', GITHUB_WORKFLOW_REF: 'tryapparent/apparent/.github/workflows/stream-platform.yml@refs/heads/main',
+    GITHUB_RUN_ID: '1', GITHUB_RUN_ATTEMPT: '1',
+  })
+  mkdirSync(join(directory, 'payload'))
+  const extract = source.match(/^\s+tar -xzf .*$/m)![0].trim()
+  execFileSync('bash', ['-eu', '-c', extract], { env: { ...process.env, RUNNER_TEMP: directory } })
+  const bundle = source.match(/"(\$RUNNER_TEMP\/payload\/bundle\/[^"\n]+)"/)![1].replace('$RUNNER_TEMP', directory)
+  assert.equal(readFileSync(join(bundle, helper), 'utf8'), 'verified producer bytes')
 })
 
 test('Engine has one workflow containing exactly its registered component targets', () => {
@@ -209,7 +246,8 @@ test('media native targets qualify their actual runtime before reuse admission',
 
 test('headless native host packaging is checked through its consuming shell lane', () => {
   const shell = entry('app-shell');
-  for (const event of ['pull_request', 'push']) assert(eventPaths(shell, event).includes('composition/native-host/**'));
+  assert(eventPaths(shell, 'pull_request').includes('composition/native-host/**'));
+  assert.match(shell, /\n  push:\n    branches: \[main\]\npermissions:/);
   assert.match(contracts, /npm --prefix composition\/native-host run test:packed/);
   assert.match(contracts, /npm --prefix shared\/contracts ci/);
   const registration = JSON.parse(readFileSync(new URL('../../../composition/app/delivery.json', import.meta.url), 'utf8'));

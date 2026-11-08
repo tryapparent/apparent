@@ -151,9 +151,11 @@ export async function createOnboardingProgressStore({configPath, configHostPath}
   await expect(state).toHaveText('unknown');
   await page.getByRole('button', { name: 'Read progress' }).click();
   await expect(state).toContainText('read:3:complete');
-  assert.equal(await page.evaluate(() => JSON.stringify({ exposed: Object.keys(window.apparent), methods: Object.keys(window.apparent.onboardingProgress),
+  assert.equal(await page.evaluate(() => JSON.stringify({ exposed: Object.keys(window.apparent).sort(), methods: Object.keys(window.apparent.onboardingProgress),
+    updateMethods: Object.keys(window.apparent.updates).sort(),
     require: typeof (window as any).require, process: typeof (window as any).process, ipcRenderer: typeof (window as any).ipcRenderer,
-    fs: typeof (window as any).fs })), JSON.stringify({ exposed: ['onboardingProgress'], methods: ['read', 'compareAndSwap'],
+    fs: typeof (window as any).fs })), JSON.stringify({ exposed: ['host', 'onboardingProgress', 'record', 'updates'], methods: ['read', 'compareAndSwap'],
+    updateMethods: ['check', 'read', 'ready', 'restart'],
     require: 'undefined', process: 'undefined', ipcRenderer: 'undefined', fs: 'undefined' }));
   assert.equal(await application.evaluate(({ BrowserWindow }) => {
     const pref = (BrowserWindow.getAllWindows()[0].webContents as any).getLastWebPreferences();
@@ -174,6 +176,9 @@ export async function createOnboardingProgressStore({configPath, configHostPath}
   }, { preload: join(appPayload, 'preload.cjs'), entryUrl: pathToFileURL(join(appPayload, 'index.html')).href });
   const unauthorizedPage = await unauthorizedEvent;
   await expect(unauthorizedPage.getByRole('heading', { name: 'Onboarding bridge test' })).toBeVisible();
+  assert.equal(await unauthorizedPage.evaluate(async () => {
+    try { await window.apparent.updates.read(); return false; } catch { return true; }
+  }), true, 'A second window cannot use the owned updater bridge');
   await unauthorizedPage.getByRole('button', { name: 'Attempt direct CAS' }).click();
   await expect(unauthorizedPage.getByTestId('bridge-state')).toHaveText('unknown');
 

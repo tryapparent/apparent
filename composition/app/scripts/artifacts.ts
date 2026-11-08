@@ -35,7 +35,7 @@ export async function readStream(directory: string) {
   }
   return manifest;
 }
-export const shellFiles = ['main.cjs', 'owner-binding.mjs', 'preload.cjs', 'renderer.js', 'index.html', 'style.css', 'package.json',
+export const shellFiles = ['main.cjs', 'owner-binding.mjs', 'preload.cjs', 'updater-helper.cjs', 'renderer.js', 'index.html', 'style.css', 'package.json',
   'vendor/react.js', 'vendor/jsx.js', 'vendor/dom.js'];
 export type ShellManifest = { schemaVersion: 1; shellApi: 1; reactVersion: string; files: Record<string, string>; nativeFiles?: NativeFileModes };
 export async function readShell(directory: string): Promise<ShellManifest> {

@@ -4,8 +4,10 @@ import { Button } from '@apparent/ui/button';
 import { parseStreamManifest, type StreamModule, type StreamManifest } from '@apparent/app-contracts';
 import type { OnboardingProgressPort } from '@apparent/app-contracts/host';
 import type { RecordRendererPort } from './record/wire.js';
+import { UpdateSettings } from './update/settings.tsx';
+import type { UpdatePort } from './update/contract.ts';
 
-declare global { interface Window { apparent: { onboardingProgress: OnboardingProgressPort; record: RecordRendererPort } } }
+declare global { interface Window { apparent: { onboardingProgress: OnboardingProgressPort; record: RecordRendererPort; updates: UpdatePort } } }
 
 type Loaded = { manifest: StreamManifest; module: StreamModule };
 function bindRecord(module: StreamModule, port: RecordRendererPort): StreamModule {
@@ -28,6 +30,7 @@ class Boundary extends React.Component<React.PropsWithChildren, { failed: boolea
   render() { return this.state.failed ? <p role="alert">This section could not open.</p> : this.props.children; }
 }
 function Shell({ streams }: { streams: Loaded[] }) {
+  React.useEffect(() => { void window.apparent.updates.ready().catch(error => console.error('Update readiness unavailable', error)); }, []);
   const [selected, select] = React.useState(streams[0]?.manifest.id);
   const [settings, showSettings] = React.useState(false);
   const active = streams.find(stream => stream.manifest.id === selected);
@@ -38,7 +41,7 @@ function Shell({ streams }: { streams: Loaded[] }) {
         onClick={() => { select(manifest.id); showSettings(false); }}>{manifest.label}</Button>)}
       <Button aria-pressed={settings} onClick={() => showSettings(true)}>Settings</Button>
     </nav>
-    <main>{settings ? <><h2>Settings</h2>{streams.map(({ manifest, module }) =>
+    <main>{settings ? <><h2>Settings</h2><UpdateSettings port={window.apparent.updates} />{streams.map(({ manifest, module }) =>
         <section key={manifest.id} aria-label={`${manifest.label} settings`}>
         <h3>{manifest.label}</h3><Boundary><module.Settings /></Boundary>
       </section>)}</> : active ? <Boundary key={active.manifest.id}><active.module.Screen /></Boundary> : <p>No streams installed.</p>}</main>

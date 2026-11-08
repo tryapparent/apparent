@@ -18,6 +18,12 @@ jobs do not reuse, seal, attest or publish deployment artifacts; main producer j
 may admit verified unchanged artifacts and then seal, attest and upload. Public
 owns the only Pages publisher and has no Connect completion trigger. The independent Worker publisher remains manual under its existing
 activation contract. Other standalone workflows remain manual-only.
+The Platform App Shell has one explicit Linux x64 follower: `app-shell-main.yml`
+admits successful canonical Platform main artifacts, exercises the final AppImage
+and Settings bridge, and publishes a separate Main prerelease/feed under the existing
+whole-workflow budget reservation and final audit. Platform selects the Linux App Shell on every main push and can reuse
+verified unchanged bytes. This does not admit legacy releases or enable installed
+capture. See [App Shell Main updates](../../composition/app/README.md#main-updates-on-linux).
 This trigger policy supersedes other automatic pipeline descriptions below.
 Existing release admission still rejects diagnostic manual verification receipts;
 manual triggering does not waive publication gates.

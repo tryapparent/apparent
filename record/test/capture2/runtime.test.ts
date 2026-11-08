@@ -107,6 +107,7 @@ test("provider composes capture2 start, stop and materials without changing publ
   assert.deepEqual(second.snapshot.captures.map(capture => [capture.captureId, capture.phase]).sort(([left], [right]) => String(left).localeCompare(String(right))), [["capture-two", "recording"], ["public/capture id", "saved"]]);
   await ctx.host.cancel("capture-two");
   ctx.client.detach(); ctx.runtime.dispose();
+  await ctx.runtime.drainObservation();
   assert.equal(await ctx.host.inspect("public/capture id").then(value => value.requestId), "public/capture id", "runtime detach leaves caller-owned host available");
   ctx.host.dispose();
 });

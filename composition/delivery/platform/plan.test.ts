@@ -66,7 +66,9 @@ test('workflow CLI emits usable matrix outputs for empty selection and unavailab
       }))
       return { ready: values.has_ready, rows: JSON.parse(values.matrix).include }
     }
-    assert.deepEqual(run({ before: sha, after: sha }), { ready: 'false', rows: [] })
+    const unchanged = run({ before: sha, after: sha })
+    assert.equal(unchanged.ready, 'true')
+    assert.deepEqual(unchanged.rows.map((row: { id: string; target: string }) => [row.id, row.target]), [['app-shell', 'linux-x64']])
     const fallback = run({ before: 'f'.repeat(40), after: sha })
     assert.equal(fallback.ready, 'true')
     assert.equal(fallback.rows.length, 6)

@@ -10,9 +10,10 @@ them. Requirements are Linux, Node 22.23.4+, Python 3.12+ and `qemu-img`
 children; they do not boot a VM or establish native product acceptance.
 
 Platform PR and main workflows run this same command as **Native driver
-contracts (no GUI execution)**. Runner/scenario-only changes select that check
-without selecting an App Shell package. The manual updater harness reuses the
-command. The existing delivery checks remain required; green driver contracts
+contracts (no GUI execution)**. Runner/scenario-only PR changes select that check
+without selecting an App Shell package. Main still emits the Linux App Shell
+receipt for its automatic update channel, reusing unchanged verified bytes when
+eligible. The manual updater harness reuses the command. The existing delivery checks remain required; green driver contracts
 do not establish that setup, permissions, recording, microphone, ink, clipboard
 or installed-app behavior worked. Actual native checks remain separately
 operated through the owning scenarios and existing resource/consent admission.
