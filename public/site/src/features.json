@@ -460,6 +460,7 @@
       "id": "undo-cancel",
       "group": "record",
       "name": "Undo and cancel",
+      "note": "The separate Omarchy qualification app exposes Cancel recording in its stock tray menu while the main pill is hidden. It uses the exact current public capture/provider revision; requested/unknown outcomes remain distinct from observed cancelled status and never replace prior Saved. Portal Escape is permission refusal, not active recording cancellation. Actual tray/cancel/cleanup qualification remains required before release.",
       "says": "Undo removes the last stroke; Esc cancels the selection or the capture.",
       "status": "stable@0.3.4",
       "platforms": ["mac", "linux"],

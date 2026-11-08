@@ -14,7 +14,13 @@ The stock tray context menu provides Open Board, Undo drawing, Clear drawing and
 Close Board. Reopening preserves the donor's completed current stack; native
 callbacks retain original immutable accepted history, including later undone or
 cleared gestures. They do not reconstruct final-canvas replay. The existing tray
-activation and menu Stop both borrow the SAME ordinary Record command. Stop is
+activation and menu Stop both borrow the SAME ordinary Record command. The tray
+also exposes Cancel recording through the existing public cancel-capture path,
+pinned to the opened menu's original active capture/provider revision. Stale,
+ambiguous or unknown targets cannot be retargeted. Pending/unknown cancellation
+is latched without disabling Stop; only the matching authoritative cancelled
+fact produces the disabled Recording cancelled menu status. Prior Saved facts
+and their output/Copy bindings are never rewritten. Stop is
 dispatched before the independent bounded input drain; failed ink never stalls
 video Stop or becomes collected-empty. Fixed drawing IPC is exact-window/frame
 bound, public-request/revision scoped and reports requested/unknown honestly.

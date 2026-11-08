@@ -19,7 +19,7 @@ function deferred<T>(){let resolve!:(v:T)=>void;const promise=new Promise<T>(r=>
 function fixture(){
  const events:string[]=[],provider=createRecordFixture();let board={nativeRevision:0,open:false,strokeCount:0,activeGesture:false};
  let registration:Promise<void>|undefined,action:Promise<'requested'|'refused'|'outcome-unknown'>|undefined;
- let sequence=0;const batches:string[]=[];
+ let sequence=0,cancelled=false,sealed=false;const batches:string[]=[];
  const source:NativeInkSourcePort={
   async readObservation(){events.push('observe');return{captureId:cid,source:ref,observation};},
   async activateInput(){events.push('activate');return{status:'active'};},
@@ -27,12 +27,16 @@ function fixture(){
   async acknowledgeBatch(_b,batch){events.push('ack');sequence++;return{status:'acknowledged',...batch};},
   async readBoard(){return {...board};},
   async controlBoard(_b,intent,revision){assert.equal(revision,board.nativeRevision);events.push(intent);if(action)return action;board={...board,nativeRevision:revision+1,open:intent==='open'?true:intent==='close'?false:board.open};return 'requested';},
-  async sealInputAndDrain(){events.push('seal');return {finalSequence:batches.length?batches.length-1:null,seal:{state:'sealed-and-drained',observedAtNs:'1000000001',nativeRevision:board.nativeRevision}};},
+  async sealInputAndDrain(){events.push('seal');sealed=true;return {finalSequence:batches.length?batches.length-1:null,seal:{state:'sealed-and-drained',observedAtNs:'1000000001',nativeRevision:board.nativeRevision}};},
  };
  const transport={async request(r:CaptureRequest):Promise<CaptureResponse>{
   events.push(r.method);let result:any;
+  // Faithful c008 ink_control::handle guard: once cancel_requested is durable,
+  // submit/finish reject unavailable even when the native source drains positively.
+  if(cancelled&&['finishInkProducer','submitInkEvents'].includes(r.method))return{channel:'capture',protocolVersion:2,rpcId:r.rpcId,error:{code:'unavailable'}} as CaptureResponse;
   if(r.method==='handshake')result={channel:'capture',protocolVersion:2,implementation:'native',readiness:'unavailable',capabilities:Object.fromEntries(['sourceDiscovery','displayCapture','areaCapture','audioCapture','contextFacts','interactionFacts','candidates','transcript','strokes','publication','retainedMaterials'].map(k=>[k,false]))};
-  else if(r.method==='inspect')result={captureId:cid,state:'recording'};
+  else if(r.method==='inspect')result={captureId:cid,state:cancelled?'cancelled':'recording'};
+  else if(r.method==='cancel'){cancelled=true;result={captureId:cid,state:'cancelled'};}
   else if(r.method==='registerInkProducer'){if(registration)await registration;result={ingressVersion:1,captureId:cid,producerId:pid,generation:1,registrationId:rid,producerToken:token,nextSequence:0,clock:{kind:observation.clock,bootId:observation.bootId,admissionMonotonicNs:'1000000000'},limits:CAPTURE_INK_LIMITS};}
   else if(r.method==='submitInkEvents')result={ingressVersion:1,captureId:cid,registrationId:rid,sequence:r.sequence,batchSha256:r.batchSha256,nextSequence:Number(r.sequence)+1,outcome:'accepted'};
   else if(r.method==='finishInkProducer'){assert.equal(sequence,batches.length);result={ingressVersion:1,captureId:cid,registrationId:rid,finalSequence:r.finalSequence,state:'complete'};}
@@ -45,7 +49,7 @@ function fixture(){
  const controller=createDrawingController({capture,mapping:async id=>{assert.equal(id,publicId);return mapping;},nativeIdentity:async()=>host,source:()=>source});
  const publish=(phase:'recording'|'saved'|'starting'='recording')=>controller.observe({...provider.driver.current(),captures:[{captureId:publicId,phase,delivery:'unknown',outcomes:[]}]});
  const ready=async()=>{await setup;publish();for(let i=0;i<100;i++){if((await controller.port.read()).phase==='ready')return;await tick();}assert.fail(JSON.stringify(await controller.port.read()));};
- return{setup,controller,source,events,mapping,original,ready,publish,provider,setRegistration(p:Promise<void>){registration=p;},setAction(p:typeof action){action=p;},batches};
+ return{nativeSealed:()=>sealed,capture,setup,controller,source,events,mapping,original,ready,publish,provider,setRegistration(p:Promise<void>){registration=p;},setAction(p:typeof action){action=p;},batches};
 }
 test('actual public SDK046 validates original mapping and Engine ACK precedes source activation, fixed Board control, positive drain',async()=>{
  const f=fixture();f.publish('starting');await tick();assert(!f.events.includes('inspect'));
@@ -87,3 +91,11 @@ test('stock tray borrows physical Stop and exact public drawing revision, never 
  assert.equal(items[0].enabled,true);items[0].click();items[4].click();await tick();assert.equal(stops,1);assert(f.events.includes('open'));assert.equal(items[3].enabled,true);
  dispose();items[4].click();assert.equal(stops,1);await f.controller.finish(publicId);
 });
+
+ test('current Engine post-Cancel unavailable guard cannot be relabelled positive input drain or close',async()=>{
+ const f=fixture();await f.ready();
+ const status=await f.capture.cancel({captureId:cid,ownerToken:owner});assert.equal(status.state,'cancelled');
+ await f.controller.finish(publicId);assert.equal(f.nativeSealed(),true);
+ assert.equal((await f.controller.port.read()).phase,'unavailable');assert.equal(f.controller.localDrain(),'unknown');assert.equal(f.controller.beginClose(),false);
+ assert(f.events.includes('finishInkProducer'));assert(!f.events.includes('submitInkEvents'));
+ });
