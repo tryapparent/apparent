@@ -81,7 +81,7 @@ export function bindSilentRecordControls(options: {
       } finally { preparingStart = false; present(); }
     },
   };
-  return { record, microphone: host.microphone, drawing:host.drawing,
+  return { record, microphone: host.microphone, drawing:host.drawing, onboardingProgress: host.onboardingProgress,
     openRecordingEntry() {
       // A normal re-entry only presents the existing surface. In particular it
       // cannot expose controls during capture or infer ownership from Saved.

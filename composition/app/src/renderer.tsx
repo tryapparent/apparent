@@ -8,9 +8,15 @@ import { MicrophoneControl } from './record/omarchy/microphone-control.tsx';
 import type { MicrophoneRendererPort } from './record/omarchy/microphone-wire.ts';
 import { DrawingControl } from './record/omarchy/drawing/control.tsx';
 import type { DrawingRendererPort } from './record/omarchy/drawing/wire.ts';
+import { OnboardingRecordEntry } from './onboarding/entry.tsx';
 declare const APPARENT_OMARCHY: boolean;
 
-declare global { interface Window { apparent: { onboardingProgress: OnboardingProgressPort; record: RecordRendererPort; microphone?: MicrophoneRendererPort; drawing?:DrawingRendererPort } } }
+declare global { interface Window { apparent: { onboardingProgress: OnboardingProgressPort; record: RecordRendererPort; microphone?: MicrophoneRendererPort; drawing?:DrawingRendererPort; host: {openRecordingEntry():Promise<boolean>} } } }
+
+const recordingEntryPorts = APPARENT_OMARCHY ? {
+  progress: window.apparent.onboardingProgress, record: window.apparent.record,
+  openRecordingEntry: () => window.apparent.host.openRecordingEntry(),
+} : undefined;
 
 type Loaded = { manifest: StreamManifest; module: StreamModule };
 function bindRecord(module: StreamModule, port: RecordRendererPort): StreamModule {
@@ -36,12 +42,12 @@ function Shell({ streams }: { streams: Loaded[] }) {
   const [selected, select] = React.useState(streams[0]?.manifest.id);
   const [settings, showSettings] = React.useState(false);
   const active = streams.find(stream => stream.manifest.id === selected);
-  if (APPARENT_OMARCHY) return <>
+  if (APPARENT_OMARCHY) return <OnboardingRecordEntry ports={recordingEntryPorts!}>
     <header><h1>Apparent</h1><p>Record a monitor. Controls hide during capture; activate the Apparent tray icon to Stop.</p></header>
     <MicrophoneControl record={window.apparent.record} microphone={window.apparent.microphone} />
     <DrawingControl drawing={window.apparent.drawing} />
     <main>{active ? <Boundary><active.module.Screen /></Boundary> : <p>Recording unavailable.</p>}</main>
-  </>;
+  </OnboardingRecordEntry>;
   return <>
     <header><h1>Apparent Foundation</h1><p>Synthetic modules · no recording or account access</p></header>
     <nav aria-label="Streams">{streams.map(({ manifest }) =>

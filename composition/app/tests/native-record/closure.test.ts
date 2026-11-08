@@ -5,7 +5,7 @@ import { chmod, open, readFile, rm, stat, symlink, writeFile } from 'node:fs/pro
 import { join } from 'node:path';
 import { digest, readShell } from '../../scripts/artifacts.ts';
 import { stageRecordNative } from '../../scripts/record-native.ts';
-import { buildShell } from '../../scripts/build.ts';
+import { buildShell, root } from '../../scripts/build.ts';
 import { assemble, verifyAssembly } from '../../scripts/assemble.ts';
 
 import { fixture } from './fixture.ts';
@@ -121,6 +121,11 @@ test('desktop GUI closure is sealed with its actual executable identity and reje
   await buildShell(shell, undefined, { module: binding, presentation: 'omarchy', nativeArtifacts: { ...f.input, gui } });
   const sealed = await readShell(shell);
   assert.equal(sealed.nativeFiles!['native-record/gui/Apparent.AppImage'], 0o755);
+  assert.equal(sealed.files['assets/frog.png'], digest(await readFile(join(root, 'node_modules/@apparent/onboarding/dist/assets/frog.png'))));
+  const renderer = await readFile(join(shell, 'renderer.js'), 'utf8');
+  assert(!renderer.includes('../assets/apparent-app-icon.svg'), 'Flattened owner guide must resolve its staged asset inside this shell');
+  assert(renderer.includes('./assets/apparent-app-icon.svg'));
+  assert((await readFile(join(shell, 'style.css'), 'utf8')).includes('.onboarding-shell'));
   const assembly = await assemble(shell, [], join(f.work, 'gui-assembly'));
   await verifyAssembly(assembly);
 });

@@ -44,6 +44,17 @@ async function fixture() {
     destroyContents: () => { contentsDestroyed = true; }, destroyWindow: () => { windowDestroyed = true; } };
 }
 
+test('recording entry is a zero-argument exact-window request and loses authority on revocation', async () => {
+  const f = await fixture(), record = createRecordFixture(); let opened = 0;
+  const dispose = f.register({ window: f.window, entryUrl: f.entryUrl, client: record.client,
+    openRecordingEntry: () => { opened++; return true; } });
+  const invoke = f.handlers.get('apparent:host:open-recording-entry')!;
+  assert.equal(await invoke(f.event), true); assert.equal(opened, 1);
+  assert.throws(() => invoke(f.event, 'untrusted-path'));
+  assert.throws(() => invoke({ ...f.event, senderFrame: { url: f.entryUrl } }));
+  assert.equal(opened, 1); dispose(); assert.throws(() => invoke(f.event));
+});
+
 function refresh(snapshot: CapabilitySnapshot, requestId: string): RecordCommand {
   return { type: 'refresh', requestId, expected: { providerEpoch: snapshot.providerEpoch, revision: snapshot.revision } };
 }
@@ -140,7 +151,7 @@ test('generation cleanup removes only its own handlers and permits a successor r
   const second = createRecordFixture();
   const dispose = f.register({ window: f.window, entryUrl: f.entryUrl, client: second.client });
   oldDispose();
-  assert.deepEqual([...f.handlers.keys()].sort(),[RECORD_CHANNELS.read,RECORD_CHANNELS.execute,RECORD_CHANNELS.subscribe,RECORD_CHANNELS.unsubscribe,...Object.values(MICROPHONE_CHANNELS),'apparent:record:drawing:read','apparent:record:drawing:act'].sort());
+  assert.deepEqual([...f.handlers.keys()].sort(),[RECORD_CHANNELS.read,RECORD_CHANNELS.execute,RECORD_CHANNELS.subscribe,RECORD_CHANNELS.unsubscribe,...Object.values(MICROPHONE_CHANNELS),'apparent:record:drawing:read','apparent:record:drawing:act','apparent:host:open-recording-entry'].sort());
   const reply = await f.handlers.get(RECORD_CHANNELS.read)!(f.event, { requestId: 'successor-read' });
   assert.deepEqual(reply.snapshot, second.driver.current());
   dispose();

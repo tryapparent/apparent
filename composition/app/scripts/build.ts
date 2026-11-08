@@ -1,4 +1,4 @@
-import { build } from 'esbuild';
+import { build, type Plugin } from 'esbuild';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -10,6 +10,16 @@ import { stageRecordNative, type RecordNativeArtifacts } from './record-native.t
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const external = ['react', 'react/jsx-runtime', 'react-dom/client'];
+// The public owner guide is one directory below its package assets. Bundling
+// flattens it beside renderer.js, so preserve that URL's meaning explicitly.
+const onboardingAssetUrls: Plugin = { name: 'onboarding-public-asset-urls', setup(builder) {
+  builder.onLoad({ filter: /[/\\]@apparent[/\\]onboarding[/\\]dist[/\\]guides[/\\]control-guide\.js$/ }, async args => {
+    const source = (await readRegular(args.path)).toString('utf8');
+    const original = "new URL('../assets/apparent-app-icon.svg', import.meta.url)";
+    if (!source.includes(original)) throw new Error('Onboarding public guide asset contract changed');
+    return { contents: source.replace(original, "new URL('./assets/apparent-app-icon.svg', import.meta.url)"), loader: 'js' };
+  });
+} };
 const common = { bundle: true, format: 'esm' as const, platform: 'browser' as const,
   target: 'es2022', jsx: 'automatic' as const, nodePaths: [join(root, 'node_modules')],
   define: { 'process.env.NODE_ENV': '"production"' }, legalComments: 'inline' as const };
@@ -43,6 +53,7 @@ export async function buildShell(output: string, onboarding?: OnboardingMainBind
   await mkdir(join(output, 'vendor'), { recursive: true });
   const nativeFiles = record?.nativeArtifacts ? await stageRecordNative(output, record.nativeArtifacts) : undefined;
   await build({ ...common, entryPoints: [join(root, 'src/renderer.tsx')], outfile: join(output, 'renderer.js'),
+    plugins: [onboardingAssetUrls],
     external: [...external, './registry.js'],
     define: { ...common.define, APPARENT_OMARCHY: JSON.stringify(record?.presentation === 'omarchy') } });
   const require = createRequire(import.meta.url);
@@ -88,19 +99,32 @@ export async function buildShell(output: string, onboarding?: OnboardingMainBind
   } else {
     await writeFile(join(output, 'owner-binding.mjs'), 'export {};\n');
   }
+  const omarchyOnboarding = record?.presentation === 'omarchy';
+  if (omarchyOnboarding) {
+    // Renderer and main bind the same admitted owner package. Copy only its
+    // actual public assets; no owner source or native build enters assembly.
+    const packageRoot = dirname(fileURLToPath(import.meta.resolve('@apparent/onboarding')));
+    for (const name of ['frog.png', 'apparent-app-icon.svg']) {
+      await mkdir(join(output, 'assets'), { recursive: true });
+      await writeFile(join(output, 'assets', name), await readRegular(join(packageRoot, 'assets', name)));
+    }
+  }
   let html = await readFile(join(root, 'src/index.html'), 'utf8');
   const importmap = html.match(/<script type="importmap">([^<]+)<\/script>/)![1];
   // CSP permits only this exact inline import map; no unsafe-inline or eval.
   const { createHash } = await import('node:crypto');
   html = html.replace('IMPORT_MAP_HASH', createHash('sha256').update(importmap).digest('base64'));
   await writeFile(join(output, 'index.html'), html);
+  const ownerStyle = omarchyOnboarding ? await build({ entryPoints: [require.resolve('@apparent/onboarding/styles.css')],
+    bundle: true, write: false, outfile: 'onboarding.css' }) : undefined;
   await writeFile(join(output, 'style.css'),
     await readFile(join(root, '../../shared/ui/src/tokens.css'), 'utf8') + '\n' +
-    await readFile(join(root, 'src/style.css'), 'utf8'));
+    await readFile(join(root, 'src/style.css'), 'utf8') + '\n' + (ownerStyle?.outputFiles?.[0].text ?? ''));
   await writeFile(join(output, 'package.json'), JSON.stringify({ name: 'apparent-foundation',
     productName: 'Apparent Foundation', version: '0.0.0', main: 'main.cjs' }, null, 2) + '\n');
   const files: Record<string, string> = {};
-  const inventory = [...shellFiles, ...Object.keys(nativeFiles ?? {}), ...(onboarding ? ['native/apparent-config-host', 'assets/frog.png', 'assets/apparent-app-icon.svg'] : [])];
+  const inventory = [...shellFiles, ...Object.keys(nativeFiles ?? {}), ...(onboarding ? ['native/apparent-config-host'] : []),
+    ...(onboarding || omarchyOnboarding ? ['assets/frog.png', 'assets/apparent-app-icon.svg'] : [])];
   for (const file of inventory) files[file] = digest(await readRegular(join(output, file)));
   await writeFile(join(output, 'manifest.json'), JSON.stringify({ schemaVersion: 1,
     shellApi: APP_SHELL_API, reactVersion: REACT_VERSION, files, ...(nativeFiles ? { nativeFiles } : {}) }, null, 2) + '\n');

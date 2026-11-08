@@ -49,8 +49,10 @@ export async function readShell(directory: string): Promise<ShellManifest> {
   }));
   if (ownerAssetStates.some(Boolean) && !ownerAssetStates.every(Boolean)) throw new Error('Incomplete Onboarding assets');
   const hasOwnerAssets = ownerAssetStates.every(Boolean);
-  assert.equal(hasOwnerAssets, hasConfigHost, 'Onboarding binding and its native helper/assets must be assembled together');
   const manifest = JSON.parse((await readRegular(join(directory, 'manifest.json'))).toString()) as ShellManifest;
+  assert(!hasConfigHost || hasOwnerAssets, 'Onboarding helper requires its owner assets');
+  assert(!hasOwnerAssets || hasConfigHost || Object.hasOwn(manifest.nativeFiles ?? {}, 'native-record/config/apparent-config-host'),
+    'Onboarding assets require an admitted owner config binding');
   const hasNative = Object.hasOwn(manifest, 'nativeFiles');
   if (hasNative) await verifyNativeModes(directory, manifest.nativeFiles!);
   const expectedNames = [...shellFiles, ...Object.keys(manifest.nativeFiles ?? {}), ...(hasConfigHost ? ['native/apparent-config-host'] : []), ...(hasOwnerAssets ? ownerAssets : []), 'manifest.json'];

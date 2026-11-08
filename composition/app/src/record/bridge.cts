@@ -33,6 +33,7 @@ export function registerRecordBridge(options: {
   client: RecordClient;
   microphone?: MicrophoneHostPort;
   drawing?: DrawingHostPort;
+  openRecordingEntry?: () => boolean;
 }): () => void {
   if (registrations.has(ipcMain)) throw new Error('Record bridge already registered');
   const token = Symbol('record-bridge');
@@ -280,6 +281,10 @@ export function registerRecordBridge(options: {
       [RECORD_CHANNELS.subscribe, subscribe], [RECORD_CHANNELS.unsubscribe, unsubscribe],
       [MICROPHONE_CHANNELS.read, microphoneRead], [MICROPHONE_CHANNELS.start, microphoneStart],
       [DRAWING_CHANNELS.read, drawingRequest(false)], [DRAWING_CHANNELS.act, drawingRequest(true)],
+      ['apparent:host:open-recording-entry', (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+        if (args.length || !allowed(event)) throw new Error('Recording entry request refused');
+        return options.openRecordingEntry?.() === true;
+      }],
     ] as const) {
       ipcMain.handle(channel, handler);
       installed.push(channel);

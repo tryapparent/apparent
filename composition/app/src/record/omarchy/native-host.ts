@@ -142,8 +142,7 @@ export async function launchNativeHost(profilePath: string, nativeRoot: string) 
   }
   const identity = Object.freeze({ ...owned });
   let close: Promise<void> | undefined;
-  return { identity,
-    async inkIdentity(){
+  const inkIdentity = async () => {
       if(await startTicks(identity.pid)!==identity.ticks||hash(await readFile(`/proc/${identity.pid}/exe`))!==manifest.executableSha256)throw Error('Native input owner changed');
       const unix=await readFile('/proc/net/unix','utf8');
       const inode=unix.split('\n').find(line=>line.trim().split(/\s+/).at(-1)===socket)?.trim().split(/\s+/)[6];
@@ -156,6 +155,17 @@ export async function launchNativeHost(profilePath: string, nativeRoot: string) 
       const snapshot=await port.readSnapshot();
       if(!joined||snapshot.processEpoch!==identity.processEpoch||await startTicks(identity.pid)!==identity.ticks)throw Error('Native input identity unavailable');
       return {processEpoch:snapshot.processEpoch,revision:snapshot.revision,pid:identity.pid,startTicks:identity.ticks};
+    };
+  return { identity, inkIdentity,
+    async verifyOnboardingWriter() {
+      // GUI73f6's legacy Progress::save reaches the same config-native fence.
+      // Its global IPC/owned socket gate excludes a separate ordinary GUI;
+      // the native-host-only role does not launch the legacy tour surface.
+      // Future producers require their own source/package contract review.
+      if (manifest.executableSha256 !== '2dbee5bcc778eb02c724ab3b9169f95784c976a54baaf75ca5042d08ea02bea2') {
+        throw new Error('Legacy onboarding writer version is not admitted');
+      }
+      await inkIdentity();
     },
     close() {
       close ??= (async () => {

@@ -501,3 +501,34 @@ The Omarchy qualification app's fixed drawing controls, native-source admission,
 accepted-history semantics and remaining OS gates are documented beside the
 [actual drawing join](src/record/omarchy/drawing/README.md). Its ordinary tray
 Stop continues through the existing Record command independently of ink drain.
+# Omarchy setup owner adoption
+
+The successor Omarchy assembly consumes admitted Onboarding1005 through its
+concrete `onboardingContributionFactory`, retaining its activation and repair
+handles. Normal first launch uses remembered owner progress; Resume does not
+replay completed setup. Only **Replay welcome tour** calls `replayTour()`.
+Completed setup opens the existing recording entry through a zero-argument,
+exact-window host request; it never starts capture or closes that destination.
+Unknown progress/host handoff stays visible as a retryable setup error. Missing
+native permissions, shortcut trial, note or stroke facts do not complete lessons.
+
+Before exposing progress, the trusted normal entry verifies its actually owned
+native socket/PID/start/epoch and the exact fence-aware GUI73f6 executable, then
+uses the already staged config73c9 backend and Onboarding's public adoption API.
+The same-lock legacy adoption and explicit retirement must return confirmed
+before a sole `bindOwnerProgress` store is exposed; native identity is checked
+again afterward. Unknown/adoption conflict never activates the factory. This
+version gate is separate from startup-refusal compatibility. An arbitrary old
+GUI/profile isolation/helper success does not qualify a legacy writer.
+
+The package includes the owner's exact frog/icon and compiled styles. Bundling
+adjusts only the guide's relative asset URL for the flattened renderer layout.
+No renderer config path, raw backend, native handle or independent writer is
+introduced. Config backend cleanup joins existing Record/native shutdown.
+
+This source is qualification-only until independent review, current-base/CI and
+affected packaged setup/focus/permission/capture-exclusion/shutdown proof. The
+frozen d7 candidate is unchanged. Once a profile adopts schema2, rollback must
+retain a compatible owner reader and durable legacy-writer fence; never reactivate
+an old legacy writer or manufacture/remove the marker. Remove the old optional
+module-progress injection only when its remaining Foundation consumers migrate.

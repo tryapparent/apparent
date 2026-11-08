@@ -126,7 +126,8 @@ app.whenReady().then(async () => {
     else console.error('Onboarding assembly binding unavailable', error);
   }
   const window = earlyWindow ?? createHostWindow();
-  const disposeProgress = host ? registerOnboardingProgressBridge({ window, entryUrl: entry, store: host.store }) : undefined;
+  const progressStore = recordHost?.onboardingProgress ?? host?.store;
+  const disposeProgress = progressStore ? registerOnboardingProgressBridge({ window, entryUrl: entry, store: progressStore }) : undefined;
   if (recordHost) {
     let ownedHost = recordHost;
     if (APPARENT_OMARCHY) {
@@ -149,14 +150,15 @@ app.whenReady().then(async () => {
       disposeDrawing=bindDrawingTray({record:ownedHost.record,drawing:ownedHost.drawing,stop:()=>activateStop?.(),
         menu:items=>tray.setContextMenu(Menu.buildFromTemplate(items)),notice:text=>tray.setToolTip(text)});
     }
-    const disposeRecord = registerRecordBridge({ window, entryUrl: entry, client: ownedHost.record, microphone: ownedHost.microphone, drawing:ownedHost.drawing });
+    const disposeRecord = registerRecordBridge({ window, entryUrl: entry, client: ownedHost.record, microphone: ownedHost.microphone, drawing:ownedHost.drawing,
+      openRecordingEntry: () => openRecordingEntry?.() === true });
     window.on('close', () => recordShutdownEvent('window-close-request'));
     const lifecycle = bindWindowShutdown({ window,
       canClose: async () => {
         const clear = typeof ownedHost.canClose === 'function' && await ownedHost.canClose() === true;
         recordShutdownEvent('window-close-decision', { clear }); return clear;
       },
-      close: () => ownedHost.close(), revoke: disposeRecord,
+      close: () => ownedHost.close(), revoke: () => { disposeProgress?.(); disposeRecord(); },
       refused: reason => {
         recordShutdownEvent('window-close-refused', { reason });
         if (!window.isDestroyed()) window.webContents.send('apparent:host:close-refused', reason);

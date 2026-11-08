@@ -87,7 +87,10 @@ const progress: OnboardingProgressPort = Object.freeze({
   },
 });
 const api = Object.freeze({ onboardingProgress: progress, record: createRecordPreloadPort(), microphone: createMicrophonePreloadPort(), drawing: createDrawingPreloadPort(),
-  host: Object.freeze({ observeCloseRefusal(listener: (reason: string) => void) {
+  host: Object.freeze({ async openRecordingEntry(...args: unknown[]): Promise<boolean> {
+    if (args.length) throw new TypeError('Recording entry takes no arguments');
+    return await invoke('apparent:host:open-recording-entry', [], READ_TIMEOUT_MS) === true;
+  }, observeCloseRefusal(listener: (reason: string) => void) {
     if (typeof listener !== 'function') throw new TypeError('Invalid close observer');
     const receive = (_event: unknown, reason: unknown) => {
       if (reason === 'ownership-unresolved' || reason === 'shutdown-failed') listener(reason);
