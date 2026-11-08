@@ -1075,6 +1075,10 @@ fn process_request(
                 "cancel" => {
                     if ["starting", "recording", "stopping"].contains(&j.state.as_str()) {
                         j.cancel_requested = true;
+                        // Cancel closes input immediately; producer closure has
+                        // only the same original two-second drain as Stop.
+                        j.ink_cutoff_ns
+                            .get_or_insert(monotonic_ns().map_err(|_| "internal")?);
                         let snapshot = j.clone();
                         persist_journal(&shared, &snapshot).map_err(|_| "internal")?;
                         shared.cancel.store(true, Ordering::Release);

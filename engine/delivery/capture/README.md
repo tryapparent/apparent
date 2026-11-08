@@ -115,6 +115,16 @@ capture and recover/reprocess remain full Engine acceptance gates.
 RPC duplicate detection covers the latest 4,096 accepted IDs with bounded memory.
 Use fresh RPC IDs; durable capture/request replay is a separate journal binding.
 
+Active Cancel persists the ink input cutoff before replying and stops video
+without waiting for source input closure. Only the already registered owning
+producer may submit its retained pre-cutoff events and seal within the same
+original two-second drain window; new registration or post-cutoff drawing is
+refused. A matching `finishInkProducer` complete receipt confirms producer
+closure, not collected facts or Saved. Cancelled history cannot become original
+material facts, and no material publication is performed. An exact completed
+finish may replay after the capture thread exits, with no new collection; a late,
+invalid or incomplete first drain remains unavailable and cannot clear ownership.
+
 New recovery-capable archives declare `recoveryLaunch` with the exact
 `apparent.engine-recovery-peer/1` identity and eight-argument launch. Use SDK
 0.4.3's separately negotiated recovery peer, not legacy close, to relinquish an

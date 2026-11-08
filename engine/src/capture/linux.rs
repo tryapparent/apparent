@@ -328,6 +328,10 @@ pub(super) fn worker(
             recorder.stop();
             drop(audio);
             drop(movie);
+            // Video Cancel is already applied. Give the existing authenticated
+            // producer its original bounded closure window before terminalizing;
+            // never finalize or publish cancelled material/facts.
+            super::ink_control::drain(&shared)?;
             let prior = shared.journal.lock().map_err(|_| "internal")?;
             remove_unsealed(&shared.directory, &prior)?;
             let cleanup_binding = prior.clone();
