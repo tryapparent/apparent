@@ -1095,8 +1095,7 @@ impl Session {
             }
         };
         let attempted = electron.and_then(|(app, runtime)| {
-            let x11 = cfg!(target_os = "linux") && std::env::var_os("WAYLAND_DISPLAY").is_none();
-            Self::spawn_renderer_transport(&mut Self::renderer_command(&runtime, &app, x11), transport_generation, events.clone()).ok()
+            Self::spawn_renderer_transport(&mut super::presentation::onboarding_command(runtime, app), transport_generation, events.clone()).ok()
         });
         let shell = attempted.is_some();
         let (transport, fallback) = match attempted {
@@ -1188,15 +1187,6 @@ impl Session {
             command.args(["--icon", dev_icon]);
         }
         Self::spawn_transport(&mut command, events)
-    }
-
-    fn renderer_command(runtime: &Path, app: &Path, x11: bool) -> std::process::Command {
-        let mut command = std::process::Command::new(runtime);
-        // prepare_process hides Wayland from GPUI. Electron must use that same display
-        // backend instead of inferring Wayland from XDG_SESSION_TYPE and exiting.
-        if x11 { command.arg("--ozone-platform=x11"); }
-        command.arg(app).arg("--onboarding");
-        command
     }
 
     fn spawn_renderer_transport(
@@ -2172,18 +2162,6 @@ mod tests {
         assert_eq!(from_intro.step(), Step::Shortcut);
         let fix = Flow::fix(vec![Accessibility], Some(available));
         assert!(!fix.view().ready);
-    }
-
-    #[test]
-    fn electron_onboarding_uses_the_parent_display_backend() {
-        for x11 in [false, true] {
-            let command = Session::renderer_command(Path::new("/runtime/electron"), Path::new("/assets"), x11);
-            let args: Vec<_> = command.get_args().map(|s| s.to_str().unwrap()).collect();
-            let mut expected = vec![];
-            if x11 { expected.push("--ozone-platform=x11"); }
-            expected.extend(["/assets", "--onboarding"]);
-            assert_eq!(args, expected);
-        }
     }
 
     #[test]
