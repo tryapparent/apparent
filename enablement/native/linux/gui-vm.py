@@ -288,7 +288,11 @@ def main():
     parser.add_argument("--scenario-timeout", type=int, default=300)
     parser.add_argument("--job-timeout", type=int, default=900,
                         help="hard lifetime in seconds; independent systemd timer (default: 900)")
+    parser.add_argument('--host-fd-observation', action='store_true',
+                        help='Clanker-only task-local sudo metadata observer on cold-retention FD access denial')
     args = parser.parse_args()
+    if args.host_fd_observation and not args.retain_cold_state:
+        parser.error('--host-fd-observation requires --retain-cold-state')
     if args.results.exists():
         parser.error("results directory already exists")
     args.results.mkdir(parents=True, mode=0o700)
@@ -327,6 +331,8 @@ def main():
         write_result(directory, status)
         if args.retain_cold_state:
             cold_retention.request_cold_retention(directory)
+            if args.host_fd_observation:
+                cold_retention.request_host_fd_observation(directory)
         validate_socket_paths(directory)
         for path in (args.template, args.ovmf_vars, args.ssh_key, args.scenario, args.binary, args.audio_file, *args.fixture_file):
             if path is not None and not path.is_file():
@@ -342,7 +348,7 @@ def main():
             # A known access denial must stop before creating owned resources.
             # This is a capability precheck, not proof of future cold absence;
             # cleanup still performs the complete inode census again.
-            cold_retention.open_resource_owners({})
+            cold_retention.observe_resource_owners(directory, {})
         status['candidate_sha256'] = file_digest(args.binary)
         stage('overlay')
         overlay = directory / "disk.qcow2"

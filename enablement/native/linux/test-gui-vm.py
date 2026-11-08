@@ -842,9 +842,13 @@ class PreallocationClosureTests(unittest.TestCase):
             args += ['--fixture-file', str(manifest)]
         else:
             args += ['--retain-cold-state']
+            if mode == 'host-read-denied':
+                args += ['--host-fd-observation']
         with patch.object(sys, 'argv', args), patch.object(runner, 'make_overlay') as overlay, \
              patch.object(runner, 'arm_expiry') as expiry, patch.object(runner, 'qemu_command') as qemu, \
              patch.object(runner.cold_retention, 'open_resource_owners', side_effect=RuntimeError('cold resource ownership access is unknown (pid=123, stage=fd-stat, errno=13)')), \
+             patch.object(runner.cold_retention.socket, 'gethostname', return_value='clanker'), \
+             (patch.object(runner.cold_retention.subprocess, 'run', return_value=SimpleNamespace(returncode=1, stdout=b'', stderr=b'denied')) if mode == 'host-read-denied' else contextlib.nullcontext()), \
              contextlib.redirect_stdout(io.StringIO()):
             self.assertNotEqual(runner.main(), 0)
             overlay.assert_not_called()
@@ -905,6 +909,98 @@ m.open_resource_owners({},Proc())
         self.assertIn('pid=123, stage=fd-stat, errno=13', child.stderr)
         self.assertNotIn('/proc/123/fd/9', child.stderr)
         self.assertNotIn('PermissionError', child.stderr)
+
+
+reaper = load_reaper()
+
+
+class HostFDObservationTests(unittest.TestCase):
+    def test_actual_opted_in_runner_denial_stops_before_overlay_expiry_qemu(self):
+        with tempfile.TemporaryDirectory() as root:
+            PreallocationClosureTests().run_refusal(root, 'host-read-denied')
+
+    def setup_job(self, root):
+        directory = Path(root) / 'owned'
+        directory.mkdir(mode=0o700)
+        reaper.request_cold_retention(directory)
+        with patch.object(reaper.socket, 'gethostname', return_value='clanker'):
+            reaper.request_host_fd_observation(directory)
+        (directory / 'disk.qcow2').write_bytes(b'owned synthetic')
+        (directory / 'disk.qcow2').chmod(0o600)
+        return directory, {'disk.qcow2': reaper.resource_metadata(directory / 'disk.qcow2')}
+
+    def test_no_privilege_for_default_success_or_unrequested_denial(self):
+        with tempfile.TemporaryDirectory() as root:
+            directory = Path(root)
+            directory.chmod(0o700)
+            with patch.object(reaper, 'open_resource_owners', return_value=[123]), patch.object(reaper.subprocess, 'run') as call:
+                self.assertEqual(reaper.observe_resource_owners(directory, {}), [123])
+                call.assert_not_called()
+            with patch.object(reaper, 'open_resource_owners', side_effect=RuntimeError('cold resource ownership access is unknown (pid=123, stage=fd-stat, errno=13)')), patch.object(reaper.subprocess, 'run') as call:
+                with self.assertRaises(RuntimeError):
+                    reaper.observe_resource_owners(directory, {})
+                call.assert_not_called()
+
+    def test_exact_fixed_literal_and_clanker_request_no_arbitrary_root_module(self):
+        with tempfile.TemporaryDirectory() as root:
+            directory, resources = self.setup_job(root)
+            with patch.object(reaper.socket, 'gethostname', return_value='clanker'):
+                payload = reaper.host_fd_payload(directory, resources)
+            compile(payload, '<fixed-host-read>', 'exec')  # syntax only
+            self.assertIn('INPUT["uid"] not in process_uids', payload)
+            self.assertNotIn('os.getuid() not in process_uids', payload)
+            self.assertIn('O_NOFOLLOW', payload)
+            self.assertNotIn('importlib', payload)
+            with patch.object(reaper.socket, 'gethostname', return_value='foreign'):
+                with self.assertRaises(RuntimeError):
+                    reaper.host_fd_payload(directory, resources)
+
+    def test_actual_retention_callsite_uses_opted_in_read_then_preserves_cold_pair(self):
+        with tempfile.TemporaryDirectory() as root:
+            directory, resources = self.setup_job(root)
+            (directory / 'OVMF_VARS.fd').write_bytes(b'owned firmware')
+            (directory / 'OVMF_VARS.fd').chmod(0o600)
+            with patch.object(reaper, 'open_resource_owners', side_effect=RuntimeError('cold resource ownership access is unknown (pid=123, stage=fd-stat, errno=13)')), patch.object(reaper.socket, 'gethostname', return_value='clanker'), patch.object(reaper, 'qemu_users', return_value=[]), patch.object(reaper.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout=b'{"status":"COMPLETE_BOUNDED_OBSERVATION","owners":[]}', stderr=b'')) as call:
+                result = reaper.retain_cold_resources(directory, 'runner')
+                self.assertEqual(result['owners'], [])
+                argv = call.call_args.args[0]
+                self.assertEqual(argv[:4], ['/usr/bin/sudo', '-n', '--', '/usr/bin/env'])
+                self.assertEqual(argv[-3:-1], ['-IBS', '-c'])
+                self.assertTrue((directory / 'disk.qcow2').exists())
+                self.assertTrue((directory / 'OVMF_VARS.fd').exists())
+
+    def test_denied_timeout_unknown_malformed_duplicate_or_owners_never_clear_resources(self):
+        outcomes = [SimpleNamespace(returncode=1, stdout=b'', stderr=b'denied'),
+                    SimpleNamespace(returncode=0, stdout=b'bad', stderr=b''),
+                    SimpleNamespace(returncode=0, stdout=b'{"status":"UNKNOWN","owners":[]}', stderr=b''),
+                    SimpleNamespace(returncode=0, stdout=b'{"status":"COMPLETE_BOUNDED_OBSERVATION","owners":[1,1]}', stderr=b''),
+                    SimpleNamespace(returncode=0, stdout=b'{"status":"COMPLETE_BOUNDED_OBSERVATION","owners":[123]}', stderr=b''),
+                    subprocess.TimeoutExpired('fixed read', 5)]
+        for outcome in outcomes:
+            with self.subTest(outcome=type(outcome).__name__), tempfile.TemporaryDirectory() as root:
+                directory, _ = self.setup_job(root)
+                (directory / 'OVMF_VARS.fd').write_bytes(b'firmware')
+                (directory / 'OVMF_VARS.fd').chmod(0o600)
+                with patch.object(reaper, 'open_resource_owners', side_effect=RuntimeError('cold resource ownership access is unknown (pid=123, stage=fd-stat, errno=13)')), patch.object(reaper.socket, 'gethostname', return_value='clanker'), patch.object(reaper, 'qemu_users', return_value=[]), patch.object(reaper.subprocess, 'run', **({'side_effect': outcome} if isinstance(outcome, Exception) else {'return_value': outcome})):
+                    with self.assertRaises(RuntimeError):
+                        reaper.retain_cold_resources(directory, 'expiry')
+                self.assertTrue((directory / 'disk.qcow2').exists())
+                self.assertFalse((directory / 'cold-state-expiry.json').exists())
+
+    def test_changed_symlink_foreign_or_missing_resource_refuses_before_privilege(self):
+        for mode in ('changed', 'symlink', 'missing', 'unexpected'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as root:
+                directory, resources = self.setup_job(root)
+                path = directory / 'disk.qcow2'
+                if mode == 'changed': path.write_bytes(b'changed')
+                elif mode == 'symlink':
+                    path.rename(directory / 'old'); path.symlink_to(directory / 'old')
+                elif mode == 'missing': path.unlink()
+                else: resources = {'unexpected': next(iter(resources.values()))}
+                with patch.object(reaper.socket, 'gethostname', return_value='clanker'), patch.object(reaper.subprocess, 'run') as call:
+                    with self.assertRaises((RuntimeError, FileNotFoundError)):
+                        reaper.host_fd_payload(directory, resources)
+                    call.assert_not_called()
 
 
 if __name__ == "__main__":
