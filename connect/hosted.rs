@@ -97,6 +97,7 @@ impl settings_controller::Backend for SettingsBackend {
                 connected: state.connected,
                 uploads_enabled: state.uploads_enabled,
                 reauthorization_required: state.reauthorization_required,
+                account_initial: state.account_initial,
             })
             .map_err(settings_error)
     }
@@ -203,7 +204,8 @@ pub fn command(command: ConnectCommand) -> Result<()> {
             println!("Hosted uploads disabled; pending uploads cancelled.");
             Ok(())
         }
-        ConnectCommand::Retry => {
+        ConnectCommand::Retry { id: Some(id) } => client.retry_capture(&id),
+        ConnectCommand::Retry { id: None } => {
             client.retry()?;
             client.process_once()
         }
