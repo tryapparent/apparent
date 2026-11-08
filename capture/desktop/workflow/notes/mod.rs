@@ -642,12 +642,14 @@ mod transport_tests {
                     .args([pid.to_string(), "1".into(), "1".into(), "-file".into()])
                     .arg(&output).stdout(Stdio::null()).stderr(Stdio::null()).spawn()
                 {
-                    let cutoff = std::time::Instant::now() + std::time::Duration::from_secs(3);
+                    let cutoff = std::time::Instant::now() + std::time::Duration::from_secs(10);
                     while matches!(sampler.try_wait(), Ok(None)) && std::time::Instant::now() < cutoff {
                         std::thread::sleep(std::time::Duration::from_millis(20));
                     }
+                    let timed_out = std::time::Instant::now() >= cutoff;
                     let _ = sampler.kill();
-                    let _ = sampler.wait();
+                    let status = sampler.wait();
+                    eprintln!("Notes fixture sampler: timed_out={timed_out}; status={status:?}");
                     // Only this synthetic fixture's owned Electron PID is sampled.
                     // Keep bounded stack text separately from the live child's log,
                     // whose file offset it still owns. Never retain notes.json.
