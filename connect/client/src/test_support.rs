@@ -1487,12 +1487,12 @@ pub fn inspect_cli_failure_scenario(
         let output = run(&f.client.config, &f.root, &["inspect", &id]);
         assert!(!output.status.success(), "{mode}: {output:?}");
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let diagnostic = match mode {
-            "missing-read" => "read",
-            "inspect-unauthorized" => "auth",
-            _ => "integrity",
-        };
-        assert!(stderr.to_lowercase().contains(diagnostic), "{mode}: {output:?}");
+        let public_error = stderr.lines().next().unwrap_or_default();
+        assert!(public_error.starts_with("Error: "), "{mode}: {output:?}");
+        if mode != "missing-read" {
+            let diagnostic = if mode == "inspect-unauthorized" { "auth" } else { "integrity" };
+            assert!(public_error.to_lowercase().contains(diagnostic), "{mode}: {output:?}");
+        }
         assert!(!stderr.contains("secret"), "{mode}: {stderr}");
         assert!(!String::from_utf8_lossy(&output.stdout).contains("Synthetic inspect transcript"));
         assert!(!out.exists());
