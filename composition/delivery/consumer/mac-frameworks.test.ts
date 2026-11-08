@@ -61,3 +61,11 @@ test('kind validator refuses unsupported entries, cycles and excessive graph dep
   const deep = Array(70).fill('dir').join('/')
   assert.throws(() => validateArchiveKinds([name, deep], ['lrwxr-xr-x fixture ' + name + ' -> A', '-rwxr-xr-x fixture ' + deep], owner.id, 'macos-x64', owner.stage))
 })
+test('Mac inventory refuses case-folded alias traversal, collisions and non-ASCII ambiguity', () => {
+  const current = prefix + 'Mantle.framework/Versions/Current', endpoint = prefix + 'Mantle.framework/Versions/A'
+  const names = [current, endpoint], entries = ['lrwxr-xr-x fixture ' + current + ' -> A', 'drwxr-xr-x fixture ' + endpoint]
+  validateArchiveKinds(names, entries, owner.id, 'macos-x64', owner.stage)
+  for (const path of [current.toLowerCase() + '/injected', endpoint.toLowerCase(), 'ambiguous-é']) {
+    assert.throws(() => validateArchiveKinds([...names, path], [...entries, '-rwxr-xr-x fixture ' + path], owner.id, 'macos-x64', owner.stage))
+  }
+})

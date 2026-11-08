@@ -10,7 +10,11 @@ export function validateArchiveKinds(names: string[], entries: string[], id: str
   const links = [...kinds].filter(([, kind]) => kind === 'l')
   if (!links.length) return
   if (id !== 'app-shell' || target !== 'macos-x64' || stage !== 'development-app') fail()
-  if (names.some(name => name.length > 4096 || name.split('/').length > 64)) fail()
+  if (names.some(name => /[^\x20-\x7e]/.test(name) || name.length > 4096 || name.split('/').length > 64)) fail()
+  // Default Mac filesystems can fold case/Unicode. Keep this fixed-layout
+  // exception ASCII and refuse collisions and alias traversal after case-folding.
+  const folded = new Map([...kinds].map(([name, kind]) => [name.toLowerCase(), kind]))
+  if (folded.size !== kinds.size) fail()
   const prefix = 'stream-payload/bundle/apparent-foundation-darwin-x64/apparent-foundation.app/Contents/Frameworks/'
   const allowed = new Map<string, { target: string; endpoint: string; kind: string; current?: string }>()
   for (const framework of ['Electron Framework', 'Mantle', 'ReactiveObjC', 'Squirrel']) {
@@ -35,7 +39,8 @@ export function validateArchiveKinds(names: string[], entries: string[], id: str
   for (const name of kinds.keys()) {
     let parent = posix.dirname(name)
     while (parent !== '.') {
-      if (kinds.has(parent) && kinds.get(parent) !== 'd') fail()
+      const kind = folded.get(parent.toLowerCase())
+      if (kind && kind !== 'd') fail()
       parent = posix.dirname(parent)
     }
   }
