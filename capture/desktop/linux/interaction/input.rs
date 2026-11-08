@@ -185,14 +185,15 @@ pub fn access() -> Access {
     access
 }
 
-/// Permission changes do not replace the live reader's already-open descriptors.
-/// Report the mismatch; device discovery/reopening remains a separate workflow.
-pub fn restart_required(available: Access) -> bool {
+/// Compare fresh permissions with the capabilities acquired when the reader started.
+/// No acquisition means unknown, not a matching reader or proof of live event delivery.
+/// Device discovery/reopening remains a separate workflow.
+pub fn restart_required(available: Access) -> Option<bool> {
     access_changed(ACQUIRED_ACCESS.get().copied(), available)
 }
 
-fn access_changed(acquired: Option<Access>, available: Access) -> bool {
-    acquired.is_some_and(|acquired| acquired != available)
+fn access_changed(acquired: Option<Access>, available: Access) -> Option<bool> {
+    acquired.map(|acquired| acquired != available)
 }
 
 #[cfg(test)]
@@ -228,11 +229,12 @@ mod access_tests {
             keyboard: true,
             pointer: true,
         };
-        assert!(!access_changed(None, both));
-        assert!(!access_changed(Some(both), both));
-        assert!(access_changed(Some(pointer), both));
-        assert!(access_changed(Some(both), pointer));
-        assert!(access_changed(Some(both), Access::default()));
+        assert_eq!(access_changed(None, both), None);
+        assert_eq!(access_changed(None, Access::default()), None);
+        assert_eq!(access_changed(Some(both), both), Some(false));
+        assert_eq!(access_changed(Some(pointer), both), Some(true));
+        assert_eq!(access_changed(Some(both), pointer), Some(true));
+        assert_eq!(access_changed(Some(both), Access::default()), Some(true));
     }
 }
 

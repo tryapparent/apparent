@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { inputAccessView, inputConsent } from './input-access.ts';
+import { inputAccessView, inputConsent, inputPositionGuidance, inputRestartGuidance } from './input-access.ts';
 
 test('the shipped Electron projector preserves only validated Linux input facts', () => {
   const { project } = createRequire(import.meta.url)('../../electron/onboarding.cjs');
@@ -31,11 +31,11 @@ test('only both native capabilities report full device access', () => {
     [false, false, 'Screen and voice only'],
     [true, false, 'Partial input access'],
     [false, true, 'Partial input access'],
-    [true, true, 'Keyboard and mouse access available'],
+    [true, true, 'Keyboard and mouse access checked'],
   ] as const) {
     assert.equal(inputAccessView({ keyboard, pointer, loginPending: false, restartRequired: false }).label, label);
   }
-  assert.match(inputAccessView({ keyboard: true, pointer: true, loginPending: false, restartRequired: false }).detail, /access alone does not verify/);
+  assert.match(inputAccessView({ keyboard: true, pointer: true, loginPending: false, restartRequired: false }).detail, /does not establish a working event reader/);
 });
 
 test('pending login and unknown are distinct from access granted', () => {
@@ -47,7 +47,7 @@ test('pending login and unknown are distinct from access granted', () => {
 });
 
 test('changed native facts immediately remove previously available status', () => {
-  assert.match(inputAccessView({ keyboard: true, pointer: true, loginPending: false, restartRequired: false }).label, /available/);
+  assert.match(inputAccessView({ keyboard: true, pointer: true, loginPending: false, restartRequired: false }).label, /access checked/);
   assert.equal(inputAccessView({ keyboard: false, pointer: false, loginPending: false, restartRequired: false }).label, 'Screen and voice only');
 });
 
@@ -59,4 +59,13 @@ test('a changed reader or an old peer cannot promise current telemetry', () => {
     assert.match(view.detail, /retain earlier access until you quit/);
   }
   assert.equal(inputAccessView({ keyboard: true, pointer: true, loginPending: false }).label, 'Input reader status unknown');
+});
+
+test('all input states keep restart timing separate from positional availability', () => {
+  assert.match(inputRestartGuidance, /finish any capture/);
+  assert.match(inputRestartGuidance, /quit and start Apparent/);
+  assert.match(inputRestartGuidance, /full desktop logout\/login/);
+  assert.match(inputPositionGuidance, /GNOME\/KDE Wayland/);
+  assert.match(inputPositionGuidance, /pin and Shift-click positioning is unavailable/);
+  assert.match(inputPositionGuidance, /Hyprland and X11/);
 });

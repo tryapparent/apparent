@@ -17,7 +17,8 @@ pub struct InputAccess {
     pub keyboard: bool,
     pub pointer: bool,
     pub login_pending: bool,
-    pub restart_required: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restart_required: Option<bool>,
 }
 
 static INPUT_ACCESS: std::sync::Mutex<Option<InputAccess>> = std::sync::Mutex::new(None);
@@ -35,7 +36,8 @@ fn read_input_access() -> InputAccess {
             keyboard: true,
             pointer: true,
             login_pending: false,
-            restart_required: false,
+            // X11 uses its X-server adapter, not an acquired evdev reader.
+            restart_required: None,
         };
     }
     let access = super::super::interaction::input::access();
@@ -119,7 +121,7 @@ pub fn permissions() -> BTreeMap<Permission, Status> {
     *INPUT_ACCESS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(access);
-    let input = input_status(access);
+    let input = input_status(access, super::super::wayland_session());
     BTreeMap::from([
         (Permission::ScreenRecording, Status::Granted),
         (Permission::Microphone, Status::Granted),
@@ -129,8 +131,8 @@ pub fn permissions() -> BTreeMap<Permission, Status> {
     ])
 }
 
-fn input_status(access: InputAccess) -> Status {
-    if access.restart_required || !access.keyboard || !access.pointer {
+fn input_status(access: InputAccess, wayland: bool) -> Status {
+    if !access.keyboard || !access.pointer || (wayland && access.restart_required != Some(false)) {
         Status::Denied
     } else {
         Status::Granted
@@ -150,15 +152,15 @@ mod tests {
             (true, true, Status::Granted),
         ] {
             for login_pending in [false, true] {
-                for restart_required in [false, true] {
+                for restart_required in [None, Some(false), Some(true)] {
                     assert_eq!(
                         input_status(InputAccess {
                             keyboard,
                             pointer,
                             login_pending,
                             restart_required
-                        }),
-                        if restart_required {
+                        }, true),
+                        if restart_required != Some(false) {
                             Status::Denied
                         } else {
                             expected
@@ -167,6 +169,25 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn missing_acquisition_is_omitted_and_never_grants_fresh_device_access() {
+        let access = InputAccess { keyboard: true, pointer: true, ..InputAccess::default() };
+        assert_eq!(input_status(access, true), Status::Denied);
+        assert!(serde_json::to_value(access).unwrap().get("restartRequired").is_none());
+        for value in [false, true] {
+            let access = InputAccess { restart_required: Some(value), ..access };
+            assert_eq!(serde_json::to_value(access).unwrap()["restartRequired"], value);
+        }
+    }
+
+    #[test]
+    fn x11_keeps_its_separate_adapter_without_claiming_evdev_acquisition() {
+        let access = InputAccess { keyboard: true, pointer: true, ..InputAccess::default() };
+        assert_eq!(input_status(access, false), Status::Granted);
+        assert!(serde_json::to_value(access).unwrap().get("restartRequired").is_none());
+        assert_eq!(input_status(InputAccess { pointer: false, ..access }, false), Status::Denied);
     }
 }
 
