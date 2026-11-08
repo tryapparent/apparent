@@ -1,5 +1,29 @@
 # Native test infrastructure
 
+## Reproducible checks and proof scope
+
+Run `node --experimental-strip-types enablement/native/linux/contracts.ts`
+from a checkout to exercise the maintained Linux runner, fixture closure and
+Desktop scenario contracts. `--list` shows the exact commands without running
+them. Requirements are Linux, Node 22.23.4+, Python 3.12+ and `qemu-img`
+(`qemu-utils` on Ubuntu). These checks use disposable local fixtures and harmless
+children; they do not boot a VM or establish native product acceptance.
+
+Platform PR and main workflows run this same command as **Native driver
+contracts (no GUI execution)**. Runner/scenario-only changes select that check
+without selecting an App Shell package. The manual updater harness reuses the
+command. The existing delivery checks remain required; green driver contracts
+do not establish that setup, permissions, recording, microphone, ink, clipboard
+or installed-app behavior worked. Actual native checks remain separately
+operated through the owning scenarios and existing resource/consent admission.
+
+Enablement owns generic lifecycle/staging/cleanup; product owners maintain their
+scenario behavior. Follow the [owner proof commands and case boundaries](../../capture/desktop/docs/native-testing.md#owner-proof-commands)
+before adding another private packet or controller. Keep concrete failures and
+applicable prior evidence; changing an engineering timeout is not a new product
+permission, and a sum of ceilings is not measured runtime. Reconcile all affected
+expiry/cleanup bounds and preserve actual human limits and frozen cases.
+
 ## Owned native-test processes
 
 `owned-processes.ts` provides the packaged smoke driver's existing Bash
@@ -118,6 +142,14 @@ scenario admission, template identity, host capacity, consent and output
 inspection. The runner supplies `SCRAWL_GUI_BINARY`, `SCRAWL_GUI_OUTPUT`, optional
 stimulus and the candidate library path to a single Bash-invoked scenario.
 Successful transport is not product acceptance.
+
+Guest binary and output roots are created exclusively as `0700` by the SSH
+account before any transfer, independently of its default umask. Existing files,
+directories and symlinks are refused; the runner never repairs their permissions.
+After staging, both roots must still match their original device/inode, owner
+and private mode before the scenario environment is returned. `guest_roots` in
+the private result records those identities; refusal diagnostics name the root
+role and observed metadata. Scenarios retain their independent privacy checks.
 
 `--retain-cold-state` explicitly opts one job into preserving its cold
 `disk.qcow2` and matching final `OVMF_VARS.fd`. Default verified-success deletion
