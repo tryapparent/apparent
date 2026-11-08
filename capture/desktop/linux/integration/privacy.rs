@@ -160,11 +160,9 @@ mod tests {
     }
 }
 
-/// Explains (in the browser) how to let Apparent read the input devices: the README's section.
+/// Copies the fixed manual setup command. This never executes it or changes access.
 pub fn open_settings(permission: Permission) {
     if permission == Permission::Accessibility {
-        let _ = super::shell::open(std::path::Path::new(
-            "https://github.com/tryapparent/apparent/blob/main/capture/desktop/docs/linux/linux.md#clicks-and-ink-on-wayland",
-        ));
+        copy_input_command();
     }
 }

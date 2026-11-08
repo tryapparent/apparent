@@ -7,6 +7,6 @@ export function InputAccessGuidance({ access, onSetup, required = false }: { acc
     <strong>Input devices{required ? '' : ' · optional'}</strong>
     <p role="status">{view.label}</p>
     <p>{view.detail}</p>
-    {!(access?.keyboard && access?.pointer) && <><p>{inputConsent}</p><Button variant="outline" onClick={onSetup}>Read setup instructions</Button></>}
+    {!(access?.keyboard && access?.pointer) && <><p>{inputConsent}</p><p>Run the copied command yourself in a terminal, then fully log out and back in. Reopening Apparent alone is not enough.</p><Button variant="outline" onClick={onSetup}>Copy setup command</Button></>}
   </article>;
 }
