@@ -79,6 +79,7 @@ struct Reader {
 
 static READER: OnceLock<Reader> = OnceLock::new();
 static STARTED: Mutex<bool> = Mutex::new(false);
+static ACQUIRED_ACCESS: OnceLock<Access> = OnceLock::new();
 
 fn event_devices() -> Vec<std::path::PathBuf> {
     let mut list: Vec<_> = std::fs::read_dir("/dev/input")
@@ -153,7 +154,7 @@ fn absolute_axes(fd: &OwnedFd) -> Option<[(i32, i32); 2]> {
 }
 
 /// Fresh device-open facts, not group membership or a guarantee of pointer coordinates.
-#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Access {
     pub keyboard: bool,
@@ -184,6 +185,16 @@ pub fn access() -> Access {
     access
 }
 
+/// Permission changes do not replace the live reader's already-open descriptors.
+/// Report the mismatch; device discovery/reopening remains a separate workflow.
+pub fn restart_required(available: Access) -> bool {
+    access_changed(ACQUIRED_ACCESS.get().copied(), available)
+}
+
+fn access_changed(acquired: Option<Access>, available: Access) -> bool {
+    acquired.is_some_and(|acquired| acquired != available)
+}
+
 #[cfg(test)]
 mod access_tests {
     use super::*;
@@ -206,6 +217,23 @@ mod access_tests {
         refreshed.observe(&bits(code::KEY_LEFTSHIFT));
         assert!(refreshed.keyboard && !refreshed.pointer && !refreshed.complete());
     }
+
+    #[test]
+    fn changed_reader_capabilities_require_restart_in_both_directions() {
+        let pointer = Access {
+            keyboard: false,
+            pointer: true,
+        };
+        let both = Access {
+            keyboard: true,
+            pointer: true,
+        };
+        assert!(!access_changed(None, both));
+        assert!(!access_changed(Some(both), both));
+        assert!(access_changed(Some(pointer), both));
+        assert!(access_changed(Some(both), pointer));
+        assert!(access_changed(Some(both), Access::default()));
+    }
 }
 
 /// Starts reading every keyboard and mouse (once). `false` when none can be read.
@@ -224,6 +252,12 @@ pub fn start() -> bool {
     if fds.is_empty() {
         return false;
     }
+    let mut acquired = Access::default();
+    for fd in &fds {
+        if let Some(bits) = key_bits(fd) {
+            acquired.observe(&bits);
+        }
+    }
     crate::capture::engine::runtime::apparent_log(format!("input devices: reading {}", fds.len()));
     READER.get_or_init(|| Reader {
         held: Mutex::new(Held::default()),
@@ -233,6 +267,9 @@ pub fn start() -> bool {
         .name("apparent-evdev".into())
         .spawn(move || read_loop(fds))
         .is_ok();
+    if *started {
+        let _ = ACQUIRED_ACCESS.set(acquired);
+    }
     *started
 }
 

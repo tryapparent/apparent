@@ -1884,6 +1884,11 @@ impl SettingsWindow {
         cx: &mut Context<Self>,
     ) -> Div {
         let permission = row.permission;
+        #[cfg(target_os = "linux")]
+        let input_restart_required = permission == Permission::Accessibility
+            && crate::capture::desktop::linux::privacy::input_access().is_some_and(|access| access.restart_required);
+        #[cfg(not(target_os = "linux"))]
+        let input_restart_required = false;
         let (name, why, path, tint) = match permission {
             Permission::ScreenRecording => (
                 "Screen Recording",
@@ -1905,7 +1910,11 @@ impl SettingsWindow {
             ),
             Permission::Accessibility if LINUX => (
                 "Input devices",
-                "Optional for global clicks and Shift ink. The input group lets all your apps read keyboard and mouse events, including typing. Run the copied command only if you accept this scope; fully log out and back in, then start Apparent. Reopening alone is not enough. Screen and voice capture remain available.".to_owned(),
+                if input_restart_required {
+                    "Input access changed after the reader started. Finish any capture, then quit and start Apparent. Existing readers can retain earlier access until you quit. Input-group changes require a full logout/login.".to_owned()
+                } else {
+                    "Optional for global clicks and Shift ink. The input group lets all your apps read keyboard and mouse events, including typing. Run the copied command only if you accept this scope; fully log out and back in, then start Apparent. Reopening alone is not enough. Screen and voice capture remain available.".to_owned()
+                },
                 crate::capture::desktop::icons::CLICK,
                 BLUE,
             ),
@@ -1933,7 +1942,9 @@ impl SettingsWindow {
         };
         let granted = row.status == Status::Granted;
         let id = SharedString::from(format!("settings-grant-{permission:?}"));
-        let trailing: AnyElement = if granted && row.relaunch {
+        let trailing: AnyElement = if input_restart_required {
+            div().text_size(px(12.0)).text_color(theme.secondary()).child("Restart required").into_any_element()
+        } else if granted && row.relaunch {
             button(theme, id, "Reopen Apparent", true)
                 .on_click(cx.listener(|view, _, _, _| view.act(Action::Reopen)))
                 .into_any_element()

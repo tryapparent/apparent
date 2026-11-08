@@ -17,6 +17,7 @@ pub struct InputAccess {
     pub keyboard: bool,
     pub pointer: bool,
     pub login_pending: bool,
+    pub restart_required: bool,
 }
 
 static INPUT_ACCESS: std::sync::Mutex<Option<InputAccess>> = std::sync::Mutex::new(None);
@@ -34,6 +35,7 @@ fn read_input_access() -> InputAccess {
             keyboard: true,
             pointer: true,
             login_pending: false,
+            restart_required: false,
         };
     }
     let access = super::super::interaction::input::access();
@@ -41,6 +43,7 @@ fn read_input_access() -> InputAccess {
         keyboard: access.keyboard,
         pointer: access.pointer,
         login_pending: login_pending().unwrap_or(false),
+        restart_required: super::super::interaction::input::restart_required(access),
     }
 }
 
@@ -127,7 +130,7 @@ pub fn permissions() -> BTreeMap<Permission, Status> {
 }
 
 fn input_status(access: InputAccess) -> Status {
-    if !access.keyboard || !access.pointer {
+    if access.restart_required || !access.keyboard || !access.pointer {
         Status::Denied
     } else {
         Status::Granted
@@ -147,14 +150,21 @@ mod tests {
             (true, true, Status::Granted),
         ] {
             for login_pending in [false, true] {
-                assert_eq!(
-                    input_status(InputAccess {
-                        keyboard,
-                        pointer,
-                        login_pending
-                    }),
-                    expected
-                );
+                for restart_required in [false, true] {
+                    assert_eq!(
+                        input_status(InputAccess {
+                            keyboard,
+                            pointer,
+                            login_pending,
+                            restart_required
+                        }),
+                        if restart_required {
+                            Status::Denied
+                        } else {
+                            expected
+                        }
+                    );
+                }
             }
         }
     }

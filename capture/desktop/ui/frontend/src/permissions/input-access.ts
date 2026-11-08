@@ -1,15 +1,23 @@
 // Presentation policy only. Native adapters supply current device-open facts.
-export type InputAccess = { keyboard: boolean; pointer: boolean; loginPending: boolean };
+export type InputAccess = { keyboard: boolean; pointer: boolean; loginPending: boolean; restartRequired?: boolean };
 
 export function inputAccessView(access: InputAccess | null) {
   if (!access) return { label: 'Input access unknown', detail: 'Current device access could not be checked. Screen sharing consent does not grant input access.' };
+  if (access.restartRequired === undefined) return {
+    label: 'Input reader status unknown',
+    detail: 'Device permissions were checked, but the current reader could not be verified. Quit and start Apparent before testing global clicks and Shift drawing. Existing readers can retain earlier access until you quit.',
+  };
+  if (access.loginPending && !(access.keyboard && access.pointer)) return {
+    label: 'Log out to apply input access',
+    detail: 'The input group is configured, but this session has not received it. Fully log out of the desktop and back in, then start Apparent. Reopening Apparent alone is not enough. Existing readers can retain earlier access until you quit.',
+  };
+  if (access.restartRequired) return {
+    label: 'Restart Apparent to apply input changes',
+    detail: 'Device access changed after the input reader started. Finish any capture, then quit and start Apparent before testing clicks and Shift drawing. Existing readers can retain earlier access until you quit.',
+  };
   if (access.keyboard && access.pointer) return {
     label: 'Keyboard and mouse access available',
     detail: 'Apparent can read Shift and mouse buttons. Accurate click positions still depend on your desktop; access alone does not verify clicks or ink.',
-  };
-  if (access.loginPending) return {
-    label: 'Log out to apply input access',
-    detail: 'The input group is configured, but this session has not received it. Fully log out of the desktop and back in, then start Apparent. Reopening Apparent alone is not enough.',
   };
   return {
     label: access.keyboard || access.pointer ? 'Partial input access' : 'Screen and voice only',
