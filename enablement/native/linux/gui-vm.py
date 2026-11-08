@@ -201,7 +201,15 @@ def arm_expiry(directory, seconds):
     reaper = directory / "reaper.py"
     shutil.copyfile(Path(__file__).with_name("gui-vm-reaper.py"), reaper)
     reaper.chmod(0o700)
-    execute(["systemd-run", "--user", "--quiet", "--collect",
+    properties = []
+    if os.path.lexists(directory / cold_retention.HOST_FD_REQUEST):
+        if not cold_retention.host_fd_observation_requested(directory):
+            raise RuntimeError('host FD expiry request is unknown')
+        # A timer service is created by the user manager, not in the runner's
+        # cgroup. Bind the literal reader's required context on that service.
+        properties = ['--property=MemoryMax=5G', '--property=MemorySwapMax=0',
+                      '--property=CPUQuota=100%']
+    execute(["systemd-run", "--user", "--quiet", "--collect", *properties,
                     "--timer-property=RemainAfterElapse=no", "--unit=" + unit,
                     f"--on-active={seconds}s", "/usr/bin/python3",
                     str(reaper), str(directory)],

@@ -2,6 +2,7 @@
 """Contract tests for disposable Omarchy guest creation; no live VM required."""
 
 import importlib.util
+import ast
 import hashlib
 import contextlib
 import io
@@ -915,6 +916,40 @@ reaper = load_reaper()
 
 
 class HostFDObservationTests(unittest.TestCase):
+    def test_actual_expiry_command_binds_context_and_copied_reader_keeps_strict_guard(self):
+        with tempfile.TemporaryDirectory() as root:
+            directory, resources = self.setup_job(root)
+            with patch.object(runner, 'execute') as execute:
+                runner.arm_expiry(directory, 45)
+            argv = execute.call_args.args[0]
+            for value in ('MemoryMax=5G', 'MemorySwapMax=0', 'CPUQuota=100%'):
+                self.assertIn('--property=' + value, argv)
+            self.assertIn('--on-active=45s', argv)
+            copied = load_reaper(directory / 'reaper.py')
+            self.assertEqual((directory / 'reaper.py').read_bytes(), REAPER.read_bytes())
+            for module in (reaper, copied):
+                with patch.object(module.socket, 'gethostname', return_value='clanker'):
+                    tree = ast.parse(module.host_fd_payload(directory, resources))
+                memory = next(n for n in ast.walk(tree) if isinstance(n, ast.Assert) and 'memory.max' in ast.unparse(n))
+                quota = next(n for n in ast.walk(tree) if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Tuple) and [getattr(x, 'id', None) for x in n.targets[0].elts] == ['quota', 'period'])
+                cpu = next(n for n in ast.walk(tree) if isinstance(n, ast.Assert) and ast.unparse(n.test) == '0 < quota <= period')
+                guard = compile(ast.fix_missing_locations(ast.Module(body=[memory, quota, cpu], type_ignores=[])), '<actual-reader-cgroup-guard>', 'exec')
+                group = Path(root) / ('group-' + str(id(module)))
+                group.mkdir()
+                for name, value in [('memory.max', 'max'), ('memory.swap.max', 'max'), ('cpu.max', 'max 100000')]:
+                    (group / name).write_text(value)
+                with self.assertRaises((ValueError, AssertionError)):
+                    exec(guard, {'base': group})  # actual source guard, inert files only
+                for name, value in [('memory.max', '5368709120'), ('memory.swap.max', '0'), ('cpu.max', '100000 100000')]:
+                    (group / name).write_text(value)
+                exec(guard, {'base': group})
+
+    def test_default_expiry_command_preserves_existing_unconstrained_policy(self):
+        with tempfile.TemporaryDirectory() as root, patch.object(runner, 'execute') as execute:
+            runner.arm_expiry(Path(root), 45)
+            argv = execute.call_args.args[0]
+            self.assertFalse(any(value.startswith(('--property=Memory', '--property=CPU')) for value in argv))
+
     def test_actual_opted_in_runner_denial_stops_before_overlay_expiry_qemu(self):
         with tempfile.TemporaryDirectory() as root:
             PreallocationClosureTests().run_refusal(root, 'host-read-denied')
