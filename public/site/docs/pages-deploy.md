@@ -1,92 +1,80 @@
-# Capture website delivery on Cloudflare Pages
+# Public delivery on Cloudflare Pages
 
 The canonical repository is `https://github.com/tryapparent/apparent`, branch
-`main`. `.github/workflows/web-delivery.yml` is the sole production publisher for
-`app.tryapparent.com`. It publishes the isolated **apparent-capture** Pages project
-in account `a54dcebead3b8ad688f891da0ab54d1f`. It does not publish the document-product
-project `tryapparent-website`, the hosted API Worker, or `public/site/wrangler.jsonc`.
+`main`. `.github/workflows/stream-public.yml` is the sole production publisher for
+`app.tryapparent.com`. It publishes the existing **apparent-capture** Pages project
+in account `a54dcebead3b8ad688f891da0ab54d1f`. It does not deploy Connect, the hosted
+API Worker, Clanker, or the separate document-product website.
 
-## Public artifact and accepted design
+## Build and checks
 
-Build the two owners independently with Bun 1.3.10 and Node 22.23.0, with
-locked dependencies installed in each package. From the repository root:
+Public uses Bun 1.3.10 and Node 22.23.0. From `public/site`:
 
 ```sh
-(cd connect/web && bun install --frozen-lockfile && VITE_HOSTED_API_ORIGIN=https://hosted.tryapparent.com npm run build)
-cd public/site
-APPARENT_PUBLIC_SITE=1 npm run build
-node scripts/site-build/package-apparent.mjs
-node scripts/connect/compose-connect.mjs
-node scripts/pages/prepare-pages.ts
-node scripts/site-build/verify-composed.ts
-node scripts/pages/prepare-pages-video.mjs
-../../connect/service/node_modules/.bin/esbuild lib/pages-worker.ts --bundle --platform=browser --format=esm --outfile=dist-apparent/_worker.js
-PAGES_WORKER=dist-apparent/_worker.js node --test scripts/pages/test-pages-video-runtime.mjs
-python3 scripts/cd/publish_pages.py seal <full-commit-sha>
+bun install --frozen-lockfile
+./node_modules/.bin/playwright-core install --with-deps chromium firefox
+npm run verify
+node scripts/cd/publish-pages.ts seal "$(git rev-parse HEAD)"
 ```
 
-Upload only the sealed `dist-apparent/` using the publisher. Never upload `dist`, this repository, the artifact manifest, evidence, private prototypes, pitches, internal feature maps or
-operator metadata. `404.html` disables Pages' implicit SPA fallback. The preparation
-step checks every input path against the former Caddy public boundary, including
-only the three approved hosted illustrations. `_headers` supplies no-store/noindex
-on Connect, including share management. All six canonical/legacy account, device
-and share-management documents remain packaged. `_redirects` preserves legacy
-hosted routes and their query strings. Anonymous capability recipients and their
-media/manifest/preview/script/styles remain on the hosted Worker origin, not Pages.
+`verify` builds the source homepage, packages its allowlisted assets, tests the
+resource graph, browser behavior, analytics consent and shared appearance, compiles
+and exercises the movie worker in workerd, then prepares Public-only Pages metadata
+and movie chunks. Public's theme check includes Public and shared inputs. It does
+not install or build Connect, Rust or Desktop. Shared-token changes still require
+the affected consumers' own acceptance; Public's checks do not certify those products.
 
-The TypeScript/React source build is the production homepage. Packaging admits
-only the public allowlist, and `compose-connect.mjs` adds the independently built
-Connect browser artifact. `prepare-pages.ts` adds provider metadata without
-replacing homepage or asset bytes. `verify-composed.ts` verifies the source-built
-homepage survives unchanged, validates Connect-owned bytes and both resource
-graphs, and refuses private/unexpected paths or loopback production configuration.
-Do not patch compiled bundles, maintain deployment overlays, or commit generated
-site output. Original approved photos and media remain source assets.
+The homepage includes the recovered photo layout, responsive movie, timeline and
+frog QR interaction. Simon approved publication on 2026-11-08 after comparison
+confirmed it matched the live site. No snapshot or bundle overlay replaces the
+source build. Analytics configuration and visitor consent remain unchanged.
 
-The approved movie exceeds Pages' 25 MiB asset ceiling. A **Pages Function**, not a
-separate Worker deployment or external origin, serves the existing movie URL from
-small static chunks. It preserves the original bytes, audio, duration and range
-seeking. Its `FixedLengthStream` supplies a real wire `Content-Length`: a manual
-header on an ordinary stream is ignored by workerd, which can make the custom-domain
-cache replace byte-range responses with full `200` responses and break seeking.
-The workerd HTTP regression checks this boundary; Node response-header tests alone
-do not. Only that exact movie path invokes the Function; other website assets
-remain static. The account stays on its existing plan. Function requests consume
-the existing Workers Free daily allowance; no paid service is activated. The project
-is configured fail-closed. At quota exhaustion the movie may be unavailable; static
-pages do not consume that Function allowance.
+The sealed `.build/website` artifact contains only `dist-apparent`, the isolated
+Pages configuration and a revision/checksum manifest. The publisher revalidates its
+complete inventory, approved movie chunks, metadata and revision before staging it.
+Private files, evidence, source maps, application documents and Connect/hosted
+outputs are rejected. `404.html` disables Pages' implicit SPA fallback.
 
-## Main-branch CD
+The movie exceeds Pages' 25 MiB asset ceiling. Its compiled Pages Function serves
+the existing URL from verified static chunks, preserving full bytes and byte
+ranges. `FixedLengthStream` supplies a real wire `Content-Length`; the workerd
+regression exercises this rather than relying on Node response headers. The
+verified `_worker.js` is published with `--no-bundle`. Only that exact movie path
+invokes the Function. The existing Free plan and fail-closed quota behavior stay
+unchanged; no separate Worker or paid service is activated.
 
-PR verification has no production credentials. The production Pages artifact is
-frozen before the separate synthetic Connect build. The website job downloads only that run's revision-named artifact, checks current
-main, verifies its complete checksum inventory, and deploys without bundling. The
-credential-free job compiles the Pages Function into `_worker.js` and tests that
-compiled worker in workerd before sealing `.build/website/`. This artifact contains
-`dist-apparent/`, `wrangler.jsonc`, and a nonserved `manifest.json` binding every
-file to the admitted commit. Artifacts are retained for 90 days; provider deployment
-IDs and readback receipts identify rollback candidates independently of that TTL.
-The production job copies no Function source or repository library into staging.
-It checks HTML and emitted JS/CSS at both the immutable deployment URL and canonical
-hostname, plus movie identity and Connect privacy headers. The receipt records
-revision, deployment ID and manifest digest. Publication is serialized without
-canceling an in-flight job. The `hosted` job and its activation gate are unchanged.
+## Checks and manual publication
 
-The synthetic integration build uses `connect/web/dist-test` and writes only
-`public/site/dist/synthetic-composition`. `COMPOSE_SYNTHETIC_ORIGIN` must name its labelled
-loopback API, and `COMPOSE_PUBLIC_INPUT` points at the saved Public package before
-composition. Production composition has no synthetic-origin exception. Never upload
-either test directory. Package fixtures cover the independent owner; the retained
-site browser suite covers the composed routes and #191 sharing interactions.
+Public checks run on relevant PRs and main pushes. **Only a manual dispatch on
+canonical `main` can publish.** Dispatch `stream-public.yml`; it runs Public's
+checks and downloads only that run's SHA-named sealed artifact into the deploy
+job. It uses the existing `website-production` environment, `WEBSITE_CD_ENABLED=true`
+gate and scoped `WEBSITE_PAGES_API_TOKEN`. No new secrets or provider configuration
+are required. The token's recorded expiry is **2026-11-19T10:27:38Z**; renew it
+through the existing secret workflow before expiry without printing it.
 
-Configure `website-production` for `main` only, with secret
-`WEBSITE_PAGES_API_TOKEN` (Pages edit for the existing account), then set repository
-variable `WEBSITE_CD_ENABLED=true`. The migration reuses the authorized Pages token
-stored in 1Password Hermes, `Apparent GitLab Cloudflare Pages Deploy 2026-08-21`;
-its provider expiry is **2026-11-19T10:27:38Z**. Renew/replace that scoped token before
-expiry and update the GitHub secret; never print it. The workflow does not need
-DNS, OAuth, R2, D1 or SSH credentials. Dispatch `web-delivery.yml` on main to retry.
-A successful merge without a successful website job is not a production delivery.
+Public does not require a full Linux/shared verification receipt or a Connect
+run. Publication is serialized separately from checks and cannot be cancelled by
+a new push. Immediately before upload, the publisher requires current main and
+refuses to overwrite an equal or newer deployed revision. A superseded candidate
+skips publication without a new receipt; dispatch current main again when needed.
+Readback verifies the revision and Public HTML, JS/CSS and full movie bytes at both
+the immutable deployment URL and `https://app.tryapparent.com`. Merge success alone
+is not production delivery.
+
+## Connect boundary
+
+Connect's runtime, API/auth, database, OAuth, DNS, Worker routing, activation gate
+and Linux/shared release admission are unchanged. Its account, device and shares
+routes are already served by its independent Worker at `app.tryapparent.com`;
+legacy `/hosted` redirects and `connect.tryapparent.com` aliases retain their code
+queries there. Public uploads no Connect documents, redirects or application
+assets. No routing cutover is part of this split.
+
+`web-delivery.yml` retains Connect's existing service and cross-origin browser
+checks and its separately gated hosted deploy job. Those integration fixtures
+still compose Public and Connect locally; they cannot publish Pages. Public's own
+checks and publication do not depend on that workflow.
 
 ## Historical hostname cutover
 
@@ -158,13 +146,23 @@ site.
 
 ## Verification
 
-Run existing public-site tests on the source build and final package, then the Pages
-package/video tests, CD Python tests and Connect's credentialed synthetic browser
-suite. On both the immutable deployment and custom hostname run the recorded-video
-browser verifier and inspect desktop/mobile screenshots, frog jumps/waves, download
-destinations and all lazy feature frames. Check 206 Content-Range and full movie
-SHA-256. Check noindex/no-store on Connect, preserved legacy query strings, no
-private-route fallback, local fonts and all referenced assets. Anonymous live
-session/CORS and sign-in redirects can be checked without accounts. Real Google
-sign-in, authenticated cookies, device approval and logout require human presence;
-never invent accounts or approve a device merely to finish deployment acceptance.
+Run `npm run verify` and seal the final artifact. After deployment check both the
+immutable URL and canonical hostname: Public graph bytes, full movie SHA-256,
+206 Content-Range, private-path denial and recorded-video playback. Compare
+Connect account/device/shares bytes and privacy headers, legacy redirects and
+code queries against their pre-deployment state. The immutable Public deployment
+has no Connect application; the canonical Worker routes must remain intact.
+Anonymous live session/CORS and sign-in redirects can be checked without accounts.
+Real Google sign-in, authenticated cookies, device approval and logout require
+human presence; do not invent accounts or approve a device for a website deployment.
+
+## Website analytics
+
+The recovered website helper preserves its own affirmative visitor choice,
+withdrawal and GPC/DNT handling. Its build uses `PUBLIC_POSTHOG_ENABLED`,
+`PUBLIC_POSTHOG_TOKEN`, `PUBLIC_POSTHOG_HOST` and `PUBLIC_POSTHOG_ENVIRONMENT`.
+Capability defaults enabled, but absent/invalid public ingestion configuration
+fails closed. This recovery does not change repository/provider variables or
+Connect account analytics. Verification uses intercepted synthetic events; no
+fixture event is sent to PostHog. Production configuration and publication remain
+subject to the existing gates.

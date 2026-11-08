@@ -165,9 +165,9 @@ fn hosted_transport_network_timeout_and_cancellation() {
     test_support::hosted_transport_network_timeout_and_cancellation();
 }
 #[test]
-fn hosted_oversized_upload_retains_actionable_details_across_restart() {
+fn hosted_scoped_retry_preserves_other_jobs_and_refuses_terminal_work() {
     setup();
-    test_support::hosted_oversized_upload_retains_actionable_details_across_restart();
+    test_support::hosted_scoped_retry_preserves_other_jobs_and_refuses_terminal_work();
 }
 
 #[test]

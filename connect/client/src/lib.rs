@@ -85,7 +85,11 @@ pub enum ConnectCommand {
     /// Disable automatic uploads and cancel pending jobs, retaining credentials.
     Disable,
     /// Retry failed queued captures. Does not discover or upload old captures.
-    Retry,
+    Retry {
+        /// Retry only this retained capture, without processing other queued work.
+        #[arg(long)]
+        id: Option<String>,
+    },
     /// Explicitly upload one historical capture (requires upload consent).
     Upload { bundle: PathBuf },
     /// List or revoke public-by-link access. IDs are management IDs, not capture IDs.
@@ -134,6 +138,8 @@ struct Credential {
     auth_required: bool,
     #[serde(default)]
     encryption_identity: Option<String>,
+    #[serde(default, rename = "accountInitial", deserialize_with = "renewal::deserialize_account_initial")]
+    account_initial: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -141,32 +147,6 @@ struct Asset {
     path: String,
     size: u64,
     sha256: String,
-}
-
-/// Local-only, allowlisted asset details for a permanent size rejection.
-/// Keep this typed through anyhow's error chain; never parse an error message
-/// or send these details to progress endpoints or telemetry.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-struct SizeFailure {
-    path: String,
-    size: u64,
-    limit: u64,
-}
-
-impl std::fmt::Display for SizeFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "file_too_large: {} is {} bytes; per-file limit {} bytes; no files were omitted",
-            self.path, self.size, self.limit)
-    }
-}
-
-impl std::error::Error for SizeFailure {}
-
-fn check_file_size(path: &str, size: u64) -> Result<()> {
-    if size > MAX_FILE_BYTES {
-        return Err(SizeFailure { path: path.into(), size, limit: MAX_FILE_BYTES }.into());
-    }
-    Ok(())
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -181,8 +161,6 @@ struct Job {
     next_attempt: u64,
     status: String,
     error: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    size_failure: Option<SizeFailure>,
     #[serde(default)]
     files: Vec<Asset>,
     #[serde(default)]
@@ -275,10 +253,13 @@ fn validate_assets(files: &[Asset]) -> Result<()> {
     let mut size = 0u64;
     for file in files {
         ensure!(
+            file.size <= MAX_FILE_BYTES,
+            "file_too_large: an asset exceeds the v1 90,000,000-byte per-file limit; no files were omitted"
+        );
+        ensure!(
             asset_path(&file.path) && hex_digest(&file.sha256) && names.insert(file.path.clone()),
             "invalid_manifest: unsafe or duplicate file"
         );
-        check_file_size(&file.path, file.size)?;
         size = size
             .checked_add(file.size)
             .context("invalid_manifest: size overflow")?;
@@ -1102,7 +1083,6 @@ impl Client {
             next_attempt: 0,
             status: if public_copy { "awaiting_share" } else { "pending" }.into(),
             error: None,
-            size_failure: None,
             files: Vec::new(),
             shared: public_copy,
             public_copy,
@@ -1524,6 +1504,7 @@ impl Client {
                         grant_id: None,
                         auth_required: false,
                         encryption_identity: encryption_identity.as_ref().map(|(id, _)| id.clone()),
+                        account_initial: None,
                     };
                     credential.apply_reply(&reply, issued, false)?;
                     break credential;
@@ -1645,10 +1626,31 @@ impl Client {
         Ok(())
     }
     pub fn retry(&self) -> Result<()> {
+        self.retry_selected(None)
+    }
+    /// Recover one retained capture under its existing identity and consent.
+    pub fn retry_capture(&self, id: &str) -> Result<()> {
+        ensure!(valid_id(id), "Capture ID must be 32 lowercase hexadecimal characters");
+        private_dir(&self.state)?;
+        // Serialize reset with worker result publication, before taking queue.lock.
+        // A busy worker must leave this request unchanged, not accept a retry
+        // which its older snapshot can immediately overwrite.
+        let _worker = Lock::acquire_until(
+            &self.state.join("worker.lock"), false,
+            Some(Instant::now() + Duration::from_secs(3)),
+        )?;
+        self.retry_selected(Some(id))?;
+        self.process_jobs(Some(id))
+    }
+    fn retry_selected(&self, id: Option<&str>) -> Result<()> {
         ensure!(self.enabled(), "Hosted uploads are disabled");
         private_dir(&self.state)?;
         let _lock = Lock::acquire(&self.state.join("queue.lock"), false)?;
+        let mut retried = false;
         for mut job in self.jobs()? {
+            if id.is_some_and(|id| job.id != id) {
+                continue;
+            }
             if self.active_locked(&job)
                 && matches!(job.status.as_str(), "pending" | "failed")
                 && now().saturating_sub(job.created) <= RETENTION
@@ -1657,10 +1659,11 @@ impl Client {
                 job.next_attempt = 0;
                 job.status = "pending".into();
                 job.error = None;
-                job.size_failure = None;
                 self.save_job(&job)?;
+                retried = true;
             }
         }
+        ensure!(id.is_none() || retried, "capture_not_retryable: choose a current pending or failed capture from apparent connect status; cancelled, expired and previous sign-in jobs cannot be revived");
         Ok(())
     }
     pub fn process_once(&self) -> Result<()> {
@@ -1669,7 +1672,13 @@ impl Client {
             Ok(lock) => lock,
             Err(_) => return Ok(()),
         };
+        self.process_jobs(None)
+    }
+    fn process_jobs(&self, id: Option<&str>) -> Result<()> {
         for mut job in self.jobs()? {
+            if id.is_some_and(|id| job.id != id) {
+                continue;
+            }
             if job.status != "pending" || job.next_attempt > now() || !self.active(&job) {
                 continue;
             }
@@ -1694,18 +1703,14 @@ impl Client {
                 Ok(()) => {
                     job.status = "ready".into();
                     job.error = None;
-                    job.size_failure = None;
                 }
                 Err(error) => {
-                    job.size_failure = error.downcast_ref::<SizeFailure>().cloned();
-                    let text = error.to_string();
+                    // Inspect causes for known codes, but persist only the allowlisted
+                    // classification below. Snapshot context is not a key failure.
+                    let text = format!("{error:#}");
                     job.error = Some(
-                        if job.size_failure.is_some() {
-                            "file_too_large"
-                        } else if text.contains("encryption_pending_recipient") {
+                        if text.contains("encryption_pending_recipient") {
                             "encryption_pending_recipient"
-                        } else if text.contains("encryption_") || text.contains("encrypted_") {
-                            "encryption_action_required"
                         } else if text.contains("file_too_large") {
                             "file_too_large"
                         } else if text.contains("quota_exceeded") {
@@ -1717,6 +1722,8 @@ impl Client {
                             || text.contains("forbidden")
                         {
                             "auth_required"
+                        } else if text.contains("encryption_") || text.contains("encrypted_") {
+                            "encryption_action_required"
                         } else {
                             "upload_failed"
                         }
@@ -1883,15 +1890,6 @@ impl Client {
         Ok(())
     }
     pub fn fetch(&self, id: &str, out: &Path, wait: u64) -> Result<PathBuf> {
-        self.fetch_inner(id, out, wait).map_err(|error| {
-            match error.to_string().as_str() {
-                "Hosted API: not_found" => anyhow::anyhow!("Capture unavailable (not_found). The sender may still be uploading, the capture may have expired or been deleted, or this account/API origin may not have access. Check apparent connect status and confirm the API origin and approved read account with the sender; ask the sender to check upload status or provide a fresh handoff. Retry with --wait 120 if upload is still in progress."),
-                message if message.starts_with("auth_required:") || matches!(message, "Hosted API: unauthorized" | "Hosted API: forbidden" | "Hosted API: reauthorization_required") => anyhow::anyhow!("Capture read authorization failed. Check apparent connect status and sign in with apparent connect login --server <API-origin> --scope read using the sender's account and API origin; retry after approval."),
-                _ => error,
-            }
-        })
-    }
-    fn fetch_inner(&self, id: &str, out: &Path, wait: u64) -> Result<PathBuf> {
         ensure!(
             valid_id(id),
             "Capture ID must be 32 lowercase hexadecimal characters"
@@ -1935,21 +1933,7 @@ impl Client {
                 None,
                 timeout,
                 &|| true,
-            );
-            // A copied pointer can precede server reservation. A 404 also hides
-            // inaccessible captures: wait only within the caller's budget and
-            // never infer existence or retry authorization failures.
-            let reply = match reply {
-                Ok(reply) => reply,
-                Err(error) if error.to_string() == "Hosted API: not_found"
-                    && wait > 0 && Instant::now() < deadline => {
-                    std::thread::sleep(Duration::from_millis(500)
-                        .min(deadline.saturating_duration_since(Instant::now())));
-                    if Instant::now() >= deadline { return Err(error); }
-                    continue;
-                }
-                Err(error) => return Err(error),
-            };
+            )?;
             ensure!(
                 reply["id"].as_str() == Some(id),
                 "Wrong capture ID in manifest"
@@ -2014,7 +1998,7 @@ impl Client {
         let mut result = json!({"server": settings.server, "enabled": self.enabled(), "uploadConsent": settings.upload_consent,
             "readSignedIn": self.credential("read", &settings.server).is_ok_and(|c| c.usable()), "uploadSignedIn": self.credential("upload", &settings.server).is_ok_and(|c| c.usable()),
             "encryption": self.provider.experiment(HOSTED_ENCRYPTION),
-            "queuePath": self.state, "queue": jobs.iter().map(|j| json!({"id":j.id,"bundle":j.bundle,"status":j.status,"encrypted":j.encrypted,"attempts":j.attempts,"nextAttempt":j.next_attempt,"error":j.error,"sizeFailure":j.size_failure})).collect::<Vec<_>>()});
+            "queuePath": self.state, "queue": jobs.iter().map(|j| json!({"id":j.id,"bundle":j.bundle,"status":j.status,"encrypted":j.encrypted,"attempts":j.attempts,"nextAttempt":j.next_attempt,"error":j.error})).collect::<Vec<_>>()});
         if account {
             let credential = self
                 .credential("upload", &settings.server)
@@ -2082,17 +2066,17 @@ fn snapshot(bundle: &Path, stage: &Path) -> Result<Vec<Asset>> {
             .file_name()
             .into_string()
             .map_err(|_| anyhow::anyhow!("Invalid asset name"))?;
-        if name == ".publication.lock" {
-            // Engine keeps this empty coordination inode after publication. It
-            // is local machinery, never capture evidence or a remotely served asset.
+        if matches!(name.as_str(), ".publication.lock" | "notes-ui.log") {
+            // Engine's empty publication lock and Desktop's notes stderr are
+            // local machinery, never capture evidence or remotely served assets.
             let metadata = fs::symlink_metadata(entry.path())?;
             ensure!(
                 metadata.is_file()
                     && metadata.uid() == unsafe { libc::geteuid() }
                     && metadata.mode() & 0o022 == 0
                     && metadata.nlink() == 1
-                    && metadata.len() == 0,
-                "Unsafe bundle publication lock"
+                    && (name != ".publication.lock" || metadata.len() == 0),
+                "Unsafe bundle publication lock or notes diagnostic"
             );
             continue;
         }
@@ -2137,7 +2121,10 @@ fn snapshot(bundle: &Path, stage: &Path) -> Result<Vec<Asset>> {
             .open(bundle.join(&path))?;
         let metadata = source.metadata()?;
         ensure!(metadata.is_file(), "Non-regular asset refused");
-        check_file_size(&path, metadata.len())?;
+        ensure!(
+            metadata.len() <= MAX_FILE_BYTES,
+            "file_too_large: an asset exceeds the v1 90,000,000-byte per-file limit; no files were omitted"
+        );
         total = total
             .checked_add(metadata.len())
             .context("Asset size overflow")?;

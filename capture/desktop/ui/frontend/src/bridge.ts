@@ -6,8 +6,6 @@ export type RuntimeState =
 declare global {
   interface Window {
     apparent?: {
-      readDrawing: () => Promise<Drawing>;
-      undoDrawing: () => Promise<Drawing>;
       readMicrophoneEnabled: () => Promise<ErrorReporting>;
       setMicrophoneEnabled: (enabled: boolean) => Promise<ErrorReporting>;
       readRuntimeState: () => Promise<RuntimeState>;
@@ -65,7 +63,7 @@ export type ConnectView = {
   buttons: ConnectButton[]; note: string;
   presentation?: { tone: 'neutral' | 'success' | 'progress' | 'warning' | 'failure';
     headline: string; detail: string; note: string; artwork: boolean; compact: boolean;
-    accountMenu: boolean; buttons: ConnectButton[]; menuActions: ConnectAction[]; sharedLinksUrl: string | null };
+    accountMenu: boolean; accountInitial?: string; buttons: ConnectButton[]; menuActions: ConnectAction[]; sharedLinksUrl: string | null };
 };
 export type ConnectButton = { command: ConnectAction; title: string; enabled: boolean };
 export type ConnectSettings =
@@ -77,7 +75,5 @@ export type RetentionResult = Unavailable | { status: 'connected'; custom: boole
   retention: { preset: string | null; options: { id: string; label: string }[]; note: string } };
 export type UsageResult = Unavailable | { status: 'connected';
   usage: { effectivePath: string; displayPath: string; formatted: string } };
-
-export type Drawing = { status: "connected"; active: boolean; strokes: number } | { status: "disconnected" | "cancelled" } | { status: "error"; code: string };
 
 export type PublicShareResult = { status:'connected'; state:'preparing'|'prepared'|'copied'|'failed'|'cancelled'|'expired' } | {status:'error';code:string} | {status:'cancelled'};

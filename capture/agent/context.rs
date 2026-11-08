@@ -96,9 +96,12 @@ pub fn keyframe_texts(bundle: &ApparentBundle) -> Vec<FrameText> {
     }
     for event in &bundle.events {
         if let InteractionEvent::Note { t, pin, text, .. } = event {
-            items[owner(*t)].push(Timed { t: *t, item: Item::Note {
-                text: crate::capture::engine::sketch::typed_note_text(bundle, *pin, text),
-            }});
+            items[owner(*t)].push(Timed {
+                t: *t,
+                item: Item::Note {
+                    text: crate::capture::engine::sketch::typed_note_text(bundle, *pin, text),
+                },
+            });
         }
     }
     for (t, text) in events(bundle) {
@@ -733,7 +736,13 @@ fn interleave(words: &[&WordTiming], items: &[Timed]) -> FrameText {
     let clauses = clause_starts(words);
     let mut splits: Vec<u64> = items
         .iter()
-        .map(|item| if matches!(item.item, Item::Note { .. }) { item.t } else { split_point(item.t, words, &clauses) })
+        .map(|item| {
+            if matches!(item.item, Item::Note { .. }) {
+                item.t
+            } else {
+                split_point(item.t, words, &clauses)
+            }
+        })
         .collect();
     for i in 1..splits.len() {
         splits[i] = splits[i].max(splits[i - 1]);
@@ -754,7 +763,9 @@ fn interleave(words: &[&WordTiming], items: &[Timed]) -> FrameText {
             lines.extend(open.take());
             lines.push(label(item));
             let said = said_between(Some(splits[i]), splits.get(i + 1).copied());
-            if !said.is_empty() { lines.push(said); }
+            if !said.is_empty() {
+                lines.push(said);
+            }
             continue;
         }
         let is_mark = matches!(item.item, Item::Mark { .. });
@@ -841,6 +852,7 @@ mod tests {
     fn stroke(t0: u64, x: f32, y: f32) -> Stroke {
         let p = |v: f32| (v * SCALE as f32) as i32;
         Stroke {
+            color: None,
             t0,
             t1: t0 + 400,
             fw: 1000,
@@ -864,17 +876,26 @@ mod tests {
 
     #[test]
     fn multiline_notes_keep_the_next_speech_and_event_outside_their_text() {
-        let words = words(&[(3000, "Before."), (6500, "After."), (7500, "Later.")]);
-        let refs: Vec<_> = words.iter().collect();
-        let items = vec![
-            Timed { t: 6000, item: Item::Note { text: "Typed note · pin 1:\n    First line\n    Second line".into() } },
-            Timed { t: 7000, item: Item::Event { text: "clicked".into() } },
+        let mut b = bundle(
+            words(&[(5000, "Before"), (6500, "After."), (7500, "Later.")]),
+            vec![keyframe(1, 5000, KeyframeReason::SceneChange, "Before After. Later.")],
+        );
+        b.events = vec![
+            InteractionEvent::Note { t: 6000, pin: 1, x: 0.5, y: 0.5,
+                text: "First line\nSecond line".into() },
+            InteractionEvent::Click { t: 7000, x: 0.5, y: 0.5, button: None,
+                role: Some("button".into()), label: Some("Save".into()) },
         ];
-        let text = interleave(&refs, &items);
-        assert_eq!(text.head, "“Before.”");
-        assert_eq!(text.lines[0], "· 0:06 Typed note · pin 1:\n    First line\n    Second line");
-        assert!(text.lines.iter().skip(1).any(|line| line.contains("After.")));
-        assert!(text.lines.iter().skip(1).any(|line| line.contains("clicked")));
+        let texts = keyframe_texts(&b);
+        let text = &texts[0];
+        // A note keeps its exact split time even inside a clause that ordinary
+        // interactions would snap back to the word at 0:05.
+        assert_eq!(text.head, "“Before”");
+        assert_eq!(text.lines, [
+            "· 0:06 Typed note · pin 1:\n    First line\n    Second line",
+            "“After.”",
+            "· 0:07 clicked button “Save” “Later.”",
+        ]);
     }
 
     fn keyframe(index: usize, t: u64, reason: KeyframeReason, said: &str) -> Keyframe {
@@ -1149,6 +1170,7 @@ mod tests {
         );
         b.strokes = vec![
             Stroke {
+                color: None,
                 on: Some("button “Window”".into()),
                 ..stroke(1_000, 0.1, 0.2)
             },

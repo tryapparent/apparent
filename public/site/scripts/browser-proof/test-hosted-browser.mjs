@@ -41,7 +41,7 @@ for (const route of ['connect', 'connect/device', 'connect/shares', 'hosted', 'h
   const graph = await closure(`/${route}/index.html`)
   assert.doesNotMatch(html, /fonts\.bunny\.net|rel="canonical"|property="og:|name="twitter:/)
   for (const [path, text] of graph) {
-    assert.doesNotMatch(text, /Visual feedback gets lost|pond-hero|pond-demo|pond-team/, `${route}: marketing closure in ${path}`)
+    assert.doesNotMatch(text, /Tell your coding agent what to change|Visual feedback gets lost|pond-hero|pond-demo|pond-team/, `${route}: marketing closure in ${path}`)
   }
   connectGraphs.push(graph)
 }
@@ -232,21 +232,12 @@ try {
       await page.evaluate(() => document.fonts.ready)
       const geometry = await page.evaluate(() => {
         const sheet = document.querySelector('.hosted-main'), title = document.querySelector('h1'), cta = document.querySelector('.hosted-main-action')
-        return { width: sheet.getBoundingClientRect().width, radius: getComputedStyle(sheet).borderRadius, title: getComputedStyle(title).fontSize, textColor: getComputedStyle(title).color, foreground: getComputedStyle(title).getPropertyValue('--color-foreground').trim(), ctaRadius: getComputedStyle(cta).borderRadius, ctaColor: getComputedStyle(cta).backgroundColor, font: getComputedStyle(sheet).fontFamily }
+        return { width: sheet.getBoundingClientRect().width, radius: getComputedStyle(sheet).borderRadius, title: getComputedStyle(title).fontSize, textColor: getComputedStyle(title).color, ctaRadius: getComputedStyle(cta).borderRadius, ctaColor: getComputedStyle(cta).backgroundColor, font: getComputedStyle(sheet).fontFamily }
       })
       assert.equal(geometry.width, test.width >= 760 ? 720 : (test.width || 1100) > 550 ? Math.min(720, (test.width || 1100) - 40) : test.width - 24)
       assert.equal(geometry.radius, '0px'); assert.equal(geometry.ctaRadius, '0px'); assert.equal(geometry.ctaColor, 'rgb(25, 22, 29)')
       assert.equal(geometry.title, test.width <= 550 ? '32px' : '36px'); assert.match(geometry.font, /Host Grotesk/)
-      assert.notEqual(geometry.foreground, '', 'Connect loads the shared foreground token')
-      const foregroundColor = await page.evaluate(foreground => {
-        const probe = document.createElement('span')
-        probe.style.color = foreground
-        document.body.append(probe)
-        const color = getComputedStyle(probe).color
-        probe.remove()
-        return color
-      }, geometry.foreground)
-      assert.equal(geometry.textColor, foregroundColor, 'Connect heading uses the current shared theme foreground')
+      assert.equal(geometry.textColor, 'rgb(25, 22, 29)', 'Connect retains its own semantic foreground; Public palette must not bleed into account pages')
       await page.screenshot({ path: `${evidence}/${test.name}-computer.png`, fullPage: true })
       await computer.focus(); await page.keyboard.press('ArrowRight')
       assert.equal(await agent.getAttribute('aria-selected'), 'true'); assert.equal(await agent.evaluate(e => e === document.activeElement), true)

@@ -1,5 +1,4 @@
 use super::*;
-use crate::{MAX_FILE_BYTES, SizeFailure};
 use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 
 struct Fixture {
@@ -468,12 +467,7 @@ fn source_allowlist_limits_and_nonempty_scratch_are_preserved() {
         .unwrap()
         .set_len(90_000_001)
         .unwrap();
-    let error = pack(&f.stage, &f.spool, &f.context, &f.sender, &f.recipients())
-        .context("encryption_pack_failed").unwrap_err();
-    let size = error.downcast_ref::<SizeFailure>().expect("preserve typed size reason through encryption context");
-    assert_eq!(size.path, "recording.mp4");
-    assert_eq!(size.size, MAX_FILE_BYTES + 1);
-    assert_eq!(size.limit, MAX_FILE_BYTES);
+    assert!(pack(&f.stage, &f.spool, &f.context, &f.sender, &f.recipients()).is_err());
     fs::remove_file(oversized).unwrap();
     let sentinel = f.spool.join("caller-owned");
     new_private_file(&sentinel)

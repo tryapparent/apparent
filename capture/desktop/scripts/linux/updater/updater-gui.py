@@ -98,6 +98,24 @@ def find_phrase(words, phrase):
     return matches[0]
 
 
+def find_portal_outputs(words, _phrase):
+    # Tesseract can split or join these tabs into different text runs. Require
+    # the complete unique row without relaxing ordinary UI locators.
+    tabs = []
+    for label in ['windows', 'outputs', 'region']:
+        matches = [w for w in words if tokens(w['text']) == [label]]
+        if len(matches) != 1:
+            raise PhraseMatchError('portal tabs', len(matches))
+        tabs.append(matches[0])
+    for left, right in zip(tabs, tabs[1:]):
+        gap = int(right['left']) - int(left['left']) - int(left['width'])
+        if not (0 <= gap <= 40 and abs(int(left['top']) - int(right['top'])) <= 5):
+            raise ValueError('portal tabs are not one ordered row')
+    output = tabs[1]
+    return (int(output['left']) + int(output['width']) // 2,
+            int(output['top']) + int(output['height']) // 2)
+
+
 def qmp(path, command, arguments):
     with socket.socket(socket.AF_UNIX) as sock:
         sock.settimeout(10)
@@ -171,14 +189,14 @@ class Evidence:
         self.last_ocr = result.stdout
         return list(csv.DictReader(io.StringIO(result.stdout), delimiter='\t'))
 
-    def locate(self, phrase, timeout):
+    def locate(self, phrase, timeout, finder=find_phrase):
         deadline = time.monotonic() + timeout
         last = None
         while True:
             path = self.frame()
             words = self.words(path)
             try:
-                position = find_phrase(words, phrase)
+                position = finder(words, phrase)
                 return path, position
             except ValueError as error:
                 last = error
@@ -186,7 +204,7 @@ class Evidence:
                     # Derived OCR input removes outlines; raw evidence is intact.
                     words = self.words(path, cleaned=True)
                     try:
-                        return path, find_phrase(words, phrase)
+                        return path, finder(words, phrase)
                     except ValueError as cleaned_error:
                         last = cleaned_error
             if time.monotonic() >= deadline:
@@ -197,12 +215,21 @@ class Evidence:
     def perform(self, request):
         start = time.monotonic() - self.clock
         op = request['op']
-        if op in ('click', 'assert'):
-            path, (x, y) = self.locate(request['text'], request.get('timeout', 20))
-            if op == 'click':
+        if op in ('click', 'assert', 'click-point'):
+            if op == 'click-point':
+                path, (x, y) = self.locate(request['text'], request.get('timeout', 20), finder=find_portal_outputs)
+            else:
+                path, (x, y) = self.locate(request['text'], request.get('timeout', 20))
+            if op in ('click', 'click-point'):
                 from PIL import Image
                 with Image.open(path) as image:
                     width, height = image.size
+                if op == 'click-point':
+                    if request['viewport'] != [width, height]:
+                        raise ValueError('portal consent fixture requires its observed viewport')
+                    x, y = request['point']
+                    if not (0 <= x < width and 0 <= y < height):
+                        raise ValueError('portal consent point is outside the observed frame')
                 qmp(self.socket, 'input-send-event', {'events': [
                     {'type': 'abs', 'data': {'axis': 'x', 'value': round(x * 32767 / (width - 1))}},
                     {'type': 'abs', 'data': {'axis': 'y', 'value': round(y * 32767 / (height - 1))}}]})
@@ -276,15 +303,7 @@ def main():
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--ssh-user', required=True)
     parser.add_argument('--channel', choices=['stable', 'main'], default='stable')
-    parser.add_argument('--legacy-appimage', type=Path, help='checksum-verified released a5cf47d x86_64 AppImage for migration acceptance')
     args = parser.parse_args()
-    legacy_digest = ''
-    if args.legacy_appimage:
-        if args.channel != 'main' or not re.fullmatch(r'[A-Za-z0-9_.-]+', args.legacy_appimage.name):
-            parser.error('legacy migration requires Main and a simple fixture filename')
-        legacy_digest = hashlib.sha256(args.legacy_appimage.read_bytes()).hexdigest()
-        if legacy_digest != 'a8e4e8c1c75cd52c871b742861b86864c4488511c1310da502db936be70bb26a':
-            parser.error('legacy fixture must match the published a5cf47d x86_64 asset digest')
     args.results = args.results.resolve()
     if args.results.exists():
         parser.error('results must be a new private directory')
@@ -310,22 +329,17 @@ def main():
     scenario = scenario.replace('__UPDATER_EXPECTED_SOURCE_HEAD__', source_head)
     scenario = scenario.replace('__UPDATER_EXPECTED_SHA256__', digest)
     scenario = scenario.replace('__UPDATER_CHANNEL__', args.channel)
-    scenario = scenario.replace('__UPDATER_LEGACY_SHA256__', legacy_digest)
-    scenario = scenario.replace('__UPDATER_LEGACY_NAME__', args.legacy_appimage.name if args.legacy_appimage else '')
     scenario_path = args.results / 'scenario.sh'
     scenario_path.write_text(scenario)
     (args.results / 'candidate.json').write_text(json.dumps({
         'appimage': str(args.appimage.resolve()), 'sha256': digest,
         'source_head': source_head, 'channel': args.channel,
-        'legacy_sha256': legacy_digest,
         'scope': 'isolated Omarchy; guest-local synthetic HTTPS release contract, NOT GitHub publication'}, indent=2) + '\n')
     command = [sys.executable, str(source.parent / 'gui/gui-vm.py'), '--template', str(args.template.resolve()),
                '--ovmf-vars', str(args.ovmf_vars.resolve()), '--ssh-key', str(args.ssh_key.resolve()),
                '--ssh-user', args.ssh_user, '--binary', str(args.appimage.resolve()),
                '--scenario', str(scenario_path), '--results', str(args.results / 'vm'),
                '--isolated-network', '--scenario-timeout', '360', '--job-timeout', '660']
-    if args.legacy_appimage:
-        command.extend(['--fixture-file', str(args.legacy_appimage.resolve())])
     evidence = Evidence(args.results)
     error = None
     with (args.results / 'runner.log').open('wb') as log:

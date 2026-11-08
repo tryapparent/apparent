@@ -1,4 +1,4 @@
-/** One-time November 2026 Main-history migration. No old ancestry enters Main. */
+/** Compatibility publication for legacy Main updaters. No old ancestry enters Main. */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const LEGACY = 'a5cf47d7dc7d0f89b1552cfb2d5e4b0ab489526a';
+export const LEGACY = '1a55d5ebe05c948211ff74356c00b8dbfe58ecc6';
 const REPO = 'tryapparent/apparent';
 function run(command: string, args: string[]): string {
   return execFileSync(command, args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).trim();

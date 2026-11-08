@@ -1,21 +1,18 @@
 name: Linux verification
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Finish the running candidate; replace only pending work. Mac never holds this lane.
+# Coalesce only this platform; a queued Mac must not hold Linux publication.
 concurrency:
   group: changed-tree-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   verify:
-    if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/verification-platform.yml
     with:
       runner: ubuntu-24.04

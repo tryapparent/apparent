@@ -627,7 +627,7 @@ fn start_video_export() {
                 Ok(None) => say(Some("Export cancelled".into())),
                 Err(error) => {
                     apparent_log(format!("Video export failed: {error:#}"));
-                    workflow::error_reporting::report_error(workflow::error_reporting::Failure::VideoExport, &error);
+                    workflow::error_reporting::report(workflow::error_reporting::Failure::VideoExport);
                     #[cfg(target_os = "linux")]
                     {
                         let detail = format!("{error:#}");
@@ -1288,32 +1288,6 @@ impl ApparentCoordinator {
             let _ = request.reply.send(response.to_string());
             return;
         }
-        if let Some((action @ (Action::DrawingRead | Action::DrawingUndo), expected)) = &request.action {
-            use std::hash::{Hash, Hasher};
-            let revision = self.active_recording.as_ref().filter(|r|
-                matches!(&r.source, CaptureSource::Screen { session, .. } if session.has_frames())
-            ).map(|r| {
-                let mut hash = std::collections::hash_map::DefaultHasher::new();
-                r.started.hash(&mut hash);
-                format!("{:016x}", hash.finish())
-            });
-            if let Err(error) = crate::capture::desktop::workflow::agent_capture::drawing_admission(
-                revision.as_deref(), (*action == Action::DrawingUndo).then_some(expected.as_str()), request.expired(),
-            ) {
-                let _ = request.reply.send(serde_json::json!({"error":error}).to_string());
-                return;
-            }
-            if *action == Action::DrawingUndo { self.undo_stroke(cx); }
-            let count = {
-                let strokes = self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                let desktop = self.telemetry.desktop_ink.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                desktop.len() + strokes.iter().filter(|s| !s.laser && s.pin.is_some()).count()
-            };
-            let _ = request.reply.send(serde_json::json!({"drawing":{
-                "revision":revision, "strokes":if revision.is_some() { count } else { 0 }
-            }}).to_string());
-            return;
-        }
         // Report an ended sampler, but never discard another session as a side
         // effect of State, Inspect or a competing Start. Cancellation stays explicit.
         if matches!(self.active_recording.as_ref().map(|r| &r.source),
@@ -1600,6 +1574,23 @@ impl ApparentCoordinator {
     }
 
     /// Polled while the gate holds a request: shows the permissions window once ⌥⇧ is up.
+    pub(in crate::capture::desktop) fn tick_onboarding_practice(&mut self,cx:&mut Context<Self>) {
+        if !self.onboarding.as_ref().is_some_and(|s|s.practice_active()) {return;}
+        #[cfg(target_os="macos")]
+        let anchor=if self.onboarding.as_ref().is_some_and(|s|s.practice_locating()) {crate::capture::desktop::ui::macos::status_bar_anchor()} else {self.native_pill.as_ref().and_then(|p|p.coach_anchor())};
+        #[cfg(not(target_os="macos"))]
+        let anchor=None;
+        if let Some(session)=self.onboarding.as_mut(){session.practice_anchor(anchor);}
+        let board_frame=whiteboard::frame(cx);
+        if let Some(session)=self.onboarding.as_mut(){session.practice_board(board_frame);}
+        let board=self.whiteboard.borrow().strokes.iter().any(|s|s.len()>3);
+        let screen=self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|s|!s.laser && s.pts.len()>9).count();
+        let processing=self.is_processing();
+        let was_screen=self.onboarding.as_ref().unwrap().practice_screen_stage();
+        if let Some(session)=self.onboarding.as_mut() {session.observe_practice(board,screen,processing,None);}
+        if !was_screen && self.onboarding.as_ref().is_some_and(|s|s.practice_screen_stage()) {cx.defer(whiteboard::close);}
+    }
+
     pub fn tick_gate(&mut self) {
         use crate::capture::desktop::settings::onboarding::{Flow, Input, Mode, Permission};
         let Some(asks) = self.gate.tick(crate::capture::engine::runtime::modifier_flags() != 0) else {
@@ -1623,7 +1614,10 @@ impl ApparentCoordinator {
 
     fn onboarding_event(&mut self, event: crate::capture::desktop::settings::onboarding::Event, cx: &mut Context<Self>) {
         use crate::capture::desktop::settings::onboarding::{Effect, Event, Progress};
+        let Some(event) = event.for_current_session(self.onboarding.as_ref().map(|s|s.source())) else {return;};
+        let Some(event) = event.for_current_transport(self.onboarding.as_ref().map(|s|s.transport_generation())) else {return;};
         let effect = match event {
+            Event::Session { .. } | Event::Transport { .. } => Effect::None,
             Event::Launch(grants) => {
                 self.note_grants(&grants);
                 let mut progress = Progress::load();
@@ -1987,10 +1981,6 @@ impl ApparentCoordinator {
         // The recording's overlay becomes the picker's (moved if the picker opens on another
         // display), so the border never swaps windows (as the picker → recording path does).
         self.picker_metal_overlay = overlay;
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
-        if let Some(overlay) = self.picker_metal_overlay.as_mut() {
-            overlay.prepare_picker();
-        }
         self.open_picker(Some(mode), cx);
         if self.is_selecting() && chips_shown && !self.reduced_motion {
             // The chips showed Screen; the picker shows `mode`.
@@ -2321,20 +2311,8 @@ impl ApparentCoordinator {
             .strokes
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut desktop = self.telemetry.desktop_ink.lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let latest = strokes.iter().rposition(|s| !s.laser && s.pin.is_some());
-        if desktop.last().is_some_and(|ink| latest.is_none_or(|i| ink.t0 >= strokes[i].t0)) {
-            let ink = desktop.pop().unwrap();
-            strokes.retain(|s| s.laser || s.pin.is_some() || !(ink.t0..=ink.t1).contains(&s.t0));
-        } else if let Some(idx) = latest {
-            if let Some(ui) = &self.note_ui {
-                // Remove the mark only after durable note deletion. A failed or
-                // timed-out receipt leaves its anchor available for recovery.
-                if ui.undo(strokes[idx].pin.unwrap()) { strokes.remove(idx); }
-            } else {
-                strokes.remove(idx);
-            }
+        if let Some(idx) = strokes.iter().rposition(|s| !s.laser) {
+            strokes.remove(idx);
         }
         drop(strokes);
         cx.notify();
@@ -2374,6 +2352,7 @@ impl ApparentCoordinator {
         }
         let capture = match (self.island_phase, phase) {
             (IslandPhase::Recording, IslandPhase::Recording) => None,
+            (_, IslandPhase::Selecting { .. }) => Some(Input::CaptureSelecting),
             (_, IslandPhase::Recording) => Some(Input::CaptureStarted),
             (IslandPhase::Recording | IslandPhase::Processing, IslandPhase::Completed { .. }) => {
                 Some(Input::CaptureEnded { completed: true })
@@ -3262,7 +3241,7 @@ impl ApparentCoordinator {
         let bundle_dir = root.join(format!("{id}.apparent"));
         if let Err(error) = crate::capture::engine::bundle::recover::begin_screen_capture(&bundle_dir) {
             apparent_log(format!("Capture could not protect raw video: {error:#}"));
-            workflow::error_reporting::report_error(workflow::error_reporting::Failure::ProtectRecording, &error);
+            workflow::error_reporting::report(workflow::error_reporting::Failure::ProtectRecording);
             self.cancel_recording(cx);
             if let Ok(mut status) = CAPTURE_STATUS.lock() {
                 *status = Some("Capture failed — could not protect raw video".into());
@@ -3316,7 +3295,7 @@ impl ApparentCoordinator {
                 .push(overlay.window_number());
             overlay
         });
-        let mut metal_overlay = metal_overlay.or_else(|| {
+        let metal_overlay = metal_overlay.or_else(|| {
             let ov = platform::open_overlay(Arc::clone(&self.telemetry), Some(target_rect), cx)
                 .map_err(|error| apparent_log(format!("Metal overlay failed: {error}")))
                 .ok();
@@ -3334,31 +3313,6 @@ impl ApparentCoordinator {
             }
             ov
         });
-        #[cfg(target_os = "macos")]
-        if target.mode != CaptureMode::Device {
-            if let Some(overlay) = metal_overlay.as_mut() {
-                match overlay.cover_desktop() {
-                    Ok(ids) => {
-                        self.telemetry.excluded_window_ids.lock().unwrap_or_else(std::sync::PoisonError::into_inner).extend(ids.iter().copied());
-                        self.telemetry.passthrough_window_ids.lock().unwrap_or_else(std::sync::PoisonError::into_inner).extend(ids);
-                    }
-                    Err(error) => apparent_log(format!("Desktop ink overlays failed: {error}")),
-                }
-            }
-        }
-        #[cfg(target_os = "linux")]
-        if target.mode != CaptureMode::Device {
-            if let Some(overlay) = metal_overlay.as_mut() {
-                overlay.move_to(target_rect);
-                match overlay.cover_desktop(cx) {
-                    Ok(ids) => {
-                        self.telemetry.excluded_window_ids.lock().unwrap_or_else(std::sync::PoisonError::into_inner).extend(ids.iter().copied());
-                        self.telemetry.passthrough_window_ids.lock().unwrap_or_else(std::sync::PoisonError::into_inner).extend(ids);
-                    }
-                    Err(error) => apparent_log(format!("Desktop ink overlays failed: {error}")),
-                }
-            }
-        }
         start_metric("metal_open_ms", stage);
         let stage = Instant::now();
         self.publish_capture_busy();
@@ -3374,7 +3328,7 @@ impl ApparentCoordinator {
             Ok(recorder) => Some(recorder),
             Err(error) => {
                 let message = format!("Capture refused: narration could not be saved: {error:#}");
-                workflow::error_reporting::report_error(workflow::error_reporting::Failure::AudioStart, &error);
+                workflow::error_reporting::report(workflow::error_reporting::Failure::AudioStart);
                 apparent_log(&message);
                 self.cancel_recording(cx);
                 if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some(message); }
@@ -3391,7 +3345,7 @@ impl ApparentCoordinator {
             Ok(session) => session,
             Err(error) => {
                 apparent_log(format!("Capture refused: {error:#}"));
-                workflow::error_reporting::report_error(workflow::error_reporting::Failure::ScreenStart, &error);
+                workflow::error_reporting::report(workflow::error_reporting::Failure::ScreenStart);
                 if let Err(cleanup) = crate::capture::engine::bundle::recover::abandon_start(&bundle_dir, || drop(audio_recorder)) {
                     apparent_log(format!("Failed capture startup cleanup at {}: {cleanup:#}", bundle_dir.display()));
                 }
@@ -3562,7 +3516,7 @@ impl ApparentCoordinator {
                 Ok(session) => session,
                 Err(error) => {
                     apparent_log(format!("iPhone capture could not start: {error:#}"));
-                    workflow::error_reporting::report_error(workflow::error_reporting::Failure::PhoneStart, &error);
+                    workflow::error_reporting::report(workflow::error_reporting::Failure::PhoneStart);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
                     {
                         if let Some(id) = self.agent_capture_id.take() {
@@ -6835,6 +6789,7 @@ pub fn run_app(
                                         crate::shared::handoff::load_bundle(std::path::Path::new("latest"))
                                     {
                                         loop_coord.update(cx, |coord, cx| {
+                                            if let Some(session)=coord.onboarding.as_mut(){session.practice_opened_bundle(&dir);}
                                             coord.mark_handled(&dir);
                                             coord.set_review_bundle((dir, bundle), None);
                                             cx.notify();
@@ -6923,6 +6878,7 @@ pub fn run_app(
                     if loop_coord.read(cx).gate.is_pending() {
                         loop_coord.update(cx, |coord, _| coord.tick_gate());
                     }
+                    loop_coord.update(cx, |coord, cx| coord.tick_onboarding_practice(cx));
                     if loop_coord.read(cx).is_island_visible() {
                         record_external_frontmost_app();
                         loop_coord.update(cx, |coord, cx| coord.island_tick(cx));

@@ -671,6 +671,7 @@ impl Fixture {
                     grant_id: None,
                     auth_required: false,
                     encryption_identity: None,
+                    account_initial: None,
                 },
             )
             .unwrap();
@@ -883,12 +884,7 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
             .push((format!("{method} {route}"), body.to_vec()));
     }
     let mut status = 200;
-    let result: Vec<u8> = if method == "GET" && route.starts_with("/v1/captures/")
-        && (s.mode == "fetch-missing" || s.mode == "fetch-unauthorized"
-            || (route.split('/').count() == 4 && route.rsplit('/').next() != Some(s.capture_id.as_str()))) {
-        status = if s.mode == "fetch-unauthorized" { 401 } else { 404 };
-        json!({"error":{"code":if status == 401 {"unauthorized"} else {"not_found"}}}).to_string().into_bytes()
-    } else if route == "/v1/device/start" {
+    let result: Vec<u8> = if route == "/v1/device/start" {
         if let Some(encryption) = &mut s.encryption {
             let request: Value = serde_json::from_slice(body).unwrap();
             encryption.pending_key = request.get("encryptionKey").cloned();
@@ -1378,56 +1374,6 @@ pub fn hosted_roundtrip_pending_pointer_restart_complete_and_no_overwrite() {
     );
 }
 #[cfg_attr(test, test)]
-pub fn hosted_fetch_before_reservation_waits_and_unavailable_is_actionable() {
-    let f = Fixture::new();
-    let server = Server::new("");
-    f.authorize(&server.url);
-    let bundle = f.bundle();
-    let id = f.client.enqueue(&bundle).unwrap();
-    assert!(f.client.pointer(&bundle).is_some());
-    let out = f.root.join("delayed.apparent");
-    let error = f.client.fetch(&id, &out, 0).unwrap_err().to_string();
-    assert!(error.contains("Capture unavailable") && error.contains("API origin"));
-    assert!(!out.exists());
-    std::thread::scope(|scope| {
-        let worker = scope.spawn(|| {
-            std::thread::sleep(Duration::from_millis(150));
-            f.client.process_once().unwrap();
-        });
-        f.client.fetch(&id, &out, 5).unwrap();
-        worker.join().unwrap();
-    });
-    assert!(out.join("apparent.json").is_file());
-    server.state.lock().unwrap().ready = false;
-    let pending_out = f.root.join("pending.apparent");
-    std::thread::scope(|scope| {
-        scope.spawn(|| {
-            std::thread::sleep(Duration::from_millis(150));
-            server.state.lock().unwrap().ready = true;
-        });
-        f.client.fetch(&id, &pending_out, 5).unwrap();
-    });
-    for path in server.state.lock().unwrap().data.keys() {
-        assert_eq!(fs::read(bundle.join(path)).unwrap(), fs::read(pending_out.join(path)).unwrap());
-    }
-    for mode in ["fetch-missing", "fetch-unauthorized"] {
-        server.state.lock().unwrap().mode = mode.into();
-        let absent = f.root.join("absent.apparent");
-        let start = Instant::now();
-        let error = f.client.fetch(&id, &absent, 1).unwrap_err().to_string();
-        assert!(start.elapsed() < Duration::from_secs(3));
-        assert!(!absent.exists());
-        if mode == "fetch-missing" {
-            assert!(error.contains("Capture unavailable") && error.contains("fresh handoff"));
-        } else {
-            assert!(error.contains("authorization failed") && error.contains("--scope read"));
-            assert!(start.elapsed() < Duration::from_secs(1));
-        }
-        assert!(!fs::read_dir(&f.root).unwrap().any(|entry|
-            entry.unwrap().file_name().to_string_lossy().starts_with(".apparent-fetch-")));
-    }
-}
-#[cfg_attr(test, test)]
 pub fn hosted_disable_logout_and_quota_preserve_local() {
     let f = Fixture::new();
     let server = Server::new("quota");
@@ -1667,7 +1613,64 @@ pub fn hosted_transport_network_timeout_and_cancellation() {
     );
 }
 #[cfg_attr(test, test)]
+pub fn hosted_scoped_retry_preserves_other_jobs_and_refuses_terminal_work() {
+    for unrelated_status in ["pending", "failed"] {
+        let f = Fixture::new();
+        let server = Server::new("");
+        f.authorize(&server.url);
+        let requested = f.root.join("requested.apparent");
+        fs::rename(f.bundle(), &requested).unwrap();
+        let id = f.client.enqueue(&requested).unwrap();
+        let other = f.client.enqueue(&f.bundle()).unwrap();
+        let mut selected = f.client.jobs().unwrap().into_iter().find(|j| j.id == id).unwrap();
+        selected.status = "failed".into();
+        selected.attempts = MAX_ATTEMPTS;
+        selected.error = Some("upload_failed".into());
+        f.client.save_job(&selected).unwrap();
+        let mut unrelated = f.client.jobs().unwrap().into_iter().find(|j| j.id == other).unwrap();
+        unrelated.status = unrelated_status.into();
+        unrelated.attempts = MAX_ATTEMPTS;
+        unrelated.error = Some("upload_failed".into());
+        f.client.save_job(&unrelated).unwrap();
+        let other_path = f.client.state.join(format!("{other}.job"));
+        let before = fs::read(&other_path).unwrap();
+        // Do not reset a job while an older worker can still publish its result.
+        let worker = Lock::acquire(&f.client.state.join("worker.lock"), false).unwrap();
+        let selected_path = f.client.state.join(format!("{id}.job"));
+        let selected_before = fs::read(&selected_path).unwrap();
+        assert!(f.client.retry_capture(&id).is_err(), "busy worker silently accepted scoped retry");
+        assert_eq!(fs::read(&selected_path).unwrap(), selected_before);
+        assert_eq!(fs::read(&other_path).unwrap(), before);
+        assert_eq!(server.state.lock().unwrap().requests, 0);
+        drop(worker);
+        f.client.retry_capture(&id).unwrap();
+        assert_eq!(fs::read(&other_path).unwrap(), before, "unrelated pending job changed");
+        assert_eq!(server.state.lock().unwrap().capture_id, id);
+        assert_eq!(f.client.jobs().unwrap().iter().find(|j| j.id == id).unwrap().status, "ready");
+        let requests = server.state.lock().unwrap().requests;
+        assert!(f.client.retry_capture(&id).is_err(), "ready job was revived");
+        assert!(f.client.retry_capture("../invalid").is_err());
+        assert!(f.client.retry_capture(&random_id().unwrap()).is_err());
+        let original = f.client.jobs().unwrap().into_iter().find(|j| j.id == other).unwrap();
+        for refusal in ["cancelled", "expired", "old-generation"] {
+            let mut job = original.clone();
+            match refusal {
+                "cancelled" => job.status = "cancelled".into(),
+                "expired" => job.created = now() - RETENTION - 1,
+                _ => job.generation = random_id().unwrap(),
+            }
+            f.client.save_job(&job).unwrap();
+            let before = fs::read(&other_path).unwrap();
+            assert!(f.client.retry_capture(&other).unwrap_err().to_string().contains("capture_not_retryable"));
+            assert_eq!(fs::read(&other_path).unwrap(), before, "{refusal} changed");
+        }
+        assert_eq!(server.state.lock().unwrap().requests, requests, "refusal made a request");
+    }
+}
+
+#[cfg_attr(test, test)]
 pub fn hosted_paths_symlinks_oversize_and_unknown_assets() {
+    use std::os::unix::fs::PermissionsExt;
     let f = Fixture::new();
     let bundle = f.bundle();
     let publication_lock = bundle.join(".publication.lock");
@@ -1692,6 +1695,42 @@ pub fn hosted_paths_symlinks_oversize_and_unknown_assets() {
     assert!(snapshot(&bundle, &stage.0).is_err());
     fs::remove_file(&publication_lock).unwrap();
     let stage = Scratch::new(&f.client.state).unwrap();
+    let notes_log = bundle.join("notes-ui.log");
+    let mut diagnostic = OpenOptions::new().write(true).create_new(true).mode(0o600)
+        .open(&notes_log).unwrap();
+    diagnostic.write_all(b"synthetic Chromium diagnostic\n").unwrap();
+    drop(diagnostic);
+    let files = snapshot(&bundle, &stage.0).expect("notes stderr is local diagnostics");
+    assert!(!files.iter().any(|file| file.path == "notes-ui.log"));
+    assert!(!stage.0.join("notes-ui.log").exists());
+    assert_eq!(fs::read(&notes_log).unwrap(), b"synthetic Chromium diagnostic\n");
+    fs::set_permissions(&notes_log, fs::Permissions::from_mode(0o620)).unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
+    assert!(snapshot(&bundle, &stage.0).is_err());
+    fs::remove_file(&notes_log).unwrap();
+    std::os::unix::fs::symlink(&outside_lock, &notes_log).unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
+    assert!(snapshot(&bundle, &stage.0).is_err());
+    fs::remove_file(&notes_log).unwrap();
+    fs::hard_link(&outside_lock, &notes_log).unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
+    assert!(snapshot(&bundle, &stage.0).is_err());
+    fs::remove_file(&notes_log).unwrap();
+    fs::create_dir(&notes_log).unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
+    assert!(snapshot(&bundle, &stage.0).is_err());
+    fs::remove_dir(&notes_log).unwrap();
+    // A local-only sidecar must not satisfy a manifest's evidence reference.
+    fs::write(&notes_log, b"diagnostic").unwrap();
+    fs::set_permissions(&notes_log, fs::Permissions::from_mode(0o600)).unwrap();
+    let metadata = fs::read(bundle.join("apparent.json")).unwrap();
+    fs::write(bundle.join("apparent.json"), br#"{"video":"notes-ui.log"}"#).unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
+    assert!(snapshot(&bundle, &stage.0).unwrap_err().to_string()
+        .contains("Unsafe or missing bundle asset reference"));
+    fs::write(bundle.join("apparent.json"), metadata).unwrap();
+    fs::remove_file(&notes_log).unwrap();
+    let stage = Scratch::new(&f.client.state).unwrap();
     fs::write(bundle.join("unexpected.svg"), b"asset").unwrap();
     assert!(
         snapshot(&bundle, &stage.0).is_err(),
@@ -1714,50 +1753,6 @@ pub fn hosted_paths_symlinks_oversize_and_unknown_assets() {
             .to_string()
             .contains("file_too_large")
     );
-}
-
-#[cfg_attr(test, test)]
-pub fn hosted_oversized_upload_retains_actionable_details_across_restart() {
-    for asset in ["recording.mov", "audio.wav"] {
-        let f = Fixture::new();
-        let server = Server::new("");
-        f.authorize(&server.url);
-        let bundle = f.bundle();
-        File::create(bundle.join(asset)).unwrap().set_len(MAX_FILE_BYTES + 1).unwrap();
-        let id = f.client.enqueue(&bundle).unwrap();
-        f.client.process_once().unwrap();
-        let restarted = Client::new(provider(f.client.config.clone()));
-        restarted.process_once().unwrap();
-        let status = restarted.status(false).unwrap();
-        let job = &status["queue"][0];
-        assert_eq!(job["id"], id);
-        assert_eq!(job["status"], "failed");
-        assert_eq!(job["error"], "file_too_large");
-        assert_eq!(job["attempts"], 1, "permanent size failure must not retry automatically");
-        assert_eq!(job["sizeFailure"], json!({"path":asset,"size":MAX_FILE_BYTES+1,"limit":MAX_FILE_BYTES}));
-        assert_eq!(server.state.lock().unwrap().requests, 0, "reject before reservation or upload");
-        assert_eq!(fs::metadata(bundle.join(asset)).unwrap().len(), MAX_FILE_BYTES + 1);
-        assert!(!status.to_string().contains("synthetic-upload-secret"));
-
-        // An older durable job has no structured details; retain its stable code.
-        let path = restarted.state.join(format!("{id}.job"));
-        let current: Value = serde_json::from_slice(&read_private(&path, JSON_LIMIT).unwrap()).unwrap();
-        let mut legacy = current.clone();
-        legacy.as_object_mut().unwrap().remove("sizeFailure");
-        atomic_json(&path, &legacy).unwrap();
-        assert_eq!(restarted.status(false).unwrap()["queue"][0]["error"], "file_too_large");
-        assert!(restarted.status(false).unwrap()["queue"][0]["sizeFailure"].is_null());
-
-        // Explicit recovery clears stale details before attempting changed bytes.
-        atomic_json(&path, &current).unwrap();
-        fs::write(bundle.join(asset), b"small replacement").unwrap();
-        restarted.retry().unwrap();
-        assert!(restarted.status(false).unwrap()["queue"][0]["sizeFailure"].is_null());
-        restarted.process_once().unwrap();
-        let recovered = restarted.status(false).unwrap();
-        assert_eq!(recovered["queue"][0]["status"], "ready");
-        assert!(recovered["queue"][0]["sizeFailure"].is_null());
-    }
 }
 
 #[cfg_attr(test, test)]

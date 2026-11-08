@@ -708,9 +708,13 @@ pub fn timeline(bundle: &ApparentBundle) -> Vec<String> {
 
 /// Lossless typed feedback shared by the ordinary and interleaved timelines.
 pub(crate) fn typed_note_text(bundle: &ApparentBundle, pin: u32, text: &str) -> String {
-    let frame = bundle.marks.iter().find(|m| m.pin == Some(pin)).and_then(|m| m.frame.as_deref());
-    let mut label = format!("Typed note · pin {pin}{}:", frame.map(|f| format!(" · {f}")).unwrap_or_default());
-    for line in text.lines() { label.push_str(&format!("\n    {line}")); }
+    let frame = bundle.marks.iter().find(|m| m.pin == Some(pin))
+        .and_then(|m| m.frame.as_deref());
+    let mut label = format!("Typed note · pin {pin}{}:",
+        frame.map(|f| format!(" · {f}")).unwrap_or_default());
+    for line in text.lines() {
+        label.push_str(&format!("\n    {line}"));
+    }
     label
 }
 
@@ -910,7 +914,7 @@ fn summary_markdown_formatted(
     }));
     // Text-only captures still need one timed stream: adding a note must never
     // suppress speech merely because no keyframe was selected.
-    if bundle.keyframes.is_empty() {
+    if bundle.keyframes.is_empty() && !app_events.is_empty() {
         app_events.extend(bundle.transcript.segments.iter().map(|s| (s.t0, format!("“{}”", s.text))));
         if bundle.transcript.segments.is_empty() && !bundle.transcript.text.trim().is_empty() {
             app_events.push((0, format!("“{}”", bundle.transcript.text.trim())));
@@ -1545,6 +1549,7 @@ mod tests {
 
     fn stroke(points: &[[f32; 2]], t: u64) -> Stroke {
         Stroke {
+            color: None,
             t0: t,
             t1: t + 100,
             fw: 1000,
@@ -1652,6 +1657,7 @@ mod tests {
     /// tip and a barb below.
     fn real_stroke(pts: &[i32], t: u64) -> Stroke {
         Stroke {
+            color: None,
             fw: 1728,
             fh: 1117,
             pts: pts.to_vec(),
@@ -1711,6 +1717,7 @@ mod tests {
     fn real_hooked_underlines_are_not_arrows() {
         for pts in REAL_HOOKED_UNDERLINES {
             let stroke = Stroke {
+                color: None,
                 fw: 2560,
                 fh: 1440,
                 pts: pts.to_vec(),
@@ -2196,11 +2203,20 @@ mod tests {
         assert!(summary.contains("- #1 (0:05) “This row is too dense.”"));
         assert!(!summary.contains("No transcript"));
 
+        let mut text_only = bundle.clone();
+        text_only.keyframes.clear();
+        for context in [false, true] {
+            let summary = summary_markdown_with(&text_only, std::path::Path::new("/tmp"), context);
+            assert!(summary.ends_with("“This row is too dense.”\n"));
+            assert!(!summary.contains("· 0:03"));
+        }
+
         // Typed feedback belongs between the surrounding spoken keyframes, once,
         // retaining its exact text and the original pin/frame reference.
         let mut mixed = bundle.clone();
+        mixed.marks[0].pin = Some(1);
         mixed.events.push(InteractionEvent::Note { t: 6000, pin: 1, x: 0.5, y: 0.5,
-            text: "Exact typed feedback\nSecond line".into() });
+            text: "Exact typed feedback\n  Second line  ".into() });
         let mut later = mixed.keyframes[0].clone();
         later.index = 2; later.t = 9000; later.said = Some("Later spoken feedback".into());
         later.file = "frames/frame-02.png".into(); later.mark_id = None; later.reason = KeyframeReason::SceneChange;
@@ -2210,19 +2226,32 @@ mod tests {
             assert_eq!(summary.matches("Exact typed feedback").count(), 1);
             assert!(summary.find("This row").unwrap() < summary.find("Exact typed feedback").unwrap());
             assert!(summary.find("Exact typed feedback").unwrap() < summary.find("Later spoken feedback").unwrap());
-            assert!(summary.contains("Second line"));
-            assert!(summary.contains("0:06 Typed note · pin 1"));
+            assert!(summary.contains("0:06 Typed note · pin 1 · frames/frame-01.png:\n    Exact typed feedback\n      Second line  \n"));
         }
 
         mixed.keyframes[0].reason = KeyframeReason::Whiteboard;
-        let whiteboard = summary_markdown_with(&mixed, std::path::Path::new("/tmp"), true);
-        assert_eq!(whiteboard.matches("Exact typed feedback").count(), 1);
+        for context in [false, true] {
+            let whiteboard = summary_markdown_with(&mixed, std::path::Path::new("/tmp"), context);
+            assert_eq!(whiteboard.matches("Exact typed feedback").count(), 1);
+            assert!(whiteboard.contains("This row is too dense."));
+            assert!(whiteboard.contains("Later spoken feedback"));
+        }
 
         mixed.keyframes.clear();
+        mixed.transcript.segments.push(TranscriptSegment {
+            t0: 9000, t1: 10000, text: "Later spoken feedback".into(),
+        });
         for context in [false, true] {
             let summary = summary_markdown_with(&mixed, std::path::Path::new("/tmp"), context);
             assert_eq!(summary.matches("Exact typed feedback").count(), 1);
             assert!(summary.find("This row").unwrap() < summary.find("Exact typed feedback").unwrap());
+            assert!(summary.find("Exact typed feedback").unwrap() < summary.find("Later spoken feedback").unwrap());
+        }
+        mixed.transcript.segments.clear();
+        for context in [false, true] {
+            let summary = summary_markdown_with(&mixed, std::path::Path::new("/tmp"), context);
+            assert_eq!(summary.matches("This row is too dense.").count(), 1);
+            assert_eq!(summary.matches("Exact typed feedback").count(), 1);
         }
 
         // Audio but no speech model yet: the summary says so instead of staying quiet.

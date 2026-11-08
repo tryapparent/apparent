@@ -6,11 +6,6 @@
 
 Shared macOS/Linux implementation, default-off `hostedSync` experiment. This is an implementation candidate, not a deployed service or proof of native GUI behavior. No Windows support. See [hosted-api.md](hosted-api.md) for the v1 protocol and hosting prerequisites.
 
-Readiness evidence, action-scoped holds and cutover preparation are authoritative
-in [Deployment prerequisites](hosted-api.md#deployment-prerequisites). A deployment
-hold does not stop local tests, read-only investigation or candidate preparation;
-those do not authorize activation or turn synthetic proof into live acceptance.
-
 ## Implementation ownership
 
 Desktop account controls appear by default in **Settings → General**. The
@@ -32,6 +27,11 @@ It builds independently with anyhow, Clap derive, libc, serde and serde_json,
 plus the candidate's pinned age, ed25519-dalek and zeroize dependencies. It does not build the root app, GPUI, Engine,
 GStreamer, Swift helper or root build script. Runtime curl and system SHA-256
 requirements still apply; supported platforms remain macOS and Linux.
+
+The account control receives only an optional bounded `accountInitial` from verified
+email on device approval/renewal. Old credentials/server responses use a neutral
+icon; full emails and credentials never enter renderer state. Fresh local readback
+replaces or clears the hint on account change, disconnect or unusable state.
 
 ### Explicit public-copy admission
 
@@ -131,41 +131,6 @@ apparent connect logout
 
 `upload` explicitly queues that completed bundle **under a fresh ID on every invocation**, then makes one processing pass. It supersedes any unfinished local job for that bundle/server without changing an already reserved remote manifest. Use it to recover a changed bundle, an expired reservation or a tombstoned ID, or to deliberately share a previously cancelled capture. Automatic completion notifications deduplicate only retained queue records, including cancelled/expired records. Admission of another bundle prunes terminal or expired records; after pruning, a repeated completion notification for the original bundle can create a fresh ID. There is no permanent dedup history and no automatic historical scan. `retry` keeps existing IDs, resets eligible failed/pending jobs and makes one processing pass; it cannot enable disabled uploads or revive cancelled jobs. The running desktop worker resumes persisted pending jobs at startup, checks every two seconds, and retries with bounded exponential backoff (eight attempts, at most seven days, 100 queue records). CLI-only users run `retry` to resume after the command exits. `disable` acquires the queue lock before reading settings, clears consent/enabled state and cancels unfinished jobs durably under that same lock. `logout` additionally removes local read/upload transport credentials and renewal journals under the lock, then attempts whole-device-grant revocation with a shared two-second deadline outside all queue/config locks. An expired renewable access token uses the refresh credential without an expired bearer header. Offline or failed revocation does not undo local logout; a copied grant can remain usable remotely until revoked or expired. Neither operation removes independent decryption-key artifacts. Already sent server data is not deleted by local logout; it expires under the server's seven-day policy.
 
-### Installed worker readiness proof
-
-The manually invoked `native-proof-mac.yml` workflow builds/installs only the candidate
-and runs `service/test/native/desktop-worker.mjs` against
-the signed installed app and actual local Worker/D1/R2. Dispatch it with
-`gh workflow run verification-mac.yml --ref <candidate-branch> -f connect_worker_proof=true`;
-the existing registered dispatcher calls this focused route only on a manually
-selected non-main branch. The full verification job keeps its main-only guard.
-Inspect the exact
-run SHA and `mac-connect-worker-native` artifact, including candidate identity,
-scenario report and cleanup receipt. The dependency cache uses the main Mac Rust
-job's `rust` namespace and root/engine/client workspace inputs, retaining the
-automatic OS, architecture, compiler, environment and lock hashes. `cache-on-failure`
-retains reusable dependencies after downstream failure; it does not cache a proof
-verdict. Inspect the action's actual restored-key/size log, not just its configured
-key or an exact-match boolean. The observed cold build/install took 25m24s: the
-stage allows 30 minutes. Every step has an explicit cap, totaling 58 minutes
-including setup/restore, the four-minute scenario, cleanup and evidence. The
-hosted job allows 65 minutes, leaving seven for job overhead and post-action
-cache saving. Warm reuse is expected to reduce dependency compilation, but
-restoration and native success must be verified on the actual run. These Actions
-limits do not change NoMac spending/session limits. This focused route runs no full suites,
-produces no release receipt and does not replace main-only verification. It is
-restricted to standard GitHub-hosted `macos-15-intel`, with read-only repository
-permission and no secrets or production bindings. Later native consumers may
-extend this route through reviewed, bounded scenarios. A synthetic read approval
-does not enable uploads or discover history. Separate explicit upload approval
-allows a staged synthetic job; a failed PUT remains pending, then the restarted
-Desktop worker completes the same encrypted job without a CLI retry or account
-probe. Fetch compares all six files; disabled restart stays offline and logout
-preserves unrelated config. Only the allowlisted evidence directory is uploaded,
-excluding the disposable home and its credentials. This is not real Google,
-browser-cookie, deployed-service or real-capture proof. Existing activation and
-schema holds remain unchanged.
-
 ### Renewable native grants
 
 The Better Auth candidate configures **3,600-second access tokens** and **2,592,000-second (30-day) refresh tokens**. The client uses the returned positive `expiresIn` and `refreshExpiresIn` seconds, not hardcoded lifetimes; it stores conservative Unix-second deadlines measured from before the request. Approved device polling and `POST /v1/token/refresh` must return `accessToken`, `refreshToken`, `scope`, `expiresIn`, `refreshExpiresIn` and `grantId`. Refresh sends only `{"refreshToken":...}`: it cannot request a scope or escalate a read grant. The returned scope must match, and `grantId` must remain stable. Server grant IDs are opaque and stored separately from the local 32-hex generation.
@@ -177,6 +142,11 @@ Local `status` does not make network requests. `readAuth` and `uploadAuth` expos
 One private per-scope advisory renewal lock serializes processes. It is never acquired while holding queue/config locks; the existing order remains **worker → queue → config**. No queue/config lock spans refresh network waits. A response is synced privately before publication; the journal records its completed state. Restart recovers a completed response without another rotation. Publication checks caller/job authorization, then rereads the exact credential and disable-cancellation epoch under the queue lock, so a late response cannot replace a new login/logout or cross a completed disable. Disable can let an in-flight rotation finish into its private journal, but cannot publish it for a cancelled job; a later independently authorized account operation can recover it without restoring uploads. The private `hosted/cancellation` marker is runtime cancellation state, not a preference or encryption key. A crash before a completed response is durably marked requires the server's bounded refresh-replay protection; after that window, reapproval can be necessary. Authentication does not establish encryption trust (#189).
 
 Completion publishes a random 32-lowercase-hex ID to the disk queue before clipboard construction. Clipboard text starts with `apparent fetch <id> --out ./<id>.apparent --wait 120` and `apparent inspect ./<id>.apparent`, even while upload is pending. A one-line README Agents link handles a missing CLI and leads to the maintained installation guide; image-inspection and the configured video-proof request precede the duration header and timestamped words/marks, which remain last for paste recognition. The prompt omits repeated login instructions, server lines and sender-local paths. The receiving CLI uses its configured server; configure a custom origin separately when required. Sign-in alone does not select this format: a retained, active private hosted job must exist. Without one, the prompt uses a shell-quoted local inspect path and local image/crop guidance. Archived summaries and bundle assets remain unchanged. It includes no bearer token. Hashing, media staging, network requests and retries run outside capture completion/paste. Network, auth, quota and upload errors leave the original capture and local clipboard handoff usable. Queue errors fall back to local-only handoff. `apparent connect status` is local JSON with queue path, status, attempts, next retry and sanitized error codes; `--account` explicitly queries account quota.
+
+For scoped recovery, `apparent connect retry --id <capture-id>` resets and
+processes only that retained pending/failed capture, preserving its ID and
+leaving unrelated queued work unchanged. It cannot revive cancelled, expired,
+ready or previous-sign-in jobs. Without `--id`, Retry retains its bulk behavior.
 
 ## Fetch on an agent's computer
 
@@ -226,16 +196,13 @@ The allowlist exactly matches the API: summary, metadata, contact sheets includi
 
 The server quota is **500,000,000 bytes per account**. Separately, v1 accepts at most 512 files and **90,000,000 bytes per file**, with a 128KiB manifest request. `file_too_large` is reported in queue status; the capture stays local. There is no multipart/chunk protocol and the client never drops a large recording/audio asset to fit. Real larger recordings therefore need a future coordinated protocol change. Server retention is seven days after reservation, with incomplete reservations reclaimed after 24 hours; a tombstoned ID requires a fresh explicit `apparent connect upload`, not a retry of that ID.
 
-When local staging rejects an oversized asset, the private durable job and local
-`apparent connect status` queue entry also carry
-`sizeFailure: {path, size, limit}`. Sizes are exact bytes; `path` is an allowlisted
-bundle-relative asset name, never the source directory or credential path. The
-same typed reason survives encryption staging context and process restart. Size
-failures stop automatic retries before reservation or media transfer. Explicit
-CLI retry clears the previous details and checks the files again; unchanged
-oversized files fail again. Older jobs without details remain readable and retain
-their original error code. Successful recovery clears the details. This is local
-diagnostic state, not a server response, telemetry payload or implemented pocket UI.
+Local machinery is excluded before building either plaintext or encrypted
+snapshots: Engine's empty `.publication.lock` and Desktop's `notes-ui.log`
+(Chromium stderr). Both must be owned regular files with one link and no
+group/other write permission. Neither is an allowed remote asset or evidence
+reference; originals stay local. Unknown files still fail the upload. Known
+asset failures retain their safe queue codes through encryption's snapshot
+context rather than being misreported as an endpoint-key problem.
 
 ## Verification
 
@@ -251,18 +218,3 @@ it is not live Google, deployed Worker, Electron routing or native platform proo
 `cargo test -j 3 --offline hosted_ -- --test-threads=2` exercises the production curl subprocess against an isolated loopback HTTP server, synthetic device auth, complete bundle upload/fetch, restart queue recovery, pending pointers, quota/disable/logout, pending/transport deadlines, corruption, path and symlink rejection and v1 bounds. Tests use private synthetic config/bundle directories, not the user's credentials/captures. Native capture/paste and macOS tooling still require platform proof; a Linux build is not GUI proof.
 
 The independent package tests also exercise renewable account/upload/fetch/share/progress calls, proactive expiry and unexpected 401, separate-process single ownership, transient/permanent refresh failures, scope/grant mismatch, delayed refresh versus disable/logout/new generation, secret-free status, expired-grant revocation, offline logout and process exit after durable response before credential publication. These are synthetic protocol tests, not Better Auth/browser integration evidence; candidate backend-client integration and macOS/Linux native GUI checks remain separate gates.
-
-### Fetch before upload reservation
-
-A private copy-handoff pointer can be emitted from the local queue before the
-sender reserves the capture on the API. `apparent fetch <id> --wait 120` waits
-within that budget for both a privacy-preserving `not_found` and a known pending
-capture. A 404 does not establish whether a capture exists: absent, expired,
-deleted, wrong-account and wrong-origin requests remain indistinguishable.
-Fetch gives recipient guidance to check `apparent connect status`, confirm the
-API origin and approved read account with the sender, and ask for upload status
-or a fresh handoff. Authorization failures need read approval rather than polling.
-The private destination guard, integrity validation and atomic complete-bundle
-publication still apply. Loopback tests exercise queue pointer → delayed upload
-→ fetch and unavailable/unauthorized failures; these are not live service or
-native clipboard proof.

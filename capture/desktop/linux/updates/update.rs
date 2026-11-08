@@ -15,9 +15,9 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 const REPO: &str = "tryapparent/apparent";
-// Last published tip before the November 2026 signing/identity rewrite.
-// Only the dedicated bridge tag may retain this history; never merge it into Main.
-const LEGACY_MAIN: &str = "a5cf47d7dc7d0f89b1552cfb2d5e4b0ab489526a";
+// The pre-signing tip and its last published compatibility bridge. These
+// histories stay out of Main; only exact-tree release bridges may cross them.
+const LEGACY_MAIN: [&str; 2] = ["a5cf47d7dc7d0f89b1552cfb2d5e4b0ab489526a", "1a55d5ebe05c948211ff74356c00b8dbfe58ecc6"];
 static CHECK: Mutex<()> = Mutex::new(());
 
 pub fn set_channel_in(path: &Path, channel: &str) -> Result<()> {
@@ -342,16 +342,13 @@ fn first_usable_main(releases: Vec<Release>, arch: &str, fetch: &impl Fn(&str) -
 }
 
 fn latest_main_candidate(arch: &str) -> Result<Candidate> {
+    latest_main_candidate_with(arch, &|url| get(url, None))
+}
+
+fn latest_main_candidate_with(arch: &str, fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Candidate> {
     // Release lists include Mac previews, old Scrawl assets and stable releases.
     // GitHub pages by creation date, not publication date: inspect all pages before choosing.
-    let mut releases = Vec::new();
-    for page in 1.. {
-        let body = get(&format!("https://api.github.com/repos/{REPO}/releases?per_page=10&page={page}"), None)?;
-        let page_releases: Vec<Release> = serde_json::from_slice(&body).context("invalid release list")?;
-        if page_releases.is_empty() { break; }
-        releases.extend(page_releases);
-    }
-    first_usable_main(releases, arch, &|url| get(url, None))?
+    first_usable_main(release_history(fetch)?, arch, fetch)?
         .context("no published Linux main preview yet")
 }
 
@@ -368,28 +365,61 @@ fn get(url: &str, out: Option<&Path>) -> Result<Vec<u8>> {
         cmd.args(["--max-filesize", "1073741824"]);
         cmd.arg("--output").arg(path);
     } else {
-        cmd.args(["--max-filesize", "262144"]);
+        // A page of 100 releases includes component assets and can exceed 256 KiB.
+        // Keep metadata bounded while avoiding dozens of anonymous API requests.
+        cmd.args(["--max-filesize", "4194304"]);
     }
     let result = cmd.output().context("curl is required for updates")?;
     ensure!(result.status.success(), "download failed: {}", String::from_utf8_lossy(&result.stderr));
     Ok(result.stdout)
 }
 
-fn stable_candidate(arch: &str) -> Result<Candidate> {
-    let body = get(&format!("https://api.github.com/repos/{REPO}/releases/latest"), None)?;
-    let release: Release = serde_json::from_slice(&body).context("invalid stable release")?;
-    ensure!(release.tag_name.starts_with('v') && release.tag_name[1..].bytes().all(|b| b.is_ascii_digit() || b == b'.'), "invalid stable tag");
+fn stable_candidate(arch: &str) -> Result<Option<Candidate>> {
+    stable_candidate_with(arch, &|url| get(url, None))
+}
+
+fn release_history(fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Vec<Release>> {
+    let mut releases = Vec::new();
+    let mut complete = false;
+    for page in 1..=10 {
+        let body = fetch(&format!("https://api.github.com/repos/{REPO}/releases?per_page=100&page={page}"))?;
+        let page_releases: Vec<Release> = serde_json::from_slice(&body).context("invalid release list")?;
+        ensure!(page_releases.len() <= 100, "oversized release page");
+        complete = page_releases.len() < 100;
+        releases.extend(page_releases);
+        if complete { break; }
+    }
+    ensure!(complete, "release discovery exceeded its page limit");
+    Ok(releases)
+}
+
+fn stable_candidate_with(arch: &str, fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Option<Candidate>> {
+    let releases = release_history(fetch)?;
+
+    // GitHub's /latest can name a standalone component instead of the desktop app.
+    // Only published versioned desktop releases belong to the Stable channel.
+    let mut releases: Vec<_> = releases.into_iter().filter_map(|release| {
+        if release.draft || release.prerelease || release.published_at.is_none() { return None; }
+        let version = release.tag_name.strip_prefix('v')?.split('.')
+            .map(str::parse::<u32>).collect::<Result<Vec<_>, _>>().ok()?;
+        let name = format!("Apparent-{}-linux-{arch}.AppImage", &release.tag_name[1..]);
+        (release.assets.iter().any(|asset| asset.name == name)
+            && release.assets.iter().any(|asset| asset.name == format!("{name}.sha256")))
+            .then_some((version, release))
+    }).collect();
+    releases.sort_by(|a, b| b.0.cmp(&a.0));
+    let Some((_, release)) = releases.into_iter().next() else { return Ok(None); };
     let name = format!("Apparent-{}-linux-{arch}.AppImage", &release.tag_name[1..]);
     let image = release.assets.iter().find(|a| a.name == name).context("no Linux AppImage in the stable release yet")?;
     let checksum = release.assets.iter().find(|a| a.name == format!("{name}.sha256")).context("stable release has no checksum")?;
     let prefix = format!("https://github.com/{REPO}/releases/download/{}/", release.tag_name);
     ensure!(image.browser_download_url == format!("{prefix}{name}") && checksum.browser_download_url == format!("{prefix}{name}.sha256"), "unexpected release asset URL");
-    let body = get(&checksum.browser_download_url, None)?;
+    let body = fetch(&checksum.browser_download_url)?;
     let text = std::str::from_utf8(&body)?;
     let (hash, file) = text.trim().split_once(char::is_whitespace).context("invalid release checksum")?;
     ensure!(file.trim() == name, "checksum refers to another file");
     validate_hash(hash)?;
-    Ok(Candidate { id: release.tag_name, channel: "stable", url: image.browser_download_url.clone(), sha256: hash.to_owned() })
+    Ok(Some(Candidate { id: release.tag_name, channel: "stable", url: image.browser_download_url.clone(), sha256: hash.to_owned() }))
 }
 
 fn installed_id(image: &Path) -> Option<(String, String)> {
@@ -444,9 +474,8 @@ fn main_advances(current: Option<&str>, candidate: &Candidate, fetch: &impl Fn(&
     }
 }
 
-/// A legacy updater stages the bridge tag's identity, while the bridge carries
-/// the exact verified canonical build. Authenticate that one transition using
-/// GitHub's immutable commit objects before applying ordinary forward ancestry.
+/// Legacy updaters record a bridge ID while executing the unchanged canonical
+/// build. Authenticate that exact mapping before checking normal forward ancestry.
 fn main_advances_from_bridge(current: Option<&str>, candidate: &Candidate, compiled: Option<&str>,
     fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<bool>
 {
@@ -464,8 +493,8 @@ fn main_advances_from_bridge(current: Option<&str>, candidate: &Candidate, compi
     };
     let bridge = commit(current)?;
     ensure!(bridge["parents"].as_array().is_some_and(|parents| parents.len() == 2)
-        && bridge["parents"][0]["sha"] == LEGACY_MAIN
-        && bridge["parents"][1]["sha"].as_str() == Some(compiled), "not the signing migration bridge");
+        && bridge["parents"][0]["sha"].as_str().is_some_and(|parent| LEGACY_MAIN.contains(&parent))
+        && bridge["parents"][1]["sha"].as_str() == Some(compiled), "not a known Main compatibility bridge");
     let source = commit(compiled)?;
     let tree = source["tree"]["sha"].as_str().context("missing bridge source tree")?;
     ensure!(tree.len() == 40 && tree.bytes().all(|b| b.is_ascii_hexdigit())
@@ -590,7 +619,8 @@ fn check() -> Result<bool> {
     let candidate = if status["channel"] == "main" {
         latest_main_candidate(arch)?
     } else {
-        stable_candidate(arch)?
+        let Some(candidate) = stable_candidate(arch)? else { return Ok(false); };
+        candidate
     };
     let name = image.file_name().context("AppImage has no name")?.to_string_lossy();
     let failed = image.with_file_name(format!(".{name}.failed-update.json"));
@@ -705,44 +735,36 @@ mod tests {
         let tree = "d".repeat(40);
         let next = "e".repeat(40);
         let candidate = Candidate { id: next.clone(), channel: "main", url: String::new(), sha256: String::new() };
-        for fault in ["", "parent", "tree", "identity", "offline", "extra-parent", "rollback"] {
-            let fetch = |url: &str| -> Result<Vec<u8>> {
-                let value = if url.contains("/compare/") {
-                    let base = if url.contains(&format!("/{bridge}...")) { &bridge } else { &source };
-                    serde_json::json!({"base_commit":{"sha":base}, "status":
-                        if base == &bridge { "diverged" } else if fault == "rollback" { "behind" } else { "ahead" }})
-                } else if url.ends_with(&format!("/git/commits/{bridge}")) {
-                    if fault == "offline" { anyhow::bail!("offline") }
-                    let mut parents = vec![serde_json::json!({"sha":if fault == "parent" { &source } else { LEGACY_MAIN }}), serde_json::json!({"sha":source})];
-                    if fault == "extra-parent" { parents.push(serde_json::json!({"sha":next})); }
-                    serde_json::json!({"sha":if fault == "identity" { &source } else { &bridge }, "parents":parents,
-                        "tree":{"sha":if fault == "tree" { &source } else { &tree }}})
-                } else {
-                    assert!(url.ends_with(&format!("/git/commits/{source}")));
-                    serde_json::json!({"sha":source,"tree":{"sha":tree}})
+        for legacy in LEGACY_MAIN {
+            for fault in ["", "parent", "tree", "identity", "offline", "extra-parent", "rollback"] {
+                let fetch = |url: &str| -> Result<Vec<u8>> {
+                    let value = if url.contains("/compare/") {
+                        let base = if url.contains(&format!("/{bridge}...")) { &bridge } else { &source };
+                        serde_json::json!({"base_commit":{"sha":base}, "status":
+                            if base == &bridge { "diverged" } else if fault == "rollback" { "behind" } else { "ahead" }})
+                    } else if url.ends_with(&format!("/git/commits/{bridge}")) {
+                        if fault == "offline" { anyhow::bail!("offline") }
+                        let mut parents = vec![serde_json::json!({"sha":if fault == "parent" { &source } else { legacy }}), serde_json::json!({"sha":source})];
+                        if fault == "extra-parent" { parents.push(serde_json::json!({"sha":next})); }
+                        serde_json::json!({"sha":if fault == "identity" { &source } else { &bridge }, "parents":parents,
+                            "tree":{"sha":if fault == "tree" { &source } else { &tree }}})
+                    } else {
+                        assert!(url.ends_with(&format!("/git/commits/{source}")));
+                        serde_json::json!({"sha":source,"tree":{"sha":tree}})
+                    };
+                    Ok(serde_json::to_vec(&value)?)
                 };
-                Ok(serde_json::to_vec(&value)?)
-            };
-            let result = main_advances_from_bridge(Some(&bridge), &candidate, Some(&source), &fetch);
-            match fault {
-                "" => assert!(result.unwrap()),
-                "rollback" => assert!(!result.unwrap()),
-                _ => assert!(result.is_err(), "{fault}"),
+                let result = main_advances_from_bridge(Some(&bridge), &candidate, Some(&source), &fetch);
+                match fault {
+                    "" => assert!(result.unwrap()),
+                    "rollback" => assert!(!result.unwrap()),
+                    _ => assert!(result.is_err(), "{fault}"),
+                }
             }
         }
         // Once D is staged while bridge C is running, a repeat check must use D.
         assert!(!main_advances_from_bridge(Some(&next), &candidate, Some(&source), &|_| panic!("staged identity needs no bridge lookup")).unwrap());
         assert!(main_advances_from_bridge(Some(&bridge), &candidate, None, &|_| anyhow::bail!("no embedded source")).is_err());
-    }
-
-    #[test]
-    fn corrected_feed_cannot_be_hidden_by_the_permanent_legacy_bridge() {
-        let legacy = Release {
-            tag_name: format!("linux-main-{}", "a".repeat(40)), prerelease: true, draft: false,
-            published_at: Some("2099-01-01T00:00:00Z".into()),
-            assets: vec![],
-        };
-        assert!(main_releases(vec![legacy], "x86_64").is_empty());
     }
 
     #[test]
@@ -770,6 +792,25 @@ mod tests {
     }
 
     #[test]
+    fn canonical_main_preview_is_not_hidden_by_the_legacy_bridge() {
+        let image = "Apparent-0.3.13-linux-x86_64.AppImage";
+        let release = |tag: String, published: &str| Release {
+            assets: [image.to_owned(), format!("{image}.sha256")].into_iter().map(|name| ReleaseAsset {
+                browser_download_url: format!("https://github.com/{REPO}/releases/download/{tag}/{name}"), name,
+            }).collect(),
+            tag_name: tag, prerelease: true, draft: false, published_at: Some(published.into()),
+        };
+        let releases = vec![
+            release(format!("linux-main-{}", "a".repeat(40)), "2099-01-01T00:00:00Z"),
+            release(format!("linux-main-v2-{}", "b".repeat(40)), "2026-11-04T00:00:00Z"),
+        ];
+        let candidate = first_usable_main(releases, "x86_64", &|_| {
+            Ok(format!("{}  {image}", "c".repeat(64)).into_bytes())
+        }).unwrap().unwrap();
+        assert_eq!(candidate.id, "b".repeat(40));
+    }
+
+    #[test]
     fn main_channel_rejects_other_architecture_and_unpublished_releases() {
         let tag = format!("linux-main-v2-{}", "a".repeat(40));
         let image = "Apparent-0.3.13-linux-aarch64.AppImage";
@@ -787,6 +828,79 @@ mod tests {
         assert!(first_usable_main(vec![draft, unpublished], "aarch64", &|_| panic!("private releases must not fetch")).unwrap().is_none());
         let candidate = first_usable_main(vec![release()], "aarch64", &|_| Ok(format!("{}  {image}", "c".repeat(64)).into_bytes())).unwrap().unwrap();
         assert!(candidate.url.ends_with("-linux-aarch64.AppImage"));
+    }
+
+    fn stable_release_fixture(tag: &str, arch: &str) -> serde_json::Value {
+        let name = format!("Apparent-{}-linux-{arch}.AppImage", tag.strip_prefix('v').unwrap_or(tag));
+        let prefix = format!("https://github.com/{REPO}/releases/download/{tag}/");
+        serde_json::json!({"tag_name": tag, "draft": false, "prerelease": false,
+            "published_at": "2026-11-01T00:00:00Z", "assets": [
+                {"name": name, "browser_download_url": format!("{prefix}{name}")},
+                {"name": format!("{name}.sha256"), "browser_download_url": format!("{prefix}{name}.sha256")}]})
+    }
+
+    #[test]
+    fn stable_discovers_desktop_versions_after_component_release_pages() {
+        let candidate = stable_candidate_with("x86_64", &|url| {
+            if url.ends_with("?per_page=100&page=1") {
+                return Ok(serde_json::to_vec(&vec![stable_release_fixture("recipient-component", "x86_64"); 100])?);
+            }
+            if url.ends_with("?per_page=100&page=2") {
+                return Ok(serde_json::to_vec(&vec![stable_release_fixture("v0.3.9", "x86_64"),
+                    stable_release_fixture("v0.3.14", "x86_64"), stable_release_fixture("v0.3.10", "x86_64")])?);
+            }
+            assert_eq!(url, format!("https://github.com/{REPO}/releases/download/v0.3.14/Apparent-0.3.14-linux-x86_64.AppImage.sha256"));
+            Ok(format!("{}  Apparent-0.3.14-linux-x86_64.AppImage", "c".repeat(64)).into_bytes())
+        }).unwrap().unwrap();
+        assert_eq!(candidate.id, "v0.3.14");
+        assert_eq!(candidate.channel, "stable");
+        assert_eq!(candidate.sha256, "c".repeat(64));
+    }
+
+    #[test]
+    fn stable_with_no_compatible_desktop_release_has_no_update() {
+        let mut preview = stable_release_fixture("v0.3.15", "x86_64");
+        preview["prerelease"] = true.into();
+        let mut draft = stable_release_fixture("v0.3.15", "x86_64");
+        draft["draft"] = true.into();
+        let mut unpublished = stable_release_fixture("v0.3.15", "x86_64");
+        unpublished["published_at"] = serde_json::Value::Null;
+        let mut incomplete = stable_release_fixture("v0.3.15", "x86_64");
+        incomplete["assets"].as_array_mut().unwrap().pop();
+        let mut legacy = stable_release_fixture("v0.3.13", "x86_64");
+        for asset in legacy["assets"].as_array_mut().unwrap() {
+            asset["name"] = asset["name"].as_str().unwrap().replace("Apparent-", "Scrawl-").into();
+        }
+        let releases = vec![preview, draft, unpublished, incomplete, legacy,
+            stable_release_fixture("v0.3.15", "aarch64"),
+            stable_release_fixture("preview-mac-12-2", "x86_64"),
+            stable_release_fixture("recipient-component", "x86_64")];
+        assert!(stable_candidate_with("x86_64", &|url| {
+            assert!(url.ends_with("?per_page=100&page=1"), "no checksum or download may be requested");
+            Ok(serde_json::to_vec(&releases)?)
+        }).unwrap().is_none());
+    }
+
+    #[test]
+    fn stable_network_metadata_and_integrity_failures_remain_errors() {
+        assert!(stable_candidate_with("x86_64", &|_| anyhow::bail!("offline")).is_err());
+        assert!(stable_candidate_with("x86_64", &|_| Ok(b"not JSON".to_vec())).is_err());
+        for checksum in ["invalid".to_owned(), format!("{}  unrelated.AppImage", "c".repeat(64))] {
+            assert!(stable_candidate_with("x86_64", &|url| {
+                if url.contains("/releases?") {
+                    Ok(serde_json::to_vec(&vec![stable_release_fixture("v0.3.14", "x86_64")])?)
+                } else { Ok(checksum.clone().into_bytes()) }
+            }).is_err());
+        }
+        let mut foreign = stable_release_fixture("v0.3.14", "x86_64");
+        foreign["assets"][0]["browser_download_url"] = "https://untrusted.example/app.AppImage".into();
+        assert!(stable_candidate_with("x86_64", &|url| {
+            assert!(url.contains("/releases?"), "foreign asset must be rejected before fetching");
+            Ok(serde_json::to_vec(&vec![foreign.clone()])?)
+        }).is_err());
+        assert!(stable_candidate_with("x86_64", &|_| {
+            Ok(serde_json::to_vec(&vec![stable_release_fixture("recipient-component", "x86_64"); 100])?)
+        }).is_err(), "incomplete discovery cannot be reported as no update");
     }
 
     #[test]
@@ -843,22 +957,28 @@ mod tests {
         let image = "Apparent-0.3.13-linux-x86_64.AppImage";
         let release = |letter: &str, date: &str| {
             let tag = format!("linux-main-v2-{}", letter.repeat(40));
-            Release {
-                tag_name: tag.clone(), prerelease: true, draft: false, published_at: Some(date.into()),
-                assets: [image.to_owned(), format!("{image}.sha256")].into_iter().map(|name| ReleaseAsset {
-                    browser_download_url: format!("https://github.com/{REPO}/releases/download/{tag}/{name}"), name,
-                }).collect(),
-            }
+            let assets: Vec<_> = [image.to_owned(),format!("{image}.sha256")].into_iter().map(|name| {
+                serde_json::json!({"browser_download_url":format!("https://github.com/{REPO}/releases/download/{tag}/{name}"),"name":name})
+            }).collect();
+            serde_json::json!({"tag_name":tag,"prerelease":true,"draft":false,"published_at":date,
+                "assets":assets})
         };
         // A later page can contain a later publication when GitHub orders by tag creation.
-        let pages = [
-            vec![release("a", "2026-10-28T01:00:00Z")],
-            vec![release("b", "2026-10-29T01:00:00Z")],
-        ];
-        let candidate = first_usable_main(pages.into_iter().flatten().collect(), "x86_64", &|_| {
+        let candidate = latest_main_candidate_with("x86_64", &|url| {
+            if url.ends_with("?per_page=100&page=1") {
+                return Ok(serde_json::to_vec(&vec![release("a", "2026-10-28T01:00:00Z"); 100])?);
+            }
+            if url.ends_with("?per_page=100&page=2") {
+                return Ok(serde_json::to_vec(&vec![release("b", "2026-10-29T01:00:00Z")])?);
+            }
+            assert!(url.ends_with(".sha256"), "stop after the final partial page");
             Ok(format!("{}  {image}", "c".repeat(64)).into_bytes())
-        }).unwrap().unwrap();
+        }).unwrap();
         assert_eq!(candidate.id, "b".repeat(40));
+        assert!(latest_main_candidate_with("x86_64", &|url| {
+            assert!(url.contains("/releases?per_page=100&page="));
+            Ok(serde_json::to_vec(&vec![stable_release_fixture("recipient-component", "x86_64"); 100])?)
+        }).is_err(), "incomplete history must fail before fetching an asset");
     }
 
     #[test]

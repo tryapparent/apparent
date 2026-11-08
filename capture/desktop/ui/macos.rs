@@ -762,8 +762,7 @@ fn refresh_status_bar_icon(item: &NSStatusItem, mtm: MainThreadMarker) {
         return;
     };
     // Full-screen menu bars can stay dark even while the system is light.
-    // Follow the application's inherited system appearance so the two brand
-    // variants switch with Light/Dark mode in either window context.
+    // Follow the application's inherited system appearance in either context.
     let names = NSArray::from_retained_slice(&[
         NSString::from_str("NSAppearanceNameAqua"),
         NSString::from_str("NSAppearanceNameDarkAqua"),
@@ -774,11 +773,7 @@ fn refresh_status_bar_icon(item: &NSStatusItem, mtm: MainThreadMarker) {
         msg_send![&*appearance, bestMatchFromAppearancesWithNames: &*names]
     };
     let dark = best.is_some_and(|name| name.to_string() == "NSAppearanceNameDarkAqua");
-    let bytes: &[u8] = if dark {
-        include_bytes!("../../../capture/desktop/assets/menubar-icon@2x.png")
-    } else {
-        include_bytes!("../../../capture/desktop/assets/menubar-light@2x.png")
-    };
+    let bytes = super::status_icon(dark);
     if let Some(image) = NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(bytes)) {
         image.setSize(NSSize::new(18.0, 18.0));
         // Preserve the purple glyph and its contrasting background.
@@ -791,6 +786,17 @@ fn refresh_status_bar_icon(item: &NSStatusItem, mtm: MainThreadMarker) {
 
 thread_local! {
     static STATUS_BAR: RefCell<Option<StatusBarController>> = const { RefCell::new(None) };
+}
+
+/// The owned status-item window, in the same global top-left coordinates as capture.
+pub(in crate::capture::desktop) fn status_bar_anchor()->Option<[f32;4]> {
+    let mtm=MainThreadMarker::new()?;
+    STATUS_BAR.with(|bar| {
+        let bar=bar.borrow();let button=bar.as_ref()?._item.button(mtm)?;
+        let frame=button.window()?.frame();
+        let primary_h=objc2_app_kit::NSScreen::screens(mtm).firstObject()?.frame().size.height;
+        Some([frame.origin.x as f32,(primary_h-frame.origin.y-frame.size.height) as f32,frame.size.width as f32,frame.size.height as f32])
+    })
 }
 
 pub(in crate::capture::desktop) fn install_status_bar() -> Option<flume::Receiver<MenuAction>> {
@@ -905,7 +911,7 @@ fn find_picker_ns_window() -> Option<Retained<NSWindow>> {
         if win.ignoresMouseEvents() {
             continue;
         }
-        if win.title().to_string() == "Apparent Whiteboard" {
+        if win.title().to_string() == super::whiteboard::title() {
             continue;
         }
         let size = win.frame().size;

@@ -1,9 +1,8 @@
 # Desktop UI foundation
 
-Shared Electron Settings surfaces and a separate opt-in development window use
-React/TypeScript, shadcn/ui and Tailwind. Installed routing and retained native
-fallbacks are described per surface below. The development window has native
-Linux and macOS checks with their own proof limits. No Windows support.
+Opt-in Electron development window using React/TypeScript, shadcn/ui and Tailwind.
+It does **not** replace the installed app, Settings, pill or launcher. The opt-in
+window has native Linux and macOS checks; see their distinct scope below. No Windows support.
 
 From the repository root, with Node 22 and npm 10 or newer:
 
@@ -56,13 +55,8 @@ shared sources, rerun `npm ci`; builds reject a stale installed snapshot.
 ## Experimental General → Apparent Connect
 
 The default-on `connectSettings` flag also gates this opt-in window's Connect
-card; an explicit false hides it. Visibility alone never enables uploads. Installed General connection actions open
-`--settings-connect` when its packaged assets are available. This mode loads the
-existing Connect card with a Connect-only preload, and no Storage, capture, clipboard
-or reporting capabilities. It consumes the originating native action once after
-a successful local read; renderer reload never replays it. Navigation returns to
-the existing Settings pages. Missing assets and startup/crash failure restore the
-native General presentation. No onboarding route changes. See
+card; an explicit false hides it. Visibility alone never enables uploads. Installed Settings still use their existing native presentation;
+this slice does not change routing or onboarding. See
 `../../docs/onboarding-and-settings.md` for consent and recovery behavior.
 
 Electron main owns one persistent, same-user Rust socket/controller. Opening and
@@ -87,8 +81,8 @@ it does not approve a real account or upload media. Run it from the root with
 `cargo test --offline connect_settings_electron_rust_roundtrip -- --ignored --nocapture`.
 On Clanker, wrap the command once with `t3-build` as documented in `AGENTS.md`.
 Neither check substitutes for native Linux/macOS acceptance. The earlier shell evidence below does not
-certify this new workflow. Roll back by disabling `connectSettings`; missing packaged Connect assets or
-a failed Connect window also restore native General. Do not remove the legacy
+certify this new workflow. Roll back by disabling `connectSettings` or closing
+this opt-in window and using installed Settings; do not remove the legacy
 presentation until both platforms pass equivalent consent/cancel/recovery proof.
 
 Background completion receipts are consumed only on a valid window request,
@@ -172,7 +166,7 @@ effective path. Loading/error states hide old totals, and Retry never starts
 Rust. A slow filesystem syscall can outlive client expiry; the existing single
 Storage worker stays busy rather than spawning unbounded scans.
 
-The Rust Settings session owns navigation and the Electron child. The installed
+On macOS the Rust Settings session owns navigation and the Electron child. The installed
 page contains Storage only, with the existing Settings sidebar and system-following
 light/dark Paper/Carbon/Signal palette. Other sidebar pages return to their native
 presentation. Retired windows cannot send commands or close the current page.
@@ -180,13 +174,37 @@ Closing Settings cancels the session; an Electron crash restores native Storage.
 Missing packaged assets also fall back to native Storage. Reopen Settings after
 editing the opt-out. Saved preferences remain readable by both presentations.
 
+Electron Storage uses the native Mac Settings' 720×530 frame and 210px black
+sidebar. macOS centers after applying its inset titlebar and accepts the first
+inactive click; content scrolls inside the frame to keep lower controls reachable.
+The other Settings pages keep their native routing.
+The Linux parent supplies the X11 backend option before Electron starts when it
+has selected XWayland; a live native-Wayland opt-in keeps its existing selection.
+
+Storage starts hidden, including when its parent requests Show early. React
+acknowledges its committed DOM in a layout effect; the isolated preload waits
+two animation callbacks before sending the mount and first-frame acknowledgements.
+`paintWhenInitiallyHidden` keeps those callbacks moving while hidden. The host
+requires both the mount and either Chromium's `ready-to-show` or the validated
+first-frame acknowledgement, recovering when Electron omits that native event.
+Missing renderer startup exits unsuccessfully after 15 seconds without a
+user-dismiss signal, allowing the existing native fallback. Load failure/crash
+also fail; close/parent EOF retires the window so late readiness cannot reopen it.
+Parent retirement emits no user-dismiss event. A broken parent output pipe also
+retires quietly instead of opening an Electron error dialog.
+The readiness bridge admits only the owned local main frame and no arguments.
+The broader intermittent blanking reported in #562 remains unconfirmed.
+
 `stage-settings.py` builds the locked frontend/runtime into Linux AppImage and Mac
 installer/release packages. Installed packages contain no development dashboard or
 synthetic examples. Node/npm are build prerequisites, not runtime dependencies.
 macOS stages and signs nested Electron code before the enclosing app is signed.
-The old Storage presentation is retained solely for the explicit opt-out and
-startup/crash fallback. Remove it only after exact-candidate installed Mac/Linux
-acceptance and a deliberate retirement of that fallback contract. Functional
+Linux keeps every installed Settings pane inside one native GPUI frame, including
+the folder picker, retention and usage controls. Switching to Storage does not
+replace the window. The Electron development harness and Rust bridge remain
+available on Linux; the installed macOS route retains its explicit opt-out and
+startup/crash fallback. Remove a native presentation only after applicable native
+acceptance and a deliberate retirement of its fallback contract. Functional
 transport tests and synthetic backend fixtures remain verification tooling.
 
 `tests/retention-smoke.cjs` exercises production Electron with a **synthetic**
@@ -224,49 +242,6 @@ npm run test:electron       # real Electron, synthetic socket; needs a display
 xvfb-run -a npm run test:electron
 ```
 
-For a Linux integration checkpoint before Mac access, run from the repository root:
-
-```sh
-(
-TMPDIR="$(mktemp -d /tmp/apparent-ui.XXXXXXXX)" || exit 1
-export TMPDIR
-python3 enablement/owner_lanes.py --lane desktop-ui-integration --run --online
-# Preserve this private directory if fixtures need diagnosis.
-)
-```
-
-On Clanker, replace the Python command inside the subshell with
-`/home/simon/.local/bin/t3-build -- python3 enablement/owner_lanes.py --lane desktop-ui-integration --run --online`.
-Use the runner once; do not wrap an already admitted invocation.
-The lane honors the runner's `T3_BUILD_JOBS` and runs npm unit tests, the existing
-sequential Electron smoke script (including TypeScript/build) under Xvfb, then
-both ignored `_electron_rust_roundtrip` Rust tests, with the absolute Electron
-package executable supplied to `APPARENT_STORAGE_TEST_ELECTRON` and
-`APPARENT_CONNECT_TEST_ELECTRON`. Those tests use the actual Rust listener and
-controller with private temporary fixtures; the Connect HTTP account fixture is
-synthetic. They run Electron in Node mode and need no display. No standalone
-application build or installed app launch is performed.
-
-The temporary root must be short, owned and mode 0700; failed fixtures may be
-retained for diagnosis; the subshell preserves the caller’s TMPDIR.
-
-Prerequisites: Node 22/npm 10+, Xvfb (`xvfb-run` and `xauth`), Electron's Linux
-runtime libraries, Rust/system build dependencies and available build capacity.
-The command above permits npm/Electron installation and uses Cargo `--locked`.
-Omit `--online` for `npm ci --offline` and `cargo test --offline`; populate both
-package caches first and set `ELECTRON_OVERRIDE_DIST_PATH` to an absolute,
-preinstalled Linux Electron distribution directory outside this frontend's
-`node_modules` (matching its locked Electron version). Offline mode requires
-that executable before npm ci, preventing Electron's lazy downloader from
-silently fetching a binary. Missing prerequisites fail rather than skip proof.
-The ordinary `desktop-ui` lane remains lightweight and unchanged.
-
-This checkpoint proves renderer/synthetic transport behavior and real Rust bridge
-roundtrips only. It does not replace exact-candidate isolated Linux/Omarchy GUI,
-portal/picker, permissions, capture/output or installed packaging proof, nor Mac
-native acceptance. Follow `../../docs/native-testing.md` and
-`../../docs/linux/linux.md`; required exact-SHA CI/release receipts remain separate.
-
 The Electron smoke checks controls/keyboard use, disconnected/error/reconnect,
 renderer reload, minimum-width layout, sandbox/Node isolation, navigation/network
 refusal and rejection of a second renderer. It is not native platform acceptance.
@@ -292,9 +267,10 @@ physical-device or performance acceptance.
 
 ## Experimental Storage card
 
-The installed Storage bridge is on unless `experiments.electronCaptureLocation`
+The Electron Storage bridge is on unless `experiments.electronCaptureLocation`
 is explicitly false in the Rust app's `~/.config/apparent/config.json`. File edits
-apply at the next request; reopen Settings to change presentation routing. The
+apply at the next request; on macOS reopen Settings to change presentation routing. Linux
+installed Settings always uses its continuous native frame. The
 separate `npm start` window remains a developer harness; it is not installed or
 used by the Settings route. Browser preview has no Storage bridge.
 
@@ -411,37 +387,6 @@ window, not change the saved consent. Remove the old presentation only with the
 future Settings routing switch. The reporting preference itself is not an
 off-by-default experiment. A packaged PostHog token is required to send reports.
 
-## Drawing controls (#355)
-
-The development window's **Draw across displays** section reads active screen
-recording status and mark count, and **Undo last mark** invokes the same Rust
-undo operation as the native shortcut (desktop ink or a newer pin). Hold Shift
-and move over the desktop to draw; Electron does not intercept pointer events.
-Refresh explicitly after drawing. Pin Undo first persists deletion of its typed note; a failed or timed-out receipt preserves the pin for recovery. This receipt has a two-second bound. No recording is started, target changed or
-permission granted by this section. Phone and lab sessions are unavailable.
-
-Routing: `npm start` opens the development controls; the separately running Rust
-GUI owns admission, capture, input and overlays. This adds no feature flag and
-does not activate any existing experiment or switch installed launchers. Linux and macOS use per-display native
-panels. These are OS adapters, not competing React ink canvases. The native
-shortcut remains usable alongside this control, as keyboard access to the same
-operation. Closing Electron rolls back to the installed native controls without
-changing config or active capture state. Remove the legacy control surface only
-after the shared shell is routed and accepted on both platforms and all its
-callers/build/package inputs are verified; this slice does not authorize that
-routing change or removal.
-
-The same-user private socket accepts typed `drawing: read|undo` JSON with a
-monotonic deadline. Main holds the observed recording revision; the renderer
-cannot supply it. Rust validates the deadline and exact recording identity on
-the GUI thread before mutation. Navigation invalidates the receipt. Requests
-are serialized, never retried automatically; after an ambiguous timeout refresh
-before another undo. No paths, capture contents or raw errors reach React.
-
-Transport and renderer fixtures are synthetic checks, not native drawing proof.
-Exact-candidate isolated Linux and macOS cross-display proof, bundle text/image
-inspection and a verified playable video remain required before acceptance.
-
 ## Explicit public link from the selected capture (#171)
 
 The Selected capture card includes Copy public link, followed by an explicit
@@ -495,8 +440,15 @@ use Rust's existing atomic writer and preserve unrelated keys. No setting edit
 interrupts active audio.
 
 On Linux, Electron uses X11/XWayland. Rust checks each XID against this capture's
-child PID and prepares it while hidden; Electron alone shows and hides it. The
-compositor's visible pinned order can diverge from X11's input stack after focus
+child PID and prepares it while hidden; Electron alone shows and hides it.
+On the Hyprland Lua backend, notes remain managed toolbars so their first map
+belongs to a real output even when its layout origin is offset. Other backends
+retain override-redirect preparation. Popup activation restores web-content focus.
+The pipe carries X11 root pixels: Electron converts incoming anchors to DIPs and
+outgoing window bounds back to pixels. Hyprland placement then matches the
+output by name and converts those pixels to its scaled, potentially offset
+layout. Do not send an Electron DIP rectangle directly to either native adapter.
+The compositor's visible pinned order can diverge from X11's input stack after focus
 returns to the recorded app. The notes worker checks that stack at most every
 100 ms and raises its visible surfaces only when needed. Renderer commands cannot
 place windows. Counter/editor clicks are excluded from capture telemetry.

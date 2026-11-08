@@ -149,6 +149,14 @@ class LinuxPreviewPublicationTest(unittest.TestCase):
         self.assertEqual(draft, "false")
         self.assertFalse(any(c[:2] == ["workflow", "run"] for c in calls))
 
+    def test_legacy_bridges_and_feed_do_not_block_canonical_publication(self):
+        legacy = dict(preview(NEW_SHA), tag_name=f"linux-main-{NEW_SHA}")
+        feed = dict(preview(NEW_SHA), tag_name="linux-main-feed")
+        result, calls, draft = self.run_case([SHA], pages=[[legacy, feed]])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(draft, "false")
+        self.assertFalse(any('/compare/' + NEW_SHA in c[1] for c in calls if c[0] == 'api'))
+
     def test_divergent_or_future_commit_cannot_publish(self):
         for status in ("diverged", "behind", "FAIL", "unknown"):
             with self.subTest(status=status):
@@ -275,20 +283,18 @@ class LinuxPreviewPublicationTest(unittest.TestCase):
         self.assertIn("--json isDraft --jq .isDraft", workflow)
         self.assertIn("ref: ${{ needs.admit.outputs.sha }}", build)
         self.assertIn('test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"', build)
-        self.assertIn("ref: main", job)
-        self.assertIn('git show "$CANDIDATE_SHA:capture/desktop/linux/updates/update.rs"', job)
-        self.assertIn('strip_prefix("linux-main-v2-")', job)
-        self.assertIn('GITHUB_SHA="$CANDIDATE_SHA" cargo build', build)
+        self.assertIn("ref: ${{ needs.admit.outputs.sha }}", job)
+        self.assertIn('gh release view "linux-main-v2-$CANDIDATE_SHA"', workflow)
         self.assertIn("python3 capture/desktop/scripts/linux/maintenance/publish-main-preview.py", job)
         self.assertIn("inputs.verify_only != true", job)
         self.assertNotIn("exit 0", job)
 
-    def test_main_push_and_retry_selection_preserve_non_canceling_serialization(self):
+    def test_manual_publication_preserves_non_canceling_serialization(self):
         workflow = (ROOT / ".github/workflows/release-linux.yml").read_text()
         triggers = workflow.split("on:\n", 1)[1].split("\npermissions:", 1)[0]
-        self.assertIn("  workflow_run:\n    workflows: [Linux verification]\n    branches: [main]\n", triggers)
+        self.assertNotIn("  push:", triggers)
         self.assertNotIn("pull_request:", triggers)
-        self.assertIn("cron: '17 3 * * *'", triggers)
+        self.assertNotIn("  schedule:", triggers)
         self.assertIn("workflow_dispatch:", triggers)
         concurrency = workflow.split("\nconcurrency:\n", 1)[1].split("\njobs:", 1)[0]
         self.assertIn("cancel-in-progress: false", concurrency)
@@ -298,15 +304,15 @@ class LinuxPreviewPublicationTest(unittest.TestCase):
         job = workflow.split("  main-preview:\n", 1)[1]
         condition = job.split("    if: ", 1)[1].splitlines()[0]
         for event, ref, tag, publish, verify, result, expected in (
-            ("workflow_run", "refs/heads/main", "", False, False, "success", True),
+            ("push", "refs/heads/main", "", False, False, "success", False),
             ("schedule", "refs/heads/main", "", False, False, "success", True),
             ("workflow_dispatch", "refs/heads/main", "", True, False, "success", True),
             ("workflow_dispatch", "refs/heads/main", "v1.2.3", False, False, "success", False),
             ("workflow_dispatch", "refs/heads/main", "", False, True, "success", False),
             ("workflow_dispatch", "refs/heads/topic", "", True, False, "success", False),
             ("pull_request", "refs/pull/278/merge", "", False, False, "success", False),
-            ("workflow_run", "refs/heads/main", "", False, False, "failure", False),
-            ("workflow_run", "refs/heads/main", "", False, False, "skipped", False),
+            ("push", "refs/heads/main", "", False, False, "failure", False),
+            ("push", "refs/heads/main", "", False, False, "skipped", False),
         ):
             with self.subTest(event=event, ref=ref, tag=tag, verify=verify, result=result):
                 values = {"github.event_name": event, "github.ref": ref, "inputs.tag": tag,
@@ -327,10 +333,10 @@ class LinuxPreviewPublicationTest(unittest.TestCase):
         concurrency = workflow.split("\nconcurrency:\n", 1)[1].split("\njobs:", 1)[0]
         group = concurrency.split("  group: ", 1)[1].splitlines()[0]
 
-        def lane(event, *, verify=False, publish=False, tag='', ref='refs/heads/main'):
+        def lane(event, *, verify=False, publish=False, tag='', ref='refs/heads/main', bridge=''):
             values = {'github.event_name': event, 'github.ref': ref,
                       'inputs.verify_only': verify, 'inputs.publish_main': publish,
-                      'inputs.tag': tag}
+                      'inputs.tag': tag, 'inputs.bridge_commit': bridge}
 
             def evaluate(match):
                 expression = match[1].strip()
@@ -361,6 +367,12 @@ class LinuxPreviewPublicationTest(unittest.TestCase):
         verify = lane('workflow_dispatch', verify=True)
         arrive('verify V', verify)
         arrive('verify W', verify)
+        bridge = lane('workflow_dispatch', bridge=OTHER_SHA)
+        self.assertNotEqual(bridge, main)
+        self.assertEqual(lane('workflow_dispatch', bridge=NEW_SHA), bridge,
+                         'all compatibility publishers must serialize together')
+        arrive('bridge A', bridge)
+        arrive('bridge B', bridge)
         self.assertEqual(running[main], 'push A')
         self.assertEqual(pending[main], 'push B')
         self.assertEqual(running[verify], 'verify V')
@@ -369,6 +381,8 @@ class LinuxPreviewPublicationTest(unittest.TestCase):
         arrive('manual D', lane('workflow_dispatch', publish=True))
         self.assertEqual(running[main], 'push A')
         self.assertEqual(pending[main], 'manual D')
+        self.assertEqual(running[bridge], 'bridge A')
+        self.assertEqual(pending[bridge], 'bridge B', 'canonical publication cannot evict a pending bridge')
         cancel = concurrency.split('  cancel-in-progress: ', 1)[1].splitlines()[0]
         self.assertEqual(cancel, 'false')
 

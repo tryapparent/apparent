@@ -13,9 +13,7 @@ use gpui::{
 };
 
 use crate::capture::engine::runtime::SharedCaptureTelemetry;
-use crate::capture::engine::sketch::{
-    pin_pulse, slice_laser_window, smooth_ink_points, smooth_laser_points,
-};
+use crate::capture::engine::sketch::{pin_pulse, slice_laser_window, smooth_ink_points, smooth_laser_points};
 
 const TAIL_MS: u64 = 420;
 
@@ -23,8 +21,6 @@ const TAIL_MS: u64 = 420;
 #[derive(Clone, Copy)]
 pub(crate) struct Placement {
     pub rect: [f64; 4],
-    #[cfg(target_os = "linux")]
-    pub ink_only: bool,
     // Windows maps physical screen points with the monitor scale; Linux uses GPUI's
     // actual window scale, which can differ from the monitor's reported scale.
     #[cfg_attr(target_os = "linux", allow(dead_code))]
@@ -53,10 +49,11 @@ struct Scene {
 }
 
 fn ink_color(alpha: f32) -> Hsla {
+    let [r,g,b]=crate::shared::handoff::pen::rgb();
     gpui::Rgba {
-        r: 1.0,
-        g: 0.23,
-        b: 0.19,
+        r: r as f32/255.0,
+        g: g as f32/255.0,
+        b: b as f32/255.0,
         a: alpha,
     }
     .into()
@@ -67,10 +64,7 @@ fn rgba(r: f32, g: f32, b: f32, a: f32) -> Hsla {
 }
 
 impl OverlayView {
-    pub(crate) fn new(
-        telemetry: Arc<SharedCaptureTelemetry>,
-        placement: Arc<Mutex<Placement>>,
-    ) -> Self {
+    pub(crate) fn new(telemetry: Arc<SharedCaptureTelemetry>, placement: Arc<Mutex<Placement>>) -> Self {
         Self {
             telemetry,
             placement,
@@ -109,9 +103,7 @@ impl OverlayView {
         // XWayland's GPUI scale can differ from the monitor's reported scale.
         // Screen coordinates are physical pixels, so use the window's actual paint scale.
         #[cfg(target_os = "linux")]
-        let k = screen_to_view_scale(screen[0], placement.rect[2] as f32);
-        #[cfg(target_os = "linux")]
-        let _ = viewport_scale;
+        let k = screen_to_view_scale(viewport_scale);
         #[cfg(target_os = "windows")]
         let k = 1.0 / placement.scale;
         let [ox, oy] = [placement.rect[0] as f32, placement.rect[1] as f32];
@@ -149,8 +141,6 @@ impl OverlayView {
             ];
             (constrained.then_some((rect, mode as f32)), None)
         };
-        #[cfg(target_os = "linux")]
-        let (target, uniform_dim) = if placement.ink_only { (None, None) } else { (target, uniform_dim) };
         let to_screen = |nx: f32, ny: f32| -> [f32; 2] {
             let [lx, ly] = local(frame.x as f32, frame.y as f32);
             [
@@ -164,16 +154,9 @@ impl OverlayView {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
-            .filter(|s| s.laser || s.pin.is_some())
             .cloned()
             .map(|s| (s, false))
             .collect();
-        let desktop_ink = t
-            .desktop_ink
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        strokes.extend(desktop_ink.into_iter().map(|s| (s, false)));
         if let Some(laser) = t
             .active_laser
             .lock()
@@ -190,14 +173,6 @@ impl OverlayView {
         {
             strokes.push((ink, true));
         }
-        #[cfg(target_os = "linux")]
-        let strokes: Vec<_> = {
-            let outputs: Vec<_> = crate::capture::engine::runtime::screens::current().iter().map(|s| s.frame).collect();
-            strokes.into_iter().flat_map(|(stroke, live)| {
-                if stroke.laser || stroke.pin.is_some() { vec![(stroke, live)] }
-                else { crate::capture::engine::runtime::ink_output_parts(&stroke, frame, &outputs).into_iter().map(|s| (s, live)).collect() }
-            }).collect()
-        };
         let mut ink = Vec::new();
         let mut laser = Vec::new();
         let mut pins = Vec::new();
@@ -252,16 +227,12 @@ impl OverlayView {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             local(x, y)
         });
-        #[cfg(target_os = "linux")]
-        let ink_only = placement.ink_only;
-        #[cfg(not(target_os = "linux"))]
-        let ink_only = false;
         Some(Scene {
             target,
             uniform_dim,
             now_sec,
             picker_fade,
-            glow: active && t.start_glow.load(Ordering::Acquire) && !ink_only,
+            glow: active && t.start_glow.load(Ordering::Acquire),
             ink,
             laser,
             pins,
@@ -272,8 +243,8 @@ impl OverlayView {
 }
 
 #[cfg(target_os = "linux")]
-fn screen_to_view_scale(view_width: f32, output_width: f32) -> f32 {
-    view_width / output_width.max(1.0)
+fn screen_to_view_scale(viewport_scale: f32) -> f32 {
+    1.0 / viewport_scale
 }
 
 fn pt(p: [f32; 2], origin: Point<Pixels>) -> Point<Pixels> {
@@ -503,10 +474,7 @@ fn paint_scene(scene: &Scene, bounds: Bounds<Pixels>, window: &mut Window) {
 impl Render for OverlayView {
     fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let size = window.viewport_size();
-        let scene = self.scene(
-            [f32::from(size.width), f32::from(size.height)],
-            window.scale_factor(),
-        );
+        let scene = self.scene([f32::from(size.width), f32::from(size.height)], window.scale_factor());
         // Telemetry changes on other threads; follow it every frame while the overlay is up.
         window.request_animation_frame();
         canvas(
@@ -529,9 +497,9 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn fractional_xwayland_scale_keeps_ink_under_the_physical_cursor() {
-        let logical_x = 360.0 * screen_to_view_scale(1280.0 / 1.083_333_4, 1280.0);
+        let logical_x = 360.0 * screen_to_view_scale(1.083_333_4);
         assert!((logical_x * 1.083_333_4 - 360.0).abs() < 0.001);
         // Monitor scale must not be applied again if GPUI already paints at that scale.
-        assert_eq!(screen_to_view_scale(640.0, 1280.0), 0.5);
+        assert_eq!(screen_to_view_scale(2.0), 0.5);
     }
 }

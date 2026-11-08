@@ -7,5 +7,5 @@
 /artifacts
 /*.apparent
 __pycache__/
-/connect/service/wrangler.cd.json
+/hosted/wrangler.cd.json
 /capture/agent/narrator/target/

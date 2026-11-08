@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+from urllib.parse import parse_qs, urlsplit
 
 spec = importlib.util.spec_from_file_location('release_gate', Path(__file__).resolve().parents[1] / 'release_gate.py')
 gate = importlib.util.module_from_spec(spec)
@@ -13,6 +14,20 @@ spec.loader.exec_module(gate)
 
 
 class AdmissionTests(unittest.TestCase):
+    def test_baseline_restoration_does_not_publish_or_start_full_platform_runs(self):
+        root = Path(__file__).resolve().parents[2] / '.github/workflows'
+        for name in ('verification.yml', 'verification-mac.yml',
+                     'release-linux.yml', 'release-mac-preview.yml', 'web-delivery.yml'):
+            workflow = (root / name).read_text()
+            events = workflow.split('\non:\n', 1)[1].split('\npermissions:', 1)[0]
+            triggers = re.findall(r'^  ([a-z_]+):', events, re.M)
+            self.assertEqual(triggers, ['workflow_dispatch'], name)
+        checks = (root / 'checks.yml').read_text()
+        self.assertIn('  pull_request:', checks)
+        self.assertIn('  push:', checks)
+        self.assertIn('enablement/verification.py --base "$BASE_SHA" --pr', checks)
+        self.assertNotIn('contents: write', checks)
+
     def setUp(self):
         self.repo = 'example/project'
         self.sha = 'a' * 40
@@ -31,13 +46,33 @@ class AdmissionTests(unittest.TestCase):
         self.status = 'identical'
         self.calls = []
 
+    def test_public_uses_its_own_checks_and_never_publishes_on_push_or_pr(self):
+        root = Path(__file__).resolve().parents[2] / '.github/workflows'
+        workflow = (root / 'stream-public.yml').read_text()
+        checks, deploy = workflow.split('\n  deploy:\n')
+        for event in ('pull_request', 'push', 'workflow_dispatch'):
+            self.assertIn('\n  ' + event + ':', checks)
+        self.assertIn('npm run verify', checks)
+        self.assertNotIn('connect/', checks)
+        self.assertNotIn('release_gate.py', workflow)
+        self.assertIn('needs: verify', deploy)
+        for guard in ("github.event_name == 'workflow_dispatch'", "github.ref == 'refs/heads/main'",
+                      "github.repository == 'tryapparent/apparent'", "vars.WEBSITE_CD_ENABLED == 'true'"):
+            self.assertIn(guard, deploy)
+        self.assertIn('name: public-${{ github.sha }}', checks)
+        self.assertIn('name: public-${{ github.sha }}', deploy)
+        self.assertNotIn('publish-pages.ts', (root / 'web-delivery.yml').read_text())
+        self.assertNotIn('\n  website:\n', (root / 'web-delivery.yml').read_text())
+
     def fetch(self, path):
         self.calls.append(path)
         if '/compare/' in path:
             return {'status': self.status}
         if '/workflows/' in path:
             platform = 'macos' if '/verification-mac.yml/' in path else 'linux'
-            return dict(total_count=1, workflow_runs=[copy.deepcopy(self.runs[platform])])
+            event = parse_qs(urlsplit(path).query).get('event', [None])[0]
+            runs = [copy.deepcopy(self.runs[platform])] if event in (None, self.runs[platform]['event']) else []
+            return dict(total_count=len(runs), workflow_runs=runs)
         number = int(path.split('/actions/runs/')[1].split('/')[0])
         platform = 'linux' if number == 42 else 'macos'
         if '/jobs?' in path:
@@ -53,48 +88,44 @@ class AdmissionTests(unittest.TestCase):
             self.assertEqual(self.admit(platform, number), self.sha)
             self.assertEqual(self.admit(platform), self.sha)
 
-    def test_full_verification_is_main_only_even_for_manual_dispatch(self):
+    def test_manual_feature_checks_preserve_publication_boundary(self):
         root = Path(__file__).resolve().parents[2]
-        for caller in ('verification.yml', 'verification-mac.yml'):
-            text = (root / '.github/workflows' / caller).read_text()
-            verify = text.split('  verify:\n', 1)[1]
-            self.assertIn("if: github.ref == 'refs/heads/main'\n", verify)
-            self.assertIn('uses: ./.github/workflows/verification-platform.yml', verify)
         workflow = (root / '.github/workflows/verification-platform.yml').read_text()
         for job in ('desktop-ui', 'rust'):
             section = re.search(r'^  ' + job + r':\n(.*?)(?=^  [a-z]|\Z)', workflow, re.M | re.S)[1]
-            self.assertIn("if: github.ref == 'refs/heads/main'\n", section)
-            self.assertNotIn('workflow_dispatch', section.split('    steps:', 1)[0])
+            self.assertIn("if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'", section)
         receipt = workflow.split('  release-ready:\n', 1)[1]
-        self.assertIn("if: github.ref == 'refs/heads/main'\n", receipt)
-        self.assertNotIn('workflow_dispatch', receipt)
+        self.assertIn("github.ref == 'refs/heads/main'", receipt)
+        self.assertIn("github.ref == 'refs/heads/t3/onboarding-mac-release-baseline'", receipt)
+        self.assertIn("github.repository == 'tryapparent/apparent'", receipt)
+        self.assertIn("github.event_name == 'workflow_dispatch'", receipt)
         for platform in self.runs:
             self.runs[platform].update(event='workflow_dispatch', head_branch='feature')
         for platform in self.runs:
             with self.assertRaises(ValueError):
                 self.admit(platform)
 
-    def test_mac_follower_requires_terminal_receipt_for_exact_linux_candidate(self):
-        self.runs['macos'].update(event='workflow_run', head_sha='b' * 40)
-        # A newer workflow control SHA is not the tested candidate.
-        with self.assertRaises(ValueError): self.admit('macos')
-        for job in self.jobs['macos']:
-            if job['name'] == 'verify / Release verification':
-                job['name'] += f' ({self.sha})'
-        self.assertEqual(self.admit('macos'), self.sha)
-        for job in self.jobs['macos']:
-            if 'Release verification' in job['name']:
-                job['name'] = 'verify / Release verification (' + 'b' * 40 + ')'
-        with self.assertRaises(ValueError): self.admit('macos')
+    def test_exact_successful_manual_main_verification_is_admitted(self):
+        for run in self.runs.values():
+            run['event'] = 'workflow_dispatch'
+        for platform, number in [('linux', '42'), ('macos', '84')]:
+            self.assertEqual(self.admit(platform, number), self.sha)
+            self.assertEqual(self.admit(platform), self.sha)
 
-    def test_follower_cannot_use_a_missing_linux_receipt(self):
-        self.runs['macos'].update(event='workflow_run')
-        for job in self.jobs['macos']:
-            if job['name'] == 'verify / Release verification':
-                job['name'] += f' ({self.sha})'
-        self.runs['linux']['conclusion'] = 'cancelled'
-        with self.assertRaisesRegex(ValueError, 'linux main verification'):
-            self.admit('macos')
+    def test_manual_main_verification_retains_identity_and_required_job_checks(self):
+        for run in self.runs.values():
+            run['event'] = 'workflow_dispatch'
+        original = copy.deepcopy(self.runs['linux'])
+        for field, value in [('head_sha', 'b' * 40), ('head_branch', 'feature'),
+                             ('head_repository', {'full_name': 'fork/repo'}),
+                             ('path', '.github/workflows/other.yml'),
+                             ('status', 'in_progress'), ('conclusion', 'failure')]:
+            with self.subTest(field=field):
+                self.runs['linux'][field] = value
+                with self.assertRaises(ValueError): self.admit(run_id='42')
+                self.runs['linux'] = copy.deepcopy(original)
+        self.jobs['linux'][-1]['conclusion'] = 'skipped'
+        with self.assertRaises(ValueError): self.admit()
 
     def test_intel_mac_receipt_matches_workflow_and_is_required(self):
         workflow = Path(__file__).resolve().parents[2] / gate.WORKFLOWS['macos']
@@ -130,7 +161,7 @@ class AdmissionTests(unittest.TestCase):
     def test_unrelated_or_unsuccessful_runs_never_admit(self):
         for platform in self.runs:
             for key, value in [('head_sha', 'b'*40), ('head_branch', 'feature'),
-                               ('event', 'pull_request'), ('event', 'workflow_dispatch'),
+                               ('event', 'pull_request'), ('event', 'workflow_run'), ('event', 'schedule'),
                                ('path', '.github/workflows/other.yml'), ('status', 'in_progress'),
                                ('conclusion', 'failure'), ('conclusion', 'cancelled'),
                                ('repository', {'full_name': 'other/repo'}),
@@ -201,138 +232,52 @@ class AdmissionTests(unittest.TestCase):
             gate.pages('jobs', lambda _: dict(total_count=1, workflow_runs=[]))
 
 
-class PublicationProgressTests(unittest.TestCase):
-    def test_abc_candidates_publish_without_a_quiet_main_and_never_roll_back(self):
-        # GitHub compare boundary models A -> B -> C -> D (continuously moving main).
-        commits = [letter * 40 for letter in 'abcd']
-        def fetch(path):
-            base, tip = path.split('/compare/')[1].split('...')
-            tip = commits[-1] if tip == 'main' else tip
-            a, b = commits.index(base), commits.index(tip)
-            return {'status': 'ahead' if b > a else 'behind' if b < a else 'identical'}
-        a, b, c, _ = commits
-        self.assertTrue(gate.publication_needed('example/project', a, None, fetch))
-        self.assertTrue(gate.publication_needed('example/project', c, a, fetch))
-        self.assertFalse(gate.publication_needed('example/project', b, c, fetch))
-        self.assertFalse(gate.publication_needed('example/project', c, c, fetch))
 
-    def test_unknown_diverged_or_removed_revisions_fail_closed(self):
-        for value in ('', 'unknown', 'z' * 40):
-            with self.assertRaises(ValueError):
-                gate.publication_needed('example/project', 'a' * 40, value, lambda _: {})
-        for status in ('behind', 'diverged', 'unknown'):
-            with self.assertRaises(ValueError):
-                gate.publication_needed('example/project', 'a' * 40, None, lambda _: {'status': status})
-        answers = iter([{'status': 'ahead'}, {'status': 'diverged'}])
-        with self.assertRaises(ValueError):
-            gate.publication_needed('example/project', 'b' * 40, 'a' * 40, lambda _: next(answers))
-
-    def test_mac_feed_identity_comes_from_its_release_tag(self):
-        previous = '<rss><channel><item><enclosure url="https://github.com/example/project/releases/download/preview-mac-4-1/app.zip"/></item></channel></rss>'
-        calls = []
-        def fetch(path):
-            calls.append(path)
-            return {'object': {'type': 'commit', 'sha': 'a' * 40}}
-        self.assertEqual(gate.mac_feed_revision('example/project', previous, fetch), 'a' * 40)
-        self.assertEqual(calls, ['repos/example/project/git/ref/tags/preview-mac-4-1'])
-        with self.assertRaises(ValueError): gate.mac_feed_revision('example/project', '<rss/>', fetch)
-        with self.assertRaises(ValueError): gate.mac_feed_revision('other/project', previous, fetch)
-
-    def test_ineligible_completions_cannot_evict_good_pending_candidates(self):
-        root = Path(__file__).resolve().parents[2]
-        for name in ('verification-mac.yml', 'web-delivery.yml', 'release-linux.yml'):
-            workflow = (root / '.github/workflows' / name).read_text()
-            group = workflow.split('\nconcurrency:\n')[1].split('  group: ')[1].splitlines()[0]
-            def key(**overrides):
-                values = {'github.event_name': 'workflow_run', 'github.ref': 'refs/heads/main',
-                          'github.event.workflow_run.conclusion': 'success',
-                          'github.event.workflow_run.event': 'push',
-                          'github.event.workflow_run.head_repository.full_name': 'example/project',
-                          'github.repository': 'example/project', 'github.run_id': 123,
-                          'inputs.tag': '', 'inputs.verify_only': False}
-                values.update(overrides)
-                def evaluate(match):
-                    expression = match[1]
-                    for field in sorted(values, key=len, reverse=True):
-                        expression = expression.replace(field, repr(values[field]))
-                    expression = expression.replace('&&', ' and ').replace('||', ' or ').replace('true', 'True')
-                    return str(eval(expression, {'__builtins__': {}}))
-                return re.sub(r'\$\{\{(.*?)\}\}', evaluate, group)
-            with self.subTest(workflow=name):
-                good = key()
-                self.assertEqual(good, key(**{'github.run_id': 124}))
-                for field, value in [('github.event.workflow_run.conclusion', 'failure'),
-                                     ('github.event.workflow_run.event', 'workflow_dispatch'),
-                                     ('github.event.workflow_run.head_repository.full_name', 'fork/project')]:
-                    self.assertNotEqual(good, key(**{field: value}))
-
-    def test_workflow_scheduling_keeps_running_work_and_matching_candidates(self):
-        root = Path(__file__).resolve().parents[2]
-        linux = (root / gate.WORKFLOWS['linux']).read_text()
-        mac = (root / gate.WORKFLOWS['macos']).read_text()
-        for workflow in (linux, mac):
-            concurrency = workflow.split('\nconcurrency:\n')[1].split('\njobs:')[0]
-            self.assertIn('cancel-in-progress: false', concurrency)
-            self.assertIn('github.event_name', concurrency)
-        self.assertIn("github.event.workflow_run.conclusion != 'success'", mac)
-        self.assertIn("github.event.workflow_run.event != 'push'", mac)
-        self.assertIn('workflows: [Linux verification]', mac)
-        self.assertNotIn('  push:', mac)
-        self.assertIn('revision: ${{ needs.admit.outputs.sha }}', mac)
-        self.assertIn('--platform linux --sha "$REQUEST_SHA" --run-id "$VERIFY_RUN_ID"', mac)
-        platform = (root / '.github/workflows/verification-platform.yml').read_text()
-        self.assertEqual(platform.count('uses: actions/checkout@'), platform.count('ref: ${{ inputs.revision || github.sha }}'))
-        self.assertIn("format('Release verification ({0})', inputs.revision)", platform)
-
-
-class MacPreviewAdmissionWorkflowTests(unittest.TestCase):
+class OnboardingAdmissionTests(unittest.TestCase):
+    fetch_main = AdmissionTests.fetch
     def setUp(self):
-        root = Path(__file__).resolve().parents[2]
-        workflow = (root / '.github/workflows/release-mac-preview.yml').read_text()
-        self.admission, self.preview = workflow.split('  preview:\n', 1)
-        self.guard = "github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main'"
-        self.command = 'python3 enablement/release_gate.py --platform macos --sha "$REQUEST_SHA"'
+        AdmissionTests.setUp(self)
+        self.repo = 'tryapparent/apparent'
+        self.status = 'ahead'
+        self.branch_sha = self.sha
+        self.jobs['macos'].append(dict(name='onboarding-candidate', status='completed', conclusion='success'))
+        for run in self.runs.values():
+            run.update(repository={'full_name': self.repo}, head_repository={'full_name': self.repo},
+                       head_branch='t3/onboarding-mac-release-baseline', event='workflow_dispatch')
 
-    def test_mac_allocation_requires_successful_ubuntu_admission(self):
-        self.assertIn('  admit:\n', self.admission)
-        self.assertIn('    runs-on: ubuntu-24.04\n', self.admission)
-        # needs plus the normal success() condition skips allocation on failure,
-        # cancellation or skipped admission. No always()/failure() override.
-        header = self.preview.split('    steps:\n', 1)[0]
-        self.assertIn('    needs: admit\n', header)
-        self.assertIn('    if: ' + self.guard + '\n', header)
-        self.assertEqual(header.count('    if:'), 1)
-        self.assertNotIn('continue-on-error:', self.admission)
-        self.assertNotIn('continue-on-error:', header)
-        self.assertIn('    runs-on: macos-latest\n', header)
+    def fetch(self, path):
+        if '/git/ref/heads/' in path:
+            return {'object': {'type': 'commit', 'sha': self.branch_sha}}
+        return self.fetch_main(path)
 
-    def test_admission_uses_read_only_trusted_main_and_exact_candidate(self):
-        job = self.admission.split('  admit:\n', 1)[1]
-        self.assertIn('    if: ' + self.guard + '\n', job)
-        self.assertIn('    permissions:\n      contents: read\n      actions: read\n', job)
-        self.assertIn('          ref: main\n', job)
-        self.assertIn('          persist-credentials: false\n', job)
-        self.assertIn('          GH_TOKEN: ${{ github.token }}\n', job)
-        self.assertIn('        run: ' + self.command + '\n', job)
-        self.assertNotIn('secrets.', job)
-        self.assertNotIn('continue-on-error:', job)
+    def candidate(self):
+        return gate.admit(self.repo, self.sha, fetch=self.fetch, platform='macos', onboarding_candidate=True)
 
-    def test_selected_verified_ancestor_flows_to_checkout_and_publication(self):
-        self.assertIn('REQUEST_SHA: ${{ inputs.candidate_sha || github.sha }}', self.admission)
-        self.assertIn('sha: ${{ steps.gate.outputs.sha }}', self.admission)
-        self.assertIn('CANDIDATE_SHA: ${{ needs.admit.outputs.sha }}', self.preview)
-        self.assertIn('ref: ${{ needs.admit.outputs.sha }}', self.preview)
-        self.assertNotIn('$GITHUB_SHA', self.preview)
-        self.assertNotIn('${GITHUB_SHA}', self.preview)
-        self.assertIn('--previous-mac-feed "$previous"', self.preview)
+    def test_scoped_candidate_requires_exact_both_platforms_and_current_branch(self):
+        self.assertEqual(self.candidate(), self.sha)
+        for platform in self.runs:
+            original = copy.deepcopy(self.runs[platform])
+            for field, value in [('head_sha', 'b'*40), ('head_branch', 'feature'), ('event', 'push'),
+                                 ('conclusion', 'failure'), ('status', 'queued'), ('path', 'other.yml')]:
+                with self.subTest(platform=platform, field=field):
+                    self.runs[platform][field] = value
+                    with self.assertRaises(ValueError): self.candidate()
+                    self.runs[platform] = copy.deepcopy(original)
+            receipt = self.jobs[platform].pop()
+            with self.assertRaises(ValueError): self.candidate()
+            self.jobs[platform].append(receipt)
+        self.branch_sha = 'b'*40
+        with self.assertRaisesRegex(ValueError, 'branch moved'): self.candidate()
 
-    def test_mac_rechecks_receipts_before_credentials_or_build(self):
-        steps = self.preview.split('    steps:\n', 1)[1]
-        recheck = steps.index('        run: ' + self.command.replace('$REQUEST_SHA', '$CANDIDATE_SHA') + '\n')
-        self.assertLess(steps.index('uses: actions/checkout@'), recheck)
-        for action in ('Prepare Developer ID credentials', 'dtolnay/rust-toolchain@',
-                       'Build and verify the preview app', 'Sign the Sparkle archive'):
-            self.assertLess(recheck, steps.index(action))
+    def test_scoped_candidate_requires_published_baseline_ancestry(self):
+        for status in ['behind', 'diverged', 'identical']:
+            self.status = status
+            with self.assertRaisesRegex(ValueError, 'descend'): self.candidate()
+
+    def test_exception_cannot_admit_other_repositories_or_linux_publication(self):
+        for repo, platform in [('example/project', 'macos'), (self.repo, 'linux')]:
+            with self.assertRaises(ValueError):
+                gate.admit(repo, self.sha, fetch=self.fetch, platform=platform, onboarding_candidate=True)
 
 
 if __name__ == '__main__': unittest.main()

@@ -21,7 +21,6 @@ def config(env):
     return {
         'name': 'apparent-hosted', 'account_id': account,
         'main': 'dist/worker.js', 'compatibility_date': '2026-02-05',
-        'compatibility_flags': ['nodejs_compat'],
         'workers_dev': False, 'preview_urls': False,
         'routes': [{'pattern': 'hosted.tryapparent.com', 'custom_domain': True}],
         'vars': {'API_ORIGIN': 'https://hosted.tryapparent.com',

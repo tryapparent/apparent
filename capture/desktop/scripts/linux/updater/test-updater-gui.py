@@ -26,6 +26,44 @@ class LocatorTests(unittest.TestCase):
     def setUp(self):
         self.gui = load('updater-gui')
 
+    def test_portal_tabs_require_unique_ordered_labels_across_ocr_run_splits(self):
+        for gap in [17, 27]:
+            words = [{'text': text, 'left': x, 'top': 185, 'width': 65, 'height': 16}
+                     for text, x in [('Windows', 178), ('Outputs', 243 + gap), ('Region', 325 + gap)]]
+            self.assertEqual(self.gui.find_portal_outputs(words, ''), (275 + gap, 193))
+            for invalid in [words[:2], words + [words[1]],
+                            [words[1], words[0], dict(words[2], left=20)],
+                            [words[0], dict(words[1], top=250), words[2]]]:
+                with self.subTest(gap=gap, invalid=invalid), self.assertRaises(ValueError):
+                    self.gui.find_portal_outputs(invalid, '')
+
+    def test_portal_points_require_the_observed_viewport_and_stay_inside_it(self):
+        from PIL import Image
+        for viewport, point, accepted in [([1280, 800], [640, 420], True),
+                                          ([1920, 1080], [640, 420], False),
+                                          ([1280, 800], [-1, 420], False),
+                                          ([1280, 800], [1280, 420], False)]:
+            with self.subTest(viewport=viewport, point=point), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                frame = root / 'portal.png'
+                Image.new('RGB', (1280, 800)).save(frame)
+                evidence = self.gui.Evidence(root)
+                request = {'op': 'click-point', 'text': 'Outputs Region', 'label': 'consent',
+                           'viewport': viewport, 'point': point}
+                with patch.object(evidence, 'locate', return_value=(frame, (335, 193))) as locate, \
+                     patch.object(evidence, 'frame', return_value=frame), \
+                     patch.object(self.gui, 'qmp') as pointer, patch.object(self.gui.time, 'sleep'):
+                    if accepted:
+                        evidence.perform(request)
+                        events = pointer.call_args_list[0].args[2]['events']
+                        self.assertEqual(events[0]['data']['value'], round(640 * 32767 / 1279))
+                        self.assertEqual(events[1]['data']['value'], round(420 * 32767 / 799))
+                        locate.assert_called_once_with('Outputs Region', 20, finder=self.gui.find_portal_outputs)
+                    else:
+                        with self.assertRaises(ValueError):
+                            evidence.perform(request)
+                        pointer.assert_not_called()
+
     def test_phrase_uses_visible_word_bounds(self):
         words = [{'text': t, 'left': x, 'top': 10, 'width': w, 'height': 12,
                   'block_num': 1, 'par_num': 1, 'line_num': 1}
@@ -252,27 +290,24 @@ class FixtureTests(unittest.TestCase):
     def setUp(self):
         self.fixture = load('updater-fixture')
 
-    def test_migration_preserves_old_discovery_and_authenticates_bridge_source(self):
-        control = {'channel':'main','source_head':'c'*40,'version':'0.3.13',
-                   'mode':'available','migration':True,'legacy':True}
-        base = '/repos/tryapparent/apparent/'
-        releases = json.loads(self.fixture.response(control, base+'releases?per_page=10&page=2', b'candidate')[1])
-        old_visible = [r for r in releases if re.fullmatch(r'linux-main-[0-9a-f]{40}', r['tag_name'])]
-        self.assertEqual([r['tag_name'] for r in old_visible], ['linux-main-'+'f'*40])
-        bridge = json.loads(self.fixture.response(control, base+'git/commits/'+'f'*40, b'candidate')[1])
-        source = json.loads(self.fixture.response(control, base+'git/commits/'+'c'*40, b'candidate')[1])
-        self.assertEqual([p['sha'] for p in bridge['parents']], [self.fixture.LEGACY_SHA, source['sha']])
-        self.assertEqual(bridge['tree'], source['tree'])
-        self.assertEqual(self.fixture.response(control, base+'git/commits/'+'d'*40, b'candidate')[0], 404)
-        control['legacy'] = False
-        releases = json.loads(self.fixture.response(control, base+'releases?per_page=10&page=2', b'candidate')[1])
-        self.assertEqual(releases[0]['tag_name'], 'linux-main-v2-'+'b'*40)
+    def test_stable_metadata_separates_components_from_desktop_candidates(self):
+        control = {'channel': 'stable', 'version': '0.3.13', 'mode': 'current'}
+        path = self.fixture.metadata_path(control)
+        self.assertEqual(path, '/repos/tryapparent/apparent/releases?per_page=100&page=1')
+        status, body = self.fixture.response(control, path, b'packaged candidate')
+        self.assertEqual(status, 200)
+        releases = json.loads(body)
+        self.assertEqual([r['tag_name'] for r in releases], ['recipient-component', 'v0.3.13'])
+        self.assertEqual(json.loads(self.fixture.response(control, self.fixture.API, b'')[1])['tag_name'], 'recipient-component')
+        control['mode'] = 'error'
+        self.assertEqual(self.fixture.response(control, path, b'')[0], 503)
 
     def test_main_pagination_canonical_assets_and_current_identity(self):
         source = 'a' * 40
         control = {'channel': 'main', 'source_head': source, 'version': '1.2.3', 'mode': 'current'}
-        base = '/repos/tryapparent/apparent/releases?per_page=10&page='
+        base = '/repos/tryapparent/apparent/releases?per_page=100&page='
         first = json.loads(self.fixture.response(control, base + '1', b'x')[1])
+        self.assertEqual(len(first), 100)
         self.assertFalse(first[0]['prerelease'])
         release = json.loads(self.fixture.response(control, base + '2', b'x')[1])[0]
         self.assertEqual(release['tag_name'], 'linux-main-v2-' + source)
@@ -306,16 +341,16 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(json.loads(self.fixture.response(control, forward, b'')[1])['status'], 'diverged')
         self.assertEqual(self.fixture.response(control, base + 'c' * 40 + '...' + 'b' * 40, b'')[0], 404)
         control['mode'] = 'error'
-        self.assertEqual(self.fixture.response(control, '/repos/tryapparent/apparent/releases?per_page=10&page=1', b'')[0], 503)
-        self.assertEqual(self.fixture.response(control, '/repos/tryapparent/apparent/releases?per_page=10&page=0', b'')[0], 404)
+        self.assertEqual(self.fixture.response(control, '/repos/tryapparent/apparent/releases?per_page=100&page=1', b'')[0], 503)
+        self.assertEqual(self.fixture.response(control, '/repos/tryapparent/apparent/releases?per_page=100&page=0', b'')[0], 404)
 
     def test_release_contract_and_digest_are_exact(self):
         import hashlib
         payload = b'test AppImage bytes, not a published release'
         control = {'version': '1.2.3', 'mode': 'available'}
-        status, body = self.fixture.response(control, '/repos/tryapparent/apparent/releases/latest', payload)
+        status, body = self.fixture.response(control, self.fixture.metadata_path(control), payload)
         import json
-        release = json.loads(body)
+        release = json.loads(body)[-1]
         self.assertEqual(status, 200)
         self.assertEqual(release['tag_name'], 'v999.0.0')
         url = release['assets'][1]['browser_download_url']
@@ -325,7 +360,7 @@ class FixtureTests(unittest.TestCase):
 
     def test_only_expected_routes_and_modes(self):
         self.assertEqual(self.fixture.response({'version': '1.2.3', 'mode': 'error'},
-                         '/repos/tryapparent/apparent/releases/latest', b'')[0], 503)
+                         self.fixture.STABLE_API + '1', b'')[0], 503)
         self.assertEqual(self.fixture.response({'version': '1.2.3', 'mode': 'current'},
                          '/unexpected', b'')[0], 404)
         self.assertEqual(self.fixture.response({'version': '1.2.3', 'mode': 'bad-checksum'},
@@ -354,12 +389,12 @@ class FixtureTests(unittest.TestCase):
                     time.sleep(.05)
                 curl = ['curl', '--silent', '--show-error', '--fail', '--max-time', '3',
                         '--proxy', f'http://127.0.0.1:{port}', '--noproxy', '']
-                url = 'https://api.github.com' + self.fixture.API
+                url = 'https://api.github.com' + self.fixture.STABLE_API + '1'
                 untrusted = subprocess.run(curl + [url], capture_output=True)
                 self.assertEqual(untrusted.returncode, 60)
                 trusted = subprocess.run(curl + ['--cacert', str(directory / 'cert.pem'), url],
                                          check=True, capture_output=True)
-                self.assertEqual(json.loads(trusted.stdout)['tag_name'], 'v1.2.3')
+                self.assertEqual(json.loads(trusted.stdout)[-1]['tag_name'], 'v1.2.3')
                 foreign = subprocess.run(curl + ['--cacert', str(directory / 'cert.pem'), 'https://foreign.invalid/'],
                                          capture_output=True)
                 self.assertNotEqual(foreign.returncode, 0)

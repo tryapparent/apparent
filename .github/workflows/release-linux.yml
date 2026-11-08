@@ -1,16 +1,10 @@
 name: Release (Linux)
 
 on:
-  workflow_run:
-    workflows: [Linux verification]
-    branches: [main]
-    types: [completed]
-  schedule:
-    - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
       bridge_commit:
-        description: One-time signed compatibility bridge commit; aliases already verified v2 assets.
+        description: Signed compatibility bridge; publish aliases of already verified v2 assets.
         required: false
         default: ""
       tag:
@@ -33,7 +27,9 @@ permissions:
 
 concurrency:
   # Verification cannot replace the pending publisher behind a running Main build.
-  group: release-linux-${{ github.ref }}-${{ inputs.tag }}-${{ inputs.verify_only == true && 'verify-only' || 'publish' }}-${{ github.event_name == 'workflow_run' && (github.event.workflow_run.conclusion != 'success' || github.event.workflow_run.event != 'push' || github.event.workflow_run.head_repository.full_name != github.repository) && github.run_id || 'eligible' }}
+  # Canonical publication writes only v2 tags. Compatibility publication alone
+  # writes legacy tags; its own serialized lane cannot be evicted by Main builds.
+  group: release-linux-${{ inputs.bridge_commit != '' && 'compatibility' || 'canonical' }}-${{ github.ref }}-${{ inputs.tag }}-${{ inputs.verify_only == true && 'verify-only' || 'publish' }}
   # Finish the running build/publication; GitHub coalesces to the latest pending run.
   cancel-in-progress: false
 
@@ -56,7 +52,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.23.0'
-      - name: Bridge publication contracts
+      - name: Compatibility publication contracts
         run: node --experimental-strip-types --test capture/desktop/scripts/linux/maintenance/signing-bridge.test.ts
       - id: gate
         env:
@@ -70,7 +66,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "$BRIDGE_COMMIT" ]]; then
-            [[ "$GITHUB_REF" == refs/heads/main && -z "$TAG" && "$VERIFY_ONLY" != true ]]
+            [[ "$GITHUB_REF" == refs/heads/main && -z "$TAG" && "$VERIFY_ONLY" != true && "${{ inputs.publish_main }}" != true ]]
             REQUEST_SHA=$(node --experimental-strip-types capture/desktop/scripts/linux/maintenance/signing-bridge.ts inspect "$BRIDGE_COMMIT")
           fi
           if [[ "$VERIFY_ONLY" == true ]]; then
@@ -79,6 +75,11 @@ jobs:
           fi
           if [[ -n "$TAG" ]]; then
             REQUEST_SHA=$(git rev-parse --verify "refs/tags/$TAG^{commit}")
+          fi
+          # Superseded automatic candidates need no more runner time.
+          if [[ "$GITHUB_EVENT_NAME" == workflow_run && "$(git rev-parse origin/main)" != "$REQUEST_SHA" ]]; then
+            echo 'Skipping superseded main candidate'
+            exit 0
           fi
           args=(--platform linux --sha "$REQUEST_SHA")
           if [[ -n "$VERIFY_RUN_ID" ]]; then args+=(--run-id "$VERIFY_RUN_ID"); fi
@@ -127,7 +128,6 @@ jobs:
     timeout-minutes: 90
     env:
       CANDIDATE_SHA: ${{ needs.admit.outputs.sha }}
-      # workflow_run's event SHA may be newer than the admitted checkout.
       TAG: ${{ inputs.tag }}
       PUBLISH_MAIN: ${{ github.event_name == 'workflow_run' || github.event_name == 'schedule' || inputs.publish_main }}
       VERIFY_ONLY: ${{ inputs.verify_only }}
@@ -162,9 +162,9 @@ jobs:
         run: GITHUB_SHA="$CANDIDATE_SHA" cargo build --release --locked
       - name: Unit tests and model test executable
         run: |
-          GITHUB_SHA="$CANDIDATE_SHA" cargo test --release --locked -- --test-threads=2
-          GITHUB_SHA="$CANDIDATE_SHA" cargo test --release --locked speech:: -- --nocapture
-          GITHUB_SHA="$CANDIDATE_SHA" cargo test --release --locked --bin apparent --no-run --message-format=json > target/test-artifacts.jsonl
+          cargo test --release --locked -- --test-threads=2
+          cargo test --release --locked speech:: -- --nocapture
+          cargo test --release --locked --bin apparent --no-run --message-format=json > target/test-artifacts.jsonl
           test=$(jq -r 'select(.reason == "compiler-artifact" and .target.name == "apparent" and .profile.test) | .executable // empty' target/test-artifacts.jsonl)
           test -f "$test"
           echo "SPEECH_TEST=$test" >> "$GITHUB_ENV"
@@ -255,10 +255,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # Publication policy comes from current trusted main, not an older
-          # admitted build whose publisher may still use the legacy feed.
-          ref: main
-          fetch-depth: 0
+          ref: ${{ needs.admit.outputs.sha }}
       - uses: actions/download-artifact@v5
         with:
           pattern: Apparent-*.AppImage
@@ -269,9 +266,7 @@ jobs:
           CANDIDATE_SHA: ${{ needs.admit.outputs.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Never put a pre-migration updater into the corrected feed.
-          git show "$CANDIDATE_SHA:capture/desktop/linux/updates/update.rs" | grep -F 'strip_prefix("linux-main-v2-")'
-          version=$(git show "$CANDIDATE_SHA:Cargo.toml" | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           GITHUB_SHA="$CANDIDATE_SHA" APPARENT_VERSION="$version" python3 capture/desktop/scripts/linux/maintenance/publish-main-preview.py
 
   signing-bridge:

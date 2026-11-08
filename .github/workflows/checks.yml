@@ -1,0 +1,51 @@
+name: Repository checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hermes:
+    name: Hermes inspection (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install plugin image dependency
+        run: python -m pip install 'Pillow>=10.2,<13'
+      - name: Verify recording inspection and evidence boundaries
+        run: python -m unittest discover -s hermes/tests -v
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify theme, push guards, selection and publication admission
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 enablement/verification.py --base "$BASE_SHA" --pr
+      - name: Validate workflow syntax and job dependencies
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -shellcheck= -pyflakes= .github/workflows/checks.yml .github/workflows/linux-updater-harness.yml .github/workflows/verification.yml .github/workflows/verification-mac.yml .github/workflows/verification-platform.yml .github/workflows/release-linux.yml .github/workflows/release-mac-preview.yml .github/workflows/web-delivery.yml .github/workflows/stream-public.yml

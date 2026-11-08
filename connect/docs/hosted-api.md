@@ -43,6 +43,12 @@ Errors always JSON `{error:{code,message}}`; secrets/provider responses are neve
 
 `POST /v1/token/refresh` JSON `{refreshToken}` -> `{accessToken,refreshToken,expiresIn,refreshExpiresIn,scope,grantId}`. Access lasts up to one hour; new refresh credentials last up to 30 days. Both lifetime fields are remaining **seconds**. Scope comes from the original approved grant, never a caller-supplied replacement. `grantId` is stable across every renewal. Atomically persist each new credential pair without changing the local authorization generation or re-enrolling decryption keys. Login/renewal do not grant capture decryption or sharing consent (#189).
 
+Approved device-poll and refresh replies may also include `accountInitial`, derived
+from the first character of that grant user's verified email. The email itself is
+not returned. This optional display hint grants no authority; older replies and
+credentials without it use a neutral account icon. Clients discard malformed
+initials and withhold the hint when the relevant grant is unusable.
+
 Duplicate refreshes can replay the same pair within the library's 30-second interval, including after Worker restart. While rotation is incomplete, return transient 503 `auth_unavailable` rather than invalidate a live concurrent winner. HTTP 429 `slow_down`, 5xx and transport failures are transient: keep the previous durable credentials and retry within bounded backoff. A **refresh** response of 401 `unauthorized` or `reauthorization_required` is permanent and needs explicit device reapproval. An expired access credential alone can still be refreshed. Reuse after the replay interval, expired renewal or an interrupted rotation that never persisted replay data tombstones only that device. D1 cannot make the library's separate rotation writes atomic; seamless recovery from every crash is not promised. Interrupted initial approval/issuance may also need a new device flow; see the service README's exact failure boundaries.
 
 `POST /v1/token/revoke` with the current bearer revokes the **entire device authorization**, including outstanding access and every renewal credential, returning `{ok:true}`. Optional JSON `{refreshToken}` can revoke without a live bearer. If both credentials are supplied, they must belong to the same grant/account; a matching expired bearer is allowed, mismatched/unknown credentials return 401. Browser logout affects only its own session. Sibling read/upload devices remain valid. Durable authorization denial precedes fallible provider cleanup, so concurrent orphan token rows cannot regain access.
@@ -88,75 +94,6 @@ Capability reads never authorize account listing, another capture, uploads, dele
 Local tests include concurrent grant reuse, read-budget races across Worker instances, and revocation while HTML/manifest/thumbnail/range requests are blocked at storage/metadata I/O. These are local workerd/D1/R2 results, not production or provider-login proof.
 
 ## Deployment prerequisites
-
-### Readiness evidence and action-scoped holds (#337 / #189)
-
-Acceptance authority is [#337](https://github.com/tryapparent/apparent/issues/337),
-[#189's accepted v1/default-on/public-copy limits](https://github.com/tryapparent/apparent/issues/189)
-and [#180's deployment bounds](https://github.com/tryapparent/apparent/pull/180).
-This is the owning readiness/hold map, not a second issue checklist. A hold applies
-only to its named action. Continue source review, read-only investigation, local
-synthetic tests, cutover/rollback preparation and reviewable candidate preparation
-under the existing authority. Record what those establish and what they do not;
-never turn a receipt, provisioned resource or anonymous HTTP response into live
-acceptance. Missing access blocks that inspection, not unrelated preparation.
-
-| Acceptance boundary | Evidence and safe next preparation | Held action and authority; prerequisite to proceed |
-| --- | --- | --- |
-| Installed Settings, consent and private queue/fetch | #381 covers future completion admission, retry/cancellation and complete bundles in Rust. #384 provides installed Connect and no eager history scan. #390's installed Mac worker and isolated Linux fixture prove the same encrypted pending job resumes after restart, six-file hash equality, disabled restart offline and logout. These use synthetic approval and explicit staging, not real Google or a new capture/paste recording. Reuse only unchanged inputs; review finalizer/clipboard callers and obtain any missing changed native capture/handoff proof separately. Opening Settings must remain local-only. | No deployment hold blocks local review, fixtures or a focused native candidate. Native capture/paste evidence is not supplied by the worker fixture. A missing platform permission/runner must be identified specifically; preserve local-only onboarding practice and do not wait for #171's separate public-copy workflow. |
-| Browser approval and OAuth/cookies | `service/test/access/oauth.test.mjs` exercises the actual Worker with a signed controlled provider, exact CORS/CSRF, scopes and cookie attributes; `web` browser tests use a labelled synthetic API. #337's browser/native local roundtrip uses an injected synthetic identity, so it does not prove real Secure-cookie transport or Google. Prepare a reviewed same-site HTTPS browser/provider fixture and an exact staging smoke packet; do not repeat unchanged fixtures as live proof. | Real Google audience/test-user/callback changes and account-access expansion remain held by #337/#180 and the owner deployment checklist. Actual acceptance needs the existing approved client/origins and an authorized test identity; local fixtures cannot supply that decision. |
-| Authentication/encryption cutover | #187/#317 implement trusted-account enrollment, not malicious-authorization-service resistance. `renewal.test.mjs` and `encryption.test.mjs` rehearse incumbent metadata/spent-ledger preservation, retired credentials, additive format/grants and replay refusal in local D1. Source/crypto review and native worker proof do not establish remote schema or a professional cryptographic audit. Prepare backup/restore and ordered cutover below; retain the #189 accepted future-only/no-escrow/no-history-regrant limits. | Applying `0004` to an existing database retires old credentials and needs backup/stopped-writer approval (this checklist). Production `0005`, capture migration and activation remain explicitly held by #189's accepted v1 scope and #337. Need approval for the exact database, writer stop/cutover and verified backup/restore; no implicit migration or reseeding. |
-| Remote bindings, Free viability and live end-to-end | Inspect existing approved resource/version/plan/binding and migration metadata read-only when access exists; do not read user capture contents. The configuration/packaging dry-run and local SQL/R2 audit below are safe prerequisites. They do not establish remote CPU, cron, current D1 ledger, private bucket or account isolation. Prepare small synthetic upload/fetch/delete and quota/cleanup cases with fixed operation/byte ceilings. | Provisioning, deployment, plan changes, ledger initialization and production traffic remain held by #337/#180 and [hosted activation](../../enablement/docs/continuous-delivery.md#hosted-activation-separate-operator-gate). Need an identified existing approved environment and least-privilege read access first; a later exact staging execution decision must name resources, schema state, test identity, limits and cleanup. Do not request a Paid upgrade as a substitute for Free proof. |
-| Default private availability and opt-out | Settings visibility is already default-on; `hostedSync` and `hostedEncryption` remain existing disabled candidates. Review the Rust `experiment_enabled_in` allowlist, client provider reads and config-preservation tests. Prepare the default/explicit-false, no-account/no-consent/no-history and legacy-job compatibility candidate together with feature-map/docs changes. Keep `cloud.enabled` and `cloud.uploadConsent` false by default and independently required. | Landing/enabling existing defaults before their acceptance is cleared is held by #337's default-on acceptance order and #189's enablement hold. Preparing/reviewing the patch is allowed; deployment is not a prerequisite for preparing it. Ship only after the named native/encryption/service gates are satisfied, with explicit opt-out and unchanged consent; no release receipt or production activation follows from this document. |
-| Public sharing, history, size and privacy | #171/#172 own explicit service-readable copies and any prior automatic-sharing opt-in; they do not authorize private endpoint-key disclosure. Keep their independently reviewed contracts. Do not grow #337 into recovery/history regrant, account expansion, #188 size expansion or outreach. | #189's public-sharing exception permits only separately consented selected copies; private encryption and sharing remain distinct. Their implementation is not a blanket blocker for private upload preparation. No schema application, bulk publication, Paid resource or real-user communication is authorized here. |
-
-Evidence provenance: #390's original native run `41621191966` executed original
-head `d57f881e`; its original landed tree `5e14301d` equals rewritten merge
-`78d096bf` byte-for-byte. The rewrite changes commit identity, not that proof's
-inputs. It is not a new run on later main. Keep private receipts, identities,
-credentials and recordings outside public docs/issues; report only sanitized
-scope/results and exact input applicability. Full CI runs only on main; focused
-checks, independent review and applicable native proof precede merge. Exact-main
-verification still gates publication.
-
-A blocked handoff must state the affected row, last actual evidence, exact denied
-operation and authority, completed safe prerequisites and the smallest missing
-access/resource/decision. “Production/schema hold” alone is not a stopping reason.
-Recheck this map and existing owner evidence before requesting access or repeating
-work. Issue #337 remains the acceptance tracker until the full outcome is met.
-
-### Cutover rehearsal and operator packet
-
-1. **Read-only inventory first:** record exact account/environment/Worker version,
-   D1 migration ledger/schema and spent `r2_budget`, private Standard bucket/plan,
-   route/CORS/Google callback and old writer/client compatibility. Record absent
-   access as unknown, not empty resources, zero spend or successful readiness.
-2. **Rehearse locally:** run the focused OAuth/renewal/encryption and Free-budget
-   tests against the checked Worker. Generate deployment config with synthetic
-   identifiers and run Wrangler `deploy --dry-run`; verify `nodejs_compat` is
-   retained in the generated JSON as well as the template. Packaging success with
-   a missing-runtime warning is not readiness. This never authorizes deploy.
-   Authentication cutover from `0003` applies only separately approved `0004`.
-   The local rehearsal also tests `0005` to prepare the encryption candidate;
-   applying that additive encryption migration is a distinct held action, not
-   part of authentication cutover. Do not replay `0001`–`0003`, reseed budgets or rewrite
-   existing plaintext. Legacy native/browser credentials require explicit reapproval.
-3. **Prepare rollback before requesting cutover:** identify the previous Worker
-   and a verified pre-cutover database backup/restore procedure, stop old writers,
-   then apply only approved migrations through their ledger and verify preserved
-   accounts/captures/shares/files/attempts/grants and spent counters. `0004` drops
-   old auth tables: rolling back only the Worker is insufficient. On failure keep
-   writers stopped and use the reviewed compatible version/database restore plan;
-   never restore a stale budget over later writes or fabricate a down migration.
-4. **Execute only after the specific approval/access exists:** verify same-site
-   Secure/HttpOnly cookie transport, real Google audience/issuer/state/PKCE, separate
-   read/upload consent, synthetic account isolation, encrypted complete-bundle
-   transfer, restart/retry, disable/disconnect, deletion/cron and measured Free CPU/
-   D1/R2 ceilings against that exact backend and changed native clients. Retain
-   private receipts and delete only owned synthetic artifacts. Staging acceptance,
-   production schema application, traffic activation and default shipment are
-   separate decisions; none is silently bundled with this rehearsal.
-
 
 **Local Free SQL budgets pass; not yet deployment-ready:** the real Miniflare audit in `connect/service/README.md` measures **5 SQL statements** for 512-file admission, **6 SQL + 512 R2 HEADs** for completion (518 combined internal operations), and **30 SQL + 10 R2 deletes** for a full 1,000-attempt cleanup (40 combined). Insufficient bulk B returns before HEAD with 5 SQL; ready completion uses 2 SQL and no R2. PUT first publication uses 7 SQL/1 R2; duplicate 9/2; checksum failure 8/2; denied grant 6/0; the tested lost-publication/404/catch branch 12/3. First-page cleanup delete/stamp failures use 2/4 SQL with one delete; tenth-page failures use 20/22 SQL with ten deletes. Each bounded page releases/stamps in two set statements, not SQL per object. The audit counts individual statements inside batches against Free's 50 queries and combined SQL/R2 against 1,000 internal-service operations; the 50 external-fetch budget is separate. Local 90MB streaming and these counts do not prove remote Free 10ms CPU, daily D1 rows/storage, scan cost or metadata-growth viability. No Paid activation is authorized. Parent must independently review and rerun native integration against the changed exact backend before publishing.
 

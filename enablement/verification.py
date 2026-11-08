@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Conservative changed-tree verification shared by pre-push and Actions.
 
-PR pushes run contract checks; main CI runs full platform verification before CD.
+Feature pushes and repository CI run contract checks. Full platform verification
+and publication remain manual-only.
 Explicit local --run retains conservative changed-tree checks.
 Both sides of renames/deletions are included. Missing history broadens checks.
 """
@@ -249,7 +250,6 @@ def main():
     parser.add_argument("--base", required=True)
     parser.add_argument("--preflight", action="store_true", help="Check temporary environment only; no builds or mutations")
     parser.add_argument("--head", default="HEAD")
-    parser.add_argument("--receipt-dir", type=Path, help="Write observation-only receipts outside the checkout (Node 22 required)")
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--pr", action="store_true", help="Hook/CI: cheap PR contract checks")
     parser.add_argument("--online", action="store_true", help="CI: use locked graph instead of offline cache")
@@ -258,15 +258,6 @@ def main():
     if args.preflight:
         check_temp_environment()
         print("Temporary environment prerequisites passed; not native proof.")
-        return
-    if args.receipt_dir and (args.pr or args.run):
-        command = ['python3', str(Path(__file__).resolve()), '--base', args.base, '--head', args.head]
-        if args.github_output:
-            command += ['--github-output', str(args.github_output.resolve())]
-        command += [flag for flag, enabled in [('--pr', args.pr), ('--run', args.run), ('--online', args.online)] if enabled]
-        subprocess.run(['node', str(ROOT / 'enablement/verification/receipt.ts'),
-                        '--suite', 'changed-tree' if args.run else 'pr-contracts',
-                        '--output', str(args.receipt_dir.resolve()), '--', *command], cwd=ROOT, check=True)
         return
     selection = plan(args.base, args.head)
     print(json.dumps(selection, sort_keys=True), flush=True)

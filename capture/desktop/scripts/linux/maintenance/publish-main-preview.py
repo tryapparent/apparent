@@ -56,6 +56,8 @@ def publication_needed(repo, sha):
         for item in page:
             if not isinstance(item, dict) or not isinstance(item.get("tag_name"), str):
                 raise RuntimeError("Malformed release history entry")
+            # Legacy linux-main-<sha> tags belong to the pre-signing history
+            # and compatibility bridge. linux-main-feed is metadata, not a SHA.
             if not item["tag_name"].startswith("linux-main-v2-"):
                 continue
             if not isinstance(item.get("draft"), bool) or not isinstance(item.get("prerelease"), bool):

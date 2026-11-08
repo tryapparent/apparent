@@ -52,7 +52,6 @@ on run argv
       if (count of windows) is 0 then error "Owned process has no AX windows"
       set outerWindow to window 1
       set picker to outerWindow
-      set parentPicker to missing value
       set depth to 0
       set trace to ""
       repeat
@@ -70,7 +69,6 @@ on run argv
         set childSheets to sheets of picker
         if (count of childSheets) is 0 then exit repeat
         if (count of childSheets) is not 1 or depth is 4 then error "Unsupported owned AX sheet tree: " & trace
-        set parentPicker to picker
         set picker to item 1 of childSheets
         set depth to depth + 1
       end repeat
@@ -99,36 +97,6 @@ on run argv
       if panelRole is not "AXSheet" and panelRole is not "AXWindow" then error "Unexpected picker role: " & trace
       -- A sheet can have no title. A named picker must expose the shipped title.
       if panelName is not "" and panelName is not "Choose capture location" then error "Unexpected picker title: " & trace
-      -- Go to Folder is a blocking child of the verified native chooser.
-      -- Observe only its immediate controls; never descend the file browser.
-      if operation is "go-ready" or operation is "go-fill" or operation is "go-readback" or operation is "go-commit" then
-        if depth is not 2 or panelRole is not "AXSheet" or panelName is not "" then error "Unsupported Go to Folder sheet: " & trace
-        if (role of parentPicker as text) is not "AXSheet" then error "Unexpected Go to Folder parent role: " & trace
-        set parentButtons to buttons of parentPicker
-        if (count of parentButtons) > 16 then error "Oversized Go to Folder parent footer: " & trace
-        set parentChooseCount to 0
-        set parentCancelCount to 0
-        repeat with parentButton in parentButtons
-          set parentButtonName to name of parentButton
-          if parentButtonName is "Choose" then set parentChooseCount to parentChooseCount + 1
-          if parentButtonName is "Cancel" then set parentCancelCount to parentCancelCount + 1
-        end repeat
-        if parentChooseCount is not 1 or parentCancelCount is not 1 then error "Go to Folder has no unique chooser parent: " & trace
-        set children to UI elements of picker
-        if (count of children) is not 4 then error "Unsupported Go to Folder controls: " & trace
-        if (role of item 1 of children as text) is not "AXStaticText" or (role of item 2 of children as text) is not "AXButton" or (role of item 3 of children as text) is not "AXTextField" or (role of item 4 of children as text) is not "AXScrollArea" then error "Unsupported Go to Folder roles: " & trace
-        set pathField to item 3 of children
-        if not frontmost or not (enabled of pathField) or not (focused of pathField) then error "Go to Folder field is not ready/focused: " & trace
-        if operation is "go-fill" then
-          -- Set the OS field directly, avoiding lost keystrokes/autocomplete races.
-          set value of pathField to item 2 of argv
-        end if
-        if operation is not "go-ready" then
-          if (value of pathField as text) is not (item 2 of argv) then error "Go to Folder path readback mismatch: " & trace
-        end if
-        if operation is "go-commit" then key code 36
-        return trace & "go-field=" & operation
-      end if
       -- Observed macOS 26 NSOpenPanel: one AXSplitGroup immediately under the
       -- sheet, with the footer buttons directly under that group. Do not walk
       -- the file-browser descendants (which can expose an entire volume).
@@ -164,7 +132,22 @@ on run argv
         if not frontmost then error "Owned Electron process is not frontmost"
         if operation is "go" then
           keystroke "g" using {command down, shift down}
-          -- Readiness, path readback and confirmation occur in separate phases.
+          delay 0.4
+          if not frontmost then error "Focus left owned Electron process"
+          -- argv, not script interpolation: spaces, quotes and accents remain data.
+          set goSheets to sheets of picker
+          if (count of goSheets) is not 1 then error "Owned Go to Folder sheet missing or ambiguous"
+          set goSheet to item 1 of goSheets
+          set pathFields to text fields of goSheet
+          if (count of pathFields) is not 1 then error "Owned Go to Folder path field missing or ambiguous"
+          set pathField to item 1 of pathFields
+          set value of pathField to (item 2 of argv)
+          if (value of pathField as text) is not (item 2 of argv) then error "Go to Folder path readback differs"
+          -- Let NSOpenPanel resolve the edited path before committing navigation.
+          -- Immediate Return can leave the autocomplete sheet open on CI.
+          delay 1
+          if not frontmost then error "Focus left owned Electron process"
+          key code 36
         else if operation is "choose" then
           click chooseButton
         else
@@ -454,25 +437,11 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     report.before = { ...await poll(snapshot, 'Initial authoritative read'), files: await assertFiles(null) };
     assert.equal(report.before.location.storage.source, 'builtin');
     assert.equal(report.before.location.storage.effectivePath, builtin);
-    await poll(async () => {
-      const displayed = await locationStatus.innerText({ timeout: budget(1000) });
-      if (await locationStatus.getByText(report.before.location.storage.displayPath, { exact: true }).isVisible()) return;
-      // The initial renderer read may race other read-only Settings requests.
-      // Use the shipped Refresh control only for its explicit busy state;
-      // unexpected errors still fail, and no mutation is retried.
-      assert.equal(displayed, 'Another location request is still running. Refresh when it finishes.');
-      await card.getByRole('button', { name: 'Refresh location', exact: true }).click({ timeout: budget(1000) });
-      throw new Error('Location refresh pending');
-    }, 'Rendered initial capture location');
+    await locationStatus.getByText(report.before.location.storage.displayPath, { exact: true }).waitFor({ timeout: budget() });
     await change.click({ timeout: budget() });
     report.nativeBeforeGo = await poll(() => panel('inspect'), 'Native Change picker');
     // Only the OS picker receives the path. Never pass it through renderer/IPC.
-    const goPanel = operation => osa(panelScript, [String(electronChild.pid), selected, operation]);
-    await goPanel('go');
-    report.nativeGoReady = await poll(() => goPanel('go-ready'), 'Go to Folder field readiness');
-    report.nativeGoFilled = await goPanel('go-fill');
-    report.nativeGoReadback = await poll(() => goPanel('go-readback'), 'Go to Folder exact path readback');
-    report.nativeGoCommit = await goPanel('go-commit');
+    await osa(panelScript, [String(electronChild.pid), selected, 'go']);
     report.nativeBeforeChoose = await poll(() => panel('inspect'), 'Picker after Go to Folder');
     // Optional evidence: bounded rectangle of our verified Electron window only.
     const bounds = report.nativeBeforeChoose.match(/bounds=(-?\d+),(-?\d+),(\d+),(\d+)$/);
@@ -506,6 +475,11 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     const afterCancelStat = await fs.stat(config, { bigint: true });
     assert.equal(afterCancelStat.ino, beforeCancelStat.ino, 'Cancel replaced config');
     assert.equal(afterCancelStat.mtimeNs, beforeCancelStat.mtimeNs, 'Cancel rewrote config');
+    // Cancel remounts Retention, which reads policy and then scans usage on
+    // Rust's single Storage worker. Wait for that real receipt before the
+    // fixture's direct socket probe and one Reset; do not retry mutations.
+    await expect(card.getByRole('button', { name: 'Refresh usage', exact: true }))
+      .toBeEnabled({ timeout: budget() });
     report.cancel = { ...await snapshot(), files: await assertFiles(selected),
       bytesUnchanged: true, inodeUnchanged: true, mtimeUnchanged: true };
     assert.deepEqual(report.cancel.location, report.change.location);

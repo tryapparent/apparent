@@ -9,7 +9,8 @@ It follows the application's inherited system appearance through AppKit KVO,
 including live changes. A full-screen menu bar can stay dark in both system
 modes, so the status button's own appearance must not select the icon variant.
 There is no app appearance setting or restart requirement. The Dock/app icon
-keeps its Carbon/Lilac colors. Linux's tray is unchanged.
+keeps its Carbon/Lilac colors. The Linux tray uses the same boxed variants; see
+[Linux tray appearance](linux/linux.md#tray-appearance).
 This is an OS adapter change, not a new Settings workflow;
 the development Electron Settings window does not create a second tray icon.
 
@@ -45,16 +46,8 @@ must be available. CLI commands/tests never install the global reporter.
 Live ingestion, grouping and alerts require bounded synthetic verification in an
 isolated project before release; local HTTP tests are not that proof.
 
-Reports include a fixed failure category, version/build, OS/architecture and
-repo-relative source call site. Operation errors also include typed processing
-breadcrumbs (step and source line), OS error kind/number, JSON error category and
-position when present, and bounded error-chain depth. Finalization failures include
-capture mode, dimensions/scale, duration, candidate-frame count, video/microphone
-presence when known, pending-notes status and stroke/interaction counts. These
-describe reproduction inputs, not their contents. Unknown third-party messages
-remain local; diagnostics never format an arbitrary error. Error groups distinguish
-the deepest known step and OS error kind per platform; breadcrumb frames are
-synthetic failure boundaries, not an unwound stack. No raw error/panic text, logs, recordings,
+The payload allows only a static failure category, version/build, OS/architecture
+and repo-relative source call site. No raw error/panic text, logs, recordings,
 screenshots, transcripts, clipboard contents, window/device names, capture IDs,
 share URLs or user paths. Each event gets a random identity; person profiles and
 geolocation are disabled. No session replay/usage tracking. The receiving service
@@ -130,16 +123,6 @@ uploads. To hide the controls, set `"connectSettings": false` in the existing
 Settings. It adds no onboarding step and does not require `hostedSharing`. Without a configured `cloud.server`, sign-in uses
 `https://hosted.tryapparent.com`; an existing valid custom origin is preserved.
 
-Connection actions in General open the packaged shared Electron Connect view.
-It uses the existing Rust controller and a Connect-only bridge; navigating back
-returns to the existing Settings pages. Missing assets or a failed Electron window
-retain the native General fallback. Closing/reloading cancels pending approval;
-the native action that opened the view is consumed once and is never replayed by
-reload. Keep the native fallback until equivalent macOS and isolated Linux consent,
-cancellation, recovery and navigation acceptance passes. Ordinary Settings opens
-no longer measure capture history; the native Storage fallback measures only on
-an explicit Storage visit, and Electron Storage uses its bounded usage request.
-
 **Sign in to Connect… → Allow and continue → Open browser** explains the full
 upload scope before starting device authorization. The browser link carries the public code automatically; approve there, then return
 to Settings. Settings does not ask users to match a code that the browser does not show. Website sign-in/approval is not
@@ -165,9 +148,10 @@ raw errors, tokens and device secrets never enter its presentation contract.
 
 Connect uses the accepted Paper card and the shared frog artwork, without a separate
 section heading. The invitation reads “Help others see what you mean.”; successful
-local activation becomes a compact confirmation. The top-right A opens connection
-controls, not an asserted account identity: the current Desktop contract has no
-verified email. Disable and disconnect first show a local confirmation; declining
+local activation becomes a compact confirmation. The top-right account control shows
+the initial derived from the verified email on the active local grant, without
+exposing the email to Desktop. Older credentials and unavailable identity use a
+neutral person icon. Disable and disconnect first show a local confirmation; declining
 it does not revoke or cancel anything. Confirmed commands retain the existing
 revocation and pending-login cancellation semantics. Shared-link management is
 available only through its existing feature gate and validated credential site.
@@ -223,6 +207,17 @@ Storage now opens the branded Electron Settings page by default; other Settings 
 Recording › Language shows under Transcription while it's Apple Speech: Automatic, then the helper's supported `locales` by name. It writes `appleLocale` (Automatic removes the key) and returns `Effect::SpeechModel`, which restarts the model check for the new language (see `capture/engine/docs/keyframes-and-text.md`).
 
 The sidebar is the helper's alone: a row selects on mouse-down and its pane replaces the last on the next frame, with no transition (keep it that way; a fade read as lag; the level meter starts after the Recording pane has drawn). Rust's `state` never carries the pane (only `show` does, when Settings is opened again), so a reply can't move the selection.
+
+On Linux all Settings panes, including Storage, stay inside the same GPUI window.
+Navigation preserves its frame, position and focus. Storage has a native folder
+picker, Change/Reset, effective-location readback, retention presets/reset and
+Refresh Storage for folder usage. These use the existing Rust preference
+transactions; picker Cancel writes nothing and existing captures are never moved.
+An environment override or unusable saved folder is shown explicitly. Usage is a
+bounded background scan on open or refresh, not continuous scanning. A folder
+change affects new captures; an active capture keeps its original destination.
+Restart after changing folders so the existing cleanup worker follows that folder.
+macOS keeps its existing Electron Storage route and native fallback.
 
 About shows the package version and the running binary's build-time commit, for example `Version 0.3.13 · ad8d4b1`. Tracked local edits add `+modified`; builds without Git metadata or a valid CI revision say `build unknown`. This identifies the compiled build, not the selected update channel or an update staged for the next launch. Both the Mac helper and Linux GPUI Settings use the same label.
 
@@ -300,3 +295,14 @@ or a renderer crash restore the native presentation. During capture, constructio
 of a crashed presentation’s native replacement waits until capture ends. The
 first-capture opt-out changes the workflow requirements; it does not select a
 second competing onboarding surface.
+
+
+The release-baseline onboarding candidate uses the existing packaged Electron route
+for the approved pen picker, permission checklist, shortcut editor and floating
+practice coaches. The lesson follows real whiteboard/screen ink, completion and
+clipboard receipts, then asks the person to confirm a manual paste and open the
+same practice bundle. Confirmation does not establish destination focus or audio
+quality; installed platform acceptance remains required. `penColor` accepts
+`coral`, `purple`, `blue` or `green`, loads at app startup and applies immediately
+when saved in setup. Legacy strokes without a color retain red. Config writes
+preserve unrelated keys. See [candidate admission and proof](onboarding-release-candidate.md).
