@@ -153,9 +153,9 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     }
   };
   let env;
-  const osa = async (script, args = [], cap = 3500) => {
+  const osa = async (script, args = []) => {
     const { stdout } = await run('/usr/bin/osascript', ['-e', script, ...args], {
-      env, timeout: budget(cap), killSignal: 'SIGKILL', maxBuffer: 32768,
+      env, timeout: budget(3500), killSignal: 'SIGKILL', maxBuffer: 32768,
     });
     return stdout.trim();
   };
