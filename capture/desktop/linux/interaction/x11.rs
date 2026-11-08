@@ -13,6 +13,7 @@ use x11rb::connection::Connection;
 use x11rb::protocol::randr::ConnectionExt as _;
 use x11rb::protocol::shape::SK;
 use x11rb::protocol::xfixes::ConnectionExt as _;
+use x11rb::protocol::xinput::ConnectionExt as _;
 use x11rb::protocol::xproto::{
     AtomEnum, ChangeWindowAttributesAux, ClientMessageEvent, ConfigureWindowAux,
     ConnectionExt as _, EventMask, InputFocus, MapState, PropMode, StackMode, Window,
@@ -324,8 +325,21 @@ impl OverlayPointer {
                     crate::capture::engine::runtime::apparent_log("ink pointer unavailable: event subscription failed");
                     return None;
                 }
+                // XWayland/GPUI deliver XI2 motion even when no core MotionNotify
+                // reaches another client. Select only motion/leave on our owned
+                // surface; never subscribe to buttons or desktop-wide raw input.
+                let xi2 = conn.xinput_xi_query_version(2, 0).ok()
+                    .and_then(|cookie| cookie.reply().ok()).is_some_and(|version| version.major_version >= 2)
+                    && conn.xinput_xi_select_events(id, &[x11rb::protocol::xinput::EventMask {
+                        deviceid: 1, // XIAllMasterDevices, matching GPUI's surface input.
+                        mask: vec![x11rb::protocol::xinput::XIEventMask::MOTION
+                            | x11rb::protocol::xinput::XIEventMask::LEAVE],
+                    }]).ok().and_then(|cookie| cookie.check().ok()).is_some();
                 self.connection = Some((conn, root));
-                crate::capture::engine::runtime::apparent_log(format!("ink pointer subscribed: window={id:#x}"));
+                crate::capture::engine::runtime::apparent_log(format!(
+                    "ink pointer subscribed: window={id:#x} source={}",
+                    if xi2 { "core+xi2" } else { "core" },
+                ));
             }
         }
         let (id, _) = request?;
@@ -357,7 +371,15 @@ fn observe_overlay_event(point: &mut Option<(f64, f64)>, event: x11rb::protocol:
             && event.same_screen && event.response_type & 0x80 == 0 => {
             *point = Some((f64::from(event.root_x), f64::from(event.root_y)));
         }
+        Event::XinputMotion(event) if event.event == id && event.root == root
+            && event.response_type & 0x80 == 0
+            && event.valuator_mask.first().is_some_and(|mask| mask & 3 != 0) => {
+            // XI2 positions are signed 16.16 X-root pixels, including fractions
+            // and negative output origins. They are not normalized device axes.
+            *point = Some((f64::from(event.root_x) / 65536.0, f64::from(event.root_y) / 65536.0));
+        }
         Event::LeaveNotify(event) if event.event == id => *point = None,
+        Event::XinputLeave(event) if event.event == id => *point = None,
         Event::UnmapNotify(event) if event.window == id => *point = None,
         Event::DestroyNotify(event) if event.window == id => *point = None,
         Event::ConfigureNotify(event) if event.window == id => *point = None,
@@ -1045,6 +1067,31 @@ mod tests {
         assert!(point.is_none());
         let mut tracker = OverlayPointer { request: Some((7, 1)), connection: None, point: Some((1.0, 2.0)) };
         assert!(tracker.poll(None).is_none());
+    }
+
+    #[test]
+    fn xi2_overlay_motion_keeps_fractional_roots_and_rejects_foreign_or_scroll_events() {
+        use x11rb::protocol::{Event, xinput::{MotionEvent, LeaveEvent}};
+        let motion = MotionEvent {
+            response_type: 35, event: 7, root: 3,
+            root_x: -120 * 65536 - 32768, root_y: 240 * 65536 + 16384,
+            valuator_mask: vec![3], ..Default::default()
+        };
+        let mut point = None;
+        for rejected in [
+            MotionEvent { event: 8, ..motion.clone() },
+            MotionEvent { root: 4, ..motion.clone() },
+            MotionEvent { response_type: 0xa3, ..motion.clone() },
+            MotionEvent { valuator_mask: vec![4], ..motion.clone() },
+            MotionEvent { valuator_mask: Vec::new(), ..motion.clone() },
+        ] {
+            observe_overlay_event(&mut point, Event::XinputMotion(rejected), 7, 3);
+            assert!(point.is_none());
+        }
+        observe_overlay_event(&mut point, Event::XinputMotion(motion), 7, 3);
+        assert_eq!(point, Some((-120.5, 240.25)));
+        observe_overlay_event(&mut point, Event::XinputLeave(LeaveEvent { event: 7, ..Default::default() }), 7, 3);
+        assert!(point.is_none());
     }
 
     #[test]
