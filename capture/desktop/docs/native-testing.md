@@ -132,6 +132,14 @@ speaker stimulus is used. This recipe makes no microphone-quality claim.
 
 ## Run and native consent
 
+For coordinate tests, `--outputs 2` adds a second owned virtio GPU and
+`--relative-mouse` adds a USB relative mouse alongside the existing tablet.
+Defaults retain the original single-GPU/tablet layout. Use QMP `query-mice`
+and select the non-absolute USB mouse for relative-input cases; adding it does
+not change which pointer is active. Verify actual compositor output layout,
+scale and guest input events. Device flags, a ready desktop or an X11 window
+alone do not prove native Wayland coordinates, capture identity or consent.
+
 The runner defaults to `--desktop hyprland`. For a separately prepared GNOME or
 KDE Wayland image, pass `--desktop gnome` or `--desktop kde`. It requires the
 test account's compositor process and exported X11/Wayland/runtime environment,

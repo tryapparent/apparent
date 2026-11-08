@@ -77,6 +77,21 @@ class GuestIsolationTests(unittest.TestCase):
         network = command[command.index('-netdev') + 1]
         self.assertEqual(network, 'user,id=net0,hostfwd=tcp:127.0.0.1:23456-:22,restrict=on')
 
+    @patch.object(runner.os, 'getgroups', return_value=[1234])
+    @patch.object(runner.Path, 'stat', return_value=SimpleNamespace(st_gid=1234))
+    def test_extra_output_and_relative_mouse_are_explicit_owned_devices(self, _stat, _groups):
+        directory = Path('/synthetic/job')
+        args = (directory / 'disk.qcow2', directory / 'OVMF_VARS.fd', directory, 23456, 3072)
+        default = runner.qemu_command(*args, True)
+        expanded = runner.qemu_command(*args, True, outputs=2, relative_mouse=True)
+        self.assertEqual(expanded[:len(default)], default)
+        self.assertEqual(expanded[len(default):], ['-device', 'virtio-gpu-pci,id=apparent-second-display',
+                                                 '-device', 'usb-mouse,id=apparent-relative-mouse'])
+        self.assertNotIn('virtio-gpu-pci,id=apparent-second-display', default)
+        self.assertNotIn('usb-mouse,id=apparent-relative-mouse', default)
+        with self.assertRaises(ValueError):
+            runner.qemu_command(*args, outputs=3)
+
     def test_expiry_is_armed_before_guest_boot_and_fail_closed(self):
         with tempfile.TemporaryDirectory() as scratch:
             with patch.object(runner.subprocess, "run") as command:
