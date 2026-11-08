@@ -309,12 +309,23 @@ impl OverlayPointer {
                 crate::capture::engine::runtime::apparent_log(format!(
                     "ink pointer request: window={id:#x} generation={generation}"
                 ));
-                let (conn, screen) = RustConnection::connect(None).ok()?;
-                let root = conn.setup().roots.get(screen)?.root;
-                conn.change_window_attributes(id, &ChangeWindowAttributesAux::new().event_mask(
+                let Ok((conn, screen)) = RustConnection::connect(None) else {
+                    crate::capture::engine::runtime::apparent_log("ink pointer unavailable: X11 connection failed");
+                    return None;
+                };
+                let Some(root) = conn.setup().roots.get(screen).map(|screen| screen.root) else {
+                    crate::capture::engine::runtime::apparent_log("ink pointer unavailable: X11 root missing");
+                    return None;
+                };
+                let subscribed = conn.change_window_attributes(id, &ChangeWindowAttributesAux::new().event_mask(
                     EventMask::POINTER_MOTION | EventMask::LEAVE_WINDOW | EventMask::STRUCTURE_NOTIFY,
-                )).ok()?.check().ok()?;
+                )).ok().and_then(|cookie| cookie.check().ok()).is_some();
+                if !subscribed {
+                    crate::capture::engine::runtime::apparent_log("ink pointer unavailable: event subscription failed");
+                    return None;
+                }
                 self.connection = Some((conn, root));
+                crate::capture::engine::runtime::apparent_log(format!("ink pointer subscribed: window={id:#x}"));
             }
         }
         let (id, _) = request?;
@@ -1034,6 +1045,44 @@ mod tests {
         assert!(point.is_none());
         let mut tracker = OverlayPointer { request: Some((7, 1)), connection: None, point: Some((1.0, 2.0)) };
         assert!(tracker.poll(None).is_none());
+    }
+
+    #[test]
+    #[ignore = "requires an isolated X server; run under xvfb-run"]
+    fn overlay_pointer_observes_real_motion_without_reusing_a_generation() {
+        use x11rb::protocol::xproto::{CreateWindowAux, WindowClass};
+        let x = x().expect("isolated X server");
+        let id = x.conn.generate_id().unwrap();
+        x.conn.create_window(x11rb::COPY_DEPTH_FROM_PARENT, id, x.root,
+            0, 0, 200, 200, 0, WindowClass::INPUT_OUTPUT, x11rb::COPY_FROM_PARENT,
+            &CreateWindowAux::new()).unwrap().check().unwrap();
+        x.conn.map_window(id).unwrap().check().unwrap();
+        let mut tracker = OverlayPointer::default();
+        assert_eq!(tracker.poll(Some((id, 1))), None);
+        let move_to = |x_pos, y_pos| {
+            x.conn.warp_pointer(x11rb::NONE, x.root, 0, 0, 0, 0, x_pos, y_pos)
+                .unwrap().check().unwrap();
+        };
+        let expect_point = |tracker: &mut OverlayPointer, generation, expected| {
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(1);
+            loop {
+                let actual = tracker.poll(Some((id, generation)));
+                if actual == expected { break; }
+                assert!(std::time::Instant::now() < until, "expected {expected:?}, got {actual:?}");
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        };
+        move_to(20, 30);
+        expect_point(&mut tracker, 1, Some((20.0, 30.0)));
+        // Leave an actual motion queued on the old connection. A new request
+        // cannot acquire that event merely because its XID remains unchanged.
+        move_to(40, 50);
+        assert_eq!(tracker.poll(Some((id, 2))), None);
+        move_to(60, 70);
+        expect_point(&mut tracker, 2, Some((60.0, 70.0)));
+        x.conn.unmap_window(id).unwrap().check().unwrap();
+        expect_point(&mut tracker, 2, None);
+        x.conn.destroy_window(id).unwrap().check().unwrap();
     }
 
     #[test]

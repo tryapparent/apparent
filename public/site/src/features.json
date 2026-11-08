@@ -437,7 +437,7 @@
       "says": "⇧-click drops a numbered pin: a brief pulse on screen, a mark on the keyframe.",
       "status": "stable@0.3.4",
       "platforms": ["mac", "linux"],
-      "note": "On GNOME/KDE Wayland, polled Shift-clicks report position unavailable instead of placing a guessed pin. Fresh overlay motion still supports drawing. Native relative-pointer and scaled-output acceptance is pending.",
+      "note": "On GNOME/KDE Wayland, polled Shift-clicks report position unavailable instead of placing a guessed pin. Drawing requires fresh motion delivered to the owned overlay; a pointer request alone does not prove acquisition. Native drawing acceptance remains required.",
       "shortcuts": [{ "keys": "⇧ click", "does": "Drop a numbered pin" }],
       "docs": ["README.md#capture-controls"]
     },
