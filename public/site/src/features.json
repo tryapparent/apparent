@@ -437,7 +437,7 @@
       "says": "⇧-click drops a numbered pin: a brief pulse on screen, a mark on the keyframe.",
       "status": "stable@0.3.4",
       "platforms": ["mac", "linux"],
-      "note": "On GNOME/KDE Wayland, polled Shift-clicks report position unavailable instead of placing a guessed pin. Drawing requires fresh motion delivered to the owned overlay; a pointer request alone does not prove acquisition. Native drawing acceptance remains required.",
+      "note": "On GNOME/KDE Wayland, polled Shift-clicks report position unavailable instead of placing a guessed pin. Drawing requires fresh core/XI2 motion delivered to the owned overlay; a pointer request alone does not prove acquisition. Relative-mouse held ink verified on GNOME 46 and Plasma 5.27, including GNOME 2×. Initial acquisition can be delayed and earlier motion is omitted.",
       "shortcuts": [{ "keys": "⇧ click", "does": "Drop a numbered pin" }],
       "docs": ["README.md#capture-controls"]
     },
@@ -461,7 +461,7 @@
       "says": "Clicks, drags and scrolls reach the app underneath and are recorded; keyframes show a ripple.",
       "status": "stable@0.3.4",
       "platforms": ["mac", "linux"],
-      "note": "On GNOME/KDE Wayland, ordinary button presses retain timing with position unavailable, without a ripple or inferred target; this also covers XWayland apps until a reliable source can distinguish them. Hyprland uses its compositor adapter. Relative-pointer and scaled-output native acceptance remains pending.",
+      "note": "On GNOME/KDE Wayland, ordinary button presses retain timing with position unavailable, without a ripple or inferred target; this also covers XWayland apps until a reliable source can distinguish them. Hyprland uses its compositor adapter. Relative-mouse fallback verified on GNOME 46 and Plasma 5.27 with separate native Wayland/XWayland clients; GNOME scaled and offset-output bundles inspected.",
       "docs": ["README.md#capture-controls"]
     },
     {

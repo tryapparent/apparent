@@ -51,7 +51,7 @@ Verified in an Ubuntu 24.04 arm64 VM with GNOME 46 (Wayland and X11) and Plasma 
 | Recording a display or area | `ximagesrc` | `org.gnome.Mutter.ScreenCast.RecordArea`, no dialog | ScreenCast portal, asks once (restore token in `~/.local/share/apparent/portal.json`) |
 | Recording a window | Temporarily disabled | Temporarily disabled | Temporarily disabled |
 | Clicks, keys, ⇧ ink | the X server (pointer and key state, polled) | the input devices (`/dev/input`, needs the `input` group) | same |
-| Pointer position | the X server | XWayland while it's over X11 windows; an absolute pointing device (tablet, touchscreen, VM or remote desktop) from the input devices; the overlay takes the pointer while ⇧ is held | same |
+| Recording pointer position | the X server | Ordinary clicks: unavailable. ⇧ ink: fresh motion delivered to the owned overlay | same |
 | App in front | `_NET_ACTIVE_WINDOW` | AT-SPI when the app exposes it (`linux::atspi`; X11 apps use XWayland) | AT-SPI when available; Kate did not expose context in the test VM |
 | Paste | XTEST `Ctrl+V` | RemoteDesktop portal, asks once | same |
 
@@ -63,7 +63,7 @@ Verified in an Ubuntu 24.04 arm64 VM with GNOME 46 (Wayland and X11) and Plasma 
 
 Wayland tells no app where the pointer is over another app's window. Apparent reads buttons and keys from the input devices. In onboarding or Settings › Permissions, **Copy command** copies `sudo usermod -aG input "$USER"`. Run it in a terminal, then log out and back in. Apparent checks whether it can open actual keyboard/mouse devices, rather than trusting group membership; it retries devices when access changes. This is the **Input devices** row (the Accessibility row on macOS).
 
-While ⇧ is held, the ink overlay takes the pointer (`linux::overlay::take_pointer`), so XWayland reports where it is and the ink follows it; a click while ⇧ is held lands on the overlay, not the app. On KDE Wayland, Apparent hides the recording overlay between strokes because KWin 5 otherwise blocks clicks into native apps even with an empty X input shape. Ink remains in the bundle, but disappears from the desktop when ⇧ is released.
+While ⇧ is held, the ink overlay requests the pointer (`linux::overlay::take_pointer`); that request alone does not prove acquisition. Drawing requires fresh motion delivered to the owned overlay. A click while the overlay has input lands on the overlay, not the app. On KDE Wayland, Apparent hides the recording overlay between strokes because KWin 5 otherwise blocks clicks into native apps even with an empty X input shape. Ink remains in the bundle, but disappears from the desktop when ⇧ is released.
 
 On Hyprland 0.56.2 with Lua configuration, the released overlay stays visible for its existing fade. A process-owned runtime rule matches only its exact Fade title and prevents focus; Draw uses a different title. Each Shift transition unmaps locally before asynchronous compositor reconciliation, so a late reply cannot remap an older input state. Reloading config hides and re-establishes the rule; unsupported syntax or policy failure retains the hide-between-strokes fallback. Finishing unmaps before disabling the rule. The one reused rule is disabled on ordinary cleanup; a crash can leave an inert rule matching only that process's unique title until config reload. This is a native compositor repair; the current Electron surface has no production overlay interaction to migrate independently.
 
@@ -79,14 +79,18 @@ a supported current-position source can distinguish them reliably. No GNOME
 extension or privileged input component is installed. Hyprland retains its
 existing compositor adapter; native X11 retains its X-server source.
 
-Shift ink uses fresh motion events delivered to the exact current overlay
+Shift ink uses core/XI2 motion events delivered to the exact current overlay
 generation, invalidating the point on leave, unmap, movement or replacement.
 An overlay motion sample cannot locate a button press that occurred earlier;
 on GNOME/KDE Wayland Shift-clicks therefore also report unavailable rather than
 placing a pin or opening a note at a guessed point. Ink drawing remains separate.
-The window-placement fallback is separate and remains unchanged. GNOME/KDE
-relative-pointer, scaled-output and actual bundle/movie acceptance for this
-fallback is pending; source checks and unit tests are not native proof.
+The window-placement fallback is separate and remains unchanged. Disposable
+GNOME 46 and Plasma 5.27 sessions verified relative-mouse unavailable clicks
+over native Wayland and XWayland clients, and visible held ink in saved movies.
+GNOME also verified 2× ink and unavailable clicks on an offset second output.
+Initial overlay acquisition can be delayed: motion before acquisition is omitted,
+and continued motion is needed before ink can begin. This is not desktop-wide
+pointer tracking or a promise that every compositor delivers overlay events.
 
 Without the `input` group, a capture on Wayland has no clicks, keys or ⇧ ink outside Apparent's own windows, and records only the screen and voice.
 
