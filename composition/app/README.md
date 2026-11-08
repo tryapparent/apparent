@@ -469,7 +469,7 @@ drain scope, or an undrained external borrower prevents release. Trusted-main
 release diagnostics are separate from renderer capability facts. The ordinary
 owning-client factory and its global-clearance requirement remain unchanged.
 
-The Omarchy startup adapter recognizes only the reviewed GUI executable's exact
+The Omarchy startup adapter recognizes only a reviewed GUI executable's exact
 pre-owner foreign-GUI refusal, after confirmed child exit and absent profile
 socket/runtime/output state. That narrow result shows “Another Apparent is
 running” and permits ordinary shell Quit; it never adopts or stops the other
@@ -477,8 +477,12 @@ app. A different producer, truncated/unknown error, active child or existing
 profile work retains the conservative startup failure. Private bounded startup
 diagnostics are attempted in `startup-diagnostic.log` (0600, no symlink); a log
 write failure does not change ownership decisions. The renderer promises no
-successful log write. The existing global GUI guard is unchanged. This source
-path still requires its affected packaged startup/refusal/Quit native check;
+successful log write. The existing global GUI guard is unchanged.
+The complete Omarchy builder rejects an executable whose refusal contract has
+not been reviewed, before creating output. A GUI rebuild therefore needs its
+actual package member and pre-owner guard ordering verified before updating the
+narrow compatibility set; a manifest hash or refusal text alone is insufficient.
+This path still requires its affected packaged startup/refusal/Quit native check;
 unit/compiled-main tests do not establish that OS effect.
 
 The Omarchy qualification app's fixed drawing controls, native-source admission,

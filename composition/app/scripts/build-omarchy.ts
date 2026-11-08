@@ -9,12 +9,16 @@ import { assemble } from './assemble.ts';
 import { packageApplication } from './package.ts';
 import { digest } from './artifacts.ts';
 import type { RecordNativeArtifacts } from './record-native.ts';
+import { hasReviewedGuiRefusalContract } from '../src/record/omarchy/startup-refusal.ts';
 
 /** Packages already admitted Engine/config closures and this candidate's GUI.
  * Does not launch the desktop, record, copy, install or change routing. */
 export async function buildOmarchyPackage(output: string, nativeArtifacts: RecordNativeArtifacts) {
+  nativeArtifacts = structuredClone(nativeArtifacts);
   assert(process.platform === 'linux' && process.arch === 'x64', 'Omarchy package requires Linux x64');
   assert(nativeArtifacts.gui, 'Complete desktop requires the adapter-only GUI closure');
+  assert(hasReviewedGuiRefusalContract(nativeArtifacts.gui.executableSha256),
+    'Native GUI startup-refusal contract must be reviewed for this exact executable before packaging');
   const repo = resolve(root, '../..');
   const source = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
   assert.equal(execFileSync('git', ['status', '--porcelain', '--untracked-files=normal'], { cwd: repo, encoding: 'utf8' }), '',

@@ -1,13 +1,22 @@
 import { constants, closeSync, fstatSync, fsyncSync, openSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 
-// Compatibility with the reviewed GUI producer: this exact binary emits this
+// Compatibility with reviewed GUI producers: these exact binaries emit this
 // refusal before acquiring the GUI owner or starting native services. Neither
 // text nor an exit status from an arbitrary future producer grants clearance.
-const reviewedGui = '9768f559f97b10e40b3efa348c54f220a87242794529d3d4fce37ace1b1e18d0';
+const reviewedGui = new Set([
+  '9768f559f97b10e40b3efa348c54f220a87242794529d3d4fce37ace1b1e18d0',
+  // GUI73f6: exact AppImage member verified; main/CLI/Linux preparation/IPC/
+  // launch-owner guards are byte-identical to the originally reviewed producer.
+  '2dbee5bcc778eb02c724ab3b9169f95784c976a54baaf75ca5042d08ea02bea2',
+]);
+/** Build compatibility only. This alone establishes no process or work clearance. */
+export function hasReviewedGuiRefusalContract(executableSha256: string): boolean {
+  return reviewedGui.has(executableSha256);
+}
 export function confirmsForeignOwner(input: { executableSha256: string; stderr: string;
   truncated: boolean; exitCode: number | null; signal: string | null; profileWorkAbsent: boolean }) {
-  return input.executableSha256 === reviewedGui && !input.truncated && input.exitCode === 1
+  return hasReviewedGuiRefusalContract(input.executableSha256) && !input.truncated && input.exitCode === 1
     && input.signal === null && input.profileWorkAbsent
     && input.stderr.split(/\r?\n/).filter(line => line === 'Error: native-host-only requires its own GUI owner').length === 1;
 }
