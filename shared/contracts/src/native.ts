@@ -1,5 +1,20 @@
 import type { LegacyConfigValue } from './values.js';
 
+/** Main-process observation, not an Engine exclusion acknowledgement. */
+export interface NativeControlSurfaceIdentity {
+  api: 1;
+  hostEpoch: string;
+  surfaceId: string;
+  generation: number;
+  owner: {
+    pid: number;
+    incarnation:
+      | { kind: 'linux-proc-start'; bootId: string; startTicks: string }
+      | { kind: 'electron-process-creation-unix-ms'; value: number };
+  };
+  window: { kind: 'x11' | 'cg-window'; id: number };
+}
+
 /** Public, consumer-neutral view of OS facts owned by the running Desktop GUI. */
 export type NativePermissionStatus = 'granted' | 'denied' | 'not-determined' | 'unavailable';
 export type NativePermissionAction = 'request-permission' | 'open-system-settings';

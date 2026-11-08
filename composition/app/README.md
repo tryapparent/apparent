@@ -303,3 +303,29 @@ Changing shell surfaces disconnects only the renderer's observations. Record
 Settings are not supplied by this contribution. The default shell remains the
 development foundation; this does not enable installed routing or claim native
 pill placement, focus, stacking, exclusion or capture-to-Saved behavior.
+
+## Hidden native control-surface identity
+
+Trusted main may call `identifyHiddenControlSurface(window, backend)` from
+`src/native-surfaces/identity.ts` after creating a hidden `BrowserWindow`.
+The public `NativeControlSurfaceIdentity` DTO is exported from
+`@apparent/app-contracts/native`. It distinguishes the host process epoch,
+window instance/generation, owning PID and native process incarnation. Linux
+uses boot UUID and `/proc/self/stat` start ticks; Mac reports Electron's native
+process creation time in Unix milliseconds. Missing observations fail closed.
+
+The native window number comes from `getMediaSourceId`, not the Mac NSView
+pointer returned by `getNativeWindowHandle`. Linux callers must explicitly select
+X11 before Electron readiness; this mechanism does not support native Wayland.
+Repeat reads of the same hidden window retain its identity. Visible or destroyed
+windows are refused. The host must retain each old identity through replacement
+and closing until the capture provider verifies native disappearance.
+
+An identity is an observation, never a capture-exclusion acknowledgement. Engine
+must independently validate native ownership/incarnation and bind exclusion to
+its capture/source generation and applied revision before the host shows a
+required control surface. This helper neither shows windows nor switches routing.
+The full-video exclusion producer and acknowledgement lifecycle remain unavailable.
+Packaged Linux X11 tests verify the hidden XID's owning PID, process incarnation,
+unmapped state and refusal after visibility/destruction. Independent Mac native
+CGWindow ownership/incarnation proof remains a required gate before adoption.
