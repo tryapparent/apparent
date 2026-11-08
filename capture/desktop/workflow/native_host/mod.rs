@@ -1,6 +1,9 @@
 //! Strict, Record-bound protocol carried by the existing same-user GUI socket.
 use serde::{Deserialize, Serialize};
 
+// Safety mechanism only. No OS trial source or public dispatch is enabled here.
+pub(crate) mod trial;
+
 pub(crate) const MAX_SERIALIZED_FRAME_BYTES: usize = 131_072;
 pub(crate) const MAX_UTF8_TEXT_BYTES: usize = 21_800;
 const LEGACY_MAX_FRAME_BYTES: usize = 4096;
