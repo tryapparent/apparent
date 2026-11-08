@@ -564,7 +564,9 @@ mod tests {
     #[test]
     fn legacy_capture_destination_remains_readable_in_metadata_and_summary() {
         let fixture = Fixture::new();
-        let dir = &fixture.0;
+        let directory = fixture.0.join("legacy.apparent");
+        fs::create_dir_all(&directory).unwrap();
+        let dir = &directory;
         let bundle = serde_json::json!({
             "version": 1, "id": "legacy", "createdAtMs": 0, "durationMs": 1_000,
             "target": {"mode": "display", "displayId": 1,
