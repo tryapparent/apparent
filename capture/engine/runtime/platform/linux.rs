@@ -119,7 +119,8 @@ struct Held {
     left: bool,
     right: bool,
     keys: HashSet<u16>,
-    button_presses: Vec<input::ButtonPress>,
+    button_events: Vec<input::ButtonEvent>,
+    button_events_lost: bool,
 }
 
 impl Modifiers {
@@ -201,7 +202,8 @@ fn held_from(devices: Option<input::Held>) -> Held {
                 .iter()
                 .filter_map(|&code| input::vk_for_evdev_code(code))
                 .collect(),
-            button_presses: devices.button_presses,
+            button_events: devices.button_events,
+            button_events_lost: devices.button_events_lost,
         };
     }
     let pointer = x11::pointer_state().unwrap_or_default();
@@ -223,7 +225,8 @@ fn held_from(devices: Option<input::Held>) -> Held {
         left: pointer.left,
         right: pointer.right,
         keys,
-        button_presses: Vec::new(),
+        button_events: Vec::new(),
+        button_events_lost: false,
     }
 }
 
@@ -1071,7 +1074,7 @@ fn poll_unlocated_clicks(
     telemetry: &SharedCaptureTelemetry,
     prev: &mut [bool; 2],
     now: [bool; 2],
-    presses: Option<&[input::ButtonPress]>,
+    events: Option<(&[input::ButtonEvent], bool)>,
 ) {
     let was = std::mem::replace(prev, now);
     // A known press cannot become a located drag when position disappears and
@@ -1085,9 +1088,12 @@ fn poll_unlocated_clicks(
         telemetry.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(InteractionEvent::ClickUnavailable { t, button: "unknown".into(), time_source: Some("polled".into()) });
     }
-    if let Some(presses) = presses {
+    if let Some((events, lost)) = events {
+        if lost {
+            apparent_log("input button history incomplete; retaining available press times without gesture inference");
+        }
         let started = *telemetry.started_at.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        for press in presses {
+        for press in events.iter().filter(|event| event.pressed) {
             let Some(elapsed) = press.at.checked_duration_since(started) else { continue; };
             telemetry.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push(InteractionEvent::ClickUnavailable {
@@ -1221,7 +1227,7 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
         };
         let Some((x, y)) = position else {
             poll_unlocated_clicks(&telemetry, &mut prev_buttons, buttons,
-                from_devices().then_some(held.button_presses.as_slice()));
+                from_devices().then_some((held.button_events.as_slice(), held.button_events_lost)));
             if prev_shift_ink {
                 track_shift_ink(&telemetry, (0.0, 0.0), false, true);
                 prev_shift_ink = false;
@@ -1238,7 +1244,7 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
             // arrived before that motion. Keep the button's own event time and
             // report it unlocated rather than pinning at a later cursor point.
             poll_unlocated_clicks(&telemetry, &mut prev_buttons, buttons,
-                from_devices().then_some(held.button_presses.as_slice()));
+                from_devices().then_some((held.button_events.as_slice(), held.button_events_lost)));
         } else {
             poll_clicks(
                 &telemetry, &mut prev_buttons, buttons, (x, y),
@@ -1330,15 +1336,37 @@ mod tests {
         let start = Instant::now() - Duration::from_secs(1);
         *telemetry.started_at.lock().unwrap() = start;
         let presses = [
-            input::ButtonPress { at: start - Duration::from_millis(1), button: input::code::BTN_LEFT, time_source: "evdev_monotonic" },
-            input::ButtonPress { at: start + Duration::from_millis(10), button: input::code::BTN_LEFT, time_source: "evdev_monotonic" },
-            input::ButtonPress { at: start + Duration::from_millis(15), button: input::code::BTN_RIGHT, time_source: "evdev_monotonic" },
+            input::ButtonEvent {
+                pressed: true, modifiers: input::ButtonModifiers::default(), modifiers_known: false, at: start - Duration::from_millis(1), button: input::code::BTN_LEFT, time_source: "evdev_monotonic" },
+            input::ButtonEvent {
+                pressed: true, modifiers: input::ButtonModifiers::default(), modifiers_known: false, at: start + Duration::from_millis(10), button: input::code::BTN_LEFT, time_source: "evdev_monotonic" },
+            input::ButtonEvent {
+                pressed: false, modifiers: input::ButtonModifiers::default(), modifiers_known: false, at: start + Duration::from_millis(11), button: input::code::BTN_LEFT, time_source: "evdev_monotonic" },
+            input::ButtonEvent {
+                pressed: true, modifiers: input::ButtonModifiers::default(), modifiers_known: false, at: start + Duration::from_millis(15), button: input::code::BTN_RIGHT, time_source: "evdev_monotonic" },
         ];
         let mut previous = [false; 2];
-        poll_unlocated_clicks(&telemetry, &mut previous, [false; 2], Some(&presses));
-        poll_unlocated_clicks(&telemetry, &mut previous, [false; 2], Some(&[]));
+        poll_unlocated_clicks(&telemetry, &mut previous, [false; 2], Some((&presses, false)));
+        poll_unlocated_clicks(&telemetry, &mut previous, [false; 2], Some((&[], false)));
         let events = telemetry.events.lock().unwrap();
         assert!(matches!(&events[..], [InteractionEvent::ClickUnavailable { t: 10, button: left, .. }, InteractionEvent::ClickUnavailable { t: 15, button: right, .. }] if left == "left" && right == "right"));
+    }
+
+    #[test]
+    fn lost_button_history_does_not_invent_an_unobserved_press() {
+        let (tx, _) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(tx);
+        let start = Instant::now() - Duration::from_secs(1);
+        *telemetry.started_at.lock().unwrap() = start;
+        let release = input::ButtonEvent {
+            at: start + Duration::from_millis(17), button: input::code::BTN_LEFT,
+            pressed: false, modifiers: input::ButtonModifiers { shift: true, ..Default::default() },
+            modifiers_known: false, time_source: "evdev_monotonic",
+        };
+        let mut previous = [true, false];
+        poll_unlocated_clicks(&telemetry, &mut previous, [false; 2], Some((&[release], true)));
+        assert!(telemetry.events.lock().unwrap().is_empty());
+        assert_eq!(previous, [false; 2]);
     }
 
     #[test]
