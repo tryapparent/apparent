@@ -1699,6 +1699,7 @@ mod tests {
                 vec!["--help"],
                 vec!["login", "--help"],
                 vec!["upload", "--help"],
+                vec!["retry", "--help"],
             ] {
                 let mut args = vec!["apparent", name];
                 args.extend(tail);
@@ -1748,6 +1749,7 @@ mod tests {
             vec!["logout"],
             vec!["disable"],
             vec!["retry"],
+            vec!["retry", "--id", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
             vec!["upload", "./synthetic capture.apparent"],
             vec!["shares", "list"],
             vec!["shares", "revoke", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
