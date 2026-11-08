@@ -35,6 +35,7 @@ pub fn label(version: &str, revision: Option<&str>, modified: bool) -> String {
     )
 }
 
+#[cfg(not(test))]
 pub fn emit() {
     let root = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
     println!("cargo:rerun-if-env-changed=GITHUB_SHA");
