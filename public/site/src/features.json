@@ -310,7 +310,7 @@
       "status": "stable@0.3.4",
       "platforms": ["mac", "linux"],
       "shortcuts": [{ "keys": "⌥⇧S", "does": "Start or finish a capture (Alt+Shift+S on Linux)" }],
-      "note": "The shortcut can be changed in Settings; on Omarchy an active Super+Shift+Copilot binding in bindings.lua takes precedence and is shown as managed by Hyprland.",
+      "note": "The app-owned shortcut requires Apparent to be running. After Quit, open Apparent from Applications on macOS or the Linux app launcher, complete any setup, then press Record once. The shortcut can be changed in Settings; on Omarchy an active Super+Shift+Copilot binding in bindings.lua takes precedence and is shown as managed by Hyprland.",
       "docs": ["README.md#capture-controls", "capture/engine/docs/capture.md"]
     },
     {
