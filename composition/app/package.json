@@ -15,7 +15,7 @@
     "prestart": "npm run prepare:electron",
     "start": "electron dist/app",
     "package": "node scripts/package.ts dist/app dist/packages",
-    "test:electron": "node --experimental-strip-types --test --test-concurrency=1 tests/electron.test.ts tests/record-bridge.electron.test.ts tests/record-provider.electron.test.ts tests/record/pill.electron.ts tests/native-record/closure.electron.ts",
+    "test:electron": "node --experimental-strip-types --test --test-concurrency=1 tests/electron.test.ts tests/record-bridge.electron.test.ts tests/record-provider.electron.test.ts tests/record/pill.electron.ts tests/native-record/closure.electron.ts tests/onboarding/entry.electron.ts",
     "test:electron:onboarding": "node --experimental-strip-types --test tests/onboarding-bridge.electron.test.ts",
     "test:electron:record": "node --experimental-strip-types --test --test-concurrency=1 tests/record-bridge.electron.test.ts tests/record-provider.electron.test.ts tests/record/pill.electron.ts"
   },
