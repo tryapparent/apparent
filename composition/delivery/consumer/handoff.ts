@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { sourceDigest, type Owner, type Target } from '../core.ts'
+import { join, posix, resolve } from 'node:path'
+import { sourceDigest, type Kind, type Owner, type Target } from '../core.ts'
 
 const repository = 'tryapparent/apparent'
 const maxArtifactBytes = 1024 * 1024 * 1024
@@ -45,7 +45,7 @@ function receiptFor(zip: Buffer, owner: Owner, target: Target, admission: Admiss
   } finally { rmSync(tmp, { force: true }) }
 }
 
-function validateTarInventory(archive: Buffer) {
+export function validateTarInventory(archive: Buffer, kind: Kind = 'directory', target?: Target) {
   const tmp = join(process.env.TMPDIR || '/tmp', `apparent-component-${process.pid}-${Math.random().toString(16).slice(2)}.tar.gz`)
   try {
     writeFileSync(tmp, archive, { mode: 0o600, flag: 'wx' })
@@ -59,7 +59,55 @@ function validateTarInventory(archive: Buffer) {
     }
     const verbose = execFileSync('tar', ['-P', '-tvzf', tmp], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] })
     const entries = verbose.split('\n').filter(Boolean)
-    if (entries.length !== names.length || entries.some(line => !/^[d-][rwxStTs-]{9}/.test(line))) fail('Component archive contains links or unsupported filesystem entries')
+    if (entries.length !== names.length) fail('Component archive inventory is inconsistent')
+    const types = new Map<string, string>(), links = new Map<string, string>()
+    entries.forEach((line, index) => {
+      if (!/^[dl-][rwxStTs-]{9}/.test(line) || (line[0] === 'l' && (kind !== 'app-shell' || target !== 'macos-x64'))) fail('Component archive contains links or unsupported filesystem entries')
+      const name = canonical[index]
+      types.set(name, line[0])
+      if (line[0] !== 'l') return
+      if (!/^stream-payload\/bundle\/[^/]+\/[^/]+\.app\/Contents\/Frameworks\//.test(name)) fail('Unsupported App Shell symlink location')
+      // Electron's Mac frameworks use relative links. Parse against the exact
+      // name from the matching tar listing, without depending on date/UID format.
+      const marker = ` ${name} -> `, offset = line.lastIndexOf(marker)
+      if (offset < 0 || name.includes(' -> ') || names[index].endsWith('/')) fail('Malformed component symlink')
+      const linkTarget = line.slice(offset + marker.length)
+      if (!linkTarget || Buffer.byteLength(linkTarget) > 4096 || linkTarget.includes(' -> ') || /[\\\x00-\x1f\x7f]/.test(linkTarget) || posix.isAbsolute(linkTarget) || /^[A-Za-z]:/.test(linkTarget)) fail('Unsafe component symlink')
+      links.set(name, linkTarget)
+    })
+    for (const name of canonical) {
+      const parts = name.split('/')
+      for (let i = 1; i < parts.length; i++) {
+        const parent = parts.slice(0, i).join('/')
+        if (types.has(parent) && types.get(parent) !== 'd') fail('Component entry traverses a non-directory')
+      }
+    }
+    // Resolve the declared graph BEFORE any extraction. Follow intermediate
+    // links before '..', so a chain cannot turn a lexical inside path into an escape.
+    for (const name of links.keys()) {
+      const boundary = name.slice(0, name.indexOf('/Contents/Frameworks/')).split('/').length
+      let pending = name.split('/'), hops = 0
+      const path: string[] = []
+      while (pending.length) {
+        const part = pending.shift()!
+        if (!part || part === '.') continue
+        if (part === '..') {
+          if (path.length <= boundary) fail('Component symlink escapes its application bundle')
+          path.pop(); continue
+        }
+        const current = [...path, part].join('/')
+        const target = links.get(current)
+        if (target !== undefined) {
+          if (++hops > 32) fail('Component symlink cycle or excessive chain')
+          pending = [...target.split('/'), ...pending]
+        } else {
+          if (!types.has(current)) fail('Dangling component symlink')
+          if (pending.length && types.get(current) !== 'd') fail('Component symlink traverses a non-directory')
+          path.push(part)
+        }
+      }
+      if (!types.has(path.join('/')) || types.get(path.join('/')) === 'l') fail('Dangling component symlink')
+    }
   } finally { rmSync(tmp, { force: true }) }
 }
 
@@ -165,7 +213,7 @@ export async function handoff(root: string, owner: Owner, target: Target, source
     writeFileSync(temporaryArchive, verifiedArchive, { mode: 0o600, flag: 'wx' })
     await api.attest(temporaryArchive, owner, target, sourceSha, runId, runAttempt)
   } finally { rmSync(temporaryArchive, { force: true }) }
-  validateTarInventory(verifiedArchive)
+  validateTarInventory(verifiedArchive, owner.kind, target)
   const key = createHash('sha256').update(JSON.stringify([repository, owner.id, target, sourceSha, admitted.input_digest, receipt.sha256])).digest('hex')
   const cache = atomicCache(cacheDir, key, verifiedArchive, receipt)
   const indexTemp = `${indexPath}.tmp-${process.pid}`
