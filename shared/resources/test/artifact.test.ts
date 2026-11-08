@@ -22,3 +22,18 @@ test("artifact inventory, exact target, checksum, mode and canonical manifest", 
     await rm(f.executable); await symlink(path, f.executable); assert.throws(() => validateResourceArtifact(f.directory, target()));
   } finally { await f.close(); }
 });
+
+test("manifest schema accepts each supported OS and architecture target and rejects mismatches", async () => {
+  const f = await fixture(); try {
+    const bytes = await (await import("node:fs/promises")).readFile(f.executable);
+    for (const target of ["linux-x64", "linux-arm64", "macos-x64", "macos-arm64"] as const) {
+      const manifest = resourceManifest("a".repeat(40), target, bytes);
+      const path = join(f.directory, "manifest.json");
+      await writeFile(path, JSON.stringify(manifest, null, 2) + "\n", { mode: 0o644 });
+      assert.deepEqual(validateResourceArtifact(f.directory, target), manifest);
+      const other = target === "linux-arm64" ? "linux-x64" : "linux-arm64";
+      assert.throws(() => validateResourceArtifact(f.directory, other));
+    }
+    assert.throws(() => resourceManifest("a".repeat(40), "freebsd-arm64" as never, bytes));
+  } finally { await f.close(); }
+});

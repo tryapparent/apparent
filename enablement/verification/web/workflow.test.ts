@@ -52,14 +52,15 @@ test('owner entrypoints select only their stream and shared delivery inputs', ()
     for (const actionPath of sharedActions) assert(sourcePaths.includes(actionPath))
     if (name === 'public') assert(sourcePaths.includes('enablement/verification/web/**'))
     const registration = name === 'platform-resources'
-      ? { id: name, kind: 'directory', stage: 'library', package: 'shared/resources/delivery', targets: ['linux-x64', 'macos-x64'], inputs: ['shared/resources/', '.cargo/'] }
+      ? { id: name, kind: 'directory', stage: 'library', package: 'shared/resources/delivery', targets: ['linux-x64', 'macos-x64', 'linux-arm64', 'macos-arm64'], inputs: ['shared/resources/', '.cargo/'] }
       : JSON.parse(readFileSync(new URL(`../../../${registrations[name]}`, import.meta.url), 'utf8'))
     const matrices = matricesFor(source)
     assert.deepEqual(matrices[0], matrices[1], `${name} PR and main matrices agree`)
     const matrix = matrices[0].filter((row: any) => row.id === name)
     assert.deepEqual(matrix.map((row: any) => row.id), matrix.map(() => name))
     assert.deepEqual([...matrix.map((row: any) => row.target)].sort(), [...registration.targets].sort())
-    assert(matrix.every((row: any) => row.runner === (row.target === 'macos-x64' ? 'macos-26-intel' : 'ubuntu-24.04')))
+    const runners: Record<string, string> = { 'linux-x64': 'ubuntu-24.04', 'macos-x64': 'macos-26-intel', 'linux-arm64': 'ubuntu-24.04-arm', 'macos-arm64': 'macos-15', web: 'ubuntu-24.04' }
+    assert(matrix.every((row: any) => row.runner === runners[row.target]))
     assert(matrix.every((row: any) => row.kind === registration.kind && row.stage === registration.stage && row.package === registration.package))
     for (const input of registration.inputs) assert(sourcePaths.includes(`${input.replace(/\/$/, '')}/**`), `${name} workflow misses declared input ${input}`)
     for (const input of registration.files ?? []) assert(sourcePaths.includes(input), `${name} workflow misses declared file input ${input}`)
@@ -74,8 +75,8 @@ test('platform resources workflow retains literal receipt names, full Cargo clos
   assert.match(workflow, /name: deliver \/ Delivery contracts/)
   assert.match(workflow, /name: deliver \/ Workflow runtime budget/)
   assert.match(workflow, /name: deliver \/ stream \(\$\{\{ matrix\.id \}\}, \$\{\{ matrix\.target \}\}\)/)
-  assert.deepEqual(platformRows.filter(row => row.id === 'platform-resources').map(row => row.target), ['linux-x64', 'macos-x64'])
-  assert.doesNotMatch(workflow, /macos-arm64/)
+  assert.deepEqual(platformRows.filter(row => row.id === 'platform-resources').map(row => row.target), ['linux-x64', 'macos-x64', 'linux-arm64', 'macos-arm64'])
+  assert(platformRows.filter(row => row.id !== 'platform-resources').every(row => !row.target.endsWith('-arm64')))
   assert.match(workflow, /APPARENT_DELIVERY_WORKFLOW_PATH: '\.github\/workflows\/stream-platform\.yml'/)
   assert.match(workflow, /id: \$\{\{ matrix\.id \}\}[\s\S]*?target: \$\{\{ matrix\.target \}\}[\s\S]*?publish: 'false'/)
 })

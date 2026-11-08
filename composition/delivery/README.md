@@ -7,11 +7,18 @@ The isolated TypeScript architecture checker in `composition/architecture` rejec
 `engine-native` consumes `engine/delivery/native/delivery.json` independently of the SDK slot. That native lane installs Rust and produces the exact executable/manifest inventory through the Engine-owned producer. Its inputs include `engine/` and inherited `.cargo/` settings. The separate `engine-media-native` producer also fingerprints `capture/engine/` because its Linux media worker still uses that legacy implementation. Packaging does not enable installed routing.
 
 `platform-resources` consumes `shared/resources/delivery/delivery.json` through
-`stream-platform.yml`, with fixed Linux x64 and Intel Mac targets. Its
+`stream-platform.yml`, with explicit Linux x64/ARM64 and Mac x64/ARM64 targets. Its
 native helper remains owned by the producer and staged before the public
 TypeScript adapter tests. The registration must fingerprint both
 `shared/resources/` and inherited `.cargo/`; the synthetic contract rejects an
-incomplete closure. This wiring does not enable or publish the helper by itself.
+incomplete closure. ARM uses the existing Connect recipient runner labels
+`ubuntu-24.04-arm` and `macos-15`; the producer rejects a host OS/architecture
+mismatch and tests the installed wrapper against its exact staged helper.
+ARM registration is restricted to this owner and does not add ARM targets for
+App Shell, Engine or other streams. Each target retains a distinct fingerprint,
+receipt and artifact; PR jobs always build fresh. This wiring does not activate
+an installed consumer. A target is usable only after its real native producer,
+contracts/audit and exact archive admission pass.
 
 `engine-media-native` consumes `engine/delivery/media/delivery.json` as a separate
 native `linux-x64` and `macos-x64` slot owned architecturally by Engine. Its Linux qualification installs

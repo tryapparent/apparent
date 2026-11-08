@@ -15,6 +15,7 @@ export class NativeResourceError extends Error {
 export type ResourceProvider = { executable: string; sha256: string; target: ResourceTarget; protocol: 1 };
 export type Frame = "accepted" | "acquired" | "released" | "busy" | "cancelled" | "failed" | "published" | "destination_exists" | "replaced" | "destination_changed" | "refused" | "publication_uncertain";
 const hostTarget = () => process.platform === "linux" && process.arch === "x64" ? "linux-x64"
+  : process.platform === "linux" && process.arch === "arm64" ? "linux-arm64"
   : process.platform === "darwin" && process.arch === "x64" ? "macos-x64"
   : process.platform === "darwin" && process.arch === "arm64" ? "macos-arm64" : undefined;
 

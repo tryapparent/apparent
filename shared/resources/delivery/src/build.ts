@@ -9,6 +9,7 @@ const repository = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd: 
 const target = process.env.OWNER_TARGET as ResourceTarget;
 const targets: Record<ResourceTarget, { os: string; arch: string; triple: string }> = {
   "linux-x64": { os: "linux", arch: "x64", triple: "x86_64-unknown-linux-gnu" },
+  "linux-arm64": { os: "linux", arch: "arm64", triple: "aarch64-unknown-linux-gnu" },
   "macos-x64": { os: "darwin", arch: "x64", triple: "x86_64-apple-darwin" },
   "macos-arm64": { os: "darwin", arch: "arm64", triple: "aarch64-apple-darwin" },
 };
@@ -41,8 +42,7 @@ writeFileSync(resolve(output, "manifest.json"), JSON.stringify(resourceManifest(
 validateResourceArtifact(output, target);
 // Exercise the public TypeScript adapter against these exact staged bytes.
 const nativeTests = ["shared/resources/test/native.test.ts"];
-// ARM is an owner-local producer option, not a registered installed-provider target.
-if (target !== "macos-arm64") nativeTests.push("shared/resources/test/installed-native.test.ts");
+nativeTests.push("shared/resources/test/installed-native.test.ts");
 execFileSync(process.execPath, ["--experimental-strip-types", "--test", ...nativeTests], {
   cwd: repository, stdio: "inherit", env: { ...process.env, APPARENT_RESOURCE_HOST_BIN: executable },
 });

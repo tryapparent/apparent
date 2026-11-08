@@ -13,7 +13,9 @@
   "build": "build",
   "targets": [
     "linux-x64",
-    "macos-x64"
+    "macos-x64",
+    "linux-arm64",
+    "macos-arm64"
   ],
   "stage": "library",
   "language": "native",
