@@ -1430,7 +1430,7 @@
       "says": "For Screen Recording and Accessibility, a card flies to System Settings so you drag Apparent into the list.",
       "status": "stable@0.3.4",
       "platforms": ["mac"],
-      "note": "Linux Wayland asks for the input group.",
+      "note": "Linux Wayland input access is separate from screen consent and optional for screen/voice capture. Setup explains broad input-group scope and full logout/login timing; readable keyboard and mouse devices determine access, not group membership alone. Native acceptance for the revised guidance remains pending.",
       "docs": ["README.md#welcome-and-permissions"]
     },
     {

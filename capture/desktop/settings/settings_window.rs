@@ -1905,7 +1905,7 @@ impl SettingsWindow {
             ),
             Permission::Accessibility if LINUX => (
                 "Input devices",
-                "For Shift ink and clicks. Run the copied command in a terminal, then log out and back in.".to_owned(),
+                "Optional for global clicks and Shift ink. The input group lets all your apps read keyboard and mouse events, including typing. Run the copied command only if you accept this scope; fully log out and back in, then start Apparent. Reopening alone is not enough. Screen and voice capture remain available.".to_owned(),
                 crate::capture::desktop::icons::CLICK,
                 BLUE,
             ),

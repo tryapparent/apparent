@@ -1,7 +1,7 @@
 //! Keys and mouse buttons straight from the kernel's input devices (`/dev/input/event*`), for a
 //! Wayland session, where no app hears another's input. Reading them needs membership of the
-//! `input` group (`sudo usermod -aG input $USER`, then log in again): the same trust macOS asks
-//! for with Accessibility. Apparent only keeps which modifiers and buttons are down and a few
+//! `input` group (`sudo usermod -aG input $USER`, then log in again). This grants the user's
+//! processes broad device access, not an app-scoped permission. Apparent only keeps which modifiers and buttons are down and a few
 //! keys (its shortcuts, Esc, Ctrl+Z); it never records what is typed.
 //!
 //! On X11 none of this is used: the X server answers the same questions (`super::x11`).
@@ -124,8 +124,11 @@ fn has_key(bits: &[u8], code: u16) -> bool {
 
 /// Keyboards and mice: devices with Shift or a left button.
 fn interesting(fd: &OwnedFd) -> bool {
-    key_bits(fd)
-        .is_some_and(|bits| has_key(&bits, code::KEY_LEFTSHIFT) || has_key(&bits, code::BTN_LEFT))
+    key_bits(fd).is_some_and(|bits| {
+        let mut access = Access::default();
+        access.observe(&bits);
+        access.keyboard || access.pointer
+    })
 }
 
 /// `EVIOCGABS(axis)`: an absolute axis's range, `None` when the device has none.
@@ -149,12 +152,60 @@ fn absolute_axes(fd: &OwnedFd) -> Option<[(i32, i32); 2]> {
     Some([abs_range(fd, ABS_X)?, abs_range(fd, ABS_Y)?])
 }
 
-/// Whether Apparent may read at least one keyboard or mouse.
-pub fn devices_readable() -> bool {
-    event_devices()
+/// Fresh device-open facts, not group membership or a guarantee of pointer coordinates.
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Access {
+    pub keyboard: bool,
+    pub pointer: bool,
+}
+
+impl Access {
+    fn observe(&mut self, bits: &[u8]) {
+        self.keyboard |= has_key(bits, code::KEY_LEFTSHIFT) || has_key(bits, code::KEY_RIGHTSHIFT);
+        self.pointer |= has_key(bits, code::BTN_LEFT);
+    }
+
+    #[cfg(test)]
+    fn complete(self) -> bool {
+        self.keyboard && self.pointer
+    }
+}
+
+pub fn access() -> Access {
+    let mut access = Access::default();
+    for bits in event_devices()
         .iter()
         .filter_map(|p| open(p))
-        .any(|fd| interesting(&fd))
+        .filter_map(|fd| key_bits(&fd))
+    {
+        access.observe(&bits);
+    }
+    access
+}
+
+#[cfg(test)]
+mod access_tests {
+    use super::*;
+
+    fn bits(code: u16) -> Vec<u8> {
+        let mut bits = vec![0; 96];
+        bits[usize::from(code / 8)] |= 1 << (code % 8);
+        bits
+    }
+
+    #[test]
+    fn input_access_requires_keyboard_and_pointer_in_each_snapshot() {
+        let mut access = Access::default();
+        assert!(!access.complete());
+        access.observe(&bits(code::BTN_LEFT));
+        assert!(access.pointer && !access.keyboard && !access.complete());
+        access.observe(&bits(code::KEY_RIGHTSHIFT));
+        assert!(access.complete());
+        let mut refreshed = Access::default();
+        refreshed.observe(&bits(code::KEY_LEFTSHIFT));
+        assert!(refreshed.keyboard && !refreshed.pointer && !refreshed.complete());
+    }
 }
 
 /// Starts reading every keyboard and mouse (once). `false` when none can be read.
