@@ -4,6 +4,7 @@ import {
   type RecordCapabilityProviderOptions,
   type RecordClient,
 } from '@apparent/record/capabilities';
+import type { RecordCaptureCoordinator, RecordCaptureCoordinatorShutdownReport } from '@apparent/record/host/capture2-coordinator';
 import type { RecordHostServices } from './host.ts';
 import type { RecordNativeBindings } from './native-bindings.ts';
 
@@ -14,16 +15,26 @@ export interface RecordProviderHostOptions {
   capture2Start?: RecordCapabilityProviderOptions['capture2Start'];
   /** Authenticated Record output facts; omission remains unavailable. */
   captureFacts?: RecordCapabilityProviderOptions['captureFacts'];
+  /** Only this exact coordinator may supply terminal scope-specific clearance. */
+  coordinator?: RecordCaptureCoordinator;
+  /** Seal other SDK/runtime users' admission and drain their work; never infer clear from missing facts. */
+  shutdownOtherRuntimeUsers?(): Promise<'clear' | 'unresolved' | 'unknown'>;
+  /** Local recovery-connection release only, after exact coordinator and external-user drain. */
+  releaseRecoveryPeersAfterDrain?(): Promise<void>;
   nativeBindings: RecordNativeBindings;
   /** Releases only this host's Engine resources after clearance. Must be idempotent; failure is not clearance. */
   closeEngine(): Promise<void>;
 }
 
-type Phase = 'open' | 'admitted-close' | 'provider-detached' | 'engine-closed' | 'closed' | 'cleanup-unknown';
+type Phase = 'open' | 'draining' | 'inspecting' | 'ownership-retained' | 'admitted-close' | 'provider-detached' | 'engine-closed' | 'closed' | 'cleanup-unknown';
 const unresolved = new Set(['starting', 'recording', 'processing', 'unknown']);
+export interface RecordProviderHost extends RecordHostServices {
+  /** Trusted-main diagnostics only; this is not a renderer capability or retry instruction. */
+  shutdownReport(): RecordCaptureCoordinatorShutdownReport | undefined;
+}
 
 /** Trusted main-process assembly of the real Record provider, with one admission/close boundary. */
-export function createRecordProviderHost(options: RecordProviderHostOptions): RecordHostServices {
+export function createRecordProviderHost(options: RecordProviderHostOptions): RecordProviderHost {
   if (!options?.runtime || typeof options.runtime.unresolvedOwnership !== 'function'
     || !options.nativeBindings || typeof options.nativeBindings.close !== 'function'
     || typeof options.closeEngine !== 'function') throw new TypeError('Invalid Record provider host options');
@@ -31,12 +42,28 @@ export function createRecordProviderHost(options: RecordProviderHostOptions): Re
   const bindings = options.nativeBindings;
   const closeEngine = options.closeEngine;
   const captureFacts = options.captureFacts;
-  const provider = createRecordCapabilityProvider({ runtime, capture2Start: options.capture2Start,
-    captureFacts: options.captureFacts, native: bindings.native, penConfig: bindings.penConfig,
-    clipboard: bindings.clipboard, providerEpoch: randomUUID() });
+  const coordinator = options.coordinator;
+  const shutdownOtherRuntimeUsers = options.shutdownOtherRuntimeUsers;
+  const releaseRecoveryPeersAfterDrain = options.releaseRecoveryPeersAfterDrain;
+  if (releaseRecoveryPeersAfterDrain !== undefined
+    && (!coordinator || typeof releaseRecoveryPeersAfterDrain !== 'function')) {
+    throw new TypeError('Recovery release requires an exact coordinator drain');
+  }
+  if (coordinator && (runtime !== coordinator.runtime || options.capture2Start !== coordinator.capture2Start
+    || captureFacts !== coordinator.captureFacts || typeof coordinator.shutdown !== 'function'
+    || typeof coordinator.dispose !== 'function' || typeof coordinator.createProvider !== 'function'
+    || typeof shutdownOtherRuntimeUsers !== 'function')) {
+    throw new TypeError('Coordinator clearance must cover the exact injected ports and all other runtime users');
+  }
+  const ports = { native: bindings.native, penConfig: bindings.penConfig, clipboard: bindings.clipboard, providerEpoch: randomUUID() };
+  const provider = coordinator ? coordinator.createProvider(ports)
+    : createRecordCapabilityProvider({ runtime, capture2Start: options.capture2Start, captureFacts, ...ports });
   let phase: Phase = 'open';
   let commands = 0;
   let closing: Promise<void> | undefined;
+  let inspecting: Promise<boolean> | undefined;
+  let shutdownReport: RecordCaptureCoordinatorShutdownReport | undefined;
+  const commandDrain = new Set<() => void>();
   let subscriptions: Set<() => void> | undefined = new Set();
   const currentPhase = (): Phase => phase;
 
@@ -54,7 +81,10 @@ export function createRecordProviderHost(options: RecordProviderHostOptions): Re
         reason: 'Record host is closing', snapshot: provider.current() };
       commands++;
       try { return await provider.execute(command); }
-      finally { commands--; }
+      finally {
+        commands--;
+        if (!commands) { for (const done of commandDrain) done(); commandDrain.clear(); }
+      }
     },
     // UI detach is observation-only. The bridge owns its individual unsubscribe.
     // Provider/runtime disposal belongs exclusively to the cleared host shutdown.
@@ -65,7 +95,63 @@ export function createRecordProviderHost(options: RecordProviderHostOptions): Re
     },
   };
 
+  const coordinatorCanClose = (): Promise<boolean> => {
+    if (inspecting) return inspecting;
+    if (phase === 'ownership-retained' || phase === 'cleanup-unknown') return Promise.resolve(false);
+    if (phase !== 'open') return Promise.resolve(true);
+    // Seal this host first. Already admitted native commands retain their results;
+    // later renderer commands cannot enter while either scope is inspected.
+    phase = 'draining';
+    const inspect = async () => {
+      if (commands) await new Promise<void>(resolve => commandDrain.add(resolve));
+      try {
+        const facts = await captureFacts!.readFacts();
+        const admission = facts?.nextShortcutAdmission;
+        const ownership = runtime.unresolvedOwnership();
+        const current = provider.current();
+        // Keep Stop/Cancel available for known active or unreadable captures.
+        // This preflight is nonterminal; unavailable reservation facts are not clearance.
+        if (!facts || facts.version !== 1 || !Array.isArray(facts.captures)
+          || !['unavailable', 'idle', 'consumed', 'cancelled', 'expired'].includes(admission?.state)
+          || facts.captures.some(capture => !['saved', 'cancelled', 'failed'].includes(capture.phase))
+          || (admission.state === 'consumed'
+            && !facts.captures.some(capture => capture.captureId === admission.captureId))
+          || !ownership || ownership.storageUnavailable !== false || ownership.reconciliation !== 'complete'
+          || !Array.isArray(ownership.requestIds) || ownership.requestIds.length
+          || current.captures.some(capture => unresolved.has(capture.phase))
+          || current.nextShortcutAdmission.state === 'armed') {
+          phase = 'open'; return false;
+        }
+      } catch { phase = 'open'; return false; }
+      phase = 'inspecting';
+      try {
+        let other: 'clear' | 'unresolved' | 'unknown' = 'unknown';
+        try { other = await shutdownOtherRuntimeUsers!(); } catch { /* Unknown retains shared SDK ownership. */ }
+        const report = structuredClone(await coordinator!.shutdown());
+        shutdownReport = report;
+        await coordinator!.dispose();
+        const localDrain = report?.scope === 'record-coordinator'
+          && report.admission === 'closed' && report.localDrain === 'complete';
+        if (other === 'clear' && localDrain && releaseRecoveryPeersAfterDrain) {
+          // Releasing a separately launched recovery connection does not cancel
+          // native work or establish runtime clearance. Keep the original report.
+          await releaseRecoveryPeersAfterDrain();
+        }
+        const clear = other === 'clear' && report?.scope === 'record-coordinator'
+          && report.admission === 'closed' && report.localDrain === 'complete' && report.runtimeClearance === 'clear'
+          && report.nextShortcutAdmission?.state === 'unsupported'
+          && typeof report.nextShortcutAdmission.reason === 'string' && report.nextShortcutAdmission.reason.length > 0
+          && Array.isArray(report.work) && report.work.length === 0;
+        phase = clear ? 'admitted-close' : 'ownership-retained';
+        return clear;
+      } catch { phase = 'ownership-retained'; return false; }
+    };
+    inspecting = inspect().finally(() => { inspecting = undefined; });
+    return inspecting;
+  };
+
   const canClose = async (): Promise<boolean> => {
+    if (coordinator) return coordinatorCanClose();
     if (phase === 'cleanup-unknown') return false;
     if (phase !== 'open') return true;
     if (commands) return false;
@@ -102,10 +188,14 @@ export function createRecordProviderHost(options: RecordProviderHostOptions): Re
   return {
     record,
     canClose,
+    shutdownReport: () => shutdownReport && structuredClone(shutdownReport),
     async close() {
       if (phase === 'closed') return;
+      if (phase === 'ownership-retained') throw new Error('Record shutdown retains unresolved runtime ownership');
       if (phase === 'cleanup-unknown') throw new Error('Record cleanup ownership remains unknown');
-      if (phase === 'open' && !await canClose()) throw new Error('Record ownership remains unresolved');
+      if ((phase === 'open' || phase === 'draining' || phase === 'inspecting') && !await canClose()) {
+        throw new Error('Record ownership remains unresolved');
+      }
       if (closing) return closing;
       const cleanup = async () => {
         if (phase === 'admitted-close') {

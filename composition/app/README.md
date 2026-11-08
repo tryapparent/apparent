@@ -262,9 +262,9 @@ SDK peer is packaged beside it. Trusted assembly injects `output.captureFacts`
 and uses `output.resolveHandoff` for the native clipboard adapter. That port owns
 the existing durable publication authority; composition adds no Saved-facts store
 or substitute resolver. It does not provide shortcut-reservation authority:
-`nextShortcutAdmission: unavailable` still blocks host shutdown until the trusted
-assembly can establish authoritative clearance. Automatic processing orchestration
-and installed legacy-transition clearance remain separate prerequisites.
+`nextShortcutAdmission: unavailable` cannot establish shutdown clearance. The generic
+host refuses it; the coordinator binding below requires its explicit scoped shutdown
+report plus clearance of every other SDK/runtime user. Installed legacy-transition clearance remains a separate prerequisite.
 The trusted Record build may additionally provide `nativeArtifacts`, containing
 the Linux x64 Capture/2, Media/2 and config-helper payload directories, each with
 its externally admitted manifest SHA-256 and original build source SHA. Use the
@@ -303,3 +303,92 @@ Changing shell surfaces disconnects only the renderer's observations. Record
 Settings are not supplied by this contribution. The default shell remains the
 development foundation; this does not enable installed routing or claim native
 pill placement, focus, stacking, exclusion or capture-to-Saved behavior.
+
+
+## Record automatic coordinator assembly
+
+The pinned Record package is the admitted `c43a7182` producer with the accepted SDK 0.4.3 peer. Its public
+`@apparent/record/host/capture2-coordinator` export owns automatic retained-media
+processing and publication. Trusted composition supplies the existing Capture/2
+and Media/2 clients, private roots, source intent and explicit proof/destination
+preferences. `createStandardRecordCaptureCoordinator` owns sampling, sealed-PNG
+observations, frame/layout selection and publication; the shell supplies no
+selection loop or second journal.
+
+Trusted owning composition may also supply a distinct `publicationClient` from an
+already admitted recovery peer, sharing the capture client's configured private
+runtime and original authority. The factory retains that exact capability before
+asynchronous native setup. Record routes publication and recovery through it;
+capture start, stop and inspection stay with `captureClient`. This does not grant
+release or close authority: drain every borrower under the existing shutdown
+policy before releasing recovery peers, and retain the separate owning-client
+close gate. The two-peer recovery factory continues to reject an extra publication
+client rather than acquire an untracked third lifetime.
+
+After constructing that public coordinator, create native bindings using its
+`resolveHandoff` and pass both to `bindRecordCoordinatorHost` in
+`src/record/coordinator-host.ts`. The host injects the coordinator's runtime,
+start and output-fact ports into the public Record provider. It awaits the
+coordinator's asynchronous disposal before closing caller-owned SDKs, then closes
+its config binding. Construction transfers exclusive command/lifetime ownership;
+do not continue issuing commands or reconciliation through the original handles.
+Read-only processing issues remain available to trusted host diagnostics.
+
+The host first seals its command admission and drains admitted native commands.
+A nonterminal preflight refuses known active captures and unreadable ownership,
+preserving Stop/Cancel controls. It then invokes the mandatory
+`shutdownOtherRuntimeUsers` callback, which must seal and drain every other user
+of the shared SDKs, and awaits the coordinator's terminal `shutdown()` report
+and `dispose()`. Only a clear `record-coordinator` report with empty work and
+explicit `nextShortcutAdmission: unsupported`, together with other-user clearance,
+admits SDK closure. The original reservation facts remain `unavailable`; they
+are never relabelled idle. Unknown, unresolved or inconsistent terminal reports
+retain SDK ownership and leave admission closed without retrying shutdown.
+`shutdownReport()` exposes a defensive copy to trusted-main diagnostics only.
+
+Runtime IDs or a local disposal drain alone do not prove clearance. This adapter
+does not activate installed routing. Packaged tests exercise the admitted package,
+terminal ordering and transport with synthetic producers, separately from real
+native Saved/copy and native pill/exclusion acceptance.
+
+Trusted binding modules can use `createRecordProductionHost` from
+`src/record/production-host.ts` to construct the standard visual owner coordinator, public
+native/config/pen/clipboard adapters and serialized host lifetime together.
+Supply already constructed admitted Capture/2 and Media/2 SDK clients sharing
+one private runtime, explicit roots/source intent and `standardProcessing` proof
+and destination preferences, native permission/config inputs, and the ownership callbacks described
+above. The factory fixes publication preflight to the public SDK implementation
+and binds clipboard resolution to the coordinator's existing Saved authority.
+Record owns the standard visual selection and recovery; this factory supplies
+no parallel selector or shortcut-trial producer. Renderer transport preserves the
+current `shortcutTrialBeginBinding` separately from the old terminal identity and
+the explicit `begin-shortcut-trial.replaces` tuple without changing either fact.
+
+SDK/process ownership remains with the caller until construction succeeds.
+`RecordHostSetupError` returns any constructed coordinator and native bindings
+when later setup fails: retain those exact handles, inspect terminal ownership
+through the owner contract and dispose only under the applicable policy. Setup
+failure alone never permits SDK closure, capture cancellation or deletion of
+private roots. Failure before coordinator construction likewise does not clear
+caller-owned SDK/runtime users. This composition function does not launch the
+privileged GUI, install a route or establish native effect/exclusion acceptance.
+
+
+Recovery-only SDK connections have a separate lifetime from owning clients.
+`createRecordRecoveryProductionHost` accepts the separately retained public
+`RecoveryPeer` handles and injects their exact clients into Record. The caller
+must have launched both against the same configured private runtime and original
+authority; peer IDs and lifetime facts alone cannot establish that join. It never
+converts an owning client or calls `client.close()`. The host first seals and
+drains its admitted commands and requires positive external-borrower clearance.
+Only an exact `record-coordinator` report with closed admission and complete
+local drain, followed by successful coordinator disposal, permits the peer
+release callbacks. `connection: released` with an unconfirmed input closure is
+local Node-handle release, not worker exit, cancellation or native completion.
+
+That release may happen while the original report remains unresolved or unknown.
+The host preserves that report and work list, keeps normal close refused, and
+never retries an uncertain release. Failed/pending shutdown or disposal, invalid
+drain scope, or an undrained external borrower prevents release. Trusted-main
+release diagnostics are separate from renderer capability facts. The ordinary
+owning-client factory and its global-clearance requirement remain unchanged.
