@@ -3,9 +3,14 @@ import { test } from 'node:test';
 import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { initialProgress, onboardingProgressCodec } from '@apparent/onboarding';
 import { createRecordFixture } from '@apparent/record/fixtures';
 import type { ConfigBackend } from '@apparent/config-host';
+import { hasReviewedOnboardingWriter } from '../../src/onboarding/writer.ts';
+import { buildOmarchyPackage } from '../../scripts/build-omarchy.ts';
 
 const hostCompiled = await build({ entryPoints: [fileURLToPath(new URL('../../src/onboarding/host.ts', import.meta.url))],
   bundle: true, platform: 'node', format: 'cjs', write: false,
@@ -13,6 +18,22 @@ const hostCompiled = await build({ entryPoints: [fileURLToPath(new URL('../../sr
 const hostModule = { exports: {} as any };
 new Function('require', 'module', 'exports', hostCompiled.outputFiles[0].text)(createRequire(import.meta.url), hostModule, hostModule.exports);
 const { bindOnboardingWriter } = hostModule.exports;
+
+test('writer-version compatibility is distinct from startup refusal and does not admit an arbitrary future producer', () => {
+  assert.equal(hasReviewedOnboardingWriter('2dbee5bcc778eb02c724ab3b9169f95784c976a54baaf75ca5042d08ea02bea2'), true);
+  assert.equal(hasReviewedOnboardingWriter('9768f559f97b10e40b3efa348c54f220a87242794529d3d4fce37ace1b1e18d0'), false);
+  assert.equal(hasReviewedOnboardingWriter('a'.repeat(64)), false);
+});
+
+test('actual package entry refuses an unreviewed onboarding writer before creating package output',
+  { skip: process.platform !== 'linux' || process.arch !== 'x64' }, async t => {
+    const directory = await mkdtemp(join(tmpdir(), 'onboarding-package-gate-'));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const output = join(directory, 'package');
+    await assert.rejects(buildOmarchyPackage(output, { target: 'linux-x64',
+      gui: { executableSha256: '9768f559f97b10e40b3efa348c54f220a87242794529d3d4fce37ace1b1e18d0' } } as any), /onboarding writer fence/);
+    await assert.rejects(stat(output), { code: 'ENOENT' });
+  });
 
 const completed = () => ({ ...initialProgress(), status: 'completed' as const, stage: 'complete' as const, setupCompleted: true });
 const compiled = await build({ entryPoints: [fileURLToPath(new URL('../../src/onboarding/entry.tsx', import.meta.url))],

@@ -10,6 +10,7 @@ import { packageApplication } from './package.ts';
 import { digest } from './artifacts.ts';
 import type { RecordNativeArtifacts } from './record-native.ts';
 import { hasReviewedGuiRefusalContract } from '../src/record/omarchy/startup-refusal.ts';
+import { hasReviewedOnboardingWriter } from '../src/onboarding/writer.ts';
 
 /** Packages already admitted Engine/config closures and this candidate's GUI.
  * Does not launch the desktop, record, copy, install or change routing. */
@@ -19,6 +20,8 @@ export async function buildOmarchyPackage(output: string, nativeArtifacts: Recor
   assert(nativeArtifacts.gui, 'Complete desktop requires the adapter-only GUI closure');
   assert(hasReviewedGuiRefusalContract(nativeArtifacts.gui.executableSha256),
     'Native GUI startup-refusal contract must be reviewed for this exact executable before packaging');
+  assert(hasReviewedOnboardingWriter(nativeArtifacts.gui.executableSha256),
+    'Native GUI onboarding writer fence must be reviewed for this exact executable before packaging');
   const repo = resolve(root, '../..');
   const source = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
   assert.equal(execFileSync('git', ['status', '--porcelain', '--untracked-files=normal'], { cwd: repo, encoding: 'utf8' }), '',
@@ -53,6 +56,7 @@ exec env HOME="$profile/home" XDG_CONFIG_HOME="$profile/home/.config" XDG_CACHE_
   await chmod(join(install, 'apparent'), 0o755);
   await writeFile(join(install, 'README.txt'),
     'Apparent Omarchy MVP candidate\n\nLaunch ./apparent from an extracted, user-owned directory. Keep the directory intact.\n'
+    + 'The normal app uses remembered owner setup. New or resumed setup waits for actual permission/trial/practice facts; explicit Replay welcome tour alone replays. Completed setup returns to existing recording controls without starting capture. Unknown config/writer ownership refuses setup activation; preserve the profile and logs. A second normal launch can focus the existing idle entry, but never starts capture or overrides active/unknown work.\n'
     + 'Choose one monitor in the real portal. Record starts silent video; Record with microphone requires a configured local model and actual native support. Controls hide during capture; activate the Apparent tray icon to Stop. The tray menu also provides Cancel recording for the exact active capture. A requested or unknown cancellation is not a confirmed cancelled recording; the menu reports authoritative cancelled status separately.\n'
     + 'Optional microphone resource: place the explicit, verified parakeet-unified-en-0.6b-Q8_0.gguf (731357568 bytes, SHA256 4b50b6dd862bf6e346929aaf4f5eaacec003bfa3f56462d6c874b41ef2f38795) in <profile>/resources/ before launch. The resources directory must be user-owned mode 0700; the regular model must have one link and no group/world write. No automatic download or microphone fallback is supplied. Native support is not transcript success.\n'
     + 'When drawing input is ready, hold Shift and move to draw. The tray menu opens Board and provides Undo drawing, Clear drawing and Close Board; reopening preserves completed marks. Input-device access, scale1 and native source identity are required. An unavailable source is not an empty collected drawing. Accepted history includes later undone or cleared gestures; movie pixels show the current canvas.\n'

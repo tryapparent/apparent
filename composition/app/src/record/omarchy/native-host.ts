@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createNativeHostPort } from '@apparent/native-host';
 import { confirmsForeignOwner, ForeignOwnerRefusal } from './startup-refusal.ts';
+import { hasReviewedOnboardingWriter } from '../../onboarding/writer.ts';
 
 async function startTicks(pid: number): Promise<string> {
   const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
@@ -162,7 +163,7 @@ export async function launchNativeHost(profilePath: string, nativeRoot: string) 
       // Its global IPC/owned socket gate excludes a separate ordinary GUI;
       // the native-host-only role does not launch the legacy tour surface.
       // Future producers require their own source/package contract review.
-      if (manifest.executableSha256 !== '2dbee5bcc778eb02c724ab3b9169f95784c976a54baaf75ca5042d08ea02bea2') {
+      if (!hasReviewedOnboardingWriter(manifest.executableSha256)) {
         throw new Error('Legacy onboarding writer version is not admitted');
       }
       await inkIdentity();
