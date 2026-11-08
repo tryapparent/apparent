@@ -17,6 +17,7 @@ function host(mode: string) {
   const lines = new EventEmitter();
   const exits: number[] = [];
   const written: string[] = [];
+  const output = Object.assign(new EventEmitter(), { write: (line: string) => written.push(line) });
   const handlers = new Map<string, (...args: any[]) => void>();
   const timers: { callback: () => void; active: boolean; unref(): void }[] = [];
   let window: Window;
@@ -62,13 +63,35 @@ function host(mode: string) {
     __dirname: path.dirname(filename),
     setTimeout: (callback: () => void) => { const timer = { callback, active: true, unref() {} }; timers.push(timer); return timer; },
     clearTimeout: (timer?: typeof timers[number]) => { if (timer) timer.active = false; },
-    process: { argv: ['electron', '.', mode, '--settings-parent'], platform: 'darwin', stdin: {}, stdout: { write: (line: string) => written.push(line) } },
+    process: { argv: ['electron', '.', mode, '--settings-parent'], platform: 'darwin', stdin: {}, stdout: output },
   }, { filename });
   const mounted = () => handlers.get('apparent:settings-mounted')!({ sender: window.webContents, senderFrame: window.webContents.mainFrame });
   const expire = () => { for (const timer of timers) if (timer.active) { timer.active = false; timer.callback(); } };
   const frameReady = () => handlers.get('apparent:settings-frame-ready')!({ sender: window.webContents, senderFrame: window.webContents.mainFrame });
-  return { window: window!, lines, exits, written, mounted, frameReady, expire, handlers };
+  return { window: window!, lines, exits, written, mounted, frameReady, expire, handlers, output };
 }
+
+test('parent retirement and broken stdout never report user dismissal or reopen Settings', () => {
+  for (const cause of ['close', 'eof', 'broken-pipe']) {
+    const {window, lines, output, written, mounted, frameReady} = host('--settings-storage');
+    if (cause === 'close') lines.emit('line', JSON.stringify({type:'close'}));
+    else if (cause === 'eof') lines.emit('close');
+    else output.emit('error', Object.assign(new Error('Synthetic broken pipe'), {code:'EPIPE'}));
+    window.emit('close');
+    mounted(); frameReady();
+    assert.deepEqual(written, [], cause);
+    assert.equal(window.visible, false, cause);
+  }
+});
+
+test('an actual window dismissal still notifies the parent once', () => {
+  const {window, written, mounted} = host('--settings-storage');
+  window.emit('close');
+  window.emit('close');
+  mounted();
+  assert.deepEqual(written, ['{"action":"close"}\n']);
+  assert.equal(window.visible, false);
+});
 
 for (const mode of ['--settings-storage']) {
   test(`${mode} waits for first paint even when the parent requests focus early`, () => {

@@ -109,6 +109,9 @@ app.whenReady().then(() => {
   });
   if (settings) {
     const closeSettings = () => { settingsClosing = true; clearTimeout(startupTimer); app.quit(); };
+    // A parent can exit before Chromium closes its child. Retire quietly when
+    // its output pipe breaks instead of opening Electron's error dialog.
+    process.stdout.on('error', error => { if (error.code === 'EPIPE') closeSettings(); else failSettings(); });
     // Only the Rust Settings owner supplies this private pipe. EOF closes its child.
     if (process.argv.includes('--settings-parent')) {
     const lines = require('node:readline').createInterface({ input: process.stdin });
@@ -122,10 +125,11 @@ app.whenReady().then(() => {
     lines.on('close', closeSettings);
     }
     window.on('close', () => {
+      const userDismissed = !settingsClosing && !settingsFailed;
       settingsClosing = true;
       clearTimeout(startupTimer);
       // Failure is not user dismissal: Rust must be allowed to restore Storage.
-      if (!settingsFailed) process.stdout.write(`${JSON.stringify({ action: 'close' })}\n`);
+      if (userDismissed) process.stdout.write(`${JSON.stringify({ action: 'close' })}\n`);
     });
     window.webContents.on('did-fail-load', failSettings);
     window.webContents.on('render-process-gone', failSettings);
