@@ -44,6 +44,10 @@ try {
   const blockedPath = `${deny}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH ?? ''}`;
   const installEnv = { ...process.env, PATH: blockedPath, npm_config_cache: join(root, 'npm-cache') };
 
+  // A previous branch can leave ignored modules that tsc no longer emits.
+  await mkdir(join(nativeRoot, 'dist'), { recursive: true });
+  await writeFile(join(nativeRoot, 'dist/previous-build.js'), 'export const stale = true;\n');
+  await writeFile(join(nativeRoot, 'dist/previous-build.d.ts'), 'export declare const stale: true;\n');
   for (const [workdir, artifact] of [
     [contractsRoot, 'apparent-app-contracts-0.1.0.tgz'],
     [nativeRoot, 'apparent-native-host-0.1.0.tgz'],
@@ -55,6 +59,11 @@ try {
   const contractsTar = join(packages, 'apparent-app-contracts-0.1.0.tgz');
   const nativeTar = join(packages, 'apparent-native-host-0.1.0.tgz');
   const nativeTarEntries = (await run('native-tar-list.log', 'tar', ['-tzf', nativeTar], root)).split(/\r?\n/).filter(Boolean);
+  const expectedDist = (await readdir(join(nativeRoot, 'src')))
+    .filter(name => name.endsWith('.ts'))
+    .flatMap(name => ['package/dist/' + name.replace(/\.ts$/, '.js'), 'package/dist/' + name.replace(/\.ts$/, '.d.ts')]).sort();
+  assert.deepEqual(nativeTarEntries.filter(name => name.startsWith('package/dist/') && !name.endsWith('/')).sort(),
+    expectedDist, 'pack only current compiler outputs; previous-branch artifacts must not survive');
   assert.ok(nativeTarEntries.some(name => name === 'package/dist/client.js'));
   assert.ok(nativeTarEntries.some(name => name === 'package/dist/client.d.ts'));
   assert.ok(nativeTarEntries.every(name => !name.startsWith('package/src/')), 'native-host tarball must not require TypeScript source');
@@ -119,7 +128,7 @@ try {
   await run('compiled-client-socket-tests.log', process.execPath, ['--experimental-strip-types', '--test', join(consumerTests, 'client.test.ts')], consumer, installEnv);
 
   const sourceFiles = [
-    'package.json', 'package-lock.json', 'README.md', 'tsconfig.build.json',
+    'package.json', 'package-lock.json', 'README.md', 'tsconfig.json', 'tsconfig.build.json', 'scripts/clean-dist.ts',
     'src/client.ts', 'src/pen.ts', 'src/clipboard.ts',
     'test/client.test.ts', 'test/packed-consumer-types.ts', 'test/packed-consumer.ts',
   ];
