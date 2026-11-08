@@ -41,6 +41,9 @@ for library in "$(dirname "$binary")"/libggml-cpu*.so; do
   libraries+=(--library "$library")
 done
 
+mkdir -p "$appdir/usr/bin"
+node --experimental-strip-types "$root/connect/delivery/recipient/package.ts" "$root/connect/delivery/recipient/pins.json" "$arch-unknown-linux-gnu" "$appdir/usr/bin" 
+
 cd "$out"
 LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy \
   --appdir "$appdir" \
