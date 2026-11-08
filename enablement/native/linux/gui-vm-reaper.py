@@ -185,12 +185,17 @@ def signal_owner(pid, disk, signum):
 def reap(directory):
     directory, _ = private_directory(directory)
     disk = directory / "disk.qcow2"
+    if not os.path.lexists(disk):
+        # No initial drive binding means no signalling authority, even if an
+        # argv would match. Refuse an incomplete requested pair; preserve it.
+        if cold_retention_requested(directory):
+            retain_cold_resources(directory, 'expiry')
+        return
     # Establish this job's drive authority before any signal. Retention policy
     # and firmware qualification must NOT prevent authorized owned-QEMU drain.
-    if os.path.lexists(disk):
-        meta = disk.lstat()
-        if not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.getuid() or meta.st_nlink != 1:
-            raise RuntimeError('job disk ownership is unknown; refusing to signal')
+    meta = disk.lstat()
+    if not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.getuid() or meta.st_nlink != 1:
+        raise RuntimeError('job disk ownership is unknown; refusing to signal')
     owners = list(qemu_users(disk))
     for pid in owners:
         signal_owner(pid, disk, signal.SIGTERM)

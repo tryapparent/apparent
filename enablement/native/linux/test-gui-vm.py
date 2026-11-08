@@ -356,6 +356,35 @@ class ColdRetentionTests(unittest.TestCase):
             os.close(read_fd)
             os.close(write_fd)
 
+    def test_initially_missing_drive_never_grants_signal_authority_in_canonical_or_copied_expire(self):
+        for copied in (False, True):
+            for malformed in (False, True):
+                with self.subTest(copied=copied, malformed=malformed), tempfile.TemporaryDirectory() as root:
+                    directory = Path(root)
+                    module = self.prepare(directory)
+                    if copied:
+                        with patch.object(runner, 'execute'):
+                            runner.arm_expiry(directory, 45)
+                        module = load_reaper(directory / 'reaper.py')
+                    (directory / 'disk.qcow2').unlink()
+                    request = directory / module.COLD_REQUEST
+                    if malformed:
+                        request.write_text('{')
+                    original = request.read_bytes()
+                    with patch.object(module, 'qemu_users', return_value=[321]) as users, \
+                         patch.object(module, 'signal_owner') as send:
+                        with self.assertRaises((RuntimeError, OSError)):
+                            module.expire(directory)
+                    users.assert_not_called()
+                    send.assert_not_called()
+                    self.assertEqual(request.read_bytes(), original)
+                    self.assertEqual((directory / 'OVMF_VARS.fd').read_bytes(), b'owned synthetic resource')
+                    self.assertFalse((directory / 'cold-state-expiry.json').exists())
+                    status = json.loads((directory / 'result.json').read_text())
+                    self.assertEqual(status['driver'], 'failed')
+                    self.assertEqual(status['exit_code'], 1)
+                    self.assertEqual(status['cleanup']['status'], 'failed')
+
     def test_uncertain_drive_authority_is_not_permission_to_signal(self):
         for mode in ('symlink', 'hardlink', 'foreign'):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as root:
