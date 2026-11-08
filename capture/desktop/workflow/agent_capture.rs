@@ -370,6 +370,15 @@ impl ErrorReportingRequest {
     }
 }
 
+fn parse_framed_request(line: &str) -> Option<Wire> {
+    let wire = parse_request(line.trim())?;
+    let maximum = match &wire {
+        Wire::NativeHost(request) => request.maximum_frame_bytes(),
+        _ => 131_072,
+    };
+    (line.len() <= maximum).then_some(wire)
+}
+
 fn parse_request(line: &str) -> Option<Wire> {
     if line.starts_with('{')
         && let Some(request) = super::native_host::parse(line, storage_clock_ms())
@@ -566,10 +575,10 @@ fn listen_at_config(path: PathBuf, config_path: PathBuf) -> Result<flume::Receiv
                 let mut line = String::new();
                 let read_deadline = Instant::now() + Duration::from_secs(3);
                 let Ok(read_stream) = stream.try_clone() else { continue; };
-                let mut reader = BufReader::new(DeadlineStream { stream: read_stream, deadline: read_deadline }.take(131073));
-                let valid_frame = reader.read_line(&mut line).is_ok() && line.ends_with('\n') && line.len() <= 131072 && reader.buffer().is_empty();
+                let mut reader = BufReader::new(DeadlineStream { stream: read_stream, deadline: read_deadline }.take(super::native_host::MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES as u64 + 1));
+                let valid_frame = reader.read_line(&mut line).is_ok() && line.ends_with('\n') && line.len() <= super::native_host::MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES && reader.buffer().is_empty();
                 let response = if valid_frame {
-                    if let Some(wire) = parse_request(line.trim()) {
+                    if let Some(wire) = parse_framed_request(&line) {
                         let (action, deadline_ms) = match wire {
                             Wire::NativeHost(request) => {
                                 let id = request.id.clone();
@@ -1028,6 +1037,49 @@ mod tests {
         for _ in 0..50 { if !path.exists() { break; } std::thread::sleep(Duration::from_millis(20)); }
         assert!(!path.exists());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn combined_clipboard_socket_accepts_large_frames_without_widening_text_frames() {
+        let (path, stale) = transport_fixture();
+        drop(stale);
+        let directory = path.parent().unwrap().to_owned();
+        let receiver = listen_at_config(path.clone(), directory.join("config.json")).unwrap();
+        let request = serde_json::json!({"protocol":1,"id":"png-frame","owner":"record",
+            "operation":"writeClipboardPngText","deadline":storage_clock_ms()+2500,
+            "observed":{"processEpoch":"epoch","revision":4},"text":"synthetic",
+            "pngHex":"00".repeat(131_072)});
+        let client_path = path.clone();
+        let client = std::thread::spawn(move || {
+            let mut stream = UnixStream::connect(client_path).unwrap();
+            stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+            writeln!(stream, "{request}").unwrap();
+            let mut response = String::new();
+            BufReader::new(stream).read_line(&mut response).unwrap();
+            serde_json::from_str::<serde_json::Value>(&response).unwrap()
+        });
+        let admitted = receiver.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(admitted.action.is_none());
+        assert!(matches!(&admitted.native_host.as_ref().unwrap().operation,
+            super::super::native_host::Operation::WriteClipboardPngText { png_hex, text }
+            if png_hex.len() == 262_144 && text == "synthetic"));
+        admitted.reply.send(r#"{"status":"refused","reason":"invalid-png"}"#.into()).unwrap();
+        assert_eq!(client.join().unwrap()["id"], "png-frame");
+        let text = serde_json::json!({"protocol":1,"id":"padded-text","owner":"record",
+            "operation":"writeClipboardText","deadline":storage_clock_ms()+2500,
+            "observed":{"processEpoch":"epoch","revision":4},"text":"synthetic"});
+        let mut stream = UnixStream::connect(&path).unwrap();
+        stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        writeln!(stream, "{text}{}", " ".repeat(131_072)).unwrap();
+        let mut response = String::new();
+        BufReader::new(stream).read_line(&mut response).unwrap();
+        assert!(!response.is_empty());
+        assert!(receiver.try_recv().is_err(), "old oversized text frame must not be dispatched");
+        drop(receiver);
+        for _ in 0..50 { if !path.exists() { break; } std::thread::sleep(Duration::from_millis(20)); }
+        assert!(!path.exists());
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -1585,5 +1637,26 @@ mod tests {
         });
         assert_eq!(response["state"]["phase"], "starting");
         assert_eq!(response["outcome"], "not_ready");
+    }
+}
+
+#[cfg(test)]
+mod png_text_frame_tests {
+    use super::*;
+
+    #[test]
+    fn raw_frame_bound_includes_padding_before_trimming_old_requests() {
+        let text = serde_json::json!({"protocol":1,"id":"padded-text","owner":"record",
+            "operation":"writeClipboardText","deadline":storage_clock_ms()+3000,
+            "observed":{"processEpoch":"epoch","revision":4},"text":"exact"});
+        let normal = format!("{text}\n");
+        assert!(parse_framed_request(&normal).is_some());
+        let oversized = format!("{text}{}\n", " ".repeat(super::super::native_host::MAX_SERIALIZED_FRAME_BYTES));
+        assert!(parse_framed_request(&oversized).is_none(), "increased combined bound must not widen the text ABI through trim");
+        let read = serde_json::json!({"protocol":1,"id":"padded-read","owner":"record",
+            "operation":"readSnapshot","deadline":storage_clock_ms()+3000});
+        assert!(parse_framed_request(&format!("{read}{}\n", " ".repeat(4096))).is_none());
+        let legacy = format!("{}state\n", " ".repeat(131_072));
+        assert!(parse_framed_request(&legacy).is_none(), "non-native operations retain the old global frame bound");
     }
 }

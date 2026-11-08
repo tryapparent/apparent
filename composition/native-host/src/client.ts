@@ -3,7 +3,7 @@ import { lstat } from 'node:fs/promises';
 import { connect } from 'node:net';
 import { homedir } from 'node:os';
 import { join, normalize } from 'node:path';
-import { MAX_SERIALIZED_FRAME_BYTES, MAX_UTF8_TEXT_BYTES, type NativeClipboardPort, type NativeClipboardWriteResult, type NativeHostPort, type NativeHostSnapshot, type NativeHostRefusal, type NativeMutationResult, type NativePenPort, type NativePenResult, type NativePenSnapshot } from '@apparent/app-contracts/native';
+import { MAX_PNG_BYTES, MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES, type NativeClipboardPngTextPort, type NativeClipboardPngTextWriteResult, MAX_SERIALIZED_FRAME_BYTES, MAX_UTF8_TEXT_BYTES, type NativeClipboardPort, type NativeClipboardWriteResult, type NativeHostPort, type NativeHostSnapshot, type NativeHostRefusal, type NativeMutationResult, type NativePenPort, type NativePenResult, type NativePenSnapshot } from '@apparent/app-contracts/native';
 
 type LegacyConfigValue = Parameters<NativePenPort['applyStrokeColor']>[1];
 
@@ -85,7 +85,8 @@ async function request(target: ReturnType<typeof endpoint>, operation: string, f
   const id = randomUUID();
   const deadline = Number(process.hrtime.bigint() / 1_000_000n) + TIMEOUT_MS;
   const frame = Buffer.from(`${JSON.stringify({ protocol: 1, id, owner: 'record', operation, ...fields, deadline })}\n`);
-  const maxFrame = operation === 'writeClipboardText' ? MAX_SERIALIZED_FRAME_BYTES : MAX_FRAME;
+  const maxFrame = operation === 'writeClipboardPngText' ? MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES
+    : operation === 'writeClipboardText' ? MAX_SERIALIZED_FRAME_BYTES : MAX_FRAME;
   if (frame.length > maxFrame) throw new RequestFrameTooLarge('Native host request exceeds limit');
   const identity = await verifySocket(target);
   return await new Promise((resolve, reject) => {
@@ -255,6 +256,49 @@ export function createNativeClipboardPort(): NativeClipboardPort {
           observed: { processEpoch: epoch, revision }, text,
         });
         return clipboardResult(value, encoded.bytes.length, createHash('sha256').update(encoded.bytes).digest('hex'));
+      } catch (error) {
+        if (error instanceof RequestFrameTooLarge) return { status: 'refused', reason: 'too-large' };
+        return { status: 'outcome-unknown' };
+      } finally { clipboardWriteInFlight = false; }
+    },
+  };
+}
+
+/** One bounded combined offer through the same privileged clipboard effect lane. */
+export function createNativeClipboardPngTextPort(): NativeClipboardPngTextPort {
+  const target = endpoint();
+  return {
+    async writePngAndText(png, text, observed) {
+      const encoded = exactUtf8(text);
+      if ('reason' in encoded) return { status: 'refused', reason: encoded.reason };
+      if (!(png instanceof Uint8Array)) return { status: 'refused', reason: 'invalid-png' };
+      if (png.byteLength > MAX_PNG_BYTES) return { status: 'refused', reason: 'too-large' };
+      const image = Buffer.from(png);
+      if (image.length < 8 || !image.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+        return { status: 'refused', reason: 'invalid-png' };
+      }
+      const epoch = observed?.processEpoch, revision = observed?.revision;
+      if (typeof epoch !== 'string' || !/^[a-zA-Z0-9-]{1,64}$/.test(epoch)
+        || !Number.isSafeInteger(revision) || revision < 0) throw new TypeError('Invalid native host revision');
+      if (clipboardWriteInFlight) return { status: 'refused', reason: 'busy' };
+      const expectedText = { digest: createHash('sha256').update(encoded.bytes).digest('hex'), byteLength: encoded.bytes.length };
+      const expectedPng = { digest: createHash('sha256').update(image).digest('hex'), byteLength: image.length };
+      clipboardWriteInFlight = true;
+      try {
+        const value = await request(target, 'writeClipboardPngText', {
+          observed: { processEpoch: epoch, revision }, text, pngHex: image.toString('hex'),
+        });
+        const matches = (receipt: unknown, expected: { digest: string; byteLength: number }) =>
+          exact(receipt, ['digest', 'byteLength']) && receipt.digest === expected.digest && receipt.byteLength === expected.byteLength;
+        if (exact(value, ['status', 'text', 'png']) && value.status === 'applied'
+          && matches(value.text, expectedText) && matches(value.png, expectedPng)) {
+          return { status: 'applied', text: expectedText, png: expectedPng };
+        }
+        if (exact(value, ['status', 'reason']) && value.status === 'refused'
+          && ['stale', 'busy', 'unavailable', 'invalid-text', 'invalid-png', 'too-large'].includes(String(value.reason))) {
+          return value as unknown as NativeClipboardPngTextWriteResult;
+        }
+        return { status: 'outcome-unknown' };
       } catch (error) {
         if (error instanceof RequestFrameTooLarge) return { status: 'refused', reason: 'too-large' };
         return { status: 'outcome-unknown' };

@@ -10,9 +10,11 @@ use crate::shared::model::ApparentBundle;
 mod config_store;
 mod config;
 mod integration;
+mod clipboard_image;
 // Preserve the handoff API while each boundary owns its implementation.
 pub use config::*;
 pub use integration::*;
+pub use clipboard_image::copy_png_and_text_to_clipboard_verified_until;
 pub(crate) use config_store::ConfigPublicationUncertain;
 pub(crate) mod capture_location;
 pub use config_store::{default_config_path, set_config_value_in};
@@ -286,6 +288,15 @@ pub(crate) fn run_native_clipboard_text_owner() -> Result<()> {
     }
 }
 
+/// One-shot AppKit child entry point for the existing native clipboard process mode.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub(crate) fn run_native_clipboard_png_text_owner() -> Result<()> {
+    #[cfg(target_os = "macos")]
+    { clipboard_image::run_native_clipboard_png_text_owner() }
+    #[cfg(target_os = "linux")]
+    { anyhow::bail!("Combined clipboard child mode is unavailable on Linux") }
+}
+
 /// Uses the existing platform clipboard writer, then confirms the exact text and write owner.
 /// This method returns no clipboard content and never attempts to restore a previous owner.
 pub fn copy_string_to_clipboard_verified_until(
@@ -319,6 +330,20 @@ pub fn copy_string_to_clipboard_verified_until(
 
 #[cfg(target_os = "macos")]
 fn run_bounded_native_clipboard_child(content: &str, deadline: std::time::Instant) -> VerifiedClipboardTextWrite {
+    run_bounded_native_clipboard_owner(
+        &["--internal-native-clipboard-text-owner"],
+        content.as_bytes().to_vec(),
+        deadline,
+    )
+}
+
+/// Shared bounded child transport for the existing private clipboard helper entry point.
+#[cfg(target_os = "macos")]
+pub(super) fn run_bounded_native_clipboard_owner(
+    args: &[&str],
+    bytes: Vec<u8>,
+    deadline: std::time::Instant,
+) -> VerifiedClipboardTextWrite {
     use std::io::Write as _;
     use std::process::{Command, Stdio};
 
@@ -327,7 +352,7 @@ fn run_bounded_native_clipboard_child(content: &str, deadline: std::time::Instan
         Err(_) => return VerifiedClipboardTextWrite::Unavailable,
     };
     let mut child = match Command::new(executable)
-        .arg("--internal-native-clipboard-text-owner")
+        .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -340,7 +365,6 @@ fn run_bounded_native_clipboard_child(content: &str, deadline: std::time::Instan
         stop_clipboard_helper(&mut child);
         return VerifiedClipboardTextWrite::OutcomeUnknown;
     };
-    let bytes = content.as_bytes().to_vec();
     let (write_tx, write_rx) = std::sync::mpsc::sync_channel(1);
     std::thread::spawn(move || {
         let result = input.write_all(&bytes);
@@ -408,11 +432,7 @@ fn copy_string_to_clipboard_verified_local(content: &str) -> VerifiedClipboardTe
         return VerifiedClipboardTextWrite::OutcomeUnknown;
     }
     let after = pasteboard.changeCount();
-    #[cfg(test)]
-    CLIPBOARD_BEFORE_READBACK.with(|slot| {
-        let hook = slot.borrow_mut().take();
-        if let Some(hook) = hook { hook(); }
-    });
+    clipboard_before_readback();
     let actual = unsafe { pasteboard.stringForType(NSPasteboardTypeString) };
     if pasteboard_write_confirmed(
         before as isize,
@@ -424,6 +444,61 @@ fn copy_string_to_clipboard_verified_local(content: &str) -> VerifiedClipboardTe
     } else {
         VerifiedClipboardTextWrite::OutcomeUnknown
     }
+}
+
+#[cfg(target_os = "macos")]
+fn copy_png_and_text_verified_local(png_bytes: &[u8], content: &str) -> VerifiedClipboardTextWrite {
+    use objc2_app_kit::{NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeString};
+
+    let pasteboard = NSPasteboard::generalPasteboard();
+    let before = pasteboard.changeCount();
+    if !matches!(copy_png_and_text_to_clipboard(png_bytes, content), Ok(true)) {
+        return VerifiedClipboardTextWrite::OutcomeUnknown;
+    }
+    let after = pasteboard.changeCount();
+    clipboard_before_readback();
+    let text_matches = unsafe { pasteboard.stringForType(NSPasteboardTypeString) }
+        .is_some_and(|actual| actual.to_string() == content);
+    let png_matches = unsafe { pasteboard.dataForType(NSPasteboardTypePNG) }
+        .is_some_and(|actual| data_matches_bytes(&actual, png_bytes));
+    let after_readback = pasteboard.changeCount();
+    if pasteboard_write_confirmed(
+        before as isize,
+        after as isize,
+        after_readback as isize,
+        text_matches && png_matches,
+    ) {
+        VerifiedClipboardTextWrite::Applied
+    } else {
+        VerifiedClipboardTextWrite::OutcomeUnknown
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn data_matches_bytes(data: &objc2_foundation::NSData, expected: &[u8]) -> bool {
+    use std::ptr::NonNull;
+
+    if data.length() != expected.len() {
+        return false;
+    }
+    if expected.is_empty() {
+        return true;
+    }
+    let mut actual = vec![0; expected.len()];
+    let Some(buffer) = NonNull::new(actual.as_mut_ptr().cast()) else {
+        return false;
+    };
+    unsafe { data.getBytes_length(buffer, actual.len()) };
+    actual == expected
+}
+
+#[cfg(target_os = "macos")]
+fn clipboard_before_readback() {
+    #[cfg(test)]
+    CLIPBOARD_BEFORE_READBACK.with(|slot| {
+        let hook = slot.borrow_mut().take();
+        if let Some(hook) = hook { hook(); }
+    });
 }
 
 #[cfg(target_os = "macos")]

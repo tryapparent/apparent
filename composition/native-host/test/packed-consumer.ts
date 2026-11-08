@@ -80,7 +80,7 @@ try {
     import assert from 'node:assert/strict';
     import { createNativeHostPort } from '@apparent/native-host';
     import { createNativePenPort } from '@apparent/native-host/pen';
-    import { createNativeClipboardPort, MAX_UTF8_TEXT_BYTES, MAX_SERIALIZED_FRAME_BYTES } from '@apparent/native-host/clipboard';
+    import { createNativeClipboardPort, createNativeClipboardPngTextPort, MAX_PNG_BYTES, MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES, MAX_UTF8_TEXT_BYTES, MAX_SERIALIZED_FRAME_BYTES } from '@apparent/native-host/clipboard';
     assert.equal(MAX_UTF8_TEXT_BYTES, 21800);
     assert.equal(MAX_SERIALIZED_FRAME_BYTES, 131072);
     assert.equal(typeof createNativeHostPort().readSnapshot, 'function');
@@ -88,6 +88,9 @@ try {
     const clipboard = createNativeClipboardPort();
     assert.deepEqual(await clipboard.writeText('bad\\0text', { processEpoch: 'epoch', revision: 1 }), { status: 'refused', reason: 'invalid-text' });
     assert.deepEqual(await clipboard.writeText('x'.repeat(21801), { processEpoch: 'epoch', revision: 1 }), { status: 'refused', reason: 'too-large' });
+    assert.equal(MAX_PNG_BYTES, 4194304);
+    assert.equal(MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES, 9000000);
+    assert.deepEqual(await createNativeClipboardPngTextPort().writePngAndText(new Uint8Array(), 'text', { processEpoch: 'epoch', revision: 1 }), { status: 'refused', reason: 'invalid-png' });
     console.log('plain-node-imports=pass; limits=21800,131072; local-refusals=pass');
   `;
   await run('plain-node-runtime.log', process.execPath, ['--input-type=module', '-e', runtimeSmoke], consumer, installEnv);
@@ -110,8 +113,8 @@ try {
   const sourceTests = await readFile(join(nativeRoot, 'test/client.test.ts'), 'utf8');
   const packedTests = sourceTests
     .replace(
-      "import { createNativeHostPort, createNativeClipboardPort, createNativePenPort } from '../src/client.ts';",
-      "import { createNativeHostPort } from '@apparent/native-host';\nimport { createNativeClipboardPort } from '@apparent/native-host/clipboard';\nimport { createNativePenPort } from '@apparent/native-host/pen';",
+      "import { createNativeHostPort, createNativeClipboardPort, createNativeClipboardPngTextPort, createNativePenPort } from '../src/client.ts';",
+      "import { createNativeHostPort } from '@apparent/native-host';\nimport { createNativeClipboardPort, createNativeClipboardPngTextPort } from '@apparent/native-host/clipboard';\nimport { createNativePenPort } from '@apparent/native-host/pen';",
     );
   assert.notEqual(packedTests, sourceTests, 'packed test copy must switch to the installed public exports');
   assert.ok(!packedTests.includes("'../src/"), 'packed test copy must not import TypeScript source');
@@ -139,7 +142,7 @@ try {
     install: 'normal npm install from paired tarballs; scripts enabled; cargo/rustc/tsc/esbuild denied on PATH',
     runtime: 'plain Node ESM import of root, pen, and clipboard; invalid and oversize refusal; no TS flags',
     types: 'strict fresh consumer compile; no React ambient types',
-    socketTests: 'existing 18 tests against the installed compiled package',
+    socketTests: '23 text, pen, host and combined clipboard tests against the installed compiled package',
   };
   await writeFile(join(root, 'proof.json'), JSON.stringify(proof, null, 2), { mode: 0o600 });
   passed = true;

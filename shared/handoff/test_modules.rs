@@ -1357,11 +1357,19 @@ mod session_lookup {
 #[cfg(target_os = "macos")]
 #[test]
 fn pasteboard_competing_process_during_readback_stays_unknown_without_retry() {
-    use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+    use objc2_app_kit::{NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeString};
     use std::io::Write as _;
     use std::process::{Command, Stdio};
     use std::rc::Rc;
     use std::cell::Cell;
+    let mut png = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut png, 1, 1);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.write_header().unwrap().write_image_data(&[1, 2, 3, 255]).unwrap();
+    }
+    for combined in [false, true] {
     let calls = Rc::new(Cell::new(0));
     let competitor_count = Rc::new(Cell::new(0_isize));
     let observed_calls = calls.clone();
@@ -1375,11 +1383,17 @@ fn pasteboard_competing_process_during_readback_stays_unknown_without_retry() {
             observed_count.set(NSPasteboard::generalPasteboard().changeCount() as isize);
         }));
     });
-    let result = copy_string_to_clipboard_verified_local("synthetic-candidate-write");
+    let result = if combined {
+        copy_png_and_text_verified_local(&png, "synthetic-candidate-write")
+    } else {
+        copy_string_to_clipboard_verified_local("synthetic-candidate-write")
+    };
     assert_eq!(result, VerifiedClipboardTextWrite::OutcomeUnknown);
     assert_eq!(calls.get(), 1);
     let pasteboard = NSPasteboard::generalPasteboard();
     assert_eq!(pasteboard.changeCount() as isize, competitor_count.get(), "no retry or restoration may overwrite the competitor");
     let actual = unsafe { pasteboard.stringForType(NSPasteboardTypeString) }.unwrap();
     assert!(actual.to_string() == "synthetic-competing-owner", "competing synthetic text must remain");
+    assert!(unsafe { pasteboard.dataForType(NSPasteboardTypePNG) }.is_none(), "candidate PNG must not be restored over the competing text");
+    }
 }

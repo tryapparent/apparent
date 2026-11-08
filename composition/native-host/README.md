@@ -107,3 +107,38 @@ change count to advance and remain stable across exact string readback. Unsuppor
 refuse before writing. A mismatch, timeout after possible effect, or lost reply is
 `outcome-unknown`; this port has no read operation and never restores or returns
 ambient clipboard contents. The bounded native worker admits one write at a time.
+
+### Combined PNG and text candidate
+
+`createNativeClipboardPngTextPort()` from `@apparent/native-host/clipboard`
+adds `writePngAndText(pngBytes, text, observedEpochRevision)`. It snapshots the
+supplied bytes and text before asynchronous work and uses the existing GUI socket
+and shared clipboard effect lane. It accepts no filesystem path or MIME selector,
+exposes no ambient clipboard read or snapshot, retries no unknown write and performs no text
+fallback. The separate `NativeClipboardPort.writeText` API and its limits remain
+unchanged.
+
+Limits: `MAX_PNG_BYTES = 4_194_304`, `MAX_PNG_DIMENSION = 4096` per axis,
+`MAX_PNG_DECODED_BYTES = 67_108_864`, and the existing `MAX_UTF8_TEXT_BYTES = 21_800`.
+The native worker validates a complete static PNG within those resource bounds;
+animated, corrupt or unsupported images are refused before effect. PNG bytes use
+canonical lowercase hex on the private wire. The separate
+`MAX_PNG_TEXT_SERIALIZED_FRAME_BYTES = 9_000_000` includes JSON escaping, envelope
+and terminating LF; text-only frames still have their original 131,072-byte bound
+and other native operations retain 4,096 bytes. Valid handoffs can exceed these
+limits. Callers must surface typed refusal rather than truncate, split or replace
+the content.
+
+Applied returns only `{text:{digest,byteLength},png:{digest,byteLength}}` for the
+exact supplied UTF-8 and original PNG bytes. The macOS producer requires exact
+readback of both formats with an advanced, stable pasteboard change count. Supported KDE/Hyprland
+Wayland sessions reuse the existing multi-MIME owner and checks both payloads but returns
+`outcome-unknown`: its clipboard protocol does not expose authoritative selection
+ownership. X11 refuses combined copy before effect because its existing donor
+cannot offer both formats atomically. No new X11 implementation is supplied.
+
+This candidate does not establish Linux/Mac OS-effect acceptance, a delivered GUI
+archive or installed/Agent adoption. Those native and artifact gates must pass
+before a usable capability return; socket fixtures and compiled package imports
+alone do not clear them. The native producer does not read `clipboardImage` or
+choose a handoff format; that preference and output eligibility stay with callers.

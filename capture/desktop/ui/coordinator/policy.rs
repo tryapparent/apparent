@@ -621,10 +621,15 @@ impl ApparentCoordinator {
         if crate::capture::desktop::workflow::agent_capture::storage_clock_ms() >= request.deadline {
             return Some(refusal("unavailable"));
         }
-        if let Operation::WriteClipboardText(text) = &request.operation {
+        let clipboard = match &request.operation {
+            Operation::WriteClipboardText(text) => Some((text, None)),
+            Operation::WriteClipboardPngText { png_hex, text } => Some((text, Some(png_hex))),
+            _ => None,
+        };
+        if let Some((text, png_hex)) = clipboard {
             use std::sync::atomic::Ordering;
             use sha2::{Digest, Sha256};
-            if let Some(reason) = crate::capture::desktop::workflow::native_host::clipboard_text_refusal(text) {
+            if let Some(reason) = crate::capture::desktop::workflow::native_host::clipboard_text_refusal(&text) {
                 return Some(refusal(reason));
             }
             let Some(expected) = request.expected.as_ref() else { return Some(refusal("unavailable")); };
@@ -635,6 +640,7 @@ impl ApparentCoordinator {
                 return Some(refusal("busy"));
             }
             let text = text.clone();
+            let png_hex = png_hex.cloned();
             let deadline = request.deadline;
             let expected_revision = expected.revision;
             let deadline_instant = std::time::Instant::now()
@@ -649,20 +655,46 @@ impl ApparentCoordinator {
                 }
                 let _lane = ReleaseClipboardLane;
                 let refused = |reason: &str| serde_json::json!({"status":"refused","reason":reason});
-                let result = if crate::capture::desktop::workflow::agent_capture::storage_clock_ms() >= deadline {
+                let current = || crate::capture::desktop::workflow::agent_capture::storage_clock_ms() < deadline;
+                let prepare = || -> Result<Option<Vec<u8>>, &'static str> {
+                    let Some(hex) = png_hex.as_ref() else { return Ok(None); };
+                    let image = crate::capture::desktop::workflow::native_host::decode_png_hex(hex)?;
+                    if let Some(reason) = crate::capture::desktop::workflow::native_host::clipboard_png_refusal(&image) {
+                        return Err(reason);
+                    }
+                    Ok(Some(image))
+                };
+                let result = if !current() {
                     refused("unavailable")
                 } else if NATIVE_HOST_REVISION_FOR_WORKER.load(Ordering::Acquire) != expected_revision {
                     refused("stale")
                 } else {
-                    match crate::shared::handoff::copy_string_to_clipboard_verified_until(&text, deadline_instant) {
-                        crate::shared::handoff::VerifiedClipboardTextWrite::Applied
-                            if crate::capture::desktop::workflow::agent_capture::storage_clock_ms() < deadline => {
-                                let digest = Sha256::digest(text.as_bytes());
-                                serde_json::json!({"status":"applied","digest":format!("{digest:x}"),"byteLength":text.len()})
+                    match prepare() {
+                        Err(reason) => refused(reason),
+                        Ok(_) if !current() => refused("unavailable"),
+                        Ok(_) if NATIVE_HOST_REVISION_FOR_WORKER.load(Ordering::Acquire) != expected_revision => refused("stale"),
+                        Ok(image) => {
+                            let outcome = match image.as_ref() {
+                                Some(image) => crate::shared::handoff::copy_png_and_text_to_clipboard_verified_until(image, &text, deadline_instant),
+                                None => crate::shared::handoff::copy_string_to_clipboard_verified_until(&text, deadline_instant),
+                            };
+                            match outcome {
+                                crate::shared::handoff::VerifiedClipboardTextWrite::Applied if current() => {
+                                    let digest = Sha256::digest(text.as_bytes());
+                                    match image {
+                                        Some(image) => {
+                                            let image_digest = Sha256::digest(&image);
+                                            serde_json::json!({"status":"applied",
+                                                "text":{"digest":format!("{digest:x}"),"byteLength":text.len()},
+                                                "png":{"digest":format!("{image_digest:x}"),"byteLength":image.len()}})
+                                        }
+                                        None => serde_json::json!({"status":"applied","digest":format!("{digest:x}"),"byteLength":text.len()}),
+                                    }
+                                }
+                                crate::shared::handoff::VerifiedClipboardTextWrite::Unavailable if current() => refused("unavailable"),
+                                _ => serde_json::json!({"status":"outcome-unknown"}),
                             }
-                        crate::shared::handoff::VerifiedClipboardTextWrite::Unavailable
-                            if crate::capture::desktop::workflow::agent_capture::storage_clock_ms() < deadline => refused("unavailable"),
-                        _ => serde_json::json!({"status":"outcome-unknown"}),
+                        }
                     }
                 };
                 let _ = reply.send(result.to_string());
@@ -785,7 +817,7 @@ impl ApparentCoordinator {
                 return None;
             }
             Operation::ReadStrokeColor => unreachable!("pen read was handled before config observation"),
-            Operation::WriteClipboardText(_) => unreachable!("clipboard write was dispatched to its bounded worker"),
+            Operation::WriteClipboardText(_) | Operation::WriteClipboardPngText { .. } => unreachable!("clipboard write was dispatched to its bounded worker"),
             Operation::SaveRecordShortcut(value) => self.native_host_save_shortcut(value, &observation, request.deadline),
         })
     }
