@@ -99,3 +99,48 @@ must establish that the legacy journey writer has been upgraded to this fence
 (or stopped) before relying on retirement; a successful helper call alone does
 not qualify an old GUI. This prerequisite does not upgrade or stop installed
 applications. Host activation must retain that writer-version/identity gate.
+
+Connect's fixed cloud-group storage is exported as compiled ESM and declarations
+from `@apparent/config-host/cloud`:
+
+```ts
+import { createConnectCloudConfig } from '@apparent/config-host/cloud';
+const cloud = await createConnectCloudConfig({
+  executable: admittedConfigHost.path,
+  executableSha256: admittedConfigHost.sha256,
+  configPath: userConfigPath,
+});
+const observed = await cloud.read();
+// Connect validates/interprets observed.value and constructs the next opaque group.
+const result = await cloud.compareAndSwap(observed, nextCloudSnapshot);
+await cloud.close();
+```
+
+`read()` returns `{present,value}` for the top-level `cloud` key only. Missing is
+distinct from present null. `compareAndSwap(expected,next)` compares that entire
+presence/value under the existing config transaction and sidecar lock, returning
+`{status:'saved'}`, `{status:'conflict',current}`, or `{status:'unknown',message}`.
+Read and conflict do not rewrite the config. Matching CAS republishes even an
+unchanged value, so a caller can explicitly settle a previously uncertain
+publication after reading it. The facade never retries automatically.
+
+Owner `connect` and key `cloud` are fixed; there is no arbitrary key selector.
+Native storage preserves every value outside `cloud`. Connect must preserve
+server, unknown fields and secrets within the opaque next cloud value it supplies;
+the helper does not merge fields, interpret consent, select a server, implement
+logout, alter credentials or switch the live writer. Existing JSON validation
+and the 16,384-byte serialized JSON value limit apply to both expected and next
+(`MAX_CONNECT_CLOUD_VALUE_BYTES`). The complete UTF-8 JSON protocol frame is
+bounded to 65,536 bytes including LF. A publication or lost-reply uncertainty
+requires reconciliation, never inferred no-effect or an automatic second write.
+Keep Connect's existing lock order, sole-writer transition and admission policy.
+
+The compiled package requires Node >=22.18 and the paired
+`@apparent/app-contracts@0.1.0` peer tarball. The cloud declaration graph uses only
+`@apparent/app-contracts/native`; React is optional and is not installed for this
+headless consumer. `npm run test:packed` tests a normal paired tar installation,
+plain Node import, strict declarations without React ambient types and transport
+cases while compiler/native build tools are denied during install and runtime.
+It does not prove native filesystem effects. Both registered `platform-config`
+native producers run the public compiled cloud adapter against their exact staged
+helper; production admission still requires their receipt and artifact identity.

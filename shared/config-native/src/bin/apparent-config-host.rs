@@ -1,4 +1,4 @@
-use apparent_config_native::{adopt_legacy_in, compare_and_swap_pen_color_in, compare_and_swap_stream_state_in, read_for_adoption_in, read_pen_color_in, read_stream_state_in, retire_onboarding_legacy_writer_in, AdoptResult, CasResult, ConfigPublicationUncertain, LegacyCasResult, LegacyValue};
+use apparent_config_native::{compare_and_swap_connect_cloud_in, read_connect_cloud_in, adopt_legacy_in, compare_and_swap_pen_color_in, compare_and_swap_stream_state_in, read_for_adoption_in, read_pen_color_in, read_stream_state_in, retire_onboarding_legacy_writer_in, AdoptResult, CasResult, ConfigPublicationUncertain, LegacyCasResult, LegacyValue};
 use serde_json::{json, Value};
 use std::{io::{self, BufRead, Read, Write}, path::PathBuf};
 const LIMIT: usize = 64 * 1024;
@@ -41,6 +41,18 @@ fn dispatch(req: &Value, path: &PathBuf, owner: &str) -> (String, Value) {
         Some("readForAdoption") if object.len() == 3 => read_for_adoption_in(path, owner).map(|snapshot| snapshot_json(&snapshot)),
         Some("retireOnboardingLegacyWriter") if object.len() == 3 && owner == "onboarding" => retire_onboarding_legacy_writer_in(path).map(|()| json!({"status":"retired"})),
         Some("readPenColor") if object.len() == 3 && owner == "record" => read_pen_color_in(path).map(|value| field_json(&value)),
+        Some("readConnectCloud") if object.len() == 3 && owner == "connect" => read_connect_cloud_in(path).map(|value| field_json(&value)),
+        Some("compareAndSwapConnectCloud") if object.len() == 5 && owner == "connect" => {
+            let expected = object.get("expectedLegacy").and_then(parse_legacy_value);
+            let next = object.get("next").and_then(parse_legacy_value);
+            match (expected, next) {
+                (Some(expected), Some(next)) => compare_and_swap_connect_cloud_in(path, expected, next).map(|result| match result {
+                    LegacyCasResult::Saved => json!({"status":"saved"}),
+                    LegacyCasResult::Conflict(current) => json!({"status":"conflict","current":field_json(&current)}),
+                }),
+                _ => return (id, unknown("invalid request")),
+            }
+        }
         Some("compareAndSwapPenColor") if object.len() == 5 && owner == "record" => {
             let expected = object.get("expectedLegacy").and_then(parse_legacy_value);
             let next = object.get("next").and_then(parse_legacy_value);
@@ -169,4 +181,19 @@ mod tests {
             assert!(!response.to_string().contains(private));
         }
     }
+    #[test]
+    fn cloud_operations_refuse_foreign_owners_and_key_selectors_before_storage() {
+        let path = PathBuf::from("/unavailable/config.json");
+        for owner in ["record", "onboarding", "agent"] {
+            for request in [
+                json!({"protocol":1,"id":"read","operation":"readConnectCloud"}),
+                json!({"protocol":1,"id":"write","operation":"compareAndSwapConnectCloud","expectedLegacy":{"present":false,"value":null},"next":{"present":true,"value":null}})
+            ] {
+                assert_eq!(dispatch(&request, &path, owner).1, unknown("invalid request"));
+            }
+        }
+        assert_eq!(dispatch(&json!({"protocol":1,"id":"read","operation":"readConnectCloud","key":"secret"}), &path, "connect").1, unknown("invalid request"));
+        assert_eq!(dispatch(&json!({"protocol":1,"id":"write","operation":"compareAndSwapConnectCloud","expectedLegacy":{"present":false,"value":{}},"next":{"present":true,"value":null}}), &path, "connect").1, unknown("invalid request"));
+    }
+
 }

@@ -3,13 +3,41 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/client.ts" },
+  "exports": {
+    ".": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js"
+    },
+    "./cloud": {
+      "types": "./dist/cloud.d.ts",
+      "import": "./dist/cloud.js"
+    }
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test test/client.test.ts",
-    "test:native": "node --experimental-strip-types --test test/native.test.ts"
+    "test": "node --experimental-strip-types --test test/client.test.ts test/cloud.test.ts",
+    "test:native": "node --experimental-strip-types --test test/native.test.ts",
+    "build": "npm --prefix ../../shared/contracts run build && tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
+    "prepack": "npm run build",
+    "pretest": "npm run build",
+    "pretest:native": "npm run build",
+    "pretypecheck": "npm run build",
+    "test:packed": "node --experimental-strip-types test/packed-consumer.ts"
   },
-  "dependencies": { "@apparent/app-contracts": "file:../../shared/contracts" },
-  "devDependencies": { "@types/node": "22.19.0", "typescript": "5.9.3" },
-  "engines": { "node": ">=22.18" }
+  "devDependencies": {
+    "@apparent/app-contracts": "file:../../shared/contracts",
+    "@types/node": "22.19.0",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@apparent/app-contracts": "0.1.0"
+  }
 }

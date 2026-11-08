@@ -8,8 +8,14 @@ for await (const line of createInterface({ input: process.stdin })) {
   if (config.endsWith('malformed.json')) { process.stdout.write('{bad}\n'); continue; }
   if (config.endsWith('oversized.json')) { process.stdout.write('x'.repeat(70_000)); continue; }
   const id = config.endsWith('wrong-id.json') ? 'wrong' : request.id;
-  const result = config.endsWith('unknown.json') && request.operation !== 'read'
+  const result = config.endsWith('unknown.json') && !['read', 'readConnectCloud'].includes(request.operation)
     ? { status: 'unknown', message: 'Native publication unconfirmed' }
+    : request.operation === 'readConnectCloud'
+    ? { present: true, value: null }
+    : request.operation === 'compareAndSwapConnectCloud' && config.endsWith('conflict.json')
+    ? { status: 'conflict', current: { present: true, value: { server: 'synthetic', enabled: false } } }
+    : request.operation === 'compareAndSwapConnectCloud'
+    ? { status: 'saved' }
     : request.operation === 'readForAdoption'
     ? { owner: { present: false, revision: 0, value: null }, legacy: { present: true, value: { seen: true } } }
     : request.operation === 'readPenColor'
