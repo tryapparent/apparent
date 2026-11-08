@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmod, cp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { buildShell, root } from './build.ts';
@@ -37,7 +37,9 @@ export async function buildOmarchyPackage(output: string, nativeArtifacts: Recor
   const packaged = await packageApplication(assembly, join(destination, 'build/packages'));
   const install = join(destination, 'apparent-omarchy');
   await mkdir(install);
-  await cp(packaged, join(install, 'app'), { recursive: true, errorOnExist: true, force: false });
+  // This fresh builder-owned bundle is already verified. Move it into the
+  // exclusively created install tree instead of retaining a second full copy.
+  await rename(packaged, join(install, 'app'));
   // A user-owned distribution cannot supply a root-owned SUID helper. Use
   // Chromium's namespace sandbox explicitly, and keep this helper unwritable.
   await chmod(join(install, 'app/chrome-sandbox'), 0o755);
