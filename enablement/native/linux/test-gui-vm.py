@@ -579,7 +579,7 @@ while not (root / 'release-writer').exists(): time.sleep(.01)
                  patch.object(runner, 'wait_for_desktop'), \
                  patch.object(runner, 'ssh_prefix', return_value=[sys.executable, str(transport), str(root), 'ssh', str(scenario_exit)]), \
                  patch.object(runner, 'execute', side_effect=transport_execute), \
-                 patch.object(runner.cold_retention, 'open_resource_owners', return_value=list(resource_owners)), \
+                 patch.object(runner.cold_retention, 'open_resource_owners', side_effect=lambda resources: list(resource_owners) if resources else []), \
                  patch.object(runner.subprocess, 'Popen', side_effect=track_process), contextlib.redirect_stdout(io.StringIO()):
                 code = runner.main()
         finally:
@@ -827,6 +827,60 @@ while not (root / 'release-writer').exists(): time.sleep(.01)
             self.assertIn({'message': 'late cleanup diagnostic'}, status['cleanup']['errors'])
             self.assertIn({'message': 'late runner diagnostic'}, status['secondary_failures'])
 
+
+class PreallocationClosureTests(unittest.TestCase):
+    def run_refusal(self, root, mode):
+        root = Path(root)
+        for name in ('template', 'vars', 'key', 'scenario', 'candidate'):
+            (root / name).write_text('synthetic')
+        manifest = root / 'input-seals.sha256'
+        manifest.write_text('0' * 64 + '  commands.ts\n')
+        args = ['gui-vm.py', '--template', str(root / 'template'), '--ovmf-vars', str(root / 'vars'),
+                '--ssh-key', str(root / 'key'), '--ssh-user', 'fixture', '--scenario', str(root / 'scenario'),
+                '--binary', str(root / 'candidate'), '--results', str(root / 'result')]
+        if mode == 'closure':
+            args += ['--fixture-file', str(manifest)]
+        else:
+            args += ['--retain-cold-state']
+        with patch.object(sys, 'argv', args), patch.object(runner, 'make_overlay') as overlay, \
+             patch.object(runner, 'arm_expiry') as expiry, patch.object(runner, 'qemu_command') as qemu, \
+             patch.object(runner.cold_retention, 'open_resource_owners', side_effect=RuntimeError('cold resource ownership access is unknown (pid=123, stage=fd-stat, errno=13)')), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertNotEqual(runner.main(), 0)
+            overlay.assert_not_called()
+            expiry.assert_not_called()
+            qemu.assert_not_called()
+        result = json.loads((root / 'result/result.json').read_text())
+        self.assertEqual(result['primary_failure']['stage'], 'preflight')
+        self.assertEqual(result['product'], 'unrun')
+        self.assertFalse((root / 'result/disk.qcow2').exists())
+
+    def test_actual_seal_argv_omission_refuses_before_overlay_expiry_or_qemu(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.run_refusal(root, 'closure')
+
+    def test_unknown_cold_fd_access_refuses_before_overlay_expiry_or_qemu(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.run_refusal(root, 'cold-access')
+
+class SanitizedOwnershipDiagnosticsTests(unittest.TestCase):
+    def test_same_uid_denied_descriptor_is_not_skipped_and_diagnostics_are_sanitized(self):
+        module = load_reaper()
+        class FakeStatus:
+            def read_text(self): return 'Uid:\t{0}\t{0}\t{0}\t{0}\n'.format(os.getuid())
+        class Descriptor:
+            def stat(self): raise PermissionError(13, 'synthetic denied', '/proc/123/fd/9')
+        class Fds:
+            def iterdir(self): return iter([Descriptor()])
+        class Process:
+            name = '123'
+            def __truediv__(self, name): return FakeStatus() if name == 'status' else Fds()
+        class Proc:
+            def iterdir(self): return iter([Process()])
+        with self.assertRaisesRegex(RuntimeError, r'pid=123, stage=fd-stat, errno=13') as error:
+            module.open_resource_owners({}, Proc())
+        self.assertNotIn('/proc/', str(error.exception))
+        self.assertNotIn('/fd/9', str(error.exception))
 
 if __name__ == "__main__":
     unittest.main()
