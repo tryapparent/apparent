@@ -1,2 +1,2 @@
-// Deliberate compile failure in a disposable, never-merge CI probe.
-export const statusReporterProbe: number = "synthetic failure";
+// Valid recovery fixture in a disposable, never-merge CI probe.
+export const statusReporterProbe: number = 1;
