@@ -881,6 +881,31 @@ class SanitizedOwnershipDiagnosticsTests(unittest.TestCase):
             module.open_resource_owners({}, Proc())
         self.assertNotIn('/proc/', str(error.exception))
         self.assertNotIn('/fd/9', str(error.exception))
+        import traceback
+        rendered = ''.join(traceback.format_exception(type(error.exception), error.exception, error.exception.__traceback__))
+        self.assertNotIn('/proc/123/fd/9', rendered)
+        self.assertIn('pid=123, stage=fd-stat, errno=13', rendered)
+        script = """import importlib.util,sys
+spec=importlib.util.spec_from_file_location('actual_reaper',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+class Status:
+ def read_text(self):return 'Uid: {0} {0} {0} {0}\\n'.format(m.os.getuid())
+class FD:
+ def stat(self):raise PermissionError(13,'synthetic denied','/proc/123/fd/9')
+class FDs:
+ def iterdir(self):return iter([FD()])
+class P:
+ name='123'
+ def __truediv__(self,name):return Status() if name=='status' else FDs()
+class Proc:
+ def iterdir(self):return iter([P()])
+m.open_resource_owners({},Proc())
+"""
+        child = subprocess.run([sys.executable, '-IBS', '-c', script, str(REAPER)], capture_output=True, text=True, timeout=3)
+        self.assertNotEqual(child.returncode, 0)
+        self.assertIn('pid=123, stage=fd-stat, errno=13', child.stderr)
+        self.assertNotIn('/proc/123/fd/9', child.stderr)
+        self.assertNotIn('PermissionError', child.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

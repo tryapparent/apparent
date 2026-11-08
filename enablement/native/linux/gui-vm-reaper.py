@@ -129,7 +129,7 @@ def open_resource_owners(resources, proc=Path('/proc'), seconds=2):
             # Unknown remains a refusal; never skip a same-UID process/FD.
             stage = 'fd-stat' if error.filename and '/fd/' in str(error.filename) else access_stage
             raise RuntimeError('cold resource ownership access is unknown '
-                               f'(pid={int(process.name)}, stage={stage}, errno={error.errno})') from error
+                               f'(pid={int(process.name)}, stage={stage}, errno={error.errno})') from None
     if time.monotonic() >= end:
         raise TimeoutError('cold resource ownership observation expired')
     return sorted(owners)
