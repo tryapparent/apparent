@@ -184,16 +184,13 @@ def signal_owner(pid, disk, signum):
 
 def reap(directory):
     directory, _ = private_directory(directory)
-    retain = cold_retention_requested(directory)
     disk = directory / "disk.qcow2"
-    if retain:
-        for path in (disk, directory / 'OVMF_VARS.fd'):
-            if os.path.lexists(path):
-                resource_metadata(path)
-    if not disk.exists():
-        if retain:
-            retain_cold_resources(directory, 'expiry')
-        return
+    # Establish this job's drive authority before any signal. Retention policy
+    # and firmware qualification must NOT prevent authorized owned-QEMU drain.
+    if os.path.lexists(disk):
+        meta = disk.lstat()
+        if not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.getuid() or meta.st_nlink != 1:
+            raise RuntimeError('job disk ownership is unknown; refusing to signal')
     owners = list(qemu_users(disk))
     for pid in owners:
         signal_owner(pid, disk, signal.SIGTERM)
@@ -210,6 +207,13 @@ def reap(directory):
             time.sleep(0.5)
     if list(qemu_users(disk)):
         raise RuntimeError("QEMU still owns job disk; refusing to unlink it")
+    # Invalid requests fail here, AFTER owned-process teardown, without falling
+    # through to the default deletion policy. Preserve the original error/files.
+    retain = cold_retention_requested(directory)
+    if not disk.exists():
+        if retain:
+            retain_cold_resources(directory, 'expiry')
+        return
     # A killed runner may never have copied the evidence. Stop writers, but
     # preserve the only copy on the cold disk until retention was verified
     # after an observed remote exit. A partial live snapshot earns no marker.

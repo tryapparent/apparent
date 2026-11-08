@@ -24,8 +24,8 @@ runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 REAPER = MODULE.with_name("gui-vm-reaper.py")
 
-def load_reaper():
-    spec = importlib.util.spec_from_file_location("gui_vm_reaper", REAPER)
+def load_reaper(path=REAPER):
+    spec = importlib.util.spec_from_file_location("gui_vm_reaper", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -287,6 +287,101 @@ class ColdRetentionTests(unittest.TestCase):
             self.assertEqual(status['driver'], 'failed')
             self.assertEqual(status['cleanup']['status'], 'complete')
             self.assertEqual(status['cleanup']['disk'], 'retained_cold')
+
+    def test_actual_expire_drains_owned_qemu_before_refusing_retention_including_copied_sibling(self):
+        for copied in (False, True):
+            for mode in ('malformed', 'wrong-job', 'unsafe-firmware'):
+                with self.subTest(copied=copied, mode=mode), tempfile.TemporaryDirectory() as root:
+                    directory = Path(root)
+                    module = self.prepare(directory)
+                    if copied:
+                        with patch.object(runner, 'execute'):
+                            runner.arm_expiry(directory, 45)
+                        self.assertEqual((directory / 'reaper.py').read_bytes(), REAPER.read_bytes())
+                        module = load_reaper(directory / 'reaper.py')
+                    if mode == 'malformed':
+                        (directory / module.COLD_REQUEST).write_text('{')
+                    elif mode == 'wrong-job':
+                        value = json.loads((directory / module.COLD_REQUEST).read_text())
+                        value['inode'] += 1
+                        (directory / module.COLD_REQUEST).write_text(json.dumps(value))
+                    else:
+                        (directory / 'OVMF_VARS.fd').chmod(0o666)
+                    primary = {'stage': 'scenario', 'message': 'original retained failure'}
+                    (directory / 'result.json').write_text(json.dumps({'primary_failure': primary}))
+                    live = [321]
+                    def owned_users(disk):
+                        self.assertEqual(disk, directory / 'disk.qcow2')
+                        return list(live)
+                    def stop_owned(pid, disk, signum):
+                        self.assertEqual((pid, disk, signum), (321, directory / 'disk.qcow2', signal.SIGTERM))
+                        live.clear()
+                    with patch.object(module, 'qemu_users', side_effect=owned_users) as users, \
+                         patch.object(module, 'signal_owner', side_effect=stop_owned) as stop, \
+                         patch.object(module, 'open_resource_owners', return_value=[]):
+                        with self.assertRaises((RuntimeError, OSError)):
+                            module.expire(directory)
+                    self.assertGreaterEqual(users.call_count, 3)
+                    stop.assert_called_once()
+                    self.assertEqual(live, [])
+                    self.assertTrue((directory / 'disk.qcow2').exists())
+                    self.assertTrue((directory / 'OVMF_VARS.fd').exists())
+                    self.assertFalse((directory / 'cold-state-expiry.json').exists())
+                    status = json.loads((directory / 'result.json').read_text())
+                    self.assertEqual(status['primary_failure'], primary)
+                    self.assertEqual(status['driver'], 'failed')
+                    self.assertEqual(status['exit_code'], 1)
+                    self.assertEqual(status['cleanup']['status'], 'failed')
+                    self.assertEqual(status['cleanup']['disk'], 'retained_unverified')
+
+    def test_pidfd_authority_still_refuses_foreign_uid_and_reused_drive_identity(self):
+        module = load_reaper()
+        read_fd, write_fd = os.pipe()
+        try:
+            for foreign in (False, True):
+                with self.subTest(foreign=foreign), \
+                     patch.object(module.os, 'pidfd_open', side_effect=lambda pid: os.dup(read_fd)), \
+                     patch.object(Path, 'stat', return_value=SimpleNamespace(st_uid=os.getuid() + int(foreign))), \
+                     patch.object(module, 'qemu_users', return_value=[]) as users, \
+                     patch.object(module.signal, 'pidfd_send_signal') as send:
+                    if foreign:
+                        with self.assertRaisesRegex(RuntimeError, 'foreign QEMU'):
+                            module.signal_owner(321, Path('/owned/disk.qcow2'), signal.SIGTERM)
+                        users.assert_not_called()
+                    else:
+                        module.signal_owner(321, Path('/owned/disk.qcow2'), signal.SIGTERM)
+                        users.assert_called_once()
+                    send.assert_not_called()
+        finally:
+            os.close(read_fd)
+            os.close(write_fd)
+
+    def test_uncertain_drive_authority_is_not_permission_to_signal(self):
+        for mode in ('symlink', 'hardlink', 'foreign'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as root:
+                directory = Path(root)
+                module = self.prepare(directory)
+                disk = directory / 'disk.qcow2'
+                outside = directory / 'outside'
+                outside.write_bytes(b'untouched synthetic outside')
+                if mode in ('symlink', 'hardlink'):
+                    disk.unlink()
+                    if mode == 'symlink':
+                        disk.symlink_to(outside)
+                    else:
+                        os.link(outside, disk)
+                real_lstat = Path.lstat
+                def foreign(path, *args, **kwargs):
+                    meta = real_lstat(path, *args, **kwargs)
+                    return SimpleNamespace(st_mode=meta.st_mode, st_uid=os.getuid()+1, st_nlink=1) if path == disk else meta
+                with (patch.object(Path, 'lstat', foreign) if mode == 'foreign' else contextlib.nullcontext()), \
+                     patch.object(module, 'qemu_users') as users, patch.object(module, 'signal_owner') as send:
+                    with self.assertRaisesRegex(RuntimeError, 'ownership is unknown'):
+                        module.expire(directory)
+                users.assert_not_called()
+                send.assert_not_called()
+                self.assertEqual(outside.read_bytes(), b'untouched synthetic outside')
+                self.assertFalse((directory / 'cold-state-expiry.json').exists())
 
     def test_expiry_stops_exact_owned_qemu_before_cold_retention_and_keeps_unverified_state_unqualified(self):
         with tempfile.TemporaryDirectory() as root:
