@@ -231,6 +231,13 @@ def ssh_prefix(port, key, known_hosts, user):
             "-i", str(key), "-p", str(port), f"{user}@127.0.0.1"]
 
 
+def guest_staging_command(binary_directory, output_directory):
+    # Fresh UUID names only. mkdir (without -p) fails rather than repairing or
+    # reusing an existing directory; mode is independent of the guest's umask.
+    return ('mkdir -m 700 -- ' + shlex.quote(binary_directory) +
+            ' && mkdir -m 700 -- ' + shlex.quote(output_directory))
+
+
 def desktop_probe(desktop):
     if desktop == 'hyprland':
         return ('pgrep -u "$(id -u)" -x Hyprland >/dev/null && '
@@ -385,7 +392,7 @@ def main():
             remote = "/home/" + args.ssh_user + "/scrawl-gui-scenario-" + uuid.uuid4().hex + ".sh"
             guest_output = "/home/" + args.ssh_user + "/scrawl-gui-output-" + uuid.uuid4().hex
             guest_bin = "/home/" + args.ssh_user + "/scrawl-gui-bin-" + uuid.uuid4().hex
-            call(prefix + ["mkdir -p " + shlex.quote(guest_bin)], timeout=10)
+            call(prefix + [guest_staging_command(guest_bin, guest_output)], timeout=10)
             files = [args.binary.resolve()] + sorted(args.binary.parent.glob("lib*.so*"))
             transfer = ["scp", "-q", "-P", str(port), "-i", str(args.ssh_key.resolve()),
                         "-o", "StrictHostKeyChecking=accept-new",
@@ -401,7 +408,6 @@ def main():
             call(scp)
             audio_file = ""
             if args.audio_file:
-                call(prefix + ["mkdir -p " + shlex.quote(guest_output)], timeout=10)
                 audio_file = guest_output + "/stimulus.wav"
                 call(transfer + [str(args.audio_file.resolve()),
                                  f"{args.ssh_user}@127.0.0.1:{audio_file}"], timeout=120)
@@ -409,8 +415,7 @@ def main():
                 stage('scenario')
                 status['unrun'] = []
                 status['product'] = 'unknown'
-                scenario_command = prefix + ["mkdir -p " + shlex.quote(guest_output) +
-                                            " && SCRAWL_GUI_OUTPUT=" + shlex.quote(guest_output) +
+                scenario_command = prefix + ["SCRAWL_GUI_OUTPUT=" + shlex.quote(guest_output) +
                                             " SCRAWL_GUI_BINARY=" + shlex.quote(guest_binary) +
                                             " SCRAWL_GUI_AUDIO_FILE=" + shlex.quote(audio_file) +
                                             " LD_LIBRARY_PATH=" + shlex.quote(guest_bin) +

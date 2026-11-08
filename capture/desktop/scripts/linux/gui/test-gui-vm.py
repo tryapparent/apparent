@@ -92,6 +92,28 @@ class GuestIsolationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             runner.qemu_command(*args, outputs=3)
 
+    def test_guest_staging_is_private_under_group_writable_umask(self):
+        with tempfile.TemporaryDirectory() as root:
+            binary, output = Path(root) / 'bin with spaces', Path(root) / 'output with spaces'
+            subprocess.run(['sh', '-c', 'umask 0002; ' + runner.guest_staging_command(str(binary), str(output))], check=True)
+            self.assertEqual(binary.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(output.stat().st_mode & 0o777, 0o700)
+
+    def test_guest_staging_refuses_existing_paths_without_chmod(self):
+        for existing_name in ('binary', 'output'):
+            with self.subTest(existing=existing_name), tempfile.TemporaryDirectory() as root:
+                binary, output = Path(root) / 'binary', Path(root) / 'output'
+                existing = Path(root) / existing_name
+                existing.mkdir()
+                existing.chmod(0o775)
+                marker = existing / 'owned-elsewhere'
+                marker.write_text('preserve')
+                result = subprocess.run(['sh', '-c', 'umask 0002; ' + runner.guest_staging_command(str(binary), str(output))],
+                                        capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(existing.stat().st_mode & 0o777, 0o775)
+                self.assertEqual(marker.read_text(), 'preserve')
+
     def test_expiry_is_armed_before_guest_boot_and_fail_closed(self):
         with tempfile.TemporaryDirectory() as scratch:
             with patch.object(runner.subprocess, "run") as command:
