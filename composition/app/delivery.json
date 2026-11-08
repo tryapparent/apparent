@@ -13,7 +13,7 @@
   "verify": [
     "check"
   ],
-  "files": ["enablement/native/owned-processes.ts", ".github/workflows/verification-platform.yml"],
+  "files": ["enablement/native/owned-processes.ts", ".github/workflows/verification-platform.yml", ".github/workflows/app-shell-main.yml"],
   "build": "build",
   "targets": [
     "linux-x64",

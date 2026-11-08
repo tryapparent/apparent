@@ -136,11 +136,13 @@ test('Connect producer and client retain separate invocation and path ownership'
   assert.deepEqual(streamWorkflows.sort(), [...new Set(owners.map(name => workflowPathFor(name).split('/').at(-1)!))].sort())
 })
 
-test('PR and main events share path filters, fixed target matrices and least privilege', () => {
+test('owner events preserve scoped PR checks, Main channel delivery and least privilege', () => {
   for (const name of owners) {
     const source = entry(name)
     assert(eventPaths(source, 'pull_request').length > 0, `${name} has PR paths`)
-    assert.deepEqual(eventPaths(source, 'pull_request'), eventPaths(source, 'push'), `${name} PR paths match main paths`)
+    if (platformIds.includes(name)) {
+      assert.match(source, /\n  push:\n    branches: \[main\]\npermissions:/, 'every main push can advance the Linux App Shell channel')
+    } else assert.deepEqual(eventPaths(source, 'pull_request'), eventPaths(source, 'push'), `${name} PR paths match main paths`)
     assert.match(source, /verify-pr:\n[\s\S]*?if: github\.event_name == 'pull_request'/)
     const pr = section(source, 'verify-pr')
     assert.match(pr, /permissions:\n      contents: read\n      actions: read/)
@@ -167,13 +169,23 @@ test('owner component checks are fresh on PRs; only main producer jobs admit, at
   }
 })
 
-test('non-stream workflows remain manual or reusable', () => {
+test('non-stream workflows are manual/reusable except the gated Main AppImage follower', () => {
   const files = readdirSync(root).filter(name => /\.ya?ml$/.test(name))
   for (const file of files.filter(name => !name.startsWith('stream-'))) {
     const source = readFileSync(new URL(file, root), 'utf8')
     const triggers = source.split('\non:\n')[1]?.split(/\n[^\s#]/)[0] ?? ''
     const events = [...triggers.matchAll(/^  ([a-z_]+):/gm)].map(match => match[1])
-    assert(events.every(event => ['workflow_dispatch', 'workflow_call'].includes(event)), `${file} has no automatic event`)
+    if (file === 'app-shell-main.yml') {
+      assert.deepEqual(events, ['workflow_run'])
+      assert.match(triggers, /workflows: \[platform delivery\]\n    types: \[completed\]/)
+      assert.match(section(source, 'package'), /github\.event\.workflow_run\.event == 'push'/)
+      assert.match(section(source, 'package'), /github\.event\.workflow_run\.head_branch == 'main'/)
+      assert.match(section(source, 'package'), /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/)
+      assert.match(section(source, 'package'), /github\.event\.workflow_run\.conclusion == 'success'/)
+      assert.match(section(source, 'package'), /cli\.ts consume app-shell linux-x64/)
+      assert.match(section(source, 'publish'), /needs: package/)
+      assert.match(contracts, /\.github\/workflows\/app-shell-main\.yml/)
+    } else assert(events.every(event => ['workflow_dispatch', 'workflow_call'].includes(event)), `${file} has no automatic event`)
   }
 })
 
@@ -209,7 +221,8 @@ test('media native targets qualify their actual runtime before reuse admission',
 
 test('headless native host packaging is checked through its consuming shell lane', () => {
   const shell = entry('app-shell');
-  for (const event of ['pull_request', 'push']) assert(eventPaths(shell, event).includes('composition/native-host/**'));
+  assert(eventPaths(shell, 'pull_request').includes('composition/native-host/**'));
+  assert.match(shell, /\n  push:\n    branches: \[main\]\npermissions:/);
   assert.match(contracts, /npm --prefix composition\/native-host run test:packed/);
   assert.match(contracts, /npm --prefix shared\/contracts ci/);
   const registration = JSON.parse(readFileSync(new URL('../../../composition/app/delivery.json', import.meta.url), 'utf8'));

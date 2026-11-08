@@ -17,31 +17,13 @@ on:
       - 'shared/resources/**'
       - 'enablement/native/owned-processes.ts'
       - '.github/workflows/verification-platform.yml'
+      - '.github/workflows/app-shell-main.yml'
       - 'composition/app/**'
       - 'composition/native-host/**'
       - 'shared/ui/**'
       - '.github/workflows/stream-platform.yml'
   push:
     branches: [main]
-    paths:
-      - 'composition/config/**'
-      - 'shared/config-native/**'
-      - 'shared/contracts/**'
-      - '.cargo/**'
-      - 'composition/delivery/**'
-      - 'composition/architecture/**'
-      - '.github/actions/delivery-contracts/**'
-      - '.github/actions/delivery-component/**'
-      - '.github/actions/runtime-budget/**'
-      - 'enablement/verification/workflow-budget.ts'
-      - 'LICENSE'
-      - 'shared/resources/**'
-      - 'enablement/native/owned-processes.ts'
-      - '.github/workflows/verification-platform.yml'
-      - 'composition/app/**'
-      - 'composition/native-host/**'
-      - 'shared/ui/**'
-      - '.github/workflows/stream-platform.yml'
 permissions:
   contents: read
 env:

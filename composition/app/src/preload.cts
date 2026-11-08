@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { createRecordPreloadPort } from './record/preload.cts';
 import type { OnboardingProgressPort, Revision, SaveResult } from '@apparent/app-contracts/host';
+import type { UpdatePort, UpdateState } from './update/contract.ts';
 
 const MAX_BYTES = 64 * 1024;
 const MAX_DEPTH = 32;
@@ -86,7 +87,13 @@ const progress: OnboardingProgressPort = Object.freeze({
     }
   },
 });
-const api = Object.freeze({ onboardingProgress: progress, record: createRecordPreloadPort(),
+const updates: UpdatePort = Object.freeze({
+  read: () => invoke('apparent:updates:read', [], READ_TIMEOUT_MS) as Promise<UpdateState>,
+  check: () => invoke('apparent:updates:check', [], READ_TIMEOUT_MS) as Promise<UpdateState>,
+  restart: () => invoke('apparent:updates:restart', [], READ_TIMEOUT_MS) as Promise<void>,
+  ready: () => invoke('apparent:updates:ready', [], READ_TIMEOUT_MS) as Promise<void>,
+});
+const api = Object.freeze({ onboardingProgress: progress, record: createRecordPreloadPort(), updates,
   host: Object.freeze({ observeCloseRefusal(listener: (reason: string) => void) {
     if (typeof listener !== 'function') throw new TypeError('Invalid close observer');
     const receive = (_event: unknown, reason: unknown) => {

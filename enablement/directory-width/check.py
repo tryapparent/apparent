@@ -14,6 +14,7 @@ LIMIT = 10
 # This exact inventory is the sole file-count exception; unknown entries fail.
 WORKFLOW_DIRECTORY = b".github/workflows"
 WORKFLOW_FILES = {
+    b"app-shell-main.yml",
     b"hermes-plugin.yml",
     b"connect-delivery.yml", b"linux-updater-harness.yml", b"native-proof-mac.yml",
     b"release-linux.yml", b"release-mac-preview.yml", b"release-windows.yml",

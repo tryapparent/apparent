@@ -1427,6 +1427,17 @@
       "docs": ["capture/desktop/docs/mac-signing.md", "capture/desktop/docs/release.md"]
     },
     {
+      "id": "platform-main-updates",
+      "group": "install",
+      "name": "Platform Main updates",
+      "says": "The Foundation Linux x64 AppImage automatically downloads verified Main builds and applies them at the next launch. Settings shows running and downloaded revisions and offers a safe restart.",
+      "status": "main",
+      "added": "2026-11-08",
+      "platforms": ["linux"],
+      "docs": ["composition/app/README.md"],
+      "note": "Separate development App Shell and prerelease feed, initially Omarchy/Linux x64. Publication requires the exact Platform Linux artifact, final packaged bridge check and workflow budget reservation/audit. This does not adopt installed recording routes or provide Stable, Mac or arm64 updates."
+    },
+    {
       "id": "linux-appimage-updates",
       "group": "install",
       "name": "Linux AppImage update channels",

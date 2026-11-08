@@ -3,9 +3,52 @@
 This development-only shell composes independently built stream artifacts into
 one Electron application. Its default build is a usable empty shell; synthetic
 contributions are generated only in disposable test directories. It does not
-replace the installed Apparent route, capture, onboarding, updater or production
+replace the installed Apparent route, capture, onboarding or production
 Settings. No experiment/config flag is added. Record, Connect and Engine are
 not adopted by this slice.
+
+## Main updates on Linux
+
+The Linux x64 Main AppImage includes an automatic updater. Install a checksum-verified
+`Apparent-Foundation-main-<SHA>-linux-x64.AppImage` from an `app-shell-main-<SHA>`
+prerelease in an owned directory under your home, make it executable and launch it.
+Keep that path for desktop shortcuts. Omarchy needs its ordinary FUSE/AppImage
+support, curl and util-linux flock; Chromium sandboxing stays enabled. The image
+and its writable parent directories must not be symlinks or system-owned.
+
+Main is the build's fixed channel, separate from Stable and the legacy recorder's
+feed. Settings → App updates shows the running revision, check state and downloaded
+revision. Checks run at renderer readiness and hourly, or manually. Downloads verify
+size/SHA-256 and preflight the AppImage runtime. The current launcher stays intact.
+Downloads apply on the next launch, before any native host is created; **Restart to
+update** uses the existing host shutdown gate and refuses unresolved capture
+ownership or failed cleanup. There is no automatic restart during use.
+
+A private file lock serializes staging, swap, startup acknowledgement and recovery.
+Early zero/nonzero exits and startup timeout restore the previous launcher/marker
+and suppress that revision until a newer one arrives. A child that remains live
+after cooperative termination is left intact with its backup; the updater never
+force-kills it. Crashes after renderer readiness do not roll back. Inspect sidecars
+beside the image (`.pending.json`, `.version.json`, `.previous`, `.previous.json`,
+`.failed.json`, `.update.lock`). No second writer touches production preferences.
+
+Every main push selects the Linux App Shell producer, reusing authenticated,
+unchanged component bytes when eligible. Changed Mac components retain their
+existing checks. After the canonical Platform push workflow succeeds,
+`app-shell-main.yml` admits its exact Linux artifact, wraps the prebuilt Electron
+package and stamps the admitted main SHA outside the sealed assembly. The final
+AppImage/Settings bridge check and whole-workflow budget reservation gate publication;
+the final runtime audit confirms actual execution. Immutable
+prereleases contain the image/checksum; public asset validation precedes serialized
+advancement of `app-shell-main-feed/main.json`. Complete ancestry prevents stale or
+divergent promotion and client downgrades. Failed CI preserves the last good feed.
+Main follows the latest successfully published build, allowing for CI/package
+latency and the hourly check interval; no semantic-version bump is required.
+
+This delivers the currently assembled Foundation application, with its documented
+incomplete streams. It does not adopt installed Record/native routing. Mac and arm64
+updates are not provided. Rollback of this development route remains closing
+Foundation and using the existing recorder; no legacy presentation is removed.
 
 ## Ownership and contract
 
@@ -140,7 +183,7 @@ node scripts/package.ts dist/app-next dist/packages-next
 `npm run package` bundles `dist/app` with the published Electron runtime for the
 current Linux/macOS host and x64/arm64 architecture; it does not compile native
 source. The development bundle has a distinct name, bundle ID and user profile.
-It is unsigned and has no installer/updater/publication integration. Host-native
+The unpackaged bundle is unsigned; the Linux x64 Main AppImage path is described above. Host-native
 packaging is supported by the command; Linux packaged execution is tested here.
 Mac packaged launch/signing proof is required before adopting that route on Mac.
 
@@ -169,8 +212,9 @@ Pull requests run the `app-shell delivery` owner checks on Linux and Mac; main
 pushes also produce the registered development-app receipts. The shell lane
 packages its prebuilt output and tests that exact bundle on Linux and Mac.
 See [delivery contracts](../delivery/README.md) for registration and admission.
-Artifacts remain development output; stable publication and an updater are not
-provided. Existing native verification and publication gates remain conservative.
+Artifacts remain development output; the dedicated Main channel wraps verified
+Linux x64 packages. Stable publication and installed capture adoption are not
+provided. Existing legacy publication and native capture gates remain in force.
 
 For production adoption, a stream must supply its real artifact/contract and
 owner checks, prove affected OS seams, then switch a complete workflow. Preserve

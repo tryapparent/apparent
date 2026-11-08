@@ -1,0 +1,122 @@
+name: App Shell Main
+on:
+  workflow_run:
+    workflows: [platform delivery]
+    types: [completed]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    # The agent whose run hits the limit owns optimization; never raise it.
+    if: >-
+      github.repository == 'tryapparent/apparent' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: app-shell-main-build
+      cancel-in-progress: true
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+          cache: npm
+          cache-dependency-path: composition/app/package-lock.json
+      - id: source
+        env:
+          CANDIDATE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
+          echo "sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+      - name: Admit exact verified Platform Linux artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --experimental-strip-types composition/delivery/cli.ts consume app-shell linux-x64 '${{ steps.source.outputs.sha }}' "$RUNNER_TEMP/admitted"
+          mkdir "$RUNNER_TEMP/payload"
+          tar -xzf "$RUNNER_TEMP/admitted/component.tar.gz" -C "$RUNNER_TEMP/payload" --no-same-owner
+      - name: Install packaging tools
+        run: |
+          npm --prefix shared/contracts ci --no-audit --no-fund
+          npm --prefix composition/app ci --no-audit --no-fund
+      - name: Package the admitted Electron application
+        run: |
+          node --experimental-strip-types composition/app/scripts/update/appimage.ts \
+            "$RUNNER_TEMP/payload/bundle/apparent-foundation-linux-x64" "$RUNNER_TEMP/main-appimage" '${{ steps.source.outputs.sha }}'
+      - name: Qualify Linux Electron dependencies
+        run: node --experimental-strip-types composition/delivery/runtime/electron-dependencies.ts
+      - name: Permit sandboxed user namespaces on this disposable runner
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Exercise the final Main AppImage and Settings bridge
+        env:
+          APPARENT_SHELL_APPIMAGE: ${{ runner.temp }}/main-appimage/Apparent-Foundation-main-${{ steps.source.outputs.sha }}-linux-x64.AppImage
+          APPARENT_SHELL_SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: xvfb-run -a npm --prefix composition/app run test:appimage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-shell-main-${{ steps.source.outputs.sha }}
+          path: ${{ runner.temp }}/main-appimage/*.AppImage*
+          if-no-files-found: error
+          retention-days: 14
+
+  runtime-budget:
+    name: Workflow runtime budget
+    # The agent whose run hits the limit owns optimization; never raise it.
+    needs: [package, publish]
+    if: always() && needs.package.result != 'skipped'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: test "$PACKAGE_RESULT" = success && test "$PUBLISH_RESULT" = success
+        env:
+          PACKAGE_RESULT: ${{ needs.package.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+      - uses: ./.github/actions/runtime-budget
+
+  publish:
+    name: Publish Main
+    # The agent whose run hits the limit owns optimization; never raise it.
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    concurrency:
+      group: app-shell-main-publication
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-shell-main-${{ needs.package.outputs.sha }}
+          path: ${{ runner.temp }}/main-appimage
+      - name: Publish immutable prerelease and advance Main after readback
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_BUDGET_RESERVE_SECONDS: '120'
+        # 2 minute execution budget reserved against completed package work.
+        run: node --experimental-strip-types composition/app/scripts/update/publish.ts "$RUNNER_TEMP/main-appimage" '${{ needs.package.outputs.sha }}'
