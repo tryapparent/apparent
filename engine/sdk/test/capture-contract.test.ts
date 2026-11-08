@@ -299,6 +299,25 @@ test("cached capabilities and sources cannot be changed through returned objects
   await assert.rejects(client.inspect({ ...authority, rpcId: "0".repeat(32) } as typeof authority), /reserved/);
 });
 
+test("ordinary microphone start uses configured support and still refuses unavailable admission", async () => {
+  // Synthetic transport checks unchanged SDK policy, never native qualification.
+  for (const supported of [false, true]) {
+    let starts = 0;
+    const client = new CaptureClient(scripted(request => {
+      if (request.method === "discoverSources") return { state: "available", sources: [source] };
+      if (request.method !== "start") throw new Error("unexpected microphone dispatch");
+      assert.equal(request.options.audio, "microphone");
+      starts++; return { captureId, state: "starting" };
+    }, { capabilities: { audioCapture: supported, transcript: supported } }));
+    await client.handshake(); await client.discoverSources();
+    const input = { ...authority, bundleId: "voice", bundlePath: "/captures/voice.apparent", source, options: { audio: "microphone" as const, localOnly: true as const }, invocation: { kind: "explicit" as const, invocationId: "a".repeat(32), observedAtMs: 0 } };
+    if (supported) assert.equal((await client.start(input)).state, "starting");
+    else await assert.rejects(client.start(input), /microphone.*unavailable|audio.*unavailable|audio.*supported/i);
+    assert.equal(starts, supported ? 1 : 0);
+    await client.close();
+  }
+});
+
 test("test-double capabilities, unsupported methods and secret-shaped error codes are rejected", async () => {
   const falseCaps = Object.fromEntries(Object.keys(new ReferenceCapturePeer().handshake.capabilities).map(key => [key, false]));
   for (const capability of Object.keys(falseCaps)) {

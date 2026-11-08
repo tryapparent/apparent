@@ -12,27 +12,38 @@ pub fn handle(req: &Value, shared: &Shared, live_owner: bool) -> Result<Value, &
         .capture_transaction()
         .map_err(|_| "internal")?;
     let durable = read_journal(&shared.directory, &j.capture_id, &j.owner_token)?;
-    if !["recording", "stopping"].contains(&durable.state.as_str()) {
-        return Err("unavailable");
-    }
     j.cancel_requested |= durable.cancel_requested;
     j.ink_cutoff_ns = durable.ink_cutoff_ns.or(j.ink_cutoff_ns);
-    if durable.state == "stopping" {
-        j.state = "stopping".into();
-    }
-    if !live_owner || !["recording", "stopping"].contains(&j.state.as_str()) || j.cancel_requested {
-        return Err("unavailable");
+    if durable.state != "recording" {
+        j.state = durable.state.clone();
     }
     let now = monotonic_ns().map_err(|_| "internal")?;
+    let cancelled = j.cancel_requested;
     let source = j.request["source"].clone();
     if req["ingressVersion"] != 1 {
         return Err("unsupported_version");
+    }
+    // A positively completed exact finish can be replayed after capture-thread
+    // exit. No new events/registration or source authority are admitted here.
+    if req["method"] == "finishInkProducer" {
+        if let Some(r) = j.ink_registration.as_mut() {
+            r.authenticate(req)?;
+            if cancelled && r.finished() {
+                r.cancel();
+                let result = r.finish(req, now);
+                write_locked(shared, &j)?;
+                return result;
+            }
+        }
+    }
+    if !live_owner || !["recording", "stopping"].contains(&j.state.as_str()) {
+        return Err("unavailable");
     }
     if req["method"] == "registerInkProducer" {
         if req["source"] != json!({"id":source["id"], "generation":source["generation"]}) {
             return Err("source_changed");
         }
-        if j.state != "recording" || j.ink_cutoff_ns.is_some() {
+        if j.cancel_requested || j.state != "recording" || j.ink_cutoff_ns.is_some() {
             return Err("unavailable");
         }
         if let Some(r) = &j.ink_registration {
@@ -64,6 +75,9 @@ pub fn handle(req: &Value, shared: &Shared, live_owner: bool) -> Result<Value, &
     // Authenticate before invalidating a producer: a foreign secret is not an
     // instruction to discard accepted history. The mapper repeats this check.
     r.authenticate(req)?;
+    if cancelled {
+        r.cancel();
+    }
     if r.frozen() {
         return if req["method"] == "finishInkProducer" {
             r.finish(req, now)
@@ -108,6 +122,11 @@ pub fn close_input(shared: &Shared) -> Result<(), &'static str> {
         .or(j.ink_cutoff_ns)
         .or(Some(monotonic_ns().map_err(|_| "internal")?));
     j.cancel_requested |= current.cancel_requested;
+    if j.cancel_requested {
+        if let Some(r) = j.ink_registration.as_mut() {
+            r.cancel();
+        }
+    }
     if current.state == "stopping" {
         j.state = "stopping".into();
     }
@@ -138,7 +157,7 @@ pub fn freeze(shared: &Shared, materials: &str) -> Result<Option<Value>, &'stati
     let capture = j.capture_id.clone();
     let facts = if let Some(r) = j.ink_registration.as_mut() {
         if current.cancel_requested {
-            r.invalidate();
+            r.cancel();
         }
         r.freeze(&capture, materials)
     } else {
@@ -162,7 +181,7 @@ pub fn drain(shared: &Shared) -> Result<(), &'static str> {
         if !r.collecting() {
             return Ok(());
         }
-        if shared.cancel.load(Ordering::Acquire) || monotonic_ns().map_err(|_| "internal")? >= end {
+        if monotonic_ns().map_err(|_| "internal")? >= end {
             r.invalidate();
             persist_journal(shared, &j).map_err(|_| "internal")?;
             return Ok(());
@@ -174,6 +193,123 @@ pub fn drain(shared: &Shared) -> Result<(), &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cancelled_input_after_cutoff_is_not_acked_and_late_finish_is_unavailable() {
+        for late in [false, true] {
+            let (base, shared, req) = fixture();
+            let shared = Arc::new(shared);
+            let receipt = handle(&req, &shared, true).unwrap();
+            let mut all = HashMap::from([(
+                req["captureId"].as_str().unwrap().to_owned(),
+                shared.clone(),
+            )]);
+            process_request(json!({"method":"cancel","captureId":req["captureId"],"ownerToken":req["ownerToken"]}),
+                &shared.runtime, &shared.directory, &mut String::new(), &mut vec![], &mut true,
+                &mut HashMap::new(), &mut all, false).unwrap();
+            let cutoff = shared.journal.lock().unwrap().ink_cutoff_ns.unwrap();
+            if late {
+                thread::sleep(Duration::from_nanos(ink::GRACE_NS + 1_000_000));
+            } else {
+                let raw = serde_json::to_string(&json!([{"kind":"begin","gestureId":"d".repeat(32),"surfaceId":"screen","transformId":"t","nativeIncarnation":"i","timeNs":(cutoff+1).to_string(),"x":10,"y":20}])).unwrap();
+                let submit = json!({"method":"submitInkEvents","ingressVersion":1,"ownerToken":req["ownerToken"],"captureId":req["captureId"],"registrationId":receipt["registrationId"],"producerToken":receipt["producerToken"],"sequence":0,"eventsJson":raw,"batchSha256":sha(raw.as_bytes())});
+                assert!(handle(&submit, &shared, true).is_err());
+            }
+            let finish = json!({"method":"finishInkProducer","ingressVersion":1,"ownerToken":req["ownerToken"],"captureId":req["captureId"],"registrationId":receipt["registrationId"],"producerToken":receipt["producerToken"],"finalSequence":null,"seal":{"state":"sealed-and-drained","observedAtNs":monotonic_ns().unwrap().to_string(),"nativeRevision":1}});
+            // A dead capture cannot obtain its first positive finish receipt.
+            assert_eq!(handle(&finish, &shared, false), Err("unavailable"));
+            assert_eq!(
+                handle(&finish, &shared, true).unwrap()["state"],
+                "unavailable"
+            );
+            drain(&shared).unwrap();
+            assert!(freeze(&shared, &"e".repeat(32)).unwrap().is_none());
+            let cold = shared.journal.lock().unwrap().clone();
+            remove_unsealed(&shared.directory, &cold).unwrap();
+            drop(all);
+            drop(shared);
+            fs::remove_dir_all(base).unwrap();
+        }
+    }
+    #[test]
+    fn cancel_keeps_original_authenticated_drain_but_never_materials() {
+        for pending in [false, true] {
+            let (base, shared, req) = fixture();
+            let shared = Arc::new(shared);
+            let receipt = handle(&req, &shared, true).unwrap();
+            let n = shared
+                .journal
+                .lock()
+                .unwrap()
+                .admitted_monotonic_ns
+                .unwrap();
+            let raw = serde_json::to_string(&json!([
+                {"kind":"begin","gestureId":"d".repeat(32),"surfaceId":"screen","transformId":"t","nativeIncarnation":"i","timeNs":n.to_string(),"x":10,"y":20},
+                {"kind":"points","gestureId":"d".repeat(32),"points":[{"timeNs":(n+1).to_string(),"x":30,"y":20}]},
+                {"kind":"commit","gestureId":"d".repeat(32),"acceptedAtNs":(n+2).to_string()}
+            ])).unwrap();
+            let submit = json!({"method":"submitInkEvents","ingressVersion":1,"ownerToken":req["ownerToken"],"captureId":req["captureId"],"registrationId":receipt["registrationId"],"producerToken":receipt["producerToken"],"sequence":0,"eventsJson":raw,"batchSha256":sha(raw.as_bytes())});
+            // A distinct recovery peer has separate process-local Atomics and
+            // discovers the existing owner through the real kernel permit.
+            let owner = shared
+                .runtime
+                .acquire_capture_owner(req["captureId"].as_str().unwrap())
+                .unwrap()
+                .unwrap();
+            let mut all = HashMap::new();
+            process_request(json!({"method":"cancel","captureId":req["captureId"],"ownerToken":req["ownerToken"]}),
+                &shared.runtime, &shared.directory, &mut String::new(), &mut vec![], &mut true,
+                &mut HashMap::new(), &mut all, true).unwrap();
+            assert!(!Arc::ptr_eq(
+                &all[req["captureId"].as_str().unwrap()],
+                &shared
+            ));
+            assert!(!shared.cancel.load(Ordering::Acquire));
+            let cancelled = read_journal(
+                &shared.directory,
+                req["captureId"].as_str().unwrap(),
+                req["ownerToken"].as_str().unwrap(),
+            )
+            .unwrap();
+            assert!(cancelled.cancel_requested);
+            assert!(cancelled.ink_cutoff_ns.is_some());
+            assert_eq!(handle(&req, &shared, true), Err("unavailable"));
+            sync_control(&shared).unwrap();
+            assert!(shared.cancel.load(Ordering::Acquire));
+            if pending {
+                let mut foreign = submit.clone();
+                foreign["producerToken"] = json!("f".repeat(64));
+                assert_eq!(handle(&foreign, &shared, true), Err("permission_denied"));
+                assert_eq!(
+                    handle(&submit, &shared, true).unwrap()["outcome"],
+                    "accepted"
+                );
+                assert_eq!(
+                    handle(&submit, &shared, true).unwrap()["outcome"],
+                    "replayed"
+                );
+            }
+            let mut finish = json!({"method":"finishInkProducer","ingressVersion":1,"ownerToken":req["ownerToken"],"captureId":req["captureId"],"registrationId":receipt["registrationId"],"producerToken":receipt["producerToken"],"finalSequence":if pending {json!(0)} else {Value::Null},"seal":{"state":"sealed-and-drained","observedAtNs":monotonic_ns().unwrap().to_string(),"nativeRevision":1}});
+            assert_eq!(handle(&finish, &shared, true).unwrap()["state"], "complete");
+            drain(&shared).unwrap();
+            assert!(freeze(&shared, &"e".repeat(32)).unwrap().is_none());
+            shared.journal.lock().unwrap().state = "cancelled".into();
+            persist(&shared).unwrap();
+            // A completed closure's lost reply can be replayed after the worker
+            // exits; this does not reopen collection or mint new authority.
+            finish["rpcId"] = json!("a".repeat(32));
+            assert_eq!(
+                handle(&finish, &shared, false).unwrap()["state"],
+                "complete"
+            );
+            assert!(shared.journal.lock().unwrap().materials.is_none());
+            let cold = shared.journal.lock().unwrap().clone();
+            remove_unsealed(&shared.directory, &cold).unwrap();
+            drop(all);
+            drop(owner);
+            drop(shared);
+            fs::remove_dir_all(base).unwrap();
+        }
+    }
     fn fixture() -> (PathBuf, Shared, Value) {
         let (base, directory, _, mut j) = super::super::unsealed_cleanup_tests::fixture();
         let now = monotonic_ns().unwrap();

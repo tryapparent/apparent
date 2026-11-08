@@ -409,11 +409,15 @@ fn operation_dir(shared: &Shared) -> Result<apparent_capture_engine::SecureStore
     Ok(dir)
 }
 
-fn capabilities(ready: bool, area: bool) -> Value {
-    json!({"sourceDiscovery":ready,"displayCapture":ready,"areaCapture":ready && area,"audioCapture":false,"contextFacts":false,"interactionFacts":false,"candidates":false,"transcript":false,"strokes":false,"publication":true,"retainedMaterials":ready})
+fn voice_support_ready() -> bool {
+    speech::configured_source_available()
+        && apparent_capture_engine::linux::microphone::default_source_available()
+}
+fn capabilities(ready: bool, area: bool, voice: bool) -> Value {
+    json!({"sourceDiscovery":ready,"displayCapture":ready,"areaCapture":ready && area,"audioCapture":ready && voice,"contextFacts":false,"interactionFacts":false,"candidates":false,"transcript":ready && voice,"strokes":false,"publication":true,"retainedMaterials":ready})
 }
 fn handshake(ready: bool, area: bool) -> Value {
-    json!({"channel":"capture","protocolVersion":2,"implementation":"native","readiness":if ready {"ready"} else {"unavailable"},"capabilities":capabilities(ready, area)})
+    json!({"channel":"capture","protocolVersion":2,"implementation":"native","readiness":if ready {"ready"} else {"unavailable"},"capabilities":capabilities(ready, area, ready && voice_support_ready())})
 }
 fn status(j: &Journal) -> Value {
     let mut v = json!({"captureId":j.capture_id,"state":j.state});
@@ -634,7 +638,7 @@ fn validate_start(v: &Value) -> Result<(), &'static str> {
     }
     let options = v.get("options").ok_or("malformed_request")?;
     let audio = options.get("audio").and_then(Value::as_str);
-    if !(audio == Some("none") || (audio == Some("microphone") && speech::configured()))
+    if !(audio == Some("none") || (audio == Some("microphone") && voice_support_ready()))
         || options.get("localOnly").and_then(Value::as_bool) != Some(true)
         || options.as_object().is_none_or(|o| o.len() != 2)
     {
@@ -1071,6 +1075,10 @@ fn process_request(
                 "cancel" => {
                     if ["starting", "recording", "stopping"].contains(&j.state.as_str()) {
                         j.cancel_requested = true;
+                        // Cancel closes input immediately; producer closure has
+                        // only the same original two-second drain as Stop.
+                        j.ink_cutoff_ns
+                            .get_or_insert(monotonic_ns().map_err(|_| "internal")?);
                         let snapshot = j.clone();
                         persist_journal(&shared, &snapshot).map_err(|_| "internal")?;
                         shared.cancel.store(true, Ordering::Release);
@@ -1877,7 +1885,7 @@ mod publication_capability_tests {
     use super::{capabilities, validate_start};
     use serde_json::json;
     #[test]
-    fn microphone_execution_does_not_open_public_admission_before_qualification() {
+    fn unconfigured_microphone_requests_remain_unavailable() {
         let mut request = json!({
             "captureId":"a".repeat(32),"ownerToken":"b".repeat(64),
             "bundleId":"original-audio","bundlePath":"/private/original-audio.apparent",
@@ -1887,21 +1895,50 @@ mod publication_capability_tests {
         assert_eq!(validate_start(&request), Ok(()));
         request["options"]["audio"] = json!("microphone");
         assert_eq!(validate_start(&request), Err("unavailable"));
-        assert_eq!(capabilities(true, false)["audioCapture"], false);
+        assert_eq!(capabilities(true, false, false)["audioCapture"], false);
+    }
+
+    #[test]
+    fn configured_voice_support_requires_screen_readiness_and_keeps_other_collectors_honest() {
+        let available = capabilities(true, false, true);
+        assert_eq!(available["audioCapture"], true);
+        assert_eq!(available["transcript"], true);
+        assert_eq!(available["strokes"], false);
+        assert_eq!(available["contextFacts"], false);
+        for (screen, voice) in [(false, true), (true, false), (false, false)] {
+            let unavailable = capabilities(screen, false, voice);
+            assert_eq!(unavailable["audioCapture"], false);
+            assert_eq!(unavailable["transcript"], false);
+        }
     }
 
     #[test]
     fn publication_reconciliation_is_advertised_when_screen_capture_is_unavailable() {
-        assert_eq!(super::capabilities(false, false)["publication"], true);
-        assert_eq!(super::capabilities(false, false)["displayCapture"], false);
-        assert_eq!(super::capabilities(false, false)["areaCapture"], false);
+        assert_eq!(
+            super::capabilities(false, false, false)["publication"],
+            true
+        );
+        assert_eq!(
+            super::capabilities(false, false, false)["displayCapture"],
+            false
+        );
+        assert_eq!(
+            super::capabilities(false, false, false)["areaCapture"],
+            false
+        );
     }
 
     #[test]
     fn portal_only_readiness_does_not_advertise_area_capture() {
-        assert_eq!(super::capabilities(true, false)["displayCapture"], true);
-        assert_eq!(super::capabilities(true, false)["areaCapture"], false);
-        assert_eq!(super::capabilities(true, true)["areaCapture"], true);
+        assert_eq!(
+            super::capabilities(true, false, false)["displayCapture"],
+            true
+        );
+        assert_eq!(
+            super::capabilities(true, false, false)["areaCapture"],
+            false
+        );
+        assert_eq!(super::capabilities(true, true, false)["areaCapture"], true);
     }
 
     #[test]

@@ -33,6 +33,8 @@ pub struct Registration {
     last_ns: u64,
     native_revision: u64,
     finish: Option<Value>,
+    #[serde(default)]
+    cancelled: bool,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Surface {
@@ -236,6 +238,7 @@ impl Registration {
             last_ns: admission_ns,
             native_revision: 0,
             finish: None,
+            cancelled: false,
         };
         for s in surfaces {
             let p = parse_surface(s, source)?;
@@ -265,6 +268,17 @@ impl Registration {
     }
     pub fn collecting(&self) -> bool {
         self.phase == Phase::Collecting
+    }
+    pub fn finished(&self) -> bool {
+        self.finish.is_some()
+    }
+    /// Closure receipts acknowledge the native producer, never publication.
+    /// Retain exact history/sequence for draining but forbid cancelled facts.
+    pub fn cancel(&mut self) {
+        if !self.cancelled {
+            self.cancelled = true;
+            self.revision += 1;
+        }
     }
     pub fn frozen(&self) -> bool {
         matches!(self.phase, Phase::FrozenComplete | Phase::FrozenUnavailable)
@@ -657,7 +671,7 @@ impl Registration {
         self.facts(capture, materials)
     }
     pub fn facts(&self, capture: &str, materials: &str) -> Option<Value> {
-        matches!(self.phase, Phase::Complete | Phase::FrozenComplete)
+        (!self.cancelled && matches!(self.phase, Phase::Complete | Phase::FrozenComplete))
             .then(|| self.fact_value(capture, materials))
     }
 }
