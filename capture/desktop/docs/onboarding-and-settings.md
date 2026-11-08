@@ -14,7 +14,8 @@ quit app. Launch at login is optional and is not required for this route.
 Opening the app is separate from starting a recording. Reopening a running app
 does not request a capture. Do not repeatedly press Record while waiting: Record
 is a start/finish toggle. If setup or capture fails, resolve the shown problem
-before trying again. Existing captures, processing and uploads are not stopped
+before trying again. If you dismiss the Linux sharing dialog or it fails to start,
+use the recording controls' **Cancel** before retrying. Existing captures, processing and uploads are not stopped
 by this route. Linux desktop-managed bindings can invoke `apparent shortcut
 record`, which already attempts a cold launch; their behavior and conflicts
 belong to the configured desktop binding, not to the in-process global shortcut.
