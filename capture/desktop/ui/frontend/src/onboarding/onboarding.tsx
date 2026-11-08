@@ -57,6 +57,7 @@ export function NativeOnboarding(){
   const boardName='Whiteboard';
   const reopen=state.platform==='macos'?'open Apparent from Applications':'open Apparent from your app launcher or installed AppImage';
   const launchGuidance=`The app-owned Record shortcut works while Apparent is running. After Quit, ${reopen}, finish any setup, then press your Record shortcut once.`;
+  const coachLaunchGuidance=`Record needs Apparent running. After Quit, reopen from ${state.platform==='macos'?'Applications':'your launcher or AppImage'}.`;
   document.title=state.testInstance?'apparent onboarding preview 9':'apparent setup';
   if(practice){
     const content:Record<string,{title:string;text:string;button?:string;action?:string}>={
@@ -70,7 +71,7 @@ export function NativeOnboarding(){
       copied:{title:'Copied. Try pasting it.',text:'Your capture is copied. Paste it into your agent.',button:'Show paste steps',action:'practice-paste'},
       paste:{title:'Paste your capture.',text:`In your agent, press ${state.platform==='linux'?'Ctrl':'⌘'} V. Confirm when it appears.`,button:'Confirm paste',action:'practice-pasted'},
       locate:{title:'apparent lives here.',text:`Find the apparent icon in your ${state.platform==='linux'?'system tray':'menu bar'}. Click it, then choose Open Latest Capture.`},
-      complete:{title:'Ready for your next idea.',text:launchGuidance,button:'Finish setup',action:'practice-finish'},
+      complete:{title:'Ready for your next idea.',text:coachLaunchGuidance,button:'Finish setup',action:'practice-finish'},
       retry:{title:'Try another capture.',text:`Press ${state.shortcut} to start again, then follow both drawing prompts. Your previous capture is saved.`},
       'copy-failed':{title:'Saved, but not copied.',text:'Your capture is saved. Find it in apparent’s menu.',button:'Find saved capture',action:'practice-locate'},
     };

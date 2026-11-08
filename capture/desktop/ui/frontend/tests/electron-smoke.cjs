@@ -300,8 +300,8 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('heading', { name:'apparent lives here.', exact:true })).toBeVisible();
   await expect(page.getByText('Find the apparent icon in your menu bar. Click it, then choose Open Latest Capture.', { exact:true })).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveAttribute('data-arrow','true');
-  for(const phase of ['start','screen','whiteboard','board-ink','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
-    send({step:'try-it',practice:phase});
+  for(const platform of ['macos','linux'])for(const phase of ['start','screen','whiteboard','board-ink','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
+    send({step:'try-it',practice:phase,platform});
     await expect(page.locator('.native-coach')).toHaveAttribute('data-stage',phase);
     const layout=await page.locator('.native-coach').evaluate(card=>{
       const content=card.querySelector('.native-coach-content'),rect=card.getBoundingClientRect();
