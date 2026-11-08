@@ -67,7 +67,23 @@ While ⇧ is held, the ink overlay takes the pointer (`linux::overlay::take_poin
 
 On Hyprland 0.56.2 with Lua configuration, the released overlay stays visible for its existing fade. A process-owned runtime rule matches only its exact Fade title and prevents focus; Draw uses a different title. Each Shift transition unmaps locally before asynchronous compositor reconciliation, so a late reply cannot remap an older input state. Reloading config hides and re-establishes the rule; unsupported syntax or policy failure retains the hide-between-strokes fallback. Finishing unmaps before disabling the rule. The one reused rule is disabled on ordinary cleanup; a crash can leave an inert rule matching only that process's unique title until config reload. This is a native compositor repair; the current Electron surface has no production overlay interaction to migrate independently.
 
-A click's position is right over X11 apps and with an absolute pointing device. With a mouse or touchpad over a Wayland app, XWayland still has the pointer where it last saw it, so the click's position is stale: the keyframe is cut at the right moment, but its ripple can be in the wrong place. A GNOME Shell extension that reports the pointer would close this gap (see the PR's open questions).
+Recording telemetry does not use the XWayland placement fallback on GNOME/KDE
+Wayland: a mouse or touchpad can move over a native app while XWayland keeps its
+last point. An absolute device's normalized axes also do not establish the
+compositor's output mapping, especially with scaled or multiple displays.
+Ordinary button presses therefore record `click_unavailable`, with a timestamp
+and button but no position or target. Their keyframes say **clicked (position
+unavailable)** and have no ripple; export does not invent a zoom target. This
+conservative fallback also applies over XWayland apps in these sessions, until
+a supported current-position source can distinguish them reliably. No GNOME
+extension or privileged input component is installed. Hyprland retains its
+existing compositor adapter; native X11 retains its X-server source.
+
+Shift ink uses the overlay's X11 pointer only after it moves from the stale
+pre-acquisition point; a Shift-click before acquisition cannot place a pin.
+The window-placement fallback is separate and remains unchanged. GNOME/KDE
+relative-pointer, scaled-output and actual bundle/movie acceptance for this
+fallback is pending; source checks and unit tests are not native proof.
 
 Without the `input` group, a capture on Wayland has no clicks, keys or ⇧ ink outside Apparent's own windows, and records only the screen and voice.
 

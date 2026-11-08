@@ -489,7 +489,7 @@ pub fn select_keyframes(
     let actions: Vec<u64> = settled
         .iter()
         .filter_map(|event| match event {
-            InteractionEvent::Click { t, .. } | InteractionEvent::Drag { t, .. } => Some(*t),
+            InteractionEvent::ClickUnavailable { t, .. } | InteractionEvent::Click { t, .. } | InteractionEvent::Drag { t, .. } => Some(*t),
             _ => None,
         })
         .collect();
@@ -527,6 +527,15 @@ pub fn select_keyframes(
         .collect();
     for event in settled {
         match &event {
+            InteractionEvent::ClickUnavailable { t, .. } => candidates.push(Candidate {
+                frame: nearest_frame(&frames, t.saturating_add(250)),
+                span: (*t, *t),
+                score: 60.0,
+                reason: KeyframeReason::ClickUnavailable,
+                marks: Vec::new(),
+                event: describe_event(&event),
+                cursor: None,
+            }),
             InteractionEvent::Click { t, x, y, .. }
             | InteractionEvent::Drag {
                 t, x1: x, y1: y, ..
@@ -922,6 +931,17 @@ fn scene_candidate(frame: usize, span: (u64, u64), diff: f32) -> Candidate {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unavailable_click_selects_action_frame_without_a_cursor() {
+        let frames = vec![frame(0, 100), frame(1000, 100), frame(1250, 100), frame(2000, 100)];
+        let events = vec![InteractionEvent::ClickUnavailable { t: 1000, button: "left".into() }];
+        let selected = select_keyframes(&frames, &[], &mut [], &events, &TranscriptData::default(), 6);
+        let (action, _) = selected.iter().find(|(k, _)| k.reason == KeyframeReason::ClickUnavailable).expect("unlocated press retained");
+        assert_eq!(action.t, 1250);
+        assert_eq!(action.cursor, None);
+        assert_eq!(action.event, "clicked (position unavailable)");
+    }
 
     fn frame(t: u64, gray: u8) -> RgbaFrame {
         RgbaFrame::new(t, 2, 2, [gray, gray, gray, 255].repeat(4))

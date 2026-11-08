@@ -460,7 +460,7 @@
       "says": "Clicks, drags and scrolls reach the app underneath and are recorded; keyframes show a ripple.",
       "status": "stable@0.3.4",
       "platforms": ["mac", "linux"],
-      "note": "Over Wayland apps the Linux preview's click positions can be stale.",
+      "note": "On GNOME/KDE Wayland, ordinary button presses retain timing with position unavailable, without a ripple or inferred target; this also covers XWayland apps until a reliable source can distinguish them. Hyprland uses its compositor adapter. Relative-pointer and scaled-output native acceptance remains pending.",
       "docs": ["README.md#capture-controls"]
     },
     {

@@ -266,6 +266,9 @@ pub struct PointerState {
 pub fn pointer_state() -> Option<PointerState> {
     let x = x()?;
     let reply = x.conn.query_pointer(x.root).ok()?.reply().ok()?;
+    if !reply.same_screen {
+        return None;
+    }
     let mask = u16::from(reply.mask);
     let has = |bit: x11rb::protocol::xproto::KeyButMask| mask & u16::from(bit) != 0;
     use x11rb::protocol::xproto::KeyButMask as M;

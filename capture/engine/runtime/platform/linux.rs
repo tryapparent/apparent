@@ -1063,8 +1063,36 @@ fn log_chord(telemetry: &SharedCaptureTelemetry, mods: Modifiers, vk: u16) {
         });
 }
 
-/// 125 Hz poller: the shortcuts where nothing else delivers them, Esc, Ctrl+Z, logged chords,
-/// clicks, the pointer for the overlay, and ⇧ ink.
+/// Consume button edges even without a reliable point; never replay them on recovery.
+fn poll_unlocated_clicks(
+    telemetry: &SharedCaptureTelemetry,
+    prev: &mut [bool; 2],
+    now: [bool; 2],
+) {
+    let was = std::mem::replace(prev, now);
+    // A known press cannot become a located drag when position disappears and
+    // returns; likewise, do not replay a held button as a new press on recovery.
+    let interrupted = telemetry.drag_start.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
+    *telemetry.shift_press.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    if telemetry.notes_editing.load(Ordering::Acquire) {
+        return;
+    }
+    if let Some((t, ..)) = interrupted {
+        telemetry.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(InteractionEvent::ClickUnavailable { t, button: "unknown".into() });
+    }
+    for (i, (&down, &before)) in now.iter().zip(&was).enumerate() {
+        if down && !before {
+            telemetry.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(InteractionEvent::ClickUnavailable {
+                    t: telemetry.elapsed_ms(),
+                    button: if i == 0 { "left" } else { "right" }.into(),
+                });
+        }
+    }
+}
+
+/// 125 Hz shortcut, button and Shift-ink collector.
 fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
     let mut prev_keys: HashSet<u16> = HashSet::new();
     let mut prev_shift_ink = false;
@@ -1147,12 +1175,24 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
         // while ⇧ is held (`linux::overlay::take_pointer`).
         pure_shift &= !telemetry.notes_editing.load(Ordering::Acquire);
         if from_devices() && pure_shift != pointer_taken {
+            stale_pointer = pure_shift.then(x11::cursor_position).flatten();
             linux::overlay::take_pointer(pure_shift);
             pointer_taken = pure_shift;
-            stale_pointer = pure_shift.then(linux::cursor_position).flatten();
         }
 
-        let Some((x, y)) = linux::cursor_position() else {
+        // Overlay acquisition is a separate, local X11 interaction while Shift
+        // is held; ordinary clicks must never use the placement fallback.
+        let position = if pointer_taken {
+            x11::cursor_position().filter(|point| stale_pointer != Some(*point))
+        } else {
+            linux::interaction_position()
+        };
+        let Some((x, y)) = position else {
+            poll_unlocated_clicks(&telemetry, &mut prev_buttons, buttons);
+            if prev_shift_ink {
+                track_shift_ink(&telemetry, (0.0, 0.0), false, true);
+                prev_shift_ink = false;
+            }
             continue;
         };
         if stale_pointer.is_some_and(|stale| stale == (x, y)) {
@@ -1204,6 +1244,37 @@ pub(crate) fn screen_video_ink() -> Option<crate::shared::model::VideoInk> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unavailable_position_keeps_press_without_replaying_it_on_recovery() {
+        let (tx, _) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(tx);
+        let mut previous = [false; 2];
+        poll_unlocated_clicks(&telemetry, &mut previous, [true, false]);
+        poll_unlocated_clicks(&telemetry, &mut previous, [true, false]);
+        poll_clicks(&telemetry, &mut previous, [true, false], (100.0, 100.0), false, |_, _| false);
+        poll_clicks(&telemetry, &mut previous, [false, false], (100.0, 100.0), false, |_, _| false);
+        let events = telemetry.events.lock().unwrap();
+        assert!(matches!(&events[..], [InteractionEvent::ClickUnavailable { button, .. }] if button == "left"));
+        let json = serde_json::to_value(&events[0]).unwrap();
+        assert!(json.get("x").is_none() && json.get("y").is_none());
+        let mut restored: InteractionEvent = serde_json::from_value(json).unwrap();
+        assert!(restored.rebase(0));
+        assert_eq!(crate::capture::engine::sketch::describe_event(&restored), "clicked (position unavailable)");
+    }
+
+    #[test]
+    fn position_loss_preserves_the_original_press_time() {
+        let (tx, _) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(tx);
+        let frame = *telemetry.target_frame.lock().unwrap();
+        *telemetry.drag_start.lock().unwrap() = Some((42, 0.2, 0.3, None, frame));
+        let mut previous = [true, false];
+        poll_unlocated_clicks(&telemetry, &mut previous, [false, false]);
+        let events = telemetry.events.lock().unwrap();
+        assert!(matches!(events[..], [InteractionEvent::ClickUnavailable { t: 42, .. }]));
+        assert!(telemetry.drag_start.lock().unwrap().is_none());
+    }
 
     #[test]
     fn a_portal_press_is_ignored_once_the_paste_shortcut_is_turned_off() {

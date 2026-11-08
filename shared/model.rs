@@ -507,6 +507,9 @@ pub struct Mark {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum InteractionEvent {
+    /// A button press was observed, but the platform could not locate it reliably.
+    /// No target, normalized point or ripple may be inferred from this event.
+    ClickUnavailable { t: u64, button: String },
     /// Typed explanation, anchored to a Shift-click rather than transcription time.
     Note { t: u64, pin: u32, x: f32, y: f32, text: String },
     Click {
@@ -582,7 +585,8 @@ impl InteractionEvent {
                 *t1 -= ms;
                 true
             }
-            Self::Click { t, .. }
+            Self::ClickUnavailable { t, .. }
+            | Self::Click { t, .. }
             | Self::Scroll { t, .. }
             | Self::Point { t, .. }
             | Self::Key { t, .. }
@@ -600,7 +604,8 @@ impl InteractionEvent {
 
     pub fn timestamp_ms(&self) -> u64 {
         match self {
-            Self::Click { t, .. }
+            Self::ClickUnavailable { t, .. }
+            | Self::Click { t, .. }
             | Self::Drag { t, .. }
             | Self::Scroll { t, .. }
             | Self::Point { t, .. }
@@ -617,6 +622,7 @@ impl InteractionEvent {
 pub enum KeyframeReason {
     Mark,
     Click,
+    ClickUnavailable,
     Laser,
     SceneChange,
     Speech,

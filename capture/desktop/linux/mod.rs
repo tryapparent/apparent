@@ -108,6 +108,20 @@ pub fn cursor_position() -> Option<(f64, f64)> {
     x11::cursor_position()
 }
 
+/// Position for recorded interactions. XWayland queries on GNOME/KDE can return
+/// the last point seen over an X11 window, even after a relative pointer moved
+/// over a native window. Absolute device coordinates also lack a compositor
+/// output mapping. Neither is evidence of the current global position.
+/// Keep the legacy placement fallback separate from recorded telemetry.
+pub fn interaction_position() -> Option<(f64, f64)> {
+    if wayland_session() {
+        return hyprland::running()
+            .then(|| hyprland::cursor_in_x_space(&output_rects()))
+            .flatten();
+    }
+    x11::cursor_position()
+}
+
 /// Each output's name and X11 rectangle, read at most once a second.
 fn output_rects() -> Vec<(String, [f64; 4])> {
     static CACHE: std::sync::Mutex<Option<(std::time::Instant, Vec<(String, [f64; 4])>)>> =
