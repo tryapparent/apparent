@@ -304,6 +304,18 @@ Settings are not supplied by this contribution. The default shell remains the
 development foundation; this does not enable installed routing or claim native
 pill placement, focus, stacking, exclusion or capture-to-Saved behavior.
 
+The separate Omarchy entry routes a second normal launch to its existing idle
+recording window. It ignores incoming arguments and never starts capture or
+replays setup. The controls owner opens/focuses only with connected facts and no
+starting, recording, unknown or pending Start/Stop; it refuses while shutdown is
+being checked or sealed. A refused close restores this presentation admission;
+an unknown close does not. Existing tray activation still Stops the active job.
+Native single-instance/focus and capture-hidden behavior need the affected
+packaged Linux proof before release. This does not adopt Onboarding's progress
+writer or factory: remembered setup and explicit replay remain a separate
+guarded adoption using the delivered owner seam. Rollback keeps the prior frozen
+qualification package; no profile, Saved identity or setup state is rewritten.
+
 
 ## Record automatic coordinator assembly
 

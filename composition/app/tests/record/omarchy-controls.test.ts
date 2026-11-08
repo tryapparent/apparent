@@ -15,9 +15,13 @@ function fixture(identity: { captureId: string; invocationId?: string } = {
   let closed = 0;
   let closeChecks = 0;
   let hideWorks = true;
+  let focused = 0;
+  let destroyed = false;
+  let closeResult: boolean | Error = true;
+  let holdClose: Promise<void> | undefined;
   const host = bindSilentRecordControls({ host: { record: f.client,
-    async canClose() { closeChecks++; return true; }, async close() { closed++; } },
-    window: { hide() { if (hideWorks) visible = false; }, isVisible: () => visible, show() { visible = true; } },
+    async canClose() { closeChecks++; await holdClose; if (closeResult instanceof Error) throw closeResult; return closeResult; }, async close() { closed++; } },
+    window: { hide() { if (hideWorks) visible = false; }, isVisible: () => visible, show() { visible = true; }, focus() { focused++; }, isDestroyed: () => destroyed },
     stopControl: { onActivate(listener) { activation = listener; return () => { activation = undefined; }; }, dispose() {} },
     createRequestId: () => 'tray-stop',
   });
@@ -27,7 +31,9 @@ function fixture(identity: { captureId: string; invocationId?: string } = {
       captures: [{ ...identity, phase, outcomes: [], delivery: 'unknown' }] });
   };
   return { ...f, host, publish, activate: () => activation?.(), visible: () => visible,
-    breakHide() { hideWorks = false; }, counts: () => ({ closed, closeChecks }),
+    breakHide() { hideWorks = false; }, counts: () => ({ closed, closeChecks, focused }),
+    hide() { visible = false; }, destroy() { destroyed = true; },
+    closeResult(value: boolean | Error, pending?: Promise<void>) { closeResult = value; holdClose = pending; },
     start() { const s = f.driver.current(); return host.record.execute({ type: 'start-capture', requestId: 'start-one',
       expected: { providerEpoch: s.providerEpoch, revision: s.revision }, delivery: 'host-default' }); },
   };
@@ -56,6 +62,40 @@ test('hides before Start and uses exact current capture/revision for one tray St
   assert.equal(await f.host.canClose(), true);
   await f.host.close();
   assert.equal(f.counts().closed, 1);
+});
+
+test('normal entry opens/focuses the existing connected idle surface without recording or clearing Saved', async () => {
+  const f = fixture(); f.publish('saved'); const before = f.driver.current(); f.hide();
+  assert.equal(f.host.openRecordingEntry(), true);
+  assert.equal(f.visible(), true); assert.equal(f.counts().focused, 1);
+  assert.equal(f.host.openRecordingEntry(), true);
+  assert.equal(f.driver.commands().length, 0); assert.deepEqual(f.driver.current(), before);
+  f.destroy(); assert.equal(f.host.openRecordingEntry(), false);
+});
+
+test('normal entry cannot expose active, uncertain or disconnected capture controls', async () => {
+  for (const phase of ['starting', 'recording', 'unknown'] as const) {
+    const f = fixture(); f.publish(phase);
+    assert.equal(f.host.openRecordingEntry(), false); assert.equal(f.visible(), false);
+    assert.equal(f.counts().focused, 0); assert.equal(f.driver.commands().length, 0);
+  }
+  const f = fixture(); f.driver.disconnect();
+  assert.equal(f.host.openRecordingEntry(), false); assert.equal(f.visible(), false);
+  const uncertain = fixture(); uncertain.driver.setNextResult('outcome-unknown'); await uncertain.start();
+  assert.equal(uncertain.host.openRecordingEntry(), false); assert.equal(uncertain.visible(), false);
+});
+
+test('normal entry is sealed while close checks run, reopens on refusal, and remains sealed after positive/unknown close', async () => {
+  const f = fixture(); let release!: () => void;
+  f.closeResult(false, new Promise<void>(resolve => { release = resolve; }));
+  const pending = f.host.canClose(); assert.equal(f.host.openRecordingEntry(), false);
+  release(); assert.equal(await pending, false); assert.equal(f.host.openRecordingEntry(), true);
+  f.closeResult(true); assert.equal(await f.host.canClose(), true);
+  assert.equal(f.host.openRecordingEntry(), false);
+  await f.host.close(); assert.equal(f.host.openRecordingEntry(), false);
+  const unknown = fixture(); unknown.closeResult(new Error('unknown native check'));
+  await assert.rejects(unknown.host.canClose(), /unknown native check/);
+  assert.equal(unknown.host.openRecordingEntry(), false);
 });
 
 test('cannot start when controls fail to hide; no native dispatch', async () => {

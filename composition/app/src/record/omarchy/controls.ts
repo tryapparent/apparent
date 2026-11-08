@@ -7,6 +7,8 @@ export interface SilentRecordWindow {
   hide(): void;
   isVisible(): boolean;
   show(): void;
+  focus?(): void;
+  isDestroyed?(): boolean;
 }
 
 /** Main-process controls only. Tray activation requests Stop; it never toggles Start.
@@ -17,7 +19,7 @@ export function bindSilentRecordControls(options: {
   stopControl: { onActivate(listener: () => void): () => void; dispose(): void };
   createRequestId?: () => string;
   reportError?: (error: unknown) => void;
-}): RecordHostServices {
+}): RecordHostServices & { openRecordingEntry(): boolean } {
   const { host, window, stopControl } = options;
   const requestId = options.createRequestId ?? randomUUID;
   let current: CapabilitySnapshot | undefined;
@@ -25,6 +27,7 @@ export function bindSilentRecordControls(options: {
   let uncertainStart: string | undefined;
   let stopping = false;
   let closed = false;
+  let entryAdmission: 'open' | 'checking-close' | 'sealed' | 'closed' = 'open';
   const rendererObservers = new Set<() => void>();
   const active = () => current?.captures.filter(c => ['starting', 'recording', 'unknown'].includes(c.phase)) ?? [];
   const present = () => {
@@ -79,15 +82,40 @@ export function bindSilentRecordControls(options: {
     },
   };
   return { record, microphone: host.microphone, drawing:host.drawing,
-    canClose: () => {
+    openRecordingEntry() {
+      // A normal re-entry only presents the existing surface. In particular it
+      // cannot expose controls during capture or infer ownership from Saved.
+      if (entryAdmission !== 'open' || preparingStart || stopping || uncertainStart
+        || !current || current.connection !== 'connected' || active().length
+        || window.isDestroyed?.()) return false;
+      try {
+        window.show();
+        if (!window.isVisible()) return false;
+        window.focus?.();
+        return true;
+      } catch { return false; }
+    },
+    canClose: async () => {
       const blocked = !!(preparingStart || stopping || uncertainStart || active().length);
       recordShutdownEvent('silent-controls-close-check', { blocked, preparingStart, stopping,
         uncertainStart: !!uncertainStart, activePhases: active().map(capture => capture.phase) });
-      return blocked ? Promise.resolve(false) : host.canClose();
+      if (blocked || entryAdmission !== 'open') return false;
+      entryAdmission = 'checking-close';
+      try {
+        const clear = await host.canClose();
+        entryAdmission = clear ? 'sealed' : 'open';
+        return clear;
+      } catch (error) {
+        // An uncertain close keeps admission sealed, including normal re-entry.
+        entryAdmission = 'sealed';
+        throw error;
+      }
     },
     async close() {
+      entryAdmission = 'sealed';
       await host.close();
       closed = true;
+      entryAdmission = 'closed';
       record.detach();
       removeActivation(); unsubscribe(); stopControl.dispose();
     },

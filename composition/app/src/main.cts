@@ -21,6 +21,8 @@ let ownedWindow: BrowserWindow | undefined;
 let entryStarted: 'normal' | 'failure' | undefined;
 let bindingStarted = false;
 let preOwnershipRefusal = false;
+let openRecordingEntry: (() => boolean) | undefined;
+let pendingRecordingEntry = false;
 function loadEntry(failure = false) {
   const target = failure ? 'failure' : 'normal';
   if (entryStarted === 'failure' || entryStarted === target || !ownedWindow || ownedWindow.isDestroyed()) return;
@@ -66,6 +68,11 @@ if (process.env.APPARENT_FOUNDATION_PROFILE) {
 // its native adapter crashes. A second launch must not create another owner.
 const primaryInstance = !APPARENT_OMARCHY || app.requestSingleInstanceLock();
 if (!primaryInstance) app.exit(0);
+if (APPARENT_OMARCHY && primaryInstance) app.on('second-instance', () => {
+  // Ignore incoming argv/paths: the request targets only our existing surface.
+  if (openRecordingEntry) openRecordingEntry();
+  else pendingRecordingEntry = true;
+});
 app.whenReady().then(async () => {
   if (!primaryInstance) return;
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
@@ -129,10 +136,16 @@ app.whenReady().then(async () => {
       tray.setToolTip('Apparent — activate to Stop recording');
       let activateStop:(()=>void)|undefined;
       let disposeDrawing:(()=>void)|undefined;
-      ownedHost = bindSilentRecordControls({ host: ownedHost, window, stopControl: {
+      const controls = bindSilentRecordControls({ host: ownedHost, window, stopControl: {
         onActivate(listener) { activateStop=listener;tray.on('click', listener); return () => {activateStop=undefined;tray.removeListener('click', listener);}; },
         dispose() { disposeDrawing?.();tray.destroy(); },
       }, reportError: error => console.error('Record Stop remains unresolved', error) });
+      ownedHost = controls;
+      openRecordingEntry = () => controls.openRecordingEntry();
+      if (pendingRecordingEntry) {
+        pendingRecordingEntry = false;
+        openRecordingEntry();
+      }
       disposeDrawing=bindDrawingTray({record:ownedHost.record,drawing:ownedHost.drawing,stop:()=>activateStop?.(),
         menu:items=>tray.setContextMenu(Menu.buildFromTemplate(items)),notice:text=>tray.setToolTip(text)});
     }
