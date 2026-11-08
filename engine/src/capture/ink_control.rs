@@ -248,16 +248,22 @@ mod tests {
                 {"kind":"commit","gestureId":"d".repeat(32),"acceptedAtNs":(n+2).to_string()}
             ])).unwrap();
             let submit = json!({"method":"submitInkEvents","ingressVersion":1,"ownerToken":req["ownerToken"],"captureId":req["captureId"],"registrationId":receipt["registrationId"],"producerToken":receipt["producerToken"],"sequence":0,"eventsJson":raw,"batchSha256":sha(raw.as_bytes())});
-            // Real dispatcher cancellation, including durable control intent,
-            // precedes the already registered native producer's final drain.
-            let mut all = HashMap::from([(
-                req["captureId"].as_str().unwrap().to_owned(),
-                shared.clone(),
-            )]);
+            // A distinct recovery peer has separate process-local Atomics and
+            // discovers the existing owner through the real kernel permit.
+            let owner = shared
+                .runtime
+                .acquire_capture_owner(req["captureId"].as_str().unwrap())
+                .unwrap()
+                .unwrap();
+            let mut all = HashMap::new();
             process_request(json!({"method":"cancel","captureId":req["captureId"],"ownerToken":req["ownerToken"]}),
                 &shared.runtime, &shared.directory, &mut String::new(), &mut vec![], &mut true,
                 &mut HashMap::new(), &mut all, true).unwrap();
-            assert!(shared.cancel.load(Ordering::Acquire));
+            assert!(!Arc::ptr_eq(
+                &all[req["captureId"].as_str().unwrap()],
+                &shared
+            ));
+            assert!(!shared.cancel.load(Ordering::Acquire));
             let cancelled = read_journal(
                 &shared.directory,
                 req["captureId"].as_str().unwrap(),
@@ -267,6 +273,8 @@ mod tests {
             assert!(cancelled.cancel_requested);
             assert!(cancelled.ink_cutoff_ns.is_some());
             assert_eq!(handle(&req, &shared, true), Err("unavailable"));
+            sync_control(&shared).unwrap();
+            assert!(shared.cancel.load(Ordering::Acquire));
             if pending {
                 let mut foreign = submit.clone();
                 foreign["producerToken"] = json!("f".repeat(64));
@@ -297,6 +305,7 @@ mod tests {
             let cold = shared.journal.lock().unwrap().clone();
             remove_unsealed(&shared.directory, &cold).unwrap();
             drop(all);
+            drop(owner);
             drop(shared);
             fs::remove_dir_all(base).unwrap();
         }
