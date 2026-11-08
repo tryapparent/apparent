@@ -108,8 +108,8 @@ and a cold native build still invokes the compilers.
 staging, independent expiry and private evidence retention. Its sibling
 `gui-vm-reaper.py` survives controller/worktree loss by being copied into each
 owned job. Run `python3 enablement/native/linux/test-gui-vm.py` for launch-free
-contracts. The three files were relocated unchanged; this is not a new VM
-controller or a claim of additional platform support.
+contracts. These are the existing maintained lifecycle and cleanup entrypoints,
+not a second VM controller or a claim of additional platform support.
 
 Desktop owns scenario behavior and assertions under
 `capture/desktop/scripts/linux/{gui,updater}`. Follow the
@@ -118,6 +118,21 @@ scenario admission, template identity, host capacity, consent and output
 inspection. The runner supplies `SCRAWL_GUI_BINARY`, `SCRAWL_GUI_OUTPUT`, optional
 stimulus and the candidate library path to a single Bash-invoked scenario.
 Successful transport is not product acceptance.
+
+`--retain-cold-state` explicitly opts one job into preserving its cold
+`disk.qcow2` and matching final `OVMF_VARS.fd`. Default verified-success deletion
+is unchanged. Normal cleanup and the copied expiry sibling share the same
+private job-bound request and metadata-only FD ownership check; unknown access,
+open owners or unsafe resources produce no positive cold receipt. QEMU still
+stops, sockets are removed and normal cleanup stops the expiry timer. Failure or
+expiry remains failure; retained state does not convert it into success.
+`cold-state-{runner,expiry}.json` records owned cold file identities and artifact
+retention status, not native acceptance, image hashes or standalone equivalence.
+An A→B handoff must separately seal the actual cold pair under its bounded
+offline admission, convert a backed overlay through the supported standalone
+route with fsync/sector comparison, preserve its originals and freshly qualify
+B's persisted device/inode/publication bindings. Never use a partial profile
+snapshot, a live copy or a deliberately failed scenario as the preservation path.
 
 Retention remains fail closed: only a successful trusted scenario plus matching
 copied-file manifests permits disk deletion. Failed/interrupted runs retain cold
@@ -163,3 +178,30 @@ Named AX controls and their allowlists remain part of Desktop acceptance; there
 is no independent cross-owner AX consumer to justify extracting their selector
 logic. Product startup/readiness adapters likewise retain their real bridge
 assertions with Desktop. This boundary does not wait for PR376 acceptance.
+
+## Linux sealed fixture preflight
+
+For a flat guest fixture that stages `input-seals.sha256`, run the same closure
+check against the **actual** runner argv before budget initialization/allocation:
+
+```sh
+node --experimental-strip-types --experimental-vm-modules enablement/native/linux/fixture-closure.ts check-config CONFIG_JSON EXPECTED_CONFIG_SHA256
+```
+
+This is a Node22 parser-only check, not execution or admission. It rejects missing
+sealed files, duplicate basenames, missing/unsealed static relative imports and
+unsupported non-flat or relative dynamic imports. Type-only imports are erased;
+computed archive imports still rely on the existing installer/archive seals.
+No module is linked/evaluated and no archive/model/image is read. Actual content
+hashes and installed runtime closure remain separate admission/guest checks.
+The runner repeats this check before overlay/expiry/QEMU for manifest-bearing
+fixtures. A frozen runner copy must retain the adjacent `fixture-closure.ts` and
+pin its bytes too; a Python-only copy fails closed rather than booting unchecked.
+
+Cold retention also prechecks whether the current UID's complete FD metadata
+census is accessible before creating an overlay. Access denial reports only
+numeric PID, stage and errno, and still refuses. This precheck is not future
+absence proof: cleanup repeats inode ownership checks and preserves unknown
+resources. It does not skip protected processes, grant host privilege or qualify
+an earlier failed/partial cold disk. An unavailable complete census remains a
+cold-retention method blocker under unprivileged access.
