@@ -453,11 +453,30 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     // another request. The card intentionally retains app_busy until Refresh;
     // a successful direct socket probe above does not refresh the renderer.
     const refreshLocation = card.getByRole('button', { name: 'Refresh location', exact: true });
-    await expect(refreshLocation).toBeEnabled({ timeout: budget() });
-    await refreshLocation.click({ timeout: budget() });
-    await locationStatus.getByText(report.before.location.storage.displayPath, { exact: true }).waitFor({ timeout: budget() });
-    await change.click({ timeout: budget() });
-    report.nativeBeforeGo = await poll(() => panel('inspect'), 'Native Change picker');
+    const busyLocation = locationStatus.getByText('Another location request is still running. Refresh when it finishes.', { exact: true });
+    const { openNativePicker } = await import('./storage/native-picker.ts');
+    const opened = await openNativePicker({
+      refresh: async () => {
+        await expect(refreshLocation).toBeEnabled({ timeout: budget() });
+        await refreshLocation.click({ timeout: budget() });
+        return poll(async () => {
+          await expect(refreshLocation).toBeEnabled({ timeout: budget(500) });
+          if (await busyLocation.isVisible()) return 'busy';
+          await expect(locationStatus.getByText(report.before.location.storage.displayPath, { exact: true })).toBeVisible({ timeout: budget(500) });
+          await expect(change).toBeEnabled({ timeout: budget(500) });
+          return 'ready';
+        }, 'Rendered Storage refresh');
+      },
+      change: () => change.click({ timeout: budget() }),
+      observe: () => poll(async () => {
+        // The host returns this rendered error before showOpenDialog. A picker
+        // timeout, unknown outcome or post-picker mutation is never retried.
+        if (await busyLocation.isVisible() && await refreshLocation.isEnabled()) return { busy: true };
+        return { picker: await panel('inspect') };
+      }, 'Native Change picker'),
+    });
+    report.nativeBeforeGo = opened.picker;
+    report.nativePickerPreflightAttempts = opened.attempts;
     // Only the OS picker receives the path. Never pass it through renderer/IPC.
     await osa(panelScript, [String(electronChild.pid), selected, 'go']);
     report.nativeBeforeChoose = await poll(() => panel('inspect'), 'Picker after Go to Folder');
