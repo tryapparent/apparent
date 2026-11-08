@@ -16,7 +16,7 @@ const observation:NativeInkObservation={host,producerId:pid,generation:1,bootId:
  output:{name:'Virtual-1',physical:{x:0,y:0,width:1280,height:800},compositor:{x:0,y:0,width:1280,height:800,scale:1}},
  surfaces:[{surfaceId:'screen-original',transformId:'screen-transform',nativeIncarnation:'native-original',target:'capture-rectangle',pointSpace:'desktop-physical',contentRectangle:{x:0,y:0,width:1280,height:800},plane:{width:1280,height:800}}]};
 function deferred<T>(){let resolve!:(v:T)=>void;const promise=new Promise<T>(r=>{resolve=r;});return{promise,resolve};}
-function fixture(){
+function fixture(cancelDrain:'unavailable'|'original-producer'='unavailable'){
  const events:string[]=[],provider=createRecordFixture();let board={nativeRevision:0,open:false,strokeCount:0,activeGesture:false};
  let registration:Promise<void>|undefined,action:Promise<'requested'|'refused'|'outcome-unknown'>|undefined;
  let sequence=0,cancelled=false,sealed=false;const batches:string[]=[];
@@ -33,12 +33,16 @@ function fixture(){
   events.push(r.method);let result:any;
   // Faithful c008 ink_control::handle guard: once cancel_requested is durable,
   // submit/finish reject unavailable even when the native source drains positively.
-  if(cancelled&&['finishInkProducer','submitInkEvents'].includes(r.method))return{channel:'capture',protocolVersion:2,rpcId:r.rpcId,error:{code:'unavailable'}} as CaptureResponse;
+  if(cancelled&&(r.method==='registerInkProducer'||(cancelDrain==='unavailable'&&['finishInkProducer','submitInkEvents'].includes(r.method))))return{channel:'capture',protocolVersion:2,rpcId:r.rpcId,error:{code:'unavailable'}} as CaptureResponse;
   if(r.method==='handshake')result={channel:'capture',protocolVersion:2,implementation:'native',readiness:'unavailable',capabilities:Object.fromEntries(['sourceDiscovery','displayCapture','areaCapture','audioCapture','contextFacts','interactionFacts','candidates','transcript','strokes','publication','retainedMaterials'].map(k=>[k,false]))};
   else if(r.method==='inspect')result={captureId:cid,state:cancelled?'cancelled':'recording'};
   else if(r.method==='cancel'){cancelled=true;result={captureId:cid,state:'cancelled'};}
   else if(r.method==='registerInkProducer'){if(registration)await registration;result={ingressVersion:1,captureId:cid,producerId:pid,generation:1,registrationId:rid,producerToken:token,nextSequence:0,clock:{kind:observation.clock,bootId:observation.bootId,admissionMonotonicNs:'1000000000'},limits:CAPTURE_INK_LIMITS};}
-  else if(r.method==='submitInkEvents')result={ingressVersion:1,captureId:cid,registrationId:rid,sequence:r.sequence,batchSha256:r.batchSha256,nextSequence:Number(r.sequence)+1,outcome:'accepted'};
+  else if(r.method==='submitInkEvents'){
+   assert.equal(r.captureId,cid);assert.equal(r.ownerToken,owner);assert.equal(r.registrationId,rid);assert.equal(r.producerToken,token);
+   assert.equal(r.sequence,sequence);assert.equal(r.eventsJson,batches[sequence]);assert.equal(r.batchSha256,createHash('sha256').update(batches[sequence]).digest('hex'));
+   result={ingressVersion:1,captureId:cid,registrationId:rid,sequence:r.sequence,batchSha256:r.batchSha256,nextSequence:Number(r.sequence)+1,outcome:'accepted'};
+  }
   else if(r.method==='finishInkProducer'){assert.equal(sequence,batches.length);result={ingressVersion:1,captureId:cid,registrationId:rid,finalSequence:r.finalSequence,state:'complete'};}
   else throw Error('Unexpected native operation');
   return{channel:'capture',protocolVersion:2,rpcId:r.rpcId,result} as CaptureResponse;
@@ -92,10 +96,37 @@ test('stock tray borrows physical Stop and exact public drawing revision, never 
  dispose();items[4].click();assert.equal(stops,1);await f.controller.finish(publicId);
 });
 
- test('current Engine post-Cancel unavailable guard cannot be relabelled positive input drain or close',async()=>{
+ test('prior Engine post-Cancel unavailable guard cannot be relabelled positive input drain or close',async()=>{
  const f=fixture();await f.ready();
  const status=await f.capture.cancel({captureId:cid,ownerToken:owner});assert.equal(status.state,'cancelled');
  await f.controller.finish(publicId);assert.equal(f.nativeSealed(),true);
  assert.equal((await f.controller.port.read()).phase,'unavailable');assert.equal(f.controller.localDrain(),'unknown');assert.equal(f.controller.beginClose(),false);
  assert(f.events.includes('finishInkProducer'));assert(!f.events.includes('submitInkEvents'));
  });
+
+test('SDK046 and original relay accept compatible Cancel closure without collecting or publishing facts',async()=>{
+ // Models the reviewed 28357728 completion contract, not the native cutoff,
+ // clocks or recorder effects: those remain producer/native qualification gates.
+ for(const retained of[false,true]){
+  const f=fixture('original-producer');await f.ready();
+  await f.capture.cancel({captureId:cid,ownerToken:owner});
+  if(retained){
+   // Retained pre-cutoff bytes become visible during native seal/drain. Their
+   // original formatting must survive SDK dispatch and exact native ACK.
+   f.batches.push('[ {"kind":"begin","gestureId":"'+'8'.repeat(32)+'","surfaceId":"screen-original","transformId":"screen-transform","nativeIncarnation":"native-original","timeNs":"1000000000","x":1.0000000000000002,"y":2.0}, {"kind":"commit","gestureId":"'+'8'.repeat(32)+'","acceptedAtNs":"1000000000"} ]');
+  }
+  await f.controller.finish(publicId);
+  assert(f.nativeSealed());assert.equal((await f.controller.port.read()).phase,'complete');
+  assert.equal(f.controller.localDrain(),'clear');assert.equal(f.controller.beginClose(),true);
+  assert.equal(f.events.filter(e=>e==='submitInkEvents').length,retained?1:0);
+  assert.equal(f.events.filter(e=>e==='ack').length,retained?1:0);
+  assert.equal(f.events.filter(e=>e==='finishInkProducer').length,1);
+  assert(f.events.indexOf('cancel')<f.events.indexOf('seal'));
+  if(retained)assert(f.events.indexOf('ack')<f.events.indexOf('finishInkProducer'));
+  assert(!f.events.some(e=>['materials','publish','finalize','releaseMaterials'].includes(e)));
+  assert.deepEqual(f.mapping,f.original);
+  // Local input drain only permits later independent Record/native preflight.
+  // It does not manufacture Saved, runtime clearance or process absence.
+  assert.equal(f.provider.driver.current().captures.length,0);
+ }
+});
