@@ -1208,14 +1208,16 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
             pointer_taken = pure_shift;
         }
 
-        // Overlay acquisition is a separate, local X11 interaction while Shift
-        // is held; ordinary clicks must never use the placement fallback.
-        let position = if pointer_taken {
+        // A compositor/X11 source remains authoritative even for a stationary
+        // Shift-click. Own-overlay motion is an ink-only fallback: it cannot
+        // locate a button press that arrived before that motion.
+        let click_position = linux::interaction_position();
+        let position = if pointer_taken && click_position.is_none() {
             validated_overlay_position(linux::overlay::pointer_request,
                 |request| overlay_pointer.poll(request))
         } else {
             overlay_pointer.poll(None);
-            linux::interaction_position()
+            click_position
         };
         let Some((x, y)) = position else {
             poll_unlocated_clicks(&telemetry, &mut prev_buttons, buttons,
@@ -1231,7 +1233,7 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = [x as f32, y as f32];
 
-        if linux::wayland_session() && !linux::hyprland::running() {
+        if click_position.is_none() {
             // A motion event locates ink, not an evdev button that may have
             // arrived before that motion. Keep the button's own event time and
             // report it unlocated rather than pinning at a later cursor point.
