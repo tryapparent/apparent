@@ -1612,6 +1612,62 @@ pub fn hosted_transport_network_timeout_and_cancellation() {
     );
 }
 #[cfg_attr(test, test)]
+pub fn hosted_scoped_retry_preserves_other_jobs_and_refuses_terminal_work() {
+    for unrelated_status in ["pending", "failed"] {
+        let f = Fixture::new();
+        let server = Server::new("");
+        f.authorize(&server.url);
+        let requested = f.root.join("requested.apparent");
+        fs::rename(f.bundle(), &requested).unwrap();
+        let id = f.client.enqueue(&requested).unwrap();
+        let other = f.client.enqueue(&f.bundle()).unwrap();
+        let mut selected = f.client.jobs().unwrap().into_iter().find(|j| j.id == id).unwrap();
+        selected.status = "failed".into();
+        selected.attempts = MAX_ATTEMPTS;
+        selected.error = Some("upload_failed".into());
+        f.client.save_job(&selected).unwrap();
+        let mut unrelated = f.client.jobs().unwrap().into_iter().find(|j| j.id == other).unwrap();
+        unrelated.status = unrelated_status.into();
+        unrelated.attempts = MAX_ATTEMPTS;
+        unrelated.error = Some("upload_failed".into());
+        f.client.save_job(&unrelated).unwrap();
+        let other_path = f.client.state.join(format!("{other}.job"));
+        let before = fs::read(&other_path).unwrap();
+        // Do not reset a job while an older worker can still publish its result.
+        let worker = Lock::acquire(&f.client.state.join("worker.lock"), false).unwrap();
+        let selected_path = f.client.state.join(format!("{id}.job"));
+        let selected_before = fs::read(&selected_path).unwrap();
+        assert!(f.client.retry_capture(&id).is_err(), "busy worker silently accepted scoped retry");
+        assert_eq!(fs::read(&selected_path).unwrap(), selected_before);
+        assert_eq!(fs::read(&other_path).unwrap(), before);
+        assert_eq!(server.state.lock().unwrap().requests, 0);
+        drop(worker);
+        f.client.retry_capture(&id).unwrap();
+        assert_eq!(fs::read(&other_path).unwrap(), before, "unrelated pending job changed");
+        assert_eq!(server.state.lock().unwrap().capture_id, id);
+        assert_eq!(f.client.jobs().unwrap().iter().find(|j| j.id == id).unwrap().status, "ready");
+        let requests = server.state.lock().unwrap().requests;
+        assert!(f.client.retry_capture(&id).is_err(), "ready job was revived");
+        assert!(f.client.retry_capture("../invalid").is_err());
+        assert!(f.client.retry_capture(&random_id().unwrap()).is_err());
+        let original = f.client.jobs().unwrap().into_iter().find(|j| j.id == other).unwrap();
+        for refusal in ["cancelled", "expired", "old-generation"] {
+            let mut job = original.clone();
+            match refusal {
+                "cancelled" => job.status = "cancelled".into(),
+                "expired" => job.created = now() - RETENTION - 1,
+                _ => job.generation = random_id().unwrap(),
+            }
+            f.client.save_job(&job).unwrap();
+            let before = fs::read(&other_path).unwrap();
+            assert!(f.client.retry_capture(&other).unwrap_err().to_string().contains("capture_not_retryable"));
+            assert_eq!(fs::read(&other_path).unwrap(), before, "{refusal} changed");
+        }
+        assert_eq!(server.state.lock().unwrap().requests, requests, "refusal made a request");
+    }
+}
+
+#[cfg_attr(test, test)]
 pub fn hosted_paths_symlinks_oversize_and_unknown_assets() {
     use std::os::unix::fs::PermissionsExt;
     let f = Fixture::new();

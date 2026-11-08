@@ -85,7 +85,11 @@ pub enum ConnectCommand {
     /// Disable automatic uploads and cancel pending jobs, retaining credentials.
     Disable,
     /// Retry failed queued captures. Does not discover or upload old captures.
-    Retry,
+    Retry {
+        /// Retry only this retained capture, without processing other queued work.
+        #[arg(long)]
+        id: Option<String>,
+    },
     /// Explicitly upload one historical capture (requires upload consent).
     Upload { bundle: PathBuf },
     /// List or revoke public-by-link access. IDs are management IDs, not capture IDs.
@@ -1619,10 +1623,31 @@ impl Client {
         Ok(())
     }
     pub fn retry(&self) -> Result<()> {
+        self.retry_selected(None)
+    }
+    /// Recover one retained capture under its existing identity and consent.
+    pub fn retry_capture(&self, id: &str) -> Result<()> {
+        ensure!(valid_id(id), "Capture ID must be 32 lowercase hexadecimal characters");
+        private_dir(&self.state)?;
+        // Serialize reset with worker result publication, before taking queue.lock.
+        // A busy worker must leave this request unchanged, not accept a retry
+        // which its older snapshot can immediately overwrite.
+        let _worker = Lock::acquire_until(
+            &self.state.join("worker.lock"), false,
+            Some(Instant::now() + Duration::from_secs(3)),
+        )?;
+        self.retry_selected(Some(id))?;
+        self.process_jobs(Some(id))
+    }
+    fn retry_selected(&self, id: Option<&str>) -> Result<()> {
         ensure!(self.enabled(), "Hosted uploads are disabled");
         private_dir(&self.state)?;
         let _lock = Lock::acquire(&self.state.join("queue.lock"), false)?;
+        let mut retried = false;
         for mut job in self.jobs()? {
+            if id.is_some_and(|id| job.id != id) {
+                continue;
+            }
             if self.active_locked(&job)
                 && matches!(job.status.as_str(), "pending" | "failed")
                 && now().saturating_sub(job.created) <= RETENTION
@@ -1632,8 +1657,10 @@ impl Client {
                 job.status = "pending".into();
                 job.error = None;
                 self.save_job(&job)?;
+                retried = true;
             }
         }
+        ensure!(id.is_none() || retried, "capture_not_retryable: choose a current pending or failed capture from apparent connect status; cancelled, expired and previous sign-in jobs cannot be revived");
         Ok(())
     }
     pub fn process_once(&self) -> Result<()> {
@@ -1642,7 +1669,13 @@ impl Client {
             Ok(lock) => lock,
             Err(_) => return Ok(()),
         };
+        self.process_jobs(None)
+    }
+    fn process_jobs(&self, id: Option<&str>) -> Result<()> {
         for mut job in self.jobs()? {
+            if id.is_some_and(|id| job.id != id) {
+                continue;
+            }
             if job.status != "pending" || job.next_attempt > now() || !self.active(&job) {
                 continue;
             }

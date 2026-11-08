@@ -138,6 +138,11 @@ One private per-scope advisory renewal lock serializes processes. It is never ac
 
 Completion publishes a random 32-lowercase-hex ID to the disk queue before clipboard construction. Clipboard text starts with `apparent fetch <id> --out ./<id>.apparent --wait 120` and `apparent inspect ./<id>.apparent`, even while upload is pending. A one-line README Agents link handles a missing CLI and leads to the maintained installation guide; image-inspection and the configured video-proof request precede the duration header and timestamped words/marks, which remain last for paste recognition. The prompt omits repeated login instructions, server lines and sender-local paths. The receiving CLI uses its configured server; configure a custom origin separately when required. Sign-in alone does not select this format: a retained, active private hosted job must exist. Without one, the prompt uses a shell-quoted local inspect path and local image/crop guidance. Archived summaries and bundle assets remain unchanged. It includes no bearer token. Hashing, media staging, network requests and retries run outside capture completion/paste. Network, auth, quota and upload errors leave the original capture and local clipboard handoff usable. Queue errors fall back to local-only handoff. `apparent connect status` is local JSON with queue path, status, attempts, next retry and sanitized error codes; `--account` explicitly queries account quota.
 
+For scoped recovery, `apparent connect retry --id <capture-id>` resets and
+processes only that retained pending/failed capture, preserving its ID and
+leaving unrelated queued work unchanged. It cannot revive cancelled, expired,
+ready or previous-sign-in jobs. Without `--id`, Retry retains its bulk behavior.
+
 ## Fetch on an agent's computer
 
 ```
