@@ -5,24 +5,31 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
+import { randomBytes } from 'node:crypto';
 import { availablePort } from './testing/port.ts';
 import { keyDirectory } from './key.ts';
 import { mailboxId, sign, authenticatedState } from '../../../../../../hermes/desktop/controller.ts';
 const root = fileURLToPath(new URL('../..', import.meta.url));
-const token = '0123456789abcdef0123456789abcdef';
 for (const needsLaunch of [false, true]) test(`real Electron confirmation/preload and bounded native CLI flow (${needsLaunch ? 'closed' : 'running'} recorder), then acknowledgement closes the bridge`, { timeout: 45000 }, async () => {
+  const token = randomBytes(16).toString('hex');
   const job = await mkdtemp(path.join(tmpdir(), 'hermes-native-'));
   const home = path.join(job, 'home'); await mkdir(home, { mode: 0o700 });
   const runtime = path.join(job, 'runtime'); await mkdir(runtime, { mode: 0o700 });
+  const appData = path.join(job, 'app-data'); await mkdir(appData, { mode: 0o700 });
+  const bootstrap = path.join(job, 'bootstrap.cjs');
+  await build({ entryPoints: [path.join(root, 'src/hermes/testing/bootstrap.cts')], outfile: bootstrap, bundle: true, platform: 'node', format: 'cjs', external: ['electron'] });
   const keyFile = path.join(process.platform === 'linux' ? runtime : keyDirectory(), 'apparent-hermes', `${token}.key`);
   const bridgePort = await availablePort();
   const id = await mailboxId(token);
   let application: Awaited<ReturnType<typeof electron.launch>> | undefined;
   let passed = false;
   const diagnostics: unknown[] = [];
+  const launch = async (port: number) => electron.launch({ args: [bootstrap, path.join(root, 'dist/hermes-main.cjs'), '--hermes-request', `${token}/${port}`, '--apparent-executable', path.join(root, 'src/hermes/testing/cli.ts')],
+    env: { ...process.env, HOME: home, APPARENT_SYNTHETIC_APP_DATA: appData, XDG_RUNTIME_DIR: runtime, XDG_CONFIG_HOME: path.join(job, 'config'), APPARENT_SYNTHETIC_NEEDS_LAUNCH: needsLaunch ? '1' : '0', APPARENT_SYNTHETIC_RECEIPT: path.join(job, 'receipt.json'), APPARENT_SYNTHETIC_TRACE: path.join(job, 'trace.jsonl') } });
   try {
-    application = await electron.launch({ args: [path.join(root, 'dist/hermes-main.cjs'), '--hermes-request', `${token}/${bridgePort}`, '--apparent-executable', path.join(root, 'src/hermes/testing/cli.ts')],
-      env: { ...process.env, HOME: home, XDG_RUNTIME_DIR: runtime, XDG_CONFIG_HOME: path.join(job, 'config'), APPARENT_SYNTHETIC_NEEDS_LAUNCH: needsLaunch ? '1' : '0', APPARENT_SYNTHETIC_RECEIPT: path.join(job, 'receipt.json'), APPARENT_SYNTHETIC_TRACE: path.join(job, 'trace.jsonl') } });
+    application = await launch(bridgePort);
+    assert.equal(await application.evaluate(({ app }) => app.getPath('userData')), path.join(appData, 'apparent-hermes'));
     const page = await application.firstWindow();
     const key = await readFile(keyFile, 'utf8');
     assert.notEqual(key, token);
@@ -72,7 +79,23 @@ for (const needsLaunch of [false, true]) test(`real Electron confirmation/preloa
     await fetch(`http://127.0.0.1:${bridgePort}/${id}/ack/${await sign(key, `ack:${id}`)}`, { method: 'POST', headers: { Origin: 'null' } });
     await new Promise<void>(resolve => { if (application!.process().exitCode !== null) resolve(); else application!.process().once('exit', () => resolve()); });
     await assert.rejects(readFile(keyFile), { code: 'ENOENT' });
+    if (!needsLaunch) {
+      // A genuine second launch in the same private app state must still refuse
+      // the consumed ID. Test isolation must not weaken persistent replay safety.
+      application = await launch(await availablePort());
+      const replay = await application.firstWindow();
+      await replay.getByRole('button', { name: 'Record and send when finished' }).click();
+      await replay.waitForFunction(async () => (await (window as any).hermesRecording.read()).phase === 'error');
+      const after = (await readFile(path.join(job, 'trace.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+      assert.equal(after.filter(call => call[1] === 'start').length, 1, 'replayed ID must never start another take');
+      assert.equal(after.filter(call => call[0] === 'launch').length, 0);
+    }
     passed = true;
+  } catch (error) {
+    const view = await application?.windows()[0]?.evaluate(() => (window as any).hermesRecording.read()).catch(() => undefined);
+    const trace = await readFile(path.join(job, 'trace.jsonl'), 'utf8').catch(() => 'unavailable');
+    console.error('Synthetic Hermes smoke failure', { view, trace });
+    throw error;
   } finally {
     await writeFile(path.join(job, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2));
     await application?.close().catch(() => {});
