@@ -4,6 +4,7 @@ import {readFileSync, readdirSync, mkdtempSync, rmSync, mkdirSync, writeFileSync
 import {execFileSync} from 'node:child_process';
 import {YAML} from 'bun';
 import {select, changedPaths, requiresMac, featureNotesOnly, macDecision, selectRange} from './select.ts';
+import {changedPaths as sharedInputPaths, workflowControlPaths} from './inputs.ts';
 
 const root = new URL('../../', import.meta.url);
 const workflow = (name: string) => YAML.parse(readFileSync(new URL(`.github/workflows/${name}`, root), 'utf8')) as any;
@@ -340,6 +341,18 @@ test('feature metadata exemption changes only direct note strings in the known s
     (map: any) => map.groups[0].runtime = true,
     (map: any) => map.features[0].shortcuts = [{keys: 'x', does: 'x', runtime: true}],
     (map: any) => map.features[0].id = map.features[1].id,
+    (map: any) => map.features[0].platforms = 'linux',
+    (map: any) => map.features[0].platforms = ['unknown-platform'],
+    (map: any) => map.features[0].status = 'unknown-status',
+    (map: any) => map.features[0].docs = [42],
+    (map: any) => map.features[0].config = [{key: 'x', value: true, does: 'x'}],
+    (map: any) => map.features[0].shortcuts = [{keys: 42, does: 'x'}],
+    (map: any) => map.features[0].pr = 'unknown',
+    (map: any) => map.groups[0].title = 42,
+    (map: any) => map.features[0].id = 'Not Kebab',
+    (map: any) => map.features[0].name = '',
+    (map: any) => map.features[0].says = '',
+    (map: any) => map.features[0].added = 'tomorrow',
   ]) {
     const unknown = structuredClone(before); mutate(unknown);
     const changed = structuredClone(unknown); changed.features[0].note = 'new';
@@ -373,6 +386,7 @@ test('production Git/CLI selects Linux and Public for the portal, guide and feat
   git('add', '.'); git('commit', '-qm', 'portal restriction and documentation');
   const head = git('rev-parse', 'HEAD');
   assert.deepEqual(changedPaths(base, head), [linuxDoc, portal, featureMap]);
+  assert.deepEqual(changedPaths(base, head), sharedInputPaths(base, head, process.cwd()));
   const expected = {public: true, updater: false, macos: false, reasons: [
     `linux:reviewed-portal-input:${linuxDoc}`, `linux:reviewed-portal-input:${portal}`, `linux:feature-notes-only:${featureMap}`,
   ]};
@@ -386,6 +400,35 @@ test('production Git/CLI selects Linux and Public for the portal, guide and feat
 function appendFile(path: string, text: string) {
   writeFileSync(path, readFileSync(path, 'utf8') + text);
 }
+
+test('malformed UTF-8 in committed metadata cannot qualify as a note-only change', () => linuxFixture((git, dir, base) => {
+  const map = metadata(); map.features[0].note = 'invalid-byte';
+  const text = JSON.stringify(map);
+  const at = text.indexOf('invalid-byte');
+  writeFileSync(featureMap, Buffer.concat([Buffer.from(text.slice(0, at)), Buffer.from([0xff]), Buffer.from(text.slice(at + 12))]));
+  git('add', '.'); git('commit', '-qm', 'invalid note encoding');
+  const head = git('rev-parse', 'HEAD');
+  const invalid = runSelector(base, head, dir);
+  assert.equal(invalid.public, true);
+  assert.equal(invalid.macos, true);
+  // An invalid base is no more trustworthy than an invalid candidate.
+  writeFileSync(featureMap, text); git('add', '.'); git('commit', '-qm', 'valid note encoding');
+  assert.equal(runSelector(head, git('rev-parse', 'HEAD'), dir).macos, true);
+}));
+
+test('proved concurrency-only local input never exempts hosted Mac verification', () => repository((git, dir) => {
+  const path = '.github/workflows/checks.yml';
+  mkdirSync('.github/workflows', {recursive: true});
+  const before = readFileSync(new URL(path, root), 'utf8');
+  writeFileSync(path, before); git('add', '.'); git('commit', '-qm', 'orchestrator base');
+  const base = git('rev-parse', 'HEAD');
+  writeFileSync(path, before.replace(/  cancel-in-progress: .*/, '  cancel-in-progress: false'));
+  git('add', '.'); git('commit', '-qm', 'concurrency control');
+  const head = git('rev-parse', 'HEAD');
+  assert.deepEqual(workflowControlPaths(base, head, sharedInputPaths(base, head, dir), dir), [path]);
+  assert.deepEqual(runSelector(base, head, dir), {public: true, updater: true, macos: true,
+    reasons: [`mac:unproven-input:${path}`]});
+}));
 
 test('Linux-only source/docs and metadata-only notes qualify independently and compose with Settings', () => linuxFixture((git, dir, base) => {
   for (const path of [portal, linuxDoc, featureMap, 'capture/desktop/ui/frontend/src/storage.tsx']) {

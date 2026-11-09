@@ -2,6 +2,7 @@ import {execFileSync} from 'node:child_process';
 import {appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
+import {changedPaths as inputPaths} from './inputs.ts';
 
 // Keep the previous automatic Public/updater input sets. Changes to this
 // orchestration also exercise both consumers before they land.
@@ -38,22 +39,30 @@ const featureMap = 'public/site/src/features.json';
 export function featureNotesOnly(before: string, after: string): boolean {
   const fields = (value: any, allowed: string[]) => value !== null && typeof value === 'object' &&
     !Array.isArray(value) && Object.keys(value).every(key => allowed.includes(key));
+  const strings = (value: any, names: string[]) => names.every(name => typeof value[name] === 'string');
   const strip = (text: string) => {
     const map = JSON.parse(text);
     if (!fields(map, ['groups', 'flow', 'features']) ||
-      !Array.isArray(map.groups) || !map.groups.every((g: any) => fields(g, ['id', 'title'])) ||
-      !Array.isArray(map.flow) || !map.flow.every((f: any) => fields(f, ['title', 'detail', 'group'])) ||
+      !Array.isArray(map.groups) || !map.groups.every((g: any) => fields(g, ['id', 'title']) && strings(g, ['id', 'title'])) ||
+      !Array.isArray(map.flow) || !map.flow.every((f: any) => fields(f, ['title', 'detail', 'group']) && strings(f, ['title', 'detail', 'group'])) ||
       !Array.isArray(map.features) || !map.features.length) throw Error('Unknown feature map');
     const ids = new Set<string>();
     map.features = map.features.map((feature: any) => {
       if (!fields(feature, ['id', 'group', 'name', 'says', 'status', 'platforms', 'added',
         'note', 'flag', 'pr', 'shortcuts', 'config', 'docs']) ||
-        typeof feature.id !== 'string' || !feature.id || ids.has(feature.id) ||
-        ('note' in feature && typeof feature.note !== 'string') ||
+        typeof feature.id !== 'string' || !/^[a-z0-9-]+$/.test(feature.id) || ids.has(feature.id) ||
+        !strings(feature, ['group', 'name', 'says', 'status']) || !feature.name || !feature.says ||
+        !/^(?:main|stable@\d+\.\d+\.\d+|experiment:[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*|branch:[\w./-]+|review:#\d+)$/.test(feature.status) ||
+        !Array.isArray(feature.platforms) || !feature.platforms.length ||
+        !feature.platforms.every((platform: any) => platform === 'mac' || platform === 'linux') ||
+        ['note', 'added', 'flag'].some(key => key in feature && typeof feature[key] !== 'string') ||
+        ('added' in feature && !/^\d{4}-\d{2}-\d{2}$/.test(feature.added)) ||
+        ('pr' in feature && (!Number.isSafeInteger(feature.pr) || feature.pr <= 0)) ||
+        ('docs' in feature && (!Array.isArray(feature.docs) || !feature.docs.every((doc: any) => typeof doc === 'string'))) ||
         ('config' in feature && (!Array.isArray(feature.config) ||
-          !feature.config.every((c: any) => fields(c, ['key', 'value', 'does'])))) ||
+          !feature.config.every((c: any) => fields(c, ['key', 'value', 'does']) && strings(c, ['key', 'value', 'does'])))) ||
         ('shortcuts' in feature && (!Array.isArray(feature.shortcuts) ||
-          !feature.shortcuts.every((s: any) => fields(s, ['keys', 'does']))))) throw Error('Unknown feature');
+          !feature.shortcuts.every((s: any) => fields(s, ['keys', 'does']) && strings(s, ['keys', 'does']))))) throw Error('Unknown feature');
       ids.add(feature.id);
       const {note, ...rest} = feature;
       return rest;
@@ -93,10 +102,11 @@ function changes(base: string, head: string): Change[] | null {
   try {
     if (git(['rev-parse', '--is-shallow-repository']).trim() !== 'false') return null;
     git(['merge-base', '--is-ancestor', base, head]);
+    const sharedPaths = inputPaths(base, head, process.cwd());
     // No rename folding: moving a file out of an owner must still select it.
     const raw = git(['diff', '--no-renames', '--no-ext-diff', '--no-textconv', '--ignore-submodules=none',
       '--raw', '--no-abbrev', '-z', base, head, '--']);
-    if (!raw) return [];
+    if (!raw) return sharedPaths.length ? null : [];
     const parts = raw.split('\0');
     if (parts.pop() !== '' || parts.length % 2 !== 0) return null;
     const result: Change[] = [];
@@ -106,7 +116,10 @@ function changes(base: string, head: string): Change[] | null {
       const [, oldMode, newMode, oldBlob, newBlob, status] = match;
       result.push({path: parts[i + 1], status, oldMode, newMode, oldBlob, newBlob});
     }
-    return result;
+    // Shared committed path facts remain authoritative for both consumers.
+    // The Mac exemption additionally needs status/mode/blob proof; disagreement
+    // cannot suppress any hosted check.
+    return isDeepStrictEqual(sharedPaths, result.map(change => change.path)) ? result : null;
   } catch {
     // Missing history cannot suppress checks.
     return null;
@@ -125,7 +138,9 @@ export function selectRange(base: string, head: string) {
   const metadata = delta?.find(change => change.path === featureMap && !unsupported(change));
   let notesOnly = false;
   if (metadata) try {
-    notesOnly = featureNotesOnly(git(['cat-file', 'blob', metadata.oldBlob]), git(['cat-file', 'blob', metadata.newBlob]));
+    const blob = (oid: string) => new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(
+      execFileSync('git', ['cat-file', 'blob', oid], {maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe']}));
+    notesOnly = featureNotesOnly(blob(metadata.oldBlob), blob(metadata.newBlob));
   } catch { /* Unreadable metadata cannot suppress Mac. */ }
   return {...select(paths), ...macDecision(paths, delta?.filter(unsupported).map(change => change.path) ?? null, notesOnly)};
 }

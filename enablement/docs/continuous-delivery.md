@@ -470,7 +470,8 @@ boundary and grants no native acceptance to the underlying product change.
 `public/site/src/features.json` is not generally exempt. Only direct `note`
 strings on existing feature entries may be added, edited or removed; all other
 parsed data, including entry order, must remain equal. Invalid JSON, duplicate
-feature IDs, non-string notes and unknown schema fields retain Mac verification.
+feature IDs, malformed UTF-8, unsupported schema types/status/platform values,
+non-string notes and unknown schema fields retain Mac verification.
 Platform support, status, config/flags, shortcuts, docs, feature membership and
 unknown contracts cannot enter through this exception. No English wording, PR
 number or commit identity controls it. Public's `features.ts`, map rendering and
@@ -480,7 +481,10 @@ portable contracts and Public web verification stay selected for note edits.
 The metadata is not a runtime or native build input. A future consumer/schema
 change remains outside the allowlist and needs a new boundary review.
 
-The exact rules live in `enablement/ci/select.ts`. Selection reads committed blobs
+The exact rules live in `enablement/ci/select.ts`. Hosted selection consumes
+`inputs.ts`'s shared committed path facts and requires agreement with its extra
+raw status/mode/blob proof before granting any Mac exemption. The local-only
+concurrency-control proof never exempts hosted Mac verification. Selection reads committed blobs
 and the complete current PR base-to-proposed-merge delta, including earlier
 unverified commits and both sides of renames. Empty/unknown, shallow, missing or
 divergent history, additions, deletions, renames, type changes, symlink edits and
