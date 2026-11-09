@@ -1,9 +1,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync, readdirSync, mkdtempSync, rmSync, mkdirSync, writeFileSync} from 'node:fs';
+import {readFileSync, readdirSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync, unlinkSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {YAML} from 'bun';
-import {select, changedPaths, documentationOnlyPath, needsPlatform} from './select.ts';
+import {select, changedPaths, requiresMac, documentationOnlyPath, needsPlatform} from './select.ts';
 
 const root = new URL('../../', import.meta.url);
 const workflow = (name: string) => YAML.parse(readFileSync(new URL(`.github/workflows/${name}`, root), 'utf8')) as any;
@@ -51,15 +51,15 @@ test('main preserves active checks while PR updates supersede them', () => {
   }
 });
 
-test('ready PRs and main pushes execute both full platform jobs; drafts and other events cannot', () => {
+test('platform admission composes documentation and portable Settings selection', () => {
   const ci = workflow('checks.yml');
   const platform = workflow('verification-platform.yml');
   // Evaluate the workflow's actual boolean admission expressions against event
   // fixtures. These expressions use the common GitHub/JavaScript boolean subset.
   const admitted = (expression: string, event: string, draft: boolean, ref: string,
-    receipt = false) => Function('github', 'inputs', 'needs', `return (${expression});`)(
+    receipt = false, macos = 'true', platform = 'true') => Function('github', 'inputs', 'needs', `return (${expression});`)(
       {event_name: event, ref, repository: 'tryapparent/apparent',
-        event: {pull_request: {draft}}}, {'release_receipt': receipt}, {select: {outputs: {platform: 'true'}}});
+        event: {pull_request: {draft}}}, {'release_receipt': receipt}, {select: {outputs: {macos, platform}}});
   for (const [name, runner] of [['linux', 'ubuntu-24.04'], ['macos', 'macos-15-intel']]) {
     const job = ci.jobs[name];
     assert.equal(job.uses, './.github/workflows/verification-platform.yml');
@@ -72,9 +72,13 @@ test('ready PRs and main pushes execute both full platform jobs; drafts and othe
       ['workflow_run', false, 'refs/heads/main', false],
       ['pull_request_target', false, 'refs/heads/main', false],
     ] as const) {
-      assert.deepEqual(job.needs, name === 'linux' ? 'select' : ['select', 'linux', 'contracts', 'hermes']);
       assert.equal(admitted(job.if, event, draft, ref), expected);
-      assert.equal(admitted(job.if.replaceAll("needs.select.outputs.platform == 'true'", 'false'), event, draft, ref), false);
+      for (const selection of ['false', 'true', '']) {
+        for (const platform of ['false', 'true', '']) {
+          assert.equal(admitted(job.if, event, draft, ref, false, selection, platform),
+            expected && platform !== 'false' && !(name === 'macos' && event === 'pull_request' && selection === 'false'));
+        }
+      }
       if (expected) for (const child of ['rust', 'desktop-ui']) {
         assert.equal(admitted(platform.jobs[child].if, event, draft, ref), true, child);
         assert.equal(platform.jobs[child]['continue-on-error'], undefined);
@@ -83,6 +87,10 @@ test('ready PRs and main pushes execute both full platform jobs; drafts and othe
       assert.equal(admitted(platform.jobs['release-ready'].if, event, draft, ref), false);
     }
   }
+  assert.deepEqual(ci.jobs.macos.needs, ['linux', 'contracts', 'hermes', 'select']);
+  assert.equal(ci.jobs.linux.needs, 'select');
+  assert.equal(ci.jobs.select.outputs.macos, '${{ steps.paths.outputs.macos }}');
+  assert.equal(ci.jobs.select.outputs.platform, '${{ steps.paths.outputs.platform }}');
   assert.equal(platform.on.workflow_call.inputs['release_receipt'].default, true);
   assert.equal(admitted(platform.jobs['release-ready'].if, 'workflow_dispatch', false, 'refs/heads/main', true), true);
   assert.equal(admitted(platform.jobs['release-ready'].if, 'pull_request', false, 'refs/pull/7/merge', true), false);
@@ -90,8 +98,7 @@ test('ready PRs and main pushes execute both full platform jobs; drafts and othe
     assert.deepEqual(Object.keys(workflow(filename).on), ['workflow_dispatch']);
   }
   assert.match(ci.concurrency.group, /github.event.pull_request.number/);
-  assert.equal(ci.concurrency['cancel-in-progress'], "${{ github.event_name == 'pull_request' }}");
-  assert.match(ci.concurrency.group, /github.sha/);
+  assert.match(ci.concurrency['cancel-in-progress'], /pull_request/);
   assert.equal(ci.permissions.contents, 'read');
 });
 
@@ -136,6 +143,28 @@ test('every automatic Mac entrypoint waits for successful Linux verification and
       assert.equal(ci.jobs[entry]['continue-on-error'], undefined, entry);
     }
   }
+  const admitted = (name: string, results: Record<string, string>, macos: string, platform = 'true') =>
+    ancestors(name).every(parent => (results[parent] ?? 'success') === 'success') &&
+    Function('github', 'needs', `return (${ci.jobs[name].if});`)(
+      {event_name: 'pull_request', event: {pull_request: {draft: false}}},
+      {select: {outputs: {macos, platform}}});
+  for (const name of ['macos', 'hermes-macos']) {
+    for (const parent of ['linux', 'contracts', 'hermes']) {
+      for (const result of ['failure', 'skipped', 'cancelled']) {
+        for (const selected of ['true', 'false']) {
+          assert.equal(admitted(name, {[parent]: result}, selected), false,
+            `${name} with ${parent} ${result}, selected ${selected}`);
+        }
+      }
+    }
+  }
+  assert.equal(admitted('macos', {}, 'false'), false);
+  assert.equal(admitted('macos', {}, 'true'), true);
+  assert.equal(admitted('macos', {select: 'failure'}, 'true'), false);
+  assert.equal(admitted('hermes-macos', {}, 'false'), true);
+  assert.equal(admitted('macos', {}, 'true', 'false'), false);
+  assert.equal(admitted('hermes-macos', {}, 'false', 'false'), false);
+  assert.equal(admitted('macos', {}, '', ''), true);
   assert.equal(ci.jobs.hermes['runs-on'], 'ubuntu-24.04');
   assert.equal(ci.jobs.hermes.needs, undefined, 'cheap inspection must not wait for full suites');
 });
@@ -146,7 +175,9 @@ test('Mac inspection preserves its checks but runs only for ready PRs and main p
   assert.ok(inspection);
   assert.equal(inspection['runs-on'], 'macos-15-intel');
   assert.deepEqual(inspection.steps, ci.jobs.hermes.steps);
-  assert.equal(inspection.if, ci.jobs.macos.if);
+  // The Settings exemption applies to the platform workflow; Hermes keeps
+  // main's own event admission and Linux-first checks.
+  assert.equal(inspection.if, ci.jobs.linux.if);
 });
 
 test('unknown history runs all checks and git deltas include deleted and renamed owner paths', () => {
@@ -170,13 +201,79 @@ test('unknown history runs all checks and git deltas include deleted and renamed
     const paths = changedPaths(base, git('rev-parse', 'HEAD'))!;
     assert.deepEqual(paths.sort(), ['outside.txt', 'public/site/old.txt']);
     assert.equal(select(paths).public, true);
+    assert.deepEqual(changedPaths(base, git('rev-parse', 'HEAD'), true), ['outside.txt', 'public/site/old.txt']);
+    assert.equal(requiresMac(paths, changedPaths(base, git('rev-parse', 'HEAD'), true)), true);
     assert.equal(changedPaths('a'.repeat(40), git('rev-parse', 'HEAD')), null);
+    const card = 'capture/desktop/ui/frontend/src/storage.tsx';
+    mkdirSync('capture/desktop/ui/frontend/src', {recursive: true});
+    const runSelector = (from: string) => {
+      const output = dir + '/selection.txt';
+      writeFileSync(output, '');
+      execFileSync(process.execPath, [new URL('enablement/ci/select.ts', root).pathname], {
+        env: {...process.env, BASE_SHA: from, GITHUB_SHA: git('rev-parse', 'HEAD'), GITHUB_OUTPUT: output},
+      });
+      return Object.fromEntries(readFileSync(output, 'utf8').trim().split('\n').map(line => line.split('=')));
+    };
+    const beforeAdd = git('rev-parse', 'HEAD');
+    writeFileSync(card, 'before');
+    git('add', card); git('commit', '-qm', 'add card');
+    assert.equal(runSelector(beforeAdd).macos, 'true');
+    const beforeEdit = git('rev-parse', 'HEAD');
+    writeFileSync(card, 'after');
+    git('add', card); git('commit', '-qm', 'edit card');
+    assert.deepEqual(runSelector(beforeEdit), {public: 'false', updater: 'false', macos: 'false', platform: 'true'});
+    const mixedDoc = 'capture/engine/docs/mixed.md';
+    mkdirSync('capture/engine/docs', {recursive: true});
+    writeFileSync(mixedDoc, 'before');
+    git('add', mixedDoc); git('commit', '-qm', 'mixed fixture baseline');
+    const beforeMixed = git('rev-parse', 'HEAD');
+    writeFileSync(card, 'another renderer edit');
+    writeFileSync(mixedDoc, 'after');
+    git('add', card, mixedDoc); git('commit', '-qm', 'mixed renderer and docs');
+    assert.deepEqual(runSelector(beforeMixed), {public: 'false', updater: 'false', macos: 'true', platform: 'true'},
+      'filtering prose for Public must not broaden the exact Mac exemption');
+    const beforeType = git('rev-parse', 'HEAD');
+    unlinkSync(card); symlinkSync('retention.tsx', card);
+    git('add', card); git('commit', '-qm', 'change card type');
+    assert.equal(runSelector(beforeType).macos, 'true');
+    const beforeDelete = git('rev-parse', 'HEAD');
+    git('rm', card); git('commit', '-qm', 'remove card');
+    assert.equal(runSelector(beforeDelete).macos, 'true');
+    const beforeDocs = git('rev-parse', 'HEAD');
+    mkdirSync('capture/engine/docs', {recursive: true});
+    writeFileSync('capture/engine/docs/guide.md', 'ordinary documentation');
+    git('add', 'capture/engine/docs/guide.md'); git('commit', '-qm', 'docs');
+    assert.deepEqual(runSelector(beforeDocs), {public: 'false', updater: 'false', macos: 'true', platform: 'false'});
+    assert.deepEqual(runSelector('a'.repeat(40)), {public: 'true', updater: 'true', macos: 'true', platform: 'true'});
+
   } finally {
     process.chdir(previous);
     rmSync(dir, {recursive: true, force: true});
   }
 });
 
+test('Mac exemption is exact, nonempty, modification-only and fails closed', () => {
+  const prefix = 'capture/desktop/ui/frontend/';
+  const allowed = ['storage', 'retention', 'connect-settings', 'error-reporting', 'reference']
+    .map(name => prefix + 'src/' + name + '.tsx');
+  assert.equal(requiresMac(allowed), false);
+  for (const path of allowed) {
+    assert.equal(requiresMac([path]), false);
+    assert.equal(requiresMac([path], [path]), true);
+  }
+  for (const path of ['src/new.tsx', 'src/style.css', 'src/settings.tsx', 'src/bridge.ts',
+    'src/notes/index.tsx', 'src/onboarding/onboarding.tsx', 'electron/main.cjs',
+    'electron/preload.cjs', 'package-lock.json', 'tests/storage-smoke.cjs']) {
+    assert.equal(requiresMac([...allowed, prefix + path]), true, path);
+  }
+  for (const path of ['shared/ui/src/button.tsx', 'capture/desktop/mod.rs',
+    '.github/workflows/checks.yml', 'enablement/ci/select.ts', 'README.md']) {
+    assert.equal(requiresMac([...allowed, path]), true, path);
+  }
+  assert.equal(requiresMac(null), true);
+  assert.equal(requiresMac([]), true);
+  assert.equal(requiresMac(allowed, null), true);
+});
 
 test('ordinary prose skips heavy CI; instructions, shipped text and unknown inputs retain coverage', () => {
   for (const path of ['capture/desktop/docs/linux/linux.md', 'enablement/docs/continuous-delivery.md',
