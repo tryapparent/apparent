@@ -253,8 +253,44 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     await startRust();
     application = await electron.launch({ args: [root], env, timeout: budget(15000) });
     electronChild = application.process();
+    const launchedAt = Date.now();
+    report.electronBootstrap = { pid: electronChild.pid, stderrTail: '' };
+    electronChild.stderr?.on('data', chunk => {
+      report.electronBootstrap.stderrTail = (report.electronBootstrap.stderrTail + chunk.toString()).slice(-8192);
+    });
+    electronChild.once('exit', (code, signal) => {
+      report.electronBootstrap.exit = { code, signal, elapsedMs: Date.now() - launchedAt,
+        duringCleanup: report.electronBootstrap.cleanupStartedMs !== undefined };
+    });
     // launch() attaches to the main process before app.whenReady() creates a window.
-    page = await application.firstWindow({ timeout: budget() });
+    // Start the existing window deadline before diagnostics; observation must not
+    // buy extra startup time or turn cleanup's exit into a bootstrap failure.
+    const firstWindow = application.firstWindow({ timeout: budget() });
+    const bootstrap = within(application.evaluate(({ app, BrowserWindow }) => {
+      const events = [];
+      globalThis.__apparentStorageWindowProbe = events;
+      app.once('ready', () => events.push({ kind: 'ready', at: Date.now() }));
+      app.on('browser-window-created', (_, window) => {
+        if (events.length < 8) events.push({ kind: 'window', id: window.id, at: Date.now() });
+      });
+      return { pid: process.pid, ready: app.isReady(), windows: BrowserWindow.getAllWindows().map(window => window.id) };
+    }), budget(1500), 'Electron bootstrap observation').then(value => {
+      assert.equal(value.pid, electronChild.pid);
+      report.electronBootstrap.initial = value;
+    }).catch(error => { report.electronBootstrap.observationError = error.message; });
+    try {
+      page = await firstWindow;
+    } catch (error) {
+      await bootstrap;
+      try {
+        report.electronBootstrap.failure = await within(application.evaluate(({ app, BrowserWindow }) => ({
+          pid: process.pid, ready: app.isReady(), events: globalThis.__apparentStorageWindowProbe ?? [],
+          windows: BrowserWindow.getAllWindows().map(window => ({ id: window.id, visible: window.isVisible() })),
+        })), budget(1500), 'Failed Electron bootstrap observation');
+      } catch (diagnosticError) { report.electronBootstrap.failureObservationError = diagnosticError.message; }
+      throw error;
+    }
+    await bootstrap;
     report.electron = await within(application.evaluate(({ app, BrowserWindow }) => ({
       pid: process.pid, version: process.versions.electron, platform: process.platform,
       home: process.env.HOME, userData: app.getPath('userData'),
@@ -427,6 +463,10 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
         killed: error.cause.killed, stderr: error.cause.stderr } };
     if (page && Date.now() < deadline) {
       try {
+        report.storageFailure = await page.getByRole('region', { name: 'Capture location', exact: true })
+          .locator(':scope > [role="status"]').innerText({ timeout: budget(1000) });
+      } catch (diagnosticError) { report.storageFailureUnavailable = diagnosticError.message; }
+      try {
         report.errorReportingFailure = {
           rendered: await page.getByRole('region', { name: 'Send technical error reports', exact: true }).innerText({ timeout: budget(2000) }),
           readback: await within(page.evaluate(() => window.apparent.readErrorReporting()), budget(), 'Failed reporting readback'),
@@ -454,6 +494,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       }
     }
   } finally {
+    if (report.electronBootstrap) report.electronBootstrap.cleanupStartedMs = Date.now();
     if (application) {
       try { await within(application.close(), 3000, 'Electron close'); }
       catch (error) { report.cleanup.electronCloseError = error.message; }

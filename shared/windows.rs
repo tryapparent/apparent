@@ -683,6 +683,10 @@ fn run(
     loop {
         let finishing = stopping.load(Ordering::Acquire);
         let t = started_at.elapsed().as_millis() as u64;
+        #[cfg(target_os = "linux")]
+        let cursor = crate::capture::desktop::linux::interaction_position()
+            .map(|(x, y)| [x as f32, y as f32]);
+        #[cfg(not(target_os = "linux"))]
         let cursor = crate::capture::engine::runtime::current_mouse_screen();
         if let Some([x, y]) = cursor {
             log.push_cursor(t, f64::from(x) - frame.x, f64::from(y) - frame.y, frame);

@@ -1819,10 +1819,21 @@ pub fn annotate_and_crop(
                 workers.into_iter().map(|w| w.join().ok()).collect()
             });
             // A crop bug must never cost the capture: fall back to the full frames.
-            let crops = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut crops = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 compute(&input, settings)
             }))
             .ok()?;
+            let whole_unlocated = settings.scope == Scope::Whole && selected.iter().any(|(keyframe, _)|
+                keyframe.reason == crate::shared::model::KeyframeReason::ClickUnavailable);
+            for ((keyframe, _), crop) in selected.iter().zip(&mut crops) {
+                if whole_unlocated || keyframe.reason == crate::shared::model::KeyframeReason::ClickUnavailable {
+                    // Focus is not evidence of where an unlocated press landed.
+                    crop.rect = FULL;
+                    crop.kind = CropKind::Full;
+                    crop.reason = "click position unavailable: the whole screen".into();
+                    crop.apps.clear();
+                }
+            }
             crops
                 .iter()
                 .any(|c| c.kind != CropKind::Full)
@@ -1963,6 +1974,57 @@ mod tests {
             mark_id: None,
             cursor: Some([0.5, 0.5]),
         }
+    }
+
+    #[test]
+    fn an_unlocated_click_keeps_pixels_outside_the_focused_window() {
+        let target = TargetInfo {
+            mode: CaptureMode::Display, app: None, bundle_id: None,
+            window_title: None, window_id: None, display_id: 1, frame: FRAME,
+        };
+        let windows = [WindowSnapshot {
+            t: 0, windows: vec![window(1, "Editor", [100, 100, 600, 400], true)],
+        }];
+        let mut action = keyframe(1, 1000);
+        action.reason = KeyframeReason::ClickUnavailable;
+        action.cursor = None;
+        let mut raw = solid(1728, 1117, 255);
+        let pixel = (900 * 1728 + 1500) * 4;
+        raw.rgba[pixel..pixel + 4].copy_from_slice(&[10, 220, 80, 255]);
+        for video_ink in [None, Some(crate::shared::model::VideoInk::Captured),
+            Some(crate::shared::model::VideoInk::CapturedVideo)] {
+            let (frames, cropped) = annotate_and_crop(
+                vec![(action.clone(), raw.clone())], None, Some(&Settings::default()), &target,
+                2000, &[], &[], &[InteractionEvent::ClickUnavailable {
+                    t: 1000, button: "left".into(), time_source: Some("evdev_monotonic".into()),
+                }], &windows, &[], video_ink,
+            );
+            assert_eq!((frames[0].1.width, frames[0].1.height), (1728, 1117));
+            assert_eq!(&frames[0].1.rgba[pixel..pixel + 4], &[10, 220, 80, 255]);
+            assert!(cropped.is_none(), "focus alone cannot locate an unobserved click");
+        }
+    }
+
+    #[test]
+    fn an_unlocated_click_keeps_whole_scope_consistent() {
+        let target = TargetInfo {
+            mode: CaptureMode::Display, app: None, bundle_id: None,
+            window_title: None, window_id: None, display_id: 1, frame: FRAME,
+        };
+        let windows = [WindowSnapshot {
+            t: 0, windows: vec![window(1, "Editor", [100, 100, 600, 400], true)],
+        }];
+        let mut unknown = keyframe(2, 1000);
+        unknown.reason = KeyframeReason::ClickUnavailable;
+        unknown.cursor = None;
+        let raw = solid(1728, 1117, 255);
+        let settings = Settings { scope: Scope::Whole, ..Default::default() };
+        let (frames, cropped) = annotate_and_crop(
+            vec![(keyframe(1, 300), raw.clone()), (unknown, raw)], None,
+            Some(&settings), &target, 2000, &[], &[], &[], &windows, &[], None,
+        );
+        assert!(frames.iter().all(|(_, frame)| (frame.width, frame.height) == (1728, 1117)));
+        assert!(cropped.is_none(), "whole scope must use one conservative crop");
     }
 
     #[test]

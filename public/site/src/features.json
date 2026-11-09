@@ -125,7 +125,7 @@
           "does": "Set false for intentional silent captures; applies to the next screen capture without changing the selected microphone device"
         }
       ],
-      "note": "Enabled by default. Rust persists notes before acknowledgement. The notes-only Electron surface does not replace the picker, native drawing or the complete recording capsule. Linux display video includes the visible popup, including drafts; unsaved text is excluded from note metadata and summary. Native platform acceptance is required before release.",
+      "note": "Enabled by default. Rust persists notes before acknowledgement. The notes-only Electron surface does not replace the picker, native drawing or the complete recording capsule. Linux display video includes the visible popup, including drafts; unsaved text is excluded from note metadata and summary. On GNOME/KDE Wayland, a polled Shift-click has no verified event-time position and reports position unavailable instead of opening a note at a guessed point. Native platform acceptance is required before release.",
       "docs": [
         "capture/engine/docs/keyframes-and-text.md",
         "capture/desktop/ui/frontend/README.md"
@@ -437,6 +437,7 @@
       "says": "⇧-click drops a numbered pin: a brief pulse on screen, a mark on the keyframe.",
       "status": "stable@0.3.4",
       "platforms": ["mac", "linux"],
+      "note": "On GNOME/KDE Wayland, polled Shift-clicks report position unavailable instead of placing a guessed pin. Drawing requires fresh core/XI2 motion delivered to the owned overlay; a pointer request alone does not prove acquisition. Relative-mouse held ink verified on GNOME 46 and Plasma 5.27, including GNOME 2×. Initial acquisition can be delayed and earlier motion is omitted.",
       "shortcuts": [{ "keys": "⇧ click", "does": "Drop a numbered pin" }],
       "docs": ["README.md#capture-controls"]
     },
@@ -460,7 +461,7 @@
       "says": "Clicks, drags and scrolls reach the app underneath and are recorded; keyframes show a ripple.",
       "status": "stable@0.3.4",
       "platforms": ["mac", "linux"],
-      "note": "Over Wayland apps the Linux preview's click positions can be stale.",
+      "note": "On GNOME/KDE Wayland, ordinary button presses retain timing with position unavailable, without a ripple or inferred target; this also covers XWayland apps until a reliable source can distinguish them. Hyprland uses its compositor adapter. Relative-mouse fallback verified on GNOME 46 and Plasma 5.27 with separate native Wayland/XWayland clients; GNOME scaled and offset-output bundles inspected.",
       "docs": ["README.md#capture-controls"]
     },
     {

@@ -13,6 +13,7 @@ use x11rb::connection::Connection;
 use x11rb::protocol::randr::ConnectionExt as _;
 use x11rb::protocol::shape::SK;
 use x11rb::protocol::xfixes::ConnectionExt as _;
+use x11rb::protocol::xinput::ConnectionExt as _;
 use x11rb::protocol::xproto::{
     AtomEnum, ChangeWindowAttributesAux, ClientMessageEvent, ConfigureWindowAux,
     ConnectionExt as _, EventMask, InputFocus, MapState, PropMode, StackMode, Window,
@@ -266,6 +267,9 @@ pub struct PointerState {
 pub fn pointer_state() -> Option<PointerState> {
     let x = x()?;
     let reply = x.conn.query_pointer(x.root).ok()?.reply().ok()?;
+    if !reply.same_screen {
+        return None;
+    }
     let mask = u16::from(reply.mask);
     let has = |bit: x11rb::protocol::xproto::KeyButMask| mask & u16::from(bit) != 0;
     use x11rb::protocol::xproto::KeyButMask as M;
@@ -284,6 +288,103 @@ pub fn pointer_state() -> Option<PointerState> {
 /// The pointer's global position in pixels.
 pub fn cursor_position() -> Option<(f64, f64)> {
     pointer_state().map(|p| (p.x, p.y))
+}
+
+/// Coordinates delivered to the exact owned ink window, never a root-pointer
+/// query. A new connection per request generation excludes queued events from
+/// an earlier Shift stroke or window placement.
+#[derive(Default)]
+pub struct OverlayPointer {
+    request: Option<(Window, u64)>,
+    connection: Option<(RustConnection, Window)>,
+    point: Option<(f64, f64)>,
+}
+
+impl OverlayPointer {
+    pub fn poll(&mut self, request: Option<(Window, u64)>) -> Option<(f64, f64)> {
+        if self.request != request {
+            self.request = request;
+            self.point = None;
+            self.connection = None;
+            if let Some((id, generation)) = request {
+                crate::capture::engine::runtime::apparent_log(format!(
+                    "ink pointer request: window={id:#x} generation={generation}"
+                ));
+                let Ok((conn, screen)) = RustConnection::connect(None) else {
+                    crate::capture::engine::runtime::apparent_log("ink pointer unavailable: X11 connection failed");
+                    return None;
+                };
+                let Some(root) = conn.setup().roots.get(screen).map(|screen| screen.root) else {
+                    crate::capture::engine::runtime::apparent_log("ink pointer unavailable: X11 root missing");
+                    return None;
+                };
+                let subscribed = conn.change_window_attributes(id, &ChangeWindowAttributesAux::new().event_mask(
+                    EventMask::POINTER_MOTION | EventMask::LEAVE_WINDOW | EventMask::STRUCTURE_NOTIFY,
+                )).ok().and_then(|cookie| cookie.check().ok()).is_some();
+                if !subscribed {
+                    crate::capture::engine::runtime::apparent_log("ink pointer unavailable: event subscription failed");
+                    return None;
+                }
+                // XWayland/GPUI deliver XI2 motion even when no core MotionNotify
+                // reaches another client. Select only motion/leave on our owned
+                // surface; never subscribe to buttons or desktop-wide raw input.
+                let xi2 = conn.xinput_xi_query_version(2, 0).ok()
+                    .and_then(|cookie| cookie.reply().ok()).is_some_and(|version| version.major_version >= 2)
+                    && conn.xinput_xi_select_events(id, &[x11rb::protocol::xinput::EventMask {
+                        deviceid: 1, // XIAllMasterDevices, matching GPUI's surface input.
+                        mask: vec![x11rb::protocol::xinput::XIEventMask::MOTION
+                            | x11rb::protocol::xinput::XIEventMask::LEAVE],
+                    }]).ok().and_then(|cookie| cookie.check().ok()).is_some();
+                self.connection = Some((conn, root));
+                crate::capture::engine::runtime::apparent_log(format!(
+                    "ink pointer subscribed: window={id:#x} source={}",
+                    if xi2 { "core+xi2" } else { "core" },
+                ));
+            }
+        }
+        let (id, _) = request?;
+        let (conn, root) = self.connection.as_ref()?;
+        loop {
+            let event = match conn.poll_for_event() {
+                Ok(Some(event)) => event,
+                Ok(None) => break,
+                Err(_) => { self.point = None; break; }
+            };
+            let acquired = self.point.is_some();
+            observe_overlay_event(&mut self.point, event, id, *root);
+            if acquired != self.point.is_some() {
+                crate::capture::engine::runtime::apparent_log(format!(
+                    "ink pointer {}: window={id:#x}",
+                    if self.point.is_some() { "acquired" } else { "invalidated" },
+                ));
+            }
+        }
+        self.point
+    }
+}
+
+fn observe_overlay_event(point: &mut Option<(f64, f64)>, event: x11rb::protocol::Event,
+    id: Window, root: Window) {
+    use x11rb::protocol::Event;
+    match event {
+        Event::MotionNotify(event) if event.event == id && event.root == root
+            && event.same_screen && event.response_type & 0x80 == 0 => {
+            *point = Some((f64::from(event.root_x), f64::from(event.root_y)));
+        }
+        Event::XinputMotion(event) if event.event == id && event.root == root
+            && event.response_type & 0x80 == 0
+            && event.valuator_mask.first().is_some_and(|mask| mask & 3 != 0) => {
+            // XI2 positions are signed 16.16 X-root pixels, including fractions
+            // and negative output origins. They are not normalized device axes.
+            *point = Some((f64::from(event.root_x) / 65536.0, f64::from(event.root_y) / 65536.0));
+        }
+        Event::LeaveNotify(event) if event.event == id => *point = None,
+        Event::XinputLeave(event) if event.event == id => *point = None,
+        Event::UnmapNotify(event) if event.window == id => *point = None,
+        Event::DestroyNotify(event) if event.window == id => *point = None,
+        Event::ConfigureNotify(event) if event.window == id => *point = None,
+        _ => {}
+    }
 }
 
 /// Keysyms by keycode, read once (and again when the layout changes, `refresh_keymap`).
@@ -946,6 +1047,90 @@ pub fn capture_rect(rect: [f64; 4]) -> anyhow::Result<crate::shared::model::Rgba
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overlay_position_requires_owned_motion_and_expires_on_leave_or_move() {
+        use x11rb::protocol::{Event, xproto::{MotionNotifyEvent, LeaveNotifyEvent, ConfigureNotifyEvent}};
+        let motion = MotionNotifyEvent { response_type: 6, event: 7, root: 3,
+            root_x: -120, root_y: 240, same_screen: true, ..Default::default() };
+        let mut point = None;
+        observe_overlay_event(&mut point, Event::MotionNotify(MotionNotifyEvent { event: 8, ..motion }), 7, 3);
+        assert!(point.is_none());
+        observe_overlay_event(&mut point, Event::MotionNotify(MotionNotifyEvent { response_type: 0x86, ..motion }), 7, 3);
+        assert!(point.is_none());
+        observe_overlay_event(&mut point, Event::MotionNotify(motion), 7, 3);
+        assert_eq!(point, Some((-120.0, 240.0)));
+        observe_overlay_event(&mut point, Event::LeaveNotify(LeaveNotifyEvent { event: 7, ..Default::default() }), 7, 3);
+        assert!(point.is_none());
+        observe_overlay_event(&mut point, Event::MotionNotify(motion), 7, 3);
+        observe_overlay_event(&mut point, Event::ConfigureNotify(ConfigureNotifyEvent { window: 7, ..Default::default() }), 7, 3);
+        assert!(point.is_none());
+        let mut tracker = OverlayPointer { request: Some((7, 1)), connection: None, point: Some((1.0, 2.0)) };
+        assert!(tracker.poll(None).is_none());
+    }
+
+    #[test]
+    fn xi2_overlay_motion_keeps_fractional_roots_and_rejects_foreign_or_scroll_events() {
+        use x11rb::protocol::{Event, xinput::{MotionEvent, LeaveEvent}};
+        let motion = MotionEvent {
+            response_type: 35, event: 7, root: 3,
+            root_x: -120 * 65536 - 32768, root_y: 240 * 65536 + 16384,
+            valuator_mask: vec![3], ..Default::default()
+        };
+        let mut point = None;
+        for rejected in [
+            MotionEvent { event: 8, ..motion.clone() },
+            MotionEvent { root: 4, ..motion.clone() },
+            MotionEvent { response_type: 0xa3, ..motion.clone() },
+            MotionEvent { valuator_mask: vec![4], ..motion.clone() },
+            MotionEvent { valuator_mask: Vec::new(), ..motion.clone() },
+        ] {
+            observe_overlay_event(&mut point, Event::XinputMotion(rejected), 7, 3);
+            assert!(point.is_none());
+        }
+        observe_overlay_event(&mut point, Event::XinputMotion(motion), 7, 3);
+        assert_eq!(point, Some((-120.5, 240.25)));
+        observe_overlay_event(&mut point, Event::XinputLeave(LeaveEvent { event: 7, ..Default::default() }), 7, 3);
+        assert!(point.is_none());
+    }
+
+    #[test]
+    #[ignore = "requires an isolated X server; run under xvfb-run"]
+    fn overlay_pointer_observes_real_motion_without_reusing_a_generation() {
+        use x11rb::protocol::xproto::{CreateWindowAux, WindowClass};
+        let x = x().expect("isolated X server");
+        let id = x.conn.generate_id().unwrap();
+        x.conn.create_window(x11rb::COPY_DEPTH_FROM_PARENT, id, x.root,
+            0, 0, 200, 200, 0, WindowClass::INPUT_OUTPUT, x11rb::COPY_FROM_PARENT,
+            &CreateWindowAux::new()).unwrap().check().unwrap();
+        x.conn.map_window(id).unwrap().check().unwrap();
+        let mut tracker = OverlayPointer::default();
+        assert_eq!(tracker.poll(Some((id, 1))), None);
+        let move_to = |x_pos, y_pos| {
+            x.conn.warp_pointer(x11rb::NONE, x.root, 0, 0, 0, 0, x_pos, y_pos)
+                .unwrap().check().unwrap();
+        };
+        let expect_point = |tracker: &mut OverlayPointer, generation, expected| {
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(1);
+            loop {
+                let actual = tracker.poll(Some((id, generation)));
+                if actual == expected { break; }
+                assert!(std::time::Instant::now() < until, "expected {expected:?}, got {actual:?}");
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        };
+        move_to(20, 30);
+        expect_point(&mut tracker, 1, Some((20.0, 30.0)));
+        // Leave an actual motion queued on the old connection. A new request
+        // cannot acquire that event merely because its XID remains unchanged.
+        move_to(40, 50);
+        assert_eq!(tracker.poll(Some((id, 2))), None);
+        move_to(60, 70);
+        expect_point(&mut tracker, 2, Some((60.0, 70.0)));
+        x.conn.unmap_window(id).unwrap().check().unwrap();
+        expect_point(&mut tracker, 2, None);
+        x.conn.destroy_window(id).unwrap().check().unwrap();
+    }
 
     #[test]
     #[ignore = "requires an isolated X server; run under xvfb-run"]

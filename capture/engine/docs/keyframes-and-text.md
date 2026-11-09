@@ -50,6 +50,21 @@ Each app reserves the model for itself through `AssetInventory` (attributed to `
 
 ## Keyframe selection (`capture/engine/keyframes.rs`)
 
+A `click_unavailable` event retains a button press whose platform cannot locate
+it reliably. It has `t` and `button`, with no coordinates or inferred element.
+Its `click_unavailable` keyframe reason preserves an action frame without a
+cursor/ripple. Text says “clicked (position unavailable)”; export and auto-crop
+must not derive a spatial target from it. Existing located clicks keep their
+format. Linux GNOME/KDE Wayland uses this conservative fallback independently
+of the legacy pointer used to place windows.
+
+Linux retains separate left/right presses, including presses completed between
+polls. `time_source: "evdev_monotonic"` means a kernel monotonic timestamp was
+converted onto the capture clock. If that source or timestamp is unavailable,
+`"observation"` records receipt time instead; `"polled"` identifies a state-edge
+estimate. Estimated times are called out in the event text. These sources do not
+establish a position, input permission or target attribution.
+
 Timed CLI screen captures deliberately have no click/Shift ink collector. Their manifest sets `interactionTelemetry: "videoOnly"` and their summary warns that a click visible in the movie is not a recorded event or click keyframe. Reprocessing and journal-backed recovery preserve the marker; old manifests and orphaned movies without it have unknown telemetry provenance. Use the app shortcut for click and ink context (subject to OS permissions). See `capture/engine/docs/capture.md`.
 
 For fresh Hyprland screen/area movies, `videoInk: "captured"` records that live ink is already in the source pixels. Keyframes, contact sheets, mark zooms and exports preserve that recorded progression instead of drawing a second, longer-lived copy. KDE Wayland uses `"capturedVideo"`: movie consumers suppress replay, while still images reconstruct the marks hidden on release. Semantic marks still drive text, selection and crop geometry; click effects remain separate. Older or unknown sources keep legacy replay. See [export and retention](export-and-retention.md).

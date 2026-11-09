@@ -586,6 +586,9 @@ pub(crate) fn direction(dx: f32, dy: f32, threshold: f32) -> String {
 
 pub fn describe_event(event: &InteractionEvent) -> String {
     match event {
+        InteractionEvent::ClickUnavailable { time_source: Some(source), .. }
+            if source == "observation" || source == "polled" => "clicked (position unavailable; time estimated)".into(),
+        InteractionEvent::ClickUnavailable { .. } => "clicked (position unavailable)".into(),
         InteractionEvent::Click {
             x,
             y,
@@ -982,6 +985,8 @@ fn summary_markdown_formatted(
                 Some(said) => {
                     let action_marker = if flag {
                         " ⚑".to_owned()
+                    } else if frame.reason == KeyframeReason::ClickUnavailable {
+                        format!(" [{}]", frame.event)
                     } else if frame.reason == KeyframeReason::Click {
                         let compact = frame
                             .event

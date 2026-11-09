@@ -77,6 +77,43 @@ class GuestIsolationTests(unittest.TestCase):
         network = command[command.index('-netdev') + 1]
         self.assertEqual(network, 'user,id=net0,hostfwd=tcp:127.0.0.1:23456-:22,restrict=on')
 
+    @patch.object(runner.os, 'getgroups', return_value=[1234])
+    @patch.object(runner.Path, 'stat', return_value=SimpleNamespace(st_gid=1234))
+    def test_extra_output_and_relative_mouse_are_explicit_owned_devices(self, _stat, _groups):
+        directory = Path('/synthetic/job')
+        args = (directory / 'disk.qcow2', directory / 'OVMF_VARS.fd', directory, 23456, 3072)
+        default = runner.qemu_command(*args, True)
+        expanded = runner.qemu_command(*args, True, outputs=2, relative_mouse=True)
+        self.assertEqual(expanded[:len(default)], default)
+        self.assertEqual(expanded[len(default):], ['-device', 'virtio-gpu-pci,id=apparent-second-display',
+                                                 '-device', 'usb-mouse,id=apparent-relative-mouse'])
+        self.assertNotIn('virtio-gpu-pci,id=apparent-second-display', default)
+        self.assertNotIn('usb-mouse,id=apparent-relative-mouse', default)
+        with self.assertRaises(ValueError):
+            runner.qemu_command(*args, outputs=3)
+
+    def test_guest_staging_is_private_under_group_writable_umask(self):
+        with tempfile.TemporaryDirectory() as root:
+            binary, output = Path(root) / 'bin with spaces', Path(root) / 'output with spaces'
+            subprocess.run(['sh', '-c', 'umask 0002; ' + runner.guest_staging_command(str(binary), str(output))], check=True)
+            self.assertEqual(binary.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(output.stat().st_mode & 0o777, 0o700)
+
+    def test_guest_staging_refuses_existing_paths_without_chmod(self):
+        for existing_name in ('binary', 'output'):
+            with self.subTest(existing=existing_name), tempfile.TemporaryDirectory() as root:
+                binary, output = Path(root) / 'binary', Path(root) / 'output'
+                existing = Path(root) / existing_name
+                existing.mkdir()
+                existing.chmod(0o775)
+                marker = existing / 'owned-elsewhere'
+                marker.write_text('preserve')
+                result = subprocess.run(['sh', '-c', 'umask 0002; ' + runner.guest_staging_command(str(binary), str(output))],
+                                        capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(existing.stat().st_mode & 0o777, 0o775)
+                self.assertEqual(marker.read_text(), 'preserve')
+
     def test_expiry_is_armed_before_guest_boot_and_fail_closed(self):
         with tempfile.TemporaryDirectory() as scratch:
             with patch.object(runner.subprocess, "run") as command:

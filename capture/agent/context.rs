@@ -284,7 +284,7 @@ fn frame_starts(bundle: &ApparentBundle, words: Option<&[Vec<&WordTiming>]>) -> 
         let first_word = words.and_then(|w| w[i].first().map(|w| w.t0));
         let first_mark = marks_on(frame, &bundle.marks).first().map(|m| m.t0);
         // A click keyframe is cut a moment after its click.
-        let click = (frame.reason == KeyframeReason::Click)
+        let click = matches!(frame.reason, KeyframeReason::Click | KeyframeReason::ClickUnavailable)
             .then(|| {
                 bundle
                     .events
@@ -292,7 +292,7 @@ fn frame_starts(bundle: &ApparentBundle, words: Option<&[Vec<&WordTiming>]>) -> 
                     .filter(|e| {
                         matches!(
                             e,
-                            InteractionEvent::Click { .. } | InteractionEvent::Drag { .. }
+                            InteractionEvent::ClickUnavailable { .. } | InteractionEvent::Click { .. } | InteractionEvent::Drag { .. }
                         )
                     })
                     .map(InteractionEvent::timestamp_ms)
@@ -1298,6 +1298,18 @@ mod tests {
         assert_eq!(texts[0].lines, vec![format!("· 0:01 clicked{fallback} ×3")]);
         assert_eq!(texts[1].lines, vec![format!("· 0:09 clicked{fallback}")]);
         assert_eq!(texts[1].head, "");
+    }
+
+    #[test]
+    fn unavailable_click_text_belongs_to_its_action_frame() {
+        let mut b = bundle(Vec::new(), vec![
+            keyframe(1, 500, KeyframeReason::SceneChange, ""),
+            keyframe(2, 9250, KeyframeReason::ClickUnavailable, ""),
+        ]);
+        b.events = vec![InteractionEvent::ClickUnavailable { t: 9000, button: "left".into(), time_source: None }];
+        let texts = keyframe_texts(&b);
+        assert!(texts[0].lines.is_empty());
+        assert_eq!(texts[1].lines, vec!["· 0:09 clicked (position unavailable)"]);
     }
 
     #[cfg(target_os = "linux")]

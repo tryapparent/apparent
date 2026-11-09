@@ -592,6 +592,7 @@ pub fn annotate_keyframe_marks_in_place(
     }
     let click = events
         .iter()
+        .filter(|_| keyframe.reason != KeyframeReason::ClickUnavailable)
         .filter_map(|event| match event {
             InteractionEvent::Click { t, x, y, .. } if t.abs_diff(keyframe.t) <= 600 => {
                 Some((t.abs_diff(keyframe.t), [*x, *y]))
@@ -2157,6 +2158,21 @@ mod tests {
             let i = (y * 1280 + x) * 4;
             assert!(after.rgba[i] > 20, "({x}, {y}) hides the screen");
         }
+    }
+
+    #[test]
+    fn unavailable_click_does_not_borrow_a_nearby_click_ripple() {
+        let base = solid(1280, 800, [240, 240, 240, 255]);
+        let mut keyframe = key(1);
+        keyframe.reason = KeyframeReason::ClickUnavailable;
+        keyframe.cursor = None;
+        let events = vec![InteractionEvent::Click {
+            t: keyframe.t, x: 0.5, y: 0.5,
+            button: None, label: None, role: None,
+        }];
+        let after = render_annotated_keyframe(&base, &keyframe, &[], &[], &events);
+        let without_click = render_annotated_keyframe(&base, &keyframe, &[], &[], &[]);
+        assert!(after.rgba == without_click.rgba, "unavailable action borrowed a located ripple");
     }
 
     #[test]

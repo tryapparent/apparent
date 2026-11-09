@@ -192,7 +192,10 @@ def arm_expiry(directory, seconds):
     return unit
 
 
-def qemu_command(overlay, vars_copy, directory, port, memory, isolated_network=False):
+def qemu_command(overlay, vars_copy, directory, port, memory, isolated_network=False,
+                 outputs=1, relative_mouse=False):
+    if outputs not in (1, 2):
+        raise ValueError('only one or two isolated virtual outputs are supported')
     command = [
         "qemu-system-x86_64", "-name", "scrawl-gui-" + directory.name,
         "-machine", "q35,accel=kvm", "-cpu", "host", "-smp", "4", "-m", str(memory),
@@ -207,6 +210,10 @@ def qemu_command(overlay, vars_copy, directory, port, memory, isolated_network=F
         "-qmp", "unix:" + str(directory / "qmp.sock") + ",server=on,wait=off",
         "-monitor", "none", "-serial", "none",
     ]
+    if outputs == 2:
+        command.extend(['-device', 'virtio-gpu-pci,id=apparent-second-display'])
+    if relative_mouse:
+        command.extend(['-device', 'usb-mouse,id=apparent-relative-mouse'])
     kvm_group = Path("/dev/kvm").stat().st_gid
     if kvm_group in os.getgroups():
         return command
@@ -222,6 +229,13 @@ def ssh_prefix(port, key, known_hosts, user):
     return ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3",
             "-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=" + str(known_hosts),
             "-i", str(key), "-p", str(port), f"{user}@127.0.0.1"]
+
+
+def guest_staging_command(binary_directory, output_directory):
+    # Fresh UUID names only. mkdir (without -p) fails rather than repairing or
+    # reusing an existing directory; mode is independent of the guest's umask.
+    return ('mkdir -m 700 -- ' + shlex.quote(binary_directory) +
+            ' && mkdir -m 700 -- ' + shlex.quote(output_directory))
 
 
 def desktop_probe(desktop):
@@ -277,6 +291,10 @@ def main():
     parser.add_argument("--scenario", type=Path, required=True, help="guest bash script; runs after the selected desktop starts")
     parser.add_argument("--desktop", choices=('hyprland', 'gnome', 'kde'), default='hyprland',
                         help="required test-user Wayland desktop (default: hyprland)")
+    parser.add_argument("--outputs", type=int, choices=(1, 2), default=1,
+                        help="virtual GPU outputs (default: 1; 2 adds a separate virtio GPU)")
+    parser.add_argument("--relative-mouse", action="store_true",
+                        help="add an owned USB relative mouse alongside the existing tablet")
     parser.add_argument("--audio-file", type=Path, help="optional WAV stimulus staged inside the guest")
     parser.add_argument("--binary", type=Path, required=True, help="candidate executable (sibling .so files are staged too)")
     parser.add_argument("--results", type=Path, required=True, help="new directory; retained after the run")
@@ -297,7 +315,8 @@ def main():
     scenario_completed = False
     start = time.monotonic()
     deadline = start + args.job_timeout
-    status = {'version': 1, 'desktop': args.desktop, 'stage': 'preflight', 'progress': ['preflight'],
+    status = {'version': 1, 'desktop': args.desktop, 'outputs': args.outputs,
+              'relative_mouse': args.relative_mouse, 'stage': 'preflight', 'progress': ['preflight'],
               'environment': 'unknown', 'driver': 'running', 'product': 'unrun',
               'unrun': ['scenario'], 'scenario_exit': None, 'candidate_sha256': None,
               'primary_failure': None, 'secondary_failures': [], 'artifact_retention': 'not_attempted',
@@ -340,7 +359,8 @@ def main():
         vars_copy = directory / "OVMF_VARS.fd"
         copy_firmware(args.ovmf_vars, vars_copy)
         port = available_port()
-        command = qemu_command(overlay, vars_copy, directory, port, args.memory, args.isolated_network)
+        command = qemu_command(overlay, vars_copy, directory, port, args.memory,
+                               args.isolated_network, args.outputs, args.relative_mouse)
         # The user manager survives a SIGKILL or OOM kill of this runner.
         # Refuse to boot at all if that independent expiry cannot be armed.
         expiry_unit = arm_expiry(directory, args.job_timeout)
@@ -372,7 +392,7 @@ def main():
             remote = "/home/" + args.ssh_user + "/scrawl-gui-scenario-" + uuid.uuid4().hex + ".sh"
             guest_output = "/home/" + args.ssh_user + "/scrawl-gui-output-" + uuid.uuid4().hex
             guest_bin = "/home/" + args.ssh_user + "/scrawl-gui-bin-" + uuid.uuid4().hex
-            call(prefix + ["mkdir -p " + shlex.quote(guest_bin)], timeout=10)
+            call(prefix + [guest_staging_command(guest_bin, guest_output)], timeout=10)
             files = [args.binary.resolve()] + sorted(args.binary.parent.glob("lib*.so*"))
             transfer = ["scp", "-q", "-P", str(port), "-i", str(args.ssh_key.resolve()),
                         "-o", "StrictHostKeyChecking=accept-new",
@@ -388,7 +408,6 @@ def main():
             call(scp)
             audio_file = ""
             if args.audio_file:
-                call(prefix + ["mkdir -p " + shlex.quote(guest_output)], timeout=10)
                 audio_file = guest_output + "/stimulus.wav"
                 call(transfer + [str(args.audio_file.resolve()),
                                  f"{args.ssh_user}@127.0.0.1:{audio_file}"], timeout=120)
@@ -396,8 +415,7 @@ def main():
                 stage('scenario')
                 status['unrun'] = []
                 status['product'] = 'unknown'
-                scenario_command = prefix + ["mkdir -p " + shlex.quote(guest_output) +
-                                            " && SCRAWL_GUI_OUTPUT=" + shlex.quote(guest_output) +
+                scenario_command = prefix + ["SCRAWL_GUI_OUTPUT=" + shlex.quote(guest_output) +
                                             " SCRAWL_GUI_BINARY=" + shlex.quote(guest_binary) +
                                             " SCRAWL_GUI_AUDIO_FILE=" + shlex.quote(audio_file) +
                                             " LD_LIBRARY_PATH=" + shlex.quote(guest_bin) +
