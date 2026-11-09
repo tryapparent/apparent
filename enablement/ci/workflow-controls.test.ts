@@ -32,7 +32,7 @@ test('execution-sensitive changes, ambiguous YAML and changed alias consumers re
     safe.replace('actions/checkout@v4', 'actions/checkout@v3'),
     safe.replace('bun enablement/ci/select.ts', 'echo skip'),
     safe.replace('release_receipt: false', 'release_receipt: true'),
-    safe.replace(/needs: \[[^\n]*\blinux\b[^\n]*\]/, 'needs: [contracts]'),
+    safe.replace(/needs: \[[^\n]+\]/, 'needs: []'),
     safe.replace('branches: [main]', 'branches: [other]'),
     safe.replace('jobs:', 'env:\n  CARGO_BUILD_JOBS: 1\n\njobs:'),
     safe.replace('concurrency:', 'concurrency: &policy'),
