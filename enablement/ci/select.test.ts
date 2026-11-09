@@ -31,6 +31,26 @@ test('only one automatic workflow; manual diagnostics and reporter retirement ar
   assert.match(workflow('stream-public.yml').jobs.deploy.if, /github.event_name == 'workflow_dispatch'/);
 });
 
+test('main preserves active checks while PR updates supersede them', () => {
+  for (const filename of ['checks.yml', 'stream-public.yml']) {
+    const concurrency = workflow(filename).concurrency;
+    const expression = concurrency['cancel-in-progress'].replace(/^\$\{\{\s*|\s*\}\}$/g, '');
+    for (const [event, expected] of [['push', false], ['pull_request', true], ['workflow_dispatch', false]]) {
+      assert.equal(Function('github', `return (${expression});`)({event_name: event}), expected, `${filename}: ${event}`);
+    }
+    assert.equal(concurrency.queue, undefined);
+    assert.match(concurrency.group, filename === 'checks.yml' ? /github.sha/ : /github.ref/);
+    const group = (sha: string, pr?: number) => concurrency.group.replace(/\$\{\{(.+?)\}\}/g,
+      (_: string, expression: string) => Function('github', 'return (' + expression + ');')({
+        event_name: pr ? 'pull_request' : 'push', sha, ref: 'refs/heads/main',
+        event: {pull_request: {number: pr}},
+      }));
+    if (filename === 'checks.yml') assert.notEqual(group('code-sha'), group('docs-sha'));
+    else assert.equal(group('code-sha'), group('docs-sha'));
+    assert.equal(group('code-sha', 7), group('docs-sha', 7));
+  }
+});
+
 test('ready PRs and main pushes execute both full platform jobs; drafts and other events cannot', () => {
   const ci = workflow('checks.yml');
   const platform = workflow('verification-platform.yml');
