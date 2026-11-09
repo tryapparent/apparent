@@ -41,6 +41,15 @@ build containing the native bridge. Older SDKs fail before recording. The OS
 must have the installed [Apparent URL handler](../capture/desktop/docs/native-launch.md).
 The plugin never registers handlers or enables `nativeLaunch`.
 
+Stock 0.23.0 refuses custom app schemes through its external-link API despite
+the SDK documentation. For a local conversation, the button therefore uses
+the public session-scoped `shell.exec` API to ask `open` (macOS) or `xdg-open`
+(Linux) to open only the validated Apparent URI. It rechecks the original
+route, runtime and session first. Hermes retains its local-terminal safety
+checks; sandboxed/remote terminals can refuse. No shell settings, handler
+registration or Hermes source are changed. Stock remote connections require
+the existing manual recording-and-paste flow.
+
 The launch URL carries a random signing secret and loopback port, not gateway
 credentials or session IDs. HTTP requests reveal only its hash; signed state
 responses and a separate authenticated acknowledgement prevent a prebound local
@@ -63,7 +72,7 @@ Reload replays neither Start
 nor a new message identity. Native replay receipts hold only consumed tokens
 and creation times, not media or transcripts.
 
-Remote backends need an existing Connect reference. Local paths are refused for
+Remote delivery needs an existing Connect reference. Local paths are refused for
 remote routes; uploads/read grants are never enabled automatically. “Recording
 sent” means gateway admission, not model vision or a finished agent turn.
 Disabling the plugin removes its control; manual paste remains the fallback.

@@ -1,6 +1,6 @@
 import { host, COMPOSER_AREAS, PALETTE_AREA, Button, Codicon, atom, useValue } from '@hermes/plugin-sdk';
 import { jsx } from 'react/jsx-runtime';
-import { launchURL, submission, validSource, validToken, mailboxId, sign, authenticatedState, runtime, sameRuntime, type Pending } from './controller.ts';
+import { launchURL, launchCommand, submission, validSource, validToken, mailboxId, sign, authenticatedState, runtime, sameRuntime, type Pending } from './controller.ts';
 export default {
   id: 'apparent', name: 'Apparent',
   register(ctx) {
@@ -94,6 +94,7 @@ export default {
       if (disposed || working) return;
       if (pending) { watch(); return; }
       working = true;
+      let launchMayHaveStarted = false;
       try {
         const owner = host.state.focusedSessionOwner?.get();
         const session = host.state.focusedSessionId?.get();
@@ -107,9 +108,34 @@ export default {
         pending = { token: crypto.randomUUID().replaceAll('-', ''), port: 32768 + bytes[0] % (60999 - 32768 + 1), destination: { session, connectionId: owner.connectionId, profile: owner.profile, targetProfile: routes[0].targetProfile, mode: routes[0].mode, local: routes[0].mode === 'local' }, runtime: identity, created: Date.now() };
         await save();
         if (disposed) return;
-        if (!await ctx.os.openExternal(launchURL(pending.token, pending.port))) { pending = null; await save(); throw new Error('Unable to open Apparent. Install the app and register its URL handler.'); }
-        watch();
-      } catch (error) { report(error instanceof Error ? error.message : 'Unable to open Apparent'); }
+        if (!await ctx.os.openExternal(launchURL(pending.token, pending.port))) {
+          if (disposed) return;
+          if (!pending.destination.local) throw new Error('Hermes blocks app links on this remote connection. Use Apparent directly and paste the recording handoff.');
+          const operation = pending;
+          const route = (await host.profileRoutes()).find(r => r.connectionId === operation.destination.connectionId && r.profile === operation.destination.profile);
+          if (!route || route.mode !== operation.destination.mode || route.targetProfile !== operation.destination.targetProfile) throw new Error('The original Hermes gateway mapping changed. Nothing was launched.');
+          const release = await host.retainProfile(route, { spawnPriority: 'foreground' });
+          try {
+            if (disposed) return;
+            const current = runtime(await host.requestProfile(route, 'runtime.describe', {}));
+            if (!sameRuntime(operation.runtime, current)) throw new Error('The original Hermes runtime changed. Nothing was launched.');
+            if (disposed) return;
+            const snapshot = await host.requestProfile(route, 'session.resume', { session_id: session });
+            if (snapshot?.session_id !== session || snapshot.authority_epoch !== operation.runtime.authority_epoch) throw new Error('The original session changed. Nothing was launched.');
+            if (disposed) return;
+            launchMayHaveStarted = true;
+            const result = await host.requestProfile(route, 'shell.exec', { session_id: session, command: launchCommand(operation.token, operation.port) });
+            if (result?.code !== 0) { launchMayHaveStarted = false; throw new Error('Unable to open Apparent. Install the app and register its URL handler; the session must allow a local terminal.'); }
+          } finally { release(); }
+        }
+        launchMayHaveStarted = true;
+        if (!disposed) watch();
+      } catch (error) {
+        // An RPC timeout cannot establish that the OS did not open the helper.
+        if (launchMayHaveStarted && pending) { if (!disposed) watch(); }
+        else { pending = null; await save(); }
+        report(error instanceof Error ? error.message : 'Unable to open Apparent');
+      }
       finally { working = false; }
     }
     // No credentials or recording media are stored here; only an owned in-flight operation.

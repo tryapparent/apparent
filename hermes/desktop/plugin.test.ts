@@ -13,13 +13,14 @@ async function until(predicate: () => unknown) {
   const deadline = Date.now() + 1500;
   while (!predicate()) { if (Date.now() > deadline) throw new Error('Async test condition did not settle'); await new Promise(resolve => setTimeout(resolve, 2)); }
 }
-function fixture() {
+function fixture(external = true) {
   let contribution: any, discard: any, interval: (() => void) | undefined, saved: any, launch: string | undefined;
-  const ctx = { onDispose: () => {}, setInterval: (fn: () => void) => { interval = fn; return () => { interval = undefined; }; },
+  let dispose = () => {};
+  const ctx = { onDispose: (fn: () => void) => { dispose = fn; }, setInterval: (fn: () => void) => { interval = fn; return () => { interval = undefined; }; },
     storage: { get: () => null, set: (_key: string, value: unknown) => { saved = structuredClone(value); } },
-    os: { openExternal: async (url: string) => { launch = url; return true; } }, register: (c: any) => { if (c.id === 'record') contribution = c; else discard = c; } };
+    os: { openExternal: async (url: string) => { launch = url; return external; } }, register: (c: any) => { if (c.id === 'record') contribution = c; else discard = c; } };
   plugin.register(ctx);
-  return { click: () => contribution.render().props.onClick(), discard: () => discard.data.run(), tick: () => interval?.(), saved: () => saved, launch: () => launch, watching: () => Boolean(interval) };
+  return { click: () => contribution.render().props.onClick(), discard: () => discard.data.run(), tick: () => interval?.(), saved: () => saved, launch: () => launch, watching: () => Boolean(interval), dispose: () => dispose() };
 }
 async function packet(secret: string, phase: string) {
   const payload = JSON.stringify({ phase, ...(phase === 'saved' ? { source: '/private/owned.apparent' } : {}) });
@@ -29,6 +30,7 @@ function reset() {
   shared.submissions = []; shared.failSubmit = false; shared.session = 'runtime-A'; shared.owner = { connectionId: 'local-A', profile: 'work' };
   shared.routes = [{ connectionId: 'local-A', profile: 'work', targetProfile: 'work', mode: 'local' }];
   shared.runtime.instance_id = 'runtime-instance-A';
+  shared.launchWait = null;
 }
 test('completion submits once to captured gateway/session after foreground switches; next click records again', async () => {
   reset(); const originalFetch = globalThis.fetch;
@@ -86,4 +88,41 @@ test('changed route mapping or replaced runtime cannot receive the saved recordi
       await f.discard(); assert.equal(f.saved(), null);
     }
   } finally { reset(); globalThis.fetch = originalFetch; }
+});
+test('stock app-link refusal uses only the original local session safe shell; remote routes never execute', async () => {
+  reset();
+  const f = fixture(false);
+  f.click(); await until(() => f.watching());
+  assert.equal(shared.submissions.length, 1);
+  const call = shared.submissions[0] as any;
+  assert.equal(call.method, 'shell.exec');
+  assert.equal(call.route.connectionId, 'local-A');
+  assert.equal(call.params.session_id, 'runtime-A');
+  assert.ok(call.params.command.includes(f.launch()));
+  reset(); shared.routes[0].mode = 'ssh';
+  const remote = fixture(false); remote.click();
+  await until(() => remote.launch() && remote.saved() === null);
+  assert.equal(shared.submissions.length, 0);
+  assert.equal(remote.watching(), false);
+  reset();
+});
+test('a lost local launch reply retains the original pending handoff without launching again', async () => {
+  reset(); shared.failSubmit = true;
+  const f = fixture(false); f.click();
+  await until(() => f.watching());
+  assert.ok(f.saved().token);
+  assert.equal(shared.submissions.length, 1);
+  f.click(); await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(shared.submissions.length, 1);
+  f.dispose(); reset();
+});
+test('unloading during local launch leaves recovery persisted and never creates a timer afterward', async () => {
+  reset(); let finish!: () => void;
+  shared.launchWait = new Promise<void>(resolve => { finish = resolve; });
+  const f = fixture(false); f.click();
+  await until(() => shared.submissions.length === 1);
+  f.dispose(); finish(); await new Promise(resolve => setTimeout(resolve, 5));
+  assert.ok(f.saved().token);
+  assert.equal(f.watching(), false);
+  reset();
 });

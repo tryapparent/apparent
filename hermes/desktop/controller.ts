@@ -4,6 +4,12 @@ export function launchURL(token: string, port: number) {
   if (!validToken(token) || !Number.isInteger(port) || port < 32768 || port > 60999) throw new Error('Invalid recording request');
   return `apparent://hermes/${token}/${port}`;
 }
+// Stock Desktop refuses custom schemes through PluginOs. The public session
+// shell API can ask the local OS to open this one strictly validated URI.
+export function launchCommand(token: string, port: number) {
+  const url = launchURL(token, port);
+  return `case "$(uname -s)" in Darwin) open '${url}';; Linux) xdg-open '${url}';; *) exit 64;; esac`;
+}
 export function validSource(s: unknown): s is string {
   return typeof s === 'string' && s.length <= 4096 && !/[\x00-\x1f\x7f]/.test(s) &&
     (validToken(s) || (s.startsWith('/') && s.endsWith('.apparent')));

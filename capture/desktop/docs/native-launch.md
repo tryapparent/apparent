@@ -19,6 +19,12 @@ sends nothing. Closing the bridge leaves any admitted capture intact and ends
 the return service. It expires after one hour. See the
 [plugin routing and acceptance limits](../../../hermes/README.md).
 
+Stock Hermes 0.23.0 blocks custom schemes in its external-link API. The plugin
+uses its supported session-scoped safe-shell API for local conversations to
+invoke the OS opener with this strictly validated URI. Remote and sandboxed
+terminal refusals retain manual paste; the plugin changes no Hermes code or
+OS registration.
+
 Rollback is removal/disablement of the desktop plugin; manual paste is retained.
 Remove the bridge after installed plugin consumers no longer use its URL or
 `capture handoff` contract. Installed macOS/Linux launch, capture, permissions,
