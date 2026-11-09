@@ -406,3 +406,19 @@ test('permission refresh keeps setup unfocused and avoids repeating native geome
  stdin.emit('data','{"type":"show"}\n');
  assert.equal(calls.filter(x=>x==='show').length,2,'explicit parent show may reactivate setup');
 });
+
+test('whiteboard bridge admits only finite paper input and copies a minimal command',()=>{
+ const {parseAction}=require('../electron/onboarding-protocol.cjs');
+ const base={action:'board',id:'apparent-123-a',operation:'begin',point:[40,60]};
+ assert.deepEqual(parseAction({...base,strokes:[[1,2]],demo:true}),base);
+ for(const point of [[NaN,1],[Infinity,1],[-1,1],[1600,1],[1,1100],[1],['1',2]])assert.throws(()=>parseAction({...base,point}));
+ for(const operation of ['replay','complete','export','stroke'])assert.throws(()=>parseAction({...base,operation}));
+ for(const id of ['', '../capture', 'x'.repeat(81)])assert.throws(()=>parseAction({...base,id}));
+ for(const operation of ['end','undo','clear','close'])assert.deepEqual(parseAction({...base,operation}),{action:'board',id:base.id,operation});
+});
+test('saved shortcut keys retain every modifier and a literal plus key',async()=>{
+ const {recordKeys}=await import('../src/onboarding/shortcut-keys.ts');
+ assert.deepEqual(recordKeys('⌃⌥⇧⌘A'),['⌃','⌥','⇧','⌘','A']);
+ assert.deepEqual(recordKeys('Ctrl + Alt + +'),['Ctrl','Alt','+']);
+ assert.deepEqual(recordKeys('Super + Shift + S'),['Super','Shift','S']);
+});

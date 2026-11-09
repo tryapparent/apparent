@@ -14,6 +14,7 @@ function project(v) {
   for(const r of v.rows){if(!r||typeof r!=='object'||!['screen-recording','microphone','accessibility','speech-recognition','camera'].includes(r.permission)||!['granted','denied','not-determined'].includes(r.status))return null;rows.push({permission:r.permission,status:r.status,required:r.required===true,reopening:r.reopening===true,relaunch:r.relaunch===true});}
   return {account:projectAccount(v.account),tutorial:['skipped','watched','practiced'].includes(v.tutorial)?v.tutorial:null,step:v.step,ready:v.ready,fix:v.fix===true,rows,index:v.index,count:v.count,shortcut:typeof v.shortcut==='string'?v.shortcut.slice(0,80):'',shortcutEditing:v.shortcutEditing===true,shortcutChosen:v.shortcutChosen===true,shortcutTested:v.shortcutTested===true,
     penPicker:v.penPicker===true,penSelected:v.penSelected===true,penError:v.penError===true,penRgb:Array.isArray(v.penRgb)&&v.penRgb.length===3&&v.penRgb.every(n=>Number.isInteger(n)&&n>=0&&n<=255)?v.penRgb:[255,59,48],
+    boardView:v.boardView&&typeof v.boardView.id==='string'&&Array.isArray(v.boardView.strokes)?v.boardView:null,
     platform:v.platform==='linux'?'linux':'macos',shortcutEditor:v.shortcutEditor&&typeof v.shortcutEditor==='object'?{recording:v.shortcutEditor.recording===true,externallyManaged:v.shortcutEditor.externallyManaged===true,error:typeof v.shortcutEditor.error==='string'?v.shortcutEditor.error.slice(0,240):null}:null,
     testInstance:v.testInstance===true,practice:phases.has(v.practice)?v.practice:null,firstCaptureRequired:v.firstCaptureRequired===true,
     ...(Array.isArray(v.practiceBoard)&&v.practiceBoard.length===4&&v.practiceBoard.every(Number.isFinite)&&v.practiceBoard[2]>0&&v.practiceBoard[3]>0?{practiceBoard:v.practiceBoard}:{}),
@@ -74,14 +75,16 @@ app.whenReady().then(()=>{
   const valid=e=>!window.isDestroyed()&&e.sender===window.webContents&&e.senderFrame===window.webContents.mainFrame&&e.senderFrame.url===page;
   ipcMain.handle('onboarding:state',(e,...args)=>{if(!valid(e)||args.length)throw Error('Forbidden state request');return state});
   ipcMain.handle('onboarding:action',(e,...args)=>{if(!valid(e)||args.length!==1)throw Error('Forbidden onboarding action');return channel.send(parseAction(args[0]))});
+  window.webContents.on('render-process-gone',()=>shutdown(1));
   window.webContents.on('did-finish-load',()=>{if(state)present(state)});
+  window.on('close',event=>{if(!closing&&state?.boardView){event.preventDefault();channel.send({action:'board',id:state.boardView.id,operation:'close'});}});
   window.on('closed',()=>{if(!closing)channel.send('close');shutdown()});
   void window.loadURL(page);
   process.stdin.setEncoding('utf8');
   process.stdin.on('data',chunk=>{
     if(closing)return;
     buffer+=chunk;
-    if(buffer.length>131072){shutdown(1);return;}
+    if(buffer.length>16777216){shutdown(1);return;}
     let end;
     while((end=buffer.indexOf('\n'))>=0){
       const line=buffer.slice(0,end);buffer=buffer.slice(end+1);
@@ -102,15 +105,17 @@ function present(v,activate=false){
   // Linux adapters report X11 pixels; Electron places windows in logical DIP.
   // macOS adapter coordinates are already points.
   if(process.platform==='linux')v={...v,anchor:nativeRectangle(v.anchor,p=>screen.screenToDipPoint(p)),practiceBoard:nativeRectangle(v.practiceBoard,p=>screen.screenToDipPoint(p))};
-  const coach=v.step==='try-it'&&v.practice!==null&&v.practice!=='start';
+  const board=!!v.boardView&&!!v.practiceBoard;
+  const coach=!board&&v.step==='try-it'&&v.practice!==null&&v.practice!=='start';
   const focal=v.practiceBoard||v.anchor;
   const target=focal?screen.getDisplayMatching({x:Math.round(focal[0]),y:Math.round(focal[1]),width:Math.max(1,Math.round(focal[2])),height:Math.max(1,Math.round(focal[3]))}):screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   const area=target.workArea;
   const shortcut=v.step==='shortcut'||(v.step==='try-it'&&!coach);
-  const {width,height}=coach?coachDimensions(area,v.practice):setupDimensions(area,shortcut);
-  const mode=`${coach}:${width}:${height}`;
+  const {width,height}=board?{width:Math.min(area.width,720),height:Math.min(area.height,540)}:coach?coachDimensions(area,v.practice):setupDimensions(area,shortcut);
+  const mode=`${board}:${coach}:${width}:${height}`;
   if(lastMode!==mode){
-    window.setAlwaysOnTop(coach,'floating');
+    if(lastMode?.startsWith('true:')&&!board)window.blur();
+    window.setAlwaysOnTop(coach||board,'floating');
     window.setHasShadow(!coach); // The coach card paints its own shaped shadow, not a rectangular window shadow.
     // X11 fixed-size constraints must change together, only when the mode changes.
     window.setMaximumSize(0,0);window.setMinimumSize(width,height);window.setMaximumSize(width,height);
@@ -118,7 +123,9 @@ function present(v,activate=false){
     window.setVisibleOnAllWorkspaces(coach,{visibleOnFullScreen:coach});
     lastMode=mode;lastPlacement='';
   }
-  if(coach){
+  if(board){
+    if(lastPlacement!==v.boardView.id){const rect=v.practiceBoard;window.setPosition(Math.round(rect[0]),Math.round(rect[1]),false);window.show();window.focus();lastPlacement=v.boardView.id;}
+  } else if(coach){
     const placement=coachPosition(area,v.anchor,v.practiceBoard,v.practice);
     // Reposition on stage/target changes; leave a user's manual adjustment alone between ticks.
     const key=JSON.stringify([v.practice,v.anchor,v.practiceBoard,area]);

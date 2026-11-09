@@ -205,7 +205,7 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
 });
 
 // Rust state is synthetic; the main/preload/renderer and OS window resizing are real.
-for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coach and restores setup ${mode}`, { timeout: 45000 }, async (t) => {
+for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coach and restores setup ${mode}`, { timeout: 65000 }, async (t) => {
   const { spawn } = require('node:child_process');
   const { chromium } = require('@playwright/test');
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'onboarding-window-'));
@@ -335,6 +335,33 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     assert.equal(layout.scroll,false,phase+' needs scrolling at normal text size');
     for(const button of layout.buttons){assert.ok(button.font>=18&&button.width>=44&&button.height>=44,phase+' button violates brand minimum');assert.equal(button.radius,'0px');}
   }
+  send({step:'try-it',practice:'stop',shortcut:'⌃⌥⇧9',firstCaptureRequired:true});
+  await expect(page.getByRole('heading',{name:'Finish your capture.',exact:true})).toBeVisible();
+  assert.deepEqual(await page.locator('.native-saved-keys kbd').allTextContents(),['⌃','⌥','⇧','9']);
+  assert.equal(await page.locator('.native-control').count(),0);
+  const human=[[20,30],[40,50],[70,60],[90,80]];
+  const board={id:'apparent-test-1',strokes:[human],color:[59,121,189]};
+  send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:board});
+  await expect(page.locator('.native-board')).toBeVisible();
+  assert.equal(await page.locator('.native-coach').count(),0);
+  await expect(page.getByRole('status')).toHaveText('Watch this.');
+  const beforeGuide=output;
+  await expect(page.getByRole('status')).toHaveText('Your turn.');
+  assert.equal(output,beforeGuide,'demonstration cannot emit native input');
+  await expect(page.locator('.native-board-paper > svg polyline')).toHaveCount(1);
+  await page.getByRole('button',{name:'Replay guide',exact:true}).click();
+  assert.equal(output,beforeGuide,'replay cannot clear or export human ink');
+  const canvas=await page.getByLabel('Whiteboard drawing canvas').boundingBox();
+  await page.mouse.move(canvas.x+20,canvas.y+30);await page.mouse.down();
+  await page.mouse.move(canvas.x+100,canvas.y+90,{steps:5});await page.mouse.up();
+  await expect.poll(()=>output).toContain('"operation":"end"');
+  assert.ok(output.includes('"id":"apparent-test-1","operation":"begin"'));
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.getByRole('button',{name:'Replay guide',exact:true}).click();
+  await expect(page.getByRole('status')).toHaveText('Your turn.');
+  await page.getByRole('button',{name:'Close whiteboard',exact:true}).click();
+  await expect.poll(()=>output).toContain('"operation":"close"');
+  await page.emulateMedia({reducedMotion:'no-preference'});
   send({step:'try-it',practice:'note',firstCaptureRequired:true});
   await expect(page.getByRole('heading',{name:'Add a note.',exact:true})).toBeVisible();
   await expect(page.getByText('Hold Shift and click without dragging. Type a note, then save it.',{exact:true})).toBeVisible();
@@ -347,8 +374,8 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   assert.equal(await page.locator('.native-gesture').evaluate(el=>el.getAnimations({subtree:true}).length),0);
   await expect(page.getByRole('button',{name:'Replay note guide',exact:true})).toBeHidden();
   await page.emulateMedia({reducedMotion:'no-preference'});
-  // All three control examples remain presentation only, and settle once.
-  for(const [phase,kind] of [['whiteboard','whiteboard'],['stop','finish'],['locate','locate']]){
+  // Control examples remain presentation only, and settle once.
+  for(const [phase,kind] of [['whiteboard','whiteboard'],['locate','locate']]){
     send({step:'try-it',practice:phase,firstCaptureRequired:true});
     await expect(page.locator('.native-control')).toHaveAttribute('data-kind',kind);
     const before=output;
@@ -365,7 +392,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.locator('.native-control button')).toBeHidden();
   await page.emulateMedia({reducedMotion:'no-preference'});
   send({step:'try-it',practice:'whiteboard',platform:'linux',firstCaptureRequired:true});
-  await expect(page.getByText('Open Whiteboard from the recording controls.',{exact:true})).toBeVisible();
+  assert.equal(await page.getByText('Click Whiteboard in the recording controls.',{exact:true}).count(),0);
   await expect(page.getByRole('figure',{name:'Example: click Whiteboard',exact:true})).toBeVisible();
   await expect(page.locator('.control-screen')).toBeHidden();
   await expect(page.locator('.control-board')).toHaveCSS('opacity','1');
@@ -441,9 +468,9 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect.poll(()=>output).toContain('change-shortcut');
   assert.equal(output.includes('use-current-shortcut'),false);
   send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:false});
-  await expect(page.getByRole('heading',{name:'Try your shortcut.',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Start your first capture.',exact:true})).toBeVisible();
   assert.equal(await page.getByText(/This check won’t record/).count(),0);
-  await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeDisabled();
+  await expect(page.getByRole('button',{name:'Continue',exact:true})).toHaveCount(0);
   const beforeTrialAdvance=(output.match(/"action":"continue"/g)?.length??0);
   send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
   await expect(page.getByRole('heading',{name:'Go again.',exact:true})).toBeVisible();
@@ -451,7 +478,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
   await page.waitForTimeout(100);
   assert.equal((output.match(/"action":"continue"/g)?.length??0),beforeTrialAdvance+1,'repeated state must not advance twice');
-  await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeEnabled();
+  await expect(page.getByRole('button',{name:'Continue',exact:true})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Change shortcut',exact:true})).toBeVisible();
   send({step:'try-it',practice:'start',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
   await expect(page.getByRole('heading',{name:'Go again.',exact:true})).toBeVisible();
@@ -459,9 +486,9 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.locator('.native-setup')).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveCount(0);
   await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,520]);
-  await expect(page.locator('.native-shortcut kbd')).toHaveText('⌃⌥⇧9');
-  await expect(page.locator('.native-shortcut kbd')).toHaveCSS('font-size','40px');
-  const keys=await page.locator('.native-shortcut kbd').boundingBox();
+  assert.deepEqual(await page.locator('.native-shortcut kbd').allTextContents(),['⌃','⌥','⇧','9']);
+  await expect(page.locator('.native-shortcut kbd').first()).toHaveCSS('font-size','40px');
+  const keys=await page.locator('.native-saved-keys').boundingBox();
   assert.ok(Math.abs(keys.x+keys.width/2-380)<2,'keys are horizontally centered');
   assert.ok(Math.abs(keys.y+keys.height/2-260)<60,'keys are vertically centered in the compact setup');
   assert.equal(await page.locator('.native-setup section').evaluate(el=>el.scrollHeight>el.clientHeight),false);

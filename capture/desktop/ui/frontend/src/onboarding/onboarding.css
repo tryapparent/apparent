@@ -144,3 +144,9 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
   body > #root > .native-trackpad-helper .native-trackpad-helper-content { max-height: calc(100vh - 222px); overflow: auto; }
   body > #root > .native-trackpad-helper:before { content: ''; position: absolute; left: -7px; top: calc(50% - 6px); width: 12px; height: 12px; transform: rotate(45deg); background: var(--apparent-surface); border-left: 1px solid var(--apparent-border); border-bottom: 1px solid var(--apparent-border); }
 }
+
+.native-wordmark { width: 138px; height: auto; }
+.native-saved-keys { display:flex; flex-wrap:wrap; justify-content:center; gap:12px; }
+.native-saved-keys kbd { min-width:76px; min-height:84px; padding:16px 24px; border-radius:6px; box-shadow:0 4px 0 var(--apparent-border); }
+
+.native-coach .native-saved-keys kbd { min-width:44px; min-height:48px; padding:8px 12px; font-size:24px; background:var(--apparent-lilac); color:var(--apparent-carbon); }

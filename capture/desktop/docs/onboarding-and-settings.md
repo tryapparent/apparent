@@ -411,7 +411,7 @@ The default first-capture tour offers no preselected Record combination and no
 accept-current shortcut action. Save a valid combination in the existing editor,
 then press and release that combination once. Rust consumes the normal shortcut
 release as a trial: no capture, picker, microphone admission or clipboard handoff
-starts. Continue remains disabled until the trial succeeds. Changing the saved
+starts. The Electron setup advances on the native receipt; its native fallback keeps Continue until the trial succeeds. Changing the saved
 combination invalidates the trial. `onboarding.shortcutTestedFor` stores the exact
 effective label for restart checks; a mismatched binding returns to the trial.
 Completed users retain completion, and a desktop-managed Linux binding keeps its
@@ -468,3 +468,28 @@ begins; the next shortcut still uses the existing native recording path. Returni
 to the start state restores the setup window. Native fallback routing is unchanged.
 
 The removed demonstration has no Electron renderer/assets. Both Electron and native fallback skip its legacy step through the authoritative Rust route; rollback requires reverting that route together with presentation changes.
+
+### Inline shortcut trial and whiteboard guide
+
+Electron setup keeps shortcut choice, the native non-recording trial and **Go
+again.** in the setup window. Saved shortcuts render as individual keys. Once
+saved, the main prompt asks for the shortcut; no disabled Continue competes
+with it. Only the native trial receipt advances setup. Finish shows those same
+keys without a second Finish-to-Copied illustration.
+
+During Electron first-capture practice, opening Whiteboard routes the existing
+setup renderer to the paper surface instead of opening GPUI or a separate coach.
+Pointer input uses the private onboarding pipe, gated by the current transport,
+session, recording and per-open board identity. Rust's existing Board remains
+authoritative for human ink, undo/clear and export; no configuration writer is
+added. Coordinates remain paper points. The finite selected-pen scribble is a
+separate inert SVG, removed before **Your turn.** Replay affects only that SVG;
+reduced motion briefly shows a still. Drawing is available throughout.
+
+Other whiteboard uses retain GPUI. Missing Electron assets use the native route;
+a lost renderer restores the native board with its current human ink during the
+same recording. This is the bounded migration slice, not general whiteboard
+migration. Remove the GPUI donor only after the remaining consumers migrate and
+installed Mac/Linux focus, shortcuts, close/reopen, capture-bound drawing and
+bundle acceptance pass. Native acceptance for this revision remains unrun until
+parent verification; renderer tests do not establish it.

@@ -971,6 +971,7 @@ pub enum Event {
     Action(String),
     /// The inline recorder uses the same actions and validation as Settings.
     Shortcut(crate::capture::desktop::settings::Action),
+    Board(serde_json::Value),
     Exited,
     /// Reader callbacks belong to the session that created their transport.
     Session { source: u64, event: Box<Event> },
@@ -1097,6 +1098,7 @@ pub struct Session {
     practice: Option<super::practice::Practice>,
     anchor: Option<[f32;4]>,
     practice_board: Option<[f32;4]>,
+    board_view: Option<serde_json::Value>,
     practice_completed: bool,
     practice_bundle: Option<std::path::PathBuf>,
     practice_receipt: Option<(u64, String, Option<String>)>,
@@ -1133,6 +1135,7 @@ impl Session {
             practice: None,
             anchor: None,
             practice_board: None,
+            board_view: None,
             practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
         }
     }
@@ -1227,6 +1230,7 @@ impl Session {
             practice: shell.then(super::practice::Practice::default),
             anchor: None,
             practice_board: None,
+            board_view: None,
             practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
         };
         session.shortcut_changed(shortcut);
@@ -1302,6 +1306,7 @@ impl Session {
                         continue;
                     };
                     let action = action.to_owned();
+                    if action=="board" {events(Event::Board(value));continue;}
                     #[cfg(target_os="linux")]
                     if action=="shortcut-key" {
                         if let (Some(key),Some(modifiers))=(value["key"].as_str(),value["modifiers"].as_u64()) {
@@ -1612,6 +1617,8 @@ impl Session {
             if let Some(practice)=self.practice.as_mut() {practice.observe_note(saved);}
         }
     }
+    pub fn electron_practice(&self)->bool {self.practice_active() && self.fallback.is_some() && !self.fallback_pending}
+    pub fn board_view(&mut self, view: Option<serde_json::Value>) {self.board_view=view;}
     pub fn practice_anchor(&mut self,anchor:Option<[f32;4]>) {self.anchor=anchor;}
     pub fn practice_board(&mut self, frame: Option<[f32;4]>) {
         self.practice_board=frame;
@@ -1664,6 +1671,7 @@ impl Session {
         view["platform"]=std::env::consts::OS.into();
         view["shortcutEditor"]=serde_json::json!(self.editor);
         view["anchor"]=serde_json::json!(self.anchor);
+        view["boardView"]=serde_json::json!(self.board_view);
         view["practiceBoard"]=serde_json::json!(self.practice_board);
         view["testInstance"]=false.into();
         view["penPicker"]=self.pen_picker.into();view["penSelected"]=self.pen_selected.into();view["penError"]=self.pen_error.into();
