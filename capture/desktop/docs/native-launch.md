@@ -1,5 +1,31 @@
 # Native app launch
 
+## Hermes recording request
+
+`apparent://hermes/<32-lowercase-hex-token>/<loopback-port>` opens the packaged
+Electron confirmation for one recording. Ports are 32768–60999; paths, queries,
+fragments and callback URLs are refused. The new route is separate from the
+existing `nativeLaunch` experiment and never enables it or registers an OS
+handler. The person must confirm **Record and send when finished** before the
+bridge starts the installed app and uses its existing ID-bound capture CLI.
+The native recorder retains permission/admission/resource enforcement.
+
+Only the exact saved capture can provide `capture handoff <capture-id>`'s
+reference. The loopback capability exposes signed status and that reference, never
+capture controls, arbitrary files, credentials or transcripts. The Hermes
+plugin sends through its own authenticated, captured connection/session; the
+native helper holds neither session IDs nor gateway credentials. Cancelling
+sends nothing. Closing the bridge leaves any admitted capture intact and ends
+the return service. It expires after one hour. See the
+[plugin routing and acceptance limits](../../../hermes/README.md).
+
+Rollback is removal/disablement of the desktop plugin; manual paste is retained.
+Remove the bridge after installed plugin consumers no longer use its URL or
+`capture handoff` contract. Installed macOS/Linux launch, capture, permissions,
+actual Hermes networking, model vision and receiver proof remain required.
+
+## Open the idle app
+
 The contract is the literal **`apparent://open`** on macOS and Linux. It opens the
 idle app's existing onboarding window, or General Settings if onboarding is not
 open. It never records, uploads, sends a capture, pastes, or changes a preference.

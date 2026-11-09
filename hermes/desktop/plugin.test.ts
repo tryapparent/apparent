@@ -1,0 +1,89 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { registerHooks } from 'node:module';
+import { shared } from './testing/sdk.ts';
+import { sign } from './controller.ts';
+const hooks = registerHooks({ resolve(specifier, context, next) {
+  if (['@hermes/plugin-sdk', 'react/jsx-runtime'].includes(specifier)) return { url: new URL('./testing/sdk.ts', import.meta.url).href, shortCircuit: true };
+  return next(specifier, context);
+} });
+const plugin = (await import('./plugin.ts')).default;
+hooks.deregister();
+async function until(predicate: () => unknown) {
+  const deadline = Date.now() + 1500;
+  while (!predicate()) { if (Date.now() > deadline) throw new Error('Async test condition did not settle'); await new Promise(resolve => setTimeout(resolve, 2)); }
+}
+function fixture() {
+  let contribution: any, discard: any, interval: (() => void) | undefined, saved: any, launch: string | undefined;
+  const ctx = { onDispose: () => {}, setInterval: (fn: () => void) => { interval = fn; return () => { interval = undefined; }; },
+    storage: { get: () => null, set: (_key: string, value: unknown) => { saved = structuredClone(value); } },
+    os: { openExternal: async (url: string) => { launch = url; return true; } }, register: (c: any) => { if (c.id === 'record') contribution = c; else discard = c; } };
+  plugin.register(ctx);
+  return { click: () => contribution.render().props.onClick(), discard: () => discard.data.run(), tick: () => interval?.(), saved: () => saved, launch: () => launch, watching: () => Boolean(interval) };
+}
+async function packet(secret: string, phase: string) {
+  const payload = JSON.stringify({ phase, ...(phase === 'saved' ? { source: '/private/owned.apparent' } : {}) });
+  return Response.json({ payload, mac: await sign(secret, payload) });
+}
+function reset() {
+  shared.submissions = []; shared.failSubmit = false; shared.session = 'runtime-A'; shared.owner = { connectionId: 'local-A', profile: 'work' };
+  shared.routes = [{ connectionId: 'local-A', profile: 'work', targetProfile: 'work', mode: 'local' }];
+  shared.runtime.instance_id = 'runtime-instance-A';
+}
+test('completion submits once to captured gateway/session after foreground switches; next click records again', async () => {
+  reset(); const originalFetch = globalThis.fetch;
+  let phase = 'recording'; let acknowledgements = 0; const f = fixture();
+  globalThis.fetch = async url => {
+    if (String(url).includes('/ack/')) { acknowledgements++; return Response.json({ ok: true }); }
+    return packet(f.launch()!.split('/')[3], phase);
+  };
+  try {
+    f.click(); await until(() => f.launch());
+    assert.match(f.launch()!, /^apparent:\/\/hermes\/[a-f0-9]{32}\/\d+$/);
+    const first = f.saved();
+    shared.session = 'runtime-B'; shared.owner = { connectionId: 'other-gateway', profile: 'work' };
+    phase = 'saved'; f.tick(); await until(() => acknowledgements === 1);
+    f.tick(); await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(shared.submissions.length, 1);
+    assert.equal((shared.submissions[0] as any).params.session_id, 'runtime-A');
+    assert.equal((shared.submissions[0] as any).route.connectionId, 'local-A');
+    assert.equal((shared.submissions[0] as any).params.input_id, first.token);
+    shared.owner = { connectionId: 'local-A', profile: 'work' }; phase = 'recording';
+    f.click(); await until(() => f.saved()?.token && f.saved().token !== first.token);
+  } finally { globalThis.fetch = originalFetch; }
+});
+test('lost submit replies retry only original input_id and stop; no title lookup', async () => {
+  reset(); shared.failSubmit = true; const originalFetch = globalThis.fetch; const f = fixture();
+  globalThis.fetch = async () => packet(f.launch()!.split('/')[3], 'saved');
+  try {
+    f.click(); await until(() => f.launch()); f.tick(); await until(() => !f.watching());
+    assert.equal(shared.submissions.length, 2);
+    assert.deepEqual(shared.submissions[0], shared.submissions[1]);
+    assert.equal((shared.submissions[0] as any).method, 'prompt.submit');
+    f.tick(); assert.equal(shared.submissions.length, 2);
+  } finally { shared.failSubmit = false; globalThis.fetch = originalFetch; }
+});
+test('a prebound listener cannot forge completion and never receives the signing secret', async () => {
+  reset(); const originalFetch = globalThis.fetch; const f = fixture(); let requested: string | undefined;
+  globalThis.fetch = async url => { requested = String(url); return Response.json({ phase: 'saved', source: '/private/forged.apparent' }); };
+  try {
+    f.click(); await until(() => f.launch()); f.tick(); await until(() => requested);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.ok(!requested!.includes(f.saved().token));
+    assert.equal(shared.submissions.length, 0);
+    assert.equal(f.saved().source, undefined);
+  } finally { globalThis.fetch = originalFetch; }
+});
+test('changed route mapping or replaced runtime cannot receive the saved recording', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const change of [() => { shared.routes[0].targetProfile = 'other'; }, () => { shared.runtime.instance_id = 'replacement'; }]) {
+      reset(); const f = fixture();
+      globalThis.fetch = async () => packet(f.launch()!.split('/')[3], 'saved');
+      f.click(); await until(() => f.launch()); change(); f.tick(); await until(() => !f.watching());
+      assert.equal(shared.submissions.length, 0);
+      assert.equal(f.saved().source, '/private/owned.apparent');
+      await f.discard(); assert.equal(f.saved(), null);
+    }
+  } finally { reset(); globalThis.fetch = originalFetch; }
+});

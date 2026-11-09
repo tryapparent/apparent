@@ -17,7 +17,7 @@
     { "title": "Capture", "detail": "⌥⇧S, the picker, a cabled iPhone", "group": "start" },
     { "title": "Record", "detail": "Screen, voice, clicks and ⇧ ink on one clock", "group": "record" },
     { "title": "Bundle", "detail": "Keyframes, contact sheet, summary.md, apparent.json", "group": "agent" },
-    { "title": "Deliver", "detail": "Clipboard and ⌥⇧V; no automatic session send", "group": "delivery" },
+    { "title": "Deliver", "detail": "Clipboard, ⌥⇧V and explicit Hermes record-and-send", "group": "delivery" },
     { "title": "Agent", "detail": "The skill, then apparent zoom for a closer look", "group": "cli" }
   ],
   "features": [
@@ -1184,7 +1184,7 @@
       "status": "main",
       "added": "2026-11-08",
       "platforms": ["mac", "linux"],
-      "note": "Source candidate; catalog publication, real Hermes Desktop model vision and fresh native setup remain release gates. Uses the installed full CLI, with explicit fetch before inspect for Connect IDs. Downloaded snapshots are removed after each call; local originals remain unchanged. Manual paste and Send; no picker or automatic recorder installation.",
+      "note": "Source candidate; catalog publication, real Hermes Desktop model vision and fresh native setup remain release gates. The generated desktop package adds Record with Apparent: native confirmation, existing recording controls, then exact-session message admission through the originating gateway. Actual Desktop loopback access and installed capture/return on macOS/Linux remain unverified. Remote receivers require existing Connect uploads/read access. Manual paste remains available; no automatic recorder installation or upload enablement.",
       "docs": ["hermes/README.md"]
     },
     {
