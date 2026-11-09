@@ -16,10 +16,11 @@ an external URL from silently starting capture; normal permissions still apply.
 
 This is a source candidate for Hermes Desktop on macOS/Linux, not a catalog
 release. Stock 0.23.0 Desktop routing passed with a mock model; separately, a real
-Hermes model read the images from a native Linux recording. The installed Linux
-AppImage passed normal URL launch, confirmation, screen consent, GUI Finish and
-signed return on a synthetic desktop without microphone audio. Mac native
-capture and fresh setup on both platforms remain release gates.
+Hermes model read the images from a native Linux recording. The installed macOS
+app and Linux AppImage passed normal URL launch, confirmation, screen consent,
+GUI Finish and signed return on isolated synthetic desktops with the microphone
+disabled. The Mac bundle also retained the original app and window context.
+Fresh onboarding and microphone capture on both platforms remain release gates.
 
 ## Desktop package and routing
 
