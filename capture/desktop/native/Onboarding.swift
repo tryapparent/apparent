@@ -613,7 +613,7 @@ struct OnboardingView: View {
     case "try-it": ("Make your first capture", state.firstCaptureRequired
       ? "Tap \(s) to start. Try giving feedback on this onboarding: talk and point at something. Tap \(s) again to finish. The capture stays local; nothing is sent to us."
       : "Tap \(s) now. Talk, point at something, then tap \(s) again.")
-    case "done": ("It's on your clipboard", "Press ⌘V in your agent. apparent stays in the menu bar; tap \(s) whenever you want to show something.")
+    case "done": ("It's on your clipboard", "Press ⌘V in your agent. While Apparent is running, tap \(s) to record again. After Quit, open Apparent from Applications first.")
     case "shortcut": ("Choose your shortcut", state.firstCaptureRequired
       ? (state.shortcutChosen
           ? "Shortcut saved. Continue to make your first capture."
@@ -622,7 +622,7 @@ struct OnboardingView: View {
       ? (model.shortcutEditor?.recording == true
           ? "Press the new shortcut now. Esc cancels; Continue keeps the current one."
           : "Continue to try it, or change it again.")
-      : "Record with \(s). You can change it now, or keep it and move on.")
+      : "Record with \(s) while Apparent is running. After Quit, open Apparent from Applications first. You can change the shortcut below.")
     default: ("Welcome to apparent", "Record your screen and voice. Mark what matters, then paste the capture into your agent.")
     }
     return VStack(spacing: 0) {

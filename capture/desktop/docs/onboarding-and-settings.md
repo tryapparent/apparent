@@ -1,5 +1,26 @@
 # Onboarding, permissions and Settings
 
+## Recording after Quit
+
+On macOS, open the installed **Apparent** from Applications (or find it with
+Spotlight). On Linux, open **Apparent** from your desktop's app launcher, or open
+your installed AppImage if you have not installed a launcher entry. Complete
+any onboarding or permission repair first, return to what you want to show, then
+press the Record shortcut shown in Settings **once**. Wait for the recording cue;
+press it again to finish, or use the existing cancel control to discard.
+The app-owned global shortcut requires Apparent to be running: it cannot wake a
+quit app. Launch at login is optional and is not required for this route.
+
+Opening the app is separate from starting a recording. Reopening a running app
+does not request a capture. Do not repeatedly press Record while waiting: Record
+is a start/finish toggle. If setup or capture fails, resolve the shown problem
+before trying again. If you dismiss the Linux sharing dialog or it fails to start,
+use the recording controls' **Cancel** before retrying. Existing captures, processing and uploads are not stopped
+by this route. Linux desktop-managed bindings can invoke `apparent shortcut
+record`, which already attempts a cold launch; their behavior and conflicts
+belong to the configured desktop binding, not to the in-process global shortcut.
+`apparent://open` opens setup/Settings only and never requests recording.
+
 ## Mac menu bar icon
 
 The Mac status item keeps the approved lowercase “a” at 18 points. It uses Lilac

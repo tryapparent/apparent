@@ -55,6 +55,9 @@ export function NativeOnboarding(){
   if(!state)return <main className="native-setup"><p>Connecting to apparent…</p></main>;
   const practice=state.step==='try-it',penPage=state.step==='welcome'&&state.penPicker;
   const boardName='Whiteboard';
+  const reopen=state.platform==='macos'?'open Apparent from Applications':'open Apparent from your app launcher or installed AppImage';
+  const launchGuidance=`The app-owned Record shortcut works while Apparent is running. After Quit, ${reopen}, finish any setup, then press your Record shortcut once.`;
+  const coachLaunchGuidance=`Record needs Apparent running. After Quit, reopen from ${state.platform==='macos'?'Applications':'your launcher or AppImage'}.`;
   document.title=state.testInstance?'apparent onboarding preview 9':'apparent setup';
   if(practice){
     const content:Record<string,{title:string;text:string;button?:string;action?:string}>={
@@ -68,7 +71,7 @@ export function NativeOnboarding(){
       copied:{title:'Copied. Try pasting it.',text:'Your capture is copied. Paste it into your agent.',button:'Show paste steps',action:'practice-paste'},
       paste:{title:'Paste your capture.',text:`In your agent, press ${state.platform==='linux'?'Ctrl':'⌘'} V. Confirm when it appears.`,button:'Confirm paste',action:'practice-pasted'},
       locate:{title:'apparent lives here.',text:`Find the apparent icon in your ${state.platform==='linux'?'system tray':'menu bar'}. Click it, then choose Open Latest Capture.`},
-      complete:{title:'Ready for your next idea.',text:'You can record, draw, paste, and find your captures. Your setup is complete.',button:'Finish setup',action:'practice-finish'},
+      complete:{title:'Ready for your next idea.',text:coachLaunchGuidance,button:'Finish setup',action:'practice-finish'},
       retry:{title:'Try another capture.',text:`Press ${state.shortcut} to start again, then follow both drawing prompts. Your previous capture is saved.`},
       'copy-failed':{title:'Saved, but not copied.',text:'Your capture is saved. Find it in apparent’s menu.',button:'Find saved capture',action:'practice-locate'},
     };
@@ -87,7 +90,7 @@ export function NativeOnboarding(){
       const codes:Record<string,number>={a:0,s:1,d:2,f:3,h:4,g:5,z:6,x:7,c:8,v:9,b:11,q:12,w:13,e:14,r:15,y:16,t:17,'1':18,'2':19,'3':20,'4':21,'6':22,'5':23,'9':25,'7':26,'8':28,'0':29,o:31,u:32,i:34,p:35,l:37,j:38,k:40,n:45,m:46};
       void action({action:'shortcut',kind:'record',keyCode:state.platform==='macos'?codes[key]:key.toUpperCase().charCodeAt(0),modifiers:(event.metaKey?256:0)|(event.shiftKey?512:0)|(event.altKey?2048:0)|(event.ctrlKey?4096:0),key,reserved:false});
     }}><p>Press your new shortcut.</p><Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div>:<><Button variant="outline" onClick={()=>void action('change-shortcut')}>Change shortcut</Button>{!state.shortcutChosen&&<Button onClick={()=>void action('use-current-shortcut')}>Use this shortcut</Button>}</>}{state.shortcutEditor?.error&&<p role="alert">{state.shortcutEditor.error}</p>}</div></>}
-    {state.step==='done'&&<><h1>Ready for your next idea.</h1><div className="native-explain"><img src={frog} alt=""/></div><p>apparent stays in the menu bar, ready when you are.</p></>}
+    {state.step==='done'&&<><h1>Ready for your next idea.</h1><div className="native-explain"><img src={frog} alt=""/></div><p>{launchGuidance}</p></>}
     {error&&<p role="alert">{error}</p>}
     </section><footer className={penPage?'native-pen-footer':undefined}><Button variant="ghost" onClick={()=>void action('back')} disabled={state.index===0||penBusy}>Back</Button>{!penPage&&<span>{state.index+1} / {state.count}</span>}<Button aria-busy={penPage&&penBusy} onClick={()=>penPage?confirmPen():void action('continue')} disabled={(penPage&&(!state.penSelected||penBusy||state.penError))||(state.step==='permissions'&&!state.ready)||(state.step==='shortcut'&&state.firstCaptureRequired&&!state.shortcutChosen)}>{state.step==='welcome'?(state.penPicker?'Use this pen':'Choose a pen'):state.step==='done'?'Finish setup':state.step==='permissions'?(state.fix?'Finish permission setup':'Choose recording shortcut'):'Try a capture'}</Button></footer></main>;
 }

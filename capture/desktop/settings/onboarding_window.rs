@@ -1286,11 +1286,6 @@ impl Render for OnboardingWindow {
             return root;
         };
         let (s, paste, _) = self.labels();
-        let tray = if cfg!(not(target_os = "macos")) {
-            "system tray"
-        } else {
-            "menu bar"
-        };
         let page: AnyElement = match state.step {
             Step::Welcome => self
                 .centered(
@@ -1334,7 +1329,7 @@ impl Render for OnboardingWindow {
                             "Continue to try it, or change it again.".to_owned()
                         }
                     } else {
-                        format!("Record with {s}. You can change it now, or keep it and move on.")
+                        format!("Record with {s} while Apparent is running. After Quit, open Apparent from your app launcher first. You can change the shortcut below.")
                     },
                 ))
                 .when(state.shortcut_editing, |d| d.child(
@@ -1390,7 +1385,7 @@ impl Render for OnboardingWindow {
                     164.0,
                     "It's on your clipboard",
                     format!(
-                        "Press {paste} in your agent. {} stays in the {tray}; tap {s} whenever you want to show something.",
+                        "Press {paste} in your agent. While {} is running, tap {s} to record again. After Quit, open Apparent from your app launcher first.",
                         if cfg!(target_os = "windows") { "Apparent" } else { "apparent" }
                     ),
                 )
