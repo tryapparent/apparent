@@ -103,7 +103,7 @@ test('platform admission keeps main full and exempts only selected ready PRs fro
 
 test('Public and updater retain their previous automatic input coverage', () => {
   for (const path of ['public/site/src/page.ts', 'shared/ui/button.ts', 'shared/analytics/index.ts',
-    'shared/assets/logo.svg', '.github/workflows/stream-public.yml']) {
+    'shared/assets/logo.svg', '.github/workflows/stream-public.yml', 'capture/desktop/docs/linux/linux.md']) {
     assert.deepEqual(select([path]), {public: true, updater: false}, path);
   }
   for (const path of ['capture/desktop/scripts/linux/gui/gui-vm.py',
@@ -384,7 +384,7 @@ test('Linux-only source/docs and metadata-only notes qualify independently and c
     git('add', '.'); git('commit', '-qm', 'reviewed modification');
     const result = runSelector(base, git('rev-parse', 'HEAD'), dir);
     assert.equal(result.macos, false, path);
-    assert.equal(result.public, path === featureMap, path);
+    assert.equal(result.public, path === featureMap || path === linuxDoc, path);
   }
   appendFile(portal, '\n// portal edit\n'); git('add', portal); git('commit', '-qm', 'compose portal and Settings');
   assert.equal(runSelector(base, git('rev-parse', 'HEAD'), dir).macos, false);
@@ -489,6 +489,9 @@ test('audited consumers keep full Linux commands, portable contracts, metadata w
   assert.match(source('composition/feature_map.rs'), /fn the_feature_map_covers_every_config_key_and_experiment/);
   assert.match(source('public/site/src/features.ts'), /import data from "\.\/features.json"/);
   assert.deepEqual(select([featureMap]), {public: true, updater: false});
+  assert.ok(metadata().features.some((feature: any) => feature.docs?.some((doc: string) => doc.startsWith(linuxDoc + '#'))),
+    'Public feature audit reads the Linux guide to resolve referenced headings');
+  assert.deepEqual(select([linuxDoc]), {public: true, updater: false});
   const platform = workflow('verification-platform.yml');
   const steps = platform.jobs.select.steps;
   assert.match(steps.find((step: any) => step.id === 'plan').run, /git hash-object -t tree \/dev\/null/);

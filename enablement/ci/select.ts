@@ -11,7 +11,9 @@ export function select(paths: string[] | null): {public: boolean; updater: boole
   return {
     public: orchestration || paths.some(path =>
       ['public/site/', 'shared/ui/', 'shared/analytics/', 'shared/assets/'].some(prefix => path.startsWith(prefix)) ||
-      path === '.github/workflows/stream-public.yml'),
+      path === '.github/workflows/stream-public.yml' ||
+      // Public's feature audit reads this guide's referenced headings.
+      path === 'capture/desktop/docs/linux/linux.md'),
     updater: orchestration || paths.some(path =>
       ['capture/desktop/scripts/linux/gui/', 'capture/desktop/scripts/linux/updater/'].some(prefix => path.startsWith(prefix)) ||
       ['.github/workflows/linux-updater-harness.yml', 'capture/desktop/linux/update.rs',

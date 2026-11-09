@@ -450,6 +450,8 @@ The same rule admits modifications to the audited Linux portal implementation
 `capture/desktop/docs/linux/linux.md`. These may compose with the five Settings
 cards and documentation-only feature-map edits. No Linux directory or Rust
 extension is generally exempt. The selector logs deterministic per-input reasons.
+Public's feature-map build audit reads headings from this Linux guide, so guide
+edits also retain Public web verification independently of metadata edits.
 
 The portal's module chain is `capture/desktop/mod.rs`'s `cfg(target_os="linux")`
 declaration, then `linux/mod.rs` and `linux/capture/mod.rs`. Its media, shortcut
