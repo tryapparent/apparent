@@ -28,6 +28,11 @@ if sys.argv[1] == 'decoder-check':
     print('Decoded 1 full-quality H.264 keyframe(s) (160x90)')
     sys.exit(0)
 if sys.argv[1:] == ['app']:
+    extracted = pathlib.Path(os.environ['TMPDIR']) / 'appimage-extracted'
+    extracted.mkdir()
+    evidence = root / 'retained-evidence'
+    evidence.write_text('must remain')
+    (extracted / 'AppRun').symlink_to(evidence)
     sockets = []
     for relative in ('.config/apparent/agent-control/capture.sock', '.config/apparent/launch/open.sock'):
         path = root / relative
@@ -74,11 +79,11 @@ print(json.dumps(reply))
 
 class SyntheticRecipe(smoke.Recipe):
     def prepare(self):
-        # This transport fixture owns a synthetic guest, not the host's process
-        # namespace. Keep the real cleanup census after prepare has returned.
+        # The synthetic guest has an explicit process snapshot. Restore the real
+        # host census before transport execution and owned-process cleanup.
         iterdir = Path.iterdir
         def guest_entries(path):
-            return iter(()) if path == Path('/proc') else iterdir(path)
+            return iter(self.guest_processes) if path == Path('/proc') else iterdir(path)
         with patch.object(Path, 'iterdir', guest_entries):
             return super().prepare()
 
@@ -123,6 +128,8 @@ class CleanupTests(unittest.TestCase):
     def test_reaped_peer_never_signalled_or_probed_and_live_peer_is_joined(self):
         with tempfile.TemporaryDirectory(prefix='cs-', dir=os.environ.get('TMPDIR')) as directory:
             recipe = smoke.Recipe(Path(directory), Path('/unused'), 1)
+            recipe.runtime = Path(directory) / 'runtime'
+            recipe.runtime.mkdir()
             stale = recipe.launch([sys.executable, '-c', 'pass'], 'stale.log')
             stale.wait(timeout=3)
             live = recipe.launch([sys.executable, '-c', 'import time; time.sleep(120)'], 'live.log')
@@ -138,6 +145,7 @@ class CleanupTests(unittest.TestCase):
                 self.assertIsNotNone(live.returncode)
                 self.assertEqual(recipe.report['gates']['owned_process_cleanup'], 'FAIL')
                 self.assertTrue(any('ownership' in error for error in recipe.report['cleanup_errors']))
+                self.assertTrue(recipe.runtime.is_dir(), 'uncertain writers must retain runtime')
             finally:
                 if live.poll() is None:
                     live.kill()
@@ -200,7 +208,7 @@ class CleanupTests(unittest.TestCase):
 
 
 class TransportTests(unittest.TestCase):
-    def exercise(self, fail=False, pending=False, no_decoder=False):
+    def exercise(self, fail=False, pending=False, no_decoder=False, existing_process=False):
         # Keep paths short, as required by the real Unix control socket contract.
         with tempfile.TemporaryDirectory(prefix='cs-', dir=os.environ.get('TMPDIR')) as directory:
             root = Path(directory)
@@ -216,6 +224,9 @@ class TransportTests(unittest.TestCase):
             systemctl = tools / 'systemctl'
             authority = runtime / 'xauthority'
             authority.write_text('synthetic session authority')
+            guest_process = root / '123'
+            guest_process.mkdir()
+            (guest_process / 'comm').write_text('apparent\n')
             systemctl.write_text('#!/bin/sh\nprintf "DISPLAY=:synthetic\\nXDG_RUNTIME_DIR=' + str(runtime) +
                                  '\\nXAUTHORITY=' + str(authority) + '\\n"\n')
             systemctl.chmod(0o700)
@@ -234,8 +245,13 @@ class TransportTests(unittest.TestCase):
                 env['PEER_NO_DECODER'] = '1'
             with patch.dict(os.environ, env, clear=True):
                 recipe = SyntheticRecipe(out, binary, 1)
+                recipe.guest_processes = [guest_process] if existing_process else []
+                cleanup_census = Path.iterdir
                 try:
-                    if no_decoder:
+                    if existing_process:
+                        with self.assertRaisesRegex(smoke.Failure, 'existing product process'):
+                            recipe.run()
+                    elif no_decoder:
                         with self.assertRaisesRegex(smoke.Failure, 'H.264 decoder'):
                             recipe.run()
                     elif pending:
@@ -247,12 +263,26 @@ class TransportTests(unittest.TestCase):
                     else:
                         recipe.run()
                 finally:
-                    recipe.cleanup()
+                    try:
+                        self.assertIs(Path.iterdir, cleanup_census, 'prepare must restore the real cleanup census')
+                    finally:
+                        recipe.cleanup()
             self.assertEqual(recipe.env['XAUTHORITY'], str(authority))
             report = json.loads((out / 'capture-smoke-report.json').read_text())
             self.assertEqual(report['gates']['owned_process_cleanup'], 'PASS', report)
+            if existing_process:
+                self.assertEqual(report['requests'], [])
+                self.assertFalse((out / 'scene.json').exists())
+                self.assertEqual(report['gates']['gui_ready'], 'UNRUN')
+                self.assertEqual(report['gates']['h264_decoder'], 'UNRUN')
+                return
             self.assertFalse((out / '.config/apparent/agent-control/capture.sock').exists())
             self.assertFalse((out / '.config/apparent/launch/open.sock').exists())
+            self.assertFalse(recipe.runtime.exists(), 'AppImage extraction must not reach artifact retention')
+            self.assertFalse(recipe.runtime.is_relative_to(out))
+            self.assertTrue(report['removed_private_runtime'])
+            if not no_decoder:
+                self.assertEqual((out / 'retained-evidence').read_text(), 'must remain')
             self.assertEqual(report['gates']['selected_target_pixels'], 'UNRUN')
             self.assertEqual(report['gates']['movie_nonblack_changing'], 'UNRUN')
             if no_decoder:
@@ -288,6 +318,9 @@ class TransportTests(unittest.TestCase):
 
     def test_whole_recipe_with_real_harmless_transport(self):
         self.exercise()
+
+    def test_existing_guest_product_stops_before_decoder_scene_or_capture(self):
+        self.exercise(existing_process=True)
 
     def test_missing_decoder_stops_before_scene_gui_or_capture(self):
         self.exercise(no_decoder=True)
