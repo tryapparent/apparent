@@ -376,6 +376,8 @@ pub struct SettingsWindow {
     events: Events,
     focus: FocusHandle,
     appearance_revision: u64,
+    #[cfg(target_os = "linux")]
+    input_access: Option<crate::capture::desktop::linux::privacy::InputAccess>,
     update_later_focus: FocusHandle,
     update_now_focus: FocusHandle,
     update_dismiss_focus: FocusHandle,
@@ -482,7 +484,21 @@ fn open(request: Request, cx: &mut App) {
                                     #[cfg(not(target_os = "linux"))]
                                     { false }
                                 };
-                                if changed || appearance_changed || view.pane == Pane::Recording && view.meter.is_some() {
+                                // Device facts can change while the permission remains denied
+                                // (for example, a partial reader needs restart after a grant).
+                                // Those facts are refreshed off-thread, outside ViewState.
+                                let input_access_changed = {
+                                    #[cfg(target_os = "linux")]
+                                    {
+                                        let access = crate::capture::desktop::linux::privacy::input_access();
+                                        let changed = view.input_access != access;
+                                        view.input_access = access;
+                                        changed && view.pane == Pane::Permissions
+                                    }
+                                    #[cfg(not(target_os = "linux"))]
+                                    { false }
+                                };
+                                if changed || appearance_changed || input_access_changed || view.pane == Pane::Recording && view.meter.is_some() {
                                     cx.notify();
                                 }
                                 true
@@ -505,6 +521,8 @@ fn open(request: Request, cx: &mut App) {
                         #[cfg(not(target_os = "linux"))]
                         { 0 }
                     },
+                    #[cfg(target_os = "linux")]
+                    input_access: crate::capture::desktop::linux::privacy::input_access(),
                     update_later_focus: cx.focus_handle(),
                     update_now_focus: cx.focus_handle(),
                     update_dismiss_focus: cx.focus_handle(),
@@ -1884,6 +1902,18 @@ impl SettingsWindow {
         cx: &mut Context<Self>,
     ) -> Div {
         let permission = row.permission;
+        #[cfg(target_os = "linux")]
+        let input_access = if permission == Permission::Accessibility {
+            crate::capture::desktop::linux::privacy::input_access()
+        } else { None };
+        #[cfg(target_os = "linux")]
+        let input_restart_required = input_access.is_some_and(|access| access.restart_required == Some(true));
+        #[cfg(not(target_os = "linux"))]
+        let input_restart_required = false;
+        #[cfg(target_os = "linux")]
+        let input_reader_unknown = input_access.is_some_and(|access| access.keyboard && access.pointer && access.restart_required.is_none());
+        #[cfg(not(target_os = "linux"))]
+        let input_reader_unknown = false;
         let (name, why, path, tint) = match permission {
             Permission::ScreenRecording => (
                 "Screen Recording",
@@ -1905,7 +1935,11 @@ impl SettingsWindow {
             ),
             Permission::Accessibility if LINUX => (
                 "Input devices",
-                "For Shift ink and clicks. Run the copied command in a terminal, then log out and back in.".to_owned(),
+                if input_restart_required {
+                    "Input access changed after the reader started. Finish any capture, then quit and start Apparent. Existing readers can retain earlier access until you quit. Input-group changes require a full logout/login. Readability does not establish pin or Shift-click positioning.".to_owned()
+                } else {
+                    "Optional input access is separate from screen consent. The input group lets all your apps read typing and mouse events; use the copied command only if you accept this scope. After changing access, finish capture and restart Apparent; group changes require full logout/login. Readability does not verify a working reader or ink. GNOME/KDE Wayland pin and Shift-click positions remain unavailable. Screen/voice capture stays available.".to_owned()
+                },
                 crate::capture::desktop::icons::CLICK,
                 BLUE,
             ),
@@ -1933,7 +1967,11 @@ impl SettingsWindow {
         };
         let granted = row.status == Status::Granted;
         let id = SharedString::from(format!("settings-grant-{permission:?}"));
-        let trailing: AnyElement = if granted && row.relaunch {
+        let trailing: AnyElement = if input_restart_required {
+            div().text_size(px(12.0)).text_color(theme.secondary()).child("Restart required").into_any_element()
+        } else if !granted && input_reader_unknown {
+            div().text_size(px(12.0)).text_color(theme.secondary()).child("Reader unknown").into_any_element()
+        } else if granted && row.relaunch {
             button(theme, id, "Reopen Apparent", true)
                 .on_click(cx.listener(|view, _, _, _| view.act(Action::Reopen)))
                 .into_any_element()

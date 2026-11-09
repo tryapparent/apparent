@@ -56,7 +56,9 @@ impl Permission {
     ];
 
     pub fn required(self) -> bool {
-        Self::REQUIRED.contains(&self) && (self != Self::Microphone || crate::capture::engine::runtime::audio::mic::enabled())
+        Self::REQUIRED.contains(&self)
+            && !(cfg!(target_os = "linux") && self == Self::Accessibility)
+            && (self != Self::Microphone || crate::capture::engine::runtime::audio::mic::enabled())
     }
 
     /// Whether this Mac asks for it at all: Speech Recognition only when the helper reports it
@@ -585,7 +587,9 @@ impl Flow {
 
     /// A step the tour passes: the permissions screen once everything on it works.
     fn passes(&self, step: Step) -> bool {
-        (step == Step::HowItWorks && self.skip_intro) || (step == Step::Permissions && self.done())
+        (step == Step::HowItWorks && self.skip_intro)
+            || (step == Step::Permissions && self.done()
+                && !(cfg!(target_os = "linux") && !self.usable(Permission::Accessibility)))
     }
 
     fn forward_from(&self, mut step: Step) -> Step {
@@ -1505,6 +1509,8 @@ impl Session {
         if let Some(practice)=self.practice.as_ref() {view["practice"]=serde_json::json!(practice.stage);}
         view["shortcut"]=self.shortcut_label.clone().into();
         view["platform"]=std::env::consts::OS.into();
+        #[cfg(target_os = "linux")]
+        { view["inputAccess"] = serde_json::json!(crate::capture::desktop::linux::privacy::input_access()); }
         view["shortcutEditor"]=serde_json::json!(self.editor);
         view["anchor"]=serde_json::json!(self.anchor);
         view["practiceBoard"]=serde_json::json!(self.practice_board);
@@ -2012,7 +2018,8 @@ mod tests {
         assert_eq!(flow.on(Input::Continue), Effect::None);
         assert_eq!(flow.step(), Step::Permissions);
         assert_eq!(rows(&flow), Permission::REQUIRED);
-        assert!(flow.view().rows.iter().all(|r| r.required));
+        assert!(flow.view().rows.iter().all(|r| r.required
+            || (cfg!(target_os = "linux") && r.permission == Accessibility)));
         // Camera is asked for when used, never in the tour.
         assert!(!rows(&flow).contains(&Camera));
         // Continue does nothing until the required ones are on.
@@ -2137,7 +2144,24 @@ mod tests {
         let fix = Flow::fix(Permission::REQUIRED.to_vec(), Some(grants(&[])));
         assert_eq!(rows(&fix)[0], ScreenRecording);
         assert_eq!(rows(&fix)[2], Accessibility);
-        assert!(Accessibility.required() && Accessibility.draggable());
+        assert_eq!(Accessibility.required(), !cfg!(target_os = "linux"));
+        assert!(Accessibility.draggable());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_tour_allows_screen_voice_without_claiming_input_access() {
+        let available = grants(&[ScreenRecording, Microphone]);
+        let tour = Flow::tour(Step::Permissions, Some(available.clone()));
+        assert!(tour.view().ready);
+        assert!(!tour.grants.as_ref().unwrap().granted(Accessibility));
+        let mut from_intro = Flow::tour(Step::HowItWorks, Some(available.clone()));
+        from_intro.on(Input::Continue);
+        assert_eq!(from_intro.step(), Step::Permissions);
+        from_intro.on(Input::Continue);
+        assert_eq!(from_intro.step(), Step::Shortcut);
+        let fix = Flow::fix(vec![Accessibility], Some(available));
+        assert!(!fix.view().ready);
     }
 
     #[test]

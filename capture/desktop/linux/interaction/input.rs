@@ -1,7 +1,7 @@
 //! Keys and mouse buttons straight from the kernel's input devices (`/dev/input/event*`), for a
 //! Wayland session, where no app hears another's input. Reading them needs membership of the
-//! `input` group (`sudo usermod -aG input $USER`, then log in again): the same trust macOS asks
-//! for with Accessibility. Apparent only keeps which modifiers and buttons are down and a few
+//! `input` group (`sudo usermod -aG input $USER`, then log in again). This grants the user's
+//! processes broad device access, not an app-scoped permission. Apparent only keeps which modifiers and buttons are down and a few
 //! keys (its shortcuts, Esc, Ctrl+Z); it never records what is typed.
 //!
 //! On X11 none of this is used: the X server answers the same questions (`super::x11`).
@@ -120,6 +120,7 @@ struct Reader {
 
 static READER: OnceLock<Reader> = OnceLock::new();
 static STARTED: Mutex<bool> = Mutex::new(false);
+static ACQUIRED_ACCESS: OnceLock<Access> = OnceLock::new();
 
 fn event_devices() -> Vec<std::path::PathBuf> {
     let mut list: Vec<_> = std::fs::read_dir("/dev/input")
@@ -165,8 +166,11 @@ fn has_key(bits: &[u8], code: u16) -> bool {
 
 /// Keyboards and mice: devices with Shift or a left button.
 fn interesting(fd: &OwnedFd) -> bool {
-    key_bits(fd)
-        .is_some_and(|bits| has_key(&bits, code::KEY_LEFTSHIFT) || has_key(&bits, code::BTN_LEFT))
+    key_bits(fd).is_some_and(|bits| {
+        let mut access = Access::default();
+        access.observe(&bits);
+        access.keyboard || access.pointer
+    })
 }
 
 /// `EVIOCGABS(axis)`: an absolute axis's range, `None` when the device has none.
@@ -190,12 +194,89 @@ fn absolute_axes(fd: &OwnedFd) -> Option<[(i32, i32); 2]> {
     Some([abs_range(fd, ABS_X)?, abs_range(fd, ABS_Y)?])
 }
 
-/// Whether Apparent may read at least one keyboard or mouse.
-pub fn devices_readable() -> bool {
-    event_devices()
+/// Fresh device-open facts, not group membership or a guarantee of pointer coordinates.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Access {
+    pub keyboard: bool,
+    pub pointer: bool,
+}
+
+impl Access {
+    fn observe(&mut self, bits: &[u8]) {
+        self.keyboard |= has_key(bits, code::KEY_LEFTSHIFT) || has_key(bits, code::KEY_RIGHTSHIFT);
+        self.pointer |= has_key(bits, code::BTN_LEFT);
+    }
+
+    #[cfg(test)]
+    fn complete(self) -> bool {
+        self.keyboard && self.pointer
+    }
+}
+
+pub fn access() -> Access {
+    let mut access = Access::default();
+    for bits in event_devices()
         .iter()
         .filter_map(|p| open(p))
-        .any(|fd| interesting(&fd))
+        .filter_map(|fd| key_bits(&fd))
+    {
+        access.observe(&bits);
+    }
+    access
+}
+
+/// Compare fresh permissions with the capabilities acquired when the reader started.
+/// No acquisition means unknown, not a matching reader or proof of live event delivery.
+/// Device discovery/reopening remains a separate workflow.
+pub fn restart_required(available: Access) -> Option<bool> {
+    access_changed(ACQUIRED_ACCESS.get().copied(), available)
+}
+
+fn access_changed(acquired: Option<Access>, available: Access) -> Option<bool> {
+    acquired.map(|acquired| acquired != available)
+}
+
+#[cfg(test)]
+mod access_tests {
+    use super::*;
+
+    fn bits(code: u16) -> Vec<u8> {
+        let mut bits = vec![0; 96];
+        bits[usize::from(code / 8)] |= 1 << (code % 8);
+        bits
+    }
+
+    #[test]
+    fn input_access_requires_keyboard_and_pointer_in_each_snapshot() {
+        let mut access = Access::default();
+        assert!(!access.complete());
+        access.observe(&bits(code::BTN_LEFT));
+        assert!(access.pointer && !access.keyboard && !access.complete());
+        access.observe(&bits(code::KEY_RIGHTSHIFT));
+        assert!(access.complete());
+        let mut refreshed = Access::default();
+        refreshed.observe(&bits(code::KEY_LEFTSHIFT));
+        assert!(refreshed.keyboard && !refreshed.pointer && !refreshed.complete());
+    }
+
+    #[test]
+    fn changed_reader_capabilities_require_restart_in_both_directions() {
+        let pointer = Access {
+            keyboard: false,
+            pointer: true,
+        };
+        let both = Access {
+            keyboard: true,
+            pointer: true,
+        };
+        assert_eq!(access_changed(None, both), None);
+        assert_eq!(access_changed(None, Access::default()), None);
+        assert_eq!(access_changed(Some(both), both), Some(false));
+        assert_eq!(access_changed(Some(pointer), both), Some(true));
+        assert_eq!(access_changed(Some(both), pointer), Some(true));
+        assert_eq!(access_changed(Some(both), Access::default()), Some(true));
+    }
 }
 
 /// Starts reading every keyboard and mouse (once). `false` when none can be read.
@@ -214,6 +295,12 @@ pub fn start() -> bool {
     if fds.is_empty() {
         return false;
     }
+    let mut acquired = Access::default();
+    for fd in &fds {
+        if let Some(bits) = key_bits(fd) {
+            acquired.observe(&bits);
+        }
+    }
     crate::capture::engine::runtime::apparent_log(format!("input devices: reading {}", fds.len()));
     READER.get_or_init(|| Reader {
         held: Mutex::new(Held::default()),
@@ -223,6 +310,9 @@ pub fn start() -> bool {
         .name("apparent-evdev".into())
         .spawn(move || read_loop(fds))
         .is_ok();
+    if *started {
+        let _ = ACQUIRED_ACCESS.set(acquired);
+    }
     *started
 }
 
