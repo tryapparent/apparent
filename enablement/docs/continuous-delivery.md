@@ -38,7 +38,7 @@ include deleted and renamed source paths. There are no PR-edit or verification
 lifecycle triggers. Superseded PR runs coalesce within their PR; main pushes use distinct commit groups so a docs-only push cannot cancel or replace pending verification for an earlier code change.
 Neither reusable consumer publishes on an automatic run.
 
-Ordinary documentation-only deltas retain cheap contracts but skip Linux/Mac platform suites and Hermes inspection. The selector exempts Markdown in owner `docs/` directories, package READMEs/changelogs and the named repository reference docs. `AGENTS.md`, `SKILL.md`, other agent instructions, skill/prompt/instruction directories, test/fixture/template Markdown, the root README consumed by the ordinary site build, and unclassified Markdown remain verification inputs. Mixed changes, missing history and empty deltas retain full platform coverage. Public/updater selectors ignore only these ordinary prose paths; non-document inputs retain their previous coverage. PR selection uses the complete base-to-merge delta, including deletions and both rename sides. Manual platform workflows still verify the full tree.
+Ordinary documentation-only deltas retain cheap contracts but skip Linux/Mac platform suites and Mac Hermes inspection. The selector exempts Markdown in owner `docs/` directories, package READMEs/changelogs and the named repository reference docs. `AGENTS.md`, `SKILL.md`, other agent instructions, skill/prompt/instruction directories, test/fixture/template Markdown, the root README consumed by the ordinary site build, and unclassified Markdown remain verification inputs. Mixed changes, missing history and empty deltas retain full platform coverage. Public/updater selectors ignore only these ordinary prose paths; non-document inputs retain their previous coverage. PR selection uses the complete base-to-merge delta, including deletions and both rename sides. Manual platform workflows still verify the full tree.
 
 Every non-deletion push runs cheap contracts plus the affected owners' local
 suites, selected by `enablement/local-tests/run.ts` over the full merge-base delta.
@@ -76,12 +76,19 @@ separate; it does not control the enforced hook selection.
 
 The same workflow also calls the full Linux and Mac platform suites on main
 pushes and on non-draft PRs (opened, reopened, updated or marked ready for review).
-Drafts retain inexpensive checks; converting a PR back to draft cancels its
+Automatic Mac verification and Mac Hermes inspection wait for successful full
+Linux verification, cheap contracts and Linux Hermes inspection for the same
+candidate. Failed, cancelled or skipped prerequisites prevent Mac allocation.
+Linux verification and the cheap checks start independently. Drafts retain
+inexpensive Linux checks; converting a PR back to draft cancels its
 superseded full run. Each update tests GitHub's proposed merge commit, with
 read-only permissions and no release receipt. These jobs appear directly on the
 PR, so their actual completion is visible without a status reporter or manual
 dispatch. Existing separate manual runs do not substitute for this integrated
 candidate. Publication remains manual and retains its existing admission policy.
+This is a dependency gate, not a global concurrency limit or priority queue.
+Removing these Mac `needs` dependencies restores parallel platform scheduling;
+manual platform diagnostics remain independent.
 
 `Linux verification` and `Mac verification` remain manual diagnostic entrypoints,
 each coalescing superseded runs within its own platform. Both call the same reusable
