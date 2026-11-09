@@ -1184,7 +1184,7 @@
       "status": "main",
       "added": "2026-11-08",
       "platforms": ["mac", "linux"],
-      "note": "Source candidate; catalog publication, real Hermes Desktop model vision and fresh native setup remain release gates. The generated desktop package adds Record with Apparent: native confirmation, existing recording controls, then exact-session message admission through the originating gateway. Stock 0.23.0 uses its session-scoped safe-shell API for local app launch; remote connections retain manual paste with existing Connect access. Installed capture/return on macOS/Linux remains unverified. No automatic recorder installation or upload enablement.",
+      "note": "Source candidate; catalog publication, Mac native capture and fresh setup remain release gates. The generated desktop package adds Record with Apparent: native confirmation, existing recording controls, then exact-session message admission through the originating gateway. Stock 0.23.0 uses its session-scoped safe-shell API for local app launch and private return-key access; remote connections retain manual paste with existing Connect access. Stock Desktop routing with a mock model, real Hermes model image inspection and installed Linux screen capture/GUI Finish/signed return passed separately on synthetic content. Microphone capture was not tested. No automatic recorder installation or upload enablement.",
       "docs": ["hermes/README.md"]
     },
     {

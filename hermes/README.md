@@ -15,8 +15,11 @@ Cancel sends nothing. New unsaved chats are refused. Native confirmation prevent
 an external URL from silently starting capture; normal permissions still apply.
 
 This is a source candidate for Hermes Desktop on macOS/Linux, not a catalog
-release. Actual Hermes Desktop loopback access, model vision, installed native
-launch/capture and fresh setup on both platforms remain release gates.
+release. Stock 0.23.0 Desktop routing passed with a mock model; separately, a real
+Hermes model read the images from a native Linux recording. The installed Linux
+AppImage passed normal URL launch, confirmation, screen consent, GUI Finish and
+signed return on a synthetic desktop without microphone audio. Mac native
+capture and fresh setup on both platforms remain release gates.
 
 ## Desktop package and routing
 
