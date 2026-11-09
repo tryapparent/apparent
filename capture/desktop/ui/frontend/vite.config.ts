@@ -37,5 +37,5 @@ export default defineConfig({
     await build({ entryPoints: { 'onboarding-workflow': '../../../../onboarding/src/host.ts' },
       bundle: true, platform: 'node', format: 'cjs', outdir: path.resolve(reportingOutput), outExtension: { '.js': '.cjs' } });
   } }],
-  build: { rollupOptions: { input: { foundation: 'index.html', settings: 'settings.html', onboarding: 'onboarding.html', installer: 'src/installer/index.html', pill: 'pill/index.html' } } },
+  build: { rollupOptions: { input: { foundation: 'index.html', settings: 'settings.html', onboarding: 'onboarding.html', installer: 'src/installer/index.html', pill: 'pill/index.html', controls: 'src/controls/index.html' } } },
 });
