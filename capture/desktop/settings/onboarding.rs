@@ -1106,7 +1106,6 @@ pub struct Session {
     practice_request_id: u64,
     practice_board: Option<[f32;4]>,
     practice_completed: bool,
-    practice_bundle: Option<std::path::PathBuf>,
     editor: Option<crate::capture::desktop::settings::ShortcutView>,
     pen_picker: bool,
     pen_selected: bool,
@@ -1144,7 +1143,7 @@ impl Session {
             practice_alive: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             practice_request_id: 0,
             practice_board: None,
-            practice_completed:false,practice_bundle:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
+            practice_completed:false,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
         }
     }
 
@@ -1250,7 +1249,7 @@ impl Session {
             practice_alive,
             practice_request_id: 0,
             practice_board: None,
-            practice_completed:false,practice_bundle:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
+            practice_completed:false,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
         };
         session.shortcut_changed(shortcut);
         session.sync();
@@ -1445,7 +1444,6 @@ impl Session {
                 Input::CaptureSelecting => self.practice.as_mut().unwrap().begin("selecting"),
                 Input::CaptureStarted => {
                     self.practice_completed=false;
-                    self.practice_bundle=None;
                     self.practice_progress_saved=false;
                     if let Some(facts)=self.practice.as_mut() { facts.reset(); }
                 },
@@ -1631,15 +1629,10 @@ impl Session {
         self.flow.step() == Step::Shortcut
     }
 
-    pub fn observe_practice(&mut self, board:bool, screen:usize, processing:bool, saved:Option<bool>) {
+    pub fn observe_practice(&mut self, board:bool, screen:usize, processing:bool) {
         if self.flow.step()!=Step::TryIt {return;}
         if let Some(facts)=self.practice.as_mut() {
             facts.observe(board,screen,processing);
-            // Compatibility for the current-main completion producer. The new Record
-            // producer calls practice_completion with its explicit original identity.
-            if let (Some(copied), Some(capture)) = (saved, facts.observation.as_ref().and_then(|o|o.capture.clone())) {
-                facts.complete(capture,self.practice_bundle.as_deref(),Some(copied));
-            }
         }
         self.sync();
     }
@@ -1674,9 +1667,6 @@ impl Session {
     pub fn practice_opened_bundle(&mut self, path: &Path) {
         if let Some(facts)=self.practice.as_mut() { facts.opened(path); }
         self.sync();
-    }
-    pub fn practice_saved_bundle(&mut self, path: &Path) {
-        if self.practice_active() { self.practice_bundle = Some(path.to_owned()); }
     }
 
     /// Capability admission stays native. Lesson decisions come only from the host.

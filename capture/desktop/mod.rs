@@ -868,6 +868,8 @@ pub struct ApparentCoordinator {
     active_recording: Option<ActiveRecording>,
     /// Identifies the recording whose finalization may update the current UI.
     capture_generation: u64,
+    /// Prevent repeated publication callbacks from scheduling a second clipboard write.
+    completion_pending: Option<u64>,
     capture_local_practice: bool,
     /// Media workers outlive their capsule and still own unfinished bundles.
     pending_finalizers: usize,
@@ -1006,6 +1008,7 @@ impl ApparentCoordinator {
             whiteboard: Rc::new(RefCell::new(whiteboard::Board::default())),
             active_recording: None,
             capture_generation: 0,
+            completion_pending: None,
             capture_local_practice: false,
             pending_finalizers: 0,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -1646,7 +1649,7 @@ impl ApparentCoordinator {
         let screen=self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|s|!s.laser && s.pts.len()>9).count();
         let processing=self.is_processing();
         let note_saved=self.note_ui.as_ref().is_some_and(|notes|notes.has_saved_note());
-        if let Some(session)=self.onboarding.as_mut() {session.practice_note_saved(note_saved);session.observe_practice(board,screen,processing,None);}
+        if let Some(session)=self.onboarding.as_mut() {session.practice_note_saved(note_saved);session.observe_practice(board,screen,processing);}
     }
 
     pub fn tick_gate(&mut self) {
@@ -3765,14 +3768,10 @@ impl ApparentCoordinator {
             self.agent_captures.set(id, "processing", None, None);
         }
         #[cfg(target_os = "linux")]
-        let auto_active = !std::mem::take(&mut self.agent_finishing)
-            && crate::shared::handoff::experiment(crate::capture::desktop::linux::auto_paste::EXPERIMENT)
-            && crate::capture::desktop::linux::hyprland::running()
-            && crate::capture::desktop::linux::wayland_session()
-            && !self.lab
-            && matches!(&rec.source, CaptureSource::Screen { .. });
+        let agent_requested = std::mem::take(&mut self.agent_finishing);
         #[cfg(not(target_os = "linux"))]
-        let auto_active = false;
+        let agent_requested = false;
+        let completion_source = if matches!(&rec.source, CaptureSource::Phone(_)) { "phone" } else { "screen" };
         // Keep the capture-local receipt alive while Finish drains already queued Saves.
         let note_receipt = self.note_ui.as_ref().map(workflow::notes::Session::saved_note_receipt);
         let notes_finished = self.note_ui.take().map(workflow::notes::Session::finish);
@@ -3786,6 +3785,26 @@ impl ApparentCoordinator {
         drop(rec._metal_overlay);
         self.set_island_phase(IslandPhase::Processing);
         let generation = self.capture_generation;
+        let completion_facts = desktop_completion::Facts {
+            capture: desktop_completion::Capture {
+                generation: generation.to_string(),
+                capture_id: finishing_id.clone().unwrap_or_default(),
+                request_id: finishing_id.clone(),
+            },
+            platform: if cfg!(target_os = "linux") { "linux" } else { "macos" }.into(),
+            source: completion_source.into(),
+            agent_requested,
+            automatic_trial_enabled: crate::shared::handoff::experiment("autoPasteDraft"),
+            lab: self.lab,
+            #[cfg(target_os = "linux")]
+            hyprland: crate::capture::desktop::linux::hyprland::running(),
+            #[cfg(not(target_os = "linux"))]
+            hyprland: false,
+            #[cfg(target_os = "linux")]
+            wayland: crate::capture::desktop::linux::wayland_session(),
+            #[cfg(not(target_os = "linux"))]
+            wayland: false,
+        };
         // Freeze practice policy with the worker, independent of window/UI lifetime.
         let local_practice = self.capture_local_practice;
         self.completed_note = None;
@@ -3854,7 +3873,7 @@ impl ApparentCoordinator {
                                 }
                             }
                             coord.present_capture_result(
-                                finalized, duration_ms, auto_active, cx,
+                                finalized, duration_ms, completion_facts, cx,
                             );
                         },
                     );
