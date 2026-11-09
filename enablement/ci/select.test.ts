@@ -414,9 +414,10 @@ test('mixed shared, Mac, ABI, dependencies, packaging, CI and unknown inputs ret
   }
 }));
 
-test('real Git additions, deletions, both rename sides, executable modes and symlinks fail closed', () => linuxFixture((git, dir, base) => {
-  const card = 'capture/desktop/ui/frontend/src/storage.tsx';
-  for (const path of [portal, linuxDoc, card, ...linuxInputs]) {
+// One independently isolated case per input keeps the full status/mode matrix
+// below the runner's per-test deadline without dropping any assertions.
+for (const path of [portal, linuxDoc, 'capture/desktop/ui/frontend/src/storage.tsx', ...linuxInputs]) {
+test('real Git status and mode changes fail closed: ' + path, () => linuxFixture((git, dir, base) => {
     for (const operation of ['add', 'delete', 'rename-out', 'rename-in', 'chmod', 'symlink', 'edit-symlink']) {
       git('checkout', '--detach', base);
       if (operation === 'add' || operation === 'rename-in') {
@@ -440,8 +441,8 @@ test('real Git additions, deletions, both rename sides, executable modes and sym
       assert.ok(changedPaths(from, head, true)!.includes(path), `${path}: ${operation}`);
       if (operation.startsWith('rename-')) assert.deepEqual(changedPaths(from, head)!.sort(), [path, 'outside.txt'].sort());
     }
-  }
 }));
+}
 
 test('full merge delta carries earlier unverified changes; missing, divergent and shallow history retain coverage', () => linuxFixture((git, dir, base) => {
   writeFileSync('shared-contract.rs', 'earlier unverified change');
