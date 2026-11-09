@@ -120,6 +120,14 @@ Rows for draggable lists (`Permission::draggable`: Screen Recording, Accessibili
 
 ### First-capture onboarding
 
+The Electron guide's lesson progression now lives in the headless TypeScript
+[`onboarding/`](../../../onboarding/README.md) owner. Native code supplies capture,
+ink, durable-note, actual clipboard and shell-open observations; renderer buttons
+cannot manufacture them. Completion progress uses an allowlisted leaf transaction
+on the existing config executor, preserving unknown nested settings. Setup and
+permission-repair progression retain their existing native authority until the
+next bounded slice. See the owner README for routing, fallback and rollback.
+
 First-capture onboarding is enabled by default. Set
 `"experiments": {"onboardingFirstCapture": false}` to opt out, then restart the app
 or reopen the tour. The opt-out restores optional shortcut choice and practice.

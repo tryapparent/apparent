@@ -1,0 +1,23 @@
+{
+  "name": "@apparent/onboarding",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": { "types": "./dist/practice.d.ts", "default": "./dist/practice.js" },
+    "./host": { "types": "./dist/host.d.ts", "default": "./dist/host.js" },
+    "./session": { "types": "./dist/session.d.ts", "default": "./dist/session.js" },
+    "./progress": { "types": "./dist/progress.d.ts", "default": "./dist/progress.js" }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "node --experimental-strip-types scripts/build.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.0",
+    "typescript": "5.9.3"
+  },
+  "engines": { "node": ">=22.18.0" }
+}

@@ -1614,19 +1614,25 @@ impl ApparentCoordinator {
         }
         if !self.onboarding.as_ref().is_some_and(|s|s.practice_active()) {return;}
         #[cfg(target_os="macos")]
-        let anchor=if self.onboarding.as_ref().is_some_and(|s|s.practice_locating()) {crate::capture::desktop::ui::macos::status_bar_anchor()} else {self.native_pill.as_ref().and_then(|p|p.coach_anchor())};
+        let anchor=self.native_pill.as_ref().and_then(|p|p.coach_anchor());
+        #[cfg(target_os="macos")]
+        let menu_anchor=crate::capture::desktop::ui::macos::status_bar_anchor();
+        #[cfg(not(target_os="macos"))]
+        let menu_anchor=None;
         #[cfg(not(target_os="macos"))]
         let anchor=None;
-        if let Some(session)=self.onboarding.as_mut(){session.practice_anchor(anchor);}
+        #[cfg(any(target_os="macos",target_os="linux"))]
+        let anchor = if self.electron_pill_routed {
+            self.electron_pill.as_ref().and_then(|pill| pill.note_badge_anchor()).map(|r|r.map(|v|v as f32))
+        } else { anchor };
+        if let Some(session)=self.onboarding.as_mut(){session.practice_anchor(anchor);session.practice_menu_anchor(menu_anchor);}
         let board_frame=whiteboard::frame(cx);
         if let Some(session)=self.onboarding.as_mut(){session.practice_board(board_frame);}
         let board=self.whiteboard.borrow().strokes.iter().any(|s|s.len()>3);
         let screen=self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|s|!s.laser && s.pts.len()>9).count();
         let processing=self.is_processing();
         let note_saved=self.note_ui.as_ref().is_some_and(|notes|notes.has_saved_note());
-        let was_desktop=self.onboarding.as_ref().unwrap().practice_desktop_stage();
         if let Some(session)=self.onboarding.as_mut() {session.practice_note_saved(note_saved);session.observe_practice(board,screen,processing,None);}
-        if !was_desktop && self.onboarding.as_ref().is_some_and(|s|s.practice_desktop_stage()) {cx.defer(whiteboard::close);}
     }
 
     pub fn tick_gate(&mut self) {
@@ -1699,6 +1705,7 @@ impl ApparentCoordinator {
                 }
                 Effect::None
             }
+            Event::Practice { value, received } => self.onboarding.as_mut().map_or(Effect::None, |session| session.practice_host(value, received)),
             Event::Action(action) => self
                 .onboarding
                 .as_mut()
@@ -1749,6 +1756,7 @@ impl ApparentCoordinator {
             }
         };
         match effect {
+            Effect::CloseWhiteboard => { cx.defer(whiteboard::close); }
             Effect::EditShortcut => {
                 let mut host = crate::capture::desktop::settings::AppHost {
                     telemetry: &self.telemetry,
@@ -2466,6 +2474,11 @@ impl ApparentCoordinator {
             && let Some(session) = self.onboarding.as_mut()
         {
             session.input(input);
+            if matches!(phase, IslandPhase::Recording) {
+                if let Some(id) = self.agent_capture_id.as_deref() {
+                    session.practice_capture_identity(self.capture_generation,id,Some(id));
+                }
+            }
         }
         let changed = std::mem::discriminant(&self.island_phase) != std::mem::discriminant(&phase);
         if changed {

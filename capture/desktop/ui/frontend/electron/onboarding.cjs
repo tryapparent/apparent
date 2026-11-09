@@ -1,6 +1,7 @@
 const {transparentBackgroundColor}=require('@apparent/ui/window-theme');
 const {parseAction}=require('./onboarding-protocol.cjs');
-// A private, Rust-owned presentation transport. No capture commands or filesystem IPC.
+// Existing private native/host pipe. Renderer IPC carries commands only; the
+// trusted workflow requests bounded native capabilities on its own channel.
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const actions = new Set(['continue','back','later','close','change-shortcut','grant:screen-recording','grant:microphone','grant:accessibility','grant:speech-recognition','grant:camera','practice-paste','practice-locate','practice-pasted','practice-finish','pen:coral','pen:purple','pen:blue','pen:green']);
@@ -56,13 +57,26 @@ function parentChannel(output,onLost){
 module.exports={project,actions,coachDimensions,setupDimensions,nativeRectangle,coachPosition,parentChannel};
 if(!process.versions.electron) return;
 const { app, BrowserWindow, ipcMain, screen, session } = require('electron');
+const { PracticeHost } = require('../dist/assets/onboarding-workflow.cjs');
 if (process.env.APPARENT_DESKTOP_REPORTING === '1') {
   require('../dist/assets/reporting.cjs').install(app, kind => require('./runtime.cjs').reportException(require('node:os').homedir(), kind));
 }
 app.setName(process.env.APPARENT_TEST_INSTANCE==='1'?'apparent onboarding preview':'apparent onboarding');
 app.setPath('userData',path.join(app.getPath('appData'),'apparent-onboarding'));
 if(process.env.APPARENT_UI_PROFILE)app.setPath('userData',process.env.APPARENT_UI_PROFILE);
-let window,state=null,buffer='',page,lastPlacement='',lastMode=null,closing=false;
+let window,state=null,buffer='',page,lastPlacement='',lastMode=null,closing=false,parentState=null;
+const workflow = new PracticeHost({
+  send:value=>channel.send(value),
+  changed:()=>{if(parentState&&!closing)updatePracticeView()},
+  timeout:callback=>{const timer=setTimeout(callback,4000);return()=>clearTimeout(timer)},
+});
+function updatePracticeView(){
+  if(!parentState)return;
+  const view=workflow.view;
+  const next=project({...parentState,practice:view?.stage??null,
+    anchor:parentState.platform==='macos'&&view?.stage==='locate'?parentState.menuAnchor:parentState.anchor});
+  if(next){state={...next,practiceContext:view?.context??null,practicePersistence:view?.persistence??null,practiceSaved:view?.savedBundle===true};present(state);}
+}
 const channel=parentChannel(process.stdout,error=>{
   const expected=['EPIPE','ECONNRESET','ERR_STREAM_DESTROYED','ERR_STREAM_WRITE_AFTER_END'].includes(error?.code);
   if(!expected)console.error('Onboarding parent channel failed:',error);
@@ -70,7 +84,7 @@ const channel=parentChannel(process.stdout,error=>{
 });
 function shutdown(code=0){
   if(closing)return;
-  closing=true;channel.close();
+  closing=true;workflow.close();channel.close();
   if(code)app.exit(code);else app.quit();
 }
 app.whenReady().then(()=>{
@@ -81,7 +95,14 @@ app.whenReady().then(()=>{
   window.webContents.setWindowOpenHandler(()=>({action:'deny'}));window.webContents.on('will-navigate',e=>e.preventDefault());window.webContents.on('will-attach-webview',e=>e.preventDefault());
   const valid=e=>!window.isDestroyed()&&e.sender===window.webContents&&e.senderFrame===window.webContents.mainFrame&&e.senderFrame.url===page;
   ipcMain.handle('onboarding:state',(e,...args)=>{if(!valid(e)||args.length)throw Error('Forbidden state request');return state});
-  ipcMain.handle('onboarding:action',(e,...args)=>{if(!valid(e)||args.length!==1)throw Error('Forbidden onboarding action');return channel.send(parseAction(args[0]))});
+  ipcMain.handle('onboarding:action',(e,...args)=>{if(!valid(e)||args.length!==1)throw Error('Forbidden onboarding action');const value=args[0];
+    if(value&&typeof value==='object'&&typeof value.action==='string'&&value.action.startsWith('practice-')){
+      if(state?.step!=='try-it')return false;
+      return workflow.command(value);
+    }
+    if(typeof value==='string'&&value.startsWith('practice-'))return false;
+    if(['close','later'].includes(value))workflow.close();
+    return channel.send(parseAction(value))});
   window.webContents.on('did-finish-load',()=>{if(state)present(state)});
   window.on('closed',()=>{if(!closing)channel.send('close');shutdown()});
   void window.loadURL(page);
@@ -99,8 +120,11 @@ app.whenReady().then(()=>{
       if(v.type==='close'){shutdown();return;}
       if(v.type==='hide'){if(state?.step!=='try-it')window.hide();continue;}
       if(v.type==='show'){if(state)present(state,true);continue;}
-      const next=project(v);
-      if(next){state=next;present(next);}
+      if(v.type==='practice-progress'){workflow.reply(v);continue;}
+      if(v.type==='state'){
+        parentState=v;
+        if(!workflow.receive(v.practiceFacts)){console.error('Invalid onboarding observation contract');shutdown(1);return;}
+      }
     }
   });
   process.stdin.on('end',()=>shutdown());process.stdin.on('error',error=>{console.error('Onboarding input failed:',error);shutdown(1)});process.stdin.resume();

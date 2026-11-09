@@ -328,7 +328,8 @@ test('onboarding output failure retires the channel once and preserves its error
   }
 });
 
-test('permission refresh keeps setup unfocused and avoids repeating native geometry calls',()=>{
+test('permission refresh keeps setup unfocused and avoids repeating native geometry calls',async()=>{
+ const policy=await import('../../../../../onboarding/src/host.ts');
  const vm=require('node:vm'),fs=require('node:fs'),{EventEmitter}=require('node:events');
  const stdin=new EventEmitter();stdin.setEncoding=stdin.resume=()=>{};
  const stdout=new EventEmitter();stdout.write=()=>true;
@@ -343,8 +344,9 @@ test('permission refresh keeps setup unfocused and avoids repeating native geome
  }
  const area={x:0,y:0,width:1440,height:900};
  const electron={app:{setName(){},getPath(){return'/tmp'},setPath(){},whenReady(){return{then:fn=>fn()}},dock:{hide(){}},quit(){}},BrowserWindow:Window,ipcMain:{handle(){}},screen:{getCursorScreenPoint:()=>({x:0,y:0}),getDisplayNearestPoint:()=>({workArea:area})},session:{defaultSession:{setPermissionRequestHandler(){},setPermissionCheckHandler(){}}}};
- vm.runInNewContext('(function(){'+fs.readFileSync(require.resolve('../electron/onboarding.cjs'),'utf8')+'})()',{require:name=>name==='electron'?electron:require('node:module').createRequire(require.resolve('../electron/onboarding.cjs'))(name),__dirname:path.resolve(__dirname,'../electron'),module:{exports:{}},process:{versions:{electron:'fixture'},env:{},argv:[],stdin,stdout},console});
- const send=status=>stdin.emit('data',JSON.stringify({type:'state',step:'permissions',rows:[{permission:'microphone',status,required:true}],ready:false})+'\n');
+ vm.runInNewContext('(function(){'+fs.readFileSync(require.resolve('../electron/onboarding.cjs'),'utf8')+'})()',{require:name=>name==='electron'?electron:name==='../dist/assets/onboarding-workflow.cjs'?policy:require('node:module').createRequire(require.resolve('../electron/onboarding.cjs'))(name),__dirname:path.resolve(__dirname,'../electron'),module:{exports:{}},process:{versions:{electron:'fixture'},env:{},argv:[],stdin,stdout},console,setTimeout,clearTimeout});
+ const practiceFacts={version:1,scope:{session:'fixture',transport:'1'},attempt:'1',observation:null,completion:null,openedBundle:null};
+ const send=status=>stdin.emit('data',JSON.stringify({type:'state',step:'permissions',rows:[{permission:'microphone',status,required:true}],ready:false,practiceFacts})+'\n');
  send('not-determined');const initial=calls.slice();send('granted');
  assert.equal(calls.filter(x=>x==='state').length,2);
  assert.equal(calls.filter(x=>x==='show').length,1,'permission refresh must not reactivate setup over OS prompts');
@@ -352,4 +354,5 @@ test('permission refresh keeps setup unfocused and avoids repeating native geome
  assert.equal(calls.filter(x=>x==='position').length,1,'same mode must preserve a user-moved window');
  stdin.emit('data','{"type":"show"}\n');
  assert.equal(calls.filter(x=>x==='show').length,2,'explicit parent show may reactivate setup');
+ stdin.emit('end');
 });
