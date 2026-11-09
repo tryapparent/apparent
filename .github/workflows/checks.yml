@@ -19,19 +19,24 @@ jobs:
   # PR checkout is GitHub's proposed merge, so these checks cover integration.
   # Draft updates retain cheap feedback without allocating full platform suites.
   linux:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
+    needs: [contracts, hermes, select]
+    if: >-
+      !cancelled() && needs.contracts.result == 'success' && needs.hermes.result == 'success' &&
+      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
     uses: ./.github/workflows/verification-platform.yml
     with:
       runner: ubuntu-24.04
       release_receipt: false
 
   macos:
-    # Keep scarce Mac runners free until this candidate passes Linux and cheap checks.
-    needs: [linux, contracts, hermes, select]
-    # A status function permits a conservative fallback after selector failure.
-    # Explicit success guards retain the Linux-first prerequisites even then.
+    # Share the cheap admission barrier; neither full platform waits for the other.
+    needs: [contracts, hermes, select]
     # Only a successful explicit false can exempt a reviewed ready-PR delta.
-    if: ${{ !cancelled() && needs.linux.result == 'success' && needs.contracts.result == 'success' && needs.hermes.result == 'success' && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && (needs.select.result != 'success' || needs.select.outputs.macos != 'false'))) }}
+    # Failed/unknown selection keeps Mac coverage after the cheap guards pass.
+    if: >-
+      !cancelled() && needs.contracts.result == 'success' && needs.hermes.result == 'success' &&
+      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false &&
+      (needs.select.result != 'success' || needs.select.outputs.macos != 'false')))
     uses: ./.github/workflows/verification-platform.yml
     with:
       runner: macos-15-intel
@@ -87,8 +92,10 @@ jobs:
         run: python -m unittest discover -s hermes/tests -v
 
   hermes-macos:
-    needs: [linux, contracts, hermes]
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
+    needs: [contracts, hermes, select]
+    if: >-
+      !cancelled() && needs.contracts.result == 'success' && needs.hermes.result == 'success' &&
+      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
     name: Hermes inspection (macos-15-intel)
     runs-on: macos-15-intel
     timeout-minutes: 5

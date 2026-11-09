@@ -55,7 +55,7 @@ test('platform admission keeps main full and exempts only selected ready PRs fro
       `return (${expression.replace(/^\$\{\{\s*|\s*\}\}$/g, '')});`)(
       {event_name: event, ref, repository: 'tryapparent/apparent',
         event: {pull_request: {draft}}}, {'release_receipt': receipt}, {
-        linux: {result: 'success'}, contracts: {result: 'success'}, hermes: {result: 'success'},
+        linux: {result: 'failure'}, contracts: {result: 'success'}, hermes: {result: 'success'},
         select: {result, outputs: {macos}}}, () => cancelled);
   for (const [name, runner] of [['linux', 'ubuntu-24.04'], ['macos', 'macos-15-intel']]) {
     const job = ci.jobs[name];
@@ -82,8 +82,8 @@ test('platform admission keeps main full and exempts only selected ready PRs fro
       assert.equal(admitted(platform.jobs['release-ready'].if, event, draft, ref), false);
     }
   }
-  assert.deepEqual(ci.jobs.macos.needs, ['linux', 'contracts', 'hermes', 'select']);
-  assert.equal(ci.jobs.linux.needs, undefined);
+  assert.deepEqual(ci.jobs.macos.needs, ['contracts', 'hermes', 'select']);
+  assert.deepEqual(ci.jobs.linux.needs, ['contracts', 'hermes', 'select']);
   assert.equal(ci.jobs.select.outputs.macos, '${{ steps.paths.outputs.macos }}');
   const selector = ci.jobs.select.steps.find((step: any) => step.id === 'paths');
   assert.equal(selector.env.BASE_SHA, '${{ github.event.pull_request.base.sha || github.event.before }}');
@@ -133,65 +133,52 @@ test('Public and updater retain their previous automatic input coverage', () => 
   }
 });
 
-test('every automatic Mac entrypoint waits for successful Linux verification and cheap checks', () => {
+test('full platforms and Mac inspection share cheap prerequisites without depending on either full platform', () => {
   const ci = workflow('checks.yml');
-  const ancestors = (name: string): string[] => {
-    const needs = ci.jobs[name].needs ?? [];
-    return [needs].flat().flatMap((parent: string) => [parent, ...ancestors(parent)]);
-  };
-  const macJobs = Object.entries(ci.jobs).filter(([, job]: any) => {
+  const expensive = Object.entries(ci.jobs).filter(([, job]: any) => {
     const runners = [job.with?.runner, job['runs-on'], ...Object.values(job.strategy?.matrix ?? {}).flat()];
-    return runners.some(runner => typeof runner === 'string' && runner.startsWith('macos-'));
+    return job.uses === './.github/workflows/verification-platform.yml' ||
+      runners.some(runner => typeof runner === 'string' && runner.startsWith('macos-'));
   });
-  assert.ok(macJobs.length > 0, 'must inspect the actual Mac job inventory');
-  for (const [name, job] of macJobs as [string, any][]) {
-    const prerequisites = ancestors(name);
-    for (const required of ['linux', 'contracts', 'hermes']) {
-      assert.ok(prerequisites.includes(required), `${name} must wait for ${required}`);
-    }
-    // Ordinary prerequisites keep implicit success(). Only the platform caller
-    // may override it, and the actual expression must then preserve all three
-    // success requirements (exercised below, not assumed by the evaluator).
-    for (const entry of [name, ...prerequisites]) {
-      if (entry !== 'macos') assert.doesNotMatch(ci.jobs[entry].if ?? '', /\b(always|failure|cancelled)\s*\(/, entry);
-      else assert.doesNotMatch(ci.jobs[entry].if ?? '', /\b(always|failure)\s*\(/, entry);
-      assert.equal(ci.jobs[entry]['continue-on-error'], undefined, entry);
-    }
+  assert.deepEqual(expensive.map(([name]) => name).sort(), ['hermes-macos', 'linux', 'macos']);
+  for (const cheap of ['contracts', 'hermes', 'select']) {
+    assert.equal(ci.jobs[cheap].needs, undefined, `${cheap} must not wait for full platforms`);
+    assert.equal(ci.jobs[cheap]['continue-on-error'], undefined);
   }
-  const admitted = (name: string, results: Record<string, string>, macos: string,
-    event = 'pull_request', cancelled = false) => {
-    const expression = ci.jobs[name].if.replace(/^\$\{\{\s*|\s*\}\}$/g, '');
-    const implicitSuccess = !cancelled && ancestors(name).every(parent => (results[parent] ?? 'success') === 'success');
-    if (!/\b(always|failure|cancelled|success)\s*\(/.test(expression) && !implicitSuccess) return false;
-    const needs: Record<string, {result: string; outputs?: {macos: string}}> =
-      Object.fromEntries(ancestors(name).map(parent => [parent, {result: results[parent] ?? 'success'}]));
-    needs.select = {...needs.select, outputs: {macos}};
-    return Function('github', 'needs', 'cancelled', `return (${expression});`)(
-      {event_name: event, event: {pull_request: {draft: false}}}, needs, () => cancelled);
-  };
-  for (const name of ['macos', 'hermes-macos']) {
-    for (const parent of ['linux', 'contracts', 'hermes']) {
-      for (const result of ['failure', 'skipped', 'cancelled', '', 'unknown']) {
-        for (const selected of ['true', 'false', '']) {
-          for (const event of ['pull_request', 'push']) {
-            for (const selection of ['success', 'failure', 'skipped', 'cancelled']) {
-              assert.equal(admitted(name, {[parent]: result, select: selection}, selected, event), false,
-                `${name} on ${event} with ${parent} ${result}, selector ${selection}, selected ${selected}`);
+  for (const [name, job] of expensive.sort(([a], [b]) => a.localeCompare(b)) as [string, any][]) {
+    assert.deepEqual([job.needs ?? []].flat().sort(), ['contracts', 'hermes', 'select'], name);
+    assert.equal(job['continue-on-error'], undefined, name);
+    // Evaluate the actual expression, including GitHub's implicit success()
+    // only when no explicit status function overrides it. A failed selector
+    // must retain full coverage, while failed cheap guards block allocation.
+    const admitted = (needs: any, event = 'pull_request', draft = false, cancelled = false) => {
+      const expression = job.if.replace(/^\$\{\{\s*|\s*\}\}$/g, '');
+      const explicitStatus = /\b(always|success|failure|cancelled)\s*\(/.test(expression);
+      if (!explicitStatus && job.needs.some((parent: string) => needs[parent]?.result !== 'success')) return false;
+      return Function('needs', 'github', 'cancelled', `return (${expression});`)(needs,
+        {event_name: event, event: {pull_request: {draft}}}, () => cancelled);
+    };
+    const results = ['success', 'failure', 'cancelled', 'skipped', undefined, 'unknown'];
+    for (const contracts of results) {
+      for (const hermes of results) {
+        for (const select of results) {
+          for (const output of ['true', 'false', '', undefined, 'unknown']) {
+            const needs = {contracts: {result: contracts}, hermes: {result: hermes},
+              select: {result: select, outputs: {macos: output}}, linux: {result: 'failure'}, macos: {result: 'failure'}};
+            const expected = contracts === 'success' && hermes === 'success';
+            for (const [event, draft, allowed] of [['pull_request', false, true], ['push', false, true],
+              ['pull_request', true, false], ['workflow_run', false, false], ['workflow_dispatch', false, false]] as const) {
+              const exempt = name === 'macos' && event === 'pull_request' && select === 'success' && output === 'false';
+              assert.equal(admitted(needs, event, draft), expected && allowed && !exempt,
+                `${name}: ${event}, draft=${draft}, guards=${contracts}/${hermes}, selector=${select}, output=${output}`);
             }
+            assert.equal(admitted(needs, 'pull_request', false, true), false, `${name}: workflow cancellation`);
           }
         }
       }
     }
-    assert.equal(admitted(name, {}, 'true', 'push'), true);
-    assert.equal(admitted(name, {}, 'true', 'pull_request', true), false);
   }
-  assert.equal(admitted('macos', {}, 'false'), false);
-  assert.equal(admitted('macos', {}, 'true'), true);
-  assert.equal(admitted('macos', {select: 'failure'}, 'true'), true, 'selector failure alone cannot suppress Mac');
-  assert.equal(admitted('macos', {select: 'failure'}, 'false'), true, 'failed partial output cannot exempt Mac');
-  assert.equal(admitted('hermes-macos', {}, 'false'), true);
   assert.equal(ci.jobs.hermes['runs-on'], 'ubuntu-24.04');
-  assert.equal(ci.jobs.hermes.needs, undefined, 'cheap inspection must not wait for full suites');
 });
 
 test('Mac inspection preserves its checks but runs only for ready PRs and main pushes', () => {
@@ -201,7 +188,7 @@ test('Mac inspection preserves its checks but runs only for ready PRs and main p
   assert.equal(inspection['runs-on'], 'macos-15-intel');
   assert.deepEqual(inspection.steps, ci.jobs.hermes.steps);
   // The Settings exemption applies to the platform workflow; Hermes keeps
-  // main's own event admission and Linux-first checks.
+  // main's own event admission and cheap shared prerequisite guards.
   assert.equal(inspection.if, ci.jobs.linux.if);
 });
 

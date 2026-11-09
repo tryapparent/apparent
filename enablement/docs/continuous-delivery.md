@@ -77,19 +77,23 @@ pushes and on non-draft PRs (opened, reopened, updated or marked ready for revie
 Main pushes preserve the active run and keep only the newest pending run in the
 same concurrency group, including Public checks. PR updates still cancel their
 superseded active run. Manual publication retains its separate noncancelling lock.
-Automatic Mac verification and Mac Hermes inspection wait for successful full
-Linux verification, cheap contracts and Linux Hermes inspection for the same
-candidate. Failed, cancelled or skipped prerequisites prevent Mac allocation.
-Linux verification and the cheap checks start independently. Drafts retain
+Full Linux and Mac verification and Mac Hermes inspection share the cheap
+contracts, Linux Hermes inspection and selector prerequisites. Once those finish,
+both full platforms can start in parallel; neither waits for the other's results.
+Failed, cancelled or skipped contracts or Linux Hermes inspection prevent their
+allocation. A failed or unavailable selector retains full platform coverage rather
+than silently skipping it; cancelled workflows do not allocate these jobs. All
+applicable platform/native acceptance and publication gates remain required.
+Drafts retain
 inexpensive Linux checks; converting a PR back to draft cancels its
 superseded full run. Each update tests GitHub's proposed merge commit, with
 read-only permissions and no release receipt. These jobs appear directly on the
 PR, so their actual completion is visible without a status reporter or manual
 dispatch. Existing separate manual runs do not substitute for this integrated
 candidate. Publication remains manual and retains its existing admission policy.
-This is a dependency gate, not a global concurrency limit or priority queue.
-Removing these Mac `needs` dependencies restores parallel platform scheduling;
-manual platform diagnostics remain independent.
+This is a cheap admission barrier, not a global concurrency limit or priority queue.
+Restoring a full `linux` prerequisite on the Mac jobs reinstates the former serial
+platform scheduling. Manual platform diagnostics remain independent.
 
 `Linux verification` and `Mac verification` remain manual diagnostic entrypoints,
 each coalescing superseded runs within its own platform. Both call the same reusable
@@ -440,10 +444,11 @@ Settings renderer cards (`storage.tsx`, `retention.tsx`,
 `connect-settings.tsx`, `error-reporting.tsx`, `reference.tsx` in
 `capture/desktop/ui/frontend/src/`) use the existing full Linux verification
 without allocating the Mac platform workflow. When selected, that workflow still
-waits for successful Linux verification, cheap contracts and Linux Hermes inspection.
+shares the cheap contracts, Linux Hermes inspection and selector barrier with Linux.
 Only successful selection can grant an exemption; failed selection retains Mac
-after those three prerequisites pass. Mac Hermes inspection retains its independent Linux-first
-admission. Linux still runs the real Electron
+after contracts and Linux Hermes pass. Neither full platform waits for the other;
+all applicable platform results remain required for acceptance. Mac Hermes keeps
+the same cheap barrier and ordinary event admission. Linux still runs the real Electron
 build and smoke suites. Main pushes, manual Mac verification and Mac publication
 retain full Mac evidence. This is a PR iteration exemption, not native acceptance
 or evidence that Linux proves Mac window behavior.
@@ -496,13 +501,14 @@ changes. New files are not implicitly admitted.
 Only a successful selector with explicit `macos=false` can skip the PR Mac
 caller. Its status-function condition overrides GitHub's implicit dependency
 success check, retaining Mac allocation on selector failure, skip or missing
-output after successful Linux, contracts and Linux Hermes jobs. Explicit success
-guards for all three preserve their prerequisite gate despite the status-function
-override: their failure, cancellation, skip or unknown result still prevents Mac
-allocation. Cancelled workflows can still stop. Mac Hermes inspection keeps its
-ordinary event/implicit-success admission and has no selector exemption.
-Linux admission remains independent of the selector, with its existing full
-command inventory. Selector errors still
+output after successful contracts and Linux Hermes jobs. Explicit success guards
+for those two preserve the cheap prerequisite barrier despite the status-function
+override: their failure, cancellation, skip or unknown result prevents allocation.
+Full Linux is not a Mac scheduling prerequisite; its applicable result is still
+required for acceptance. Cancelled workflows can still stop. Mac Hermes keeps
+the same cheap guards and event admission, with no selector exemption. Linux
+retains its full command inventory and conservative selector-failure fallback.
+Selector errors still
 fail Continuous delivery. Main/manual verification, independent client checks,
 Mac publication, exact-head/current-base review and native acceptance policy are
 unchanged. Restore unconditional ready-PR Mac admission in `checks.yml` to roll
