@@ -1,9 +1,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync, readdirSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync, unlinkSync, chmodSync} from 'node:fs';
+import {readFileSync, readdirSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync, unlinkSync, chmodSync, existsSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {YAML} from 'bun';
-import {select, changedPaths, requiresMac, featureNotesOnly, macDecision, selectRange} from './select.ts';
+import {select, changedPaths, requiresMac, macDecision, selectRange, documentationOnlyPath, needsPlatform} from './select.ts';
 import {changedPaths as sharedInputPaths, workflowControlPaths} from './inputs.ts';
 
 const root = new URL('../../', import.meta.url);
@@ -39,24 +39,31 @@ test('main preserves active checks while PR updates supersede them', () => {
     for (const [event, expected] of [['push', false], ['pull_request', true], ['workflow_dispatch', false]]) {
       assert.equal(Function('github', `return (${expression});`)({event_name: event}), expected, `${filename}: ${event}`);
     }
-    // GitHub's default single pending slot replaces older pending runs.
     assert.equal(concurrency.queue, undefined);
-    assert.match(concurrency.group, /github.ref/);
+    assert.match(concurrency.group, filename === 'checks.yml' ? /github.sha/ : /github.ref/);
+    const group = (sha: string, pr?: number) => concurrency.group.replace(/\$\{\{(.+?)\}\}/g,
+      (_: string, expression: string) => Function('github', 'return (' + expression + ');')({
+        event_name: pr ? 'pull_request' : 'push', sha, ref: 'refs/heads/main',
+        event: {pull_request: {number: pr}},
+      }));
+    if (filename === 'checks.yml') assert.notEqual(group('code-sha'), group('docs-sha'));
+    else assert.equal(group('code-sha'), group('docs-sha'));
+    assert.equal(group('code-sha', 7), group('docs-sha', 7));
   }
 });
 
-test('platform admission keeps main full and exempts only selected ready PRs from Mac', () => {
+test('platform admission composes ordinary docs with selected ready-PR Mac exemptions', () => {
   const ci = workflow('checks.yml');
   const platform = workflow('verification-platform.yml');
   // Evaluate the workflow's actual boolean admission expressions against event
   // fixtures. These expressions use the common GitHub/JavaScript boolean subset.
   const admitted = (expression: string, event: string, draft: boolean, ref: string,
-    receipt = false, macos = 'true', result = 'success', cancelled = false) => Function('github', 'inputs', 'needs', 'cancelled',
+    receipt = false, macos = 'true', result = 'success', cancelled = false, platform = 'true') => Function('github', 'inputs', 'needs', 'cancelled',
       `return (${expression.replace(/^\$\{\{\s*|\s*\}\}$/g, '')});`)(
       {event_name: event, ref, repository: 'tryapparent/apparent',
         event: {pull_request: {draft}}}, {'release_receipt': receipt}, {
         linux: {result: 'failure'}, contracts: {result: 'success'}, hermes: {result: 'success'},
-        select: {result, outputs: {macos}}}, () => cancelled);
+        select: {result, outputs: {macos, platform}}}, () => cancelled);
   for (const [name, runner] of [['linux', 'ubuntu-24.04'], ['macos', 'macos-15-intel']]) {
     const job = ci.jobs[name];
     assert.equal(job.uses, './.github/workflows/verification-platform.yml');
@@ -85,6 +92,7 @@ test('platform admission keeps main full and exempts only selected ready PRs fro
   assert.deepEqual(ci.jobs.macos.needs, ['contracts', 'hermes', 'select']);
   assert.deepEqual(ci.jobs.linux.needs, ['contracts', 'hermes', 'select']);
   assert.equal(ci.jobs.select.outputs.macos, '${{ steps.paths.outputs.macos }}');
+  assert.equal(ci.jobs.select.outputs.platform, '${{ steps.paths.outputs.platform }}');
   const selector = ci.jobs.select.steps.find((step: any) => step.id === 'paths');
   assert.equal(selector.env.BASE_SHA, '${{ github.event.pull_request.base.sha || github.event.before }}');
   assert.equal(selector.run, 'bun enablement/ci/select.ts');
@@ -117,7 +125,7 @@ test('platform admission keeps main full and exempts only selected ready PRs fro
 
 test('Public and updater retain their previous automatic input coverage', () => {
   for (const path of ['public/site/src/page.ts', 'shared/ui/button.ts', 'shared/analytics/index.ts',
-    'shared/assets/logo.svg', '.github/workflows/stream-public.yml', 'capture/desktop/docs/linux/linux.md']) {
+    'shared/assets/logo.svg', '.github/workflows/stream-public.yml']) {
     assert.deepEqual(select([path]), {public: true, updater: false}, path);
   }
   for (const path of ['capture/desktop/scripts/linux/gui/gui-vm.py',
@@ -163,16 +171,19 @@ test('full platforms and Mac inspection share cheap prerequisites without depend
       for (const hermes of results) {
         for (const select of results) {
           for (const output of ['true', 'false', '', undefined, 'unknown']) {
-            const needs = {contracts: {result: contracts}, hermes: {result: hermes},
-              select: {result: select, outputs: {macos: output}}, linux: {result: 'failure'}, macos: {result: 'failure'}};
-            const expected = contracts === 'success' && hermes === 'success';
-            for (const [event, draft, allowed] of [['pull_request', false, true], ['push', false, true],
-              ['pull_request', true, false], ['workflow_run', false, false], ['workflow_dispatch', false, false]] as const) {
-              const exempt = name === 'macos' && event === 'pull_request' && select === 'success' && output === 'false';
-              assert.equal(admitted(needs, event, draft), expected && allowed && !exempt,
-                `${name}: ${event}, draft=${draft}, guards=${contracts}/${hermes}, selector=${select}, output=${output}`);
+            for (const platform of ['true', 'false', '', undefined, 'unknown']) {
+              const needs = {contracts: {result: contracts}, hermes: {result: hermes},
+                select: {result: select, outputs: {macos: output, platform}}, linux: {result: 'failure'}, macos: {result: 'failure'}};
+              const expected = contracts === 'success' && hermes === 'success';
+              const docsExempt = select === 'success' && platform === 'false';
+              for (const [event, draft, allowed] of [['pull_request', false, true], ['push', false, true],
+                ['pull_request', true, false], ['workflow_run', false, false], ['workflow_dispatch', false, false]] as const) {
+                const exempt = name === 'macos' && event === 'pull_request' && select === 'success' && output === 'false';
+                assert.equal(admitted(needs, event, draft), expected && allowed && !exempt && !docsExempt,
+                  name + ': ' + [event, draft, contracts, hermes, select, output, platform].join('/'));
+              }
+              assert.equal(admitted(needs, 'pull_request', false, true), false, name + ': workflow cancellation');
             }
-            assert.equal(admitted(needs, 'pull_request', false, true), false, `${name}: workflow cancellation`);
           }
         }
       }
@@ -225,7 +236,7 @@ function runSelector(base: string, head: string, dir: string) {
   });
   const decision = JSON.parse(stdout);
   const outputs = Object.fromEntries(readFileSync(output, 'utf8').trim().split('\n').map(line => line.split('=')));
-  assert.deepEqual(outputs, {public: String(decision.public), updater: String(decision.updater), macos: String(decision.macos)});
+  assert.deepEqual(outputs, {public: String(decision.public), updater: String(decision.updater), macos: String(decision.macos), platform: String(decision.platform)});
   return decision as ReturnType<typeof selectRange>;
 }
 
@@ -255,7 +266,7 @@ test('unknown history runs all checks and git deltas include deleted and renamed
     writeFileSync(card, 'after');
     git('add', card); git('commit', '-qm', 'edit card');
     assert.deepEqual(runSelector(beforeEdit, git('rev-parse', 'HEAD'), dir),
-      {public: false, updater: false, macos: false, reasons: [`linux:reviewed-settings:${card}`]});
+      {public: false, updater: false, macos: false, platform: true, reasons: [`linux:reviewed-settings:${card}`]});
     const beforeType = git('rev-parse', 'HEAD');
     unlinkSync(card); symlinkSync('retention.tsx', card);
     git('add', card); git('commit', '-qm', 'change card type');
@@ -290,71 +301,11 @@ test('Mac exemption is exact, nonempty, modification-only and fails closed', () 
 
 const portal = 'capture/desktop/linux/capture/portal.rs';
 const linuxDoc = 'capture/desktop/docs/linux/linux.md';
-const featureMap = 'public/site/src/features.json';
-const metadata = () => JSON.parse(readFileSync(new URL(featureMap, root), 'utf8'));
-
-test('feature metadata exemption changes only direct note strings in the known schema', () => {
-  const before = metadata();
-  const after = structuredClone(before);
-  after.features[0].note = 'Arbitrary documentation, independent of platform words.';
-  assert.equal(featureNotesOnly(JSON.stringify(before), JSON.stringify(after)), true);
-  assert.equal(featureNotesOnly(JSON.stringify(after), JSON.stringify(before)), true);
-  after.features[0].note = 'Another note';
-  assert.equal(featureNotesOnly(JSON.stringify(before), JSON.stringify(after)), true);
-  for (const [field, value] of Object.entries({platforms: ['linux'], status: 'experiment:future', flag: 'new-flag',
-    config: [{key: 'newRuntime', value: 'true', does: 'new behavior'}], docs: ['missing.md'],
-    shortcuts: [{keys: 'Super+S', does: 'record'}], id: 'new-id', name: 'New name', added: '2027-01-01',
-    says: 'Different promise', pr: 999, group: 'unknown', runtime: true, note: null})) {
-    const changed = structuredClone(after);
-    changed.features[0][field] = value;
-    assert.equal(featureNotesOnly(JSON.stringify(before), JSON.stringify(changed)), false, field);
-  }
-  for (const mutate of [
-    (map: any) => map.features.push({...map.features[0], id: 'new-feature'}),
-    (map: any) => map.features.pop(),
-    (map: any) => map.features.reverse(),
-    (map: any) => map.groups[0].title = 'Different title',
-    (map: any) => map.flow[0].detail = 'Different flow',
-    (map: any) => map.futureContract = true,
-    (map: any) => map.features[0].config = [{key: 'runtime', value: 'x', does: 'x', unknown: true}],
-  ]) {
-    const changed = structuredClone(before); mutate(changed);
-    assert.equal(featureNotesOnly(JSON.stringify(before), JSON.stringify(changed)), false);
-  }
-  // Unknown contracts on both sides must not be grandfathered into the exemption.
-  for (const mutate of [
-    (map: any) => map.runtime = true,
-    (map: any) => map.features[0].runtime = true,
-    (map: any) => map.groups[0].runtime = true,
-    (map: any) => map.features[0].shortcuts = [{keys: 'x', does: 'x', runtime: true}],
-    (map: any) => map.features[0].id = map.features[1].id,
-    (map: any) => map.features[0].platforms = 'linux',
-    (map: any) => map.features[0].platforms = ['unknown-platform'],
-    (map: any) => map.features[0].status = 'unknown-status',
-    (map: any) => map.features[0].docs = [42],
-    (map: any) => map.features[0].config = [{key: 'x', value: true, does: 'x'}],
-    (map: any) => map.features[0].shortcuts = [{keys: 42, does: 'x'}],
-    (map: any) => map.features[0].pr = 'unknown',
-    (map: any) => map.groups[0].title = 42,
-    (map: any) => map.features[0].id = 'Not Kebab',
-    (map: any) => map.features[0].name = '',
-    (map: any) => map.features[0].says = '',
-    (map: any) => map.features[0].added = 'tomorrow',
-  ]) {
-    const unknown = structuredClone(before); mutate(unknown);
-    const changed = structuredClone(unknown); changed.features[0].note = 'new';
-    assert.equal(featureNotesOnly(JSON.stringify(unknown), JSON.stringify(changed)), false);
-  }
-  for (const invalid of ['{', 'null', '[]', '{"features": {}}']) {
-    assert.equal(featureNotesOnly(invalid, JSON.stringify(after)), false);
-    assert.equal(featureNotesOnly(JSON.stringify(before), invalid), false);
-  }
-  assert.equal(requiresMac([featureMap]), true, 'paths alone cannot establish a note-only change');
-});
+const retiredFeatureMap = 'public/site/src/features.json';
 
 function linuxFixture(action: (git: (...args: string[]) => string, dir: string, base: string) => void) {
   repository((git, dir) => {
-    for (const path of [portal, linuxDoc, featureMap, 'capture/desktop/ui/frontend/src/storage.tsx']) {
+    for (const path of [portal, linuxDoc, 'capture/desktop/ui/frontend/src/storage.tsx']) {
       mkdirSync(path.slice(0, path.lastIndexOf('/')), {recursive: true});
       writeFileSync(path, readFileSync(new URL(path, root)));
     }
@@ -363,24 +314,21 @@ function linuxFixture(action: (git: (...args: string[]) => string, dir: string, 
   });
 }
 
-test('production Git/CLI selects Linux and Public for the portal, guide and feature note delta', () => linuxFixture((git, dir, base) => {
-  // The same three-file shape as the portal source-type fix, with no PR/SHA or
-  // English-prose matching. Use real source and feature-map inputs.
+test('production Git/CLI selects full Linux for the portal and guide after catalogue retirement', () => linuxFixture((git, dir, base) => {
+  // The surviving current-main inputs of the original portal source-type fix.
+  // No PR, commit or English-prose matching participates in selection.
   appendFile(portal, '\nfn selected_source_type(source_type: Option<u32>) -> bool { source_type != Some(2) }\n');
   appendFile(linuxDoc, '\nA documented portal scope restriction.\n');
-  const map = metadata(); map.features[0].note = 'Synthetic portal caveat.';
-  writeFileSync(featureMap, JSON.stringify(map));
   git('add', '.'); git('commit', '-qm', 'portal restriction and documentation');
   const head = git('rev-parse', 'HEAD');
-  assert.deepEqual(changedPaths(base, head), [linuxDoc, portal, featureMap]);
+  assert.deepEqual(changedPaths(base, head), [linuxDoc, portal]);
   assert.deepEqual(changedPaths(base, head), sharedInputPaths(base, head, process.cwd()));
-  const expected = {public: true, updater: false, macos: false, reasons: [
-    `linux:reviewed-portal-input:${linuxDoc}`, `linux:reviewed-portal-input:${portal}`, `linux:feature-notes-only:${featureMap}`,
+  const expected = {public: false, updater: false, macos: false, platform: true, reasons: [
+    'linux:reviewed-portal-input:' + linuxDoc, 'linux:reviewed-portal-input:' + portal,
   ]};
   assert.deepEqual(selectRange(base, head), expected);
   assert.deepEqual(runSelector(base, head, dir), expected);
-  // Read committed blobs, not the checkout's later working contents.
-  writeFileSync(featureMap, '{broken working file');
+  writeFileSync(portal, 'Later uncommitted contents');
   assert.deepEqual(runSelector(base, head, dir), expected);
 }));
 
@@ -388,19 +336,19 @@ function appendFile(path: string, text: string) {
   writeFileSync(path, readFileSync(path, 'utf8') + text);
 }
 
-test('malformed UTF-8 in committed metadata cannot qualify as a note-only change', () => linuxFixture((git, dir, base) => {
-  const map = metadata(); map.features[0].note = 'invalid-byte';
-  const text = JSON.stringify(map);
-  const at = text.indexOf('invalid-byte');
-  writeFileSync(featureMap, Buffer.concat([Buffer.from(text.slice(0, at)), Buffer.from([0xff]), Buffer.from(text.slice(at + 12))]));
-  git('add', '.'); git('commit', '-qm', 'invalid note encoding');
-  const head = git('rev-parse', 'HEAD');
-  const invalid = runSelector(base, head, dir);
-  assert.equal(invalid.public, true);
-  assert.equal(invalid.macos, true);
-  // An invalid base is no more trustworthy than an invalid candidate.
-  writeFileSync(featureMap, text); git('add', '.'); git('commit', '-qm', 'valid note encoding');
-  assert.equal(runSelector(head, git('rev-parse', 'HEAD'), dir).macos, true);
+test('retired catalogue and unknown metadata retain Mac and Public even for a note-only modification', () => linuxFixture((git, dir) => {
+  mkdirSync('public/site/src', {recursive: true});
+  writeFileSync(retiredFeatureMap, '{"note":"before"}');
+  git('add', '.'); git('commit', '-qm', 'unknown metadata baseline');
+  const base = git('rev-parse', 'HEAD');
+  writeFileSync(retiredFeatureMap, '{"note":"after"}');
+  appendFile(portal, '\n// Linux source change\n');
+  git('add', '.'); git('commit', '-qm', 'mixed unknown note and Linux source');
+  const result = runSelector(base, git('rev-parse', 'HEAD'), dir);
+  assert.equal(result.platform, true);
+  assert.equal(result.public, true);
+  assert.equal(result.macos, true);
+  assert.ok(result.reasons.includes('mac:unproven-input:' + retiredFeatureMap));
 }));
 
 test('proved concurrency-only local input never exempts hosted Mac verification', () => repository((git, dir) => {
@@ -413,31 +361,34 @@ test('proved concurrency-only local input never exempts hosted Mac verification'
   git('add', '.'); git('commit', '-qm', 'concurrency control');
   const head = git('rev-parse', 'HEAD');
   assert.deepEqual(workflowControlPaths(base, head, sharedInputPaths(base, head, dir), dir), [path]);
-  assert.deepEqual(runSelector(base, head, dir), {public: true, updater: true, macos: true,
+  assert.deepEqual(runSelector(base, head, dir), {public: true, updater: true, macos: true, platform: true,
     reasons: [`mac:unproven-input:${path}`]});
 }));
 
-test('Linux-only source/docs and metadata-only notes qualify independently and compose with Settings', () => linuxFixture((git, dir, base) => {
-  for (const path of [portal, linuxDoc, featureMap, 'capture/desktop/ui/frontend/src/storage.tsx']) {
+test('Linux portal and guide compose with Settings while ordinary docs retain their existing gate', () => linuxFixture((git, dir, base) => {
+  for (const path of [portal, linuxDoc, 'capture/desktop/ui/frontend/src/storage.tsx']) {
     git('checkout', '--detach', base);
-    if (path === featureMap) {
-      const map = metadata(); map.features[0].note = 'Documentation only';
-      writeFileSync(path, JSON.stringify(map));
-    } else appendFile(path, '\n// synthetic edit\n');
+    appendFile(path, '\n// synthetic edit\n');
     git('add', '.'); git('commit', '-qm', 'reviewed modification');
     const result = runSelector(base, git('rev-parse', 'HEAD'), dir);
     assert.equal(result.macos, false, path);
-    assert.equal(result.public, path === featureMap || path === linuxDoc, path);
+    assert.equal(result.public, false, path);
+    assert.equal(result.platform, path !== linuxDoc, path);
   }
-  appendFile(portal, '\n// portal edit\n'); git('add', portal); git('commit', '-qm', 'compose portal and Settings');
-  assert.equal(runSelector(base, git('rev-parse', 'HEAD'), dir).macos, false);
+  appendFile(portal, '\n// portal edit\n');
+  appendFile(linuxDoc, '\nDocumentation for this portal edit.\n');
+  git('add', '.'); git('commit', '-qm', 'compose portal, guide and Settings');
+  const result = runSelector(base, git('rev-parse', 'HEAD'), dir);
+  assert.equal(result.macos, false);
+  assert.equal(result.platform, true);
 }));
 
 test('mixed shared, Mac, ABI, dependencies, packaging, CI and unknown inputs retain Mac', () => linuxFixture((git, dir, base) => {
   for (const path of ['shared/model.rs', 'capture/desktop/native/Settings.swift', 'capture/desktop/mod.rs',
     'capture/desktop/linux/capture/mod.rs', 'capture/desktop/ui/frontend/src/bridge.ts',
     'build.rs', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'capture/desktop/ui/frontend/package-lock.json',
-    'capture/desktop/scripts/packaging/build-mac-preview.sh', '.github/workflows/checks.yml', 'unknown.md']) {
+    'capture/desktop/scripts/packaging/build-mac-preview.sh', '.github/workflows/checks.yml',
+    'capture/engine/docs/other-owner.md', 'public/site/src/runtime-metadata.json', retiredFeatureMap, 'unknown.md']) {
     git('checkout', '--detach', base);
     appendFile(portal, '\n// portal edit\n');
     mkdirSync(path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '.', {recursive: true});
@@ -445,32 +396,22 @@ test('mixed shared, Mac, ABI, dependencies, packaging, CI and unknown inputs ret
     git('add', '.'); git('commit', '-qm', 'mixed delta');
     const result = runSelector(base, git('rev-parse', 'HEAD'), dir);
     assert.equal(result.macos, true, path);
-    assert.ok(result.reasons.includes(`mac:unsupported-change:${path}`));
+    assert.equal(result.platform, true, path);
+    assert.ok(result.reasons.includes('mac:unsupported-change:' + path));
     const modificationBase = git('rev-parse', 'HEAD');
     appendFile(path, '\nModified existing unreviewed input\n');
     appendFile(portal, '\n// another portal edit\n');
     git('add', '.'); git('commit', '-qm', 'mixed modifications');
     const modified = runSelector(modificationBase, git('rev-parse', 'HEAD'), dir);
     assert.equal(modified.macos, true, path);
-    assert.ok(modified.reasons.includes(`mac:unproven-input:${path}`));
-  }
-  for (const mutate of [
-    (map: any) => map.features[0].platforms = ['linux'],
-    (map: any) => map.features[0].config = [{key: 'newKey'}],
-    (map: any) => map.features[0].status = 'experiment:future',
-    (map: any) => map.features[0].futureContract = true,
-  ]) {
-    git('checkout', '--detach', base);
-    appendFile(portal, '\n// portal edit\n');
-    const map = metadata(); mutate(map); writeFileSync(featureMap, JSON.stringify(map));
-    git('add', '.'); git('commit', '-qm', 'semantic metadata');
-    assert.equal(runSelector(base, git('rev-parse', 'HEAD'), dir).macos, true);
+    assert.equal(modified.platform, true, path);
+    assert.ok(modified.reasons.includes('mac:unproven-input:' + path));
   }
 }));
 
 test('real Git additions, deletions, both rename sides, executable modes and symlinks fail closed', () => linuxFixture((git, dir, base) => {
   const card = 'capture/desktop/ui/frontend/src/storage.tsx';
-  for (const path of [portal, linuxDoc, featureMap, card]) {
+  for (const path of [portal, linuxDoc, card]) {
     for (const operation of ['add', 'delete', 'rename-out', 'rename-in', 'chmod', 'symlink', 'edit-symlink']) {
       git('checkout', '--detach', base);
       if (operation === 'add' || operation === 'rename-in') {
@@ -490,6 +431,7 @@ test('real Git additions, deletions, both rename sides, executable modes and sym
       const head = git('rev-parse', 'HEAD');
       const result = runSelector(from, head, dir);
       assert.equal(result.macos, true, `${path}: ${operation}`);
+      assert.equal(result.platform, !(path === linuxDoc && ['add', 'delete'].includes(operation)), `${path}: ${operation}`);
       assert.ok(changedPaths(from, head, true)!.includes(path), `${path}: ${operation}`);
       if (operation.startsWith('rename-')) assert.deepEqual(changedPaths(from, head)!.sort(), [path, 'outside.txt'].sort());
     }
@@ -515,26 +457,25 @@ test('full merge delta carries earlier unverified changes; missing, divergent an
     const decision = runSelector(from, to, dir);
     assert.equal(decision.macos, true);
     if (from !== to || !from) assert.deepEqual(selectRange(from, to),
-      {public: true, updater: true, macos: true, reasons: ['mac:unknown-history']});
+      {public: true, updater: true, macos: true, platform: true, reasons: ['mac:unknown-history']});
   }
   git('clone', '--quiet', '--no-local', '--depth=2', dir, dir + '/shallow');
   process.chdir(dir + '/shallow');
   assert.deepEqual(runSelector(currentBase, merge, dir + '/shallow'),
-    {public: true, updater: true, macos: true, reasons: ['mac:unknown-history']});
+    {public: true, updater: true, macos: true, platform: true, reasons: ['mac:unknown-history']});
 }));
 
-test('audited consumers keep full Linux commands, portable contracts, metadata web checks and Mac release admission', () => {
+test('audited consumers keep Linux commands, portable contracts, catalogue retirement and Mac release admission', () => {
   const source = (path: string) => readFileSync(new URL(path, root), 'utf8');
   assert.match(source('capture/desktop/mod.rs'), /#\[cfg\(target_os = "linux"\)\]\s*pub\(crate\) mod linux;/);
   assert.match(source('capture/desktop/linux/mod.rs'), /pub\(crate\) mod capture;/);
   assert.match(source('capture/desktop/linux/capture/mod.rs'), /pub\(crate\) mod portal;/);
-  assert.match(source('composition/mod.rs'), /#\[cfg\(test\)\]\s*pub\(crate\) mod feature_map;/);
-  assert.match(source('composition/feature_map.rs'), /fn the_feature_map_covers_every_config_key_and_experiment/);
-  assert.match(source('public/site/src/features.ts'), /import data from "\.\/features.json"/);
-  assert.deepEqual(select([featureMap]), {public: true, updater: false});
-  assert.ok(metadata().features.some((feature: any) => feature.docs?.some((doc: string) => doc.startsWith(linuxDoc + '#'))),
-    'Public feature audit reads the Linux guide to resolve referenced headings');
-  assert.deepEqual(select([linuxDoc]), {public: true, updater: false});
+  // Catalogue retirement removed the former Rust scanner and Public guide read.
+  for (const path of [retiredFeatureMap, 'composition/feature_map.rs', 'public/site/src/features.ts',
+    'public/site/scripts/site-build/feature-audit.ts']) assert.equal(existsSync(new URL(path, root)), false, path);
+  assert.deepEqual(select([retiredFeatureMap]), {public: true, updater: false});
+  assert.equal(requiresMac([retiredFeatureMap]), true);
+  assert.deepEqual(select([linuxDoc]), {public: false, updater: false});
   const platform = workflow('verification-platform.yml');
   const steps = platform.jobs.select.steps;
   assert.match(steps.find((step: any) => step.id === 'plan').run, /git hash-object -t tree \/dev\/null/);
@@ -548,3 +489,67 @@ test('audited consumers keep full Linux commands, portable contracts, metadata w
   assert.equal(macDecision([portal, linuxDoc]).macos, false);
   assert.equal(macDecision([portal], ['unknown-input']).macos, true);
 });
+
+test('ordinary prose skips heavy CI; instructions, shipped text and unknown inputs retain coverage', () => {
+  for (const path of ['capture/desktop/docs/linux/linux.md', 'enablement/docs/continuous-delivery.md',
+    'public/site/docs/feature-grid.md', 'capture/engine/README.md', 'enablement/refactor.md']) {
+    assert.equal(documentationOnlyPath(path), true, path);
+    assert.equal(needsPlatform([path]), false, path);
+    assert.deepEqual(select([path]), {public: false, updater: false}, path);
+  }
+  for (const path of ['AGENTS.md', 'capture/AGENTS.md', 'README.md', 'capture/agent/skills/apparent/SKILL.md',
+    'hermes/skills/recordings/SKILL.md', 'capture/agent/instructions/context.md',
+    'public/site/src/copy.md', 'capture/engine/tests/fixtures/summary.md', 'unknown.md',
+    'public/site/src/docs/copy.md', 'public/site/public/assets/docs/help.md',
+    'unknown/docs/input.md', 'unknown/README.md', 'public/site/src/README.md']) {
+    assert.equal(needsPlatform([path]), true, path);
+  }
+  assert.equal(needsPlatform(null), true);
+  assert.equal(needsPlatform([]), true);
+  assert.equal(needsPlatform(['capture/engine/docs/capture.md', 'capture/engine/runtime/mod.rs']), true);
+  assert.equal(select(['public/site/docs/guide.md', 'public/site/src/main.tsx']).public, true);
+});
+
+test('production CLI preserves regular prose additions, deletions and rename sides but rejects unsafe modes', () => repository((git, dir) => {
+  const path = 'capture/engine/docs/guide.md';
+  mkdirSync('capture/engine/docs', {recursive: true});
+  writeFileSync('baseline.txt', 'baseline'); git('add', '.'); git('commit', '-qm', 'base');
+  let base = git('rev-parse', 'HEAD');
+  writeFileSync(path, 'Ordinary prose');
+  git('add', '.'); git('commit', '-qm', 'add guide');
+  let result = runSelector(base, git('rev-parse', 'HEAD'), dir);
+  assert.equal(result.platform, false);
+  assert.deepEqual(result.reasons, ['docs:reviewed-prose:' + path]);
+  base = git('rev-parse', 'HEAD');
+  git('mv', path, 'capture/engine/docs/renamed.md'); git('commit', '-qm', 'rename guide');
+  assert.equal(runSelector(base, git('rev-parse', 'HEAD'), dir).platform, false);
+  base = git('rev-parse', 'HEAD');
+  git('rm', 'capture/engine/docs/renamed.md'); git('commit', '-qm', 'delete guide');
+  assert.equal(runSelector(base, git('rev-parse', 'HEAD'), dir).platform, false);
+  const empty = git('rev-parse', 'HEAD');
+  for (const kind of ['executable', 'symlink']) {
+    git('checkout', '--detach', empty);
+    mkdirSync('capture/engine/docs', {recursive: true});
+    if (kind === 'symlink') symlinkSync('../../../build.rs', path);
+    else { writeFileSync(path, 'Unproven executable'); chmodSync(path, 0o755); }
+    git('add', '.'); git('commit', '-qm', 'unsafe prose mode');
+    result = runSelector(empty, git('rev-parse', 'HEAD'), dir);
+    assert.equal(result.platform, true, kind);
+    assert.equal(result.macos, true, kind);
+    assert.equal(result.public, true, kind);
+    assert.equal(result.updater, true, kind);
+  }
+}));
+
+test('ordinary prose mixed with Settings cannot broaden the reviewed Mac exemption', () => linuxFixture((git, dir) => {
+  const guide = 'capture/engine/docs/guide.md';
+  mkdirSync('capture/engine/docs', {recursive: true}); writeFileSync(guide, 'before');
+  git('add', '.'); git('commit', '-qm', 'prose baseline');
+  const base = git('rev-parse', 'HEAD');
+  appendFile(guide, '\nafter\n'); appendFile('capture/desktop/ui/frontend/src/storage.tsx', '\n// edit\n');
+  git('add', '.'); git('commit', '-qm', 'mixed Settings and prose');
+  const result = runSelector(base, git('rev-parse', 'HEAD'), dir);
+  assert.equal(result.macos, true);
+  assert.equal(result.platform, true);
+  assert.equal(result.public, false);
+}));
