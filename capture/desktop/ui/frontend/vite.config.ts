@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import ts from 'typescript';
 import { build } from 'esbuild';
 
 // file: dependencies are snapshots. Refuse a build using stale shared controls.
@@ -11,9 +13,24 @@ for (const file of ['button.tsx', 'tabs.tsx', 'utils.ts', 'theme.css', 'tokens.c
   if (canonical !== installed) throw new Error('Shared UI changed. Run npm ci before building.');
 }
 
+let reportingOutput: string;
 export default defineConfig({
   base: './',
-  plugins: [react(), tailwindcss(), { name: 'hermes-native-bridge', async closeBundle() {
+  plugins: [react(), tailwindcss(), {
+    name: 'desktop-reporting-policy',
+    apply: 'build',
+    configResolved(config) { reportingOutput = path.resolve(config.root, config.build.outDir, config.build.assetsDir); },
+    // Emitted beside other staged assets; never commit authored JavaScript.
+    closeBundle() {
+      const source = readFileSync(new URL('./electron/reporting/index.ts', import.meta.url), 'utf8');
+      const { outputText } = ts.transpileModule(source, {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+        fileName: 'index.ts',
+      });
+      mkdirSync(reportingOutput, { recursive: true });
+      writeFileSync(path.join(reportingOutput, 'reporting.cjs'), outputText);
+    },
+  }, { name: 'hermes-native-bridge', async closeBundle() {
     await build({ entryPoints: { 'hermes-main': 'src/hermes/main.ts', 'hermes-preload': 'src/hermes/preload.ts' },
       bundle: true, platform: 'node', format: 'cjs', external: ['electron'], outdir: 'dist', outExtension: { '.js': '.cjs' } });
   } }],
