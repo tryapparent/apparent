@@ -261,6 +261,21 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     }
   });
   await page.emulateMedia({reducedMotion:'no-preference'});
+  await send({account:{status:'signed-out'}});
+  await page.getByRole('button',{name:'Sign in with Google',exact:true}).click();
+  await expect.poll(()=>output).toContain('"action":"sign-in"');
+  await send({account:{status:'approval',userCode:'TEST-CODE',verificationUri:'https://app.example.test/connect/device?code=TEST-CODE'}});
+  await expect(page.locator('.native-account code')).toHaveText('TEST-CODE');
+  await page.getByRole('button',{name:'Continue in browser',exact:true}).click();
+  await expect.poll(()=>output).toContain('"action":"open-sign-in"');
+  await page.getByRole('button',{name:'Cancel sign-in',exact:true}).click();
+  await expect.poll(()=>output).toContain('"action":"cancel-sign-in"');
+  await send({account:{status:'failed',error:'expired'}});
+  await expect(page.getByRole('alert')).toContainText('code expired');
+  await expect(page.getByRole('button',{name:'Sign in with Google',exact:true})).toBeEnabled();
+  await send({account:{status:'signed-in'}});
+  await expect(page.getByText('✓ Signed in.',{exact:true})).toBeVisible();
+  await expect(page.getByText('Recording stays local. Uploads need separate permission in Settings.',{exact:true})).toBeVisible();
   await send({ penPicker:true });
   await expect(page.getByRole('heading', { name:'Pick your pen.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
@@ -342,7 +357,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   }
   await send({step:'try-it',practice:'note',firstCaptureRequired:true});
   await expect(page.getByRole('heading',{name:'Add a note.',exact:true})).toBeVisible();
-  await expect(page.getByText('Hold Shift and click a spot.',{exact:true})).toBeVisible();
+  await expect(page.getByText('Hold Shift and click without dragging. Type a note, then save it.',{exact:true})).toBeVisible();
   await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','note');
   assert.equal(await page.getByRole('textbox').count(),0,'the coach must not compete with the real note editor');
   const beforeNoteReplay=output;
@@ -423,17 +438,24 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   const enlargedHelper=await page.locator('.native-trackpad-helper').evaluate(el=>{const r=el.getBoundingClientRect(),content=el.querySelector('.native-trackpad-helper-content');return{inside:r.right<=innerWidth&&r.bottom<=innerHeight,horizontal:content.scrollWidth>content.clientWidth}});
   assert.deepEqual(enlargedHelper,{inside:true,horizontal:false});
   assert.equal(await page.locator('.native-coach-content').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
-  await page.getByRole('button',{name:'Try later',exact:true}).scrollIntoViewIfNeeded();
-  await expect(page.getByRole('button',{name:'Try later',exact:true})).toBeInViewport();
+  await page.getByRole('button',{name:'Close guide',exact:true}).scrollIntoViewIfNeeded();
+  await expect(page.getByRole('button',{name:'Close guide',exact:true})).toBeInViewport();
   await page.evaluate(()=>document.documentElement.style.fontSize='');
 
   await send({ step:'permissions' });
   await expect(page.getByRole('heading', { name:'We need three things.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
   assert.equal(await page.locator('.native-setup section > p').count(),0);
+  await send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:false,platform:'linux',shortcut:'Super+Shift+Copilot',shortcutEditor:{recording:false,externallyManaged:true}});
+  await expect(page.locator('.native-shortcut kbd')).toHaveText('Super+Shift+Copilot');
+  await expect(page.getByRole('button',{name:'Use Super+Shift+Copilot',exact:true})).toBeInViewport();
+  await expect(page.getByRole('button',{name:'Choose another shortcut',exact:true})).toBeInViewport();
+  await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'Choose another shortcut',exact:true}).click();
+  await expect.poll(()=>output).toContain('"action":"change-shortcut"');
   await send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:false,platform:'macos',shortcutEditor:{recording:false,externallyManaged:false}});
   await expect(page.getByRole('heading',{name:'Choose your shortcut.',exact:true})).toBeVisible();
-  assert.equal(await page.locator('.native-shortcut kbd').count(),0,'no preselected/default combination');
+  await expect(page.locator('.native-shortcut kbd')).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeDisabled();
   await page.getByRole('button',{name:'Choose shortcut',exact:true}).click();
   await expect.poll(()=>output).toContain('change-shortcut');

@@ -18,6 +18,7 @@
 //! AppKit mouse monitor that needs no permission, keys from an Accessibility event tap.
 
 use std::collections::{BTreeMap, BTreeSet};
+mod account;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -1078,6 +1079,7 @@ pub fn poll_grants(
 /// The open welcome window: the `Flow` and the window drawing it. On macOS the app
 /// supplies permission updates even while this window is closed; other platforms poll here.
 pub struct Session {
+    account: Option<account::Account>,
     source: u64,
     transport_generation: u64,
     flow: Flow,
@@ -1116,6 +1118,7 @@ impl Session {
     #[cfg(test)]
     pub(crate) fn for_test(flow: Flow) -> Self {
         Self {
+            account: None,
             source: next_session_source(),
             transport_generation: next_session_source(),
             flow,
@@ -1213,6 +1216,7 @@ impl Session {
         let progress = Progress::load();
         let allowed = relaunch_allowed(&progress, unix_ms());
         let mut session = Self {
+            account: Some(account::Account::new(crate::shared::handoff::default_config_path())),
             source,
             transport_generation,
             flow: flow
@@ -1369,6 +1373,7 @@ impl Session {
     }
 
     pub fn restore_native(&mut self) -> bool {
+        if let Some(account) = self.account.as_mut() { account.cancel(); }
         // Invalidate queued actions/EOF before dropping the old child's input.
         if self.fallback.is_some() {
             self.practice_alive.store(false, std::sync::atomic::Ordering::Release);
@@ -1520,6 +1525,22 @@ impl Session {
 
     /// An action string from the helper as an `Input`.
     pub fn action(&mut self, action: &str) -> Effect {
+        if self.flow.step() == Step::Welcome && !self.pen_picker && matches!(action, "sign-in" | "cancel-sign-in" | "open-sign-in") {
+            if let Some(account) = self.account.as_mut() {
+                match action {
+                    "sign-in" => account.start(),
+                    "cancel-sign-in" => account.cancel(),
+                    "open-sign-in" => if let Some(uri) = account.browser_uri() {
+                        if crate::shared::handoff::open_path(Path::new(uri)).is_err() { account.browser_failed(); }
+                    },
+                    _ => (),
+                }
+            }
+            self.sync(); return Effect::None;
+        }
+        if matches!(action, "continue" | "later" | "close" | "back") {
+            if let Some(account) = self.account.as_mut() { account.cancel(); }
+        }
         if self.practice.is_some() && self.flow.step()==Step::Welcome {
             if action=="continue" && !self.pen_picker {self.pen_picker=true;self.sync();return Effect::None;}
             if let Some(name)=action.strip_prefix("pen:") {
@@ -1718,6 +1739,9 @@ impl Session {
             _ => Effect::None,
         }
     }
+    pub fn refresh_account(&mut self) {
+        if self.account.as_mut().is_some_and(|account| account.poll()) { self.sync(); }
+    }
 
     pub fn editing_shortcut(&self) -> bool {
         self.flow.step() == Step::Shortcut && self.flow.shortcut_editing
@@ -1730,6 +1754,7 @@ impl Session {
         }
         let mut view = serde_json::to_value(self.flow.view()).unwrap_or_default();
         view["type"] = "state".into();
+        view["account"] = serde_json::to_value(self.account.as_ref().map(|a| a.view())).unwrap_or_default();
         if let Some(facts)=self.practice.as_ref() {view["practiceFacts"]=facts.view();}
         view["menuAnchor"]=serde_json::json!(self.menu_anchor);
         view["shortcut"]=self.shortcut_label.clone().into();
@@ -1889,6 +1914,7 @@ fn retire_transport(transport: Transport) {
 impl Drop for Session {
     fn drop(&mut self) {
         self.practice_alive.store(false, std::sync::atomic::Ordering::Release);
+        if let Some(account) = self.account.as_mut() { account.cancel(); }
         self.polling
             .store(false, std::sync::atomic::Ordering::Release);
         if let Some(adapter) = self.permission_adapter.take() { retire_transport(adapter); }
