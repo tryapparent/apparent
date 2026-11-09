@@ -21,6 +21,7 @@ const owned = new Recording(request.token, (args) => new Promise<Receipt>((resol
 const sender = (event: Electron.IpcMainInvokeEvent) => {
   if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error('Invalid sender');
 };
+const ready = () => new Promise<void>((resolve, reject) => execFile(executable, ['capture', 'state'], { timeout: 4500, maxBuffer: 65536 }, error => error ? reject(error) : resolve()));
 app.whenReady().then(async () => {
   // Duplicate launches bind the same port and fail before creating a window or recording.
   const server = await mailbox(request.token, request.port, () => view, () => window.close());
@@ -29,10 +30,11 @@ app.whenReady().then(async () => {
   app.once('before-quit', () => clearTimeout(deadline));
   session.defaultSession.setPermissionRequestHandler((_w, _p, reply) => reply(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
-  window = new BrowserWindow({ width: 500, height: 340, resizable: false, show: false,
+  window = new BrowserWindow({ width: 500, height: 340, resizable: false, show: false, autoHideMenuBar: true,
     title: 'Record for Hermes', webPreferences: { preload: path.join(__dirname, 'hermes-preload.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false } });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
+  window.webContents.on('page-title-updated', event => event.preventDefault());
   window.once('ready-to-show', () => { if (view.code !== 'occupied') window.show(); });
   ipcMain.handle('apparent:hermes-read', event => { sender(event); return view; });
   ipcMain.handle('apparent:hermes-start', async event => {
@@ -43,12 +45,15 @@ app.whenReady().then(async () => {
       await mkdir(app.getPath('userData'), { recursive: true, mode: 0o700 });
       const journal = await open(path.join(app.getPath('userData'), `${request.token}.json`), 'wx', 0o600);
       try { await journal.writeFile(JSON.stringify({ created: Date.now() })); } finally { await journal.close(); }
-      const child = spawn(executable, ['launch'], { detached: true, stdio: 'ignore' });
-      await new Promise<void>((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
-      child.unref();
-      for (let attempt = 0; ; attempt++) {
-        try { await new Promise<void>((resolve, reject) => execFile(executable, ['capture', 'state'], { timeout: 4500, maxBuffer: 65536 }, error => error ? reject(error) : resolve())); break; }
-        catch { if (attempt === 9) throw new Error('Open Apparent and complete onboarding, then try again.'); await new Promise(resolve => setTimeout(resolve, 500)); }
+      try { await ready(); }
+      catch {
+        const child = spawn(executable, ['launch'], { detached: true, stdio: 'ignore' });
+        await new Promise<void>((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
+        child.unref();
+        for (let attempt = 0; ; attempt++) {
+          try { await ready(); break; }
+          catch { if (attempt === 9) throw new Error('Open Apparent and complete onboarding, then try again.'); await new Promise(resolve => setTimeout(resolve, 500)); }
+        }
       }
       window.hide();
       await owned.start();

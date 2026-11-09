@@ -9,7 +9,7 @@ import { availablePort } from './testing/port.ts';
 import { mailboxId, sign, authenticatedState } from '../../../../../../hermes/desktop/controller.ts';
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const token = '0123456789abcdef0123456789abcdef';
-test('real Electron confirmation/preload and bounded native CLI flow, then acknowledgement closes the bridge', { timeout: 45000 }, async () => {
+for (const needsLaunch of [false, true]) test(`real Electron confirmation/preload and bounded native CLI flow (${needsLaunch ? 'closed' : 'running'} recorder), then acknowledgement closes the bridge`, { timeout: 45000 }, async () => {
   const job = await mkdtemp(path.join(tmpdir(), 'hermes-native-'));
   const home = path.join(job, 'home'); await mkdir(home, { mode: 0o700 });
   const bridgePort = await availablePort();
@@ -19,7 +19,7 @@ test('real Electron confirmation/preload and bounded native CLI flow, then ackno
   const diagnostics: unknown[] = [];
   try {
     application = await electron.launch({ args: [path.join(root, 'dist/hermes-main.cjs'), '--hermes-request', `${token}/${bridgePort}`, '--apparent-executable', path.join(root, 'src/hermes/testing/cli.ts')],
-      env: { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(job, 'config'), APPARENT_SYNTHETIC_RECEIPT: path.join(job, 'receipt.json'), APPARENT_SYNTHETIC_TRACE: path.join(job, 'trace.jsonl') } });
+      env: { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(job, 'config'), APPARENT_SYNTHETIC_NEEDS_LAUNCH: needsLaunch ? '1' : '0', APPARENT_SYNTHETIC_RECEIPT: path.join(job, 'receipt.json'), APPARENT_SYNTHETIC_TRACE: path.join(job, 'trace.jsonl') } });
     const page = await application.firstWindow();
     page.on('console', entry => diagnostics.push({ console: entry.text() }));
     page.on('requestfailed', request => diagnostics.push({ request: request.url(), failure: request.failure() }));
@@ -55,6 +55,9 @@ test('real Electron confirmation/preload and bounded native CLI flow, then ackno
     await page.getByText('Recording saved.', { exact: false }).waitFor();
     assert.deepEqual(await authenticatedState(token, await (await fetch(stateURL, { headers: { Origin: 'null' } })).json()), { phase: 'saved', source: '/synthetic/owned.apparent' });
     const calls = (await readFile(path.join(job, 'trace.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+    assert.equal(calls.filter(c => c[0] === 'launch').length, needsLaunch ? 1 : 0, 'only an unavailable recorder should be launched');
+    assert.equal(await page.title(), 'Record for Hermes');
+    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle()), 'Record for Hermes');
     assert.equal(calls.filter(c => c[1] === 'start').length, 1);
     assert.ok(calls.filter(c => ['inspect', 'handoff'].includes(c[1])).every(c => c[2] === token));
     assert.ok(!calls.some(c => ['stop', 'cancel'].includes(c[1])));
