@@ -150,3 +150,14 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 .native-saved-keys kbd { min-width:76px; min-height:84px; padding:16px 24px; border-radius:6px; box-shadow:0 4px 0 var(--apparent-border); }
 
 .native-coach .native-saved-keys kbd { min-width:44px; min-height:48px; padding:8px 12px; font-size:24px; background:var(--apparent-lilac); color:var(--apparent-carbon); }
+
+/* Keep the instruction and keys together in the centre of the setup window. */
+.native-setup[data-shortcut-state=true] section { justify-content:center; text-align:center; gap:24px; }
+.native-setup[data-shortcut-state=true] section > h1,
+.native-setup[data-shortcut-state=true] section > p { margin:0; }
+.native-setup[data-shortcut-state=true] .native-shortcut { flex:0; margin:0; }
+
+.native-coach[data-stage=stop] .native-coach-content { position:relative; padding-top:8px; }
+.native-coach[data-stage=stop] h1 { text-align:center; padding-inline:44px; margin:0 0 24px; }
+.native-coach[data-stage=stop] .native-saved-keys { gap:16px; padding-bottom:8px; }
+.native-coach[data-stage=stop] .native-finish-close { position:absolute; top:0; right:0; padding:0; font-size:24px; }

@@ -475,7 +475,9 @@ Electron setup keeps shortcut choice, the native non-recording trial and **Go
 again.** in the setup window. Saved shortcuts render as individual keys. Once
 saved, the main prompt asks for the shortcut; no disabled Continue competes
 with it. Only the native trial receipt advances setup. Finish shows those same
-keys without a second Finish-to-Copied illustration.
+keys without a second Finish-to-Copied illustration. The shortcut prompt and keys
+form one centred group. Finish uses a small close control instead of the Close
+guide button and Recording continues detail; it keeps the same dismissal action.
 
 During Electron first-capture practice, opening Whiteboard routes the existing
 setup renderer to the paper surface instead of opening GPUI or a separate coach.
