@@ -74,12 +74,19 @@ separate; it does not control the enforced hook selection.
 
 The same workflow also calls the full Linux and Mac platform suites on main
 pushes and on non-draft PRs (opened, reopened, updated or marked ready for review).
-Drafts retain inexpensive checks; converting a PR back to draft cancels its
+Automatic Mac verification and Mac Hermes inspection wait for successful full
+Linux verification, cheap contracts and Linux Hermes inspection for the same
+candidate. Failed, cancelled or skipped prerequisites prevent Mac allocation.
+Linux verification and the cheap checks start independently. Drafts retain
+inexpensive Linux checks; converting a PR back to draft cancels its
 superseded full run. Each update tests GitHub's proposed merge commit, with
 read-only permissions and no release receipt. These jobs appear directly on the
 PR, so their actual completion is visible without a status reporter or manual
 dispatch. Existing separate manual runs do not substitute for this integrated
 candidate. Publication remains manual and retains its existing admission policy.
+This is a dependency gate, not a global concurrency limit or priority queue.
+Removing these Mac `needs` dependencies restores parallel platform scheduling;
+manual platform diagnostics remain independent.
 
 `Linux verification` and `Mac verification` remain manual diagnostic entrypoints,
 each coalescing superseded runs within its own platform. Both call the same reusable
@@ -429,7 +436,11 @@ Ready PRs whose complete base-to-merge delta modifies only the five reviewed
 Settings renderer cards (`storage.tsx`, `retention.tsx`,
 `connect-settings.tsx`, `error-reporting.tsx`, `reference.tsx` in
 `capture/desktop/ui/frontend/src/`) use the existing full Linux verification
-without allocating the Mac platform workflow. Linux still runs the real Electron
+without allocating the Mac platform workflow. When selected, that workflow still
+waits for successful Linux verification, cheap contracts and Linux Hermes inspection.
+Only successful selection can grant an exemption; failed selection retains Mac
+after those three prerequisites pass. Mac Hermes inspection retains its independent Linux-first
+admission. Linux still runs the real Electron
 build and smoke suites. Main pushes, manual Mac verification and Mac publication
 retain full Mac evidence. This is a PR iteration exemption, not native acceptance
 or evidence that Linux proves Mac window behavior.
@@ -476,8 +487,13 @@ changes. New files are not implicitly admitted.
 Only a successful selector with explicit `macos=false` can skip the PR Mac
 caller. Its status-function condition overrides GitHub's implicit dependency
 success check, retaining Mac allocation on selector failure, skip or missing
-output; cancelled workflows can still stop. Linux admission remains independent
-of the selector, with its existing full command inventory. Selector errors still
+output after successful Linux, contracts and Linux Hermes jobs. Explicit success
+guards for all three preserve their prerequisite gate despite the status-function
+override: their failure, cancellation, skip or unknown result still prevents Mac
+allocation. Cancelled workflows can still stop. Mac Hermes inspection keeps its
+ordinary event/implicit-success admission and has no selector exemption.
+Linux admission remains independent of the selector, with its existing full
+command inventory. Selector errors still
 fail Continuous delivery. Main/manual verification, independent client checks,
 Mac publication, exact-head/current-base review and native acceptance policy are
 unchanged. Restore unconditional ready-PR Mac admission in `checks.yml` to roll

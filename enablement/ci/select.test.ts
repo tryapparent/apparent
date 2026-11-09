@@ -40,7 +40,9 @@ test('platform admission keeps main full and exempts only selected ready PRs fro
     receipt = false, macos = 'true', result = 'success', cancelled = false) => Function('github', 'inputs', 'needs', 'cancelled',
       `return (${expression.replace(/^\$\{\{\s*|\s*\}\}$/g, '')});`)(
       {event_name: event, ref, repository: 'tryapparent/apparent',
-        event: {pull_request: {draft}}}, {'release_receipt': receipt}, {select: {result, outputs: {macos}}}, () => cancelled);
+        event: {pull_request: {draft}}}, {'release_receipt': receipt}, {
+        linux: {result: 'success'}, contracts: {result: 'success'}, hermes: {result: 'success'},
+        select: {result, outputs: {macos}}}, () => cancelled);
   for (const [name, runner] of [['linux', 'ubuntu-24.04'], ['macos', 'macos-15-intel']]) {
     const job = ci.jobs[name];
     assert.equal(job.uses, './.github/workflows/verification-platform.yml');
@@ -66,7 +68,7 @@ test('platform admission keeps main full and exempts only selected ready PRs fro
       assert.equal(admitted(platform.jobs['release-ready'].if, event, draft, ref), false);
     }
   }
-  assert.equal(ci.jobs.macos.needs, 'select');
+  assert.deepEqual(ci.jobs.macos.needs, ['linux', 'contracts', 'hermes', 'select']);
   assert.equal(ci.jobs.linux.needs, undefined);
   assert.equal(ci.jobs.select.outputs.macos, '${{ steps.paths.outputs.macos }}');
   const selector = ci.jobs.select.steps.find((step: any) => step.id === 'paths');
@@ -115,6 +117,78 @@ test('Public and updater retain their previous automatic input coverage', () => 
   for (const paths of [null, ['.github/workflows/checks.yml'], ['enablement/ci/select.ts']]) {
     assert.deepEqual(select(paths), {public: true, updater: true});
   }
+});
+
+test('every automatic Mac entrypoint waits for successful Linux verification and cheap checks', () => {
+  const ci = workflow('checks.yml');
+  const ancestors = (name: string): string[] => {
+    const needs = ci.jobs[name].needs ?? [];
+    return [needs].flat().flatMap((parent: string) => [parent, ...ancestors(parent)]);
+  };
+  const macJobs = Object.entries(ci.jobs).filter(([, job]: any) => {
+    const runners = [job.with?.runner, job['runs-on'], ...Object.values(job.strategy?.matrix ?? {}).flat()];
+    return runners.some(runner => typeof runner === 'string' && runner.startsWith('macos-'));
+  });
+  assert.ok(macJobs.length > 0, 'must inspect the actual Mac job inventory');
+  for (const [name, job] of macJobs as [string, any][]) {
+    const prerequisites = ancestors(name);
+    for (const required of ['linux', 'contracts', 'hermes']) {
+      assert.ok(prerequisites.includes(required), `${name} must wait for ${required}`);
+    }
+    // Ordinary prerequisites keep implicit success(). Only the platform caller
+    // may override it, and the actual expression must then preserve all three
+    // success requirements (exercised below, not assumed by the evaluator).
+    for (const entry of [name, ...prerequisites]) {
+      if (entry !== 'macos') assert.doesNotMatch(ci.jobs[entry].if ?? '', /\b(always|failure|cancelled)\s*\(/, entry);
+      else assert.doesNotMatch(ci.jobs[entry].if ?? '', /\b(always|failure)\s*\(/, entry);
+      assert.equal(ci.jobs[entry]['continue-on-error'], undefined, entry);
+    }
+  }
+  const admitted = (name: string, results: Record<string, string>, macos: string,
+    event = 'pull_request', cancelled = false) => {
+    const expression = ci.jobs[name].if.replace(/^\$\{\{\s*|\s*\}\}$/g, '');
+    const implicitSuccess = !cancelled && ancestors(name).every(parent => (results[parent] ?? 'success') === 'success');
+    if (!/\b(always|failure|cancelled|success)\s*\(/.test(expression) && !implicitSuccess) return false;
+    const needs: Record<string, {result: string; outputs?: {macos: string}}> =
+      Object.fromEntries(ancestors(name).map(parent => [parent, {result: results[parent] ?? 'success'}]));
+    needs.select = {...needs.select, outputs: {macos}};
+    return Function('github', 'needs', 'cancelled', `return (${expression});`)(
+      {event_name: event, event: {pull_request: {draft: false}}}, needs, () => cancelled);
+  };
+  for (const name of ['macos', 'hermes-macos']) {
+    for (const parent of ['linux', 'contracts', 'hermes']) {
+      for (const result of ['failure', 'skipped', 'cancelled', '', 'unknown']) {
+        for (const selected of ['true', 'false', '']) {
+          for (const event of ['pull_request', 'push']) {
+            for (const selection of ['success', 'failure', 'skipped', 'cancelled']) {
+              assert.equal(admitted(name, {[parent]: result, select: selection}, selected, event), false,
+                `${name} on ${event} with ${parent} ${result}, selector ${selection}, selected ${selected}`);
+            }
+          }
+        }
+      }
+    }
+    assert.equal(admitted(name, {}, 'true', 'push'), true);
+    assert.equal(admitted(name, {}, 'true', 'pull_request', true), false);
+  }
+  assert.equal(admitted('macos', {}, 'false'), false);
+  assert.equal(admitted('macos', {}, 'true'), true);
+  assert.equal(admitted('macos', {select: 'failure'}, 'true'), true, 'selector failure alone cannot suppress Mac');
+  assert.equal(admitted('macos', {select: 'failure'}, 'false'), true, 'failed partial output cannot exempt Mac');
+  assert.equal(admitted('hermes-macos', {}, 'false'), true);
+  assert.equal(ci.jobs.hermes['runs-on'], 'ubuntu-24.04');
+  assert.equal(ci.jobs.hermes.needs, undefined, 'cheap inspection must not wait for full suites');
+});
+
+test('Mac inspection preserves its checks but runs only for ready PRs and main pushes', () => {
+  const ci = workflow('checks.yml');
+  const inspection = ci.jobs['hermes-macos'];
+  assert.ok(inspection);
+  assert.equal(inspection['runs-on'], 'macos-15-intel');
+  assert.deepEqual(inspection.steps, ci.jobs.hermes.steps);
+  // The Settings exemption applies to the platform workflow; Hermes keeps
+  // main's own event admission and Linux-first checks.
+  assert.equal(inspection.if, ci.jobs.linux.if);
 });
 
 // Isolate the entire synchronous scope: production helpers also spawn Git.
