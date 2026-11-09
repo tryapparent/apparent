@@ -24,9 +24,9 @@ Linux release and website/Connect delivery have no automatic or scheduled trigge
 Review compatibility with the currently deployed service before publishing this
 older client/server source.
 
-## Repository checks
+## Continuous delivery
 
-`Repository checks` runs automatically on PRs targeting main and main pushes.
+`Continuous delivery` runs automatically on PRs targeting main and main pushes.
 It is the only automatic workflow: one run per PR open/reopen/commit update
 against main, and one per push to main. It validates the theme, selector,
 push-hook, publication-admission contracts and workflow syntax with read-only
@@ -392,7 +392,7 @@ changes this split.
 
 Connect Rust/client security, filesystem, credential and staging tests remain on
 both platforms, as do Desktop tests, actual Electron integration, packaging and
-Mac native assertions when Mac verification is selected (see Portable Settings PR
+Mac native assertions when Mac verification is selected (see Bounded Linux PR
 verification below). Both platform jobs depend on the successful Linux `select`
 prerequisite; portable failures prevent their allocation. This is once per
 platform caller, not reuse of another workflow's results. Reverting the explicit
@@ -478,7 +478,7 @@ caller. Its status-function condition overrides GitHub's implicit dependency
 success check, retaining Mac allocation on selector failure, skip or missing
 output; cancelled workflows can still stop. Linux admission remains independent
 of the selector, with its existing full command inventory. Selector errors still
-fail Repository checks. Main/manual verification, independent client checks,
+fail Continuous delivery. Main/manual verification, independent client checks,
 Mac publication, exact-head/current-base review and native acceptance policy are
 unchanged. Restore unconditional ready-PR Mac admission in `checks.yml` to roll
 back; do not broaden these rules without reviewing the new platform boundary.
