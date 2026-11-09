@@ -463,6 +463,10 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
         killed: error.cause.killed, stderr: error.cause.stderr } };
     if (page && Date.now() < deadline) {
       try {
+        report.storageFailure = await page.getByRole('region', { name: 'Capture location', exact: true })
+          .locator(':scope > [role="status"]').innerText({ timeout: budget(1000) });
+      } catch (diagnosticError) { report.storageFailureUnavailable = diagnosticError.message; }
+      try {
         report.errorReportingFailure = {
           rendered: await page.getByRole('region', { name: 'Send technical error reports', exact: true }).innerText({ timeout: budget(2000) }),
           readback: await within(page.evaluate(() => window.apparent.readErrorReporting()), budget(), 'Failed reporting readback'),
