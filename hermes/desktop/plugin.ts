@@ -1,20 +1,42 @@
 import { host, COMPOSER_AREAS, PALETTE_AREA, Button, Codicon, atom, useValue } from '@hermes/plugin-sdk';
 import { jsx } from 'react/jsx-runtime';
-import { launchURL, launchCommand, submission, validSource, validToken, mailboxId, sign, authenticatedState, runtime, sameRuntime, type Pending } from './controller.ts';
+import { launchURL, launchCommand, keyCommand, submission, validSource, validToken, mailboxId, sign, authenticatedState, runtime, sameRuntime, type Pending } from './controller.ts';
 export default {
   id: 'apparent', name: 'Apparent',
   register(ctx) {
     let disposed = false;
     let working = false;
     let pending: Pending | null = null;
+    let bridgeKey: { token: string; value: string } | undefined;
     let timer: (() => void) | undefined;
     const hasPending = atom(false);
     const save = () => { hasPending.set(Boolean(pending)); return ctx.storage.set('recording', pending); };
     const report = (message: string) => { if (!disposed) host.notify({ kind: 'error', message }); };
     ctx.onDispose(() => { disposed = true; timer?.(); });
+    async function signingKey(operation: Pending) {
+      if (bridgeKey?.token === operation.token) return bridgeKey.value;
+      if (!operation.destination.local) throw new Error('Use Apparent directly and paste the recording into this remote conversation.');
+      const route = (await host.profileRoutes()).find(r => r.connectionId === operation.destination.connectionId && r.profile === operation.destination.profile);
+      if (!route || route.mode !== operation.destination.mode || route.targetProfile !== operation.destination.targetProfile) throw new Error('The original Hermes gateway mapping changed. Nothing was sent.');
+      const release = await host.retainProfile(route, { spawnPriority: 'foreground' });
+      try {
+        if (disposed || pending !== operation) throw new Error('Handoff is no longer active');
+        if (!sameRuntime(operation.runtime, runtime(await host.requestProfile(route, 'runtime.describe', {})))) throw new Error('The original Hermes runtime changed. Nothing was sent.');
+        const snapshot = await host.requestProfile(route, 'session.resume', { session_id: operation.destination.session });
+        if (snapshot?.session_id !== operation.destination.session || snapshot.authority_epoch !== operation.runtime.authority_epoch) throw new Error('The original session changed. Nothing was sent.');
+        if (disposed || pending !== operation) throw new Error('Handoff is no longer active');
+        const result = await host.requestProfile(route, 'shell.exec', { session_id: operation.destination.session, command: keyCommand(operation.token) });
+        const key = result?.stdout?.trim();
+        if (result?.code !== 0 || !validToken(key) || key === operation.token) throw new Error('Apparent recording bridge is unavailable');
+        if (disposed || pending !== operation) throw new Error('Handoff is no longer active');
+        bridgeKey = { token: operation.token, value: key };
+        return key;
+      } finally { release(); }
+    }
     async function local(path: 'state' | 'ack', operation: Pending) {
+      const key = await signingKey(operation);
       const id = await mailboxId(operation.token);
-      const suffix = path === 'ack' ? `ack/${await sign(operation.token, `ack:${id}`)}` : 'state';
+      const suffix = `${path}/${await sign(key, `${path}:${id}`)}`;
       const response = await fetch(`http://127.0.0.1:${operation.port}/${id}/${suffix}`, {
         method: path === 'ack' ? 'POST' : 'GET', cache: 'no-store', credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(3000),
       });
@@ -26,7 +48,7 @@ export default {
         if (size > 32768) { await reader.cancel(); throw new Error('Oversized Apparent response'); } chunks.push(value); }
       const bytes = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
       const packet = JSON.parse(new TextDecoder().decode(bytes));
-      return path === 'state' ? authenticatedState(operation.token, packet) : packet;
+      return path === 'state' ? authenticatedState(key, packet) : packet;
     }
     async function poll() {
       if (disposed || working || !pending) return;
@@ -102,10 +124,12 @@ export default {
         const routes = (await host.profileRoutes()).filter(r => r.connectionId === owner.connectionId && r.profile === owner.profile);
         if (routes.length !== 1) throw new Error('The conversation’s gateway is ambiguous or unavailable.');
         if (typeof routes[0].targetProfile !== 'string' || typeof routes[0].mode !== 'string') throw new Error('Hermes lacks a complete conversation route. Update Hermes before recording.');
+        if (routes[0].mode !== 'local') throw new Error('Use Apparent directly and paste the recording into this remote conversation.');
         const identity = runtime(await host.requestProfile(routes[0], 'runtime.describe', {}));
         if (disposed) return;
         const bytes = crypto.getRandomValues(new Uint32Array(1));
-        pending = { token: crypto.randomUUID().replaceAll('-', ''), port: 32768 + bytes[0] % (60999 - 32768 + 1), destination: { session, connectionId: owner.connectionId, profile: owner.profile, targetProfile: routes[0].targetProfile, mode: routes[0].mode, local: routes[0].mode === 'local' }, runtime: identity, created: Date.now() };
+        bridgeKey = undefined;
+        pending = { version: 2, token: crypto.randomUUID().replaceAll('-', ''), port: 32768 + bytes[0] % (60999 - 32768 + 1), destination: { session, connectionId: owner.connectionId, profile: owner.profile, targetProfile: routes[0].targetProfile, mode: routes[0].mode, local: true }, runtime: identity, created: Date.now() };
         await save();
         if (disposed) return;
         if (!await ctx.os.openExternal(launchURL(pending.token, pending.port))) {
@@ -139,8 +163,10 @@ export default {
       finally { working = false; }
     }
     // No credentials or recording media are stored here; only an owned in-flight operation.
-    Promise.resolve(ctx.storage.get('recording')).then(value => {
-      if (disposed || pending || !value || !validToken(value.token)) return;
+    Promise.resolve(ctx.storage.get('recording')).then(async value => {
+      if (disposed || pending || !value) return;
+      if (value.version !== 2) { await ctx.storage.set('recording', null); report('This older recording handoff cannot resume safely. Copy its recording from Apparent into Hermes.'); return; }
+      if (!validToken(value.token)) return;
       if (!Number.isInteger(value.port) || value.port < 32768 || value.port > 60999 || !Number.isFinite(value.created) ||
           !value.runtime || !value.destination || typeof value.destination.local !== 'boolean' || !['session', 'connectionId', 'profile', 'targetProfile', 'mode'].every(k => typeof value.destination[k] === 'string' && value.destination[k])) return;
       runtime(value.runtime);

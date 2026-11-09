@@ -9,6 +9,14 @@ existing `nativeLaunch` experiment and never enables it or registers an OS
 handler. The person must confirm **Record and send when finished** before the
 bridge starts the installed app and uses its existing ID-bound capture CLI.
 The native recorder retains permission/admission/resource enforcement.
+The URL token is a public request ID. A separate signing key lives in
+`$XDG_RUNTIME_DIR/apparent-hermes/<token>.key` on Linux (default `/run/user/<uid>`),
+or `$(getconf DARWIN_USER_TEMP_DIR)/apparent-hermes/<token>.key` on macOS.
+The containing directory must belong to the user with mode 0700; the file is
+created exclusively with mode 0600 and removed on normal helper exit. Hermes
+reads it through the checked original local session, keeping the key out of
+process arguments and persistent plugin state. Older pending handoffs require
+manual paste rather than resuming the former public-token signing protocol.
 
 Only the exact saved capture can provide `capture handoff <capture-id>`'s
 reference. The loopback capability exposes signed status and that reference, never

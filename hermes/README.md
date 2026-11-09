@@ -50,13 +50,17 @@ checks; sandboxed/remote terminals can refuse. No shell settings, handler
 registration or Hermes source are changed. Stock remote connections require
 the existing manual recording-and-paste flow.
 
-The launch URL carries a random signing secret and loopback port, not gateway
-credentials or session IDs. HTTP requests reveal only its hash; signed state
-responses and a separate authenticated acknowledgement prevent a prebound local
-listener from forging a completion. A bounded local endpoint returns only this
+The launch URL carries a public random request ID and loopback port, not a signing
+key, gateway credentials or session IDs. Apparent publishes a separate signing key
+in a mode-0600 file inside a mode-0700 user runtime directory. The plugin reads it
+once through the original local session's checked `shell.exec` API; no folder grant
+is needed. The key stays in memory and is removed on normal helper exit. It never
+appears in URL/process arguments, HTTP requests or plugin storage. Authenticated
+state reads, signed responses and a separate authenticated acknowledgement prevent a listener that knows the
+public request ID from forging completion. A bounded local endpoint returns only this
 recording's status
 and saved reference. It cannot control capture or read arbitrary files. It binds
-IPv4 loopback, checks Host/origin/token and expires after one hour. Keep Hermes
+IPv4 loopback, checks Host/origin/signature and expires after one hour. Keep Hermes
 and the bridge open until handoff completes. Native confirmation is required
 because an external URL does not establish the caller's identity.
 

@@ -2,13 +2,13 @@ import { createServer, type Server } from 'node:http';
 import { createHash, createHmac } from 'node:crypto';
 import { tokenValid, sourceValid, type View } from './protocol.ts';
 // Read-only capability for this one recording. No capture controls, arbitrary file reads or credentials.
-export async function mailbox(token: string, port: number, read: () => View, acknowledged: () => void): Promise<Server> {
-  if (!tokenValid(token) || !Number.isInteger(port) || port < 32768 || port > 60999) throw new Error('Invalid bridge address');
+export async function mailbox(token: string, port: number, key: string, read: () => View, acknowledged: () => void): Promise<Server> {
+  if (!tokenValid(token) || !tokenValid(key) || key === token || !Number.isInteger(port) || port < 32768 || port > 60999) throw new Error('Invalid bridge address');
   let acknowledgedOnce = false;
-  // The HTTP listener never receives the launch secret. A prebound foreign
-  // listener sees only its hash and cannot forge a signed recording result.
+  // The public launch ID is not an authentication secret. The separate key is
+  // read through the user's local Hermes session, never through this listener.
   const id = createHash('sha256').update(token).digest('hex');
-  const mac = (text: string) => createHmac('sha256', token).update(text).digest('hex');
+  const mac = (text: string) => createHmac('sha256', key).update(text).digest('hex');
   const server = createServer({ maxHeaderSize: 2048, headersTimeout: 3000, requestTimeout: 3000, connectionsCheckingInterval: 1000, keepAliveTimeout: 1000 }, (request, response) => {
     const origin = request.headers.origin;
     // Electron's file renderer can omit Origin. Authentication is the signed
@@ -18,7 +18,7 @@ export async function mailbox(token: string, port: number, read: () => View, ack
     }
     const headers = { 'Access-Control-Allow-Origin': origin ?? 'null', 'Cache-Control': 'no-store', 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' };
     const view = read();
-    if (request.url === `/${id}/state` && request.method === 'GET') {
+    if (request.url === `/${id}/state/${mac(`state:${id}`)}` && request.method === 'GET') {
       const state = { phase: view.phase, ...(view.code === 'occupied' ? { code: 'occupied' } : {}), ...(view.phase === 'saved' && sourceValid(view.source) ? { source: view.source } : {}) };
       const payload = JSON.stringify(state);
       response.writeHead(200, headers).end(JSON.stringify({ payload, mac: mac(payload) }));

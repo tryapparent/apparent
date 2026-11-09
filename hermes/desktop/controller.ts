@@ -10,6 +10,10 @@ export function launchCommand(token: string, port: number) {
   const url = launchURL(token, port);
   return `case "$(uname -s)" in Darwin) open '${url}';; Linux) xdg-open '${url}';; *) exit 64;; esac`;
 }
+export function keyCommand(token: string) {
+  if (!validToken(token)) throw new Error('Invalid recording request');
+  return `case "$(uname -s)" in Darwin) apparent_bridge_dir="$(getconf DARWIN_USER_TEMP_DIR)";; Linux) apparent_bridge_dir="\${XDG_RUNTIME_DIR:-/run/user/$(id -u)}";; *) exit 64;; esac\ncat "$apparent_bridge_dir/apparent-hermes/${token}.key"`;
+}
 export function validSource(s: unknown): s is string {
   return typeof s === 'string' && s.length <= 4096 && !/[\x00-\x1f\x7f]/.test(s) &&
     (validToken(s) || (s.startsWith('/') && s.endsWith('.apparent')));
@@ -20,7 +24,7 @@ export function submission(destination: Destination, token: string, source: stri
   return { session_id: destination.session, input_id: token,
     text: `Apparent recording (.apparent): ${source}\nUse apparent_inspect with this exact source to read my spoken instructions and the recording’s images, then act on them.` };
 }
-export interface Pending { token: string; port: number; destination: Destination; runtime: Runtime; created: number; source?: string; sending?: boolean }
+export interface Pending { version: 2; token: string; port: number; destination: Destination; runtime: Runtime; created: number; source?: string; sending?: boolean }
 const hex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('');
 export async function mailboxId(secret: string) {
   if (!validToken(secret)) throw new Error('Invalid mailbox capability');

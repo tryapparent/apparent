@@ -6,12 +6,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { availablePort } from './testing/port.ts';
+import { keyDirectory } from './key.ts';
 import { mailboxId, sign, authenticatedState } from '../../../../../../hermes/desktop/controller.ts';
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const token = '0123456789abcdef0123456789abcdef';
 for (const needsLaunch of [false, true]) test(`real Electron confirmation/preload and bounded native CLI flow (${needsLaunch ? 'closed' : 'running'} recorder), then acknowledgement closes the bridge`, { timeout: 45000 }, async () => {
   const job = await mkdtemp(path.join(tmpdir(), 'hermes-native-'));
   const home = path.join(job, 'home'); await mkdir(home, { mode: 0o700 });
+  const runtime = path.join(job, 'runtime'); await mkdir(runtime, { mode: 0o700 });
+  const keyFile = path.join(process.platform === 'linux' ? runtime : keyDirectory(), 'apparent-hermes', `${token}.key`);
   const bridgePort = await availablePort();
   const id = await mailboxId(token);
   let application: Awaited<ReturnType<typeof electron.launch>> | undefined;
@@ -19,8 +22,10 @@ for (const needsLaunch of [false, true]) test(`real Electron confirmation/preloa
   const diagnostics: unknown[] = [];
   try {
     application = await electron.launch({ args: [path.join(root, 'dist/hermes-main.cjs'), '--hermes-request', `${token}/${bridgePort}`, '--apparent-executable', path.join(root, 'src/hermes/testing/cli.ts')],
-      env: { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(job, 'config'), APPARENT_SYNTHETIC_NEEDS_LAUNCH: needsLaunch ? '1' : '0', APPARENT_SYNTHETIC_RECEIPT: path.join(job, 'receipt.json'), APPARENT_SYNTHETIC_TRACE: path.join(job, 'trace.jsonl') } });
+      env: { ...process.env, HOME: home, XDG_RUNTIME_DIR: runtime, XDG_CONFIG_HOME: path.join(job, 'config'), APPARENT_SYNTHETIC_NEEDS_LAUNCH: needsLaunch ? '1' : '0', APPARENT_SYNTHETIC_RECEIPT: path.join(job, 'receipt.json'), APPARENT_SYNTHETIC_TRACE: path.join(job, 'trace.jsonl') } });
     const page = await application.firstWindow();
+    const key = await readFile(keyFile, 'utf8');
+    assert.notEqual(key, token);
     page.on('console', entry => diagnostics.push({ console: entry.text() }));
     page.on('requestfailed', request => diagnostics.push({ request: request.url(), failure: request.failure() }));
     page.on('response', response => { if (response.url().startsWith('http://127.0.0.1:')) diagnostics.push({ response: response.url(), status: response.status(), headers: response.headers() }); });
@@ -28,7 +33,7 @@ for (const needsLaunch of [false, true]) test(`real Electron confirmation/preloa
     const preflight = (await readFile(path.join(job, 'trace.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
     assert.ok(preflight.every(call => call[0] === 'capture' && call[1] === 'state'));
     assert.equal(await page.evaluate(() => typeof (window as any).require), 'undefined');
-    const stateURL = `http://127.0.0.1:${bridgePort}/${id}/state`;
+    const stateURL = `http://127.0.0.1:${bridgePort}/${id}/state/${await sign(key, `state:${id}`)}`;
     // Apparent deliberately has connect-src 'none': its UI uses only IPC.
     // Stock Hermes v0.23.0's index has no CSP. A separate file renderer models
     // that receiving boundary without weakening Apparent's production policy.
@@ -48,12 +53,12 @@ for (const needsLaunch of [false, true]) test(`real Electron confirmation/preloa
     }, stateURL);
     diagnostics.push({ rendererReply });
     assert.equal(rendererReply.status, 200);
-    assert.deepEqual(await authenticatedState(token, JSON.parse(rendererReply.body)), { phase: 'confirm' });
+    assert.deepEqual(await authenticatedState(key, JSON.parse(rendererReply.body)), { phase: 'confirm' });
     await receiver.close();
-    assert.deepEqual(await authenticatedState(token, await (await fetch(stateURL, { headers: { Origin: 'null' } })).json()), { phase: 'confirm' });
+    assert.deepEqual(await authenticatedState(key, await (await fetch(stateURL, { headers: { Origin: 'null' } })).json()), { phase: 'confirm' });
     await page.getByRole('button', { name: 'Record and send when finished' }).click();
     await page.getByText('Recording saved.', { exact: false }).waitFor();
-    assert.deepEqual(await authenticatedState(token, await (await fetch(stateURL, { headers: { Origin: 'null' } })).json()), { phase: 'saved', source: '/synthetic/owned.apparent' });
+    assert.deepEqual(await authenticatedState(key, await (await fetch(stateURL, { headers: { Origin: 'null' } })).json()), { phase: 'saved', source: '/synthetic/owned.apparent' });
     const calls = (await readFile(path.join(job, 'trace.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
     assert.equal(calls.filter(c => c[0] === 'launch').length, needsLaunch ? 1 : 0, 'only an unavailable recorder should be launched');
     assert.equal(await page.title(), 'Record for Hermes');
@@ -63,8 +68,10 @@ for (const needsLaunch of [false, true]) test(`real Electron confirmation/preloa
     assert.ok(!calls.some(c => ['stop', 'cancel'].includes(c[1])));
     // Cross-origin callers cannot acknowledge or read this recording.
     assert.equal((await fetch(stateURL, { headers: { Origin: 'https://example.invalid' } })).status, 403);
-    await fetch(`http://127.0.0.1:${bridgePort}/${id}/ack/${await sign(token, `ack:${id}`)}`, { method: 'POST', headers: { Origin: 'null' } });
+    assert.equal((await fetch(`http://127.0.0.1:${bridgePort}/${id}/ack/${await sign(token, `ack:${id}`)}`, { method: 'POST', headers: { Origin: 'null' } })).status, 404);
+    await fetch(`http://127.0.0.1:${bridgePort}/${id}/ack/${await sign(key, `ack:${id}`)}`, { method: 'POST', headers: { Origin: 'null' } });
     await new Promise<void>(resolve => { if (application!.process().exitCode !== null) resolve(); else application!.process().once('exit', () => resolve()); });
+    await assert.rejects(readFile(keyFile), { code: 'ENOENT' });
     passed = true;
   } finally {
     await writeFile(path.join(job, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2));

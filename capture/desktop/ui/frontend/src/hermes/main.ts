@@ -2,8 +2,10 @@ import { app, BrowserWindow, ipcMain, session } from 'electron';
 import { execFile, spawn } from 'node:child_process';
 import { mkdir, open } from 'node:fs/promises';
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { Recording, destination, type Receipt, type View } from './protocol';
 import { mailbox } from './mailbox';
+import { keyDirectory, publishKey } from './key';
 const option = (key: string) => process.argv[process.argv.indexOf(key) + 1];
 const request = destination(option('--hermes-request'));
 const executable = option('--apparent-executable');
@@ -24,8 +26,11 @@ const sender = (event: Electron.IpcMainInvokeEvent) => {
 const ready = () => new Promise<void>((resolve, reject) => execFile(executable, ['capture', 'state'], { timeout: 4500, maxBuffer: 65536 }, error => error ? reject(error) : resolve()));
 app.whenReady().then(async () => {
   // Duplicate launches bind the same port and fail before creating a window or recording.
-  const server = await mailbox(request.token, request.port, () => view, () => window.close());
+  const key = randomBytes(16).toString('hex');
+  const server = await mailbox(request.token, request.port, key, () => view, () => window.close());
   app.once('before-quit', () => server.close());
+  const removeKey = publishKey(keyDirectory(), request.token, key);
+  app.once('before-quit', removeKey);
   const deadline = setTimeout(() => { server.close(); if (!window.isDestroyed()) window.close(); }, 60 * 60 * 1000);
   app.once('before-quit', () => clearTimeout(deadline));
   session.defaultSession.setPermissionRequestHandler((_w, _p, reply) => reply(false));
