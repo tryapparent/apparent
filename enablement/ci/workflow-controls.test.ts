@@ -8,8 +8,7 @@ import {changedPaths, controlWorkflows, workflowControlPaths} from './inputs.ts'
 
 const root = new URL('../../', import.meta.url);
 const original = readFileSync(new URL(controlWorkflows[0], root), 'utf8');
-const update = (source: string) => source.replace(/  cancel-in-progress: .*/,
-  "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
+const update = (source: string) => source.replace(/  cancel-in-progress: .*/, '  cancel-in-progress: false');
 
 test('real orchestrators accept only a changed root concurrency block and adjacent comments', () => {
   for (const path of controlWorkflows) {
@@ -25,6 +24,7 @@ test('real orchestrators accept only a changed root concurrency block and adjace
 
 test('execution-sensitive changes, ambiguous YAML and changed alias consumers retain coverage', () => {
   const safe = update(original);
+  assert.equal(concurrencyOnly(original, safe), true, 'each negative starts with a qualifying control edit');
   for (const after of [
     safe.replace('contents: read', 'contents: write'),
     safe.replace('ubuntu-24.04', 'ubuntu-22.04'),
