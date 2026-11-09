@@ -423,7 +423,7 @@ manual triggers. Exact-head verification, independent review, native acceptance
 and publication admission remain required; inspect their workflow evidence
 directly. The retired status is no longer required by branch protection.
 
-## Portable Settings PR verification
+## Bounded Linux PR verification
 
 Ready PRs whose complete base-to-merge delta modifies only the five reviewed
 Settings renderer cards (`storage.tsx`, `retention.tsx`,
@@ -434,10 +434,53 @@ build and smoke suites. Main pushes, manual Mac verification and Mac publication
 retain full Mac evidence. This is a PR iteration exemption, not native acceptance
 or evidence that Linux proves Mac window behavior.
 
-The exact allowlist lives in `enablement/ci/select.ts`. Empty/unknown deltas,
-additions, deletions, type changes, renames and every other input require Mac verification.
-Shell/preload/bridge contracts, styles, onboarding, notes, shared UI, dependencies,
-native code, packaging and CI changes are outside this exemption. New files are
-not implicitly admitted. Changed native behavior still needs its platform proof.
-Restore unconditional ready-PR Mac admission in `checks.yml` to roll back;
-do not broaden the allowlist without reviewing the new platform boundary.
+The same rule admits modifications to the audited Linux portal implementation
+`capture/desktop/linux/capture/portal.rs` and its guide
+`capture/desktop/docs/linux/linux.md`. These may compose with the five Settings
+cards and documentation-only feature-map edits. No Linux directory or Rust
+extension is generally exempt. The selector logs deterministic per-input reasons.
+
+The portal's module chain is `capture/desktop/mod.rs`'s `cfg(target_os="linux")`
+declaration, then `linux/mod.rs` and `linux/capture/mod.rs`. Its media, shortcut
+and paste consumers are under the same Linux module or Engine's Linux platform
+adapter. Mac native compilation and app packaging do not read this source or
+the guide. Root build identity watches tracked files, but changes here affect
+only the ordinary revision label on Mac, as for the existing Settings exemption.
+The Rust `composition/feature_map.rs` source audit scans Linux source even on
+Mac; its platform-independent config/experiment/doc checks still execute in full
+on Linux. This selection policy changes no application code, persistence or native
+boundary and grants no native acceptance to the underlying product change.
+
+`public/site/src/features.json` is not generally exempt. Only direct `note`
+strings on existing feature entries may be added, edited or removed; all other
+parsed data, including entry order, must remain equal. Invalid JSON, duplicate
+feature IDs, non-string notes and unknown schema fields retain Mac verification.
+Platform support, status, config/flags, shortcuts, docs, feature membership and
+unknown contracts cannot enter through this exception. No English wording, PR
+number or commit identity controls it. Public's `features.ts`, map rendering and
+build audit consume the metadata; the Rust audit consumes status/config/docs
+but not notes. Full Linux verification (including the Rust feature-map audit),
+portable contracts and Public web verification stay selected for note edits.
+The metadata is not a runtime or native build input. A future consumer/schema
+change remains outside the allowlist and needs a new boundary review.
+
+The exact rules live in `enablement/ci/select.ts`. Selection reads committed blobs
+and the complete current PR base-to-proposed-merge delta, including earlier
+unverified commits and both sides of renames. Empty/unknown, shallow, missing or
+divergent history, additions, deletions, renames, type changes, symlink edits and
+any mode other than regular non-executable files retain Mac verification. Every
+unreviewed input also retains Mac: shell/preload/bridge, styles, onboarding,
+recording notes, shared/native-Mac/ABI, build/toolchain/lockfile, packaging and CI
+changes. New files are not implicitly admitted.
+
+Only a successful selector with explicit `macos=false` can skip the PR Mac
+caller. Its status-function condition overrides GitHub's implicit dependency
+success check, retaining Mac allocation on selector failure, skip or missing
+output; cancelled workflows can still stop. Linux admission remains independent
+of the selector, with its existing full command inventory. Selector errors still
+fail Repository checks. Main/manual verification, independent client checks,
+Mac publication, exact-head/current-base review and native acceptance policy are
+unchanged. Restore unconditional ready-PR Mac admission in `checks.yml` to roll
+back; do not broaden these rules without reviewing the new platform boundary.
+Selector regressions establish selection, not measured queue/runtime savings;
+qualify those separately from subsequent real runs and their actual job inventory.

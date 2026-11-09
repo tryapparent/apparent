@@ -26,9 +26,10 @@ jobs:
 
   macos:
     needs: select
-    # Full Mac verification stays mandatory on main; only reviewed Settings
-    # renderer-only PR deltas can use Linux evidence during iteration.
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.select.outputs.macos != 'false')
+    # A status function avoids GitHub's implicit success() skip after selector
+    # failure. Only a successful explicit false may exempt a reviewed PR delta.
+    # Main always retains Mac; cancellation still stops superseded work.
+    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && (needs.select.result != 'success' || needs.select.outputs.macos != 'false'))) }}
     uses: ./.github/workflows/verification-platform.yml
     with:
       runner: macos-15-intel
