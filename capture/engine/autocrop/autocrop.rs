@@ -1991,15 +1991,18 @@ mod tests {
         let mut raw = solid(1728, 1117, 255);
         let pixel = (900 * 1728 + 1500) * 4;
         raw.rgba[pixel..pixel + 4].copy_from_slice(&[10, 220, 80, 255]);
-        let (frames, cropped) = annotate_and_crop(
-            vec![(action, raw)], None, Some(&Settings::default()), &target,
-            2000, &[], &[], &[InteractionEvent::ClickUnavailable {
-                t: 1000, button: "left".into(), time_source: Some("evdev_monotonic".into()),
-            }], &windows, &[],
-        );
-        assert_eq!((frames[0].1.width, frames[0].1.height), (1728, 1117));
-        assert_eq!(&frames[0].1.rgba[pixel..pixel + 4], &[10, 220, 80, 255]);
-        assert!(cropped.is_none(), "focus alone cannot locate an unobserved click");
+        for video_ink in [None, Some(crate::shared::model::VideoInk::Captured),
+            Some(crate::shared::model::VideoInk::CapturedVideo)] {
+            let (frames, cropped) = annotate_and_crop(
+                vec![(action.clone(), raw.clone())], None, Some(&Settings::default()), &target,
+                2000, &[], &[], &[InteractionEvent::ClickUnavailable {
+                    t: 1000, button: "left".into(), time_source: Some("evdev_monotonic".into()),
+                }], &windows, &[], video_ink,
+            );
+            assert_eq!((frames[0].1.width, frames[0].1.height), (1728, 1117));
+            assert_eq!(&frames[0].1.rgba[pixel..pixel + 4], &[10, 220, 80, 255]);
+            assert!(cropped.is_none(), "focus alone cannot locate an unobserved click");
+        }
     }
 
     #[test]
@@ -2018,7 +2021,7 @@ mod tests {
         let settings = Settings { scope: Scope::Whole, ..Default::default() };
         let (frames, cropped) = annotate_and_crop(
             vec![(keyframe(1, 300), raw.clone()), (unknown, raw)], None,
-            Some(&settings), &target, 2000, &[], &[], &[], &windows, &[],
+            Some(&settings), &target, 2000, &[], &[], &[], &windows, &[], None,
         );
         assert!(frames.iter().all(|(_, frame)| (frame.width, frame.height) == (1728, 1117)));
         assert!(cropped.is_none(), "whole scope must use one conservative crop");
