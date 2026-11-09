@@ -301,11 +301,16 @@ test('Mac exemption is exact, nonempty, modification-only and fails closed', () 
 
 const portal = 'capture/desktop/linux/capture/portal.rs';
 const linuxDoc = 'capture/desktop/docs/linux/linux.md';
+const linuxInputs = [
+  'capture/desktop/linux/integration/appearance.rs',
+  ...['capture-smoke.py', 'gui-vm.py', 'gui-vm-reaper.py', 'test-capture-smoke.py', 'test-gui-vm.py']
+    .map(name => 'capture/desktop/scripts/linux/gui/' + name),
+];
 const retiredFeatureMap = 'public/site/src/features.json';
 
 function linuxFixture(action: (git: (...args: string[]) => string, dir: string, base: string) => void) {
   repository((git, dir) => {
-    for (const path of [portal, linuxDoc, 'capture/desktop/ui/frontend/src/storage.tsx']) {
+    for (const path of [portal, linuxDoc, ...linuxInputs, 'capture/desktop/ui/frontend/src/storage.tsx']) {
       mkdirSync(path.slice(0, path.lastIndexOf('/')), {recursive: true});
       writeFileSync(path, readFileSync(new URL(path, root)));
     }
@@ -411,7 +416,7 @@ test('mixed shared, Mac, ABI, dependencies, packaging, CI and unknown inputs ret
 
 test('real Git additions, deletions, both rename sides, executable modes and symlinks fail closed', () => linuxFixture((git, dir, base) => {
   const card = 'capture/desktop/ui/frontend/src/storage.tsx';
-  for (const path of [portal, linuxDoc, card]) {
+  for (const path of [portal, linuxDoc, card, ...linuxInputs]) {
     for (const operation of ['add', 'delete', 'rename-out', 'rename-in', 'chmod', 'symlink', 'edit-symlink']) {
       git('checkout', '--detach', base);
       if (operation === 'add' || operation === 'rename-in') {
@@ -593,3 +598,40 @@ test('production Git/CLI cannot exempt Public build Markdown alone or mixed with
     assert.equal(mixed.platform, true, path);
   }
 }));
+
+test('audited Linux leaf and VM drivers use real committed regular modifications only', () => linuxFixture((git, dir, base) => {
+  for (const path of linuxInputs) {
+    git('checkout', '--detach', base);
+    appendFile(path, '\n// synthetic selector edit\n');
+    git('add', '.'); git('commit', '-qm', 'Linux input edit');
+    const head = git('rev-parse', 'HEAD');
+    const selected = runSelector(base, head, dir);
+    assert.equal(selected.macos, false, path);
+    assert.equal(selected.platform, true, path);
+    assert.equal(selected.updater, path.includes('/scripts/'), path);
+    // Shared/build/CI/packaging and unaudited siblings never inherit exemption.
+    for (const other of ['build.rs', 'enablement/build_version.rs', '.github/workflows/checks.yml',
+      'capture/desktop/scripts/linux/appimage/appimage.sh', 'capture/desktop/linux/mod.rs',
+      'capture/desktop/scripts/linux/gui/narration-durability.py', 'shared/unknown.rs']) {
+      git('checkout', '--detach', head);
+      if (other.includes('/')) mkdirSync(other.slice(0, other.lastIndexOf('/')), {recursive: true});
+      writeFileSync(other, 'mixed input');
+      git('add', '.'); git('commit', '-qm', 'mixed delta');
+      assert.equal(runSelector(base, git('rev-parse', 'HEAD'), dir).macos, true, other);
+    }
+  }
+}));
+
+test('Linux consumer audit retains cfg boundary, driver checks and accurate build identity', () => {
+  const source = (path: string) => readFileSync(new URL(path, root), 'utf8');
+  assert.match(source('capture/desktop/mod.rs'), /#\[cfg\(target_os = "linux"\)\]\s*pub\(crate\) mod linux;/);
+  assert.match(source('capture/desktop/linux/mod.rs'), /pub\(crate\) mod integration;/);
+  assert.match(source('capture/desktop/linux/integration/mod.rs'), /pub\(crate\) mod appearance;/);
+  for (const path of linuxInputs.filter(path => path.endsWith('.py'))) {
+    assert.ok(source('build.rs').includes('"' + path + '"'), path);
+  }
+  assert.match(source('enablement/build_version.rs'), /ls-files/);
+  assert.match(source('enablement/local-tests/run.ts'), /captureToolTests\(\)/);
+  const harness = source('.github/workflows/linux-updater-harness.yml');
+  for (const name of ['test-gui-vm.py', 'test-capture-smoke.py']) assert.ok(harness.includes(name));
+});
