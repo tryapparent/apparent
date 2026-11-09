@@ -9,6 +9,8 @@ existing `nativeLaunch` experiment and never enables it or registers an OS
 handler. The person must confirm **Record and send when finished** before the
 bridge starts the installed app and uses its existing ID-bound capture CLI.
 The native recorder retains permission/admission/resource enforcement.
+On macOS the confirmation application hides before capture so it relinquishes
+focus and does not become the recording's application context.
 The URL token is a public request ID. A separate signing key lives in
 `$XDG_RUNTIME_DIR/apparent-hermes/<token>.key` on Linux (default `/run/user/<uid>`),
 or `$(getconf DARWIN_USER_TEMP_DIR)/apparent-hermes/<token>.key` on macOS.
@@ -73,7 +75,9 @@ queued, **not** that a browser can confirm installation or foreground success.
 The install, preview and release bundle builders declare `apparent` in
 `CFBundleURLTypes`; GPUI's native URL-open callback applies the shared contract.
 Install and launch via `./capture/desktop/scripts/packaging/install-app.sh`, never a background daemon from
-`target/`. On a safe Mac test surface, inspect the installed bundle with
+`target/`. Use its normal Applications destination for URL verification: directly
+opening a temporary staged bundle does not establish URL-handler registration.
+On a safe Mac test surface, inspect the installed bundle with
 `plutil -extract CFBundleURLTypes json -o - ~/Applications/Apparent.app/Contents/Info.plist`
 and exercise `open 'apparent://open'` both cold and warm. LaunchServices chooses
 the installed handler; multiple production/preview bundles may require explicitly

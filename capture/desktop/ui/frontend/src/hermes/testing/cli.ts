@@ -15,7 +15,7 @@ if (args[1] === 'start') {
   writeFileSync(file, JSON.stringify(receipt));
 } else {
   receipt = JSON.parse(readFileSync(file, 'utf8'));
-  if (args[1] === 'inspect') receipt.status = 'saved';
+  if (args[1] === 'inspect' && existsSync(file + '.finished')) receipt.status = 'saved';
   if (args[1] === 'handoff') receipt.source = '/synthetic/owned.apparent';
 }
 console.log(JSON.stringify(receipt));

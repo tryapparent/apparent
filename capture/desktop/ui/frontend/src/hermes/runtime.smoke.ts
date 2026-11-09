@@ -64,7 +64,18 @@ for (const needsLaunch of [false, true]) test(`real Electron confirmation/preloa
     await receiver.close();
     assert.deepEqual(await authenticatedState(key, await (await fetch(stateURL, { headers: { Origin: 'null' } })).json()), { phase: 'confirm' });
     await page.getByRole('button', { name: 'Record and send when finished' }).click();
+    await page.getByRole('status').filter({ hasText: 'Talk, point and draw.' }).waitFor({ state: 'attached' });
+    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some(window => window.isVisible())), false,
+      'confirmation must stay hidden while native recording is active');
+    if (process.platform === 'darwin') {
+      assert.equal(await application.evaluate(({ app }) => app.isHidden()), true, 'the entire confirmation app must hide on macOS');
+      assert.equal(await application.evaluate(({ app }) => app.isActive()), false, 'the confirmation app must relinquish native focus');
+    }
+    await writeFile(path.join(job, 'receipt.json.finished'), '1');
     await page.getByText('Recording saved.', { exact: false }).waitFor();
+    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), true,
+      'completion must be visible after the recording app was hidden');
+    if (process.platform === 'darwin') assert.equal(await application.evaluate(({ app }) => app.isHidden()), false);
     assert.deepEqual(await authenticatedState(key, await (await fetch(stateURL, { headers: { Origin: 'null' } })).json()), { phase: 'saved', source: '/synthetic/owned.apparent' });
     const calls = (await readFile(path.join(job, 'trace.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
     assert.equal(calls.filter(c => c[0] === 'launch').length, needsLaunch ? 1 : 0, 'only an unavailable recorder should be launched');
@@ -85,7 +96,7 @@ for (const needsLaunch of [false, true]) test(`real Electron confirmation/preloa
       application = await launch(await availablePort());
       const replay = await application.firstWindow();
       await replay.getByRole('button', { name: 'Record and send when finished' }).click();
-      await replay.waitForFunction(async () => (await (window as any).hermesRecording.read()).phase === 'error');
+      await replay.getByText('Any recording already started remains in Apparent. Nothing is retried automatically.').waitFor();
       const after = (await readFile(path.join(job, 'trace.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
       assert.equal(after.filter(call => call[1] === 'start').length, 1, 'replayed ID must never start another take');
       assert.equal(after.filter(call => call[0] === 'launch').length, 0);

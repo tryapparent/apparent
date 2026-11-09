@@ -15,6 +15,11 @@ app.setPath('userData', path.join(app.getPath('appData'), 'apparent-hermes'));
 let view: View = { phase: 'confirm' };
 let window: BrowserWindow;
 let running = false;
+const showWindow = () => {
+  if (window.isDestroyed()) return;
+  if (process.platform === 'darwin') app.show();
+  window.show();
+};
 const owned = new Recording(request.token, (args) => new Promise<Receipt>((resolve, reject) => {
   execFile(executable, args, { timeout: 35000, maxBuffer: 65536, encoding: 'utf8' }, (_error, stdout) => {
     try { resolve(JSON.parse(stdout)); } catch { reject(new Error('Apparent is unavailable. Open the installed app and finish onboarding.')); }
@@ -40,7 +45,7 @@ app.whenReady().then(async () => {
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.webContents.on('page-title-updated', event => event.preventDefault());
-  window.once('ready-to-show', () => { if (view.code !== 'occupied') window.show(); });
+  window.once('ready-to-show', () => { if (view.code !== 'occupied') showWindow(); });
   ipcMain.handle('apparent:hermes-read', event => { sender(event); return view; });
   ipcMain.handle('apparent:hermes-start', async event => {
     sender(event);
@@ -61,16 +66,19 @@ app.whenReady().then(async () => {
         }
       }
       window.hide();
+      // Hiding only the window leaves Electron active on macOS, which records
+      // the confirmation as the capture's app instead of the previous app.
+      if (process.platform === 'darwin') app.hide();
       await owned.start();
       while (!window.isDestroyed()) {
         const receipt = await owned.inspect();
-        if (receipt.status === 'saved') { view = { phase: 'saved', source: await owned.source() }; window.show(); break; }
-        if (receipt.status === 'cancelled') { view = { phase: 'cancelled' }; window.show(); break; }
+        if (receipt.status === 'saved') { view = { phase: 'saved', source: await owned.source() }; showWindow(); break; }
+        if (receipt.status === 'cancelled') { view = { phase: 'cancelled' }; showWindow(); break; }
         if (!['starting', 'recording', 'processing'].includes(receipt.status ?? '')) throw new Error('Recording did not start. Check Apparent’s permissions and active capture.');
         view = { phase: receipt.status as 'starting' | 'recording' | 'processing' };
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
-    } catch (error) { view = { phase: 'error', message: error instanceof Error ? error.message : 'Unable to record' }; if (!window.isDestroyed()) window.show(); }
+    } catch (error) { view = { phase: 'error', message: error instanceof Error ? error.message : 'Unable to record' }; showWindow(); }
     finally { running = false; }
     return view;
   });
