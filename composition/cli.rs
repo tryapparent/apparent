@@ -1169,6 +1169,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 rebuild_screen_bundle(
                     &out,
                     recover::Unfinished {
+                        context: old.context,
                         target: old.target,
                         duration_ms: old.duration_ms,
                         video: copied
