@@ -462,6 +462,13 @@ Public verification. Portal plus guide now selects `platform=true, macos=false,
 public=false, updater=false`: the guide has no remaining Public build consumer. A guide-only
 change follows the existing ordinary-prose policy.
 
+Public's agent-document builder reads `README.md`, the Apparent Agent `SKILL.md`,
+`capture/agent/docs/usage.md`, `capture/desktop/docs/guides/recording.md` and
+`capture/engine/docs/guides/processing.md`. These bodies retain Public and full platform
+verification rather than the prose exception. This is a build dependency even though the
+Pages package excludes generated agent documents; linked targets are not all body inputs.
+The consumer-bound regression requires review when this literal input set changes.
+
 Hosted selection consumes `inputs.ts`'s shared committed path facts and requires agreement
 with raw Git status and mode facts. It reads the complete current base-to-proposed-merge
 delta, including earlier unverified commits and both rename sides. Empty, missing, shallow

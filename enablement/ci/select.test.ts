@@ -134,7 +134,7 @@ test('Public and updater retain their previous automatic input coverage', () => 
     '.github/workflows/linux-updater-harness.yml']) {
     assert.deepEqual(select([path]), {public: false, updater: true}, path);
   }
-  assert.deepEqual(select(['README.md']), {public: false, updater: false});
+  assert.deepEqual(select(['README.md']), {public: true, updater: false});
   assert.deepEqual(select([]), {public: false, updater: false});
   for (const paths of [null, ['.github/workflows/checks.yml'], ['enablement/ci/select.ts']]) {
     assert.deepEqual(select(paths), {public: true, updater: true});
@@ -552,4 +552,44 @@ test('ordinary prose mixed with Settings cannot broaden the reviewed Mac exempti
   assert.equal(result.macos, true);
   assert.equal(result.platform, true);
   assert.equal(result.public, false);
+}));
+
+function publicMarkdownInputs() {
+  const consumer = readFileSync(new URL('public/site/scripts/site-build/agent-files.ts', root), 'utf8');
+  const paths = [...new Set([...consumer.matchAll(/\b(?:repo|guide)\("([^"]+\.md)"\)/g)].map(match => match[1]))].sort();
+  assert.equal(paths.length, 5, 'Review the Public Markdown input boundary when its consumer changes');
+  assert.ok(paths.every(path => !path.startsWith('/') && !path.split('/').includes('..')));
+  return paths;
+}
+
+test('Public Markdown body consumers retain Public and full platform verification', () => {
+  const paths = publicMarkdownInputs();
+  assert.deepEqual(paths.map(path => ({path, prose: documentationOnlyPath(path),
+    platform: needsPlatform([path]), ...select([path])})),
+    paths.map(path => ({path, prose: false, platform: true, public: true, updater: false})));
+});
+
+test('production Git/CLI cannot exempt Public build Markdown alone or mixed with portal source', () => linuxFixture((git, dir) => {
+  const paths = publicMarkdownInputs();
+  for (const path of paths) {
+    mkdirSync(path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '.', {recursive: true});
+    writeFileSync(path, readFileSync(new URL(path, root)));
+  }
+  git('add', '.'); git('commit', '-qm', 'Public documentation baseline');
+  const base = git('rev-parse', 'HEAD');
+  for (const path of paths) {
+    git('checkout', '--detach', base);
+    appendFile(path, '\nArbitrary documentation edit.\n');
+    git('add', '.'); git('commit', '-qm', 'Public build input');
+    const result = runSelector(base, git('rev-parse', 'HEAD'), dir);
+    assert.deepEqual({public: result.public, updater: result.updater,
+      macos: result.macos, platform: result.platform},
+      {public: true, updater: false, macos: true, platform: true}, path);
+    appendFile(portal, '\n// mixed Linux source edit\n');
+    git('add', '.'); git('commit', '-qm', 'Public input and portal source');
+    const mixed = runSelector(base, git('rev-parse', 'HEAD'), dir);
+    assert.equal(mixed.public, true, path);
+    assert.equal(mixed.macos, true, path);
+    assert.equal(mixed.platform, true, path);
+  }
 }));

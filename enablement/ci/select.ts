@@ -4,13 +4,20 @@ import {pathToFileURL} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
 import {changedPaths as inputPaths} from './inputs.ts';
 
+// Public's agent-files.ts reads these bodies, not merely links to them.
+// Build inputs cannot use the ordinary-prose exemption.
+const publicMarkdown = new Set([
+  'README.md', 'capture/agent/skills/apparent/SKILL.md',
+  'capture/agent/docs/usage.md', 'capture/desktop/docs/guides/recording.md',
+  'capture/engine/docs/guides/processing.md',
+]);
+
 // Only known prose locations are exempt. Agent instructions and embedded or
 // test/fixture Markdown remain executable inputs, even with a .md extension.
 export function documentationOnlyPath(path: string): boolean {
-  if (!path.endsWith('.md')) return false;
+  if (!path.endsWith('.md') || publicMarkdown.has(path)) return false;
   if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)\.md$/i.test(path) ||
-      /(^|\/)(skills?|prompts?|instructions?|tests?|fixtures?|templates?)(\/|$)/i.test(path) ||
-      path === 'README.md') return false;
+      /(^|\/)(skills?|prompts?|instructions?|tests?|fixtures?|templates?)(\/|$)/i.test(path)) return false;
   const owners = ['capture/engine', 'capture/desktop', 'capture/agent', 'connect', 'public/site', 'shared', 'enablement'];
   return path === 'CONTEXT.md' || path === 'VERIFICATION.md' ||
     path === 'enablement/refactor.md' ||
@@ -29,6 +36,7 @@ export function select(paths: string[] | null): {public: boolean; updater: boole
   const orchestration = paths.some(path => path === '.github/workflows/checks.yml' || path.startsWith('enablement/ci/'));
   return {
     public: orchestration || paths.some(path =>
+      publicMarkdown.has(path) ||
       ['public/site/', 'shared/ui/', 'shared/analytics/', 'shared/assets/'].some(prefix => path.startsWith(prefix)) ||
       path === '.github/workflows/stream-public.yml'),
     updater: orchestration || paths.some(path =>
