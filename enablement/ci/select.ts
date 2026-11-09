@@ -2,10 +2,29 @@ import {execFileSync} from 'node:child_process';
 import {appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 
+// Only known prose locations are exempt. Agent instructions and embedded or
+// test/fixture Markdown remain executable inputs, even with a .md extension.
+export function documentationOnlyPath(path: string): boolean {
+  if (!path.endsWith('.md')) return false;
+  if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)\.md$/i.test(path) ||
+      /(^|\/)(skills?|prompts?|instructions?|tests?|fixtures?|templates?)(\/|$)/i.test(path) ||
+      path === 'README.md') return false;
+  const owners = ['capture/engine', 'capture/desktop', 'capture/agent', 'connect', 'public/site', 'shared', 'enablement'];
+  return path === 'CONTEXT.md' || path === 'VERIFICATION.md' ||
+    path === 'enablement/refactor.md' ||
+    owners.some(owner => path.startsWith(owner + '/docs/') ||
+      ['README', 'CHANGELOG', 'CONTRIBUTING', 'LICENSE'].some(name => path === owner + '/' + name + '.md'));
+}
+
+export function needsPlatform(paths: string[] | null): boolean {
+  return paths === null || paths.length === 0 || paths.some(path => !documentationOnlyPath(path));
+}
+
 // Keep the previous automatic Public/updater input sets. Changes to this
 // orchestration also exercise both consumers before they land.
 export function select(paths: string[] | null): {public: boolean; updater: boolean} {
   if (paths === null) return {public: true, updater: true};
+  paths = paths.filter(path => !documentationOnlyPath(path));
   const orchestration = paths.some(path => path === '.github/workflows/checks.yml' || path.startsWith('enablement/ci/'));
   return {
     public: orchestration || paths.some(path =>
@@ -31,6 +50,7 @@ export function changedPaths(base: string, head: string): string[] | null {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const result = select(changedPaths(process.env.BASE_SHA ?? '', process.env.GITHUB_SHA ?? ''));
+  const paths = changedPaths(process.env.BASE_SHA ?? '', process.env.GITHUB_SHA ?? '');
+  const result = {...select(paths), platform: needsPlatform(paths)};
   appendFileSync(process.env.GITHUB_OUTPUT!, Object.entries(result).map(([key, value]) => `${key}=${value}\n`).join(''));
 }

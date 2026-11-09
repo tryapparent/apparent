@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync, readdirSync, mkdtempSync, rmSync, mkdirSync, writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {YAML} from 'bun';
-import {select, changedPaths} from './select.ts';
+import {select, changedPaths, documentationOnlyPath, needsPlatform} from './select.ts';
 
 const root = new URL('../../', import.meta.url);
 const workflow = (name: string) => YAML.parse(readFileSync(new URL(`.github/workflows/${name}`, root), 'utf8')) as any;
@@ -37,9 +37,9 @@ test('ready PRs and main pushes execute both full platform jobs; drafts and othe
   // Evaluate the workflow's actual boolean admission expressions against event
   // fixtures. These expressions use the common GitHub/JavaScript boolean subset.
   const admitted = (expression: string, event: string, draft: boolean, ref: string,
-    receipt = false) => Function('github', 'inputs', `return (${expression});`)(
+    receipt = false) => Function('github', 'inputs', 'needs', `return (${expression});`)(
       {event_name: event, ref, repository: 'tryapparent/apparent',
-        event: {pull_request: {draft}}}, {'release_receipt': receipt});
+        event: {pull_request: {draft}}}, {'release_receipt': receipt}, {select: {outputs: {platform: 'true'}}});
   for (const [name, runner] of [['linux', 'ubuntu-24.04'], ['macos', 'macos-15-intel']]) {
     const job = ci.jobs[name];
     assert.equal(job.uses, './.github/workflows/verification-platform.yml');
@@ -52,7 +52,9 @@ test('ready PRs and main pushes execute both full platform jobs; drafts and othe
       ['workflow_run', false, 'refs/heads/main', false],
       ['pull_request_target', false, 'refs/heads/main', false],
     ] as const) {
+      assert.equal(job.needs, 'select');
       assert.equal(admitted(job.if, event, draft, ref), expected);
+      assert.equal(admitted(job.if.replaceAll("needs.select.outputs.platform == 'true'", 'false'), event, draft, ref), false);
       if (expected) for (const child of ['rust', 'desktop-ui']) {
         assert.equal(admitted(platform.jobs[child].if, event, draft, ref), true, child);
         assert.equal(platform.jobs[child]['continue-on-error'], undefined);
@@ -68,7 +70,8 @@ test('ready PRs and main pushes execute both full platform jobs; drafts and othe
     assert.deepEqual(Object.keys(workflow(filename).on), ['workflow_dispatch']);
   }
   assert.match(ci.concurrency.group, /github.event.pull_request.number/);
-  assert.match(ci.concurrency['cancel-in-progress'], /pull_request/);
+  assert.equal(ci.concurrency['cancel-in-progress'], "${{ github.event_name == 'pull_request' }}");
+  assert.match(ci.concurrency.group, /github.sha/);
   assert.equal(ci.permissions.contents, 'read');
 });
 
@@ -116,4 +119,25 @@ test('unknown history runs all checks and git deltas include deleted and renamed
     process.chdir(previous);
     rmSync(dir, {recursive: true, force: true});
   }
+});
+
+
+test('ordinary prose skips heavy CI; instructions, shipped text and unknown inputs retain coverage', () => {
+  for (const path of ['capture/desktop/docs/linux/linux.md', 'enablement/docs/continuous-delivery.md',
+    'public/site/docs/feature-grid.md', 'capture/engine/README.md', 'enablement/refactor.md']) {
+    assert.equal(documentationOnlyPath(path), true, path);
+    assert.equal(needsPlatform([path]), false, path);
+    assert.deepEqual(select([path]), {public: false, updater: false}, path);
+  }
+  for (const path of ['AGENTS.md', 'capture/AGENTS.md', 'README.md', 'capture/agent/skills/apparent/SKILL.md',
+    'hermes/skills/recordings/SKILL.md', 'capture/agent/instructions/context.md',
+    'public/site/src/copy.md', 'capture/engine/tests/fixtures/summary.md', 'unknown.md',
+    'public/site/src/docs/copy.md', 'public/site/public/assets/docs/help.md',
+    'unknown/docs/input.md', 'unknown/README.md', 'public/site/src/README.md']) {
+    assert.equal(needsPlatform([path]), true, path);
+  }
+  assert.equal(needsPlatform(null), true);
+  assert.equal(needsPlatform([]), true);
+  assert.equal(needsPlatform(['capture/engine/docs/capture.md', 'capture/engine/runtime/mod.rs']), true);
+  assert.equal(select(['public/site/docs/guide.md', 'public/site/src/main.tsx']).public, true);
 });

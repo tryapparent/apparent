@@ -11,21 +11,23 @@ permissions:
   contents: read
 
 concurrency:
-  group: repository-checks-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+  group: repository-checks-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # PR checkout is GitHub's proposed merge, so these checks cover integration.
   # Draft updates retain cheap feedback without allocating full platform suites.
   linux:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
+    needs: select
+    if: needs.select.outputs.platform == 'true' && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
     uses: ./.github/workflows/verification-platform.yml
     with:
       runner: ubuntu-24.04
       release_receipt: false
 
   macos:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
+    needs: select
+    if: needs.select.outputs.platform == 'true' && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
     uses: ./.github/workflows/verification-platform.yml
     with:
       runner: macos-15-intel
@@ -37,6 +39,7 @@ jobs:
     outputs:
       public: ${{ steps.paths.outputs.public }}
       updater: ${{ steps.paths.outputs.updater }}
+      platform: ${{ steps.paths.outputs.platform }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -63,7 +66,8 @@ jobs:
     uses: ./.github/workflows/linux-updater-harness.yml
 
   hermes:
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    needs: select
+    if: needs.select.outputs.platform == 'true' && (github.event_name == 'pull_request' || github.event_name == 'push')
     name: Hermes inspection (${{ matrix.os }})
     strategy:
       fail-fast: false
