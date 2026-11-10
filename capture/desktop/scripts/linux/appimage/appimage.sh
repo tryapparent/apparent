@@ -44,6 +44,14 @@ for library in "$(dirname "$binary")"/libggml-cpu*.so; do
   libraries+=(--library "$library")
 done
 
+# Keep NSS's dynamically loaded token/crypto modules with the NSS libraries
+# selected by linuxdeploy, rather than mixing them with a newer host NSS.
+node --experimental-strip-types "$root/capture/desktop/scripts/linux/appimage/nss-runtime.ts" \
+  libraries "/usr/lib/$multiarch" > "$out/nss-libraries"
+while IFS= read -r library; do
+  libraries+=(--library "$library")
+done < "$out/nss-libraries"
+
 cd "$out"
 install -Dm755 "$root/capture/desktop/scripts/support/apparent-restore-clipboard.py" "$appdir/usr/bin/apparent-restore-clipboard.py"
 node "$root/capture/desktop/ui/frontend/scripts/package-notes.mjs" "$appdir/usr/lib/apparent/note-ui"
@@ -56,7 +64,8 @@ LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy \
   --executable "$(command -v wl-paste)" \
   --desktop-file "$root/capture/desktop/packaging/linux/dev.kitlangton.apparent.desktop" \
   --icon-file "$root/capture/desktop/packaging/linux/dev.kitlangton.apparent.png" \
-  --plugin gstreamer \
-  --output appimage
+  --plugin gstreamer
+node --experimental-strip-types "$root/capture/desktop/scripts/linux/appimage/nss-runtime.ts" check "$appdir/usr/lib"
+LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy --appdir "$appdir" --output appimage
 bash "$root/capture/desktop/scripts/linux/appimage/check-appimage-encoder.sh" "$out/Apparent-$arch.AppImage"
 echo "$out/Apparent-$arch.AppImage"
