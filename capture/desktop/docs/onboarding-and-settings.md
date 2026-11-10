@@ -270,6 +270,13 @@ change affects new captures; an active capture keeps its original destination.
 Restart after changing folders so the existing cleanup worker follows that folder.
 macOS keeps its existing Electron Storage route and native fallback.
 
+The Electron Settings shell waits for a committed React surface, initial paint
+readiness and a hidden compositor snapshot before showing its window. The
+TypeScript Desktop adapter discards that snapshot in memory; it is never saved
+or sent. Startup still has the existing 15-second deadline and falls back to the
+native pane if presentation fails. This does not change pane routing, settings
+writes, the Storage opt-out or the native fallback's removal condition.
+
 About shows the package version and the running binary's build-time commit, for example `Version 0.3.13 · ad8d4b1`. Tracked local edits add `+modified`; builds without Git metadata or a valid CI revision say `build unknown`. This identifies the compiled build, not the selected update channel or an update staged for the next launch. Both the Mac helper and Linux GPUI Settings use the same label.
 
 About has a Star on GitHub button below the update control. Its heading, action and caption share one box in the Mac helper and Linux GPUI Settings. It opens `https://github.com/tryapparent/apparent` in the browser; starring remains the user's choice on GitHub.

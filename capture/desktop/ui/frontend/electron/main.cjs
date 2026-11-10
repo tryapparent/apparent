@@ -126,6 +126,8 @@ app.whenReady().then(() => {
   // A parent show must not expose Chromium's empty initial document.
   let settingsPainted = false;
   let settingsMounted = false;
+  let settingsCommitted = false;
+  let settingsFrame;
   let settingsClosing = false;
   let settingsFailed = false;
   let startupTimer;
@@ -135,7 +137,15 @@ app.whenReady().then(() => {
     exitWithReports(1);
   };
   const showSettings = () => {
-    if (!settingsPainted || !settingsMounted || settingsClosing || window.isDestroyed()) return;
+    if (!settingsPainted || !settingsCommitted || settingsClosing || window.isDestroyed()) return;
+    if (!settingsMounted) {
+      settingsFrame ??= require('./settings/frame.cjs').committedFrame(window.webContents).then(() => {
+        if (settingsClosing || window.isDestroyed()) return;
+        settingsMounted = true;
+        showSettings();
+      }).catch(() => { if (!settingsClosing) failSettings(); });
+      return settingsFrame;
+    }
     clearTimeout(startupTimer);
     window.show();
     window.focus();
@@ -172,14 +182,15 @@ app.whenReady().then(() => {
   ipcMain.handle('apparent:settings-mounted', (event, ...args) => {
     validate(event, args);
     if (!settings) throw new Error('Unavailable outside Settings');
-    settingsMounted = true;
-    showSettings();
+    if (settingsClosing || window.isDestroyed()) return;
+    settingsCommitted = true;
+    return showSettings();
   });
   ipcMain.handle('apparent:settings-frame-ready', (event, ...args) => {
     validate(event, args);
     if (!settings) throw new Error('Unavailable outside Settings');
     settingsPainted = true;
-    showSettings();
+    return showSettings();
   });
   ipcMain.handle('apparent:about-link', (event, link, ...args) => {
     validate(event, args);
