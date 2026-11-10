@@ -4,6 +4,9 @@ const args = process.argv.slice(2);
 const file = process.env.APPARENT_SYNTHETIC_RECEIPT!;
 const trace = process.env.APPARENT_SYNTHETIC_TRACE!;
 appendFileSync(trace, JSON.stringify(args) + '\n');
+// Exercise the real multi-process startup path under slow-runner scheduling.
+const delay = Number(process.env.APPARENT_SYNTHETIC_CLI_DELAY_MS || 0);
+if (delay > 0 && delay <= 2000) await new Promise(resolve => setTimeout(resolve, delay));
 let receipt: { capture_id: string; status: string; source?: string };
 if (args[0] === 'launch') { writeFileSync(file + '.launched', '1'); process.exit(0); }
 if (args[1] === 'state') {

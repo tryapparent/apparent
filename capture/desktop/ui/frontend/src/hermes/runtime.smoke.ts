@@ -115,6 +115,9 @@ for (const needsLaunch of [false, true]) test(`real Electron confirmation/preloa
 });
 
 test('trusted local request records without confirmation, reports saved/occupied state, and refuses replay', { timeout: 45000 }, async () => {
+  const started = Date.now();
+  const deadline = started + 40000; // One budget inside the unchanged 45s test, including all three launches.
+  const observations: unknown[] = [];
   const token = randomBytes(16).toString('hex');
   const job = await mkdtemp(path.join(tmpdir(), 'hermes-trusted-'));
   const home = path.join(job, 'home'); await mkdir(home, { mode: 0o700 });
@@ -129,14 +132,23 @@ test('trusted local request records without confirmation, reports saved/occupied
   const receipt = path.join(job, 'receipt.json');
   const trace = path.join(job, 'trace.jsonl');
   const launch = (port: number, id: string, occupied = false) => electron.launch({ args: [bootstrap, path.join(root, 'dist/hermes-main.cjs'), '--hermes-request', `${id}/${port}`, '--hermes-autostart', '--apparent-executable', executable],
-    env: { ...process.env, HOME: home, APPARENT_SYNTHETIC_APP_DATA: appData, XDG_RUNTIME_DIR: runtime, XDG_CONFIG_HOME: path.join(job, 'config'), APPARENT_SYNTHETIC_RECEIPT: receipt, APPARENT_SYNTHETIC_TRACE: trace, APPARENT_SYNTHETIC_OCCUPIED: occupied ? '1' : '0' } });
+    env: { ...process.env, HOME: home, APPARENT_SYNTHETIC_APP_DATA: appData, XDG_RUNTIME_DIR: runtime, XDG_CONFIG_HOME: path.join(job, 'config'), APPARENT_SYNTHETIC_RECEIPT: receipt, APPARENT_SYNTHETIC_TRACE: trace, APPARENT_SYNTHETIC_OCCUPIED: occupied ? '1' : '0', APPARENT_SYNTHETIC_CLI_DELAY_MS: '1600' } });
   const waitForState = async (key: string, id: string, port: number, phase: string) => {
     const url = `http://127.0.0.1:${port}/${id}/state/${await sign(key, `state:${id}`)}`;
-    for (let i = 0; i < 60; i++) {
+    while (Date.now() < deadline) {
+      let response: Response | undefined;
       try {
-        const state = await authenticatedState(key, await (await fetch(url, { headers: { Origin: 'null' } })).json());
+        response = await fetch(url, { headers: { Origin: 'null' }, signal: AbortSignal.timeout(Math.max(1, Math.min(1000, deadline - Date.now()))) });
+      } catch (error) {
+        observations.push({ expected: phase, elapsedMs: Date.now() - started, transport: error instanceof Error ? error.name : 'unknown' });
+      }
+      if (response) {
+        assert.equal(response.status, 200);
+        const state = await authenticatedState(key, await response.json());
+        observations.push({ expected: phase, elapsedMs: Date.now() - started, state });
         if (state.phase === phase) return state;
-      } catch { /* Mailbox may not have bound yet. */ }
+        assert.ok(!['error', 'cancelled', 'saved'].includes(state.phase), `Unexpected terminal mailbox state: ${JSON.stringify(state)}`);
+      }
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     throw new Error(`Hermes mailbox did not reach ${phase}`);
@@ -192,6 +204,8 @@ test('trusted local request records without confirmation, reports saved/occupied
     await application.close(); application = undefined;
     passed = true;
   } finally {
+    await writeFile(path.join(job, 'states.json'), JSON.stringify(observations, null, 2));
+    if (!passed) console.error('Trusted Hermes failure', { states: observations.slice(-10), trace: await readFile(trace, 'utf8').catch(() => 'unavailable') });
     await application?.close().catch(() => {});
     if (passed) await rm(job, { recursive: true, force: true });
     else console.error(`Failed trusted Hermes smoke evidence: ${job}`);
