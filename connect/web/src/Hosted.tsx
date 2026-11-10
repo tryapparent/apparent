@@ -39,7 +39,7 @@ function Account({ devicePage }: { devicePage: boolean }) {
       }
       if (result.authenticated) {
         setInterested(result.waitlist.interestedAtFiveDollars)
-        if (devicePage && !result.beta.access && value) await api.reportDeviceWaitlist(result.csrfToken, value)
+        if (devicePage && !result.beta.access && /^[A-F0-9]{12}$/.test(value)) await api.reportDeviceWaitlist(result.csrfToken, value)
         if (devicePage && result.beta.access && value) {
           const preview = await api.device(value)
           if (current === generation.current) { setNow(Date.now()); setRequest(preview); setTab(preview.scope === "upload" ? "computer" : "agent") }

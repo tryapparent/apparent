@@ -344,7 +344,7 @@ try {
     }
     results.push(test.name); await page.close()
   }
-  assert.equal(results.length, 38, 'all account/device scenarios must execute')
+  assert.equal(results.length, 40, 'all account/device scenarios must execute')
   for (const test of [
     {name:'shares',width:390},{name:'shares-320',width:320},{name:'shares-empty',empty:true},
     {name:'shares-denied',forbidden:true},{name:'shares-unconfirmed',unconfirmed:true},
@@ -440,7 +440,7 @@ try {
   await recovery.getByRole('link',{name:'Open shared recording'}).waitFor()
   assert.equal(await recovery.getByRole('alert').count(),0);assert.equal(writes.length,0)
   await recovery.close();results.push('shares-load-recovery')
-  assert.equal(results.length,68,'all auth and management scenarios must execute')
+  assert.equal(results.length,70,'all auth and management scenarios must execute')
   assert.equal(routeResults.length,24,'all real dev/preview route variants must execute')
   const receipt = { synthetic: true, routes:routeResults, closures:connectGraphs.map(g=>[...g.keys()]), artifact: root, apiOrigin: apiOrigin || 'same-origin', passed: results, count: results.length, screenshots: evidence, assets: Object.fromEntries(await Promise.all(['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png', 'hosted/agent-reading-v4.png', 'HostGrotesk-Variable.ttf', 'apparent-wordmark.svg'].map(async name => [name, createHash('sha256').update(await readFile(`${root}/${name}`)).digest('hex')]))), limits: 'Controlled synthetic API only; not live OAuth, service, native, or deployment proof. 640×450 CSS pixels is a 200%-equivalent layout, not browser zoom.' }
   await import('node:fs/promises').then(fs => fs.writeFile(`${evidence}/receipt.json`, JSON.stringify(receipt, null, 2)))
