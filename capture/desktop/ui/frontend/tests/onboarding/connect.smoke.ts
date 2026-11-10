@@ -2,7 +2,6 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import net from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
@@ -23,12 +22,34 @@ async function inspect(url:string,expression:string):Promise<unknown>{
 // Production main, preload and renderer against an isolated synthetic socket.
 // This is Electron contract evidence, not native capture or live Google proof.
 for(const outcome of ['connected','waitlisted','opt-out','initial-unavailable'] as const)test(`onboarding fast Connect: ${outcome}`,{timeout:30000},async t=>{
- const home=await fs.mkdtemp(path.join(os.tmpdir(),'connect-onboarding-'));
+ // Darwin's system TMPDIR can exceed the Unix socket pathname limit once the
+ // real control-socket suffix is appended. Keep this owned fixture short.
+ const home=await fs.mkdtemp('/tmp/apparent-dev-onboard-');
+ const sockets=new Set<net.Socket>();
+ let server:net.Server|undefined,ownedChild:ReturnType<typeof spawn>|undefined;
+ let browser:Awaited<ReturnType<typeof chromium.connectOverCDP>>|undefined;
+ // Register ownership before bind/chmod/spawn: setup failures must not leave a
+ // listening server holding the test worker open until the CI job deadline.
+ t.after(async()=>{
+  try {
+   const owned=ownedChild;
+   if(owned&&owned.exitCode===null&&owned.signalCode===null){
+    const exited=new Promise(r=>owned.once('exit',r));
+    owned.stdin?.end('{"type":"close"}\n');const timer=setTimeout(()=>owned.kill(),3000);
+    try{await exited;}finally{clearTimeout(timer);}
+   }
+   await browser?.close();
+  }finally{
+   for(const socket of sockets)socket.destroy();
+   try{if(server?.listening)await new Promise<void>(r=>server!.close(()=>r()));}
+   finally{await fs.rm(home,{recursive:true,force:true});}
+  }
+ });
  const dir=path.join(home,'.config/apparent/agent-control');
  await fs.mkdir(dir,{recursive:true,mode:0o700});await fs.chmod(dir,0o700);
  let phase=outcome==='initial-unavailable'?'connected':'disconnected',disableAttempts=0,healthyReads=0,available=outcome!=='initial-unavailable';
- const requests:string[]=[],sockets=new Set<net.Socket>();
- const server=net.createServer(socket=>{
+ const requests:string[]=[];
+ server=net.createServer(socket=>{
   sockets.add(socket);socket.on('error',()=>{});socket.on('close',()=>sockets.delete(socket));
   let buffer='';socket.on('data',bytes=>{
    buffer+=bytes;
@@ -46,15 +67,17 @@ for(const outcome of ['connected','waitlisted','opt-out','initial-unavailable'] 
    }
   });
  });
- const socketPath=path.join(dir,'capture.sock');await new Promise<void>(r=>server.listen(socketPath,r));await fs.chmod(socketPath,0o600);
+ const socketPath=path.join(dir,'capture.sock');
+ assert(Buffer.byteLength(socketPath)<104,'fixture must fit Darwin and Linux Unix socket paths');
+ await new Promise<void>((resolve,reject)=>{
+  server!.once('error',reject);server!.listen(socketPath,()=>{server!.removeListener('error',reject);resolve();});
+ });
+ await fs.chmod(socketPath,0o600);
+ if(process.env.APPARENT_TEST_ONBOARDING_SETUP_FAILURE==='1')throw Error('Controlled fixture failure after socket bind');
  // Onboarding's parent pipe is a real lifetime requirement. Playwright's
  // Electron launcher closes stdin; spawn with the same pipes as Rust instead.
  const child=spawn(require('electron'),['--inspect=0',root,'--onboarding','--remote-debugging-port=0',...(process.platform==='linux'?['--no-sandbox']:[])],{env:{...process.env,HOME:home,APPARENT_UI_PROFILE:path.join(home,'profile')},stdio:['pipe','pipe','pipe']});
- let browser:Awaited<ReturnType<typeof chromium.connectOverCDP>>|undefined;
- t.after(async()=>{
-  if(child.exitCode===null){child.stdin.end('{"type":"close"}\n');const timer=setTimeout(()=>child.kill(),3000);await new Promise(r=>child.once('exit',r));clearTimeout(timer);}
-  await browser?.close();for(const socket of sockets)socket.destroy();await new Promise<void>(r=>server.close(()=>r()));await fs.rm(home,{recursive:true,force:true});
- });
+ ownedChild=child;
  const endpoints=await new Promise<{node:string;browser:string}>((resolve,reject)=>{
   let log='';const timer=setTimeout(()=>reject(Error('No inspector endpoints: '+log)),10000);
   child.on('error',reject);child.stderr.on('data',bytes=>{log+=bytes;const node=log.match(/Debugger listening on (ws:\/\/[^\s]+)/),web=log.match(/DevTools listening on (ws:\/\/[^\s]+)/);if(node&&web){clearTimeout(timer);resolve({node:node[1],browser:web[1]});}});
