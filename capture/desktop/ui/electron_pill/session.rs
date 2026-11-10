@@ -1,5 +1,7 @@
 //! Bounded, parent-owned stdio transport. Rendering cannot own capture lifetime.
 use super::{Command as Action, View};
+#[cfg(target_os = "linux")]
+mod pointer;
 use std::{
     io::{BufRead, Read, Write},
     path::PathBuf,
@@ -16,6 +18,8 @@ struct Mailbox {
     state: Option<serde_json::Value>,
     place: Option<[f64; 2]>,
     position: Option<(u64, [f64; 2])>,
+    cursor: Option<(Instant, Option<[f64; 2]>)>,
+    cursor_active: bool,
     activate: bool,
     closed: bool,
 }
@@ -129,6 +133,7 @@ impl Session {
                     && pending.state.is_none()
                     && pending.place.is_none()
                     && pending.position.is_none()
+                    && pending.cursor.is_none()
                     && !pending.activate
                 {
                     pending = wake.wait(pending).unwrap();
@@ -139,6 +144,7 @@ impl Session {
                 let state = pending.state.take();
                 let place = pending.place.take();
                 let position = pending.position.take();
+                let cursor = pending.cursor.take();
                 let activate = std::mem::take(&mut pending.activate);
                 drop(pending);
                 let messages = position
@@ -147,6 +153,11 @@ impl Session {
                     .chain(place
                     .map(|point| serde_json::json!({"type":"place","point":point}))
                     .into_iter())
+                    .chain(cursor.into_iter().map(|(observed, point)| {
+                        // Discard facts that aged in the coalescing mailbox.
+                        let point = point.filter(|_| observed.elapsed() < Duration::from_millis(250));
+                        serde_json::json!({"type":"cursor","point":point})
+                    }))
                     .chain(state)
                     .chain(activate.then(|| serde_json::json!({"type":"activate"})));
                 let mut failed = false;
@@ -273,6 +284,8 @@ impl Session {
         };
         #[cfg(target_os = "linux")]
         if crate::capture::desktop::linux::hyprland::running() {
+            pointer::observe(session.alive.clone(), session.ready.clone(),
+                session.activated.clone(), session.mailbox.clone());
             let alive = session.alive.clone();
             let id = session.window_id.clone();
             let activated = session.activated.clone();
@@ -395,7 +408,10 @@ impl Session {
         #[cfg(target_os = "linux")]
         self.pin_admission.lock().unwrap().update(self.view.phase != "hidden", self.generation);
         let (lock, wake) = &*self.mailbox;
-        lock.lock().unwrap().state = Some(serde_json::json!({"type":"state","view":self.view}));
+        let mut pending = lock.lock().unwrap();
+        pending.cursor_active = self.view.phase != "hidden";
+        pending.state = Some(serde_json::json!({"type":"state","view":self.view}));
+        drop(pending);
         self.sent = Instant::now();
         wake.notify_one();
     }

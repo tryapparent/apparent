@@ -34,3 +34,12 @@ focus, stacking, dragging, capture visibility and actual Paste delivery.
 
 Native acceptance must use the exact packaged candidate in isolated Linux and
 macOS environments. Synthetic renderer checks do not establish that acceptance.
+
+On Hyprland, a native worker supplies bounded compositor cursor observations in
+XWayland physical pixels through the same coalescing parent pipe. The TypeScript
+host converts them to Electron's DIP coordinates, applies the pill silhouette and
+expires missing facts after 400 ms. XWayland's stale pointer over native Wayland
+windows must not keep the controls expanded. Compositor reads never run on the
+GUI thread; they grant no renderer action or capture receipt. Other desktops and
+macOS retain Electron's native cursor API. Rolling back this fact adapter restores
+the known stale-hover limitation; it does not require another lesson authority.

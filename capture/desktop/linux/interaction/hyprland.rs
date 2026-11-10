@@ -774,8 +774,14 @@ fn to_x_space(
 /// Where the pointer is, in XWayland's coordinates. XWayland itself sees the pointer only over
 /// X11 windows and keeps the last place it saw it over the rest.
 pub fn cursor_in_x_space(x_monitors: &[(String, [f64; 4])]) -> Option<(f64, f64)> {
-    let cursor: CursorPos = serde_json::from_str(&request("j/cursorpos").ok()?).ok()?;
-    let layout: Vec<Monitor> = serde_json::from_str(&request("j/monitors").ok()?).ok()?;
+    cursor_in_x_space_with_timeout(x_monitors, Duration::from_secs(5))
+}
+
+pub fn cursor_in_x_space_with_timeout(
+    x_monitors: &[(String, [f64; 4])], timeout: Duration,
+) -> Option<(f64, f64)> {
+    let cursor: CursorPos = serde_json::from_str(&request_with_timeout("j/cursorpos", timeout).ok()?).ok()?;
+    let layout: Vec<Monitor> = serde_json::from_str(&request_with_timeout("j/monitors", timeout).ok()?).ok()?;
     to_x_space([cursor.x, cursor.y], &layout, x_monitors)
 }
 

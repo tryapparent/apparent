@@ -3110,12 +3110,13 @@ impl ApparentCoordinator {
 
         if self.reveal.is_open() {
             let activity = self.reveal_activity();
-            let on_pill = self
-                .native_pill
-                .as_ref()
-                .map_or_else(pointer_on_hud_pill, |p| p.pointer_on_pill());
             #[cfg(any(target_os = "macos", target_os = "linux"))]
-            let on_pill = self.electron_pill.as_ref().filter(|s| s.ready()).map_or(on_pill, |s| s.hovered());
+            let on_pill = self.electron_pill.as_ref().filter(|s| s.ready()).map_or_else(
+                || self.native_pill.as_ref().map_or_else(pointer_on_hud_pill, |p| p.pointer_on_pill()),
+                |s| s.hovered(),
+            );
+            #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+            let on_pill = self.native_pill.as_ref().map_or_else(pointer_on_hud_pill, |p| p.pointer_on_pill());
             if self.reveal.tick(reveal_clock_ms(), on_pill, activity) {
                 self.play_fold();
             }
