@@ -60,6 +60,8 @@ confirmation command counts. The matching bundle must subsequently be opened by
 the shell. Opening it earlier cannot be replayed as a later lesson receipt.
 
 Capture admission freezes local practice independently of the window lifetime.
+Cancellation is observed only after native cancellation succeeds; a failed durable
+cancellation leaves the admitted practice capture active.
 Capture execution, note/ink durability, permission requests, real shortcut trials,
 resource safety, clipboard writes, shell opening and overlay geometry stay native.
 The workflow only asks to close the current whiteboard or finish its own guide.
