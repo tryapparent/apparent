@@ -68,6 +68,30 @@ fn command(client: &mut BufReader<UnixStream>, name: &str) -> serde_json::Value 
     writeln!(client.get_mut(), "{}", serde_json::json!({"connect":"command","command":name,"deadline":clock_ms()+3000})).unwrap();
     read(client)
 }
+// Drive the real socket like the renderer's local-only read polling. Policy
+// replies are asynchronous; a command reply is not proof its next view exists.
+fn observe(client: &mut BufReader<UnixStream>, mut value: serde_json::Value,
+           ready: impl Fn(&serde_json::Value) -> bool) -> serde_json::Value {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !ready(&value) {
+        assert!(value.get("error").is_none(), "{value}");
+        assert!(Instant::now() < deadline, "{value}");
+        std::thread::sleep(Duration::from_millis(10));
+        writeln!(client.get_mut(), "{}", serde_json::json!({"connect":"read","deadline":clock_ms()+3000})).unwrap();
+        value = read(client);
+    }
+    value
+}
+fn consent(client: &mut BufReader<UnixStream>) -> serde_json::Value {
+    let value = command(client, "connect");
+    observe(client, value, |v| v["connect"]["buttons"].as_array().is_some_and(|buttons|
+        buttons.iter().any(|b| b["command"] == "allow" && b["enabled"] == true)))
+}
+fn begin_login(client: &mut BufReader<UnixStream>) {
+    consent(client);
+    let value = command(client, "allow");
+    observe(client, value, |v| v.get("error").is_some() || v["connect"]["status"] == "Signing in…");
+}
 fn wait_for(mut predicate: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(2);
     while !predicate() { assert!(Instant::now() < deadline); std::thread::sleep(Duration::from_millis(10)); }
@@ -110,7 +134,7 @@ fn stream_reads_consent_cancel_and_preserves_unrelated_config_without_network() 
     let (mut client, handle, workers) = start(&fixture.config, backend.clone(), LEASE);
     let first = read(&mut client);
     assert!(first.get("connect").is_some()); assert!(!first.to_string().contains("privateToken"));
-    let consent = command(&mut client, "connect");
+    let consent = consent(&mut client);
     assert!(consent["connect"]["buttons"].as_array().unwrap().iter().any(|b| b["command"]=="allow"));
     command(&mut client, "cancel");
     assert!(started.try_recv().is_err());
@@ -153,7 +177,7 @@ fn eof_feature_disable_and_idle_lease_revoke_pending_login_before_late_receipt()
         let (backend, started, release) = fake();
         let lease = if mode=="lease" { Duration::from_millis(150) } else { LEASE };
         let (mut client, handle, workers) = start(&fixture.config, backend.clone(), lease);
-        read(&mut client); command(&mut client, "connect"); command(&mut client, "allow");
+        read(&mut client); begin_login(&mut client);
         let allowed = started.recv_timeout(Duration::from_secs(1)).unwrap();
         assert!(allowed());
         if mode=="feature" { std::fs::write(&fixture.config, r#"{"experiments":{"connectSettings":false}}"#).unwrap(); }
@@ -172,7 +196,7 @@ fn completion_without_a_window_read_cannot_start_uploads_or_escape_close_cancell
     let fixture = Fixture::new(true);
     let (backend, started, release) = fake();
     let (mut client, handle, workers) = start(&fixture.config, backend.clone(), LEASE);
-    read(&mut client); command(&mut client, "connect"); command(&mut client, "allow");
+    read(&mut client); begin_login(&mut client);
     started.recv_timeout(Duration::from_secs(1)).unwrap();
     {
         let mut state = backend.state.lock().unwrap();
@@ -198,7 +222,7 @@ fn admitted_window_read_observes_success_and_starts_the_worker_once() {
     let fixture = Fixture::new(true);
     let (backend, started, release) = fake();
     let (mut client, handle, workers) = start(&fixture.config, backend.clone(), LEASE);
-    read(&mut client); command(&mut client, "connect"); command(&mut client, "allow");
+    read(&mut client); begin_login(&mut client);
     started.recv_timeout(Duration::from_secs(1)).unwrap();
     {
         let mut state = backend.state.lock().unwrap();
@@ -240,7 +264,7 @@ fn feature_edit_between_command_and_transport_admission_invalidates_the_client_p
     let (inner, _started, _release) = fake();
     let backend = Arc::new(DisableBeforeAdmission { config: fixture.config.clone(), inner: inner.clone(), admitted: AtomicUsize::new(0) });
     let (mut client, handle, workers) = start(&fixture.config, backend.clone(), LEASE);
-    read(&mut client); command(&mut client, "connect"); command(&mut client, "allow");
+    read(&mut client); begin_login(&mut client);
     handle.join().unwrap();
     assert_eq!(backend.admitted.load(Ordering::SeqCst), 0);
     assert_eq!(workers.load(Ordering::SeqCst), 0);
