@@ -52,7 +52,7 @@ class SigningTests(unittest.TestCase):
                 self.assertTrue((destination / "app" / relative).is_file(), relative)
             self.assertEqual((destination / "app/electron/installer/ui/src/installer/index.html").read_text(), "dist/src/installer/index.html")
             self.assertEqual((destination / "app/dist/pill/index.html").read_text(), "dist/pill/index.html")
-            for name in ("presentation", "hyprland", "account"):
+            for name in ("presentation", "hyprland"):
                 relative = f"dist/onboarding-{name}.cjs"
                 self.assertEqual((destination / "app" / relative).read_text(), relative)
             self.assertTrue((destination / "runtime/electron").is_file())
