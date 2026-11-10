@@ -1360,9 +1360,18 @@ pub fn hosted_roundtrip_pending_pointer_restart_complete_and_no_overwrite() {
     assert_eq!(pointer, format!("apparent inspect {id}\n"));
     assert!(!pointer.contains("login") && !pointer.contains("secret"));
     assert_eq!(server.state.lock().unwrap().requests, 0);
+    let mut job = f.client.jobs().unwrap().remove(0);
+    for status in ["failed", "expired", "cancelled", "awaiting_share"] {
+        job.status = status.into();
+        f.client.save_job(&job).unwrap();
+        assert!(f.client.pointer(&bundle).is_none(), "{status} advertised Connect");
+    }
+    job.status = "pending".into();
+    f.client.save_job(&job).unwrap();
     let restarted = Client::new(f.client.provider.clone());
     restarted.process_once().unwrap();
     assert_eq!(restarted.jobs().unwrap()[0].status, "ready");
+    assert_eq!(restarted.pointer(&bundle), Some(pointer));
     let out = f.root.join("download.apparent");
     restarted.fetch(&id, &out, 0).unwrap();
     for entry in server.state.lock().unwrap().data.keys() {

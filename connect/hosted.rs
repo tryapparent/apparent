@@ -167,7 +167,11 @@ pub fn sharing_progress(bundle: &Path) -> String {
 
 pub fn command(command: ConnectCommand) -> Result<()> {
     let client = client();
-    match command {
+    let result = (|| match command {
+        ConnectCommand::Alternatives => {
+            println!("{}", apparent_connect_client::Client::alternatives()?);
+            Ok(())
+        }
         ConnectCommand::Shares { command } => match command {
             SharesCommand::List => {
                 println!("{}", serde_json::to_string_pretty(&client.shares()?)?);
@@ -223,10 +227,11 @@ pub fn command(command: ConnectCommand) -> Result<()> {
             println!("Queued hosted capture; inspect its ID with apparent connect status");
             client.process_once()
         }
-    }
+    })();
+    result.context("Connect did not complete; run apparent connect alternatives for local inspection and authorized transfer options")
 }
 pub fn fetch(id: &str, out: &Path, wait: u64) -> Result<()> {
-    println!("{}", client().fetch(id, out, wait)?.display());
+    println!("{}", client().fetch(id, out, wait).context("Connect capture unavailable; run apparent connect alternatives")?.display());
     Ok(())
 }
 /// Only a bare canonical Connect ID implies a download. Explicit local paths
@@ -236,6 +241,7 @@ pub fn inspect_source(source: &Path) -> Result<PathBuf> {
         return Ok(source.to_path_buf());
     };
     client().fetch(id, &PathBuf::from(format!("./{id}.apparent")), 120)
+        .context("Connect capture unavailable; run apparent connect alternatives. The recording computer retains the local original")
 }
 
 fn inspect_capture_id(source: &Path) -> Option<&str> {
