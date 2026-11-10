@@ -74,9 +74,8 @@ Verification is proportional to changed behavior, not commit IDs. For mechanical
 feature pushes while preserving exact-HEAD/clean-tree guards. Explicit local
 `enablement/verification.py --run` and direct main pushes retain conservative
 changed-tree build/tests. Continuous delivery runs the cheap contracts and workflow
-validation automatically on PRs and main pushes. Full Linux/macOS verification
-runs in that workflow for ready PRs and main pushes, except ordinary documentation-only changes; drafts retain cheap checks. Agent instructions, skills, shipped Markdown and unknown Markdown paths retain full verification.
-Separate platform diagnostics and all publication workflows remain manual-only. Linux and Connect publication require the
+validation automatically on PRs and main pushes. Affected Linux/macOS suites run for ready PRs. Main reuses successful PR suites only with authenticated identical-tree evidence and runs affected missing suites before fresh exact-main admission. Public-only README/site inputs retain Public verification without native suites; native-embedded text, agent instructions and unknown inputs retain their consumers. Drafts retain cheap checks.
+Separate platform diagnostics remain manual. Linux latest-Main publication runs automatically after exact-main Linux/shared admission, independently of Mac; Connect publication remains manual and requires the
 exact commit's successful Linux/shared verification. Public publication uses its own
 successful web/shared checks and sealed artifact in `stream-public.yml`, without
 requiring Rust, Desktop or Connect verification. Mac publication additionally

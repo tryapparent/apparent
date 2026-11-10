@@ -64,6 +64,10 @@ class PrePushGuardTests(unittest.TestCase):
             shutil.copy2(SELECTOR.parent / "ci" / name, self.repo / "enablement/ci" / name)
         # The real verifier now runs the shared frontend color guard. Preserve
         # its actual dependency closure in this disposable hook repository.
+        routing = self.repo / "enablement/ci/routing"
+        routing.mkdir()
+        for name in ("consumers.ts", "legacy.ts"):
+            shutil.copy2(SELECTOR.parent / "ci/routing" / name, routing / name)
         theme = self.repo / "shared/ui/scripts"
         theme.mkdir(parents=True)
         for name in ("check-theme.py", "legacy-colors.json"):
@@ -87,6 +91,10 @@ class PrePushGuardTests(unittest.TestCase):
         for directory in ("connect/client", "connect/service", "connect/web", "public/site",
                           "capture/desktop/ui/frontend", "enablement/directory-width/tests", "hermes/tests"):
             (self.repo / directory).mkdir(parents=True, exist_ok=True)
+        browser_tests = self.repo / "connect/web/test"
+        browser_tests.mkdir()
+        for name in ("artifact.test.mjs", "closure.test.mjs", "routes.test.mjs"):
+            (browser_tests / name).write_text("import {test} from 'node:test'; test('finite browser contract', () => {});\n")
         # Model the prerequisite package without network work in this finite repo.
         package = self.repo / "connect/client/typescript"
         package.mkdir()
@@ -222,8 +230,8 @@ class PrePushGuardTests(unittest.TestCase):
 
     def test_later_document_commit_does_not_hide_source_delta(self):
         run("git", "update-ref", "refs/remotes/origin/main", self.head, cwd=self.repo)
-        (self.repo / "file").write_text("source change\n")
-        run("git", "add", "file", cwd=self.repo)
+        (self.repo / "file.rs").write_text("// Rust source change\n")
+        run("git", "add", "file.rs", cwd=self.repo)
         run("git", "commit", "-qm", "source", cwd=self.repo)
         (self.repo / "enablement/refactor.md").write_text("plan\n")
         run("git", "add", "enablement/refactor.md", cwd=self.repo)
