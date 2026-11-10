@@ -72,7 +72,7 @@ test('platform admission composes ordinary docs with selected ready-PR Mac exemp
     for (const [event, draft, ref, expected] of [
       ['pull_request', false, 'refs/pull/7/merge', true],
       ['pull_request', true, 'refs/pull/7/merge', false],
-      ['push', false, 'refs/heads/main', true],
+      ['push', false, 'refs/heads/main', false],
       ['workflow_run', false, 'refs/heads/main', false],
       ['pull_request_target', false, 'refs/heads/main', false],
     ] as const) {
@@ -106,7 +106,7 @@ test('platform admission composes ordinary docs with selected ready-PR Mac exemp
   for (const result of ['success', 'failure', 'skipped', 'cancelled']) {
     for (const output of ['false', 'true', '', 'garbage']) {
       assert.equal(macAdmitted('pull_request', result, output), result !== 'success' || output !== 'false');
-      assert.equal(macAdmitted('push', result, output), true);
+      assert.equal(macAdmitted('push', result, output), false);
       assert.equal(macAdmitted('pull_request', result, output, true), false);
     }
   }
@@ -176,7 +176,7 @@ test('full platforms and Mac inspection share cheap prerequisites without depend
                 select: {result: select, outputs: {macos: output, platform}}, linux: {result: 'failure'}, macos: {result: 'failure'}};
               const expected = contracts === 'success' && hermes === 'success';
               const docsExempt = select === 'success' && platform === 'false';
-              for (const [event, draft, allowed] of [['pull_request', false, true], ['push', false, true],
+              for (const [event, draft, allowed] of [['pull_request', false, true], ['push', false, false],
                 ['pull_request', true, false], ['workflow_run', false, false], ['workflow_dispatch', false, false]] as const) {
                 const exempt = name === 'macos' && event === 'pull_request' && select === 'success' && output === 'false';
                 assert.equal(admitted(needs, event, draft), expected && allowed && !exempt && !docsExempt,
@@ -192,15 +192,33 @@ test('full platforms and Mac inspection share cheap prerequisites without depend
   assert.equal(ci.jobs.hermes['runs-on'], 'ubuntu-24.04');
 });
 
-test('Mac inspection preserves its checks but runs only for ready PRs and main pushes', () => {
+test('Mac inspection preserves its checks but runs only for ready PRs', () => {
   const ci = workflow('checks.yml');
   const inspection = ci.jobs['hermes-macos'];
   assert.ok(inspection);
   assert.equal(inspection['runs-on'], 'macos-15-intel');
   assert.deepEqual(inspection.steps, ci.jobs.hermes.steps);
   // The Settings exemption applies to the platform workflow; Hermes keeps
-  // main's own event admission and cheap shared prerequisite guards.
+  // ready-PR event admission and cheap shared prerequisite guards.
   assert.equal(inspection.if, ci.jobs.linux.if);
+});
+
+test('main retains cheap admission and affected consumers without full platform allocation', () => {
+  const ci = workflow('checks.yml');
+  for (const name of ['contracts', 'hermes', 'select']) {
+    const allowed = Function('github', `return (${ci.jobs[name].if});`);
+    assert.equal(allowed({event_name: 'push'}), true, name);
+    assert.equal(allowed({event_name: 'pull_request'}), true, name);
+  }
+  // Main-only updater and Public still depend on their real path selector.
+  for (const selected of ['true', 'false']) {
+    const needs = {select: {outputs: {public: selected, updater: selected}}};
+    assert.equal(Function('needs', `return (${ci.jobs.public.if});`)(needs), selected === 'true');
+    for (const event of ['push', 'pull_request']) {
+      assert.equal(Function('needs', 'github', `return (${ci.jobs.updater.if});`)(needs,
+        {event_name: event}), event === 'push' && selected === 'true');
+    }
+  }
 });
 
 // Isolate the entire synchronous scope: production helpers also spawn Git.

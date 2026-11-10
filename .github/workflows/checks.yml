@@ -17,13 +17,15 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Full platform verification runs before merge, not again on main pushes.
+  # Publication retains exact-main manual platform receipts.
   # PR checkout is GitHub's proposed merge, so these checks cover integration.
   # Draft updates retain cheap feedback without allocating full platform suites.
   linux:
     needs: [contracts, hermes, select]
     if: >-
       !cancelled() && needs.contracts.result == 'success' && needs.hermes.result == 'success' &&
-      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
+      (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
       && (needs.select.result != 'success' || needs.select.outputs.platform != 'false')
     uses: ./.github/workflows/verification-platform.yml
     with:
@@ -37,8 +39,8 @@ jobs:
     # Failed/unknown selection keeps Mac coverage after the cheap guards pass.
     if: >-
       !cancelled() && needs.contracts.result == 'success' && needs.hermes.result == 'success' &&
-      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false &&
-      (needs.select.result != 'success' || needs.select.outputs.macos != 'false')))
+      (github.event_name == 'pull_request' && github.event.pull_request.draft == false &&
+      (needs.select.result != 'success' || needs.select.outputs.macos != 'false'))
       && (needs.select.result != 'success' || needs.select.outputs.platform != 'false')
     uses: ./.github/workflows/verification-platform.yml
     with:
@@ -105,7 +107,7 @@ jobs:
     needs: [contracts, hermes, select]
     if: >-
       !cancelled() && needs.contracts.result == 'success' && needs.hermes.result == 'success' &&
-      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
+      (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
       && (needs.select.result != 'success' || needs.select.outputs.platform != 'false')
     name: Hermes inspection (macos-15-intel)
     runs-on: macos-15-intel

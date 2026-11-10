@@ -38,7 +38,7 @@ include deleted and renamed source paths. There are no PR-edit or verification
 lifecycle triggers. Superseded PR runs coalesce within their PR; main pushes use distinct commit groups so a docs-only push cannot cancel or replace pending verification for an earlier code change.
 Neither reusable consumer publishes on an automatic run.
 
-Ordinary documentation-only deltas retain cheap contracts but skip Linux/Mac platform suites and Mac Hermes inspection. The selector exempts Markdown in owner `docs/` directories, package READMEs/changelogs and the named repository reference docs. `AGENTS.md`, `SKILL.md`, other agent instructions, skill/prompt/instruction directories, test/fixture/template Markdown, the root README consumed by the ordinary site build, and unclassified Markdown remain verification inputs. Mixed changes, missing history and empty deltas retain full platform coverage. Public/updater selectors ignore only these ordinary prose paths; non-document inputs retain their previous coverage. PR selection uses the complete base-to-merge delta, including deletions and both rename sides. Manual platform workflows still verify the full tree.
+Ordinary documentation-only PR deltas retain cheap contracts but skip Linux/Mac platform suites and Mac Hermes inspection. The selector exempts Markdown in owner `docs/` directories, package READMEs/changelogs and the named repository reference docs. `AGENTS.md`, `SKILL.md`, other agent instructions, skill/prompt/instruction directories, test/fixture/template Markdown, the root README consumed by the ordinary site build, and unclassified Markdown remain verification inputs. Mixed changes, missing history and empty deltas retain full platform coverage. Public/updater selectors ignore only these ordinary prose paths; non-document inputs retain their previous coverage. PR selection uses the complete base-to-merge delta, including deletions and both rename sides. Manual platform workflows still verify the full tree.
 
 Every non-deletion push runs cheap contracts plus the affected owners' local
 suites, selected by `enablement/local-tests/run.ts` over the full merge-base delta.
@@ -74,8 +74,7 @@ and publication checks still require their existing explicit procedures. A Linux
 hook cannot certify macOS behavior. The advisory owner-lane report below remains
 separate; it does not control the enforced hook selection.
 
-The same workflow also calls the full Linux and Mac platform suites on main
-pushes and on non-draft PRs (opened, reopened, updated or marked ready for review).
+The same workflow calls the full Linux and Mac platform suites only on non-draft PRs (opened, reopened, updated or marked ready for review).
 Public main checks preserve the active run and keep only the newest pending run
 for that ref. The root workflow uses distinct commit groups as described above. PR updates still cancel their
 superseded active run. Manual publication retains its separate noncancelling lock.
@@ -119,8 +118,19 @@ Linux/shared and Mac receipts for the same commit. A queued/failed Mac run canno
 hold Linux publication; Linux success cannot authorize a Mac release.
 `enablement/release_gate.py --platform linux|macos` validates the exact caller
 workflow, upstream run/attempt, repository, main branch, SHA and every required job.
-Successful main-push `Continuous delivery` runs now supply publication evidence
-without a second manual verification run. Admission checks the current attempt's
+Main pushes run cheap contracts, Linux Hermes inspection, selection and the
+applicable Public/updater consumers; they do not repeat full Linux/Mac suites or
+Mac Hermes inspection. Before merging, the owner must verify the ready PR against
+current main, including all applicable CI and native acceptance. GitHub branch
+protection currently does not enforce required checks or up-to-date branches;
+this remains an owner obligation, not a claimed server-enforced gate. Direct
+main pushes receive no automatic full platform proof.
+
+Before Linux/Connect publication, dispatch `Linux verification` on the exact main
+commit and wait for success. Mac publication additionally needs `Mac verification`
+on that same commit. A successful lightweight main run cannot authorize release.
+Historical main-push `Continuous delivery` runs that actually passed the required
+platform jobs remain valid evidence for their exact commits. Admission checks the current attempt's
 shared guards, applicable Hermes inspection and actual platform select, Desktop UI, client and Rust jobs; a
 skipped platform (including a documentation-only run) cannot authorize publication.
 A CD run with pending or failed Mac jobs can still admit Linux when all Linux/shared
@@ -495,15 +505,14 @@ and both platforms. Instructions, skills/prompts, shipped Markdown and unknown p
 their existing coverage. All other Public/updater input sets are unchanged.
 
 Only successful selection with explicit `macos=false` exempts a ready PR's Mac platform
-caller; successful `platform=false` retains main's ordinary-docs exception for all expensive
-entrypoints. Failed, skipped, missing or unknown selection facts cannot silently exempt
+caller; successful `platform=false` exempts all expensive ready-PR entrypoints. Main pushes
+never allocate those entrypoints. Failed, skipped, missing or unknown selection facts cannot silently exempt
 required jobs. Status-function guards explicitly require contracts and Linux Hermes success
 and reject workflow cancellation. Neither full platform depends on the other's result;
 applicable results remain required for acceptance.
 
 Linux retains its full command inventory, including independent clients, portable contracts
-and actual Electron suites. Mac Hermes retains ordinary admission for source changes. Main
-source changes, manual full-tree verification, Mac publication, exact-head/current-base
+and actual Electron suites. Mac Hermes retains ordinary admission for source changes. Manual full-tree verification, Mac publication, exact-head/current-base
 review, privacy/cleanup and independent native/client/release admission remain required
 under the existing policy. Selector errors still fail Continuous delivery.
 
@@ -529,7 +538,7 @@ scripts and unaudited VM scenarios retain broad coverage. This is a finite
 consumer audit, not a directory or Rust-extension rule. Additions, deletions,
 renames, mode/type changes, missing/divergent/shallow history and mixed shared,
 build, CI or unknown inputs retain Mac verification. Linux platform tests,
-portable driver regressions, main's Mac verification, Hermes inspection, native
+portable driver regressions, ready-PR Mac verification where selected, Hermes inspection, native
 acceptance and exact-source release admission remain unchanged.
 
 `build.rs::watch_desktop_tooling` still watches these drivers;

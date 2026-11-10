@@ -1,4 +1,4 @@
-Ready-PR/main platform verification opts into root test/build overlap. The
+Ready-PR/manual platform verification opts into root test/build overlap. The
 verifier retains the Cargo inventory; `root.ts` starts the real app build only
 after Cargo reports successful test compilation. Two test threads overlap one
 build worker. Both commands must pass before the verifier continues. Focused
