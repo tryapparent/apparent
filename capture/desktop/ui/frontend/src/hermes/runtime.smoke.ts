@@ -143,9 +143,20 @@ test('trusted local request records without confirmation, reports saved/occupied
   };
   let application: Awaited<ReturnType<typeof electron.launch>> | undefined;
   let passed = false;
+  const waitForKey = async (file: string) => {
+    // Playwright connects before app.whenReady() finishes publishing the bridge.
+    // Unlike the confirmation case, trusted mode has no window readiness barrier.
+    for (let attempt = 0; ; attempt++) {
+      try { return await readFile(file, 'utf8'); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || attempt === 59 || application?.process().exitCode !== null) throw error;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+  };
   try {
     application = await launch(bridgePort, token);
-    const key = await readFile(keyFile, 'utf8');
+    const key = await waitForKey(keyFile);
     assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 0, 'trusted mode must create no status or confirmation window');
     const state = await waitForState(key, mailbox, bridgePort, 'recording');
     assert.deepEqual(state, { phase: 'recording' });
@@ -160,7 +171,7 @@ test('trusted local request records without confirmation, reports saved/occupied
 
     const replayPort = await availablePort();
     application = await launch(replayPort, token);
-    const replayKey = await readFile(keyFile, 'utf8');
+    const replayKey = await waitForKey(keyFile);
     assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 0);
     const refused = await waitForState(replayKey, mailbox, replayPort, 'error');
     assert.deepEqual(refused, { phase: 'error' });
@@ -172,7 +183,7 @@ test('trusted local request records without confirmation, reports saved/occupied
     const occupiedId = await mailboxId(occupiedToken);
     const occupiedPort = await availablePort();
     application = await launch(occupiedPort, occupiedToken, true);
-    const occupiedKey = await readFile(path.join(process.platform === 'linux' ? runtime : keyDirectory(), 'apparent-hermes', `${occupiedToken}.key`), 'utf8');
+    const occupiedKey = await waitForKey(path.join(process.platform === 'linux' ? runtime : keyDirectory(), 'apparent-hermes', `${occupiedToken}.key`));
     assert.deepEqual(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 0);
     assert.deepEqual(await waitForState(occupiedKey, occupiedId, occupiedPort, 'error'), { phase: 'error', code: 'occupied' });
     const calls = (await readFile(trace, 'utf8')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
@@ -182,7 +193,8 @@ test('trusted local request records without confirmation, reports saved/occupied
     passed = true;
   } finally {
     await application?.close().catch(() => {});
-    await rm(job, { recursive: true, force: true });
+    if (passed) await rm(job, { recursive: true, force: true });
+    else console.error(`Failed trusted Hermes smoke evidence: ${job}`);
   }
   assert.ok(passed);
 });
