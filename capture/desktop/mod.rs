@@ -6811,6 +6811,8 @@ pub fn run_app(
     workflow::error_reporting::install();
     let app = Application::new().with_assets(crate::capture::desktop::icons::Assets);
     #[cfg(target_os = "macos")]
+    app.on_reopen(|_| crate::capture::desktop::workflow::launch_instance::request_open());
+    #[cfg(target_os = "macos")]
     app.on_open_urls(|urls| {
         for url in urls {
             if crate::capture::desktop::workflow::launch_instance::request_url(&url).is_err() {
@@ -6971,8 +6973,6 @@ pub fn run_app(
                     }
                     loop_coord.read(cx).publish_capture_busy();
                     platform::poll_status_bar();
-                    #[cfg(target_os = "linux")]
-                    platform::poll_controls(loop_coord.read(cx).is_recording() || loop_coord.read(cx).is_processing() || loop_coord.read(cx).is_selecting(), !onboarding_initialized || loop_coord.read(cx).onboarding.is_some(), loop_coord.read(cx).settings.is_some(), cx);
                     crate::capture::desktop::settings::onboarding_window::poll(cx);
                     crate::capture::desktop::settings::settings_window::poll(cx);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -6987,15 +6987,16 @@ pub fn run_app(
                             } else if let Some(session) = coord.onboarding.as_mut() {
                                 session.show();
                             } else {
-                                #[cfg(target_os = "linux")]
-                                if platform::controls_needed() {
-                                    platform::show_controls(cx);
-                                    return;
-                                }
-                                coord.open_settings(None);
+                                // About is the shared installed Electron Settings entry.
+                                // Its sidebar retains access to the native panes until migrated.
+                                coord.open_settings(Some(crate::capture::desktop::settings::Pane::About));
                             }
                         });
                     }
+                    // Explicit launch gets first choice of presentation; automatic
+                    // no-tray controls must observe the Settings session it opens.
+                    #[cfg(target_os = "linux")]
+                    platform::poll_controls(loop_coord.read(cx).is_recording() || loop_coord.read(cx).is_processing() || loop_coord.read(cx).is_selecting(), !onboarding_initialized || loop_coord.read(cx).onboarding.is_some(), loop_coord.read(cx).settings.is_some(), cx);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
                     if let Some(ref rx) = agent_rx {
                         while let Ok(request) = rx.try_recv() {

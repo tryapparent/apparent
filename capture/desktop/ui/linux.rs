@@ -687,7 +687,7 @@ pub(in crate::capture::desktop) fn show_controls(cx: &mut App) {
 
 pub(in crate::capture::desktop) fn poll_controls(busy: bool, onboarding: bool, settings: bool, cx: &mut App) {
     if take_controls_request(&CONTROLS_PENDING, !controls_needed(), busy, onboarding, settings) {
-        crate::capture::desktop::workflow::launch_instance::request_open();
+        show_controls(cx);
     }
     CONTROLS.with(|controls| {
         if let Some(controls) = controls.borrow_mut().as_mut() { controls.poll(busy || onboarding, cx); }
