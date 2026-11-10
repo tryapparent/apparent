@@ -473,6 +473,18 @@ impl Controller {
         });
     }
 
+    // Confirmation policy has already admitted the explicit command (or the
+    // existing emergency/retry route). Enter the native durable executor now,
+    // before window close/drop or a failed ephemeral worker can discard it.
+    fn begin_revocation(&mut self, logout: bool) {
+        self.invalidate_policy();
+        self.cancel_request();
+        self.policy_state = PolicyState::default();
+        self.policy_overlay = None;
+        self.retry_disable = Some(logout);
+        self.start(Operation::Disable { logout }, String::new());
+    }
+
     /// Returns a safe browser URI only for this immediate, explicit user action.
     /// Busy controls reject forged/duplicate renderer commands, not just button clicks.
     pub fn command(&mut self, command: Command) -> Option<String> {
@@ -522,19 +534,7 @@ impl Controller {
             {
                 // A direct emergency control supersedes any pending consent or
                 // confirmation transition and invalidates the request first.
-                let logout = command == Command::Disconnect;
-                self.invalidate_policy();
-                self.cancel_request();
-                self.policy_overlay = None;
-                self.retry_disable = Some(logout);
-                self.policy(
-                    if logout {
-                        PolicyAction::Disconnect
-                    } else {
-                        PolicyAction::Disable
-                    },
-                    true,
-                );
+                self.begin_revocation(command == Command::Disconnect);
             }
             return None;
         }
@@ -579,20 +579,7 @@ impl Controller {
             let emergency = self.policy_state.confirmation.is_none()
                 && (active_request || self.snapshot.is_none() && self.retry_disable.is_none());
             if confirmation_matches || retry_matches || emergency {
-                if active_request {
-                    self.cancel_request();
-                }
-                if emergency {
-                    self.retry_disable = Some(command == Command::Disconnect);
-                }
-                self.policy(
-                    if command == Command::Disable {
-                        PolicyAction::Disable
-                    } else {
-                        PolicyAction::Disconnect
-                    },
-                    emergency,
-                );
+                self.begin_revocation(command == Command::Disconnect);
                 return None;
             }
         }

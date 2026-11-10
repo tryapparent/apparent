@@ -175,6 +175,11 @@ staged Electron Node runtime. Rust remains authoritative for local snapshots,
 login, health checks, credential/config writes, queue cancellation and durable
 revocation. No other account transitions have moved.
 
+After an explicit confirmed Disable/Disconnect (or the existing emergency/retry
+action), the Controller starts the native durable revocation immediately. That
+admitted intent survives Settings close/drop and does not wait for another policy
+worker or UI receipt. A worker failure cannot discard an admitted revocation.
+
 The transport build emits this worker beside `electron/main.cjs`. There is no
 native-policy fallback after worker admission: a missing or failed worker clears
 transient consent/confirmation state and fails closed, leaving recovery actions
