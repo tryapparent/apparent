@@ -243,7 +243,8 @@ def main():
                 os.close(voices)
         else:
             with tempfile.TemporaryDirectory(prefix="apparent-dev-narrator-build-", dir="/tmp") as target:
-                command = ["cargo", "build", "--release", "--locked", "-j", "3", "--manifest-path",
+                jobs = str(max(1, min(3, int(os.environ.get("T3_BUILD_JOBS", "3")))))
+                command = ["cargo", "build", "--release", "--locked", "-j", jobs, "--manifest-path",
                            str(ROOT / "capture/agent/narrator/Cargo.toml"), "--target-dir", target]
                 subprocess.run(command, check=True, timeout=1800)
                 install_worker(cache, Path(target) / "release/apparent-narrator")
