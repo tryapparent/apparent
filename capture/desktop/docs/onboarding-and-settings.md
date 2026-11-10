@@ -96,14 +96,44 @@ renderer JavaScript errors and hangs remain outside this slice's coverage.
 
 ## Onboarding (`capture/desktop/settings/onboarding.rs`, `capture/desktop/native/Onboarding.swift`)
 
-The shared Electron Welcome page offers Google sign-in through Connect's existing
-read-only device approval. It shows the public code and opens only the current
-native-validated approval URL on an explicit click. Cancel, leaving Welcome,
-renderer fallback and closing the session cancel pending enrollment; late replies
-cannot update a successor. Local setup remains available when offline or rejected.
-Sign-in does not enable uploads, grant upload consent or complete tour milestones.
-Connect remains the sole credential/config writer; the native onboarding adapter
-owns worker lifetime, while TypeScript owns account presentation and coach placement.
+The shared Electron Welcome page asks **Where’s ur agent at?** with equally
+prominent **Right here** and **Up in the cloud** illustrations. Right here uses
+the existing pen picker without signup. **idk??** explains both routes. The cloud
+route offers Connect, with **Keep it local** as an explicit secondary opt-out.
+There is no second pen picker or separate read-only onboarding enrollment.
+
+The cloud route displays the upload scope beside **Continue with Google**. That
+single explicit click admits local upload consent through the existing Connect
+controller, starts device authorization and opens its validated browser URL once.
+The browser enters Google directly for a valid signed-out device request, then
+requires an explicit **Allow uploads** action after displaying the scope. There
+is no additional checkbox or Done action. Google sign-in alone grants no device
+access. Starting from Welcome takes three apparent-controlled clicks including
+the cloud choice; Google login/account selection/MFA may add interactions.
+
+The browser reports a verified waitlisted account to its exact pending device
+request. Native polling returns a waitlist receipt without credentials or enabled
+uploads; **Continue locally** then leads to the existing pen picker. Pricing
+interest is optional and never required to proceed. Unknown/offline/expired state
+is not a waitlist receipt. Access granted later needs explicit reconnection from
+Settings. Signup does not independently grant an agent read access or make shared
+links available; existing sharing and encryption gates remain authoritative.
+
+TypeScript owns fast-flow sequencing and presentation. The same-user Connect
+socket/controller used by Settings remains the credential/config writer and
+durable cancellation authority: these queue-lock/revocation mechanisms cannot be
+replaced by a competing frontend writer. Explicit local opt-out disables uploads
+and waits for fresh uploads-off readback; failed writes offer a durable retry.
+Closing, renderer replacement and stale responses cannot open a successor's
+browser or complete onboarding. Opening a page never starts authorization.
+
+The packaged Electron route and native fallback are unchanged. Missing assets or
+renderer failure retain the existing local-only native presentation. Roll back
+the changed Welcome and Connect presentation together with their bridge and
+protocol consumers; retain the existing pen picker and consent/cancellation
+guards. Native adapters can be removed only after installed macOS/Linux
+authorization, cancellation, resume and pen-persistence acceptance. Synthetic
+browser/Electron fixtures do not establish live Google or installed native proof.
 
 On Omarchy the shortcut page shows the actual desktop chord before acceptance and
 also offers a custom shortcut. A custom choice uses the existing validated shortcut
@@ -171,7 +201,7 @@ the guided capture lesson. Permission-repair windows retain their existing behav
 macOS and Linux. Opening it does not sign in, grant upload consent or enable
 uploads. To hide the controls, set `"connectSettings": false` in the existing
 `experiments` object in `~/.config/apparent/config.json`, then close and reopen
-Settings. It adds no onboarding step and does not require `hostedSharing`. Without a configured `cloud.server`, sign-in uses
+Settings. Onboarding reuses this controller and does not require `hostedSharing`. Without a configured `cloud.server`, sign-in uses
 `https://hosted.tryapparent.com`; an existing valid custom origin is preserved.
 
 **Sign in to Connect… → Allow and continue → Open browser** explains the full

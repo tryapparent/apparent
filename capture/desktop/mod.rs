@@ -1624,7 +1624,6 @@ impl ApparentCoordinator {
     /// Polled while the gate holds a request: shows the permissions window once ⌥⇧ is up.
     pub(in crate::capture::desktop) fn tick_onboarding_practice(&mut self,cx:&mut Context<Self>) {
         if let Some(session) = self.onboarding.as_mut() {
-            session.refresh_account();
             session.observe_shortcut_modifiers(crate::capture::engine::runtime::modifier_flags());
         }
         if !self.onboarding.as_ref().is_some_and(|s|s.practice_active()) {return;}

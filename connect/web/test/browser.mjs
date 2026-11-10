@@ -94,6 +94,28 @@ const results = []
 const routeResults = []
 let viteServer
 try {
+  // Valid device links enter Google directly, without the duplicate website CTA.
+  scenario={anonymous:true};writes=[];calls=[];signedOut=false;
+  const direct=await browser.newPage();
+  let googleEntry='';
+  await direct.route('**/auth/google/start?*',route=>{
+    googleEntry=route.request().url();
+    return route.fulfill({contentType:'text/html',body:'<h1>Synthetic Google entry</h1>'});
+  });
+  await direct.goto(`${uiOrigin}/connect/device?code=ABCDEF123456`);
+  await direct.getByRole('heading',{name:'Synthetic Google entry'}).waitFor();
+  assert.equal(googleEntry,apiOrigin+'/auth/google/start?returnTo='+encodeURIComponent('/connect/device?code=ABCDEF123456'));
+  assert.equal(writes.length,0,'automatic sign-in entry never approves uploads');
+  await direct.close();results.push('device-direct-google-entry');
+  scenario={waitlist:true,full:true};writes=[];calls=[];signedOut=false;
+  const waiting=await browser.newPage();
+  await waiting.context().addCookies([{name:'fixture',value:'1',url:uiOrigin}]);
+  await waiting.goto(`${uiOrigin}/connect/device?code=ABCDEF123456`);
+  await waiting.waitForFunction(()=>document.querySelector('.hosted-panel')?.getAttribute('aria-busy')==='false');
+  assert.match(await waiting.locator('main').innerText(),/on the waitlist/);
+  assert.deepEqual(writes.map(w=>({path:w.path,body:w.body})),[{path:'/v1/device/waitlist',body:{userCode:'ABCDEF123456'}}]);
+  assert.equal(await waiting.getByRole('button',{name:'Allow uploads',exact:true}).count(),0);
+  await waiting.close();results.push('device-waitlist-receipt');
   for (const test of [
     { name: 'session-empty-403', failure: 'cors' },
     { name: 'session-device-empty-403', failure: 'cors', device: true },
@@ -142,7 +164,7 @@ try {
     assert.equal(await page.getByRole('alert').count(), 0)
     assert.equal(await page.getByRole('link', { name: 'Continue with Google' }).count(), 0)
     assert.equal(writes.length, 0, 'retry never approves a device or logs out')
-    if (test.device) assert.equal(await page.getByRole('button', { name: 'Allow uploads', exact: true }).isDisabled(), true, 'recovered upload preview still requires explicit consent')
+    if (test.device) assert.equal(await page.getByRole('button', { name: 'Allow uploads', exact: true }).isDisabled(), false, 'explicit approval button remains required after recovery')
     else assert.equal(await page.getByRole('button', { name: 'Connect', exact: true }).count(), 1)
     await page.close(); results.push(test.name)
   }
@@ -283,7 +305,7 @@ try {
       assert.equal(await selectedTab.getAttribute('aria-selected'), 'true')
       assert.equal(await page.getByRole('tab', { name: test.scope === 'upload' ? 'Your agent' : 'This computer', exact: true }).isDisabled(), true)
       await selectedTab.focus(); await page.keyboard.press('ArrowRight'); assert.equal(await selectedTab.getAttribute('aria-selected'), 'true')
-      if (test.scope === 'upload') { assert.equal(await allow.isDisabled(), true); await page.getByRole('checkbox').check(); assert.equal(writes.length, 0) }
+      if (test.scope === 'upload') { assert.equal(await allow.isDisabled(), false); assert.equal(await page.getByRole('checkbox').count(), 0); assert.equal(writes.length, 0, 'no upload consent before the explicit approval click') }
       assert.match(await page.locator('main').innerText(), test.scope === 'upload' ? /add, read and delete/ : /All your current and future uploads/)
       await page.screenshot({ path: `${evidence}/${test.name}-pending.png`, fullPage: true })
       await allow.evaluate(e => { e.click(); e.click() })

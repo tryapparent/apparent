@@ -1,5 +1,22 @@
 @import '../../../../../../shared/ui/src/tokens.css';
 
+.native-agent-setup { width: 100%; }
+.native-setup[data-agent-setup=true] { border-radius: 0; }
+.native-setup[data-agent-setup=true] header { padding: 16px 32px; }
+.native-setup[data-agent-setup=true] footer { display: none; }
+.native-agent-setup h1 { text-align: left; }
+.native-agent-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.native-agent-choices button { display: flex; flex-direction: column; height: auto; min-height: 44px; padding: 0 0 16px; border: 1px solid var(--apparent-foreground); border-radius: 0; background: var(--apparent-background); color: var(--apparent-foreground); white-space: normal; }
+.native-agent-choices img { display: block; width: 100%; aspect-ratio: 620 / 490; object-fit: contain; }
+.native-agent-choices strong { font-size: 1.125rem; font-weight: 700; padding: 0 8px; }
+.native-agent-setup .native-agent-idk { display: block; margin: 24px auto 0; color: var(--apparent-primary); font-weight: 700; }
+.native-agent-explanation { padding: 16px 0; border-top: 1px solid var(--apparent-border); }
+.native-agent-explanation h2 { font-size: 1.125rem; font-weight: 700; margin: 0 0 8px; }
+.native-agent-setup .native-connect-disclosure { font-size: 1rem; line-height: 1.5; }
+.native-connect-art { display: block; width: 180px; max-width: 100%; margin: 0 auto 16px; }
+.native-brand-name { color: var(--apparent-primary); font-weight: 700; }
+@media (max-width: 480px) { .native-agent-choices { gap: 12px; } }
+
 /* Scope brand roles to onboarding; other Settings consumers keep their routing/style.
    Frog/puddle artwork, popup silhouettes and their motion are user-approved exceptions. */
 html.native-onboarding-shell {

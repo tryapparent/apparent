@@ -1,54 +1,24 @@
-import { useEffect, useRef, useState } from 'react';
 import { Button } from '@apparent/ui/button';
 import { StatusCard } from '@apparent/ui/status-card';
 import { DisclosureMenu } from '@apparent/ui/disclosure-menu';
 import '@apparent/ui/status.css';
 import frogs from '../../../../../shared/assets/brand/connect-frogs.png';
 import font from '../../../../../shared/assets/fonts/HostGrotesk-Variable.ttf?url';
-import type { ConnectAction, ConnectSettings, ConnectView } from './bridge';
+import {useConnectFlow, type ConnectBridge} from './onboarding/connect-flow';
+import type {ConnectAction, ConnectSettings} from './bridge';
+
+const settingsBridge: ConnectBridge = {
+  read: () => window.apparent?.readConnectSettings() ?? Promise.resolve({status:'disconnected'}),
+  command: action => {
+    const b=window.apparent;
+    if(!b)return Promise.resolve({status:'disconnected'});
+    const commands={connect:b.connectSettings,allow:b.allowConnectUploads,cancel:b.cancelConnectSettings,check:b.checkConnectConnection,disable:b.disableConnectUploads,disconnect:b.disconnectConnectSettings,'open-browser':b.openConnectBrowser,'request-disable':b.requestDisableConnectUploads,'request-disconnect':b.requestDisconnectConnectSettings,'open-shared-links':b.openConnectSharedLinks};
+    return commands[action]();
+  },
+};
 
 export function ConnectSettingsCard() {
-  const [result, setResult] = useState<ConnectSettings>({ status: 'disabled' });
-  const [busy, setBusy] = useState(false);
-  const generation = useRef(0);
-  const polling = useRef(false);
-  async function request(action?: ConnectAction) {
-    const current = ++generation.current;
-    setBusy(true);
-    try {
-      const bridge = window.apparent;
-      const handlers = bridge && {
-        connect: bridge.connectSettings, allow: bridge.allowConnectUploads, cancel: bridge.cancelConnectSettings,
-        check: bridge.checkConnectConnection, disable: bridge.disableConnectUploads,
-        disconnect: bridge.disconnectConnectSettings, 'open-browser': bridge.openConnectBrowser,
-        'request-disable': bridge.requestDisableConnectUploads,
-        'request-disconnect': bridge.requestDisconnectConnectSettings,
-        'open-shared-links': bridge.openConnectSharedLinks,
-      };
-      const next = !bridge ? { status: 'disconnected' } as const : action
-        ? await handlers![action]() : await bridge.readConnectSettings();
-      if (current === generation.current) setResult(next);
-    } catch {
-      if (current === generation.current) setResult({ status: 'error' });
-    } finally {
-      if (current === generation.current) setBusy(false);
-    }
-  }
-  useEffect(() => {
-    void request();
-    return () => { generation.current += 1; };
-  }, []);
-  useEffect(() => {
-    if (result.status !== 'connected') return;
-    // Local-only snapshots renew this window's controller lease and collect
-    // background receipts. They never perform a health probe or authorize login.
-    const timer = setInterval(() => {
-      if (busy || polling.current) return;
-      polling.current = true;
-      void request().finally(() => { polling.current = false; });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [result.status, busy]);
+  const {result,busy,request}=useConnectFlow(settingsBridge);
 
   if (result.status === 'disabled') return null;
   const view = result.status === 'connected' ? result.view : undefined;
@@ -62,7 +32,7 @@ export function ConnectSettingsCard() {
     return <Button key={button.command} variant="ghost"
       className={close ? destructive ? 'disconnect-action' : undefined
         : destructive ? 'destructive-action' : button.command === 'cancel' ? 'secondary-action' : 'primary-action'}
-      disabled={busy || !button.enabled} onClick={() => { close?.(); void request(button.command); }}>{button.title}</Button>;
+      disabled={busy || !button.enabled} onClick={() => { close?.(); void request(button.command); }}>{button.command==='connect'?'Continue with Google':button.title}</Button>;
   }
   return <section aria-label="Apparent Connect" className="apparent-connect-workflow">
     <style>{`@font-face { font-family: 'Connect Host Grotesk'; src: url('${font}'); }`}</style>
@@ -79,9 +49,10 @@ export function ConnectSettingsCard() {
       headline={p?.headline ?? view?.status ?? (busy ? 'Reading connection settings…' : 'Connection unavailable.')}
       compact={p?.compact} artwork={p?.artwork ? <img src={frogs} alt="" /> : undefined}>
       <p>{p?.detail ?? view?.detail ?? 'Open the current Apparent app, then refresh. Local recording remains available.'}</p>
+      {buttons.some(b=>b.command==='connect')&&<p className="status-note">Continuing requests upload access for new captures, including recordings, screen images, voice, transcripts and context. Older captures stay local. You approve this computer in your browser.</p>}
       {p?.note && <p className="status-note">{p.note}</p>}
       {cardButtons.length > 0 && <div className="status-actions">{cardButtons.map(button => renderButton(button))}</div>}
-      {!view && <Button className="primary-action" disabled={busy} onClick={() => void request()}>Refresh connection</Button>}
+      {!view && <Button className="primary-action" disabled={busy} onClick={() => void request('check')}>Refresh connection</Button>}
     </StatusCard>
   </section>;
 }

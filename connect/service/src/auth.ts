@@ -16,7 +16,7 @@ function encryptionKey(value:unknown) {
  return {version:1,recipient:value.recipient,signing:value.signing};
 }
 
-interface Grant {id:string;client_id:string;device_hash:string;user_code:string;scope:Scope;account_id:string|null;user_id:string|null;expires_at:number;revoked_at:number|null;response:string|null;last_poll:number}
+interface Grant {id:string;client_id:string;device_hash:string;user_code:string;scope:Scope;account_id:string|null;user_id:string|null;expires_at:number;approved_at:number|null;revoked_at:number|null;response:string|null;last_poll:number}
 function returnTo(value:string|null) {
  const match=/^\/(?:connect|hosted)(\/device)?\/?(?:\?([^#]*))?$/.exec(value??'/connect');if(!match)fail('invalid_request');
  const query=new URLSearchParams(match[2]);if([...query.keys()].some(k=>k!=='code')||query.getAll('code').length>1)fail('invalid_request');
@@ -110,6 +110,10 @@ export async function authRoutes(request:Request,env:Env,url:URL) {
   // Do not consume a library approval until its application account binding
   // has completed; a crash in that gap requires a new explicit approval.
   if(!g.user_id||!g.account_id)return json({status:'pending'});
+  // Account enrollment is not device approval. A waitlisted browser may bind
+  // this request only to report eligibility to its secret-holding native caller.
+  const eligibility=await stmt(env,'SELECT beta FROM accounts WHERE id=?',g.account_id).first<{beta:string}>();
+  if(eligibility?.beta==='waitlist')return json({status:'waitlisted'});
   if(g.response){const saved=JSON.parse(await envelope(env,g.response,true));return json({status:'approved',...await issued(env,g,saved.accessToken,saved.refreshToken)});}
   const result=await tokens(env,g,await call(env,'/oauth2/token',{grant_type:DEVICE_CODE_GRANT_TYPE,client_id:g.client_id,device_code:deviceCode}));
   if('error' in result){if(result.error==='authorization_pending')return json({status:'pending'});if(result.error==='slow_down'||result.status===429)fail('slow_down',429);if(result.status>=500)fail('auth_unavailable',503);return json({status:result.error==='expired_token'?'expired':'rejected'});}
@@ -123,12 +127,18 @@ export async function authRoutes(request:Request,env:Env,url:URL) {
   const d=await stmt(env,'SELECT status FROM auth_device WHERE userCode=?',code).first<{status:string}>();
   return json({scope:g.scope,status:g.expires_at<=Date.now()?'expired':g.revoked_at!==null?'rejected':g.response?'approved':d?.status==='denied'?'rejected':d?.status||'pending',expiresAt:new Date(g.expires_at).toISOString()});
  }
- if(['/v1/device/approve','/v1/device/reject'].includes(p)&&m==='POST') {
+ if(['/v1/device/approve','/v1/device/reject','/v1/device/waitlist'].includes(p)&&m==='POST') {
   const s=await session(request,env);csrf(request,env,s);await rate(env,'approve:'+s.account_id);
   const input=await body(request),{userCode}=input;if(input.encryptionKey!==undefined||typeof userCode!=='string'||!/^[A-F0-9]{12}$/.test(userCode))fail('invalid_request');
   const g=await stmt(env,'SELECT * FROM auth_grants WHERE user_code=?',userCode).first<Grant>();if(!g||g.expires_at<=Date.now())fail('device_unavailable',404);
   if(g.revoked_at!==null)fail('device_unavailable',409);
   if(g.account_id&&g.account_id!==s.account_id)fail('device_unavailable',409);
+  if(p.endsWith('waitlist')) {
+   if(s.beta!=='waitlist'||g.approved_at!==null||g.response)fail('device_unavailable',409);
+   const result=await stmt(env,'UPDATE auth_grants SET account_id=?,user_id=? WHERE id=? AND approved_at IS NULL AND response IS NULL AND revoked_at IS NULL AND (account_id IS NULL OR account_id=?)',s.account_id,s.user_id,g.id,s.account_id).run();
+   if(!result.meta.changes)fail('device_unavailable',409);
+   return json({status:'waitlisted'});
+  }
   if(p.endsWith('approve')&&s.beta!=='active')fail('beta_required',403);
   const collision=()=>stmt(env,'SELECT 1 FROM encryption_keys k JOIN encryption_keys other ON other.grant_id!=k.grant_id JOIN auth_grants g ON g.id=other.grant_id WHERE k.grant_id=? AND (k.recipient=other.recipient OR k.signing=other.signing) AND g.approved_at IS NOT NULL AND (g.account_id!=? OR g.scope!=? OR k.recipient!=other.recipient OR k.signing!=other.signing)',g.id,s.account_id,g.scope).first();
   if(p.endsWith('approve')&&await collision())fail('encryption_key_conflict',409);
