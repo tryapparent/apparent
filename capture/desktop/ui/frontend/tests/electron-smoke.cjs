@@ -339,10 +339,14 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('heading',{name:'Finish your capture.',exact:true})).toBeVisible();
   assert.deepEqual(await page.locator('.native-saved-keys kbd').allTextContents(),['⌃','⌥','⇧','9']);
   assert.equal(await page.locator('.native-control').count(),0);
+  await expect(page.getByRole('button',{name:'Close guide',exact:true})).toBeVisible();
+  assert.equal(await page.locator('.native-exit-detail').count(),0);
   const human=[[20,30],[40,50],[70,60],[90,80]];
   const board={id:'apparent-test-1',strokes:[human],color:[59,121,189]};
   send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:board});
   await expect(page.locator('.native-board')).toBeVisible();
+  const guideColors=await page.getByRole('button',{name:'Close guide',exact:true}).evaluate(el=>{const s=getComputedStyle(el);return [s.color,s.backgroundColor]});
+  assert.notEqual(guideColors[0],guideColors[1],'board guide must have contrasting text and surface');
   assert.equal(await page.locator('.native-coach').count(),0);
   await expect(page.getByRole('status')).toHaveText('Watch this.');
   const beforeGuide=output;
@@ -454,7 +458,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
   assert.equal(await page.locator('.native-setup section > p').count(),0);
   send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:false,platform:'linux',shortcut:'Super+Shift+Copilot',shortcutEditor:{recording:false,externallyManaged:true}});
-  await expect(page.locator('.native-shortcut kbd')).toHaveText('Super+Shift+Copilot');
+  assert.deepEqual(await page.locator('.native-shortcut kbd').allTextContents(),['Super','Shift','Copilot']);
   await expect(page.getByRole('button',{name:'Use Super+Shift+Copilot',exact:true})).toBeInViewport();
   await expect(page.getByRole('button',{name:'Choose another shortcut',exact:true})).toBeInViewport();
   await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeDisabled();

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@apparent/ui/button';
 import icon from '../../../../../../shared/assets/brand/apparent-app-icon.svg';
 import wordmark from '../../../../../../shared/assets/brand/apparent-wordmark.svg';
-import { Whiteboard, type BoardView } from './whiteboard';
-import { recordKeys } from './shortcut-keys';
+import { Whiteboard, type BoardView } from './board/whiteboard';
+import { recordKeys } from './shortcut/keys';
 import frog from '../../../../assets/onboarding/frog.png';
 import './onboarding.css';
 import { GestureGuide } from './gesture-guide';
@@ -78,7 +78,7 @@ export function NativeOnboarding(){
   const trackpadHint=state.practice==='screen-ink';
   const helper=<aside className="native-trackpad-helper" aria-label="Trackpad drawing hint"><div className="native-trackpad-helper-content"><strong>Pressing down on your trackpad?</strong><p>No need. Just hold Shift and glide.</p></div></aside>;
   document.title=state.testInstance?'apparent onboarding preview 9':'apparent setup';
-  if(state.boardView)return <Whiteboard key={state.boardView.id} board={state.boardView} action={value=>action(value)}/>;
+  if(state.boardView)return <Whiteboard key={state.boardView.id} board={state.boardView} closeGuide={()=>action('later')} action={value=>action(value)}/>;
   if(practice){
     const content:Record<string,{title:string;text:string;button?:string;action?:string}>={
       start:{title:'Go again.',text:''},

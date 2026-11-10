@@ -67,6 +67,12 @@ pub(in crate::capture::desktop) struct Board {
 impl Default for Board {fn default()->Self{Self{presentation:None,color:[26,26,26],strokes:Vec::new(),active:None}}}
 
 impl Board {
+    /// End in-flight human ink before restoring a native surface.
+    pub fn detach_presentation(&mut self) -> bool {
+        self.finish();
+        self.presentation.take().is_some()
+    }
+
     /// The current renderer identity is checked by the coordinator before this native input boundary.
     pub fn apply_input(&mut self, value: &serde_json::Value) {
         let point=||serde_json::from_value::<[f32;2]>(value["point"].clone()).ok().filter(|p|p.iter().all(|n|n.is_finite())&&on_paper(*p));
@@ -680,6 +686,19 @@ fn render_paper(strokes: &[Vec<[f32; 2]>], t_ms: u64, color:[u8;3]) -> crate::sh
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detaching_renderer_retains_unfinished_human_ink() {
+        let mut board = Board::default();
+        board.presentation = Some(("current-board".into(), [0.0, 0.0, 720.0, 540.0]));
+        board.start([20.0, 30.0]);
+        board.extend([40.0, 50.0]);
+        assert!(board.detach_presentation());
+        assert!(board.active.is_none());
+        assert_eq!(board.strokes, vec![vec![[20.0, 30.0], [40.0, 50.0]]]);
+        assert!(!board.detach_presentation());
+        assert_eq!(board.strokes.len(), 1);
+    }
 
     #[test]
     fn renderer_input_is_human_only_and_rejects_invalid_points() {

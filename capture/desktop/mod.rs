@@ -1772,7 +1772,7 @@ impl ApparentCoordinator {
                 Effect::None
             }
             Event::Exited => {
-                let board_was_open=self.whiteboard.borrow_mut().presentation.take().is_some();
+                let board_was_open=self.whiteboard.borrow_mut().detach_presentation();
                 if board_was_open && self.is_recording(){let coord=cx.entity();cx.defer(move |cx|whiteboard::open(&coord,cx));}
                 if self.onboarding.as_mut().is_some_and(|session| session.restore_native()) {
                     self.sync_onboarding_editor();
@@ -1808,6 +1808,12 @@ impl ApparentCoordinator {
                     self.open_settings(None);
                 }
                 self.onboarding = None;
+                // Dismissing the guide leaves capture and its human ink usable.
+                let board_was_open = self.whiteboard.borrow_mut().detach_presentation();
+                if board_was_open && self.is_recording() {
+                    let coord = cx.entity();
+                    cx.defer(move |cx| whiteboard::open(&coord, cx));
+                }
             }
             Effect::Relaunch { resume } => {
                 if self.refuse_capture_restart() { return; }

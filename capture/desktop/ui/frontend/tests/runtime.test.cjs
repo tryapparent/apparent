@@ -417,7 +417,7 @@ test('whiteboard bridge admits only finite paper input and copies a minimal comm
  for(const operation of ['end','undo','clear','close'])assert.deepEqual(parseAction({...base,operation}),{action:'board',id:base.id,operation});
 });
 test('saved shortcut keys retain every modifier and a literal plus key',async()=>{
- const {recordKeys}=await import('../src/onboarding/shortcut-keys.ts');
+ const {recordKeys}=await import('../src/onboarding/shortcut/keys.ts');
  assert.deepEqual(recordKeys('⌃⌥⇧⌘A'),['⌃','⌥','⇧','⌘','A']);
  assert.deepEqual(recordKeys('Ctrl + Alt + +'),['Ctrl','Alt','+']);
  assert.deepEqual(recordKeys('Super + Shift + S'),['Super','Shift','S']);

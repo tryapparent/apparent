@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '@apparent/ui/button';
 import './gesture-guide.css';
 
-import { recordKeys } from './shortcut-keys';
+import { recordKeys } from './shortcut/keys';
 
 /** Presentation only: these illustrations never send keys, draw, or advance setup. */
 export function GestureGuide({ kind, shortcut, platform }: {
