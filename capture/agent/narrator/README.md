@@ -160,9 +160,11 @@ model startup. `strace -f -e trace=network` recorded no network syscalls.
 Float inference can vary in its last bits; output WAV hashes need not match
 across separate runs.
 
-**Mac portability remains unverified.** Run provision/build/tests and actual
-synthesis on the intended Mac architecture; inspect `otool -L`, verify upstream
-ONNX Runtime's architecture/minimum-OS compatibility, and decide signing/notarization
-for distributing the separately cached executable. Exercise Python's dir-fd,
-no-follow, hard-link, rename and deadline behavior there. Nothing here proves
-Mac synthesis, app CLI integration, cue fit, video export or GUI behavior.
+Fresh setup and reuse were also verified on Apple-silicon macOS 26.6.2 with
+Node 24.20, Python 3.14 and Rust 1.92: 16 Python tests plus three TypeScript
+contracts, pinned downloads, locked worker build, real synthesis and a second
+readiness check passed. `otool -L` showed only system libraries/frameworks.
+A synthetic cue produced a complete mono PCM16 24 kHz WAV with nonzero signal
+and no saturated samples; it was inspected silently, without listening approval.
+This does not establish older-macOS compatibility, signing/notarization for a
+published worker, app CLI integration, cue fit, video export or GUI behavior.
