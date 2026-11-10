@@ -18,8 +18,6 @@ use super::media::{Crop, Source};
 use crate::capture::engine::runtime::apparent_log;
 use crate::shared::model::{CaptureMode, TargetInfo};
 
-mod screencast_request;
-
 /// A PipeWire stream a compositor is sending, open until dropped.
 pub struct Stream {
     pub node: u32,
@@ -536,7 +534,7 @@ fn validate_source_type(window: bool, actual: Option<ashpd::desktop::screencast:
 /// without asking.
 fn portal_screencast(window: bool, key: &str, stopping: &AtomicBool) -> Result<(Stream, Option<String>)> {
     use ashpd::desktop::PersistMode;
-    use ashpd::desktop::screencast::{Screencast, SourceType};
+    use ashpd::desktop::screencast::{CursorMode, Screencast, SourceType};
 
     let (ready_tx, ready_rx) = flume::bounded::<Result<(u32, OwnedFd, Option<[f64; 4]>, Option<String>, Option<String>, bool)>>(1);
     let (stop_tx, stop_rx) = flume::bounded::<()>(1);
@@ -555,36 +553,45 @@ fn portal_screencast(window: bool, key: &str, stopping: &AtomicBool) -> Result<(
                         } else {
                             SourceType::Monitor
                         };
-                        let selection = screencast_request::PendingRequest::new(&proxy).await?;
-                        selection.until_stopped(
-                            selection.select_sources(&proxy, &session, kind, token.as_deref(),
-                                if window { PersistMode::DoNot } else { PersistMode::ExplicitlyRevoked }),
-                            &stop_rx,
-                        ).await?;
-                        let start = screencast_request::PendingRequest::new(&proxy).await?;
-                        let recording = async {
-                            let streams = start.start(&proxy, &session).await?;
-                            let token = streams.restore_token().map(str::to_owned);
-                            let stream = streams.streams().first().context("Nothing was shared")?;
-                            validate_source_type(window, stream.source_type())?;
-                            let portal_monitor = stream.source_type() == Some(SourceType::Monitor);
-                            if portal_monitor {
-                                apparent_log(format!("Screen sharing monitor metadata: position={:?}, size={:?}", stream.position(), stream.size()));
+                        proxy
+                            .select_sources(
+                                &session,
+                                CursorMode::Embedded,
+                                kind.into(),
+                                false,
+                                token.as_deref(),
+                                // Windows come and go: ask each time for one.
+                                if window {
+                                    PersistMode::DoNot
+                                } else {
+                                    PersistMode::ExplicitlyRevoked
+                                },
+                            )
+                            .await?;
+                        let streams = proxy.start(&session, None).await?.response()?;
+                        let token = streams.restore_token().map(str::to_owned);
+                        let stream = streams.streams().first().context("Nothing was shared")?;
+                        validate_source_type(window, stream.source_type())?;
+                        let portal_monitor = stream.source_type() == Some(SourceType::Monitor);
+                        if portal_monitor {
+                            apparent_log(format!("Screen sharing monitor metadata: position={:?}, size={:?}", stream.position(), stream.size()));
+                        }
+                        let rect = match (stream.position(), stream.size()) {
+                            (Some((x, y)), Some((w, h))) => {
+                                Some([f64::from(x), f64::from(y), f64::from(w), f64::from(h)])
                             }
-                            let rect = match (stream.position(), stream.size()) {
-                                (Some((x, y)), Some((w, h))) => {
-                                    Some([f64::from(x), f64::from(y), f64::from(w), f64::from(h)])
-                                }
-                                _ => None,
-                            };
-                            let node = stream.pipe_wire_node_id();
-                            let mapping_id = stream.mapping_id().map(str::to_owned);
-                            let fd = proxy.open_pipe_wire_remote(&session).await?;
-                            anyhow::Ok((node, fd, rect, mapping_id, token, portal_monitor))
+                            _ => None,
                         };
-                        start.until_stopped(recording, &stop_rx).await
+                        let node = stream.pipe_wire_node_id();
+                        let mapping_id = stream.mapping_id().map(str::to_owned);
+                        let fd = proxy.open_pipe_wire_remote(&session).await?;
+                        anyhow::Ok((node, fd, rect, mapping_id, token, portal_monitor))
                     };
-                    match request.await {
+                    let cancelled = async {
+                        let _ = stop_rx.recv_async().await;
+                        bail!("Screen sharing was cancelled")
+                    };
+                    match futures_lite::future::race(request, cancelled).await {
                         Ok((node, fd, rect, mapping_id, token, portal_monitor)) => anyhow::Ok((proxy, session, node, fd, rect, mapping_id, token, portal_monitor)),
                         Err(error) => {
                             let _ = session.close().await;
