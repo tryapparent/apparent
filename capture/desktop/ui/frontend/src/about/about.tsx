@@ -16,6 +16,7 @@ type Action = { action: string; key?: string; value?: string };
 declare global {
   interface Window {
     apparentAbout: {
+      copyVersion(): Promise<void>;
       read(): Promise<AboutState | undefined>;
       act(action: Action): Promise<void>;
       subscribe(callback: (state: AboutState) => void): () => void;
@@ -25,6 +26,7 @@ declare global {
 }
 export function About() {
   const [state, setState] = useState<AboutState>();
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
     let live = true;
@@ -57,12 +59,20 @@ export function About() {
     {!state && <p role="status">Loading update status…</p>}
     {error && <p role="alert">{error}</p>}
     {state && <>
-      <p>Version {state.version}</p>
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="min-w-0 select-text break-all">Version {state.version}</p>
+        <Button variant="outline" onClick={() => {
+          setError('');
+          void window.apparentAbout.copyVersion().then(() => setCopied(true))
+            .catch(() => setError('Unable to copy version. Please select and copy the version text.'));
+        }}>Copy version</Button>
+        {copied && <span role="status">Version copied</span>}
+      </div>
       <Button variant="outline" className="h-11 text-lg" disabled={!state.updates || state.updateCheck.checking}
         onClick={() => void act({ action: 'check-for-updates' })}>
-        {state.updateCheck.checking ? 'Checking…' : 'Check for Updates…'}
+        {!state.updates ? 'Updates unavailable' : state.updateCheck.checking ? 'Checking…' : 'Check for Updates…'}
       </Button>
-      {!state.updates && <p>{state.linux ? 'Update checks work when Apparent runs from an AppImage.' : 'Updates work in the installed Apparent.app.'}</p>}
+      {!state.updates && <p>{state.linux ? 'This installation cannot check for updates. Run the AppImage to use automatic updates.' : 'This installation cannot check for updates. Run the installed Apparent.app to use automatic updates.'}</p>}
       {state.linux && state.mainUpdates && <p><label>Channel <select value={state.updateChannel}
         onChange={event => void act({ action: 'set', key: 'updateChannel', value: event.target.value })}>
         <option value="stable">Stable releases</option><option value="main">Latest main</option>

@@ -74,7 +74,7 @@ function startControls() {
 
 if(process.argv.includes('--controls')) { startControls(); }
 else if(process.argv.includes('--onboarding')) { require('./onboarding.cjs'); } else {
-const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, nativeTheme } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, nativeTheme, clipboard } = require('electron');
 const os = require('node:os');
 let exitWithReports = code => app.exit(code);
 if (process.env.APPARENT_DESKTOP_REPORTING === '1') {
@@ -185,6 +185,12 @@ app.whenReady().then(() => {
     validate(event, args);
     if (!about || !['website', 'source'].includes(link)) throw new Error('Forbidden link');
     return shell.openExternal(link === 'website' ? 'https://app.tryapparent.com' : 'https://github.com/tryapparent/apparent');
+  });
+  ipcMain.handle('apparent:about-copy-version', (event, ...args) => {
+    validate(event, args);
+    if (!about || typeof aboutState?.version !== 'string' || !aboutState.version)
+      throw new Error('Version unavailable');
+    clipboard.writeText(`Apparent ${aboutState.version}`);
   });
   ipcMain.handle('apparent:about-read', (event, ...args) => {
     validate(event, args);
