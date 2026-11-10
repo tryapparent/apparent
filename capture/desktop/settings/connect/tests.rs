@@ -880,3 +880,23 @@ fn policy_child_deadline_covers_spawn_and_pipes_without_waiting_for_inherited_st
     assert_eq!(result.unwrap_err(), SafeError::Unavailable);
     assert!(elapsed < Duration::from_secs(2));
 }
+
+#[test]
+fn old_controller_policy_reply_cannot_match_a_reopened_controller() {
+    let (mut old, _, old_events, _, _, _) = fixture();
+    old.command(Command::Connect);
+    let old_reply = policy_receipt(&old_events);
+    old.close();
+    let (mut current, _, current_events, logins, _, disables) = fixture();
+    // This Controller has not shown consent. Simulate the shared Session event
+    // sink forwarding the old Connect reply while its forged Allow is pending.
+    current.command(Command::Allow);
+    assert!(current.policy_pending);
+    assert!(!current.receive(old_reply));
+    assert!(current.policy_pending);
+    assert!(!current.policy_state.consent);
+    assert!(!current.receive(policy_receipt(&current_events)));
+    assert!(!current.policy_state.consent);
+    assert!(logins.try_recv().is_err());
+    assert!(disables.try_recv().is_err());
+}

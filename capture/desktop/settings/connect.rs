@@ -274,6 +274,13 @@ enum Outcome {
     Policy,
 }
 
+// Policy receipts can outlive a Settings Session and its Controller. Native
+// event identity must remain unique when a new Controller uses the same sink.
+fn next_policy_generation() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
 pub struct Controller {
     backend: Arc<dyn Backend>,
     emit: Arc<dyn Fn(Event) + Send + Sync>,
@@ -358,7 +365,7 @@ impl Controller {
         }
         self.closed = true;
         self.approval = None;
-        self.policy_generation = self.policy_generation.wrapping_add(1);
+        self.policy_generation = next_policy_generation();
         self.policy_pending = false;
         self.policy_action = None;
         self.policy_state = PolicyState::default();
@@ -375,7 +382,7 @@ impl Controller {
     }
 
     fn invalidate_policy(&mut self) {
-        self.policy_generation = self.policy_generation.wrapping_add(1);
+        self.policy_generation = next_policy_generation();
         self.policy_pending = false;
         self.policy_action = None;
     }
@@ -437,7 +444,7 @@ impl Controller {
         if action == PolicyAction::Connect || action == PolicyAction::Allow {
             self.refresh();
         }
-        self.policy_generation = self.policy_generation.wrapping_add(1);
+        self.policy_generation = next_policy_generation();
         let generation = self.policy_generation;
         self.policy_pending = true;
         self.policy_action = Some(action);

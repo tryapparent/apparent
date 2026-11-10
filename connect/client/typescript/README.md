@@ -1,4 +1,18 @@
-# Connect crypto compatibility primitives
+# Connect client TypeScript migration
+
+The package also owns the bounded Settings consent and destructive-confirmation
+policy in `src/settings-policy.cts`. Its pure transition tests run with the local
+commands below, without Rust or Electron. The Desktop transport build compiles
+the dependency-free worker to `electron/settings-policy.cjs`; the existing native
+Controller consumes that artifact using the packaged Electron Node runtime.
+
+Native snapshots, login, health, credentials, queue/config transactions and
+durable revocation remain authoritative. Once confirmation or an existing
+emergency/retry path admits a destructive command, the native executor starts
+immediately and survives UI close/drop. Remaining Account behavior has not moved.
+This is a real installed-Controller policy consumer, not an installed Electron
+Account route or full client independence. Routing and rollback are documented in
+[Settings](../../../capture/desktop/docs/onboarding-and-settings.md).
 
 This package is the bounded TypeScript prerequisite for migrating Connect crypto callers. It preserves the current Rust `encryption.rs` wire rules:
 
