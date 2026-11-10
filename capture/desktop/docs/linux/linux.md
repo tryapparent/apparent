@@ -87,6 +87,30 @@ Plasma 5 can report successful GlobalShortcuts binding with an empty result. App
 
 ### Multi-output source validation
 
+Default Screen recording already starts a full display directly, without
+Apparent's target picker. It starts only on an explicit recording request and
+ends at Finish/Cancel; it is not continuous background capture. It records one
+selected display, not a union of all outputs. On portal
+backends the desktop can still require its own sharing chooser. Apparent asks
+for a Monitor and supplies a previously granted restore token when available;
+it does not forge a grant, accept a Window instead, or suppress first-use consent.
+
+A separate isolated Omarchy check of the stock NSS-repaired AppImage
+(`02eff52a…be5a5`, unchanged Rust executable from `d4b80fe7b` with repaired
+assets/packaging corresponding to `01fce58d2`) selected the actual portal
+Monitor preview, then switched from a
+synthetic scene to an otherwise empty workspace and back. CLI Start/Stop against
+the running GUI saved the same request's 1280×800, 30 fps, 417-frame movie. Every frame was
+reviewed in chronological contact sheets: scene at frames 0–153, wallpaper at
+154–256, and scene again at 257–416. The Electron capsule stayed pinned and
+visible. Bundle text, original/cropped image sheets and native screenshots were
+inspected. Capture, renderer and packaging inputs are unchanged on `c0ff42b26`;
+this is qualified reuse of that packaged candidate, not a fresh whole-head build.
+This take used CLI Start/Stop against the real GUI and supported extract-and-run
+with a private disk-backed runtime; it does not prove physical Finish/Cancel,
+FUSE launch, audio, real x1 behavior or chooser suppression. See the
+[AppImage fixture constraint](../native-testing.md#appimage-extract-and-run-temporary-storage).
+
 Multi-output ScreenCast portal capture requires a verified output identity.
 Hyprland supplies its connector name; other portal backends currently have no
 validated equivalent in Apparent and are rejected before opening the sharing
