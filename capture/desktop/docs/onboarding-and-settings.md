@@ -99,11 +99,23 @@ renderer JavaScript errors and hangs remain outside this slice's coverage.
 The shared Electron Welcome page offers Google sign-in through Connect's existing
 read-only device approval. It shows the public code and opens only the current
 native-validated approval URL on an explicit click. Cancel, leaving Welcome,
-renderer fallback and closing the session cancel pending enrollment; late replies
+renderer fallback and closing the session stop the local enrollment wait; late replies
 cannot update a successor. Local setup remains available when offline or rejected.
 Sign-in does not enable uploads, grant upload consent or complete tour milestones.
 Connect remains the sole credential/config writer; the native onboarding adapter
 owns worker lifetime, while TypeScript owns account presentation and coach placement.
+
+Browser sign-in is distinct from device admission. When all 20 beta places are
+occupied, Connect keeps later identities waitlisted and refuses read/upload approval.
+The current device poll remains pending, so Desktop must not claim to detect a
+full beta or successful access from browser sign-in. During approval it explains
+this boundary and points to the browser waitlist. **Set up locally** stops the
+local enrollment wait through the existing Continue action and opens the pen picker;
+it does not enable uploads or upload historical captures. Cancel permits a fresh
+sign-in attempt. It does not revoke the server's device request, which can remain
+valid in the browser until expiry. Relaunch reads only Connect's persisted credentials. This is shared
+Electron presentation with unchanged native worker/persistence routing. Rollback
+the account presentation patch alone; native fallback remains local-only.
 
 On Omarchy the shortcut page shows the actual desktop chord before acceptance and
 also offers a custom shortcut. A custom choice uses the existing validated shortcut
