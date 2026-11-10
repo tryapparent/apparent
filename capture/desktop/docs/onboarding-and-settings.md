@@ -1,5 +1,22 @@
 # Onboarding, permissions and Settings
 
+## Opening the app
+
+Opening Apparent from the macOS or Linux app picker opens Settings on About,
+including when the app is already running. The shared Electron Settings shell
+provides the sidebar to General, Recording, Storage, Permissions and Agents;
+panes without an accepted Electron replacement retain their native presentation.
+This launch slice reuses that presentation contract and its existing config writer;
+it does not add a second preferences writer. Missing Electron assets or a failed
+presentation retain the existing native Settings fallback. Removing that fallback
+still requires acceptance of the remaining panes on both platforms.
+
+Setup takes priority on an unfinished installation. Launching during selection,
+recording or processing leaves the capture unchanged and does not queue a recording.
+Explicit recording shortcuts and `app --record` keep their recording behavior.
+A bare terminal invocation still prints help. Linux tray-host loss can still show
+fallback controls when idle; an explicit app launch opens Settings instead.
+
 ## Mac menu bar icon
 
 The Mac status item keeps the approved lowercase “a” at 18 points. It uses Lilac

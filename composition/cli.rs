@@ -642,6 +642,11 @@ fn run_owned_app(record: bool, iphone: bool) -> Result<()> {
         "another Apparent GUI is running; update and restart it first"
     );
     owner.listen()?;
+    // Ordinary application launches reveal Settings after setup has initialized.
+    // Explicit capture launches retain their existing behavior.
+    if !record && !iphone {
+        launch_instance::request_open();
+    }
     hosted::start_worker();
     #[cfg(target_os = "linux")]
     if let Err(error) = linux::update::record_running() {

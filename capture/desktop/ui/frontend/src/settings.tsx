@@ -38,14 +38,14 @@ function Settings() {
   }
   return <div className="settings-shell">
     <aside className="settings-sidebar" aria-label="Settings pages">
-      <div className="settings-brand"><img src={wordmark} alt="Apparent" /><p>CAPTURE SETTINGS</p></div>
+      <div className="settings-brand"><img src={wordmark} alt="Apparent" /><p>SETTINGS</p></div>
       <nav>{panes.map((pane, index) => <button key={pane} type="button" disabled={navigating}
         aria-current={pane === current ? 'page' : undefined}
         onClick={() => { if (pane !== current) void navigate(pane); }}>
         <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{icons[index]}</svg>{pane}</button>)}</nav>
     </aside>
     <main className="settings-content">
-      <header><h1>{current}</h1>{current === 'Storage' && <p>Choose where captures live and how long to keep them.</p>}</header>
+      <header><h1>{current}</h1>{current === 'Storage' ? <p>Choose where captures live and how long to keep them.</p> : <p>Use the sidebar to change your recording preferences, permissions and shortcuts.</p>}</header>
       {error && <p role="alert">{error}</p>}
       {current === 'About' ? <About /> : <Storage settings />}
     </main>

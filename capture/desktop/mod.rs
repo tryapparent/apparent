@@ -6811,6 +6811,8 @@ pub fn run_app(
     workflow::error_reporting::install();
     let app = Application::new().with_assets(crate::capture::desktop::icons::Assets);
     #[cfg(target_os = "macos")]
+    app.on_reopen(|_| crate::capture::desktop::workflow::launch_instance::request_open());
+    #[cfg(target_os = "macos")]
     app.on_open_urls(|urls| {
         for url in urls {
             if crate::capture::desktop::workflow::launch_instance::request_url(&url).is_err() {
@@ -6987,12 +6989,9 @@ pub fn run_app(
                             } else if let Some(session) = coord.onboarding.as_mut() {
                                 session.show();
                             } else {
-                                #[cfg(target_os = "linux")]
-                                if platform::controls_needed() {
-                                    platform::show_controls(cx);
-                                    return;
-                                }
-                                coord.open_settings(None);
+                                // About is the shared installed Electron Settings entry.
+                                // Its sidebar retains access to the native panes until migrated.
+                                coord.open_settings(Some(crate::capture::desktop::settings::Pane::About));
                             }
                         });
                     }
