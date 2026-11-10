@@ -220,7 +220,8 @@ mod tests {
     fn uncertain_publication_has_truthful_readback_without_repeating_the_transaction() {
         let f = Fixture::new(); f.write(&serde_json::json!({})); let intent = f.intent();
         crate::shared::handoff::set_config_directory_sync_failure(true);
-        assert!(commit(&f.path(), &intent, &|| true).is_err());
+        let error = commit(&f.path(), &intent, &|| true).unwrap_err();
+        assert!(error.is::<crate::shared::handoff::ConfigPublicationUncertain>());
         let after = read(&f.path()).unwrap();
         assert_eq!(after[&Key::FirstCaptureCompleted].value, Some(Value::Bool(true)));
         assert_eq!(after[&Key::Seen].value, Some(Value::Bool(true)));

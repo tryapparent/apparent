@@ -1696,8 +1696,8 @@ impl Session {
                         Ok(intent) => match crate::onboarding::native::commit(path, &intent, &allowed) {
                             Ok(()) => Ok(serde_json::json!("saved")),
                             Err(error) if error.is::<crate::onboarding::native::Conflict>() => Ok(serde_json::json!("conflict")),
-                            // Current executor does not distinguish every post-rename failure.
-                            // Readback is required for every unclassified write failure.
+                            // Post-publication uncertainty and unclassified write failures
+                            // both require authoritative readback before an explicit retry.
                             Err(_) => Ok(serde_json::json!("unknown")),
                         },
                         Err(error) => Err(error.into()),
