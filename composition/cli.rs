@@ -191,6 +191,13 @@ enum TuneCommand {
     Rust,
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[derive(Subcommand)]
+enum HermesCommand {
+    /// Start one trusted recording requested by the local Hermes plugin.
+    Record { destination: String },
+}
+
 #[derive(Subcommand)]
 enum Command {
     /// Preview or explicitly submit text-only feedback to Apparent's GitHub repository.
@@ -215,6 +222,12 @@ enum Command {
     /// Open Apparent, or review a token-bound Hermes recording request.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     Launch { url: Option<String> },
+    /// Handle a recording request from the installed, local Hermes plugin.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    Hermes {
+        #[command(subcommand)]
+        command: HermesCommand,
+    },
     /// Explicitly register the Linux URL handler, or inspect the desktop's selected handler.
     #[cfg(target_os = "linux")]
     LaunchHandler {
@@ -698,7 +711,7 @@ fn run_cli(cli: Cli) -> Result<()> {
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Launch { url } => {
             if let Some(token) = url.as_deref().and_then(crate::capture::desktop::workflow::launch_url::hermes_request) {
-                return crate::capture::desktop::workflow::launch_url::open_hermes(token);
+                return crate::capture::desktop::workflow::launch_url::open_hermes(token, false);
             }
             if let Some(url) = url {
                 launch_instance::request_url(&url)?;
@@ -706,6 +719,10 @@ fn run_cli(cli: Cli) -> Result<()> {
                 launch_instance::request_open();
             }
             run_owned_app(false, false)
+        }
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        Command::Hermes { command: HermesCommand::Record { destination } } => {
+            crate::capture::desktop::workflow::launch_url::open_hermes(&destination, true)
         }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Capture { command } => {
@@ -1695,6 +1712,28 @@ fn copy_confirmation(dir: &std::path::Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn hermes_local_record_cli_accepts_only_the_bounded_destination_argument() {
+        for (destination, valid) in [
+            ("0123456789abcdef0123456789abcdef/45000", true),
+            ("0123456789abcdef0123456789abcdef/32768", true),
+            ("0123456789abcdef0123456789abcdef/60999", true),
+            ("0123456789abcdef0123456789abcdef/32767", false),
+            ("0123456789abcdef0123456789abcdef/61000", false),
+            ("0123456789ABCDEF0123456789ABCDEF/45000", false),
+            ("0123456789abcdef0123456789abcdef/45000?callback=evil", false),
+        ] {
+            let parsed = Cli::try_parse_from(["apparent", "hermes", "record", destination]).unwrap();
+            let Some(Command::Hermes { command: HermesCommand::Record { destination: parsed } }) = parsed.command else {
+                panic!("unexpected CLI command");
+            };
+            assert_eq!(crate::capture::desktop::workflow::launch_url::valid_hermes_destination(&parsed), valid, "{destination}");
+        }
+        assert!(Cli::try_parse_from(["apparent", "hermes", "record"]).is_err());
+        assert!(Cli::try_parse_from(["apparent", "hermes", "record", "0123456789abcdef0123456789abcdef/45000", "extra"]).is_err());
+    }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]

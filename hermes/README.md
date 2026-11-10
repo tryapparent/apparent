@@ -1,6 +1,6 @@
 # Apparent for Hermes
 
-Native plugin source candidate, version **0.3.1**. Paste an Apparent recording handoff into
+Native plugin source candidate, version **0.4.0**. Paste an Apparent recording handoff into
 Hermes and press Send. `apparent_inspect` returns the spoken instructions,
 timestamped interaction context and actual contact-sheet pixels together.
 Pass `frame` to read a numbered keyframe when a detail needs closer inspection.
@@ -8,19 +8,16 @@ The bundled `apparent:recordings` skill guides Hermes to inspect the images,
 investigate uncertainty and act under its existing approvals.
 
 The staged package also adds **Record with Apparent** beside the composer.
-Click it, confirm **Record and send when finished** in Apparent, then talk, point
-and draw. Finish submits the recording to the original conversation, starting
-or queueing an agent turn. Switching chats never changes that destination.
-Cancel sends nothing. New unsaved chats are refused. Native confirmation prevents
-an external URL from silently starting capture; normal permissions still apply.
+It starts the local recorder through a dedicated local Hermes helper session,
+including when the selected conversation is on a remote backend. The plugin
+locates the installed `apparent` CLI on macOS/Linux and calls
+`apparent hermes record <request-id>/<port>`. This is a trusted local shell
+invocation; no external URL or URL-handler confirmation is involved. Normal
+Apparent permissions and capture controls still apply.
 
 This is a source candidate for Hermes Desktop on macOS/Linux, not a catalog
-release. Stock 0.23.0 Desktop routing passed with a mock model; separately, a real
-Hermes model read the images from a native Linux recording. The installed macOS
-app and Linux AppImage passed normal URL launch, confirmation, screen consent,
-GUI Finish and signed return on isolated synthetic desktops with the microphone
-disabled. The Mac bundle also retained the original app and window context.
-Fresh onboarding and microphone capture on both platforms remain release gates.
+release. Native direct-recording integration and fresh onboarding remain
+platform acceptance gates.
 
 ## Desktop package and routing
 
@@ -46,39 +43,25 @@ selecting, starting, recording and processing remain occupied. This preflight
 does not replace the native Start request's atomic admission check.
 
 Requires SDK support for `focusedSessionOwner`, `focusedSessionId`,
-`profileRoutes`, `requestProfile`, `retainProfile` and composer actions, plus a full Apparent
-build containing the native bridge. Older SDKs fail before recording. The OS
-must have the installed [Apparent URL handler](../capture/desktop/docs/native-launch.md).
-The plugin never registers handlers or enables `nativeLaunch`.
+`profileRoutes`, `requestProfile`, `retainProfile`, `session.create` and
+`shell.exec`, plus a full Apparent build with the native `hermes record`
+worker. Older SDKs fail before recording. Hermes must expose a local route and
+permit its normal local terminal safety checks.
 
-Stock 0.23.0 refuses custom app schemes through its external-link API despite
-the SDK documentation. For a local conversation, the button therefore uses
-the public session-scoped `shell.exec` API to ask `open` (macOS) or `xdg-open`
-(Linux) to open only the validated Apparent URI. It rechecks the original
-route, runtime and session first. Hermes retains its local-terminal safety
-checks; sandboxed/remote terminals can refuse. No shell settings, handler
-registration or Hermes source are changed. Stock remote connections require
-the existing manual recording-and-paste flow.
-
-The launch URL carries a public random request ID and loopback port, not a signing
-key, gateway credentials or session IDs. Apparent publishes a separate signing key
-in a mode-0600 file inside a mode-0700 user runtime directory. The plugin reads it
-once through the original local session's checked `shell.exec` API; no folder grant
-is needed. The key stays in memory and is removed on normal helper exit. It never
-appears in URL/process arguments, HTTP requests or plugin storage. Authenticated
-state reads, signed responses and a separate authenticated acknowledgement prevent a listener that knows the
-public request ID from forging completion. A bounded local endpoint returns only this
-recording's status
-and saved reference. It cannot control capture or read arbitrary files. It binds
-IPv4 loopback, checks Host/origin/signature and expires after one hour. Keep Hermes
-and the bridge open until handoff completes. Native confirmation is required
-because an external URL does not establish the caller's identity.
+The plugin creates a separate local helper session and pins its route and runtime
+identity. A public random request ID and loopback port correlate the worker; a
+separate signing key stays in the local runtime directory and never enters plugin
+storage or process arguments. Authenticated status and acknowledgement prevent a
+listener that knows the public ID from forging completion. The endpoint is bounded
+to that recording and cannot read arbitrary files.
 
 Hermes retains the exact session, route mapping and gateway instance/profile/epoch,
 checks them again, resumes that exact session on a retained socket, then calls
 `prompt.submit` through that connection. Changed
 runtime identities or mappings fail closed. Missing sessions never fall back
-to titles or new chats. A lost reply gets one retry with the same `input_id` and
+to titles. A new empty draft is submitted only if its fresh-draft identity remains
+unchanged; text typed during recording is preserved and the recording instructions
+are inserted as a block for review and manual Send. A lost reply gets one retry with the same `input_id` and
 text, using admission deduplication. Further failure retains the reference; the
 composer button checks/retries that same handoff. The command palette's
 **Apparent: discard pending handoff** abandons delivery without deleting a recording.
@@ -86,29 +69,34 @@ Reload replays neither Start
 nor a new message identity. Native replay receipts hold only consumed tokens
 and creation times, not media or transcripts.
 
-Remote delivery needs an existing Connect reference. Local paths are refused for
-remote routes; uploads/read grants are never enabled automatically. “Recording
-sent” means gateway admission, not model vision or a finished agent turn.
+For remote destinations, delivery uses only the existing Connect source ID.
+If no Connect ID exists, the local recording remains saved and the plugin reports
+that Connect upload must be enabled by the user in Apparent; the receiving backend
+also needs its normal read approval. The plugin never changes upload consent,
+credentials or configuration. A pending upload ID does not prove the recording is
+ready to watch. “Recording sent” means gateway admission, not model vision or a
+finished agent turn. The prompt asks the receiving agent to use the
+`capture/agent/skills/make-it-apparent` skill and include its playable reply video;
+that skill must be installed in the receiving agent's environment.
 Disabling the plugin removes its control; manual paste remains the fallback.
-Remove the native bridge only after installed plugins no longer consume its URL
-and `capture handoff` contracts.
+The native bridge remains required for authenticated recording status and source
+handoff.
 
 ## Setup and use
 
-Install a compatible full Apparent CLI on the **Hermes backend host** using the
+Install a compatible full Apparent CLI on the **recording computer** using the
 [official agent installation guide](../capture/agent/docs/installation.md).
-The existing app includes that CLI. The recording computer needs the full
-recorder and its normal onboarding; a headless receiving backend needs only
-the CLI and its runtime libraries, without capture permissions. Reuse an
+The recording computer needs the full recorder and its normal onboarding. A
+headless receiving backend needs the plugin's existing agent CLI and runtime
+libraries, without capture permissions. Reuse an
 existing installation. Installing this plugin does not install or launch apps.
 
 For development, copy this directory into the active Hermes profile's
 `plugins/apparent/` directory, run the validation below, enable it with
 `hermes plugins enable apparent`, then start a fresh conversation. Dependencies
 are Python 3.11+, stock Hermes >=0.23.0 and Pillow >=10.2,<14. Pillow 13 is
-supported for Hermes's managed Python 3.14 environment. If the executable is not
-on PATH, set the plugin's `executable` setting to its absolute app CLI path
-through Hermes's plugin settings. No global Apparent settings are rewritten.
+supported for Hermes's managed Python 3.14 environment. The local CLI is resolved
+from PATH, with macOS installed-app discovery as a fallback.
 
 Paste the handoff generated by Apparent. The tool accepts an explicit absolute
 `.apparent` bundle path (also its `apparent.json`) or a lowercase 32-hex Connect

@@ -5,15 +5,31 @@ export function captureCanStart(phase: unknown): boolean {
   return phase === 'idle' || phase === 'completed';
 }
 export const validToken = (s: unknown): boolean => typeof s === 'string' && /^[a-f0-9]{32}$/.test(s);
-export function launchURL(token: string, port: number) {
-  if (!validToken(token) || !Number.isInteger(port) || port < 32768 || port > 60999) throw new Error('Invalid recording request');
-  return `apparent://hermes/${token}/${port}`;
+/** Quote one argument for the POSIX shell used by Hermes shell.exec. */
+export function shellQuote(value: string) { return `'${value.replaceAll("'", "'\\''")}'`; }
+
+/** Resolve the CLI without assuming an account-specific install path. */
+function cliPrefix() {
+  return `case "$(uname -s)" in Darwin|Linux) ;; *) exit 64;; esac\n` +
+    `apparent_bin="$(command -v apparent 2>/dev/null || true)"\n` +
+    `if [ -z "$apparent_bin" ] && [ "$(uname -s)" = Darwin ] && command -v mdfind >/dev/null 2>&1; then ` +
+    `app_path="$(mdfind 'kMDItemFSName == \"Apparent.app\"' | head -n 1)"; ` +
+    `[ -n "$app_path" ] && apparent_bin="$app_path/Contents/MacOS/apparent"; fi\n` +
+    `[ -n "$apparent_bin" ] && [ -x "$apparent_bin" ] || { echo 'Install Apparent CLI on this computer' >&2; exit 127; }\n`;
 }
-// Stock Desktop refuses custom schemes through PluginOs. The public session
-// shell API can ask the local OS to open this one strictly validated URI.
-export function launchCommand(token: string, port: number) {
-  const url = launchURL(token, port);
-  return `case "$(uname -s)" in Darwin) open '${url}';; Linux) xdg-open '${url}';; *) exit 64;; esac`;
+function cliCommand(subcommand: 'hermes record' | 'capture inspect' | 'capture handoff', args: string[]) { return `${cliPrefix()}"$apparent_bin" ${subcommand} ${args.map(shellQuote).join(' ')}`; }
+/** Launch the direct Hermes recording worker using its public request capability. */
+export function recordCommand(token: string, port: number) {
+  if (!validToken(token) || !Number.isInteger(port) || port < 32768 || port > 60999) throw new Error('Invalid recording request');
+  return cliCommand('hermes record', [`${token}/${port}`]);
+}
+export function captureInspectCommand(token: string) {
+  if (!validToken(token)) throw new Error('Invalid capture identity');
+  return cliCommand('capture inspect', [token]);
+}
+export function captureHandoffCommand(token: string) {
+  if (!validToken(token)) throw new Error('Invalid capture identity');
+  return cliCommand('capture handoff', [token]);
 }
 export function keyCommand(token: string) {
   if (!validToken(token)) throw new Error('Invalid recording request');
@@ -24,12 +40,12 @@ export function validSource(s: unknown): s is string {
     (validToken(s) || (s.startsWith('/') && s.endsWith('.apparent')));
 }
 export function submission(destination: Destination, token: string, source: string) {
-  if (!destination.session || !destination.connectionId || !destination.profile || !validToken(token) || !validSource(source)) throw new Error('Invalid recording delivery');
+  if (!destination.connectionId || !destination.profile || !validToken(token) || !validSource(source)) throw new Error('Invalid recording delivery');
   if (!destination.local && !validToken(source)) throw new Error('This recording is local. Enable Connect uploads in Apparent before recording for a remote Hermes backend. Nothing was sent.');
   return { session_id: destination.session, input_id: token,
-    text: `Apparent recording (.apparent): ${source}\nUse apparent_inspect with this exact source to read my spoken instructions and the recording’s images, then act on them.` };
+    text: `Apparent recording (.apparent): ${source}\nUse apparent_inspect with this exact source to read my spoken instructions and the recording’s images, then act on them. Use the make-it-apparent skill for your reply, and include the playable video it produces in this conversation.` };
 }
-export interface Pending { version: 2; token: string; port: number; destination: Destination; runtime: Runtime; created: number; source?: string; sending?: boolean }
+export interface Pending { version: 3; token: string; port: number; destination: Destination; runtime: Runtime; localRoute: { connectionId: string; profile: string; targetProfile: string }; localRuntime: Runtime; helper: string; draftKey?: string; retrySource?: boolean; paused?: boolean; created: number; source?: string; sending?: boolean }
 const hex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('');
 export async function mailboxId(secret: string) {
   if (!validToken(secret)) throw new Error('Invalid mailbox capability');

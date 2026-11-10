@@ -7,6 +7,7 @@ appendFileSync(trace, JSON.stringify(args) + '\n');
 let receipt: { capture_id: string; status: string; source?: string };
 if (args[0] === 'launch') { writeFileSync(file + '.launched', '1'); process.exit(0); }
 if (args[1] === 'state') {
+  if (process.env.APPARENT_SYNTHETIC_OCCUPIED === '1') { console.log('{"state":{"phase":"recording"}}'); process.exit(0); }
   if (process.env.APPARENT_SYNTHETIC_NEEDS_LAUNCH === '1' && !existsSync(file + '.launched')) process.exit(1);
   console.log('{"state":{"phase":"idle"}}'); process.exit(0);
 }

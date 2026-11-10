@@ -113,3 +113,76 @@ for (const needsLaunch of [false, true]) test(`real Electron confirmation/preloa
     if (passed) await rm(job, { recursive: true, force: true }); else console.log(`Failed synthetic bridge evidence: ${job}`);
   }
 });
+
+test('trusted local request records without confirmation, reports saved/occupied state, and refuses replay', { timeout: 45000 }, async () => {
+  const token = randomBytes(16).toString('hex');
+  const job = await mkdtemp(path.join(tmpdir(), 'hermes-trusted-'));
+  const home = path.join(job, 'home'); await mkdir(home, { mode: 0o700 });
+  const runtime = path.join(job, 'runtime'); await mkdir(runtime, { mode: 0o700 });
+  const appData = path.join(job, 'app-data'); await mkdir(appData, { mode: 0o700 });
+  const bootstrap = path.join(job, 'bootstrap.cjs');
+  await build({ entryPoints: [path.join(root, 'src/hermes/testing/bootstrap.cts')], outfile: bootstrap, bundle: true, platform: 'node', format: 'cjs', external: ['electron'] });
+  const keyFile = path.join(process.platform === 'linux' ? runtime : keyDirectory(), 'apparent-hermes', `${token}.key`);
+  const bridgePort = await availablePort();
+  const mailbox = await mailboxId(token);
+  const executable = path.join(root, 'src/hermes/testing/cli.ts');
+  const receipt = path.join(job, 'receipt.json');
+  const trace = path.join(job, 'trace.jsonl');
+  const launch = (port: number, id: string, occupied = false) => electron.launch({ args: [bootstrap, path.join(root, 'dist/hermes-main.cjs'), '--hermes-request', `${id}/${port}`, '--hermes-autostart', '--apparent-executable', executable],
+    env: { ...process.env, HOME: home, APPARENT_SYNTHETIC_APP_DATA: appData, XDG_RUNTIME_DIR: runtime, XDG_CONFIG_HOME: path.join(job, 'config'), APPARENT_SYNTHETIC_RECEIPT: receipt, APPARENT_SYNTHETIC_TRACE: trace, APPARENT_SYNTHETIC_OCCUPIED: occupied ? '1' : '0' } });
+  const waitForState = async (key: string, id: string, port: number, phase: string) => {
+    const url = `http://127.0.0.1:${port}/${id}/state/${await sign(key, `state:${id}`)}`;
+    for (let i = 0; i < 60; i++) {
+      try {
+        const state = await authenticatedState(key, await (await fetch(url, { headers: { Origin: 'null' } })).json());
+        if (state.phase === phase) return state;
+      } catch { /* Mailbox may not have bound yet. */ }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw new Error(`Hermes mailbox did not reach ${phase}`);
+  };
+  let application: Awaited<ReturnType<typeof electron.launch>> | undefined;
+  let passed = false;
+  try {
+    application = await launch(bridgePort, token);
+    const key = await readFile(keyFile, 'utf8');
+    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 0, 'trusted mode must create no status or confirmation window');
+    const state = await waitForState(key, mailbox, bridgePort, 'recording');
+    assert.deepEqual(state, { phase: 'recording' });
+    const startCount = () => readFile(trace, 'utf8').then(text => text.split('\n').filter(Boolean).filter(line => JSON.parse(line)[1] === 'start').length);
+    assert.equal(await startCount(), 1);
+    await writeFile(`${receipt}.finished`, '1');
+    const saved = await waitForState(key, mailbox, bridgePort, 'saved');
+    assert.deepEqual(saved, { phase: 'saved', source: '/synthetic/owned.apparent' });
+    await fetch(`http://127.0.0.1:${bridgePort}/${mailbox}/ack/${await sign(key, `ack:${mailbox}`)}`, { method: 'POST', headers: { Origin: 'null' } });
+    await new Promise<void>(resolve => { if (application!.process().exitCode !== null) resolve(); else application!.process().once('exit', () => resolve()); });
+    await assert.rejects(readFile(keyFile), { code: 'ENOENT' });
+
+    const replayPort = await availablePort();
+    application = await launch(replayPort, token);
+    const replayKey = await readFile(keyFile, 'utf8');
+    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 0);
+    const refused = await waitForState(replayKey, mailbox, replayPort, 'error');
+    assert.deepEqual(refused, { phase: 'error' });
+    assert.equal(await startCount(), 1, 'replayed request must not start another take');
+    await fetch(`http://127.0.0.1:${replayPort}/${mailbox}/ack/${await sign(replayKey, `ack:${mailbox}`)}`, { method: 'POST', headers: { Origin: 'null' } });
+    await application.close(); application = undefined;
+
+    const occupiedToken = randomBytes(16).toString('hex');
+    const occupiedId = await mailboxId(occupiedToken);
+    const occupiedPort = await availablePort();
+    application = await launch(occupiedPort, occupiedToken, true);
+    const occupiedKey = await readFile(path.join(process.platform === 'linux' ? runtime : keyDirectory(), 'apparent-hermes', `${occupiedToken}.key`), 'utf8');
+    assert.deepEqual(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 0);
+    assert.deepEqual(await waitForState(occupiedKey, occupiedId, occupiedPort, 'error'), { phase: 'error', code: 'occupied' });
+    const calls = (await readFile(trace, 'utf8')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    assert.equal(calls.filter(call => call[1] === 'start').length, 1, 'occupied request must not start native capture');
+    await fetch(`http://127.0.0.1:${occupiedPort}/${occupiedId}/ack/${await sign(occupiedKey, `ack:${occupiedId}`)}`, { method: 'POST', headers: { Origin: 'null' } });
+    await application.close(); application = undefined;
+    passed = true;
+  } finally {
+    await application?.close().catch(() => {});
+    await rm(job, { recursive: true, force: true });
+  }
+  assert.ok(passed);
+});
