@@ -143,7 +143,8 @@ class AdmissionTests(unittest.TestCase):
         workflow = (root / '.github/workflows/verification-platform.yml').read_text()
         for job in ('desktop-ui', 'rust'):
             section = re.search(r'^  ' + job + r':\n(.*?)(?=^  [a-z]|\Z)', workflow, re.M | re.S)[1]
-            self.assertIn("if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'", section)
+            self.assertIn("needs.select.outputs.root" if job == "rust" else "needs.select.outputs.desktop", section)
+        self.assertIn("default: ''", workflow)  # Missing plan defaults to full manual verification.
         receipt = workflow.split('  release-ready:\n', 1)[1]
         self.assertIn("github.ref == 'refs/heads/main'", receipt)
         self.assertIn("github.ref == 'refs/heads/t3/onboarding-mac-release-baseline'", receipt)

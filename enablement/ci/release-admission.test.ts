@@ -53,3 +53,15 @@ test('Linux can publish while Mac remains pending', () => {
   assert.ok(admitsCD(active, pending, repo, sha, 'linux'));
   assert.equal(admitsCD(active, pending, repo, sha, 'macos'), false);
 });
+
+test('fresh exact-main owner admission supports targeted execution and authenticated PR reuse', () => {
+  for (const platform of ['linux','macos']) {
+    const marker = {name: platform === 'linux' ? 'Linux verification' : 'Mac verification', status:'completed', conclusion:'success'};
+    const minimal=[...jobs.filter(job=>['contracts','select'].includes(job.name)),marker];
+    assert.equal(admitsCD(run,minimal,repo,sha,platform),true);
+    for(const name of ['contracts','select',marker.name]) {
+      for(const conclusion of ['failure','skipped','cancelled',null]) assert.equal(admitsCD(run,minimal.map(job=>job.name===name?{...job,conclusion}:job),repo,sha,platform),false);
+    }
+    assert.equal(admitsCD({...run,event:'pull_request'},minimal,repo,sha,platform),false);
+  }
+});

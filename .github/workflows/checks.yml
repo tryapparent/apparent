@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 # Main uses commit groups so docs cannot replace pending code verification.
 # PR updates supersede active checks.
@@ -17,23 +18,26 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Full platform verification runs before merge, not again on main pushes.
-  # Publication retains exact-main manual platform receipts.
+  # Main reuses only passed PR suites bound to its identical complete tree.
+  # Missing evidence runs affected suites before exact-main publication admission.
   # PR checkout is GitHub's proposed merge, so these checks cover integration.
   # Draft updates retain cheap feedback without allocating full platform suites.
   linux:
-    needs: [contracts, hermes, select]
+    needs: [contracts, hermes, select, reuse, portable]
     if: >-
-      !cancelled() && needs.contracts.result == 'success' && needs.hermes.result == 'success' &&
-      (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
+      !cancelled() && needs.contracts.result == 'success' && (needs.hermes.result == 'success' || needs.hermes.result == 'skipped') && (needs.portable.result == 'success' || needs.portable.result == 'skipped') &&
+      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
       && (needs.select.result != 'success' || needs.select.outputs.platform != 'false')
+      && needs.reuse.outputs.linux != 'true'
     uses: ./.github/workflows/verification-platform.yml
     with:
       runner: ubuntu-24.04
       release_receipt: false
+      portable: false
+      plan: ${{ needs.select.outputs.plan }}
 
   release-linux:
-    needs: [contracts, hermes, select, linux]
+    needs: [linux-admission]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'tryapparent/apparent'
     permissions:
       contents: write
@@ -42,24 +46,28 @@ jobs:
     with:
       publish_main: true
     secrets:
+      POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
       APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
 
   macos:
     # Share the cheap admission barrier; neither full platform waits for the other.
-    needs: [contracts, hermes, select]
+    needs: [contracts, hermes, select, reuse, portable]
     # Only a successful explicit false can exempt a reviewed ready-PR delta.
     # Renderer-only PRs retain Electron; only their root Rust job is omitted.
     # Failed/unknown selection keeps Mac coverage after the cheap guards pass.
     if: >-
-      !cancelled() && needs.contracts.result == 'success' && needs.hermes.result == 'success' &&
-      (github.event_name == 'pull_request' && github.event.pull_request.draft == false &&
-      (needs.select.result != 'success' || needs.select.outputs.macos != 'false' || needs.select.outputs.mac_rust != 'true'))
+      !cancelled() && needs.contracts.result == 'success' && (needs.hermes.result == 'success' || needs.hermes.result == 'skipped') && (needs.portable.result == 'success' || needs.portable.result == 'skipped') &&
+      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
+      && (needs.select.result != 'success' || needs.select.outputs.macos != 'false' || needs.select.outputs.mac_rust == 'false')
       && (needs.select.result != 'success' || needs.select.outputs.platform != 'false')
+      && needs.reuse.outputs.macos != 'true'
     uses: ./.github/workflows/verification-platform.yml
     with:
       runner: macos-15-intel
       release_receipt: false
-      mac_rust: ${{ !(github.event_name == 'pull_request' && needs.select.result == 'success' && needs.select.outputs.mac_rust == 'false') }}
+      portable: false
+      plan: ${{ needs.select.outputs.mac_plan }}
+      mac_rust: ${{ !(needs.select.result == 'success' && needs.select.outputs.mac_rust == 'false') }}
 
   select:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
@@ -70,6 +78,10 @@ jobs:
       public: ${{ steps.paths.outputs.public }}
       updater: ${{ steps.paths.outputs.updater }}
       platform: ${{ steps.paths.outputs.platform }}
+      plan: ${{ steps.paths.outputs.plan }}
+      mac_plan: ${{ steps.paths.outputs.mac_plan }}
+      hermes: ${{ steps.paths.outputs.hermes }}
+      portable: ${{ steps.paths.outputs.portable }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -83,9 +95,34 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: bun enablement/ci/select.ts
 
+  reuse:
+    needs: select
+    if: always() && !cancelled()
+    runs-on: ubuntu-24.04
+    outputs:
+      linux: ${{ steps.evidence.outputs.linux }}
+      macos: ${{ steps.evidence.outputs.macos }}
+      portable: ${{ steps.evidence.outputs.portable }}
+      hermes: ${{ steps.evidence.outputs.hermes }}
+      hermes_macos: ${{ steps.evidence.outputs.hermes_macos }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - id: evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFICATION_PLAN: ${{ needs.select.outputs.plan }}
+          MAC_VERIFICATION_PLAN: ${{ needs.select.outputs.mac_plan }}
+        run: node --experimental-strip-types enablement/ci/routing/evidence.ts --reuse
+
+
   public:
     needs: select
-    if: needs.select.outputs.public == 'true'
+    if: always() && !cancelled() && (needs.select.result != 'success' || needs.select.outputs.public != 'false')
     uses: ./.github/workflows/stream-public.yml
     secrets:
       APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
@@ -95,8 +132,38 @@ jobs:
     if: github.event_name == 'push' && needs.select.outputs.updater == 'true'
     uses: ./.github/workflows/linux-updater-harness.yml
 
+  portable:
+    needs: [contracts, select, reuse]
+    if: >-
+      !cancelled() && needs.contracts.result == 'success' &&
+      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) &&
+      (needs.select.result != 'success' || needs.select.outputs.portable != 'false') && needs.reuse.outputs.portable != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.10'
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+      - name: Verify affected Connect browser, service and capture drivers once
+        env:
+          VERIFICATION_PLAN: ${{ needs.select.outputs.plan }}
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: node --experimental-strip-types enablement/ci/routing/run.ts --portable
+
   hermes:
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    needs: [select, reuse]
+    if: always() && !cancelled() && (needs.select.result != 'success' || needs.select.outputs.hermes != 'false') && needs.reuse.outputs.hermes != 'true'
     name: Hermes inspection (ubuntu-24.04)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -119,11 +186,11 @@ jobs:
         run: node --experimental-strip-types --test hermes/desktop/*.test.ts capture/desktop/ui/frontend/src/hermes/*.test.ts
 
   hermes-macos:
-    needs: [contracts, hermes, select]
+    needs: [contracts, hermes, select, reuse, portable]
     if: >-
-      !cancelled() && needs.contracts.result == 'success' && needs.hermes.result == 'success' &&
-      (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
-      && (needs.select.result != 'success' || needs.select.outputs.platform != 'false')
+      !cancelled() && needs.contracts.result == 'success' && (needs.hermes.result == 'success' || needs.hermes.result == 'skipped') && (needs.portable.result == 'success' || needs.portable.result == 'skipped') &&
+      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
+      && (needs.select.result != 'success' || needs.select.outputs.hermes != 'false') && needs.reuse.outputs.hermes_macos != 'true'
     name: Hermes inspection (macos-15-intel)
     runs-on: macos-15-intel
     timeout-minutes: 5
@@ -162,7 +229,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.3.10'
-      - run: bun test enablement/ci/select.test.ts
+      - run: bun test enablement/ci/
       - name: Verify theme, push guards, selection and publication admission
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -171,3 +238,65 @@ jobs:
         uses: docker://rhysd/actionlint:1.7.12
         with:
           args: -shellcheck= -pyflakes= .github/workflows/checks.yml .github/workflows/linux-updater-harness.yml .github/workflows/verification.yml .github/workflows/verification-mac.yml .github/workflows/verification-platform.yml .github/workflows/release-linux.yml .github/workflows/release-mac-preview.yml .github/workflows/web-delivery.yml .github/workflows/stream-public.yml
+
+  tree-evidence:
+    needs: [select, contracts, linux, macos, portable, hermes, hermes-macos]
+    if: always() && !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.select.result == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+          VERIFICATION_PLAN: ${{ needs.select.outputs.plan }}
+          MAC_VERIFICATION_PLAN: ${{ needs.select.outputs.mac_plan }}
+        run: node --experimental-strip-types enablement/ci/routing/evidence.ts --write
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-tree-evidence-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/verified-tree.json
+          retention-days: 14
+
+  linux-admission:
+    name: Linux verification
+    needs: [select, contracts, reuse, linux, portable, hermes]
+    if: always() && !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+          CI_REUSE: ${{ toJSON(needs.reuse.outputs) }}
+          VERIFICATION_PLAN: ${{ needs.select.outputs.plan }}
+          MAC_VERIFICATION_PLAN: ${{ needs.select.outputs.mac_plan }}
+          VERIFY_PLATFORM: linux
+        run: node --experimental-strip-types enablement/ci/routing/evidence.ts --admit
+
+  macos-admission:
+    name: Mac verification
+    needs: [select, contracts, reuse, macos, portable, hermes, hermes-macos]
+    if: always() && !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+          CI_REUSE: ${{ toJSON(needs.reuse.outputs) }}
+          VERIFICATION_PLAN: ${{ needs.select.outputs.plan }}
+          MAC_VERIFICATION_PLAN: ${{ needs.select.outputs.mac_plan }}
+          VERIFY_PLATFORM: macos
+        run: node --experimental-strip-types enablement/ci/routing/evidence.ts --admit

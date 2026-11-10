@@ -1,10 +1,12 @@
 # Local verification reuse
 
-Pre-push schedules Rust builds/tests only for a complete pushed delta containing
-`.rs` paths, including deletions and both rename sides. Unavailable history retains
-Rust coverage. Known changes without Rust source skip Cargo and native CLI tests
-that require a rebuilt binary. Workflow changes select tooling contracts rather
-than product suites. Hosted CI and explicit verification keep their own gates.
+Pre-push uses the shared TypeScript consumer map in `ci/routing/consumers.ts`.
+Native manifests, lockfiles, build helpers, embedded assets and Swift/Metal
+adapters retain native checks even without Rust source edits. Public/browser
+changes and ordinary owner prose avoid unrelated native suites. Unknown history,
+inputs and unsafe Git modes/types stay broad. Only proven concurrency-only
+workflow edits select tooling alone; execution-sensitive workflow changes retain
+integration coverage. Hosted and local execution use the same owner facts.
 
 Local selections that need Rust check the existing private temporary-root contract
 before other commands. When Desktop is selected, its locked install, unit tests

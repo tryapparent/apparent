@@ -4,38 +4,22 @@ import {pathToFileURL} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
 import {changedPaths as inputPaths} from './inputs.ts';
 
-// Public's agent-files.ts reads these bodies, not merely links to them.
-// Build inputs cannot use the ordinary-prose exemption.
-const publicMarkdown = new Set([
-  'README.md', 'capture/agent/skills/apparent/SKILL.md',
-  'capture/agent/docs/usage.md', 'capture/desktop/docs/guides/recording.md',
-  'capture/engine/docs/guides/processing.md',
-]);
-
-// Only known prose locations are exempt. Agent instructions and embedded or
-// test/fixture Markdown remain executable inputs, even with a .md extension.
-export function documentationOnlyPath(path: string): boolean {
-  if (!path.endsWith('.md') || publicMarkdown.has(path)) return false;
-  if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)\.md$/i.test(path) ||
-      /(^|\/)(skills?|prompts?|instructions?|tests?|fixtures?|templates?)(\/|$)/i.test(path)) return false;
-  const owners = ['capture/engine', 'capture/desktop', 'capture/agent', 'connect', 'public/site', 'shared', 'enablement'];
-  return path === 'CONTEXT.md' || path === 'VERIFICATION.md' ||
-    path === 'enablement/refactor.md' ||
-    owners.some(owner => path.startsWith(owner + '/docs/') ||
-      ['README', 'CHANGELOG', 'CONTRIBUTING', 'LICENSE'].some(name => path === owner + '/' + name + '.md'));
-}
+import {publicMarkdown, documentationOnlyPath, linuxDrivers, selectedOwners, suitePlan} from './routing/consumers.ts';
+export {documentationOnlyPath} from './routing/consumers.ts';
 
 export function needsPlatform(paths: string[] | null): boolean {
-  return paths === null || paths.length === 0 || paths.some(path => !documentationOnlyPath(path));
+  const plan = suitePlan(paths);
+  return plan.root || plan.engine || plan.desktop || plan.client;
 }
 
 // Preserve main's Public/updater input sets and ordinary-prose exception.
 export function select(paths: string[] | null): {public: boolean; updater: boolean} {
-  if (paths === null) return {public: true, updater: true};
+  if (!paths?.length) return {public: true, updater: true};
   paths = paths.filter(path => !documentationOnlyPath(path));
+  if (!paths.length) return {public: false, updater: false};
   const orchestration = paths.some(path => path === '.github/workflows/checks.yml' || path.startsWith('enablement/ci/'));
   return {
-    public: orchestration || paths.some(path =>
+    public: selectedOwners(paths).includes('public') || orchestration || paths.some(path =>
       publicMarkdown.has(path) ||
       ['public/site/', 'shared/ui/', 'shared/analytics/', 'shared/assets/'].some(prefix => path.startsWith(prefix)) ||
       path === '.github/workflows/stream-public.yml'),
@@ -62,18 +46,12 @@ export const presentationInputs = new Set([
 
 export function requiresMacRust(paths: string[] | null, unsupported: string[] | null): boolean {
   return paths === null || unsupported === null || !paths.length || unsupported.length > 0 ||
-    paths.some(path => !presentationInputs.has(path));
+    paths.filter(path => {const plan = suitePlan([path]); return plan.root || plan.engine || plan.client;}).some(path => !presentationInputs.has(path));
 }
 
 const portal = 'capture/desktop/linux/capture/portal.rs';
 // Audited cfg(linux) leaf adapter; no shared policy or Mac compiler consumer.
 const linuxAdapters = new Set(['capture/desktop/linux/integration/appearance.rs']);
-// Launch-free test drivers, not shipped runtime/package inputs. Keep their
-// build/version watches: selection avoids unrelated PR verification, not stamping.
-const linuxDrivers = new Set([
-  'capture-smoke.py', 'gui-vm.py', 'gui-vm-reaper.py',
-  'test-capture-smoke.py', 'test-gui-vm.py',
-].map(name => 'capture/desktop/scripts/linux/gui/' + name));
 const linuxDoc = 'capture/desktop/docs/linux/linux.md';
 
 export function macDecision(paths: string[] | null, nonModifications: string[] | null = []) {
@@ -81,6 +59,8 @@ export function macDecision(paths: string[] | null, nonModifications: string[] |
   if (!paths.length) return {macos: true, reasons: ['mac:empty-delta']};
   const reasons = paths.map(path => {
     if (nonModifications.includes(path)) return 'mac:unsupported-change:' + path;
+    if (documentationOnlyPath(path)) return 'docs:reviewed-prose:' + path;
+    if (!needsPlatform([path])) return 'owner:portable:' + path;
     if (linuxAdapters.has(path)) return 'linux:reviewed-adapter:' + path;
     if (linuxDrivers.has(path)) return 'linux:reviewed-test-driver:' + path;
     if (portableSettings.has(path)) return 'linux:reviewed-settings:' + path;
@@ -130,7 +110,7 @@ const unsupported = (change: Change) => change.status !== 'M' || change.oldMode 
 
 // Main's prose exception permits regular additions/deletions and both regular
 // rename sides. A symlink, executable or unknown mode is not proven prose.
-const regularProseChange = (change: Change) =>
+const regularFileChange = (change: Change) =>
   (change.status === 'M' && change.oldMode === '100644' && change.newMode === '100644') ||
   (change.status === 'A' && change.oldMode === '000000' && change.newMode === '100644') ||
   (change.status === 'D' && change.oldMode === '100644' && change.newMode === '000000');
@@ -142,22 +122,28 @@ export function changedPaths(base: string, head: string, nonModificationsOnly = 
 export function selectRange(base: string, head: string) {
   const delta = changes(base, head);
   const paths = delta?.map(change => change.path) ?? null;
-  const unsafeProse = delta?.some(change => documentationOnlyPath(change.path) && !regularProseChange(change)) ?? false;
-  const mac = macDecision(paths, delta?.filter(unsupported).map(change => change.path) ?? null);
-  const platform = needsPlatform(paths) || unsafeProse;
-  return {...select(unsafeProse ? null : paths), ...mac, platform,
-    reasons: platform ? mac.reasons : paths!.map(path => 'docs:reviewed-prose:' + path)};
+  const unsafe = delta?.some(change => !regularFileChange(change)) ?? false;
+  const effective = unsafe ? null : paths;
+  const plan = suitePlan(effective);
+  const mac = macDecision(effective, delta?.filter(change => unsupported(change) && needsPlatform([change.path])).map(change => change.path) ?? null);
+  const platform = needsPlatform(effective);
+  return {...select(effective), ...mac, platform, plan,
+    hermes: plan.hermes, portable: plan.browser || plan.service || plan.tools,
+    reasons: mac.reasons};
 }
 
 export function requiresMacRustRange(base: string, head: string): boolean {
   const delta = changes(base, head);
   return requiresMacRust(delta?.map(change => change.path) ?? null,
-    delta?.filter(unsupported).map(change => change.path) ?? null);
+    delta?.filter(change => unsupported(change) && (suitePlan([change.path]).root || suitePlan([change.path]).engine || suitePlan([change.path]).client)).map(change => change.path) ?? null);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const {reasons, ...result} = selectRange(process.env.BASE_SHA ?? '', process.env.GITHUB_SHA ?? '');
+  const {reasons, plan, ...result} = selectRange(process.env.BASE_SHA ?? '', process.env.GITHUB_SHA ?? '');
   const mac_rust = requiresMacRustRange(process.env.BASE_SHA ?? '', process.env.GITHUB_SHA ?? '');
-  console.log(JSON.stringify({...result, mac_rust, reasons}));
-  appendFileSync(process.env.GITHUB_OUTPUT!, Object.entries({...result, mac_rust}).map(([key, value]) => key + '=' + value + '\n').join(''));
+  const macEnabled = result.macos || !mac_rust;
+  const macPlan = {...plan, root: plan.root && mac_rust && macEnabled, engine: plan.engine && mac_rust && macEnabled,
+    desktop: plan.desktop && macEnabled, client: plan.client && macEnabled};
+  console.log(JSON.stringify({...result, mac_rust, plan, mac_plan: macPlan, reasons}));
+  appendFileSync(process.env.GITHUB_OUTPUT!, Object.entries({...result, mac_rust, plan: JSON.stringify(plan), mac_plan: JSON.stringify(macPlan)}).map(([key, value]) => key + '=' + value + '\n').join(''));
 }

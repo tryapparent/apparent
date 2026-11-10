@@ -26,158 +26,70 @@ older client/server source.
 
 ## Continuous delivery
 
-`Continuous delivery` runs automatically on PRs targeting main and main pushes.
-It is the only automatic workflow: one run per PR open/reopen/commit update
-against main, and one per push to main. It validates the theme, selector,
-push-hook, publication-admission contracts and workflow syntax with read-only
-permissions. Public web verification runs as a reusable job when Public/shared
-web inputs change. The updater harness runs as a reusable job on main pushes
-when its inputs change. Changes to the CI orchestrator select both consumers;
-unavailable diff history selects both rather than skipping checks. Git diffs
-include deleted and renamed source paths. There are no PR-edit or verification
-lifecycle triggers. Superseded PR runs coalesce within their PR; main pushes use distinct commit groups so a docs-only push cannot cancel or replace pending verification for an earlier code change.
-Neither reusable consumer publishes on an automatic run.
+`checks.yml` is the only automatic workflow, on PRs targeting main and main
+pushes. PR updates coalesce; main commits have distinct concurrency groups so
+later documentation cannot cancel earlier code verification. Drafts retain cheap
+contracts and relevant Public checks; ready PRs verify the proposed merge tree.
 
-Ordinary documentation-only PR deltas retain cheap contracts but skip Linux/Mac platform suites and Mac Hermes inspection. The selector exempts Markdown in owner `docs/` directories, package READMEs/changelogs and the named repository reference docs. `AGENTS.md`, `SKILL.md`, other agent instructions, skill/prompt/instruction directories, test/fixture/template Markdown, the root README consumed by the ordinary site build, and unclassified Markdown remain verification inputs. Mixed changes, missing history and empty deltas retain full platform coverage. Public/updater selectors ignore only these ordinary prose paths; non-document inputs retain their previous coverage. PR selection uses the complete base-to-merge delta, including deletions and both rename sides. Manual platform workflows still verify the full tree.
+`enablement/ci/routing/consumers.ts` owns consumer facts for hosted selection,
+local pushes and the Python native execution adapter. Ordinary owner prose needs
+contracts only. README and guides read by Public run Public verification; the
+agent skill embedded in the CLI retains native coverage. Public and Connect web
+source do not select Rust or Electron. Shared UI/assets retain their real web,
+service, Desktop and native consumers. Service changes retain client/root API
+integration and run the canonical service build, serial tests and recipient browser.
+Hermes inspection runs on Linux and Mac only for its relevant inputs. Audited
+Linux drivers run launch-free contracts. Unknown inputs/history, empty deltas,
+unsafe modes/types, instructions and execution-sensitive CI retain broad checks.
+Regular additions/deletions and both rename sides retain their owner consumers.
+Native manifests, lockfiles, build helpers, Swift/Metal and embedded assets count
+as native inputs even when no Rust source changes.
 
-Every non-deletion push runs cheap contracts plus the affected owners' local
-suites, selected by `enablement/local-tests/run.ts` over the full merge-base delta.
-Native-prerequisite, timing, CI routing and local-selector regressions run in the
-cheap contracts in CI and locally. Failed selected commands reject the push.
-Use `python3 enablement/verification.py --base <base> --run` for explicit affected
-local checks. Dirty-tree, hidden-index and exact-HEAD push guards remain enforced.
+The complete base-to-merge/push delta produces a suite plan. Platform callers
+consume that plan; they never replace it with an empty-tree comparison. Portable
+Connect web/service/driver checks run once on Linux. Desktop renderer tests run in
+Electron on each selected platform; native root/staged Engine and standalone
+client suites are separately selected. The finite renderer-only Mac Rust
+exemption retains Mac Electron. Ordinary prose cannot undo a Linux exemption.
+Manual platform workflows default to all suites and retain full-tree diagnostics.
+The advisory owner report does not control admission.
 
-Preview selection without executing tests:
-`node --experimental-strip-types enablement/local-tests/run.ts --base origin/main --head HEAD`.
-The hook supplies the merge-base; both rename sides and deletions are included.
-Workflow files select local tooling contracts, including changes to jobs, commands,
-triggers and newly added workflows. They do not select product builds. Hosted
-platform selection and release admission remain independent and unchanged.
-Unknown/shared/root-build inputs, missing history and empty deltas select all
-owners. Root documentation alone runs contracts. Tooling changes additionally
-run directory-width tests; Hermes changes run its inspection suite. Public runs
-its standalone verifier. Connect web runs its full package suite and Public
-composition; client changes also run root integration; service changes include
-client, browser, Public and root consumers. Desktop frontend changes run npm tests,
-synthetic Electron smokes (Xvfb on Linux).
-Capture script changes also load every tracked Python contract file explicitly
-under Desktop/Agent scripts, including nested packaging and hyphenated Linux tests;
-these run before expensive suites except the CLI integration, which follows the
-root rebuild and receives its exact executable through `APPARENT_BIN`. This native
-CLI check runs only when Rust verification is selected. New enablement test filenames are discovered
-automatically. Rust builds/tests run only when the complete pushed delta includes
-a `.rs` path (including deletions and both rename sides), or history is unavailable.
-Known deltas without Rust source changes skip root/Engine and client Cargo commands;
-this includes workflow, TypeScript, docs, manifests and lockfile changes. Explicit
-local verification and hosted CI retain their existing conservative gates. Shared UI
-also selects Desktop and service tests. Package manifests/lockfiles
-select the entire owner, with locked installs and ordinary build prerequisites.
-Missing tools/packages fail rather than silently skip. Use Node 22.23+ and Bun
-1.3.10 for CI routing and selected web/Public packages. Run hook-backed pushes once through
-`t3-build` on Clanker.
+Main first runs fresh cheap contracts and selection. Ready PRs record their actual
+checkout tree, head, run/attempt, plans and job results in the 14-day
+`ci-tree-evidence-<attempt>` Actions artifact. Main can reuse a suite only from the
+merged same-repository PR's completed trusted workflow run, with an identical
+complete Git tree, matching head/run/attempt and sufficient successful suite
+coverage, authenticated against GitHub's actual current-attempt job conclusions.
+The workflow, selector/producer/runner code and package scripts must match the
+trusted main parent; verification-definition changes always run fresh on main.
+The recorded checkout SHA must independently resolve to the identical tree.
+Failed, cancelled, skipped, expired, malformed, missing or inaccessible
+proof is not reusable. A changed merge tree or direct push runs affected suites.
+PRs cannot consume this main-only reuse route. Public artifact verification stays
+fresh; reuse does not copy build artifacts, installed dependencies or native
+binaries. Packaging still builds the exact main SHA and its revision metadata.
 
-This is owner-level selection, not inferred per-file test coverage. It runs the
-canonical automated local suites; platform-only/ignored native scenarios, release
-and publication checks still require their existing explicit procedures. A Linux
-hook cannot certify macOS behavior. The advisory owner-lane report below remains
-separate; it does not control the enforced hook selection.
+Fresh main `Linux verification` / `Mac verification` admission jobs require
+successful contracts/selection plus every affected suite to pass now or have
+validated identical-tree PR evidence. Missing selected coverage fails admission.
+The Linux gate never waits for Mac. After Linux admission succeeds,
+`release-linux.yml` automatically packages both AppImages and publishes the
+existing Linux latest-Main channel. Its exact-SHA/attempt/repository admission,
+stale-main suppression, packaging checks and noncancelling publication lock remain
+required. A later main push cannot cancel an active publication. Mac publication
+and Connect activation remain separately operated; Linux success cannot admit Mac.
+Historical full main CI and existing exact-main manual receipts remain valid.
+Native/product acceptance and current-base integration remain owner obligations.
+A successful draft or aggregate workflow conclusion alone supplies no release proof.
 
-The same workflow calls the full Linux and Mac platform suites only on non-draft PRs (opened, reopened, updated or marked ready for review).
-Public main checks preserve the active run and keep only the newest pending run
-for that ref. The root workflow uses distinct commit groups as described above. PR updates still cancel their
-superseded active run. Manual publication retains its separate noncancelling lock.
-Full Linux and Mac verification and Mac Hermes inspection share the cheap
-contracts, Linux Hermes inspection and selector prerequisites. Once those finish,
-both full platforms can start in parallel; neither waits for the other's results.
-Failed, cancelled or skipped contracts or Linux Hermes inspection prevent their
-allocation. A failed or unavailable selector retains full platform coverage rather
-than silently skipping it; cancelled workflows do not allocate these jobs. All
-applicable platform/native acceptance and publication gates remain required.
-Drafts retain
-inexpensive Linux checks; converting a PR back to draft cancels its
-superseded full run. Each update tests GitHub's proposed merge commit, with
-read-only permissions and no release receipt. These jobs appear directly on the
-PR, so their actual completion is visible without a status reporter or manual
-dispatch. Existing separate manual runs do not substitute for this integrated
-candidate. Publication remains manual and retains its existing admission policy.
-This is a cheap admission barrier, not a global concurrency limit or priority queue.
-Restoring a full `linux` prerequisite on the Mac jobs reinstates the former serial
-platform scheduling. Manual platform diagnostics remain independent.
-
-`Linux verification` and `Mac verification` remain manual diagnostic entrypoints,
-each coalescing superseded runs within its own platform. Both call the same reusable
-`verification-platform.yml`, preserving the full Rust, Engine/client, browser,
-Electron and applicable native checks. Each checks the entire tree, not just the
-latest push delta: changes from a cancelled earlier run cannot escape verification.
-Explicit `workflow_dispatch` on a feature branch runs the same full test jobs.
-Feature dispatch does not emit the main-only `Release verification` receipt and
-cannot authorize publication. Neither workflow has an automatic push trigger.
-Each caller's `verify / Release verification` job is its platform receipt.
-General Mac verification uses `macos-15-intel` so it does not depend on the
-standard Apple Silicon runner pool. The required Xcode/macOS SDK remains selected
-explicitly. Preview publication stays on `macos-latest` for arm64 packaging; Intel
-CI is not Apple Silicon runtime proof. An image change must still pass the same
-checks before Mac publication.
-
-Linux latest-main delivery runs automatically after the main push's Linux and shared
-checks succeed, without depending on Mac jobs. It reuses `release-linux.yml` for both
-AppImage packaging gates and publication to the existing Main update channel.
-PRs and skipped/failed Linux jobs cannot publish. Manual Linux delivery remains
-available; Connect delivery remains manual-only. The admission job reads trusted-main
-code and requires that exact commit's
-successful Linux/shared receipt. Mac preview publication requires both the
-Linux/shared and Mac receipts for the same commit. A queued/failed Mac run cannot
-hold Linux publication; Linux success cannot authorize a Mac release.
-`enablement/release_gate.py --platform linux|macos` validates the exact caller
-workflow, upstream run/attempt, repository, main branch, SHA and every required job.
-Main pushes run cheap contracts, Linux Hermes inspection, selection and the
-applicable Public/updater consumers; they do not repeat full Linux/Mac suites or
-Mac Hermes inspection. Before merging, the owner must verify the ready PR against
-current main, including all applicable CI and native acceptance. GitHub branch
-protection currently does not enforce required checks or up-to-date branches;
-this remains an owner obligation, not a claimed server-enforced gate. Direct
-main pushes receive no automatic full platform proof.
-
-Before Linux/Connect publication, dispatch `Linux verification` on the exact main
-commit and wait for success. Mac publication additionally needs `Mac verification`
-on that same commit. A successful lightweight main run cannot authorize release.
-Historical main-push `Continuous delivery` runs that actually passed the required
-platform jobs remain valid evidence for their exact commits. Admission checks the current attempt's
-shared guards, applicable Hermes inspection and actual platform select, Desktop UI, client and Rust jobs; a
-skipped platform (including a documentation-only run) cannot authorize publication.
-A CD run with pending or failed Mac jobs can still admit Linux when all Linux/shared
-jobs passed; cancelled runs are refused. Existing exact-main manual receipts remain accepted for diagnostics
-and recovery. The onboarding branch exception still requires its manual receipts
-and signed candidate; CD cannot authorize that exception.
-New CD evidence policy lives in `enablement/ci/release-admission.ts`; the Python
-entrypoint retains GitHub API plumbing and the existing manual/onboarding policy.
-PR/feature-branch checks, skipped jobs, failed required jobs, cancelled runs, legacy combined receipts
-and another platform's receipt cannot substitute for the required proof.
-
-Automatic stale candidates are skipped before builds. Every downstream checkout
-and website artifact uses the admitted SHA, including when `workflow_run`'s default
-SHA points at a newer main commit. Publication locks are separate from cancellable
-verification; a new push never cancels publication. Existing service activation,
-schema, consent and native/product acceptance requirements are unchanged.
-
-Manual/tag Linux releases require the same exact Linux/shared receipt; manual Mac
-previews require both receipts. Linux `verify_only` still permits isolated branch
-packaging without publication. Failed required verification leaves that platform's
-last published version available; fix or revert main and verify the next candidate.
-CodeQL managed setup is disabled by Simon's explicit instruction; it is not a
-release gate.
-
-`.github/workflows/stream-public.yml` checks Public on relevant PRs/main pushes
-and publishes only after its own successful web/shared verification during a
-manual main dispatch. It does not require Linux/Rust, Desktop or Connect proof.
-The same-run sealed Public-only artifact, current-main guard, deployment ordering
-and canonical readback protect publication. This is the bounded Public exception
-to full-platform admission; native and Connect gates remain unchanged.
-
-`.github/workflows/web-delivery.yml` retains Connect's existing verification and
-hosted deployment gate, with no Pages publisher. The existing `website-production`
-and `hosted-production` environments and activation variables are retained. This
-policy does not enable a disabled publisher, provision resources or apply migrations.
+Local pushes use the same consumer map and retain mandatory theme, hook, selector,
+prerequisite, timing, workflow and release-admission contracts. Qualified local
+concurrency-only workflow edits retain their existing bounded exception; protected
+main/tag pushes disable it. Node 22.23+ and Bun 1.3.10 are required. Run hook-backed
+pushes through `t3-build` on Clanker. Local reuse receipts cannot admit a release.
+Manual/tag Linux and Mac procedures and the bounded onboarding candidate exception
+retain their existing requirements. No workflow enables Connect or changes provider
+settings, consent, schema or deployment resources.
 
 ## Checks and artifact identity
 
@@ -427,38 +339,12 @@ native evidence, cleanup, 60-minute Rust timeout and release gates are unchanged
 
 ## Portable verification routing
 
-Each platform caller runs portable contracts and the independent Connect web
-artifact/Chromium fixtures in its existing Linux `select` job. Its success is
-a prerequisite of both platform jobs. `--execution portable` runs the theme,
-selector contracts and selected Connect web fixtures; `--execution platform`
-retains push/credential/staging and temporary-filesystem contracts, root and staged Engine Rust suites.
-The ordinary local verifier defaults to `full`, preserving both inventories,
-full-delta selection and unknown-input fallback. No environment variable silently
-changes this split.
-
-Connect Rust/client security, filesystem, credential and staging tests remain on
-both platforms, as do Desktop tests, actual Electron integration, packaging and
-Mac native assertions when Mac verification is selected (see Bounded Linux PR
-verification below). Both platform jobs depend on the successful Linux `select`
-prerequisite; portable failures prevent their allocation. This is once per
-platform caller, not reuse of another workflow's results. Reverting the explicit
-routing and workflow
-placement restores the previous duplicate execution.
-
-The supplied six-hour cohort reports Mac changed-tree median 10:16 (n=32) and
-successful whole-run median 21:50 (n=19); these are mixed profiles/cache states.
-Only the portable fraction plus browser setup is projected to leave Mac runner
-time. No measured whole-run savings or queue reduction is established by local
-routing tests. Linux selection now takes longer before native jobs become
-eligible; candidate timings must assess that latency tradeoff separately.
-The disposable Mac Storage fixture waits for real Storage/Retention read receipts
-before its single Change click. Its TypeScript CI driver separates the owned
-Go-to-Folder shortcut, read-only AX sheet readiness, and one path-entry/Return
-operation. The initial picker and nested Go sheet are distinct readiness phases;
-no mutation, keyboard shortcut or preference write is retried. Existing exact
-PID/window/sheet/control checks, Choose/Cancel/Reset assertions, native consent,
-process cleanup and test deadlines remain required. This is test orchestration,
-not a change to installed Desktop routing or application persistence policy.
+Automatic CI runs affected portable checks once, through `routing/run.ts`, before
+selected native suites. Manual platform callers run the full portable inventory.
+The Python adapter retains root/Engine command execution, resource and temporary
+filesystem safety. TypeScript supplies its owner decisions. Routing tests exercise
+command omission and failure propagation; they do not establish native acceptance
+or measured runtime/cost savings.
 
 ## PR verification evidence
 
@@ -469,128 +355,34 @@ manual triggers. Exact-head verification, independent review, native acceptance
 and publication admission remain required; inspect their workflow evidence
 directly. The retired status is no longer required by branch protection.
 
-## Bounded Linux PR verification
+## Audited platform boundaries
 
-Ready PRs whose complete delta modifies only the five reviewed Settings renderer cards
-(`storage.tsx`, `retention.tsx`, `connect-settings.tsx`, `error-reporting.tsx`,
-`reference.tsx` in `capture/desktop/ui/frontend/src/`), the audited Linux portal source
-`capture/desktop/linux/capture/portal.rs`, and its guide
-`capture/desktop/docs/linux/linux.md` use existing full Linux verification without
-allocating the Mac platform workflow. There is no directory-wide Linux or Rust-extension
-exemption. Other ordinary prose mixed with source does not broaden this exact allowlist.
+`capture/desktop/linux/capture/portal.rs` is reached through Desktop's
+`cfg(target_os = "linux")` module and Linux capture module. The Linux appearance
+adapter has the same OS boundary. Their callers, module declarations, ABI and
+packaging are not exempt. Regular modifications to these reviewed leaves do not
+select Mac native checks. The Linux guide is ordinary prose. The five reviewed
+GUI VM/capture drivers in `routing/consumers.ts` select launch-free contracts,
+not a Mac build. Unknown/additional native inputs and unsupported file types/modes
+retain conservative coverage. Both rename sides always contribute consumers.
 
-The portal is reached through `capture/desktop/mod.rs`'s Linux cfg, then `linux/mod.rs` and
-`linux/capture/mod.rs`. Its media, shortcut and paste consumers are inside Linux modules or
-Engine's Linux adapter. Mac compilation and packaging do not consume this source or guide;
-tracked-file changes affect only the ordinary build revision label on Mac, as with the
-existing Settings exemption. This policy grants no native acceptance to a product change.
+Five Settings TSX cards and `src/style.css` are the finite renderer-only Mac Rust
+exemption. The cards feed Settings; the stylesheet feeds foundation, Settings,
+onboarding, installer, controls and pill. Vite builds their entries and
+`test:electron` executes the actual renderer smokes. `stage-settings.py` stages
+these assets separately from the native binary. Mac Electron remains selected;
+Linux root/bridge verification remains selected. New entrypoints, bridge,
+main/preload, dependencies, packaging and unknown renderer files retain native
+checks. Settings frog PNGs remain native `include_bytes!` inputs. Build-version
+watches remain intact: a revision-label change is not evidence of a new policy
+consumer, and proof reuse never reuses a packaged binary with an old revision.
+Manual full-tree/release callers default to full native execution.
 
-Main retired the feature catalogue, its Rust scanner, Public rendering and guide-heading
-audit in #1115. The selector preserves that retirement and has no metadata-content
-exemption. Reintroduced catalogue paths and other unknown metadata retain Mac and applicable
-Public verification. Portal plus guide now selects `platform=true, macos=false,
-public=false, updater=false`: the guide has no remaining Public build consumer. A guide-only
-change follows the existing ordinary-prose policy.
-
-Public's agent-document builder reads `README.md`, the Apparent Agent `SKILL.md`,
-`capture/agent/docs/usage.md`, `capture/desktop/docs/guides/recording.md` and
-`capture/engine/docs/guides/processing.md`. These bodies retain Public and full platform
-verification rather than the prose exception. This is a build dependency even though the
-Pages package excludes generated agent documents; linked targets are not all body inputs.
-The consumer-bound regression requires review when this literal input set changes.
-
-Hosted selection consumes `inputs.ts`'s shared committed path facts and requires agreement
-with raw Git status and mode facts. It reads the complete current base-to-proposed-merge
-delta, including earlier unverified commits and both rename sides. Empty, missing, shallow
-or divergent history retains platform coverage. The local concurrency-control exception
-never exempts hosted Mac verification.
-
-Only regular, non-executable modifications enter the portal/Settings Mac exemption.
-Additions, deletions, renames, symlinks, type or executable-mode changes and every
-unreviewed source, shared/native-Mac/ABI, build/toolchain/lockfile, packaging or CI input
-retain Mac. Deterministic per-input reasons explain each decision.
-
-The separately landed prose exception accepts ordinary documentation modifications,
-additions, deletions and both rename sides only when committed Git facts prove regular
-non-executable files. Unsupported prose modes or types conservatively select all consumers
-and both platforms. Instructions, skills/prompts, shipped Markdown and unknown paths retain
-their existing coverage. All other Public/updater input sets are unchanged.
-
-Only successful selection with explicit `macos=false` exempts a ready PR's Mac platform
-caller; successful `platform=false` exempts all expensive ready-PR entrypoints. Main pushes
-never allocate those entrypoints. Failed, skipped, missing or unknown selection facts cannot silently exempt
-required jobs. Status-function guards explicitly require contracts and Linux Hermes success
-and reject workflow cancellation. Neither full platform depends on the other's result;
-applicable results remain required for acceptance.
-
-Linux retains its full command inventory, including independent clients, portable contracts
-and actual Electron suites. Mac Hermes retains ordinary admission for source changes. Manual full-tree verification, Mac publication, exact-head/current-base
-review, privacy/cleanup and independent native/client/release admission remain required
-under the existing policy. Selector errors still fail Continuous delivery.
-
-Restore unconditional ready-PR Mac admission to roll back the source exemption; do not
-broaden it without reviewing the new platform boundary. Selector tests establish selection,
-not measured queue/runtime savings. Qualify subsequent real runs by their actual selected
-and executed job inventory.
-
-### Audited Linux PR inputs
-
-Ready PRs may omit the Mac application platform suite for regular-file
-modifications to the exact Linux inputs in `enablement/ci/select.ts`.
-The existing portal/guide and five Settings-card exceptions compose with:
-- `capture/desktop/linux/integration/appearance.rs`: XDG colour-scheme adapter,
-  reached through Desktop's cfg(linux) module; its callers and exports are not exempt.
-- Five files under `capture/desktop/scripts/linux/gui/`: `gui-vm.py`,
-  `gui-vm-reaper.py`, `capture-smoke.py`, `test-gui-vm.py` and
-  `test-capture-smoke.py`. These are isolated VM/guest test drivers and
-  launch-free regression tests, not shipped Mac or AppImage payloads.
-
-Other cfg(linux) adapters, module declarations, packaging/maintenance/updater
-scripts and unaudited VM scenarios retain broad coverage. This is a finite
-consumer audit, not a directory or Rust-extension rule. Additions, deletions,
-renames, mode/type changes, missing/divergent/shallow history and mixed shared,
-build, CI or unknown inputs retain Mac verification. Linux platform tests,
-portable driver regressions, ready-PR Mac verification where selected, Hermes inspection, native
-acceptance and exact-source release admission remain unchanged.
-
-`build.rs::watch_desktop_tooling` still watches these drivers;
-`enablement/build_version.rs` still watches all tracked files for correct
-revision/modified labels. Removing those watches would not establish compile
-independence. Existing validated Swift/Metal reuse remains authoritative.
-This selection changes only hosted PR admission; it claims no warm build reuse
-or measured end-to-end speedup.
-
-### Renderer-only Mac Rust exemption
-
-For ready PRs, regular modifications exclusively to the five Settings cards
-listed above or `capture/desktop/ui/frontend/src/style.css` now retain the
-Mac platform caller and its real Electron build/smoke job, but omit that
-caller's `rust` job. The selector emits `mac_rust=false` only for this finite
-set. Mixed, unknown, added, deleted, renamed, executable or symlink inputs and
-missing/divergent/shallow history keep Rust. A successful explicit false is
-required; failed selection cannot omit it. Linux execution is unchanged.
-
-Consumer audit: the cards are imported by the Settings/foundation renderer;
-the stylesheet is imported by foundation, Settings, onboarding, installer,
-controls and pill renderers. Vite builds those entries; `test:electron` first
-runs the full frontend build, then the actual Electron smoke suites on Mac.
-`stage-settings.py` stages the resulting Vite assets separately from the native
-application. Native presentation launches that package rather than compiling
-these renderer bodies. Root build-version watches still record tracked inputs;
-this exemption does not remove watches or promise cache reuse.
-
-Assets are deliberately not exempt: the About renderer's three Settings frog
-PNGs are also `include_bytes!` inputs in native `settings_window.rs`.
-Shared UI/fonts/brand assets, entrypoints, bridge, main/preload, dependencies,
-build scripts and packaging retain full coverage. Expand the finite set only
-after another consumer audit.
-
-Connect client Rust, Mac Hermes, portable prerequisite checks and all Linux
-jobs remain conservative and still cost runner time. The omitted root/Engine
-job also owns native assertions and packaging integration, so this is strictly
-a renderer-only PR policy, not native acceptance. Main pushes, manual callers,
-release receipts and release admission retain their previous inventory.
-The reusable input defaults to full Rust and cannot omit it outside PRs or
-when a release receipt is requested. No measured runtime/cost savings are
-claimed; no native CI was dispatched for this tooling patch. Roll back by
-removing the `mac_rust` caller override and restoring the previous Mac admission.
+Public's five Markdown body inputs are checked against the actual agent-document
+builder in regression tests. README and guides select Public; the agent skill is
+also embedded by the CLI and retains native coverage. Shared UI/assets preserve
+native consumers. Connect web's five imported Public assets are explicitly listed
+in the shared consumer map. Public-only source and new browser files avoid Rust;
+an unexpected native source in a web owner remains broad. Expand exemptions only
+with a consumer audit and adverse/mixed-delta tests. Selector tests are command
+selection evidence, not measured savings or native product acceptance.

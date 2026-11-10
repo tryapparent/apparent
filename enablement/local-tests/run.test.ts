@@ -6,15 +6,15 @@ import { spawnSync } from 'node:child_process';
 import { select, selection, owners, changedPaths, captureToolTests, commands, contractTests, execute, root } from './run.ts';
 
 test('owner selection retains consumers and unrelated packages stay out', () => {
-  assert.deepEqual(select(['enablement/local-tests/run.ts']), ['tooling']);
+  assert.deepEqual(select(['enablement/local-tests/run.ts']), [...owners]);
   assert.deepEqual(select(['capture/desktop/ui/frontend/src/Settings.tsx']), ['capture', 'desktop']);
   assert.deepEqual(select(['connect/client/src/config.rs']), ['capture', 'client']);
-  assert.deepEqual(select(['shared/ui/src/button.tsx']), ['capture', 'desktop', 'service']);
+  assert.deepEqual(select(['shared/ui/src/button.tsx']), ['capture', 'desktop', 'web', 'service', 'public']);
   assert.deepEqual(select(['public/site/src/App.tsx']), ['public']);
-  assert.deepEqual(select(['connect/web/src/api.ts']), ['web', 'public']);
+  assert.deepEqual(select(['connect/web/src/api.ts']), ['web']);
   assert.deepEqual(select(['hermes/inspect.py']), ['hermes']);
   assert.deepEqual(select(['capture/desktop/scripts/packaging/install-app.sh']), ['capture', 'engine', 'capture-tools']);
-  assert.deepEqual(select(['README.md']), []);
+  assert.deepEqual(select(['README.md']), ['public']);
 });
 
 test('unknown, missing history and empty deltas cannot silently skip coverage', () => {
@@ -24,9 +24,9 @@ test('unknown, missing history and empty deltas cannot silently skip coverage', 
   assert.deepEqual(select(['README.md'], false), [...owners]);
 });
 
-test('all workflow edits are local tooling inputs and only Rust source changes schedule Rust builds', () => {
+test('execution-sensitive workflow edits stay broad; verified non-native plans omit stale CLI work', () => {
   for (const path of ['.github/workflows/checks.yml', '.github/workflows/release-linux.yml',
-    '.github/workflows/new-workflow.yml']) assert.deepEqual(select([path]), ['tooling']);
+    '.github/workflows/new-workflow.yml']) assert.deepEqual(select([path]), [...owners]);
   const nonRust = commands([...owners], 'base', 'head', 'linux', false);
   assert.ok(!nonRust.some(command => command.argv.includes('cargo') || command.argv.includes('--run')));
   assert.ok(!nonRust.some(command => command.env?.APPARENT_BIN), 'no stale native binary acceptance');
@@ -158,7 +158,7 @@ test('committed concurrency-only workflow edits select contracts rather than pro
     ['python3', 'enablement/verification.py', '--base', base, '--head', 'HEAD', '--pr'],
     ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'],
   ]);
-  assert.deepEqual(selection(base, 'HEAD', dir, true).selected, ['tooling']);
+  assert.deepEqual(selection(base, 'HEAD', dir, true).selected, [...owners]);
   // A later safe workflow/docs commit cannot mask an earlier build change.
   writeFileSync(join(dir, 'Cargo.lock'), 'changed build graph');
   git('add', '.'); git('commit', '-qm', 'build input');
@@ -334,13 +334,15 @@ test('installed hook proves control-only selection, mandatory commands, failure 
     const protectedPush = push(ref, '7'); assert.notEqual(protectedPush.status, 0);
     assert.match(protectedPush.stdout, /"workflowControls":\[\]/);
     const result = JSON.parse(protectedPush.stdout.trim());
-    assert.deepEqual(result.selected, ['tooling']);
+    assert.deepEqual(result.selected, [...owners]);
   }
   assert.equal(readFileSync(join(dir, '.git/config'), 'utf8'), config);
   assert.deepEqual(readFileSync(join(dir, '.git/index')), index);
 }));
 
 function copyInputHelpers(dir: string) {
+  mkdirSync(join(dir, 'enablement/ci/routing'), {recursive: true});
+  copyFileSync(join(root, 'enablement/ci/routing/consumers.ts'), join(dir, 'enablement/ci/routing/consumers.ts'));
   for (const name of ['service.ts', 'receipt.ts'])
     copyFileSync(join(root, 'enablement/local-tests', name), join(dir, 'enablement/local-tests', name));
   mkdirSync(join(dir, 'enablement/ci'), {recursive: true});

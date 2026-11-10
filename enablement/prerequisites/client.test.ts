@@ -34,14 +34,14 @@ test('client runs independently on both platforms with isolated cache and unchan
   assert.match(client, /^    needs: select$/m);
   // Client remains unconditional for ready PRs even when renderer-only root Rust is omitted.
   assert.equal(client.match(/^    if: (.+)$/m)?.[1],
-    "github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)");
+    "needs.select.outputs.client == 'true'");
   assert.match(client, /toolchain: \$\{\{ runner\.os == 'macOS' && '1\.99\.1' \|\| 'stable' \}\}/);
   assert.ok(client.indexOf('uses: ./.github/actions/mac-rust-cache') < client.indexOf('uses: Swatinem/rust-cache'));
   assert.match(client, /key: connect-client\n          workspaces: connect\/client -> target/);
   assert.doesNotMatch(client, /cache-on-failure:|continue-on-error:|setup-chrome|MetalToolchain/);
   assert.match(job('rust'), /\. -> target\n            capture\/engine -> target\n            connect\/client -> target/);
   assert.doesNotMatch(job('rust'), /--manifest-path connect\/client\/Cargo.toml/);
-  assert.match(job('select'), /--execution portable/);
+  assert.match(job('select'), /routing\/run\.ts --portable/);
   assert.match(job('release-ready'), /needs: \[select, desktop-ui, connect-client, rust\]/);
 });
 test('the real client shell retains build, test compilation/execution, flags and private cleanup', t => {

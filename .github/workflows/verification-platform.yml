@@ -3,6 +3,14 @@ name: Platform verification
 on:
   workflow_call:
     inputs:
+      plan:
+        description: Audited complete PR delta; empty or invalid means full verification
+        type: string
+        default: ''
+      portable:
+        description: Manual callers retain full portable checks; automatic CI runs these once
+        type: boolean
+        default: true
       runner:
         required: true
         type: string
@@ -25,6 +33,8 @@ jobs:
       root: ${{ steps.plan.outputs.root }}
       engine: ${{ steps.plan.outputs.engine }}
       browser: ${{ steps.plan.outputs.browser }}
+      desktop: ${{ steps.plan.outputs.desktop }}
+      client: ${{ steps.plan.outputs.client }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,51 +42,30 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-      - run: node --experimental-strip-types --test enablement/prerequisites/*.test.ts
-      - name: Selector and hook contracts (no native proof)
-        run: |
-          python3 -m unittest discover -s enablement/tests -p 'test_commit_push_checkpoint.py'
-          python3 -m unittest discover -s enablement/tests -p 'test_temp_preflight.py'
-          python3 -m unittest discover -s enablement/tests -p 'test_owner_lanes.py'
-          python3 -m unittest discover -s capture/desktop/scripts/tests/mac -p 'test_*.py'
-          python3 -m unittest discover -s capture/desktop/scripts/packaging -p 'test*.py'
-      - name: Validate workflow syntax and job dependencies
-        uses: docker://rhysd/actionlint:1.7.12
-        with:
-          args: -shellcheck= -pyflakes= .github/workflows/verification.yml .github/workflows/verification-mac.yml .github/workflows/verification-platform.yml .github/workflows/release-linux.yml .github/workflows/release-mac-preview.yml .github/workflows/web-delivery.yml .github/workflows/stream-public.yml
-      - name: Release admission contracts
-        run: python3 -m unittest discover -s enablement/tests -p 'test_release_gate.py'
-      - name: Advisory owner dependency report (does not select execution)
-        run: |
-          python3 enablement/owner_lanes.py --base HEAD^ --json "$RUNNER_TEMP/owner-plan.json" --summary "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: owner-plan-${{ inputs.runner }}
-          path: ${{ runner.temp }}/owner-plan.json
-          if-no-files-found: error
+          node-version: '22.23.0'
+      - id: plan
+        env:
+          VERIFICATION_PLAN: ${{ inputs.plan }}
+        run: node --experimental-strip-types enablement/ci/routing/run.ts --outputs
       - uses: oven-sh/setup-bun@v2
+        if: inputs.portable
         with:
           bun-version: '1.3.10'
       - uses: browser-actions/setup-chrome@v1
+        if: inputs.portable
         id: chrome
-      - id: plan
-        run: |
-          # Full tree: a cancelled earlier main run must not hide its delta.
-          BASE=$(git hash-object -t tree /dev/null)
-          python3 enablement/verification.py --base "${BASE:-unknown}" --github-output "$GITHUB_OUTPUT"
-      - name: Portable contracts and Connect browser fixtures (Linux, no native proof)
+      - name: Manual full portable verification
+        if: inputs.portable
         env:
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
-          TMPDIR: ${{ runner.temp }}
         run: |
-          BASE=$(git hash-object -t tree /dev/null)
-          python3 enablement/verification.py --base "$BASE" --run --online --execution portable
+          python3 enablement/verification.py --base unknown --pr
+          node --experimental-strip-types enablement/ci/routing/run.ts --portable
 
   desktop-ui:
     needs: select
     # Each caller verifies one platform independently.
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
+    if: needs.select.outputs.desktop == 'true'
     name: desktop-ui (${{ inputs.runner }})
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 15
@@ -118,7 +107,7 @@ jobs:
 
   connect-client:
     needs: select
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
+    if: needs.select.outputs.client == 'true'
     name: connect-client (${{ inputs.runner }})
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 20
@@ -141,6 +130,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Prepare the client-owned TypeScript policy for native consumers
+        run: python3 enablement/verification.py --base unknown --prepare-connect-typescript
       - name: Independent Connect client build and tests
         id: client
         shell: bash
@@ -175,7 +166,7 @@ jobs:
 
   rust:
     needs: select
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && (inputs.runner != 'macos-15-intel' || inputs.mac_rust || inputs.release_receipt))
+    if: (needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true') && (inputs.runner != 'macos-15-intel' || inputs.mac_rust || inputs.release_receipt)
     name: rust (${{ inputs.runner }})
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 60
@@ -228,7 +219,7 @@ jobs:
             capture/engine -> target
             connect/client -> target
       - uses: actions/setup-node@v4
-        if: needs.select.outputs.root == 'true' || needs.select.outputs.browser == 'true'
+        if: needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true' || needs.select.outputs.browser == 'true'
         with:
           node-version: '22'
       - name: Timing helper contracts
@@ -356,6 +347,8 @@ jobs:
             APPARENT_CONNECT_TEST_ELECTRON="$electron" \
             node --experimental-strip-types enablement/timing/command.ts bridge-readiness-and-assertions cargo test -j 3 --locked --timings _electron_rust_roundtrip -- --ignored --nocapture
       - name: Execute the same changed-tree checks (not GUI acceptance)
+        env:
+          VERIFICATION_PLAN: ${{ inputs.plan }}
         run: |
           # Engine finalizer proofs reject group-writable cache ancestors.
           verification_tmp="$(mktemp -d "$HOME/.apparent-verification.XXXXXX")"
@@ -370,8 +363,7 @@ jobs:
             exit "$status"
           }
           trap cleanup EXIT
-          BASE=$(git hash-object -t tree /dev/null)
-          python3 enablement/verification.py --base "$BASE" --run --online --execution platform --overlap-root-build
+          node --experimental-strip-types enablement/ci/routing/native.ts
       - name: Retain completed Mac dependency seeds after full verification
         if: runner.os == 'macOS' && (needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true')
         # Swatinem's post action reads this variable. Arm it only after all
