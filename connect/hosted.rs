@@ -165,6 +165,12 @@ pub fn sharing_progress(bundle: &Path) -> String {
     client().sharing_progress(bundle)
 }
 
+fn recovery(error: anyhow::Error) -> anyhow::Error {
+    // Keep the actual refusal visible to humans and CLI consumers on line one.
+    let message = format!("{error}; run apparent connect alternatives for local inspection and authorized transfer options");
+    error.context(message)
+}
+
 pub fn command(command: ConnectCommand) -> Result<()> {
     let client = client();
     let result = (|| match command {
@@ -228,10 +234,10 @@ pub fn command(command: ConnectCommand) -> Result<()> {
             client.process_once()
         }
     })();
-    result.context("Connect did not complete; run apparent connect alternatives for local inspection and authorized transfer options")
+    result.map_err(recovery)
 }
 pub fn fetch(id: &str, out: &Path, wait: u64) -> Result<()> {
-    println!("{}", client().fetch(id, out, wait).context("Connect capture unavailable; run apparent connect alternatives")?.display());
+    println!("{}", client().fetch(id, out, wait).map_err(recovery)?.display());
     Ok(())
 }
 /// Only a bare canonical Connect ID implies a download. Explicit local paths
@@ -241,7 +247,7 @@ pub fn inspect_source(source: &Path) -> Result<PathBuf> {
         return Ok(source.to_path_buf());
     };
     client().fetch(id, &PathBuf::from(format!("./{id}.apparent")), 120)
-        .context("Connect capture unavailable; run apparent connect alternatives. The recording computer retains the local original")
+        .map_err(recovery)
 }
 
 fn inspect_capture_id(source: &Path) -> Option<&str> {

@@ -1511,6 +1511,7 @@ pub fn inspect_cli_failure_scenario(
         let stderr = String::from_utf8_lossy(&output.stderr);
         let public_error = stderr.lines().next().unwrap_or_default();
         assert!(public_error.starts_with("Error: "), "{mode}: {output:?}");
+        assert!(public_error.contains("apparent connect alternatives"), "{mode}: {output:?}");
         if mode != "missing-read" {
             let diagnostic = if mode == "inspect-unauthorized" { "auth" } else { "integrity" };
             assert!(public_error.to_lowercase().contains(diagnostic), "{mode}: {output:?}");
