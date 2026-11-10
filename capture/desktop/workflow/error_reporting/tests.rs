@@ -131,6 +131,39 @@ fn disable_reenable_rotates_consent_and_preserves_unrelated_preferences() {
 }
 
 #[test]
+fn exception_names_identify_each_category_without_changing_fingerprints() {
+    for (failure, expected_type) in [
+        (Failure::ProtectRecording, "recording_storage_failed"),
+        (Failure::AudioStart, "audio_start_failed"),
+        (Failure::ScreenStart, "screen_start_failed"),
+        (Failure::PhoneStart, "phone_start_failed"),
+        (Failure::FinalizeCapture, "capture_finalization_failed"),
+        (Failure::VideoExport, "video_export_failed"),
+        (Failure::ElectronMainException, "electron_main_exception"),
+        (Failure::ElectronMainRejection, "electron_main_rejection"),
+        (Failure::ElectronRendererGone, "electron_renderer_gone"),
+        (Failure::ElectronChildGone, "electron_child_gone"),
+        (Failure::RustPanic, "RustPanic"),
+    ] {
+        let report = Report {
+            failure,
+            file: Some("capture/desktop/mod.rs".into()),
+            line: 42,
+            consent: Consent { generation: "private-generation".into() },
+            delivered: None,
+        };
+        let payload = report.payload("phc_synthetic").unwrap();
+        let properties = &payload["properties"];
+        let code = if expected_type == "RustPanic" { "rust_panic" } else { expected_type };
+        assert_eq!(properties["$exception_list"][0]["type"], expected_type);
+        assert_eq!(properties["$exception_list"][0]["value"], code);
+        assert_eq!(properties["operation"], code);
+        assert_eq!(properties["$exception_fingerprint"], format!("desktop:{code}:capture/desktop/mod.rs:42"));
+        assert!(!payload.to_string().contains("private-generation"));
+    }
+}
+
+#[test]
 fn payload_is_allowlisted_with_no_user_or_error_text() {
     let consent = Consent {
         generation: "private-consent-canary".into(),

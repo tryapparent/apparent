@@ -53,6 +53,11 @@ share URLs or user paths. Each event gets a random identity; person profiles and
 geolocation are disabled. No session replay/usage tracking. The receiving service
 still sees the connection's IP address; transport is not anonymous.
 
+New non-panic exception types use the same static operation code as their value
+(for example `audio_start_failed` or `electron_renderer_gone`), rather than the
+generic `DesktopOperationError`. Panics retain `RustPanic`. Fingerprints are
+unchanged; historical event names are not rewritten.
+
 Reports also carry the full compiled `commit_sha`, `build_modified`,
 `package_version`, `release_version`, `channel`, `environment`, `component`,
 `process` and `diagnostics_schema_version`. Packaging supplies public labels through
