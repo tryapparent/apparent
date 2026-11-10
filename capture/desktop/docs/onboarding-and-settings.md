@@ -167,6 +167,24 @@ the guided capture lesson. Permission-repair windows retain their existing behav
 
 ### Apparent Connect (experiment)
 
+The bounded consent and disable/disconnect confirmation transitions live in
+Connect's headless TypeScript policy worker (`connect/client/typescript/src/settings-policy.cts`).
+The installed native Settings route and its `Controller` remain in place; the
+Controller runs the generated `electron/settings-policy.cjs` with the already
+staged Electron Node runtime. Rust remains authoritative for local snapshots,
+login, health checks, credential/config writes, queue cancellation and durable
+revocation. No other account transitions have moved.
+
+The transport build emits this worker beside `electron/main.cjs`. There is no
+native-policy fallback after worker admission: a missing or failed worker clears
+transient consent/confirmation state and fails closed, leaving recovery actions
+available where the local state permits. Until the packaged Settings app contains
+this artifact and its Electron Node runtime passes installed-route acceptance,
+this migration is not ready to ship. Rollback is reverting the Controller adapter
+and worker build together; installed Settings routing remains unchanged. Remaining
+account-policy migration and native platform acceptance stay with the full Account
+slice.
+
 **General → Connect** appears by default above Launch at login on
 macOS and Linux. Opening it does not sign in, grant upload consent or enable
 uploads. To hide the controls, set `"connectSettings": false` in the existing

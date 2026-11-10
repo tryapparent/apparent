@@ -10,6 +10,7 @@ export type PolicyContext = {
   snapshotAvailable: boolean;
   busy: boolean;
   retryDisable: boolean | null;
+  emergency: boolean;
   closed: boolean;
 };
 export type PolicyEffect = 'allow' | 'disable' | 'disconnect' | null;
@@ -98,13 +99,13 @@ export function transition(state: PolicyState, context: PolicyContext): PolicyRe
       next.confirmation = context.action === 'request-disconnect' ? 'disconnect' : 'disable';
       break;
     case 'disable':
-      if (state.confirmation === 'disable' || context.retryDisable === false) {
+      if (state.confirmation === 'disable' || context.retryDisable === false || context.emergency) {
         next.confirmation = null;
         effect = 'disable';
       }
       break;
     case 'disconnect':
-      if (state.confirmation === 'disconnect' || context.retryDisable === true) {
+      if (state.confirmation === 'disconnect' || context.retryDisable === true || context.emergency) {
         next.confirmation = null;
         effect = 'disconnect';
       }
@@ -122,23 +123,34 @@ export function transition(state: PolicyState, context: PolicyContext): PolicyRe
 // The native adapter sends one bounded JSON request per child. No paths,
 // credentials, raw errors or browser URLs are accepted by this worker.
 if (require.main === module) {
-  let input = '';
-  process.stdin.setEncoding('utf8');
-  process.stdin.on('data', chunk => {
-    input += chunk;
-    if (Buffer.byteLength(input) > 4096) process.exitCode = 2;
+  const chunks: Buffer[] = [];
+  let inputLength = 0;
+  let invalid = false;
+  process.stdin.on('data', (chunk: Buffer) => {
+    if (invalid) return;
+    if (chunk.byteLength > 4096 - inputLength) {
+      invalid = true;
+      process.exitCode = 2;
+      chunks.length = 0;
+      process.stdin.destroy();
+      return;
+    }
+    inputLength += chunk.byteLength;
+    chunks.push(chunk);
   });
+  process.stdin.on('error', () => { invalid = true; process.exitCode = 2; });
   process.stdin.on('end', () => {
+    if (invalid) return;
     try {
-      const request = JSON.parse(input) as { state: PolicyState; context: PolicyContext };
+      const request = JSON.parse(Buffer.concat(chunks, inputLength).toString('utf8')) as { state: PolicyState; context: PolicyContext };
       const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
       const exact = (value: Record<string, unknown>, keys: string[]) => Object.keys(value).sort().join(',') === [...keys].sort().join(',');
       if (!object(request) || !exact(request, ['state', 'context']) ||
           !object(request.state) || !exact(request.state, ['consent', 'confirmation']) ||
-          !object(request.context) || !exact(request.context, ['action', 'snapshotAvailable', 'busy', 'retryDisable', 'closed']) ||
+          !object(request.context) || !exact(request.context, ['action', 'snapshotAvailable', 'busy', 'retryDisable', 'emergency', 'closed']) ||
           !['connect', 'allow', 'cancel', 'request-disable', 'request-disconnect', 'disable', 'disconnect'].includes(request.context.action as string) ||
           typeof request.context.snapshotAvailable !== 'boolean' || typeof request.context.busy !== 'boolean' ||
-          typeof request.context.closed !== 'boolean' ||
+          typeof request.context.emergency !== 'boolean' || typeof request.context.closed !== 'boolean' ||
           !(request.context.retryDisable === null || typeof request.context.retryDisable === 'boolean') ||
           typeof request.state.consent !== 'boolean' ||
           !(request.state.confirmation === null || request.state.confirmation === 'disable' || request.state.confirmation === 'disconnect')) {

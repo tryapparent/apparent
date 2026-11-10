@@ -65,7 +65,7 @@ test('packed consumer installs and runs without Rust, compilers or source resolu
     const require=createRequire(import.meta.url);
     const entry=fileURLToPath(import.meta.resolve('@apparent/connect-crypto'));
     const {transition}=require(path.join(path.dirname(entry),'settings-policy.cjs'));
-    const decision=transition({consent:false,confirmation:null},{action:'connect',snapshotAvailable:true,busy:false,retryDisable:null,closed:false});
+    const decision=transition({consent:false,confirmation:null},{action:'connect',snapshotAvailable:true,busy:false,retryDisable:null,emergency:false,closed:false});
     assert.equal(decision.overlay.mode,'consent');
     assert.equal(decision.effect,null);
   `],consumer,env);

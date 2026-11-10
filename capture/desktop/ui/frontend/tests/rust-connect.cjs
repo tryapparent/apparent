@@ -17,6 +17,17 @@ async function until(read, accept, label) {
   throw new Error(`${label}: ${JSON.stringify(last)}`);
 }
 async function cancellation() { return fs.readFile(path.join(state, 'cancellation'), 'utf8').catch(() => null); }
+async function consentView(client) {
+  const end = performance.now() + 5000;
+  let last;
+  while (performance.now() < end) {
+    await client.request('connect');
+    last = await client.request();
+    if (last.view?.buttons.some(button => button.command === 'allow')) return last;
+    await wait(30);
+  }
+  throw new Error(`TypeScript consent transition missing: ${JSON.stringify(last)}`);
+}
 async function revoked(previous) {
   const raw = JSON.parse(await fs.readFile(config, 'utf8'));
   const files = await fs.readdir(state).catch(() => []);
@@ -77,7 +88,7 @@ async function main() {
     assert.equal(calls.length, 0);
     assert.equal(await fs.readFile(config, 'utf8'), preserved);
     for (const ending of ['cancel', 'close']) {
-      const consent = await client.request('connect');
+      const consent = await consentView(client);
       assert.ok(consent.view.buttons.some(button => button.command === 'allow'));
       const beforeNetwork = calls.length;
       await client.request('allow');

@@ -17,7 +17,7 @@ const { transition } = policyModule.exports as typeof import('../src/settings-po
 
 const idle: PolicyState = { consent: false, confirmation: null };
 const context = (action: PolicyContext['action'], extra: Partial<PolicyContext> = {}): PolicyContext => ({
-  action, snapshotAvailable: true, busy: false, retryDisable: null, closed: false, ...extra,
+  action, snapshotAvailable: true, busy: false, retryDisable: null, emergency: false, closed: false, ...extra,
 });
 
 test('forged allow and unavailable local snapshot cannot create upload consent or login intent', () => {
@@ -61,6 +61,13 @@ test('disable and disconnect require the matching explicit confirmation', () => 
   const disconnect = transition(idle, context('request-disconnect'));
   assert.equal(disconnect.overlay.buttons[0]?.command, 'disconnect');
   assert.equal(transition(disconnect.state, context('disconnect')).effect, 'disconnect');
+});
+
+test('visible emergency revocation controls bypass confirmation only with their explicit context', () => {
+  assert.equal(transition(idle, context('disable')).effect, null);
+  assert.equal(transition(idle, context('disconnect')).effect, null);
+  assert.equal(transition(idle, context('disable', { emergency: true })).effect, 'disable');
+  assert.equal(transition(idle, context('disconnect', { emergency: true })).effect, 'disconnect');
 });
 
 test('confirmation cancel clears only the local confirmation', () => {

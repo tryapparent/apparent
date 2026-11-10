@@ -12,7 +12,7 @@ const buildScript = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 test('compiled Settings policy worker is a bounded secret-free one-shot contract', () => {
   const request = {
     state: { consent: false, confirmation: null },
-    context: { action: 'connect', snapshotAvailable: true, busy: false, retryDisable: null, closed: false },
+    context: { action: 'connect', snapshotAvailable: true, busy: false, retryDisable: null, emergency: false, closed: false },
   };
   const child = spawnSync(process.execPath, [worker], {
     input: JSON.stringify(request), encoding: 'utf8', timeout: 2_000,
@@ -33,12 +33,32 @@ test('compiled worker rejects unknown fields instead of accepting an expanded wi
   const child = spawnSync(process.execPath, [worker], {
     input: JSON.stringify({
       state: { consent: false, confirmation: null },
-      context: { action: 'connect', snapshotAvailable: true, busy: false, retryDisable: null, closed: false, token: 'secret' },
+      context: { action: 'connect', snapshotAvailable: true, busy: false, retryDisable: null, emergency: false, closed: false, token: 'secret' },
     }), encoding: 'utf8', timeout: 2_000,
     env: { PATH: process.env.PATH ?? '' },
   });
   assert.equal(child.status, 2);
   assert.equal(child.stdout, '');
+});
+
+test('compiled worker rejects malformed, oversized and wrongly typed frames without output', () => {
+  const invalid = [
+    '{"state":',
+    'x'.repeat(64 * 1024),
+    JSON.stringify({
+      state: { consent: false, confirmation: null },
+      context: { action: 'connect', snapshotAvailable: true, busy: false, retryDisable: null, emergency: 'yes', closed: false },
+    }),
+  ];
+  for (const input of invalid) {
+    const child = spawnSync(process.execPath, [worker], {
+      input, encoding: 'utf8', timeout: 2_000,
+      env: { PATH: process.env.PATH ?? '' },
+    });
+    assert.equal(child.error, undefined);
+    assert.equal(child.status, 2);
+    assert.equal(child.stdout, '');
+  }
 });
 
 test('generated worker remains runnable from the installed Settings electron directory', async t => {
@@ -51,7 +71,7 @@ test('generated worker remains runnable from the installed Settings electron dir
   const child = spawnSync(process.execPath, [workerPath], {
     input: JSON.stringify({
       state: { consent: false, confirmation: null },
-      context: { action: 'request-disconnect', snapshotAvailable: true, busy: false, retryDisable: null, closed: false },
+      context: { action: 'request-disconnect', snapshotAvailable: true, busy: false, retryDisable: null, emergency: false, closed: false },
     }), encoding: 'utf8', timeout: 2_000,
     env: { PATH: process.env.PATH ?? '' },
   });

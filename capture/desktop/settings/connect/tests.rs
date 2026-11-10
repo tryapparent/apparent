@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
@@ -63,6 +65,31 @@ fn recv<T>(rx: &mpsc::Receiver<T>) -> T {
         .expect("controlled worker event")
 }
 
+fn policy_receipt(events: &mpsc::Receiver<Event>) -> Event {
+    let event = recv(events);
+    assert!(
+        event.policy.is_some(),
+        "expected async TypeScript policy receipt"
+    );
+    event
+}
+
+fn policy_failure(generation: u64, action: PolicyAction) -> Event {
+    Event {
+        request: Arc::new(Request {
+            active: AtomicBool::new(true),
+            operation: Operation::Policy,
+            server: String::new(),
+        }),
+        outcome: Outcome::Policy,
+        policy: Some(PolicyEvent {
+            generation,
+            action,
+            result: Err(SafeError::Unavailable),
+        }),
+    }
+}
+
 fn disconnected(server: Option<&str>) -> Snapshot {
     Snapshot {
         server: server.map(str::to_owned),
@@ -117,19 +144,29 @@ fn approval() -> Approval {
     }
 }
 
-fn start(controller: &mut Controller, logins: &mpsc::Receiver<LoginCall>) -> LoginCall {
-    controller.command(Command::Connect);
-    controller.command(Command::Allow);
+fn policy(controller: &mut Controller, events: &mpsc::Receiver<Event>, command: Command) {
+    controller.command(command);
+    let event = policy_receipt(events);
+    assert!(!controller.receive(event));
+}
+
+fn start(
+    controller: &mut Controller,
+    events: &mpsc::Receiver<Event>,
+    logins: &mpsc::Receiver<LoginCall>,
+) -> LoginCall {
+    policy(controller, events, Command::Connect);
+    policy(controller, events, Command::Allow);
     recv(logins)
 }
 
-fn confirm(controller: &mut Controller, command: Command) {
+fn confirm(controller: &mut Controller, events: &mpsc::Receiver<Event>, command: Command) {
     let request = match command {
         Command::Disable => Command::RequestDisable,
         Command::Disconnect => Command::RequestDisconnect,
         _ => panic!("expected a destructive action"),
     };
-    controller.command(request);
+    policy(controller, events, request);
     assert_eq!(
         controller.policy_state.confirmation,
         Some(if command == Command::Disable {
@@ -138,7 +175,7 @@ fn confirm(controller: &mut Controller, command: Command) {
             PolicyConfirmation::Disconnect
         })
     );
-    controller.command(command);
+    policy(controller, events, command);
     assert!(controller.disabling());
 }
 
@@ -147,8 +184,8 @@ fn consent_precedes_network_and_preserves_custom_server() {
     let (mut c, backend, events, logins, probes, disables) = fixture();
     *backend.local.lock().unwrap() = Ok(disconnected(Some("https://custom.example")));
     c.refresh();
-    c.command(Command::Allow); // A forged renderer action cannot skip the explanation.
-    c.command(Command::Connect);
+    policy(&mut c, &events, Command::Allow); // A forged renderer action cannot skip the explanation.
+    policy(&mut c, &events, Command::Connect);
     assert!(logins.try_recv().is_err());
     assert!(probes.try_recv().is_err());
     assert!(
@@ -157,7 +194,7 @@ fn consent_precedes_network_and_preserves_custom_server() {
             .iter()
             .any(|b| b.command == Command::Allow && b.enabled)
     );
-    c.command(Command::Allow);
+    policy(&mut c, &events, Command::Allow);
     let call = recv(&logins);
     assert_eq!(call.server, "https://custom.example");
     call.approve.send(approval()).unwrap();
@@ -179,16 +216,120 @@ fn consent_precedes_network_and_preserves_custom_server() {
 }
 
 #[test]
+fn pending_allow_cancel_invalidates_the_admitted_generation_and_late_receipt() {
+    let (mut c, _backend, events, logins, _, _) = fixture();
+    policy(&mut c, &events, Command::Connect);
+    c.command(Command::Allow);
+    let allow = policy_receipt(&events);
+    assert_eq!(allow.policy.as_ref().unwrap().action, PolicyAction::Allow);
+    let pending_view = c.view();
+    assert!(
+        pending_view
+            .buttons
+            .iter()
+            .any(|b| b.command == Command::Allow && !b.enabled)
+    );
+    assert!(
+        pending_view
+            .buttons
+            .iter()
+            .any(|b| b.command == Command::Cancel && b.enabled)
+    );
+    assert!(
+        pending_view
+            .buttons
+            .iter()
+            .all(|b| b.command == Command::Cancel || !b.enabled)
+    );
+    assert!(
+        pending_view
+            .presentation
+            .buttons
+            .iter()
+            .all(|b| b.command == Command::Cancel || !b.enabled)
+    );
+
+    let generation = c.policy_generation;
+    c.command(Command::Allow); // Forged duplicate admission is inert while pending.
+    assert_eq!(c.policy_generation, generation);
+    assert!(logins.try_recv().is_err());
+    c.command(Command::Cancel);
+    assert!(c.policy_generation > generation);
+    assert_eq!(c.policy_action, Some(PolicyAction::Cancel));
+    assert!(logins.try_recv().is_err());
+    let cancel = policy_receipt(&events);
+    assert_eq!(cancel.policy.as_ref().unwrap().action, PolicyAction::Cancel);
+    assert!(!c.receive(cancel));
+    assert!(!c.receive(allow));
+    assert!(!c.policy_state.consent);
+    assert!(c.policy_overlay.is_none());
+    assert!(logins.try_recv().is_err());
+}
+
+#[test]
+fn pending_connect_close_reopen_ignores_the_old_policy_receipt() {
+    let (mut c, backend, events, logins, _, disables) = fixture();
+    c.command(Command::Connect);
+    let late = policy_receipt(&events);
+    assert_eq!(late.policy.as_ref().unwrap().action, PolicyAction::Connect);
+    c.close();
+    let (reopened_sender, reopened_events) = mpsc::channel();
+    let mut reopened = Controller::new(
+        backend,
+        Arc::new(move |event| reopened_sender.send(event).unwrap()),
+    );
+    assert!(!reopened.receive(late.clone()));
+    assert!(!c.receive(late));
+    assert!(!reopened.policy_state.consent);
+    assert!(logins.try_recv().is_err());
+    assert!(disables.try_recv().is_err());
+    assert!(reopened_events.try_recv().is_err());
+}
+
+#[test]
+fn policy_worker_failure_clears_consent_and_keeps_durable_retry_without_fallback() {
+    let (mut c, _backend, events, logins, _, disables) = fixture();
+    policy(&mut c, &events, Command::Connect);
+    assert!(c.policy_state.consent);
+    c.command(Command::Allow);
+    let late_allow = policy_receipt(&events);
+    let generation = late_allow.policy.as_ref().unwrap().generation;
+    assert!(!c.receive(policy_failure(generation, PolicyAction::Allow)));
+    assert!(c.policy_state == PolicyState::default());
+    assert!(c.policy_overlay.is_none());
+    assert!(logins.try_recv().is_err());
+    assert!(disables.try_recv().is_err());
+    assert!(!c.receive(late_allow));
+    assert!(logins.try_recv().is_err());
+
+    let (mut c, _backend, events, _, _, disables) = fixture();
+    policy(&mut c, &events, Command::RequestDisable);
+    c.command(Command::Disable);
+    let late_disable = policy_receipt(&events);
+    let generation = late_disable.policy.as_ref().unwrap().generation;
+    assert!(!c.receive(policy_failure(generation, PolicyAction::Disable)));
+    assert_eq!(c.retry_disable, Some(false));
+    assert!(
+        c.view()
+            .buttons
+            .iter()
+            .any(|b| b.command == Command::Disable && b.enabled)
+    );
+    assert!(disables.try_recv().is_err());
+    assert!(!c.receive(late_disable));
+}
+
+#[test]
 fn late_a_and_duplicate_completion_cannot_replace_or_authorize_b() {
     let (mut c, backend, events, logins, _, disables) = fixture();
-    let a = start(&mut c, &logins);
+    let a = start(&mut c, &events, &logins);
     a.approve.send(approval()).unwrap();
     let late_approval = recv(&events);
     c.command(Command::Cancel);
     let (_, finish) = recv(&disables);
     finish.send(Ok(())).unwrap();
     assert!(!c.receive(recv(&events)));
-    let b = start(&mut c, &logins);
+    let b = start(&mut c, &events, &logins);
     assert!(!c.receive(late_approval));
     a.finish.send(Ok(())).unwrap();
     assert!(!c.receive(recv(&events)));
@@ -207,7 +348,7 @@ fn late_a_and_duplicate_completion_cannot_replace_or_authorize_b() {
 #[test]
 fn cancelled_b_cannot_authorize_worker_even_after_backend_success() {
     let (mut c, backend, events, logins, _, disables) = fixture();
-    let b = start(&mut c, &logins);
+    let b = start(&mut c, &events, &logins);
     b.approve.send(approval()).unwrap();
     c.receive(recv(&events));
     c.close();
@@ -246,7 +387,7 @@ fn login_requires_authoritative_enabled_state_not_transport_success() {
         }),
     ] {
         let (mut c, backend, events, logins, _, _) = fixture();
-        let call = start(&mut c, &logins);
+        let call = start(&mut c, &events, &logins);
         call.approve.send(approval()).unwrap();
         c.receive(recv(&events));
         *backend.local.lock().unwrap() = local;
@@ -260,10 +401,10 @@ fn login_requires_authoritative_enabled_state_not_transport_success() {
 #[test]
 fn disable_cancels_login_and_blocks_reenable_until_durable_result_even_on_close() {
     let (mut c, backend, events, logins, _, disables) = fixture();
-    let call = start(&mut c, &logins);
+    let call = start(&mut c, &events, &logins);
     call.approve.send(approval()).unwrap();
     c.receive(recv(&events));
-    confirm(&mut c, Command::Disconnect);
+    confirm(&mut c, &events, Command::Disconnect);
     assert!(!(call.allowed)());
     let (logout, finish) = recv(&disables);
     assert!(logout);
@@ -282,11 +423,94 @@ fn disable_cancels_login_and_blocks_reenable_until_durable_result_even_on_close(
 }
 
 #[test]
+fn emergency_disable_during_login_is_direct_and_invalidates_before_policy_receipt() {
+    let (mut c, backend, events, logins, _, disables) = fixture();
+    let call = start(&mut c, &events, &logins);
+    call.approve.send(approval()).unwrap();
+    assert!(!c.receive(recv(&events)));
+    let request = c.request.as_ref().unwrap().clone();
+    assert!(
+        c.view()
+            .presentation
+            .buttons
+            .iter()
+            .any(|b| b.command == Command::Disable && b.enabled)
+    );
+    assert!(
+        !c.view()
+            .presentation
+            .buttons
+            .iter()
+            .any(|b| b.command == Command::RequestDisable)
+    );
+
+    c.command(Command::Disable);
+    assert!(!(request.allowed())());
+    assert!(c.request.is_none());
+    let intent = policy_receipt(&events);
+    assert_eq!(
+        intent.policy.as_ref().unwrap().action,
+        PolicyAction::Disable
+    );
+    assert!(c.policy_state.confirmation.is_none());
+    assert!(!c.receive(intent));
+    let (logout, finish) = recv(&disables);
+    assert!(!logout);
+    call.finish.send(Ok(())).unwrap();
+    assert!(!c.receive(recv(&events)));
+    *backend.local.lock().unwrap() = Ok(disconnected(None));
+    finish.send(Ok(())).unwrap();
+    assert!(!c.receive(recv(&events)));
+}
+
+#[test]
+fn emergency_disconnect_during_probe_is_direct_and_invalidates_before_policy_receipt() {
+    let (mut c, backend, events, _, probes, disables) = fixture();
+    *backend.local.lock().unwrap() = Ok(connected());
+    c.refresh();
+    c.command(Command::Check);
+    let probe = recv(&probes);
+    let request = c.request.as_ref().unwrap().clone();
+    assert!(
+        c.view()
+            .presentation
+            .buttons
+            .iter()
+            .any(|b| b.command == Command::Disconnect && b.enabled)
+    );
+    assert!(
+        !c.view()
+            .presentation
+            .buttons
+            .iter()
+            .any(|b| b.command == Command::RequestDisconnect)
+    );
+
+    c.command(Command::Disconnect);
+    assert!(!(request.allowed())());
+    assert!(c.request.is_none());
+    let intent = policy_receipt(&events);
+    assert_eq!(
+        intent.policy.as_ref().unwrap().action,
+        PolicyAction::Disconnect
+    );
+    assert!(c.policy_state.confirmation.is_none());
+    assert!(!c.receive(intent));
+    let (logout, finish) = recv(&disables);
+    assert!(logout);
+    probe.send(Health::Offline).unwrap();
+    assert!(!c.receive(recv(&events)));
+    *backend.local.lock().unwrap() = Ok(disconnected(None));
+    finish.send(Ok(())).unwrap();
+    assert!(!c.receive(recv(&events)));
+}
+
+#[test]
 fn failed_disable_retains_retry_and_fresh_read_only_status_without_health_flood() {
     let (mut c, backend, events, _, probes, disables) = fixture();
     *backend.local.lock().unwrap() = Ok(connected());
     c.refresh();
-    confirm(&mut c, Command::Disable);
+    confirm(&mut c, &events, Command::Disable);
     let (_, finish) = recv(&disables);
     finish.send(Err(SafeError::LocalState)).unwrap();
     c.receive(recv(&events));
@@ -320,7 +544,7 @@ fn stale_probe_cannot_override_new_login_and_offline_does_not_revoke_consent() {
     c.command(Command::Check);
     let health = recv(&probes);
     c.command(Command::Cancel);
-    let call = start(&mut c, &logins);
+    let call = start(&mut c, &events, &logins);
     health.send(Health::Offline).unwrap();
     assert!(!c.receive(recv(&events)));
     assert_eq!(c.view().status, "Signing in…");
@@ -381,7 +605,7 @@ fn expired_authorization_is_actionable_without_network_or_enabled_upload_claim()
 #[test]
 fn closing_signin_durably_disables_even_when_success_committed_before_receipt() {
     let (mut c, backend, events, logins, _, disables) = fixture();
-    let call = start(&mut c, &logins);
+    let call = start(&mut c, &events, &logins);
     call.approve.send(approval()).unwrap();
     let event = recv(&events);
     assert_eq!(format!("{event:?}"), "ConnectEvent");
@@ -417,12 +641,12 @@ fn reopened_unsettled_revocation_can_be_retried_without_allowing_a_new_login() {
             .iter()
             .any(|button| button.command == Command::Disconnect && button.enabled)
     );
-    c.command(Command::Connect);
-    c.command(Command::Allow);
+    policy(&mut c, &events, Command::Connect);
+    policy(&mut c, &events, Command::Allow);
     assert!(logins.try_recv().is_err());
     // With local state unreadable this is the existing explicit emergency retry
     // action, not a normal connected-account disable request.
-    c.command(Command::Disable);
+    policy(&mut c, &events, Command::Disable);
     let (logout, finish) = recv(&disables);
     assert!(!logout);
     *backend.local.lock().unwrap() = Ok(disconnected(None));
@@ -463,21 +687,21 @@ fn confirmation_and_consent_cancel_are_local_until_explicit_allow_or_revoke() {
     let (mut c, backend, events, logins, probes, disables) = fixture();
     *backend.local.lock().unwrap() = Ok(connected());
     c.refresh();
-    c.command(Command::RequestDisconnect);
+    policy(&mut c, &events, Command::RequestDisconnect);
     let p = c.view().presentation;
     assert_eq!(p.tone, Tone::Warning);
     assert_eq!(p.buttons[0].command, Command::Disconnect);
     assert!(disables.try_recv().is_err());
-    c.command(Command::Cancel);
+    policy(&mut c, &events, Command::Cancel);
     assert_eq!(c.view().presentation.tone, Tone::Success);
-    c.command(Command::Connect);
-    c.command(Command::Cancel);
+    policy(&mut c, &events, Command::Connect);
+    policy(&mut c, &events, Command::Cancel);
     assert!(logins.try_recv().is_err());
     assert!(probes.try_recv().is_err());
     assert!(disables.try_recv().is_err());
     assert_eq!(c.view().presentation.tone, Tone::Success);
-    c.command(Command::RequestDisable);
-    c.command(Command::Disable);
+    policy(&mut c, &events, Command::RequestDisable);
+    policy(&mut c, &events, Command::Disable);
     let (logout, result) = recv(&disables);
     assert!(!logout);
     assert_eq!(c.view().presentation.tone, Tone::Progress);
@@ -544,4 +768,29 @@ fn account_initial_tracks_fresh_identity_without_changing_actions() {
     *backend.local.lock().unwrap() = Ok(disconnected(None));
     c.refresh();
     assert!(c.view().presentation.account_initial.is_none());
+}
+
+#[test]
+#[cfg(unix)]
+fn policy_child_deadline_covers_spawn_and_pipes_without_waiting_for_inherited_stdout() {
+    let root = std::env::temp_dir().join(format!(
+        "apparent-dev-account-policy-child-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir(&root).unwrap();
+    std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let runtime = root.join("hang.sh");
+    std::fs::write(&runtime, "#!/bin/sh\n/bin/sleep 10 &\nwait\n").unwrap();
+    std::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let started = std::time::Instant::now();
+    let blocked_input = vec![b'x'; 4096];
+    let result = run_policy_child(&runtime, std::path::Path::new("/dev/null"), &blocked_input);
+    let elapsed = started.elapsed();
+    std::fs::remove_dir_all(root).unwrap();
+    assert_eq!(result.unwrap_err(), SafeError::Unavailable);
+    assert!(elapsed < Duration::from_secs(2));
 }

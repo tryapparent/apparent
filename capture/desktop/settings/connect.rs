@@ -125,6 +125,7 @@ struct PolicyContext {
     snapshot_available: bool,
     busy: bool,
     retry_disable: Option<bool>,
+    emergency: bool,
     closed: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -254,6 +255,7 @@ pub struct Event {
 #[derive(Clone)]
 struct PolicyEvent {
     generation: u64,
+    action: PolicyAction,
     result: Result<PolicyResult, SafeError>,
 }
 
@@ -283,6 +285,7 @@ pub struct Controller {
     policy_overlay: Option<PolicyOverlay>,
     policy_generation: u64,
     policy_pending: bool,
+    policy_action: Option<PolicyAction>,
     approval: Option<Approval>,
     request: Option<Arc<Request>>,
     closed: bool,
@@ -303,6 +306,7 @@ impl Controller {
             policy_overlay: None,
             policy_generation: 0,
             policy_pending: false,
+            policy_action: None,
             approval: None,
             request: None,
             closed: false,
@@ -356,6 +360,7 @@ impl Controller {
         self.approval = None;
         self.policy_generation = self.policy_generation.wrapping_add(1);
         self.policy_pending = false;
+        self.policy_action = None;
         self.policy_state = PolicyState::default();
         self.policy_overlay = None;
         if !self.disabling() {
@@ -367,6 +372,18 @@ impl Controller {
         self.request
             .as_ref()
             .is_some_and(|r| matches!(r.operation, Operation::Disable { .. }))
+    }
+
+    fn invalidate_policy(&mut self) {
+        self.policy_generation = self.policy_generation.wrapping_add(1);
+        self.policy_pending = false;
+        self.policy_action = None;
+    }
+
+    fn emergency_operation(&self) -> bool {
+        self.request
+            .as_ref()
+            .is_some_and(|request| matches!(request.operation, Operation::Login | Operation::Probe))
     }
 
     fn start(&mut self, operation: Operation, server: String) {
@@ -410,7 +427,7 @@ impl Controller {
         });
     }
 
-    fn policy(&mut self, action: PolicyAction) {
+    fn policy(&mut self, action: PolicyAction, emergency: bool) {
         if self.closed || self.policy_pending || self.disabling() {
             return;
         }
@@ -423,75 +440,121 @@ impl Controller {
         self.policy_generation = self.policy_generation.wrapping_add(1);
         let generation = self.policy_generation;
         self.policy_pending = true;
+        self.policy_action = Some(action);
         let snapshot_available = self.snapshot.is_some();
-        let retry_disable = self.retry_disable.or_else(|| {
-            (!snapshot_available
-                && matches!(action, PolicyAction::Disable | PolicyAction::Disconnect))
-            .then_some(action == PolicyAction::Disconnect)
-        });
         let input = PolicyEnvelope {
             state: self.policy_state.clone(),
             context: PolicyContext {
                 action,
                 snapshot_available,
                 busy: self.disabling(),
-                retry_disable,
+                retry_disable: self.retry_disable,
+                emergency,
                 closed: self.closed,
             },
         };
-        #[cfg(test)]
-        {
+        let emit = self.emit.clone();
+        std::thread::spawn(move || {
             let result = run_policy_worker(input);
             let request = Arc::new(Request {
                 active: AtomicBool::new(true),
                 operation: Operation::Policy,
                 server: String::new(),
             });
-            self.receive(Event {
+            emit(Event {
                 request,
                 outcome: Outcome::Policy,
-                policy: Some(PolicyEvent { generation, result }),
+                policy: Some(PolicyEvent {
+                    generation,
+                    action,
+                    result,
+                }),
             });
-        }
-        #[cfg(not(test))]
-        {
-            let emit = self.emit.clone();
-            std::thread::spawn(move || {
-                let result = run_policy_worker(input);
-                let request = Arc::new(Request {
-                    active: AtomicBool::new(true),
-                    operation: Operation::Policy,
-                    server: String::new(),
-                });
-                emit(Event {
-                    request,
-                    outcome: Outcome::Policy,
-                    policy: Some(PolicyEvent { generation, result }),
-                });
-            });
-        }
+        });
     }
 
     /// Returns a safe browser URI only for this immediate, explicit user action.
     /// Busy controls reject forged/duplicate renderer commands, not just button clicks.
     pub fn command(&mut self, command: Command) -> Option<String> {
-        if self.closed || self.disabling() || self.policy_pending {
+        if self.closed || self.disabling() {
+            return None;
+        }
+        if self.policy_pending {
+            if command == Command::Cancel {
+                if self
+                    .request
+                    .as_ref()
+                    .is_some_and(|request| request.operation == Operation::Login)
+                {
+                    // Cancel sign-in is an existing durable revoke, even while a
+                    // confirmation transition is still in flight.
+                    self.invalidate_policy();
+                    self.cancel_request();
+                    self.retry_disable = Some(false);
+                    self.start(Operation::Disable { logout: false }, String::new());
+                    return None;
+                }
+                if self
+                    .request
+                    .as_ref()
+                    .is_some_and(|request| request.operation == Operation::Probe)
+                {
+                    self.invalidate_policy();
+                    self.cancel_request();
+                    self.error = Some(SafeError::Cancelled);
+                    self.refresh();
+                    self.policy_overlay = None;
+                    self.policy(PolicyAction::Cancel, false);
+                    return None;
+                }
+                if self.policy_action.is_some_and(|action| {
+                    !matches!(action, PolicyAction::Disable | PolicyAction::Disconnect)
+                }) {
+                    self.invalidate_policy();
+                    self.policy_overlay = None;
+                    self.policy(PolicyAction::Cancel, false);
+                    return None;
+                }
+                return None;
+            }
+            if matches!(command, Command::Disable | Command::Disconnect)
+                && self.emergency_operation()
+            {
+                // A direct emergency control supersedes any pending consent or
+                // confirmation transition and invalidates the request first.
+                let logout = command == Command::Disconnect;
+                self.invalidate_policy();
+                self.cancel_request();
+                self.policy_overlay = None;
+                self.retry_disable = Some(logout);
+                self.policy(
+                    if logout {
+                        PolicyAction::Disconnect
+                    } else {
+                        PolicyAction::Disable
+                    },
+                    true,
+                );
+            }
             return None;
         }
         if command == Command::Connect {
-            self.policy(PolicyAction::Connect);
+            self.policy(PolicyAction::Connect, false);
             return None;
         }
         if command == Command::Allow {
-            self.policy(PolicyAction::Allow);
+            self.policy(PolicyAction::Allow, false);
             return None;
         }
         if command == Command::RequestDisable || command == Command::RequestDisconnect {
-            self.policy(if command == Command::RequestDisable {
-                PolicyAction::RequestDisable
-            } else {
-                PolicyAction::RequestDisconnect
-            });
+            self.policy(
+                if command == Command::RequestDisable {
+                    PolicyAction::RequestDisable
+                } else {
+                    PolicyAction::RequestDisconnect
+                },
+                false,
+            );
             return None;
         }
         if command == Command::Cancel
@@ -500,7 +563,8 @@ impl Controller {
                 .as_ref()
                 .is_some_and(|o| o.mode.is_some())
         {
-            self.policy(PolicyAction::Cancel);
+            self.policy_overlay = None;
+            self.policy(PolicyAction::Cancel, false);
             return None;
         }
         if command == Command::Disable || command == Command::Disconnect {
@@ -511,13 +575,24 @@ impl Controller {
                     PolicyConfirmation::Disconnect
                 });
             let retry_matches = self.retry_disable == Some(command == Command::Disconnect);
-            let unreadable_state_retry = self.snapshot.is_none() && self.retry_disable.is_none();
-            if confirmation_matches || retry_matches || unreadable_state_retry {
-                self.policy(if command == Command::Disable {
-                    PolicyAction::Disable
-                } else {
-                    PolicyAction::Disconnect
-                });
+            let active_request = self.emergency_operation();
+            let emergency = self.policy_state.confirmation.is_none()
+                && (active_request || self.snapshot.is_none() && self.retry_disable.is_none());
+            if confirmation_matches || retry_matches || emergency {
+                if active_request {
+                    self.cancel_request();
+                }
+                if emergency {
+                    self.retry_disable = Some(command == Command::Disconnect);
+                }
+                self.policy(
+                    if command == Command::Disable {
+                        PolicyAction::Disable
+                    } else {
+                        PolicyAction::Disconnect
+                    },
+                    emergency,
+                );
                 return None;
             }
         }
@@ -571,7 +646,9 @@ impl Controller {
             if self.closed || !self.policy_pending || policy.generation != self.policy_generation {
                 return false;
             }
+            let action = policy.action;
             self.policy_pending = false;
+            self.policy_action = None;
             match policy.result {
                 Ok(result) => {
                     let effect = result.effect;
@@ -608,7 +685,11 @@ impl Controller {
                     }
                 }
                 Err(error) => {
+                    self.policy_state = PolicyState::default();
                     self.policy_overlay = None;
+                    if matches!(action, PolicyAction::Disable | PolicyAction::Disconnect) {
+                        self.retry_disable = Some(action == PolicyAction::Disconnect);
+                    }
                     self.error = Some(error);
                 }
             }
@@ -828,6 +909,55 @@ impl Controller {
                 view.presentation.clone_from(presentation);
             }
         }
+        if self.policy_pending {
+            view.status = match self.policy_action {
+                Some(PolicyAction::Connect | PolicyAction::Allow) => "Preparing Connect action…",
+                Some(PolicyAction::RequestDisable | PolicyAction::RequestDisconnect) => {
+                    "Preparing confirmation…"
+                }
+                _ => "Applying Connect action…",
+            }
+            .into();
+            let can_cancel = self.policy_action.is_some_and(|action| {
+                !matches!(action, PolicyAction::Disable | PolicyAction::Disconnect)
+            });
+            let emergency_controls = self.emergency_operation();
+            let cancel = button(
+                Command::Cancel,
+                if self
+                    .request
+                    .as_ref()
+                    .is_some_and(|r| r.operation == Operation::Login)
+                {
+                    "Cancel sign-in"
+                } else {
+                    "Cancel"
+                },
+                can_cancel,
+            );
+            if can_cancel && !view.buttons.iter().any(|b| b.command == Command::Cancel) {
+                view.buttons.push(cancel.clone());
+            }
+            if can_cancel
+                && !view
+                    .presentation
+                    .buttons
+                    .iter()
+                    .any(|b| b.command == Command::Cancel)
+            {
+                view.presentation.buttons.push(cancel);
+            }
+            for button in &mut view.buttons {
+                button.enabled = (can_cancel && button.command == Command::Cancel)
+                    || (emergency_controls
+                        && matches!(button.command, Command::Disable | Command::Disconnect));
+            }
+            for button in &mut view.presentation.buttons {
+                button.enabled = (can_cancel && button.command == Command::Cancel)
+                    || (emergency_controls
+                        && matches!(button.command, Command::Disable | Command::Disconnect));
+            }
+        }
         if self.closed {
             view.verification_uri = None;
             view.user_code = None;
@@ -860,14 +990,7 @@ fn button(command: Command, title: &str, enabled: bool) -> Button {
 /// state frame and has no network, filesystem or credential capability. This runs
 /// off the Settings thread and is bounded/reaped by the adapter.
 fn run_policy_worker(input: PolicyEnvelope) -> Result<PolicyResult, SafeError> {
-    use std::{
-        io::{Read, Write},
-        process::{Command as ProcessCommand, Stdio},
-        time::{Duration, Instant},
-    };
     const MAX_INPUT: usize = 4096;
-    const MAX_OUTPUT: usize = 16 * 1024;
-    const DEADLINE: Duration = Duration::from_millis(800);
     let bytes = serde_json::to_vec(&input).map_err(|_| SafeError::Unavailable)?;
     if bytes.len() > MAX_INPUT {
         return Err(SafeError::Unavailable);
@@ -885,7 +1008,7 @@ fn run_policy_worker(input: PolicyEnvelope) -> Result<PolicyResult, SafeError> {
         )
     });
     #[cfg(not(test))]
-    let resolved: Option<(PathBuf, PathBuf)> = None;
+    let resolved: Option<(std::path::PathBuf, std::path::PathBuf)> = None;
     let (app, runtime) = match resolved.or_else(super::presentation::assets) {
         Some(resources) => resources,
         None => return Err(SafeError::Unavailable),
@@ -895,67 +1018,167 @@ fn run_policy_worker(input: PolicyEnvelope) -> Result<PolicyResult, SafeError> {
     if !worker_metadata.is_file() || worker_metadata.file_type().is_symlink() {
         return Err(SafeError::Unavailable);
     }
-    let mut child = ProcessCommand::new(runtime)
+    run_policy_child(&runtime, &worker, &bytes)
+}
+
+#[cfg(unix)]
+fn run_policy_child(
+    runtime: &std::path::Path,
+    worker: &std::path::Path,
+    bytes: &[u8],
+) -> Result<PolicyResult, SafeError> {
+    use std::{
+        os::{fd::AsRawFd, unix::process::CommandExt},
+        process::{Command as ProcessCommand, Stdio},
+        time::{Duration, Instant},
+    };
+    const MAX_INPUT: usize = 4096;
+    const MAX_OUTPUT: usize = 16 * 1024;
+    const DEADLINE: Duration = Duration::from_millis(800);
+    if bytes.len() > MAX_INPUT {
+        return Err(SafeError::Unavailable);
+    }
+    let deadline = Instant::now() + DEADLINE;
+    let mut command = ProcessCommand::new(runtime);
+    command
+        .process_group(0)
         .env_clear()
         .env("ELECTRON_RUN_AS_NODE", "1")
         .arg(worker)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|_| SafeError::Unavailable)?;
-    let Some(mut stdin) = child.stdin.take() else {
-        let _ = child.kill();
+        .stderr(Stdio::null());
+    let mut child = command.spawn().map_err(|_| SafeError::Unavailable)?;
+    let pid = child.id() as libc::pid_t;
+    let Some(stdin) = child.stdin.take() else {
+        kill_policy_group(pid);
         let _ = child.wait();
         return Err(SafeError::Unavailable);
     };
-    if stdin.write_all(&bytes).is_err() {
-        drop(stdin);
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(SafeError::Unavailable);
-    }
-    drop(stdin);
     let Some(stdout) = child.stdout.take() else {
-        let _ = child.kill();
+        kill_policy_group(pid);
         let _ = child.wait();
         return Err(SafeError::Unavailable);
     };
-    let reader = std::thread::spawn(move || {
-        let mut output = Vec::new();
-        stdout
-            .take((MAX_OUTPUT + 1) as u64)
-            .read_to_end(&mut output)
-            .map(|_| output)
-    });
-    let started = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) if started.elapsed() < DEADLINE => {
-                std::thread::sleep(Duration::from_millis(2))
+    set_nonblocking(stdin.as_raw_fd()).map_err(|_| {
+        kill_policy_group(pid);
+        let _ = child.wait();
+        SafeError::Unavailable
+    })?;
+    set_nonblocking(stdout.as_raw_fd()).map_err(|_| {
+        kill_policy_group(pid);
+        let _ = child.wait();
+        SafeError::Unavailable
+    })?;
+    let output_fd = stdout.as_raw_fd();
+    let mut input_pipe = Some(stdin);
+    let mut input_offset = 0;
+    let mut output = Vec::with_capacity(MAX_OUTPUT.min(1024));
+    let mut child_status = None;
+    let mut output_closed = false;
+    let mut failed = false;
+    let mut scratch = [0u8; 1024];
+    loop {
+        if input_offset < bytes.len() {
+            let input_fd = input_pipe.as_ref().expect("open policy input").as_raw_fd();
+            let written = unsafe {
+                libc::write(
+                    input_fd,
+                    bytes[input_offset..].as_ptr().cast(),
+                    bytes.len() - input_offset,
+                )
+            };
+            if written > 0 {
+                input_offset += written as usize;
+            } else if written == -1 {
+                let error = std::io::Error::last_os_error();
+                if error.kind() != std::io::ErrorKind::WouldBlock
+                    && error.kind() != std::io::ErrorKind::Interrupted
+                {
+                    failed = true;
+                }
+            } else {
+                failed = true;
             }
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break None;
-            }
-            Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break None;
+            if input_offset == bytes.len() {
+                drop(input_pipe.take());
             }
         }
-    };
-    let output = reader
-        .join()
-        .ok()
-        .and_then(Result::ok)
-        .ok_or(SafeError::Unavailable)?;
-    if status.is_none_or(|status| !status.success()) || output.len() > MAX_OUTPUT {
+        if !output_closed && output.len() <= MAX_OUTPUT {
+            let read = unsafe { libc::read(output_fd, scratch.as_mut_ptr().cast(), scratch.len()) };
+            if read > 0 {
+                output.extend_from_slice(&scratch[..read as usize]);
+                if output.len() > MAX_OUTPUT {
+                    failed = true;
+                }
+            } else if read == 0 {
+                output_closed = true;
+            } else {
+                let error = std::io::Error::last_os_error();
+                if error.kind() != std::io::ErrorKind::WouldBlock
+                    && error.kind() != std::io::ErrorKind::Interrupted
+                {
+                    failed = true;
+                }
+            }
+        }
+        if child_status.is_none() {
+            match child.try_wait() {
+                Ok(status) => child_status = status,
+                Err(_) => failed = true,
+            }
+        }
+        if failed || Instant::now() >= deadline {
+            break;
+        }
+        if child_status.is_some() && output_closed && input_offset == bytes.len() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    drop(input_pipe);
+    drop(stdout);
+    let complete = !failed
+        && Instant::now() < deadline
+        && input_offset == bytes.len()
+        && output_closed
+        && child_status.is_some_and(|status| status.success())
+        && output.len() <= MAX_OUTPUT;
+    if !complete {
+        kill_policy_group(pid);
+        let _ = child.kill();
+    }
+    let status = child.wait().ok().or(child_status);
+    if !complete || status.is_none_or(|status| !status.success()) {
         return Err(SafeError::Unavailable);
     }
     serde_json::from_slice(&output).map_err(|_| SafeError::Unavailable)
+}
+
+#[cfg(not(unix))]
+fn run_policy_child(
+    _runtime: &std::path::Path,
+    _worker: &std::path::Path,
+    _bytes: &[u8],
+) -> Result<PolicyResult, SafeError> {
+    Err(SafeError::Unavailable)
+}
+
+#[cfg(unix)]
+fn set_nonblocking(fd: std::os::fd::RawFd) -> std::io::Result<()> {
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn kill_policy_group(pid: libc::pid_t) {
+    // SAFETY: each worker is placed in a fresh process group whose id is its pid.
+    unsafe {
+        libc::killpg(pid, libc::SIGKILL);
+    }
 }
 
 #[cfg(test)]

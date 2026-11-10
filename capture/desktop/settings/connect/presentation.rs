@@ -183,7 +183,7 @@ impl Controller {
                 _ => &b.title,
             }
             .into();
-            if !self.disabling() && self.retry_disable.is_none() {
+            if !self.disabling() && !self.emergency_operation() && self.retry_disable.is_none() {
                 b.command = match b.command {
                     Command::Disable => Command::RequestDisable,
                     Command::Disconnect => Command::RequestDisconnect,
