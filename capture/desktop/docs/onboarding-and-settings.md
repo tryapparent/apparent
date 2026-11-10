@@ -105,6 +105,17 @@ Sign-in does not enable uploads, grant upload consent or complete tour milestone
 Connect remains the sole credential/config writer; the native onboarding adapter
 owns worker lifetime, while TypeScript owns account presentation and coach placement.
 
+Browser sign-in is distinct from device admission. When all 20 beta places are
+occupied, Connect keeps later identities waitlisted and refuses read/upload approval.
+The current device poll remains pending, so Desktop must not claim to detect a
+full beta or successful access from browser sign-in. During approval it explains
+this boundary and points to the browser waitlist. **Set up locally** cancels the
+pending enrollment through the existing Continue action and opens the pen picker;
+it does not enable uploads or upload historical captures. Cancel permits a fresh
+sign-in attempt; relaunch reads only Connect's persisted credentials. This is shared
+Electron presentation with unchanged native worker/persistence routing. Rollback
+the account presentation patch alone; native fallback remains local-only.
+
 On Omarchy the shortcut page shows the actual desktop chord before acceptance and
 also offers a custom shortcut. A custom choice uses the existing validated shortcut
 writer (`shortcuts.record.source = "app"` retains that explicit preference even for

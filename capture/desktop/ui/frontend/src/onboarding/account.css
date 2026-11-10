@@ -1,0 +1,3 @@
+.native-account-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.native-account-actions button { width: auto; }
+.native-welcome:has(.native-account[data-pending="true"]) > img { width: 64px; height: 64px; margin-bottom: 0; }
