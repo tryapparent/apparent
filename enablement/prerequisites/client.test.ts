@@ -32,7 +32,9 @@ case "$*" in *"$FAIL_FRAGMENT"*) if [ -n "$FAIL_FRAGMENT" ]; then exit 23; fi ;;
 }
 test('client runs independently on both platforms with isolated cache and unchanged automatic/manual admission', () => {
   assert.match(client, /^    needs: select$/m);
-  assert.equal(client.match(/^    if: (.+)$/m)?.[1], job('rust').match(/^    if: (.+)$/m)?.[1]);
+  // Client remains unconditional for ready PRs even when renderer-only root Rust is omitted.
+  assert.equal(client.match(/^    if: (.+)$/m)?.[1],
+    "github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)");
   assert.match(client, /toolchain: \$\{\{ runner\.os == 'macOS' && '1\.99\.1' \|\| 'stable' \}\}/);
   assert.ok(client.indexOf('uses: ./.github/actions/mac-rust-cache') < client.indexOf('uses: Swatinem/rust-cache'));
   assert.match(client, /key: connect-client\n          workspaces: connect\/client -> target/);

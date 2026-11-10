@@ -559,3 +559,38 @@ revision/modified labels. Removing those watches would not establish compile
 independence. Existing validated Swift/Metal reuse remains authoritative.
 This selection changes only hosted PR admission; it claims no warm build reuse
 or measured end-to-end speedup.
+
+### Renderer-only Mac Rust exemption
+
+For ready PRs, regular modifications exclusively to the five Settings cards
+listed above or `capture/desktop/ui/frontend/src/style.css` now retain the
+Mac platform caller and its real Electron build/smoke job, but omit that
+caller's `rust` job. The selector emits `mac_rust=false` only for this finite
+set. Mixed, unknown, added, deleted, renamed, executable or symlink inputs and
+missing/divergent/shallow history keep Rust. A successful explicit false is
+required; failed selection cannot omit it. Linux execution is unchanged.
+
+Consumer audit: the cards are imported by the Settings/foundation renderer;
+the stylesheet is imported by foundation, Settings, onboarding, installer,
+controls and pill renderers. Vite builds those entries; `test:electron` first
+runs the full frontend build, then the actual Electron smoke suites on Mac.
+`stage-settings.py` stages the resulting Vite assets separately from the native
+application. Native presentation launches that package rather than compiling
+these renderer bodies. Root build-version watches still record tracked inputs;
+this exemption does not remove watches or promise cache reuse.
+
+Assets are deliberately not exempt: the About renderer's three Settings frog
+PNGs are also `include_bytes!` inputs in native `settings_window.rs`.
+Shared UI/fonts/brand assets, entrypoints, bridge, main/preload, dependencies,
+build scripts and packaging retain full coverage. Expand the finite set only
+after another consumer audit.
+
+Connect client Rust, Mac Hermes, portable prerequisite checks and all Linux
+jobs remain conservative and still cost runner time. The omitted root/Engine
+job also owns native assertions and packaging integration, so this is strictly
+a renderer-only PR policy, not native acceptance. Main pushes, manual callers,
+release receipts and release admission retain their previous inventory.
+The reusable input defaults to full Rust and cannot omit it outside PRs or
+when a release receipt is requested. No measured runtime/cost savings are
+claimed; no native CI was dispatched for this tooling patch. Roll back by
+removing the `mac_rust` caller override and restoring the previous Mac admission.

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync, readdirSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync, unlinkSync, chmodSync, existsSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {YAML} from 'bun';
-import {select, changedPaths, requiresMac, macDecision, selectRange, documentationOnlyPath, needsPlatform} from './select.ts';
+import {select, changedPaths, requiresMac, macDecision, selectRange, documentationOnlyPath, needsPlatform, requiresMacRust, requiresMacRustRange, presentationInputs} from './select.ts';
 import {changedPaths as sharedInputPaths, workflowControlPaths} from './inputs.ts';
 
 const root = new URL('../../', import.meta.url);
@@ -85,13 +85,13 @@ test('platform admission composes ordinary docs with selected ready-PR Mac exemp
     receipt = false, macos = 'true', result = 'success', cancelled = false, platform = 'true') => Function('github', 'inputs', 'needs', 'cancelled',
       `return (${expression.replace(/^\$\{\{\s*|\s*\}\}$/g, '')});`)(
       {event_name: event, ref, repository: 'tryapparent/apparent',
-        event: {pull_request: {draft}}}, {'release_receipt': receipt}, {
+        event: {pull_request: {draft}}}, {'release_receipt': receipt, runner: 'macos-15-intel', mac_rust: true}, {
         linux: {result: 'failure'}, contracts: {result: 'success'}, hermes: {result: 'success'},
-        select: {result, outputs: {macos, platform}}}, () => cancelled);
+        select: {result, outputs: {macos, platform, mac_rust: 'true'}}}, () => cancelled);
   for (const [name, runner] of [['linux', 'ubuntu-24.04'], ['macos', 'macos-15-intel']]) {
     const job = ci.jobs[name];
     assert.equal(job.uses, './.github/workflows/verification-platform.yml');
-    assert.deepEqual(job.with, {runner, 'release_receipt': false});
+    assert.deepEqual(job.with, {runner, 'release_receipt': false, ...(name === 'macos' ? {mac_rust: ci.jobs.macos.with.mac_rust} : {})});
     assert.equal(job['continue-on-error'], undefined);
     for (const [event, draft, ref, expected] of [
       ['pull_request', false, 'refs/pull/7/merge', true],
@@ -197,7 +197,7 @@ test('full platforms and Mac inspection share cheap prerequisites without depend
           for (const output of ['true', 'false', '', undefined, 'unknown']) {
             for (const platform of ['true', 'false', '', undefined, 'unknown']) {
               const needs = {contracts: {result: contracts}, hermes: {result: hermes},
-                select: {result: select, outputs: {macos: output, platform}}, linux: {result: 'failure'}, macos: {result: 'failure'}};
+                select: {result: select, outputs: {macos: output, platform, mac_rust: 'true'}}, linux: {result: 'failure'}, macos: {result: 'failure'}};
               const expected = contracts === 'success' && hermes === 'success';
               const docsExempt = select === 'success' && platform === 'false';
               for (const [event, draft, allowed] of [['pull_request', false, true], ['push', false, false],
@@ -276,9 +276,10 @@ function runSelector(base: string, head: string, dir: string) {
   const stdout = execFileSync(process.execPath, [new URL('enablement/ci/select.ts', root).pathname], {
     env: {...process.env, BASE_SHA: base, GITHUB_SHA: head, GITHUB_OUTPUT: output}, encoding: 'utf8',
   });
-  const decision = JSON.parse(stdout);
+  const {mac_rust, ...decision} = JSON.parse(stdout);
+  assert.equal(mac_rust, requiresMacRustRange(base, head));
   const outputs = Object.fromEntries(readFileSync(output, 'utf8').trim().split('\n').map(line => line.split('=')));
-  assert.deepEqual(outputs, {public: String(decision.public), updater: String(decision.updater), macos: String(decision.macos), platform: String(decision.platform)});
+  assert.deepEqual(outputs, {public: String(decision.public), updater: String(decision.updater), macos: String(decision.macos), platform: String(decision.platform), mac_rust: String(mac_rust)});
   return decision as ReturnType<typeof selectRange>;
 }
 
@@ -678,3 +679,88 @@ test('Linux consumer audit retains cfg boundary, driver checks and accurate buil
   const harness = source('.github/workflows/linux-updater-harness.yml');
   for (const name of ['test-gui-vm.py', 'test-capture-smoke.py']) assert.ok(harness.includes(name));
 });
+
+test('renderer-only admission retains real Mac Electron and Linux; all other callers retain Rust', () => {
+  const ci = workflow('checks.yml');
+  const platform = workflow('verification-platform.yml');
+  assert.equal(platform.on.workflow_call.inputs.mac_rust.default, true);
+  assert.equal(ci.jobs.select.outputs.mac_rust, '${{ steps.paths.outputs.mac_rust }}');
+  const evaluate = (expression: string, github: any, needs: any, inputs = {}) =>
+    Function('github', 'needs', 'inputs', 'cancelled',
+      'return (' + expression.replace(/^\$\{\{\s*|\s*\}\}$/g, '') + ');')(github, needs, inputs, () => false);
+  for (const event of ['pull_request', 'push', 'workflow_dispatch']) {
+    for (const result of ['success', 'failure', 'skipped', 'cancelled']) {
+      for (const output of ['false', 'true', '', undefined, 'unknown']) {
+        const github = {event_name: event, ref: event === 'pull_request' ? 'refs/pull/7/merge' : 'refs/heads/main',
+          event: {pull_request: {draft: false}}};
+        const needs = {contracts: {result: 'success'}, hermes: {result: 'success'},
+          select: {result, outputs: {macos: 'false', platform: 'true', mac_rust: output}}};
+        const omit = event === 'pull_request' && result === 'success' && output === 'false';
+        const macRust = evaluate(ci.jobs.macos.with.mac_rust, github, needs);
+        assert.equal(macRust, !omit);
+        if (event === 'pull_request' && (result !== 'success' || output !== 'true')) {
+          assert.equal(evaluate(ci.jobs.macos.if, github, needs), true);
+          assert.equal(evaluate(ci.jobs.linux.if, github, needs), true);
+        }
+        for (const runner of ['macos-15-intel', 'ubuntu-24.04']) {
+          const inputs = {runner, mac_rust: macRust, release_receipt: false};
+          assert.equal(evaluate(platform.jobs.rust.if, github, needs, inputs), !(omit && runner === 'macos-15-intel'));
+          for (const job of ['desktop-ui', 'connect-client']) {
+            assert.equal(evaluate(platform.jobs[job].if, github, needs, inputs), true);
+          }
+          assert.equal(evaluate(platform.jobs.rust.if, github, needs, {...inputs, release_receipt: true}), true);
+        }
+      }
+    }
+  }
+  const electron = platform.jobs['desktop-ui'].steps;
+  assert.ok(electron.some((step: any) => step.run === 'npm test' && !step.if));
+  assert.ok(electron.some((step: any) => step.run?.includes('npm run test:electron') && !step.if));
+  const pkg = JSON.parse(readFileSync(new URL('capture/desktop/ui/frontend/package.json', root), 'utf8'));
+  assert.match(pkg.scripts['test:electron'], /^npm run build &&/);
+  assert.match(pkg.scripts.build, /vite build/);
+});
+
+for (const path of presentationInputs) {
+  test('presentation input Git/CLI proof and unsafe statuses: ' + path, () => repository((git, dir) => {
+    mkdirSync(path.slice(0, path.lastIndexOf('/')), {recursive: true});
+    writeFileSync(path, 'before');
+    git('add', '.'); git('commit', '-qm', 'baseline');
+    const base = git('rev-parse', 'HEAD');
+    appendFile(path, '\nafter');
+    git('commit', '-qam', 'design edit');
+    const head = git('rev-parse', 'HEAD');
+    runSelector(base, head, dir);
+    assert.equal(requiresMacRustRange(base, head), false);
+    for (const other of ['capture/desktop/ui/frontend/src/bridge.ts', 'capture/desktop/ui/frontend/electron/main.cjs',
+      'capture/desktop/ui/frontend/electron/preload.cjs', 'capture/desktop/ui/frontend/package-lock.json',
+      'capture/desktop/ui/frontend/src/new.tsx', 'build.rs', 'Cargo.lock',
+      'capture/desktop/scripts/packaging/stage-settings.py', 'unknown.css']) {
+      assert.equal(requiresMacRust([path, other], []), true, other);
+    }
+    writeFileSync('unknown.css', 'mixed input');
+    git('add', '.'); git('commit', '-qm', 'mixed committed delta');
+    const mixed = git('rev-parse', 'HEAD');
+    runSelector(base, mixed, dir);
+    assert.equal(requiresMacRustRange(base, mixed), true);
+    for (const operation of ['delete', 'rename', 'chmod', 'symlink', 'add']) {
+      git('checkout', '--detach', base);
+      if (operation === 'add') {
+        git('rm', path); git('commit', '-qm', 'before addition');
+      }
+      const from = git('rev-parse', 'HEAD');
+      if (operation === 'delete') git('rm', path);
+      if (operation === 'rename') git('mv', path, 'outside.txt');
+      if (operation === 'chmod') chmodSync(path, 0o755);
+      if (operation === 'symlink') { unlinkSync(path); symlinkSync('elsewhere', path); }
+      if (operation === 'add') { mkdirSync(path.slice(0, path.lastIndexOf('/')), {recursive: true}); writeFileSync(path, 'new'); }
+      git('add', '.'); git('commit', '-qm', operation);
+      const to = git('rev-parse', 'HEAD');
+      runSelector(from, to, dir);
+      assert.equal(requiresMacRustRange(from, to), true, operation);
+    }
+    assert.equal(requiresMacRustRange('', head), true);
+    assert.equal(requiresMacRustRange(base, base), true);
+    assert.equal(requiresMacRust(null, null), true);
+  }));
+}
