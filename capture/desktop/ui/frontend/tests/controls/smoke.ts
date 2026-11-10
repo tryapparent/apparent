@@ -48,6 +48,12 @@ test('shipped controls mount, dispatch allowed actions and reflect parent busy s
   await record.waitFor();
   await page.waitForFunction(() => !(document.querySelector('button') as HTMLButtonElement)?.disabled);
   assert.equal(await page.evaluate(() => document.visibilityState), 'visible');
+  assert.equal(await page.getByRole('button', {name: 'Choose what to record…', exact: true}).count(), 0);
+  assert.equal(await page.evaluate(async () => {
+    try { await (window as any).apparentControls.command('choose'); return false; }
+    catch (error) { return String(error).includes('Forbidden controls request'); }
+  }), true, 'A stale picker command must be rejected by the real host');
+  assert.equal(output.join('').includes('{"action":"choose"}'), false);
   await record.click();
   const deadline = Date.now() + 5000;
   while (!output.join('').includes('{"action":"record"}')) {

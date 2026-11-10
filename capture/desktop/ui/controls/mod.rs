@@ -259,7 +259,6 @@ impl Controls {
 fn action(value: &str) -> Option<MenuAction> {
     Some(match value {
         "record" => MenuAction::ToggleCapture,
-        "choose" => MenuAction::ChooseTarget,
         "latest" => MenuAction::OpenLatest,
         "settings" => MenuAction::Settings,
         _ => return None,
@@ -290,7 +289,6 @@ impl gpui::Render for Native {
         }
         for (id, label) in [
             ("record", "Record screen"),
-            ("choose", "Choose what to record…"),
             ("latest", "Open latest capture"),
             ("settings", "Settings…"),
         ] {
@@ -321,7 +319,6 @@ mod tests {
             Some(MenuAction::ToggleCapture)
         );
         for action in [
-            MenuAction::ChooseTarget,
             MenuAction::OpenLatest,
             MenuAction::Settings,
         ] {

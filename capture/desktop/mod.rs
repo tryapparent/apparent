@@ -533,6 +533,7 @@ enum MenuAction {
     Controls(Box<MenuAction>),
     ToggleCapture,
     ToggleMicrophone,
+    #[cfg(not(target_os = "linux"))]
     ChooseTarget,
     OpenLatest,
     OpenInbox(PathBuf),
@@ -2031,8 +2032,14 @@ impl ApparentCoordinator {
             )
     }
 
-    /// The recording just started from a tap: the capsule opens onto the switch chips.
+    /// macOS and lab tap starts reveal switch chips; ordinary Linux starts keep controls.
     fn show_reveal(&mut self, cx: &mut Context<Self>) {
+        // Linux exposes one full-display capture path. Keep the native fallback
+        // consistent with Electron even when a renderer cannot start.
+        #[cfg(target_os = "linux")]
+        if !self.lab {
+            return;
+        }
         // The iPhone chip shows only while one is cabled (a USB registry read, no prompt).
         if !self.lab {
             self.refresh_iphone(cx);
@@ -2073,6 +2080,12 @@ impl ApparentCoordinator {
     /// chosen first: Window and Area morph the capsule into the picker (hover and click a window,
     /// or drag an area), iPhone goes straight into the phone's mirror.
     pub fn switch_recording(&mut self, mode: SelectionMode, cx: &mut Context<Self>) {
+        // Native lifetime guard: a stale child action must not discard an
+        // active full-display capture to reopen the retired Linux picker.
+        #[cfg(target_os = "linux")]
+        if !self.lab && mode != SelectionMode::Screen {
+            return;
+        }
         if mode == SelectionMode::Window {
             self.report_window_recording_disabled(cx);
             return;
@@ -3180,7 +3193,8 @@ impl ApparentCoordinator {
         }
     }
 
-    /// The menu bar's picker, opening on the mode the last recording used.
+    /// The menu bar's picker on platforms that still expose target selection.
+    #[cfg(not(target_os = "linux"))]
     pub fn begin_target_selection(&mut self, cx: &mut Context<Self>) {
         if self.ready_to_record() {
             self.open_picker(None, cx);
@@ -6775,7 +6789,13 @@ pub fn run_start_benchmark() {
         let coordinator = cx.new(|_| ApparentCoordinator::new(telemetry, None));
         cx.spawn(async move |cx| {
             for run in 0..8 {
-                coordinator.update(cx, |coord, cx| coord.begin_target_selection(cx)).unwrap();
+                // This explicit diagnostic still measures the legacy picker;
+                // the ordinary Linux GUI entry is intentionally unavailable.
+                coordinator.update(cx, |coord, cx| {
+                    if coord.ready_to_record() {
+                        coord.open_picker(None, cx);
+                    }
+                }).unwrap();
                 // Allow deferred picker creation and async discovery to settle.
                 cx.background_executor().timer(Duration::from_millis(600)).await;
                 coordinator.update(cx, |coord, cx| {
@@ -7041,6 +7061,7 @@ pub fn run_app(
                                 MenuAction::ToggleCapture => {
                                     loop_coord.update(cx, |coord, cx| coord.record_or_finish(cx));
                                 }
+                                #[cfg(not(target_os = "linux"))]
                                 MenuAction::ChooseTarget => {
                                     loop_coord.update(cx, |coord, cx| {
                                         if !coord.is_recording()

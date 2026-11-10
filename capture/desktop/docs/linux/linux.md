@@ -74,7 +74,28 @@ Without the `input` group, a capture on Wayland has no clicks, keys or ⇧ ink o
 
 ### Picker and portal limits
 
-Screen and Area work on the tested desktops within the output limits below. Window recording is temporarily disabled on every backend pending original-window lifetime safety (#230); the picker omits it and `record --window` returns an error without starting a recorder or substituting a screen. Choose Screen or Area explicitly. Existing Window bundles remain readable. A portal window source exists internally, but the UI does not offer it. A press of the record shortcut records the display under the pointer once its keys come up, however long they're held; the tray menu's **Choose What to Record…** opens the picker, which stays open until you choose a target or press Esc. The Mac-only iPhone mode is hidden. Screen sharing can ask again if a desktop does not honor the saved restore token. Finishing while the dialog is open cancels the pending session; a failed or empty capture reports an error rather than producing demo imagery, and `latest` skips its unfinished directory.
+The Linux GUI records a full display. **Record screen** or the recording shortcut
+starts the display under the pointer once the shortcut's keys come up. The tray,
+Electron controls and native fallback omit **Choose What to Record…**, and a
+recording opens directly onto Whiteboard, Finish and Cancel rather than Area/Screen
+switch chips. A retired bridge picker command is rejected without starting a capture.
+A stale non-Screen switch cannot discard an active recording. There is no new
+setting or opt-in route. The native fallback follows the same presentation when
+Electron is unavailable; macOS selection and the existing diagnostic lab remain
+unchanged. The native safety guards stay on the GUI thread that owns capture
+lifetimes, so a failed or stale renderer cannot retarget/delete the recording.
+
+This removes Apparent's picker, not the compositor's consent dialog. Screen sharing
+can ask again when the desktop does not honor a saved restore token; a Window
+returned for a Monitor request is still rejected. Finishing during consent cancels
+the pending session. A failed or empty capture reports an error rather than
+producing demo imagery, and `latest` skips its unfinished directory. Window
+recording remains disabled pending original-window lifetime safety (#230).
+Existing bundles remain readable. Native Area/source-validation adapters remain
+unchanged; the Area results below describe their bounded historical checks,
+not an Area offered by the current Linux GUI. Restoring interactive selection
+requires a separately accepted workflow; this change does not enable a hidden
+replacement picker.
 
 Before the first screen frame, **Finish** uses the same durable cancellation as
 **Cancel**, including from the Electron pill, recording shortcut, tray and quit.
