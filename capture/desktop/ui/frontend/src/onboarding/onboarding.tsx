@@ -8,7 +8,7 @@ import frog from '../../../../assets/onboarding/frog.png';
 import './onboarding.css';
 import { GestureGuide } from './gesture-guide';
 import { ControlGuide } from './control-guide';
-import { practiceExit } from '../../electron/onboarding/presentation.ts';
+import { boardGuidePending, practiceExit } from '../../electron/onboarding/presentation.ts';
 import { OnboardingAccount } from './account';
 import type { AccountState } from '../../electron/onboarding/account';
 import { subscribeOnboardingState } from './state';
@@ -78,13 +78,13 @@ export function NativeOnboarding(){
   const trackpadHint=state.practice==='screen-ink';
   const helper=<aside className="native-trackpad-helper" aria-label="Trackpad drawing hint"><div className="native-trackpad-helper-content"><strong>Pressing down on your trackpad?</strong><p>No need. Just hold Shift and glide.</p></div></aside>;
   document.title=state.testInstance?'apparent onboarding preview 9':'apparent setup';
+  if(boardGuidePending(state))return null;
   if(state.boardView)return <Whiteboard key={state.boardView.id} board={state.boardView} closeGuide={()=>action('later')} action={value=>action(value)}/>;
   if(practice){
     const content:Record<string,{title:string;text:string;button?:string;action?:string}>={
       start:{title:'Go again.',text:''},
       screen:{title:'Choose Screen.',text:'Choose Screen in the capture controls. Whiteboard becomes available once recording starts.'},
       whiteboard:{title:`Open ${boardName}.`,text:''},
-      'board-ink':{title:'Draw on the whiteboard.',text:''},
       note:{title:'Add a note.',text:'Hold Shift and click without dragging. Type a note, then save it.'},
       'screen-ink':{title:'Draw on your screen.',text:'Hold Shift and circle something in your window.'},
       stop:{title:'Finish your capture.',text:''},

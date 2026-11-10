@@ -315,7 +315,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('heading', { name:'apparent lives here.', exact:true })).toBeVisible();
   await expect(page.getByText('Click the a in your menu bar, then Open Latest Capture.', { exact:true })).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveAttribute('data-arrow','true');
-  for(const phase of ['screen','whiteboard','board-ink','note','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
+  for(const phase of ['screen','whiteboard','note','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
     send({step:'try-it',practice:phase});
     await expect(page.locator('.native-coach')).toHaveAttribute('data-stage',phase);
     if(phase==='screen-ink'){
@@ -343,6 +343,10 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   assert.equal(await page.locator('.native-exit-detail').count(),0);
   const human=[[20,30],[40,50],[70,60],[90,80]];
   const board={id:'apparent-test-1',strokes:[human],color:[59,121,189]};
+  // The native stage arrives before the opened board's identity/geometry.
+  // Never flash the retired drawing coach during that real provider sequence.
+  send({step:'try-it',practice:'board-ink'});
+  await expect(page.locator('.native-coach')).toHaveCount(0);
   send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:board});
   await expect(page.locator('.native-board')).toBeVisible();
   const guideColors=await page.getByRole('button',{name:'Close guide',exact:true}).evaluate(el=>{const s=getComputedStyle(el);return [s.color,s.backgroundColor]});

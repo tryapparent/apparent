@@ -1,7 +1,17 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {coachPosition, coachDimensions, practiceExit} from '../../electron/onboarding/presentation.ts';
+import {boardGuidePending, coachPosition, coachDimensions, practiceExit} from '../../electron/onboarding/presentation.ts';
 import {borderCommand} from '../../electron/onboarding/hyprland.ts';
+
+test('opening the inline board waits for its native identity without a drawing coach', () => {
+  assert.equal(boardGuidePending({step:'try-it',practice:'board-ink'}), true);
+  assert.equal(boardGuidePending({step:'try-it',practice:'board-ink',boardView:null}), true);
+  assert.equal(boardGuidePending({step:'try-it',practice:'board-ink',boardView:{id:'owned'}}), false);
+  for(const practice of ['whiteboard','note','stop',null]) {
+    assert.equal(boardGuidePending({step:'try-it',practice}), false);
+  }
+  assert.equal(boardGuidePending({step:'shortcut',practice:'board-ink'}), false);
+});
 
 test('Omarchy walkthrough: coach clears the compositor-moved board and recording controls', () => {
   // Synthetic geometry reproducing the reported 1920x1200 arrangement; no private media.

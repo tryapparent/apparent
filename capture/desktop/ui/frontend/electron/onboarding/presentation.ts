@@ -2,6 +2,12 @@
 export type Rect = readonly [number, number, number, number];
 export type Area = {x: number; y: number; width: number; height?: number};
 
+// The native stage can arrive before the board's identity and mapped surface.
+// Keep its example on the board instead of briefly opening the retired coach.
+export function boardGuidePending(state: {step: string; practice: string | null; boardView?: unknown}) {
+  return state.step === 'try-it' && state.practice === 'board-ink' && !state.boardView;
+}
+
 export function coachDimensions(area: Area, phase: string) {
   return {width: Math.min(area.width, phase === 'screen-ink' && area.width >= 720 ? 720 : 380),
     height: Math.min(area.height ?? 440, 440)};

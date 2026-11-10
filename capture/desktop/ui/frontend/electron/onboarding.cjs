@@ -1,6 +1,6 @@
 const {transparentBackgroundColor}=require('@apparent/ui/window-theme');
 const {parseAction}=require('./onboarding-protocol.cjs');
-const {coachDimensions,coachPosition}=require(process.versions.electron?'../dist/onboarding-presentation.cjs':'./onboarding/presentation.ts');
+const {coachDimensions,coachPosition,boardGuidePending}=require(process.versions.electron?'../dist/onboarding-presentation.cjs':'./onboarding/presentation.ts');
 const {projectAccount}=require(process.versions.electron?'../dist/onboarding-account.cjs':'./onboarding/account.ts');
 // A private, Rust-owned presentation transport. No capture commands or filesystem IPC.
 const path = require('node:path');
@@ -102,6 +102,11 @@ app.whenReady().then(()=>{
 });
 function present(v,activate=false){
   if(closing||!window||window.isDestroyed())return;
+  if(boardGuidePending(v)){
+    window.webContents.send('onboarding:state',v);
+    window.hide();
+    return;
+  }
   // Linux adapters report X11 pixels; Electron places windows in logical DIP.
   // macOS adapter coordinates are already points.
   if(process.platform==='linux')v={...v,anchor:nativeRectangle(v.anchor,p=>screen.screenToDipPoint(p)),practiceBoard:nativeRectangle(v.practiceBoard,p=>screen.screenToDipPoint(p))};

@@ -405,6 +405,17 @@ test('permission refresh keeps setup unfocused and avoids repeating native geome
  assert.equal(calls.filter(x=>x==='position').length,1,'same mode must preserve a user-moved window');
  stdin.emit('data','{"type":"show"}\n');
  assert.equal(calls.filter(x=>x==='show').length,2,'explicit parent show may reactivate setup');
+  // Native board stage precedes its identity; hide the existing window rather
+  // than resizing/showing a retired drawing coach. CDP focus emulation cannot
+  // establish BrowserWindow visibility, so assert the real host's window calls.
+  const opening=JSON.stringify({type:'state',step:'try-it',rows:[],ready:true,practice:'board-ink'});
+  const beforePending=calls.slice();
+  stdin.emit('data',opening+'\n');
+  assert.equal(window.visible,false);
+  assert.deepEqual(calls.slice(beforePending.length),['state']);
+  stdin.emit('data',JSON.stringify({type:'state',step:'try-it',rows:[],ready:true,practice:'note'})+'\n');
+  assert.equal(window.visible,true,'the next lesson must restore the coach');
+  assert.equal(calls.at(-1),'showInactive','restoring a coach must not take keyboard focus');
 });
 
 test('whiteboard bridge admits only finite paper input and copies a minimal command',()=>{

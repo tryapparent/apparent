@@ -481,6 +481,8 @@ guide button and Recording continues detail; it keeps the same dismissal action.
 
 During Electron first-capture practice, opening Whiteboard routes the existing
 setup renderer to the paper surface instead of opening GPUI or a separate coach.
+If the native drawing stage arrives before the board surface, the shared renderer
+stays hidden until that surface is ready, avoiding a transient drawing coach.
 Pointer input uses the private onboarding pipe, gated by the current transport,
 session, recording and per-open board identity. Rust's existing Board remains
 authoritative for human ink, undo/clear and export; no configuration writer is
