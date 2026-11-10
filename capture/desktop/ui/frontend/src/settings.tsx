@@ -38,7 +38,7 @@ function Settings() {
   }
   return <div className="settings-shell">
     <aside className="settings-sidebar" aria-label="Settings pages">
-      <div className="settings-brand"><img src={wordmark} alt="Apparent" /><p>SETTINGS</p></div>
+      <div className="settings-brand"><img src={wordmark} alt="Apparent" /><p>CAPTURE SETTINGS</p></div>
       <nav>{panes.map((pane, index) => <button key={pane} type="button" disabled={navigating}
         aria-current={pane === current ? 'page' : undefined}
         onClick={() => { if (pane !== current) void navigate(pane); }}>
