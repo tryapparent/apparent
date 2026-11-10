@@ -13,9 +13,9 @@ test('shipped controls mount, dispatch allowed actions and reflect parent busy s
   const frontend = fileURLToPath(new URL('../..', import.meta.url));
   const fixture = await mkdtemp(path.join(os.tmpdir(), 'controls-'));
   const executable = createRequire(import.meta.url)('electron') as string;
-  // Match the other synthetic Linux Electron fixtures without requiring a
-  // privileged SUID helper install. This case verifies the pipe/UI, not sandboxing.
-  const child = spawn(executable, ['--remote-debugging-port=0', ...(process.platform === 'linux' ? ['--ozone-platform=x11', '--no-sandbox'] : []), frontend, '--controls'], {env: {
+  // Match Playwright's Linux Electron launcher without requiring a host SUID helper.
+  // This synthetic fixture option never changes the installed application's launch.
+  const child = spawn(executable, ['--remote-debugging-port=0', ...(process.platform === 'linux' ? ['--no-sandbox', '--ozone-platform=x11'] : []), frontend, '--controls'], {env: {
     ...process.env, HOME: fixture, XDG_CONFIG_HOME: path.join(fixture, 'config'),
     XDG_DATA_HOME: path.join(fixture, 'data'),
   }});
