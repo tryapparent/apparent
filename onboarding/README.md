@@ -92,8 +92,8 @@ slice; the compatible completion receipt method can remain for Record consumers.
 
 Basic native setup/permission-repair progression, legacy progress readers and
 ordinary Capture/Settings readiness still need the next bounded extraction.
-The unused Rust practice donor remains only until the actual native seam is
-accepted, after which its module and replaced tests must be deleted. Preserve the
+The replaced Rust practice donor and its obsolete tests have been removed after
+verifying the actual Electron/native consumers. Preserve the
 released #1122 account/shortcut/geometry fixes when integrating refreshed main.
 Installed Mac/Linux permission/input/focus/bridge/packaging and real bundle text/
 image acceptance are required separately. Synthetic parent/window tests are not
