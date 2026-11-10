@@ -24,6 +24,7 @@ pub enum Health {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SafeError {
+    Waitlisted,
     Cancelled,
     Offline,
     AuthRequired,
@@ -40,7 +41,9 @@ fn safe_error(error: &anyhow::Error, allowed: &dyn Fn() -> bool) -> SafeError {
         return SafeError::Cancelled;
     }
     let message = error.to_string();
-    if message == "cancelled" || message.starts_with("cancelled:") {
+    if message == "Connect account is waitlisted" {
+        SafeError::Waitlisted
+    } else if message == "cancelled" || message.starts_with("cancelled:") {
         SafeError::Cancelled
     } else if message.starts_with("auth_required:") {
         SafeError::AuthRequired

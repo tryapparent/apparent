@@ -2540,6 +2540,8 @@ mod tests {
         use crate::capture::desktop::settings::connect::{Button, Command, View};
         assert!(serde_json::from_value::<ViewState>(serde_json::json!({})).unwrap().connect.is_none());
         let connect = View {
+            phase: "approval".into(),
+            local_ready: false,
             title: "Apparent Connect".into(),
             status: "Waiting for browser approval".into(),
             detail: "Check the code before approving.".into(),

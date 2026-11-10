@@ -241,21 +241,14 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     index:0, count:5, testInstance:true, shortcut:'⌃⌥⇧9', ...patch })+'\n');
   let output='';child.stdout.on('data',bytes=>output+=bytes);
   await page.emulateMedia({reducedMotion:'no-preference'});
-  send({account:{status:'signed-out'}});
-  await page.getByRole('button',{name:'Sign in with Google',exact:true}).click();
-  await expect.poll(()=>output).toContain('"action":"sign-in"');
-  send({account:{status:'approval',userCode:'TEST-CODE',verificationUri:'https://app.example.test/connect/device?code=TEST-CODE'}});
-  await expect(page.locator('.native-account code')).toHaveText('TEST-CODE');
-  await page.getByRole('button',{name:'Continue in browser',exact:true}).click();
-  await expect.poll(()=>output).toContain('"action":"open-sign-in"');
-  await page.getByRole('button',{name:'Cancel sign-in',exact:true}).click();
-  await expect.poll(()=>output).toContain('"action":"cancel-sign-in"');
-  send({account:{status:'failed',error:'expired'}});
-  await expect(page.getByRole('alert')).toContainText('code expired');
-  await expect(page.getByRole('button',{name:'Sign in with Google',exact:true})).toBeEnabled();
-  send({account:{status:'signed-in'}});
-  await expect(page.getByText('✓ Signed in.',{exact:true})).toBeVisible();
-  await expect(page.getByText('Recording stays local. Uploads need separate permission in Settings.',{exact:true})).toBeVisible();
+  send({});
+  await expect(page.getByRole('heading',{name:'Where’s ur agent at?',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Right here',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Up in the cloud',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'idk?? →',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Let’s figure it out.',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Right here →',exact:true}).click();
+  await expect.poll(()=>output).toContain('"action":"continue"');
   send({ penPicker:true });
   await expect(page.getByRole('heading', { name:'Pick your pen.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
@@ -284,6 +277,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   });
   assert.ok(Math.abs(centres[0]-centres[2])<2&&Math.abs(centres[1]-centres[2])<2);
   // Hold the first image decode, as on a cold launch. No wall-clock timeout may skip the hop.
+  output=''; // The earlier local-route Continue is a separate, already checked action.
   await page.locator('.native-pond-frog').evaluate(img=>{const decode=img.decode.bind(img);img.decode=()=>decode().then(()=>new Promise(resolve=>{window.releasePenImage=resolve}));});
   const before=await page.locator('.native-pond-frog').boundingBox();
   await page.getByRole('button',{name:'Use this pen',exact:true}).click();
