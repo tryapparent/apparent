@@ -45,8 +45,9 @@ note observations, exact finalized bundle/clipboard receipts and shell-open
 receipts. It contains no lesson stages. `Session::practice_completion` remains
 compatible with the separate Record completion owner: the caller first enforces
 native current-generation admission. A known copied receipt survives an unavailable
-policy host. The current-main producer's temporary saved-bundle/observation adapter
-is removed only after the released Record producer is adopted.
+policy host. The adopted Record finalizer supplies its original capture identity,
+exact saved path and independent clipboard result through this method; the former
+saved-bundle/observation route has been removed.
 
 Each transport has a session identity, each admitted attempt has an identity and
 each command includes the displayed stage revision. Native host messages also
