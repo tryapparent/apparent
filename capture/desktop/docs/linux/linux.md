@@ -78,7 +78,7 @@ Screen and Area work on the tested desktops within the output limits below. Wind
 
 Before the first screen frame, **Finish** uses the same durable cancellation as
 **Cancel**, including from the Electron pill, recording shortcut, tray and quit.
-It closes the pending sharing session without starting bundle processing or
+It closes the pending sharing Request and Session without starting bundle processing or
 reporting a finalization failure. If writing the cancellation marker fails, the
 capture stays owned and busy; it is not reported as cancelled. Once a screen frame
 has arrived, Finish retains normal finalization and its empty-frame safety check.
@@ -88,6 +88,12 @@ resource release, independent of renderer state. Record's TypeScript completion
 policy and existing Electron routing are unchanged. Remove the guard only when a
 replacement native admission contract preserves these same cancellation receipts
 and producer checks; reverting this repair restores the prior Finish behavior.
+The native portal adapter owns the Start Request before waiting for its response:
+`Request.Close` dismisses the chooser, while `Session.Close` releases the session.
+Dropping the pending Start future or closing only its session is insufficient on
+the tested Hyprland portal. No picker process is killed or permission bypassed.
+Request cleanup uses a two-second response deadline; failure is logged locally
+before continuing to session cleanup.
 
 `apparent capture start --wait --timeout 30` uses the running GUI's normal interaction-aware
 screen path and returns its own request ID. Portal consent still applies; `capture state` reports

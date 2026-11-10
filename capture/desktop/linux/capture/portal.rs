@@ -18,6 +18,8 @@ use super::media::{Crop, Source};
 use crate::capture::engine::runtime::apparent_log;
 use crate::shared::model::{CaptureMode, TargetInfo};
 
+mod screencast_request;
+
 /// A PipeWire stream a compositor is sending, open until dropped.
 pub struct Stream {
     pub node: u32,
@@ -546,6 +548,13 @@ fn portal_screencast(window: bool, key: &str, stopping: &AtomicBool) -> Result<(
                 let run = async {
                     let proxy = Screencast::new().await?;
                     let session = proxy.create_session().await?;
+                    let start = match screencast_request::StartRequest::new(&proxy).await {
+                        Ok(start) => start,
+                        Err(error) => {
+                            let _ = session.close().await;
+                            return Err(error);
+                        }
+                    };
                     let request = async {
                         let token = saved_token(&request_key);
                         let kind = if window {
@@ -568,7 +577,7 @@ fn portal_screencast(window: bool, key: &str, stopping: &AtomicBool) -> Result<(
                                 },
                             )
                             .await?;
-                        let streams = proxy.start(&session, None).await?.response()?;
+                        let streams = start.start(&proxy, &session).await?;
                         let token = streams.restore_token().map(str::to_owned);
                         let stream = streams.streams().first().context("Nothing was shared")?;
                         validate_source_type(window, stream.source_type())?;
@@ -587,11 +596,7 @@ fn portal_screencast(window: bool, key: &str, stopping: &AtomicBool) -> Result<(
                         let fd = proxy.open_pipe_wire_remote(&session).await?;
                         anyhow::Ok((node, fd, rect, mapping_id, token, portal_monitor))
                     };
-                    let cancelled = async {
-                        let _ = stop_rx.recv_async().await;
-                        bail!("Screen sharing was cancelled")
-                    };
-                    match futures_lite::future::race(request, cancelled).await {
+                    match start.until_stopped(request, &stop_rx).await {
                         Ok((node, fd, rect, mapping_id, token, portal_monitor)) => anyhow::Ok((proxy, session, node, fd, rect, mapping_id, token, portal_monitor)),
                         Err(error) => {
                             let _ = session.close().await;
