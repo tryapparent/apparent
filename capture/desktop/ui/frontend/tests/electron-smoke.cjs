@@ -458,7 +458,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
   assert.equal(await page.locator('.native-setup section > p').count(),0);
   send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:false,platform:'linux',shortcut:'Super+Shift+Copilot',shortcutEditor:{recording:false,externallyManaged:true}});
-  assert.deepEqual(await page.locator('.native-shortcut kbd').allTextContents(),['Super','Shift','Copilot']);
+  await expect(page.locator('.native-shortcut kbd')).toHaveText(['Super','Shift','Copilot']);
   await expect(page.getByRole('button',{name:'Use Super+Shift+Copilot',exact:true})).toBeInViewport();
   await expect(page.getByRole('button',{name:'Choose another shortcut',exact:true})).toBeInViewport();
   await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeDisabled();
