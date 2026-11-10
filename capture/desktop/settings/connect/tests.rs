@@ -175,7 +175,7 @@ fn confirm(controller: &mut Controller, events: &mpsc::Receiver<Event>, command:
             PolicyConfirmation::Disconnect
         })
     );
-    policy(controller, events, command);
+    controller.command(command);
     assert!(controller.disabling());
 }
 
@@ -302,12 +302,21 @@ fn policy_worker_failure_clears_consent_and_keeps_durable_retry_without_fallback
     assert!(!c.receive(late_allow));
     assert!(logins.try_recv().is_err());
 
-    let (mut c, _backend, events, _, _, disables) = fixture();
+    let (mut c, backend, events, _, _, disables) = fixture();
+    *backend.local.lock().unwrap() = Ok(connected());
+    c.refresh();
     policy(&mut c, &events, Command::RequestDisable);
+    let generation = c.policy_generation;
     c.command(Command::Disable);
-    let late_disable = policy_receipt(&events);
-    let generation = late_disable.policy.as_ref().unwrap().generation;
+    // Accepted revocation enters the native executor directly. A missing or
+    // failed subsequent pure-policy reply cannot leave uploads enabled.
+    let (logout, finish) = recv(&disables);
+    assert!(!logout);
+    assert!(c.disabling());
     assert!(!c.receive(policy_failure(generation, PolicyAction::Disable)));
+    assert!(c.disabling());
+    finish.send(Err(SafeError::LocalState)).unwrap();
+    assert!(!c.receive(recv(&events)));
     assert_eq!(c.retry_disable, Some(false));
     assert!(
         c.view()
@@ -316,7 +325,92 @@ fn policy_worker_failure_clears_consent_and_keeps_durable_retry_without_fallback
             .any(|b| b.command == Command::Disable && b.enabled)
     );
     assert!(disables.try_recv().is_err());
-    assert!(!c.receive(late_disable));
+}
+
+#[test]
+fn confirmed_revocation_survives_close_or_drop_without_a_policy_receipt() {
+    for (command, logout) in [(Command::Disable, false), (Command::Disconnect, true)] {
+        for drop_window in [false, true] {
+            let (mut c, backend, events, _, _, disables) = fixture();
+            *backend.local.lock().unwrap() = Ok(connected());
+            c.refresh();
+            policy(
+                &mut c,
+                &events,
+                if logout {
+                    Command::RequestDisconnect
+                } else {
+                    Command::RequestDisable
+                },
+            );
+            let generation = c.policy_generation;
+            c.command(command);
+            assert!(c.disabling());
+            // No policy or native completion receipt has been delivered after
+            // the destructive click. Closing cannot retract this durable intent.
+            if drop_window {
+                drop(c);
+                let (actual_logout, finish) = recv(&disables);
+                assert_eq!(actual_logout, logout);
+                *backend.local.lock().unwrap() = Ok(disconnected(None));
+                finish.send(Ok(())).unwrap();
+                let completion = recv(&events);
+                assert!(matches!(completion.outcome, Outcome::Disabled(Ok(()))));
+            } else {
+                c.close();
+                c.close();
+                let (actual_logout, finish) = recv(&disables);
+                assert_eq!(actual_logout, logout);
+                assert!(!c.receive(policy_failure(
+                    generation,
+                    if logout {
+                        PolicyAction::Disconnect
+                    } else {
+                        PolicyAction::Disable
+                    }
+                )));
+                assert!(c.disabling());
+                *backend.local.lock().unwrap() = Ok(disconnected(None));
+                finish.send(Ok(())).unwrap();
+                assert!(!c.receive(recv(&events)));
+                assert!(c.view().buttons.iter().all(|button| !button.enabled));
+            }
+            assert!(disables.try_recv().is_err(), "revocation must execute once");
+        }
+    }
+}
+
+#[test]
+fn emergency_revocation_supersedes_pending_confirmation_and_raced_login_commit() {
+    for (command, logout) in [(Command::Disable, false), (Command::Disconnect, true)] {
+        let (mut c, backend, events, logins, _, disables) = fixture();
+        let call = start(&mut c, &events, &logins);
+        call.approve.send(approval()).unwrap();
+        assert!(!c.receive(recv(&events)));
+        c.command(Command::RequestDisconnect);
+        let late_confirmation = policy_receipt(&events);
+        let generation = late_confirmation.policy.as_ref().unwrap().generation;
+        c.command(command);
+        assert!(!(call.allowed)());
+        assert!(c.disabling());
+        // Native execution is admitted before a confirmation worker receipt,
+        // its error, or a raced successful sign-in receipt can reach the UI.
+        let (actual_logout, finish) = recv(&disables);
+        assert_eq!(actual_logout, logout);
+        c.close();
+        *backend.local.lock().unwrap() = Ok(connected());
+        call.finish.send(Ok(())).unwrap();
+        assert!(!c.receive(recv(&events)));
+        assert!(!c.receive(late_confirmation));
+        assert!(!c.receive(policy_failure(generation, PolicyAction::RequestDisconnect)));
+        assert!(c.disabling());
+        *backend.local.lock().unwrap() = Ok(disconnected(None));
+        finish.send(Ok(())).unwrap();
+        assert!(!c.receive(recv(&events)));
+        assert_eq!(c.view().status, "Not connected");
+        assert!(disables.try_recv().is_err());
+        assert!(logins.try_recv().is_err());
+    }
 }
 
 #[test]
@@ -423,7 +517,7 @@ fn disable_cancels_login_and_blocks_reenable_until_durable_result_even_on_close(
 }
 
 #[test]
-fn emergency_disable_during_login_is_direct_and_invalidates_before_policy_receipt() {
+fn emergency_disable_during_login_enters_native_executor_before_any_policy_receipt() {
     let (mut c, backend, events, logins, _, disables) = fixture();
     let call = start(&mut c, &events, &logins);
     call.approve.send(approval()).unwrap();
@@ -446,14 +540,10 @@ fn emergency_disable_during_login_is_direct_and_invalidates_before_policy_receip
 
     c.command(Command::Disable);
     assert!(!(request.allowed())());
-    assert!(c.request.is_none());
-    let intent = policy_receipt(&events);
-    assert_eq!(
-        intent.policy.as_ref().unwrap().action,
-        PolicyAction::Disable
-    );
+    assert!(c.disabling());
     assert!(c.policy_state.confirmation.is_none());
-    assert!(!c.receive(intent));
+    assert!(!c.policy_pending);
+    assert!(events.try_recv().is_err());
     let (logout, finish) = recv(&disables);
     assert!(!logout);
     call.finish.send(Ok(())).unwrap();
@@ -464,7 +554,7 @@ fn emergency_disable_during_login_is_direct_and_invalidates_before_policy_receip
 }
 
 #[test]
-fn emergency_disconnect_during_probe_is_direct_and_invalidates_before_policy_receipt() {
+fn emergency_disconnect_during_probe_enters_native_executor_before_any_policy_receipt() {
     let (mut c, backend, events, _, probes, disables) = fixture();
     *backend.local.lock().unwrap() = Ok(connected());
     c.refresh();
@@ -488,14 +578,10 @@ fn emergency_disconnect_during_probe_is_direct_and_invalidates_before_policy_rec
 
     c.command(Command::Disconnect);
     assert!(!(request.allowed())());
-    assert!(c.request.is_none());
-    let intent = policy_receipt(&events);
-    assert_eq!(
-        intent.policy.as_ref().unwrap().action,
-        PolicyAction::Disconnect
-    );
+    assert!(c.disabling());
     assert!(c.policy_state.confirmation.is_none());
-    assert!(!c.receive(intent));
+    assert!(!c.policy_pending);
+    assert!(events.try_recv().is_err());
     let (logout, finish) = recv(&disables);
     assert!(logout);
     probe.send(Health::Offline).unwrap();
@@ -646,7 +732,7 @@ fn reopened_unsettled_revocation_can_be_retried_without_allowing_a_new_login() {
     assert!(logins.try_recv().is_err());
     // With local state unreadable this is the existing explicit emergency retry
     // action, not a normal connected-account disable request.
-    policy(&mut c, &events, Command::Disable);
+    c.command(Command::Disable);
     let (logout, finish) = recv(&disables);
     assert!(!logout);
     *backend.local.lock().unwrap() = Ok(disconnected(None));
@@ -701,7 +787,7 @@ fn confirmation_and_consent_cancel_are_local_until_explicit_allow_or_revoke() {
     assert!(disables.try_recv().is_err());
     assert_eq!(c.view().presentation.tone, Tone::Success);
     policy(&mut c, &events, Command::RequestDisable);
-    policy(&mut c, &events, Command::Disable);
+    c.command(Command::Disable);
     let (logout, result) = recv(&disables);
     assert!(!logout);
     assert_eq!(c.view().presentation.tone, Tone::Progress);
