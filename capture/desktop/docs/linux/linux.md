@@ -76,6 +76,19 @@ Without the `input` group, a capture on Wayland has no clicks, keys or ⇧ ink o
 
 Screen and Area work on the tested desktops within the output limits below. Window recording is temporarily disabled on every backend pending original-window lifetime safety (#230); the picker omits it and `record --window` returns an error without starting a recorder or substituting a screen. Choose Screen or Area explicitly. Existing Window bundles remain readable. A portal window source exists internally, but the UI does not offer it. A press of the record shortcut records the display under the pointer once its keys come up, however long they're held; the tray menu's **Choose What to Record…** opens the picker, which stays open until you choose a target or press Esc. The Mac-only iPhone mode is hidden. Screen sharing can ask again if a desktop does not honor the saved restore token. Finishing while the dialog is open cancels the pending session; a failed or empty capture reports an error rather than producing demo imagery, and `latest` skips its unfinished directory.
 
+Before the first screen frame, **Finish** uses the same durable cancellation as
+**Cancel**, including from the Electron pill, recording shortcut, tray and quit.
+It closes the pending sharing session without starting bundle processing or
+reporting a finalization failure. If writing the cancellation marker fails, the
+capture stays owned and busy; it is not reported as cancelled. Once a screen frame
+has arrived, Finish retains normal finalization and its empty-frame safety check.
+Agent `capture stop` still refuses a `starting` capture; use its exact-ID Cancel.
+This guard stays beside the native producer's first-frame admission and durable
+resource release, independent of renderer state. Record's TypeScript completion
+policy and existing Electron routing are unchanged. Remove the guard only when a
+replacement native admission contract preserves these same cancellation receipts
+and producer checks; reverting this repair restores the prior Finish behavior.
+
 `apparent capture start --wait --timeout 30` uses the running GUI's normal interaction-aware
 screen path and returns its own request ID. Portal consent still applies; `capture state` reports
 `starting` until a real frame arrives. An agent can cancel its owned pending ID but cannot
