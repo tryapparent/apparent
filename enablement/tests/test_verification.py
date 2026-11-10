@@ -22,7 +22,7 @@ class SelectionTests(unittest.TestCase):
         self.addCleanup(guard.stop)
 
     def test_documents_do_not_compile_app(self):
-        result = verification.select(["enablement/refactor.md", "AGENTS.md", "docs/capture.md"])
+        result = verification.select(["enablement/refactor.md", "capture/engine/docs/capture.md"])
         self.assertFalse(result["root"])
         self.assertFalse(result["engine"])
 
@@ -34,9 +34,9 @@ class SelectionTests(unittest.TestCase):
     def test_unknown_shared_build_security_lifecycle_and_tooling_broaden(self):
         for path in ["new-owner/foo.rs", "Cargo.toml", "Cargo.lock", "build.rs",
                      "assets/icon.png", "src/ui/recording_completion.rs", "src/handoff.rs",
-                     "capture/engine/src/session.rs", "capture/desktop/native/Settings.swift",
+                     "capture/desktop/native/Settings.swift",
                      "enablement/verification.py", ".githooks/pre-push",
-                     ".github/workflows/verification.yml", "public/site/package.json", "connect/service/src/auth.ts"]:
+                     ".github/workflows/verification.yml"]:
             with self.subTest(path=path):
                 result = verification.select([path])
                 self.assertTrue(result["root"])
@@ -83,16 +83,17 @@ class SelectionTests(unittest.TestCase):
             if command == ["node", "scripts/test-browser.mjs"]:
                 return real_run(command, **kwargs, capture_output=True)
             return subprocess.CompletedProcess(command, 0)
+        selected = verification.select(["connect/web/src/SharedLinks.tsx"])
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "connect/web").mkdir(parents=True)
             with patch.object(verification, "ROOT", root), patch.object(
                     verification.subprocess, "run", side_effect=execute):
                 with self.assertRaises(subprocess.CalledProcessError) as failure:
-                    verification.run_checks(verification.select(["connect/web/src/SharedLinks.tsx"]))
+                    verification.run_checks(selected)
                 self.assertIn(b"MODULE_NOT_FOUND", failure.exception.stderr)
 
-    def test_shared_links_is_exact_browser_inventory_not_shared_asset_permission(self):
+    def test_shared_links_and_new_browser_sources_stay_browser_local(self):
         selected = verification.select(["connect/web/src/SharedLinks.tsx"])
         self.assertEqual((selected["root"], selected["engine"], selected["browser"]),
                          (False, False, True))
@@ -102,8 +103,8 @@ class SelectionTests(unittest.TestCase):
                      "public/site/public/HostGrotesk-Variable.ttf", "public/site/public/apparent-wordmark.svg"]:
             with self.subTest(path=path):
                 result = verification.select(["connect/web/src/SharedLinks.tsx", path])
-                self.assertTrue(result["root"])
-                self.assertTrue(result["engine"])
+                self.assertFalse(result["root"])
+                self.assertFalse(result["engine"])
                 self.assertTrue(result["browser"])
 
     def test_reviewed_moves_require_complete_exact_source_pairs(self):
@@ -238,18 +239,18 @@ class SelectionTests(unittest.TestCase):
             git("config", "user.name", "Test")
             git("config", "user.email", "test@example.invalid")
             (root / "CONTEXT.md").write_text("Retired glossary\n")
-            (root / "docs").mkdir()
-            (root / "docs/routing.md").write_text("See CONTEXT.md\n")
+            (root / "capture/engine/docs").mkdir(parents=True)
+            (root / "capture/engine/docs/routing.md").write_text("See CONTEXT.md\n")
             git("add", ".")
             git("commit", "-qm", "base")
             base = git("rev-parse", "HEAD")
             git("rm", "CONTEXT.md")
-            (root / "docs/routing.md").write_text("Historical routing\n")
+            (root / "capture/engine/docs/routing.md").write_text("Historical routing\n")
             git("add", ".")
             git("commit", "-qm", "delete retired glossary")
             with patch.object(verification, "ROOT", root), patch.dict(os.environ, env, clear=True):
                 result = verification.plan(base, "HEAD")
-            self.assertEqual(result["paths"], ["CONTEXT.md", "docs/routing.md"])
+            self.assertEqual(result["paths"], ["CONTEXT.md", "capture/engine/docs/routing.md"])
             self.assertFalse(result["root"])
             self.assertFalse(result["engine"])
             self.assertFalse(result["browser"])
@@ -394,7 +395,7 @@ class SelectionTests(unittest.TestCase):
                                 changed = commit()
                                 broad(base, changed)
                     for path in ["Cargo.lock", "build.rs", "src/unknown.rs",
-                                 "enablement/tests/test_verification.py", "public/site/scripts/cd/publish-pages.ts"]:
+                                 "enablement/tests/test_verification.py", "capture/desktop/native/New.swift"]:
                         git("read-tree", head)
                         oid = git("hash-object", "-w", "--stdin", input="mixed input\n")
                         git("update-index", "--add", "--cacheinfo", "100644", oid, path)

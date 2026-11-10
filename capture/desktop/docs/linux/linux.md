@@ -426,3 +426,14 @@ continues. Finish/reset invalidates the binding. Other sessions keep their
 existing input route. This introduces no setting or experiment. If the native
 route must be reverted, remove its Desktop binding and the existing polled route
 remains available; retain that route for sessions without accepted native delivery.
+
+### Electron NSS packaging
+
+The AppImage stages NSS's dynamically loaded `libsoftokn3`, `libfreebl3`,
+`libfreeblpriv3` and `libnssckbi` modules from the same build distribution as
+its NSS libraries. ELF dependency traversal alone misses these modules. Mixing
+bundled NSS with a newer host soft token can terminate an Electron helper with
+SIGTRAP (`crypto/nss_util.cc`, NSS error -5925), independently of portal capture.
+Packaging rejects missing modules, unresolved relocations and host NSS dependency
+fallback before sealing the image. This check does not replace isolated Omarchy
+notes-editor acceptance against the packaged candidate.

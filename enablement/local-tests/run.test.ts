@@ -6,22 +6,33 @@ import { spawnSync } from 'node:child_process';
 import { select, selection, owners, changedPaths, captureToolTests, commands, contractTests, execute, root } from './run.ts';
 
 test('owner selection retains consumers and unrelated packages stay out', () => {
-  assert.deepEqual(select(['enablement/local-tests/run.ts']), ['tooling']);
+  assert.deepEqual(select(['enablement/local-tests/run.ts']), [...owners]);
   assert.deepEqual(select(['capture/desktop/ui/frontend/src/Settings.tsx']), ['capture', 'desktop']);
   assert.deepEqual(select(['connect/client/src/config.rs']), ['capture', 'client']);
-  assert.deepEqual(select(['shared/ui/src/button.tsx']), ['capture', 'desktop', 'service']);
+  assert.deepEqual(select(['shared/ui/src/button.tsx']), ['capture', 'desktop', 'web', 'service', 'public']);
   assert.deepEqual(select(['public/site/src/App.tsx']), ['public']);
-  assert.deepEqual(select(['connect/web/src/api.ts']), ['web', 'public']);
+  assert.deepEqual(select(['connect/web/src/api.ts']), ['web']);
   assert.deepEqual(select(['hermes/inspect.py']), ['hermes']);
   assert.deepEqual(select(['capture/desktop/scripts/packaging/install-app.sh']), ['capture', 'engine', 'capture-tools']);
-  assert.deepEqual(select(['README.md']), []);
+  assert.deepEqual(select(['README.md']), ['public']);
 });
 
 test('unknown, missing history and empty deltas cannot silently skip coverage', () => {
-  for (const paths of [[], ['Cargo.lock'], ['new-owner/file.ts'], ['shared/schema.ts'], ['.github/workflows/checks.yml']]) {
+  for (const paths of [[], ['Cargo.lock'], ['new-owner/file.ts'], ['shared/schema.ts']]) {
     assert.deepEqual(select(paths), [...owners]);
   }
   assert.deepEqual(select(['README.md'], false), [...owners]);
+});
+
+test('execution-sensitive workflow edits stay broad; verified non-native plans omit stale CLI work', () => {
+  for (const path of ['.github/workflows/checks.yml', '.github/workflows/release-linux.yml',
+    '.github/workflows/new-workflow.yml']) assert.deepEqual(select([path]), [...owners]);
+  const nonRust = commands([...owners], 'base', 'head', 'linux', false);
+  assert.ok(!nonRust.some(command => command.argv.includes('cargo') || command.argv.includes('--run')));
+  assert.ok(!nonRust.some(command => command.env?.APPARENT_BIN), 'no stale native binary acceptance');
+  assert.ok(nonRust.some(command => command.argv.includes('test:electron')), 'renderer tests remain selected');
+  const mixed = commands(select(['.github/workflows/checks.yml', 'capture/engine/source.rs']), 'base', 'head', 'linux', true);
+  assert.ok(mixed.some(command => command.argv.includes('--run')));
 });
 
 test('prerequisite, CI routing, selector and timing regressions are mandatory even on docs pushes', () => {
@@ -142,6 +153,7 @@ test('committed concurrency-only workflow edits select contracts rather than pro
   const result = selection(base, 'HEAD', dir);
   assert.deepEqual(result.workflowControls, [path]);
   assert.deepEqual(result.selected, ['tooling']);
+  assert.equal(result.rustChanged, false);
   assert.deepEqual(commands(result.selected, base, 'HEAD').map(command => command.argv), [
     ['python3', 'enablement/verification.py', '--base', base, '--head', 'HEAD', '--pr'],
     ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'],
@@ -154,6 +166,7 @@ test('committed concurrency-only workflow edits select contracts rather than pro
   git('add', '.'); git('commit', '-qm', 'docs');
   assert.deepEqual(selection(base, 'HEAD', dir).selected, [...owners]);
   assert.deepEqual(selection('unavailable', 'HEAD', dir).selected, [...owners]);
+  assert.equal(selection('unavailable', 'HEAD', dir).rustChanged, true);
   assert.deepEqual(selection('HEAD', 'HEAD', dir).selected, [...owners]);
 }));
 
@@ -171,6 +184,7 @@ test('real Git delta includes earlier commits and both sides of cross-owner rena
   git('mv', 'capture/engine/old.rs', 'public/site/new.ts'); git('commit', '-qm', 'move');
   writeFileSync(join(dir, 'README.md'), 'docs'); git('add', '.'); git('commit', '-qm', 'later docs');
   const paths = changedPaths(base, 'HEAD', dir);
+  assert.equal(selection(base, 'HEAD', dir).rustChanged, true, 'renamed-away Rust remains in full delta');
   assert.deepEqual(paths, ['README.md', 'capture/engine/old.rs', 'public/site/new.ts']);
   assert.deepEqual(select(paths), ['capture', 'engine', 'public']);
   git('rm', 'public/site/new.ts'); git('commit', '-qm', 'delete');
@@ -327,6 +341,8 @@ test('installed hook proves control-only selection, mandatory commands, failure 
 }));
 
 function copyInputHelpers(dir: string) {
+  mkdirSync(join(dir, 'enablement/ci/routing'), {recursive: true});
+  copyFileSync(join(root, 'enablement/ci/routing/consumers.ts'), join(dir, 'enablement/ci/routing/consumers.ts'));
   for (const name of ['service.ts', 'receipt.ts'])
     copyFileSync(join(root, 'enablement/local-tests', name), join(dir, 'enablement/local-tests', name));
   mkdirSync(join(dir, 'enablement/ci'), {recursive: true});

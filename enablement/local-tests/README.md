@@ -1,5 +1,13 @@
 # Local verification reuse
 
+Pre-push uses the shared TypeScript consumer map in `ci/routing/consumers.ts`.
+Native manifests, lockfiles, build helpers, embedded assets and Swift/Metal
+adapters retain native checks even without Rust source edits. Public/browser
+changes and ordinary owner prose avoid unrelated native suites. Unknown history,
+inputs and unsafe Git modes/types stay broad. Only proven concurrency-only
+workflow edits select tooling alone; execution-sensitive workflow changes retain
+integration coverage. Hosted and local execution use the same owner facts.
+
 Local selections that need Rust check the existing private temporary-root contract
 before other commands. When Desktop is selected, its locked install, unit tests
 and complete Electron suite run before Rust verification. This catches missing

@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCS = {"AGENTS.md", "README.md", "enablement/refactor.md", "CONTEXT.md"}
+POLICY = ROOT / "enablement/ci/routing/legacy.ts"
 
 # Exact reviewed extraction pairs, not an arbitrary Rust/mechanical classifier.
 # f1b46d2a donors -> #221 1ea0d146 / #225 28d83f3d preserved bodies,
@@ -78,43 +78,13 @@ MOVES = {
     },
 }
 
-# Additive independent browser package from #200, inventory checked at c5bb1b78. Root
-# build.rs/Cargo/native inputs do not consume this directory; its build reads
-# the five approved public/site/public brand assets. Changing those/shared inputs is
-# not this route. SharedLinks.tsx closure rechecked at 31281ba5; its existing
-# standalone verifier covers shares routes. Unknown new owners remain broad.
-BROWSER_FILES = {"connect/web/" + path for path in (
-    ".gitignore", "AGENTS.md", "README.md", "VERIFICATION.md", "bun.lock",
-    "index.html", "package.json", "tsconfig.json", "vite.config.ts",
-    "scripts/assets.mjs", "scripts/prerender.mjs", "scripts/test-browser.mjs",
-    "src/Hosted.tsx", "src/SharedLinks.tsx", "src/api.ts", "src/base.css", "src/entry-server.tsx",
-    "src/hosted.css", "src/main.tsx", "test/artifact.test.mjs", "test/browser.mjs",
-    "test/closure.test.mjs", "test/routes.test.mjs",
-)}
-
-
 def select(paths, history_known=True):
     paths = sorted(set(paths))
-    # Unknown/shared/build/security/lifecycle input is broad by default. Do not
-    # infer safety from a commit message, extension, or a newly created owner.
-    broad = not history_known or not paths
-    engine = False
-    browser = False
-    reasons = []
-    for path in paths:
-        if path in DOCS or (path.startswith("docs/") and path.endswith(".md")):
-            continue
-        if path.startswith("capture/engine/tests/") or path == "capture/engine/README.md":
-            engine = True
-        elif path in BROWSER_FILES:
-            browser = True
-        else:
-            broad = True
-            reasons.append(path)
-    return {"root": broad, "engine": broad or engine, "browser": browser,
-            "focused": [], "paths": paths,
-            "reason": "unknown history or empty delta" if not history_known or not paths
-            else "broad inputs: " + ", ".join(reasons) if broad else "document/package-test-only delta"}
+    result = subprocess.run(["node", "--experimental-strip-types", str(POLICY)],
+                            input=json.dumps(paths if history_known else None), capture_output=True, text=True, check=True)
+    suites = json.loads(result.stdout)
+    return {"root": suites["root"], "engine": suites["engine"], "browser": suites["browser"],
+            "focused": [], "paths": paths, "reason": "shared TypeScript consumer selection"}
 
 
 def changed_paths(base, head):
@@ -352,6 +322,7 @@ def main():
                         help="Explicit CI routing; local default runs portable and platform checks")
     parser.add_argument("--overlap-root-build", action="store_true",
                         help="CI: overlap two root test threads with one required app-build worker")
+    parser.add_argument("--selection-json", help="Internal TypeScript owner plan; invalid plans fail")
     parser.add_argument("--github-output", type=Path)
     args = parser.parse_args()
     if args.prepare_connect_typescript:
@@ -362,6 +333,10 @@ def main():
         print("Temporary environment prerequisites passed; not native proof.")
         return
     selection = plan(args.base, args.head)
+    if args.selection_json:
+        selection = json.loads(args.selection_json)
+        if any(type(selection.get(key)) is not bool for key in ("root", "engine", "browser")) or selection.get("focused") != []:
+            raise ValueError("Invalid TypeScript owner plan")
     print(json.dumps(selection, sort_keys=True), flush=True)
     if args.github_output:
         with args.github_output.open("a") as output:

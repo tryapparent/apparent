@@ -179,8 +179,10 @@ with patch.object(v,'check_temp_environment'),patch.object(v,'prepare_connect_ty
   assert.equal(result.status, 0, result.stderr + result.stdout);
   assert.ok(existsSync(join(directory, 'timings.jsonl')));
   const workflow = readFileSync('.github/workflows/verification-platform.yml', 'utf8');
-  assert.match(workflow, /verification\.py --base "\$BASE" --run --online --execution platform --overlap-root-build/);
-  assert.equal((workflow.match(/--overlap-root-build/g) ?? []).length, 1);
+  assert.match(workflow, /routing\/native\.ts/);
+  const adapter = readFileSync('enablement/ci/routing/native.ts', 'utf8');
+  assert.match(adapter, /--overlap-root-build/);
+  assert.equal((adapter.match(/--overlap-root-build/g) ?? []).length, 1);
 });
 
 const cargoTest = process.env.APPARENT_ROOT_REAL_CARGO === '1' ? test : test.skip;
