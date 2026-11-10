@@ -6,6 +6,10 @@ on:
       runner:
         required: true
         type: string
+      mac_rust:
+        description: Run Mac root and Engine native verification (PR renderer exemption only)
+        type: boolean
+        default: true
       release_receipt:
         description: Emit the existing manual publication receipt on eligible refs
         type: boolean
@@ -171,7 +175,7 @@ jobs:
 
   rust:
     needs: select
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && (inputs.runner != 'macos-15-intel' || inputs.mac_rust || inputs.release_receipt))
     name: rust (${{ inputs.runner }})
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 60

@@ -53,6 +53,18 @@ const portableSettings = new Set([
   'error-reporting.tsx', 'reference.tsx',
 ].map(name => 'capture/desktop/ui/frontend/src/' + name));
 
+// Exact renderer-only build inputs. See continuous-delivery.md for consumers.
+// No TS/TSX/CSS directory glob: bridge, policy, entrypoints and new files fail closed.
+export const presentationInputs = new Set([
+  ...portableSettings,
+  'capture/desktop/ui/frontend/src/style.css',
+]);
+
+export function requiresMacRust(paths: string[] | null, unsupported: string[] | null): boolean {
+  return paths === null || unsupported === null || !paths.length || unsupported.length > 0 ||
+    paths.some(path => !presentationInputs.has(path));
+}
+
 const portal = 'capture/desktop/linux/capture/portal.rs';
 // Audited cfg(linux) leaf adapter; no shared policy or Mac compiler consumer.
 const linuxAdapters = new Set(['capture/desktop/linux/integration/appearance.rs']);
@@ -137,8 +149,15 @@ export function selectRange(base: string, head: string) {
     reasons: platform ? mac.reasons : paths!.map(path => 'docs:reviewed-prose:' + path)};
 }
 
+export function requiresMacRustRange(base: string, head: string): boolean {
+  const delta = changes(base, head);
+  return requiresMacRust(delta?.map(change => change.path) ?? null,
+    delta?.filter(unsupported).map(change => change.path) ?? null);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const {reasons, ...result} = selectRange(process.env.BASE_SHA ?? '', process.env.GITHUB_SHA ?? '');
-  console.log(JSON.stringify({...result, reasons}));
-  appendFileSync(process.env.GITHUB_OUTPUT!, Object.entries(result).map(([key, value]) => key + '=' + value + '\n').join(''));
+  const mac_rust = requiresMacRustRange(process.env.BASE_SHA ?? '', process.env.GITHUB_SHA ?? '');
+  console.log(JSON.stringify({...result, mac_rust, reasons}));
+  appendFileSync(process.env.GITHUB_OUTPUT!, Object.entries({...result, mac_rust}).map(([key, value]) => key + '=' + value + '\n').join(''));
 }

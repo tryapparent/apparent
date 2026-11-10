@@ -34,22 +34,25 @@ jobs:
     # Share the cheap admission barrier; neither full platform waits for the other.
     needs: [contracts, hermes, select]
     # Only a successful explicit false can exempt a reviewed ready-PR delta.
+    # Renderer-only PRs retain Electron; only their root Rust job is omitted.
     # Failed/unknown selection keeps Mac coverage after the cheap guards pass.
     if: >-
       !cancelled() && needs.contracts.result == 'success' && needs.hermes.result == 'success' &&
       (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false &&
-      (needs.select.result != 'success' || needs.select.outputs.macos != 'false')))
+      (needs.select.result != 'success' || needs.select.outputs.macos != 'false' || needs.select.outputs.mac_rust != 'true')))
       && (needs.select.result != 'success' || needs.select.outputs.platform != 'false')
     uses: ./.github/workflows/verification-platform.yml
     with:
       runner: macos-15-intel
       release_receipt: false
+      mac_rust: ${{ !(github.event_name == 'pull_request' && needs.select.result == 'success' && needs.select.outputs.mac_rust == 'false') }}
 
   select:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-24.04
     outputs:
       macos: ${{ steps.paths.outputs.macos }}
+      mac_rust: ${{ steps.paths.outputs.mac_rust }}
       public: ${{ steps.paths.outputs.public }}
       updater: ${{ steps.paths.outputs.updater }}
       platform: ${{ steps.paths.outputs.platform }}
