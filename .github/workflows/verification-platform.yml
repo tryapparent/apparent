@@ -47,6 +47,10 @@ jobs:
         env:
           VERIFICATION_PLAN: ${{ inputs.plan }}
         run: node --experimental-strip-types enablement/ci/routing/run.ts --outputs
+      - uses: actions/setup-python@v5
+        if: inputs.portable
+        with:
+          python-version: '3.12'
       - uses: oven-sh/setup-bun@v2
         if: inputs.portable
         with:
@@ -54,6 +58,12 @@ jobs:
       - uses: browser-actions/setup-chrome@v1
         if: inputs.portable
         id: chrome
+      - name: Install disk-image contract dependency (no KVM required)
+        if: inputs.portable
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qemu-utils
+      - name: Install OCR preprocessing dependency
+        if: inputs.portable
+        run: python3 -m pip install Pillow
       - name: Manual full portable verification
         if: inputs.portable
         env:

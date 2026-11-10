@@ -193,3 +193,20 @@ test('staged Engine-only deltas retain both platform native execution without th
   writeFileSync(path,'after');git('commit','-qam','engine');const result=cli(base,git('rev-parse','HEAD'),dir);
   assert.equal(result.plan.root,false);assert.equal(result.plan.engine,true);assert.equal(result.mac_rust,true);assert.equal(result.mac_plan.engine,true);
 }));
+
+test('portable tool contracts retain the updater harness disk-image/OCR prerequisites before execution', () => {
+  const harness=workflow('linux-updater-harness.yml').jobs.contracts.steps;
+  for (const [steps, execution, condition] of [
+    [ci().jobs.portable.steps,'--portable',"needs.select.result != 'success' || fromJSON(needs.select.outputs.plan).tools"],
+    [workflow('verification-platform.yml').jobs.select.steps,'--portable','inputs.portable'],
+  ] as const) {
+    const run=steps.findIndex((step:any)=>step.run?.includes(execution));
+    for(const name of ['Install disk-image contract dependency (no KVM required)','Install OCR preprocessing dependency']) {
+      const existing=harness.find((step:any)=>step.name===name);
+      const index=steps.findIndex((step:any)=>step.name===name);
+      assert.ok(index>=0&&index<run,name+' must precede the real contract suite');
+      assert.equal(steps[index].run,existing.run);
+      assert.equal(steps[index].if,condition);
+    }
+  }
+});
