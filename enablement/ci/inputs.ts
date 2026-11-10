@@ -36,3 +36,21 @@ export function workflowControlPaths(base: string, head: string, paths: string[]
       {...options(cwd), input: JSON.stringify(snapshots)}));
   } catch { return []; }
 }
+
+// Path-only owner exemptions require ordinary files on both sides. Moves are
+// unfolded into A/D by --no-renames; symlinks, executable/type changes broaden.
+export function regularFileDelta(base: string, head: string, cwd = root): boolean {
+  try {
+    const fields = execFileSync('git', ['diff', '--no-renames', '--raw', '--no-abbrev', '-z', base, head, '--'], options(cwd)).split('\0');
+    if (fields.pop() !== '' || fields.length % 2) return false;
+    for (let i = 0; i < fields.length; i += 2) {
+      const match = /^:(\d{6}) (\d{6}) [a-f0-9]{40} [a-f0-9]{40} ([MAD])$/.exec(fields[i]);
+      if (!match || !fields[i+1]) return false;
+      const [,before,after,status] = match;
+      if (!((status === 'M' && before === '100644' && after === '100644') ||
+        (status === 'A' && before === '000000' && after === '100644') ||
+        (status === 'D' && before === '100644' && after === '000000'))) return false;
+    }
+    return true;
+  } catch { return false; }
+}

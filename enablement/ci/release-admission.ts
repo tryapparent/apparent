@@ -22,7 +22,10 @@ export function admitsCD(run: Run, jobs: Job[], repo: string, sha: string, platf
     `${platform} / select`, ...['desktop-ui', 'connect-client', 'rust'].map(name => `${platform} / ${name} (${runner})`)];
   if (platform === 'macos') required.push('Hermes inspection (macos-15-intel)');
   const passed = new Set(jobs.filter(job => job.status === 'completed' && job.conclusion === 'success').map(job => job.name));
-  return required.every(name => passed.has(name));
+  // Fresh exact-main admission proves each affected suite ran or has authenticated
+  // identical-tree PR evidence. Historical complete runs retain their contract.
+  return passed.has('contracts') && passed.has('select') &&
+    (passed.has(platform === 'linux' ? 'Linux verification' : 'Mac verification') || required.every(name => passed.has(name)));
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { run, jobs, repo, sha, platform } = JSON.parse(readFileSync(0, 'utf8'));

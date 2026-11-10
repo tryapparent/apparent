@@ -1,4 +1,6 @@
-Ready-PR/main platform verification opts into root test/build overlap. The
+Consumer selection, exact-tree PR evidence reuse and automatic Linux Main publication are documented in [continuous delivery](../docs/continuous-delivery.md). `routing/consumers.ts` owns the shared facts; native commands remain in the existing verifier adapter.
+
+Ready-PR/manual platform verification opts into root test/build overlap. The
 verifier retains the Cargo inventory; `root.ts` starts the real app build only
 after Cargo reports successful test compilation. Two test threads overlap one
 build worker. Both commands must pass before the verifier continues. Focused

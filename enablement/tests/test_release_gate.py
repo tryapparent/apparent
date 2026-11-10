@@ -40,12 +40,12 @@ class AdmissionTests(unittest.TestCase):
             workflow = (root / name).read_text()
             events = workflow.split('\non:\n', 1)[1].split('\npermissions:', 1)[0]
             triggers = re.findall(r'^  ([a-z_]+):', events, re.M)
-            self.assertEqual(triggers, ['workflow_dispatch'], name)
+            self.assertEqual(triggers, ['workflow_call', 'workflow_dispatch'] if name == 'release-linux.yml' else ['workflow_dispatch'], name)
         checks = (root / 'checks.yml').read_text()
         self.assertIn('  pull_request:', checks)
         self.assertIn('  push:', checks)
         self.assertIn('enablement/verification.py --base "$BASE_SHA" --pr', checks)
-        self.assertNotIn('contents: write', checks)
+        self.assertIn('uses: ./.github/workflows/release-linux.yml', checks)
 
     def setUp(self):
         self.repo = 'example/project'
@@ -143,7 +143,8 @@ class AdmissionTests(unittest.TestCase):
         workflow = (root / '.github/workflows/verification-platform.yml').read_text()
         for job in ('desktop-ui', 'rust'):
             section = re.search(r'^  ' + job + r':\n(.*?)(?=^  [a-z]|\Z)', workflow, re.M | re.S)[1]
-            self.assertIn("if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'", section)
+            self.assertIn("needs.select.outputs.root" if job == "rust" else "needs.select.outputs.desktop", section)
+        self.assertIn("default: ''", workflow)  # Missing plan defaults to full manual verification.
         receipt = workflow.split('  release-ready:\n', 1)[1]
         self.assertIn("github.ref == 'refs/heads/main'", receipt)
         self.assertIn("github.ref == 'refs/heads/t3/onboarding-mac-release-baseline'", receipt)
