@@ -998,6 +998,9 @@ struct SettingsView: View {
   }
 
   private func select(_ pane: SettingsPane) {
+    // Native callback time distinguishes input delivery from the asynchronous
+    // handoff to another Settings presentation. Never log preference values.
+    NSLog("Apparent Settings selected %@", pane.rawValue)
     if model.state.recording != nil { model.act("cancel-shortcut") }
     if pane == .storage || pane == .about {
       model.act("navigate", ["pane": pane.rawValue])

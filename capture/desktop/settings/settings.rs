@@ -2043,6 +2043,7 @@ impl Session {
                 Effect::None
             }
             Event::Action(Action::Navigate { pane }) => {
+                crate::capture::engine::runtime::apparent_log(format!("Settings navigation accepted: {pane:?}"));
                 self.panel.on(Action::CancelShortcut, host);
                 self.show(Some(pane));
                 Effect::None
