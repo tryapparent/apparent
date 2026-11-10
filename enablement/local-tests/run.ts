@@ -18,7 +18,7 @@ export function select(paths: string[], known = true, workflowControls: string[]
   if (!known || !paths.length) add(...owners);
   for (const path of paths) {
     if (['README.md', 'AGENTS.md', 'CONTEXT.md', 'enablement/refactor.md'].includes(path)) continue;
-    if (known && workflowControls.includes(path)) add('tooling');
+    if (path.startsWith('.github/workflows/')) add('tooling');
     else if (path.startsWith('enablement/') || path.startsWith('.githooks/')) add('tooling');
     else if (path.startsWith('hermes/')) add('hermes');
     else if (path.startsWith('connect/web/')) add('web', 'public');
@@ -45,7 +45,8 @@ export function selection(base: string, head: string, cwd = root, conservativeWo
   let paths: string[] = [], historyKnown = true;
   try { paths = changedPaths(base, head, cwd); } catch { historyKnown = false; }
   const workflowControls = historyKnown && !conservativeWorkflows ? workflowControlPaths(base, head, paths, cwd) : [];
-  return {paths, historyKnown, workflowControls, selected: select(paths, historyKnown, workflowControls)};
+  const rustChanged = !historyKnown || paths.some(path => path.endsWith('.rs'));
+  return {paths, historyKnown, workflowControls, rustChanged, selected: select(paths, historyKnown, workflowControls)};
 }
 
 export function captureToolTests(cwd = root): Command[] {
@@ -58,7 +59,7 @@ export function captureToolTests(cwd = root): Command[] {
       ...(path.endsWith('/test_issue_cli.py') ? {env: {APPARENT_BIN: resolve(cwd, process.env.CARGO_TARGET_DIR || 'target', 'debug/apparent')}} : {}) }));
 }
 
-export function commands(selected: Owner[], base: string, head: string, platform = process.platform): Command[] {
+export function commands(selected: Owner[], base: string, head: string, platform = process.platform, rustChanged = true): Command[] {
   const result: Command[] = [];
   const add = (argv: string[], cwd = '.') => result.push({ argv, cwd });
   // Diagnose invalid/private/overlong temporary roots before any selected work.
@@ -83,7 +84,7 @@ export function commands(selected: Owner[], base: string, head: string, platform
     add(['npm', 'test'], cwd);
     add([...(platform === 'linux' ? ['xvfb-run', '-a'] : []), 'npm', 'run', 'test:electron'], cwd);
   }
-  if (selected.includes('capture') || selected.includes('engine')) {
+  if (rustChanged && (selected.includes('capture') || selected.includes('engine'))) {
     // Reuse the authoritative conservative Rust verifier, including TMPDIR and jobs.
     // For mixed inputs it broadens to root + staged Engine rather than omit tests.
     add(['python3', 'enablement/verification.py', '--base', base, '--head', head, '--run']);
@@ -91,8 +92,8 @@ export function commands(selected: Owner[], base: string, head: string, platform
   // This real CLI suite needs the exact executable the preceding root check
   // rebuilt. Its existing APPARENT_BIN contract supports private target dirs.
   if (tools.some(command => command.env?.APPARENT_BIN) && !selected.includes('capture')) throw Error('CLI tests require root build coverage');
-  result.push(...tools.filter(command => command.env?.APPARENT_BIN));
-  if (selected.includes('client')) {
+  result.push(...tools.filter(command => rustChanged && command.env?.APPARENT_BIN));
+  if (rustChanged && selected.includes('client')) {
     // The Rust client-only lane also consumes the compiled shares policy. The
     // broad root verifier above prepares it when present; this route keeps the
     // standalone client owner lane safe without duplicating that work.
@@ -156,7 +157,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   if (!args.includes('--base') || !args.includes('--head')) throw Error('--base and --head are required');
   const base = value('--base'), head = value('--head');
   const result = selection(base, head, root, args.includes('--conservative-workflows'));
-  const plan = commands(result.selected, base, head);
+  const plan = commands(result.selected, base, head, process.platform, result.rustChanged);
   console.log(JSON.stringify({ ...result, commands: plan }));
   if (args.includes('--run')) execute(plan, root, result.historyKnown ? {base, head} : undefined);
 }

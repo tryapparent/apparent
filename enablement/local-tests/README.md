@@ -1,5 +1,11 @@
 # Local verification reuse
 
+Pre-push schedules Rust builds/tests only for a complete pushed delta containing
+`.rs` paths, including deletions and both rename sides. Unavailable history retains
+Rust coverage. Known changes without Rust source skip Cargo and native CLI tests
+that require a rebuilt binary. Workflow changes select tooling contracts rather
+than product suites. Hosted CI and explicit verification keep their own gates.
+
 Local selections that need Rust check the existing private temporary-root contract
 before other commands. When Desktop is selected, its locked install, unit tests
 and complete Electron suite run before Rust verification. This catches missing

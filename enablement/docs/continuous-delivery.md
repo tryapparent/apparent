@@ -50,19 +50,27 @@ local checks. Dirty-tree, hidden-index and exact-HEAD push guards remain enforce
 Preview selection without executing tests:
 `node --experimental-strip-types enablement/local-tests/run.ts --base origin/main --head HEAD`.
 The hook supplies the merge-base; both rename sides and deletions are included.
+Workflow files select local tooling contracts, including changes to jobs, commands,
+triggers and newly added workflows. They do not select product builds. Hosted
+platform selection and release admission remain independent and unchanged.
 Unknown/shared/root-build inputs, missing history and empty deltas select all
 owners. Root documentation alone runs contracts. Tooling changes additionally
 run directory-width tests; Hermes changes run its inspection suite. Public runs
 its standalone verifier. Connect web runs its full package suite and Public
 composition; client changes also run root integration; service changes include
 client, browser, Public and root consumers. Desktop frontend changes run npm tests,
-synthetic Electron smokes (Xvfb on Linux) and conservative root verification.
+synthetic Electron smokes (Xvfb on Linux).
 Capture script changes also load every tracked Python contract file explicitly
 under Desktop/Agent scripts, including nested packaging and hyphenated Linux tests;
 these run before expensive suites except the CLI integration, which follows the
-root rebuild and receives its exact executable through `APPARENT_BIN`. New enablement test filenames are discovered
-automatically. Other capture changes retain the broad Rust/Engine verifier. Shared UI
-also selects Desktop, service and root integration. Package manifests/lockfiles
+root rebuild and receives its exact executable through `APPARENT_BIN`. This native
+CLI check runs only when Rust verification is selected. New enablement test filenames are discovered
+automatically. Rust builds/tests run only when the complete pushed delta includes
+a `.rs` path (including deletions and both rename sides), or history is unavailable.
+Known deltas without Rust source changes skip root/Engine and client Cargo commands;
+this includes workflow, TypeScript, docs, manifests and lockfile changes. Explicit
+local verification and hosted CI retain their existing conservative gates. Shared UI
+also selects Desktop and service tests. Package manifests/lockfiles
 select the entire owner, with locked installs and ordinary build prerequisites.
 Missing tools/packages fail rather than silently skip. Use Node 22.23+ and Bun
 1.3.10 for CI routing and selected web/Public packages. Run hook-backed pushes once through
@@ -112,7 +120,11 @@ explicitly. Preview publication stays on `macos-latest` for arm64 packaging; Int
 CI is not Apple Silicon runtime proof. An image change must still pass the same
 checks before Mac publication.
 
-Linux and Connect delivery are manual-only. Their admission job reads trusted-main
+Linux latest-main delivery runs automatically after the main push's Linux and shared
+checks succeed, without depending on Mac jobs. It reuses `release-linux.yml` for both
+AppImage packaging gates and publication to the existing Main update channel.
+PRs and skipped/failed Linux jobs cannot publish. Manual Linux delivery remains
+available; Connect delivery remains manual-only. The admission job reads trusted-main
 code and requires that exact commit's
 successful Linux/shared receipt. Mac preview publication requires both the
 Linux/shared and Mac receipts for the same commit. A queued/failed Mac run cannot
