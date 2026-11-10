@@ -241,6 +241,8 @@ fn electron_pill_real_pipe_child() {
         session.healthy(),
         "activation acknowledgement was lost under state load"
     );
+    let anchor = session.note_badge_anchor().expect("visible child must report its native frame");
+    assert!(anchor.iter().all(|value| value.is_finite()) && anchor[2] > 0.0 && anchor[3] > 0.0);
     session.update(
         View::new(&snapshot(Pres::Hidden), 0, false),
         1,

@@ -29,8 +29,10 @@ function applyPlacement(point){
 }
 function emit(message){process.stdout.write(JSON.stringify(message)+'\n');}
 function reportFrame(){
-  if(process.platform!=='darwin' || !rendererReady || current?.phase!=='recording' || !window.isVisible())return;
-  const b=window.getBounds(),frame=[b.x,b.y,b.width,b.height],revision=current.revision,key=JSON.stringify({revision,frame});
+  if(!rendererReady || current?.phase!=='recording' || !window.isVisible())return;
+  const b=window.getBounds(),origin=process.platform==='linux'?screen.dipToScreenPoint({x:b.x,y:b.y}):b;
+  const scale=process.platform==='linux'?screen.getDisplayMatching(b).scaleFactor:1;
+  const frame=[origin.x,origin.y,b.width*scale,b.height*scale],revision=current.revision,key=JSON.stringify({revision,frame});
   if(key!==lastFrame){lastFrame=key;emit({revision,frame});}
 }
 function publish(value){
@@ -38,6 +40,7 @@ function publish(value){
   if(current && next.revision<current.revision)throw Error('Old pill state');
   if(!current || next.revision!==current.revision)pending=false;
   if(current && next.revision!==current.revision)pasteGesture=null;
+  if(!current || next.revision!==current.revision || next.phase!==current.phase){rendererReady=false;renderDeadline=Date.now()+5000;}
   current=next;lastInput=Date.now();
   if(loaded){window.webContents.send('pill:state',current);visibility();}
 }
@@ -88,7 +91,8 @@ app.whenReady().then(()=>{
   session.defaultSession.webRequest.onBeforeRequest((details,reply)=>reply({cancel:!details.url.startsWith('file:')}));
   window=new BrowserWindow({...(process.platform==='darwin'?{type:'panel',acceptFirstMouse:true}:{focusable:false}),width:640,height:58,show:false,frame:false,transparent:true,resizable:false,
     fullscreenable:false,skipTaskbar:true,hasShadow:false,alwaysOnTop:true,title:'Apparent recording controls',
-    webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false,webSecurity:true,spellcheck:false}});
+    paintWhenInitiallyHidden:true,
+    webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false,webSecurity:true,spellcheck:false,backgroundThrottling:false}});
   if(pendingPlace)applyPlacement(pendingPlace);
   window.setAlwaysOnTop(true,'screen-saver');
   window.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
@@ -124,13 +128,15 @@ app.whenReady().then(()=>{
   // Renderer never chooses native dimensions or screen coordinates.
   // Parent's bounded state defines content; main measures its own trusted document.
   let appliedShape=null;
-  async function measure(){
+  async function measure(revision){
     if(!loaded || window.isDestroyed())return;
     if(current?.phase!=='hidden' && Date.now()-lastInput>5000){app.exit(1);return;}
     try{
       const area=screen.getDisplayMatching(window.getBounds()).workArea;
       const size=await window.webContents.executeJavaScript(`(() => {document.documentElement.style.setProperty('--pill-limit', '${area.width}px');const element=document.querySelector('main'),rect=element?.getBoundingClientRect();return rect && {width:Math.ceil(rect.width),height:Math.ceil(rect.height),revision:Number(element.dataset.revision)};})()`);
-      if(!size || !Number.isFinite(size.width)||!Number.isFinite(size.height))return false;
+      // A newer parent state may arrive while the renderer answers. Never apply
+      // geometry measured for an obsolete document.
+      if(revision!==current?.revision || size?.revision!==revision || !Number.isFinite(size.width)||!Number.isFinite(size.height))return false;
       const bounds=window.getBounds();
       const width=Math.min(area.width,Math.max(100,Math.ceil(size.width)));
       const height=Math.min(160,Math.max(58,Math.ceil(size.height)));
@@ -144,15 +150,14 @@ app.whenReady().then(()=>{
       return size.revision===current?.revision;
     }catch{app.exit(1);}
   }
-  const sizing=setInterval(()=>{
+  const watchdog=setInterval(()=>{
     if(!rendererReady && Date.now()>renderDeadline){app.exit(1);return;}
-    void measure();
-    reportFrame();
-  },250);
+    if(current?.phase!=='hidden' && Date.now()-lastInput>5000)app.exit(1);
+  },500);
   ipcMain.handle('pill:layout',async(event,revision,...args)=>{
     valid(event,args);
     if(!Number.isSafeInteger(revision) || revision!==current?.revision)return;
-    const committed=current.phase==='hidden' || await measure();
+    const committed=current.phase==='hidden' || await measure(revision);
     if(committed && revision===current?.revision){
       // React invokes this after committing the authoritative snapshot. HTML load
       // alone must never retire the functioning previous presentation.
@@ -164,6 +169,7 @@ app.whenReady().then(()=>{
         readySent=true;emit({ready:true,windowId});
       }
       visibility();
+      reportFrame();
     }
   });
   ipcMain.handle('pill:begin-paste',(event,revision,...args)=>{
@@ -194,7 +200,10 @@ app.whenReady().then(()=>{
     if(pasteGesture && Date.now()>pasteGesture.until)pasteGesture=null;
     if(process.platform==='darwin')window.setIgnoreMouseEvents(!inside && !pasteGesture,{forward:true});
   },16);
-  window.on('closed',()=>{clearInterval(sizing);clearInterval(pointerTimer);app.quit();});
+  window.on('closed',()=>{clearInterval(watchdog);clearInterval(pointerTimer);app.quit();});
+  window.on('show',reportFrame);
+  window.on('move',reportFrame);
+  window.on('resize',reportFrame);
   // Hyprland assigns even override-redirect XWayland windows to a workspace.
   // Rust's existing native adapter pins only this exact child/window identity.
   if(process.platform==='linux'){
