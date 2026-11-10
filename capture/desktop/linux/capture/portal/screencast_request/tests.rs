@@ -67,6 +67,54 @@ impl Portal {
     ) -> zbus::fdo::Result<OwnedObjectPath> {
         assert_eq!(session.as_str(), "/owned/session");
         assert_eq!(parent, "");
+        self.respond(options, connection, header, false).await
+    }
+
+    async fn select_sources(
+        &self,
+        session: ObjectPath<'_>,
+        options: HashMap<String, OwnedValue>,
+        #[zbus(connection)] connection: &zbus::Connection,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+    ) -> zbus::fdo::Result<OwnedObjectPath> {
+        assert_eq!(session.as_str(), "/owned/session");
+        assert!(!bool::try_from(options.get("multiple").unwrap()).unwrap());
+        assert_eq!(
+            u32::try_from(options.get("cursor_mode").unwrap()).unwrap(),
+            2
+        );
+        match u32::try_from(options.get("types").unwrap()).unwrap() {
+            1 => {
+                assert_eq!(
+                    u32::try_from(options.get("persist_mode").unwrap()).unwrap(),
+                    2
+                );
+                assert_eq!(
+                    <&str>::try_from(options.get("restore_token").unwrap()).unwrap(),
+                    "owned-restore"
+                );
+            }
+            2 => {
+                assert_eq!(
+                    u32::try_from(options.get("persist_mode").unwrap()).unwrap(),
+                    0
+                );
+                assert!(!options.contains_key("restore_token"));
+            }
+            value => panic!("unexpected source type {value}"),
+        }
+        self.respond(options, connection, header, true).await
+    }
+}
+
+impl Portal {
+    async fn respond(
+        &self,
+        options: HashMap<String, OwnedValue>,
+        connection: &zbus::Connection,
+        header: zbus::message::Header<'_>,
+        selection: bool,
+    ) -> zbus::fdo::Result<OwnedObjectPath> {
         let token = <&str>::try_from(options.get("handle_token").unwrap()).unwrap();
         assert!(token.starts_with("apparent_"));
         let sender = header
@@ -94,7 +142,7 @@ impl Portal {
         self.started.send(()).unwrap();
         if let Some(status) = self.response {
             // Reply before the Start method returns: exercise signal subscription order.
-            let values = if status == 0 {
+            let values = if status == 0 && !selection {
                 HashMap::from([(
                     "streams",
                     Value::new(vec![(42u32, HashMap::<&str, Value<'_>>::new())]),
@@ -172,8 +220,9 @@ impl Drop for Dropped {
 }
 
 #[test]
-fn pending_start_closes_its_request_after_dropping_operation_on_cancel_or_disconnect() {
-    for disconnect in [false, true] {
+fn pending_selection_or_start_closes_its_request_after_dropping_operation_on_cancel_or_disconnect()
+{
+    for (selection, disconnect) in [(false, false), (false, true), (true, false), (true, true)] {
         let bus = Bus::new();
         let (started, started_rx) = flume::bounded(1);
         let (closed, closed_rx) = flume::bounded(1);
@@ -199,12 +248,23 @@ fn pending_start_closes_its_request_after_dropping_operation_on_cancel_or_discon
                     },
                 )
                 .await;
-                let request = StartRequest::new(&portal).await?;
+                let request = PendingRequest::new(&portal).await?;
                 let operation = async {
                     let _dropped = Dropped(dropped.clone());
-                    request
-                        .start(&portal, &ObjectPath::try_from("/owned/session")?)
-                        .await
+                    let session = ObjectPath::try_from("/owned/session")?;
+                    if selection {
+                        request
+                            .select_sources(
+                                &portal,
+                                &session,
+                                SourceType::Monitor,
+                                Some("owned-restore"),
+                                PersistMode::ExplicitlyRevoked,
+                            )
+                            .await
+                    } else {
+                        request.start(&portal, &session).await.map(|_| ())
+                    }
                 };
                 let error = request
                     .until_stopped(operation, &stop_rx)
@@ -218,6 +278,51 @@ fn pending_start_closes_its_request_after_dropping_operation_on_cancel_or_discon
                 assert!(closed_rx.is_empty(), "one close for one owned request");
                 Ok(())
             });
+        });
+    }
+}
+
+#[test]
+fn selection_preserves_source_cursor_persistence_and_optional_restore_fields() {
+    for (kind, token, mode) in [
+        (
+            SourceType::Monitor,
+            Some("owned-restore"),
+            PersistMode::ExplicitlyRevoked,
+        ),
+        (SourceType::Window, None, PersistMode::DoNot),
+    ] {
+        let bus = Bus::new();
+        let (started, _started_rx) = flume::bounded(1);
+        let (closed, closed_rx) = flume::bounded(1);
+        let (_stop_tx, stop_rx) = flume::bounded(1);
+        timed(async {
+            let (_server, portal) = connect(
+                &bus,
+                Portal {
+                    started,
+                    closed,
+                    dropped: Arc::new(AtomicBool::new(false)),
+                    response: Some(0),
+                    mismatch: false,
+                },
+            )
+            .await;
+            let request = PendingRequest::new(&portal).await?;
+            request
+                .until_stopped(
+                    request.select_sources(
+                        &portal,
+                        &ObjectPath::try_from("/owned/session")?,
+                        kind,
+                        token,
+                        mode,
+                    ),
+                    &stop_rx,
+                )
+                .await?;
+            assert!(closed_rx.is_empty());
+            Ok(())
         });
     }
 }
@@ -240,7 +345,7 @@ fn immediate_start_response_is_received_and_success_does_not_close_the_request()
             },
         )
         .await;
-        let request = StartRequest::new(&portal).await?;
+        let request = PendingRequest::new(&portal).await?;
         let streams = request
             .until_stopped(
                 request.start(&portal, &ObjectPath::try_from("/owned/session")?),
@@ -271,7 +376,7 @@ fn mismatched_start_handle_is_closed_and_refused() {
             },
         )
         .await;
-        let request = StartRequest::new(&portal).await?;
+        let request = PendingRequest::new(&portal).await?;
         let error = request
             .until_stopped(
                 request.start(&portal, &ObjectPath::try_from("/owned/session")?),

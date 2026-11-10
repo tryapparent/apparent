@@ -1,23 +1,26 @@
-//! Own the pending Start Request as well as the ScreenCast Session. ashpd's
-//! Start future does not expose its Request until after the chooser responds.
+//! Own pending SelectSources and Start Requests as well as the ScreenCast
+//! Session. ashpd exposes their handles only after the chooser responds.
 use std::collections::HashMap;
 use std::io::Read;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
-use ashpd::desktop::{Response, screencast::Streams};
+use ashpd::desktop::{
+    PersistMode, Response,
+    screencast::{CursorMode, SourceType, Streams},
+};
 use futures_lite::StreamExt;
 use zbus::{
     Proxy,
-    zvariant::{OwnedObjectPath, Type, Value},
+    zvariant::{OwnedObjectPath, OwnedValue, Type, Value},
 };
 
-pub(super) struct StartRequest {
+pub(super) struct PendingRequest {
     request: Proxy<'static>,
     token: String,
 }
 
-impl StartRequest {
+impl PendingRequest {
     pub(super) async fn new(portal: &Proxy<'_>) -> Result<Self> {
         let mut random = [0; 16];
         std::fs::File::open("/dev/urandom")?.read_exact(&mut random)?;
@@ -50,10 +53,46 @@ impl StartRequest {
         portal: &Proxy<'_>,
         session: &(impl serde::Serialize + Type),
     ) -> Result<Streams> {
-        // Subscribe before Start: a fast response must not race our listener.
-        let mut responses = self.request.receive_signal("Response").await?;
         let options = HashMap::from([("handle_token", Value::from(self.token.as_str()))]);
-        let returned: OwnedObjectPath = portal.call("Start", &(session, "", options)).await?;
+        self.response(portal, "Start", &(session, "", options))
+            .await
+    }
+
+    pub(super) async fn select_sources(
+        &self,
+        portal: &Proxy<'_>,
+        session: &(impl serde::Serialize + Type),
+        kind: SourceType,
+        restore_token: Option<&str>,
+        persist_mode: PersistMode,
+    ) -> Result<()> {
+        // Keep the existing ashpd SelectSources fields and values. Some portals
+        // open their chooser here rather than in Start.
+        let mut options = HashMap::from([
+            ("handle_token", Value::from(self.token.as_str())),
+            ("types", Value::from(kind as u32)),
+            ("multiple", Value::from(false)),
+            ("cursor_mode", Value::from(CursorMode::Embedded as u32)),
+            ("persist_mode", Value::from(persist_mode as u32)),
+        ]);
+        if let Some(token) = restore_token {
+            options.insert("restore_token", Value::from(token));
+        }
+        let _: HashMap<String, OwnedValue> = self
+            .response(portal, "SelectSources", &(session, options))
+            .await?;
+        Ok(())
+    }
+
+    async fn response<T: serde::de::DeserializeOwned + Type>(
+        &self,
+        portal: &Proxy<'_>,
+        method: &str,
+        body: &(impl serde::Serialize + Type),
+    ) -> Result<T> {
+        // Subscribe before the call: a fast response must not race our listener.
+        let mut responses = self.request.receive_signal("Response").await?;
+        let returned: OwnedObjectPath = portal.call(method, body).await?;
         if returned.as_str() != self.request.path().as_str() {
             // Do not strand a request from an older/nonconforming provider.
             let other = Proxy::new_owned(
@@ -70,8 +109,8 @@ impl StartRequest {
             .next()
             .await
             .context("Screen sharing portal did not respond")?;
-        match response.body().deserialize::<Response<Streams>>()? {
-            Response::Ok(streams) => Ok(streams),
+        match response.body().deserialize::<Response<T>>()? {
+            Response::Ok(value) => Ok(value),
             Response::Err(error) => Err(error.into()),
         }
     }

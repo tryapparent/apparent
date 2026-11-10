@@ -88,7 +88,7 @@ resource release, independent of renderer state. Record's TypeScript completion
 policy and existing Electron routing are unchanged. Remove the guard only when a
 replacement native admission contract preserves these same cancellation receipts
 and producer checks; reverting this repair restores the prior Finish behavior.
-The native portal adapter owns the Start Request before waiting for its response:
+The native portal adapter owns each SelectSources and Start Request before waiting for its response:
 `Request.Close` dismisses the chooser, while `Session.Close` releases the session.
 Dropping the pending Start future or closing only its session is insufficient on
 the tested Hyprland portal. No picker process is killed or permission bypassed.
