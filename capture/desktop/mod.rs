@@ -1624,23 +1624,36 @@ impl ApparentCoordinator {
     /// Polled while the gate holds a request: shows the permissions window once ⌥⇧ is up.
     pub(in crate::capture::desktop) fn tick_onboarding_practice(&mut self,cx:&mut Context<Self>) {
         if let Some(session) = self.onboarding.as_mut() {
+            session.refresh_account();
             session.observe_shortcut_modifiers(crate::capture::engine::runtime::modifier_flags());
         }
         if !self.onboarding.as_ref().is_some_and(|s|s.practice_active()) {return;}
         #[cfg(target_os="macos")]
-        let anchor=if self.onboarding.as_ref().is_some_and(|s|s.practice_locating()) {crate::capture::desktop::ui::macos::status_bar_anchor()} else {self.native_pill.as_ref().and_then(|p|p.coach_anchor())};
+        let anchor=self.native_pill.as_ref().and_then(|p|p.coach_anchor());
+        #[cfg(target_os="macos")]
+        let menu_anchor=crate::capture::desktop::ui::macos::status_bar_anchor();
         #[cfg(not(target_os="macos"))]
+        let menu_anchor=None;
+        #[cfg(target_os="linux")]
+        let anchor=crate::capture::desktop::ui::linux::coach_anchor();
+        #[cfg(not(any(target_os="macos",target_os="linux")))]
         let anchor=None;
-        if let Some(session)=self.onboarding.as_mut(){session.practice_anchor(anchor);}
+        #[cfg(any(target_os="macos",target_os="linux"))]
+        let anchor = if self.electron_pill_routed {
+            self.electron_pill.as_ref().and_then(|pill| pill.note_badge_anchor()).map(|r|r.map(|v|v as f32))
+        } else { anchor };
+        if let Some(session)=self.onboarding.as_mut(){session.practice_anchor(anchor);session.practice_menu_anchor(menu_anchor);}
         let board_frame=whiteboard::frame(cx);
         if let Some(session)=self.onboarding.as_mut(){session.practice_board(board_frame);}
-        let board=self.whiteboard.borrow().strokes.iter().any(|s|s.len()>3);
-        let screen=self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|s|!s.laser && s.pts.len()>9).count();
+        let board=self.whiteboard.borrow().strokes.iter().map(Vec::len).max().unwrap_or(0);
+        let screen={
+            let strokes=self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            crate::onboarding::native::observations::ScreenInk::new(strokes.len(),
+                strokes.iter().enumerate().rev().map(|(i,s)|(i+1,s.pts.len(),s.laser)))
+        };
         let processing=self.is_processing();
         let note_saved=self.note_ui.as_ref().is_some_and(|notes|notes.has_saved_note());
-        let was_desktop=self.onboarding.as_ref().unwrap().practice_desktop_stage();
-        if let Some(session)=self.onboarding.as_mut() {session.practice_note_saved(note_saved);session.observe_practice(board,screen,processing,None);}
-        if !was_desktop && self.onboarding.as_ref().is_some_and(|s|s.practice_desktop_stage()) {cx.defer(whiteboard::close);}
+        if let Some(session)=self.onboarding.as_mut() {session.practice_note_saved(note_saved);session.observe_practice(board,screen,processing);}
     }
 
     pub fn tick_gate(&mut self) {
@@ -1713,6 +1726,7 @@ impl ApparentCoordinator {
                 }
                 Effect::None
             }
+            Event::Practice { value, received } => self.onboarding.as_mut().map_or(Effect::None, |session| session.practice_host(value, received)),
             Event::Action(action) => self
                 .onboarding
                 .as_mut()
@@ -1763,6 +1777,7 @@ impl ApparentCoordinator {
             }
         };
         match effect {
+            Effect::CloseWhiteboard => { cx.defer(whiteboard::close); }
             Effect::EditShortcut => {
                 let mut host = crate::capture::desktop::settings::AppHost {
                     telemetry: &self.telemetry,
@@ -2480,6 +2495,11 @@ impl ApparentCoordinator {
             && let Some(session) = self.onboarding.as_mut()
         {
             session.input(input);
+            if matches!(phase, IslandPhase::Recording) {
+                if let Some(id) = self.agent_capture_id.as_deref() {
+                    session.practice_capture_identity(self.capture_generation,id,Some(id));
+                }
+            }
         }
         let changed = std::mem::discriminant(&self.island_phase) != std::mem::discriminant(&phase);
         if changed {
@@ -3094,12 +3114,13 @@ impl ApparentCoordinator {
 
         if self.reveal.is_open() {
             let activity = self.reveal_activity();
-            let on_pill = self
-                .native_pill
-                .as_ref()
-                .map_or_else(pointer_on_hud_pill, |p| p.pointer_on_pill());
             #[cfg(any(target_os = "macos", target_os = "linux"))]
-            let on_pill = self.electron_pill.as_ref().filter(|s| s.ready()).map_or(on_pill, |s| s.hovered());
+            let on_pill = self.electron_pill.as_ref().filter(|s| s.ready()).map_or_else(
+                || self.native_pill.as_ref().map_or_else(pointer_on_hud_pill, |p| p.pointer_on_pill()),
+                |s| s.hovered(),
+            );
+            #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+            let on_pill = self.native_pill.as_ref().map_or_else(pointer_on_hud_pill, |p| p.pointer_on_pill());
             if self.reveal.tick(reveal_clock_ms(), on_pill, activity) {
                 self.play_fold();
             }
@@ -3755,14 +3776,17 @@ impl ApparentCoordinator {
 
     /// Cancellation must also work before a visible island or recording exists.
     fn cancel_capture_attempt(&mut self) {
-        // dismiss_island is a no-op while Hidden: startup failure must revoke the
-        // shortcut attempt here, not wait for a visible phase transition.
-        if let Some(session) = self.onboarding.as_mut() {
-            session.input(crate::capture::desktop::settings::onboarding::Input::CaptureEnded { completed: false });
-        }
         self.playback.take();
         apparent_log("cancel_recording invoked");
         self.discard_recording();
+        // A failed cancellation journal keeps the native capture active. Publish
+        // its end only after cancellation succeeds, including a hidden startup
+        // attempt with no recording (dismiss_island is a no-op while Hidden).
+        if self.active_recording.is_none() {
+            if let Some(session) = self.onboarding.as_mut() {
+                session.input(crate::capture::desktop::settings::onboarding::Input::CaptureEnded { completed: false });
+            }
+        }
     }
 
     pub fn finish_recording(&mut self, cx: &mut Context<Self>) {
@@ -6824,6 +6848,9 @@ pub fn run_app(
         // ⌘W, Esc, the close button or Apparent itself: every way a window closes ends up here.
         cx.on_window_closed(|cx| cx.defer(platform::hand_back_keys))
             .detach();
+        #[cfg(target_os = "linux")]
+        cx.on_app_quit(|_| crate::capture::desktop::linux::hyprland::release_runtime_bindings())
+            .detach();
         let (ui_sender, ui_receiver) = flume::unbounded();
         crate::capture::desktop::web::start_server();
         let telemetry = SharedCaptureTelemetry::new(ui_sender);
@@ -7488,9 +7515,18 @@ mod tests {
     #[test]
     fn terminal_screen_start_cleanup_preserves_pending_started_and_unrelated_captures() {
         use std::sync::atomic::Ordering;
+        use crate::capture::desktop::settings::onboarding::{Flow, Grants, Input, Permission, Session, Status, Step};
         for (real_frames, journal_fails) in [(false, false), (true, false), (false, true)] {
             let (sender, _receiver) = flume::unbounded();
             let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
+            let grants = Grants {
+                statuses: Permission::REQUIRED.into_iter().map(|p| (p, Status::Granted)).collect(),
+                ..Default::default()
+            };
+            let mut flow = Flow::tour(Step::TryIt, Some(grants)).with_first_capture(true, true, true, false);
+            flow.on(Input::ShortcutTriggered);
+            flow.on(Input::CaptureStarted);
+            coordinator.onboarding = Some(Session::for_test(flow));
             let dir = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
             if journal_fails { std::fs::write(&dir, b"owned fixture").unwrap(); }
             else { std::fs::create_dir(&dir).unwrap(); }
@@ -7512,6 +7548,8 @@ mod tests {
             let cleared = !real_frames && !journal_fails;
             assert_eq!(coordinator.discard_failed_screen_start(), cleared);
             assert_eq!(coordinator.active_recording.is_none(), cleared);
+            assert_eq!(coordinator.onboarding.as_ref().unwrap().local_practice(), !cleared,
+                "a failed native cancellation must not end the admitted practice capture");
             assert_eq!(coordinator.agent_captures.inspect("old")["status"], "saved");
             if cleared {
                 assert_eq!(coordinator.agent_capture_id, None);

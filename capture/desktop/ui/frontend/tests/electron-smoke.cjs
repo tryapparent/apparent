@@ -237,11 +237,46 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   browser = await chromium.connectOverCDP(endpoint);
   const context=browser.contexts()[0];
   const page=context.pages()[0]||await context.waitForEvent('page');
-  const send = patch => child.stdin.write(JSON.stringify({ type:'state', step:'welcome', rows:[], ready:true,
-    index:0, count:5, testInstance:true, shortcut:'⌃⌥⇧9', ...patch })+'\n');
-  let output='';child.stdout.on('data',bytes=>output+=bytes);
+  const { PracticeFixture } = await import('./onboarding/fixture.ts');
+  const fixture = new PracticeFixture();
+  const write = value => child.stdin.write(JSON.stringify(value)+'\n');
+  const send = async patch => {
+    const { practice, ...state } = patch;
+    const emit = facts => write({ type:'state', step:'welcome', rows:[], ready:true,
+      index:0, count:5, testInstance:true, shortcut:'⌃⌥⇧9', ...state, practiceFacts:facts });
+    if ('practice' in patch) {
+      await fixture.enter(practice, emit, async action => {
+        const name = action === 'practice-paste' ? 'Show paste steps' : 'Confirm paste';
+        await page.getByRole('button',{name,exact:true}).click();
+      });
+      if(practice && practice !== 'start') await expect(page.locator('.native-coach')).toHaveAttribute('data-stage',practice);
+    } else emit(fixture.facts);
+  };
+  let output='',buffer='';child.stdout.on('data',bytes=>{
+    output+=bytes;buffer+=bytes;
+    let end;while((end=buffer.indexOf('\n'))>=0){
+      const message=JSON.parse(buffer.slice(0,end));buffer=buffer.slice(end+1);
+      if(message.action==='practice-progress')write({type:'practice-progress',id:message.id,scope:message.scope,attempt:message.attempt,
+        result:message.operation==='read'?{tourRevision:{present:true,value:1},seen:{present:true,value:true},resume:{present:false},shortcutChosen:{present:true,value:true},shortcutTestedFor:{present:true,value:'⌃⌥⇧9'},firstCaptureCompleted:{present:false}}:'saved'});
+    }
+  });
   await page.emulateMedia({reducedMotion:'no-preference'});
-  send({ penPicker:true });
+  await send({account:{status:'signed-out'}});
+  await page.getByRole('button',{name:'Sign in with Google',exact:true}).click();
+  await expect.poll(()=>output).toContain('"action":"sign-in"');
+  await send({account:{status:'approval',userCode:'TEST-CODE',verificationUri:'https://app.example.test/connect/device?code=TEST-CODE'}});
+  await expect(page.locator('.native-account code')).toHaveText('TEST-CODE');
+  await page.getByRole('button',{name:'Continue in browser',exact:true}).click();
+  await expect.poll(()=>output).toContain('"action":"open-sign-in"');
+  await page.getByRole('button',{name:'Cancel sign-in',exact:true}).click();
+  await expect.poll(()=>output).toContain('"action":"cancel-sign-in"');
+  await send({account:{status:'failed',error:'expired'}});
+  await expect(page.getByRole('alert')).toContainText('code expired');
+  await expect(page.getByRole('button',{name:'Sign in with Google',exact:true})).toBeEnabled();
+  await send({account:{status:'signed-in'}});
+  await expect(page.getByText('✓ Signed in.',{exact:true})).toBeVisible();
+  await expect(page.getByText('Recording stays local. Uploads need separate permission in Settings.',{exact:true})).toBeVisible();
+  await send({ penPicker:true });
   await expect(page.getByRole('heading', { name:'Pick your pen.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
   assert.deepEqual(await page.locator('.native-pencils button').allTextContents(),['','','','']);
@@ -260,7 +295,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
 
   await page.getByRole('button',{name:'purple pen',exact:true}).click();
   await expect.poll(()=>output).toContain('pen:purple');
-  send({penPicker:true,penSelected:true,penRgb:[122,88,199]});
+  await send({penPicker:true,penSelected:true,penRgb:[122,88,199]});
   await expect(page.locator('.native-puddle path')).toHaveCSS('fill','rgb(122, 88, 199)');
   const centres=await page.evaluate(()=>{
     const h=document.querySelector('.native-pen-picker h1').getBoundingClientRect();
@@ -284,24 +319,24 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   assert.ok(minimum<before.y-25,'frog must rise visibly before landing');
   await expect.poll(()=>output).toContain('"action":"continue"');
   assert.equal(output.match(/"action":"continue"/g)?.length,1);
-  send({step:'try-it',practice:'screen'});
+  await send({step:'try-it',practice:'screen'});
   await expect(page.getByRole('heading',{name:'Choose Screen.',exact:true})).toBeVisible();
-  send({ step:'try-it', practice:'whiteboard', anchor:[300,30,320,50] });
+  await send({ step:'try-it', practice:'whiteboard', anchor:[300,30,320,50] });
   await expect(page.getByRole('heading', { name:'Open Whiteboard.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(380);
   assert.equal(await page.evaluate(() => {
     const rect=document.querySelector('main').getBoundingClientRect();
     return rect.left>=0 && rect.right<=innerWidth && rect.bottom<=innerHeight;
   }), true);
-  send({step:'try-it',practice:'copy-failed'});
+  await send({step:'try-it',practice:'copy-failed'});
   await page.getByRole('button',{name:'Find saved capture',exact:true}).click();
-  await expect.poll(()=>output).toContain('practice-locate');
-  send({ step:'try-it', practice:'locate', anchor:[900,0,24,24] });
+  await expect(page.locator('.native-coach')).toHaveAttribute('data-stage','locate');
+  await send({ step:'try-it', practice:'locate', anchor:[900,0,24,24] });
   await expect(page.getByRole('heading', { name:'apparent lives here.', exact:true })).toBeVisible();
   await expect(page.getByText('Click the a in your menu bar, then Open Latest Capture.', { exact:true })).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveAttribute('data-arrow','true');
   for(const phase of ['screen','whiteboard','board-ink','note','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
-    send({step:'try-it',practice:phase});
+    await send({step:'try-it',practice:phase});
     await expect(page.locator('.native-coach')).toHaveAttribute('data-stage',phase);
     if(phase==='screen-ink'){
       await expect.poll(()=>page.evaluate(()=>innerWidth)).toBe(720);
@@ -320,9 +355,9 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     assert.equal(layout.scroll,false,phase+' needs scrolling at normal text size');
     for(const button of layout.buttons){assert.ok(button.font>=18&&button.width>=44&&button.height>=44,phase+' button violates brand minimum');assert.equal(button.radius,'0px');}
   }
-  send({step:'try-it',practice:'note',firstCaptureRequired:true});
+  await send({step:'try-it',practice:'note',firstCaptureRequired:true});
   await expect(page.getByRole('heading',{name:'Add a note.',exact:true})).toBeVisible();
-  await expect(page.getByText('Hold Shift and click a spot.',{exact:true})).toBeVisible();
+  await expect(page.getByText('Hold Shift and click without dragging. Type a note, then save it.',{exact:true})).toBeVisible();
   await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','note');
   assert.equal(await page.getByRole('textbox').count(),0,'the coach must not compete with the real note editor');
   const beforeNoteReplay=output;
@@ -334,13 +369,13 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await page.emulateMedia({reducedMotion:'no-preference'});
   // All three control examples remain presentation only, and settle once.
   for(const [phase,kind] of [['whiteboard','whiteboard'],['stop','finish'],['locate','locate']]){
-    send({step:'try-it',practice:phase,firstCaptureRequired:true});
+    await send({step:'try-it',practice:phase,firstCaptureRequired:true});
     await expect(page.locator('.native-control')).toHaveAttribute('data-kind',kind);
     const before=output;
     await page.locator('.native-control button').click();
     assert.equal(output,before,'Control-guide replay must never drive the app');
   }
-  send({step:'try-it',practice:'whiteboard',firstCaptureRequired:true});
+  await send({step:'try-it',practice:'whiteboard',firstCaptureRequired:true});
   await expect(page.locator('.native-control')).toHaveAttribute('data-kind','whiteboard');
   await page.locator('.native-control').evaluate(el=>{for(const a of el.getAnimations({subtree:true})){a.pause();a.currentTime=2500}});
   await expect(page.locator('.control-screen')).toHaveCSS('opacity','0');
@@ -349,13 +384,13 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   assert.equal(await page.locator('.native-control').evaluate(el=>el.getAnimations({subtree:true}).length),0);
   await expect(page.locator('.native-control button')).toBeHidden();
   await page.emulateMedia({reducedMotion:'no-preference'});
-  send({step:'try-it',practice:'whiteboard',platform:'linux',firstCaptureRequired:true});
+  await send({step:'try-it',practice:'whiteboard',platform:'linux',firstCaptureRequired:true});
   await expect(page.getByText('Click Whiteboard in the recording controls.',{exact:true})).toBeVisible();
   await expect(page.getByRole('figure',{name:'Example: click Whiteboard',exact:true})).toBeVisible();
   await expect(page.locator('.control-screen')).toBeHidden();
   await expect(page.locator('.control-board')).toHaveCSS('opacity','1');
   // Guides use the saved keys, finish once, and replay without invoking app actions.
-  send({step:'try-it',practice:'retry',shortcut:'⌃⌘9',firstCaptureRequired:true});
+  await send({step:'try-it',practice:'retry',shortcut:'⌃⌘9',firstCaptureRequired:true});
   await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','record');
   assert.deepEqual(await page.locator('.native-gesture kbd').allTextContents(),['⌃','⌘','9']);
   const strip=await page.locator('.native-gesture').boundingBox();
@@ -369,10 +404,10 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await page.getByRole('button',{name:'Replay shortcut guide',exact:true}).click();
   assert.equal(await page.locator('.native-gesture-motion').evaluate(el=>el!==window.originalGuideNode),true);
   assert.equal(output,priorActions,'Replay must never send shortcuts or advance onboarding');
-  send({step:'try-it',practice:'paste',platform:'linux',firstCaptureRequired:true});
+  await send({step:'try-it',practice:'paste',platform:'linux',firstCaptureRequired:true});
   await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','paste');
   assert.deepEqual(await page.locator('.native-gesture kbd').allTextContents(),['Ctrl','V']);
-  send({step:'try-it',practice:'retry',platform:'linux',shortcut:'Ctrl+Alt+K',firstCaptureRequired:true});
+  await send({step:'try-it',practice:'retry',platform:'linux',shortcut:'Ctrl+Alt+K',firstCaptureRequired:true});
   await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','record');
   assert.deepEqual(await page.locator('.native-gesture kbd').allTextContents(),['Ctrl','Alt','K']);
   for(const [platform,shortcut,keys] of [
@@ -380,7 +415,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     ['macos','⌥⇧Space',['⌥','⇧','Space']],
     ['macos','⌥⇧+',['⌥','⇧','+']],
   ]){
-    send({step:'try-it',practice:'retry',platform,shortcut,firstCaptureRequired:true});
+    await send({step:'try-it',practice:'retry',platform,shortcut,firstCaptureRequired:true});
     await expect(page.locator('.native-gesture')).toHaveAttribute('aria-label','Record with '+shortcut);
     assert.deepEqual(await page.locator('.native-gesture kbd').allTextContents(),keys);
   }
@@ -389,7 +424,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.locator('.native-gesture kbd').first()).toHaveCSS('color','rgb(2, 1, 2)');
   await expect(page.locator('.native-gesture')).toHaveCSS('background-color','rgb(231, 224, 238)');
   await expect(page.getByRole('button',{name:'Replay shortcut guide',exact:true})).toHaveCSS('color','rgb(2, 1, 2)');
-  send({step:'try-it',practice:'screen-ink',firstCaptureRequired:true});
+  await send({step:'try-it',practice:'screen-ink',firstCaptureRequired:true});
   await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','draw');
   await page.emulateMedia({reducedMotion:'reduce',colorScheme:'dark'});
   assert.equal(await page.locator('.native-gesture').evaluate(el=>el.getAnimations({subtree:true}).length),0);
@@ -403,35 +438,42 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   const enlargedHelper=await page.locator('.native-trackpad-helper').evaluate(el=>{const r=el.getBoundingClientRect(),content=el.querySelector('.native-trackpad-helper-content');return{inside:r.right<=innerWidth&&r.bottom<=innerHeight,horizontal:content.scrollWidth>content.clientWidth}});
   assert.deepEqual(enlargedHelper,{inside:true,horizontal:false});
   assert.equal(await page.locator('.native-coach-content').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
-  await page.getByRole('button',{name:'Try later',exact:true}).scrollIntoViewIfNeeded();
-  await expect(page.getByRole('button',{name:'Try later',exact:true})).toBeInViewport();
+  await page.getByRole('button',{name:'Close guide',exact:true}).scrollIntoViewIfNeeded();
+  await expect(page.getByRole('button',{name:'Close guide',exact:true})).toBeInViewport();
   await page.evaluate(()=>document.documentElement.style.fontSize='');
 
-  send({ step:'permissions' });
+  await send({ step:'permissions' });
   await expect(page.getByRole('heading', { name:'We need three things.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
   assert.equal(await page.locator('.native-setup section > p').count(),0);
-  send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:false,platform:'macos',shortcutEditor:{recording:false,externallyManaged:false}});
+  await send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:false,platform:'linux',shortcut:'Super+Shift+Copilot',shortcutEditor:{recording:false,externallyManaged:true}});
+  await expect(page.locator('.native-shortcut kbd')).toHaveText('Super+Shift+Copilot');
+  await expect(page.getByRole('button',{name:'Use Super+Shift+Copilot',exact:true})).toBeInViewport();
+  await expect(page.getByRole('button',{name:'Choose another shortcut',exact:true})).toBeInViewport();
+  await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'Choose another shortcut',exact:true}).click();
+  await expect.poll(()=>output).toContain('"action":"change-shortcut"');
+  await send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:false,platform:'macos',shortcutEditor:{recording:false,externallyManaged:false}});
   await expect(page.getByRole('heading',{name:'Choose your shortcut.',exact:true})).toBeVisible();
-  assert.equal(await page.locator('.native-shortcut kbd').count(),0,'no preselected/default combination');
+  await expect(page.locator('.native-shortcut kbd')).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeDisabled();
   await page.getByRole('button',{name:'Choose shortcut',exact:true}).click();
   await expect.poll(()=>output).toContain('change-shortcut');
   assert.equal(output.includes('use-current-shortcut'),false);
-  send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:false});
+  await send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:false});
   await expect(page.getByRole('heading',{name:'Try your shortcut.',exact:true})).toBeVisible();
   assert.equal(await page.getByText(/This check won’t record/).count(),0);
   await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeDisabled();
   const beforeTrialAdvance=(output.match(/"action":"continue"/g)?.length??0);
-  send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
+  await send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
   await expect(page.getByRole('heading',{name:'Go again.',exact:true})).toBeVisible();
   await expect.poll(()=>(output.match(/"action":"continue"/g)?.length??0)).toBe(beforeTrialAdvance+1);
-  send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
+  await send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
   await page.waitForTimeout(100);
   assert.equal((output.match(/"action":"continue"/g)?.length??0),beforeTrialAdvance+1,'repeated state must not advance twice');
   await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeEnabled();
   await expect(page.getByRole('button',{name:'Change shortcut',exact:true})).toBeVisible();
-  send({step:'try-it',practice:'start',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
+  await send({step:'try-it',practice:'start',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
   await expect(page.getByRole('heading',{name:'Go again.',exact:true})).toBeVisible();
   assert.equal(await page.getByText(/Press .* to start recording/).count(),0);
   await expect(page.locator('.native-setup')).toBeVisible();
@@ -444,14 +486,14 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   assert.ok(Math.abs(keys.y+keys.height/2-260)<60,'keys are vertically centered in the compact setup');
   assert.equal(await page.locator('.native-setup section').evaluate(el=>el.scrollHeight>el.clientHeight),false);
   await expect(page.getByRole('button',{name:'Try a capture',exact:true})).toHaveCount(0);
-  send({step:'try-it',practice:'screen',firstCaptureRequired:true});
+  await send({step:'try-it',practice:'screen',firstCaptureRequired:true});
   await expect(page.locator('.native-coach')).toBeVisible();
   await expect(page.locator('.native-setup')).toHaveCount(0);
   await expect.poll(()=>page.evaluate(()=>innerWidth)).toBeLessThan(760);
-  send({step:'try-it',practice:null,firstCaptureRequired:true});
+  await send({step:'try-it',practice:null,firstCaptureRequired:true});
   await expect(page.getByRole('heading',{name:'Go again.',exact:true})).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,520]);
-  send({step:'shortcut',shortcutEditor:{recording:true,externallyManaged:false}});
+  await send({step:'shortcut',shortcutEditor:{recording:true,externallyManaged:false}});
   await page.getByRole('group',{name:'Shortcut recorder'}).press('Control+Alt+k');
   await expect.poll(()=>output).toContain('"keyCode":40');
   await expect.poll(()=>output).toContain('"modifiers":6144');
@@ -464,7 +506,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
 
 
   await page.emulateMedia({reducedMotion:'reduce'});
-  send({penPicker:true,penSelected:true,penRgb:[59,121,189]});
+  await send({penPicker:true,penSelected:true,penRgb:[59,121,189]});
   await expect(page.getByRole('heading',{name:'Pick your pen.',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Use this pen',exact:true}).click();
   await expect.poll(()=>output.match(/"action":"continue"/g)?.length).toBe(beforeTrialAdvance+2);

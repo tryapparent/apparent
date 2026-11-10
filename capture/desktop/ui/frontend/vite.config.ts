@@ -5,6 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 import { build } from 'esbuild';
+import { buildOnboardingPolicy } from './scripts/build-onboarding-policy.ts';
 
 // file: dependencies are snapshots. Refuse a build using stale shared controls.
 for (const file of ['button.tsx', 'tabs.tsx', 'utils.ts', 'theme.css', 'tokens.css', 'window-theme.cjs', 'status-card.tsx', 'disclosure-menu.tsx', 'status.css']) {
@@ -16,7 +17,14 @@ for (const file of ['button.tsx', 'tabs.tsx', 'utils.ts', 'theme.css', 'tokens.c
 let reportingOutput: string;
 export default defineConfig({
   base: './',
-  plugins: [react(), tailwindcss(), {
+  plugins: [react(), tailwindcss(), {name: 'onboarding-host-policy', closeBundle() {
+    for (const name of ['presentation', 'hyprland', 'account']) {
+      const file = `electron/onboarding/${name}.ts`;
+      const result = ts.transpileModule(readFileSync(file, 'utf8'), {fileName: file,
+        compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}});
+      writeFileSync(`dist/onboarding-${name}.cjs`, result.outputText);
+    }
+  }}, {
     name: 'desktop-reporting-policy',
     apply: 'build',
     configResolved(config) { reportingOutput = path.resolve(config.root, config.build.outDir, config.build.assetsDir); },
@@ -33,6 +41,8 @@ export default defineConfig({
   }, { name: 'hermes-native-bridge', async closeBundle() {
     await build({ entryPoints: { 'hermes-main': 'src/hermes/main.ts', 'hermes-preload': 'src/hermes/preload.ts' },
       bundle: true, platform: 'node', format: 'cjs', external: ['electron'], outdir: 'dist', outExtension: { '.js': '.cjs' } });
+  } }, { name: 'onboarding-headless-workflow', async closeBundle() {
+    await buildOnboardingPolicy();
   } }],
   build: { rollupOptions: { input: { foundation: 'index.html', settings: 'settings.html', onboarding: 'onboarding.html', installer: 'src/installer/index.html', pill: 'pill/index.html', controls: 'src/controls/index.html' } } },
 });

@@ -108,6 +108,14 @@ pub fn cursor_position() -> Option<(f64, f64)> {
     x11::cursor_position()
 }
 
+/// Bounded compositor fact for the controls worker. Never substitute XWayland's
+/// cached cursor when Hyprland is unavailable; the consumer must see unknown.
+pub fn compositor_cursor_position(timeout: std::time::Duration) -> Option<[f64; 2]> {
+    hyprland::cursor_in_x_space_with_timeout(&output_rects(), timeout)
+        .filter(|(x, y)| x.is_finite() && y.is_finite())
+        .map(|(x, y)| [x, y])
+}
+
 /// Each output's name and X11 rectangle, read at most once a second.
 fn output_rects() -> Vec<(String, [f64; 4])> {
     static CACHE: std::sync::Mutex<Option<(std::time::Instant, Vec<(String, [f64; 4])>)>> =

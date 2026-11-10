@@ -5,8 +5,10 @@ const path=require('node:path');
 const {pathToFileURL}=require('node:url');
 const protocol=require('./protocol.cjs');
 const geometry=require('./geometry.cjs');
+const {CompositorCursor}=require('./cursor.cjs');
 if(!['linux','darwin'].includes(process.platform))process.exit(1);
 const hyprland=process.platform==='linux' && (Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE) || (process.env.XDG_CURRENT_DESKTOP||'').toLowerCase().split(':').includes('hyprland'));
+const compositorCursor=new CompositorCursor();
 app.setName('Apparent recording controls');
 app.setPath('userData',path.join(app.getPath('appData'),'apparent-pill'));
 nativeTheme.themeSource='system';
@@ -59,6 +61,7 @@ process.stdin.on('data',chunk=>{
     try{
       const message=JSON.parse(line);
       if(message.type==='state')publish(message.view);
+      else if(message.type==='cursor' && hyprland)compositorCursor.observe(message.point,performance.now());
       else if(message.type==='activate'){activated=true;if(loaded)visibility();emit({activated:true});}
       else if(message.type==='place' && Array.isArray(message.point) && message.point.length===2 && message.point.every(Number.isFinite)){
         applyPlacement(message.point);
@@ -184,7 +187,9 @@ app.whenReady().then(()=>{
   });
   const pointerTimer=setInterval(()=>{
     if(!loaded || window.isDestroyed())return;
-    const inside=window.isVisible() && geometry.contains(screen.getCursorScreenPoint(),window.getBounds());
+    const nativePoint=hyprland?compositorCursor.current(performance.now()):null;
+    const point=hyprland?(nativePoint?screen.screenToDipPoint(nativePoint):null):screen.getCursorScreenPoint();
+    const inside=window.isVisible() && point!==null && geometry.contains(point,window.getBounds());
     // A focused XWayland app can sit above the visually pinned pill in X11's
     // input stack. Raise this exact child surface without taking focus.
     if(process.platform==='linux' && inside && (!hovered || Date.now()-lastRaise>250)){
