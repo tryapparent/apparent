@@ -5,6 +5,7 @@
 .native-setup[data-agent-setup=true] header { padding: 16px 32px; }
 .native-setup[data-agent-setup=true] footer { display: none; }
 .native-agent-setup h1 { text-align: left; }
+.native-agent-setup h1:focus { outline: none; }
 .native-agent-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
 .native-agent-choices button { display: flex; flex-direction: column; height: auto; min-height: 44px; padding: 0 0 16px; border: 1px solid var(--apparent-foreground); border-radius: 0; background: var(--apparent-background); color: var(--apparent-foreground); white-space: normal; }
 .native-agent-choices img { display: block; width: 100%; aspect-ratio: 620 / 490; object-fit: contain; }

@@ -23,12 +23,12 @@ export function AgentSetup({onContinue}:{onContinue:()=>Promise<void>}) {
       <div className="native-agent-explanation"><h2>Yes, it can open my files</h2><p>An agent in a terminal or editor can read captures directly.</p><Button variant="outline" onClick={()=>void onContinue()}>Right here →</Button></div>
       <div className="native-agent-explanation"><h2>No, I send it files or links</h2><p>Connect <strong className="native-brand-name">apparent</strong> for an agent in a browser or on another computer.</p><Button variant="outline" onClick={()=>setPage('connect')}>Up in the cloud →</Button></div>
       <Button variant="ghost" onClick={()=>setPage('agent')}>Back</Button></>}
-    {page==='connect'&&<ConnectSetup onContinue={onContinue} onBack={()=>setPage('agent')}/>}
+    {page==='connect'&&<ConnectSetup onContinue={onContinue}/>}
   </div>;
 }
 
-function ConnectSetup({onContinue,onBack}:{onContinue:()=>Promise<void>;onBack:()=>void}) {
-  const {view,result,busy,request,attempted}=useConnectFlow(bridge);
+function ConnectSetup({onContinue}:{onContinue:()=>Promise<void>}) {
+  const {view,result,busy,request,attempted,browserFailed}=useConnectFlow(bridge);
   const [leaving,setLeaving]=useState(false);
   const advanced=useRef(false);
   const phase=view?.phase;
@@ -47,7 +47,7 @@ function ConnectSetup({onContinue,onBack}:{onContinue:()=>Promise<void>;onBack:(
       <><p>Connect <strong className="native-brand-name">apparent</strong>. Give ur agent a link.</p>
       {!waiting&&<><p className="native-connect-disclosure">Continuing requests upload access for new captures, including screen images, voice, transcript and context. Older captures stay local. Approve this computer in ur browser.</p>
         <Button disabled={busy||leaving||unavailable} onClick={()=>void request('connect')}>Continue with Google</Button></>}
-      {phase==='approval'&&<Button disabled={busy||leaving} onClick={()=>void request('open-browser')}>Open browser again</Button>}
+      {phase==='approval'&&browserFailed&&<Button disabled={busy||leaving} onClick={()=>void request('open-browser')}>Try opening browser</Button>}
       {phase==='failed'&&<p role="alert">{view?.detail}</p>}
       {unavailable&&!busy&&<p role="alert">Connect is unavailable. You can still set up locally.</p>}
       <Button variant="ghost" disabled={busy||leaving||phase==='cancelling'||unavailable&&attempted} onClick={()=>{
@@ -55,6 +55,5 @@ function ConnectSetup({onContinue,onBack}:{onContinue:()=>Promise<void>;onBack:(
       }}>Keep it local</Button></>}
     {phase==='cancelling'&&<p role="status">Turning uploads off before continuing…</p>}
     {(leaving&&phase==='failed'&&!view?.localReady||unavailable&&attempted)&&<Button disabled={busy} onClick={()=>void local()}>Retry cancellation</Button>}
-    <Button variant="ghost" disabled={busy||waiting||leaving||attempted} onClick={onBack}>Back</Button>
   </>;
 }
