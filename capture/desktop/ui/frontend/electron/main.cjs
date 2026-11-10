@@ -143,7 +143,11 @@ app.whenReady().then(() => {
         if (settingsClosing || window.isDestroyed()) return;
         settingsMounted = true;
         showSettings();
-      }).catch(() => { if (!settingsClosing) failSettings(); });
+      }).catch(() => {
+        // A rejected snapshot can precede render-process-gone. Let that native
+        // event admit its crash report before exiting; otherwise the existing
+        // startup deadline restores the fallback. Never reveal a failed frame.
+      });
       return settingsFrame;
     }
     clearTimeout(startupTimer);

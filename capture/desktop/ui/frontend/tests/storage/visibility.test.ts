@@ -98,15 +98,30 @@ test('a composited frame arriving after parent retirement cannot revive Settings
   assert.equal(window.focuses, 0);
 });
 
-test('empty and failed compositor snapshots release the native fallback without dismissal', async () => {
+test('empty and failed snapshots stay hidden until the native failure event or startup deadline', async () => {
   for (const capture of [() => Promise.resolve({ isEmpty: () => true }), () => Promise.reject(new Error('unavailable'))]) {
-    const { window, mounted, exits, written } = host('--settings-storage', capture);
+    const { window, mounted, exits, written, expire } = host('--settings-storage', capture);
     window.emit('ready-to-show');
     await mounted();
     assert.equal(window.visible, false);
+    assert.deepEqual(exits, [], 'Snapshot rejection can precede the renderer crash event and its reporting admission');
+    expire();
     assert.deepEqual(exits, [1]);
     assert.deepEqual(written, []);
   }
+});
+
+test('a snapshot rejection preceding renderer death cannot exit before crash admission', async () => {
+  const { window, mounted, exits, written } = host('--settings-storage', () => Promise.reject(new Error('renderer gone')));
+  window.emit('ready-to-show');
+  await mounted();
+  assert.deepEqual(exits, []);
+  // The reporter attaches on web-contents-created, before the Settings listener.
+  // This observation models the gap before that real native event is delivered.
+  window.webContents.emit('render-process-gone', {}, { reason: 'crashed' });
+  assert.deepEqual(exits, [1]);
+  assert.equal(window.visible, false);
+  assert.deepEqual(written, []);
 });
 
 test('parent retirement and broken stdout never report user dismissal or reopen Settings', async () => {
