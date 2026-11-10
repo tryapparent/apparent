@@ -6973,8 +6973,6 @@ pub fn run_app(
                     }
                     loop_coord.read(cx).publish_capture_busy();
                     platform::poll_status_bar();
-                    #[cfg(target_os = "linux")]
-                    platform::poll_controls(loop_coord.read(cx).is_recording() || loop_coord.read(cx).is_processing() || loop_coord.read(cx).is_selecting(), !onboarding_initialized || loop_coord.read(cx).onboarding.is_some(), loop_coord.read(cx).settings.is_some(), cx);
                     crate::capture::desktop::settings::onboarding_window::poll(cx);
                     crate::capture::desktop::settings::settings_window::poll(cx);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -6995,6 +6993,10 @@ pub fn run_app(
                             }
                         });
                     }
+                    // Explicit launch gets first choice of presentation; automatic
+                    // no-tray controls must observe the Settings session it opens.
+                    #[cfg(target_os = "linux")]
+                    platform::poll_controls(loop_coord.read(cx).is_recording() || loop_coord.read(cx).is_processing() || loop_coord.read(cx).is_selecting(), !onboarding_initialized || loop_coord.read(cx).onboarding.is_some(), loop_coord.read(cx).settings.is_some(), cx);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
                     if let Some(ref rx) = agent_rx {
                         while let Ok(request) = rx.try_recv() {
