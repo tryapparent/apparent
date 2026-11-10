@@ -274,6 +274,11 @@ hyprlang path is unchanged and has no new shutdown-cleanup claim. An obsolete
 inherited default blocks adoption of the permanent Copilot binding until reload,
 rather than claiming that the old chord has been removed.
 
+On Omarchy, `code:201` is Copilot. Apparent accepts only the exact permanent
+unmodified Copilot or Super+Shift+Copilot `bindings.lua` record command when its
+matching live `hyprctl binds -j` entry is unique. The onboarding/Settings editor
+also records either chord; unrelated empty-key bindings remain untrusted.
+
 Clicks on the pill and the picker need four things, found in Hyprland's source (`ViewHitTester.cpp`, `XSurface.cpp`) and Omarchy's `windows.lua`, because the symptom is always the same: the click lands on the app below.
 
 - Omarchy gives `no_focus` to floating XWayland windows with an empty class and title, which Hyprland's hit test skips. GPUI sets no class on these windows, so `x11::accept_pointer` gives them one.

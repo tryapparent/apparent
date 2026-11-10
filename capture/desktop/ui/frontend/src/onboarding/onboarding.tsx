@@ -9,6 +9,7 @@ import { practiceExit } from '../../electron/onboarding/presentation.ts';
 import { OnboardingAccount } from './account';
 import type { AccountState } from '../../electron/onboarding/account';
 import { subscribeOnboardingState } from './state';
+import { shortcutCapture } from '../../electron/onboarding/shortcut-editor.ts';
 type Row={permission:string;status:string;required:boolean;reopening:boolean;relaunch:boolean};
 type Action=string|{action:'shortcut';kind:'record';keyCode:number;modifiers:number;key:string;reserved:false};
 type Editor={recording:boolean;externallyManaged:boolean;error:string|null};
@@ -103,10 +104,9 @@ export function NativeOnboarding(){
       {state.shortcutEditor?.recording?<div ref={shortcutRecorder} tabIndex={0} role="group" aria-label="Shortcut recorder" onKeyDown={event=>{
       if(event.key==='Tab'||event.target!==event.currentTarget)return;
       event.preventDefault();if(event.key==='Escape'){void action('cancel-shortcut');return;}
-      const physical=/^(Key[A-Z]|Digit[0-9])$/.test(event.code)?event.code.replace(/^(Key|Digit)/,'').toLowerCase():event.key.toLowerCase();
-      const key=state.platform==='macos'?physical:event.key.toLowerCase();if(!/^[a-z0-9]$/.test(key)||!(event.ctrlKey||event.altKey||event.metaKey)){setError('Use a letter or number with Control, Option or Command.');return;}
-      const codes:Record<string,number>={a:0,s:1,d:2,f:3,h:4,g:5,z:6,x:7,c:8,v:9,b:11,q:12,w:13,e:14,r:15,y:16,t:17,'1':18,'2':19,'3':20,'4':21,'6':22,'5':23,'9':25,'7':26,'8':28,'0':29,o:31,u:32,i:34,p:35,l:37,j:38,k:40,n:45,m:46};
-      void action({action:'shortcut',kind:'record',keyCode:state.platform==='macos'?codes[key]:key.toUpperCase().charCodeAt(0),modifiers:(event.metaKey?256:0)|(event.shiftKey?512:0)|(event.altKey?2048:0)|(event.ctrlKey?4096:0),key,reserved:false});
+      const pressed=shortcutCapture(event,state.platform);
+      if(!pressed){setError(state.platform==='linux'?'Use a letter or number with Control, Alt or Super, or Copilot alone or with Super+Shift.':'Use a letter or number with Control, Option or Command.');return;}
+      void action({action:'shortcut',kind:'record',...pressed,reserved:false});
     }}><p>Press your new shortcut.</p><Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div>:<>
         {state.shortcutChosen?<kbd>{state.shortcut}</kbd>:state.shortcutEditor?.externallyManaged?<><p>Your desktop already has a recording shortcut:</p><kbd>{state.shortcut}</kbd></>:<p>No shortcut selected.</p>}
         <div className="native-shortcut-choices">{state.shortcutEditor?.externallyManaged&&<Button onClick={()=>void action('use-desktop-shortcut')}>Use {state.shortcut}</Button>}

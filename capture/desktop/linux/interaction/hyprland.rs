@@ -244,8 +244,10 @@ fn external_record_from(source: &str, live: &str) -> Option<(ShortcutConfig, Pat
         .lines()
         .filter_map(|line| {
             let line = line.trim();
+            let (chord, modmask) = [("SUPER + SHIFT + code:201", MOD_SUPER | MOD_SHIFT), ("code:201", 0)]
+                .into_iter().find(|(chord, _)| line.starts_with(&format!("o.bind(\"{chord}\", \"Apparent: record\", \"")))?;
             let command = line
-                .strip_prefix("o.bind(\"SUPER + SHIFT + code:201\", \"Apparent: record\", \"")?
+                .strip_prefix(&format!("o.bind(\"{chord}\", \"Apparent: record\", \""))?
                 .strip_suffix("\")")?;
             let parts: Vec<_> = command.split_whitespace().collect();
             let (prefix, path, action) = match parts.as_slice() {
@@ -266,30 +268,32 @@ fn external_record_from(source: &str, live: &str) -> Option<(ShortcutConfig, Pat
                 && path.starts_with('/')
                 && path.ends_with("/apparent")
                 && !path.contains([';', '&', '|', '$', '`', '(', ')', '<', '>', '\\']))
-            .then(|| PathBuf::from(path))
+            .then(|| (PathBuf::from(path), modmask))
         })
         .collect();
     if matches.len() != 1 {
         return None;
     }
+    let expected_mask = matches[0].1;
     let binds: Vec<serde_json::Value> = serde_json::from_str(live).ok()?;
     let live_matches: Vec<_> = binds
         .iter()
         .filter(|bind| {
-            bind["description"].as_str() == Some("Apparent: record")
-                && bind["modmask"].as_u64() == Some(u64::from(MOD_SUPER | MOD_SHIFT))
+            bind["modmask"].as_u64() == Some(u64::from(expected_mask))
                 && bind["key"].as_str() == Some("")
                 && bind["keycode"].as_u64() == Some(0)
         })
         .collect();
-    (live_matches.len() == 1).then(|| {
+    (live_matches.len() == 1
+        && live_matches[0]["description"].as_str() == Some("Apparent: record"))
+    .then(|| {
         (
             ShortcutConfig {
                 key_code: 201,
-                carbon_modifiers: CARBON_CMD_KEY | CARBON_SHIFT_KEY,
-                label: "Super+Shift+Copilot".into(),
+                carbon_modifiers: if matches[0].1 == 0 { 0 } else { CARBON_CMD_KEY | CARBON_SHIFT_KEY },
+                label: if matches[0].1 == 0 { "Copilot" } else { "Super+Shift+Copilot" }.into(),
             },
-            matches[0].clone(),
+            matches[0].0.clone(),
         )
     })
 }
@@ -1033,6 +1037,17 @@ mod tests {
         let source = "o.bind(\"SUPER + SHIFT + code:201\", \"Apparent: record\", \"env LD_PRELOAD=/usr/lib/libcblas.so.3 GST_PLUGIN_PATH=/home/simon/.local/share/scrawl-setup/gstreamer-1.28.8 GPUI_X11_SCALE_FACTOR=1.6666667 /home/simon/.local/bin/apparent shortcut record\")";
         let live = r#"[{"modmask":65,"key":"","keycode":0,"description":"Apparent: record"}]"#;
         assert_eq!(external_record_from(source, live).unwrap().0.key_code, 201);
+        let bare = source.replace("SUPER + SHIFT + code:201", "code:201");
+        let bare_live = live.replace("65", "0");
+        let (cfg, _) = external_record_from(&bare, &bare_live).unwrap();
+        assert_eq!(cfg.label, "Copilot");
+        assert_eq!(cfg.carbon_modifiers, 0);
+        assert!(external_record_from(&bare, live).is_none());
+        let conflict = bare_live.replace(
+            "}]",
+            r#"},{"modmask":0,"key":"","keycode":0,"description":"User binding"}]"#,
+        );
+        assert!(external_record_from(&bare, &conflict).is_none());
         assert!(external_record_from(source, "[]").is_none());
         assert!(external_record_from("", live).is_none());
         assert!(external_record_from(&source.replacen("env ", "false && ", 1), live).is_none());
