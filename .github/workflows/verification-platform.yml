@@ -58,6 +58,11 @@ jobs:
       - uses: browser-actions/setup-chrome@v1
         if: inputs.portable
         id: chrome
+        with:
+          chrome-version: stable
+      - name: Install recipient media fixture dependency
+        if: inputs.portable
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Install disk-image contract dependency (no KVM required)
         if: inputs.portable
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qemu-utils
