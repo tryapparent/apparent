@@ -399,7 +399,7 @@ test('permission refresh keeps setup unfocused and avoids repeating native geome
   return hostRequire(policies.get(name)||name);
  };
  vm.runInNewContext('(function(){'+fs.readFileSync(require.resolve('../electron/onboarding.cjs'),'utf8')+'})()',{require:load,__dirname:path.resolve(__dirname,'../electron'),module:{exports:{}},process:{versions:{electron:'fixture'},env:{},argv:[],stdin,stdout},console,setTimeout,clearTimeout});
- const practiceFacts={version:1,scope:{session:'fixture',transport:'1'},attempt:'1',observation:null,completion:null,openedBundle:null};
+ const practiceFacts={version:2,scope:{session:'fixture',transport:'1'},attempt:'1',observation:null,completion:null,openedBundle:null};
  const send=status=>stdin.emit('data',JSON.stringify({type:'state',step:'permissions',rows:[{permission:'microphone',status,required:true}],ready:false,practiceFacts})+'\n');
  send('not-determined');const initial=calls.slice();send('granted');
  assert.equal(calls.filter(x=>x==='state').length,2);

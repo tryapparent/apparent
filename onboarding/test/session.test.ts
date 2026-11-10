@@ -1,3 +1,4 @@
+import {ink} from './facts.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PracticeSession } from '../src/session.ts';
@@ -18,7 +19,7 @@ async function fixture(commit: () => Promise<WriteResult> = async () => 'saved')
   });
   await session.begin('attempt');
   let sequence = 0;
-  const observe = (screenInk: number, noteSaved: boolean, boardVisible = true) => session.observe({ attempt: 'attempt', sequence: ++sequence, capture, phase: 'recording', boardVisible, boardInk: true, screenInk, noteSaved });
+  const observe = (screenInk: number, noteSaved: boolean, boardVisible = true) => session.observe({ attempt: 'attempt', sequence: ++sequence, capture, phase: 'recording', boardVisible, boardPoints: 4, screenInk: ink(screenInk), noteSaved });
   observe(0, false); observe(0, true, false); observe(1, true, false);
   session.complete({ capture, current: true, outcome: { kind: 'saved', bundlePath: '/practice.apparent' }, clipboard: 'copied' });
   const command = (action: string) => session.command(action, session.view.context);

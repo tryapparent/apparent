@@ -1629,7 +1629,7 @@ impl Session {
         self.flow.step() == Step::Shortcut
     }
 
-    pub fn observe_practice(&mut self, board:bool, screen:usize, processing:bool) {
+    pub fn observe_practice(&mut self, board:usize, screen:crate::onboarding::native::observations::ScreenInk, processing:bool) {
         if self.flow.step()!=Step::TryIt {return;}
         if let Some(facts)=self.practice.as_mut() {
             facts.observe(board,screen,processing);

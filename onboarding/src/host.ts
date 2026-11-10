@@ -1,6 +1,7 @@
 import { PracticeSession, type PracticeView } from './session.ts';
 import { type CaptureIdentity, type CommandContext, type Completion, type Observation, type Scope } from './practice.ts';
 import { progressKeys, type ProgressIntent, type ProgressSnapshot, type WriteResult } from './progress.ts';
+import { validScreenInk } from './ink.ts';
 
 type ObjectValue = Record<string, unknown>;
 function object(value: unknown): value is ObjectValue { return value !== null && typeof value === 'object' && !Array.isArray(value); }
@@ -22,7 +23,7 @@ function snapshot(value: unknown): value is ProgressSnapshot {
   });
 }
 export interface NativePractice {
-  version: 1;
+  version: 2;
   scope: Scope;
   attempt: string;
   observation: Observation | null;
@@ -31,14 +32,14 @@ export interface NativePractice {
 }
 /** Closed, bounded parent projection. Invalid facts never fall back to a claimed stage. */
 export function decodePractice(value: unknown): NativePractice | null {
-  if (!object(value) || value.version !== 1 || !scope(value.scope) || !identifier(value.attempt)) return null;
+  if (!object(value) || value.version !== 2 || !scope(value.scope) || !identifier(value.attempt)) return null;
   const fact = value.observation;
   if (fact !== null && (!object(fact) || fact.attempt !== value.attempt
     || !Number.isSafeInteger(fact.sequence) || Number(fact.sequence) < 0
     || !(fact.capture === null || identity(fact.capture))
     || !['selecting', 'recording', 'processing', 'cancelled'].includes(String(fact.phase))
-    || typeof fact.boardVisible !== 'boolean' || typeof fact.boardInk !== 'boolean'
-    || typeof fact.noteSaved !== 'boolean' || !Number.isSafeInteger(fact.screenInk) || Number(fact.screenInk) < 0)) return null;
+    || typeof fact.boardVisible !== 'boolean' || !Number.isSafeInteger(fact.boardPoints) || Number(fact.boardPoints) < 0
+    || typeof fact.noteSaved !== 'boolean' || !validScreenInk(fact.screenInk))) return null;
   const receipt = value.completion;
   if (receipt !== null && (!object(receipt) || !identity(receipt.capture) || typeof receipt.current !== 'boolean'
     || !['notRequested', 'copied', 'failed'].includes(String(receipt.clipboard)) || !object(receipt.outcome)

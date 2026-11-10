@@ -1645,8 +1645,12 @@ impl ApparentCoordinator {
         if let Some(session)=self.onboarding.as_mut(){session.practice_anchor(anchor);session.practice_menu_anchor(menu_anchor);}
         let board_frame=whiteboard::frame(cx);
         if let Some(session)=self.onboarding.as_mut(){session.practice_board(board_frame);}
-        let board=self.whiteboard.borrow().strokes.iter().any(|s|s.len()>3);
-        let screen=self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|s|!s.laser && s.pts.len()>9).count();
+        let board=self.whiteboard.borrow().strokes.iter().map(Vec::len).max().unwrap_or(0);
+        let screen={
+            let strokes=self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            crate::onboarding::native::observations::ScreenInk::new(strokes.len(),
+                strokes.iter().enumerate().rev().map(|(i,s)|(i+1,s.pts.len(),s.laser)))
+        };
         let processing=self.is_processing();
         let note_saved=self.note_ui.as_ref().is_some_and(|notes|notes.has_saved_note());
         if let Some(session)=self.onboarding.as_mut() {session.practice_note_saved(note_saved);session.observe_practice(board,screen,processing);}

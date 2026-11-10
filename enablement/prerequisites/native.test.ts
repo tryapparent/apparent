@@ -26,6 +26,7 @@ function fixture(t: any) {
   for (const name of ['worker.js', 'policy.js', 'package.json']) {
     put('capture/desktop/ui/frontend/electron/record-completion/' + name);
   }
+  put('capture/desktop/ui/frontend/dist/assets/onboarding-workflow.cjs');
   return { root, put, electron };
 }
 
@@ -46,6 +47,11 @@ test('missing generated Storage policy fails before Cargo', t => {
 test('missing generated Connect transport fails before Cargo', t => {
   const f = fixture(t);
   rmSync(resolve(f.root, 'capture/desktop/ui/frontend/electron/connect.cjs'));
+  assert.throws(() => checkNativeInputs(f.root, 'linux'), /ENOENT/);
+});
+test('missing generated onboarding workflow fails before Cargo', t => {
+  const f = fixture(t);
+  rmSync(resolve(f.root, 'capture/desktop/ui/frontend/dist/assets/onboarding-workflow.cjs'));
   assert.throws(() => checkNativeInputs(f.root, 'linux'), /ENOENT/);
 });
 for (const name of ['worker.js', 'policy.js', 'package.json']) {
@@ -81,6 +87,8 @@ test('workflow installs and checks prerequisites before every Cargo command, pre
   assert.ok(prerequisite.indexOf("await import('../../capture/desktop/ui/frontend/scripts/build-connect-transport.ts')") < prerequisite.indexOf("console.log('Native prerequisites ready:"));
   const recordBuild = prerequisite.indexOf("await import('../../capture/desktop/ui/frontend/scripts/build-pill.ts')");
   assert.ok(recordBuild >= 0 && recordBuild < prerequisite.indexOf("console.log('Native prerequisites ready:"));
+  const onboardingBuild = prerequisite.indexOf('await buildOnboardingPolicy()');
+  assert.ok(onboardingBuild >= 0 && onboardingBuild < prerequisite.indexOf("console.log('Native prerequisites ready:"));
   assert.equal((rust.match(/npm --prefix capture\/desktop\/ui\/frontend ci/g) || []).length, 1);
   assert.match(rust, /timeout-minutes: 5/);
   assert.match(rust, /_electron_rust_roundtrip -- --ignored --nocapture/);

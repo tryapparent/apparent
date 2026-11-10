@@ -23,6 +23,7 @@ export function checkNativeInputs(root: string, platform = process.platform): st
     'capture/desktop/ui/frontend/electron/record-completion/worker.js',
     'capture/desktop/ui/frontend/electron/record-completion/policy.js',
     'capture/desktop/ui/frontend/electron/record-completion/package.json',
+    'capture/desktop/ui/frontend/dist/assets/onboarding-workflow.cjs',
   ];
   if (platform === 'darwin') inputs.push(
     'capture/desktop/ui/frontend/tests/mac-storage-native.cjs',
@@ -51,5 +52,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   // Rust-only provider jobs need Record's packaged worker even without a
   // renderer build. Use the same generator as Desktop build and staging.
   await import('../../capture/desktop/ui/frontend/scripts/build-pill.ts');
+  const { buildOnboardingPolicy } = await import('../../capture/desktop/ui/frontend/scripts/build-onboarding-policy.ts');
+  await buildOnboardingPolicy();
   console.log('Native prerequisites ready: ' + checkNativeInputs(process.cwd()));
 }

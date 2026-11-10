@@ -1,3 +1,5 @@
+import { boardPracticed, screenPracticed, validScreenInk, type ScreenInk } from './ink.ts';
+
 /** First-capture lesson policy. Only the host calls observe/complete/openedBundle;
  * renderer commands are deliberately a separate, receipt-free interface. */
 export type Stage = 'start' | 'screen' | 'whiteboard' | 'board-ink' | 'note'
@@ -16,8 +18,8 @@ export interface Observation {
   capture: CaptureIdentity | null;
   phase: 'selecting' | 'recording' | 'processing' | 'cancelled';
   boardVisible: boolean;
-  boardInk: boolean;
-  screenInk: number;
+  boardPoints: number;
+  screenInk: ScreenInk;
   /** A nonempty durable save in this capture's native notes session. */
   noteSaved: boolean;
 }
@@ -88,7 +90,8 @@ export class PracticeWorkflow {
   observe(fact: Observation): Effect[] {
     if (this.revoked || !this.attempt || fact.attempt !== this.attempt
       || !Number.isSafeInteger(fact.sequence) || fact.sequence <= this.sequence
-      || !Number.isSafeInteger(fact.screenInk) || fact.screenInk < 0) return [];
+      || !Number.isSafeInteger(fact.boardPoints) || fact.boardPoints < 0
+      || !validScreenInk(fact.screenInk)) return [];
     if (this.capture && (!fact.capture || !sameCapture(this.capture, fact.capture))) return [];
     // Once a final result arrived, delayed live observations cannot revive it.
     if (this.completionReceived || this.stage === 'retry') return [];
@@ -111,19 +114,19 @@ export class PracticeWorkflow {
     else if (this.stage === 'board-ink' && !fact.boardVisible) this.setStage('whiteboard');
 
     const effects: Effect[] = [];
-    if (this.stage === 'board-ink' && fact.boardInk) {
+    if (this.stage === 'board-ink' && boardPracticed(fact.boardPoints)) {
       this.boardInk = true;
-      this.screenBaseline = fact.screenInk;
+      this.screenBaseline = fact.screenInk.total;
       this.setStage('note');
       effects.push({ kind: 'close-whiteboard', capture: { ...fact.capture } });
     } else if (this.stage === 'note') {
       // Screen ink from before the durable note receipt never counts for the next lesson.
-      this.screenBaseline = fact.screenInk;
+      this.screenBaseline = fact.screenInk.total;
       if (fact.noteSaved) {
         this.noteSaved = true;
         this.setStage('screen-ink');
       }
-    } else if (this.stage === 'screen-ink' && fact.screenInk > this.screenBaseline) {
+    } else if (this.stage === 'screen-ink' && screenPracticed(fact.screenInk, this.screenBaseline)) {
       this.screenInk = true;
       this.setStage('stop');
     }

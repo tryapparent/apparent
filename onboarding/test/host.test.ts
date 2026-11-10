@@ -1,3 +1,4 @@
+import {ink} from './facts.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PracticeHost, decodePractice, type NativePractice } from '../src/host.ts';
@@ -9,7 +10,7 @@ const baseline = { tourRevision: { present: true, value: 1 }, seen: { present: t
 function fixture() {
   const messages: any[] = [], views: PracticeView[] = [], timers = new Set<() => void>();
   const host = new PracticeHost({ send: value => messages.push(value), changed: view => views.push(view), timeout: callback => { timers.add(callback); return () => { timers.delete(callback); }; } });
-  const facts: NativePractice = { version: 1, scope, attempt: '2', observation: { attempt: '2', sequence: 1, capture, phase: 'recording', boardVisible: true, boardInk: true, screenInk: 0, noteSaved: false }, completion: null, openedBundle: null };
+  const facts: NativePractice = { version: 2, scope, attempt: '2', observation: { attempt: '2', sequence: 1, capture, phase: 'recording', boardVisible: true, boardPoints: 4, screenInk: ink(0), noteSaved: false }, completion: null, openedBundle: null };
   host.receive(facts);
   const read = messages.shift();
   host.reply({ type: 'practice-progress', ...read, result: baseline });
@@ -20,6 +21,7 @@ const settle = async () => { await Promise.resolve(); await Promise.resolve(); a
 test('parent decoder rejects forged stages and malformed receipt/counter envelopes', () => {
   assert.equal(decodePractice({ practice: 'complete' }), null);
   const f = fixture();
+  assert.equal(decodePractice({...f.facts,version:1}), null, 'A partial old/new deployment must fail closed');
   for (const value of [undefined, {}, { ...f.facts, scope: { ...scope, transport: '' } }, { ...f.facts, observation: { ...f.facts.observation, sequence: NaN } }, { ...f.facts, completion: { capture, clipboard: 'copied', current: true, outcome: { kind: 'saved' } } }]) assert.equal(decodePractice(value), null);
   f.host.close();
 });
@@ -39,7 +41,7 @@ test('shell-open receipts are consumed once, not replayed after a later paste co
   const f = fixture(); await settle();
   f.facts.observation = { ...f.facts.observation!, sequence: 2, noteSaved: true, boardVisible: false };
   f.host.receive(f.facts);
-  f.facts.observation = { ...f.facts.observation!, sequence: 3, screenInk: 1 };
+  f.facts.observation = { ...f.facts.observation!, sequence: 3, screenInk: ink(1) };
   f.facts.completion = { capture, current: true, clipboard: 'copied', outcome: { kind: 'saved', bundlePath: '/a.apparent' } };
   f.facts.openedBundle = { sequence: 1, bundlePath: '/a.apparent' };
   f.host.receive(f.facts);
@@ -79,7 +81,7 @@ test('another transport starts a fresh open receipt sequence even with the same 
   const finishCapture = async () => {
     f.facts.observation = { ...f.facts.observation!, sequence: 2, noteSaved: true, boardVisible: false };
     f.host.receive(f.facts);
-    f.facts.observation = { ...f.facts.observation!, sequence: 3, screenInk: 1 };
+    f.facts.observation = { ...f.facts.observation!, sequence: 3, screenInk: ink(1) };
     f.facts.completion = { capture, current: true, clipboard: 'copied', outcome: { kind: 'saved', bundlePath: '/a.apparent' } };
     f.host.receive(f.facts);
     await f.host.command({ action: 'practice-paste', context: f.host.view!.context });
@@ -89,7 +91,7 @@ test('another transport starts a fresh open receipt sequence even with the same 
   };
   await finishCapture();
   f.facts = { ...f.facts, scope: { ...scope, transport: 'new' }, completion: null, openedBundle: null,
-    observation: { ...f.facts.observation!, sequence: 1, noteSaved: false, boardVisible: true, screenInk: 0 } };
+    observation: { ...f.facts.observation!, sequence: 1, noteSaved: false, boardVisible: true, screenInk: ink(0) } };
   f.host.receive(f.facts);
   await finishCapture();
   const ids = f.messages.map(message => Number(message.id));

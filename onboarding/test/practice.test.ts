@@ -1,3 +1,4 @@
+import {ink} from './facts.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PracticeWorkflow, type CaptureIdentity, type Completion, type Observation } from '../src/practice.ts';
@@ -7,15 +8,15 @@ function fixture() {
   const workflow = new PracticeWorkflow({ session: 'session', transport: 'transport' });
   workflow.begin('attempt');
   let sequence = 0;
-  let fact: Observation = { attempt: 'attempt', sequence, capture, phase: 'recording', boardVisible: false, boardInk: false, screenInk: 0, noteSaved: false };
+  let fact: Observation = { attempt: 'attempt', sequence, capture, phase: 'recording', boardVisible: false, boardPoints: 0, screenInk: ink(0), noteSaved: false };
   const observe = (patch: Partial<Observation> = {}) => {
     fact = { ...fact, sequence: ++sequence, ...patch };
     return workflow.observe(fact);
   };
   const command = (action: string) => workflow.command(action, workflow.view.context);
   const complete = (patch: Partial<Completion> = {}) => workflow.complete({ capture, current: true, outcome: { kind: 'saved', bundlePath: '/practice.apparent' }, clipboard: 'copied', ...patch });
-  const toNote = () => { observe(); observe({ boardVisible: true }); return observe({ boardInk: true }); };
-  const toStop = () => { toNote(); observe({ boardVisible: false, noteSaved: true }); observe({ screenInk: 1 }); };
+  const toNote = () => { observe(); observe({ boardVisible: true }); return observe({ boardPoints: 4 }); };
+  const toStop = () => { toNote(); observe({ boardVisible: false, noteSaved: true }); observe({ screenInk: ink(1) }); };
   const toLocate = () => { complete(); command('practice-paste'); command('practice-pasted'); };
   return { workflow, observe, command, complete, toNote, toStop, toLocate };
 }
@@ -26,17 +27,17 @@ test('real drawing, durable note, clipboard, human confirmation and exact bundle
   assert.equal(f.workflow.view.stage, 'screen');
   f.observe({ phase: 'recording', capture });
   assert.equal(f.workflow.view.stage, 'whiteboard');
-  f.observe({ boardInk: true, screenInk: 1 });
+  f.observe({ boardPoints: 4, screenInk: ink(1) });
   assert.equal(f.workflow.view.stage, 'whiteboard');
   assert.deepEqual(f.observe({ boardVisible: true }), [{ kind: 'close-whiteboard', capture }]);
   assert.equal(f.workflow.view.stage, 'note');
-  f.observe({ boardVisible: false, screenInk: 2 });
+  f.observe({ boardVisible: false, screenInk: ink(2) });
   assert.equal(f.workflow.view.stage, 'note');
   f.observe({ noteSaved: true });
   assert.equal(f.workflow.view.stage, 'screen-ink');
   f.observe();
   assert.equal(f.workflow.view.stage, 'screen-ink');
-  f.observe({ screenInk: 3 });
+  f.observe({ screenInk: ink(3) });
   assert.equal(f.workflow.view.stage, 'stop');
   f.observe({ phase: 'processing' });
   assert.equal(f.workflow.view.stage, 'preparing');
@@ -60,19 +61,37 @@ test('renderer commands never invent capture, ink, note, copy, or bundle-open re
   assert.equal(f.workflow.view.stage, 'locate');
 });
 
+test('raw marks advance only when the TS lesson qualifies a new durable stroke', () => {
+  const f = fixture();
+  f.observe({boardVisible: true, boardPoints: 3});
+  assert.equal(f.workflow.view.stage, 'board-ink');
+  f.observe({boardPoints: 4});
+  assert.equal(f.workflow.view.stage, 'note');
+  f.observe({noteSaved: true, screenInk: ink(1)});
+  assert.equal(f.workflow.view.stage, 'screen-ink');
+  f.observe({screenInk: ink(1)});
+  assert.equal(f.workflow.view.stage, 'screen-ink', 'An earlier mark cannot satisfy the later prompt');
+  f.observe({screenInk: ink(2, 6)});
+  assert.equal(f.workflow.view.stage, 'screen-ink', 'The six-point saved Linux mark remains below the existing threshold');
+  f.observe({screenInk: ink(3, 10, true)});
+  assert.equal(f.workflow.view.stage, 'screen-ink', 'Laser marks are not durable screen drawing');
+  f.observe({screenInk: ink(4, 10)});
+  assert.equal(f.workflow.view.stage, 'stop');
+});
+
 test('closing an owned board before ink returns to its opening lesson', () => {
   const f = fixture();
   f.observe({ boardVisible: true });
   assert.equal(f.workflow.view.stage, 'board-ink');
   f.observe({ boardVisible: false });
   assert.equal(f.workflow.view.stage, 'whiteboard');
-  f.observe({ boardInk: true });
+  f.observe({ boardPoints: 4 });
   assert.equal(f.workflow.view.stage, 'whiteboard');
 });
 
 test('early finish teaches paste/location but cannot complete required practice', () => {
   const f = fixture(); f.toNote();
-  f.observe({ phase: 'processing', noteSaved: true, screenInk: 50 });
+  f.observe({ phase: 'processing', noteSaved: true, screenInk: ink(50) });
   assert.equal(f.workflow.view.stage, 'preparing');
   f.toLocate(); f.workflow.openedBundle(capture, '/practice.apparent');
   assert.equal(f.workflow.view.stage, 'retry');
@@ -98,7 +117,7 @@ test('cancel and retry discard every old milestone and reject delayed observatio
   f.workflow.begin('retry');
   f.observe({ phase: 'recording' }); // old attempt
   assert.equal(f.workflow.view.stage, 'start');
-  f.observe({ attempt: 'retry', capture: { ...capture, captureId: 'capture-b' }, boardVisible: true, boardInk: true, noteSaved: false });
+  f.observe({ attempt: 'retry', capture: { ...capture, captureId: 'capture-b' }, boardVisible: true, boardPoints: 4, noteSaved: false });
   assert.equal(f.workflow.view.stage, 'note');
   f.complete(); // old capture's finalizer
   assert.equal(f.workflow.view.stage, 'note');
@@ -111,7 +130,7 @@ test('polling, replayed frames and mutable caller objects do not replay effects'
   assert.equal(f.workflow.view.stage, 'note');
   f.observe({ sequence: 20, noteSaved: true });
   assert.equal(f.workflow.view.stage, 'screen-ink');
-  f.observe({ sequence: 20, screenInk: 1 });
+  f.observe({ sequence: 20, screenInk: ink(1) });
   assert.equal(f.workflow.view.stage, 'screen-ink');
 });
 
@@ -163,7 +182,7 @@ test('later/close and replaced transport revoke coaching without emitting a capt
 test('invalid counters and a different live capture cannot satisfy the drawing lesson', () => {
   const f = fixture(); f.toNote();
   f.observe({ sequence: Number.NaN, noteSaved: true });
-  f.observe({ sequence: 99, screenInk: -1 });
-  f.observe({ sequence: 100, screenInk: 0, capture: { ...capture, generation: 'old' } });
+  f.observe({ sequence: 99, screenInk: ink(-1) });
+  f.observe({ sequence: 100, screenInk: ink(0), capture: { ...capture, generation: 'old' } });
   assert.equal(f.workflow.view.stage, 'note');
 });

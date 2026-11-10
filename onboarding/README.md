@@ -49,6 +49,21 @@ policy host. The adopted Record finalizer supplies its original capture identity
 exact saved path and independent clipboard result through this method; the former
 saved-bundle/observation route has been removed.
 
+The internal version-2 observation envelope carries the longest durable board
+stroke and at most 64 recent screen strokes, with capture-local indices, point
+counts and laser flags. `src/ink.ts` owns the existing lesson thresholds (four
+board points; ten non-laser screen points after the note baseline). Native code
+only bounds/collects these facts. Short saved marks remain real capture content
+without automatically satisfying the lesson. Native/host assets deploy together;
+a mixed version fails closed and follows the existing fallback route.
+
+The existing native prerequisites generate that same host bundle before Cargo.
+`cargo test onboarding_electron_rust_roundtrip -- --ignored --nocapture`
+passes real Rust observations through the bundled production host using the
+locked Electron Node runtime, including short/laser marks and lossless capture
+identity. It performs no OS input, clipboard write or progress mutation; installed
+permission, capture, focus and packaging acceptance remain separate.
+
 Each transport has a session identity, each admitted attempt has an identity and
 each command includes the displayed stage revision. Native host messages also
 have increasing IDs, consumed independently of the value/presence CAS. CAS detects
