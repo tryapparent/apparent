@@ -669,6 +669,10 @@ impl SettingsWindow {
 
 /// The platform key code for a key GPUI names (`r`, `f5`, `space`), as the hotkeys register it.
 pub(crate) fn key_code(key: &str) -> Option<u32> {
+    #[cfg(target_os = "linux")]
+    if key.eq_ignore_ascii_case("copilot") || key.eq_ignore_ascii_case("XF86TouchpadOff") {
+        return Some(201);
+    }
     #[cfg(not(target_os = "macos"))]
     let named: &[(&str, u32)] = &[
         ("space", 0x20),
@@ -2524,6 +2528,13 @@ fn menu_setting_value(key: &str, id: &str) -> Option<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn settings_recorder_recognizes_copilot_xkb_key_name() {
+        assert_eq!(key_code("Copilot"), Some(201));
+        assert_eq!(key_code("XF86TouchpadOff"), Some(201));
+    }
 
     #[test]
     fn error_reporting_preference_reaches_the_gpui_window() {

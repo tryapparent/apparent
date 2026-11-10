@@ -232,7 +232,11 @@ pub fn modifier_flags() -> u64 {
 /// The virtual key and label for a key GPUI names (`a`, `f5`, `space`).
 fn key_from_name(key: &str) -> Option<(u16, String)> {
     let lower = key.to_ascii_lowercase();
-    if lower == "copilot" { return Some((201, "Copilot".into())); }
+    // Hyprland binds Omarchy's Copilot hardware key by XKB keycode 201. GPUI
+    // reports the default XKB symbol name for that code, not "Copilot".
+    if matches!(lower.as_str(), "copilot" | "xf86touchpadoff") {
+        return Some((201, "Copilot".into()));
+    }
     if lower.chars().count() == 1
         && let Some(ch) = lower.chars().next()
         && ch.is_ascii_alphanumeric()
@@ -1209,6 +1213,7 @@ mod tests {
     #[test]
     fn copilot_key_round_trips_through_shortcut_provider() {
         assert_eq!(key_from_name("Copilot"), Some((201, "Copilot".into())));
+        assert_eq!(key_from_name("XF86TouchpadOff"), Some((201, "Copilot".into())));
         let shortcut = shortcut_from_key_and_mods("Copilot", true, false, false, true).unwrap();
         assert_eq!(shortcut.key_code, 201);
         assert_eq!(shortcut.carbon_modifiers, CARBON_CMD_KEY | CARBON_SHIFT_KEY);
