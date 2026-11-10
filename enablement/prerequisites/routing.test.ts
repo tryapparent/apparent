@@ -57,7 +57,7 @@ test('portable browser failures propagate rather than admitting platform work', 
   };
   const select = job('select');
   assert.match(select, /^    runs-on: ubuntu-24\.04$/m);
-  assert.match(select, /python3 enablement\/verification\.py .*--execution portable/);
+  assert.match(select, /enablement\/ci\/routing\/run\.ts --portable/);
   for (const id of ['rust', 'desktop-ui']) {
     assert.match(job(id), /^    needs: select$/m);
   }

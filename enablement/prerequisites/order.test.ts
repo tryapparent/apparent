@@ -84,7 +84,7 @@ test('security fixtures and required packaging precede serial native checks; ful
   const early = result.trace.split('\n').filter(line => line.startsWith(preflight + '|'));
   assert.equal(early.length, 1, 'Mac fixtures should share one Cargo freshness/build check');
   assert.equal(early[0], preflight + '|test -j 3 --locked --timings -- --test-threads=2 ' + earlyFilters.join(' '));
-  assert.match(result.trace, /verification\.py --base [a-f0-9]+ --run --online --execution platform/);
+  assert.match(result.trace, /routing\/native\.ts/);
   assert.match(result.env, /CACHE_ON_FAILURE=true/);
   for (const name of [storage, copy, reference]) {
     assert.equal(steps.find(step => step.name === name)!.body.includes('continue-on-error'), false);
