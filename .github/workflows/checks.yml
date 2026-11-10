@@ -30,6 +30,18 @@ jobs:
       runner: ubuntu-24.04
       release_receipt: false
 
+  release-linux:
+    needs: [contracts, hermes, select, linux]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'tryapparent/apparent'
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-linux.yml
+    with:
+      publish_main: true
+    secrets:
+      APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
+
   macos:
     # Share the cheap admission barrier; neither full platform waits for the other.
     needs: [contracts, hermes, select]

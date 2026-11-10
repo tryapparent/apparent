@@ -1,6 +1,14 @@
 name: Release (Linux)
 
 on:
+  workflow_call:
+    inputs:
+      publish_main:
+        type: boolean
+        default: false
+    secrets:
+      APPARENT_POSTHOG_TOKEN:
+        required: false
   workflow_dispatch:
     inputs:
       bridge_commit:

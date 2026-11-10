@@ -112,7 +112,11 @@ explicitly. Preview publication stays on `macos-latest` for arm64 packaging; Int
 CI is not Apple Silicon runtime proof. An image change must still pass the same
 checks before Mac publication.
 
-Linux and Connect delivery are manual-only. Their admission job reads trusted-main
+Linux latest-main delivery runs automatically after the main push's Linux and shared
+checks succeed, without depending on Mac jobs. It reuses `release-linux.yml` for both
+AppImage packaging gates and publication to the existing Main update channel.
+PRs and skipped/failed Linux jobs cannot publish. Manual Linux delivery remains
+available; Connect delivery remains manual-only. The admission job reads trusted-main
 code and requires that exact commit's
 successful Linux/shared receipt. Mac preview publication requires both the
 Linux/shared and Mac receipts for the same commit. A queued/failed Mac run cannot

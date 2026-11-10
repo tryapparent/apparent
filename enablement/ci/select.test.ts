@@ -32,6 +32,27 @@ test('only one automatic workflow; manual diagnostics and reporter retirement ar
   assert.match(workflow('stream-public.yml').jobs.deploy.if, /github.event_name == 'workflow_dispatch'/);
 });
 
+test('Linux Main publication waits only for successful Linux/shared jobs', () => {
+  const job = workflow('checks.yml').jobs['release-linux'];
+  assert.deepEqual(job.needs, ['contracts', 'hermes', 'select', 'linux']);
+  assert.equal(job.uses, './.github/workflows/release-linux.yml');
+  assert.deepEqual(job.with, {publish_main: true});
+  assert.deepEqual(job.permissions, {contents: 'write', actions: 'read'});
+  const admitted = (event: string, ref: string, repository: string, result: string) =>
+    // GitHub's implicit success() rejects failed/skipped dependencies.
+    result === 'success' && Function('github', `return (${job.if});`)({event_name: event, ref, repository});
+  assert.equal(admitted('push', 'refs/heads/main', 'tryapparent/apparent', 'success'), true);
+  for (const result of ['failure', 'skipped', 'cancelled'])
+    assert.equal(admitted('push', 'refs/heads/main', 'tryapparent/apparent', result), false);
+  for (const [event, ref, repo] of [['pull_request', 'refs/pull/1/merge', 'tryapparent/apparent'],
+    ['push', 'refs/heads/feature', 'tryapparent/apparent'], ['push', 'refs/heads/main', 'fork/repo']])
+    assert.equal(admitted(event, ref, repo, 'success'), false);
+  const release = workflow('release-linux.yml');
+  assert.equal(release.on.workflow_call.inputs.publish_main.default, false);
+  assert.equal(release.concurrency['cancel-in-progress'], false);
+  assert.match(release.jobs.admit.steps.find((step: any) => step.id === 'gate').run, /--platform linux --sha/);
+});
+
 test('main preserves active checks while PR updates supersede them', () => {
   for (const filename of ['checks.yml', 'stream-public.yml']) {
     const concurrency = workflow(filename).concurrency;
