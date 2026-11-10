@@ -51,6 +51,9 @@ test('Linux Main publication waits only for successful Linux/shared jobs', () =>
   assert.equal(release.on.workflow_call.inputs.publish_main.default, false);
   assert.equal(release.concurrency['cancel-in-progress'], false);
   assert.match(release.jobs.admit.steps.find((step: any) => step.id === 'gate').run, /--platform linux --sha/);
+  const script = release.jobs.admit.steps.find((step: any) => step.id === 'gate').run;
+  const staleGuard = script.slice(script.indexOf('          # Superseded'.trim())).split('          args=')[0];
+  assert.match(staleGuard, /GITHUB_EVENT_NAME.*== push/);
 });
 
 test('main preserves active checks while PR updates supersede them', () => {
