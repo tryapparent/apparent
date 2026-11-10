@@ -68,7 +68,8 @@ fn disconnected(server: Option<&str>) -> Snapshot {
         server: server.map(str::to_owned),
         connected: false,
         uploads_enabled: false,
-        reauthorization_required: false, account_initial: None,
+        reauthorization_required: false,
+        account_initial: None,
     }
 }
 
@@ -77,7 +78,8 @@ fn connected() -> Snapshot {
         server: Some(DEFAULT_SERVER.into()),
         connected: true,
         uploads_enabled: true,
-        reauthorization_required: false, account_initial: None,
+        reauthorization_required: false,
+        account_initial: None,
     }
 }
 
@@ -119,6 +121,25 @@ fn start(controller: &mut Controller, logins: &mpsc::Receiver<LoginCall>) -> Log
     controller.command(Command::Connect);
     controller.command(Command::Allow);
     recv(logins)
+}
+
+fn confirm(controller: &mut Controller, command: Command) {
+    let request = match command {
+        Command::Disable => Command::RequestDisable,
+        Command::Disconnect => Command::RequestDisconnect,
+        _ => panic!("expected a destructive action"),
+    };
+    controller.command(request);
+    assert_eq!(
+        controller.policy_state.confirmation,
+        Some(if command == Command::Disable {
+            PolicyConfirmation::Disable
+        } else {
+            PolicyConfirmation::Disconnect
+        })
+    );
+    controller.command(command);
+    assert!(controller.disabling());
 }
 
 #[test]
@@ -213,13 +234,15 @@ fn login_requires_authoritative_enabled_state_not_transport_success() {
             server: Some(DEFAULT_SERVER.into()),
             connected: true,
             uploads_enabled: false,
-            reauthorization_required: false, account_initial: None,
+            reauthorization_required: false,
+            account_initial: None,
         }),
         Ok(Snapshot {
             server: Some("https://other.example".into()),
             connected: true,
             uploads_enabled: true,
-            reauthorization_required: false, account_initial: None,
+            reauthorization_required: false,
+            account_initial: None,
         }),
     ] {
         let (mut c, backend, events, logins, _, _) = fixture();
@@ -240,7 +263,7 @@ fn disable_cancels_login_and_blocks_reenable_until_durable_result_even_on_close(
     let call = start(&mut c, &logins);
     call.approve.send(approval()).unwrap();
     c.receive(recv(&events));
-    c.command(Command::Disconnect);
+    confirm(&mut c, Command::Disconnect);
     assert!(!(call.allowed)());
     let (logout, finish) = recv(&disables);
     assert!(logout);
@@ -263,7 +286,7 @@ fn failed_disable_retains_retry_and_fresh_read_only_status_without_health_flood(
     let (mut c, backend, events, _, probes, disables) = fixture();
     *backend.local.lock().unwrap() = Ok(connected());
     c.refresh();
-    c.command(Command::Disable);
+    confirm(&mut c, Command::Disable);
     let (_, finish) = recv(&disables);
     finish.send(Err(SafeError::LocalState)).unwrap();
     c.receive(recv(&events));
@@ -278,7 +301,8 @@ fn failed_disable_retains_retry_and_fresh_read_only_status_without_health_flood(
         server: Some(DEFAULT_SERVER.into()),
         connected: true,
         uploads_enabled: false,
-        reauthorization_required: false, account_initial: None,
+        reauthorization_required: false,
+        account_initial: None,
     });
     c.refresh();
     c.refresh();
@@ -396,6 +420,8 @@ fn reopened_unsettled_revocation_can_be_retried_without_allowing_a_new_login() {
     c.command(Command::Connect);
     c.command(Command::Allow);
     assert!(logins.try_recv().is_err());
+    // With local state unreadable this is the existing explicit emergency retry
+    // action, not a normal connected-account disable request.
     c.command(Command::Disable);
     let (logout, finish) = recv(&disables);
     assert!(!logout);
@@ -408,25 +434,35 @@ fn reopened_unsettled_revocation_can_be_retried_without_allowing_a_new_login() {
 #[test]
 fn typed_presentation_never_promotes_unverified_or_unreadable_state_to_success() {
     let (mut c, backend, _events, _logins, _probes, _disables) = fixture();
-    assert_eq!(c.view().presentation.headline, "Help others see what you mean.");
+    assert_eq!(
+        c.view().presentation.headline,
+        "Help others see what you mean."
+    );
     assert_eq!(c.view().presentation.tone, Tone::Neutral);
-    *backend.local.lock().unwrap() = Ok(connected()); c.refresh();
+    *backend.local.lock().unwrap() = Ok(connected());
+    c.refresh();
     assert_eq!(c.view().presentation.tone, Tone::Success);
     c.health = Some(Health::Offline);
     assert_eq!(c.view().presentation.tone, Tone::Failure);
     c.health = None;
     c.error = Some(SafeError::UnverifiedCommit);
     assert_eq!(c.view().presentation.tone, Tone::Failure);
-    *backend.local.lock().unwrap() = Err(SafeError::LocalState); c.refresh();
+    *backend.local.lock().unwrap() = Err(SafeError::LocalState);
+    c.refresh();
     let p = c.view().presentation;
     assert_eq!(p.tone, Tone::Failure);
-    assert!(p.buttons.iter().any(|b| b.command == Command::RequestDisconnect));
+    assert!(
+        p.buttons
+            .iter()
+            .any(|b| b.command == Command::RequestDisconnect)
+    );
 }
 
 #[test]
 fn confirmation_and_consent_cancel_are_local_until_explicit_allow_or_revoke() {
     let (mut c, backend, events, logins, probes, disables) = fixture();
-    *backend.local.lock().unwrap() = Ok(connected()); c.refresh();
+    *backend.local.lock().unwrap() = Ok(connected());
+    c.refresh();
     c.command(Command::RequestDisconnect);
     let p = c.view().presentation;
     assert_eq!(p.tone, Tone::Warning);
@@ -449,7 +485,13 @@ fn confirmation_and_consent_cancel_are_local_until_explicit_allow_or_revoke() {
     result.send(Err(SafeError::LocalState)).unwrap();
     c.receive(recv(&events));
     assert_eq!(c.view().presentation.tone, Tone::Failure);
-    assert!(c.view().presentation.buttons.iter().any(|b| b.command == Command::Disable));
+    assert!(
+        c.view()
+            .presentation
+            .buttons
+            .iter()
+            .any(|b| b.command == Command::Disable)
+    );
 }
 
 #[test]
@@ -461,7 +503,11 @@ fn failed_first_signin_keeps_recovery_actions_reachable() {
         assert_eq!(p.tone, Tone::Failure);
         assert!(p.account_menu);
         assert!(p.menu_actions.contains(&Command::Check));
-        assert!(p.buttons.iter().any(|b| b.command == Command::Check && b.enabled));
+        assert!(
+            p.buttons
+                .iter()
+                .any(|b| b.command == Command::Check && b.enabled)
+        );
     }
 }
 
@@ -480,18 +526,22 @@ fn account_initial_tracks_fresh_identity_without_changing_actions() {
         assert!(p.menu_actions.contains(&Command::RequestDisconnect));
     }
     snapshot.account_initial = Some("S".into());
-    *backend.local.lock().unwrap() = Ok(snapshot.clone()); c.refresh();
+    *backend.local.lock().unwrap() = Ok(snapshot.clone());
+    c.refresh();
     c.health = Some(Health::AuthRequired);
     assert!(c.view().presentation.account_initial.is_none());
     c.health = None;
     c.error = Some(SafeError::AuthRequired);
     assert!(c.view().presentation.account_initial.is_none());
     c.error = None;
-    *backend.local.lock().unwrap() = Err(SafeError::LocalState); c.refresh();
+    *backend.local.lock().unwrap() = Err(SafeError::LocalState);
+    c.refresh();
     assert!(c.view().presentation.account_initial.is_none());
     snapshot.reauthorization_required = true;
-    *backend.local.lock().unwrap() = Ok(snapshot); c.refresh();
+    *backend.local.lock().unwrap() = Ok(snapshot);
+    c.refresh();
     assert!(c.view().presentation.account_initial.is_none());
-    *backend.local.lock().unwrap() = Ok(disconnected(None)); c.refresh();
+    *backend.local.lock().unwrap() = Ok(disconnected(None));
+    c.refresh();
     assert!(c.view().presentation.account_initial.is_none());
 }

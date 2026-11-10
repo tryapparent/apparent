@@ -27,7 +27,7 @@ test('build removes stale generated modules and refuses redirected output',async
   await fs.mkdir(dist);await fs.writeFile(path.join(dist,'obsolete.js'),'obsolete');
   await fs.writeFile(path.join(dist,'obsolete.d.ts'),'obsolete');
   run('npm',['run','build'],source);
-  assert.deepEqual((await fs.readdir(dist)).sort(),['index.d.ts','index.js']);
+  assert.deepEqual((await fs.readdir(dist)).sort(),['index.d.ts','index.js','settings-policy.cjs','settings-policy.d.cts']);
   await fs.rm(dist,{recursive:true});
   const external=path.join(root,'external');await fs.mkdir(external);
   await fs.writeFile(path.join(external,'sentinel'),'preserve');
@@ -40,7 +40,7 @@ test('packed consumer installs and runs without Rust, compilers or source resolu
   const {root,source}=await fixture(t);
   const result=JSON.parse(run('npm',['pack','--json','--pack-destination',root],source))[0];
   assert.deepEqual(result.files.map((file:{path:string})=>file.path).sort(),
-    ['README.md','dist/index.d.ts','dist/index.js','package.json']);
+    ['README.md','dist/index.d.ts','dist/index.js','dist/settings-policy.cjs','dist/settings-policy.d.cts','package.json']);
   const bin=path.join(root,'deny');await fs.mkdir(bin);
   for(const name of ['cargo','rustc','tsc','esbuild']) {
     await fs.writeFile(path.join(bin,name),'#!/bin/sh\necho forbidden-build-tool >&2\nexit 99\n',{mode:0o700});
@@ -52,6 +52,9 @@ test('packed consumer installs and runs without Rust, compilers or source resolu
   run('npm',['install','--offline','--ignore-scripts=false','--no-audit','--no-fund',path.join(root,result.filename)],consumer,env);
   run(process.execPath,['--input-type=module','-e',`
     import assert from 'node:assert/strict';
+    import {createRequire} from 'node:module';
+    import path from 'node:path';
+    import {fileURLToPath} from 'node:url';
     import {generateAgeIdentity,encryptAge,decryptAge,signEnvelope,verifyEnvelope} from '@apparent/connect-crypto';
     const identity=await generateAgeIdentity(),original=new Uint8Array([0,1,255]);
     assert.deepEqual(await decryptAge(await encryptAge(original,[identity.recipient]),identity.identity),original);
@@ -59,6 +62,12 @@ test('packed consumer installs and runs without Rust, compilers or source resolu
     const signed={version:1,context:{origin:'https://example.test',accountId:'a',captureId:'c',senderGrantId:'s'},chunks:[]};
     assert.equal((await signEnvelope(seed,signed)).length,128);
     assert.equal(await verifyEnvelope(new Uint8Array(32),signed,'00'.repeat(64)),false);
+    const require=createRequire(import.meta.url);
+    const entry=fileURLToPath(import.meta.resolve('@apparent/connect-crypto'));
+    const {transition}=require(path.join(path.dirname(entry),'settings-policy.cjs'));
+    const decision=transition({consent:false,confirmation:null},{action:'connect',snapshotAvailable:true,busy:false,retryDisable:null,closed:false});
+    assert.equal(decision.overlay.mode,'consent');
+    assert.equal(decision.effect,null);
   `],consumer,env);
   await fs.writeFile(path.join(consumer,'consumer.mts'),`
     import {generateAgeIdentity,encryptAge,type Asset} from '@apparent/connect-crypto';
