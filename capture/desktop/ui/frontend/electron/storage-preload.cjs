@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('apparent', Object.freeze({
 
 contextBridge.exposeInMainWorld('apparentAbout', Object.freeze({
   read: () => ipcRenderer.invoke('apparent:about-read'),
+  copyVersion: () => ipcRenderer.invoke('apparent:about-copy-version'),
   link: link => ipcRenderer.invoke('apparent:about-link', link),
   act: action => ipcRenderer.invoke('apparent:about-action', action),
   subscribe: callback => {

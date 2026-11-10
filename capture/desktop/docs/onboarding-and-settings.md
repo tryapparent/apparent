@@ -301,7 +301,17 @@ About has a Star on GitHub button below the update control. Its heading, action 
 Settings follows system light or dark appearance without storing a preference. The Mac helper resolves the SwiftUI theme from its environment and the titlebar background from a dynamic AppKit color; an open window updates when macOS appearance changes. Linux reads the desktop portal before opening, then watches its color-scheme revision and repaints the open GPUI window. Hovered buttons and menu items use black on light lilac (`#c4a9e6`) in light mode, and cream on dark lilac (`#302442`) in dark mode; the selected sidebar always has cream text. The Linux update result panel also follows the palette, including its secondary actions.
 
 
-Settings › About keeps its existing **Check for Updates…** action. On Linux, a manual check
+Settings › About includes a **Copy version** button that copies the displayed version
+and Git SHA as plain text (for example, `Apparent 0.3.13 · 6885bac`). The Electron
+version text can also be selected. Copying does not send anything.
+Unsupported installations show **Updates unavailable**, with installation guidance,
+rather than a disabled check action that could be mistaken for ongoing work.
+The installed Electron About presentation and Linux native fallback use the same
+parent version and update availability; routing and fallback remain unchanged.
+The Mac legacy fallback retains its existing presentation until packaged Electron
+About is accepted on both platforms.
+
+Settings › About keeps its existing **Check for Updates…** action when updates are available. On Linux, a manual check
 shows Checking… only in the disabled check button and ignores duplicate clicks until it completes. Its dismissible result has
 one line only: **Update available**, **No update available**, or **Update check failed**, with
 the same pixel frog jumping, lounging, or puzzled on its notched lily pad. Failures and
