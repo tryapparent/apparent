@@ -14,6 +14,15 @@ const jobs = names.map(name => ({ name, status: 'completed', conclusion: 'succes
 test('exact main CD supplies both platforms without manual receipts', () => {
   for (const platform of ['linux', 'macos']) assert.ok(admitsCD(run, jobs, repo, sha, platform));
 });
+test('lightweight main success cannot authorize publication or inherit PR proof', () => {
+  const lightweight = jobs.map(job => job.name.startsWith('linux /') ||
+    job.name.startsWith('macos /') || job.name === 'Hermes inspection (macos-15-intel)'
+    ? { ...job, conclusion: 'skipped' } : job);
+  for (const platform of ['linux', 'macos']) {
+    assert.equal(admitsCD(run, lightweight, repo, sha, platform), false);
+    assert.equal(admitsCD({ ...run, event: 'pull_request' }, jobs, repo, sha, platform), false);
+  }
+});
 test('untrusted identities, events and incomplete runs fail closed', () => {
   for (const change of [{ head_sha: 'b'.repeat(40) }, { head_branch: 'feature' },
     { event: 'pull_request' }, { event: 'workflow_dispatch' }, { status: 'queued' },
