@@ -288,12 +288,14 @@ fn settings_health_renewal_queue_cancel_exits_without_late_writes() {
 }
 
 #[test]
-fn settings_health_renews_without_fabricating_local_expiry_success() {
+fn settings_health_renews_saved_session_without_requesting_reapproval() {
     let f = Fixture::new();
     let server = RenewalServer::new("");
     renewable(&f, &server.url);
+    fs::remove_file(f.client.state.join("read.credential")).unwrap();
     let local = f.client.settings_snapshot().unwrap();
-    assert!(local.reauthorization_required);
+    assert!(local.connected);
+    assert!(!local.reauthorization_required);
     assert!(!local.uploads_enabled);
     assert_eq!(server.requests.load(Ordering::SeqCst), 0);
     assert_eq!(
@@ -304,6 +306,23 @@ fn settings_health_renews_without_fabricating_local_expiry_success() {
     assert!(renewed.connected && renewed.uploads_enabled);
     assert!(!renewed.reauthorization_required);
     assert_eq!(server.refreshes.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn settings_renewable_session_survives_offline_but_revocation_requires_signin() {
+    for (mode, expected) in [("transient", crate::settings::Health::Offline), ("revoked", crate::settings::Health::AuthRequired)] {
+        let f = Fixture::new();
+        let server = RenewalServer::new(mode);
+        renewable(&f, &server.url);
+        fs::remove_file(f.client.state.join("read.credential")).unwrap();
+        assert!(!f.client.settings_snapshot().unwrap().reauthorization_required);
+        assert_eq!(f.client.settings_health(&|| true), expected);
+        let fresh = Client::new(provider(f.client.config.clone()));
+        let snapshot = fresh.settings_snapshot().unwrap();
+        assert_eq!(snapshot.reauthorization_required, mode == "revoked");
+        assert!(!snapshot.uploads_enabled);
+        assert_eq!(server.refreshes.load(Ordering::SeqCst), 1);
+    }
 }
 
 #[test]
