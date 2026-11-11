@@ -31,6 +31,7 @@ jobs:
     runs-on: ubuntu-24.04
     container: node:22.23.0-bookworm-slim
     steps:
+      - run: apt-get update && apt-get install -y --no-install-recommends git python3 python3-venv
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -43,6 +44,9 @@ jobs:
           test ! -d capture
           ! command -v rustc
           ! command -v cargo
+          python3 -m venv /tmp/apparent-dev-hermes-clean-python
+          /tmp/apparent-dev-hermes-clean-python/bin/pip install 'Pillow>=13,<14'
+          /tmp/apparent-dev-hermes-clean-python/bin/python -m unittest discover -s hermes/tests -v
           npm ci --ignore-scripts --prefix hermes/desktop
           node --experimental-strip-types --test hermes/desktop/*.test.ts hermes/distribution/*.test.ts
   verify:
