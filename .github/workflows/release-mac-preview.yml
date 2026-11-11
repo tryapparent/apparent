@@ -37,13 +37,13 @@ jobs:
             test "$APPARENT_PREVIEW_NOTARIZE" = true
             python3 enablement/release_gate.py --platform macos --sha "$GITHUB_SHA" --onboarding-candidate
             echo 'APPARENT_PREVIEW_VERSION=0.12.2' >> "$GITHUB_ENV"
+            echo 'APPARENT_RELEASE_VERSION=0.12.2' >> "$GITHUB_ENV"
             echo 'APPARENT_PREVIEW_BUILD_NUMBER=12.2' >> "$GITHUB_ENV"
             echo 'APPARENT_PREVIEW_TAG=preview-mac-12-2' >> "$GITHUB_ENV"
           else
             python3 enablement/release_gate.py --platform macos --sha "$GITHUB_SHA"
-            echo "APPARENT_PREVIEW_VERSION=0.$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+            node --experimental-strip-types capture/desktop/scripts/release/desktop-version.ts
             echo "APPARENT_PREVIEW_BUILD_NUMBER=$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
-            echo "APPARENT_PREVIEW_TAG=preview-mac-$GITHUB_RUN_NUMBER-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
           fi
       - name: Prepare Developer ID credentials
         if: env.APPARENT_PREVIEW_NOTARIZE == 'true'
@@ -64,7 +64,7 @@ jobs:
         env:
           POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
         run: |
-          node --experimental-strip-types --test capture/desktop/scripts/release/posthog-release.test.ts
+          node --experimental-strip-types --test capture/desktop/scripts/release/desktop-version.test.ts capture/desktop/scripts/release/posthog-release.test.ts
           node --experimental-strip-types capture/desktop/scripts/release/posthog-release.ts macos
       - name: Build and verify the preview app
         env:
@@ -90,8 +90,7 @@ jobs:
           printf '%s\n' "$SPARKLE_PREVIEW_PRIVATE_KEY" | \
             "$(capture/desktop/scripts/release/setup-sparkle.sh)/bin/sign_update" --ed-key-file - "$zip" \
             > "$RUNNER_TEMP/preview-signature-attributes"
-      - name: Recheck scoped candidate against live feed before public release
-        if: github.ref == 'refs/heads/t3/onboarding-mac-release-baseline'
+      - name: Recheck candidate against live feed before public release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -102,6 +101,7 @@ jobs:
             --previous "$RUNNER_TEMP/live-preview-before-release.xml" \
             --zip "dist/Apparent-Preview-${APPARENT_PREVIEW_VERSION}-arm64.zip" \
             --version "$APPARENT_PREVIEW_VERSION" --build-number "$APPARENT_PREVIEW_BUILD_NUMBER" \
+            --tag "$APPARENT_PREVIEW_TAG" \
             --signature-attributes "$(cat "$RUNNER_TEMP/preview-signature-attributes")" \
             --url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${APPARENT_PREVIEW_TAG}/Apparent-Preview-${APPARENT_PREVIEW_VERSION}-arm64.zip" \
             --out "$RUNNER_TEMP/preview-prepublication-check.xml"
@@ -185,6 +185,7 @@ jobs:
           fi
           python3 capture/desktop/scripts/release/preview_appcast.py \
             --previous "$previous" --zip "$zip" --version "$version" --build-number "$build" \
+            --tag "$APPARENT_PREVIEW_TAG" \
             --signature-attributes "$(cat "$RUNNER_TEMP/preview-signature-attributes")" \
             --url "$url" --out "$RUNNER_TEMP/preview-appcast.xml"
           fields=(-f branch="$branch" -f message="Publish signed Mac preview $version" \

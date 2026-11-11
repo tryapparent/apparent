@@ -112,7 +112,7 @@ def main():
     try:
         gh("release", "create", tag, *(str(p) for p in files), "--repo", repo,
            "--target", sha, "--draft", "--prerelease", "--latest=false",
-           "--title", f"Linux main {sha[:12]}",
+           "--title", f"Apparent Linux preview {os.environ['APPARENT_VERSION']} ({sha[:12]})",
            "--notes", "Automatic Linux preview from main; not a stable release.")
         draft = release(repo, tag)
         if draft is None or not draft["isDraft"]:

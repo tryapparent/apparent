@@ -5,9 +5,13 @@
 Mac preview and Linux publication resolve a release before compiling via
 `scripts/release/posthog-release.ts` (PostHog CLI pinned to `0.19.0`). They use
 EU project `329943`, names `apparent-desktop-macos` / `apparent-desktop-linux`,
-the packaged version and the checked-out full commit, including tagged Linux
+the packaged version and the checked-out full commit as the provider's separate
+build identifier, including tagged Linux
 builds. Registration failure blocks publication rather than shipping an
 unlinked reporting build. Linux verify-only builds skip registration entirely.
+This keeps successive Main builds distinct in PostHog even when they share the
+same displayed release number. Both platforms still report the common numeric
+`release_version`; the provider release key also includes the source build.
 
 Configure repository secret `POSTHOG_CLI_API_KEY` with a personal key scoped to
 the intended project and **error tracking write**. It is separate from the
@@ -29,9 +33,17 @@ Mac publication first requires successful Linux/shared and Mac main verification
 of the exact commit. Linux publication requires its Linux/shared receipt and does
 not wait for queued Mac runners.
 It is dispatched manually from `tryapparent/apparent`'s `main`: **Actions → Mac preview release →
-Run workflow → main**. It builds on `macos-latest`, assigns version `0.<workflow run>.<attempt>` and
-tag `preview-mac-<run>-<attempt>`, and creates a GitHub prerelease with the DMG, its SHA-256 and
-a Sparkle ZIP. A re-run gets a new attempt number; existing tags are never overwritten. The
+Run workflow → main**. It builds on `macos-latest`, reads the shared application version
+from `Cargo.toml`, and creates a GitHub prerelease with the DMG, its SHA-256 and
+a Sparkle ZIP. Mac and Linux packages and PostHog records use exactly that version;
+0.22.1 advances Linux from 0.3.13 and Mac from 0.21.1. Bump the package version
+and its lockfile entry together for each subsequent numbered release. Mac tags
+retain `preview-mac-<minor>-<patch>` for 0.x versions; Linux Main tags retain their
+commit IDs for ancestry-based update ordering. Linux release titles include the
+shared version. The internal Mac Sparkle build number remains `<workflow run>.<attempt>`
+to preserve monotonic update ordering; it is separate from the displayed release version.
+Existing tags are never overwritten, and a published version requires a new version bump.
+The historical onboarding baseline remains fixed at 0.12.2. The
 first install uses the release DMG: drag `Apparent Preview.app` into `/Applications`
 before launching it. Sparkle cannot update a copy running directly from the mounted DMG or
 Downloads; quit that copy, move it to Applications and relaunch it there. Installed previews
