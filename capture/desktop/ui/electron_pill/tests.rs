@@ -300,3 +300,17 @@ fn electron_pill_requires_an_explicit_capture_for_handoff() {
         Some(PillAction::DismissCompleted)
     ));
 }
+
+#[test]
+fn saved_notes_are_recording_only_and_admitted_by_revision() {
+    let mut snapshot = snapshot(Pres::Recording { chips: false, has_iphone: false });
+    let view = View::new(&snapshot, 7, true).with_notes(0);
+    assert_eq!(view.note_count, 0);
+    assert_eq!(view.actions.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["cancel", "whiteboard", "finish"]);
+    assert!(!view.actions.iter().any(|a| a.id == "notes"));
+    let view = view.with_notes(12);
+    assert_eq!(view.note_count, 12);
+    assert!(matches!(view.admit(Command { revision: 7, action: "notes".into(), target: None }), Some(PillAction::Notes)));
+    snapshot.pres = Pres::Processing;
+    assert_eq!(View::new(&snapshot, 8, true).with_notes(12).note_count, 0);
+}

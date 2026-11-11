@@ -10,7 +10,7 @@ function validCommand(v) {
 function validSnapshot(v) {
   const note = n => n && pin(n.pin) && Number.isSafeInteger(n.t) && n.t >= 0 &&
     [n.x, n.y].every(p => Number.isFinite(p) && p >= 0 && p <= 1) && text(n.text);
-  return v && ['badge', 'editor', 'list'].includes(v.mode) && (v.current === null || pin(v.current)) &&
+  return v && (v.embedded == null || typeof v.embedded === 'boolean') && ['badge', 'editor', 'list'].includes(v.mode) && (v.current === null || pin(v.current)) &&
     (v.badgeRect == null || (Array.isArray(v.badgeRect) && v.badgeRect.length === 4 && v.badgeRect.every(Number.isFinite))) &&
     Array.isArray(v.position) && v.position.length === 2 && v.position.every(Number.isFinite) &&
     Array.isArray(v.notes) && v.notes.length <= 100 && v.notes.every(note) &&

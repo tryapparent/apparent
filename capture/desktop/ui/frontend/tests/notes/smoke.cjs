@@ -75,6 +75,19 @@ test(`shipped Electron note UI focuses, saves, counts, edits, recovers drafts an
     await expect.poll(() => messages.some(m => m.action === 'surface' && JSON.stringify(m.rect) === JSON.stringify(expected))).toBe(true);
     await expect.poll(() => messages.some(m => m.action === 'surface' && m.rect[3] === 350 * scale)).toBe(true);
   }
+  // The pill owns the visible count; the same editor/list remains available.
+  state.embedded = true; send();
+  if (process.platform === 'linux') {
+    const id = messages.find(m => m.action === 'surface' && m.rect[2] === 150 * scale && m.rect[3] === 44 * scale).id;
+    const mapped = () => require('node:child_process').execFileSync('xwininfo', ['-id', String(id)], {encoding:'utf8'}).includes('Map State: IsViewable');
+    await expect.poll(mapped).toBe(false);
+  }
+  await expect(popup.getByRole('button', { name: /Smaller button/ })).toBeVisible();
+  state.embedded = false; send();
+  if (process.platform === 'linux') {
+    const id = messages.find(m => m.action === 'surface' && m.rect[2] === 150 * scale && m.rect[3] === 44 * scale).id;
+    await expect.poll(() => require('node:child_process').execFileSync('xwininfo', ['-id', String(id)], {encoding:'utf8'}).includes('Map State: IsViewable')).toBe(true);
+  }
   await popup.getByRole('button', { name: /Smaller button/ }).click();
   await expect.poll(() => messages.some(m => m.action === 'edit' && m.pin === 1)).toBe(true);
   state.mode = 'editor'; send();

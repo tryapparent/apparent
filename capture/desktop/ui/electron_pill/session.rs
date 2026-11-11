@@ -502,7 +502,7 @@ mod native_tests {
         let view = View {
             revision: 1, phase: "recording", clock: "00:01".into(), label: "Synthetic pin test".into(),
             warning: None, notice: None, reduced_motion: true,
-            draggable: false, input_level: None, actions: vec![],
+            draggable: false, input_level: None, note_count: 0, actions: vec![],
         };
         let mut session = Session::open(view.clone(), 1, Default::default()).unwrap();
         let deadline = Instant::now() + Duration::from_secs(8);

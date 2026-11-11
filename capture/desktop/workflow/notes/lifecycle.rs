@@ -25,6 +25,9 @@ impl Lifecycle {
         self.admitted = true;
         true
     }
+    #[cfg(test)]
+    pub fn ready(&self) -> bool { self.ready }
+
     pub fn observed_ready(&mut self) {
         self.ready = true;
     }
