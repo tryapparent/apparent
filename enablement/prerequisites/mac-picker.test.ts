@@ -145,6 +145,26 @@ test('path entry and readback have separate bounded calls before one navigation'
  assert.equal((receipt as Record<string,unknown>).pathEntered,true);
  assert.equal((receipt as Record<string,unknown>).pathReadback,'owned path readback');
 });
+test('each real Change waits for one native focus admission; failed or concurrent admission never clicks', async () => {
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const start=source.indexOf('    const startNativeChange ='),end=source.indexOf('    const settleNativeChange =',start);
+ assert.ok(start>0&&end>start);
+ const create=new Function('assert','panel','change','budget','report',
+  'let pendingNativeChange; let nativeChangeStarting=false;'+source.slice(start,end)+'return startNativeChange;');
+ const focus=deferred<string>();let focuses=0,clicks=0;
+ const report:{nativeChangeFocus?:string[]}={};
+ const begin=create(assert,async(operation:string)=>{assert.equal(operation,'focus-change');focuses++;return focus.promise;},
+  {click:async()=>{clicks++;}},(cap:number)=>cap,report);
+ const pending=begin();await Promise.resolve();
+ assert.equal(clicks,0,'CDP must not open a sheet while another app remains native-frontmost');
+ await assert.rejects(async()=>begin(),/focus is already pending/);
+ assert.equal(focuses,1);focus.resolve('owned native focus');await pending;
+ assert.equal(clicks,1);assert.deepEqual(report.nativeChangeFocus,['owned native focus']);
+ await assert.rejects(async()=>begin(),/already pending/);assert.equal(clicks,1);
+ const failure=Error('owned focus refused');let refusedClicks=0;
+ const refuse=create(assert,async()=>{throw failure;},{click:async()=>{refusedClicks++;}},(cap:number)=>cap,{});
+ await assert.rejects(async()=>refuse(),error=>error===failure);assert.equal(refusedClicks,0);
+});
 test('unknown path entry or failed readback never replays entry or sends Return', async () => {
  for (const phase of ['entry','readback','autocomplete']) {
   let entries=0,reads=0,navigations=0;
