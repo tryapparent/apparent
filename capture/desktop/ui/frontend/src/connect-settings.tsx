@@ -4,10 +4,11 @@ import { DisclosureMenu } from '@apparent/ui/disclosure-menu';
 import '@apparent/ui/status.css';
 import frogs from '../../../../../shared/assets/brand/connect-frogs.png';
 import font from '../../../../../shared/assets/fonts/HostGrotesk-Variable.ttf?url';
-import {useConnectFlow, type ConnectBridge} from './onboarding/connect-flow';
-import type {ConnectAction, ConnectSettings} from './bridge';
+import {useConnectFlow, type ConnectBridge} from './connect/flow';
+import {openConnectSession} from './connect/session';
 
 const settingsBridge: ConnectBridge = {
+  open: current => window.apparent ? openConnectSession(window.apparent, current) : Promise.resolve({status:'disconnected'}),
   read: () => window.apparent?.readConnectSettings() ?? Promise.resolve({status:'disconnected'}),
   command: action => {
     const b=window.apparent;

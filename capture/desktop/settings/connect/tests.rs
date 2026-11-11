@@ -115,6 +115,30 @@ fn approval() -> Approval {
     }
 }
 
+#[test]
+fn native_open_checks_saved_session_once_without_enrollment() {
+    for saved in [false, true] {
+        let (_old, backend, _old_events, logins, probes, disables) = fixture();
+        if saved {
+            let mut snapshot = connected();
+            snapshot.uploads_enabled = false;
+            *backend.local.lock().unwrap() = Ok(snapshot);
+        }
+        let (send, events) = mpsc::channel();
+        let mut controller = Controller::open(backend, Arc::new(move |event| { send.send(event).unwrap(); }));
+        if saved {
+            assert_eq!(controller.view().presentation.headline, "Checking connection…");
+            recv(&probes).send(Health::Offline).unwrap();
+            controller.receive(recv(&events));
+            assert_eq!(controller.view().presentation.headline, "Connect is offline.");
+        }
+        for _ in 0..3 { controller.refresh(); }
+        assert!(probes.try_recv().is_err());
+        assert!(logins.try_recv().is_err());
+        assert!(disables.try_recv().is_err());
+    }
+}
+
 fn start(controller: &mut Controller, logins: &mpsc::Receiver<LoginCall>) -> LoginCall {
     controller.command(Command::Connect);
     controller.command(Command::Allow);

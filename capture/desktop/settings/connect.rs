@@ -239,6 +239,16 @@ impl Controller {
         controller
     }
 
+    /// Compatibility entry for the native Settings window. Electron owns its
+    /// opening check in TypeScript; this path remains until that pane is replaced.
+    pub fn open(backend: Arc<dyn Backend>, emit: Arc<dyn Fn(Event) + Send + Sync>) -> Self {
+        let mut controller = Self::new(backend, emit);
+        if controller.snapshot.as_ref().is_some_and(|snapshot| snapshot.connected) {
+            controller.command(Command::Check);
+        }
+        controller
+    }
+
     /// Safe for each Settings Tick: reads local state only, never starts a worker.
     /// Errors discard the old snapshot rather than presenting cached success.
     pub fn refresh(&mut self) {

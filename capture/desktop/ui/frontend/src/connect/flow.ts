@@ -1,7 +1,7 @@
 import {useEffect, useRef, useState} from 'react';
 import type {ConnectAction, ConnectSettings} from '../bridge';
 
-export type ConnectBridge = {read: () => Promise<ConnectSettings>; command: (action: ConnectAction) => Promise<ConnectSettings>; close?: () => void};
+export type ConnectBridge = {read: () => Promise<ConnectSettings>; open?: (current: () => boolean) => Promise<ConnectSettings>; command: (action: ConnectAction) => Promise<ConnectSettings>; close?: () => void};
 
 // One explicit click covers the displayed local upload disclosure. Keep the
 // existing controller's consent admission rather than introducing a writer.
@@ -20,11 +20,16 @@ export function useConnectFlow(bridge: ConnectBridge) {
   const readPending=useRef<Promise<void>|null>(null),actionBusy=useRef(false);
   useEffect(() => {
     let active = true;
+    let opening = true;
     const refresh = async () => {
       if (pending.current||actionBusy.current) return;
       pending.current = true;
       readPending.current=(async()=>{
-        try { const next = await bridge.read(); if(active) setResult(next); }
+        try {
+          const first = opening; opening = false;
+          const next = await (first && bridge.open ? bridge.open(() => active && !actionBusy.current) : bridge.read());
+          if(active) setResult(next);
+        }
         catch { if(active) setResult({status:'error'}); }
         finally { pending.current = false; if(active&&!actionBusy.current) setBusy(false); }
       })();

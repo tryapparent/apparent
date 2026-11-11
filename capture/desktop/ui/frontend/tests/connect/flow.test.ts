@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {startConnect, type ConnectBridge} from '../../src/onboarding/connect-flow.ts';
+import {startConnect, type ConnectBridge} from '../../src/connect/flow.ts';
 import type {ConnectSettings} from '../../src/bridge.ts';
 
 const consent:ConnectSettings={status:'connected',view:{title:'apparent',status:'',detail:'',note:'',server:null,userCode:null,verificationUri:null,phase:'consent',buttons:[{command:'allow',title:'Allow',enabled:true}]}};

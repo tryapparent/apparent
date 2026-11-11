@@ -2,7 +2,7 @@ import {useEffect, useRef, useState} from 'react';
 import {Button} from '@apparent/ui/button';
 import localAgent from '../../../../assets/onboarding/local-agent.png';
 import cloudAgent from '../../../../assets/onboarding/cloud-agent.png';
-import {useConnectFlow, type ConnectBridge} from './connect-flow';
+import {useConnectFlow, type ConnectBridge} from '../connect/flow';
 
 const bridge: ConnectBridge = {
   read: () => window.nativeOnboarding?.readConnect() ?? Promise.resolve({status:'disconnected'}),
