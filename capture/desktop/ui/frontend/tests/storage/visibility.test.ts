@@ -14,7 +14,7 @@ const source = readFileSync(filename, 'utf8');
 
 // Execute the shipped host with a delayed native first-paint event. This covers
 // parent-pipe ordering without pretending to exercise a macOS window server.
-function host(mode: string, capture = () => Promise.resolve({ isEmpty: () => false })) {
+function host(mode: string, capture = () => Promise.resolve({ isEmpty: () => false }), platform = 'darwin') {
   const lines = new EventEmitter();
   const exits: number[] = [];
   const written: string[] = [];
@@ -64,13 +64,28 @@ function host(mode: string, capture = () => Promise.resolve({ isEmpty: () => fal
     __dirname: path.dirname(filename),
     setTimeout: (callback: () => void) => { const timer = { callback, active: true, unref() {} }; timers.push(timer); return timer; },
     clearTimeout: (timer?: typeof timers[number]) => { if (timer) timer.active = false; },
-    process: { argv: ['electron', '.', mode, '--settings-parent'], env: {}, platform: 'darwin', stdin: {}, stdout: output },
+    process: { argv: ['electron', '.', mode, '--settings-parent'], env: {}, platform, stdin: {}, stdout: output },
   }, { filename });
   const mounted = () => handlers.get('apparent:settings-mounted')!({ sender: window.webContents, senderFrame: window.webContents.mainFrame });
   const expire = () => { for (const timer of timers) if (timer.active) { timer.active = false; timer.callback(); } };
   const frameReady = () => handlers.get('apparent:settings-frame-ready')!({ sender: window.webContents, senderFrame: window.webContents.mainFrame });
   return { window: window!, lines, exits, written, mounted, frameReady, expire, handlers, output };
 }
+
+test('every Linux Settings presentation opens as a compact managed dialog', () => {
+  // Replacing About with another pane creates a fresh window: the compositor
+  // must receive the floating hint each time, without relying on a user rule.
+  for (let reopen = 0; reopen < 3; reopen++) {
+    const { window } = host('--settings-storage', undefined, 'linux');
+    assert.equal(window.options.type, 'dialog');
+    assert.equal(window.options.width, 720);
+    assert.equal(window.options.height, 530);
+    assert.equal(window.options.resizable, false);
+    assert.equal(window.options.maximizable, false);
+    assert.equal(window.options.fullscreenable, false);
+    assert.equal(window.options.alwaysOnTop, undefined, 'Settings stays an ordinary managed dialog');
+  }
+});
 
 test('an earlier paint plus committed DOM cannot reveal an uncomposited Settings surface', async () => {
   let release!: (image: { isEmpty(): boolean }) => void;
