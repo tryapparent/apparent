@@ -48,7 +48,7 @@ jobs:
           /tmp/apparent-dev-hermes-clean-python/bin/pip install 'Pillow>=13,<14'
           /tmp/apparent-dev-hermes-clean-python/bin/python -m unittest discover -s hermes/tests -v
           npm ci --ignore-scripts --prefix hermes/desktop
-          node --experimental-strip-types --test hermes/desktop/*.test.ts hermes/distribution/*.test.ts
+          node --experimental-strip-types --test hermes/desktop/*.test.ts hermes/distribution/package.test.ts
   verify:
     strategy:
       fail-fast: false
@@ -74,18 +74,17 @@ jobs:
           python -m pip install 'Pillow>=13,<14'
           python -m unittest discover -s hermes/tests -v
       - name: Routing, bridge and package installation contracts
-        run: node --experimental-strip-types --test hermes/desktop/*.test.ts hermes/distribution/*.test.ts capture/desktop/ui/frontend/src/hermes/*.test.ts
-      - name: Verify Agent setup consumer when its independent slice is present
-        run: |
-          if [ -f capture/agent/setup/hermes.test.ts ]; then
-            node --experimental-strip-types --test capture/agent/setup/hermes.test.ts
-          fi
+        run: node --experimental-strip-types --test hermes/desktop/*.test.ts hermes/distribution/package.test.ts capture/desktop/ui/frontend/src/hermes/*.test.ts capture/agent/setup/hermes.test.ts
       - name: Package exact candidate without Rust or unrelated builds
         id: package
         run: |
           job=$(mktemp -d /tmp/apparent-dev-hermes-ci-XXXXXX)
           node --experimental-strip-types hermes/desktop/package.ts "$job/release"
           echo "directory=$job/release" >> "$GITHUB_OUTPUT"
+      - name: Verify Agent setup consumes the exact compiled archive
+        env:
+          HERMES_PACKAGE: ${{ steps.package.outputs.directory }}
+        run: node --experimental-strip-types --test hermes/distribution/consumer.test.ts
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
