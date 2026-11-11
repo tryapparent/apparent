@@ -32,6 +32,13 @@ test('each affected hosted dependency consumer prepares transport before install
    const steps=job.steps??[];
    const install=steps.findIndex((s:any)=>/apt-get|install-deps|with-deps|appimage\/dependencies/.test(s.run??''));
    if(install<0)continue;
+   if(workflow==='hermes.yml' && name==='clean'){
+    // Audited Rust-free package proof uses Debian's sources/keyring, not
+    // the hosted Ubuntu mirror list. A different image requires re-audit.
+    assert.equal(job.container,'node:22.23.0-bookworm-slim');
+    assert.ok(!steps.some((s:any)=>(s.uses??'').includes('/ubuntu-apt')));
+    continue;
+   }
    const transport=steps.findIndex((s:any)=>s.uses==='./.github/actions/ubuntu-apt' || s.uses==='tryapparent/apparent/.github/actions/ubuntu-apt@4beaef83eec4a11ed709b05ee76c881055bfd46b');
    assert.ok(transport>=0 && transport<install,`${workflow}/${name}`);
    assert.equal(steps[transport].if,workflow==='release-linux.yml'?"runner.os == 'Linux' && runner.arch == 'X64'":"runner.os == 'Linux'");
