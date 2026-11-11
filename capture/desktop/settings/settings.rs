@@ -225,7 +225,8 @@ fn prefers_app_shortcut(config: &serde_json::Value) -> bool {
         && serde_json::from_value::<Stored>(value.clone()).ok()
             .and_then(|stored| from_stored(ShortcutKind::Record, stored))
             .is_some_and(|cfg| cfg.key_code <= 255
-                && cfg.carbon_modifiers & (CARBON_CONTROL_KEY | CARBON_OPTION_KEY | CARBON_CMD_KEY) != 0
+                && (cfg.carbon_modifiers & (CARBON_CONTROL_KEY | CARBON_OPTION_KEY | CARBON_CMD_KEY) != 0
+                    || cfg.key_code == 201 && cfg.carbon_modifiers == 0)
                 && cfg.carbon_modifiers & !(CARBON_CONTROL_KEY | CARBON_OPTION_KEY | CARBON_CMD_KEY | CARBON_SHIFT_KEY) == 0)
 }
 
@@ -288,7 +289,7 @@ const DELETE_KEYS: [u32; 2] = [51, 117];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Rejection {
-    /// Only ⇧, or nothing, with a key that isn't a function key.
+    /// Only ⇧, or no modifiers except for Linux's dedicated Copilot key.
     NoModifier,
     /// A key Apparent can't name or that the recorder uses (Esc).
     UnsupportedKey,
@@ -412,6 +413,10 @@ const KEY_ESCAPE: u32 = 53;
 
 /// The name a key is shown with: a function key, a named key, or the typed character in capitals.
 pub fn key_label(key_code: u32, typed: &str) -> Option<String> {
+    #[cfg(target_os = "linux")]
+    if key_code == 201 {
+        return Some("Copilot".to_owned());
+    }
     if let Some((_, name)) = FUNCTION_KEYS
         .iter()
         .chain(NAMED_KEYS.iter())
@@ -462,6 +467,7 @@ fn reserved(modifiers: u32, key: &str) -> bool {
     if cfg!(target_os = "linux") {
         // Super (⌘'s bit) with a key, alone or with Shift, is the desktop's (Super+A, the
         // workspaces…); Ctrl with one key is an app's. Then Alt+Tab, Alt+F2, Ctrl+Alt+T…
+        if key == "Copilot" && (modifiers == 0 || modifiers == CMD | SHIFT) { return false; }
         return modifiers & CMD != 0 && modifiers & (CTRL | OPT) == 0
             || modifiers & (CTRL | CMD | OPT) == CTRL
             || [
@@ -515,7 +521,8 @@ pub fn validate(
         & (CARBON_CMD_KEY | CARBON_CONTROL_KEY | CARBON_OPTION_KEY | CARBON_SHIFT_KEY);
     let key = key_label(pressed.key_code, &pressed.key).ok_or(Rejection::UnsupportedKey)?;
     let strong = modifiers & (CARBON_CMD_KEY | CARBON_CONTROL_KEY | CARBON_OPTION_KEY) != 0;
-    if !strong && !is_function_key(pressed.key_code) {
+    let unmodified_copilot = cfg!(target_os = "linux") && pressed.key_code == 201 && modifiers == 0;
+    if !strong && !is_function_key(pressed.key_code) && !unmodified_copilot {
         return Err(Rejection::NoModifier);
     }
     let label = format!("{}{key}", modifier_symbols(modifiers));
@@ -2404,6 +2411,11 @@ mod tests {
                 crate::shared::clock::now_epoch_ms()
             ));
             std::fs::create_dir_all(&dir).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+            }
             Self(dir)
         }
     }
@@ -2886,6 +2898,35 @@ mod tests {
         assert_eq!(record[0].key, "Copilot");
         assert!(record[0].command && record[0].shift);
         assert!(!record[0].is_default);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn copilot_key_is_validated_and_saved_without_replacing_other_config() {
+        let dir = TempDir::new("copilot-validation");
+        let path = dir.0.join("config.json");
+        std::fs::write(&path, r#"{"ingestToken":"secret","unrelated":7}"#).unwrap();
+        let pressed = Pressed { key_code:201, modifiers:CARBON_CMD_KEY | CARBON_SHIFT_KEY, key:"Copilot".into(), reserved:false };
+        let cfg = validate(ShortcutKind::Record, &pressed, &ShortcutKind::Paste.default_config()).unwrap();
+        assert_eq!(cfg.label, "Super+Shift+Copilot");
+        let bare = validate(
+            ShortcutKind::Record,
+            &Pressed { key_code: 201, modifiers: 0, key: "Copilot".into(), reserved: false },
+            &ShortcutKind::Paste.default_config(),
+        ).unwrap();
+        assert_eq!(bare.label, "Copilot");
+        save_shortcut_in(&path, ShortcutKind::Record, &cfg).unwrap();
+        assert_eq!(Shortcuts::load_from(&path, &dir.0.join("legacy.json")).0.record, cfg);
+        let saved = read_json(&path);
+        assert_eq!(saved["ingestToken"], "secret");
+        assert_eq!(saved["unrelated"], 7);
+        let unmodified = ShortcutConfig { key_code:201, carbon_modifiers:0, label:"Copilot".into() };
+        save_shortcut_source_in(&path, ShortcutKind::Record, &unmodified, true).unwrap();
+        assert!(prefers_app_shortcut(&read_json(&path)));
+        assert_eq!(Shortcuts::load_from(&path, &dir.0.join("legacy.json")).0.record, unmodified);
+        let saved = read_json(&path);
+        assert_eq!(saved["ingestToken"], "secret");
+        assert_eq!(saved["unrelated"], 7);
     }
 
     #[test]

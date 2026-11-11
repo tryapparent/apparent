@@ -2,6 +2,15 @@ use super::*;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+#[test]
+fn reuse_guard_names_the_exact_managed_chord_and_rejects_expired_handles() {
+    let guard = reuse_guard("record", "SUPER + SHIFT + code:201");
+    assert!(guard.contains("record:SUPER + SHIFT + code:201"));
+    assert!(guard.contains("entry.id == \"record\""));
+    assert!(guard.contains("entry.handle:is_enabled() ~= nil"));
+    assert!(!guard.contains("entry.handle:is_enabled() == true"));
+}
+
 /// Exercises the actual emitted Lua, with an inert model of the pinned API's
 /// exact handle enable/disable and deliberately chord-wide remove semantics.
 /// This is language/protocol proof, not compositor/native input acceptance.
@@ -42,6 +51,17 @@ function live() local n=0; for _, h in ipairs(objects) do if not h.expired then 
     eval(format!("eval assert(live()==2); assert(objects[1]:is_enabled()); objects[1].callback(); assert(dispatched[1]=={})", lua_str(command)));
     eval(disable("0001", Some("record")));
     eval("eval assert(not objects[1]:is_enabled()); assert(user:is_enabled())".into());
+    // Opaque Copilot rows use this same exact cache slot across pause/resume
+    // and a new process incarnation; no second handle is created.
+    eval(enable("0001", "record", "code:201", "copilot-old", false));
+    eval(disable("0001", Some("record")));
+    eval(format!("eval {}", reuse_guard("record", "code:201").strip_prefix("eval ").unwrap()));
+    eval(enable("0002", "record", "code:201", "copilot-new", true));
+    eval(format!("eval assert(objects[#objects].callback ~= nil); assert(live()==2); assert(objects[#objects].command=={})", lua_str("copilot-new")));
+    eval(disable("0002", Some("record")));
+    eval("eval objects[#objects].expired=true".into());
+    let stale = reuse_guard("record", "code:201");
+    eval(format!("eval assert(not pcall(function() {} end))", stale.strip_prefix("eval ").unwrap()));
     // A description with no retained handle must not be used to claim a binding.
     let missing = enable("0001", "paste", "ALT + P", "paste", true);
     eval(format!("eval assert(not pcall(function() {} end)); assert(live()==2)", missing.strip_prefix("eval ").unwrap()));

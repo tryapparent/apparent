@@ -232,6 +232,12 @@ pub fn modifier_flags() -> u64 {
 /// The virtual key and label for a key GPUI names (`a`, `f5`, `space`).
 fn key_from_name(key: &str) -> Option<(u16, String)> {
     let lower = key.to_ascii_lowercase();
+    // On the supported Omarchy keymap, evdev KEY_F23 (193) maps to XKB keycode
+    // 201 with F23/XF86Assistant symbols. GPUI reports that symbol identity;
+    // the physical device key cannot be distinguished from this event alone.
+    if matches!(lower.as_str(), "copilot" | "f23" | "xf86assistant" | "launchassistant") {
+        return Some((201, "Copilot".into()));
+    }
     if lower.chars().count() == 1
         && let Some(ch) = lower.chars().next()
         && ch.is_ascii_alphanumeric()
@@ -259,7 +265,7 @@ pub fn shortcut_from_key_and_mods(
 ) -> Option<ShortcutConfig> {
     let (key_code, key_label) = key_from_name(key)?;
     let is_fn_key = key_label.starts_with('F') && key_label.len() >= 2;
-    if !cmd && !ctrl && !alt && !is_fn_key {
+    if !cmd && !ctrl && !alt && !is_fn_key && !(key_code == 201 && !shift) {
         return None;
     }
     let mut carbon_modifiers = 0_u32;
@@ -1204,6 +1210,23 @@ pub(crate) fn screen_video_ink() -> Option<crate::shared::model::VideoInk> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn copilot_key_round_trips_through_shortcut_provider() {
+        assert_eq!(key_from_name("Copilot"), Some((201, "Copilot".into())));
+        assert_eq!(key_from_name("F23"), Some((201, "Copilot".into())));
+        assert_eq!(key_from_name("XF86Assistant"), Some((201, "Copilot".into())));
+        assert_eq!(key_from_name("LaunchAssistant"), Some((201, "Copilot".into())));
+        assert_eq!(key_from_name("XF86TouchpadOff"), None);
+        let shortcut = shortcut_from_key_and_mods("Copilot", true, false, false, true).unwrap();
+        assert_eq!(shortcut.key_code, 201);
+        assert_eq!(shortcut.carbon_modifiers, CARBON_CMD_KEY | CARBON_SHIFT_KEY);
+        assert_eq!(shortcut.label, "Super+Shift+Copilot");
+        let bare = shortcut_from_key_and_mods("Copilot", false, false, false, false).unwrap();
+        assert_eq!(bare.key_code, 201);
+        assert_eq!(bare.carbon_modifiers, 0);
+        assert_eq!(bare.label, "Copilot");
+    }
 
     #[test]
     fn a_portal_press_is_ignored_once_the_paste_shortcut_is_turned_off() {

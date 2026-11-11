@@ -90,6 +90,19 @@ pub(super) fn managed_description(id: &str) -> String {
     format!("{} [managed-v1]", description(id))
 }
 
+/// Require the exact Lua cache slot before reusing a managed row from `j/binds`.
+/// Hyprland hides `code:201` in that live row, so the chord identity comes from
+/// our cache key, never from the description alone.
+fn reuse_guard(id: &str, chord: &str) -> String {
+    let key = lua_str(&format!("{id}:{chord}"));
+    format!(
+        "eval {CACHE}\nlocal entry = r.entries[{key}]\n\
+         assert(entry ~= nil and entry.id == {} and entry.handle:is_enabled() ~= nil, \
+         'Apparent shortcut handle unavailable or changed; reload desktop configuration')",
+        lua_str(id)
+    )
+}
+
 fn run(command: &str, timeout: Duration) -> Result<()> {
     let reply = request_with_timeout(command, timeout)?;
     ensure!(reply.trim() == "ok", "Hyprland shortcut: {}", reply.trim());
@@ -112,12 +125,14 @@ pub(super) fn bind(id: &'static str, chord: Option<(u32, &str)>) -> Result<()> {
         return Ok(());
     }
     let chord = lua_chord(modmask(modifiers), key);
-    let reuse = match existing(&request("j/binds")?, modmask(modifiers), key, id) {
+    let inventory = if key == "Copilot" { super::binds_snapshot()? } else { request("j/binds")? };
+    let reuse = match existing(&inventory, modmask(modifiers), key, id) {
         Existing::Apparent => return Ok(()), // Unowned/permanent: never claim its handle.
         Existing::Other => bail!("{chord} is already bound or cannot be observed"),
         Existing::Managed => true,
         Existing::Free => false,
     };
+    if reuse { run(&reuse_guard(id, &chord), Duration::from_millis(200))?; }
     if CLOSING.load(Ordering::SeqCst) { return Ok(()); }
     let result = run(&enable(owner(), id, &chord, &command(id)?, reuse), Duration::from_millis(200));
     // A reply can be lost after registration. The compositor retains the exact
