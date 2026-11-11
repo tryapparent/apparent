@@ -25,12 +25,20 @@ test('runner mirror transport preserves sources and is idempotent; unsafe target
   assert.doesNotMatch(script,/trusted=yes|allow-unauthenticated|allow-insecure|Signed-By/);
  }finally{rmSync(job,{recursive:true,force:true});}
 });
+// A plugin's --install-deps flag installs Python packages, not OS packages.
+const installsApt=(command:string)=>/apt-get|(?<!-)install-deps|with-deps|appimage\/dependencies/.test(command);
+test('APT inventory distinguishes OS provisioning from plugin Python dependencies',()=>{
+ for(const command of ['sudo apt-get update', 'npx --no-install playwright install-deps chromium',
+  './node_modules/.bin/playwright-core install --with-deps chromium', './capture/desktop/scripts/linux/appimage/dependencies.sh'])
+  assert.equal(installsApt(command),true,command);
+ assert.equal(installsApt('hermes plugins validate "$PACKAGE" --install-deps'),false);
+});
 test('each affected hosted dependency consumer prepares transport before installation',()=>{
  for(const workflow of readdirSync(new URL('.github/workflows/',root)).filter(name=>name.endsWith('.yml'))){
   const source=read(`.github/workflows/${workflow}`);
   for(const [name,job] of Object.entries(source.jobs) as [string,any][]){
    const steps=job.steps??[];
-   const install=steps.findIndex((s:any)=>/apt-get|install-deps|with-deps|appimage\/dependencies/.test(s.run??''));
+   const install=steps.findIndex((s:any)=>installsApt(s.run??''));
    if(install<0)continue;
    if(workflow==='hermes.yml' && name==='clean'){
     // Audited Rust-free package proof uses Debian's sources/keyring, not
