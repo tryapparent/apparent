@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { diagnose, setup, installPackage, system, type Provider } from './hermes.ts';
+import { diagnose, setup, installPackage, system, macHandler, type Provider } from './hermes.ts';
 
 test('empty and partial installs stay distinct from unknown runtime state; check never mutates', () => {
   const home = mkdtempSync('/tmp/apparent-dev-hermes-setup-');
@@ -108,6 +108,7 @@ test('explicit package uses only the package writer; check ignores it and never 
     mkdirSync(packageRoot); writeFileSync(join(packageRoot, 'install.cjs'), '');
     let writes = 0;
     const p: Provider = { home, platform: 'darwin', env: {}, run(exe, args) {
+      if (exe === '/usr/bin/osascript') return { ok: false, output: '' };
       assert.equal(exe, process.execPath);
       assert.deepEqual(args, [join(packageRoot, 'install.cjs'), '--profile', home]);
       writes++; return { ok: false, output: '' };
@@ -119,6 +120,51 @@ test('explicit package uses only the package writer; check ignores it and never 
     assert.equal(result.repairs[0].status, 'failed');
     assert.equal(result.ready, false);
   } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test('live build identity is compared on both platforms; old or malformed facts remain unknown', () => {
+  for (const platform of ['linux', 'darwin']) {
+    let running = '0.22.1 · old';
+    let envelope: any = { schema: 1, version: '0.22.1', build: running };
+    const calls: string[] = [];
+    const p: Provider = { home: '/unused', platform, env: {}, run(_, args) {
+      calls.push(args.join(' '));
+      if (args[0] === '--version') return { ok: true, output: 'apparent 0.22.1 · current\n' };
+      if (args.join(' ') === 'capture state') return { ok: true, output: JSON.stringify({ state: { phase: 'idle' }, app: envelope }) };
+      return { ok: false, output: '' };
+    } };
+    const observed = () => setup(p, process.execPath, undefined, true).checks.find(c => c.id === 'running')!;
+    assert.equal(observed().status, 'incompatible');
+    assert.equal(observed().evidence?.runningBuild, running);
+    envelope.build = '0.22.1 · current';
+    assert.equal(observed().status, 'ok');
+    envelope = undefined;
+    assert.equal(observed().status, 'unknown');
+    envelope = { schema: 1, build: '0.22.1\nprivate', version: '0.22.1' };
+    assert.equal(observed().status, 'unknown');
+    envelope = { schema: 2, build: '0.22.1 · current' };
+    assert.equal(observed().status, 'unknown');
+    assert(calls.every(c => !/\b(?:start|stop|cancel|install|launch)\b/.test(c)), 'diagnostics never perform capture/process or registration mutations');
+  }
+});
+
+test('macOS handler checks actual selected target, preserving absent versus unavailable', () => {
+  let response = { ok: true, output: '{"status":"absent"}' };
+  const p: Provider = { home: '/unused', platform: 'darwin', env: {}, run(exe, args) {
+    assert.equal(exe, '/usr/bin/osascript');
+    assert.equal(args.at(-1), 'apparent');
+    return response;
+  } };
+  assert.equal(macHandler(p, process.execPath).status, 'absent');
+  response = { ok: false, output: '' };
+  assert.equal(macHandler(p, process.execPath).status, 'unknown');
+  response = { ok: true, output: JSON.stringify({ status: 'registered', bundle: '/Applications/Apparent.app', executable: process.execPath }) };
+  assert.equal(macHandler(p, process.execPath).status, 'ok');
+  assert.equal(macHandler(p, '/different/apparent').status, 'incompatible');
+  response.output = JSON.stringify({ status: 'registered', bundle: '/Applications/Deleted.app', executable: '/missing/apparent' });
+  assert.equal(macHandler(p, process.execPath).status, 'incompatible');
+  response.output = '{"status":"registered","bundle":"relative","executable":"relative"}';
+  assert.equal(macHandler(p, process.execPath).status, 'unknown');
 });
 
 test('real updater contract distinguishes pending restart and capture availability', () => {

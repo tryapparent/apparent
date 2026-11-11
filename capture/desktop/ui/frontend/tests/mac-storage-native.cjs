@@ -360,6 +360,18 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     }, 'Installed Rust live control readiness', 15000);
     };
     await startRust();
+    // The public state route must identify the process answering the request,
+    // rather than infer a running build from installed files or preferences.
+    const captureIdentity = JSON.parse((await run(executable, ['capture', 'state'], {
+      env, timeout: budget(5000), killSignal: 'SIGKILL', maxBuffer: 32768,
+    })).stdout);
+    const installedBuild = (await run(executable, ['--version'], {
+      env, timeout: budget(5000), killSignal: 'SIGKILL', maxBuffer: 4096,
+    })).stdout.trim().replace(/^apparent\s+/, '');
+    assert.equal(captureIdentity.state.phase, 'idle');
+    assert.equal(captureIdentity.app.schema, 1);
+    assert.equal(captureIdentity.app.build, installedBuild);
+    report.rust.captureIdentity = captureIdentity.app;
     application = await electron.launch({ executablePath: electronExecutable, args: [root], env, timeout: budget(15000) });
     electronChild = application.process();
     const launchedAt = Date.now();

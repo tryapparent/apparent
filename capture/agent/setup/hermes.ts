@@ -38,6 +38,33 @@ function json(p: Provider, exe: string, args: string[]): any {
   if (!r.ok) return undefined;
   try { return JSON.parse(r.output); } catch { return undefined; }
 }
+
+// Native LaunchServices lookup only: no URL opening, app activation, discovery
+// scan or registration. The scheme is argv data, including in native tests.
+export const macHandlerScript = `ObjC.import('AppKit');
+function run(argv) {
+  var url = $.NSWorkspace.sharedWorkspace.URLForApplicationToOpenURL($.NSURL.URLWithString(argv[0] + '://open'));
+  if (url.isNil()) return JSON.stringify({status: 'absent'});
+  var bundle = $.NSBundle.bundleWithURL(url);
+  if (bundle.isNil() || bundle.executablePath.isNil()) return JSON.stringify({status: 'unknown'});
+  return JSON.stringify({status: 'registered', bundle: ObjC.unwrap(url.path), executable: ObjC.unwrap(bundle.executablePath)});
+}`;
+
+export function macHandler(p: Provider, target: string | undefined, scheme = 'apparent'): Check {
+  if (!/^[a-z][a-z0-9-]{0,100}$/.test(scheme)) throw new Error('Invalid diagnostic URL scheme');
+  const selected = json(p, '/usr/bin/osascript', ['-l', 'JavaScript', '-e', macHandlerScript, scheme]);
+  const result: Check = { id: 'url-handler', status: 'unknown', detail: 'LaunchServices handler lookup unavailable.', action: 'Use the official app installer and inspect the selected handler; setup does not rewrite LaunchServices.' };
+  if (selected?.status === 'absent') return { ...result, status: 'absent', detail: 'LaunchServices has no application for the Apparent URL scheme.' };
+  if (selected?.status !== 'registered' || typeof selected.executable !== 'string' || !isAbsolute(selected.executable) || typeof selected.bundle !== 'string' || !isAbsolute(selected.bundle)) return result;
+  const actual = executable(selected.executable);
+  const status = executableState(selected.executable);
+  return { ...result, status: status === 'unknown' ? 'unknown' : actual && target && actual === target ? 'ok' : 'incompatible', detail: `${selected.bundle}: ${actual && actual === target ? 'selected executable matches CLI' : 'selected executable is missing, unsupported or different'}`, evidence: { bundle: selected.bundle, executable: selected.executable } };
+}
+
+function buildLabel(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length <= 200 && /^\d+\.\d+\.\d+(?:\s|[-+]|$)/.test(value) && !/[\x00-\x1f\x7f]/.test(value) ? value : undefined;
+}
+
 export function diagnose(p: Provider, exe: string, profile?: string): Check[] {
   const checks: Check[] = [];
   const target = executable(exe);
@@ -45,15 +72,20 @@ export function diagnose(p: Provider, exe: string, profile?: string): Check[] {
   checks.push({ id: 'path-command', status: !pathEntry ? 'absent' : executable(pathEntry) === target && target ? 'ok' : 'incompatible', detail: pathEntry ? `${pathEntry}: ${executable(pathEntry) ? 'resolved command' : 'broken or non-executable target'}` : 'No apparent command on PATH', action: 'Use the installed app’s CLI-link provider; do not replace unrelated commands.' });
   checks.push({ id: 'executable', status: executableState(exe), detail: target ? `${exe} -> ${target}` : `${exe}: executable target unavailable`, action: target ? undefined : 'Install the official Apparent CLI first; setup cannot bootstrap its own missing executable.' });
   const version = target ? p.run(exe, ['--version']) : undefined;
-  checks.push({ id: 'version', status: version?.ok && /^apparent\s+\S+/i.test(version.output.trim()) ? 'ok' : 'unknown', detail: version?.ok ? version.output.trim().slice(0, 200) : 'CLI version unavailable' });
+  const installedBuild = version?.ok ? buildLabel(/^apparent\s+([^\r\n]+)$/i.exec(version.output.trim())?.[1]) : undefined;
+  checks.push({ id: 'version', status: installedBuild ? 'ok' : 'unknown', detail: installedBuild ? `apparent ${installedBuild}` : 'CLI version unavailable or malformed' });
   const capabilities = target && p.run(exe, ['capture', 'handoff', '--help']);
   checks.push({ id: 'native-capability', status: capabilities && capabilities.ok && /handoff/i.test(capabilities.output) ? 'ok' : 'unknown', detail: 'Installed CLI handoff command availability; this does not establish the running app’s bridge compatibility.' });
   const capture = target ? json(p, exe, ['capture', 'state']) : undefined;
   const phase = capture?.state?.phase;
-  checks.push({ id: 'capture', status: ['idle', 'completed', 'selecting', 'starting', 'recording', 'processing'].includes(phase) ? 'ok' : 'unknown', detail: typeof phase === 'string' ? `Capture phase: ${phase}` : 'Capture control unavailable; do not start, stop or restart an app.', action: phase ? undefined : 'Open the compatible installed app yourself and retry diagnostics; capture safety remains unknown.' });
+  const knownPhase = ['idle', 'completed', 'selecting', 'starting', 'recording', 'processing'].includes(phase);
+  checks.push({ id: 'capture', status: knownPhase ? 'ok' : 'unknown', detail: knownPhase ? `Capture phase: ${phase}` : 'Capture control unavailable; do not start, stop or restart an app.', action: knownPhase ? undefined : 'Open the compatible installed app yourself and retry diagnostics; capture safety remains unknown.' });
   const update = target && p.platform === 'linux' ? json(p, exe, ['update', 'status']) : undefined;
   const scalar = (v: unknown) => typeof v === 'string' ? v.slice(0, 200) : null;
-  checks.push({ id: 'running', status: update?.pendingRestart === true ? 'incompatible' : update?.running && update?.installed && typeof update.running.updateId === 'string' && update.running.updateId === update.installed.id && update.running.updateChannel === update.installed.channel ? 'ok' : 'unknown', detail: update?.pendingRestart === true ? 'Running app differs from installed update; quit/reopen manually after checking capture.' : 'Running/installed identity is unknown unless verified by the app updater.', evidence: { runningVersion: scalar(update?.running?.version), runningUpdate: scalar(update?.running?.updateId), installedUpdate: scalar(update?.installed?.id) } });
+  const runningBuild = knownPhase && capture?.app?.schema === 1 ? buildLabel(capture.app.build) : undefined;
+  const mismatch = update?.pendingRestart === true || !!(runningBuild && installedBuild && runningBuild !== installedBuild);
+  const matched = !!(runningBuild && installedBuild && runningBuild === installedBuild) || !!(update?.running && update?.installed && typeof update.running.updateId === 'string' && update.running.updateId === update.installed.id && update.running.updateChannel === update.installed.channel);
+  checks.push({ id: 'running', status: mismatch ? 'incompatible' : matched ? 'ok' : 'unknown', detail: mismatch ? 'Running app differs from installed CLI/update; quit/reopen manually only after checking capture.' : matched ? 'The live app build or updater identity matches the installed CLI/update.' : 'Running/installed identity is unknown; this app may predate live build facts.', evidence: { runningVersion: scalar(runningBuild ? capture.app.version : update?.running?.version), runningUpdate: scalar(update?.running?.updateId), installedUpdate: scalar(update?.installed?.id), ...(runningBuild ? { runningBuild } : {}), ...(installedBuild ? { installedBuild } : {}) } });
   if (p.platform === 'linux') {
     const selection = p.run('xdg-mime', ['query', 'default', 'x-scheme-handler/apparent']);
     const id = selection.output.trim();
@@ -69,7 +101,8 @@ export function diagnose(p: Provider, exe: string, profile?: string): Check[] {
       detail = `${path}: ${status === 'ok' ? 'target matches CLI' : 'handler target is missing, unsupported or different'}`;
     } catch { status = 'unknown'; }
     checks.push({ id: 'url-handler', status, detail, action: status === 'ok' ? undefined : 'Use the existing launch-handler install provider; conflicting files require manual inspection.' });
-  } else checks.push({ id: 'url-handler', status: 'unknown', detail: 'macOS LaunchServices selection requires native verification; bundle declarations alone do not prove registration.', action: 'Install through the official app installer and verify the selected handler on a Mac.' });
+  } else if (p.platform === 'darwin') checks.push(macHandler(p, target));
+  else checks.push({ id: 'url-handler', status: 'unknown', detail: 'Unsupported platform.' });
   for (const [id, name] of [['plugin-agent', '__init__.py'], ['plugin-desktop', 'desktop/plugin.js']] as const) {
     const path = profile && join(profile, 'plugins/apparent', name);
     let status: Check['status'] = path ? file(path) : 'unknown';

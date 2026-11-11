@@ -253,6 +253,9 @@ jobs:
           node --experimental-strip-types --test enablement/timing/mac-cache.test.ts
           echo "APPARENT_TIMING_FILE=$RUNNER_TEMP/verification-timings.jsonl" >> "$GITHUB_ENV"
           touch "$RUNNER_TEMP/verification-timings.jsonl"
+      - name: Agent setup policy and native metadata contracts (no Rust required)
+        if: needs.select.outputs.root == 'true'
+        run: node --test capture/agent/setup/*.test.ts
       - name: Prepare private temporary root before first Cargo
         if: needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true'
         shell: bash

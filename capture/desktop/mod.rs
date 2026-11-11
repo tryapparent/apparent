@@ -1384,7 +1384,7 @@ impl ApparentCoordinator {
                 }
                 response
             },
-            None => serde_json::json!({"state": before}),
+            None => crate::capture::desktop::workflow::agent_capture::state_response(&before),
         };
         let _ = request.reply.send(response.to_string());
     }
