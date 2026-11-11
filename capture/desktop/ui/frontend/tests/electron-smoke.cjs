@@ -516,7 +516,10 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('button',{name:'Cancel',exact:true})).toBeFocused();
   await page.getByRole('button',{name:'Cancel',exact:true}).press('Enter');
   await expect.poll(()=>output).toContain('cancel-shortcut');
-
+  send({step:'shortcut',platform:'linux',shortcutChosen:false,shortcutEditor:{recording:false,externallyManaged:false,error:null}});
+  await expect(page.getByRole('button',{name:'Use Fn',exact:true})).toHaveCount(0);
+  send({shortcutEditor:{recording:true,externallyManaged:false,error:null}});
+  await expect(page.getByRole('button',{name:'Use Fn',exact:true})).toHaveCount(0);
 
   await page.emulateMedia({reducedMotion:'reduce'});
   send({penPicker:true,penSelected:true,penRgb:[59,121,189]});
