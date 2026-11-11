@@ -74,6 +74,11 @@ jobs:
           python -m unittest discover -s hermes/tests -v
       - name: Routing, bridge and package installation contracts
         run: node --experimental-strip-types --test hermes/desktop/*.test.ts hermes/distribution/*.test.ts capture/desktop/ui/frontend/src/hermes/*.test.ts
+      - name: Verify Agent setup consumer when its independent slice is present
+        run: |
+          if [ -f capture/agent/setup/hermes.test.ts ]; then
+            node --experimental-strip-types --test capture/agent/setup/hermes.test.ts
+          fi
       - name: Package exact candidate without Rust or unrelated builds
         id: package
         run: |

@@ -37,6 +37,7 @@ export function consumers(path: string): readonly Owner[] {
   if (!native && path.startsWith('connect/web/')) return ['web'];
   if (path.startsWith('connect/client/')) return ['client', 'capture'];
   if (!native && path.startsWith('connect/service/')) return ['service', 'client', 'web', 'public', 'capture'];
+  if (path.startsWith('capture/agent/setup/')) return ['capture', 'engine', 'hermes'];
   if (path === '.github/workflows/hermes.yml') return ['hermes'];
   if (!native && path.startsWith('hermes/')) return ['hermes'];
   if (linuxDrivers.has(path)) return ['capture-tools'];
