@@ -3,6 +3,8 @@ import { Button } from '@apparent/ui/button';
 import {LocationController, type LocationState} from '@apparent/record-storage';
 import { Retention } from './retention';
 import {locationPorts} from './storage/transport';
+import { Help } from './storage/help';
+import { RefreshCw } from 'lucide-react';
 
 const errors: Record<string, string> = {
   conflict: 'The saved location changed while the picker was open. Refresh before choosing again.',
@@ -27,17 +29,19 @@ export function Storage({ settings = false }: { settings?: boolean }) {
     return () => { unsubscribe(); current.dispose(); if (controller.current === current) controller.current = undefined; };
   }, []);
   if (result.status === 'disabled' && !settings) return null;
-  return <section aria-labelledby="storage-title" className="space-y-4 rounded-xl border border-border bg-surface p-6">
+  return <section aria-labelledby="storage-title" className={settings ? 'storage-settings' : 'space-y-4 rounded-xl border border-border bg-surface p-6'}>
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div>{!settings && <p className="text-xs font-medium text-primary">EXPERIMENTAL / STORAGE</p>}
-        <h2 id="storage-title" className="text-lg font-semibold">Capture location</h2></div>
-      <Button variant="outline" disabled={busy} onClick={() => void request('read')}>Refresh location</Button>
+        <div className="settings-label"><h2 id="storage-title" className="text-lg font-semibold">Capture location</h2>
+          {settings && <><Help label="About capture location">New captures use this folder. Existing captures stay where they are. After changing the folder, restart Apparent so cleanup uses it.</Help>
+            {result.status === 'connected' && <Button variant="ghost" size="icon" className="settings-help" aria-label="Refresh location" title="Refresh location" disabled={busy} onClick={() => void request('read')}><RefreshCw aria-hidden="true" /></Button>}</>}</div></div>
+      {(!settings || result.status !== 'connected') && <Button variant="outline" disabled={busy} onClick={() => void request('read')}>Refresh location</Button>}
     </div>
     <div role="status" aria-live="polite" className="space-y-2 text-sm">
       {busy && <p>Waiting for capture location…</p>}
       {snapshot && <>
-        <p className="text-muted-foreground">Effective location</p>
-        <p className="break-all font-medium">{snapshot.displayPath || '(empty environment override)'}</p>
+        {!settings && <p className="text-muted-foreground">Effective location</p>}
+        <p className="break-all font-medium settings-path">{snapshot.displayPath || '(empty environment override)'}</p>
         {snapshot.savedPath !== null && snapshot.savedPath !== snapshot.effectivePath &&
           <p className="break-all text-muted-foreground">Saved preference: {snapshot.savedPath}</p>}
         {snapshot.source === 'environment' && <p>The running Rust app uses APPARENT_CAPTURES_DIR. Change and Reset save a preference but cannot override that environment setting.</p>}
@@ -48,13 +52,13 @@ export function Storage({ settings = false }: { settings?: boolean }) {
       {!busy && result.status === 'disabled' && <p>Storage is disabled in your configuration. Close this window and reopen Settings to use the fallback.</p>}
       {result.status === 'error' && <p>{errors[result.code] ?? 'Unable to read capture location. Refresh when the Rust app is responsive.'}</p>}
     </div>
-    <p className="text-sm text-muted-foreground">New captures use this location. Existing captures stay where they are. Nothing is moved.</p>
-    <div className="flex gap-3">
-      <Button disabled={busy || result.status !== 'connected'} onClick={() => void request('change')}>Change…</Button>
-      <Button variant="outline" disabled={busy || result.status !== 'connected' || !snapshot?.custom} onClick={() => void request('reset')}>Reset</Button>
-      {settings && <Button variant="outline" disabled={busy || result.status !== 'connected'} onClick={() => {
+    {!settings && <p className="text-sm text-muted-foreground">New captures use this location. Existing captures stay where they are. Nothing is moved.</p>}
+    <div className="settings-actions flex flex-wrap gap-3">
+      <Button variant={settings ? 'secondary' : 'default'} disabled={busy || result.status !== 'connected'} onClick={() => void request('change')}>Change…</Button>
+      {settings && <Button variant="secondary" disabled={busy || result.status !== 'connected'} onClick={() => {
         void controller.current?.show();
       }}>Show folder</Button>}
+      <Button variant={settings ? 'secondary' : 'outline'} disabled={busy || result.status !== 'connected' || !snapshot?.custom} onClick={() => void request('reset')}>{settings ? 'Reset location' : 'Reset'}</Button>
     </div>
     {snapshot && !busy && <Retention key={snapshot.effectivePath} effectivePath={snapshot.effectivePath} settings={settings} />}
   </section>;

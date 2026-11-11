@@ -9,9 +9,14 @@ import {selectedOwners, suitePlan, publicMarkdown, linuxDrivers} from './routing
 const root = new URL('../../', import.meta.url);
 const workflow = (name: string) => YAML.parse(readFileSync(new URL(`.github/workflows/${name}`, root), 'utf8')) as any;
 const ci = () => workflow('checks.yml');
-function admitted(expression: string, needs: any, event = 'pull_request', draft = false, cancelled = false) {
+function admitted(expression: string, needs: any, event = 'pull_request', draft = false, cancelled = false,
+  context: {repository?: string; ref?: string; ancestors?: string[]} = {}) {
+  // GitHub applies success() to conditions without a status function, including
+  // skipped transitive ancestors even when a direct admission job succeeded.
+  if (!/\b(?:always|cancelled|success|failure)\s*\(/.test(expression) &&
+      [...Object.values(needs).map((job: any) => job.result), ...(context.ancestors ?? [])].some(result => result !== 'success')) return false;
   return Function('github', 'needs', 'cancelled', 'always', `return (${expression});`)(
-    {event_name: event, ref: event === 'push' ? 'refs/heads/main' : 'refs/pull/1/merge', event: {pull_request: {draft}}}, needs, () => cancelled, () => true);
+    {event_name: event, repository: context.repository ?? 'tryapparent/apparent', ref: context.ref ?? (event === 'push' ? 'refs/heads/main' : 'refs/pull/1/merge'), event: {pull_request: {draft}}}, needs, () => cancelled, () => true);
 }
 function parents(outputs: any = {}, reuse: any = {}) {
   return {contracts: {result: 'success'}, hermes: {result: 'success'}, select: {result: 'success', outputs}, reuse: {result: 'success', outputs: reuse}, portable: {result: 'success'}};
@@ -84,6 +89,22 @@ test('Linux release waits for exact-main admission without waiting for Mac', () 
   assert.ok(!ci().jobs['linux-admission'].needs.some((name: string) => name.startsWith('mac')));
   assert.equal(workflow('release-linux.yml').concurrency['cancel-in-progress'], false);
   assert.match(workflow('release-linux.yml').jobs.admit.steps.find((s: any) => s.id === 'gate').run, /--platform linux --sha/);
+});
+test('Linux publication survives intentional ancestor skips but requires successful exact-main admission', () => {
+  const expression = ci().jobs['release-linux'].if;
+  for (const ancestors of [['success'], ['success', 'skipped'], ['skipped', 'skipped']]) {
+    const needs = {'linux-admission': {result: 'success'}};
+    assert.equal(admitted(expression, needs, 'push', false, false, {ancestors}), true);
+    for (const result of ['failure', 'skipped', 'cancelled', undefined]) {
+      needs['linux-admission'].result = result as string;
+      assert.equal(admitted(expression, needs, 'push', false, false, {ancestors}), false, String(result));
+    }
+  }
+  const needs = {'linux-admission': {result: 'success'}};
+  assert.equal(admitted(expression, needs, 'push', false, true), false);
+  assert.equal(admitted(expression, needs, 'pull_request'), false);
+  assert.equal(admitted(expression, needs, 'push', false, false, {repository: 'fork/apparent'}), false);
+  assert.equal(admitted(expression, needs, 'push', false, false, {ref: 'refs/heads/feature'}), false);
 });
 test('portable checks execute once; nested platforms consume plans rather than empty-tree diffs', () => {
   const platform = workflow('verification-platform.yml');

@@ -38,7 +38,11 @@ jobs:
 
   release-linux:
     needs: [linux-admission]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'tryapparent/apparent'
+    # Reused/unselected suites intentionally skip ancestors. Override implicit
+    # success(), while retaining the fresh exact-main Linux admission gate.
+    if: >-
+      !cancelled() && needs['linux-admission'].result == 'success' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'tryapparent/apparent'
     permissions:
       contents: write
       actions: read
