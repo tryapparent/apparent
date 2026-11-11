@@ -246,7 +246,8 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     }
   };
   let env;
-  const sourceElectronExecutable = await fs.realpath(require('electron'));
+  const sourceElectronExecutable = await fs.realpath(path.join(appDir,
+    'Contents/Resources/settings/runtime/Electron.app/Contents/MacOS/Electron'));
   let electronExecutable, fixtureRuntime;
   const osa = async (script, args = [], cap = 3500) => {
     const { stdout } = await run('/usr/bin/osascript', ['-e', script, ...args], {

@@ -11,6 +11,9 @@ export async function isolatePickerRuntime(sourceExecutable:string, home:string,
  const source=await realpath(sourceExecutable),sourceBundle=resolve(source,'../../..');
  if(!sourceBundle.endsWith('.app')||relative(sourceBundle,source)!=='Contents/MacOS/Electron')
   throw Error('Picker runtime source must be an Electron application bundle');
+ // Use the installed runtime's inside-out signatures. Raw npm Electron may
+ // contain unsigned helper apps, which cannot support parent-only re-signing.
+ await run('/usr/bin/codesign',['--verify','--deep','--strict',sourceBundle]);
  const hash=async(file:string)=>createHash('sha256').update(await readFile(file)).digest('hex');
  const sourceSha256=await hash(source);
  const readIdentity=async(plist:string)=>(await run('/usr/libexec/PlistBuddy',['-c','Print :CFBundleIdentifier',plist])).stdout.trim();
@@ -27,7 +30,7 @@ export async function isolatePickerRuntime(sourceExecutable:string, home:string,
  const bundleId=`com.tryapparent.storagefixture.f${nonce}`,name=`ApparentStorageFixture-${nonce}`;
  for(const [key,value] of [['CFBundleIdentifier',bundleId],['CFBundleName',name],['CFBundleDisplayName',name]])
   await run('/usr/libexec/PlistBuddy',['-c',`Set :${key} ${value}`,plist]);
- // Only the copied parent identity changed. Nested binaries keep their original
+ // Only the copied parent identity changed. Nested binaries keep their verified
  // signatures; preserve the parent's entitlements and flags when signing it.
  await run('/usr/bin/codesign',['--force','--sign','-','--preserve-metadata=entitlements,flags',bundle]);
  await run('/usr/bin/codesign',['--verify','--deep','--strict',bundle]);
