@@ -6,10 +6,14 @@ export type PickerDriver = {
   picker: () => Promise<string>;
   openGo: () => Promise<void>;
   goSheet: () => Promise<string>;
+  enterPath: (path: string) => Promise<void>;
+  pathReady: (path: string) => Promise<string>;
+  wait: (ms: number) => Promise<void>;
   navigate: (path: string) => Promise<void>;
 };
 export type PickerPreparation = Partial<{
   beforeGo: string; openGoReturned: boolean; goSheet: string; beforeChoose: string;
+  pathEntered: boolean; pathReadback: string;
 }>;
 export async function prepareStorageChange(driver: PickerDriver, path: string, receipt: PickerPreparation = {}) {
   await driver.storageIdle();
@@ -20,6 +24,12 @@ export async function prepareStorageChange(driver: PickerDriver, path: string, r
   receipt.openGoReturned = true;
   const goSheet = await driver.goSheet();
   receipt.goSheet = goSheet;
+  // AX writes and their asynchronous readback must not consume the same bounded
+  // osascript call as autocomplete and Return. Never retry either mutation.
+  await driver.enterPath(path);
+  receipt.pathEntered = true;
+  receipt.pathReadback = await driver.pathReady(path);
+  await driver.wait(1000);
   await driver.navigate(path);
   const beforeChoose = await driver.picker();
   receipt.beforeChoose = beforeChoose;
@@ -33,7 +43,7 @@ on run argv
   set targetPID to (item 1 of argv) as integer
   set operation to item 3 of argv
   set expectedExecutable to item 4 of argv
-  set goMode to operation is "inspect-go" or operation is "navigate-go"
+  set goMode to operation is "inspect-go" or operation is "enter-go-path" or operation is "inspect-go-path" or operation is "navigate-go"
   my ownedApplication(targetPID, expectedExecutable)
   tell application "System Events"
     set owned to first application process whose unix id is targetPID
@@ -149,12 +159,14 @@ on run argv
         if (count of pathFields) is not 1 then error "Owned Go to Folder path field missing or ambiguous"
         set pathField to item 1 of pathFields
         if not (enabled of pathField) then error "Owned Go to Folder path field not ready"
-        if operation is "navigate-go" then
+        if operation is "enter-go-path" then
           -- argv, not script interpolation: spaces, quotes and accents remain data.
           set value of pathField to (item 2 of argv)
+        else if operation is "inspect-go-path" then
           if (value of pathField as text) is not (item 2 of argv) then error "Go to Folder path readback differs"
-          -- Preserve the bounded autocomplete interval and exactly one Return.
-          delay 1
+        else if operation is "navigate-go" then
+          -- The TypeScript driver waited for readback and autocomplete separately.
+          -- This call contains exactly one Return and no path-entry mutation.
           my requireNativeFocus(targetPID, expectedExecutable)
           -- Recheck the exact owned modal before Return. Never let a vanished
           -- Go sheet turn a navigation key into the parent picker's Choose.
