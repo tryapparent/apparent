@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@apparent/ui/button';
 import {RetentionController, type RetentionState, type RetentionResult, type UsageResult} from '@apparent/record-storage';
 import {retentionPorts} from './storage/transport';
+import { NativeSelect, NativeSelectOption } from '@apparent/ui/native-select';
+import { Help } from './storage/help';
+import { RefreshCw } from 'lucide-react';
 
 function problem(result: RetentionResult | UsageResult | undefined) {
   if (!result || result.status === 'connected' || result.status === 'cancelled') return '';
@@ -19,6 +22,7 @@ function problem(result: RetentionResult | UsageResult | undefined) {
 
 export function Retention({ effectivePath, settings = false }: { effectivePath: string; settings?: boolean }) {
   const [state, setState] = useState<RetentionState>({preset: '', busy: true, scanning: false});
+  const [scannedAt, setScannedAt] = useState<string>();
   const controller = useRef<RetentionController | undefined>(undefined);
   const {result, usage, preset, busy, scanning} = state;
   const request = (operation: 'read' | 'save' | 'reset') => controller.current?.request(operation);
@@ -31,6 +35,41 @@ export function Retention({ effectivePath, settings = false }: { effectivePath: 
     return () => { unsubscribe(); current.dispose(); if (controller.current === current) controller.current = undefined; };
   }, [effectivePath]);
   const snapshot = result?.status === 'connected' ? result : undefined;
+  useEffect(() => { if (usage?.status === 'connected') setScannedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })); }, [usage]);
+  if (settings) return <div className="settings-retention">
+    <section aria-labelledby="retention-label">
+      <div className="settings-label"><label id="retention-label" htmlFor="retention-preset">Keep recordings</label>
+        <Help label="About keeping recordings">Saving schedules cleanup shortly; it waits until recording finishes. Reset restores the default immediately. {snapshot?.retention.note}</Help>
+        {snapshot?.retention.preset && <Button variant="ghost" size="icon" className="settings-help" aria-label="Refresh retention" title="Refresh retention" disabled={busy || scanning} onClick={() => void request('read')}><RefreshCw aria-hidden="true" /></Button>}
+      </div>
+      {busy && <p role="status">Waiting for retention…</p>}
+      {problem(result) && <p role="alert">{problem(result)}</p>}
+      {(!snapshot || !snapshot.retention.preset) && <Button variant="secondary" disabled={busy || scanning} onClick={() => void request('read')}>Refresh retention</Button>}
+      {snapshot && <>
+        <NativeSelect id="retention-preset" className="settings-policy" disabled={busy || scanning} value={preset}
+          onChange={event => controller.current?.select(event.target.value)}>
+          <NativeSelectOption value="" disabled>Custom policy (config file)</NativeSelectOption>
+          {snapshot.retention.options.map(option => <NativeSelectOption key={option.id} value={option.id}>{option.label}</NativeSelectOption>)}
+        </NativeSelect>
+        {!snapshot.retention.preset && <p className="settings-metadata">{snapshot.retention.note}</p>}
+        <div className="settings-actions">
+          <Button disabled={busy || scanning || !preset || preset === snapshot.retention.preset} onClick={() => void request('save')}>Save retention</Button>
+          <Button variant="secondary" disabled={busy || scanning || !snapshot.custom} onClick={() => void request('reset')}>Reset retention</Button>
+          <span className="settings-metadata" role="status">{preset && preset !== snapshot.retention.preset ? 'Unsaved changes' : ''}</span>
+        </div>
+      </>}
+    </section>
+    <section className="settings-usage" aria-labelledby="usage-label">
+      <div className="settings-label"><h3 id="usage-label">Capture-folder usage</h3><Help label="About capture-folder usage">Logical file size at the last scan, not free disk space. Refresh after background cleanup; no continuous scanning.</Help></div>
+      <div className="settings-usage-row">
+        <div role="status">{scanning ? <p>Calculating folder usage…</p> : usage?.status === 'connected' ? <>
+          <strong>{usage.usage.formatted}</strong><p className="settings-metadata">Last scanned {scannedAt}</p>
+        </> : !problem(usage) && <p className="settings-metadata">Not scanned yet</p>}</div>
+        <Button variant="secondary" disabled={busy || scanning} onClick={() => void measure()}>Refresh usage</Button>
+      </div>
+      {problem(usage) && <p role="alert">{problem(usage)}</p>}
+    </section>
+  </div>;
   return <div className="space-y-4 border-t border-border pt-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h3 className="font-semibold">Retention</h3>

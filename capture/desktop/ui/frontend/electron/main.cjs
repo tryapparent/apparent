@@ -191,6 +191,12 @@ app.whenReady().then(() => {
     if (!about) throw new Error('Unavailable outside About');
     return aboutState;
   });
+  ipcMain.handle('apparent:about-copy-version', (event, ...args) => {
+    validate(event, args);
+    if (!about || typeof aboutState?.version !== 'string' || !aboutState.version) throw new Error('Build identity unavailable');
+    // No renderer-supplied text or general clipboard capability is admitted.
+    require('electron').clipboard.writeText(`apparent ${aboutState.version}`);
+  });
   ipcMain.handle('apparent:about-action', (event, action, ...args) => {
     validate(event, args);
     if (!about || !action || typeof action !== 'object') throw new Error('Forbidden About action');

@@ -7,7 +7,7 @@ import ts from 'typescript';
 import { build } from 'esbuild';
 
 // file: dependencies are snapshots. Refuse a build using stale shared controls.
-for (const file of ['button.tsx', 'tabs.tsx', 'utils.ts', 'theme.css', 'tokens.css', 'window-theme.cjs', 'status-card.tsx', 'disclosure-menu.tsx', 'status.css']) {
+for (const file of ['button.tsx', 'tabs.tsx', 'utils.ts', 'theme.css', 'tokens.css', 'window-theme.cjs', 'status-card.tsx', 'disclosure-menu.tsx', 'status.css', 'forms/tooltip.tsx', 'forms/native-select.tsx', 'settings/theme.css']) {
   const canonical = readFileSync(new URL(`../../../../shared/ui/src/${file}`, import.meta.url), 'utf8');
   const installed = readFileSync(new URL(`./node_modules/@apparent/ui/src/${file}`, import.meta.url), 'utf8');
   if (canonical !== installed) throw new Error('Shared UI changed. Run npm ci before building.');

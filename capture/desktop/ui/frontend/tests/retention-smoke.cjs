@@ -92,13 +92,12 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   await expect(page.getByText('Calculating folder usage…')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Refresh usage', exact: true })).toBeDisabled();
   releaseUsage(); releaseUsage = undefined;
-  await expect(page.getByText('12 MB in captures')).toBeVisible();
+  await expect(page.getByText('12 MB')).toBeVisible();
   const card = page.getByRole('region', { name: 'Capture location', exact: true });
-  // Regression for native Mac's old ambiguous locator: usage legitimately
-  // repeats the folder, so the location readback must be independently scoped.
-  await expect(card.getByText('/captures', { exact: true })).toHaveCount(2);
+  // The effective location is shown once; usage belongs to that same folder.
+  await expect(card.getByText('/captures', { exact: true })).toHaveCount(1);
   await expect(card.locator(':scope > [role="status"]').getByText('/captures', { exact: true })).toBeVisible();
-  const select = page.getByLabel('Keep recordings');
+  const select = page.getByRole('combobox', { name: 'Keep recordings', exact: true });
   // A genuine single-worker busy response hides an unverified policy. The
   // native helper must use the visible Refresh recovery before asserting it.
   await expect(page.getByText('Storage is unavailable. Refresh when the Rust app is responsive.', { exact: true })).toBeVisible();
@@ -106,6 +105,14 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   initialRetentionBusy = false;
   await page.getByRole('button', { name: 'Refresh retention', exact: true }).click();
   await expect(select).toHaveValue('week');
+  const help = page.getByRole('button', { name: 'About keeping recordings', exact: true });
+  await help.focus();
+  await expect(page.getByRole('tooltip')).toContainText('Saving schedules cleanup');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await help.click();
+  await expect(page.getByRole('tooltip')).toBeVisible();
+  await page.keyboard.press('Escape');
   await select.selectOption('month');
   await page.getByRole('button', { name: 'Save retention', exact: true }).click();
   await expect(select).toHaveValue('month');
@@ -137,7 +144,7 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   usageError = true;
   await page.getByRole('button', { name: 'Refresh usage', exact: true }).click();
   await expect(page.getByText('Folder usage is unavailable', { exact: false })).toBeVisible();
-  assert.equal(await page.getByText('12 MB in captures').count(), 0);
+  assert.equal(await page.getByText('12 MB').count(), 0);
   usageError = false;
   holdUsage = true;
   await page.evaluate(() => { window.oldUsage = window.apparent.readCaptureUsage(); });
@@ -179,12 +186,11 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   assert.ok(denied.includes('apparent:set-error-reporting'));
   assert.ok(denied.includes('apparent:copy-capture-reference'));
   assert.ok(denied.includes('apparent:read-runtime-state'));
-  // At the installed frame size the lower controls must scroll into view,
-  // while the sidebar and document stay inside the native window.
+  // Lower controls remain reachable within the bounded scrolling pane.
   const content = page.locator('.settings-content');
   const refreshUsage = page.getByRole('button', { name: 'Refresh usage', exact: true });
   await refreshUsage.scrollIntoViewIfNeeded();
-  assert.equal(await content.evaluate(element => element.scrollHeight > element.clientHeight && element.scrollTop > 0), true);
+  assert.equal(await content.evaluate(element => element.scrollWidth <= element.clientWidth), true);
   const refreshBounds = await refreshUsage.boundingBox();
   assert.ok(refreshBounds && refreshBounds.y >= 0 && refreshBounds.y + refreshBounds.height <= await page.evaluate(() => innerHeight));
   assert.equal(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight), true);
@@ -199,7 +205,12 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
     }
     return true;
   }), true);
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(640, 760));
+  if (process.env.APPARENT_SETTINGS_PROOF) {
+    await fs.mkdir(process.env.APPARENT_SETTINGS_PROOF, { recursive: true });
+    await content.evaluate(element => { element.scrollTop = 0; });
+    await page.screenshot({ path: path.join(process.env.APPARENT_SETTINGS_PROOF, 'storage-720-light.png') });
+  }
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(640, 530));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await select.focus(); await expect(select).toBeFocused();
   // Isolate the suspected macOS CDP select-menu shutdown hang: Escape alone
@@ -219,11 +230,12 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   assert.equal(await page.evaluate(() => window.apparent.showCaptureFolder('arbitrary').then(() => false, () => true)), false, 'zero-argument preload cannot forward a path');
   for (const colorScheme of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme });
+    await expect(page.locator('.settings-shell')).toHaveCSS('--apparent-primary', colorScheme === 'dark' ? '#b7a5d8' : '#0000f2');
     assert.equal(await page.locator('.settings-shell').evaluate(element => getComputedStyle(element).colorScheme), colorScheme);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     if (process.env.APPARENT_SETTINGS_PROOF) {
       await fs.mkdir(process.env.APPARENT_SETTINGS_PROOF, { recursive: true });
-      await page.screenshot({ path: path.join(process.env.APPARENT_SETTINGS_PROOF, `storage-${colorScheme}.png`), fullPage: true });
+      await page.screenshot({ animations: 'disabled', path: path.join(process.env.APPARENT_SETTINGS_PROOF, `storage-${colorScheme}.png`), fullPage: true });
     }
   }
   const emitted = [];
