@@ -74,7 +74,10 @@ app.whenReady().then(async () => {
 
   // Even trusted local starts use a fresh occupancy check and the native
   // engine's atomic admission. A busy request reports through the signed mailbox.
-  const occupied = await new Promise<boolean>(resolve => execFile(executable, ['capture', 'state'], { timeout: 4500, maxBuffer: 65536, encoding: 'utf8' }, (_error, stdout) => {
+  const occupied = await new Promise<boolean>(resolve => execFile(executable, ['capture', 'state'], { timeout: 4500, maxBuffer: 65536, encoding: 'utf8' }, (error, stdout) => {
+    // An unavailable CLI still prints JSON. Let prepare start/check the runtime;
+    // only a successful state read can establish occupancy before native admission.
+    if (error) { resolve(false); return; }
     try { resolve(!captureCanStart(JSON.parse(stdout)?.state?.phase)); } catch { resolve(false); }
   }));
   if (occupied) view = { phase: 'error', code: 'occupied', message: 'Finish the current Apparent capture before recording from Hermes.' };
