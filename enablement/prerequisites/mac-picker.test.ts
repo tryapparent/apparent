@@ -5,6 +5,8 @@ import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {panelScript, prepareStorageChange, type PickerDriver} from './mac-picker.ts';
+import {isolatePickerRuntime} from './mac-runtime.ts';
+import * as files from 'node:fs/promises';
 function deferred<T>() {
  let resolve!: (value:T)=>void;
  const promise=new Promise<T>(done=>{resolve=done;});
@@ -15,6 +17,118 @@ function fixture(patch: Partial<PickerDriver> = {}) {
  const driver:PickerDriver={storageIdle:async()=>{},change:async()=>{calls.change++;},picker:async()=>{calls.picker++;return 'owned-picker';},openGo:async()=>{calls.openGo++;},goSheet:async()=> 'owned-go-sheet',enterPath:async()=>{},pathReady:async()=> 'owned path readback',wait:async()=>{},navigate:async()=>{calls.navigate++;},...patch};
  return {calls,driver};
 }
+test('the picker runtime gets a private distinct bundle identity without changing its source', async () => {
+ const directory=await files.mkdtemp(join(tmpdir(),'picker-identity-'));
+ try {
+  const source=join(directory,'Electron.app'),home=join(directory,'home');
+  await files.mkdir(join(source,'Contents/MacOS'),{recursive:true});
+  await files.mkdir(home,{mode:0o700});
+  const executable=join(source,'Contents/MacOS/Electron'),plist=join(source,'Contents/Info.plist');
+  const original={CFBundleIdentifier:'com.github.Electron',CFBundleName:'Electron',CFBundleDisplayName:'Electron'};
+  await files.writeFile(executable,'synthetic runtime bytes');
+  await files.writeFile(plist,JSON.stringify(original));
+  const calls:string[]=[];
+  const native=async(file:string,args:string[])=>{
+   if(file==='/usr/libexec/PlistBuddy') {
+    const target=args[2],value=JSON.parse(await files.readFile(target,'utf8'));
+    if(args[1]==='Print :CFBundleIdentifier')return {stdout:value.CFBundleIdentifier+'\n'};
+    assert.ok(target.startsWith(home+'/picker-runtime-'),'Metadata writes stay in the private copy');
+    const match=args[1].match(/^Set :(CFBundleIdentifier|CFBundleName|CFBundleDisplayName) ([A-Za-z0-9.-]+)$/);
+    assert.ok(match);value[match[1]]=match[2];await files.writeFile(target,JSON.stringify(value));
+    calls.push(match[1]);return {stdout:''};
+   }
+   assert.equal(file,'/usr/bin/codesign');
+   if(args.at(-1)===source) {
+    assert.deepEqual(args,['--verify','--deep','--strict',source]);
+    calls.push('verify-source');return {stdout:''};
+   }
+   assert.ok(args.at(-1)!.startsWith(home+'/picker-runtime-'));
+   calls.push(args.includes('--verify')?'verify':'sign');return {stdout:''};
+  };
+  const result=await isolatePickerRuntime(executable,home,native);
+  assert.match(result.bundleId,/^com\.tryapparent\.storagefixture\.f[a-f0-9]{32}$/);
+  assert.notEqual(result.bundleId,result.sourceBundleId);
+  assert.equal(result.sourceExecutable,executable);assert.equal(result.signatureVerified,true);
+  assert.equal(await files.readFile(result.executable,'utf8'),'synthetic runtime bytes');
+  assert.deepEqual(JSON.parse(await files.readFile(plist,'utf8')),original);
+  assert.deepEqual(calls,['verify-source','CFBundleIdentifier','CFBundleName','CFBundleDisplayName','sign','verify']);
+  await files.chmod(home,0o755);
+  await assert.rejects(isolatePickerRuntime(executable,home,async()=>{throw Error('Must refuse before native calls');}),/owned private/);
+ } finally {await files.rm(directory,{recursive:true,force:true});}
+});
+test('a native signature failure refuses the isolated runtime instead of launching an unverified copy', async () => {
+ const directory=await files.mkdtemp(join(tmpdir(),'picker-signature-'));
+ try {
+  const source=join(directory,'Electron.app'),home=join(directory,'home');
+  await files.mkdir(join(source,'Contents/MacOS'),{recursive:true});await files.mkdir(home,{mode:0o700});
+  const executable=join(source,'Contents/MacOS/Electron');
+  await files.writeFile(executable,'unchanged source');await files.writeFile(join(source,'Contents/Info.plist'),'source metadata');
+  const failure=Error('synthetic signature refusal');
+  await assert.rejects(isolatePickerRuntime(executable,home,async(file,args)=>{
+   if(file==='/usr/bin/codesign'&&args.includes('--sign'))throw failure;
+   return {stdout:args[1].startsWith('Print')?'com.github.Electron\n':''};
+  }),error=>error===failure);
+  assert.equal(await files.readFile(executable,'utf8'),'unchanged source');
+ } finally {await files.rm(directory,{recursive:true,force:true});}
+});
+test('unsigned source helpers are refused before copying or changing any runtime identity', async () => {
+ const directory=await files.mkdtemp(join(tmpdir(),'picker-unsigned-'));
+ try {
+  const source=join(directory,'Electron.app'),home=join(directory,'home');
+  await files.mkdir(join(source,'Contents/MacOS'),{recursive:true});await files.mkdir(home,{mode:0o700});
+  const executable=join(source,'Contents/MacOS/Electron');
+  await files.writeFile(executable,'unsigned source');
+  const failure=Error('unsigned nested helper');
+  const calls:string[]=[];
+  await assert.rejects(isolatePickerRuntime(executable,home,async(file,args)=>{
+   calls.push(file);assert.equal(file,'/usr/bin/codesign');
+   assert.deepEqual(args,['--verify','--deep','--strict',source]);throw failure;
+  }),error=>error===failure);
+  assert.deepEqual(calls,['/usr/bin/codesign']);
+  assert.deepEqual(await files.readdir(home),[],'No private runtime is prepared after source verification fails');
+  assert.equal(await files.readFile(executable,'utf8'),'unsigned source');
+ } finally {await files.rm(directory,{recursive:true,force:true});}
+});
+test('runtime isolation preserves strict window identity and adds native bundle and AX PID checks', () => {
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ assert.match(source,/executablePath: electronExecutable/);
+ assert.match(source,/Contents\/Resources\/settings\/runtime\/Electron\.app\/Contents\/MacOS\/Electron/);
+ assert.doesNotMatch(source,/realpath\(require\('electron'\)\)/,'The raw npm runtime may contain unsigned helpers');
+ assert.match(source,/report\.fixtureRuntime = fixtureRuntime/);
+ assert.match(source,/fixtureRuntime\.bundleId/);
+ assert.match(source,/title=Apparent — UI foundation/);
+ assert.match(source,/getTitle\(\) !== 'Apparent — UI foundation'/);
+ assert.match(panelScript,/Owned Electron bundle identity differs/);
+ assert.match(panelScript,/Owned AX process identifier differs/);
+ assert.doesNotMatch(panelScript,/Apparent Settings — About/,'The unrelated Settings window is never an admitted picker parent');
+});
+test('picker calls allow bounded AppKit startup but never exceed the original overall deadline', async () => {
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const slice=(start:string,end:string)=>{
+  const from=source.indexOf(start),to=source.indexOf(end,from);
+  assert.ok(from>=0&&to>from);return source.slice(from,to);
+ };
+ const create=new Function('run','Date','assert','env','deadline','electronChild','panelScript','home','electronExecutable','pickerCommandMs','fixtureRuntime',
+  slice('  const budget =','  let home,')+slice('  const osa =','  const panel =')+
+  slice('  const panel =','  const snapshot =')+slice('    const goPathOperation =','    const prepared =')+
+  'return {osa,panel,goPathOperation};');
+ let now=0;
+ const calls:Array<{timeout:number;operation:string}>=[];
+ const driver=create(async(_file:string,args:string[],options:{timeout:number})=>{
+  calls.push({timeout:options.timeout,operation:args[4]});return {stdout:'owned picker\n'};
+ },{now:()=>now},assert,{},95000,{exitCode:null,signalCode:null,pid:4801},'native script','/synthetic/home','/synthetic/electron',5000,{bundleId:'com.tryapparent.synthetic'});
+ await driver.panel('cancel');
+ await driver.goPathOperation('enter-go-path','/synthetic/path');
+ assert.deepEqual(calls.map(call=>call.timeout),[5000,5000]);
+ await driver.osa('other native control');
+ assert.equal(calls.at(-1)!.timeout,3500,'Unrelated native controls keep their original cap');
+ now=94500;await driver.panel('choose');await driver.goPathOperation('navigate-go','/synthetic/path');
+ assert.deepEqual(calls.slice(-2).map(call=>call.timeout),[500,500]);
+ now=95000;const before=calls.length;
+ await assert.rejects(driver.panel('cancel'),/overall deadline exceeded/);
+ await assert.rejects(driver.goPathOperation('navigate-go','/synthetic/path'),/overall deadline exceeded/);
+ assert.equal(calls.length,before,'No native operation is sent after deadline expiry');
+});
 test('path entry and readback have separate bounded calls before one navigation', async () => {
  const order:string[]=[];
  let entered=false,observed=false,settled=false;
@@ -30,6 +144,26 @@ test('path entry and readback have separate bounded calls before one navigation'
  assert.deepEqual(order,['enter','readback','autocomplete','navigate']);
  assert.equal((receipt as Record<string,unknown>).pathEntered,true);
  assert.equal((receipt as Record<string,unknown>).pathReadback,'owned path readback');
+});
+test('each real Change waits for one native focus admission; failed or concurrent admission never clicks', async () => {
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const start=source.indexOf('    const startNativeChange ='),end=source.indexOf('    const settleNativeChange =',start);
+ assert.ok(start>0&&end>start);
+ const create=new Function('assert','panel','change','budget','report',
+  'let pendingNativeChange; let nativeChangeStarting=false;'+source.slice(start,end)+'return startNativeChange;');
+ const focus=deferred<string>();let focuses=0,clicks=0;
+ const report:{nativeChangeFocus?:string[]}={};
+ const begin=create(assert,async(operation:string)=>{assert.equal(operation,'focus-change');focuses++;return focus.promise;},
+  {click:async()=>{clicks++;}},(cap:number)=>cap,report);
+ const pending=begin();await Promise.resolve();
+ assert.equal(clicks,0,'CDP must not open a sheet while another app remains native-frontmost');
+ await assert.rejects(async()=>begin(),/focus is already pending/);
+ assert.equal(focuses,1);focus.resolve('owned native focus');await pending;
+ assert.equal(clicks,1);assert.deepEqual(report.nativeChangeFocus,['owned native focus']);
+ await assert.rejects(async()=>begin(),/already pending/);assert.equal(clicks,1);
+ const failure=Error('owned focus refused');let refusedClicks=0;
+ const refuse=create(assert,async()=>{throw failure;},{click:async()=>{refusedClicks++;}},(cap:number)=>cap,{});
+ await assert.rejects(async()=>refuse(),error=>error===failure);assert.equal(refusedClicks,0);
 });
 test('unknown path entry or failed readback never replays entry or sends Return', async () => {
  for (const phase of ['entry','readback','autocomplete']) {

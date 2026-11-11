@@ -119,3 +119,13 @@ bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/
 ```
 
 This installs neither the binary nor recording permissions.
+
+## Diagnose Hermes setup
+
+Once a CLI containing setup support is installed, run
+`apparent setup hermes --check --json --profile /absolute/active/hermes/profile`.
+Run without `--check` for bounded repairs through existing installation writers.
+See [the setup contract and limits](../setup/README.md), including verified-package
+installation, unknown runtime state and platform acceptance prerequisites. This
+command cannot bootstrap its own missing executable or prove a working recording
+button from plugin doctor/configuration alone.
