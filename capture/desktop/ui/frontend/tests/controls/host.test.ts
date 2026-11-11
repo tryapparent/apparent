@@ -72,20 +72,21 @@ test('controls never show after parent EOF, including a late ready/mount', () =>
   assert.equal(h.quits(), 1);
 });
 
-test('only four explicit actions cross the bridge; busy and foreign frames cannot command', () => {
+test('full-display controls reject the retired picker action; busy and foreign frames cannot command', () => {
   const h = host();
   const command = h.handlers.get('apparent:controls-command')!;
-  for (const action of ['record', 'choose', 'latest', 'settings']) command(h.event, action);
-  assert.equal(h.written.length, 4);
+  for (const action of ['record', 'latest', 'settings']) command(h.event, action);
+  assert.equal(h.written.length, 3);
+  assert.throws(() => command(h.event, 'choose'), /Forbidden controls request/);
   assert.throws(() => command(h.event, 'quit'));
   assert.throws(() => command(h.event, 'record', 'extra'));
   assert.throws(() => command({...h.event, senderFrame: {url: h.event.senderFrame.url}}, 'record'));
   h.lines.emit('line', 'busy');
   command(h.event, 'record');
-  assert.equal(h.written.length, 4);
+  assert.equal(h.written.length, 3);
   h.lines.emit('line', 'idle');
   command(h.event, 'record');
-  assert.equal(h.written.length, 5);
+  assert.equal(h.written.length, 4);
   assert.throws(() => h.handlers.get('apparent:controls-mounted')!(h.event, 'extra'));
 });
 
