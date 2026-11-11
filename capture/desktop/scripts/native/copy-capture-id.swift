@@ -211,6 +211,20 @@ func postOwnedWindowClick(_ expected: OwnedWindow, at point: CGPoint) throws {
               let rect = CGRect(dictionaryRepresentation: dict as CFDictionary) else { return false }
         return rect.contains(point)
     }
+    // Passive diagnostics only. Rectangles never authorize input; AX must still
+    // resolve this exact point to the owned PID within the original budget.
+    report["inputObservation"] = [
+        "point": [point.x, point.y], "windowID": current.id,
+        "ownedBounds": [current.bounds.minX, current.bounds.minY, current.bounds.width, current.bounds.height],
+        "foregroundPID": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1,
+        "accessibilityTrusted": AXIsProcessTrusted(),
+        "visualRectanglePID": hit?[kCGWindowOwnerPID as String] as? Int32 ?? -1,
+        "visualRectangleLayer": hit?[kCGWindowLayer as String] as? Int ?? -1,
+        "screens": NSScreen.screens.map { screen in
+            ["frame": [screen.frame.minX, screen.frame.minY, screen.frame.width, screen.frame.height],
+             "scale": screen.backingScaleFactor] as [String: Any]
+        }
+    ] as [String: Any]
     // CGWindowList is a visual stacking list, not an input hit-test: transparent
     // or mouse-ignoring system surfaces can cover a window's rectangle. Ask AX
     // for the actual element at the observed point and keep the exact PID gate.
@@ -503,13 +517,18 @@ do {
 // Leave room for the existing failure screenshot and cleanup; diagnostics never mask the
 // original failure and are skipped when the remaining budget cannot cover them.
 if failure != nil, let child = owned, child.isRunning, deadline.timeIntervalSinceNow > 11 {
-    let sample = output.appendingPathComponent("failure-owned-app.sample.txt")
+    // Four seconds collected samples but killed symbol processing on the Intel
+    // runner. Use remaining diagnostic time, preserving seven seconds for the
+    // existing screenshot/cleanup and the unchanged overall 150-second limit.
+    let sampleBudget = min(12, deadline.timeIntervalSinceNow - 7)
+    // The existing artifact collector retains .log files, not .sample.txt.
+    let sample = output.appendingPathComponent("failure-owned-app.sample.log")
     do {
-        _ = try run("/usr/bin/sample", [String(child.processIdentifier), "1", "1", "-file", sample.path], cap: 4)
+        _ = try run("/usr/bin/sample", [String(child.processIdentifier), "1", "1", "-file", sample.path], cap: sampleBudget)
         report["failureSample"] = ["pid": child.processIdentifier, "file": sample.lastPathComponent] as [String: Any]
     } catch {
         report["failureSample"] = ["pid": child.processIdentifier, "available": fm.fileExists(atPath: sample.path),
-            "status": "sampling unavailable; original failure preserved"] as [String: Any]
+            "status": "sampling unavailable; original failure preserved", "error": String(describing: error)] as [String: Any]
     }
 }
 // Retain failure pixels when possible, without widening to another window/screen.
