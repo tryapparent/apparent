@@ -66,6 +66,8 @@ pub enum PillAction {
 pub struct PillSnapshot {
     pub pres: Pres,
     pub clock: String,
+    /// Fresh chronological RMS history from captured PCM; no second microphone or speech inference.
+    pub input_waveform: Option<[f32; 24]>,
     pub mic_warning: Option<crate::capture::engine::runtime::audio::audio::InputWarning>,
     pub reduced_motion: bool,
     pub style: PillStyle,

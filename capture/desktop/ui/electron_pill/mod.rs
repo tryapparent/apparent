@@ -22,7 +22,7 @@ pub struct View {
     pub notice: Option<String>,
     pub reduced_motion: bool,
     pub draggable: bool,
-    pub input_level: Option<f32>,
+    pub input_waveform: Option<[f32; 24]>,
     pub actions: Vec<Control>,
 }
 
@@ -48,7 +48,7 @@ impl View {
                 .map(|warning| warning.announcement().to_owned()),
             reduced_motion: snapshot.reduced_motion,
             draggable: false,
-            input_level: None,
+            input_waveform: snapshot.input_waveform,
             actions: vec![],
         };
         match &snapshot.pres {

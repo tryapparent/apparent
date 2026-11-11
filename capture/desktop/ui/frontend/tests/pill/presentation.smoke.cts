@@ -6,8 +6,8 @@ const fs=require('node:fs/promises');
 const os=require('node:os');
 
 const hidden={revision:1,phase:'hidden',clock:'00:00',label:'Recording',warning:null,notice:null,
- reducedMotion:false,draggable:true,inputLevel:null,actions:[]};
-const recording={...hidden,revision:2,phase:'recording',inputLevel:.2,actions:[
+ reducedMotion:false,draggable:true,inputWaveform:null,actions:[]};
+const recording={...hidden,revision:2,phase:'recording',inputWaveform:Array(24).fill(.2),actions:[
  {id:'finish',label:'Finish',enabled:true,selected:false,primary:true},
  {id:'cancel',label:'Cancel',enabled:true,selected:false,primary:false}]};
 
@@ -48,11 +48,11 @@ test('a warm pill waits for its current layout and performs no sizing work for t
  await expect(page.getByRole('button',{name:'Finish',exact:true})).toBeVisible();
  await page.evaluate(()=>document.fonts.ready);
  const start=await application.evaluate(()=>globalThis.measurements);
- for(let i=0;i<20;i++)await publish({...recording,clock:`00:${String(i).padStart(2,'0')}`,inputLevel:i/20});
+ for(let i=0;i<20;i++)await publish({...recording,clock:`00:${String(i).padStart(2,'0')}`,inputWaveform:Array(24).fill(i/20)});
  await expect(page.locator('.clock')).toHaveText('00:19');
  // Includes several former 250ms polling periods, with parent heartbeats.
  for(let i=0;i<6;i++){
-  await page.waitForTimeout(100);await publish({...recording,clock:'00:19',inputLevel:.95});
+  await page.waitForTimeout(100);await publish({...recording,clock:'00:19',inputWaveform:Array(24).fill(.95)});
  }
  assert.equal(await application.evaluate(()=>globalThis.measurements),start,'Telemetry and idle time must not measure layout');
  assert.equal(await page.locator('.indicator').evaluate(el=>getComputedStyle(el).animationName),'none');

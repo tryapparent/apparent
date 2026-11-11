@@ -24,3 +24,11 @@ test('pill input silhouette lets transparent corners through and clamps to negat
  assert.equal(shape.length,58);assert.ok(shape[0].x>0);assert.equal(shape[28].x,0);
  assert.deepEqual(geometry.clamp({...bounds,x:-2000,y:2000},{x:-1920,y:0,width:1920,height:1080}),{x:-1920,y:1022});
 });
+
+test('waveform telemetry is a bounded chronological PCM projection',()=>{
+ const inputWaveform=Array.from({length:24},(_,index)=>index/24);
+ assert.deepEqual(view({...state,inputWaveform}).inputWaveform,inputWaveform);
+ for(const invalid of [[],[.2],Array(25).fill(0),Array(24).fill(NaN),Array(24).fill(-.1),Array(24).fill(1.1)]){
+  assert.throws(()=>view({...state,inputWaveform:invalid}));
+ }
+});

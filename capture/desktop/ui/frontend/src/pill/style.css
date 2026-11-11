@@ -26,8 +26,9 @@ body { font-family:'Host Grotesk',system-ui,sans-serif; }
 .pill[data-phase=processing] .pill-row { padding-inline:16px; }
 .pill[data-phase=processing] .lead { padding:0; }
 .pill[data-phase=processing] .indicator-slot { width:24px; }
-.meter { display:flex;align-items:center;justify-content:center;gap:3px;width:40px;min-width:40px;height:24px; }
-.meter i { width:3px;min-width:3px;border-radius:2px;background:var(--apparent-muted-foreground); }
+.meter { display:flex;align-items:center;justify-content:center;gap:.75px;width:66px;min-width:66px;height:28px; }
+.meter[data-reduced=true][data-active=false] { opacity:.4; }
+.meter i { width:2px;min-width:2px;border-radius:1px;background:var(--apparent-muted-foreground); }
 .pill.connection { color:var(--apparent-foreground);background:var(--apparent-background); }
 @media(prefers-reduced-motion:reduce){.pill * { animation:none!important;transition:none!important; }}
 .pill[data-reduced=true] * { animation:none!important;transition:none!important; }

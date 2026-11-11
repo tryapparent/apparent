@@ -117,6 +117,7 @@ pub fn measure_text_pt(text: &str, size_pt: f32, weight: f64, monospaced_digits:
 /// Measures all standard capsule strings with CoreText to build a `Metrics` table.
 pub fn measure_metrics() -> Metrics {
     Metrics {
+        waveform_width: 0.0,
         area: measure_text_pt("Area", HUD_TEXT, WEIGHT_MEDIUM, false),
         window: measure_text_pt("Window", HUD_TEXT, WEIGHT_MEDIUM, false),
         screen: measure_text_pt("Screen", HUD_TEXT, WEIGHT_MEDIUM, false),
