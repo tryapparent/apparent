@@ -5,6 +5,8 @@ import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {panelScript, prepareStorageChange, type PickerDriver} from './mac-picker.ts';
+import {isolatePickerRuntime} from './mac-runtime.ts';
+import * as files from 'node:fs/promises';
 function deferred<T>() {
  let resolve!: (value:T)=>void;
  const promise=new Promise<T>(done=>{resolve=done;});
@@ -15,13 +17,74 @@ function fixture(patch: Partial<PickerDriver> = {}) {
  const driver:PickerDriver={storageIdle:async()=>{},change:async()=>{calls.change++;},picker:async()=>{calls.picker++;return 'owned-picker';},openGo:async()=>{calls.openGo++;},goSheet:async()=> 'owned-go-sheet',enterPath:async()=>{},pathReady:async()=> 'owned path readback',wait:async()=>{},navigate:async()=>{calls.navigate++;},...patch};
  return {calls,driver};
 }
+test('the picker runtime gets a private distinct bundle identity without changing its source', async () => {
+ const directory=await files.mkdtemp(join(tmpdir(),'picker-identity-'));
+ try {
+  const source=join(directory,'Electron.app'),home=join(directory,'home');
+  await files.mkdir(join(source,'Contents/MacOS'),{recursive:true});
+  await files.mkdir(home,{mode:0o700});
+  const executable=join(source,'Contents/MacOS/Electron'),plist=join(source,'Contents/Info.plist');
+  const original={CFBundleIdentifier:'com.github.Electron',CFBundleName:'Electron',CFBundleDisplayName:'Electron'};
+  await files.writeFile(executable,'synthetic runtime bytes');
+  await files.writeFile(plist,JSON.stringify(original));
+  const calls:string[]=[];
+  const native=async(file:string,args:string[])=>{
+   if(file==='/usr/libexec/PlistBuddy') {
+    const target=args[2],value=JSON.parse(await files.readFile(target,'utf8'));
+    if(args[1]==='Print :CFBundleIdentifier')return {stdout:value.CFBundleIdentifier+'\n'};
+    assert.ok(target.startsWith(home+'/picker-runtime-'),'Metadata writes stay in the private copy');
+    const match=args[1].match(/^Set :(CFBundleIdentifier|CFBundleName|CFBundleDisplayName) ([A-Za-z0-9.-]+)$/);
+    assert.ok(match);value[match[1]]=match[2];await files.writeFile(target,JSON.stringify(value));
+    calls.push(match[1]);return {stdout:''};
+   }
+   assert.equal(file,'/usr/bin/codesign');
+   assert.ok(args.at(-1)!.startsWith(home+'/picker-runtime-'));
+   calls.push(args.includes('--verify')?'verify':'sign');return {stdout:''};
+  };
+  const result=await isolatePickerRuntime(executable,home,native);
+  assert.match(result.bundleId,/^com\.tryapparent\.storagefixture\.f[a-f0-9]{32}$/);
+  assert.notEqual(result.bundleId,result.sourceBundleId);
+  assert.equal(result.sourceExecutable,executable);assert.equal(result.signatureVerified,true);
+  assert.equal(await files.readFile(result.executable,'utf8'),'synthetic runtime bytes');
+  assert.deepEqual(JSON.parse(await files.readFile(plist,'utf8')),original);
+  assert.deepEqual(calls,['CFBundleIdentifier','CFBundleName','CFBundleDisplayName','sign','verify']);
+  await files.chmod(home,0o755);
+  await assert.rejects(isolatePickerRuntime(executable,home,async()=>{throw Error('Must refuse before native calls');}),/owned private/);
+ } finally {await files.rm(directory,{recursive:true,force:true});}
+});
+test('a native signature failure refuses the isolated runtime instead of launching an unverified copy', async () => {
+ const directory=await files.mkdtemp(join(tmpdir(),'picker-signature-'));
+ try {
+  const source=join(directory,'Electron.app'),home=join(directory,'home');
+  await files.mkdir(join(source,'Contents/MacOS'),{recursive:true});await files.mkdir(home,{mode:0o700});
+  const executable=join(source,'Contents/MacOS/Electron');
+  await files.writeFile(executable,'unchanged source');await files.writeFile(join(source,'Contents/Info.plist'),'source metadata');
+  const failure=Error('synthetic signature refusal');
+  await assert.rejects(isolatePickerRuntime(executable,home,async(file,args)=>{
+   if(file==='/usr/bin/codesign')throw failure;
+   return {stdout:args[1].startsWith('Print')?'com.github.Electron\n':''};
+  }),error=>error===failure);
+  assert.equal(await files.readFile(executable,'utf8'),'unchanged source');
+ } finally {await files.rm(directory,{recursive:true,force:true});}
+});
+test('runtime isolation preserves strict window identity and adds native bundle and AX PID checks', () => {
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ assert.match(source,/executablePath: electronExecutable/);
+ assert.match(source,/report\.fixtureRuntime = fixtureRuntime/);
+ assert.match(source,/fixtureRuntime\.bundleId/);
+ assert.match(source,/title=Apparent — UI foundation/);
+ assert.match(source,/getTitle\(\) !== 'Apparent — UI foundation'/);
+ assert.match(panelScript,/Owned Electron bundle identity differs/);
+ assert.match(panelScript,/Owned AX process identifier differs/);
+ assert.doesNotMatch(panelScript,/Apparent Settings — About/,'The unrelated Settings window is never an admitted picker parent');
+});
 test('picker calls allow bounded AppKit startup but never exceed the original overall deadline', async () => {
  const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
  const slice=(start:string,end:string)=>{
   const from=source.indexOf(start),to=source.indexOf(end,from);
   assert.ok(from>=0&&to>from);return source.slice(from,to);
  };
- const create=new Function('run','Date','assert','env','deadline','electronChild','panelScript','home','electronExecutable','pickerCommandMs',
+ const create=new Function('run','Date','assert','env','deadline','electronChild','panelScript','home','electronExecutable','pickerCommandMs','fixtureRuntime',
   slice('  const budget =','  let home,')+slice('  const osa =','  const panel =')+
   slice('  const panel =','  const snapshot =')+slice('    const goPathOperation =','    const prepared =')+
   'return {osa,panel,goPathOperation};');
@@ -29,7 +92,7 @@ test('picker calls allow bounded AppKit startup but never exceed the original ov
  const calls:Array<{timeout:number;operation:string}>=[];
  const driver=create(async(_file:string,args:string[],options:{timeout:number})=>{
   calls.push({timeout:options.timeout,operation:args[4]});return {stdout:'owned picker\n'};
- },{now:()=>now},assert,{},95000,{exitCode:null,signalCode:null,pid:4801},'native script','/synthetic/home','/synthetic/electron',5000);
+ },{now:()=>now},assert,{},95000,{exitCode:null,signalCode:null,pid:4801},'native script','/synthetic/home','/synthetic/electron',5000,{bundleId:'com.tryapparent.synthetic'});
  await driver.panel('cancel');
  await driver.goPathOperation('enter-go-path','/synthetic/path');
  assert.deepEqual(calls.map(call=>call.timeout),[5000,5000]);

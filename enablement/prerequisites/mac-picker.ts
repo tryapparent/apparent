@@ -48,9 +48,11 @@ on run argv
   set operation to item 3 of argv
   set expectedExecutable to item 4 of argv
   set goMode to operation is "inspect-go" or operation is "enter-go-path" or operation is "inspect-go-path" or operation is "navigate-go"
-  my ownedApplication(targetPID, expectedExecutable)
+  set nativeApp to my ownedApplication(targetPID, expectedExecutable)
+  if ((nativeApp's bundleIdentifier()) as text) is not (item 5 of argv) then error "Owned Electron bundle identity differs"
   tell application "System Events"
     set owned to first application process whose unix id is targetPID
+    if (unix id of owned) is not targetPID then error "Owned AX process identifier differs"
     tell owned
       if (count of windows) is 0 then error "Owned process has no AX windows; frontmost=" & (frontmost as text)
       set outerWindow to window 1
