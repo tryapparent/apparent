@@ -1,6 +1,6 @@
 # Apparent for Hermes
 
-Native plugin source candidate, version **0.3.0**. Paste an Apparent recording handoff into
+Native plugin source candidate, version **0.3.1**. Paste an Apparent recording handoff into
 Hermes and press Send. `apparent_inspect` returns the spoken instructions,
 timestamped interaction context and actual contact-sheet pixels together.
 Pass `frame` to read a numbered keyframe when a detail needs closer inspection.
@@ -105,7 +105,8 @@ existing installation. Installing this plugin does not install or launch apps.
 For development, copy this directory into the active Hermes profile's
 `plugins/apparent/` directory, run the validation below, enable it with
 `hermes plugins enable apparent`, then start a fresh conversation. Dependencies
-are Python 3.11+, stock Hermes >=0.23.0 and Pillow >=10.2,<13. If the executable is not
+are Python 3.11+, stock Hermes >=0.23.0 and Pillow >=10.2,<14. Pillow 13 is
+supported for Hermes's managed Python 3.14 environment. If the executable is not
 on PATH, set the plugin's `executable` setting to its absolute app CLI path
 through Hermes's plugin settings. No global Apparent settings are rewritten.
 
