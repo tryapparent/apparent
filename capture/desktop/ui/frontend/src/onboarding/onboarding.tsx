@@ -71,8 +71,9 @@ export function NativeOnboarding(){
   if(!state)return <main className="native-setup"><p>Connecting to apparent…</p></main>;
   const goAgain=state.step==='try-it'&&(!state.practice||state.practice==='start');
   const practice=state.step==='try-it'&&!goAgain,penPage=state.step==='welcome'&&state.penPicker;
+  const practiceStage=state.practice==='note'?'screen-ink':state.practice;
   const boardName='Whiteboard';
-  const trackpadHint=state.practice==='screen-ink';
+  const trackpadHint=practiceStage==='screen-ink';
   const helper=<aside className="native-trackpad-helper" aria-label="Trackpad drawing hint"><div className="native-trackpad-helper-content"><strong>Pressing down on your trackpad?</strong><p>No need. Just hold Shift and glide.</p></div></aside>;
   document.title=state.testInstance?'apparent onboarding preview 9':'apparent setup';
   if(practice){
@@ -81,7 +82,6 @@ export function NativeOnboarding(){
       screen:{title:'Choose Screen.',text:'Choose Screen in the capture controls. Whiteboard becomes available once recording starts.'},
       whiteboard:{title:`Open ${boardName}.`,text:'Open Whiteboard from the recording controls.'},
       'board-ink':{title:'Draw on the whiteboard.',text:'Draw a circle or arrow on the white paper. You don’t need Shift here. Release to continue.'},
-      note:{title:'Add a note.',text:'Hold Shift and click without dragging. Type a note, then save it.'},
       'screen-ink':{title:'Draw on your screen.',text:'Hold Shift and circle something in your window.'},
       stop:{title:'Finish your capture.',text:`Press ${state.shortcut} again. Your sketch and screen marks stay together.`},
       preparing:{title:'Preparing your capture…',text:'Recording has stopped. Your marks and context are being brought together.'},
@@ -89,11 +89,11 @@ export function NativeOnboarding(){
       paste:{title:'Paste your capture.',text:`In your agent, press ${state.platform==='linux'?'Ctrl':'⌘'} V. Confirm when it appears.`,button:'Confirm paste',action:'practice-pasted'},
       locate:{title:'apparent lives here.',text:`Click the a in your ${state.platform==='linux'?'system tray':'menu bar'}, then Open Latest Capture.`},
       complete:{title:'Ready for your next idea.',text:'You can record, draw, add notes, paste, and find your captures. Your setup is complete.',button:'Finish setup',action:'practice-finish'},
-      retry:{title:'Try another capture.',text:`Press ${state.shortcut} to start again, then follow the drawing and note prompts. Your previous capture is saved.`},
+      retry:{title:'Try another capture.',text:`Press ${state.shortcut} to start again, then follow the drawing prompts. Your previous capture is saved.`},
       'copy-failed':{title:'Saved, but not copied.',text:'Your capture is saved. Find it in apparent’s menu.',button:'Find saved capture',action:'practice-locate'},
     };
-    const c=content[state.practice??'start']??content.start,exit=practiceExit(state.practice??'start');
-    return <><main className="native-coach" data-paired={trackpadHint&&wideCoach} data-stage={state.practice} data-arrow={state.coachPointsUp} style={{'--coach-arrow':`${(state.coachArrow??190)-24}px`} as React.CSSProperties}><img key={state.practice} src={frog} alt="Frog guide"/><div className="native-coach-content"><div className="native-coach-label">Your first capture</div><h1>{c.title}</h1>{c.text&&<p>{c.text}</p>}{(['start','retry','screen-ink','note','copied','paste'].includes(state.practice??'start'))&&<GestureGuide key={state.practice} kind={state.practice==='note'?'note':state.practice==='screen-ink'?'draw':state.practice==='copied'||state.practice==='paste'?'paste':'record'} shortcut={state.shortcut} platform={state.platform}/>}{['screen','whiteboard','stop','locate'].includes(state.practice??'')&&<ControlGuide key={state.practice} kind={state.practice==='stop'?'finish':state.practice==='locate'?'locate':'whiteboard'} screenOnly={state.practice==='screen'} directWhiteboard={state.platform==='linux'&&state.practice==='whiteboard'}/>} {c.button&&<Button onClick={()=>void action(c.action!)}>{c.button}</Button>}{trackpadHint&&!wideCoach&&helper}{error&&<p role="alert">{error}</p>}<div className="native-coach-actions"><Button variant="outline" className="native-later" onClick={()=>void action('later')}>{exit.label}</Button><small className="native-exit-detail">{exit.detail}</small></div></div></main>{trackpadHint&&wideCoach&&helper}</>;
+    const c=content[practiceStage??'start']??content.start,exit=practiceExit(practiceStage??'start');
+    return <><main className="native-coach" data-paired={trackpadHint&&wideCoach} data-stage={practiceStage} data-arrow={state.coachPointsUp} style={{'--coach-arrow':`${(state.coachArrow??190)-24}px`} as React.CSSProperties}><img key={practiceStage} src={frog} alt="Frog guide"/><div className="native-coach-content"><div className="native-coach-label">Your first capture</div><h1>{c.title}</h1>{c.text&&<p>{c.text}</p>}{(['start','retry','screen-ink','copied','paste'].includes(practiceStage??'start'))&&<GestureGuide key={practiceStage} kind={practiceStage==='screen-ink'?'draw':practiceStage==='copied'||practiceStage==='paste'?'paste':'record'} shortcut={state.shortcut} platform={state.platform}/>}{['screen','whiteboard','stop','locate'].includes(practiceStage??'')&&<ControlGuide key={practiceStage} kind={practiceStage==='stop'?'finish':practiceStage==='locate'?'locate':'whiteboard'} screenOnly={practiceStage==='screen'} directWhiteboard={state.platform==='linux'&&practiceStage==='whiteboard'}/>} {c.button&&<Button onClick={()=>void action(c.action!)}>{c.button}</Button>}{trackpadHint&&!wideCoach&&helper}{error&&<p role="alert">{error}</p>}<div className="native-coach-actions"><Button variant="outline" className="native-later" onClick={()=>void action('later')}>{exit.label}</Button><small className="native-exit-detail">{exit.detail}</small></div></div></main>{trackpadHint&&wideCoach&&helper}</>;
   }
   return <main className="native-setup" data-shortcut-state={state.step==='shortcut'||goAgain}><header><span>{state.testInstance?'apparent · onboarding preview 9':'apparent · setup'}</span><Button variant="ghost" size="icon" aria-label="Close setup" onClick={()=>void action('close')}>×</Button></header><section>
     {state.step==='welcome'&&!state.penPicker&&<div className="native-welcome"><h1>Welcome.</h1><img src={icon} alt="apparent"/><OnboardingAccount state={state.account} action={action}/></div>}

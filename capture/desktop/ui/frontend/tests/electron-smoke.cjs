@@ -315,7 +315,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('heading', { name:'apparent lives here.', exact:true })).toBeVisible();
   await expect(page.getByText('Click the a in your menu bar, then Open Latest Capture.', { exact:true })).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveAttribute('data-arrow','true');
-  for(const phase of ['screen','whiteboard','board-ink','note','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
+  for(const phase of ['screen','whiteboard','board-ink','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
     send({step:'try-it',practice:phase});
     await expect(page.locator('.native-coach')).toHaveAttribute('data-stage',phase);
     if(phase==='screen-ink'){
@@ -336,16 +336,10 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     for(const button of layout.buttons){assert.ok(button.font>=18&&button.width>=44&&button.height>=44,phase+' button violates brand minimum');assert.equal(button.radius,'0px');}
   }
   send({step:'try-it',practice:'note',firstCaptureRequired:true});
-  await expect(page.getByRole('heading',{name:'Add a note.',exact:true})).toBeVisible();
-  await expect(page.getByText('Hold Shift and click without dragging. Type a note, then save it.',{exact:true})).toBeVisible();
-  await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','note');
-  assert.equal(await page.getByRole('textbox').count(),0,'the coach must not compete with the real note editor');
-  const beforeNoteReplay=output;
-  await page.getByRole('button',{name:'Replay note guide',exact:true}).click();
-  assert.equal(output,beforeNoteReplay,'note replay cannot claim a durable save');
-  await page.emulateMedia({reducedMotion:'reduce'});
-  assert.equal(await page.locator('.native-gesture').evaluate(el=>el.getAnimations({subtree:true}).length),0);
-  await expect(page.getByRole('button',{name:'Replay note guide',exact:true})).toBeHidden();
+  await expect(page.locator('.native-coach')).toHaveAttribute('data-stage','screen-ink');
+  await expect(page.getByRole('heading',{name:'Draw on your screen.',exact:true})).toBeVisible();
+  await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','draw');
+  assert.equal(await page.getByRole('textbox').count(),0,'the coach must not replace the real note editor');
   await page.emulateMedia({reducedMotion:'no-preference'});
   // All three control examples remain presentation only, and settle once.
   for(const [phase,kind] of [['whiteboard','whiteboard'],['stop','finish'],['locate','locate']]){
