@@ -1725,7 +1725,14 @@ impl Session {
             return;
         }
         #[cfg(target_os = "linux")]
-        crate::capture::desktop::linux::privacy::open_settings(permission);
+        if permission == Permission::Accessibility {
+            // The Electron input-device action has the same bounded clipboard effect
+            // as native onboarding. Copying never grants access or advances setup;
+            // the existing poller must observe readable devices after login.
+            crate::capture::desktop::linux::privacy::copy_input_command();
+        } else {
+            crate::capture::desktop::linux::privacy::open_settings(permission);
+        }
         #[cfg(target_os = "macos")]
         {
             let adapter_dead = match self.permission_adapter.as_mut() {
@@ -2235,6 +2242,32 @@ mod tests {
     use Permission::{Accessibility, Camera, InputMonitoring, Microphone, ScreenRecording};
 
     const ALL: [Permission; 3] = [ScreenRecording, Microphone, Accessibility];
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires an isolated desktop clipboard (Xvfb or disposable Linux VM), never a real desktop"]
+    fn electron_linux_input_action_copies_without_granting_or_advancing() {
+        crate::capture::desktop::linux::clipboard::set_text("synthetic permission fixture").unwrap();
+        let mut session = Session::for_test(Flow::fix(vec![Accessibility], Some(grants(&[]))));
+        // Presence of a fallback means the active transport is Electron; the state-only
+        // test transport still prevents configuration writes or opening real windows.
+        session.fallback = Some(Box::new(|_| panic!("permission copy must not replace the renderer")));
+        session.action("grant:accessibility");
+        let text = if crate::capture::desktop::linux::wayland_session()
+            && (crate::capture::desktop::linux::hyprland() || crate::capture::desktop::linux::kde())
+        {
+            let output = std::process::Command::new("wl-paste")
+                .args(["--no-newline", "--type", "text/plain;charset=utf-8"]).output().unwrap();
+            assert!(output.status.success());
+            String::from_utf8(output.stdout).unwrap()
+        } else {
+            arboard::Clipboard::new().unwrap().get_text().unwrap()
+        };
+        assert_eq!(text, crate::capture::desktop::linux::privacy::INPUT_COMMAND);
+        assert_eq!(session.flow.step(), Step::Permissions);
+        assert!(!session.flow.view().ready);
+        assert!(!session.flow.granted(Accessibility));
+    }
 
     fn grants(granted: &[Permission]) -> Grants {
         Grants {
