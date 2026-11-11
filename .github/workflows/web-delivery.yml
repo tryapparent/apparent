@@ -58,6 +58,9 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ needs.admit.outputs.sha }}
+      - name: Prepare hosted Ubuntu package transport
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/ubuntu-apt
       - uses: actions/setup-node@v4
         with:
           node-version: '22.23.0'
