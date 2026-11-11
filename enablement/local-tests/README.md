@@ -46,6 +46,10 @@ Ordinary frontend source edits are not installation inputs.
 The installed tree's complete bytes, modes, inventory and internal symlink targets
 must match the saved output. Missing/modified dependencies trigger installation;
 timestamps and inode identity additionally detect changes during lookup.
+Within one lookup, unchanged file digests can be reused after checking device,
+inode, mode, size, ctime and mtime again. This memo never survives the invocation;
+each new push reads installed bytes afresh. Directory/link inventories are always
+walked, and committed-blob assertions never use memoized digests.
 Desktop's build restages Record's compiled exports in `node_modules`, so cold
 qualification saves output only after both fresh Desktop suites succeed, with
 unchanged install inputs. On a hit the same suites run again. Generated local

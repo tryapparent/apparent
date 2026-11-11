@@ -5,6 +5,7 @@ import {dirname, join, relative, resolve} from 'node:path';
 import {release} from 'node:os';
 import {digest, reuse} from './receipt.ts';
 import {files, npmConfiguration} from './service.ts';
+import type {FileDigests} from './service.ts';
 import type {Admission} from './service.ts';
 import type {Command} from './run.ts';
 
@@ -29,7 +30,7 @@ function git(cwd: string, env: NodeJS.ProcessEnv, args: string[]) {
   return execFileSync('git', args, {cwd, env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024});
 }
 
-export function desktopInstallSnapshot(cwd: string, env: NodeJS.ProcessEnv, admission: Admission): InstallSnapshot {
+export function desktopInstallSnapshot(cwd: string, env: NodeJS.ProcessEnv, admission: Admission, digests?: FileDigests): InstallSnapshot {
   const frontend = join(cwd, desktopPackage);
   if (git(cwd, env, ['rev-parse', 'HEAD']).trim() !== admission.head) throw Error('candidate changed');
   const npm = npmConfiguration(frontend, env);
@@ -54,12 +55,12 @@ export function desktopInstallSnapshot(cwd: string, env: NodeJS.ProcessEnv, admi
     const source = git(cwd, env, ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', relative(cwd, path)]);
     paths.push(...source.split('\0').filter(Boolean).map(file => resolve(cwd, file)));
   }
-  const source = files(paths, [cwd]);
+  const source = files(paths, [cwd], new Map(), digests);
   const command = (name: string) => realpathSync(execFileSync('/bin/sh', ['-c', `command -v ${name}`], {env, encoding: 'utf8'}).trim());
   if (command('node') !== realpathSync(process.execPath)) throw Error('different Node');
   const npmRoot = dirname(dirname(command('npm')));
   if (JSON.parse(readFileSync(join(npmRoot, 'package.json'), 'utf8')).name !== 'npm') throw Error('unknown npm launcher');
-  const runtime = files([npmRoot, realpathSync(process.execPath)], ['/']);
+  const runtime = files([npmRoot, realpathSync(process.execPath)], ['/'], new Map(), digests);
   const inputs = {key: digest(JSON.stringify({source: source.key, runtime: runtime.key, npm: npm.key,
     environment: Object.entries(env).sort(([a], [b]) => a.localeCompare(b)), versions: process.versions,
     platform: process.platform, arch: process.arch, kernel: release(), umask: process.umask(), install})),
@@ -68,7 +69,7 @@ export function desktopInstallSnapshot(cwd: string, env: NodeJS.ProcessEnv, admi
   let output: ReturnType<typeof files> | undefined;
   try {
     if (!existsSync(join(modules, '.package-lock.json'))) throw Error('missing installed lock');
-    output = files([modules], [modules, ...localPackages.map(path => join(cwd, path))]);
+    output = files([modules], [modules, ...localPackages.map(path => join(cwd, path))], new Map(), digests);
   } catch { /* Missing, damaged or unqualified output requires a fresh install. */ }
   if (git(cwd, env, ['rev-parse', 'HEAD']).trim() !== admission.head) throw Error('candidate changed');
   return {key: digest(JSON.stringify(['desktop-install-v1', inputs.key, output?.key])),
@@ -94,12 +95,13 @@ export function desktopDependencies(block: Command[], cwd: string, inherited: No
     const eligible = admission && ['linux', 'darwin'].includes(process.platform) && !env.CI && !env.GITHUB_ACTIONS
       && !Object.keys(env).some(name => /^(NODE_|LD_|DYLD_|ELECTRON_|ESBUILD_|VSCODE_INSPECTOR_OPTIONS)/.test(name));
     if (!eligible) { block.forEach(command => run(command)); return true; }
+    const digests: FileDigests = new Map();
     let initial: InstallSnapshot | undefined;
-    try { initial = desktopInstallSnapshot(cwd, env, admission!); }
+    try { initial = desktopInstallSnapshot(cwd, env, admission!, digests); }
     catch { block.forEach(command => run(command)); return true; }
     const snapshot = () => {
       const value = initial; initial = undefined;
-      return value ?? desktopInstallSnapshot(cwd, env, admission!);
+      return value ?? desktopInstallSnapshot(cwd, env, admission!, digests);
     };
     let checked = false;
     const checks = () => { run(block[1]); run(block[2]); checked = true; };
