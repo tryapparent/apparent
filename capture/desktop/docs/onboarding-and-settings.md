@@ -541,3 +541,13 @@ begins; the next shortcut still uses the existing native recording path. Returni
 to the start state restores the setup window. Native fallback routing is unchanged.
 
 The removed demonstration has no Electron renderer/assets. Both Electron and native fallback skip its legacy step through the authoritative Rust route; rollback requires reverting that route together with presentation changes.
+
+In the Electron pen picker, clicking a pen saves it and advances after the existing
+frog hop (immediately after saving with reduced motion). There is no separate
+confirmation button. Back from the following step returns to the picker without
+advancing again; selecting even the same colour starts a new save. TypeScript
+owns this transition and waits for the matching `penSaveId` emitted after the
+native pen/config writer returns. Dispatch acknowledgement and earlier selected
+state do not confirm a save. Save failure or missing confirmation leaves the
+picker available to retry. The native fallback keeps its existing controls and
+writer; this change does not change routing or introduce another config writer.

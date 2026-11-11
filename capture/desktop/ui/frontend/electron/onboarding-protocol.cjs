@@ -1,7 +1,7 @@
 const actions = new Set(['continue','back','later','close','settings','change-shortcut','use-desktop-shortcut','skip','watched','practiced','reset-shortcut','cancel-shortcut','practice-paste','practice-locate','practice-pasted','practice-finish','sign-in','cancel-sign-in','open-sign-in']);
 function parseAction(value) {
  if (typeof value === 'string') {
-  if(actions.has(value)||/^pen:(coral|purple|blue|green)$/.test(value)) return {action:value};
+  if(actions.has(value)||/^pen:(coral|purple|blue|green)(:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$/.test(value)) return {action:value};
   if(/^grant:(screen-recording|microphone|accessibility|camera|speech-recognition)$/.test(value)) return {action:'grant',permission:value.slice(6)};
  } else if(value && typeof value==='object' && !Array.isArray(value) && Object.keys(value).sort().join(',')==='action,key,keyCode,kind,modifiers,reserved' && value.action==='shortcut' && value.kind==='record' && Number.isInteger(value.keyCode) && value.keyCode>=0 && value.keyCode<=255 && Number.isInteger(value.modifiers) && (value.modifiers & ~6912)===0 && typeof value.key==='string' && value.reserved===false && ((value.keyCode===201 && value.key==='Copilot' && (value.modifiers===0 || value.modifiers===768)) || (value.modifiers>0 && /^[a-z0-9]$/.test(value.key)))) return value;
  throw Error('Forbidden onboarding command');
