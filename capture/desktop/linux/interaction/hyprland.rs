@@ -284,8 +284,7 @@ fn external_record_from(source: &str, live: &str) -> Option<(ShortcutConfig, Pat
                 && bind["keycode"].as_u64() == Some(0)
         })
         .collect();
-    (live_matches.len() == 1
-        && live_matches[0]["description"].as_str() == Some("Apparent: record"))
+    (live_matches.len() == 1)
     .then(|| {
         (
             ShortcutConfig {
@@ -1054,6 +1053,13 @@ mod tests {
             r#"},{"modmask":0,"key":"","keycode":0,"description":"User binding"}]"#,
         );
         assert!(external_record_from(&bare, &conflict).is_none());
+        let unrelated_same_mask = bare_live.replace(
+            "]",
+            r#",{"modmask":0,"key":"","keycode":0,"description":"Move window to workspace 1"}]"#,
+        );
+        // 0.56 hides the physical key for both rows, so even an unrelated
+        // description cannot prove that this is not a Copilot collision.
+        assert!(external_record_from(&bare, &unrelated_same_mask).is_none());
         assert!(external_record_from(source, "[]").is_none());
         assert!(external_record_from("", live).is_none());
         assert!(external_record_from(&source.replacen("env ", "false && ", 1), live).is_none());
