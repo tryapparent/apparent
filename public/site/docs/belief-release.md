@@ -7,3 +7,9 @@ markup; the former hidden frog scene is not a visible production workflow.
 Build and package from TypeScript/React source, verify desktop/mobile appearance
 and interactions, and publish through main-branch Pages CD (`pages-deploy.md`).
 The compiled-bundle overlay packager is retired. The superseded interactive frog scene and its obsolete tests are retired.
+
+The hero offers a secondary agent setup prompt beside the direct download (wrapping on phones).
+Its read-only field shows “Install apparent…” and selects the complete prompt on
+focus; Copy writes the full value and reports clipboard success or failure.
+The prompt covers Mac/Linux app installation, launch verification, onboarding,
+and the separate Hermes plugin using the repository instructions.
