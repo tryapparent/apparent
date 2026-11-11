@@ -1,5 +1,9 @@
 // Disposable hosted-Mac CI driver, not application behavior or native proof.
 // Readiness callbacks may poll read-only state; mutation callbacks run once.
+// Hosted-Mac receipts show AppKit ownership checks taking ~3s before the first
+// AX query. Give the complete picker command a finite allowance for that startup;
+// the caller still clips every call to the original 95s overall test deadline.
+export const pickerCommandMs = 5000;
 export type PickerDriver = {
   storageIdle: () => Promise<void>;
   change: () => Promise<void>;
@@ -44,12 +48,21 @@ on run argv
   set operation to item 3 of argv
   set expectedExecutable to item 4 of argv
   set goMode to operation is "inspect-go" or operation is "enter-go-path" or operation is "inspect-go-path" or operation is "navigate-go"
-  my ownedApplication(targetPID, expectedExecutable)
+  set nativeApp to my ownedApplication(targetPID, expectedExecutable)
+  if ((nativeApp's bundleIdentifier()) as text) is not (item 5 of argv) then error "Owned Electron bundle identity differs"
   tell application "System Events"
     set owned to first application process whose unix id is targetPID
+    if (unix id of owned) is not targetPID then error "Owned AX process identifier differs"
     tell owned
       if (count of windows) is 0 then error "Owned process has no AX windows; frontmost=" & (frontmost as text)
       set outerWindow to window 1
+      if operation is "focus-change" then
+        if (count of windows) is not 1 then error "Change focus requires one owned window"
+        if (role of outerWindow as text) is not "AXWindow" or (name of outerWindow as text) is not "Apparent — UI foundation" then error "Change focus requires Foundation"
+        if (count of sheets of outerWindow) is not 0 then error "Change focus refuses an existing modal"
+        my activateOwned(targetPID, expectedExecutable)
+        return "native-focus-pid=" & targetPID & ";title=Apparent — UI foundation"
+      end if
       set picker to outerWindow
       set depth to 0
       set goParent to missing value
