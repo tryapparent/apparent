@@ -25,7 +25,10 @@ test('LaunchServices resolves an owned synthetic scheme to its actual executable
 <key>CFBundleExecutable</key><string>apparent</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleVersion</key><string>1</string>
-<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLSchemes</key><array><string>${scheme}</string></array></dict></array>
+<key>CFBundleURLTypes</key><array><dict>
+<key>CFBundleTypeRole</key><string>Viewer</string>
+<key>CFBundleURLSchemes</key><array><string>${scheme}</string></array>
+</dict></array>
 </dict></plist>`);
     assert.equal(macHandler(system, executable, scheme).status, 'absent');
     registrationAttempted = true;
