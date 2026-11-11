@@ -450,6 +450,11 @@ pub fn shortcut_matches(
     if cfg.is_unset() {
         return false;
     }
+    // Fn is delivered only through macOS flagsChanged; never treat its virtual keycode as an
+    // ordinary key-down, even when a caller feeds that code to the Carbon-style matcher.
+    if kind == ShortcutKind::Record && cfg.is_fn_only() {
+        return false;
+    }
     let want_cmd = (cfg.carbon_modifiers & CARBON_CMD_KEY) != 0;
     let want_ctrl = (cfg.carbon_modifiers & CARBON_CONTROL_KEY) != 0;
     let want_alt = (cfg.carbon_modifiers & CARBON_OPTION_KEY) != 0;
