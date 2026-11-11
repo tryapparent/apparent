@@ -211,6 +211,20 @@ func postOwnedWindowClick(_ expected: OwnedWindow, at point: CGPoint) throws {
               let rect = CGRect(dictionaryRepresentation: dict as CFDictionary) else { return false }
         return rect.contains(point)
     }
+    // Passive diagnostics only. Rectangles never authorize input; AX must still
+    // resolve this exact point to the owned PID within the original budget.
+    report["inputObservation"] = [
+        "point": [point.x, point.y], "windowID": current.id,
+        "ownedBounds": [current.bounds.minX, current.bounds.minY, current.bounds.width, current.bounds.height],
+        "foregroundPID": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1,
+        "accessibilityTrusted": AXIsProcessTrusted(),
+        "visualRectanglePID": hit?[kCGWindowOwnerPID as String] as? Int32 ?? -1,
+        "visualRectangleLayer": hit?[kCGWindowLayer as String] as? Int ?? -1,
+        "screens": NSScreen.screens.map { screen in
+            ["frame": [screen.frame.minX, screen.frame.minY, screen.frame.width, screen.frame.height],
+             "scale": screen.backingScaleFactor] as [String: Any]
+        }
+    ] as [String: Any]
     // CGWindowList is a visual stacking list, not an input hit-test: transparent
     // or mouse-ignoring system surfaces can cover a window's rectangle. Ask AX
     // for the actual element at the observed point and keep the exact PID gate.
@@ -509,7 +523,8 @@ do {
 // Leave room for the existing failure screenshot and cleanup; diagnostics never mask the
 // original failure and are skipped when the remaining budget cannot cover them.
 if failure != nil, let child = owned, child.isRunning, deadline.timeIntervalSinceNow > 15 {
-    let sample = output.appendingPathComponent("failure-owned-app.sample.txt")
+    // The artifact collector retains .log files, not .sample.txt.
+    let sample = output.appendingPathComponent("failure-owned-app.sample.log")
     do {
         // The retained failure log reached "processing symbols" before the old
         // four-second subprocess cap killed sample without writing its report.
