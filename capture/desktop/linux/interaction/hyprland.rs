@@ -137,7 +137,7 @@ fn normalize_binds_snapshot(before: &str, text: &str, after: &str) -> Result<Vec
             while let Some(part) = parts.next() {
                 if parts.peek().is_none() {
                     let code = part.strip_prefix("code:").context("Unsupported opaque Hyprland key identity")?;
-                    ensure!(!code.is_empty() && code.bytes().all(|b| b.is_ascii_digit()) && code.parse::<u32>().is_ok(), "Malformed Hyprland keycode");
+                    let code = code.parse::<u32>().context("Malformed Hyprland keycode")?;
                     ensure!(mask == row.modmask && row.keycode == 0, "Hyprland displayed chord modifiers differ");
                     json["key"] = serde_json::Value::String(format!("code:{code}"));
                     break;
@@ -1154,6 +1154,10 @@ mod tests {
         value[0]["modmask"] = serde_json::json!(65);
         let opaque_json = serde_json::to_string(&value).unwrap();
         let normalized = normalize_binds_snapshot(&opaque_json, &opaque, &opaque_json).unwrap();
+        assert_eq!(normalized[0]["key"], "code:201");
+        assert_eq!(existing(&serde_json::to_string(&normalized).unwrap(), 65, "Copilot", "record"), Existing::Other);
+        let leading_zero = opaque.replace("code:201", "code:0201");
+        let normalized = normalize_binds_snapshot(&opaque_json, &leading_zero, &opaque_json).unwrap();
         assert_eq!(normalized[0]["key"], "code:201");
         assert_eq!(existing(&serde_json::to_string(&normalized).unwrap(), 65, "Copilot", "record"), Existing::Other);
         assert!(normalize_binds_snapshot(&opaque_json, &opaque.replace("SUPER + SHIFT +", "SUPER +"), &opaque_json).is_err());
