@@ -80,10 +80,37 @@ async function initialRuntimeRead({ now, budget, observe, pause, refresh, connec
 // Native window creation and Playwright renderer attachment are separate facts.
 // Failure-only, read-only projection: never use these observations to admit a
 // window after firstWindow's original deadline, or inspect page/user content.
+function bootstrapObservation({ app, BrowserWindow }) {
+  const events = [];
+  globalThis.__apparentStorageWindowProbe = events;
+  const record = value => { if (events.length < 16) events.push({ ...value, at: Date.now() }); };
+  const observe = window => {
+    record({ kind: 'window', id: window.id });
+    const contents = window.webContents;
+    for (const kind of ['did-start-loading', 'dom-ready', 'did-finish-load']) {
+      contents.on(kind, () => record({ kind, id: window.id }));
+    }
+    contents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
+      record({ kind: 'did-fail-load', id: window.id, code, mainFrame });
+    });
+    contents.on('render-process-gone', (_event, details) => {
+      record({ kind: 'render-process-gone', id: window.id, reason: details.reason, exitCode: details.exitCode });
+    });
+  };
+  app.once('ready', () => record({ kind: 'ready' }));
+  app.on('browser-window-created', (_, window) => observe(window));
+  app.on('child-process-gone', (_event, details) => {
+    record({ kind: 'child-process-gone', type: details.type, reason: details.reason, exitCode: details.exitCode });
+  });
+  const windows = BrowserWindow.getAllWindows();
+  for (const window of windows) observe(window);
+  return { pid: process.pid, ready: app.isReady(), windows: windows.map(window => window.id) };
+}
+
 function bootstrapFailure({ app, BrowserWindow }) {
   return {
     pid: process.pid, at: Date.now(), ready: app.isReady(),
-    events: (globalThis.__apparentStorageWindowProbe ?? []).slice(0, 8),
+    events: (globalThis.__apparentStorageWindowProbe ?? []).slice(0, 16),
     windowCount: BrowserWindow.getAllWindows().length,
     windows: BrowserWindow.getAllWindows().slice(0, 2).map(window => {
       const contents = window.webContents;
@@ -218,13 +245,18 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     }
   };
   let env;
+  const electronExecutable = await fs.realpath(require('electron'));
   const osa = async (script, args = [], cap = 3500) => {
     const { stdout } = await run('/usr/bin/osascript', ['-e', script, ...args], {
       env, timeout: budget(cap), killSignal: 'SIGKILL', maxBuffer: 32768,
     });
     return stdout.trim();
   };
-  const panel = (operation) => osa(panelScript, [String(electronChild.pid), home, operation]);
+  const panel = (operation) => {
+    assert.equal(electronChild.exitCode, null, 'Owned Electron exited before native picker observation');
+    assert.equal(electronChild.signalCode, null, 'Owned Electron was signalled before native picker observation');
+    return osa(panelScript, [String(electronChild.pid), home, operation, electronExecutable]);
+  };
   const snapshot = async () => {
     const runtime = await within(page.evaluate(() => window.apparent.readRuntimeState()), budget(), 'Runtime read');
     assert.deepEqual(runtime, { status: 'connected', phase: 'idle' });
@@ -334,15 +366,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     // buy extra startup time or turn cleanup's exit into a bootstrap failure.
     report.electronBootstrap.firstWindowStartedAt = Date.now();
     const firstWindow = application.firstWindow({ timeout: budget() });
-    const bootstrap = within(application.evaluate(({ app, BrowserWindow }) => {
-      const events = [];
-      globalThis.__apparentStorageWindowProbe = events;
-      app.once('ready', () => events.push({ kind: 'ready', at: Date.now() }));
-      app.on('browser-window-created', (_, window) => {
-        if (events.length < 8) events.push({ kind: 'window', id: window.id, at: Date.now() });
-      });
-      return { pid: process.pid, ready: app.isReady(), windows: BrowserWindow.getAllWindows().map(window => window.id) };
-    }), budget(1500), 'Electron bootstrap observation').then(value => {
+    const bootstrap = within(application.evaluate(bootstrapObservation), budget(1500), 'Electron bootstrap observation').then(value => {
       assert.equal(value.pid, electronChild.pid);
       report.electronBootstrap.initial = value;
     }).catch(error => { report.electronBootstrap.observationError = error.message; });
@@ -361,11 +385,13 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     await bootstrap;
     report.electron = await within(application.evaluate(({ app, BrowserWindow }) => ({
       pid: process.pid, version: process.versions.electron, platform: process.platform,
+      executable: process.execPath,
       home: process.env.HOME, userData: app.getPath('userData'),
       windowCount: BrowserWindow.getAllWindows().length,
       title: BrowserWindow.getAllWindows()[0].getTitle(),
     })), budget(), 'Electron process identity');
     assert.equal(report.electron.pid, electronChild.pid);
+    assert.equal(await fs.realpath(report.electron.executable), electronExecutable);
     assert.equal(report.electron.home, home);
     assert.ok(report.electron.userData.startsWith(home + path.sep), 'Electron profile escaped private HOME');
     assert.equal(report.electron.platform, 'darwin');
@@ -518,8 +544,12 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       openGo: () => panel('open-go'),
       goSheet: () => poll(() => panel('inspect-go'), 'Owned Go to Folder readiness'),
       // Only the OS picker receives the path, as argv data, never renderer/IPC.
-      navigate: (target) => osa(panelScript, [String(electronChild.pid), target, 'navigate-go']),
-    }, selected);
+      navigate: (target) => {
+        assert.equal(electronChild.exitCode, null, 'Owned Electron exited before picker navigation');
+        assert.equal(electronChild.signalCode, null, 'Owned Electron was signalled before picker navigation');
+        return osa(panelScript, [String(electronChild.pid), target, 'navigate-go', electronExecutable]);
+      },
+    }, selected, report.nativePickerPreparation = {});
     report.nativeBeforeGo = prepared.beforeGo;
     report.nativeGoSheet = prepared.goSheet;
     report.nativeBeforeChoose = prepared.beforeChoose;

@@ -23,8 +23,9 @@ test('installed About projects parent state and bounds actions', async () => {
     assert.equal(await application.evaluate(async ({ ipcMain, BrowserWindow }) => {
       const sender = BrowserWindow.getAllWindows()[0].webContents;
       const handler = ipcMain._invokeHandlers.get('apparent:about-copy-version');
-      for (const event of [{sender, senderFrame: {url: sender.getURL()}}, {sender, senderFrame: sender.mainFrame}]) {
-        try { await handler(event, 'arbitrary clipboard text'); return false; } catch {}
+      for (const [event, args] of [[{sender, senderFrame: {url: sender.getURL()}}, []],
+        [{sender, senderFrame: sender.mainFrame}, ['arbitrary clipboard text']]] as const) {
+        try { await handler(event, ...args); return false; } catch {}
       }
       return true;
     }), true, 'Copy refuses foreign frames and renderer-supplied text');
@@ -46,6 +47,10 @@ test('installed About projects parent state and bounds actions', async () => {
       { ...state, updateCheck: { checking: true, result: null } });
     await expect(page.getByRole('button', { name: 'Checking…' })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Update now', exact: true })).toHaveCount(0);
+    if (process.env.APPARENT_SETTINGS_PROOF) {
+      await fs.mkdir(process.env.APPARENT_SETTINGS_PROOF, {recursive: true});
+      await page.screenshot({path: path.join(process.env.APPARENT_SETTINGS_PROOF, 'about-checking.png')});
+    }
     for (const result of ['current', 'failed', null] as const) {
       await application.evaluate(({ BrowserWindow }, value) => BrowserWindow.getAllWindows()[0].webContents.send('apparent:about-state', value),
         { ...state, linux: false, mainUpdates: false, updateCheck: { checking: false, result } });
@@ -73,6 +78,8 @@ test('installed About projects parent state and bounds actions', async () => {
       { ...state, updates: false, updateCheck: { checking: false, result: null } });
     await expect(page.getByRole('heading', { name: 'Updates unavailable' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Check for updates', exact: true })).toBeDisabled();
+    await expect(page.getByText('Update checks work when Apparent runs from an AppImage.', {exact: true})).toBeVisible();
+    if (process.env.APPARENT_SETTINGS_PROOF) await page.screenshot({path: path.join(process.env.APPARENT_SETTINGS_PROOF, 'about-unavailable.png')});
     await page.getByRole('button', { name: 'Copy version', exact: true }).click();
     await expect(page.getByText('Unable to copy. Try again.', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Storage', exact: true }).click();
@@ -110,9 +117,15 @@ test('Copy version uses the real parent identity through the shipped preload', {
     await expect(page.getByText('Version 1.2.3 · abcdef0 +modified')).toBeVisible();
     await page.getByRole('button', {name: 'Copy version', exact: true}).click();
     await expect(page.getByText('Copied', {exact: true})).toBeVisible();
-    // This permission belongs only to the disposable verifier, never the app.
-    await context.grantPermissions(['clipboard-read']);
-    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'apparent 1.2.3 · abcdef0 +modified');
+    await page.evaluate(() => {
+      const field = document.createElement('textarea');
+      field.setAttribute('aria-label', 'Clipboard verification');
+      document.body.append(field); field.focus();
+    });
+    await page.keyboard.press('ControlOrMeta+V');
+    await expect(page.getByRole('textbox', {name: 'Clipboard verification'})).toHaveValue('Apparent 1.2.3 · abcdef0 +modified');
+    await page.getByRole('textbox', {name: 'Clipboard verification'}).evaluate(element => element.remove());
+    assert.equal(await page.locator('.settings-version > span').first().evaluate(element => getComputedStyle(element).userSelect), 'text');
   } finally {
     await browser?.close().catch(() => {});
     if (application.exitCode === null) { application.kill('SIGTERM'); await exited; }

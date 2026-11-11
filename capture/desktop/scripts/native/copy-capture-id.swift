@@ -231,6 +231,7 @@ func postOwnedWindowClick(_ expected: OwnedWindow, at point: CGPoint) throws {
     let system = AXUIElementCreateSystemWide()
     defer { _ = AXUIElementSetMessagingTimeout(system, 1) }
     var attempts: [[String: Any]] = []
+    var observationStage = "notStarted"
     // focusAndSize may use this exact-owned-window click to activate the app.
     // Permit that controlled transition, but never a new foreign foreground PID
     // or loss of foreground ownership after the child has become active.
@@ -247,6 +248,7 @@ func postOwnedWindowClick(_ expected: OwnedWindow, at point: CGPoint) throws {
                         latest.bounds.contains(point),
                         "Owned window or focus changed during input observation")
         }, read: { readUntil in
+            observationStage = "elementAtPosition"
             let timeout = readUntil - ProcessInfo.processInfo.systemUptime
             if timeout <= 0 { return InputHit(error: .cannotComplete, pid: -1) }
             try require(AXUIElementSetMessagingTimeout(system, Float(timeout)) == .success, "Could not bound AX input observation")
@@ -255,6 +257,7 @@ func postOwnedWindowClick(_ expected: OwnedWindow, at point: CGPoint) throws {
             let error = AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &element)
             var pid: pid_t = -1
             if let element, error == .success {
+                observationStage = "elementPID"
                 let left = readUntil - ProcessInfo.processInfo.systemUptime
                 if left <= 0 { return InputHit(error: .cannotComplete, pid: -1) }
                 try require(AXUIElementSetMessagingTimeout(element, Float(left)) == .success, "Could not bound AX PID observation")
@@ -264,7 +267,8 @@ func postOwnedWindowClick(_ expected: OwnedWindow, at point: CGPoint) throws {
             }
             return InputHit(error: error, pid: pid)
         }, pause: { Thread.sleep(forTimeInterval: $0) }, record: { hit, elapsed in
-            attempts.append(["axError": hit.error.rawValue, "hitPID": hit.pid, "elapsedMs": elapsed * 1000])
+            attempts.append(["axError": hit.error.rawValue, "hitPID": hit.pid,
+                "operation": observationStage, "elapsedMs": elapsed * 1000])
             report["lastInputReadAttempts"] = attempts
         })
     let axError = observed.error
@@ -377,6 +381,7 @@ func locate(_ label: String, in boxes: [TextBox]) throws -> CGRect {
     return matches[0]
 }
 func click(_ label: String) throws {
+    report["stage"] = "click: \(label)"
     try focusAndSize()
     let (before, boxes) = try screenshot("before-click")
     let box = try locate(label, in: boxes)
@@ -390,6 +395,7 @@ func click(_ label: String) throws {
     Thread.sleep(forTimeInterval: 0.25)
 }
 func copyCheck(_ label: String, expected: String, caseName: String) throws {
+    report["case"] = caseName
     let pb = NSPasteboard.general
     let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1, pixelsHigh: 1,
         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
@@ -516,19 +522,20 @@ do {
 // stopping it. No memory dump, foreign process sampling, input or new time budget.
 // Leave room for the existing failure screenshot and cleanup; diagnostics never mask the
 // original failure and are skipped when the remaining budget cannot cover them.
-if failure != nil, let child = owned, child.isRunning, deadline.timeIntervalSinceNow > 11 {
-    // Four seconds collected samples but killed symbol processing on the Intel
-    // runner. Use remaining diagnostic time, preserving seven seconds for the
-    // existing screenshot/cleanup and the unchanged overall 150-second limit.
-    let sampleBudget = min(12, deadline.timeIntervalSinceNow - 7)
-    // The existing artifact collector retains .log files, not .sample.txt.
+if failure != nil, let child = owned, child.isRunning, deadline.timeIntervalSinceNow > 15 {
+    // The artifact collector retains .log files, not .sample.txt.
     let sample = output.appendingPathComponent("failure-owned-app.sample.log")
     do {
-        _ = try run("/usr/bin/sample", [String(child.processIdentifier), "1", "1", "-file", sample.path], cap: sampleBudget)
+        // The retained failure log reached "processing symbols" before the old
+        // four-second subprocess cap killed sample without writing its report.
+        // Allow bounded symbol processing inside the unchanged overall deadline,
+        // still reserving time for failure pixels and exact-owned cleanup.
+        _ = try run("/usr/bin/sample", [String(child.processIdentifier), "1", "1", "-file", sample.path], cap: 8)
         report["failureSample"] = ["pid": child.processIdentifier, "file": sample.lastPathComponent] as [String: Any]
     } catch {
         report["failureSample"] = ["pid": child.processIdentifier, "available": fm.fileExists(atPath: sample.path),
-            "status": "sampling unavailable; original failure preserved", "error": String(describing: error)] as [String: Any]
+            "error": String(describing: error),
+            "status": "sampling unavailable; original failure preserved"] as [String: Any]
     }
 }
 // Retain failure pixels when possible, without widening to another window/screen.
