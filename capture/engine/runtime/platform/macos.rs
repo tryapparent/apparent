@@ -19,7 +19,7 @@ use screencapturekit::screenshot_manager::{CGImageExt, SCScreenshotManager};
 use super::super::{
     CANDIDATE_EDGE, CANDIDATE_EDGE_NO_VIDEO, CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY,
     CARBON_SHIFT_KEY, FRAME_SAMPLE_INTERVAL, LiveOverlayEvent, Sampler, SharedCaptureTelemetry,
-    ShortcutConfig, ShortcutKind, capture_size, clean_label, hotkey_combos, pick_display,
+    ShortcutConfig, ShortcutKind, MACOS_FN_KEY_CODE, capture_size, clean_label, fn_gesture_transition, hotkey_combos, pick_display,
     poll_clicks, apparent_log, track_shift_ink,
 };
 use crate::capture::engine::runtime::sample_real_candidate;
@@ -89,6 +89,7 @@ const EVENT_LEFT_MOUSE_UP: u32 = 2;
 const EVENT_RIGHT_MOUSE_DOWN: u32 = 3;
 const EVENT_RIGHT_MOUSE_UP: u32 = 4;
 const EVENT_KEY_DOWN: u32 = 10;
+const EVENT_FLAGS_CHANGED: u32 = 12;
 const EVENT_SCROLL_WHEEL: u32 = 22;
 const EVENT_TAP_DISABLED_BY_TIMEOUT: u32 = u32::MAX - 1;
 const EVENT_TAP_DISABLED_BY_USER_INPUT: u32 = u32::MAX;
@@ -102,6 +103,8 @@ const FLAG_SHIFT: u64 = 1 << 17;
 const FLAG_CONTROL: u64 = 1 << 18;
 const FLAG_ALTERNATE: u64 = 1 << 19;
 const FLAG_COMMAND: u64 = 1 << 20;
+// kCGEventFlagMaskSecondaryFn from the CoreGraphics event flags contract.
+const FLAG_SECONDARY_FN: u64 = 1 << 23;
 
 /// The S key on the ANSI layout (`kVK_ANSI_S`).
 pub const KEY_S: u16 = 1;
@@ -543,6 +546,7 @@ pub fn set_shortcuts(
     record: ShortcutConfig,
     paste: ShortcutConfig,
 ) -> Result<(), ShortcutKind> {
+    telemetry.fn_candidate.store(false, Ordering::Release);
     let (old_record, old_paste) = telemetry.shortcuts();
     if let Some(state) = CARBON_HOTKEYS.get()
         && !telemetry.shortcuts_paused.load(Ordering::Acquire)
@@ -565,6 +569,7 @@ pub fn set_shortcuts(
 /// While Settings records a new shortcut, Apparent's own stop answering, so pressing the current
 /// combo reaches the recorder instead of starting a capture.
 pub fn pause_shortcuts(telemetry: &SharedCaptureTelemetry, paused: bool) {
+    telemetry.fn_candidate.store(false, Ordering::Release);
     if telemetry.shortcuts_paused.swap(paused, Ordering::AcqRel) == paused {
         return;
     }
@@ -1523,6 +1528,7 @@ fn mouse_event(
 /// Stops the key tap (Accessibility was turned off). The port and its callback's `Arc` are left
 /// alive: `check_key_tap` may still hold the old pointer.
 fn stop_key_tap(telemetry: &SharedCaptureTelemetry) {
+    telemetry.fn_candidate.store(false, Ordering::Release);
     apparent_log("Accessibility is off; stopping the key tap");
     let tap = telemetry.tap_port.swap(0, Ordering::AcqRel) as *mut c_void;
     if !tap.is_null() {
@@ -1545,7 +1551,7 @@ fn spawn_key_tap(telemetry: Arc<SharedCaptureTelemetry>) {
     let spawned = thread::Builder::new()
         .name("apparent-key-tap".into())
         .spawn(move || {
-            let mask = 1_u64 << EVENT_KEY_DOWN;
+            let mask = (1_u64 << EVENT_KEY_DOWN) | (1_u64 << EVENT_FLAGS_CHANGED);
             let user_info = Arc::into_raw(Arc::clone(&telemetry))
                 .cast_mut()
                 .cast::<c_void>();
@@ -1607,9 +1613,30 @@ unsafe extern "C" fn key_tap_callback(
     let telemetry = unsafe { &*user_info.cast::<SharedCaptureTelemetry>() };
     if event_type == EVENT_TAP_DISABLED_BY_TIMEOUT || event_type == EVENT_TAP_DISABLED_BY_USER_INPUT
     {
+        telemetry.fn_candidate.store(false, Ordering::Release);
         let tap = telemetry.tap_port.load(Ordering::Acquire) as *mut c_void;
         if !tap.is_null() {
             unsafe { CGEventTapEnable(tap, true) };
+        }
+        return event;
+    }
+    if event_type == EVENT_FLAGS_CHANGED {
+        let keycode = unsafe { CGEventGetIntegerValueField(event, KEYBOARD_EVENT_KEYCODE) } as u16;
+        let flags = unsafe { CGEventGetFlags(event) };
+        let fn_down = flags & FLAG_SECONDARY_FN != 0;
+        let other_modifiers = flags & (FLAG_COMMAND | FLAG_CONTROL | FLAG_ALTERNATE | FLAG_SHIFT) != 0;
+        let fn_event = u32::from(keycode) == MACOS_FN_KEY_CODE && telemetry.shortcuts().0.is_fn_only();
+        let (candidate, trigger) = fn_gesture_transition(
+            telemetry.fn_candidate.load(Ordering::Acquire),
+            fn_event,
+            fn_down,
+            false,
+            other_modifiers,
+            telemetry.shortcuts_paused.load(Ordering::Acquire),
+        );
+        telemetry.fn_candidate.store(candidate, Ordering::Release);
+        if trigger {
+            telemetry.emit_fn_shortcut();
         }
         return event;
     }
@@ -1623,7 +1650,16 @@ unsafe extern "C" fn key_tap_callback(
     let alt = (flags & FLAG_ALTERNATE) != 0;
     let shift = (flags & FLAG_SHIFT) != 0;
     let keycode = unsafe { CGEventGetIntegerValueField(event, KEYBOARD_EVENT_KEYCODE) } as u16;
-    if telemetry.matches_shortcut(keycode, cmd, ctrl, alt, shift) {
+    let (candidate, _) = fn_gesture_transition(
+        telemetry.fn_candidate.load(Ordering::Acquire),
+        false,
+        false,
+        u32::from(keycode) != MACOS_FN_KEY_CODE,
+        false,
+        telemetry.shortcuts_paused.load(Ordering::Acquire),
+    );
+    telemetry.fn_candidate.store(candidate, Ordering::Release);
+    if !telemetry.shortcuts().0.is_fn_only() && telemetry.matches_shortcut(keycode, cmd, ctrl, alt, shift) {
         // Holding S repeats the key; only a fresh press counts.
         if unsafe { CGEventGetIntegerValueField(event, KEYBOARD_EVENT_AUTOREPEAT) } == 0 {
             telemetry.emit_capture_shortcut();

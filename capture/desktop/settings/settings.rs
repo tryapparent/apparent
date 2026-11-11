@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::capture::engine::runtime::{
-    CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY, CARBON_SHIFT_KEY, ShortcutConfig,
+    CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY, CARBON_SHIFT_KEY, MACOS_FN_KEY_CODE, ShortcutConfig,
     ShortcutKind, modifier_symbols,
 };
 use crate::capture::desktop::settings::onboarding::{Grants, Permission, Status};
@@ -148,7 +148,7 @@ fn from_stored(kind: ShortcutKind, stored: Stored) -> Option<ShortcutConfig> {
     if cfg.label.is_empty() || cfg.key_label().is_empty() {
         return None;
     }
-    Some(if cfg.is_default_for(kind) {
+    Some(if cfg.is_default_for(kind) || kind == ShortcutKind::Record && cfg.is_legacy_record_default() {
         kind.default_config()
     } else {
         cfg
@@ -226,7 +226,7 @@ fn prefers_app_shortcut(config: &serde_json::Value) -> bool {
             .and_then(|stored| from_stored(ShortcutKind::Record, stored))
             .is_some_and(|cfg| cfg.key_code <= 255
                 && (cfg.carbon_modifiers & (CARBON_CONTROL_KEY | CARBON_OPTION_KEY | CARBON_CMD_KEY) != 0
-                    || cfg.key_code == 201 && cfg.carbon_modifiers == 0)
+                    || cfg.carbon_modifiers == 0)
                 && cfg.carbon_modifiers & !(CARBON_CONTROL_KEY | CARBON_OPTION_KEY | CARBON_CMD_KEY | CARBON_SHIFT_KEY) == 0)
 }
 
@@ -413,6 +413,10 @@ const KEY_ESCAPE: u32 = 53;
 
 /// The name a key is shown with: a function key, a named key, or the typed character in capitals.
 pub fn key_label(key_code: u32, typed: &str) -> Option<String> {
+    #[cfg(target_os = "macos")]
+    if key_code == MACOS_FN_KEY_CODE {
+        return Some("Fn".to_owned());
+    }
     #[cfg(target_os = "linux")]
     if key_code == 201 {
         return Some("Copilot".to_owned());
@@ -522,13 +526,17 @@ pub fn validate(
     let key = key_label(pressed.key_code, &pressed.key).ok_or(Rejection::UnsupportedKey)?;
     let strong = modifiers & (CARBON_CMD_KEY | CARBON_CONTROL_KEY | CARBON_OPTION_KEY) != 0;
     let unmodified_copilot = cfg!(target_os = "linux") && pressed.key_code == 201 && modifiers == 0;
-    if !strong && !is_function_key(pressed.key_code) && !unmodified_copilot {
+    let fn_only = cfg!(target_os = "macos") && kind == ShortcutKind::Record && pressed.key_code == MACOS_FN_KEY_CODE && modifiers == 0;
+    if cfg!(target_os = "macos") && pressed.key_code == MACOS_FN_KEY_CODE && (modifiers != 0 || kind != ShortcutKind::Record) {
+        return Err(Rejection::UnsupportedKey);
+    }
+    if pressed.reserved || reserved(modifiers, &key) {
+        return Err(Rejection::Reserved(format!("{}{key}", modifier_symbols(modifiers))));
+    }
+    if !strong && !is_function_key(pressed.key_code) && !unmodified_copilot && !fn_only && modifiers != 0 {
         return Err(Rejection::NoModifier);
     }
     let label = format!("{}{key}", modifier_symbols(modifiers));
-    if pressed.reserved || reserved(modifiers, &key) {
-        return Err(Rejection::Reserved(label));
-    }
     let cfg = ShortcutConfig {
         key_code: pressed.key_code,
         carbon_modifiers: modifiers,
@@ -1358,6 +1366,10 @@ impl Panel {
                 let mut shortcuts = host.shortcuts();
                 if kind.can_unset() && pressed.is_delete() {
                     self.apply(kind, ShortcutConfig::unset(), &mut shortcuts, host);
+                    return Effect::None;
+                }
+                if pressed.is_delete() {
+                    self.error = Some((kind, Rejection::NoModifier.message()));
                     return Effect::None;
                 }
                 let other = match kind {
@@ -2660,7 +2672,7 @@ mod tests {
     }
 
     #[test]
-    fn a_shortcut_needs_a_real_modifier_and_a_free_key() {
+    fn a_shortcut_accepts_supported_single_keys_and_checks_reserved_combinations() {
         let paste = ShortcutConfig::default_paste();
         let ok = validate(
             ShortcutKind::Record,
@@ -2692,7 +2704,7 @@ mod tests {
             }
         );
         let no = |p: Pressed| validate(ShortcutKind::Record, &p, &paste).unwrap_err();
-        assert_eq!(no(pressed(R, 0, "r")), Rejection::NoModifier);
+        assert_eq!(validate(ShortcutKind::Record, &pressed(R, 0, "r"), &paste).unwrap().label, "R");
         assert_eq!(no(pressed(R, CARBON_SHIFT_KEY, "r")), Rejection::NoModifier);
         // A function key may stand alone.
         assert_eq!(
@@ -2745,6 +2757,9 @@ mod tests {
             Rejection::NoModifier.message(),
             "Hold ⌘, ⌥ or ⌃ with the key."
         );
+        assert_eq!(validate(ShortcutKind::Record, &pressed(MACOS_FN_KEY_CODE, 0, "Fn"), &paste).unwrap(), ShortcutConfig::default_record());
+        assert_eq!(no(pressed(MACOS_FN_KEY_CODE, CARBON_OPTION_KEY, "Fn")), Rejection::UnsupportedKey);
+        assert_eq!(validate(ShortcutKind::Record, &pressed(R, 0, "r"), &paste).unwrap().label, "R");
     }
 
     #[cfg(target_os = "windows")]
@@ -2806,6 +2821,20 @@ mod tests {
         assert_eq!(key_label(0, ""), None);
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn saved_legacy_default_inherits_fn_but_custom_shortcuts_stay_explicit() {
+        let dir = TempDir::new("fn-default-migration");
+        let path = dir.0.join("config.json");
+        let legacy_default = r#"{"shortcuts":{"record":{"keyCode":1,"modifiers":2560,"label":"⌥⇧S"}}}"#;
+        std::fs::write(&path, legacy_default).unwrap();
+        assert_eq!(Shortcuts::load_from(&path, &dir.0.join("legacy.json")).0.record, ShortcutConfig::default_record());
+
+        let custom = ShortcutConfig { key_code: 15, carbon_modifiers: CARBON_CONTROL_KEY | CARBON_OPTION_KEY, label: "⌃⌥R".into() };
+        crate::shared::handoff::set_config_value_in(&path, "shortcuts", serde_json::json!({"record":{"keyCode":15,"modifiers":5120,"label":"⌃⌥R"}})).unwrap();
+        assert_eq!(Shortcuts::load_from(&path, &dir.0.join("legacy.json")).0.record, custom);
+    }
+
     #[test]
     fn explicit_app_shortcut_survives_desktop_default_and_preserves_unrelated_config() {
         let dir = TempDir::new("desktop-shortcut-choice");
@@ -2829,7 +2858,7 @@ mod tests {
             save_shortcut_in(&path, ShortcutKind::Record, &record).unwrap();
             assert!(prefers_app_shortcut(&read_json(&path)));
         }
-        let mut invalid = config.clone(); invalid["shortcuts"]["record"]["modifiers"] = 0.into();
+        let mut invalid = config.clone(); invalid["shortcuts"]["record"]["modifiers"] = 1.into();
         assert!(!prefers_app_shortcut(&invalid), "a malformed preference cannot suppress the working desktop adapter");
         save_shortcut_source_in(&path, ShortcutKind::Record, &record, false).unwrap();
         assert!(!prefers_app_shortcut(&read_json(&path)));
@@ -2868,6 +2897,9 @@ mod tests {
             let mode = std::fs::metadata(&path).unwrap().permissions().mode();
             assert_eq!(mode & 0o777, 0o600);
         }
+        let single = ShortcutConfig { key_code: R, carbon_modifiers: 0, label: "R".into() };
+        save_shortcut_in(&path, ShortcutKind::Record, &single).unwrap();
+        assert_eq!(Shortcuts::load_from(&path, &legacy).0.record, single);
         // Back to the default removes it.
         save_shortcut_in(
             &path,
@@ -2924,6 +2956,10 @@ mod tests {
         save_shortcut_source_in(&path, ShortcutKind::Record, &unmodified, true).unwrap();
         assert!(prefers_app_shortcut(&read_json(&path)));
         assert_eq!(Shortcuts::load_from(&path, &dir.0.join("legacy.json")).0.record, unmodified);
+        let single = ShortcutConfig { key_code:82, carbon_modifiers:0, label:"R".into() };
+        save_shortcut_source_in(&path, ShortcutKind::Record, &single, true).unwrap();
+        assert!(prefers_app_shortcut(&read_json(&path)), "an explicit single key remains App-owned");
+        assert_eq!(Shortcuts::load_from(&path, &dir.0.join("legacy.json")).0.record, single);
         let saved = read_json(&path);
         assert_eq!(saved["ingestToken"], "secret");
         assert_eq!(saved["unrelated"], 7);

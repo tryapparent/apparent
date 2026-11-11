@@ -20,9 +20,19 @@ test('rejects partial Super or Shift modifiers on Copilot', () => {
   assert.equal(shortcutCapture(event({metaKey:true,shiftKey:false}), 'linux'), null);
   assert.equal(shortcutCapture(event({metaKey:false,shiftKey:true}), 'linux'), null);
 });
-test('does not relax the modifier rule for ordinary keys', () => assert.equal(shortcutCapture(event({key:'r',code:'KeyR',metaKey:false,shiftKey:false}), 'linux'), null));
+test('accepts an explicitly selected single ordinary key', () => {
+  assert.deepEqual(shortcutCapture(event({key:'r',code:'KeyR',metaKey:false,shiftKey:false}), 'linux'), {keyCode:82,modifiers:0,key:'r'});
+  assert.deepEqual(shortcutCapture(event({key:'r',code:'KeyR',metaKey:false,shiftKey:false}), 'macos'), {keyCode:15,modifiers:0,key:'r'});
+});
+test('accepts standalone Fn on Mac and rejects Fn with other modifiers', () => {
+  assert.deepEqual(shortcutCapture(event({key:'Fn',code:'Fn',metaKey:false,shiftKey:false}), 'macos'), {keyCode:63,modifiers:0,key:'Fn'});
+  assert.equal(shortcutCapture(event({key:'Fn',code:'Fn',metaKey:true,shiftKey:false}), 'macos'), null);
+  assert.equal(shortcutCapture(event({key:'Fn',code:'Fn',metaKey:false,shiftKey:false}), 'linux'), null);
+});
 test('retains ordinary Linux shortcut encoding', () => assert.deepEqual(shortcutCapture(event({key:'r',code:'KeyR',shiftKey:false}), 'linux'), {keyCode:82,modifiers:256,key:'r'}));
-test('the Electron parent accepts only the two Copilot chords', () => {
+test('the Electron parent accepts single keys, standalone Fn, and the two Copilot chords', () => {
+  assert.deepEqual(parseAction({action:'shortcut',kind:'record',keyCode:63,modifiers:0,key:'Fn',reserved:false}), {action:'shortcut',kind:'record',keyCode:63,modifiers:0,key:'Fn',reserved:false});
+  assert.deepEqual(parseAction({action:'shortcut',kind:'record',keyCode:65,modifiers:0,key:'a',reserved:false}), {action:'shortcut',kind:'record',keyCode:65,modifiers:0,key:'a',reserved:false});
   for (const modifiers of [0,768]) assert.deepEqual(parseAction({action:'shortcut',kind:'record',keyCode:201,modifiers,key:'Copilot',reserved:false}), {action:'shortcut',kind:'record',keyCode:201,modifiers,key:'Copilot',reserved:false});
   for (const modifiers of [256,512,769]) assert.throws(() => parseAction({action:'shortcut',kind:'record',keyCode:201,modifiers,key:'Copilot',reserved:false}));
   assert.throws(() => parseAction({action:'shortcut',kind:'record',keyCode:65,modifiers:0,key:'A',reserved:false}));

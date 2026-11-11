@@ -3235,6 +3235,8 @@ mod adapter_regressions {
 #[cfg(target_os = "macos")]
 fn native_shortcut_reserved(key: u32, modifiers: u32) -> bool {
     use std::{process::Command, time::Duration};
+    // Fn is observed without suppressing it; any macOS Fn/Globe action remains active too.
+    if key == crate::capture::engine::runtime::MACOS_FN_KEY_CODE && modifiers == 0 { return false; }
     if key > 127 || modifiers & !0x1b00 != 0 { return true; }
     let Ok(path) = crate::capture::desktop::helper::path() else { return true; };
     let mut command = Command::new(path);

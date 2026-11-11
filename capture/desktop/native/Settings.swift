@@ -1460,6 +1460,7 @@ enum ShortcutKeys {
   /// The name a key is shown with, as `settings::key_label` names it; nil for Esc or a key
   /// that types nothing.
   static func label(keyCode: Int, typed: String) -> String? {
+    if keyCode == Int(kVK_Function) { return "Fn" }
     let named: [Int: String] = [
       kVK_F1: "F1", kVK_F2: "F2", kVK_F3: "F3", kVK_F4: "F4", kVK_F5: "F5", kVK_F6: "F6",
       kVK_F7: "F7", kVK_F8: "F8", kVK_F9: "F9", kVK_F10: "F10", kVK_F11: "F11", kVK_F12: "F12",
@@ -1485,6 +1486,8 @@ enum ShortcutKeys {
 
   /// Whether macOS has this combination as one of its enabled shortcuts (Keyboard Shortcuts).
   static func reserved(keyCode: Int, modifiers: Int) -> Bool {
+    // Fn is observed without suppressing it, so any macOS Fn/Globe action remains active too.
+    if keyCode == Int(kVK_Function) && modifiers == 0 { return false }
     var unmanaged: Unmanaged<CFArray>?
     guard CopySymbolicHotKeys(&unmanaged) == noErr,
           let hotkeys = unmanaged?.takeRetainedValue() as? [[String: Any]]
@@ -1534,6 +1537,7 @@ final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
     enabled: { [weak self] in self?.model.state.recording == nil }
   )
   private var monitor: Any?
+  private var fnCandidate = false
   /// Modifiers held while Settings is in front, so each shortcut presses the keys it uses.
   private var modifierMonitor: Any?
   private var presented = false
@@ -1615,8 +1619,20 @@ final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
   /// Listens for keys only while a recorder is waiting for one.
   private func listen(_ on: Bool) {
     if on, monitor == nil {
-      monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+      monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
         guard let self, let kind = self.model.state.recording else { return event }
+        if event.type == .flagsChanged {
+          let modifiers = ShortcutKeys.carbon(event.modifierFlags)
+          if event.keyCode == UInt16(kVK_Function) {
+            if event.modifierFlags.contains(.function) { self.fnCandidate = modifiers == 0 }
+            else if self.fnCandidate && modifiers == 0 {
+              self.model.act("shortcut", ["kind":kind, "keyCode":63, "modifiers":0, "key":"Fn", "reserved":false])
+              self.fnCandidate = false
+            } else { self.fnCandidate = false }
+          } else if modifiers != 0 { self.fnCandidate = false }
+          return event
+        }
+        self.fnCandidate = false
         if event.keyCode == UInt16(kVK_Escape) {
           self.model.act("cancel-shortcut")
           return nil
