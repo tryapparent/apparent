@@ -399,7 +399,6 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     } catch (error) {
       report.electronBootstrap.firstWindowFailedAt = Date.now();
       report.electronBootstrap.attachedWindowsAtFailure = application.windows().length;
-      await observeOwnedProcesses('first-window-failure');
       await bootstrap;
       try {
         report.electronBootstrap.failure = await within(application.evaluate(bootstrapFailure),
@@ -668,8 +667,8 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     assert.deepEqual(rendererErrors, []);
     report.passed = true;
   } catch (error) {
+    await observeOwnedProcesses(report.electronBootstrap?.firstWindowFailedAt ? 'first-window-failure' : 'native-test-failure');
     failure = error;
-    if (!report.electronBootstrap?.firstWindowFailedAt) await observeOwnedProcesses('native-test-failure');
     const subprocess = error.cause ?? error;
     report.error = { message: error.message, stack: error.stack,
       subprocess: { code: subprocess.code, signal: subprocess.signal,
