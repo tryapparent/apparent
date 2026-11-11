@@ -111,10 +111,7 @@ app.whenReady().then(() => {
     ...(settings ? { paintWhenInitiallyHidden: true } : {}),
     width: settings ? 720 : 920, height: settings ? 530 : 760,
     minWidth: 640, minHeight: settings ? 530 : 620,
-    ...(settings && process.platform === 'darwin' ? {
-      titleBarStyle: 'hiddenInset', resizable: false, fullscreenable: false,
-      acceptFirstMouse: true,
-    } : {}),
+    ...(settings ? require('./settings/frame.cjs').settingsWindowOptions(process.platform) : {}),
     title: settings ? 'Apparent Settings' : 'Apparent — UI foundation',
     backgroundColor: followWindowTheme.backgroundColor(nativeTheme),
     webPreferences: {
