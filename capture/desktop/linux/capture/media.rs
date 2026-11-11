@@ -111,7 +111,7 @@ pub fn encoder_warning() -> Option<String> {
         let selected = encoder().ok_or("No H.264 encoder plugin is installed")?;
         let directory = preflight_directory().map_err(|error| error.to_string())?;
         let movie = directory.join("encoder-check.mp4");
-        let result = encode_synthetic(&movie, selected).map_err(|error| error.to_string());
+        let result = encode_synthetic(&movie, selected, true).map_err(|error| error.to_string());
         let _ = std::fs::remove_file(&movie);
         let _ = std::fs::remove_dir(directory);
         result
@@ -162,7 +162,7 @@ fn encoder_diagnostic(reason: &str, packaged: bool, distro: &str) -> String {
 pub fn encoder_check(movie: &Path) -> Result<()> {
     init()?;
     let selected = encoder().ok_or_else(|| anyhow!("No H.264 encoder plugin is installed"))?;
-    encode_synthetic(movie, selected)?;
+    encode_synthetic(movie, selected, false)?;
     let frames = frames(movie, FrameTimes::At(&[0]), 0)?;
     ensure!(
         frames
@@ -173,7 +173,7 @@ pub fn encoder_check(movie: &Path) -> Result<()> {
     Ok(())
 }
 
-fn encode_synthetic(movie: &Path, selected: &str) -> Result<()> {
+fn encode_synthetic(movie: &Path, selected: &str, diagnose: bool) -> Result<()> {
     let launch = format!(
         "videotestsrc num-buffers=12 ! video/x-raw,width=160,height=90,framerate=10/1 ! videoconvert ! video/x-raw,format=I420 ! {selected} ! h264parse ! mp4mux ! filesink name=encoder_output"
     );
@@ -193,7 +193,22 @@ fn encode_synthetic(movie: &Path, selected: &str) -> Result<()> {
         ) {
             Some(message) => match message.view() {
                 gst::MessageView::Eos(..) => Ok(()),
-                gst::MessageView::Error(error) => bail!("H.264 encoding failed: {error}"),
+                gst::MessageView::Error(error) => {
+                    if diagnose {
+                        let detail = error.debug().unwrap_or_default();
+                        let debug = safe_encoder_debug(&detail, movie);
+                        let domain = error.error().domain().as_str();
+                        let code = error.error().code();
+                        let source = error
+                            .src()
+                            .map(|source| safe_encoder_field(&source.name()))
+                            .unwrap_or_else(|| "unknown".to_owned());
+                        crate::capture::engine::runtime::apparent_log(format!(
+                            "H.264 encoder preflight failed stage=synthetic_encode domain={domain} code={code} source={source} debug={debug} output=encoder-check.mp4"
+                        ));
+                    }
+                    bail!("H.264 encoding failed: {error}");
+                }
                 _ => unreachable!(),
             },
             None => bail!("H.264 encoding timed out"),
@@ -206,6 +221,25 @@ fn encode_synthetic(movie: &Path, selected: &str) -> Result<()> {
         "H.264 movie is empty"
     );
     Ok(())
+}
+
+fn safe_encoder_field(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .take(160)
+        .collect()
+}
+
+fn safe_encoder_debug(value: &str, movie: &Path) -> String {
+    let mut safe = value.to_owned();
+    if let Some(parent) = movie.parent() {
+        safe = safe.replace(&parent.to_string_lossy().to_string(), "<private-temp>");
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        safe = safe.replace(&home.to_string_lossy().to_string(), "<home>");
+    }
+    safe_encoder_field(&safe)
 }
 
 /// Check this process's registry, not the host's gst-inspect executable.
@@ -1010,6 +1044,44 @@ mod tests {
         );
         assert!(!directory.join("encoder-check.mp4").exists());
         std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn synthetic_encoder_preflight_classifies_a_missing_output_parent() {
+        if init().is_err() {
+            return;
+        }
+        let Some(selected) = encoder() else {
+            return;
+        };
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let movie = std::env::temp_dir().join(format!(
+            "apparent-dev-encoder-diagnostics-{}-{nonce}/missing/encoder-check.mp4",
+            std::process::id()
+        ));
+        let result = encode_synthetic(&movie, selected, true);
+        assert!(result.is_err(), "filesink must refuse an output whose parent is missing");
+        assert!(!movie.exists());
+    }
+
+    #[test]
+    fn encoder_debug_redacts_private_output_and_home_paths() {
+        let movie = std::env::temp_dir().join("private/output.mp4");
+        let detail = format!(
+            "Could not write {} under {}",
+            movie.display(),
+            std::env::var("HOME").unwrap_or_default()
+        );
+        let safe = safe_encoder_debug(&detail, &movie);
+        assert!(!safe.contains("private/output.mp4"));
+        if let Ok(home) = std::env::var("HOME") {
+            assert!(!safe.contains(&home));
+        }
+        assert!(safe.contains("<private-temp>"));
+        assert!(safe.chars().count() <= 160);
     }
 
     #[test]
