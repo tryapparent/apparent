@@ -467,6 +467,11 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   send({step:'try-it',practice:null,firstCaptureRequired:true});
   await expect(page.getByRole('heading',{name:'Go again.',exact:true})).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,520]);
+  const fnChoiceStart=output.length;
+  send({step:'shortcut',platform:'macos',shortcutChosen:false,shortcutEditor:{recording:false,externallyManaged:false,error:null}});
+  await page.getByRole('button',{name:'Use Fn',exact:true}).click();
+  await expect.poll(()=>output.slice(fnChoiceStart)).toContain('\"keyCode\":63');
+  assert.ok(output.slice(fnChoiceStart).indexOf('change-shortcut')<output.slice(fnChoiceStart).indexOf('\"keyCode\":63'),'open the provider editor before Fn selection');
   send({step:'shortcut',shortcutEditor:{recording:true,externallyManaged:false}});
   const recorder=page.getByRole('group',{name:'Shortcut recorder'});
   await recorder.focus();

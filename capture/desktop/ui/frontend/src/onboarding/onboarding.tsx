@@ -9,7 +9,7 @@ import { practiceExit } from '../../electron/onboarding/presentation.ts';
 import { OnboardingAccount } from './account';
 import type { AccountState } from '../../electron/onboarding/account';
 import { subscribeOnboardingState } from './state';
-import { fnShortcut, shortcutCapture } from '../../electron/onboarding/shortcut-editor.ts';
+import { fnSelectionActions, shortcutCapture } from '../../electron/onboarding/shortcut-editor.ts';
 import { Permissions, type PermissionRow as Row } from './permissions';
 type Action=string|{action:'shortcut';kind:'record';keyCode:number;modifiers:number;key:string;reserved:false};
 type Editor={recording:boolean;externallyManaged:boolean;error:string|null};
@@ -27,7 +27,8 @@ export function NativeOnboarding(){
   useEffect(()=>{if(state?.step!=='welcome'||!state?.penPicker||state?.penError){penRun.current++;penActive.current=false;if(penTimer.current)clearTimeout(penTimer.current);penTimer.current=null;setPenPhase('idle');penCommitted.current=false}},[state?.step,state?.penPicker,state?.penError]);
   document.documentElement.classList.add('native-onboarding-shell');
   useEffect(()=>{const bridge=window.nativeOnboarding;return bridge?subscribeOnboardingState(bridge,setState):undefined},[]);
-  async function action(value:Action){try{setError('');await window.nativeOnboarding?.action(value)}catch{setError('The app connection was interrupted. Close setup and reopen it from apparent.')}}
+  async function sendAction(value:Action){try{setError('');return await window.nativeOnboarding?.action(value)??false}catch{setError('The app connection was interrupted. Close setup and reopen it from apparent.');return false;}}
+  async function action(value:Action){await sendAction(value)}
   const shortcutAdvance=useRef<string|null>(null);
   useEffect(()=>{
     const ready=state?.step==='shortcut'&&state.firstCaptureRequired&&state.shortcutChosen&&state.shortcutTested&&!state.shortcutEditing&&!state.shortcutEditor?.recording;
@@ -67,7 +68,7 @@ export function NativeOnboarding(){
     }
   }
   const shortcutRecorder=useRef<HTMLDivElement|null>(null);
-  const chooseFn=()=>{const pressed=fnShortcut(state?.platform??'linux');if(pressed){setError('');void action({action:'shortcut',kind:'record',...pressed,reserved:false});}};
+  const chooseFn=async()=>{for(const next of fnSelectionActions(state?.platform??'linux',Boolean(state?.shortcutEditor?.recording))){if(!await sendAction(next))break;}};
   useEffect(()=>{if(state?.shortcutEditor?.recording)shortcutRecorder.current?.focus()},[state?.shortcutEditor?.recording]);
   if(!state)return <main className="native-setup"><p>Connecting to apparent…</p></main>;
   const goAgain=state.step==='try-it'&&(!state.practice||state.practice==='start');

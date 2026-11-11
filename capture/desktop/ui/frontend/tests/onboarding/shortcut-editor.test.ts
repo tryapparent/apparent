@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { fnShortcut, shortcutCapture } from '../../electron/onboarding/shortcut-editor.ts';
+import { fnSelectionActions, fnShortcut, shortcutCapture } from '../../electron/onboarding/shortcut-editor.ts';
 
 const require = createRequire(import.meta.url);
 const { parseAction } = require('../../electron/onboarding-protocol.cjs') as { parseAction: (value: unknown) => unknown };
@@ -44,4 +44,12 @@ test('explicit Fn selection is Mac-only and uses the accepted provider contract'
   assert.deepEqual(choice, {keyCode:63,modifiers:0,key:'Fn'});
   const action={action:'shortcut',kind:'record',...choice,reserved:false};
   assert.deepEqual(parseAction(action), action);
+});
+
+test('Fn selection enters the provider editor before choosing and keeps its guard', () => {
+  const selection={action:'shortcut',kind:'record',keyCode:63,modifiers:0,key:'Fn',reserved:false};
+  assert.deepEqual(fnSelectionActions('macos',false), ['change-shortcut',selection]);
+  assert.deepEqual(fnSelectionActions('macos',true), [selection]);
+  assert.deepEqual(fnSelectionActions('linux',false), []);
+  for(const action of fnSelectionActions('macos',false))assert.deepEqual(parseAction(action),typeof action==='string'?{action}:action);
 });
