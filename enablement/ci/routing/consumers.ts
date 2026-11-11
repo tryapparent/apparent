@@ -29,6 +29,10 @@ export function consumers(path: string): readonly Owner[] {
   if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)\.md$/i.test(path)) return owners;
   // No extension-based native exemption: unexpected native sources in web/tool owners broaden.
   const native = /\.(rs|swift|metal|c|cc|cpp|h|mm)$/.test(path) || /(^|\/)Cargo\.(toml|lock)$/.test(path);
+  // Audited headless Record packages feed Desktop's generated adapters and the
+  // packaged native application. Unknown files/packages and instructions stay broad.
+  if (/^record\/(?:storage|completion)\/(?:src\/.*\.ts|test\/.*\.test\.ts|package(?:-lock)?\.json|tsconfig\.json)$/.test(path) ||
+      path === 'record/storage/build.ts') return ['desktop', 'capture'];
   if (!native && path.startsWith('public/site/')) return webAssets.has(path) ? ['public', 'web'] : ['public'];
   if (!native && path.startsWith('connect/web/')) return ['web'];
   if (path.startsWith('connect/client/')) return ['client', 'capture'];
