@@ -2,6 +2,29 @@
 
 ## Hermes recording request
 
+The current stock Desktop plugin starts recording through the local Hermes
+profile route with `apparent hermes record <token>/<port>`. It does not use the
+custom URL handler or a session-scoped shell call. The native CLI accepts only
+a lowercase 32-hex request token and a loopback port from 32768 through 60999;
+it launches the packaged Hermes helper in trusted autostart mode. That mode
+creates no confirmation/status window. Apparent onboarding, capture admission,
+OS permission prompts, the consumed-request journal, signed loopback status,
+and authenticated acknowledgement remain in force. `apparent launch
+--background` starts the regular app without requesting its Settings window
+when the capture runtime is not ready; onboarding remains owned by Apparent.
+
+The plugin invokes `shell.exec` through the explicitly selected local profile,
+even when the pinned Hermes conversation uses SSH. It reads only its own
+mode-0600 HMAC key from the runtime directory. Delivery uses the supported
+Hermes composer API; this is local dispatch evidence, not a durable gateway
+receipt. Existing Connect IDs are required for remote delivery. The plugin
+never enables upload/read grants or changes credentials. Unsaved Hermes drafts
+remain unsupported until the public SDK exposes a stable draft identity.
+
+The legacy `apparent://hermes/<token>/<port>` review window remains for older
+pending requests. It still requires **Record and send when finished**; do not
+route the new plugin through that URL.
+
 `apparent://hermes/<32-lowercase-hex-token>/<loopback-port>` opens the packaged
 Electron confirmation for one recording. Ports are 32768–60999; paths, queries,
 fragments and callback URLs are refused. The new route is separate from the
