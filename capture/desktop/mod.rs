@@ -3021,6 +3021,11 @@ impl ApparentCoordinator {
 
     #[cfg(target_os = "linux")]
     fn discard_failed_screen_start(&mut self) -> bool {
+        self.discard_failed_screen_start_notifying(crate::capture::desktop::linux::shell::notify)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn discard_failed_screen_start_notifying(&mut self, notify: impl FnOnce(&str, &str)) -> bool {
         // Inspect the current session synchronously: a late failure from an old
         // producer must never cancel its successor. A pending portal is not failure.
         if matches!(self.active_recording.as_ref().map(|r| &r.source),
@@ -3030,6 +3035,10 @@ impl ApparentCoordinator {
             // Cancellation can fail to persist its tombstone; keep that session
             // active in that case rather than admitting another capture over it.
             if self.active_recording.is_none() {
+                notify(
+                    "Screen recording could not start",
+                    "Try again and choose the screen under Outputs if the sharing dialog appears. No recording was saved.",
+                );
                 if let Some(id) = failed_id {
                     self.agent_captures.set(&id, "failed", None, Some("start_failed"));
                 }
@@ -3796,9 +3805,18 @@ impl ApparentCoordinator {
     /// Use durable cancellation, including its refusal path, before releasing ownership.
     #[cfg(target_os = "linux")]
     fn cancel_pending_screen_finish(&mut self) -> bool {
+        self.cancel_pending_screen_finish_notifying(crate::capture::desktop::linux::shell::notify)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn cancel_pending_screen_finish_notifying(&mut self, notify: impl FnOnce(&str, &str)) -> bool {
         if matches!(self.active_recording.as_ref().map(|r| &r.source),
             Some(CaptureSource::Screen { session, .. }) if !session.has_frames()) {
             self.cancel_capture_attempt();
+            if self.active_recording.is_none() {
+                notify("Recording ended before it started",
+                    "No recording was saved. Try again, choose the screen under Outputs if asked, and wait for screen sharing to start before Finish.");
+            }
             return true;
         }
         false
@@ -7562,7 +7580,11 @@ mod tests {
                 _metal_overlay: None, microphone_enabled: false,
             });
             coordinator.set_island_phase(IslandPhase::Recording);
-            assert_eq!(coordinator.cancel_pending_screen_finish(), !real_frames);
+            let mut notices = Vec::new();
+            assert_eq!(coordinator.cancel_pending_screen_finish_notifying(|title, message| {
+                notices.push((title.to_owned(), message.to_owned()));
+            }), !real_frames);
+            assert_eq!(notices.len(), usize::from(!real_frames && !journal_fails));
             assert_eq!(coordinator.pending_finalizers, 0);
             assert_eq!(coordinator.agent_captures.inspect("older")["status"], "saved");
             if !real_frames && !journal_fails {
@@ -7570,7 +7592,7 @@ mod tests {
                 assert_eq!(coordinator.agent_capture_id, None);
                 assert_eq!(coordinator.agent_captures.inspect("current")["status"], "cancelled");
                 assert!(!dir.exists());
-                assert!(!coordinator.cancel_pending_screen_finish(), "duplicate Finish has no capture to cancel");
+                assert!(!coordinator.cancel_pending_screen_finish_notifying(|_, _| panic!("duplicate Finish must not notify")), "duplicate Finish has no capture to cancel");
             } else {
                 assert!(coordinator.active_recording.is_some());
                 assert_eq!(coordinator.agent_capture_id.as_deref(), Some("current"));
@@ -7607,12 +7629,21 @@ mod tests {
                 bundle_dir: dir.clone(), source: CaptureSource::Screen { session, audio: None, windows: None },
                 _metal_overlay: None, microphone_enabled: false,
             });
-            assert!(!coordinator.discard_failed_screen_start(), "pending consent stays owned");
+            assert!(!coordinator.discard_failed_screen_start_notifying(|_, _| panic!("pending consent must not report failure")), "pending consent stays owned");
             assert_eq!(coordinator.agent_captures.inspect("current")["status"], "starting");
             seen.store(real_frames, Ordering::Release);
             failed.store(true, Ordering::Release);
             let cleared = !real_frames && !journal_fails;
-            assert_eq!(coordinator.discard_failed_screen_start(), cleared);
+            let mut notifications = Vec::new();
+            assert_eq!(coordinator.discard_failed_screen_start_notifying(|title, message| {
+                notifications.push((title.to_owned(), message.to_owned()));
+            }), cleared);
+            assert_eq!(notifications.len(), usize::from(cleared), "only confirmed cleanup can report no saved recording");
+            if cleared {
+                assert!(notifications[0].1.contains("Outputs"));
+                assert!(notifications[0].1.contains("No recording was saved"));
+                assert!(!coordinator.discard_failed_screen_start_notifying(|_, _| panic!("failure must only be reported once")));
+            }
             assert_eq!(coordinator.active_recording.is_none(), cleared);
             assert_eq!(coordinator.agent_captures.inspect("old")["status"], "saved");
             if cleared {

@@ -29,9 +29,12 @@ actual content/font size changes. The host has no periodic layout measurement.
 Window move/resize/layout events publish physical geometry for the notes anchor,
 instead of the GUI thread polling X11 geometry. Hidden Linux rendering is not
 background-throttled, so preloading can finish before the first capture.
-On Lua-configured Hyprland the native adapter installs an exact-window `no_anim`
+On Lua-configured Hyprland the native adapter installs an exact-window `no_anim`,
+`no_blur` and `no_shadow`
 runtime rule before acknowledging readiness, and retires it when the child pipe
-closes. Other compositors and older Hyprlang retain their own window-animation
+closes. The native fallback uses the same rule for its window lifetime. These
+are compositor mechanics; recording and presentation policy are unchanged.
+Other compositors and older Hyprlang retain their own window-animation
 policy; application CSS motion is still disabled. Startup/watchdog and native
 fallback remain active. Rollback restores the previous presentation host and
 geometry polling together; no capture or persisted preference format changes.

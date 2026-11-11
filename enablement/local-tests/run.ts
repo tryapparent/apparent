@@ -38,8 +38,8 @@ export function captureToolTests(cwd = root): Command[] {
   // and does not recurse into these non-package test folders.
   const result = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/', 'capture/agent/scripts/'], { cwd, encoding: 'utf8' });
   if (result.error || result.status !== 0) throw Error('Cannot enumerate capture tooling tests');
-  return result.stdout.split('\0').filter(path => /\/test[-_][^/]*\.py$/.test(path)).sort()
-    .map(path => ({ argv: ['python3', '-m', 'unittest', path], cwd: '.',
+  return result.stdout.split('\0').filter(path => /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort()
+    .map(path => ({ argv: path.endsWith('.ts') ? ['node', '--experimental-strip-types', '--test', path] : ['python3', '-m', 'unittest', path], cwd: '.',
       ...(path.endsWith('/test_issue_cli.py') ? {env: {APPARENT_BIN: resolve(cwd, process.env.CARGO_TARGET_DIR || 'target', 'debug/apparent')}} : {}) }));
 }
 
