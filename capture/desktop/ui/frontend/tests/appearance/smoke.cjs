@@ -27,9 +27,9 @@ test('Settings renderer and window follow Electron theme changes without reload'
     await application.evaluate(({nativeTheme},mode)=>{nativeTheme.themeSource=mode;},mode);
     await expect(page.locator('body')).toHaveCSS('background-color',mode==='dark'?'rgb(32, 27, 36)':'rgb(245, 240, 232)');
     assert.equal(await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getBackgroundColor().slice(0,7).toLowerCase()),mode==='dark'?'#201b24':'#f5f0e8');
-    await expect(page.locator('.settings-sidebar')).toHaveCSS('background-color','rgb(2, 1, 2)');
-    await expect(page.getByRole('button',{name:'Storage',exact:true})).toHaveCSS('color','rgb(245, 240, 232)');
-    assert.equal(await page.locator('.settings-sidebar').evaluate(element => element.getBoundingClientRect().width), 210);
+    await expect(page.locator('.settings-sidebar')).toHaveCSS('background-color','rgb(25, 22, 29)');
+    await expect(page.getByRole('button',{name:'Storage',exact:true})).toHaveCSS('color','rgb(25, 22, 29)');
+    assert.equal(await page.locator('.settings-sidebar').evaluate(element => element.getBoundingClientRect().width), 184);
     assert.equal(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight && document.documentElement.scrollWidth <= innerWidth), true);
   }
   await application.evaluate(({nativeTheme})=>{nativeTheme.themeSource='system';});

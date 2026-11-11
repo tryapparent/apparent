@@ -194,13 +194,14 @@ test('real Git delta includes earlier commits and both sides of cross-owner rena
 test('capture script changes execute offline contracts including hyphenated and new test files', () => fixture((dir, env) => {
   for (const path of ['capture/desktop/scripts/packaging/test_installer_guard.py',
     'capture/desktop/scripts/tests/mac/test_setup.py', 'capture/desktop/scripts/linux/gui/test-gui-vm.py',
-    'capture/agent/scripts/tests/test_provision_narrator.py', 'capture/desktop/scripts/new/test_new.py']) {
+    'capture/agent/scripts/tests/test_provision_narrator.py', 'capture/desktop/scripts/new/test_new.py',
+    'capture/desktop/scripts/linux/gui/input/qmp.test.ts']) {
     const parent = path.slice(0, path.lastIndexOf('/'));
     mkdirSync(join(dir, parent), { recursive: true }); writeFileSync(join(dir, path), '');
   }
   for (const args of [['init', '-q'], ['add', '.']]) assert.equal(spawnSync('git', args, { cwd: dir, env }).status, 0);
   const suites = captureToolTests(dir);
-  assert.equal(suites.length, 5);
+  assert.equal(suites.length, 6);
   assert.ok(suites.some(command => command.argv.includes('capture/desktop/scripts/new/test_new.py')));
   const hyphenated = suites.find(command => command.argv.includes('capture/desktop/scripts/linux/gui/test-gui-vm.py'))!;
   assert.ok(hyphenated);
@@ -208,6 +209,14 @@ test('capture script changes execute offline contracts including hyphenated and 
   writeFileSync(join(dir, hyphenated.argv.at(-1)!), `import unittest\nfrom pathlib import Path\nclass Contract(unittest.TestCase):\n def test_failure(self):\n  Path(${JSON.stringify(receipt)}).write_text('executed')\n  self.fail('hyphenated regression reached')\n`);
   assert.throws(() => execute([hyphenated], dir), /failed \(1\)/);
   assert.equal(readFileSync(receipt, 'utf8'), 'executed');
+  const typescript = suites.find(command => command.argv.includes('capture/desktop/scripts/linux/gui/input/qmp.test.ts'))!;
+  writeFileSync(join(dir, typescript.argv.at(-1)!), "import {test} from 'node:test'; test('must run', () => { throw Error('native input regression reached'); });\n");
+  // A nested Node runner otherwise inherits this test worker's recursion guard
+  // and silently skips its files. Exercise the real hook's outside-worker env.
+  const context = process.env.NODE_TEST_CONTEXT;
+  delete process.env.NODE_TEST_CONTEXT;
+  try { assert.throws(() => execute([typescript], dir), /failed \(1\)/); }
+  finally { if (context !== undefined) process.env.NODE_TEST_CONTEXT = context; }
 }));
 
 test('new native prerequisite tests join the mandatory contract inventory automatically', () => fixture((dir) => {

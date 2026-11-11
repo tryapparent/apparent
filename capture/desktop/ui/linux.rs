@@ -536,10 +536,16 @@ impl PillChrome {
                 x11::set_title(id, &linux::hyprland::pill_title(id));
                 PILL_NEEDS_PIN.store(true, Ordering::Release);
                 cx.spawn(async move |cx| {
-                    loop {
+                    let motion_rule = cx.background_executor().spawn(async move {
+                        linux::hyprland::prepare_pill_motion(id, std::process::id())
+                    }).await;
+                    if let Err(error) = &motion_rule {
+                        crate::capture::engine::runtime::apparent_log(format!("Native pill appearance rule failed: {error:#}"));
+                    }
+                    'pin: loop {
                         cx.background_executor().timer(Duration::from_millis(120)).await;
                         if own_window(&PILL_WINDOW) != Some(id) {
-                            return;
+                            break;
                         }
                         if !PILL_NEEDS_PIN.swap(false, Ordering::AcqRel) {
                             continue;
@@ -547,7 +553,7 @@ impl PillChrome {
                         let mut last_error = None;
                         for _ in 0..8 {
                             if own_window(&PILL_WINDOW) != Some(id) {
-                                return;
+                                break 'pin;
                             }
                             let result = cx.background_executor().spawn(async move {
                                 linux::hyprland::pin_pill(id)
@@ -562,6 +568,14 @@ impl PillChrome {
                             crate::capture::engine::runtime::apparent_log(format!(
                                 "Recording pill: could not pin Hyprland window: {error}"
                             ));
+                        }
+                    }
+                    if matches!(motion_rule, Ok(true)) {
+                        let result = cx.background_executor().spawn(async move {
+                            linux::hyprland::release_pill_motion(id, std::process::id())
+                        }).await;
+                        if let Err(error) = result {
+                            crate::capture::engine::runtime::apparent_log(format!("Native pill appearance cleanup failed: {error:#}"));
                         }
                     }
                 }).detach();
@@ -687,7 +701,7 @@ pub(in crate::capture::desktop) fn show_controls(cx: &mut App) {
 
 pub(in crate::capture::desktop) fn poll_controls(busy: bool, onboarding: bool, settings: bool, cx: &mut App) {
     if take_controls_request(&CONTROLS_PENDING, !controls_needed(), busy, onboarding, settings) {
-        crate::capture::desktop::workflow::launch_instance::request_open();
+        show_controls(cx);
     }
     CONTROLS.with(|controls| {
         if let Some(controls) = controls.borrow_mut().as_mut() { controls.poll(busy || onboarding, cx); }
