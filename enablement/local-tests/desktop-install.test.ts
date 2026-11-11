@@ -83,8 +83,10 @@ test('real npm install is reused across source-only commits; all checks rerun an
   check(); assert.equal(installs, 7, 'manifest bytes are bound');
   appendFileSync(join(frontend, '.npmrc'), 'color=false\n');
   check(); assert.equal(installs, 8, 'npm project configuration is bound');
-  check({...env, INSTALL_SEMANTIC_INPUT: 'new'}); assert.equal(installs, 9, 'install environment is bound');
-  assert.equal(readFileSync(checks, 'utf8').trim().split('\n').length, 20, 'both suites still run on every call');
+  mkdirSync(join(frontend, 'scripts')); writeFileSync(join(frontend, 'scripts/build-owner.ts'), 'export const owner = 1;\n');
+  check(); assert.equal(installs, 9, 'build/staging producer changes invalidate installed generated output');
+  check({...env, INSTALL_SEMANTIC_INPUT: 'new'}); assert.equal(installs, 10, 'install environment is bound');
+  assert.equal(readFileSync(checks, 'utf8').trim().split('\n').length, 22, 'both suites still run on every call');
 }));
 
 test('CI and unsupported command/lifecycle modes stay fresh; failed checks never publish install evidence', () => fixture((dir, env, git) => {

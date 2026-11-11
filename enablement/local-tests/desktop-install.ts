@@ -42,6 +42,11 @@ export function desktopInstallSnapshot(cwd: string, env: NodeJS.ProcessEnv, admi
   const lock = JSON.parse(readFileSync(join(frontend, 'package-lock.json'), 'utf8'));
   if (lock.lockfileVersion !== 3 || !lock.packages?.['']) throw Error('unknown lock format');
   const paths = [join(frontend, 'package.json'), join(frontend, 'package-lock.json')];
+  // These helpers/configs generate or restage installed Record exports during
+  // checks. A changed producer must not inherit the previous generated output.
+  const tooling = git(cwd, env, ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--',
+    desktopPackage + '/scripts', desktopPackage + '/tsconfig*.json', desktopPackage + '/vite.config.*']);
+  paths.push(...tooling.split('\0').filter(Boolean).map(file => resolve(cwd, file)));
   for (const [name, entry] of Object.entries(lock.packages) as [string, any][]) {
     if (entry.hasInstallScript && installScripts.get(name) !== entry.version)
       throw Error('unreviewed dependency install lifecycle');

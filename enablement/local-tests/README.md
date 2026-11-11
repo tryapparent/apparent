@@ -35,7 +35,8 @@ installation hits. CI, missing admission and unsupported command/environment or
 dependency lifecycle shapes retain the original clean install. Hosted workflows
 and native/release gates are unchanged.
 
-`desktop-install.ts` binds the frontend manifest/lock, npm configuration and config
+`desktop-install.ts` binds the frontend manifest/lock, build/staging helpers and
+compiler/Vite configuration, npm configuration and config
 files, Node/npm bytes and versions, OS/architecture, install environment, and
 source inputs of the two supported local file packages (Shared UI and Record
 Storage). Other local packages, linked lock entries and new dependency install
@@ -79,6 +80,11 @@ a synthetic package: consecutive source-only pushes install once and execute
 both suites twice. It also checks dependency damage, mode/deletion changes,
 local-package changes, environment changes, fresh CI fallback and failed checks.
 This proves tooling behavior, not native Electron application acceptance.
+These new installer fixtures run only for tooling/unknown changes or dependency,
+installer-producer and configuration inputs. They are not added to every cheap
+contract pass: ordinary renderer/source pushes retain their actual existing
+suites without paying for synthetic npm reinstalls. Mac CI uses the same
+`run.ts --desktop-install-contracts` selection, with unknown history conservative.
 
 ## Connect service test reuse
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { select, selection, owners, changedPaths, captureToolTests, commands, contractTests, execute, root } from './run.ts';
+import { select, selection, owners, changedPaths, captureToolTests, commands, contractTests, installationContracts, execute, root } from './run.ts';
 
 test('owner selection retains consumers and unrelated packages stay out', () => {
   assert.deepEqual(select(['enablement/local-tests/run.ts']), [...owners]);
@@ -22,6 +22,29 @@ test('unknown, missing history and empty deltas cannot silently skip coverage', 
     assert.deepEqual(select(paths), [...owners]);
   }
   assert.deepEqual(select(['README.md'], false), [...owners]);
+});
+
+test('new install fixtures run for their tooling/dependency inputs, not ordinary product edits', () => {
+  for (const path of ['enablement/local-tests/desktop-install.ts', 'enablement/local-tests/receipt.ts',
+    'enablement/local-tests/service.ts', '.githooks/pre-push', '.github/workflows/verification-platform.yml',
+    'capture/desktop/ui/frontend/package.json', 'capture/desktop/ui/frontend/package-lock.json',
+    'capture/desktop/ui/frontend/.npmrc', 'capture/desktop/ui/frontend/scripts/build-storage-policy.ts',
+    'capture/desktop/ui/frontend/vite.config.ts', 'shared/ui/package.json', 'shared/ui/src/button.tsx',
+    'record/storage/.gitignore', 'record/storage/src/location-policy.ts', 'unknown/input'])
+    assert.equal(installationContracts([path]).length, 1, path);
+  for (const path of ['capture/desktop/ui/frontend/src/main.tsx', 'capture/engine/runtime/recording/mod.rs',
+    'public/site/index.html'])
+    assert.equal(installationContracts([path]).length, 0, path);
+  assert.equal(installationContracts(null).length, 1);
+  assert.equal(installationContracts([]).length, 1);
+  const workflow = '.github/workflows/checks.yml';
+  assert.equal(installationContracts([workflow], [workflow]).length, 0, 'proven control-only edits retain their cheap gate');
+  assert.equal(installationContracts([workflow, 'capture/desktop/ui/frontend/package.json'], [workflow]).length, 1);
+  assert.ok(!contractTests().some(command => command.argv.includes('enablement/local-tests/desktop-install.test.ts')),
+    'unrelated cheap contracts retain their old inventory');
+  const plan = commands(['capture', 'desktop'], 'base', 'head', 'linux', true, {paths: ['capture/desktop/ui/frontend/src/main.tsx']});
+  assert.ok(!plan.some(command => command.argv.includes('enablement/local-tests/desktop-install.test.ts')));
+  assert.ok(plan.some(command => command.argv.includes('test:electron')), 'actual renderer tests stay selected');
 });
 
 test('execution-sensitive workflow edits stay broad; verified non-native plans omit stale CLI work', () => {
@@ -121,7 +144,7 @@ test('real command execution stops at temporary-root or Electron failure without
     for (const failure of ['--preflight', 'test:electron']) {
       process.env.PREFLIGHT_FAIL = failure;
       writeFileSync(trace, '');
-      const plan = commands(['capture', 'desktop'], 'base', 'head', 'linux');
+      const plan = commands(['capture', 'desktop'], 'base', 'head', 'linux', true, {paths: ['capture/desktop/ui/frontend/src/main.tsx']});
       // All package working directories exist, but no installed/generated
       // artifacts are available to conceal a missing prerequisite.
       mkdirSync(join(dir, 'capture/desktop/ui/frontend'), {recursive: true});
@@ -155,7 +178,8 @@ test('committed concurrency-only workflow edits select contracts rather than pro
   assert.deepEqual(result.workflowControls, [path]);
   assert.deepEqual(result.selected, ['tooling']);
   assert.equal(result.rustChanged, false);
-  assert.deepEqual(commands(result.selected, base, 'HEAD').map(command => command.argv), [
+  assert.deepEqual(commands(result.selected, base, 'HEAD', process.platform, result.rustChanged,
+    {paths: result.paths, workflowControls: result.workflowControls}).map(command => command.argv), [
     ['python3', 'enablement/verification.py', '--base', base, '--head', 'HEAD', '--pr'],
     ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'],
   ]);
@@ -355,6 +379,8 @@ function copyInputHelpers(dir: string) {
   copyFileSync(join(root, 'enablement/ci/routing/consumers.ts'), join(dir, 'enablement/ci/routing/consumers.ts'));
   for (const name of ['service.ts', 'receipt.ts', 'desktop-install.ts'])
     copyFileSync(join(root, 'enablement/local-tests', name), join(dir, 'enablement/local-tests', name));
+  // Finite downstream boundary: do not recursively run real npm fixtures here.
+  writeFileSync(join(dir, 'enablement/local-tests/desktop-install.test.ts'), "import {test} from 'node:test'; test('install contract fixture', () => {});\n");
   mkdirSync(join(dir, 'enablement/ci'), {recursive: true});
   for (const name of ['inputs.ts', 'workflow-controls.ts'])
     copyFileSync(join(root, 'enablement/ci', name), join(dir, 'enablement/ci', name));

@@ -255,7 +255,9 @@ jobs:
           touch "$RUNNER_TEMP/verification-timings.jsonl"
       - name: Local Desktop install reuse contracts
         if: runner.os == 'macOS'
-        run: node --experimental-strip-types --test --test-name-pattern='shipped Desktop dependency|actual installed pre-push hook|complete install/check|npm ci lifecycle hooks' enablement/local-tests/desktop-install.test.ts
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node --experimental-strip-types enablement/local-tests/run.ts --base "$BASE_SHA" --head HEAD --desktop-install-contracts --conservative-workflows --run
       - name: Prepare private temporary root before first Cargo
         if: needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true'
         shell: bash
