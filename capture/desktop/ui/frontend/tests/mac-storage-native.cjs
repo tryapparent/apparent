@@ -208,6 +208,29 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     return Math.min(cap, remaining);
   };
   let home, backend, application, electronChild, page, logHandle, failure, pendingNativeChange;
+  const observeOwnedProcesses = async label => {
+    // No argv/environment or unrelated process records enter the artifact.
+    // Observation shares the existing deadline and never changes admission.
+    const observation = { label, at: Date.now() };
+    (report.ownedProcessObservations ??= []).push(observation);
+    try {
+      const result = await run('/bin/ps', ['-axo', 'pid=,ppid=,pcpu=,rss=,etime=,comm='],
+        { timeout: budget(1000), maxBuffer: 1024 * 1024, killSignal: 'SIGKILL' });
+      const rows = result.stdout.split('\n').flatMap(line => {
+        const match = line.trim().match(/^(\d+)\s+(\d+)\s+([\d.]+)\s+(\d+)\s+(\S+)\s+(.+)$/);
+        return match ? [{ pid: Number(match[1]), ppid: Number(match[2]), cpuPercent: Number(match[3]),
+          rssKiB: Number(match[4]), elapsed: match[5], executable: match[6] }] : [];
+      });
+      const owned = new Set([backend?.pid, electronChild?.pid].filter(Boolean));
+      for (let changed = true; changed;) {
+        changed = false;
+        for (const row of rows) if (owned.has(row.ppid) && !owned.has(row.pid)) {
+          owned.add(row.pid); changed = true;
+        }
+      }
+      observation.processes = rows.filter(row => owned.has(row.pid));
+    } catch (error) { observation.unavailable = error.code ?? error.message; }
+  };
   const sleep = () => new Promise(resolve => setTimeout(resolve, 150));
   const poll = async (fn, label, cap = 8000) => {
     const tick = performance.now();
@@ -350,6 +373,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     }, 'Installed Rust live control readiness', 15000);
     };
     await startRust();
+    await observeOwnedProcesses('before-settings-launch');
     application = await electron.launch({ args: [root], env, timeout: budget(15000) });
     electronChild = application.process();
     const launchedAt = Date.now();
@@ -375,6 +399,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     } catch (error) {
       report.electronBootstrap.firstWindowFailedAt = Date.now();
       report.electronBootstrap.attachedWindowsAtFailure = application.windows().length;
+      await observeOwnedProcesses('first-window-failure');
       await bootstrap;
       try {
         report.electronBootstrap.failure = await within(application.evaluate(bootstrapFailure),
@@ -644,6 +669,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     report.passed = true;
   } catch (error) {
     failure = error;
+    if (!report.electronBootstrap?.firstWindowFailedAt) await observeOwnedProcesses('native-test-failure');
     const subprocess = error.cause ?? error;
     report.error = { message: error.message, stack: error.stack,
       subprocess: { code: subprocess.code, signal: subprocess.signal,
