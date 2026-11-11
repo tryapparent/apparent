@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 from urllib.parse import parse_qs, urlsplit
 
@@ -23,13 +24,20 @@ class AdmissionTests(unittest.TestCase):
         script = script.replace('GITHUB_SHA="$CANDIDATE_SHA" cargo build --release --locked',
                                 'printf "%s\\n" "$APPARENT_RELEASE_VERSION" "$APPARENT_RELEASE_CHANNEL" "$APPARENT_REPORTING_ENVIRONMENT"')
         sha = 'a' * 40
+        root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as temporary:
+            environment_file = Path(temporary) / 'version-env'
+            subprocess.run(['node', '--experimental-strip-types', str(root / 'capture/desktop/scripts/release/desktop-version.ts')],
+                           check=True, env=dict(os.environ, GITHUB_ENV=str(environment_file), TAG=''))
+            shared = dict(line.split('=', 1) for line in environment_file.read_text().splitlines())
+        version = shared['APPARENT_RELEASE_VERSION']
         for tag, verify, expected in [
-            ('v1.2.3', 'false', ['v1.2.3', 'stable', 'production']),
-            ('', 'false', ['linux-main-v2-' + sha, 'preview', 'production']),
-            ('', 'true', ['linux-main-v2-' + sha, 'preview', 'synthetic']),
+            ('v' + version, 'false', [version, 'stable', 'production']),
+            ('', 'false', [version, 'preview', 'production']),
+            ('', 'true', [version, 'preview', 'synthetic']),
         ]:
             result = subprocess.run(['bash', '-eu', '-c', script], capture_output=True, text=True,
-                                    env=dict(os.environ, TAG=tag, VERIFY_ONLY=verify, CANDIDATE_SHA=sha))
+                                    env=dict(os.environ, **shared, TAG=tag, VERIFY_ONLY=verify, CANDIDATE_SHA=sha))
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.splitlines(), expected)
 
