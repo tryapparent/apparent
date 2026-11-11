@@ -509,7 +509,7 @@ do {
 // Leave room for the existing failure screenshot and cleanup; diagnostics never mask the
 // original failure and are skipped when the remaining budget cannot cover them.
 if failure != nil, let child = owned, child.isRunning, deadline.timeIntervalSinceNow > 15 {
-    let sample = output.appendingPathComponent("failure-owned-app.sample.txt")
+    let sample = output.appendingPathComponent("failure-owned-app.sample.log")
     do {
         // The retained failure log reached "processing symbols" before the old
         // four-second subprocess cap killed sample without writing its report.
