@@ -303,7 +303,13 @@ for the exact `apparent://open` contract, explicit Linux handler registration an
 
 The onboarding pattern again. `apparent-helper settings` draws the `View` it's sent (General, Recording, Storage, Permissions, Agents, About; ⌘, or the menu's **Settings…**, and **Open Settings** on onboarding's last screen) and reports actions as JSON lines; `Panel` decides and writes `~/.config/apparent/config.json` through `handoff::set_config_value_in` (other keys and `0600` kept). If an existing config is malformed or unreadable, writes fail instead of replacing it with a new object and losing preferences.
 
-Both shortcuts (`ShortcutKind::Record` ⌥⇧S, `Paste` ⌥⇧V) live under `"shortcuts"` (Carbon `keyCode`/`modifiers`/`label`; absent is the default, and `"paste": null` turns paste off; 0.3.x's file under Application Support is moved across once). Each shows only its keys, as rounded keycaps with a little depth in a recessed field, like Hex's control (`capture/desktop/native/ShortcutKeys.swift`). Holding its modifiers while Settings is in front sinks those keys onto their bases and turns the key red. Listening tints the field red: a dot breathes beside "Type a shortcut", and modifiers land as they go down (in macOS order) and lift out when let go, with a red caret after them. An accepted shortcut's keys bob once, left to right. A refused one turns red and shakes before the old keys return, with Rust's reason in the caption. Every value is a closed-form spring evaluated at a time (`Track`, `KeyController`), so the helper draws any moment the same live or rendered, and the TimelineView stops when the keys are still. Clicking a shortcut's row sends `record-shortcut`: Rust pauses every Apparent hotkey (`capture::pause_shortcuts`: Carbon unregistered, `emit_*` muted) so the current combo reaches the recorder, then `settings::validate` turns down combos without ⌘/⌥/⌃ (function keys excepted; Linux also allows unmodified Copilot), ⌘ + one key, macOS's own (a static list plus the helper's enabled `CopySymbolicHotKeys`) and the other shortcut; `capture::set_shortcuts` registers both and puts the old ones back if `RegisterEventHotKey` refuses. Only a default answers to its aliases (⌃/⌘ added, ⌃⌥⌘, the ANSI key); a custom combo matches exactly in Carbon and the key event tap. Paste can be turned off (`ShortcutKind::can_unset`; Record can't, it's the way in) with the × beside its field or Delete while it listens (`clear-shortcut`, `Pressed::is_delete`): `ShortcutConfig::unset()` registers nothing and matches no key, and the field shows "Set shortcut".
+Both shortcuts live under `"shortcuts"` (Carbon `keyCode`/`modifiers`/`label`; absent means the platform default, and `"paste": null` turns paste off; 0.3.x's file under Application Support is moved across once). Record defaults to standalone Fn on macOS (`keyCode: 63`, no modifiers, label `Fn`) and Alt+Shift+S on Linux; Paste remains Alt+Shift+V. Explicit custom shortcuts remain saved. An explicitly saved shortcut, including the former Record default Alt+Shift+S, remains unchanged; only an absent Record preference inherits Fn on Mac. Reset adopts the platform default. Linux's managed desktop binding keeps source precedence and is not changed by reset.
+
+The editor accepts supported single keys as an explicit choice, and Fn alone on Mac. In Electron onboarding, choose **Use Fn**: macOS Fn flags changes do not reliably arrive as ordinary renderer key events. This selection uses the same validation and settings writer as captured keys. Fn is a press/release toggle: release Fn once to start, then release it again to finish. Pressing another key or modifier while Fn is held cancels that gesture; repeats and cancelled presses do not toggle. The 400 ms rapid-repeat guard remains. Fn+another-key and Fn with extra modifiers are not bindings. The native Mac event tap observes Fn flags changes because Carbon cannot register Fn; it only acts on a standalone release and clears pending state when shortcuts pause, the tap is disabled, or another key/modifier intervenes. The tap passes events through and still depends on Accessibility. macOS may also map Fn/Globe to Dictation, Emoji, or another OS action; Apparent leaves that setting and its permissions untouched, so the OS action may happen alongside recording. This binding is available only when the hardware/OS delivers the Fn event. Do not assume every keyboard exposes the same Fn/Globe key.
+
+Reset in Settings restores the platform default; choosing another shortcut is the rollback path. The existing Engine settings adapter still loads and writes `shortcuts` before the Electron frontend starts, so it remains authoritative for startup and native registration. The editor's TypeScript boundary validates capture input independently, while Rust keeps provider/reserved-key validation and the existing single config writer. Move default/persistence ownership only after Record exposes an independently testable preference provider consumed by startup and Settings; remove the legacy adapter only after those consumers and the native event path are verified on Mac and Linux.
+
+Each shortcut shows only its keys, as rounded keycaps with a little depth in a recessed field, like Hex's control (`capture/desktop/native/ShortcutKeys.swift`). Holding its modifiers while Settings is in front sinks those keys onto their bases and turns the key red. Listening tints the field red: a dot breathes beside "Type a shortcut", and modifiers land as they go down (in macOS order) and lift out when let go, with a red caret after them. An accepted shortcut's keys bob once, left to right. A refused one turns red and shakes before the old keys return, with Rust's reason in the caption. Every value is a closed-form spring evaluated at a time (`Track`, `KeyController`), so the helper draws any moment the same live or rendered, and the TimelineView stops when the keys are still. Clicking a shortcut's row sends `record-shortcut`: Rust pauses every Apparent hotkey (`capture::pause_shortcuts`: Carbon unregistered, `emit_*` muted) so the current combo reaches the recorder, then `settings::validate` checks supported keys, system-reserved combinations and the other shortcut; `capture::set_shortcuts` registers chords and restores the old ones if `RegisterEventHotKey` refuses. A custom combo matches exactly in Carbon and the key event tap. Paste can be turned off (`ShortcutKind::can_unset`; Record can't, it's the way in) with the × beside its field or Delete while it listens (`clear-shortcut`, `Pressed::is_delete`): `ShortcutConfig::unset()` registers nothing and matches no key, and the field shows "Set shortcut".
 
 On Omarchy, Hyprland's `code:201` is the Copilot key. The onboarding and Settings shortcut recorder accept unmodified Copilot and Super+Shift+Copilot. At launch Apparent reads an exact `o.bind("code:201", "Apparent: record", "…/apparent shortcut record")` or `o.bind("SUPER + SHIFT + code:201", …)` definition from `$XDG_CONFIG_HOME/hypr/bindings.lua` (or `~/.config/hypr/bindings.lua`) and checks that the physical key, modifier chord and unique live binding match, and that its command is executable. Hyprland 0.56 hides Lua `code:N` identities in `hyprctl binds -j`; Apparent pairs that inventory with `hyprctl binds`, verifies the complete ordered row sets and fingerprints against JSON snapshots taken before and after, then normalizes supported displayed chords. Unsupported or multi-key rows, changed snapshots and modifier mismatches fail closed. Known `code:201`, `F23`, `XF86Assistant` and `LaunchAssistant` bindings on the same chord count as conflicts; a different known physical code such as `code:12` does not conflict just because its modifier mask matches. If the identity cannot be safely established, Apparent refuses the Copilot chord. This external system shortcut takes precedence over Apparent's saved record preference and default: Settings and Review show that exact chord for Record, mark it as managed in Hyprland, and do not install a second recording binding. Any old Apparent-described Alt+Shift+S binding in the live compositor is removed at launch. Change the binding in Hyprland, reload it, then restart Apparent. If the definition or live binding is missing or ambiguous, Apparent uses its saved shortcut or default instead. An Apparent-owned Copilot shortcut can be stored as `"shortcuts": {"record": {"keyCode": 201, "modifiers": 768, "label": "Super+Shift+Copilot"}}` (or modifiers `0` and label `Copilot`; 0 is unmodified and 768 is Super + Shift in Apparent's stored modifier format).
 
@@ -514,32 +520,24 @@ Native fallback routing remains available until installed acceptance; disabling
 the Electron route is the existing rollback. Real platform shortcut/permission/focus
 and packaged acceptance remain separate from renderer and state-machine tests.
 
-### First-capture text note lesson
+### First-capture drawing sequence
 
-After whiteboard drawing, the whiteboard closes and the existing Electron coach
-shows **Add a note.** before the separate screen-drawing lesson:
-“Hold Shift and click a spot.”
-Its compact Shift-click illustration is presentation only, with Replay and a
-reduced-motion still. The trackpad helper appears only in the following screen-drawing lesson.
-Linux opens Whiteboard directly from its recording controls; its guide and
-illustration reflect that button rather than the Mac Screen menu. The existing
-notes editor remains the only place to enter real text; the coach
-never takes keyboard focus or submits a note. On Hyprland, the native adapter
-reconciles X11 keyboard focus after compositor placement for the same current
-owned editor request. Linux note positions convert native pixels to Electron DIP
-and placement converts back, so scaled editors retain their complete controls.
-Rust advances to screen drawing only after
-the current capture's notes session reports a nonempty durable save. Opening the
-editor, keeping a draft, dismissing, empty Enter or a failed write cannot satisfy
-this lesson. Screen marks made before the saved-note transition cannot satisfy
-the later screen-drawing prompt. An early finish still teaches paste/location, but cannot complete
-required practice without drawing and attaching a note. Completed users are not
-re-enrolled. Existing default Electron coaching and native fallback routing are
-unchanged; rollback/remove this lesson together with its durable-save check and
-illustration, rather than rendering a competing surface. Installed Mac/Linux acceptance
-must verify Whiteboard drawing → close Whiteboard → Shift-click → real editor →
-Attach/Enter → screen drawing → Finish, focus restoration,
-and bundle `notes.json`/semantic output. Renderer simulation is not native proof.
+After a real whiteboard stroke, the whiteboard closes and the Electron coach
+continues directly to **Draw on your screen.** The person must make a later,
+separate screen stroke before the coach advances to Finish. The note lesson and
+its Shift-click illustration are removed; adding notes remains optional, and the
+existing notes editor, save receipts and bundle output are unchanged. Old in-memory
+practice state at the removed `note` stage maps to screen drawing and requires a
+fresh stroke, so it cannot mistake earlier screen ink for the next action.
+Whiteboard and screen ink, paste confirmation and opening the current practice
+bundle remain the actual completion evidence. The trackpad helper still appears
+during screen drawing. Installed Mac/Linux acceptance remains required for native
+focus, capture and bundle behavior; renderer simulation is not native proof.
+
+Optional notes still use the existing editor and durable save receipt. On Hyprland,
+the native adapter reconciles keyboard focus after placement for the current owned
+editor request. Note positions convert native pixels to Electron DIP and back, so
+scaled editors retain their complete controls.
 
 The Electron first-capture start state keeps “Go again.” and the saved shortcut in
 the setup window, shortened to 520 pixels with the keys centered in its content. It becomes the floating coach only after capture selection
