@@ -12,7 +12,7 @@ body:has(.capture-notes), body:has(.notes-unavailable) { background: transparent
 }
 .note-popup, .note-list, .note-count {
   background: var(--color-background); color: var(--color-foreground);
-  border-radius: 14px; box-shadow: 0 2px 9px color-mix(in srgb, var(--color-shadow) 20%, transparent);
+  border-radius: 14px; box-shadow: none;
 }
 .note-popup { padding: 15px; }
 .note-popup textarea {
