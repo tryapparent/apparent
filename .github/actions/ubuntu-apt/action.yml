@@ -13,6 +13,7 @@ runs:
         # Other image layouts retain their own configured sources.
         if [ -f "$mirrors" ]; then
           # Refuse to remove a source without an existing official fallback.
-          grep -Eq '^https://(archive|security)\.ubuntu\.com/ubuntu/?[[:space:]]*$' "$mirrors"
-          sudo sed -i '\|^https\?://azure\.archive\.ubuntu\.com/ubuntu/\?[[:space:]]*$|d' "$mirrors"
+          # Hosted images append a tab and priority:N after each URL.
+          grep -Eq '^https://(archive|security)\.ubuntu\.com/ubuntu/?([[:space:]]+priority:[0-9]+)?[[:space:]]*$' "$mirrors"
+          sudo sed -Ei '\|^https?://azure\.archive\.ubuntu\.com/ubuntu/?([[:space:]]+priority:[0-9]+)?[[:space:]]*$|d' "$mirrors"
         fi

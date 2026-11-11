@@ -35,6 +35,13 @@ test('repair refuses a mirror list without an official fallback before changing 
   assert.notEqual(result.status, 0);
   assert.equal(result.content, original);
 });
+test('the actual hosted-image priority fields are preserved on fallback entries', t => {
+  // actions/runner-images images/ubuntu/scripts/build/configure-apt-sources.sh
+  const official = 'https://archive.ubuntu.com/ubuntu/\tpriority:2\nhttps://security.ubuntu.com/ubuntu/\tpriority:3\n';
+  const result = run(t, 'http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\n' + official);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.content, official);
+});
 test('other runner image layouts are unchanged', t => {
   assert.equal(run(t, null).status, 0);
   assert.equal(run(t, fallback).content, fallback);
