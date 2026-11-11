@@ -1022,9 +1022,14 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
   }
 
   private func listenForShortcut(_ on: Bool) {
+    if !on { fnCandidate = false }
     if on, shortcutMonitor == nil {
       shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
-        guard let self, self.model.shortcutEditor?.recording == true else { return event }
+        guard let self else { return event }
+        guard self.model.shortcutEditor?.recording == true else {
+          self.fnCandidate = false
+          return event
+        }
         if event.type == .flagsChanged {
           let modifiers = ShortcutKeys.carbon(event.modifierFlags)
           if event.keyCode == UInt16(kVK_Function) {

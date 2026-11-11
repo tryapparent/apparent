@@ -1618,9 +1618,14 @@ final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
   /// Listens for keys only while a recorder is waiting for one.
   private func listen(_ on: Bool) {
+    if !on { fnCandidate = false }
     if on, monitor == nil {
       monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
-        guard let self, let kind = self.model.state.recording else { return event }
+        guard let self else { return event }
+        guard let kind = self.model.state.recording else {
+          self.fnCandidate = false
+          return event
+        }
         if event.type == .flagsChanged {
           let modifiers = ShortcutKeys.carbon(event.modifierFlags)
           if event.keyCode == UInt16(kVK_Function) {

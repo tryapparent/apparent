@@ -468,6 +468,43 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('heading',{name:'Go again.',exact:true})).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,520]);
   send({step:'shortcut',shortcutEditor:{recording:true,externallyManaged:false}});
+  const recorder=page.getByRole('group',{name:'Shortcut recorder'});
+  await recorder.focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('button',{name:'Close setup'})).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(recorder).toBeFocused();
+  await expect(recorder).toHaveCSS('outline-style','solid');
+  const screenshot=async name=>{
+    if(!process.env.APPARENT_FN_EVIDENCE)return;
+    await fs.mkdir(process.env.APPARENT_FN_EVIDENCE,{recursive:true});
+    await page.screenshot({path:path.join(process.env.APPARENT_FN_EVIDENCE,name+'.png'),fullPage:true});
+  };
+  await screenshot('shortcut-listening-normal-light');
+  await page.setViewportSize({width:320,height:520});
+  for(const scheme of ['light','dark']){
+    await page.emulateMedia({colorScheme:scheme});
+    await expect(page.locator('.native-setup')).toHaveCSS('background-color',scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)');
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`shortcut editor overflows at 320px in ${scheme} mode`);
+    await expect(recorder).toBeInViewport();
+    await screenshot(`shortcut-listening-320-${scheme}`);
+  }
+  await page.emulateMedia({colorScheme:'light'});
+  const priorFnCount=(output.match(/"keyCode":63/g)||[]).length;
+  await recorder.evaluate(element=>element.dispatchEvent(new KeyboardEvent('keydown',{key:'Fn',code:'Fn',metaKey:true,bubbles:true})));
+  await expect(page.getByRole('alert')).toContainText('Fn alone');
+  await screenshot('shortcut-rejected-fn-modifier');
+  assert.equal((output.match(/"keyCode":63/g)||[]).length,priorFnCount,'Fn with another modifier must not be accepted');
+  await recorder.evaluate(element=>element.dispatchEvent(new KeyboardEvent('keydown',{key:'Fn',code:'Fn',bubbles:true})));
+  await expect.poll(()=>output).toContain('"keyCode":63,"modifiers":0,"key":"Fn"');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await screenshot('shortcut-fn-error-recovered');
+  send({step:'shortcut',platform:'macos',shortcut:'Fn',shortcutChosen:true,shortcutTested:false,shortcutEditor:{recording:false,externallyManaged:false,error:null}});
+  await expect(page.getByRole('heading',{name:'Try your shortcut.',exact:true})).toBeVisible();
+  await expect(page.locator('.native-shortcut kbd')).toHaveText('Fn');
+  await screenshot('shortcut-accepted-fn');
+  send({step:'shortcut',platform:'macos',shortcut:'Fn',shortcutChosen:true,shortcutEditor:{recording:true,externallyManaged:false,error:null}});
+  await page.getByRole('group',{name:'Shortcut recorder'}).focus();
   await page.getByRole('group',{name:'Shortcut recorder'}).press('Control+Alt+k');
   await expect.poll(()=>output).toContain('"keyCode":40');
   await expect.poll(()=>output).toContain('"modifiers":6144');

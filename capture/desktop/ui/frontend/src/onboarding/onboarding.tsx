@@ -105,6 +105,7 @@ export function NativeOnboarding(){
       event.preventDefault();if(event.key==='Escape'){void action('cancel-shortcut');return;}
       const pressed=shortcutCapture(event,state.platform);
       if(!pressed){setError(state.platform==='linux'?'Use a supported key by itself or with Control, Alt or Super, or Copilot alone or with Super+Shift.':'Use a supported key by itself or with Control, Option or Command, or Fn alone.');return;}
+      setError('');
       void action({action:'shortcut',kind:'record',...pressed,reserved:false});
       }}><p>Press a supported key or shortcut. On Mac, press and release Fn alone to select it.</p><Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div>:<>
         {state.shortcutChosen?<kbd>{state.shortcut}</kbd>:state.shortcutEditor?.externallyManaged?<><p>Your desktop already has a recording shortcut:</p><kbd>{state.shortcut}</kbd></>:<p>No shortcut selected.</p>}
