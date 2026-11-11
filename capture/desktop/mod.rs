@@ -3450,11 +3450,12 @@ impl ApparentCoordinator {
 
         self.telemetry.set_capture_mode(target.mode);
         self.telemetry.reset_for_session(target.frame);
-        #[cfg(target_os="linux")]
-        if let Some(id)=self.electron_pill.as_ref().and_then(ui::electron_pill::Session::window_number) {
-            self.telemetry.excluded_window_ids.lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner).push(id);
-        }
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        ui::electron_pill::restore_capture_exclusion(
+            &mut self.telemetry.excluded_window_ids.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            self.electron_pill.as_ref().and_then(ui::electron_pill::Session::window_number),
+            cfg!(target_os = "linux") || !crate::shared::handoff::experiment("movableRecordingControls"));
         #[cfg(target_os="macos")]
         self.telemetry.excluded_window_ids.lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -3550,10 +3551,12 @@ impl ApparentCoordinator {
         }};
         start_metric("audio_start_ms", stage);
         let stage = Instant::now();
-        let screen_session = match ScreenCaptureSession::start(
+        let screen_session = match ScreenCaptureSession::start_with_exclusion_receipt(
             target.clone(),
             Some(video_path),
             Arc::clone(&self.telemetry.excluded_window_ids),
+            #[cfg(target_os = "macos")]
+            Arc::clone(&self.telemetry.applied_excluded_window_ids),
         ) {
             Ok(session) => session,
             Err(error) => {
@@ -6968,9 +6971,9 @@ pub fn run_app(
         }
         let has_initial = initial_bundle.is_some();
         let coordinator = cx.new(|_| ApparentCoordinator::new(telemetry, initial_bundle));
-        // Warm the hidden Linux controls before the first capture. Capture
+        // Warm the hidden shared controls before the first capture. Capture
         // admission and shortcuts do not wait for renderer startup.
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         coordinator.update(cx, |coord, _| coord.ensure_electron_pill());
         set_status_inbox_count(coordinator.read(cx).inbox.len());
         #[cfg(target_os = "macos")]

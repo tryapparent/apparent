@@ -95,16 +95,27 @@ impl ApparentCoordinator {
             return;
         }
         if !self.electron_pill_routed {
-            #[cfg(target_os = "linux")]
-            if let Some(id) = self.electron_pill.as_ref().and_then(Session::window_number) {
+            {
                 let mut excluded = self
                     .telemetry
                     .excluded_window_ids
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if !excluded.contains(&id) {
-                    excluded.push(id);
-                }
+                super::restore_capture_exclusion(&mut excluded,
+                    self.electron_pill.as_ref().and_then(Session::window_number),
+                    cfg!(target_os = "linux") || !crate::shared::handoff::experiment("movableRecordingControls"));
+            }
+            #[cfg(target_os = "macos")]
+            if (self.is_recording() || self.is_processing())
+                && !crate::shared::handoff::experiment("movableRecordingControls")
+                && !super::capture_exclusion_ready(
+                    self.electron_pill.as_ref().and_then(Session::window_number),
+                    &self.telemetry.applied_excluded_window_ids.lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner))
+            {
+                // Keep the already excluded native surface until SCK confirms
+                // this child's ID is in the actual filter, not merely requested.
+                return;
             }
             self.electron_pill_routed = true;
             self.island_await_frame = false;

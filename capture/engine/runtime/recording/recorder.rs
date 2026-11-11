@@ -133,6 +133,8 @@ pub(crate) struct Sampler {
     /// Apparent's own windows to leave out of the recording.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub excluded_window_ids: Arc<Mutex<Vec<u32>>>,
+    #[cfg(target_os = "macos")]
+    pub applied_excluded_window_ids: Arc<Mutex<Vec<u32>>>,
     pub started_at: Instant,
     pub stopping: Arc<AtomicBool>,
     pub urgent: Arc<AtomicBool>,
@@ -200,6 +202,19 @@ impl ScreenCaptureSession {
         video_output_path: Option<PathBuf>,
         excluded_window_ids: Arc<Mutex<Vec<u32>>>,
     ) -> anyhow::Result<Self> {
+        Self::start_with_exclusion_receipt(target, video_output_path, excluded_window_ids,
+            #[cfg(target_os = "macos")]
+            Arc::new(Mutex::new(Vec::new())),
+        )
+    }
+
+    pub fn start_with_exclusion_receipt(
+        target: TargetInfo,
+        video_output_path: Option<PathBuf>,
+        excluded_window_ids: Arc<Mutex<Vec<u32>>>,
+        #[cfg(target_os = "macos")]
+        applied_excluded_window_ids: Arc<Mutex<Vec<u32>>>,
+    ) -> anyhow::Result<Self> {
         super::super::ensure_recording_mode(target.mode)?;
         if let Some(directory) = video_output_path.as_deref().and_then(std::path::Path::parent) {
             crate::capture::engine::bundle::recover::adopt_microphone_intent(directory, &target)?;
@@ -227,6 +242,8 @@ impl ScreenCaptureSession {
                     target: sampler_target,
                     video_output_path,
                     excluded_window_ids,
+                    #[cfg(target_os = "macos")]
+                    applied_excluded_window_ids,
                     started_at,
                     stopping: thread_stopping,
                     urgent: thread_urgent,

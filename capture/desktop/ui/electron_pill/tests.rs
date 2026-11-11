@@ -1,4 +1,30 @@
 use super::*;
+
+#[test]
+fn child_window_exclusion_covers_initial_reset_and_late_readiness() {
+    let mut ids = vec![11];
+    restore_capture_exclusion(&mut ids, None, true);
+    assert_eq!(ids, [11]);
+    restore_capture_exclusion(&mut ids, Some(42), true);
+    restore_capture_exclusion(&mut ids, Some(42), true);
+    assert_eq!(ids, [11, 42]);
+    ids.clear(); // The real start path resets telemetry before the initial SCK filter.
+    restore_capture_exclusion(&mut ids, Some(42), true);
+    assert_eq!(ids, [42]);
+    ids.clear();
+    restore_capture_exclusion(&mut ids, Some(42), false);
+    restore_capture_exclusion(&mut ids, Some(0), true);
+    assert!(ids.is_empty()); // Explicitly visible controls and unknown IDs stay out.
+}
+
+#[test]
+fn late_child_stays_hidden_until_its_filter_receipt() {
+    assert!(!capture_exclusion_ready(Some(42), &[]));
+    assert!(!capture_exclusion_ready(Some(42), &[11]));
+    assert!(!capture_exclusion_ready(None, &[42]));
+    assert!(!capture_exclusion_ready(Some(0), &[0]));
+    assert!(capture_exclusion_ready(Some(42), &[11, 42]));
+}
 use crate::capture::desktop::native::pill::PillStyle;
 fn snapshot(pres: Pres) -> PillSnapshot {
     PillSnapshot {

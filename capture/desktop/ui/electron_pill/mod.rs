@@ -11,6 +11,19 @@ use crate::capture::desktop::{
 };
 pub use session::Session;
 
+/// Restore an externally hosted control's native window ID after capture reset,
+/// or before its first visible frame when the child becomes ready later.
+pub(crate) fn restore_capture_exclusion(ids: &mut Vec<u32>, window: Option<u32>, exclude: bool) {
+    if exclude && let Some(id) = window.filter(|id| *id > 0) && !ids.contains(&id) {
+        ids.push(id);
+    }
+}
+
+#[cfg(any(test, target_os = "macos"))]
+pub(crate) fn capture_exclusion_ready(window: Option<u32>, applied: &[u32]) -> bool {
+    window.is_some_and(|id| id > 0 && applied.contains(&id))
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct View {
