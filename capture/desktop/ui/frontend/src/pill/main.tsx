@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {Button} from '@apparent/ui/button';
 import type {PillView} from './bridge';
 import './style.css';
+import {InputMeter} from './input-meter';
 import {Check,Circle,ClipboardPaste,Link,LoaderCircle,Monitor,PenLine,Scan,ScanEye,Smartphone,Square,X,type LucideIcon} from 'lucide-react';
 
 const actionIcons:Record<string,LucideIcon>={
@@ -13,6 +14,13 @@ const actionIcons:Record<string,LucideIcon>={
 
 function Pill() {
   const [view,setView]=useState<PillView|null>(null);
+  const [receivedAt,setReceivedAt]=useState(0);
+  const [systemReduced,setSystemReduced]=useState(false);
+  useEffect(()=>{
+    const media=matchMedia('(prefers-reduced-motion: reduce)');
+    const update=()=>setSystemReduced(media.matches);update();
+    media.addEventListener('change',update);return()=>media.removeEventListener('change',update);
+  },[]);
   const [pending,setPending]=useState(false);
   const [error,setError]=useState(false);
   const current=useRef<PillView|null>(null);
@@ -25,7 +33,7 @@ function Pill() {
     const apply=(next:PillView|null)=>{
       if(!active || !next || current.current && next.revision<current.current.revision)return;
       if(next.revision!==current.current?.revision){busy.current=false;setPending(false);setError(false);}
-      current.current=next;setView(next);
+      current.current=next;setReceivedAt(performance.now());setView(next);
     };
     const unsubscribe=bridge.subscribe(apply);
     void bridge.read().then(apply).catch(()=>{if(active)setError(true);});
@@ -78,7 +86,7 @@ function Pill() {
         {view.phase==='recording'?view.clock:view.phase==='processing'?'Processing…':view.label}
       </span>
     </div>}
-    {view.inputLevel!==null && view.phase==='recording' && <span className="meter" aria-label="Microphone input level">{[.55,.8,1,.75,.5].map((gain,index)=><i key={index} style={{height:`${3+19*gain*view.inputLevel!}px`}}/>)}</span>}
+    {view.inputLevel!==null && view.phase==='recording' && <InputMeter input={view.inputLevel} receivedAt={receivedAt} reduced={view.reducedMotion || systemReduced}/>}
     {view.warning && view.warning!==view.label && <span className="warning" role="status">{view.warning}</span>}
     {view.notice && <span className="notice" role="status">{view.notice}</span>}
     {error && <span role="alert">Action not confirmed. Use the recording shortcut or tray menu.</span>}

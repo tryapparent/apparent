@@ -33,7 +33,7 @@ impl InputWarning {
     }
 }
 
-/// Actual captured samples drive this warning; the pill's animation is not a meter.
+/// Actual captured samples drive health warnings independently of presentation.
 struct InputHealth {
     started: Instant,
     last_sample: Option<Instant>,
@@ -153,10 +153,11 @@ enum InputStream {
 
 impl AudioRecorder {
     /// A read-only view of recorded samples. A repeated count means no new input arrived.
-    #[cfg(target_os = "linux")]
     pub fn input_activity(&self) -> Option<(usize, f32)> {
-        let samples = self.samples.lock().ok()?;
-        Some((samples.len(), input_level(&samples)))
+        let samples = self.samples.try_lock().ok()?;
+        let fresh = self.health.try_lock().ok()?.last_sample
+            .is_some_and(|last| last.elapsed() < Duration::from_millis(250));
+        Some((samples.len(), if fresh { input_level(&samples) } else { 0.0 }))
     }
     pub fn start(bundle_dir: &std::path::Path) -> Result<Self> {
         let started = std::time::Instant::now();
@@ -702,6 +703,31 @@ mod tests {
         assert_eq!(h.status(start + Duration::from_secs(23)), Some(InputWarning::VeryQuiet));
         h.sample(start + Duration::from_secs(24), 0.1);
         assert_eq!(h.status(start + Duration::from_secs(24)), None);
+    }
+
+    #[test]
+    fn input_activity_reads_capture_pcm_and_expires_a_stalled_stream() {
+        let now = Instant::now();
+        let recorder = AudioRecorder {
+            worker: None, stop_sender: None,
+            samples: Arc::new(Mutex::new(vec![0.2; 1280].into())),
+            writer: None, error: Arc::new(Mutex::new(None)),
+            health: Arc::new(Mutex::new(InputHealth::new(now))),
+            live: None, word_probe: None,
+            #[cfg(target_os = "linux")]
+            pause: None,
+        };
+        assert_eq!(recorder.input_activity(), Some((1280, 0.0)));
+        recorder.health.lock().unwrap().sample(now, 0.2);
+        assert!(recorder.input_activity().unwrap().1 > 0.0);
+        recorder.health.lock().unwrap().last_sample = Some(now - Duration::from_secs(1));
+        assert_eq!(recorder.input_activity(), Some((1280, 0.0)));
+        recorder.samples.lock().unwrap().extend(vec![0.0; 1280]);
+        recorder.health.lock().unwrap().sample(Instant::now(), 0.0);
+        assert_eq!(recorder.input_activity(), Some((2560, 0.0)));
+        let held = recorder.samples.lock().unwrap();
+        assert_eq!(recorder.input_activity(), None, "meter must never block capture");
+        drop(held);
     }
 
     #[test]
