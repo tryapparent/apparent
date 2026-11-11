@@ -12,17 +12,20 @@ SPARKLE = "http://www.andymatuschak.org/xml-namespaces/sparkle"
 ET.register_namespace("sparkle", SPARKLE)
 
 
-def make_feed(previous: str, archive: Path, version: str, build: str, attrs: str, url: str) -> bytes:
+def make_feed(previous: str, archive: Path, version: str, build: str, attrs: str, url: str, tag: str) -> bytes:
     match = re.fullmatch(r'sparkle:edSignature="([A-Za-z0-9+/]{86}==)" length="([0-9]+)"', attrs.strip())
     if not match or len(base64.b64decode(match[1], validate=True)) != 64:
         raise ValueError("invalid Sparkle signature output")
     if int(match[2]) != archive.stat().st_size:
         raise ValueError("signed archive length does not match the ZIP")
-    if not re.fullmatch(r"[0-9]+\.[0-9]+", build) or version != f"0.{build}":
-        raise ValueError("preview version and build number disagree")
-    run, attempt = build.split(".")
+    if not re.fullmatch(r"[0-9]+\.[0-9]+", build) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+        raise ValueError("invalid preview version or build number")
+    # desktop-version.ts owns release/tag selection. This XML boundary checks
+    # the exact supplied release URL without coupling it to Sparkle's build.
+    if not re.fullmatch(r"preview-mac-[0-9]+-[0-9]+(?:-[0-9]+)?", tag):
+        raise ValueError("invalid preview release tag")
     expected = (f"https://github.com/tryapparent/apparent/releases/download/"
-                f"preview-mac-{run}-{attempt}/Apparent-Preview-{version}-arm64.zip")
+                f"{tag}/Apparent-Preview-{version}-arm64.zip")
     if url != expected or archive.name != f"Apparent-Preview-{version}-arm64.zip":
         raise ValueError("archive URL must match this preview release")
     if previous.strip():
@@ -39,6 +42,12 @@ def make_feed(previous: str, archive: Path, version: str, build: str, attrs: str
                 raise ValueError("invalid previous build number")
             if tuple(map(int, build.split("."))) <= tuple(map(int, last_build.split("."))):
                 raise ValueError("preview feed cannot move backwards or repeat a build")
+        last_version = last.findtext(f"{{{SPARKLE}}}shortVersionString") if last is not None else None
+        if last_version is not None:
+            if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", last_version):
+                raise ValueError("invalid previous release version")
+            if tuple(map(int, version.split("."))) <= tuple(map(int, last_version.split("."))):
+                raise ValueError("preview release version cannot move backwards or repeat")
     else:
         root = ET.Element("rss", {"version": "2.0"})
         channel = ET.SubElement(root, "channel")
@@ -61,11 +70,11 @@ def make_feed(previous: str, archive: Path, version: str, build: str, attrs: str
 
 def main():
     parser = argparse.ArgumentParser()
-    for name in ("previous", "zip", "version", "build-number", "signature-attributes", "url", "out"):
+    for name in ("previous", "zip", "version", "build-number", "signature-attributes", "url", "tag", "out"):
         parser.add_argument("--" + name, required=True)
     args = parser.parse_args()
     result = make_feed(Path(args.previous).read_text(), Path(args.zip), args.version,
-                       args.build_number, args.signature_attributes, args.url)
+                       args.build_number, args.signature_attributes, args.url, args.tag)
     Path(args.out).write_bytes(result)
 
 

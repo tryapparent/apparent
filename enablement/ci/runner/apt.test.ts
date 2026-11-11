@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,readFileSync,writeFileSync,rmSync,symlinkSync} from 'node:fs';
+import {mkdtempSync,readFileSync,readdirSync,writeFileSync,rmSync,symlinkSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {YAML} from 'bun';
 const root=new URL('../../../',import.meta.url);
@@ -26,14 +26,15 @@ test('runner mirror transport preserves sources and is idempotent; unsafe target
  }finally{rmSync(job,{recursive:true,force:true});}
 });
 test('each affected hosted dependency consumer prepares transport before installation',()=>{
- for(const [workflow,jobs] of [['checks',['portable']],['stream-public',['verify']],['verification-platform',['select','desktop-ui','rust']]] as const){
-  const source=read(`.github/workflows/${workflow}.yml`);
-  for(const name of jobs){
-   const steps=source.jobs[name].steps;
-   const transport=steps.findIndex((s:any)=>s.uses==='./.github/actions/ubuntu-apt');
+ for(const workflow of readdirSync(new URL('.github/workflows/',root)).filter(name=>name.endsWith('.yml'))){
+  const source=read(`.github/workflows/${workflow}`);
+  for(const [name,job] of Object.entries(source.jobs) as [string,any][]){
+   const steps=job.steps??[];
    const install=steps.findIndex((s:any)=>/apt-get|install-deps|with-deps|appimage\/dependencies/.test(s.run??''));
+   if(install<0)continue;
+   const transport=steps.findIndex((s:any)=>s.uses==='./.github/actions/ubuntu-apt' || s.uses==='tryapparent/apparent/.github/actions/ubuntu-apt@4beaef83eec4a11ed709b05ee76c881055bfd46b');
    assert.ok(transport>=0 && transport<install,`${workflow}/${name}`);
-   assert.equal(steps[transport].if,"runner.os == 'Linux'");
+   assert.equal(steps[transport].if,workflow==='release-linux.yml'?"runner.os == 'Linux' && runner.arch == 'X64'":"runner.os == 'Linux'");
   }
  }
 });

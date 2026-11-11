@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync, readdirSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync, unlinkSync, chmodSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {YAML} from 'bun';
-import {select, changedPaths, macDecision, selectRange, documentationOnlyPath, needsPlatform, requiresMacRustRange, presentationInputs} from './select.ts';
+import {select, changedPaths, macDecision, requiresMacRust, selectRange, documentationOnlyPath, needsPlatform, requiresMacRustRange, presentationInputs} from './select.ts';
 import {selectedOwners, suitePlan, publicMarkdown, linuxDrivers} from './routing/consumers.ts';
 import {selection as localSelection, commands as localCommands} from '../local-tests/run.ts';
 
@@ -282,4 +282,24 @@ test('recipient playback provisions FFmpeg and stable Chrome before the portable
     assert.equal(steps[media].if,condition);
     assert.equal(steps.find((step:any)=>step.id==='chrome').with['chrome-version'],'stable');
   }
+});
+
+test('audited Record inputs retain Desktop and native platform consumers only', () => {
+  for (const pkg of ['storage', 'completion']) {
+    for (const input of ['src/policy.ts', 'test/policy.test.ts', 'package.json', 'package-lock.json', 'tsconfig.json', ...(pkg === 'storage' ? ['build.ts'] : [])]) {
+      const paths = [`record/${pkg}/${input}`];
+      assert.deepEqual(selectedOwners(paths), ['capture', 'desktop']);
+      assert.deepEqual(suitePlan(paths), {root: true, engine: false, desktop: true, client: false,
+        browser: false, service: false, tools: false, hermes: false});
+      assert.deepEqual(select(paths), {public: false, updater: false});
+      assert.equal(needsPlatform(paths), true);
+      assert.equal(macDecision(paths).macos, true);
+      assert.equal(requiresMacRust(paths, []), true);
+    }
+    assert.deepEqual(selectedOwners([`record/${pkg}/AGENTS.md`]), []);
+    for (const input of ['instructions/AGENTS.md', 'src/SKILL.md', 'native.rs', 'native.swift', 'native.S', 'Cargo.toml', 'src/unknown.bin', 'build.sh'])
+      assert.deepEqual(selectedOwners([`record/${pkg}/${input}`]), selectedOwners(null));
+  }
+  assert.deepEqual(selectedOwners(['record/unknown/src/policy.ts']), selectedOwners(null));
+  assert.deepEqual(selectedOwners(['record/storage/src/policy.ts', 'connect/web/src/api.ts']), ['capture', 'desktop', 'web']);
 });

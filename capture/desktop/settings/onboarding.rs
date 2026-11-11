@@ -1155,7 +1155,6 @@ impl Session {
         let events = move |event| {
             if event_alive.load(std::sync::atomic::Ordering::Acquire) { events(event); }
         };
-        let electron = super::presentation::assets().filter(|(app, _)| app.join("dist/onboarding.html").is_file() && app.join("electron/onboarding.cjs").is_file());
         let native_events = events.clone();
         let native_shortcut = shortcut.to_owned();
         let native = move |generation| {
@@ -1172,9 +1171,30 @@ impl Session {
                 Ok(Transport::InProcess(Some(sender)))
             }
         };
-        let attempted = electron.and_then(|(app, runtime)| {
-            Self::spawn_renderer_transport(&mut super::presentation::onboarding_command(runtime, app), transport_generation, events.clone()).ok()
-        });
+        let attempted = match super::presentation::onboarding_assets() {
+            Err(stage) => {
+                crate::capture::engine::runtime::apparent_log(format!(
+                    "onboarding renderer unavailable stage={}",
+                    stage.stage()
+                ));
+                None
+            }
+            Ok((app, runtime)) => {
+                let mut command = super::presentation::onboarding_command(runtime, app);
+                match Self::spawn_renderer_transport(&mut command, transport_generation, events.clone()) {
+                    Ok(transport) => Some(transport),
+                    Err(error) => {
+                        let kind = error.downcast_ref::<std::io::Error>()
+                            .map(|error| format!("io_{:?}", error.kind()))
+                            .unwrap_or_else(|| "other".to_owned());
+                        crate::capture::engine::runtime::apparent_log(format!(
+                            "onboarding renderer unavailable stage=spawn_error kind={kind}"
+                        ));
+                        None
+                    }
+                }
+            }
+        };
         let shell = attempted.is_some();
         let (transport, fallback) = match attempted {
             Some(transport) => (transport, Some(Box::new(native) as Box<dyn Fn(u64) -> anyhow::Result<Transport>>)),
@@ -1342,7 +1362,10 @@ impl Session {
                     events(Event::Action(action));
                 }
             }
-            if !closed { events(Event::Exited); }
+            if !closed {
+                crate::capture::engine::runtime::apparent_log("onboarding renderer transport stdout closed");
+                events(Event::Exited);
+            }
         });
     }
 
@@ -1360,6 +1383,7 @@ impl Session {
         }
         self.fallback_pending = false;
         let Some(fallback) = self.fallback.take() else { return false; };
+        crate::capture::engine::runtime::apparent_log("onboarding native fallback requested");
         if let Some(adapter) = self.permission_adapter.take() { retire_transport(adapter); }
         let old = std::mem::replace(&mut self.transport, Transport::InProcess(None));
         retire_transport(old);
@@ -1377,7 +1401,16 @@ impl Session {
                 if self.flow.hidden { self.send(&serde_json::json!({"type": "hide"})); }
                 true
             }
-            Err(_) => false,
+            Err(error) => {
+                let kind = error
+                    .downcast_ref::<std::io::Error>()
+                    .map(|error| format!("io_{:?}", error.kind()))
+                    .unwrap_or_else(|| "other".to_owned());
+                crate::capture::engine::runtime::apparent_log(format!(
+                    "onboarding native fallback failed kind={kind}"
+                ));
+                false
+            }
         }
     }
 

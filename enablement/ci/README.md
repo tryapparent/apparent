@@ -81,3 +81,9 @@ archive keys, package signatures, source suites or dependency/test requirements.
 It is restricted to disposable Linux Actions runners. macOS keeps its existing
 Homebrew/native setup. Tests execute the shipped mirror-list transformation
 against isolated files, including idempotence and unsafe-target refusal.
+The updater harness, manual web verifier and x86 Linux packaging also prepare
+transport before package installation. Packaging pins the reviewed action so
+older checked-out release tags need not contain it. ARM packaging uses the
+existing Ubuntu ports path; the x86 archive mirror is not ARM transport proof.
+The workflow regression enumerates all package-install callers, including manual
+workflows, so a new caller cannot silently omit preparation.

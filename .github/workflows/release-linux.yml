@@ -159,9 +159,16 @@ jobs:
       - name: Confirm build identity
         if: env.TAG == ''
         run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - name: Prepare hosted Ubuntu package transport
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        # Pin the reviewed helper independently of the checked-out release tag.
+        # ARM uses ubuntu-ports and retains its existing package source path.
+        uses: tryapparent/apparent/.github/actions/ubuntu-apt@4beaef83eec4a11ed709b05ee76c881055bfd46b
       - uses: actions/setup-node@v4
         with:
           node-version: '22.23.0'
+      - name: Resolve shared desktop release version
+        run: node --experimental-strip-types capture/desktop/scripts/release/desktop-version.ts
       - name: Build Connect client prerequisite for native tests
         working-directory: connect/client/typescript
         run: |
@@ -179,13 +186,13 @@ jobs:
         env:
           POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
         run: |
-          node --experimental-strip-types --test capture/desktop/scripts/release/posthog-release.test.ts
+          node --experimental-strip-types --test capture/desktop/scripts/release/desktop-version.test.ts capture/desktop/scripts/release/posthog-release.test.ts
           node --experimental-strip-types capture/desktop/scripts/release/posthog-release.ts linux
       - name: Build with PostHog error reporting
         env:
           APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
         run: |
-          export APPARENT_RELEASE_VERSION="${TAG:-linux-main-v2-$CANDIDATE_SHA}"
+          test -n "$APPARENT_RELEASE_VERSION"
           export APPARENT_RELEASE_CHANNEL=preview
           export APPARENT_REPORTING_ENVIRONMENT=production
           if [[ -n "$TAG" ]]; then export APPARENT_RELEASE_CHANNEL=stable; fi
