@@ -171,7 +171,9 @@ def prepared_inputs(args):
                          'inode': template.st_ino, 'size': template.st_size,
                          'mtime_ns': template.st_mtime_ns, 'ctime_ns': template.st_ctime_ns},
             'desktop': args.desktop, 'ssh_user': args.ssh_user,
-            'isolated_network': args.isolated_network, 'outputs': args.outputs}
+            'isolated_network': args.isolated_network, 'outputs': args.outputs,
+            'input_profile': args.input_profile, 'required_commands': args.require_command,
+            'required_host_commands': args.require_host_command}
 
 
 # Used verbatim on both ends: successful scp alone is not verified retention.
@@ -239,7 +241,9 @@ def arm_expiry(directory, seconds):
     return unit
 
 
-def qemu_command(overlay, vars_copy, directory, port, memory, isolated_network=False, outputs=1, desktop='hyprland'):
+def qemu_command(overlay, vars_copy, directory, port, memory, isolated_network=False, outputs=1, desktop='hyprland', input_profile='tablet'):
+    if input_profile not in ('mouse', 'tablet'):
+        raise ValueError('unsupported input profile')
     if outputs not in (1, 2):
         raise ValueError('only one or two isolated virtual outputs are supported')
     # Xorg exposed only one monitor with the separate-provider fixture.
@@ -248,13 +252,13 @@ def qemu_command(overlay, vars_copy, directory, port, memory, isolated_network=F
     primary = 'virtio-vga,max_outputs=2,id=apparent-x11-display' if x11_heads else 'virtio-vga'
     command = [
         "qemu-system-x86_64", "-name", "scrawl-gui-" + directory.name,
-        "-machine", "q35,accel=kvm", "-cpu", "host", "-smp", "4", "-m", str(memory),
+        "-machine", "q35,accel=kvm" + (",i8042=off" if input_profile == "mouse" else ""), "-cpu", "host", "-smp", "4", "-m", str(memory),
         "-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd",
         "-drive", "if=pflash,format=raw,file=" + str(vars_copy),
         "-drive", "if=virtio,format=qcow2,file=" + str(overlay) + ",cache=none",
         "-boot", "order=c", "-device", primary, "-display", "dbus,p2p=yes" if x11_heads else "none",
         "-vnc", "unix:" + str(directory / "vnc.sock"),
-        "-device", "qemu-xhci", "-device", "usb-tablet", "-device", "usb-kbd",
+        "-device", "qemu-xhci", "-device", "usb-" + input_profile, "-device", "usb-kbd",
         "-netdev", f"user,id=net0,hostfwd=tcp:127.0.0.1:{port}-:22" + (",restrict=on" if isolated_network else ""),
         "-device", "virtio-net-pci,netdev=net0",
         "-qmp", "unix:" + str(directory / "qmp.sock") + ",server=on,wait=off",
@@ -286,14 +290,33 @@ def guest_staging_command(binary_directory, output_directory):
             ' && mkdir -m 700 -- ' + shlex.quote(output_directory))
 
 
+def guest_tmp(libraries):
+    # Chromium and Unix socket producers append their own unpredictable suffixes.
+    return '/tmp/ag-' + hashlib.sha256(libraries.encode()).hexdigest()[:20]
+
+
+def readiness_command(libraries, required):
+    # Fail before product execution. Never install dependencies during a take.
+    checks = ['command -v -- ' + shlex.quote(name) + " >/dev/null || { printf '%s\\n' " +
+              shlex.quote('missing required guest command: ' + name) + ' >&2; exit 69; }' for name in required]
+    return ' && '.join(['mkdir -m 700 -- ' + shlex.quote(guest_tmp(libraries)), *checks])
+
+
 def scenario_command(remote, output, binary, libraries, audio):
     # Library search applies only when the recipe invokes the candidate. Bash,
     # Python and system desktop tools must load their own distribution runtime.
-    return ('SCRAWL_GUI_OUTPUT=' + shlex.quote(output) +
+    # Import only desktop-session variables, without evaluating shell text.
+    session = ('while IFS= read -r entry; do case "$entry" in '
+               'DISPLAY=*|WAYLAND_DISPLAY=*|XDG_RUNTIME_DIR=*|DBUS_SESSION_BUS_ADDRESS=*|'
+               'HYPRLAND_INSTANCE_SIGNATURE=*|XDG_CURRENT_DESKTOP=*|XDG_SESSION_TYPE=*) '
+               'export "$entry";; esac; done < <(systemctl --user show-environment); exec env ')
+    command = ('TMPDIR=' + shlex.quote(guest_tmp(libraries)) +
+            ' SCRAWL_GUI_OUTPUT=' + shlex.quote(output) +
             ' SCRAWL_GUI_BINARY=' + shlex.quote(binary) +
             ' SCRAWL_GUI_AUDIO_FILE=' + shlex.quote(audio) +
             ' SCRAWL_GUI_LIBRARY_PATH=' + shlex.quote(libraries) +
             ' bash ' + shlex.quote(remote))
+    return 'bash -c ' + shlex.quote(session + command)
 
 
 def desktop_probe(desktop):
@@ -444,6 +467,12 @@ def main():
     parser.add_argument("--scenario", type=Path, required=True, help="guest bash script; runs after the selected desktop starts")
     parser.add_argument("--desktop", choices=('hyprland', 'gnome', 'kde', 'gnome-x11'), default='hyprland',
                         help="required test-user desktop (default: hyprland; kde means Wayland)")
+    parser.add_argument("--input-profile", choices=('tablet', 'mouse'), default='tablet',
+                        help="one USB pointer profile; mouse uses relative motion for coherent held strokes")
+    parser.add_argument("--require-command", action='append', default=[],
+                        help="guest command required before scenario; repeat for media/fixture tools")
+    parser.add_argument("--require-host-command", action='append', default=[],
+                        help="local command required before guest allocation; repeat for host decoders/tools")
     parser.add_argument("--audio-file", type=Path, help="optional WAV stimulus staged inside the guest")
     parser.add_argument("--binary", type=Path, required=True, help="candidate executable (sibling .so files are staged too)")
     parser.add_argument("--results", type=Path, required=True, help="new directory; retained after the run")
@@ -483,6 +512,8 @@ def main():
         write_result(directory, status)
 
     def failure(error):
+        if status['stage'] == 'readiness':
+            status['guest_readiness'] = {'status': 'failed', 'required_commands': args.require_command}
         if status['primary_failure'] is None:
             status['primary_failure'] = failure_record(status['stage'], error)
         else:
@@ -506,6 +537,11 @@ def main():
             raise RuntimeError('require memory >= 2048, job-timeout >= 30 and positive boot/scenario timeouts')
         if any(',' in str(path.resolve()) for path in (directory, args.template, args.ovmf_vars)):
             raise RuntimeError('QEMU disk and firmware paths must not contain commas')
+        if any(not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.+-]*', name) for name in [*args.require_command, *args.require_host_command]):
+            raise RuntimeError('required commands must be simple executable names')
+        for name in args.require_host_command:
+            if not shutil.which(name):
+                raise RuntimeError('missing required host command: ' + name)
         x11_heads = args.desktop == 'gnome-x11' and args.outputs == 2
         if x11_heads:
             x11_display_support()  # fail before any allocation, including preflight
@@ -528,7 +564,7 @@ def main():
             vars_copy = directory / "OVMF_VARS.fd"
             copy_firmware(args.ovmf_vars, vars_copy)
             port = available_port()
-            command = qemu_command(overlay, vars_copy, directory, port, args.memory, args.isolated_network, args.outputs, desktop=args.desktop)
+            command = qemu_command(overlay, vars_copy, directory, port, args.memory, args.isolated_network, args.outputs, desktop=args.desktop, input_profile=args.input_profile)
             # The user manager survives a SIGKILL or OOM kill of this runner.
             # Refuse to boot at all if that independent expiry cannot be armed.
             expiry_unit = arm_expiry(directory, args.job_timeout)
@@ -559,6 +595,8 @@ def main():
                 boot_seconds = round(time.monotonic() - start, 2)
                 status['boot_seconds'] = boot_seconds
                 status['environment'] = 'ready'
+                status['transport'] = {'ssh_port': port, 'ssh_user': args.ssh_user,
+                                       'qmp_socket': str(directory / 'qmp.sock'), 'anchor_pid': process.pid}
                 stage('staging')
                 remote = "/home/" + args.ssh_user + "/scrawl-gui-scenario-" + uuid.uuid4().hex + ".sh"
                 guest_output = "/home/" + args.ssh_user + "/scrawl-gui-output-" + uuid.uuid4().hex
@@ -587,6 +625,10 @@ def main():
                     actual = call(prefix + ["sha256sum " + shlex.quote(target)]).stdout.split()[0]
                     if actual != status['inputs']['files'][str(source.absolute())]['sha256']:
                         raise RuntimeError(f'staged input hash differs from preflight: {source}')
+                stage('readiness')
+                call(prefix + [readiness_command(guest_bin, args.require_command)], timeout=10)
+                status['guest_readiness'] = {'status': 'passed', 'required_commands': args.require_command,
+                                             'tmpdir': guest_tmp(guest_bin), 'input_profile': args.input_profile}
                 try:
                     stage('scenario')
                     status['unrun'] = []

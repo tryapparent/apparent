@@ -53,6 +53,8 @@ export function commands(selected: Owner[], base: string, head: string, platform
   add(['python3', 'enablement/verification.py', '--base', base, '--head', head, '--pr']);
   const tools = selected.includes('capture-tools') ? captureToolTests() : [];
   result.push(...tools.filter(command => !command.env?.APPARENT_BIN));
+  if (selected.includes('capture-tools'))
+    add(['node', '--experimental-strip-types', '--test', 'capture/desktop/scripts/linux/gui/input/qmp.test.ts']);
   if (selected.includes('tooling')) add(['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py']);
   if (selected.includes('hermes')) {
     add(['python3', '-m', 'unittest', 'discover', '-s', 'hermes/tests', '-p', 'test_*.py']);

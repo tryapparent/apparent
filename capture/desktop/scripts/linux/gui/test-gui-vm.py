@@ -92,13 +92,38 @@ class GuestIsolationTests(unittest.TestCase):
                             'test -z "${LD_LIBRARY_PATH+x}"\n'
                             'bash -c "printf system-shell-ready"\n'
                             'test "$SCRAWL_GUI_LIBRARY_PATH" = "$SCRAWL_GUI_OUTPUT"\n'
-                            'test "$SCRAWL_GUI_BINARY" = /synthetic/candidate\n')
+                            'test "$SCRAWL_GUI_BINARY" = /synthetic/candidate\n'
+                            'test ${#TMPDIR} -le 28\n')
         env = dict(os.environ)
         env.pop('LD_LIBRARY_PATH', None)
         command = runner.scenario_command(str(scenario), str(root), '/synthetic/candidate', str(root), '')
         new = subprocess.run(['sh', '-c', command], env=env, capture_output=True, text=True)
         self.assertEqual(new.returncode, 0, new.stderr)
         self.assertEqual(new.stdout, 'system-shell-ready')
+
+    def test_readiness_fails_missing_dependency_before_product(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            with patch.object(runner, 'guest_tmp', return_value=str(root / 'tmp')):
+                command = runner.readiness_command(str(root), ['apparent-no-such-decoder-123'])
+            result = subprocess.run(['bash', '-c', command], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 69)
+            self.assertIn('missing required guest command', result.stderr)
+            temporary = root / 'tmp'
+            self.assertEqual(temporary.stat().st_mode & 0o777, 0o700)
+            temporary.rmdir()
+
+    @patch.object(runner.os, 'getgroups', return_value=[1234])
+    @patch.object(runner.Path, 'stat', return_value=SimpleNamespace(st_gid=1234))
+    def test_mouse_profile_has_no_tablet_to_split_a_held_stroke(self, _stat, _groups):
+        directory = Path('/synthetic/job')
+        command = runner.qemu_command(directory / 'disk', directory / 'vars', directory, 23456, 3072,
+                                      input_profile='mouse')
+        self.assertIn('usb-mouse', command)
+        self.assertNotIn('usb-tablet', command)
+        with self.assertRaisesRegex(ValueError, 'input profile'):
+            runner.qemu_command(directory / 'disk', directory / 'vars', directory, 23456, 3072,
+                                input_profile='mixed')
 
     def test_command_failure_keeps_exact_command_and_both_streams(self):
         command = [sys.executable, '-c', 'import sys; print("out"); sys.stderr.write("diagnostic\\n"); sys.exit(7)']
@@ -490,6 +515,17 @@ class PreparationTests(unittest.TestCase):
                 overlay.assert_not_called()
                 self.assertEqual(status['primary_failure']['stage'], 'preflight')
                 self.assertEqual(status['product'], 'unrun')
+
+    def test_host_tool_missing_or_invalid_is_rejected_without_allocation(self):
+        for command in ('apparent-no-such-decoder-123', '../not-a-simple-command'):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as scratch:
+                root = Path(scratch)
+                options = self.inputs(root)
+                code, status, overlay = self.invoke(options, root / 'r', '--require-host-command', command)
+                self.assertNotEqual(code, 0)
+                overlay.assert_not_called()
+                self.assertEqual(status['product'], 'unrun')
+                self.assertEqual(status['primary_failure']['stage'], 'preflight')
 
     def test_x11_transport_dependency_is_required_before_allocation(self):
         with tempfile.TemporaryDirectory() as scratch:
