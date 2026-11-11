@@ -545,6 +545,11 @@ bundle remain the actual completion evidence. The trackpad helper still appears
 during screen drawing. Installed Mac/Linux acceptance remains required for native
 focus, capture and bundle behavior; renderer simulation is not native proof.
 
+Optional notes still use the existing editor and durable save receipt. On Hyprland,
+the native adapter reconciles keyboard focus after placement for the current owned
+editor request. Note positions convert native pixels to Electron DIP and back, so
+scaled editors retain their complete controls.
+
 The Electron first-capture start state keeps “Go again.” and the saved shortcut in
 the setup window, shortened to 520 pixels with the keys centered in its content. It becomes the floating coach only after capture selection
 begins; the next shortcut still uses the existing native recording path. Returning
