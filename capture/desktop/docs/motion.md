@@ -32,8 +32,12 @@ additional history buffer or animation policy. Existing inline microphone
 warnings remain authoritative and independent.
 
 Mac Black controls use the shared Electron pill by default, including the saved
-notes extension. `movableRecordingControls` continues to control dragging only;
-this route does not enable that experiment. Glass and failed/unavailable Electron
+notes extension. `movableRecordingControls` retains its existing dragging and
+Mac movie-inclusion behavior. That feature is on by default; an absent config key
+does not disable it. Setting `"experiments": {"movableRecordingControls": false}`
+keeps Mac controls out of capture without changing shared presentation routing.
+The child then waits for the screen worker's exclusion acknowledgement before
+replacing native controls during capture. Glass and failed/unavailable Electron
 retain native controls and the existing notes badge. Both receive the same capture history. Linux's native GPUI fallback
 retains its existing meter. Rollback is the existing native fallback; removing it
 still requires accepted Electron routing and platform proof. This slice moves

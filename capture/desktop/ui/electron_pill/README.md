@@ -51,9 +51,13 @@ policy; application CSS motion is still disabled. Startup/watchdog and native
 fallback remain active. Rollback restores the previous presentation host and
 geometry polling together; no capture or persisted preference format changes.
 macOS Black uses this shared presentation by default. The existing movable-controls
-experiment controls dragging, not presentation admission. Glass retains native routing.
+feature retains dragging and Mac movie inclusion, not presentation admission.
+It is enabled by default. Explicitly set `experiments.movableRecordingControls`
+to `false` to exercise the excluded Mac route; omitting it tests the included route.
+Glass retains native routing.
 There is one visible pill. Missing packaged assets retain the native route.
-On Mac, capture reset restores the child window's explicit exclusion. If the
+On Mac with movable controls explicitly disabled, capture reset restores the child
+window's explicit exclusion. If the
 child becomes ready during capture, the native controls remain visible until
 ScreenCaptureKit acknowledges that exact child ID in its applied filter. Failed
 filter updates never acknowledge the requested ID or advance the candidate filter.
