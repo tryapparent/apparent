@@ -488,7 +488,8 @@ fn existing(binds_json: &str, mask: u32, key: &str, id: &str) -> Existing {
                 && bind["key"].as_str() == Some("")
                 && bind["keycode"].as_u64() == Some(0))
             || (key == "Copilot" && bind["key"].as_str().is_some_and(|k|
-                ["F23", "XF86Assistant", "LaunchAssistant"].iter().any(|alias| k.eq_ignore_ascii_case(alias))));
+                ["F23", "XF86Assistant", "LaunchAssistant"].iter().any(|alias| k.eq_ignore_ascii_case(alias))))
+            || (key == "Copilot" && bind["keycode"].as_u64() == Some(201));
         if !(same_mask && same_key) {
             continue;
         }
@@ -1169,6 +1170,8 @@ mod tests {
             let live = serde_json::json!([{"modmask":65,"key":alias,"description":"Foreign"}]);
             assert_eq!(existing(&live.to_string(), 65, "Copilot", "record"), Existing::Other);
         }
+        let numeric = r#"[{"modmask":65,"key":"","keycode":201,"description":"Foreign"}]"#;
+        assert_eq!(existing(numeric, 65, "Copilot", "record"), Existing::Other);
     }
 
     #[test]
