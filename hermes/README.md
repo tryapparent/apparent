@@ -14,6 +14,9 @@ locates the installed `apparent` CLI on macOS/Linux and calls
 `apparent hermes record <request-id>/<port>`. This is a trusted local shell
 invocation; no external URL or URL-handler confirmation is involved. Normal
 Apparent permissions and capture controls still apply.
+When Apparent is stopped, the helper starts its runtime with
+`apparent launch --background` so Settings does not replace the recording target.
+Required onboarding still applies; normal app launches continue to open Settings.
 
 This is a source candidate for Hermes Desktop on macOS/Linux, not a catalog
 release. Native direct-recording integration and fresh onboarding remain

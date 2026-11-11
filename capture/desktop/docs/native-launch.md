@@ -51,6 +51,11 @@ permission and occupied-capture admission, replay protection and capture
 resource safety still apply. Hermes continues to use its own authenticated
 connection to send the exact saved handoff; Apparent does not send it.
 
+If the native app is stopped, the helper uses `apparent launch --background`
+to start its capture runtime without opening Settings or raising an existing
+instance. Required onboarding and permission checks still apply. This explicit
+CLI mode accepts no URL; ordinary launches continue to open Settings.
+
 The URL route always keeps confirmation, including URLs opened locally. An
 external website cannot select trusted direct mode, and a website button cannot
 authorize recording. Errors from direct local mode stay in the signed mailbox;

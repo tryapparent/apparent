@@ -79,6 +79,7 @@ for (const needsLaunch of [false, true]) test(`real Electron confirmation/preloa
     assert.deepEqual(await authenticatedState(key, await (await fetch(stateURL, { headers: { Origin: 'null' } })).json()), { phase: 'saved', source: '/synthetic/owned.apparent' });
     const calls = (await readFile(path.join(job, 'trace.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
     assert.equal(calls.filter(c => c[0] === 'launch').length, needsLaunch ? 1 : 0, 'only an unavailable recorder should be launched');
+    if (needsLaunch) assert.deepEqual(calls.find(c => c[0] === 'launch'), ['launch', '--background'], 'cold readiness must not present Settings over the recording target');
     assert.equal(await page.title(), 'Record for Hermes');
     assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle()), 'Record for Hermes');
     assert.equal(calls.filter(c => c[1] === 'start').length, 1);
@@ -114,7 +115,7 @@ for (const needsLaunch of [false, true]) test(`real Electron confirmation/preloa
   }
 });
 
-test('trusted local request records without confirmation, reports saved/occupied state, and refuses replay', { timeout: 45000 }, async () => {
+for (const needsLaunch of [false, true]) test(`trusted local request records without confirmation, reports saved/occupied state, and refuses replay (${needsLaunch ? 'closed' : 'running'} recorder)`, { timeout: 45000 }, async () => {
   const started = Date.now();
   const deadline = started + 40000; // One budget inside the unchanged 45s test, including all three launches.
   const observations: unknown[] = [];
@@ -132,7 +133,7 @@ test('trusted local request records without confirmation, reports saved/occupied
   const receipt = path.join(job, 'receipt.json');
   const trace = path.join(job, 'trace.jsonl');
   const launch = (port: number, id: string, occupied = false) => electron.launch({ args: [bootstrap, path.join(root, 'dist/hermes-main.cjs'), '--hermes-request', `${id}/${port}`, '--hermes-autostart', '--apparent-executable', executable],
-    env: { ...process.env, HOME: home, APPARENT_SYNTHETIC_APP_DATA: appData, XDG_RUNTIME_DIR: runtime, XDG_CONFIG_HOME: path.join(job, 'config'), APPARENT_SYNTHETIC_RECEIPT: receipt, APPARENT_SYNTHETIC_TRACE: trace, APPARENT_SYNTHETIC_OCCUPIED: occupied ? '1' : '0', APPARENT_SYNTHETIC_CLI_DELAY_MS: '1600' } });
+    env: { ...process.env, HOME: home, APPARENT_SYNTHETIC_APP_DATA: appData, XDG_RUNTIME_DIR: runtime, XDG_CONFIG_HOME: path.join(job, 'config'), APPARENT_SYNTHETIC_RECEIPT: receipt, APPARENT_SYNTHETIC_TRACE: trace, APPARENT_SYNTHETIC_OCCUPIED: occupied ? '1' : '0', APPARENT_SYNTHETIC_CLI_DELAY_MS: '1600', APPARENT_SYNTHETIC_NEEDS_LAUNCH: needsLaunch ? '1' : '0' } });
   const waitForState = async (key: string, id: string, port: number, phase: string) => {
     const url = `http://127.0.0.1:${port}/${id}/state/${await sign(key, `state:${id}`)}`;
     while (Date.now() < deadline) {
@@ -172,6 +173,8 @@ test('trusted local request records without confirmation, reports saved/occupied
     assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 0, 'trusted mode must create no status or confirmation window');
     const state = await waitForState(key, mailbox, bridgePort, 'recording');
     assert.deepEqual(state, { phase: 'recording' });
+    const launchCalls = (await readFile(trace, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line)).filter(call => call[0] === 'launch');
+    assert.deepEqual(launchCalls, needsLaunch ? [['launch', '--background']] : [], 'trusted readiness must preserve the foreground target');
     const startCount = () => readFile(trace, 'utf8').then(text => text.split('\n').filter(Boolean).filter(line => JSON.parse(line)[1] === 'start').length);
     assert.equal(await startCount(), 1);
     await writeFile(`${receipt}.finished`, '1');

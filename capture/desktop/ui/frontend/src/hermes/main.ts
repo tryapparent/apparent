@@ -35,7 +35,7 @@ const lifecycle = createCaptureRequest(request.token, {
     try { await journal.writeFile(JSON.stringify({ created: Date.now() })); } finally { await journal.close(); }
     try { await ready(); }
     catch {
-      const child = spawn(executable, ['launch'], { detached: true, stdio: 'ignore' });
+      const child = spawn(executable, ['launch', '--background'], { detached: true, stdio: 'ignore' });
       await new Promise<void>((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
       child.unref();
       for (let attempt = 0; ; attempt++) {
