@@ -398,11 +398,12 @@ fn existing(binds_json: &str, mask: u32, key: &str, id: &str) -> Existing {
             continue;
         }
         if found != Existing::Free { return Existing::Other; }
-        // Lua-backed code binds are opaque here. A description cannot prove which code
-        // was pressed; only external_record_from can establish the matching source.
+        // The live table omits the physical code for Lua binds, including Copilot.
+        // Managed rows can be reused only after the caller verifies the exact cached
+        // id:chord handle. The unique-row check above keeps opaque duplicates unsafe.
         if key != "Copilot" && bind["description"].as_str() == Some(ours.as_str()) {
             found = Existing::Apparent;
-        } else if key != "Copilot" && bind["description"].as_str() == Some(bindings::managed_description(id).as_str()) {
+        } else if bind["description"].as_str() == Some(bindings::managed_description(id).as_str()) {
             found = Existing::Managed;
         } else {
             return Existing::Other;
@@ -1029,6 +1030,11 @@ mod tests {
         // Hyprland reports a code:201 Lua binding with an empty key and keycode 0.
         let copilot = r#"[{"modmask":65,"key":"","keycode":0,"description":"Apparent: record"}]"#;
         assert_eq!(existing(copilot, 65, "Copilot", "record"), Existing::Other);
+        let managed_copilot = r#"[{"modmask":65,"key":"","keycode":0,"description":"Apparent: record [managed-v1]"}]"#;
+        assert_eq!(existing(managed_copilot, 65, "Copilot", "record"), Existing::Managed);
+        assert_eq!(existing(&format!("[{managed_copilot},{}]", &managed_copilot[1..managed_copilot.len()-1]), 65, "Copilot", "record"), Existing::Other);
+        let wrong_action = managed_copilot.replace("record [managed-v1]", "paste [managed-v1]");
+        assert_eq!(existing(&wrong_action, 65, "Copilot", "record"), Existing::Other);
         assert_eq!(existing(copilot, 65, "S", "record"), Existing::Free);
     }
 
