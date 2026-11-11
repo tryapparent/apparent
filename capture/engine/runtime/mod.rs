@@ -137,6 +137,8 @@ pub const CARBON_CMD_KEY: u32 = 1 << 8;
 pub const CARBON_SHIFT_KEY: u32 = 1 << 9;
 pub const CARBON_OPTION_KEY: u32 = 1 << 11;
 pub const CARBON_CONTROL_KEY: u32 = 1 << 12;
+/// HIToolbox `kVK_Function` (0x3F), used for the macOS Fn/Globe modifier event.
+pub const MACOS_FN_KEY_CODE: u32 = 0x3F;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ShortcutConfig {
@@ -155,7 +157,7 @@ impl Default for ShortcutConfig {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ShortcutKind {
-    /// Start, switch or finish a recording (⌥⇧S).
+    /// Start, switch or finish a recording (Fn on macOS; ⌥⇧S on Linux).
     Record,
     /// Paste the latest capture into the app in front (⌥⇧V).
     Paste,
@@ -201,6 +203,11 @@ impl ShortcutKind {
 
 impl ShortcutConfig {
     pub fn default_record() -> Self {
+        #[cfg(target_os = "macos")]
+        {
+            return Self { key_code: MACOS_FN_KEY_CODE, carbon_modifiers: 0, label: "Fn".to_owned() };
+        }
+        #[cfg(not(target_os = "macos"))]
         Self {
             key_code: u32::from(layout_s_keycode()),
             carbon_modifiers: CARBON_OPTION_KEY | CARBON_SHIFT_KEY,
@@ -230,9 +237,21 @@ impl ShortcutConfig {
         self.label.is_empty()
     }
 
+    pub fn is_fn_only(&self) -> bool {
+        cfg!(target_os = "macos") && self.key_code == MACOS_FN_KEY_CODE && self.carbon_modifiers == 0 && self.label == "Fn"
+    }
+
     /// Whether this is `kind`'s default, which also answers to its aliases (⌃⌥⇧, ⌘⌥⇧, ⌃⌥⌘
     /// and the ANSI key).
     pub fn is_default_for(&self, kind: ShortcutKind) -> bool {
+        #[cfg(target_os = "macos")]
+        if kind == ShortcutKind::Record && self.is_fn_only() {
+            return true;
+        }
+        #[cfg(target_os = "macos")]
+        if kind == ShortcutKind::Record {
+            return false;
+        }
         self.carbon_modifiers == CARBON_OPTION_KEY | CARBON_SHIFT_KEY
             && shortcut_parts(&self.label).1 == kind.default_char().to_ascii_uppercase().to_string()
     }
@@ -293,6 +312,28 @@ pub fn shortcut_label(carbon_modifiers: u32, key: &str) -> String {
         label.push_str(key);
         label
     }
+}
+
+/// A standalone Fn press/release toggle. This models only native key facts; it does not suppress
+/// the OS event or decide whether capture is otherwise admitted.
+pub(crate) fn fn_gesture_transition(
+    candidate: bool,
+    is_fn_event: bool,
+    fn_down: bool,
+    other_key: bool,
+    other_modifier: bool,
+    paused: bool,
+) -> (bool, bool) {
+    if paused || other_key || other_modifier {
+        return (false, false);
+    }
+    if is_fn_event && fn_down {
+        return (true, false);
+    }
+    if is_fn_event {
+        return (false, candidate);
+    }
+    (candidate, false)
 }
 
 /// The name of the key in ⌘'s place: the Windows key, Linux's Super.
@@ -370,9 +411,8 @@ pub fn shortcut_parts(label: &str) -> (&str, &str) {
     label.split_at(split)
 }
 
-/// Whether a key press is the record shortcut. A custom one matches exactly; the default ⌥⇧S
-/// also answers with ⌃ or ⌘ added and as ⌃⌥⌘S, on the active layout's S key (`s_code`) or the
-/// ANSI one.
+/// Whether a key press is the record shortcut. A custom one matches exactly; Linux's default
+/// ⌥⇧S also answers to its legacy aliases. Mac Fn is handled by the flags-change adapter.
 pub fn is_capture_shortcut(
     cfg: &ShortcutConfig,
     s_code: u16,
@@ -410,6 +450,11 @@ pub fn shortcut_matches(
     if cfg.is_unset() {
         return false;
     }
+    // Fn is delivered only through macOS flagsChanged; never treat its virtual keycode as an
+    // ordinary key-down, even when a caller feeds that code to the Carbon-style matcher.
+    if kind == ShortcutKind::Record && cfg.is_fn_only() {
+        return false;
+    }
     let want_cmd = (cfg.carbon_modifiers & CARBON_CMD_KEY) != 0;
     let want_ctrl = (cfg.carbon_modifiers & CARBON_CONTROL_KEY) != 0;
     let want_alt = (cfg.carbon_modifiers & CARBON_OPTION_KEY) != 0;
@@ -432,10 +477,9 @@ pub fn layout_default_keycode(kind: ShortcutKind) -> u16 {
     key_code_for_char(kind.default_char()).unwrap_or(kind.ansi_code())
 }
 
-/// The key codes and Carbon modifiers `cfg` registers: itself, plus for a default its aliases
-/// (⌃⌥⇧, ⌘⌥⇧, ⌃⌥⌘) on the active layout's key and the ANSI one.
+/// The key codes and Carbon modifiers `cfg` registers: itself, plus aliases for Linux's default.
 pub(crate) fn hotkey_combos(kind: ShortcutKind, cfg: &ShortcutConfig) -> Vec<(u32, u32)> {
-    if cfg.is_unset() {
+    if cfg.is_unset() || cfg.is_fn_only() {
         return Vec::new();
     }
     let mut combos = vec![(cfg.key_code, cfg.carbon_modifiers)];
@@ -606,6 +650,8 @@ pub struct SharedCaptureTelemetry {
     /// poller records clicks from polled button state.
     mouse_live: AtomicBool,
     last_shortcut_ms: AtomicU64,
+    #[cfg(target_os = "macos")]
+    fn_candidate: AtomicBool,
     drag_start: Mutex<Option<(u64, f32, f32, Option<String>, TargetFrame)>>,
     /// The `agentContext` experiment was on when this capture started: clicks and strokes are
     /// looked up in the Accessibility tree (`crate::ax`, macOS only).
@@ -669,6 +715,8 @@ impl SharedCaptureTelemetry {
             start_glow: AtomicBool::new(false),
             mouse_live: AtomicBool::new(false),
             last_shortcut_ms: AtomicU64::new(0),
+            #[cfg(target_os = "macos")]
+            fn_candidate: AtomicBool::new(false),
             drag_start: Mutex::new(None),
             agent_context: AtomicBool::new(false),
             shift_press: Mutex::new(None),
@@ -681,9 +729,18 @@ impl SharedCaptureTelemetry {
         })
     }
 
-    /// Each source (Carbon or `RegisterHotKey`, the key tap or hook) reports the same press within
-    /// a few ms; a press after that is a new one, as when S is pressed again to switch modes.
+    /// Each input source can report one press more than once. Preserve the existing
+    /// 90 ms duplicate-source guard for ordinary shortcuts.
     pub fn emit_capture_shortcut(&self) {
+        self.emit_capture_shortcut_after(90);
+    }
+
+    /// Fn is a press/release gesture, so rapid taps use the 400 ms toggle guard.
+    pub fn emit_fn_shortcut(&self) {
+        self.emit_capture_shortcut_after(400);
+    }
+
+    fn emit_capture_shortcut_after(&self, minimum_interval_ms: u64) {
         if self.shortcuts_paused.load(Ordering::Acquire) {
             return;
         }
@@ -692,7 +749,7 @@ impl SharedCaptureTelemetry {
             .unwrap_or_default()
             .as_millis() as u64;
         let prev = self.last_shortcut_ms.load(Ordering::Acquire);
-        if now_ms.saturating_sub(prev) >= 90
+        if now_ms.saturating_sub(prev) >= minimum_interval_ms
             && self
                 .last_shortcut_ms
                 .compare_exchange(prev, now_ms, Ordering::AcqRel, Ordering::Acquire)
@@ -738,6 +795,9 @@ impl SharedCaptureTelemetry {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
+        if cfg.is_fn_only() {
+            return false;
+        }
         is_capture_shortcut(&cfg, layout_s_keycode(), keycode, cmd, ctrl, alt, shift)
     }
 
@@ -1745,11 +1805,18 @@ mod tests {
             is_capture_shortcut(cfg, s, key, cmd, ctrl, alt, shift)
         };
         assert!(hit(&default, s, (false, false, true, true)), "⌥⇧S");
-        assert!(hit(&default, s, (true, false, true, true)), "⌥⇧⌘S");
-        assert!(hit(&default, s, (false, true, true, true)), "⌃⌥⇧S");
-        assert!(hit(&default, s, (true, true, true, false)), "⌃⌥⌘S");
-        assert!(hit(&default, s, (true, true, true, true)), "hyper S");
-        assert!(hit(&default, KEY_S, (false, false, true, true)), "ANSI S");
+        if cfg!(target_os = "macos") {
+            assert!(!hit(&default, s, (true, false, true, true)), "legacy chord is now custom");
+            if KEY_S != s {
+                assert!(!hit(&default, KEY_S, (false, false, true, true)), "ANSI alias is not inherited");
+            }
+        } else {
+            assert!(hit(&default, s, (true, false, true, true)), "⌥⇧⌘S");
+            assert!(hit(&default, s, (false, true, true, true)), "⌃⌥⇧S");
+            assert!(hit(&default, s, (true, true, true, false)), "⌃⌥⌘S");
+            assert!(hit(&default, s, (true, true, true, true)), "hyper S");
+            assert!(hit(&default, KEY_S, (false, false, true, true)), "ANSI S");
+        }
         assert!(!hit(&default, s, (false, false, false, true)), "⇧S");
         assert!(!hit(&default, s, (true, false, false, false)), "⌘S");
         assert!(!hit(&default, 2, (false, false, true, true)), "⌥⇧D");
@@ -1762,6 +1829,10 @@ mod tests {
         assert!(hit(&custom, 15, (false, true, true, false)));
         assert!(!hit(&custom, 15, (true, true, true, false)));
         assert!(!hit(&custom, 15, (false, false, true, false)));
+        let single_code = if cfg!(target_os = "macos") { 15 } else { u32::from(b'R') };
+        let single = ShortcutConfig { key_code: single_code, carbon_modifiers: 0, label: "R".into() };
+        assert!(shortcut_matches(ShortcutKind::Record, &single, 1, single_code as u16, false, false, false, false));
+        assert!(!shortcut_matches(ShortcutKind::Record, &single, 1, single_code as u16, false, true, false, false));
         // Once changed, ⌥⇧S and its aliases are free for other apps.
         assert!(!hit(&custom, s, (false, false, true, true)), "⌥⇧S");
         assert!(!hit(&custom, KEY_S, (true, true, true, true)), "hyper S");
@@ -1771,7 +1842,7 @@ mod tests {
         );
         assert_eq!(
             hotkey_combos(ShortcutKind::Record, &default).len(),
-            if u32::from(KEY_S) == default.key_code { 4 } else { 8 },
+            if cfg!(target_os = "macos") { 1 } else if u32::from(KEY_S) == default.key_code { 4 } else { 8 },
             "⌥⇧S and three aliases, on the layout's key and the ANSI one"
         );
 
@@ -1825,6 +1896,37 @@ mod tests {
         assert_eq!(shortcut_parts("Ctrl+Alt+Ä"), ("Ctrl+Alt", "Ä"));
         assert_eq!(shortcut_parts("Ctrl++"), ("Ctrl", "+"));
         assert_eq!(shortcut_parts(""), ("", ""));
+    }
+
+    #[test]
+    fn fn_gesture_requires_a_standalone_press_and_release() {
+        let down = fn_gesture_transition(false, true, true, false, false, false);
+        assert_eq!(down, (true, false));
+        assert_eq!(fn_gesture_transition(down.0, true, false, false, false, false), (false, true));
+
+        let cancelled = fn_gesture_transition(down.0, false, false, true, false, false);
+        assert_eq!(cancelled, (false, false));
+        assert_eq!(fn_gesture_transition(cancelled.0, true, false, false, false, false), (false, false));
+        assert_eq!(fn_gesture_transition(down.0, false, false, false, true, false), (false, false));
+        assert_eq!(fn_gesture_transition(false, true, true, false, false, true), (false, false));
+        // Native state readback supplies keys that were already held at Fn-down.
+        let held_before_fn = fn_gesture_transition(false, true, true, true, false, false);
+        assert_eq!(held_before_fn, (false, false));
+        assert_eq!(fn_gesture_transition(held_before_fn.0, true, false, false, false, false), (false, false));
+        // Releasing the other key cannot rehabilitate the cancelled gesture.
+        assert_eq!(fn_gesture_transition(cancelled.0, false, false, false, false, false), (false, false));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn fn_is_the_mac_default_and_does_not_register_as_a_carbon_hotkey() {
+        let default = ShortcutConfig::default_record();
+        assert_eq!(default.key_code, MACOS_FN_KEY_CODE);
+        assert_eq!(default.carbon_modifiers, 0);
+        assert_eq!(default.label, "Fn");
+        assert!(default.is_default_for(ShortcutKind::Record));
+        assert!(hotkey_combos(ShortcutKind::Record, &default).is_empty());
+        assert!(!shortcut_matches(ShortcutKind::Record, &default, 1, 63, false, false, false, false));
     }
 
     #[test]

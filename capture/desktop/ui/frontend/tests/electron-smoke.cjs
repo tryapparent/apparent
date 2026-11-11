@@ -310,7 +310,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('heading', { name:'apparent lives here.', exact:true })).toBeVisible();
   await expect(page.getByText('Click the a in your menu bar, then Open Latest Capture.', { exact:true })).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveAttribute('data-arrow','true');
-  for(const phase of ['screen','whiteboard','board-ink','note','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
+  for(const phase of ['screen','whiteboard','board-ink','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
     send({step:'try-it',practice:phase});
     await expect(page.locator('.native-coach')).toHaveAttribute('data-stage',phase);
     if(phase==='screen-ink'){
@@ -331,16 +331,10 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     for(const button of layout.buttons){assert.ok(button.font>=18&&button.width>=44&&button.height>=44,phase+' button violates brand minimum');assert.equal(button.radius,'0px');}
   }
   send({step:'try-it',practice:'note',firstCaptureRequired:true});
-  await expect(page.getByRole('heading',{name:'Add a note.',exact:true})).toBeVisible();
-  await expect(page.getByText('Hold Shift and click without dragging. Type a note, then save it.',{exact:true})).toBeVisible();
-  await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','note');
-  assert.equal(await page.getByRole('textbox').count(),0,'the coach must not compete with the real note editor');
-  const beforeNoteReplay=output;
-  await page.getByRole('button',{name:'Replay note guide',exact:true}).click();
-  assert.equal(output,beforeNoteReplay,'note replay cannot claim a durable save');
-  await page.emulateMedia({reducedMotion:'reduce'});
-  assert.equal(await page.locator('.native-gesture').evaluate(el=>el.getAnimations({subtree:true}).length),0);
-  await expect(page.getByRole('button',{name:'Replay note guide',exact:true})).toBeHidden();
+  await expect(page.locator('.native-coach')).toHaveAttribute('data-stage','screen-ink');
+  await expect(page.getByRole('heading',{name:'Draw on your screen.',exact:true})).toBeVisible();
+  await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','draw');
+  assert.equal(await page.getByRole('textbox').count(),0,'the coach must not replace the real note editor');
   await page.emulateMedia({reducedMotion:'no-preference'});
   // All three control examples remain presentation only, and settle once.
   for(const [phase,kind] of [['whiteboard','whiteboard'],['stop','finish'],['locate','locate']]){
@@ -468,17 +462,64 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   send({step:'try-it',practice:null,firstCaptureRequired:true});
   await expect(page.getByRole('heading',{name:'Go again.',exact:true})).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,520]);
+  const fnChoiceStart=output.length;
+  send({step:'shortcut',platform:'macos',shortcutChosen:false,shortcutEditor:{recording:false,externallyManaged:false,error:null}});
+  await page.getByRole('button',{name:'Use Fn',exact:true}).click();
+  await expect.poll(()=>output.slice(fnChoiceStart)).toContain('\"keyCode\":63');
+  assert.ok(output.slice(fnChoiceStart).indexOf('change-shortcut')<output.slice(fnChoiceStart).indexOf('\"keyCode\":63'),'open the provider editor before Fn selection');
   send({step:'shortcut',shortcutEditor:{recording:true,externallyManaged:false}});
+  const recorder=page.getByRole('group',{name:'Shortcut recorder'});
+  await recorder.focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('button',{name:'Close setup'})).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(recorder).toBeFocused();
+  await expect(recorder).toHaveCSS('outline-style','solid');
+  const screenshot=async name=>{
+    if(!process.env.APPARENT_FN_EVIDENCE)return;
+    await fs.mkdir(process.env.APPARENT_FN_EVIDENCE,{recursive:true});
+    await page.screenshot({path:path.join(process.env.APPARENT_FN_EVIDENCE,name+'.png'),fullPage:true});
+  };
+  await screenshot('shortcut-listening-normal-light');
+  await page.setViewportSize({width:320,height:520});
+  for(const scheme of ['light','dark']){
+    await page.emulateMedia({colorScheme:scheme});
+    await expect(page.locator('.native-setup')).toHaveCSS('background-color',scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)');
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`shortcut editor overflows at 320px in ${scheme} mode`);
+    await expect(recorder).toBeInViewport();
+    await screenshot(`shortcut-listening-320-${scheme}`);
+  }
+  await page.emulateMedia({colorScheme:'light'});
+  const priorFnCount=(output.match(/"keyCode":63/g)||[]).length;
+  await recorder.evaluate(element=>element.dispatchEvent(new KeyboardEvent('keydown',{key:'Fn',code:'Fn',metaKey:true,bubbles:true})));
+  await expect(page.getByRole('alert')).toContainText('Fn alone');
+  await screenshot('shortcut-rejected-fn-modifier');
+  assert.equal((output.match(/"keyCode":63/g)||[]).length,priorFnCount,'Fn with another modifier must not be accepted');
+  await recorder.getByRole('button',{name:'Use Fn',exact:true}).click();
+  await expect.poll(()=>output).toContain('"keyCode":63,"modifiers":0,"key":"Fn"');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await screenshot('shortcut-fn-error-recovered');
+  send({step:'shortcut',platform:'macos',shortcut:'Fn',shortcutChosen:true,shortcutTested:false,shortcutEditor:{recording:false,externallyManaged:false,error:null}});
+  await expect(page.getByRole('heading',{name:'Try your shortcut.',exact:true})).toBeVisible();
+  await expect(page.locator('.native-shortcut kbd')).toHaveText('Fn');
+  await screenshot('shortcut-accepted-fn');
+  send({step:'shortcut',platform:'macos',shortcut:'Fn',shortcutChosen:true,shortcutEditor:{recording:true,externallyManaged:false,error:null}});
+  await page.getByRole('group',{name:'Shortcut recorder'}).focus();
   await page.getByRole('group',{name:'Shortcut recorder'}).press('Control+Alt+k');
   await expect.poll(()=>output).toContain('"keyCode":40');
   await expect.poll(()=>output).toContain('"modifiers":6144');
   await page.getByRole('group',{name:'Shortcut recorder'}).evaluate(element=>element.dispatchEvent(new KeyboardEvent('keydown',{key:'ß',code:'KeyS',altKey:true,bubbles:true})));
   await expect.poll(()=>output).toContain('"keyCode":1,"modifiers":2048,"key":"s"');
   await page.getByRole('group',{name:'Shortcut recorder'}).press('Tab');
+  await expect(page.getByRole('button',{name:'Use Fn',exact:true})).toBeFocused();
+  await page.getByRole('button',{name:'Use Fn',exact:true}).press('Tab');
   await expect(page.getByRole('button',{name:'Cancel',exact:true})).toBeFocused();
   await page.getByRole('button',{name:'Cancel',exact:true}).press('Enter');
   await expect.poll(()=>output).toContain('cancel-shortcut');
-
+  send({step:'shortcut',platform:'linux',shortcutChosen:false,shortcutEditor:{recording:false,externallyManaged:false,error:null}});
+  await expect(page.getByRole('button',{name:'Use Fn',exact:true})).toHaveCount(0);
+  send({shortcutEditor:{recording:true,externallyManaged:false,error:null}});
+  await expect(page.getByRole('button',{name:'Use Fn',exact:true})).toHaveCount(0);
 
   await page.emulateMedia({reducedMotion:'reduce'});
   send({penPicker:true,penSelected:true,penRgb:[59,121,189]});
