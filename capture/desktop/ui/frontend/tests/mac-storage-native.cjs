@@ -500,13 +500,21 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     const locationStatus = card.locator(':scope > [role="status"]');
     const change = card.getByRole('button', { name: 'Change…', exact: true });
     const reset = card.getByRole('button', { name: 'Reset', exact: true });
-    const startNativeChange = () => {
+    let nativeChangeStarting = false;
+    const startNativeChange = async () => {
       assert.equal(pendingNativeChange, undefined, 'A native Change is already pending');
-      // AppKit can hold the input acknowledgement while its modal sheet is
-      // open. Start one real click, operate the observed picker, then consume
-      // that same click. Observe rejection immediately without retrying it.
-      pendingNativeChange = change.click({ timeout: budget(30000) }).then(
-        () => ({ ok: true }), error => ({ ok: false, error }));
+      assert.equal(nativeChangeStarting, false, 'Native Change focus is already pending');
+      nativeChangeStarting = true;
+      try {
+        // Restarting the real backend opens About in another Electron process.
+        // Admit one native activation before CDP can open our modal sheet.
+        (report.nativeChangeFocus ??= []).push(await panel('focus-change'));
+        // AppKit can hold the input acknowledgement while its modal sheet is
+        // open. Start one real click, operate the observed picker, then consume
+        // that same click. Observe rejection immediately without retrying it.
+        pendingNativeChange = change.click({ timeout: budget(30000) }).then(
+          () => ({ ok: true }), error => ({ ok: false, error }));
+      } finally { nativeChangeStarting = false; }
     };
     const settleNativeChange = async () => {
       assert.ok(pendingNativeChange, 'No native Change was dispatched');
@@ -554,7 +562,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     };
     const prepared = await prepareStorageChange({
       storageIdle: waitStorageIdle,
-      change: async () => { startNativeChange(); },
+      change: () => startNativeChange(),
       picker: () => poll(() => panel('inspect'), 'Native Change picker readiness'),
       openGo: () => panel('open-go'),
       goSheet: () => poll(() => panel('inspect-go'), 'Owned Go to Folder readiness'),
@@ -601,7 +609,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     const beforeCancel = await fs.readFile(config);
     const beforeCancelStat = await fs.stat(config, { bigint: true });
     await waitStorageIdle();
-    startNativeChange();
+    await startNativeChange();
     report.nativeBeforeCancel = await poll(() => panel('inspect'), 'Reopened native picker');
     await panel('cancel');
     await settleNativeChange();

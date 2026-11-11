@@ -56,6 +56,13 @@ on run argv
     tell owned
       if (count of windows) is 0 then error "Owned process has no AX windows; frontmost=" & (frontmost as text)
       set outerWindow to window 1
+      if operation is "focus-change" then
+        if (count of windows) is not 1 then error "Change focus requires one owned window"
+        if (role of outerWindow as text) is not "AXWindow" or (name of outerWindow as text) is not "Apparent — UI foundation" then error "Change focus requires Foundation"
+        if (count of sheets of outerWindow) is not 0 then error "Change focus refuses an existing modal"
+        my activateOwned(targetPID, expectedExecutable)
+        return "native-focus-pid=" & targetPID & ";title=Apparent — UI foundation"
+      end if
       set picker to outerWindow
       set depth to 0
       set goParent to missing value
