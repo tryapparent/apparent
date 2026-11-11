@@ -13,15 +13,13 @@ test('installed About projects parent state and bounds actions', async () => {
   try {
     const page = await application.firstWindow();
     await expect(page.getByText('Loading update status…')).toBeVisible();
+    await expect(page).toHaveTitle('Apparent Settings — About');
     let output = '';
     application.process().stdout?.on('data', data => { output += data.toString(); });
     const state = { type: 'about-state', version: '1.2.3 · a1b2c3d +modified', updates: true, linux: true,
       mainUpdates: true, updateChannel: 'main', updateCheck: { checking: false, result: 'available' } };
     await application.evaluate(({ BrowserWindow }, value) => BrowserWindow.getAllWindows()[0].webContents.send('apparent:about-state', value), state);
     await expect(page.getByText('Version 1.2.3 · a1b2c3d +modified')).toBeVisible();
-    await page.getByRole('button', { name: 'Copy version', exact: true }).click();
-    await expect(page.getByText('Unable to copy. Try again.', { exact: true })).toBeVisible();
-    await expect(page.getByText('Unable to copy. Try again.', { exact: true })).toHaveCount(0, {timeout: 4000});
     assert.equal(await application.evaluate(async ({ ipcMain, BrowserWindow }) => {
       const sender = BrowserWindow.getAllWindows()[0].webContents;
       const handler = ipcMain._invokeHandlers.get('apparent:about-copy-version');
@@ -51,7 +49,11 @@ test('installed About projects parent state and bounds actions', async () => {
     for (const result of ['current', 'failed', null] as const) {
       await application.evaluate(({ BrowserWindow }, value) => BrowserWindow.getAllWindows()[0].webContents.send('apparent:about-state', value),
         { ...state, linux: false, mainUpdates: false, updateCheck: { checking: false, result } });
-      await expect(page.getByRole('heading', { name: result === 'current' ? 'No update available' : result === 'failed' ? 'Update check failed' : 'Check for updates', exact: true })).toBeVisible();
+      if (result) await expect(page.getByRole('heading', { name: result === 'current' ? 'No update available' : 'Update check failed', exact: true })).toBeVisible();
+      else {
+        await expect(page.getByRole('heading', { name: 'Check for updates', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Check for updates', exact: true })).toBeVisible();
+      }
       for (const size of [[720, 530], [640, 530]]) {
         await application.evaluate(({ BrowserWindow }, [width, height]) => BrowserWindow.getAllWindows()[0].setSize(width, height), size);
         for (const colorScheme of ['light', 'dark'] as const) {
@@ -71,6 +73,8 @@ test('installed About projects parent state and bounds actions', async () => {
       { ...state, updates: false, updateCheck: { checking: false, result: null } });
     await expect(page.getByRole('heading', { name: 'Updates unavailable' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Check for updates', exact: true })).toBeDisabled();
+    await page.getByRole('button', { name: 'Copy version', exact: true }).click();
+    await expect(page.getByText('Unable to copy. Try again.', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Storage', exact: true }).click();
     await expect.poll(() => output.includes('"pane":"storage"')).toBe(true);
   } finally { await application.close(); await fs.rm(home, { recursive: true, force: true }); }

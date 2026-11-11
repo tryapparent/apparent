@@ -40,7 +40,7 @@ export function About() {
     return () => { live = false; unsubscribe(); };
   }, []);
   useEffect(() => {
-    if (copyStatus === 'idle') return;
+    if (copyStatus !== 'copied') return;
     const timer = setTimeout(() => setCopyStatus('idle'), 2500);
     return () => clearTimeout(timer);
   }, [copyStatus]);
@@ -62,7 +62,7 @@ export function About() {
   const checking = state?.updateCheck.checking;
   const title = checking ? 'Checking for updates…' : !state?.updates ? 'Updates unavailable'
     : result === 'available' ? 'Update available' : result === 'current' ? 'No update available'
-    : result === 'failed' ? 'Update check failed' : 'Check for updates';
+    : result === 'failed' ? 'Update check failed' : null;
   // Results are inline. Native button activation owns Enter/Space so a focused
   // link, copy or tour action cannot accidentally accept an available update.
   useEffect(() => {
@@ -88,12 +88,12 @@ export function About() {
           <span role="status" className="settings-metadata">{copyStatus === 'copied' ? 'Copied' : copyStatus === 'failed' ? 'Unable to copy. Try again.' : ''}</span>
         </div>
       </section>
-      <section className="settings-updates" aria-label="Update check">
+      <section className="settings-updates" aria-label="Update check" data-idle={!title || undefined}>
         <div className="settings-update-text">
-          <div className="settings-result" role="status">
+          <div className="settings-result" role="status">{title && <>
             {checking ? <LoaderCircle className="settings-spin" aria-hidden="true" /> : result === 'failed' ? <AlertCircle className="text-destructive" aria-hidden="true" /> : result && <CheckCircle2 className="text-success" aria-hidden="true" />}
             <h3>{title}</h3>
-          </div>
+          </>}</div>
           {!state.updates && <p className="settings-metadata">{state.linux ? 'Update checks work when Apparent runs from an AppImage.' : 'Updates work in the installed Apparent.app.'}</p>}
           {result === 'failed' && !checking && <p className="settings-metadata">Try checking again.</p>}
           <div className="settings-actions">

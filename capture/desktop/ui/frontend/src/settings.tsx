@@ -23,6 +23,7 @@ declare global {
 
 function Settings() {
   const current = location.hash === '#about' ? 'About' : 'Storage';
+  useLayoutEffect(() => { document.title = `Apparent Settings — ${current}`; }, [current]);
   useLayoutEffect(() => {
     // React's DOM is committed here. The preload owns the first-frame wait;
     // a hidden page's animation scheduling must not hold up this acknowledgement.

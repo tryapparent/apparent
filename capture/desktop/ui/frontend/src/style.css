@@ -48,6 +48,8 @@
 .settings-copy svg { width:17px; height:17px; }
 .settings-version [role='status'] { font-size:13px; }
 .settings-updates { display:flex; align-items:center; gap:12px; min-height:112px; margin-bottom:18px; }
+.settings-updates[data-idle] { min-height:36px; }
+.settings-updates[data-idle] .settings-actions { margin-top:0; }
 .settings-update-text { flex:1; min-width:0; }
 .settings-result { display:flex; align-items:center; gap:12px; }
 .settings-result > svg { width:26px; height:26px; flex:none; }
