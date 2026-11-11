@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 const ENDPOINT: &str = "https://eu.i.posthog.com/i/v0/e/";
 const QUEUE_SIZE: usize = 16;
 static REPORTER: OnceLock<Reporter> = OnceLock::new();
+mod finalization;
 
 /// Only installed release children inherit production reporting admission.
 pub(crate) fn configure_child(command: &mut Command) {
@@ -152,9 +153,16 @@ struct Report {
     line: u32,
     consent: Consent,
     delivered: Option<mpsc::SyncSender<()>>,
+    finalization: Option<finalization::Diagnostics>,
 }
 
 impl Report {
+    fn finalization(error: &anyhow::Error, location: &std::panic::Location<'_>, consent: Consent) -> Self {
+        let mut report = Self::new(Failure::FinalizeCapture, location, consent);
+        report.finalization = Some(finalization::Diagnostics::from_error(error));
+        report
+    }
+
     fn new(failure: Failure, location: &std::panic::Location<'_>, consent: Consent) -> Self {
         Self {
             failure,
@@ -162,6 +170,7 @@ impl Report {
             line: location.line(),
             consent,
             delivered: None,
+            finalization: None,
         }
     }
 
@@ -200,7 +209,7 @@ impl Report {
                     Failure::ElectronChildGone => "electron-child",
                     _ => "rust",
                 },
-                "diagnostics_schema_version": 1,
+                "diagnostics_schema_version": 2,
                 "$os": std::env::consts::OS,
                 "architecture": std::env::consts::ARCH,
                 "operation": code,
@@ -217,6 +226,10 @@ impl Report {
         // Packaging registers the release; the native transport only forwards
         // its compiled public ID, including for panics without a JS host.
         let release_id = env!("APPARENT_POSTHOG_RELEASE_ID");
+        if let Some(diagnostics) = &self.finalization {
+            payload["properties"]["finalization"] = serde_json::to_value(diagnostics)?;
+            payload["properties"]["$exception_fingerprint"] = json!(diagnostics.fingerprint());
+        }
         if !release_id.is_empty() {
             payload["properties"]["$release_id"] = json!(release_id);
         }
@@ -282,11 +295,15 @@ impl Reporter {
     }
 
     fn capture(&self, failure: Failure, location: &std::panic::Location<'_>) {
+        self.enqueue(|consent| Report::new(failure, location, consent));
+    }
+
+    fn enqueue(&self, build: impl FnOnce(Consent) -> Report) {
         if let Some(consent) = consent_in(&self.config) {
             // Never wait for network or for queue capacity on a capture/UI thread.
             let _ = self
                 .sender
-                .try_send(Report::new(failure, location, consent));
+                .try_send(build(consent));
         }
     }
 
@@ -373,6 +390,14 @@ fn install_reporter(reporter: Reporter) {
 pub(crate) fn report(failure: Failure) {
     if let Some(reporter) = REPORTER.get() {
         reporter.capture(failure, std::panic::Location::caller());
+    }
+}
+
+#[track_caller]
+pub(crate) fn report_finalization(error: &anyhow::Error) {
+    let location = std::panic::Location::caller();
+    if let Some(reporter) = REPORTER.get() {
+        reporter.enqueue(|consent| Report::finalization(error, location, consent));
     }
 }
 
