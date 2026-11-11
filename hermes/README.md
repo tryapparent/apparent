@@ -15,13 +15,19 @@ submitted through Hermes's supported composer API only while the captured
 connection, profile, stored session and visible composer still match. Typed
 drafts remain separate.
 
-Unsaved chats are refused. The public SDK's `"new"` address means the current
-fresh draft and exposes no stable draft identity, so it cannot pin one draft
-across recording. If the original conversation is no longer visible, delivery
-waits. A false or ambiguous composer dispatch is retained for recovery and is
-never automatically retried. The SDK's `submit` boolean means local dispatch,
-not backend receipt, so the plugin does not claim Hermes accepted or completed
-the turn.
+For an unsaved chat, the plugin first reads the visible fresh draft, then uses
+the route's supported `session.create` call with an `idempotency_key` and opens
+the returned stored session through `host.openSession` with that route and
+`awaitHydration: true`. It proceeds only after the SDK reports the returned
+stored ID on the visible route. If needed, the original typed text is inserted
+as a block into that identified composer; an occupied or changed composer is
+left untouched and recording does not start. It never treats the generic
+`"new"` composer address as the recording's final destination. If the original
+conversation is no longer visible, delivery waits. A false or ambiguous
+composer dispatch is retained for recovery and is never automatically retried.
+The SDK's submit boolean and insert acknowledgement mean local composer
+dispatch/application only, not backend receipt, so the plugin does not claim
+Hermes accepted or completed the turn.
 
 Recording can be started from a local or SSH conversation through the explicit
 local Hermes profile route. Local bundle paths are sent only to local

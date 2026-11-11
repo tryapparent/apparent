@@ -20,6 +20,8 @@ export interface Pending {
   source?: string;
   /** A true SDK dispatch has no durable receipt, so never automatically replay it. */
   sending?: boolean;
+  /** A definitive false dispatch is also left for an explicit manual recovery. */
+  manual?: boolean;
 }
 export const validToken = (value: unknown): boolean => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value);
 export function validSource(value: unknown): value is string {
