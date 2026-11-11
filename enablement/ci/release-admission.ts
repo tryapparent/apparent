@@ -14,9 +14,11 @@ export function admitsCD(run: Run, jobs: Job[], repo: string, sha: string, platf
       run.path !== '.github/workflows/checks.yml' || run.head_sha !== sha ||
       run.head_branch !== 'main' || run.event !== 'push') return false;
   if (!((run.status === 'completed' && ['success', 'failure'].includes(run.conclusion ?? '')) ||
-        (run.status === 'in_progress' && run.conclusion === null))) return false;
+        (['queued', 'in_progress'].includes(run.status) && run.conclusion === null))) return false;
   // A failed Mac job must not prevent Linux publication. Require this platform's
   // actual jobs, including shared admission guards, rather than aggregate success.
+  // GitHub can report the run as queued while unrelated platform jobs await a
+  // runner. Completed platform evidence below is still mandatory.
   const runner = platform === 'linux' ? 'ubuntu-24.04' : 'macos-15-intel';
   const required = ['contracts', 'select', 'Hermes inspection (ubuntu-24.04)',
     `${platform} / select`, ...['desktop-ui', 'connect-client', 'rust'].map(name => `${platform} / ${name} (${runner})`)];
