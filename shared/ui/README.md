@@ -10,6 +10,8 @@ retrieved from `https://ui.shadcn.com/r/styles/new-york/{button,tabs}.json`.
 Only import paths and formatting were adapted. Review source changes on updates;
 update underlying Radix and utility packages normally. Add controls here, not
 separate Desktop/Connect copies. Theme tokens are shared, not OS-native skins.
+`@apparent/ui/icons` exports the shared Lucide `StickyNote` used by the saved-note
+extension; consume this export rather than copying SVG paths.
 
 NativeSelect and Tooltip use shadcn's MIT-licensed `new-york-v4/native-select`
 and `new-york/tooltip` registry sources. Import them from this package; Tooltip

@@ -24,3 +24,10 @@ test('pill input silhouette lets transparent corners through and clamps to negat
  assert.equal(shape.length,58);assert.ok(shape[0].x>0);assert.equal(shape[28].x,0);
  assert.deepEqual(geometry.clamp({...bounds,x:-2000,y:2000},{x:-1920,y:0,width:1920,height:1080}),{x:-1920,y:1022});
 });
+test('saved count is bounded and notes requires authoritative availability',()=>{
+ assert.equal(view(state).noteCount,0);
+ for(const noteCount of [-1,1.2,101,NaN,'1'])assert.throws(()=>view({...state,noteCount}));
+ const notes={id:'notes',label:'Open notes',enabled:true,selected:false,primary:false};
+ assert.deepEqual(command(view({...state,noteCount:12,actions:[notes]}),12,'notes'),{revision:12,action:'notes'});
+ assert.throws(()=>command(view(state),12,'notes'));
+});

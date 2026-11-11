@@ -60,6 +60,7 @@ enum Message {
     Action(CommandMessage),
     Stop,
     BadgePosition([i32; 4]),
+    Embedded(bool),
     Finish,
     ChildEof,
 }
@@ -68,6 +69,8 @@ pub struct Session {
     stopping: Arc<std::sync::atomic::AtomicBool>,
     finishing: bool,
     saved_note: Arc<AtomicBool>,
+    saved_count: Arc<std::sync::atomic::AtomicUsize>,
+    embedded: bool,
     badge_position: Option<[i32; 4]>,
     lifecycle: Arc<std::sync::Mutex<lifecycle::Lifecycle>>,
 }
@@ -196,6 +199,8 @@ impl Session {
         let stopped = Arc::clone(&stopping);
         let saved_note = Arc::new(AtomicBool::new(false));
         let saved_receipt = Arc::clone(&saved_note);
+        let saved_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = Arc::clone(&saved_count);
         let actor_lifecycle = Arc::clone(&lifecycle);
         std::thread::spawn(move || {
             let mut current = None;
@@ -210,6 +215,7 @@ impl Session {
             let mut finish_deadline = None;
             let mut drained = false;
             let mut badge_position = None;
+            let mut embedded = false;
             let mut failed_writes = std::collections::BTreeSet::new();
             let mut transport_failed = false;
             #[cfg(target_os = "linux")]
@@ -253,6 +259,7 @@ impl Session {
                     match message {
                         Message::Stop | Message::ChildEof => return Ok(()),
                         Message::BadgePosition(point) => badge_position = Some(point),
+                        Message::Embedded(value) => embedded = value,
                         Message::Finish => {
                             finish_requested = true;
                             finish_deadline =
@@ -316,7 +323,12 @@ impl Session {
                                 store.dismiss();
                                 mode = "badge";
                             }
-                            CommandMessage::List => mode = "list",
+                            CommandMessage::List => {
+                                mode = "list";
+                                if let Some([x, y, width, height]) = badge_position.filter(|_| embedded) {
+                                    position = [f64::from(x + width), f64::from(y + height)];
+                                }
+                            },
                             CommandMessage::Surface {
                                 id,
                                 rect,
@@ -377,8 +389,10 @@ impl Session {
                 telemetry
                     .notes_editing
                     .store(mode != "badge", Ordering::Release);
+                // Only Store::notes contains durable saves; drafts never count.
+                count.store(store.notes().len(), Ordering::Release);
                 if ready {
-                    let snapshot = serde_json::json!({ "mode": mode, "current": current, "position": position, "badgeRect": badge_position,
+                    let snapshot = serde_json::json!({ "mode": mode, "current": current, "position": position, "badgeRect": badge_position, "embedded": embedded,
                         "notes": store.notes(), "drafts": store.drafts(), "error": result.err().map(|_| "Could not save this note. Your text is kept; try again.") });
                     if write_message(
                         &mut input,
@@ -399,6 +413,7 @@ impl Session {
                     .ui_sender
                     .try_send(LiveOverlayEvent::NotesUnavailable);
             }
+            count.store(0, Ordering::Release);
             telemetry.notes_editing.store(false, Ordering::Release);
             drop(input); // EOF asks Electron to close its windows.
             let cutoff = std::time::Instant::now() + std::time::Duration::from_secs(2);
@@ -433,6 +448,8 @@ impl Session {
             stopping,
             finishing: false,
             saved_note,
+            saved_count,
+            embedded: false,
             badge_position: None,
             lifecycle,
         })
@@ -443,6 +460,16 @@ impl Session {
 
     pub fn has_saved_note(&self) -> bool {
         self.saved_note.load(Ordering::Acquire)
+    }
+
+    pub fn saved_count(&self) -> usize { self.saved_count.load(Ordering::Acquire) }
+
+    pub fn show_list(&self) { let _ = self.sender.try_send(Message::Action(CommandMessage::List)); }
+
+    pub fn set_embedded(&mut self, embedded: bool) {
+        if self.embedded != embedded && self.sender.try_send(Message::Embedded(embedded)).is_ok() {
+            self.embedded = embedded;
+        }
     }
 
     pub fn outside(&self) {
@@ -566,6 +593,36 @@ fn write_message(
 #[cfg(test)]
 mod transport_tests {
     use super::*;
+    #[test]
+    #[ignore = "requires built Electron assets and an isolated sandbox-capable desktop"]
+    fn notes_saved_count_real_provider() {
+        let directory = std::env::temp_dir().join(format!("notes-provider-{}", crate::shared::ids::make_bundle_id()));
+        std::fs::create_dir(&directory).unwrap();
+        let (events, _receiver) = flume::unbounded();
+        let mut session = Session::start(&directory, SharedCaptureTelemetry::new(events),
+            crate::shared::model::TargetFrame { x: 0.0, y: 0.0, width: 1000.0, height: 700.0, scale: 1.0 }).unwrap();
+        let wait = |condition: &dyn Fn() -> bool| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+            while !condition() && std::time::Instant::now() < deadline { std::thread::sleep(std::time::Duration::from_millis(20)); }
+            assert!(condition(), "Real notes provider failed: {}", std::fs::read_to_string(directory.join("notes-ui.log")).unwrap_or_default());
+        };
+        // Never accept injected Store commands as proof that Electron actually started.
+        wait(&|| session.lifecycle.lock().unwrap().ready());
+        session.set_embedded(true);
+        session.position_badge([0.0, 0.0, 600.0, 56.0]);
+        session.open(Anchor { pin: 1, t: 100, x: 0.5, y: 0.5, screen_x: 500.0, screen_y: 350.0, focus: 0, owner: 0 });
+        session.sender.send(Message::Action(CommandMessage::Draft { pin: 1, text: "Draft only".into() })).unwrap();
+        assert_eq!(session.saved_count(), 0);
+        session.sender.send(Message::Action(CommandMessage::Save { pin: 1, text: "Durable note".into() })).unwrap();
+        wait(&|| session.saved_count() == 1);
+        assert!(std::fs::read_to_string(directory.join("notes.json")).unwrap().contains("Durable note"));
+        session.show_list();
+        session.sender.send(Message::Action(CommandMessage::Delete { pin: 1 })).unwrap();
+        wait(&|| session.saved_count() == 0);
+        assert_eq!(session.finish().recv_timeout(std::time::Duration::from_secs(10)).unwrap(), Ok(FinishOutcome::Drained));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn profile_is_private_and_cleaned_after_the_child_finishes_writing() {
         use std::os::unix::fs::PermissionsExt;

@@ -6,9 +6,21 @@ capture generation and exact handoff selection before dispatch. The renderer
 receives no bundle paths, credentials, configuration or capture contents.
 
 The row covers selection, recording, processing and completion. It reuses
-shared shadcn Button controls and Lucide icons. Cancel/dismiss is the rightmost
-×; ordinary actions retain labels. Warnings and rejected actions remain inline;
-there is no expandable panel, notes extension or Record-package dependency.
+shared shadcn Button controls and Lucide icons. Cancel/dismiss uses ×; ordinary actions retain labels.
+During ordinary recording, Cancel precedes
+Whiteboard and Finish, matching the approved extension composition. Warnings and rejected actions remain inline;
+there is no expandable panel or Record-package dependency.
+
+During recording, durable saved notes appear in the approved flush lilac extension
+on the right, using the shared Lucide StickyNote icon. Zero hides the extension;
+drafts never count. The 72px transparent footprint keeps Whiteboard, Finish and
+Cancel fixed for 0, 1 and multi-digit counts. Its hidden region is excluded from
+Linux input shape and hover. Clicking opens the existing notes list. Rust projects
+the existing durable Store receipt and retains its sole persistence writer;
+TypeScript owns the count presentation. The separate badge is suppressed only
+while Electron owns the visible pill, and returns on native/Glass fallback.
+The existing note editor and saved format are unchanged. Remove the fallback
+badge only after all compatibility routes have accepted replacements.
 
 Build the frontend with `npm ci && npm run build` in `../frontend`. Its build
 transpiles the preserved CommonJS Electron host from `.cts`; generated `.cjs`
