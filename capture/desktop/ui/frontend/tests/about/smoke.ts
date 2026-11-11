@@ -30,6 +30,16 @@ test('installed About projects parent state and bounds actions', async () => {
       return true;
     }), true, 'Copy refuses foreign frames and renderer-supplied text');
     await expect(page.getByRole('link', { name: 'Star on GitHub' })).toHaveAttribute('href', 'https://github.com/tryapparent/apparent');
+    const discord = page.getByRole('link', { name: 'Join our Discord', exact: true });
+    await expect(discord).toHaveAttribute('href', 'https://discord.gg/ZRGZwV32M');
+    await application.evaluate(({ shell }) => { shell.openExternal = async url => { console.log('external-link:' + url); }; });
+    await discord.focus();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => output.includes('external-link:https://discord.gg/ZRGZwV32M')).toBe(true);
+    assert.equal(await page.evaluate(async () => {
+      try { await window.apparentAbout.link('https://example.com' as 'discord'); return false; }
+      catch { return true; }
+    }), true, 'External links remain restricted to named destinations');
     await expect(page.getByText('A GitHub star won’t fix your bugs, but it will make our day.')).toBeVisible();
     await page.getByRole('button', { name: 'Show welcome tour', exact: true }).focus();
     await page.keyboard.press('Enter');
@@ -60,7 +70,8 @@ test('installed About projects parent state and bounds actions', async () => {
         await expect(page.getByRole('button', { name: 'Check for updates', exact: true })).toBeVisible();
       }
       for (const size of [[720, 530], [640, 530]]) {
-        await application.evaluate(({ BrowserWindow }, [width, height]) => BrowserWindow.getAllWindows()[0].setSize(width, height), size);
+        await application.evaluate(({ BrowserWindow }, [width, height]) => { const window = BrowserWindow.getAllWindows()[0]; window.setResizable(true); window.setSize(width, height); }, size);
+        await expect.poll(() => page.evaluate(() => innerWidth)).toBe(size[0]);
         for (const colorScheme of ['light', 'dark'] as const) {
           await page.emulateMedia({ colorScheme });
           await expect(page.locator('.settings-shell')).toHaveCSS('--apparent-primary', colorScheme === 'dark' ? '#b7a5d8' : '#0000f2');
