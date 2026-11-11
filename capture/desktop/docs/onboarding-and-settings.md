@@ -11,6 +11,13 @@ it does not add a second preferences writer. Missing Electron assets or a failed
 presentation retain the existing native Settings fallback. Removing that fallback
 still requires acceptance of the remaining panes on both platforms.
 
+On Linux, both the Electron Settings shell and retained native panes request a
+managed floating dialog at 720×530, including when navigation replaces the window.
+Tiling compositors can otherwise expand each replacement across the workspace,
+discarding a manually floated window's state. This is a window-manager hint, not
+an always-on-top overlay or a saved size preference; explicit compositor rules
+remain authoritative. Existing pane routing and native fallback are unchanged.
+
 Setup takes priority on an unfinished installation. Launching during selection,
 recording or processing leaves the capture unchanged and does not queue a recording.
 Explicit recording shortcuts and `app --record` keep their recording behavior.

@@ -423,7 +423,9 @@ fn open(request: Request, cx: &mut App) {
             }),
             focus: true,
             show: true,
-            kind: WindowKind::Normal,
+            // A Settings dialog must remain compact when pane navigation replaces
+            // the Electron window. Normal windows are tiled by Hyprland.
+            kind: if cfg!(target_os = "linux") { WindowKind::Floating } else { WindowKind::Normal },
             is_movable: true,
             is_resizable: false,
             is_minimizable: true,
