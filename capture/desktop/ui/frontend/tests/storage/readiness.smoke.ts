@@ -72,7 +72,7 @@ test(`mounted Settings becomes visible without ${world}-world animation callback
   await page.locator('.settings-shell').waitFor();
   const { expect } = await import('@playwright/test');
   await expect.poll(() => app!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())).toBe(true);
-  await expect(page.getByText('CAPTURE SETTINGS', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Storage', level: 1, exact: true })).toBeVisible();
 });
 }
 

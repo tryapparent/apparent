@@ -115,7 +115,7 @@ app.whenReady().then(() => {
       titleBarStyle: 'hiddenInset', resizable: false, fullscreenable: false,
       acceptFirstMouse: true,
     } : {}),
-    title: settings ? 'Apparent Settings — Storage' : 'Apparent — UI foundation',
+    title: settings ? 'Apparent Settings' : 'Apparent — UI foundation',
     backgroundColor: followWindowTheme.backgroundColor(nativeTheme),
     webPreferences: {
       preload: path.join(__dirname, settings ? 'storage-preload.cjs' : 'preload.cjs'),
@@ -190,6 +190,12 @@ app.whenReady().then(() => {
     validate(event, args);
     if (!about) throw new Error('Unavailable outside About');
     return aboutState;
+  });
+  ipcMain.handle('apparent:about-copy-version', (event, ...args) => {
+    validate(event, args);
+    if (!about || typeof aboutState?.version !== 'string' || !aboutState.version) throw new Error('Build identity unavailable');
+    // No renderer-supplied text or general clipboard capability is admitted.
+    require('electron').clipboard.writeText(`apparent ${aboutState.version}`);
   });
   ipcMain.handle('apparent:about-action', (event, action, ...args) => {
     validate(event, args);
