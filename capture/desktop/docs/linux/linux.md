@@ -64,6 +64,16 @@ Verified in an Ubuntu 24.04 arm64 VM with GNOME 46 (Wayland and X11) and Plasma 
 
 Wayland tells no app where the pointer is over another app's window. Apparent reads buttons and keys from the input devices. In onboarding or Settings › Permissions, **Copy command** copies `sudo usermod -aG input "$USER"`. Run it in a terminal, then log out and back in. Apparent checks whether it can open actual keyboard/mouse devices, rather than trusting group membership; it retries devices when access changes. This is the **Input devices** row (the Accessibility row on macOS).
 
+Packaged Electron onboarding uses the same native clipboard action as the fallback.
+It explains the account-wide input access and full logout/login requirement, and
+shows a selectable command if clipboard copying fails. Copying never grants access
+or advances setup: permission polling must observe readable input devices. Screen
+recording is labelled as asked when recording starts, rather than an existing portal
+grant. Missing assets or a renderer failure retain the native onboarding fallback;
+this presentation can be removed only when its replacement preserves the same
+input guidance, copy action and native grant readback. Capture/ink/notes routing
+and screen/voice-only recording behavior are unchanged.
+
 While ⇧ is held, the ink overlay takes the pointer (`linux::overlay::take_pointer`), so XWayland reports where it is and the ink follows it; a click while ⇧ is held lands on the overlay, not the app. On KDE Wayland, Apparent hides the recording overlay between strokes because KWin 5 otherwise blocks clicks into native apps even with an empty X input shape. Ink remains in the bundle, but disappears from the desktop when ⇧ is released.
 
 On Hyprland 0.56.2 with Lua configuration, the released overlay stays visible for its existing fade. A process-owned runtime rule matches only its exact Fade title and prevents focus; Draw uses a different title. Each Shift transition unmaps locally before asynchronous compositor reconciliation, so a late reply cannot remap an older input state. Reloading config hides and re-establishes the rule; unsupported syntax or policy failure retains the hide-between-strokes fallback. Finishing unmaps before disabling the rule. The one reused rule is disabled on ordinary cleanup; a crash can leave an inert rule matching only that process's unique title until config reload. This is a native compositor repair; the current Electron surface has no production overlay interaction to migrate independently.

@@ -40,7 +40,7 @@ handler copies only that parent-provided identity, never renderer-supplied text.
 Update results remain inline with their real check/install/defer actions and
 approved frog artwork; no successful status or check timestamp is invented when
 the backend has not supplied one. The GitHub support invitation and project
-links open the browser; Show welcome tour invokes the existing in-app workflow.
+links, including Join our Discord, open the browser; Show welcome tour invokes the existing in-app workflow.
 Focused controls own Enter/Space, so a version-copy or tour activation cannot
 also accept an update. Existing native routing and fallbacks are unchanged.
 

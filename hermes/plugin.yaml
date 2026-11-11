@@ -1,10 +1,10 @@
 name: apparent
-version: "0.3.0"
+version: "0.3.1"
 description: Read Apparent recordings as spoken instructions and visual evidence.
 author: Apparent
 requires_hermes: ">=0.23.0"
 python_dependencies:
-  - "Pillow>=10.2,<13"
+  - "Pillow>=10.2,<14"
 provides_tools: [apparent_inspect]
 provides_hooks: [pre_llm_call]
 provides_middleware: []

@@ -22,7 +22,7 @@ declare global {
       read(): Promise<AboutState | undefined>;
       act(action: Action): Promise<void>;
       subscribe(callback: (state: AboutState) => void): () => void;
-      link(link: 'website' | 'source'): Promise<void>;
+      link(link: 'website' | 'source' | 'discord'): Promise<void>;
       copyVersion(): Promise<void>;
     };
   }
@@ -54,7 +54,7 @@ export function About() {
     try { await window.apparentAbout.act(action); }
     catch { setError('Unable to complete that action. Please try again.'); }
   }
-  async function open(link: 'website' | 'source') {
+  async function open(link: 'website' | 'source' | 'discord') {
     try { await window.apparentAbout.link(link); }
     catch { setError('Unable to open that link. Please try again.'); }
   }
@@ -120,6 +120,7 @@ export function About() {
     <div className="settings-links">
       <Button variant="link" asChild><a href="https://app.tryapparent.com" onClick={event => { event.preventDefault(); void open('website'); }}>Website <ExternalLink aria-hidden="true" /></a></Button>
       <Button variant="link" asChild><a href="https://github.com/tryapparent/apparent" onClick={event => { event.preventDefault(); void open('source'); }}>Source code <ExternalLink aria-hidden="true" /></a></Button>
+      <Button variant="link" asChild><a href="https://discord.gg/ZRGZwV32M" onClick={event => { event.preventDefault(); void open('discord'); }}>Join our Discord <ExternalLink aria-hidden="true" /></a></Button>
     </div>
     <Button variant="secondary" className="settings-tour" onClick={() => void act({ action: 'tour' })}>Show welcome tour</Button>
   </section>;
