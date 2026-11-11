@@ -66,12 +66,16 @@ fn safe_error(error: &anyhow::Error, allowed: &dyn Fn() -> bool) -> SafeError {
 }
 
 impl Client {
-    // A renewable but expired access grant is not a completed renewal. Only the
-    // explicit health/network path can establish that; local presentation cannot.
-    fn settings_usable(&self, credential: &Credential) -> bool {
-        credential.usable() && credential.expires_at.is_none_or(|expiry| expiry > now())
+    // Persisted authorization survives access-token expiry when it can renew.
+    // This is local validity, not proof of server connectivity or upload readiness.
+    fn settings_authorized(&self, credential: &Credential) -> bool {
+        credential.usable()
             && (!self.provider.experiment(HOSTED_ENCRYPTION)
                 || self.endpoint_identity(credential).is_ok())
+    }
+    // Only completed renewal can make an expired access token upload-ready.
+    fn settings_usable(&self, credential: &Credential) -> bool {
+        self.settings_authorized(credential) && credential.expires_at.is_none_or(|expiry| expiry > now())
     }
     // Strict read for presentation: unlike the application's tolerant preferences
     // reader, corrupt relevant state must not be displayed as a successful sign-out.
@@ -149,8 +153,8 @@ impl Client {
         let origin = server.as_deref().unwrap_or(DEFAULT_SERVER);
         let upload = self.settings_grant("upload", origin)?;
         let read = self.settings_grant("read", origin)?;
-        let connected = upload.as_ref().is_some_and(|grant| self.settings_usable(grant))
-            || read.as_ref().is_some_and(|grant| self.settings_usable(grant));
+        let connected = upload.as_ref().is_some_and(|grant| self.settings_authorized(grant))
+            || read.as_ref().is_some_and(|grant| self.settings_authorized(grant));
         // Prefer the upload grant even when it cannot supply identity: a read
         // grant may belong to a different account. Never substitute its initial.
         let account_initial = upload.as_ref().or(read.as_ref())
@@ -168,7 +172,7 @@ impl Client {
             reauthorization_required: upload
                 .as_ref()
                 .or(read.as_ref())
-                .is_some_and(|grant| !self.settings_usable(grant)),
+                .is_some_and(|grant| !self.settings_authorized(grant)),
             server,
             connected,
         })
