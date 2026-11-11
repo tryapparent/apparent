@@ -1,5 +1,22 @@
 # Onboarding, permissions and Settings
 
+## Opening the app
+
+Opening Apparent from the macOS or Linux app picker opens Settings on About,
+including when the app is already running. The shared Electron Settings shell
+provides the sidebar to General, Recording, Storage, Permissions and Agents;
+panes without an accepted Electron replacement retain their native presentation.
+This launch slice reuses that presentation contract and its existing config writer;
+it does not add a second preferences writer. Missing Electron assets or a failed
+presentation retain the existing native Settings fallback. Removing that fallback
+still requires acceptance of the remaining panes on both platforms.
+
+Setup takes priority on an unfinished installation. Launching during selection,
+recording or processing leaves the capture unchanged and does not queue a recording.
+Explicit recording shortcuts and `app --record` keep their recording behavior.
+A bare terminal invocation still prints help. Linux tray-host loss can still show
+fallback controls when idle; an explicit app launch opens Settings instead.
+
 ### Electron Storage and About composition
 
 The accepted Settings design keeps the six-page sidebar and bounds the reading
@@ -302,6 +319,13 @@ change affects new captures; an active capture keeps its original destination.
 Restart after changing folders so the existing cleanup worker follows that folder.
 macOS keeps its existing Electron Storage route and native fallback.
 
+The Electron Settings shell waits for a committed React surface, initial paint
+readiness and a hidden compositor snapshot before showing its window. The
+TypeScript Desktop adapter discards that snapshot in memory; it is never saved
+or sent. Startup still has the existing 15-second deadline and falls back to the
+native pane if presentation fails. This does not change pane routing, settings
+writes, the Storage opt-out or the native fallback's removal condition.
+
 About shows the package version and the running binary's build-time commit, for example `Version 0.3.13 · ad8d4b1`. Tracked local edits add `+modified`; builds without Git metadata or a valid CI revision say `build unknown`. This identifies the compiled build, not the selected update channel or an update staged for the next launch. Both the Mac helper and Linux GPUI Settings use the same label.
 
 About has a Star on GitHub button below the update control. Its heading, action and caption share one box in the Mac helper and Linux GPUI Settings. It opens `https://github.com/tryapparent/apparent` in the browser; starring remains the user's choice on GitHub.
@@ -309,7 +333,17 @@ About has a Star on GitHub button below the update control. Its heading, action 
 Settings follows system light or dark appearance without storing a preference. The Mac helper resolves the SwiftUI theme from its environment and the titlebar background from a dynamic AppKit color; an open window updates when macOS appearance changes. Linux reads the desktop portal before opening, then watches its color-scheme revision and repaints the open GPUI window. Hovered buttons and menu items use black on light lilac (`#c4a9e6`) in light mode, and cream on dark lilac (`#302442`) in dark mode; the selected sidebar always has cream text. The Linux update result panel also follows the palette, including its secondary actions.
 
 
-Settings › About keeps its existing **Check for Updates…** action. On Linux, a manual check
+Settings › About includes a **Copy version** button that copies the displayed version
+and Git SHA as plain text (for example, `Apparent 0.3.13 · 6885bac`). The Electron
+version text can also be selected. Copying does not send anything.
+Unsupported installations show **Updates unavailable**, with installation guidance,
+rather than a disabled check action that could be mistaken for ongoing work.
+The installed Electron About presentation and Linux native fallback use the same
+parent version and update availability; routing and fallback remain unchanged.
+The Mac legacy fallback retains its existing presentation until packaged Electron
+About is accepted on both platforms.
+
+Settings › About keeps its existing **Check for Updates…** action when updates are available. On Linux, a manual check
 shows Checking… only in the disabled check button and ignores duplicate clicks until it completes. Its dismissible result has
 one line only: **Update available**, **No update available**, or **Update check failed**, with
 the same pixel frog jumping, lounging, or puzzled on its notched lily pad. Failures and

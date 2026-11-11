@@ -3,6 +3,7 @@ import { accessSync, constants, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { execFileSync } from 'node:child_process';
 
 export function checkNativeInputs(root: string, platform = process.platform): string {
   const frontend = resolve(root, 'capture/desktop/ui/frontend');
@@ -56,5 +57,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   // Rust-only provider jobs need Record's packaged worker even without a
   // renderer build. Use the same generator as Desktop build and staging.
   await import('../../capture/desktop/ui/frontend/scripts/build-pill.ts');
+  // Parse the real native picker adapter before Cargo/installed-GUI setup.
+  // The Mac-only contract compiles AppleScript; it performs no UI actions.
+  if (process.platform === 'darwin') execFileSync(process.execPath,
+    ['--experimental-strip-types', '--test', 'enablement/prerequisites/mac-picker.test.ts'], {stdio: 'inherit'});
   console.log('Native prerequisites ready: ' + checkNativeInputs(process.cwd()));
 }

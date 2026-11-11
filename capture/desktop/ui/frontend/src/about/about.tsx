@@ -79,7 +79,7 @@ export function About() {
     {state && <>
       <section className="settings-identity" aria-label="Build identity">
         <h2>apparent</h2>
-        <div className="settings-version"><span>Version {state.version}</span>
+        <div className="settings-version"><span className="select-text">Version {state.version}</span>
           <TooltipProvider><Tooltip><TooltipTrigger asChild>
             <Button variant="secondary" size="icon" className="settings-copy" aria-label="Copy version" onClick={() => void copyVersion()}>
               {copyStatus === 'copied' ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}

@@ -14,7 +14,7 @@ const source = readFileSync(filename, 'utf8');
 
 // Execute the shipped host with a delayed native first-paint event. This covers
 // parent-pipe ordering without pretending to exercise a macOS window server.
-function host(mode: string) {
+function host(mode: string, capture = () => Promise.resolve({ isEmpty: () => false })) {
   const lines = new EventEmitter();
   const exits: number[] = [];
   const written: string[] = [];
@@ -23,7 +23,7 @@ function host(mode: string) {
   const timers: { callback: () => void; active: boolean; unref(): void }[] = [];
   let window: Window;
   class Window extends EventEmitter {
-    webContents = Object.assign(new EventEmitter(), { setWindowOpenHandler() {}, mainFrame: { url: '' } });
+    webContents = Object.assign(new EventEmitter(), { setWindowOpenHandler() {}, mainFrame: { url: '' }, capturePage: capture });
     visible: boolean;
     focuses = 0;
     centers = 0;
@@ -72,30 +72,82 @@ function host(mode: string) {
   return { window: window!, lines, exits, written, mounted, frameReady, expire, handlers, output };
 }
 
-test('parent retirement and broken stdout never report user dismissal or reopen Settings', () => {
+test('an earlier paint plus committed DOM cannot reveal an uncomposited Settings surface', async () => {
+  let release!: (image: { isEmpty(): boolean }) => void;
+  const snapshot = new Promise<{ isEmpty(): boolean }>(resolve => { release = resolve; });
+  const { window, mounted, lines } = host('--settings-storage', () => snapshot);
+  window.emit('ready-to-show');
+  const acknowledgement = mounted();
+  lines.emit('line', JSON.stringify({ type: 'show' }));
+  assert.equal(window.visible, false, 'The native paint event may precede React content reaching the compositor');
+  release({ isEmpty: () => false });
+  await acknowledgement;
+  assert.equal(window.visible, true);
+});
+
+test('a composited frame arriving after parent retirement cannot revive Settings', async () => {
+  let release!: (image: { isEmpty(): boolean }) => void;
+  const snapshot = new Promise<{ isEmpty(): boolean }>(resolve => { release = resolve; });
+  const { window, mounted, lines } = host('--settings-storage', () => snapshot);
+  window.emit('ready-to-show');
+  const acknowledgement = mounted();
+  lines.emit('close');
+  release({ isEmpty: () => false });
+  await acknowledgement;
+  assert.equal(window.visible, false);
+  assert.equal(window.focuses, 0);
+});
+
+test('empty and failed snapshots stay hidden until the native failure event or startup deadline', async () => {
+  for (const capture of [() => Promise.resolve({ isEmpty: () => true }), () => Promise.reject(new Error('unavailable'))]) {
+    const { window, mounted, exits, written, expire } = host('--settings-storage', capture);
+    window.emit('ready-to-show');
+    await mounted();
+    assert.equal(window.visible, false);
+    assert.deepEqual(exits, [], 'Snapshot rejection can precede the renderer crash event and its reporting admission');
+    expire();
+    assert.deepEqual(exits, [1]);
+    assert.deepEqual(written, []);
+  }
+});
+
+test('a snapshot rejection preceding renderer death cannot exit before crash admission', async () => {
+  const { window, mounted, exits, written } = host('--settings-storage', () => Promise.reject(new Error('renderer gone')));
+  window.emit('ready-to-show');
+  await mounted();
+  assert.deepEqual(exits, []);
+  // The reporter attaches on web-contents-created, before the Settings listener.
+  // This observation models the gap before that real native event is delivered.
+  window.webContents.emit('render-process-gone', {}, { reason: 'crashed' });
+  assert.deepEqual(exits, [1]);
+  assert.equal(window.visible, false);
+  assert.deepEqual(written, []);
+});
+
+test('parent retirement and broken stdout never report user dismissal or reopen Settings', async () => {
   for (const cause of ['close', 'eof', 'broken-pipe']) {
     const {window, lines, output, written, mounted, frameReady} = host('--settings-storage');
     if (cause === 'close') lines.emit('line', JSON.stringify({type:'close'}));
     else if (cause === 'eof') lines.emit('close');
     else output.emit('error', Object.assign(new Error('Synthetic broken pipe'), {code:'EPIPE'}));
     window.emit('close');
-    mounted(); frameReady();
+    await mounted(); frameReady();
     assert.deepEqual(written, [], cause);
     assert.equal(window.visible, false, cause);
   }
 });
 
-test('an actual window dismissal still notifies the parent once', () => {
+test('an actual window dismissal still notifies the parent once', async () => {
   const {window, written, mounted} = host('--settings-storage');
   window.emit('close');
   window.emit('close');
-  mounted();
+  await mounted();
   assert.deepEqual(written, ['{"action":"close"}\n']);
   assert.equal(window.visible, false);
 });
 
 for (const mode of ['--settings-storage']) {
-  test(`${mode} waits for first paint even when the parent requests focus early`, () => {
+  test(`${mode} waits for first paint even when the parent requests focus early`, async () => {
     const { window, lines, mounted, expire, exits } = host(mode);
     assert.equal(window.options.width, 720);
     assert.equal(window.options.height, 530);
@@ -111,7 +163,7 @@ for (const mode of ['--settings-storage']) {
     assert.equal(window.focuses, 0);
     window.emit('ready-to-show');
     assert.equal(window.visible, false, 'Chromium may paint a document whose React entry module is missing');
-    mounted();
+    await mounted();
     assert.equal(window.visible, true);
     assert.equal(window.focuses, 1);
     lines.emit('line', JSON.stringify({ type: 'show' }));
@@ -120,48 +172,49 @@ for (const mode of ['--settings-storage']) {
     assert.deepEqual(exits, [], 'A mounted surface cancels the startup deadline');
   });
 
-  test(`${mode} waits for paint when React commits first`, () => {
+  test(`${mode} waits for paint when React commits first`, async () => {
     const { window, mounted } = host(mode);
-    mounted();
+    await mounted();
     assert.equal(window.visible, false);
     window.emit('ready-to-show');
+    await new Promise<void>(resolve => setImmediate(resolve));
     assert.equal(window.visible, true);
   });
 
-  test(`${mode} recovers when Electron omits ready-to-show only after a renderer frame`, () => {
+  test(`${mode} recovers when Electron omits ready-to-show only after a renderer frame`, async () => {
     const { window, mounted, frameReady } = host(mode);
-    mounted();
+    await mounted();
     assert.equal(window.visible, false, 'React mount alone must not present Settings');
-    frameReady();
+    await frameReady();
     assert.equal(window.visible, true, 'The post-commit frame acknowledgement recovers the missing native event');
     assert.equal(window.focuses, 1);
   });
 
-  test(`${mode} frame acknowledgement alone cannot present Settings`, () => {
+  test(`${mode} frame acknowledgement alone cannot present Settings`, async () => {
     const { window, mounted, frameReady } = host(mode);
     frameReady();
     assert.equal(window.visible, false, 'A first frame without the Settings mount is insufficient');
-    mounted();
+    await mounted();
     assert.equal(window.visible, true);
   });
 
-  test(`${mode} missing React mount exits for fallback without a user-close signal`, () => {
+  test(`${mode} missing React mount exits for fallback without a user-close signal`, async () => {
     const { window, mounted, expire, exits, written } = host(mode);
     window.emit('ready-to-show');
     expire();
     assert.deepEqual(exits, [1]);
-    mounted();
+    await mounted();
     window.emit('close');
     assert.equal(window.visible, false);
     assert.deepEqual(written, []);
   });
 
-  test(`${mode} retains load failure and crash fallback signals`, () => {
+  test(`${mode} retains load failure and crash fallback signals`, async () => {
     const { window, exits, written, mounted, frameReady } = host(mode);
     window.webContents.emit('did-fail-load');
     window.webContents.emit('render-process-gone');
     assert.deepEqual(exits, [1, 1]);
-    mounted();
+    await mounted();
     frameReady();
     window.emit('close');
     assert.equal(window.visible, false);
@@ -169,7 +222,7 @@ for (const mode of ['--settings-storage']) {
   });
 
   for (const close of ['parent', 'eof', 'window', 'destroyed']) {
-    test(`${mode} never presents a retired window after ${close}`, () => {
+    test(`${mode} never presents a retired window after ${close}`, async () => {
       const { window, lines, mounted, frameReady, expire, exits } = host(mode);
       if (close === 'parent') lines.emit('line', JSON.stringify({ type: 'close' }));
       else if (close === 'eof') lines.emit('close');
@@ -177,7 +230,7 @@ for (const mode of ['--settings-storage']) {
       else window.destroyed = true;
       window.emit('ready-to-show');
       if (close === 'destroyed') assert.throws(mounted, /Forbidden bridge/);
-      else { mounted(); frameReady(); }
+      else { await mounted(); frameReady(); }
       lines.emit('line', JSON.stringify({ type: 'show' }));
       assert.equal(window.visible, false);
       assert.equal(window.focuses, 0);
@@ -189,7 +242,7 @@ for (const mode of ['--settings-storage']) {
   }
 }
 
-test('development foundation keeps its existing window presentation', () => {
+test('development foundation keeps its existing window presentation', async () => {
   const { window, mounted, frameReady } = host('--foundation');
   assert.equal(window.visible, true);
   assert.equal(window.centers, 0);
@@ -197,7 +250,7 @@ test('development foundation keeps its existing window presentation', () => {
   assert.throws(frameReady, /Unavailable outside Settings/);
 });
 
-test('readiness refuses another frame and unexpected arguments', () => {
+test('readiness refuses another frame and unexpected arguments', async () => {
   const { window, handlers } = host('--settings-storage');
   const ready = handlers.get('apparent:settings-mounted');
   assert.throws(() => ready!({ sender: window.webContents, senderFrame: { url: window.webContents.mainFrame.url } }), /Forbidden bridge/);
@@ -207,7 +260,7 @@ test('readiness refuses another frame and unexpected arguments', () => {
   assert.throws(() => ready!({ sender: window.webContents, senderFrame: window.webContents.mainFrame }), /Forbidden bridge/);
 });
 
-test('first-frame acknowledgement refuses another frame and unexpected arguments', () => {
+test('first-frame acknowledgement refuses another frame and unexpected arguments', async () => {
   const { window, handlers } = host('--settings-storage');
   const ready = handlers.get('apparent:settings-frame-ready');
   assert.throws(() => ready!({ sender: window.webContents, senderFrame: { url: window.webContents.mainFrame.url } }), /Forbidden bridge/);

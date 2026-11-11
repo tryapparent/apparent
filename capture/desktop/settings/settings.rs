@@ -1260,6 +1260,18 @@ pub struct Panel {
 }
 
 impl Panel {
+    // About is also the app-launch surface. Keep native login/shortcut/device
+    // discovery and unrelated pane state out of its GUI-thread projection.
+    fn about_state(&self, config_path: &Path) -> serde_json::Value {
+        let config = crate::shared::handoff::load_config_from(config_path);
+        serde_json::json!({
+            "type": "about-state", "version": env!("APPARENT_VERSION_LABEL"),
+            "updates": updates_available(), "updateCheck": self.update_check,
+            "updateChannel": if config.update_channel.as_deref() == Some("main") { "main" } else { "stable" },
+            "mainUpdates": cfg!(target_os = "linux"), "linux": cfg!(target_os = "linux")
+        })
+    }
+
     /// The same Record recorder state for Settings and the onboarding shortcut page.
     pub fn record_shortcut(&self, host: &dyn Host) -> ShortcutView {
         let kind = ShortcutKind::Record;
@@ -2224,11 +2236,7 @@ impl Session {
         // other pages' state to a renderer which does not present those pages.
         if self.storage {
             if self.about {
-                let view = self.panel.view(host);
-                let message = serde_json::json!({"type":"about-state", "version":view.version,
-                    "updates":view.updates, "updateCheck":view.update_check,
-                    "updateChannel":view.update_channel, "mainUpdates":view.main_updates,
-                    "linux":cfg!(target_os = "linux")});
+                let message = self.panel.about_state(&host.config_path());
                 let text = message.to_string();
                 if text != self.last_view { self.send(&message); self.last_view = text; }
             }
@@ -2296,6 +2304,24 @@ mod tests {
                 assert!(!electron_storage(pane, enabled), "Linux must keep the existing Settings presentation for {pane:?}");
             }
         }
+    }
+
+    #[test]
+    fn about_projection_reads_channel_without_exposing_other_panes_or_writing_config() {
+        let dir = TempDir::new("about-projection");
+        let path = dir.0.join("config.json");
+        let original = r#"{"updateChannel":"main","ingestToken":"synthetic-private","microphone":"synthetic-device","retention":{"future":42}}"#;
+        std::fs::write(&path, original).unwrap();
+        let panel = Panel::default();
+        let state = panel.about_state(&path);
+        assert_eq!(state["updateChannel"], "main");
+        assert_eq!(state.as_object().unwrap().len(), 7, "Only the About wire contract is projected");
+        for key in ["login", "shortcuts", "microphone", "permissions", "commandLine", "ingestToken"] {
+            assert!(state.get(key).is_none(), "unrelated Settings field: {key}");
+        }
+        assert!(!state.to_string().contains("synthetic-private"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        assert_eq!(panel.about_state(&dir.0.join("missing.json"))["updateChannel"], "stable");
     }
 
     #[test]

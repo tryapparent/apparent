@@ -8,3 +8,4 @@ test-results/
 /tests/pill/*.cjs
 /electron/record-completion/
 /electron/storage-owner/
+/electron/settings/*.cjs
