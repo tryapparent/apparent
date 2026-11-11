@@ -544,6 +544,7 @@ pub struct Metrics {
     pub paste: f32,
     pub copy_link: f32,
     pub inspect: f32,
+    pub waveform_width: f32,
     pub clock_000: f32,
     pub clock_0000: f32,
     pub mic_warning: [f32; 3],
@@ -565,6 +566,7 @@ impl Default for Metrics {
             paste: 36.0,
             copy_link: 56.0,
             inspect: 47.0,
+            waveform_width: 0.0,
             clock_000: 29.0,
             clock_0000: 37.0,
             mic_warning: [92.0, 73.0, 85.0],
@@ -710,7 +712,7 @@ fn layout_of_warning(
         Pres::Recording { chips, has_iphone }
         | Pres::RecordingWarning { chips, has_iphone } => {
             let clock_w = m.clock_width(clock);
-            let lead_w = CHIP_H + clock_w + LEAD_TRAIL + 32.0;
+            let lead_w = CHIP_H + clock_w + LEAD_TRAIL + m.waveform_width;
             raw.push((ElemId::Lead, lead_w, CHIP_CORE_ROUND, 0.0, true));
             raw.push((ElemId::DividerLead, DIVIDER_W, 0.0, 0.0, false));
             if let Some(warning) = warning {
@@ -898,7 +900,7 @@ pub struct FrameState {
     pub ghost: Option<Silhouette>,
     pub is_completed: bool,
     pub mic_warning: Option<InputWarning>,
-    pub input_level: Option<f32>,
+    pub input_waveform: Option<[f32; 24]>,
     pub completed_warning: bool,
     pub content_blur: f32,
     pub content_alpha: f32,
@@ -931,7 +933,7 @@ pub struct PillModel {
     pub labels: LabelWidths,
     pub metrics: Metrics,
     pub mic_warning: Option<InputWarning>,
-    pub input_level: Option<f32>,
+    pub input_waveform: Option<[f32; 24]>,
 }
 
 impl PillModel {
@@ -963,7 +965,16 @@ impl PillModel {
             labels: LabelWidths::default(),
             metrics,
             mic_warning: None,
-            input_level: None,
+            input_waveform: None,
+        }
+    }
+
+    pub fn set_input_waveform(&mut self, waveform: Option<[f32; 24]>) {
+        let changed_presence = self.input_waveform.is_some() != waveform.is_some();
+        self.input_waveform = waveform;
+        self.metrics.waveform_width = if waveform.is_some() { 72.0 } else { 0.0 };
+        if changed_presence && matches!(self.pres, Pres::Recording { .. } | Pres::RecordingWarning { .. }) {
+            self.apply_geometry();
         }
     }
 
@@ -1685,7 +1696,7 @@ impl PillModel {
             ghost,
             is_completed: matches!(self.geo_pres, Pres::Completed { .. }),
             mic_warning: self.mic_warning,
-            input_level: self.input_level,
+            input_waveform: self.input_waveform,
             completed_warning: matches!(self.geo_pres, Pres::Completed { warning: true, .. }),
             content_blur: max_blur,
             content_alpha: max_alpha,
@@ -1739,6 +1750,26 @@ impl PillModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn waveform_reserves_width_only_for_captured_audio_and_levels_never_resize_controls() {
+        let mut model = PillModel::new(Metrics::default());
+        let pres = Pres::Recording { chips: false, has_iphone: false };
+        model.set_pres(pres.clone());
+        let (plain, _) = layout_of(&pres, "0:00", model.labels, &model.metrics);
+        model.set_input_waveform(Some([0.0; 24]));
+        let (quiet, quiet_items) = layout_of(&pres, "0:00", model.labels, &model.metrics);
+        assert_eq!(quiet.width(), plain.width() + 72.0);
+        model.set_input_waveform(Some([0.8; 24]));
+        let (active, active_items) = layout_of(&pres, "0:00", model.labels, &model.metrics);
+        assert_eq!(active.width(), quiet.width());
+        for (before, after) in quiet_items.iter().zip(active_items.iter()) {
+            assert_eq!(before.rect, after.rect);
+        }
+        model.set_input_waveform(None);
+        let (without_audio, _) = layout_of(&pres, "0:00", model.labels, &model.metrics);
+        assert_eq!(without_audio.width(), plain.width());
+    }
 
     #[test]
     fn hosted_sharing_pill_has_disabled_or_enabled_copy_link_beside_local_paste() {

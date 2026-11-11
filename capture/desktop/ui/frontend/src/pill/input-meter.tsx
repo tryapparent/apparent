@@ -1,14 +1,17 @@
-import {useEffect,useRef,useState} from 'react';
-import {stepMeter,type MeterState} from './meter-policy';
+import {useEffect,useState} from 'react';
+import {waveformLevels,waveformHeight} from './meter-policy';
 
-export function InputMeter({input,receivedAt,reduced}:{input:number;receivedAt:number;reduced:boolean}) {
-  const [level,setLevel]=useState(0);
-  const state=useRef<MeterState>({level:0,at:performance.now()});
+export function InputMeter({input,receivedAt,reduced}:{input:readonly number[];receivedAt:number;reduced:boolean}) {
+  const [now,setNow]=useState(()=>performance.now());
   useEffect(()=>{
-    const tick=()=>{state.current=stepMeter(state.current,input,receivedAt,performance.now(),reduced);setLevel(state.current.level);};
-    tick();const timer=setInterval(tick,40);return()=>clearInterval(timer);
-  },[input,receivedAt,reduced]);
-  return <span className="meter" role="meter" aria-label="Microphone input level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(level*100)} data-active={level>.01} data-reduced={reduced}>
-    {[.55,.8,1,.75,.5].map((gain,index)=><i aria-hidden="true" key={index} style={{height:reduced?'10px':`${3+19*gain*level}px`}}/>)}
+    setNow(performance.now());
+    // One expiry only. A missing producer never scrolls synthetic history.
+    const timer=setTimeout(()=>setNow(performance.now()),310);
+    return()=>clearTimeout(timer);
+  },[receivedAt]);
+  const levels=waveformLevels(input,receivedAt,Math.max(now,receivedAt));
+  const latest=levels.at(-1)??0;
+  return <span className="meter" role="img" aria-label="Captured microphone waveform" data-active={latest>Math.pow(.002,.55)*1.15} data-reduced={reduced}>
+    {levels.map((level,index)=><i aria-hidden="true" key={index} style={{height:`${waveformHeight(level,reduced)}px`,opacity:.35+.65*index/23}}/>)}
   </span>;
 }
