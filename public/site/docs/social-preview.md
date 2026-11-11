@@ -1,6 +1,6 @@
 # Homepage link preview
 
-The homepage declares `https://app.tryapparent.com/social-preview-v1.png` in its
+The homepage declares `https://tryapparent.com/social-preview-v1.png` in its
 static Open Graph and Twitter metadata. The 1200 × 630 PNG contains only the
 canonical wordmark, centered in Lilac on Carbon. It follows the restrained wide
 brand-card approach used by Slack and Linear, without promotional copy or decoration.
@@ -38,3 +38,7 @@ Slack and other receivers cache unfurls independently. Test a fresh unfurl after
 publication; an existing message is not guaranteed to update. Any test message
 must be reviewed and approved before sending. Local metadata/image checks do
 not establish that Slack has fetched or displayed the new card.
+
+The image URL uses the serving public hostname directly. The legacy app hostname
+redirects to tryapparent.com; social crawlers should not need that redirect to
+retrieve the card. The existing canonical-page contract is unchanged.
