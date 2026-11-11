@@ -1,5 +1,6 @@
 // Qualify the shared input path in a fresh synthetic guest, using gui-vm.py for
 // all allocation, expiry, retention and VM cleanup. No product is executed.
+import {createHash} from 'node:crypto';
 import {spawn, execFileSync, type ChildProcess} from 'node:child_process';
 import {createServer} from 'node:net';
 import {mkdirSync, readFileSync, writeFileSync, openSync, closeSync} from 'node:fs';
@@ -32,7 +33,9 @@ const abort = new AbortController();
 let cleaning = false;
 process.on('SIGINT', () => abort.abort());
 process.on('SIGTERM', () => abort.abort());
-const receipt: any = {driver: 'unrun', product: 'unrun', cleanup: 'pending'};
+const directory = dirname(fileURLToPath(import.meta.url));
+const receipt: any = {driver: 'unrun', product: 'unrun', cleanup: 'pending', source_inputs: Object.fromEntries(
+  ['selfcheck.ts', 'qmp.ts', 'target.ts'].map(name => [name, createHash('sha256').update(readFileSync(resolve(directory, name))).digest('hex')]))};
 const remaining = () => Math.max(1, Math.min(10000, deadline - performance.now() - (cleaning ? 0 : 25000)));
 const ssh = (command: string) => execFileSync('ssh', [...prefix!, `${values.get('--ssh-user')}@127.0.0.1`, command],
   {encoding: 'utf8', timeout: remaining()});
@@ -53,6 +56,10 @@ APPARENT_HTML
 printf '%s\\n' "$DISPLAY" "$WAYLAND_DISPLAY" "$XDG_RUNTIME_DIR" "$TMPDIR" > "$SCRAWL_GUI_OUTPUT/environment.txt"
 hyprctl getoption input:kb_options > "$SCRAWL_GUI_OUTPUT/keyboard-options.txt" 2>&1 || true
 cat /etc/keyd/default.conf >> "$SCRAWL_GUI_OUTPUT/keyboard-options.txt" 2>/dev/null || true
+systemd-inhibit --list --no-pager > "$SCRAWL_GUI_OUTPUT/inhibitors.txt"
+grep -F "$SCRAWL_GUI_IDLE_INHIBITOR" "$SCRAWL_GUI_OUTPUT/inhibitors.txt" >/dev/null
+hyprctl getoption input:kb_layout > "$SCRAWL_GUI_OUTPUT/keyboard-layout.txt"
+grep -x 'str: us' "$SCRAWL_GUI_OUTPUT/keyboard-layout.txt" >/dev/null
 chromium --no-first-run --disable-default-apps --disable-background-networking --password-store=basic --user-data-dir="$TMPDIR/browser" --remote-debugging-port=9222 --start-fullscreen "file://$SCRAWL_GUI_OUTPUT/target.html" > "$SCRAWL_GUI_OUTPUT/browser.log" 2>&1 &
 browser=$!
 trap 'kill "$browser" 2>/dev/null || true; wait "$browser" 2>/dev/null || true' EXIT
@@ -69,7 +76,7 @@ exit 70
   try {
     runner = spawn('python3', [runnerPath, ...[...values].filter(([name]) => name !== '--results').flat(),
       '--binary', '/usr/bin/true', '--scenario', scenario, '--results', vm, '--input-profile', 'mouse',
-      '--require-command', 'chromium', '--isolated-network',
+      '--require-command', 'chromium', '--inhibit-idle', '--isolated-network',
       '--boot-timeout', '120', '--scenario-timeout', '120', '--job-timeout', '220'], {stdio: ['ignore', fd, fd]});
   } finally { closeSync(fd); }
   runner.on('error', error => { failure = error; });
@@ -80,6 +87,7 @@ exit 70
     try { status = JSON.parse(readFileSync(vm + '/result.json', 'utf8')); } catch { return false; }
     return status.stage === 'scenario';
   }, 150000);
+  receipt.setup_seconds = Number(((performance.now() - (deadline - 240000)) / 1000).toFixed(3));
   prefix = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=3', '-o', 'StrictHostKeyChecking=yes',
     '-o', `UserKnownHostsFile=${vm}/known_hosts`, '-i', resolve(values.get('--ssh-key')!), '-p', String(status.transport.ssh_port)];
   output = status.guest_readiness.tmpdir + '/output-path';
@@ -120,8 +128,14 @@ exit 70
     ws!.send(JSON.stringify({id, method, params}));
   });
   const evaluate = async (expression: string) => (await call('Runtime.evaluate', {expression, returnByValue: true})).result.value;
-  const geometry = await evaluate('({width:innerWidth,height:innerHeight,focus:document.hasFocus(),title:document.title})');
-  if (!geometry.focus || geometry.width < 600 || geometry.height < 400) throw Error('owned target lacks focus or usable geometry');
+  let geometry: any;
+  const focusObservations: any[] = [];
+  await waitFor(async () => {
+    geometry = await evaluate('({width:innerWidth,height:innerHeight,focus:document.hasFocus(),title:document.title})');
+    focusObservations.push(geometry);
+    writeFileSync(root + '/focus-observations.json', JSON.stringify(focusObservations, null, 2), {mode: 0o600});
+    return geometry.focus && geometry.width >= 600 && geometry.height >= 400;
+  }, 5000);
   await call('Page.enable');
   const screenshot = async (name: string) => writeFileSync(root + '/' + name,
     Buffer.from((await call('Page.captureScreenshot', {format: 'png'})).data, 'base64'), {mode: 0o600});
@@ -133,6 +147,15 @@ exit 70
     {kind: 'button', down: true}, {kind: 'button', down: false}, {kind: 'key', code: 'shift', down: false},
     {kind: 'relative', x: 10, y: 0}]}, 10000, abort.signal);
   await delay(200);
+  await sendPlan(new Qmp(vm + '/qmp.sock'), {profile: 'mouse', actions: [
+    {kind: 'key', code: 'tab', down: true}, {kind: 'key', code: 'tab', down: false}]}, 10000, abort.signal);
+  if (await evaluate('document.activeElement.id') !== 'typed') throw Error('native Tab did not focus typing target');
+  const expectedText = 'hello Apparent42';
+  await sendPlan(new Qmp(vm + '/qmp.sock'), {profile: 'mouse', actions: [
+    {kind: 'text', layout: 'us', value: expectedText}, {kind: 'relative', x: 10, y: 0}]}, 10000, abort.signal);
+  await delay(200);
+  receipt.typed_text = await evaluate('document.querySelector("#typed").value');
+  if (receipt.typed_text !== expectedText) throw Error('native typed text differs from requested text');
   const events = await evaluate('window.events');
   writeFileSync(root + '/observed-events.json', JSON.stringify(events, null, 2), {mode: 0o600});
   Object.assign(receipt, qualify(events), {geometry});
@@ -157,6 +180,7 @@ finally {
     receipt.runner_exit = status.exit_code;
     if (status.exit_code !== 0 || status.cleanup.status !== 'complete') receipt.driver = 'failed';
   } catch (error) { receipt.cleanup = String(error); receipt.driver = 'failed'; }
+  receipt.total_seconds = Number(((performance.now() - (deadline - 240000)) / 1000).toFixed(3));
   writeFileSync(root + '/input-qualification.json', JSON.stringify(receipt, null, 2), {mode: 0o600});
 }
 console.log(JSON.stringify(receipt));

@@ -113,6 +113,23 @@ class GuestIsolationTests(unittest.TestCase):
             self.assertEqual(temporary.stat().st_mode & 0o777, 0o700)
             temporary.rmdir()
 
+    def test_idle_inhibitor_wraps_only_the_owned_guest_scenario(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            tool = root / 'systemd-inhibit'
+            tool.write_text('#!/bin/bash\n'
+                            'test "$1" = --what=idle && test "$2" = --mode=block || exit 80\n'
+                            'test "$3" = "--who=$SCRAWL_GUI_IDLE_INHIBITOR" || exit 81\n'
+                            'shift 4\nexec "$@"\n')
+            tool.chmod(0o700)
+            scenario = root / 'scenario.sh'
+            scenario.write_text('test -n "$SCRAWL_GUI_IDLE_INHIBITOR" || exit 82\nexit 23\n')
+            command = runner.scenario_command(str(scenario), str(root), '/synthetic/candidate', str(root), '', True)
+            result = subprocess.run(['bash', '-c', command], capture_output=True, text=True,
+                                    env=dict(os.environ, PATH=str(root) + ':' + os.environ['PATH']))
+            self.assertEqual(result.returncode, 23, result.stderr)
+            self.assertNotIn('systemd-inhibit', runner.scenario_command(str(scenario), str(root), '', str(root), ''))
+
     @patch.object(runner.os, 'getgroups', return_value=[1234])
     @patch.object(runner.Path, 'stat', return_value=SimpleNamespace(st_gid=1234))
     def test_mouse_profile_has_no_tablet_to_split_a_held_stroke(self, _stat, _groups):

@@ -90,3 +90,26 @@ test('qualifies observed input separately; rejects the actual mixed-pointer fail
   assert.throws(() => qualify(untrusted));
   assert.throws(() => qualify(observed().slice(0, -1)), /Shift/);
 });
+
+test('focused US typing uses real qcodes and balanced Shift edges; no raw numeric X keycodes', async () => {
+  await fixture(async (path, commands) => {
+    await sendPlan(new Qmp(path), {profile: 'mouse', actions: [{kind: 'text', layout: 'us', value: 'A2 _'}]});
+    const events = commands.filter(c => c.execute === 'input-send-event').flatMap(c => c.arguments.events);
+    assert.deepEqual(events.map(e => [e.data.key.data, e.data.down]), [
+      ['shift', true], ['a', true], ['a', false], ['shift', false], ['2', true], ['2', false],
+      ['spc', true], ['spc', false], ['shift', true], ['minus', true], ['minus', false], ['shift', false]]);
+  });
+  assert.throws(() => validatePlan({profile: 'mouse', actions: [{kind: 'text', layout: 'de', value: 'test'}]}));
+  assert.throws(() => validatePlan({profile: 'mouse', actions: [{kind: 'text', layout: 'us', value: 'unhandled \u00e9'}]}));
+});
+
+test('target-readiness refusal while Shift is held releases it without pressing the button', async () => {
+  await fixture(async (path, commands) => {
+    await assert.rejects(sendPlan(new Qmp(path), {profile: 'mouse', actions: [
+      {kind: 'key', code: 'shift', down: true}, {kind: 'button', down: true},
+      {kind: 'button', down: false}, {kind: 'key', code: 'shift', down: false},
+    ]}, 10000, undefined, async action => { if (action.kind === 'button') throw Error('target not ready'); }), /target not ready/);
+    const events = commands.filter(c => c.execute === 'input-send-event').flatMap(c => c.arguments.events);
+    assert.deepEqual(events.map(e => [e.type, e.data.down]), [['key', true], ['key', false]]);
+  });
+});

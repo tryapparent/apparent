@@ -194,14 +194,17 @@ speaker stimulus is used. This recipe makes no microphone-quality claim.
 For pointer/shortcut harness diagnosis, use the existing runner's
 [shared QMP input and fresh-guest selfcheck](../scripts/linux/gui/input/README.md).
 It observes a continuous same-pointer stroke, Shift-click and released state in
-a synthetic native browser window. It reports product acceptance as unrun.
+a synthetic native browser window, plus exact focused text entry. It reports
+product acceptance as unrun.
 Use `--input-profile mouse` for relative held strokes; the default tablet profile
 is preserved for existing absolute-coordinate recipes. Do not mix the profiles.
 Declare scenario tools with repeated `--require-command` options so missing media
 or fixture commands fail before product execution. The runner provides a short
 private guest TMPDIR and the test account's exported desktop session variables.
-These readiness facts do not replace the exact installed product scenario or its
-platform gates. Idle handling remains scenario-specific; see the linked limits.
+Use `--require-host-command` for host tools and `--inhibit-idle` for a scoped
+guest logind idle lock that ends with the scenario. These readiness facts do not
+replace the exact installed product scenario or its platform gates. Custom
+ignore-inhibit/screen-lock behavior remains scenario-specific; see linked limits.
 
 ## Run and native consent
 

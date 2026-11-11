@@ -173,7 +173,7 @@ def prepared_inputs(args):
             'desktop': args.desktop, 'ssh_user': args.ssh_user,
             'isolated_network': args.isolated_network, 'outputs': args.outputs,
             'input_profile': args.input_profile, 'required_commands': args.require_command,
-            'required_host_commands': args.require_host_command}
+            'required_host_commands': args.require_host_command, 'inhibit_idle': args.inhibit_idle}
 
 
 # Used verbatim on both ends: successful scp alone is not verified retention.
@@ -302,20 +302,23 @@ def readiness_command(libraries, required):
     return ' && '.join(['mkdir -m 700 -- ' + shlex.quote(guest_tmp(libraries)), *checks])
 
 
-def scenario_command(remote, output, binary, libraries, audio):
+def scenario_command(remote, output, binary, libraries, audio, inhibit_idle=False):
     # Library search applies only when the recipe invokes the candidate. Bash,
     # Python and system desktop tools must load their own distribution runtime.
     # Import only desktop-session variables, without evaluating shell text.
     session = ('while IFS= read -r entry; do case "$entry" in '
-               'DISPLAY=*|WAYLAND_DISPLAY=*|XDG_RUNTIME_DIR=*|DBUS_SESSION_BUS_ADDRESS=*|'
-               'HYPRLAND_INSTANCE_SIGNATURE=*|XDG_CURRENT_DESKTOP=*|XDG_SESSION_TYPE=*) '
+               'DISPLAY=*|WAYLAND_DISPLAY=*|XAUTHORITY=*|XDG_RUNTIME_DIR=*|DBUS_SESSION_BUS_ADDRESS=*|'
+               'HYPRLAND_INSTANCE_SIGNATURE=*|XDG_CURRENT_DESKTOP=*|XDG_SESSION_TYPE=*|XDG_SESSION_ID=*) '
                'export "$entry";; esac; done < <(systemctl --user show-environment); exec env ')
-    command = ('TMPDIR=' + shlex.quote(guest_tmp(libraries)) +
+    idle_id = 'apparent-gui-' + hashlib.sha256(libraries.encode()).hexdigest()[:20] if inhibit_idle else ''
+    inhibitor = (' systemd-inhibit --what=idle --mode=block --who=' + shlex.quote(idle_id) +
+                 ' --why=' + shlex.quote('Disposable Apparent GUI verification') if inhibit_idle else '')
+    command = ('SCRAWL_GUI_IDLE_INHIBITOR=' + shlex.quote(idle_id) + ' TMPDIR=' + shlex.quote(guest_tmp(libraries)) +
             ' SCRAWL_GUI_OUTPUT=' + shlex.quote(output) +
             ' SCRAWL_GUI_BINARY=' + shlex.quote(binary) +
             ' SCRAWL_GUI_AUDIO_FILE=' + shlex.quote(audio) +
             ' SCRAWL_GUI_LIBRARY_PATH=' + shlex.quote(libraries) +
-            ' bash ' + shlex.quote(remote))
+            inhibitor + ' bash ' + shlex.quote(remote))
     return 'bash -c ' + shlex.quote(session + command)
 
 
@@ -473,6 +476,8 @@ def main():
                         help="guest command required before scenario; repeat for media/fixture tools")
     parser.add_argument("--require-host-command", action='append', default=[],
                         help="local command required before guest allocation; repeat for host decoders/tools")
+    parser.add_argument("--inhibit-idle", action='store_true',
+                        help="hold a guest-local logind idle inhibitor only for the scenario lifetime")
     parser.add_argument("--audio-file", type=Path, help="optional WAV stimulus staged inside the guest")
     parser.add_argument("--binary", type=Path, required=True, help="candidate executable (sibling .so files are staged too)")
     parser.add_argument("--results", type=Path, required=True, help="new directory; retained after the run")
@@ -626,14 +631,15 @@ def main():
                     if actual != status['inputs']['files'][str(source.absolute())]['sha256']:
                         raise RuntimeError(f'staged input hash differs from preflight: {source}')
                 stage('readiness')
-                call(prefix + [readiness_command(guest_bin, args.require_command)], timeout=10)
+                call(prefix + [readiness_command(guest_bin, [*args.require_command, *(['systemd-inhibit'] if args.inhibit_idle else [])])], timeout=10)
                 status['guest_readiness'] = {'status': 'passed', 'required_commands': args.require_command,
-                                             'tmpdir': guest_tmp(guest_bin), 'input_profile': args.input_profile}
+                                             'tmpdir': guest_tmp(guest_bin), 'input_profile': args.input_profile,
+                                             'idle_inhibition': 'requested' if args.inhibit_idle else 'not_requested'}
                 try:
                     stage('scenario')
                     status['unrun'] = []
                     status['product'] = 'unknown'
-                    command = prefix + [scenario_command(remote, guest_output, guest_binary, guest_bin, audio_file)]
+                    command = prefix + [scenario_command(remote, guest_output, guest_binary, guest_bin, audio_file, args.inhibit_idle)]
                     # Files keep full private output without buffering a long recipe in RAM.
                     with (directory / 'scenario.log').open('w') as output, (directory / 'scenario.stderr').open('w') as errors:
                         try:

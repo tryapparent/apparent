@@ -64,7 +64,7 @@ async function bounded<T>(promise: Promise<T>, deadline: number): Promise<T> {
 export type Action = {kind: 'relative'; x: number; y: number} |
   {kind: 'absolute'; x: number; y: number; width: number; height: number} |
   {kind: 'button'; down: boolean} | {kind: 'key'; code: string; down: boolean} |
-  {kind: 'wait'; ms: number};
+  {kind: 'wait'; ms: number} | {kind: 'text'; value: string; layout: 'us'};
 export type Plan = {profile: 'mouse' | 'tablet'; actions: Action[]};
 export function validatePlan(value: any): asserts value is Plan {
   if (!value || !['mouse', 'tablet'].includes(value.profile) || !Array.isArray(value.actions) ||
@@ -84,15 +84,18 @@ export function validatePlan(value: any): asserts value is Plan {
     } else if (action.kind === 'button') {
       if (typeof action.down !== 'boolean' || action.down === button) throw Error('unpaired button edge');
       button = action.down;
+    } else if (action.kind === 'text') {
+      if (action.layout !== 'us' || typeof action.value !== 'string' || !/^[A-Za-z0-9 .,_-]{1,128}$/.test(action.value) || button || keys.size)
+        throw Error('text requires explicit US layout, supported ASCII and released input');
     } else if (action.kind === 'key') {
-      if (!/^[a-z][a-z0-9_-]{0,31}$/.test(action.code) || typeof action.down !== 'boolean' ||
+      if (!/^(?:[a-z][a-z0-9_-]{0,31}|[0-9])$/.test(action.code) || typeof action.down !== 'boolean' ||
           keys.has(action.code) === action.down) throw Error('invalid or unpaired QEMU qcode');
       if (action.down) keys.add(action.code); else keys.delete(action.code);
     } else if (action.kind !== 'wait' || !integer(action.ms, 0, 5000)) throw Error('invalid action');
   }
   if (button || keys.size) throw Error('plan leaves input held');
 }
-export async function sendPlan(qmp: Qmp, plan: Plan, timeoutMs = 10000, signal?: AbortSignal) {
+export async function sendPlan(qmp: Qmp, plan: Plan, timeoutMs = 10000, signal?: AbortSignal, beforeAction?: (action: Action) => Promise<void>) {
   validatePlan(plan);
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60000) throw Error('timeout must be 1000–60000 ms');
   const deadline = performance.now() + timeoutMs;
@@ -126,12 +129,23 @@ export async function sendPlan(qmp: Qmp, plan: Plan, timeoutMs = 10000, signal?:
     for (const action of plan.actions) {
       signal?.throwIfAborted();
       if (performance.now() >= workDeadline) throw Error('input deadline expired');
+      if (beforeAction) await bounded(beforeAction(action), workDeadline);
       if (action.kind === 'wait') await pause(action.ms);
       else if (action.kind === 'button') {
         if (action.down) heldButton = true; // include uncertain sends in cleanup
         await event([button(action.down)]);
         if (!action.down) heldButton = false;
         await pause(120);
+      } else if (action.kind === 'text') {
+        for (const character of action.value) {
+          signal?.throwIfAborted();
+          const shifted = /[A-Z_]/.test(character);
+          const code = ({' ': 'spc', '.': 'dot', ',': 'comma', '-': 'minus', '_': 'minus'} as Record<string, string>)[character] ?? character.toLowerCase();
+          if (shifted) { heldKeys.add('shift'); await event([key('shift', true)]); await pause(120); }
+          heldKeys.add(code); await event([key(code, true)]); await pause(120);
+          await event([key(code, false)]); heldKeys.delete(code); await pause(120);
+          if (shifted) { await event([key('shift', false)]); heldKeys.delete('shift'); await pause(120); }
+        }
       } else if (action.kind === 'key') {
         if (action.down) heldKeys.add(action.code);
         await event([key(action.code, action.down)]);
