@@ -232,9 +232,10 @@ pub fn modifier_flags() -> u64 {
 /// The virtual key and label for a key GPUI names (`a`, `f5`, `space`).
 fn key_from_name(key: &str) -> Option<(u16, String)> {
     let lower = key.to_ascii_lowercase();
-    // Hyprland binds Omarchy's Copilot hardware key by XKB keycode 201. GPUI
-    // reports the default XKB symbol name for that code, not "Copilot".
-    if matches!(lower.as_str(), "copilot" | "xf86touchpadoff") {
+    // On the supported Omarchy keymap, evdev KEY_F23 (193) maps to XKB keycode
+    // 201 with F23/XF86Assistant symbols. GPUI reports that symbol identity;
+    // the physical device key cannot be distinguished from this event alone.
+    if matches!(lower.as_str(), "copilot" | "f23" | "xf86assistant" | "launchassistant" | "xf86touchpadoff") {
         return Some((201, "Copilot".into()));
     }
     if lower.chars().count() == 1
@@ -1213,6 +1214,9 @@ mod tests {
     #[test]
     fn copilot_key_round_trips_through_shortcut_provider() {
         assert_eq!(key_from_name("Copilot"), Some((201, "Copilot".into())));
+        assert_eq!(key_from_name("F23"), Some((201, "Copilot".into())));
+        assert_eq!(key_from_name("XF86Assistant"), Some((201, "Copilot".into())));
+        assert_eq!(key_from_name("LaunchAssistant"), Some((201, "Copilot".into())));
         assert_eq!(key_from_name("XF86TouchpadOff"), Some((201, "Copilot".into())));
         let shortcut = shortcut_from_key_and_mods("Copilot", true, false, false, true).unwrap();
         assert_eq!(shortcut.key_code, 201);

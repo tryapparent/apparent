@@ -9,12 +9,12 @@ const { parseAction } = require('../../electron/onboarding-protocol.cjs') as { p
 const event = (overrides: Partial<Parameters<typeof shortcutCapture>[0]> = {}) => ({key:'Unidentified',code:'LaunchAssistant',ctrlKey:false,altKey:false,metaKey:true,shiftKey:true,...overrides});
 test('recognizes Copilot with Super+Shift on Linux', () => assert.deepEqual(shortcutCapture(event(), 'linux'), {keyCode:201,modifiers:768,key:'Copilot'}));
 test('recognizes the unmodified Copilot key', () => assert.deepEqual(shortcutCapture(event({key:'LaunchAssistant',metaKey:false,shiftKey:false}), 'linux'), {keyCode:201,modifiers:0,key:'Copilot'}));
-test('recognizes keycode 201 only from the observed NUL/F23 X11 event', () => {
-  for (const eventValue of [event({key:'\u0000',code:'F23'}), event({key:'\u0000',code:'F23',metaKey:false,shiftKey:false})]) {
+test('recognizes Linux keycode 201 F23/XF86Assistant aliases as Copilot', () => {
+  for (const eventValue of [event({key:'\u0000',code:'F23'}), event({key:'\u0000',code:'F23',metaKey:false,shiftKey:false}), event({key:'F23',code:'F23'}), event({key:'XF86Assistant',code:'F23'}), event({key:'LaunchAssistant',code:'LaunchAssistant'})]) {
     assert.deepEqual(shortcutCapture(eventValue, 'linux'), {keyCode:201,modifiers:eventValue.metaKey?768:0,key:'Copilot'});
   }
-  assert.equal(shortcutCapture(event({key:'F23',code:'F23'}), 'linux'), null, 'a genuine F23 keeps its function-key identity');
-  assert.equal(shortcutCapture(event({key:'Unidentified',code:'F23'}), 'linux'), null);
+  assert.deepEqual(shortcutCapture(event({key:'Unidentified',code:'F23'}), 'linux'), {keyCode:201,modifiers:768,key:'Copilot'});
+  assert.equal(shortcutCapture(event({key:'F23',code:'F23'}), 'macos'), null, 'Linux aliases do not relax macOS');
 });
 test('rejects partial Super or Shift modifiers on Copilot', () => {
   assert.equal(shortcutCapture(event({metaKey:true,shiftKey:false}), 'linux'), null);

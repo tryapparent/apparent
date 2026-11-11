@@ -274,8 +274,14 @@ hyprlang path is unchanged and has no new shutdown-cleanup claim. An obsolete
 inherited default blocks adoption of the permanent Copilot binding until reload,
 rather than claiming that the old chord has been removed.
 
-On Omarchy, `code:201` is Copilot. Apparent accepts only the exact permanent
-unmodified Copilot or Super+Shift+Copilot `bindings.lua` record command when its
+On the observed Omarchy keymap, evdev `KEY_F23` (193) maps through XKB offset +8
+to keycode 201, whose symbols include `F23` and `XF86Assistant`. Apparent treats
+those Linux event names as Copilot because this input path does not expose enough
+information to distinguish a physical F23 from the Copilot key on that keymap.
+The same keycode appears as `code:201` in Hyprland, so the recorder, native
+shortcut provider and compositor binding share the stored identity 201. This
+alias is Linux-only; macOS retains its existing key identities. Apparent accepts
+only the exact permanent unmodified Copilot or Super+Shift+Copilot `bindings.lua` record command when its
 matching live `hyprctl binds -j` entry is unique. The onboarding/Settings editor
 also records either chord; unrelated empty-key bindings remain untrusted.
 
