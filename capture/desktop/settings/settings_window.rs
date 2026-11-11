@@ -2130,7 +2130,7 @@ impl SettingsWindow {
                             ),
                     )
                     .child(
-                        button(theme, "settings-updates", if state.update_check.checking { "Checking…" } else { "Check for Updates…" }, state.updates && !state.update_check.checking)
+                        button(theme, "settings-updates", if !state.updates { "Updates unavailable" } else if state.update_check.checking { "Checking…" } else { "Check for Updates…" }, state.updates && !state.update_check.checking)
                             .when(state.updates && !state.update_check.checking, |d| {
                                 d.on_click(
                                     cx.listener(|view, _, _, _| view.act(Action::CheckForUpdates)),
@@ -2140,10 +2140,19 @@ impl SettingsWindow {
                     .into_any_element(),
             ],
         ));
+        let version = state.version.clone();
+        column = column.child(
+            button(theme, "settings-copy-version", "Copy version", true)
+                .on_click(move |_, _, _| {
+                    if let Err(error) = crate::shared::handoff::copy_string_to_clipboard(&format!("Apparent {version}")) {
+                        crate::capture::engine::runtime::apparent_log(format!("Could not copy version: {error}"));
+                    }
+                }),
+        );
         if !state.updates {
             column = column.child(caption(
                 theme,
-                if LINUX { "Update checks work when Apparent runs from an AppImage." } else { "Updates work in the installed Apparent.app." },
+                if LINUX { "This installation cannot check for updates. Run the AppImage to use automatic updates." } else { "This installation cannot check for updates. Run the installed Apparent.app to use automatic updates." },
                 false,
             ));
         }

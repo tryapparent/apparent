@@ -74,7 +74,7 @@ function startControls() {
 
 if(process.argv.includes('--controls')) { startControls(); }
 else if(process.argv.includes('--onboarding')) { require('./onboarding.cjs'); } else {
-const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, nativeTheme } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, nativeTheme, clipboard } = require('electron');
 const os = require('node:os');
 let exitWithReports = code => app.exit(code);
 if (process.env.APPARENT_DESKTOP_REPORTING === '1') {
@@ -126,6 +126,8 @@ app.whenReady().then(() => {
   // A parent show must not expose Chromium's empty initial document.
   let settingsPainted = false;
   let settingsMounted = false;
+  let settingsCommitted = false;
+  let settingsFrame;
   let settingsClosing = false;
   let settingsFailed = false;
   let startupTimer;
@@ -135,7 +137,19 @@ app.whenReady().then(() => {
     exitWithReports(1);
   };
   const showSettings = () => {
-    if (!settingsPainted || !settingsMounted || settingsClosing || window.isDestroyed()) return;
+    if (!settingsPainted || !settingsCommitted || settingsClosing || window.isDestroyed()) return;
+    if (!settingsMounted) {
+      settingsFrame ??= require('./settings/frame.cjs').committedFrame(window.webContents).then(() => {
+        if (settingsClosing || window.isDestroyed()) return;
+        settingsMounted = true;
+        showSettings();
+      }).catch(() => {
+        // A rejected snapshot can precede render-process-gone. Let that native
+        // event admit its crash report before exiting; otherwise the existing
+        // startup deadline restores the fallback. Never reveal a failed frame.
+      });
+      return settingsFrame;
+    }
     clearTimeout(startupTimer);
     window.show();
     window.focus();
@@ -172,30 +186,31 @@ app.whenReady().then(() => {
   ipcMain.handle('apparent:settings-mounted', (event, ...args) => {
     validate(event, args);
     if (!settings) throw new Error('Unavailable outside Settings');
-    settingsMounted = true;
-    showSettings();
+    if (settingsClosing || window.isDestroyed()) return;
+    settingsCommitted = true;
+    return showSettings();
   });
   ipcMain.handle('apparent:settings-frame-ready', (event, ...args) => {
     validate(event, args);
     if (!settings) throw new Error('Unavailable outside Settings');
     settingsPainted = true;
-    showSettings();
+    return showSettings();
   });
   ipcMain.handle('apparent:about-link', (event, link, ...args) => {
     validate(event, args);
     if (!about || !['website', 'source'].includes(link)) throw new Error('Forbidden link');
     return shell.openExternal(link === 'website' ? 'https://app.tryapparent.com' : 'https://github.com/tryapparent/apparent');
   });
+  ipcMain.handle('apparent:about-copy-version', (event, ...args) => {
+    validate(event, args);
+    if (!about || typeof aboutState?.version !== 'string' || !aboutState.version)
+      throw new Error('Version unavailable');
+    clipboard.writeText(`Apparent ${aboutState.version}`);
+  });
   ipcMain.handle('apparent:about-read', (event, ...args) => {
     validate(event, args);
     if (!about) throw new Error('Unavailable outside About');
     return aboutState;
-  });
-  ipcMain.handle('apparent:about-copy-version', (event, ...args) => {
-    validate(event, args);
-    if (!about || typeof aboutState?.version !== 'string' || !aboutState.version) throw new Error('Build identity unavailable');
-    // No renderer-supplied text or general clipboard capability is admitted.
-    require('electron').clipboard.writeText(`apparent ${aboutState.version}`);
   });
   ipcMain.handle('apparent:about-action', (event, action, ...args) => {
     validate(event, args);

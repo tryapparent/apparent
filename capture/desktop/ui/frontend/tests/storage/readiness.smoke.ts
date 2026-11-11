@@ -44,8 +44,9 @@ test('missing Settings renderer stays hidden and exits for native fallback', { t
 
 // Hidden documents may defer animation callbacks even after React commits.
 // Cover both worlds: pausing page callbacks does not pause the isolated preload.
-for (const world of ['page', 'preload']) {
-test(`mounted Settings becomes visible without ${world}-world animation callbacks`, { timeout: 25000 }, async t => {
+for (const world of ['page', 'preload', 'compositor']) {
+test(world === 'compositor' ? 'committed Settings stays hidden until the native snapshot finishes' :
+  `mounted Settings becomes visible without ${world}-world animation callbacks`, { timeout: 25000 }, async t => {
   const frontend = fileURLToPath(new URL('../..', import.meta.url));
   const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'ap-mounted-'));
   let app: Awaited<ReturnType<typeof _electron.launch>> | undefined;
@@ -62,16 +63,43 @@ test(`mounted Settings becomes visible without ${world}-world animation callback
     const html = path.join(fixture, 'dist/settings.html');
     await fs.writeFile(path.join(fixture, 'dist/paused-animation.js'), paused);
     await fs.writeFile(html, (await fs.readFile(html, 'utf8')).replace('<head>', '<head><script src="./paused-animation.js"></script>'));
-  } else {
+  } else if (world === 'preload') {
     const preload = path.join(fixture, 'electron/storage-preload.cjs');
     await fs.writeFile(preload, paused + '\n' + await fs.readFile(preload, 'utf8'));
+  } else {
+    // Delay only the native compositor response; use the shipped implementation
+    // and real capturePage after release. A committed React DOM stays hidden.
+    await fs.appendFile(path.join(fixture, 'electron/settings/frame.cjs'), `
+const originalFrame = exports.committedFrame;
+exports.committedFrame = async contents => {
+  await new Promise(resolve => { globalThis.releaseSettingsFrame = resolve; });
+  return originalFrame({ capturePage: async (...args) => {
+    const image = await contents.capturePage(...args);
+    const bitmap = image.resize({ width: 720, height: 530 }).toBitmap();
+    const pixel = (x, y) => Array.from(bitmap.subarray((y * 720 + x) * 4, (y * 720 + x) * 4 + 4));
+    // Sample within both accepted sidebar widths; nativeImage bitmap bytes are BGRA.
+    globalThis.settingsFramePixels = { sidebar: pixel(100, 450), content: pixel(300, 100) };
+    return image;
+  }});
+};
+`);
   }
   app = await _electron.launch({ args: [fixture, '--settings-storage'],
     env: { ...process.env, HOME: fixture, XDG_CONFIG_HOME: path.join(fixture, 'config') } });
   const page = await app.firstWindow();
   await page.locator('.settings-shell').waitFor();
   const { expect } = await import('@playwright/test');
+  if (world === 'compositor') {
+    await expect.poll(() => app!.evaluate(() => typeof (globalThis as any).releaseSettingsFrame)).toBe('function');
+    assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), false);
+    await app.evaluate(() => (globalThis as any).releaseSettingsFrame());
+  }
   await expect.poll(() => app!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())).toBe(true);
+  if (world === 'compositor') {
+    const pixels = await app.evaluate(() => (globalThis as any).settingsFramePixels);
+    assert.deepEqual(pixels.sidebar, [29, 22, 25, 255], 'The pre-reveal snapshot contains the accepted Carbon sidebar, not a blank cream frame');
+    assert.notDeepEqual(pixels.content, pixels.sidebar, 'The content surface is separate from the sidebar');
+  }
   await expect(page.getByRole('heading', { name: 'Storage', level: 1, exact: true })).toBeVisible();
 });
 }
