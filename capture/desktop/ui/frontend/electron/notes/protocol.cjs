@@ -17,20 +17,5 @@ function validSnapshot(v) {
     Array.isArray(v.drafts) && v.drafts.length <= 100 && v.drafts.every(note) &&
     (v.error === null || typeof v.error === 'string');
 }
-function popupBounds(point, area, height) {
-  const width = Math.min(332, area.width);
-  return { x: Math.round(Math.max(area.x, Math.min(point.x + 12, area.x + area.width - width))),
-    y: Math.round(Math.max(area.y, Math.min(point.y + 12, area.y + area.height - height))),
-    width, height: Math.min(height, area.height) };
-}
-function badgeBounds(rect, area) {
-  const [x, y, width, height] = rect;
-  let bx = x + width + 6, by = y;
-  if (bx + 150 > area.x + area.width) {
-    bx = x - 156;
-    if (bx < area.x) { bx = x + (width - 150) / 2; by = y + height + 6; }
-  }
-  return { x: Math.round(Math.max(area.x, Math.min(bx, area.x + area.width - 150))),
-    y: Math.round(Math.max(area.y, Math.min(by, area.y + area.height - 44))) };
-}
+const { popupBounds, badgeBounds } = require('./presentation.cjs');
 module.exports = { validCommand, validSnapshot, popupBounds, badgeBounds };

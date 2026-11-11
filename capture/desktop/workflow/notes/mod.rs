@@ -16,6 +16,7 @@ use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 pub enum CommandMessage {
     Ready,
     Hidden,
+    Presentation { active: bool, revision: u64 },
     Outside,
     Finished,
     Draft {
@@ -71,8 +72,9 @@ pub struct Session {
     finishing: bool,
     saved_note: Arc<AtomicBool>,
     saved_count: Arc<std::sync::atomic::AtomicUsize>,
-    embedded: bool,
-    badge_position: Option<[i32; 4]>,
+    // Transport coalescing only; these are not presentation decisions.
+    last_sent_embedded: bool,
+    last_sent_badge_rect: Option<[i32; 4]>,
     lifecycle: Arc<std::sync::Mutex<lifecycle::Lifecycle>>,
 }
 
@@ -204,19 +206,19 @@ impl Session {
         let count = Arc::clone(&saved_count);
         let actor_lifecycle = Arc::clone(&lifecycle);
         std::thread::spawn(move || {
-            let mut current = None;
+            let mut admitted_pin = None;
             let mut focus = 0;
             let mut owner = 0;
-            let mut position = [frame.x + frame.width / 2.0, frame.y + 80.0];
-            let mut mode = "badge";
+            // Native integration observes the Desktop presentation receipt; it
+            // does not choose modes or placement. Store remains the sole writer.
+            let mut presentation_admission = lifecycle::PresentationAdmission::default();
+            let mut presentation_events = Vec::new();
             let mut ready = false;
             let mut own_windows = Vec::new();
             let mut finish_requested = false;
             let mut child_eof = false;
             let mut finish_deadline = None;
             let mut drained = false;
-            let mut badge_position = None;
-            let mut embedded = false;
             let mut failed_writes = std::collections::BTreeSet::new();
             let mut transport_failed = false;
             #[cfg(target_os = "linux")]
@@ -256,18 +258,17 @@ impl Session {
                     _ => None,
                 };
                 let finish_write = matches!(&message, Message::Finish);
+                let presentation_receipt = matches!(&message, Message::Action(CommandMessage::Presentation { .. }));
                 let result: Result<()> = (|| {
                     match message {
                         Message::Stop | Message::ChildEof => return Ok(()),
-                        Message::BadgePosition(point) => badge_position = Some(point),
-                        Message::Embedded(value) => embedded = value,
+                        Message::BadgePosition(rect) => presentation_events.push(serde_json::json!({"kind": "badge", "rect": rect})),
+                        Message::Embedded(value) => presentation_events.push(serde_json::json!({"kind": "embedded", "value": value})),
                         Message::List { focus: target, owner: target_owner } => {
+                            presentation_admission.requested();
                             focus = target;
                             owner = target_owner;
-                            mode = "list";
-                            if let Some([x, y, width, height]) = badge_position.filter(|_| embedded) {
-                                position = [f64::from(x + width), f64::from(y + height)];
-                            }
+                            presentation_events.push(serde_json::json!({"kind": "list"}));
                         }
                         Message::Finish => {
                             finish_requested = true;
@@ -282,11 +283,11 @@ impl Session {
                         }
                         Message::Open(a) => {
                             store.open(a.pin, a.t, a.x, a.y)?;
+                            presentation_admission.requested();
                             owner = a.owner;
                             focus = a.focus;
-                            current = Some(a.pin);
-                            position = [a.screen_x, a.screen_y];
-                            mode = "editor";
+                            admitted_pin = Some(a.pin);
+                            presentation_events.push(serde_json::json!({"kind": "open", "pin": a.pin, "position": [a.screen_x, a.screen_y]}));
                         }
                         Message::Action(action) => match action {
                             CommandMessage::Ready => ready = true,
@@ -298,45 +299,45 @@ impl Session {
                                 store.dismiss();
                                 focus = 0;
                                 owner = 0;
-                                mode = "badge";
+                                presentation_events.push(serde_json::json!({"kind": "outside"}));
+                            }
+                            CommandMessage::Presentation { active, revision } => {
+                                ensure!(ready && presentation_admission.observe(revision, active), "Invalid notes presentation receipt");
                             }
                             CommandMessage::Hidden => {
-                                if mode == "badge" {
-                                    let _ = telemetry
-                                        .ui_sender
-                                        .try_send(LiveOverlayEvent::NoteClosed { focus, owner });
+                                if !presentation_admission.blocks_input() {
+                                    let _ = telemetry.ui_sender.try_send(LiveOverlayEvent::NoteClosed { focus, owner });
                                 }
                             }
                             CommandMessage::Draft { pin, text } => {
-                                ensure!(current == Some(pin), "Stale note");
+                                ensure!(admitted_pin == Some(pin), "Stale note");
                                 store.draft(pin, text)?;
                             }
                             CommandMessage::Save { pin, text } => {
-                                ensure!(current == Some(pin), "Stale note");
+                                ensure!(admitted_pin == Some(pin), "Stale note");
                                 save_with_receipt(&mut store, pin, text, &saved_receipt)?;
-                                mode = "badge";
+                                presentation_events.push(serde_json::json!({"kind": "save"}));
                             }
                             CommandMessage::Delete { pin } => {
                                 store.delete(pin)?;
-                                mode = "list";
+                                presentation_events.push(serde_json::json!({"kind": "delete"}));
                             }
                             CommandMessage::Edit { pin } => {
                                 ensure!(
                                     store.drafts().iter().any(|n| n.pin == pin),
                                     "Unknown note"
                                 );
-                                current = Some(pin);
-                                mode = "editor";
+                                presentation_admission.requested();
+                                admitted_pin = Some(pin);
+                                presentation_events.push(serde_json::json!({"kind": "edit", "pin": pin}));
                             }
                             CommandMessage::Dismiss => {
                                 store.dismiss();
-                                mode = "badge";
+                                presentation_events.push(serde_json::json!({"kind": "dismiss"}));
                             }
                             CommandMessage::List => {
-                                mode = "list";
-                                if let Some([x, y, width, height]) = badge_position.filter(|_| embedded) {
-                                    position = [f64::from(x + width), f64::from(y + height)];
-                                }
+                                presentation_admission.requested();
+                                presentation_events.push(serde_json::json!({"kind": "list"}));
                             },
                             CommandMessage::Surface {
                                 id,
@@ -352,7 +353,7 @@ impl Session {
                                     "Invalid notes surface"
                                 );
                                 if !finish_requested
-                                    && (mode != "badge" || own_windows.first() != Some(&id))
+                                    && (presentation_admission.blocks_input() || own_windows.first() != Some(&id))
                                 {
                                     #[cfg(target_os = "linux")]
                                     crate::capture::desktop::platform::place_note_surface(
@@ -397,11 +398,12 @@ impl Session {
                 }
                 telemetry
                     .notes_editing
-                    .store(mode != "badge", Ordering::Release);
+                    .store(presentation_admission.blocks_input(), Ordering::Release);
                 // Only Store::notes contains durable saves; drafts never count.
                 count.store(store.notes().len(), Ordering::Release);
-                if ready {
-                    let snapshot = serde_json::json!({ "mode": mode, "current": current, "position": position, "badgeRect": badge_position, "embedded": embedded,
+                if ready && !presentation_receipt {
+                    let revision = presentation_admission.next_snapshot();
+                    let snapshot = serde_json::json!({ "revision": revision, "events": presentation_events,
                         "notes": store.notes(), "drafts": store.drafts(), "error": result.err().map(|_| "Could not save this note. Your text is kept; try again.") });
                     if write_message(
                         &mut input,
@@ -414,6 +416,7 @@ impl Session {
                         transport_failed = true;
                         break;
                     }
+                    presentation_events.clear();
                 }
             }
             actor_lifecycle.lock().unwrap().seal();
@@ -458,8 +461,8 @@ impl Session {
             finishing: false,
             saved_note,
             saved_count,
-            embedded: false,
-            badge_position: None,
+            last_sent_embedded: false,
+            last_sent_badge_rect: None,
             lifecycle,
         })
     }
@@ -478,8 +481,8 @@ impl Session {
     }
 
     pub fn set_embedded(&mut self, embedded: bool) {
-        if self.embedded != embedded && self.sender.try_send(Message::Embedded(embedded)).is_ok() {
-            self.embedded = embedded;
+        if self.last_sent_embedded != embedded && self.sender.try_send(Message::Embedded(embedded)).is_ok() {
+            self.last_sent_embedded = embedded;
         }
     }
 
@@ -489,10 +492,10 @@ impl Session {
 
     pub fn position_badge(&mut self, point: [f64; 4]) {
         let point = point.map(|v| v.round() as i32);
-        if self.badge_position != Some(point)
+        if self.last_sent_badge_rect != Some(point)
             && self.sender.try_send(Message::BadgePosition(point)).is_ok()
         {
-            self.badge_position = Some(point);
+            self.last_sent_badge_rect = Some(point);
         }
     }
 
@@ -609,8 +612,10 @@ mod transport_tests {
     fn notes_saved_count_real_provider() {
         let directory = std::env::temp_dir().join(format!("notes-provider-{}", crate::shared::ids::make_bundle_id()));
         std::fs::create_dir(&directory).unwrap();
-        let (events, _receiver) = flume::unbounded();
-        let mut session = Session::start(&directory, SharedCaptureTelemetry::new(events),
+        let (events, receiver) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(events);
+        let observed = Arc::clone(&telemetry);
+        let mut session = Session::start(&directory, telemetry,
             crate::shared::model::TargetFrame { x: 0.0, y: 0.0, width: 1000.0, height: 700.0, scale: 1.0 }).unwrap();
         let wait = |condition: &dyn Fn() -> bool| {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
@@ -622,12 +627,36 @@ mod transport_tests {
         session.set_embedded(true);
         session.position_badge([0.0, 0.0, 600.0, 56.0]);
         session.open(Anchor { pin: 1, t: 100, x: 0.5, y: 0.5, screen_x: 500.0, screen_y: 350.0, focus: 0, owner: 0 });
+        wait(&|| observed.notes_editing.load(Ordering::Acquire));
         session.sender.send(Message::Action(CommandMessage::Draft { pin: 1, text: "Draft only".into() })).unwrap();
         assert_eq!(session.saved_count(), 0);
         session.sender.send(Message::Action(CommandMessage::Save { pin: 1, text: "Durable note".into() })).unwrap();
         wait(&|| session.saved_count() == 1);
         assert!(std::fs::read_to_string(directory.join("notes.json")).unwrap().contains("Durable note"));
-        session.show_list(0, 0);
+        // Require real Ready and presentation receipts, never injected startup.
+        wait(&|| !observed.notes_editing.load(Ordering::Acquire));
+        loop {
+            if let LiveOverlayEvent::NoteClosed { focus, owner } = receiver.recv_timeout(std::time::Duration::from_secs(8)).expect("Real provider did not hide saved editor") {
+                assert_eq!((focus, owner), (0, 0));
+                break;
+            }
+        }
+        for (focus, owner) in [(101, 11), (202, 22)] {
+            while receiver.try_recv().is_ok() {}
+            session.show_list(focus, owner);
+            wait(&|| observed.notes_editing.load(Ordering::Acquire));
+            session.sender.send(Message::Action(CommandMessage::Dismiss)).unwrap();
+            wait(&|| !observed.notes_editing.load(Ordering::Acquire));
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+            loop {
+                let event = receiver.recv_deadline(deadline).expect("Real provider did not acknowledge hidden list");
+                if let LiveOverlayEvent::NoteClosed { focus: actual_focus, owner: actual_owner } = event {
+                    assert_eq!((actual_focus, actual_owner), (focus, owner));
+                    break;
+                }
+            }
+        }
+        session.show_list(303, 33);
         session.sender.send(Message::Action(CommandMessage::Delete { pin: 1 })).unwrap();
         wait(&|| session.saved_count() == 0);
         assert_eq!(session.finish().recv_timeout(std::time::Duration::from_secs(10)).unwrap(), Ok(FinishOutcome::Drained));
