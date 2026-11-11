@@ -116,6 +116,30 @@ mod tests {
     use super::*;
     use std::{io::{BufRead, Read, Write}, net::TcpListener, time::{Duration, Instant}};
 
+    fn configure_account_peer(stream: &std::net::TcpStream) {
+        stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        stream.set_nonblocking(false).unwrap();
+    }
+
+    #[test]
+    fn account_fixture_normalizes_nonblocking_accepted_peer() {
+        use std::os::fd::AsRawFd;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut client = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (mut peer, _) = listener.accept().unwrap();
+        // Exercise BSD-style inheritance explicitly on both supported platforms.
+        peer.set_nonblocking(true).unwrap();
+        configure_account_peer(&peer);
+        let flags = unsafe { libc::fcntl(peer.as_raw_fd(), libc::F_GETFL) };
+        assert!(flags >= 0);
+        assert_eq!(flags & libc::O_NONBLOCK, 0);
+        assert_eq!(peer.read_timeout().unwrap(), Some(Duration::from_secs(2)));
+        client.write_all(b"request").unwrap();
+        let mut bytes = [0; 7];
+        peer.read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes, b"request");
+    }
+
     #[test]
     fn real_read_enrollment_commits_private_credentials_without_upload_consent_or_tour_milestones() {
         // AppConfig intentionally suppresses config experiment flags in tests.
@@ -151,7 +175,7 @@ mod tests {
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {std::thread::sleep(Duration::from_millis(10)); continue;},
                     Err(error) => panic!("Synthetic account listener: {error}"),
                 };
-                stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                configure_account_peer(&stream);
                 let mut reader = std::io::BufReader::new(&mut stream);
                 let mut line = String::new(); reader.read_line(&mut line).unwrap();
                 let path = line.split_whitespace().nth(1).unwrap().to_owned();
