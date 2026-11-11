@@ -111,7 +111,8 @@ impl ApparentCoordinator {
                 && !super::capture_exclusion_ready(
                     self.electron_pill.as_ref().and_then(Session::window_number),
                     &self.telemetry.applied_excluded_window_ids.lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner))
+                        .unwrap_or_else(std::sync::PoisonError::into_inner),
+                    !self.lab && self.telemetry.capture_mode.load(std::sync::atomic::Ordering::Acquire) != 3)
             {
                 // Keep the already excluded native surface until SCK confirms
                 // this child's ID is in the actual filter, not merely requested.

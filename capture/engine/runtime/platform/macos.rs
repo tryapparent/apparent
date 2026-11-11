@@ -1043,6 +1043,8 @@ pub(crate) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         .checked_sub(FRAME_SAMPLE_INTERVAL)
         .unwrap_or_else(Instant::now);
     let mut last_excluded = initial_excluded.clone();
+    let mut last_attempted = initial_excluded.clone();
+    let mut last_filter_attempt = Instant::now();
     let mut prompts = SystemPrompts::new(&sampler_target);
     while !thread_stopping.load(Ordering::Acquire) {
         let mut cur_excluded = excluded_window_ids
@@ -1057,7 +1059,16 @@ pub(crate) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
                 .drop_since(prompts.clear_until_ms);
         }
         cur_excluded.extend(&prompts.ids);
-        if cur_excluded != last_excluded {
+        let elapsed = last_filter_attempt.elapsed();
+        let unresolved = super::super::recording::recorder::exclusion_retry_due(
+            &cur_excluded,
+            &applied_excluded_window_ids.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
+            elapsed);
+        if cur_excluded != last_attempted || unresolved
+            || (cur_excluded != last_excluded && elapsed >= Duration::from_millis(250))
+        {
+            last_attempted.clone_from(&cur_excluded);
+            last_filter_attempt = Instant::now();
             prompts.hidden = sck_lists_windows(&prompts.ids);
             if let Some((new_filter, _, applied)) =
                 build_sck_filter_and_config(&sampler_target, &cur_excluded)
@@ -1133,6 +1144,7 @@ fn build_sck_filter_and_config(
             return None;
         }
     };
+    let mut applied = Vec::new();
     let filter = if target.mode == CaptureMode::Window && target.window_id.is_none() {
         None
     } else if let Some(window_id) = target.window_id
@@ -1166,6 +1178,7 @@ fn build_sck_filter_and_config(
             })
             .collect();
         let excluded_refs: Vec<&SCWindow> = excluded_overlays.iter().collect();
+        applied = excluded_overlays.iter().map(|window| window.window_id()).collect();
         SCContentFilter::create()
             .with_display(&display)
             .with_excluding_windows(&excluded_refs)
@@ -1182,9 +1195,7 @@ fn build_sck_filter_and_config(
     } else {
         1280.0
     };
-    // A request for an unknown/hidden window is not proof it entered this filter.
-    let applied = content.windows().into_iter().map(|w| w.window_id())
-        .filter(|id| excluded_window_ids.contains(id)).collect();
+    // Only the display-filter branch applies exclusions. Window filters acknowledge none.
     Some((filter, sck_config(target, long_edge), applied))
 }
 

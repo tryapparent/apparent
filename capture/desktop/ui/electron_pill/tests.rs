@@ -19,11 +19,13 @@ fn child_window_exclusion_covers_initial_reset_and_late_readiness() {
 
 #[test]
 fn late_child_stays_hidden_until_its_filter_receipt() {
-    assert!(!capture_exclusion_ready(Some(42), &[]));
-    assert!(!capture_exclusion_ready(Some(42), &[11]));
-    assert!(!capture_exclusion_ready(None, &[42]));
-    assert!(!capture_exclusion_ready(Some(0), &[0]));
-    assert!(capture_exclusion_ready(Some(42), &[11, 42]));
+    assert!(!capture_exclusion_ready(Some(42), &[], true));
+    assert!(!capture_exclusion_ready(Some(42), &[11], true));
+    assert!(!capture_exclusion_ready(None, &[42], true));
+    assert!(!capture_exclusion_ready(Some(0), &[0], true));
+    assert!(capture_exclusion_ready(Some(42), &[11, 42], true));
+    // Device capture records the phone stream, not SCK's display; it has no SCK receipt.
+    assert!(capture_exclusion_ready(Some(42), &[], false));
 }
 use crate::capture::desktop::native::pill::PillStyle;
 fn snapshot(pres: Pres) -> PillSnapshot {

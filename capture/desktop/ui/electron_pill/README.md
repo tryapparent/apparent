@@ -57,6 +57,8 @@ On Mac, capture reset restores the child window's explicit exclusion. If the
 child becomes ready during capture, the native controls remain visible until
 ScreenCaptureKit acknowledges that exact child ID in its applied filter. Failed
 filter updates never acknowledge the requested ID or advance the candidate filter.
+Unresolved window IDs retry at a bounded 250 ms cadence, even when requests stay
+unchanged. Device capture uses its phone stream and does not wait for an SCK receipt.
 
 Rollback is removal of the Electron routing calls and fields in Desktop's
 coordinator; the native implementation remains required for failure recovery

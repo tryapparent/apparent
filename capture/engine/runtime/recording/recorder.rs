@@ -10,6 +10,13 @@ use super::super::{MAX_CAPTURE_SCALE, platform};
 use crate::shared::model::{RgbaFrame, TargetInfo};
 
 pub const FRAME_SAMPLE_INTERVAL: Duration = Duration::from_millis(220);
+
+/// Missing native windows can become enumerable without changing the request.
+/// Bound retries independently from the candidate-sampling clock.
+#[cfg(any(test, target_os = "macos"))]
+pub(crate) fn exclusion_retry_due(requested: &[u32], applied: &[u32], elapsed: Duration) -> bool {
+    elapsed >= Duration::from_millis(250) && requested.iter().any(|id| !applied.contains(id))
+}
 /// Candidate frames only feed scene diffs and keyframe selection; the keyframes themselves are
 /// decoded from `recording.mp4` at full size afterwards.
 pub const CANDIDATE_EDGE: f64 = 480.0;

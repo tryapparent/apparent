@@ -20,8 +20,8 @@ pub(crate) fn restore_capture_exclusion(ids: &mut Vec<u32>, window: Option<u32>,
 }
 
 #[cfg(any(test, target_os = "macos"))]
-pub(crate) fn capture_exclusion_ready(window: Option<u32>, applied: &[u32]) -> bool {
-    window.is_some_and(|id| id > 0 && applied.contains(&id))
+pub(crate) fn capture_exclusion_ready(window: Option<u32>, applied: &[u32], screen_capture: bool) -> bool {
+    !screen_capture || window.is_some_and(|id| id > 0 && applied.contains(&id))
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
