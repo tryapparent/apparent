@@ -3777,6 +3777,10 @@ impl ApparentCoordinator {
 
     pub fn cancel_recording(&mut self, cx: &mut Context<Self>) {
         self.cancel_capture_attempt();
+        self.present_capture_cancellation(cx);
+    }
+
+    fn present_capture_cancellation(&mut self, cx: &mut Context<Self>) {
         if self.is_recording() { return; }
         cx.defer(whiteboard::close);
         self.dismiss_island(cx);
@@ -3794,7 +3798,24 @@ impl ApparentCoordinator {
         self.discard_recording();
     }
 
+    /// Native producer admission: a pending Linux source has nothing to finalize.
+    /// Use durable cancellation, including its refusal path, before releasing ownership.
+    #[cfg(target_os = "linux")]
+    fn cancel_pending_screen_finish(&mut self) -> bool {
+        if matches!(self.active_recording.as_ref().map(|r| &r.source),
+            Some(CaptureSource::Screen { session, .. }) if !session.has_frames()) {
+            self.cancel_capture_attempt();
+            return true;
+        }
+        false
+    }
+
     pub fn finish_recording(&mut self, cx: &mut Context<Self>) {
+        #[cfg(target_os = "linux")]
+        if self.cancel_pending_screen_finish() {
+            self.present_capture_cancellation(cx);
+            return;
+        }
         self.playback.take();
         apparent_log("finish_recording invoked");
         let Some(rec) = self.active_recording.take() else {
@@ -7514,6 +7535,53 @@ mod tests {
 
         assert!(coordinator.discard_recording().is_none());
         assert_eq!(coordinator.agent_state().capture_id, None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn finish_before_first_frame_cancels_durably_without_starting_finalization() {
+        use std::sync::atomic::Ordering;
+        for (real_frames, journal_fails) in [(false, false), (true, false), (false, true)] {
+            let (sender, _receiver) = flume::unbounded();
+            let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
+            let dir = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
+            if journal_fails { std::fs::write(&dir, b"owned fixture").unwrap(); }
+            else { std::fs::create_dir(&dir).unwrap(); }
+            let (session, _failed, seen) = ScreenCaptureSession::test_pending_start();
+            seen.store(real_frames, Ordering::Release);
+            coordinator.agent_captures.begin("older");
+            coordinator.agent_captures.set("older", "saved", None, None);
+            coordinator.agent_captures.begin("current");
+            coordinator.agent_capture_id = Some("current".into());
+            coordinator.active_recording = Some(ActiveRecording {
+                started: Instant::now(),
+                target: region_target(0.0, 0.0, 64.0, 64.0, &[]),
+                bundle_dir: dir.clone(), source: CaptureSource::Screen { session, audio: None, windows: None },
+                _metal_overlay: None, microphone_enabled: false,
+            });
+            coordinator.set_island_phase(IslandPhase::Recording);
+            assert_eq!(coordinator.cancel_pending_screen_finish(), !real_frames);
+            assert_eq!(coordinator.pending_finalizers, 0);
+            assert_eq!(coordinator.agent_captures.inspect("older")["status"], "saved");
+            if !real_frames && !journal_fails {
+                assert!(coordinator.active_recording.is_none());
+                assert_eq!(coordinator.agent_capture_id, None);
+                assert_eq!(coordinator.agent_captures.inspect("current")["status"], "cancelled");
+                assert!(!dir.exists());
+                assert!(!coordinator.cancel_pending_screen_finish(), "duplicate Finish has no capture to cancel");
+            } else {
+                assert!(coordinator.active_recording.is_some());
+                assert_eq!(coordinator.agent_capture_id.as_deref(), Some("current"));
+                assert!(coordinator.capture_busy());
+                assert_eq!(coordinator.agent_captures.inspect("current")["status"], "starting");
+                if journal_fails {
+                    assert_eq!(std::fs::read(&dir).unwrap(), b"owned fixture");
+                    std::fs::remove_file(&dir).unwrap();
+                    std::fs::create_dir(&dir).unwrap();
+                }
+                coordinator.discard_recording();
+            }
+        }
     }
 
     #[cfg(target_os = "linux")]

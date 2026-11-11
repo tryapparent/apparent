@@ -76,6 +76,23 @@ Without the `input` group, a capture on Wayland has no clicks, keys or ⇧ ink o
 
 Screen and Area work on the tested desktops within the output limits below. Window recording is temporarily disabled on every backend pending original-window lifetime safety (#230); the picker omits it and `record --window` returns an error without starting a recorder or substituting a screen. Choose Screen or Area explicitly. Existing Window bundles remain readable. A portal window source exists internally, but the UI does not offer it. A press of the record shortcut records the display under the pointer once its keys come up, however long they're held; the tray menu's **Choose What to Record…** opens the picker, which stays open until you choose a target or press Esc. The Mac-only iPhone mode is hidden. Screen sharing can ask again if a desktop does not honor the saved restore token. Finishing while the dialog is open cancels the pending session; a failed or empty capture reports an error rather than producing demo imagery, and `latest` skips its unfinished directory.
 
+Before the first screen frame, **Finish** uses the same durable cancellation as
+**Cancel**, including from the Electron pill, recording shortcut, tray and quit.
+It stops the pending capture without starting bundle processing or
+reporting a finalization failure. If writing the cancellation marker fails, the
+capture stays owned and busy; it is not reported as cancelled. Once a screen frame
+has arrived, Finish retains normal finalization and its empty-frame safety check.
+Agent `capture stop` still refuses a `starting` capture; use its exact-ID Cancel.
+This guard stays beside the native producer's first-frame admission and durable
+resource release, independent of renderer state. Record's TypeScript completion
+policy and existing Electron routing are unchanged. Remove the guard only when a
+replacement native admission contract preserves these same cancellation receipts
+and producer checks; reverting this repair restores the prior Finish behavior.
+The tested Hyprland portal (1.4.1 with preview-share-picker 0.2.1) can leave its
+chooser visible after the app cancels. Dismiss that chooser with Escape before
+starting again. This repair does not replace the portal or synthesize permission
+input; recordings that already have frames still save normally.
+
 `apparent capture start --wait --timeout 30` uses the running GUI's normal interaction-aware
 screen path and returns its own request ID. Portal consent still applies; `capture state` reports
 `starting` until a real frame arrives. An agent can cancel its owned pending ID but cannot
@@ -86,6 +103,30 @@ See `capture/engine/docs/capture.md` for the same-user GUI control protocol on b
 Plasma 5 can report successful GlobalShortcuts binding with an empty result. Apparent validates both returned bindings and uses KGlobalAccel directly on Plasma 5, so the shortcut does not also type into the focused app.
 
 ### Multi-output source validation
+
+Default Screen recording already starts a full display directly, without
+Apparent's target picker. It starts only on an explicit recording request and
+ends at Finish/Cancel; it is not continuous background capture. It records one
+selected display, not a union of all outputs. On portal
+backends the desktop can still require its own sharing chooser. Apparent asks
+for a Monitor and supplies a previously granted restore token when available;
+it does not forge a grant, accept a Window instead, or suppress first-use consent.
+
+A separate isolated Omarchy check of the stock NSS-repaired AppImage
+(`02eff52a…be5a5`, unchanged Rust executable from `d4b80fe7b` with repaired
+assets/packaging corresponding to `01fce58d2`) selected the actual portal
+Monitor preview, then switched from a
+synthetic scene to an otherwise empty workspace and back. CLI Start/Stop against
+the running GUI saved the same request's 1280×800, 30 fps, 417-frame movie. Every frame was
+reviewed in chronological contact sheets: scene at frames 0–153, wallpaper at
+154–256, and scene again at 257–416. The Electron capsule stayed pinned and
+visible. Bundle text, original/cropped image sheets and native screenshots were
+inspected. Capture, renderer and packaging inputs are unchanged on `c0ff42b26`;
+this is qualified reuse of that packaged candidate, not a fresh whole-head build.
+This take used CLI Start/Stop against the real GUI and supported extract-and-run
+with a private disk-backed runtime; it does not prove physical Finish/Cancel,
+FUSE launch, audio, real x1 behavior or chooser suppression. See the
+[AppImage fixture constraint](../native-testing.md#appimage-extract-and-run-temporary-storage).
 
 Multi-output ScreenCast portal capture requires a verified output identity.
 Hyprland supplies its connector name; other portal backends currently have no

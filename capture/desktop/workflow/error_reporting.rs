@@ -207,7 +207,7 @@ impl Report {
                 "$exception_level": "error",
                 "$exception_fingerprint": format!("desktop:{code}:{}:{}", self.file.as_deref().unwrap_or("external"), if self.file.is_some() { self.line } else { 0 }),
                 "$exception_list": [{
-                    "type": if matches!(self.failure, Failure::RustPanic) { "RustPanic" } else { "DesktopOperationError" },
+                    "type": if matches!(self.failure, Failure::RustPanic) { "RustPanic" } else { code },
                     "value": code,
                     "mechanism": { "type":"generic", "handled": !matches!(self.failure, Failure::RustPanic | Failure::ElectronMainException | Failure::ElectronMainRejection | Failure::ElectronRendererGone | Failure::ElectronChildGone), "synthetic": true },
                     "stacktrace": { "type":"raw", "frames":[frame] }

@@ -22,6 +22,19 @@ stopping capture. Linux warms the hidden child at startup and retains native
 held-button/identity checks, drag clamping and exact-window pinning. The child
 alone moves/remaps its Electron surface; Rust never remaps it concurrently.
 The child also reconciles its X11 input stacking without taking focus.
+The pill shows and hides immediately, without CSS animation or a spring/morph.
+Each new semantic snapshot is laid out before a hidden window becomes visible.
+Clock and microphone snapshots do not request layout; a ResizeObserver handles
+actual content/font size changes. The host has no periodic layout measurement.
+Window move/resize/layout events publish physical geometry for the notes anchor,
+instead of the GUI thread polling X11 geometry. Hidden Linux rendering is not
+background-throttled, so preloading can finish before the first capture.
+On Lua-configured Hyprland the native adapter installs an exact-window `no_anim`
+runtime rule before acknowledging readiness, and retires it when the child pipe
+closes. Other compositors and older Hyprlang retain their own window-animation
+policy; application CSS motion is still disabled. Startup/watchdog and native
+fallback remain active. Rollback restores the previous presentation host and
+geometry polling together; no capture or persisted preference format changes.
 macOS retains native caption
 dragging; Glass or explicitly disabled movable controls retain native routing.
 There is one visible pill. Missing packaged assets retain the native route.

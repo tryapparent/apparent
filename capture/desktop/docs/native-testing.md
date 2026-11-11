@@ -79,6 +79,30 @@ and inspect the warning/fallback; they are not normal smoke passes. Existing
 remain separate product regression coverage. AppImage decoder acceptance remains
 the separate `check-appimage-decoder.sh` packaging check.
 
+### AppImage extract-and-run temporary storage
+
+Measure the guest's temporary filesystem before staging an extract-and-run
+AppImage. The NSS-repaired image tested for #1057 expands to about 607 MB; a
+3 GiB Omarchy guest has a roughly 1.5 GB `/tmp` tmpfs with `usrquota`. Concurrent
+GUI and CLI extraction there produced an actual MP4 mux temporary-write
+`Disk quota exceeded`, followed by refusal to publish an incomplete movie.
+Free-space output alone does not establish per-user quota headroom.
+
+The accepted isolated workspace check used fresh private, disk-backed runtime
+directories beneath that job's guest staging directory, outside the evidence
+collector. It measured about 50 GB available and required 4 GiB before launch.
+Each AppImage invocation had its own extraction directory. The GUI's extraction
+stayed alive until its entire owned service was stopped; only then did the shell
+remove its runtime tree. Removing an extraction directory while Electron children
+remain alive can itself produce missing-library/snapshot errors during teardown.
+Preserve the original errors and distinguish fixture cleanup from product failure.
+
+These are disposable-guest fixture requirements, not permission to change a host
+mount/quota, weaken the sandbox, reuse another owner's runtime or substitute an
+unpacked app for the tested AppImage. Report extract-and-run separately from FUSE
+launch. The workspace result does not qualify every smoke scenario or temporary
+filesystem size; its earlier failed runs remain failed.
+
 ### Stage the candidate
 
 Use a sanitized, powered-off, standalone qcow2 template with matching stopped
