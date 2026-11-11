@@ -11,18 +11,21 @@ SPARKLE = "http://www.andymatuschak.org/xml-namespaces/sparkle"
 
 
 class PreviewAppcastTest(unittest.TestCase):
-    def run_feed(self, directory, build, previous="", signature=None, url=None, length=None):
+    def run_feed(self, directory, build, previous="", signature=None, url=None, length=None, version=None, tag=None):
         directory = Path(directory)
         (directory / "previous.xml").write_text(previous)
-        archive = directory / f"Apparent-Preview-0.{build}-arm64.zip"
+        version = version or f"0.{build}"
+        tag = tag or f"preview-mac-{build.replace('.', '-')}"
+        archive = directory / f"Apparent-Preview-{version}-arm64.zip"
         archive.write_bytes(b"signed preview archive")
         signature = signature or base64.b64encode(b"s" * 64).decode()
         url = url or f"https://github.com/tryapparent/apparent/releases/download/preview-mac-{build.replace('.', '-')}/{archive.name}"
         result = subprocess.run([
             "python3", str(ROOT / "capture/desktop/scripts/release/preview_appcast.py"),
             "--previous", str(directory / "previous.xml"),
-            "--zip", str(archive), "--version", f"0.{build}",
+            "--zip", str(archive), "--version", version,
             "--build-number", build,
+            "--tag", tag,
             "--signature-attributes", f'sparkle:edSignature="{signature}" length="{length if length is not None else archive.stat().st_size}"',
             "--url", url, "--out", str(directory / "appcast.xml"),
         ], capture_output=True, text=True)
@@ -55,6 +58,26 @@ class PreviewAppcastTest(unittest.TestCase):
                 result, path = self.run_feed(directory, build, previous, signature)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(path.exists())
+
+    def test_shared_version_advances_independently_of_monotonic_build_number(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first, path = self.run_feed(directory, "21.1")
+            self.assertEqual(first.returncode, 0, first.stderr)
+            previous = path.read_text()
+            result, path = self.run_feed(directory, "1234.2", previous, version="0.22.1", tag="preview-mac-22-1",
+                url="https://github.com/tryapparent/apparent/releases/download/preview-mac-22-1/Apparent-Preview-0.22.1-arm64.zip")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            items = ET.parse(path).getroot().findall("channel/item")
+            self.assertEqual(items[0].findtext(f"{{{SPARKLE}}}version"), "1234.2")
+            self.assertEqual(items[0].findtext(f"{{{SPARKLE}}}shortVersionString"), "0.22.1")
+            self.assertEqual(items[1].findtext(f"{{{SPARKLE}}}version"), "21.1")
+            for build, version in [("21.1", "0.23.1"), ("1235.1", "0.21.1"), ("1235.1", "0.22.1")]:
+                current = path.read_text()
+                path.unlink()
+                rejected, path = self.run_feed(directory, build, current, version=version)
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertFalse(path.exists())
+                path.write_text(current)
 
     def test_wrong_download_host_or_length_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

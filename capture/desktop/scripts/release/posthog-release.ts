@@ -11,8 +11,10 @@ export function registerRelease(platform: string, env: Environment, sha: string,
   if (!['linux', 'macos'].includes(platform)) throw new Error('Unsupported release platform')
   if (env.VERIFY_ONLY === 'true') return ''
   if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('Release requires the checked-out full commit')
-  const version = platform === 'macos' ? env.APPARENT_PREVIEW_VERSION : (env.TAG || `linux-main-v2-${sha}`)
-  if (!version || !/^[a-zA-Z0-9.+_-]{1,128}$/.test(version)) throw new Error('Invalid release version')
+  const version = env.APPARENT_RELEASE_VERSION
+  if (!version || !/^\d+\.\d+\.\d+$/.test(version)
+      || (platform === 'macos' && env.APPARENT_PREVIEW_VERSION !== version)
+      || (platform === 'linux' && env.TAG && env.TAG !== `v${version}`)) throw new Error('Invalid release version')
   if (!env.POSTHOG_CLI_API_KEY) throw new Error('Missing POSTHOG_CLI_API_KEY with error tracking write scope')
   const id = run([
     '--yes', '@posthog/cli@0.19.0', '--host', 'https://eu.posthog.com',

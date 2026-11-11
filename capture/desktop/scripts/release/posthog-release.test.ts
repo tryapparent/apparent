@@ -9,9 +9,9 @@ const credential = 'private-test-canary'
 
 test('registers the packaged version against the checked-out commit and intended EU project', () => {
   for (const [platform, env, version] of [
-    ['macos', { APPARENT_PREVIEW_VERSION: '0.12.2' }, '0.12.2'],
-    ['linux', { TAG: 'v1.2.3' }, 'v1.2.3'],
-    ['linux', {}, `linux-main-v2-${sha}`],
+    ['macos', { APPARENT_PREVIEW_VERSION: '0.22.1', APPARENT_RELEASE_VERSION: '0.22.1' }, '0.22.1'],
+    ['linux', { TAG: 'v0.22.1', APPARENT_RELEASE_VERSION: '0.22.1' }, '0.22.1'],
+    ['linux', { APPARENT_RELEASE_VERSION: '0.22.1' }, '0.22.1'],
   ] as const) {
     let calls = 0
     const result = registerRelease(platform, { ...env, POSTHOG_CLI_API_KEY: credential, GITHUB_SHA: 'b'.repeat(40), POSTHOG_CLI_DRY_RUN: 'true' }, sha, (args, passed) => {
@@ -34,12 +34,13 @@ test('verification never registers a release, even without credentials', () => {
 })
 
 test('refuses missing credentials, invalid metadata and empty or malformed provider IDs', () => {
-  const env = { POSTHOG_CLI_API_KEY: credential }
+  const env = { POSTHOG_CLI_API_KEY: credential, APPARENT_RELEASE_VERSION: '0.22.1' }
   const never = () => { throw new Error('must not call') }
-  assert.throws(() => registerRelease('linux', {}, sha, never), /Missing POSTHOG/)
+  assert.throws(() => registerRelease('linux', { APPARENT_RELEASE_VERSION: '0.22.1' }, sha, never), /Missing POSTHOG/)
   assert.throws(() => registerRelease('linux', env, 'main', never), /full commit/)
-  assert.throws(() => registerRelease('macos', env, sha, never), /Invalid release/)
+  assert.throws(() => registerRelease('macos', { ...env, APPARENT_PREVIEW_VERSION: '0.21.1' }, sha, never), /Invalid release/)
   assert.throws(() => registerRelease('linux', { ...env, TAG: 'private/path' }, sha, never), /Invalid release/)
+  assert.throws(() => registerRelease('linux', { ...env, TAG: 'v0.3.13' }, sha, never), /Invalid release/)
   for (const output of ['', 'unknown', `${id}\nextra`, 'private\nAPPARENT_POSTHOG_RELEASE_ID=bad']) {
     assert.throws(() => registerRelease('linux', env, sha, () => output), /no valid release ID/)
   }
