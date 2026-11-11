@@ -239,3 +239,31 @@ test('a native window after firstWindow timeout never converts the original fail
   else assert.equal(report.electronBootstrap.failure.windows[0].visible,true);
  }
 });
+
+test('bootstrap telemetry observes existing and future renderers with bounded content-free failures',()=>{
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const start=source.indexOf('function bootstrapObservation('),end=source.indexOf('function bootstrapFailure(',start);
+ const observe=new Function(source.slice(start,end)+'\nreturn bootstrapObservation;')();
+ const emitter=()=>{
+  const handlers=new Map<string,Function>();
+  return {on:(kind:string,callback:Function)=>handlers.set(kind,callback),
+   once:(kind:string,callback:Function)=>handlers.set(kind,callback),
+   emit:(kind:string,...args:unknown[])=>handlers.get(kind)?.(...args)};
+ };
+ const app={...emitter(),isReady:()=>true};
+ const first={id:1,webContents:emitter()},second={id:2,webContents:emitter()};
+ const result=observe({app,BrowserWindow:{getAllWindows:()=>[first]}});
+ assert.deepEqual(result.windows,[1]);
+ app.emit('browser-window-created',{},second);
+ first.webContents.emit('did-fail-load',{},-7,'sensitive description','file:///private/sensitive',true);
+ second.webContents.emit('dom-ready');
+ app.emit('child-process-gone',{}, {type:'GPU',reason:'crashed',exitCode:9,serviceName:'private-service'});
+ const events=(globalThis as any).__apparentStorageWindowProbe;
+ assert.ok(events.some((entry:any)=>entry.kind==='did-fail-load'&&entry.code===-7&&entry.mainFrame===true));
+ assert.ok(events.some((entry:any)=>entry.kind==='dom-ready'&&entry.id===2));
+ assert.ok(events.some((entry:any)=>entry.kind==='child-process-gone'&&entry.type==='GPU'));
+ assert.doesNotMatch(JSON.stringify(events),/sensitive|private-service/);
+ for(let i=0;i<30;i++)second.webContents.emit('did-start-loading');
+ assert.equal(events.length,16);
+ delete (globalThis as any).__apparentStorageWindowProbe;
+});
