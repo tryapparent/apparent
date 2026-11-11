@@ -5,9 +5,13 @@
 Mac preview and Linux publication resolve a release before compiling via
 `scripts/release/posthog-release.ts` (PostHog CLI pinned to `0.19.0`). They use
 EU project `329943`, names `apparent-desktop-macos` / `apparent-desktop-linux`,
-the packaged version and the checked-out full commit, including tagged Linux
+the packaged version and the checked-out full commit as the provider's separate
+build identifier, including tagged Linux
 builds. Registration failure blocks publication rather than shipping an
 unlinked reporting build. Linux verify-only builds skip registration entirely.
+This keeps successive Main builds distinct in PostHog even when they share the
+same displayed release number. Both platforms still report the common numeric
+`release_version`; the provider release key also includes the source build.
 
 Configure repository secret `POSTHOG_CLI_API_KEY` with a personal key scoped to
 the intended project and **error tracking write**. It is separate from the

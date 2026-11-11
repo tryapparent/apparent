@@ -19,6 +19,7 @@ export function registerRelease(platform: string, env: Environment, sha: string,
   const id = run([
     '--yes', '@posthog/cli@0.19.0', '--host', 'https://eu.posthog.com',
     'release', 'resolve', '--release-name', `apparent-desktop-${platform}`, '--release-version', version,
+    '--build', sha,
   ], {
     ...env, POSTHOG_CLI_PROJECT_ID: '329943', POSTHOG_CLI_HOST: 'https://eu.posthog.com',
     POSTHOG_CLI_DRY_RUN: 'false', GITHUB_SHA: sha, GITHUB_REF_NAME: env.TAG || env.GITHUB_REF_NAME,

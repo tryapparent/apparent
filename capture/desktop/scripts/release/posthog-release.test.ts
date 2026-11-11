@@ -16,7 +16,7 @@ test('registers the packaged version against the checked-out commit and intended
     let calls = 0
     const result = registerRelease(platform, { ...env, POSTHOG_CLI_API_KEY: credential, GITHUB_SHA: 'b'.repeat(40), POSTHOG_CLI_DRY_RUN: 'true' }, sha, (args, passed) => {
       calls++
-      assert.deepEqual(args, ['--yes', '@posthog/cli@0.19.0', '--host', 'https://eu.posthog.com', 'release', 'resolve', '--release-name', `apparent-desktop-${platform}`, '--release-version', version])
+      assert.deepEqual(args, ['--yes', '@posthog/cli@0.19.0', '--host', 'https://eu.posthog.com', 'release', 'resolve', '--release-name', `apparent-desktop-${platform}`, '--release-version', version, '--build', sha])
       assert.equal(passed.GITHUB_SHA, sha)
       assert.equal(passed.POSTHOG_CLI_PROJECT_ID, '329943')
       assert.equal(passed.POSTHOG_CLI_DRY_RUN, 'false')
@@ -31,6 +31,18 @@ test('registers the packaged version against the checked-out commit and intended
 
 test('verification never registers a release, even without credentials', () => {
   assert.equal(registerRelease('linux', { VERIFY_ONLY: 'true' }, sha, () => { throw new Error('network called') }), '')
+})
+
+test('successive Main commits keep the shared display version but distinct provider builds', () => {
+  for (const revision of [sha, 'b'.repeat(40)]) {
+    registerRelease('linux', { APPARENT_RELEASE_VERSION: '0.22.1', POSTHOG_CLI_API_KEY: credential }, revision, args => {
+      const build = args.indexOf('--build')
+      assert.ok(build >= 0, 'provider release identity must include the source build')
+      assert.equal(args[build + 1], revision)
+      assert.equal(args[args.indexOf('--release-version') + 1], '0.22.1')
+      return id
+    })
+  }
 })
 
 test('refuses missing credentials, invalid metadata and empty or malformed provider IDs', () => {
