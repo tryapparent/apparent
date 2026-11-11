@@ -34,7 +34,8 @@ ORs the three positional substring filters, retaining both command-line row
 cases, competing-launch socket ownership and Darwin ACL fail-closed checks.
 They use two test threads, as the later full suite already does. The cases use
 independent fixtures; the early groups no longer require separate processes.
-Linux's early commands are unchanged. Packaging, native assertions, the later
+Linux batches its two early filters (three cases) into one invocation with two
+test threads as well, removing one Cargo freshness traversal. Packaging, native assertions, the later
 unfiltered verifier and cache-completion/publication guards remain required.
 No artifact or test receipt is restored by this change; cold caches still build.
 
@@ -62,12 +63,12 @@ remain Cargo's responsibility, without copying targets across worktrees.
 
 The ordinary prerequisite contracts exercise workflow ordering and failure
 gates without Rust. For cold-build, real Cargo/libtest selection and a failing
-assertion in each of the four cases (synthetic dependency-free sources):
+assertion in each selected case on both workflow branches (synthetic dependency-free sources):
 
 ```sh
 APPARENT_EARLY_CARGO_FIXTURE=1 node --experimental-strip-types --test enablement/prerequisites/order.test.ts
 ```
 
 On Clanker, run that command through `t3-build --jobs 3 --min-jobs 3 --`.
-This fixture proves filter semantics and failure propagation, not Mac native
+This fixture proves filter semantics and failure propagation, not platform native
 acceptance. Normal ready-PR platform CI must still verify the real candidate.

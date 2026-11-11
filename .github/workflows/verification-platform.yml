@@ -284,8 +284,10 @@ jobs:
                 capture::desktop::workflow::agent_capture::tests::competing_launches_cannot_remove_the_winning_control_socket \
                 connect::hosted::hosted_tests::hosted_security_darwin_acl_grants_fail_closed
             else
-              cargo test -j 3 --locked capture::desktop::settings::settings::tests::the_command_line_row_ -- --test-threads=2
-              cargo test -j 3 --locked capture::desktop::workflow::agent_capture::tests::competing_launches_cannot_remove_the_winning_control_socket -- --exact
+              # Batch Linux's three cases too: one Cargo freshness traversal.
+              cargo test -j 3 --locked --timings -- --test-threads=2 \
+                capture::desktop::settings::settings::tests::the_command_line_row_ \
+                capture::desktop::workflow::agent_capture::tests::competing_launches_cannot_remove_the_winning_control_socket
             fi
           fi
       # Required app compilation precedes GUI assertions; the later full verifier
