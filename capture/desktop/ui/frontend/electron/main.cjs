@@ -57,7 +57,7 @@ function startControls() {
     ipcMain.handle('apparent:controls-command', (event, ...args) => {
       if (window.isDestroyed() || event.sender !== window.webContents ||
           event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== page ||
-          args.length !== 1 || !['record', 'choose', 'latest', 'settings'].includes(args[0])) {
+          args.length !== 1 || !['record', 'latest', 'settings'].includes(args[0])) {
         throw new Error('Forbidden controls request');
       }
       if (!retired && !busy) process.stdout.write(JSON.stringify({action: args[0]}) + '\n');
