@@ -73,9 +73,11 @@ On Clanker, run that command through `t3-build --jobs 3 --min-jobs 3 --`.
 This fixture proves filter semantics and failure propagation, not platform native
 acceptance. Normal ready-PR platform CI must still verify the real candidate.
 
-Hosted Ubuntu dependency installers run the `ubuntu-apt` composite action first.
-It removes only the Azure entry from the image's mirror list, requires an
-existing official Ubuntu HTTPS fallback, and refuses self-hosted or non-Linux
-runners. Other image layouts remain unchanged; package signatures, dependencies,
-tests and job deadlines are preserved. This addresses repeated pre-test DNS
-failures on the Azure mirror; see [runner-image issue 15040](https://github.com/actions/runner-images/issues/15040).
+Hosted Ubuntu checks use `.github/actions/ubuntu-apt` before installing packages.
+GitHub's image assigns Azure/Ubuntu mirrors priorities 1–3; the action prepends
+Kernel.org's Ubuntu mirror at priority 0 and preserves those fallback entries.
+This addresses repeated hosted DNS/download timeouts without changing Ubuntu
+archive keys, package signatures, source suites or dependency/test requirements.
+It is restricted to disposable Linux Actions runners. macOS keeps its existing
+Homebrew/native setup. Tests execute the shipped mirror-list transformation
+against isolated files, including idempotence and unsafe-target refusal.

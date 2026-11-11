@@ -5,6 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {YAML} from 'bun';
 import {select, changedPaths, macDecision, selectRange, documentationOnlyPath, needsPlatform, requiresMacRustRange, presentationInputs} from './select.ts';
 import {selectedOwners, suitePlan, publicMarkdown, linuxDrivers} from './routing/consumers.ts';
+import {selection as localSelection, commands as localCommands} from '../local-tests/run.ts';
 
 const root = new URL('../../', import.meta.url);
 const workflow = (name: string) => YAML.parse(readFileSync(new URL(`.github/workflows/${name}`, root), 'utf8')) as any;
@@ -148,7 +149,7 @@ test('ordinary prose composes with Linux-only exemptions; shipped instructions a
     assert.deepEqual(select([prose]), {public:false, updater:false});
     assert.equal(macDecision([linux, prose]).macos, false);
   }
-  for (const path of ['AGENTS.md', 'capture/AGENTS.md', 'unknown.md', 'unknown/docs/test.md',
+  for (const path of ['unknown.md', 'unknown/docs/test.md',
     'Cargo.toml', 'Cargo.lock', 'build.rs', 'enablement/native-build/build.ts',
     'capture/desktop/native/Settings.swift', 'capture/desktop/assets/app-icon.png', 'public/site/unknown.rs']) {
     assert.equal(needsPlatform([path]), true, path);
@@ -178,6 +179,40 @@ function cli(base: string, head: string, dir: string) {
   for (const [key,value] of Object.entries(result)) if (key !== 'reasons') assert.equal(fields[key], typeof value === 'object' ? JSON.stringify(value) : String(value));
   return result;
 }
+test('repository AGENTS guidance uses contracts only through hosted and local Git selectors', () => repository((git, dir) => {
+  writeFileSync('AGENTS.md', 'before');git('add', '.');git('commit', '-qm', 'base');const base = git('rev-parse', 'HEAD');
+  const check = (from: string, product: boolean) => {
+    const head = git('rev-parse', 'HEAD'), hosted = cli(from, head, dir);
+    const local = localSelection(from, head, dir);
+    assert.equal(hosted.platform, product);assert.equal(hosted.mac_rust, product);
+    assert.equal(local.rustChanged, product);
+    if (!product) {
+      assert.ok(Object.values(hosted.plan).every(value => value === false));
+      assert.equal(hosted.public, false);assert.equal(hosted.macos, false);assert.equal(hosted.updater, false);
+      assert.deepEqual(local.selected, []);
+      assert.deepEqual(localCommands(local.selected, from, head, 'linux', local.rustChanged)
+        .map(command => command.argv), [['python3', 'enablement/verification.py', '--base', from, '--head', head, '--pr']]);
+    }
+  };
+  writeFileSync('AGENTS.md', 'after');git('commit', '-qam', 'edit');check(base, false);
+  const edited = git('rev-parse', 'HEAD');
+  mkdirSync('capture');writeFileSync('capture/AGENTS.md', 'nested');git('add', '.');git('commit', '-qm', 'add');check(edited, false);
+  git('mv', 'AGENTS.md', 'capture/AGENTS-old.md');git('commit', '-qm', 'unknown rename');check(edited, true);
+  for (const operation of ['delete', 'guidance-rename', 'chmod', 'symlink', 'mixed-rust', 'mixed-skill', 'mixed-unknown']) {
+    git('checkout', '--detach', edited);
+    if (operation === 'delete') git('rm', 'AGENTS.md');
+    if (operation === 'guidance-rename') {mkdirSync('capture', {recursive: true});git('mv', 'AGENTS.md', 'capture/AGENTS.md');}
+    if (operation === 'chmod') chmodSync('AGENTS.md', 0o755);
+    if (operation === 'symlink') {unlinkSync('AGENTS.md');symlinkSync('elsewhere', 'AGENTS.md');}
+    if (operation.startsWith('mixed-')) {
+      writeFileSync('AGENTS.md', 'mixed');
+      const path = operation === 'mixed-rust' ? 'source.rs' : operation === 'mixed-skill' ? 'SKILL.md' : 'unknown.md';
+      writeFileSync(path, 'product or unknown input');
+    }
+    git('add', '.');git('commit', '-qm', operation);
+    check(edited, !['delete', 'guidance-rename'].includes(operation));
+  }
+}));
 test('production Git selector preserves both rename sides, full history and fail-closed unknown/empty/shallow deltas', () => repository((git,dir) => {
   mkdirSync('public/site/src', {recursive: true});writeFileSync('public/site/src/page.tsx','before');
   git('add','.');git('commit','-qm','base');const base=git('rev-parse','HEAD');

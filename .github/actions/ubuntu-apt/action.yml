@@ -1,19 +1,20 @@
-name: Prefer official Ubuntu APT mirrors
-description: Avoid the hosted image's failing Azure mirror before dependency installation.
+name: Hosted Ubuntu package transport
+description: Prefer the Kernel.org Ubuntu mirror while retaining Ubuntu archive signature checks.
 runs:
   using: composite
   steps:
     - shell: bash
       run: |
-        set -eu
-        # Only the disposable GitHub-hosted Linux image may be changed.
+        set -euo pipefail
         test "$RUNNER_OS" = Linux
-        test "$RUNNER_ENVIRONMENT" = github-hosted
-        mirrors=/etc/apt/apt-mirrors.txt
-        # Other image layouts retain their own configured sources.
-        if [ -f "$mirrors" ]; then
-          # Refuse to remove a source without an existing official fallback.
-          # Hosted images append a tab and priority:N after each URL.
-          grep -Eq '^https://(archive|security)\.ubuntu\.com/ubuntu/?([[:space:]]+priority:[0-9]+)?[[:space:]]*$' "$mirrors"
-          sudo sed -Ei '\|^https?://azure\.archive\.ubuntu\.com/ubuntu/?([[:space:]]+priority:[0-9]+)?[[:space:]]*$|d' "$mirrors"
+        test "$GITHUB_ACTIONS" = true
+        mirror_file=/etc/apt/apt-mirrors.txt
+        test -f "$mirror_file"
+        test ! -L "$mirror_file"
+        mirror=$(printf 'https://mirrors.edge.kernel.org/ubuntu/\tpriority:0')
+        if ! grep -Fxq "$mirror" "$mirror_file"; then
+          job=$(mktemp -d /tmp/apparent-dev-apt-XXXXXX)
+          trap 'rm -rf "$job"' EXIT
+          { printf '%s\n' "$mirror"; cat "$mirror_file"; } > "$job/mirrors"
+          sudo install -o root -g root -m 0644 "$job/mirrors" "$mirror_file"
         fi
