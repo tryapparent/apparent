@@ -72,3 +72,10 @@ APPARENT_EARLY_CARGO_FIXTURE=1 node --experimental-strip-types --test enablement
 On Clanker, run that command through `t3-build --jobs 3 --min-jobs 3 --`.
 This fixture proves filter semantics and failure propagation, not platform native
 acceptance. Normal ready-PR platform CI must still verify the real candidate.
+
+Hosted Ubuntu dependency installers run the `ubuntu-apt` composite action first.
+It removes only the Azure entry from the image's mirror list, requires an
+existing official Ubuntu HTTPS fallback, and refuses self-hosted or non-Linux
+runners. Other image layouts remain unchanged; package signatures, dependencies,
+tests and job deadlines are preserved. This addresses repeated pre-test DNS
+failures on the Azure mirror; see [runner-image issue 15040](https://github.com/actions/runner-images/issues/15040).

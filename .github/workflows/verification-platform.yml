@@ -60,6 +60,8 @@ jobs:
         id: chrome
         with:
           chrome-version: stable
+      - uses: ./.github/actions/ubuntu-apt
+        if: inputs.portable
       - name: Install recipient media fixture dependency
         if: inputs.portable
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
@@ -190,6 +192,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - uses: ./.github/actions/ubuntu-apt
+        if: runner.os == 'Linux' && needs.select.outputs.root == 'true'
       - name: Linux application dependencies
         if: runner.os == 'Linux' && needs.select.outputs.root == 'true'
         run: ./capture/desktop/scripts/linux/appimage/dependencies.sh
