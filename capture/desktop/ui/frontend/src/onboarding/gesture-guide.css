@@ -22,16 +22,3 @@
   .native-gesture .native-gesture-replay { display: none; }
   .native-gesture { padding-right: 8px; }
 }
-
-/* Shift-click is a click, not a drag. The real editor opens separately. */
-.native-note-cursor { animation: guide-note-move 4s ease both; }
-.native-note-cursor path { fill: var(--apparent-paper); stroke: var(--apparent-carbon); stroke-width: 1.3; stroke-linejoin: round; }
-.native-note-click { fill: none; stroke: var(--apparent-signal); stroke-width: 2; transform-origin: 70px 27px; animation: guide-note-click 4s ease both; }
-.native-note-label { font: 500 16px var(--font-sans); fill: var(--apparent-carbon); }
-@keyframes guide-note-move { 0%,15% { transform: translate(16px,43px); } 45%,100% { transform: translate(70px,27px); } }
-@keyframes guide-note-click { 0%,44% { opacity: 0; transform: scale(.4); } 50%,70% { opacity: 1; transform: scale(1); } 85%,100% { opacity: 0; transform: scale(1.4); } }
-@media (prefers-reduced-motion: reduce) {
-  .native-note-cursor,.native-note-click { animation: none; }
-  .native-note-cursor { transform: translate(70px,27px); }
-  .native-note-click { opacity: 1; }
-}

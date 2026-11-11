@@ -10,7 +10,7 @@ import { practiceExit } from '../../electron/onboarding/presentation.ts';
 import { OnboardingAccount } from './account';
 import type { AccountState } from '../../electron/onboarding/account';
 import { subscribeOnboardingState } from './state';
-import { shortcutCapture } from '../../electron/onboarding/shortcut-editor.ts';
+import { fnSelectionActions, shortcutCapture } from '../../electron/onboarding/shortcut-editor.ts';
 import { Permissions, type PermissionRow as Row } from './permissions';
 type Action=string|{action:'shortcut';kind:'record';keyCode:number;modifiers:number;key:string;reserved:false};
 type Editor={recording:boolean;externallyManaged:boolean;error:string|null};
@@ -29,7 +29,8 @@ export function NativeOnboarding(){
   useEffect(()=>{if(state?.step!=='welcome'||!state?.penPicker){penRun.current++;penSave.current?.abort();penActive.current=false;if(penTimer.current)clearTimeout(penTimer.current);penTimer.current=null;setPenPhase('idle');penCommitted.current=false}},[state?.step,state?.penPicker]);
   document.documentElement.classList.add('native-onboarding-shell');
   useEffect(()=>{const bridge=window.nativeOnboarding;return bridge?subscribeOnboardingState(bridge,setState):undefined},[]);
-  async function action(value:Action){try{setError('');await window.nativeOnboarding?.action(value)}catch{setError('The app connection was interrupted. Close setup and reopen it from apparent.')}}
+  async function sendAction(value:Action){try{setError('');return await window.nativeOnboarding?.action(value)??false}catch{setError('The app connection was interrupted. Close setup and reopen it from apparent.');return false;}}
+  async function action(value:Action){await sendAction(value)}
   const shortcutAdvance=useRef<string|null>(null);
   useEffect(()=>{
     const ready=state?.step==='shortcut'&&state.firstCaptureRequired&&state.shortcutChosen&&state.shortcutTested&&!state.shortcutEditing&&!state.shortcutEditor?.recording;
@@ -83,12 +84,14 @@ export function NativeOnboarding(){
     }
   }
   const shortcutRecorder=useRef<HTMLDivElement|null>(null);
+  const chooseFn=async()=>{for(const next of fnSelectionActions(state?.platform??'linux',Boolean(state?.shortcutEditor?.recording))){if(!await sendAction(next))break;}};
   useEffect(()=>{if(state?.shortcutEditor?.recording)shortcutRecorder.current?.focus()},[state?.shortcutEditor?.recording]);
   if(!state)return <main className="native-setup"><p>Connecting to apparent…</p></main>;
   const goAgain=state.step==='try-it'&&(!state.practice||state.practice==='start');
   const practice=state.step==='try-it'&&!goAgain,penPage=state.step==='welcome'&&state.penPicker;
+  const practiceStage=state.practice==='note'?'screen-ink':state.practice;
   const boardName='Whiteboard';
-  const trackpadHint=state.practice==='screen-ink';
+  const trackpadHint=practiceStage==='screen-ink';
   const helper=<aside className="native-trackpad-helper" aria-label="Trackpad drawing hint"><div className="native-trackpad-helper-content"><strong>Pressing down on your trackpad?</strong><p>No need. Just hold Shift and glide.</p></div></aside>;
   document.title=state.testInstance?'apparent onboarding preview 9':'apparent setup';
   if(practice){
@@ -97,7 +100,6 @@ export function NativeOnboarding(){
       screen:{title:'Choose Screen.',text:'Choose Screen in the capture controls. Whiteboard becomes available once recording starts.'},
       whiteboard:{title:`Open ${boardName}.`,text:'Open Whiteboard from the recording controls.'},
       'board-ink':{title:'Draw on the whiteboard.',text:'Draw a circle or arrow on the white paper. You don’t need Shift here. Release to continue.'},
-      note:{title:'Add a note.',text:'Hold Shift and click without dragging. Type a note, then save it.'},
       'screen-ink':{title:'Draw on your screen.',text:'Hold Shift and circle something in your window.'},
       stop:{title:'Finish your capture.',text:`Press ${state.shortcut} again. Your sketch and screen marks stay together.`},
       preparing:{title:'Preparing your capture…',text:'Recording has stopped. Your marks and context are being brought together.'},
@@ -105,11 +107,11 @@ export function NativeOnboarding(){
       paste:{title:'Paste your capture.',text:`In your agent, press ${state.platform==='linux'?'Ctrl':'⌘'} V. Confirm when it appears.`,button:'Confirm paste',action:'practice-pasted'},
       locate:{title:'apparent lives here.',text:`Click the a in your ${state.platform==='linux'?'system tray':'menu bar'}, then Open Latest Capture.`},
       complete:{title:'Ready for your next idea.',text:'You can record, draw, add notes, paste, and find your captures. Your setup is complete.',button:'Finish setup',action:'practice-finish'},
-      retry:{title:'Try another capture.',text:`Press ${state.shortcut} to start again, then follow the drawing and note prompts. Your previous capture is saved.`},
+      retry:{title:'Try another capture.',text:`Press ${state.shortcut} to start again, then follow the drawing prompts. Your previous capture is saved.`},
       'copy-failed':{title:'Saved, but not copied.',text:'Your capture is saved. Find it in apparent’s menu.',button:'Find saved capture',action:'practice-locate'},
     };
-    const c=content[state.practice??'start']??content.start,exit=practiceExit(state.practice??'start');
-    return <><main className="native-coach" data-paired={trackpadHint&&wideCoach} data-stage={state.practice} data-arrow={state.coachPointsUp} style={{'--coach-arrow':`${(state.coachArrow??190)-24}px`} as React.CSSProperties}><img key={state.practice} src={frog} alt="Frog guide"/><div className="native-coach-content"><div className="native-coach-label">Your first capture</div><h1>{c.title}</h1>{c.text&&<p>{c.text}</p>}{(['start','retry','screen-ink','note','copied','paste'].includes(state.practice??'start'))&&<GestureGuide key={state.practice} kind={state.practice==='note'?'note':state.practice==='screen-ink'?'draw':state.practice==='copied'||state.practice==='paste'?'paste':'record'} shortcut={state.shortcut} platform={state.platform}/>}{['screen','whiteboard','stop','locate'].includes(state.practice??'')&&<ControlGuide key={state.practice} kind={state.practice==='stop'?'finish':state.practice==='locate'?'locate':'whiteboard'} screenOnly={state.practice==='screen'} directWhiteboard={state.platform==='linux'&&state.practice==='whiteboard'}/>} {c.button&&<Button onClick={()=>void action(c.action!)}>{c.button}</Button>}{trackpadHint&&!wideCoach&&helper}{error&&<p role="alert">{error}</p>}<div className="native-coach-actions"><Button variant="outline" className="native-later" onClick={()=>void action('later')}>{exit.label}</Button><small className="native-exit-detail">{exit.detail}</small></div></div></main>{trackpadHint&&wideCoach&&helper}</>;
+    const c=content[practiceStage??'start']??content.start,exit=practiceExit(practiceStage??'start');
+    return <><main className="native-coach" data-paired={trackpadHint&&wideCoach} data-stage={practiceStage} data-arrow={state.coachPointsUp} style={{'--coach-arrow':`${(state.coachArrow??190)-24}px`} as React.CSSProperties}><img key={practiceStage} src={frog} alt="Frog guide"/><div className="native-coach-content"><div className="native-coach-label">Your first capture</div><h1>{c.title}</h1>{c.text&&<p>{c.text}</p>}{(['start','retry','screen-ink','copied','paste'].includes(practiceStage??'start'))&&<GestureGuide key={practiceStage} kind={practiceStage==='screen-ink'?'draw':practiceStage==='copied'||practiceStage==='paste'?'paste':'record'} shortcut={state.shortcut} platform={state.platform}/>}{['screen','whiteboard','stop','locate'].includes(practiceStage??'')&&<ControlGuide key={practiceStage} kind={practiceStage==='stop'?'finish':practiceStage==='locate'?'locate':'whiteboard'} screenOnly={practiceStage==='screen'} directWhiteboard={state.platform==='linux'&&practiceStage==='whiteboard'}/>} {c.button&&<Button onClick={()=>void action(c.action!)}>{c.button}</Button>}{trackpadHint&&!wideCoach&&helper}{error&&<p role="alert">{error}</p>}<div className="native-coach-actions"><Button variant="outline" className="native-later" onClick={()=>void action('later')}>{exit.label}</Button><small className="native-exit-detail">{exit.detail}</small></div></div></main>{trackpadHint&&wideCoach&&helper}</>;
   }
   return <main className="native-setup" data-shortcut-state={state.step==='shortcut'||goAgain}><header><span>{state.testInstance?'apparent · onboarding preview 9':'apparent · setup'}</span><Button variant="ghost" size="icon" aria-label="Close setup" onClick={()=>void action('close')}>×</Button></header><section>
     {state.step==='welcome'&&!state.penPicker&&<div className="native-welcome"><h1>Welcome.</h1><img src={icon} alt="apparent"/><OnboardingAccount state={state.account} action={action}/></div>}
@@ -120,11 +122,12 @@ export function NativeOnboarding(){
       if(event.key==='Tab'||event.target!==event.currentTarget)return;
       event.preventDefault();if(event.key==='Escape'){void action('cancel-shortcut');return;}
       const pressed=shortcutCapture(event,state.platform);
-      if(!pressed){setError(state.platform==='linux'?'Use a letter or number with Control, Alt or Super, or Copilot alone or with Super+Shift.':'Use a letter or number with Control, Option or Command.');return;}
+      if(!pressed){setError(state.platform==='linux'?'Use a supported key by itself or with Control, Alt or Super, or Copilot alone or with Super+Shift.':'Use a supported key by itself or with Control, Option or Command, or Fn alone.');return;}
+      setError('');
       void action({action:'shortcut',kind:'record',...pressed,reserved:false});
-    }}><p>Press your new shortcut.</p><Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div>:<>
+      }}><p>Press a supported key or shortcut{state.platform==='macos'?', or choose Fn below.':'.'}</p><div className="native-shortcut-choices">{state.platform==='macos'&&<Button onClick={chooseFn}>Use Fn</Button>}<Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div></div>:<>
         {state.shortcutChosen?<kbd>{state.shortcut}</kbd>:state.shortcutEditor?.externallyManaged?<><p>Your desktop already has a recording shortcut:</p><kbd>{state.shortcut}</kbd></>:<p>No shortcut selected.</p>}
-        <div className="native-shortcut-choices">{state.shortcutEditor?.externallyManaged&&<Button onClick={()=>void action('use-desktop-shortcut')}>Use {state.shortcut}</Button>}
+        <div className="native-shortcut-choices">{state.platform==='macos'&&!state.shortcutChosen&&<Button onClick={chooseFn}>Use Fn</Button>}{state.shortcutEditor?.externallyManaged&&<Button onClick={()=>void action('use-desktop-shortcut')}>Use {state.shortcut}</Button>}
         <Button variant="outline" onClick={()=>void action('change-shortcut')}>{state.shortcutEditor?.externallyManaged?'Choose another shortcut':state.shortcutChosen?'Change shortcut':'Choose shortcut'}</Button></div>{state.shortcutEditor?.externallyManaged&&<p className="native-shortcut-detail">Choosing another shortcut keeps the desktop binding available too.</p>}
       </>}{state.shortcutEditor?.error&&<p role="alert">{state.shortcutEditor.error}</p>}</div></>}
     {goAgain&&<><h1>Go again.</h1><div className="native-shortcut"><kbd>{state.shortcut}</kbd></div></>}
