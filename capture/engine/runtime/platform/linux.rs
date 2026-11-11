@@ -235,7 +235,7 @@ fn key_from_name(key: &str) -> Option<(u16, String)> {
     // On the supported Omarchy keymap, evdev KEY_F23 (193) maps to XKB keycode
     // 201 with F23/XF86Assistant symbols. GPUI reports that symbol identity;
     // the physical device key cannot be distinguished from this event alone.
-    if matches!(lower.as_str(), "copilot" | "f23" | "xf86assistant" | "launchassistant" | "xf86touchpadoff") {
+    if matches!(lower.as_str(), "copilot" | "f23" | "xf86assistant" | "launchassistant") {
         return Some((201, "Copilot".into()));
     }
     if lower.chars().count() == 1
@@ -1217,7 +1217,7 @@ mod tests {
         assert_eq!(key_from_name("F23"), Some((201, "Copilot".into())));
         assert_eq!(key_from_name("XF86Assistant"), Some((201, "Copilot".into())));
         assert_eq!(key_from_name("LaunchAssistant"), Some((201, "Copilot".into())));
-        assert_eq!(key_from_name("XF86TouchpadOff"), Some((201, "Copilot".into())));
+        assert_eq!(key_from_name("XF86TouchpadOff"), None);
         let shortcut = shortcut_from_key_and_mods("Copilot", true, false, false, true).unwrap();
         assert_eq!(shortcut.key_code, 201);
         assert_eq!(shortcut.carbon_modifiers, CARBON_CMD_KEY | CARBON_SHIFT_KEY);

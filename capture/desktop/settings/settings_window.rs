@@ -670,7 +670,7 @@ impl SettingsWindow {
 /// The platform key code for a key GPUI names (`r`, `f5`, `space`), as the hotkeys register it.
 pub(crate) fn key_code(key: &str) -> Option<u32> {
     #[cfg(target_os = "linux")]
-    if ["copilot", "f23", "XF86Assistant", "LaunchAssistant", "XF86TouchpadOff"]
+    if ["copilot", "f23", "XF86Assistant", "LaunchAssistant"]
         .iter().any(|alias| key.eq_ignore_ascii_case(alias)) {
         return Some(201);
     }
@@ -2537,7 +2537,7 @@ mod tests {
         assert_eq!(key_code("F23"), Some(201));
         assert_eq!(key_code("XF86Assistant"), Some(201));
         assert_eq!(key_code("LaunchAssistant"), Some(201));
-        assert_eq!(key_code("XF86TouchpadOff"), Some(201));
+        assert_eq!(key_code("XF86TouchpadOff"), None);
     }
 
     #[test]
