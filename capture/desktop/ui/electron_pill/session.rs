@@ -182,6 +182,8 @@ impl Session {
         let mounted = ready.clone();
         std::thread::spawn(move || {
             let mut reader = std::io::BufReader::new(stdout);
+            #[cfg(target_os = "linux")]
+            let mut motion_rule = None;
             loop {
                 let mut line = Vec::new();
                 // Bound each read before allocation; a malformed child cannot grow this queue.
@@ -224,6 +226,21 @@ impl Session {
                             break;
                         };
                         identified.store(id, Ordering::Release);
+                        #[cfg(target_os = "linux")]
+                        if crate::capture::desktop::linux::hyprland::running() && motion_rule.is_none() {
+                            // This reader is off the GUI thread. Finish compositor
+                            // preparation before publishing readiness/activation.
+                            match crate::capture::desktop::linux::hyprland::prepare_pill_motion(id, child_pid) {
+                                Ok(true) => motion_rule = Some(id),
+                                Ok(false) => {}, // Older Hyprlang retains compositor-owned motion.
+                                Err(error) => {
+                                    crate::capture::engine::runtime::apparent_log(format!("Pill motion preparation failed: {error:#}"));
+                                    // Even a partial registration must be retired.
+                                    motion_rule = Some(id);
+                                    break;
+                                }
+                            }
+                        }
                         mounted.store(true, Ordering::Release);
                         continue;
                     }
@@ -244,6 +261,12 @@ impl Session {
                 }
             }
             reading.store(false, Ordering::Release);
+            #[cfg(target_os = "linux")]
+            if let Some(id) = motion_rule {
+                if let Err(error) = crate::capture::desktop::linux::hyprland::release_pill_motion(id, child_pid) {
+                    crate::capture::engine::runtime::apparent_log(format!("Pill motion cleanup failed: {error:#}"));
+                }
+            }
         });
         let mut session = Self {
             mailbox,
@@ -329,9 +352,6 @@ impl Session {
     }
     pub fn note_badge_anchor(&self) -> Option<[f64; 4]> {
         if !self.healthy() || !self.ready() { return None; }
-        #[cfg(target_os = "linux")]
-        return crate::capture::desktop::linux::x11::geometry(self.window_number()?);
-        #[cfg(target_os = "macos")]
         {
             let (revision, rect) = (*self.frame.lock().ok()?)?;
             (revision == self.view.revision).then_some(rect)

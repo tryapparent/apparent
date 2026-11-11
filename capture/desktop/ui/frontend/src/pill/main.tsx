@@ -31,7 +31,24 @@ function Pill() {
     void bridge.read().then(apply).catch(()=>{if(active)setError(true);});
     return ()=>{active=false;unsubscribe();};
   },[]);
-  useLayoutEffect(()=>{if(view)void window.apparentPill?.layout(view.revision).catch(()=>{});},[view]);
+  useLayoutEffect(()=>{
+    if(!view)return;
+    let active=true,last='';
+    const report=()=>{
+      if(!active)return;
+      const rect=document.querySelector('main')?.getBoundingClientRect();
+      const key=JSON.stringify([rect?.width,rect?.height]);
+      if(key===last)return;
+      last=key;void window.apparentPill?.layout(view.revision).catch(()=>{});
+    };
+    // Only semantic changes or an actual size change need a native layout pass.
+    // Clock/meter snapshots retain their revision and never enter this effect.
+    report();
+    const observer=new ResizeObserver(report),element=document.querySelector('main');
+    if(element)observer.observe(element);
+    void document.fonts.ready.then(report);
+    return()=>{active=false;observer.disconnect();};
+  },[view?.revision,view?.phase]);
   async function act(action:string,drop=false){
     const before=current.current;
     if(!before || busy.current)return;

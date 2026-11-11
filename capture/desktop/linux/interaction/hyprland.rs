@@ -445,6 +445,30 @@ pub fn pill_title(xid: u32) -> String {
     format!("Apparent Recording Controls {xid:x}")
 }
 
+/// Install before the hidden Electron window maps. The exact XID title scopes
+/// this runtime rule to this child; no user configuration is changed.
+pub fn prepare_pill_motion(xid: u32, pid: u32) -> Result<bool> {
+    if !matches!(syntax()?, Syntax::Lua) { return Ok(false); }
+    let key = format!("apparent_pill_motion_{pid}_{xid:x}");
+    let title = pill_title(xid);
+    let reply = request_with_timeout(&format!(
+        "eval assert(not _G['{key}'], 'Pill motion rule already owned'); \
+         local r = hl.window_rule({{ name = '{key}', match = {{ title = '^{title}$' }}, no_anim = true }}); \
+         _G['{key}'] = r; assert(r:is_enabled(), 'Pill motion rule unavailable')"
+    ), Duration::from_millis(200))?;
+    anyhow::ensure!(reply.trim() == "ok", "Hyprland pill motion: {}", reply.trim());
+    Ok(true)
+}
+
+pub fn release_pill_motion(xid: u32, pid: u32) -> Result<()> {
+    let key = format!("apparent_pill_motion_{pid}_{xid:x}");
+    let reply = request_with_timeout(&format!(
+        "eval local r = _G['{key}']; if r then r:set_enabled(false); _G['{key}'] = nil end"
+    ), Duration::from_millis(200))?;
+    anyhow::ensure!(reply.trim() == "ok", "Hyprland pill motion cleanup: {}", reply.trim());
+    Ok(())
+}
+
 pub fn note_title(xid: u32) -> String { format!("Apparent notes {xid:x}") }
 
 fn ink_session() -> u64 {
