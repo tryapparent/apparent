@@ -15,6 +15,8 @@ const localPackages = ['shared/ui', 'record/storage'];
 const installScripts = new Map([
   ['node_modules/esbuild', '0.28.2'], ['node_modules/fsevents', '2.3.3'], ['node_modules/electron', '45.2.1'],
 ]);
+// npm ci's full package lifecycle, including the reifier's dependencies hook.
+const lifecycle = ['preinstall', 'install', 'postinstall', 'prepublish', 'preprepare', 'prepare', 'postprepare', 'dependencies'];
 type InstallSnapshot = {key: string; stable: string; head: string;
   inputs: {key: string; stable: string}; installed: boolean};
 
@@ -35,7 +37,7 @@ export function desktopInstallSnapshot(cwd: string, env: NodeJS.ProcessEnv, admi
   if (git(cwd, env, ['rev-parse', 'HEAD']).trim() !== admission.head) throw Error('candidate changed');
   const npm = npmConfiguration(frontend, env);
   const manifest = JSON.parse(readFileSync(join(frontend, 'package.json'), 'utf8'));
-  if (['preinstall', 'install', 'postinstall', 'prepare'].some(name => manifest.scripts?.[name]))
+  if (lifecycle.some(name => manifest.scripts?.[name]))
     throw Error('unreviewed package install lifecycle');
   const lock = JSON.parse(readFileSync(join(frontend, 'package-lock.json'), 'utf8'));
   if (lock.lockfileVersion !== 3 || !lock.packages?.['']) throw Error('unknown lock format');
@@ -50,7 +52,7 @@ export function desktopInstallSnapshot(cwd: string, env: NodeJS.ProcessEnv, admi
     const pkg = JSON.parse(readFileSync(join(path, 'package.json'), 'utf8'));
     // Record's generated dist is rebuilt/staged by the fresh Desktop checks.
     if (pkg.files && JSON.stringify(pkg.files) !== JSON.stringify(['dist'])) throw Error('unreviewed local package files');
-    if (['preinstall', 'install', 'postinstall', 'prepare'].some(key => pkg.scripts?.[key]))
+    if (lifecycle.some(key => pkg.scripts?.[key]))
       throw Error('unreviewed local install lifecycle');
     const source = git(cwd, env, ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', relative(cwd, path)]);
     paths.push(...source.split('\0').filter(Boolean).map(file => resolve(cwd, file)));

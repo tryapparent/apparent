@@ -42,6 +42,9 @@ Storage). Other local packages, linked lock entries and new dependency install
 scripts fall back to fresh execution. Operational IDs are removed from the actual
 install as well as its fingerprint; loader/runtime overrides run fresh.
 Ordinary frontend source edits are not installation inputs.
+Package lifecycle hooks (`preinstall` through `postprepare`, plus `dependencies`)
+always retain fresh npm execution, so a source-only edit cannot suppress an
+install hook that reads application sources.
 
 The installed tree's complete bytes, modes, inventory and internal symlink targets
 must match the saved output. Missing/modified dependencies trigger installation;

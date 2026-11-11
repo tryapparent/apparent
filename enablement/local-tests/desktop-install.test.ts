@@ -164,3 +164,20 @@ test('changing installation inputs during successful checks cannot publish a rec
   desktopDependencies(block(), dir, env, admission, run);
   assert.equal(existsSync(join(receiptStore(path), 'success.json')), false);
 }));
+
+test('npm ci lifecycle hooks remain fresh after source-only commits', () => fixture((dir, env, git) => {
+  const path = join(dir, desktopPackage), pkg = JSON.parse(readFileSync(join(path, 'package.json'), 'utf8'));
+  pkg.scripts.postprepare = 'node --experimental-strip-types prepare.ts';
+  writeFileSync(join(path, 'package.json'), JSON.stringify(pkg));
+  writeFileSync(join(path, 'prepare.ts'), `import {appendFileSync, readFileSync} from 'node:fs';
+    appendFileSync('../../../../.git/prepared', readFileSync('source.ts', 'utf8'));\n`);
+  git('add', '.'); git('commit', '-qm', 'install lifecycle');
+  const run = (command: {argv: string[]; cwd: string}, environment = env) =>
+    execFileSync(command.argv[0], command.argv.slice(1), {cwd: join(dir, command.cwd), env: environment, stdio: 'pipe'});
+  const check = () => desktopDependencies(block(), dir, env, {base: git('rev-parse', 'origin/main'), head: git('rev-parse', 'HEAD')}, run);
+  check();
+  writeFileSync(join(path, 'source.ts'), 'export const value = 2;\n'); git('add', '.'); git('commit', '-qm', 'source only');
+  check();
+  assert.equal(readFileSync(join(dir, '.git/prepared'), 'utf8'), 'export const value = 1;\nexport const value = 2;\n');
+  assert.equal(existsSync(join(receiptStore(path), 'success.json')), false);
+}));
