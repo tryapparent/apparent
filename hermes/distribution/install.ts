@@ -1,5 +1,5 @@
 // One package writer; Hermes retains activation and dependency consent.
-import {lstat, readFile, mkdir, writeFile, open} from 'node:fs/promises';
+import {lstat, readFile, mkdir, writeFile, open, realpath} from 'node:fs/promises';
 import {constants} from 'node:fs';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
@@ -20,6 +20,8 @@ export async function install(source: string, profile: string) {
   if(!path.isAbsolute(profile))throw Error('Profile must be absolute');
   const manifest=await readFile(path.join(source,'package-files.json'));
   const files=JSON.parse(manifest.toString()) as Record<string,string>;
+  // macOS exposes its OS-owned temporary root through /tmp -> /private/tmp.
+  if(process.platform==='darwin' && profile.startsWith('/tmp/'))profile=path.join(await realpath('/tmp'),profile.slice(5));
   const target=path.join(profile,'plugins/apparent');
   await safe(target);
   const pending:{name:string;data:Buffer}[]=[];
