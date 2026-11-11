@@ -2834,7 +2834,7 @@ mod tests {
         assert_eq!(saved.label, "⌥⇧S");
 
         let custom = ShortcutConfig { key_code: 15, carbon_modifiers: CARBON_CONTROL_KEY | CARBON_OPTION_KEY, label: "⌃⌥R".into() };
-        crate::shared::handoff::set_config_value_in(&path, "shortcuts", serde_json::json!({"record":{"keyCode":15,"modifiers":5120,"label":"⌃⌥R"}})).unwrap();
+        crate::shared::handoff::set_config_value_in(&path, "shortcuts", serde_json::json!({"record":{"keyCode":15,"modifiers":6144,"label":"⌃⌥R"}})).unwrap();
         assert_eq!(Shortcuts::load_from(&path, &dir.0.join("legacy.json")).0.record, custom);
     }
 
