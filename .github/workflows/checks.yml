@@ -161,6 +161,13 @@ jobs:
         id: chrome
         with:
           chrome-version: stable
+      # The hosted image's Azure mirror repeatedly failed DNS before tests.
+      # Keep Ubuntu's signed repositories, using its canonical HTTPS mirrors.
+      - name: Use official Ubuntu mirrors for portable dependencies
+        if: needs.select.result != 'success' || fromJSON(needs.select.outputs.plan).service || fromJSON(needs.select.outputs.plan).tools
+        run: |
+          test -f /etc/apt/apt-mirrors.txt
+          printf '%s\n' 'https://archive.ubuntu.com/ubuntu' 'https://security.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors.txt > /dev/null
       - name: Install recipient media fixture dependency
         if: needs.select.result != 'success' || fromJSON(needs.select.outputs.plan).service
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
