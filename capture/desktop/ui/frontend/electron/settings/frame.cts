@@ -8,3 +8,18 @@ export async function committedFrame(contents: {
   const frame = await contents.capturePage(undefined, { stayHidden: true });
   if (frame.isEmpty()) throw new Error('Settings has no composited frame');
 }
+
+// Desktop shell presentation, independent of the renderer and native backend.
+export function settingsWindowOptions(platform: string) {
+  return {
+    width: 720, height: 530, minWidth: 640, minHeight: 530,
+    ...(platform === 'linux' ? {
+      // A normal XWayland window is tiled, even when given initial bounds.
+      type: 'dialog' as const, resizable: false, maximizable: false, fullscreenable: false,
+    } : {}),
+    ...(platform === 'darwin' ? {
+      titleBarStyle: 'hiddenInset' as const, resizable: false, fullscreenable: false,
+      acceptFirstMouse: true,
+    } : {}),
+  };
+}
