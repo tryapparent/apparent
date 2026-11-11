@@ -193,8 +193,10 @@ through the existing native renewal writer; its subsequent polling stays local.
 Offline checks preserve the saved session; revoked or expired refresh grants
 still require approval. Until renewal completes, expired access is not shown as
 upload-ready. This changes no consent, config format, credential path or routing.
-The native Settings fallback reads the corrected local state and retains its
-explicit Check connection action; rollback reverts this slice together.
+The native Settings compatibility window starts the same bounded check for a
+saved session once on opening and retains its explicit Check connection action.
+Its ticks stay local. Keep this adapter until General is routed to the accepted
+Electron replacement; rollback reverts this slice together.
 
 ## Fetch on an agent's computer
 

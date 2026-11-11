@@ -1923,7 +1923,7 @@ impl Session {
         let connect = crate::shared::handoff::experiment(super::connect::CONNECT_SETTINGS)
             .then(|| {
                 let events = events.clone();
-                super::connect::Controller::new(
+                super::connect::Controller::open(
                     crate::connect::hosted::settings_backend(&config_path),
                     std::sync::Arc::new(move |event| events(Event::Connect(event))),
                 )
