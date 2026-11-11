@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { shortcutCapture } from '../../electron/onboarding/shortcut-editor.ts';
+import { fnShortcut, shortcutCapture } from '../../electron/onboarding/shortcut-editor.ts';
 
 const require = createRequire(import.meta.url);
 const { parseAction } = require('../../electron/onboarding-protocol.cjs') as { parseAction: (value: unknown) => unknown };
@@ -36,4 +36,12 @@ test('the Electron parent accepts single keys, standalone Fn, and the two Copilo
   for (const modifiers of [0,768]) assert.deepEqual(parseAction({action:'shortcut',kind:'record',keyCode:201,modifiers,key:'Copilot',reserved:false}), {action:'shortcut',kind:'record',keyCode:201,modifiers,key:'Copilot',reserved:false});
   for (const modifiers of [256,512,769]) assert.throws(() => parseAction({action:'shortcut',kind:'record',keyCode:201,modifiers,key:'Copilot',reserved:false}));
   assert.throws(() => parseAction({action:'shortcut',kind:'record',keyCode:65,modifiers:0,key:'A',reserved:false}));
+});
+
+test('explicit Fn selection is Mac-only and uses the accepted provider contract', () => {
+  assert.equal(fnShortcut('linux'), null);
+  const choice=fnShortcut('macos');
+  assert.deepEqual(choice, {keyCode:63,modifiers:0,key:'Fn'});
+  const action={action:'shortcut',kind:'record',...choice,reserved:false};
+  assert.deepEqual(parseAction(action), action);
 });

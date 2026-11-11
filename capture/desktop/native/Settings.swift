@@ -814,7 +814,7 @@ struct ShortcutRecorder: View {
                 .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .help("Reset to \(shortcut.kind == "paste" ? "⌥⇧V" : "⌥⇧S")")
+            .help("Reset to \(shortcut.kind == "paste" ? "⌥⇧V" : "Fn")")
             .transition(SettingsMotion.replace)
           }
           if shortcut.clearable && !shortcut.off && !shortcut.recording {
