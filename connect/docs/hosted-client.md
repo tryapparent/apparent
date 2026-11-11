@@ -186,6 +186,18 @@ processes only that retained pending/failed capture, preserving its ID and
 leaving unrelated queued work unchanged. It cannot revive cancelled, expired,
 ready or previous-sign-in jobs. Without `--id`, Retry retains its bulk behavior.
 
+Settings distinguishes saved renewable authorization from upload-ready access.
+An expired access token with a valid refresh grant does not require another
+sign-in. Opening the Electron Connect card makes one bounded authenticated check
+through the existing native renewal writer; its subsequent polling stays local.
+Offline checks preserve the saved session; revoked or expired refresh grants
+still require approval. Until renewal completes, expired access is not shown as
+upload-ready. This changes no consent, config format, credential path or routing.
+The native Settings compatibility window starts the same bounded check for a
+saved session once on opening and retains its explicit Check connection action.
+Its ticks stay local. Keep this adapter until General is routed to the accepted
+Electron replacement; rollback reverts this slice together.
+
 ## Fetch on an agent's computer
 
 ```
