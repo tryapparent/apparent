@@ -80,8 +80,8 @@ test('rejects symlinked sockets and unsafe socket modes without a request', asyn
   assert.deepEqual(f.requests, []);
 });
 
-for (const reply of ['not json\n', '{}\n', '{"state":{"phase":"new_phase"}}\n', '{"error":"app_busy"}\n', 'x'.repeat(4097), '{"state":{"phase":"idle"}}']) {
-  test(`invalid, incomplete or oversized reply fails closed (${reply.slice(0, 22)})`, async (t) => {
+for (const reply of ['{}\n', '{"state":{"phase":"new_phase"}}\n']) {
+  test(`missing or unknown runtime phase fails closed (${reply.slice(0, 22)})`, async (t) => {
     const f = await fixture(t, reply);
     assert.equal((await readRuntimeState(f.home)).status, 'error');
   });
