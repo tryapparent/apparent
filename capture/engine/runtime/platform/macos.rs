@@ -215,6 +215,7 @@ unsafe extern "C" {
     fn CGEventTapEnable(tap: *mut c_void, enable: bool);
     fn CGEventTapIsEnabled(tap: *mut c_void) -> bool;
     fn CGEventSourceButtonState(state_id: u32, button: u32) -> bool;
+    fn CGEventSourceKeyState(state_id: u32, key: u16) -> bool;
     fn CGEventCreate(source: *const c_void) -> EventRef;
     fn CGEventCreateMouseEvent(
         source: *const c_void,
@@ -1626,11 +1627,17 @@ unsafe extern "C" fn key_tap_callback(
         let fn_down = flags & FLAG_SECONDARY_FN != 0;
         let other_modifiers = flags & (FLAG_COMMAND | FLAG_CONTROL | FLAG_ALTERNATE | FLAG_SHIFT) != 0;
         let fn_event = u32::from(keycode) == MACOS_FN_KEY_CODE && telemetry.shortcuts().0.is_fn_only();
+        // A key held before Fn produces no new key-down for this gesture. Read both
+        // session and hardware state, as the pointer poller does for virtual HID.
+        let other_key = fn_event && (0_u16..128).any(|key| {
+            u32::from(key) != MACOS_FN_KEY_CODE
+                && unsafe { CGEventSourceKeyState(0, key) || CGEventSourceKeyState(1, key) }
+        });
         let (candidate, trigger) = fn_gesture_transition(
             telemetry.fn_candidate.load(Ordering::Acquire),
             fn_event,
             fn_down,
-            false,
+            other_key,
             other_modifiers,
             telemetry.shortcuts_paused.load(Ordering::Acquire),
         );

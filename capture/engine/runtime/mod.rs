@@ -256,13 +256,6 @@ impl ShortcutConfig {
             && shortcut_parts(&self.label).1 == kind.default_char().to_ascii_uppercase().to_string()
     }
 
-    /// The Mac reader recognizes an explicitly stored copy of its former default as inherited.
-    pub fn is_legacy_record_default(&self) -> bool {
-        cfg!(target_os = "macos")
-            && self.carbon_modifiers == CARBON_OPTION_KEY | CARBON_SHIFT_KEY
-            && shortcut_parts(&self.label).1 == "S"
-    }
-
     pub fn key_label(&self) -> &str {
         shortcut_parts(&self.label).1
     }
@@ -726,10 +719,10 @@ impl SharedCaptureTelemetry {
         })
     }
 
-    /// Each input source can report one press more than once. Suppress duplicates and rapid
-    /// toggles for 400 ms so one physical gesture cannot start and immediately finish a capture.
+    /// Each input source can report one press more than once. Preserve the existing
+    /// 90 ms duplicate-source guard for ordinary shortcuts.
     pub fn emit_capture_shortcut(&self) {
-        self.emit_capture_shortcut_after(400);
+        self.emit_capture_shortcut_after(90);
     }
 
     /// Fn is a press/release gesture, so rapid taps use the 400 ms toggle guard.
@@ -1901,6 +1894,12 @@ mod tests {
         assert_eq!(fn_gesture_transition(cancelled.0, true, false, false, false, false), (false, false));
         assert_eq!(fn_gesture_transition(down.0, false, false, false, true, false), (false, false));
         assert_eq!(fn_gesture_transition(false, true, true, false, false, true), (false, false));
+        // Native state readback supplies keys that were already held at Fn-down.
+        let held_before_fn = fn_gesture_transition(false, true, true, true, false, false);
+        assert_eq!(held_before_fn, (false, false));
+        assert_eq!(fn_gesture_transition(held_before_fn.0, true, false, false, false, false), (false, false));
+        // Releasing the other key cannot rehabilitate the cancelled gesture.
+        assert_eq!(fn_gesture_transition(cancelled.0, false, false, false, false, false), (false, false));
     }
 
     #[cfg(target_os = "macos")]

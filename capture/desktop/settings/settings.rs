@@ -148,7 +148,7 @@ fn from_stored(kind: ShortcutKind, stored: Stored) -> Option<ShortcutConfig> {
     if cfg.label.is_empty() || cfg.key_label().is_empty() {
         return None;
     }
-    Some(if cfg.is_default_for(kind) || kind == ShortcutKind::Record && cfg.is_legacy_record_default() {
+    Some(if cfg.is_default_for(kind) {
         kind.default_config()
     } else {
         cfg
@@ -2823,12 +2823,15 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn saved_legacy_default_inherits_fn_but_custom_shortcuts_stay_explicit() {
+    fn saved_legacy_default_and_custom_shortcuts_stay_explicit() {
         let dir = TempDir::new("fn-default-migration");
         let path = dir.0.join("config.json");
         let legacy_default = r#"{"shortcuts":{"record":{"keyCode":1,"modifiers":2560,"label":"⌥⇧S"}}}"#;
         std::fs::write(&path, legacy_default).unwrap();
-        assert_eq!(Shortcuts::load_from(&path, &dir.0.join("legacy.json")).0.record, ShortcutConfig::default_record());
+        let saved = Shortcuts::load_from(&path, &dir.0.join("legacy.json")).0.record;
+        assert_eq!(saved.key_code, 1);
+        assert_eq!(saved.carbon_modifiers, CARBON_OPTION_KEY | CARBON_SHIFT_KEY);
+        assert_eq!(saved.label, "⌥⇧S");
 
         let custom = ShortcutConfig { key_code: 15, carbon_modifiers: CARBON_CONTROL_KEY | CARBON_OPTION_KEY, label: "⌃⌥R".into() };
         crate::shared::handoff::set_config_value_in(&path, "shortcuts", serde_json::json!({"record":{"keyCode":15,"modifiers":5120,"label":"⌃⌥R"}})).unwrap();
