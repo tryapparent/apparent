@@ -311,12 +311,14 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     const pidFile = path.join(home, 'rust.pid');
     await fs.writeFile(pidFile, '', { mode: 0o600, flag: 'wx' });
     const startRust = async () => {
-    backend = spawn('/bin/bash', ['-c', rustSupervisor, 'storage-native-supervisor', pidFile, executable, 'app'], {
+    // This fixture presents its own exact-owned Electron window below. Ordinary
+    // app launches now open Settings, which would add a competing native window.
+    backend = spawn('/bin/bash', ['-c', rustSupervisor, 'storage-native-supervisor', pidFile, executable, 'launch', '--background'], {
       env, detached: true, stdio: ['pipe', logHandle.fd, logHandle.fd],
     });
     let spawnError;
     backend.once('error', error => { spawnError = error; });
-    report.rust = { supervisorPid: backend.pid, executable, argument: 'app',
+    report.rust = { supervisorPid: backend.pid, executable, arguments: ['launch', '--background'],
       executableSha256: createHash('sha256').update(await fs.readFile(executable)).digest('hex'),
       helperSha256: createHash('sha256').update(await fs.readFile(helperExecutable)).digest('hex') };
     await poll(async () => {
