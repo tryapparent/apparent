@@ -43,6 +43,7 @@ done
 // search other processes, use coordinates, or guess which Return commits a picker.
 // Unknown AX shapes fail with bounded diagnostics from this process alone.
 const { panelScript, prepareStorageChange, pickerCommandMs } = require('../../../../../enablement/prerequisites/mac-picker.ts');
+const { isolatePickerRuntime } = require('../../../../../enablement/prerequisites/mac-runtime.ts');
 const { assertReportingRead } = require('../../../../../enablement/prerequisites/reporting-read.ts');
 
 // A direct authoritative read does not update the renderer's terminal app_busy.
@@ -245,7 +246,8 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     }
   };
   let env;
-  const electronExecutable = await fs.realpath(require('electron'));
+  const sourceElectronExecutable = await fs.realpath(require('electron'));
+  let electronExecutable, fixtureRuntime;
   const osa = async (script, args = [], cap = 3500) => {
     const { stdout } = await run('/usr/bin/osascript', ['-e', script, ...args], {
       env, timeout: budget(cap), killSignal: 'SIGKILL', maxBuffer: 32768,
@@ -255,7 +257,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
   const panel = (operation) => {
     assert.equal(electronChild.exitCode, null, 'Owned Electron exited before native picker observation');
     assert.equal(electronChild.signalCode, null, 'Owned Electron was signalled before native picker observation');
-    return osa(panelScript, [String(electronChild.pid), home, operation, electronExecutable], pickerCommandMs);
+    return osa(panelScript, [String(electronChild.pid), home, operation, electronExecutable, fixtureRuntime.bundleId], pickerCommandMs);
   };
   const snapshot = async () => {
     const runtime = await within(page.evaluate(() => window.apparent.readRuntimeState()), budget(), 'Runtime read');
@@ -302,6 +304,13 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     // The driver may have been started using an Electron binary in Node mode.
     // GUI children must always be normal Electron, never ELECTRON_RUN_AS_NODE.
     delete env.ELECTRON_RUN_AS_NODE;
+    // Ordinary Rust startup legitimately opens its own Settings Electron. Give
+    // this separate test renderer a distinct OS bundle identity so System Events
+    // cannot group its AX windows with that other Electron application.
+    fixtureRuntime = await isolatePickerRuntime(sourceElectronExecutable, home, (file, args) =>
+      run(file, args, { env, timeout: budget(15000), killSignal: 'SIGKILL', maxBuffer: 32768 }));
+    electronExecutable = fixtureRuntime.executable;
+    report.fixtureRuntime = fixtureRuntime;
     // Initial System Events startup shares the overall deadline, but does not
     // spend the shorter per-control budget. False or unavailable AX still fails.
     assert.equal(await osa('tell application "System Events" to get UI elements enabled', [], 15000), 'true',
@@ -350,7 +359,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     }, 'Installed Rust live control readiness', 15000);
     };
     await startRust();
-    application = await electron.launch({ args: [root], env, timeout: budget(15000) });
+    application = await electron.launch({ executablePath: electronExecutable, args: [root], env, timeout: budget(15000) });
     electronChild = application.process();
     const launchedAt = Date.now();
     report.electronBootstrap = { pid: electronChild.pid, launchedAt, stderrTail: '' };
@@ -540,7 +549,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     const goPathOperation = (operation, target) => {
       assert.equal(electronChild.exitCode, null, 'Owned Electron exited before picker navigation');
       assert.equal(electronChild.signalCode, null, 'Owned Electron was signalled before picker navigation');
-      return osa(panelScript, [String(electronChild.pid), target, operation, electronExecutable], pickerCommandMs);
+      return osa(panelScript, [String(electronChild.pid), target, operation, electronExecutable, fixtureRuntime.bundleId], pickerCommandMs);
     };
     const prepared = await prepareStorageChange({
       storageIdle: waitStorageIdle,
