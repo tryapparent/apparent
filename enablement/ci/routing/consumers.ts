@@ -7,8 +7,11 @@ export const publicMarkdown = new Set([
 ]);
 export function documentationOnlyPath(path: string): boolean {
   if (!path.endsWith('.md') || publicMarkdown.has(path)) return false;
-  if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)\.md$/i.test(path) ||
-      /(^|\/)(skills?|prompts?|instructions?|tests?|fixtures?|templates?)(\/|$)/i.test(path)) return false;
+  if (/(^|\/)(skills?|prompts?|instructions?|tests?|fixtures?|templates?)(\/|$)/i.test(path)) return false;
+  // Repository development guidance is not a product build input. Embedded
+  // skills/prompts/fixtures above still retain their actual consumers.
+  if (/(^|\/)AGENTS\.md$/.test(path)) return true;
+  if (/(^|\/)(SKILL|CLAUDE|GEMINI)\.md$/i.test(path)) return false;
   return ['CONTEXT.md', 'VERIFICATION.md', 'enablement/refactor.md'].includes(path) ||
     ['capture/engine', 'capture/desktop', 'capture/agent', 'connect', 'connect/web', 'connect/client',
       'connect/service', 'public/site', 'shared', 'enablement'].some(owner =>

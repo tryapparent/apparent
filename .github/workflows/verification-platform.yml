@@ -40,6 +40,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Prepare hosted Ubuntu package transport
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/ubuntu-apt
       - uses: actions/setup-node@v4
         with:
           node-version: '22.23.0'
@@ -91,6 +94,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Prepare hosted Ubuntu package transport
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/ubuntu-apt
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -190,6 +196,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Prepare hosted Ubuntu package transport
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/ubuntu-apt
       - name: Linux application dependencies
         if: runner.os == 'Linux' && needs.select.outputs.root == 'true'
         run: ./capture/desktop/scripts/linux/appimage/dependencies.sh

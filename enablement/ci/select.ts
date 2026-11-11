@@ -134,6 +134,7 @@ export function selectRange(base: string, head: string) {
 
 export function requiresMacRustRange(base: string, head: string): boolean {
   const delta = changes(base, head);
+  if (delta?.some(change => !regularFileChange(change))) return true;
   return requiresMacRust(delta?.map(change => change.path) ?? null,
     delta?.filter(change => unsupported(change) && (suitePlan([change.path]).root || suitePlan([change.path]).engine || suitePlan([change.path]).client)).map(change => change.path) ?? null);
 }
