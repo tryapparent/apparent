@@ -2818,7 +2818,8 @@ impl ApparentCoordinator {
             PillAction::Finish => self.finish_recording(cx),
             PillAction::Notes => {
                 if self.is_recording() {
-                    if let Some(ui) = &self.note_ui { ui.show_list(); }
+                    let (focus, owner) = platform::note_focus();
+                    if let Some(ui) = &self.note_ui { ui.show_list(focus, owner); }
                 }
             },
             PillAction::Paste(target) => self.paste_completed_bundle(target, cx),

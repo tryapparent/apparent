@@ -61,6 +61,7 @@ enum Message {
     Stop,
     BadgePosition([i32; 4]),
     Embedded(bool),
+    List { focus: u64, owner: u32 },
     Finish,
     ChildEof,
 }
@@ -260,6 +261,14 @@ impl Session {
                         Message::Stop | Message::ChildEof => return Ok(()),
                         Message::BadgePosition(point) => badge_position = Some(point),
                         Message::Embedded(value) => embedded = value,
+                        Message::List { focus: target, owner: target_owner } => {
+                            focus = target;
+                            owner = target_owner;
+                            mode = "list";
+                            if let Some([x, y, width, height]) = badge_position.filter(|_| embedded) {
+                                position = [f64::from(x + width), f64::from(y + height)];
+                            }
+                        }
                         Message::Finish => {
                             finish_requested = true;
                             finish_deadline =
@@ -464,7 +473,9 @@ impl Session {
 
     pub fn saved_count(&self) -> usize { self.saved_count.load(Ordering::Acquire) }
 
-    pub fn show_list(&self) { let _ = self.sender.try_send(Message::Action(CommandMessage::List)); }
+    pub fn show_list(&self, focus: u64, owner: u32) {
+        let _ = self.sender.try_send(Message::List { focus, owner });
+    }
 
     pub fn set_embedded(&mut self, embedded: bool) {
         if self.embedded != embedded && self.sender.try_send(Message::Embedded(embedded)).is_ok() {
@@ -616,7 +627,7 @@ mod transport_tests {
         session.sender.send(Message::Action(CommandMessage::Save { pin: 1, text: "Durable note".into() })).unwrap();
         wait(&|| session.saved_count() == 1);
         assert!(std::fs::read_to_string(directory.join("notes.json")).unwrap().contains("Durable note"));
-        session.show_list();
+        session.show_list(0, 0);
         session.sender.send(Message::Action(CommandMessage::Delete { pin: 1 })).unwrap();
         wait(&|| session.saved_count() == 0);
         assert_eq!(session.finish().recv_timeout(std::time::Duration::from_secs(10)).unwrap(), Ok(FinishOutcome::Drained));
