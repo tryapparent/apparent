@@ -40,7 +40,12 @@ service, Desktop and native consumers. Service changes retain client/root API
 integration and run the canonical service build, serial tests and recipient browser.
 Hermes inspection runs on Linux and Mac only for its relevant inputs. Audited
 Linux drivers run launch-free contracts. Unknown inputs/history, empty deltas,
-unsafe modes/types, instructions and execution-sensitive CI retain broad checks.
+unsafe modes/types, embedded instructions and execution-sensitive CI retain broad checks.
+Repository `AGENTS.md` guidance runs cheap contracts only in local pushes and
+hosted CI, including regular additions, deletions and renames between guidance
+paths. Guidance under skills, prompts, instructions, tests, fixtures or templates
+is not exempt. Mixed changes retain every other input's consumers; this does not
+admit an unverified release or exempt Markdown embedded in a product.
 Regular additions/deletions and both rename sides retain their owner consumers.
 Native manifests, lockfiles, build helpers, Swift/Metal and embedded assets count
 as native inputs even when no Rust source changes.

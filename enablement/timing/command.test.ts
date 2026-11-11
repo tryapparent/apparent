@@ -1,4 +1,6 @@
 import { test } from 'node:test'
+// Keep the read-only census covered by the existing local/platform timing inventory.
+import './census.test.ts'
 import { strict as assert } from 'node:assert'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

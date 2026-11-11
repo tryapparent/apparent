@@ -91,7 +91,13 @@ Live ingestion, grouping and alerts require bounded synthetic verification in an
 isolated project before release; local HTTP tests are not that proof.
 
 The payload allows only a static failure category, version/build, OS/architecture
-and repo-relative source call site. No raw error/panic text, logs, recordings,
+and repo-relative source call site. Finalization diagnostics additionally contain
+up to eight typed native stages with repository source locations and structured
+I/O kind/OS error numbers, when available. These describe the failing boundary,
+not the original error message; an unclassified error can still need local logs.
+Finalization fingerprints include the innermost known stage so unrelated failures
+are not grouped solely by the Desktop completion call site. Historical groups
+and installed older releases retain their old reports. No raw error/panic text, logs, recordings,
 screenshots, transcripts, clipboard contents, window/device names, capture IDs,
 share URLs or user paths. Each event gets a random identity; person profiles and
 geolocation are disabled. No session replay/usage tracking. The receiving service
@@ -541,3 +547,13 @@ begins; the next shortcut still uses the existing native recording path. Returni
 to the start state restores the setup window. Native fallback routing is unchanged.
 
 The removed demonstration has no Electron renderer/assets. Both Electron and native fallback skip its legacy step through the authoritative Rust route; rollback requires reverting that route together with presentation changes.
+
+In the Electron pen picker, clicking a pen saves it and advances after the existing
+frog hop (immediately after saving with reduced motion). There is no separate
+confirmation button. Back from the following step returns to the picker without
+advancing again; selecting even the same colour starts a new save. TypeScript
+owns this transition and waits for the matching `penSaveId` emitted after the
+native pen/config writer returns. Dispatch acknowledgement and earlier selected
+state do not confirm a save. Save failure or missing confirmation leaves the
+picker available to retry. The native fallback keeps its existing controls and
+writer; this change does not change routing or introduce another config writer.

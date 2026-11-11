@@ -15,7 +15,7 @@ run('bun', ['install', '--frozen-lockfile'])
 run('npm', ['run', 'build'])
 run('node', ['scripts/site-build/package-apparent.mjs'])
 const tests = [
-  'brand/test-brand-favicon.mjs', 'browser-proof/test-github-stars.mjs',
+  'brand/test-brand-favicon.mjs', 'brand/test-social-preview.mjs', 'browser-proof/test-github-stars.mjs',
   'pages/test-latest-download.mjs', 'pages/test-platform-os.mjs',
   'pages/test-public-homepage.ts', 'browser-proof/test-video-demo.ts',
   'commerce/test-package-text.mjs', 'site-build/test-expected-canonical-packaging.mjs',

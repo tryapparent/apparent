@@ -1104,6 +1104,7 @@ pub struct Session {
     pen_picker: bool,
     pen_selected: bool,
     pen_error: bool,
+    pen_save_id: Option<String>,
 }
 
 impl Session {
@@ -1133,7 +1134,7 @@ impl Session {
             practice: None,
             anchor: None,
             practice_board: None,
-            practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
+            practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,pen_save_id:None,
         }
     }
 
@@ -1227,7 +1228,7 @@ impl Session {
             practice: shell.then(super::practice::Practice::default),
             anchor: None,
             practice_board: None,
-            practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
+            practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,pen_save_id:None,
         };
         session.shortcut_changed(shortcut);
         session.sync();
@@ -1502,7 +1503,15 @@ impl Session {
         if self.practice.is_some() && self.flow.step()==Step::Welcome {
             if action=="continue" && !self.pen_picker {self.pen_picker=true;self.sync();return Effect::None;}
             if let Some(name)=action.strip_prefix("pen:") {
-                if self.pen_picker {self.pen_error=crate::shared::handoff::pen::save(name).is_err();self.pen_selected=!self.pen_error;self.sync();}
+                if self.pen_picker {
+                    let (name, receipt) = name.split_once(':').map_or((name, None), |(name, id)| (name, Some(id)));
+                    if receipt.is_some_and(|id| id.len()!=36 || !id.bytes().all(|c| c.is_ascii_hexdigit() || c==b'-')) {return Effect::None;}
+                    self.pen_error=crate::shared::handoff::pen::save(name).is_err();
+                    self.pen_selected=!self.pen_error;
+                    // Echo only after the authoritative config writer has returned.
+                    self.pen_save_id=receipt.map(str::to_owned);
+                    self.sync();
+                }
                 return Effect::None;
             }
             if action=="continue" && !self.pen_selected {return Effect::None;}
@@ -1666,6 +1675,7 @@ impl Session {
         view["anchor"]=serde_json::json!(self.anchor);
         view["practiceBoard"]=serde_json::json!(self.practice_board);
         view["testInstance"]=false.into();
+        view["penSaveId"]=serde_json::json!(self.pen_save_id);
         view["penPicker"]=self.pen_picker.into();view["penSelected"]=self.pen_selected.into();view["penError"]=self.pen_error.into();
         view["penRgb"]=serde_json::json!(crate::shared::handoff::pen::rgb());
         view["speech"] = serde_json::to_value(crate::capture::engine::runtime::audio::transcription::speech_model::current()).unwrap_or_default();
@@ -1893,6 +1903,64 @@ pub fn relaunch() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn pen_save_receipts_follow_the_real_config_transaction() {
+        const CHILD: &str = "APPARENT_PEN_RECEIPT_CHILD";
+        if let Some(path) = std::env::var_os(CHILD) {
+            let path = std::path::PathBuf::from(path);
+            assert_eq!(crate::shared::handoff::default_config_path(), path);
+            let original: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            assert_eq!(original, serde_json::json!({"secret":"synthetic-pen-receipt","microphoneEnabled":false}));
+            let mut session = Session::for_test(Flow::tour(Step::Welcome, Some(grants(&[]))));
+            session.practice = Some(super::super::practice::Practice::default());
+            session.pen_picker = true;
+            let (tx, rx) = flume::unbounded();
+            session.transport = Transport::InProcess(Some(tx));
+            let receive = || rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
+            for id in ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"] {
+                assert_eq!(session.action(&format!("pen:purple:{id}")), Effect::None);
+                let view = receive();
+                assert_eq!(view["penSaveId"], id);
+                assert_eq!(view["penError"], false);
+                assert_eq!(view["penSelected"], true);
+                assert_eq!(view["step"], "welcome", "the renderer owns advancing after its hop");
+                let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                assert_eq!(saved["penColor"], "purple");
+                assert_eq!(saved["secret"], original["secret"]);
+                assert_eq!(saved["microphoneEnabled"], false);
+            }
+            session.action("continue");
+            assert_eq!(receive()["step"], "permissions");
+            session.action("back");
+            assert_eq!(receive()["step"], "welcome");
+            assert!(session.pen_picker, "Back must return to the pen choices");
+            std::fs::write(&path, b"broken config").unwrap();
+            let failed_id = "33333333-3333-4333-8333-333333333333";
+            session.action(&format!("pen:blue:{failed_id}"));
+            let failed = receive();
+            assert_eq!(failed["penSaveId"], failed_id);
+            assert_eq!(failed["penError"], true);
+            assert_eq!(failed["penSelected"], false);
+            assert_eq!(std::fs::read(&path).unwrap(), b"broken config");
+            session.action("pen:green:invalid-receipt");
+            assert!(rx.try_recv().is_err(), "invalid receipt must not emit a new acknowledgement");
+            assert_eq!(session.pen_save_id.as_deref(), Some(failed_id));
+            return;
+        }
+        struct Fixture(std::path::PathBuf);
+        impl Drop for Fixture { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }
+        use std::os::unix::fs::DirBuilderExt;
+        let fixture = Fixture(std::env::temp_dir().join(format!("pen-provider-{}", crate::shared::ids::make_bundle_id())));
+        std::fs::DirBuilder::new().mode(0o700).create(&fixture.0).unwrap();
+        let config = fixture.0.join("config.json");
+        std::fs::write(&config, br#"{"secret":"synthetic-pen-receipt","microphoneEnabled":false}"#).unwrap();
+        let name = "capture::desktop::settings::onboarding::tests::pen_save_receipts_follow_the_real_config_transaction";
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", name, "--nocapture"]).env(CHILD, &config).env("APPARENT_CONFIG", &config).output().unwrap();
+        assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"), "child must execute the exact provider test");
+    }
+
     fn coached_session()->Session {
         let mut session=Session::for_test(Flow::tour(Step::TryIt,Some(grants(&Permission::REQUIRED))).with_first_capture(true, true, true, false));
         session.practice=Some(super::super::practice::Practice::default());session

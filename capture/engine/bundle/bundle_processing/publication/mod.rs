@@ -8,6 +8,7 @@ mod validate;
 
 use crate::shared::model::ApparentBundle;
 use anyhow::{Context, Result, ensure};
+use crate::capture::engine::runtime::recording::diagnostics::{Diagnose, Stage};
 pub(crate) use fs::Directory;
 use std::{
     cell::RefCell,
@@ -108,7 +109,7 @@ pub fn publish_after(path: &Path, build: impl FnOnce() -> Result<Built>) -> Resu
     if PUBLISHING.with(|held| held.borrow().contains(&absolute)) {
         return build();
     }
-    let guard = coordinate(path)?;
+    let guard = coordinate(path).stage(Stage::PublicationCoordinate)?;
     PUBLISHING.with(|held| held.borrow_mut().insert(absolute.clone()));
     struct Publishing(PathBuf);
     impl Drop for Publishing {
@@ -128,7 +129,7 @@ pub fn publish_after(path: &Path, build: impl FnOnce() -> Result<Built>) -> Resu
             fs::absolute(&built.0)? == fs::absolute(path)?,
             "finalizer returned another bundle path"
         );
-        checked(path, &built.1, &built.2)?;
+        checked(path, &built.1, &built.2).stage(Stage::PublicationValidate)?;
         Ok(built)
     });
     if result.is_err() {
@@ -174,11 +175,11 @@ fn checked_with(
     let guard = coordinate(path)?;
     let root = Directory::open(path, false)?;
     let before = root.0.metadata()?;
-    let inventory = validate::Inventory::read(&root)?;
-    let manifest = inventory.validate(path, expected, summary)?;
+    let inventory = validate::Inventory::read(&root).stage(Stage::PublicationValidate)?;
+    let manifest = inventory.validate(path, expected, summary).stage(Stage::PublicationValidate)?;
     after_validation()?;
     check_lease(path, &guard.lease)?;
-    inventory.sync_and_check(&root)?;
+    inventory.sync_and_check(&root).stage(Stage::PublicationSync)?;
     ensure!(
         fs::same_directory(&before, &Directory::open(path, false)?.0.metadata()?),
         "bundle directory changed during publication"
@@ -192,7 +193,7 @@ fn checked_with(
             "bundle directory changed after durability barrier"
         );
         Ok(())
-    })?;
+    }).stage(Stage::PublicationCleanup)?;
     Ok(PublicationInputs {
         path: absolute,
         bundle_id: expected.id.clone(),
