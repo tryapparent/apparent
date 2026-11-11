@@ -31,9 +31,10 @@ projects the same signal history and gain into native raster geometry, with no
 additional history buffer or animation policy. Existing inline microphone
 warnings remain authoritative and independent.
 
-Routing stays unchanged: Mac Electron controls still require non-Glass plus
-`movableRecordingControls`; Glass and failed/unavailable Electron retain native
-controls. Both receive the same capture history. Linux's native GPUI fallback
+Mac Black controls use the shared Electron pill by default, including the saved
+notes extension. `movableRecordingControls` continues to control dragging only;
+this route does not enable that experiment. Glass and failed/unavailable Electron
+retain native controls and the existing notes badge. Both receive the same capture history. Linux's native GPUI fallback
 retains its existing meter. Rollback is the existing native fallback; removing it
 still requires accepted Electron routing and platform proof. This slice moves
 Electron meter policy out of the Rust coordinator into Desktop TypeScript,

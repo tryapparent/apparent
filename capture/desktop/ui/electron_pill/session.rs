@@ -92,17 +92,7 @@ impl Session {
             launch.arg(format!("--force-device-scale-factor={}", crate::capture::desktop::linux::x11::ui_scale()));
         }
         launch.arg(app.join("electron/pill/main.cjs"));
-        #[cfg(target_os = "linux")]
-        {
-            use std::os::unix::fs::{MetadataExt, PermissionsExt};
-            let helper = std::fs::metadata(runtime.parent().unwrap().join("chrome-sandbox"))?;
-            if helper.uid() != 0 || helper.permissions().mode() & 0o4000 == 0 {
-                // User-owned AppImages cannot provide a privileged SUID helper.
-                // Chromium must use its kernel namespace sandbox or refuse launch;
-                // this never disables renderer/seccomp sandboxing.
-                launch.arg("--disable-setuid-sandbox");
-            }
-        }
+        crate::capture::desktop::workflow::electron::configure_sandbox(&mut launch, &runtime)?;
         let mut child = launch
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

@@ -50,8 +50,8 @@ Other compositors and older Hyprlang retain their own window-animation
 policy; application CSS motion is still disabled. Startup/watchdog and native
 fallback remain active. Rollback restores the previous presentation host and
 geometry polling together; no capture or persisted preference format changes.
-macOS retains native caption
-dragging; Glass or explicitly disabled movable controls retain native routing.
+macOS Black uses this shared presentation by default. The existing movable-controls
+experiment controls dragging, not presentation admission. Glass retains native routing.
 There is one visible pill. Missing packaged assets retain the native route.
 
 Rollback is removal of the Electron routing calls and fields in Desktop's

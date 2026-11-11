@@ -37,8 +37,7 @@ impl ApparentCoordinator {
     fn electron_pill_compatible() -> bool {
         #[cfg(target_os = "macos")]
         return crate::capture::desktop::native::pill::PillStyle::current()
-            != crate::capture::desktop::native::pill::PillStyle::Glass
-            && crate::shared::handoff::experiment("movableRecordingControls");
+            != crate::capture::desktop::native::pill::PillStyle::Glass;
         #[cfg(target_os = "linux")]
         true
     }
