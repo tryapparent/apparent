@@ -77,7 +77,8 @@ exports.committedFrame = async contents => {
     const image = await contents.capturePage(...args);
     const bitmap = image.resize({ width: 720, height: 530 }).toBitmap();
     const pixel = (x, y) => Array.from(bitmap.subarray((y * 720 + x) * 4, (y * 720 + x) * 4 + 4));
-    globalThis.settingsFramePixels = { sidebar: pixel(190, 450), content: pixel(300, 100) };
+    // Sample within both accepted sidebar widths; nativeImage bitmap bytes are BGRA.
+    globalThis.settingsFramePixels = { sidebar: pixel(100, 450), content: pixel(300, 100) };
     return image;
   }});
 };
@@ -96,10 +97,10 @@ exports.committedFrame = async contents => {
   await expect.poll(() => app!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())).toBe(true);
   if (world === 'compositor') {
     const pixels = await app.evaluate(() => (globalThis as any).settingsFramePixels);
-    assert.deepEqual(pixels.sidebar, [2, 1, 2, 255], 'The pre-reveal snapshot contains the black sidebar, not a blank cream frame');
+    assert.deepEqual(pixels.sidebar, [29, 22, 25, 255], 'The pre-reveal snapshot contains the accepted Carbon sidebar, not a blank cream frame');
     assert.notDeepEqual(pixels.content, pixels.sidebar, 'The content surface is separate from the sidebar');
   }
-  await expect(page.getByText('CAPTURE SETTINGS', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Storage', level: 1, exact: true })).toBeVisible();
 });
 }
 

@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
+import { AlertCircle, Check, CheckCircle2, Copy, ExternalLink, LoaderCircle, Star } from 'lucide-react';
 import availableFrog from '../../../../assets/settings/frog-jump.png';
 import currentFrog from '../../../../assets/settings/frog-lounge.png';
 import failedFrog from '../../../../assets/settings/frog-puzzled.png';
 import { Button } from '@apparent/ui/button';
+import { NativeSelect, NativeSelectOption } from '@apparent/ui/native-select';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@apparent/ui/tooltip';
 
 export interface AboutState {
   version: string;
@@ -16,18 +19,18 @@ type Action = { action: string; key?: string; value?: string };
 declare global {
   interface Window {
     apparentAbout: {
-      copyVersion(): Promise<void>;
       read(): Promise<AboutState | undefined>;
       act(action: Action): Promise<void>;
       subscribe(callback: (state: AboutState) => void): () => void;
       link(link: 'website' | 'source'): Promise<void>;
+      copyVersion(): Promise<void>;
     };
   }
 }
 export function About() {
   const [state, setState] = useState<AboutState>();
-  const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
   useEffect(() => {
     let live = true;
     let received = false;
@@ -36,59 +39,88 @@ export function About() {
       .catch(() => { if (live) setError('Unable to read update status. Reopen Settings to try again.'); });
     return () => { live = false; unsubscribe(); };
   }, []);
+  useEffect(() => {
+    if (copyStatus !== 'copied') return;
+    const timer = setTimeout(() => setCopyStatus('idle'), 2500);
+    return () => clearTimeout(timer);
+  }, [copyStatus]);
+  async function copyVersion() {
+    if (!state) return;
+    try { await window.apparentAbout.copyVersion(); setCopyStatus('copied'); }
+    catch { setCopyStatus('failed'); }
+  }
   async function act(action: Action) {
     setError('');
     try { await window.apparentAbout.act(action); }
     catch { setError('Unable to complete that action. Please try again.'); }
   }
+  async function open(link: 'website' | 'source') {
+    try { await window.apparentAbout.link(link); }
+    catch { setError('Unable to open that link. Please try again.'); }
+  }
   const result = state?.updateCheck.result;
+  const checking = state?.updateCheck.checking;
+  const title = checking ? 'Checking for updates…' : !state?.updates ? 'Updates unavailable'
+    : result === 'available' ? 'Update available' : result === 'current' ? 'No update available'
+    : result === 'failed' ? 'Update check failed' : null;
+  // Results are inline. Native button activation owns Enter/Space so a focused
+  // link, copy or tour action cannot accidentally accept an available update.
   useEffect(() => {
     if (!result) return;
     const listener = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { event.preventDefault(); void act({ action: 'dismiss-update-check' }); }
-      if (event.key === 'Enter' && !(event.target instanceof Element && event.target.closest('[role=dialog] button'))) {
-        event.preventDefault();
-        void act({ action: result === 'available' ? 'update-now' : 'dismiss-update-check' });
-      }
+      if (event.key === 'Escape' && !event.defaultPrevented) void act({ action: 'dismiss-update-check' });
     };
     window.addEventListener('keydown', listener);
     return () => window.removeEventListener('keydown', listener);
   }, [result]);
-  return <section aria-label="About Apparent" className="space-y-4">
-    <h2 className="text-xl font-semibold">Apparent</h2>
+  return <section aria-label="About Apparent" className="settings-about">
     {!state && <p role="status">Loading update status…</p>}
     {error && <p role="alert">{error}</p>}
     {state && <>
-      <div className="flex flex-wrap items-center gap-3">
-        <p className="min-w-0 select-text break-all">Version {state.version}</p>
-        <Button variant="outline" onClick={() => {
-          setError('');
-          void window.apparentAbout.copyVersion().then(() => setCopied(true))
-            .catch(() => setError('Unable to copy version. Please select and copy the version text.'));
-        }}>Copy version</Button>
-        {copied && <span role="status">Version copied</span>}
-      </div>
-      <Button variant="outline" className="h-11 text-lg" disabled={!state.updates || state.updateCheck.checking}
-        onClick={() => void act({ action: 'check-for-updates' })}>
-        {!state.updates ? 'Updates unavailable' : state.updateCheck.checking ? 'Checking…' : 'Check for Updates…'}
-      </Button>
-      {!state.updates && <p>{state.linux ? 'This installation cannot check for updates. Run the AppImage to use automatic updates.' : 'This installation cannot check for updates. Run the installed Apparent.app to use automatic updates.'}</p>}
-      {state.linux && state.mainUpdates && <p><label>Channel <select value={state.updateChannel}
-        onChange={event => void act({ action: 'set', key: 'updateChannel', value: event.target.value })}>
-        <option value="stable">Stable releases</option><option value="main">Latest main</option>
-      </select></label></p>}
-      {result && <div className="space-y-4 border border-border p-4 text-lg" role="dialog" aria-modal="false" aria-label="Update result">
-        <img src={result === 'available' ? availableFrog : result === 'current' ? currentFrog : failedFrog} alt="" width="160" />
-        <p role="status">{result === 'available' ? 'Update available' : result === 'current' ? 'No update available' : 'Update check failed'}</p>
-        {result === 'available' ? <>
-          <Button variant="outline" className="mr-3 h-11 text-lg" onClick={() => void act({ action: 'update-later' })}>Update later</Button>
-          <Button variant="outline" className="mr-3 h-11 text-lg" onClick={() => void act({ action: 'update-now' })}>Update now</Button>
-        </> : <Button variant="outline" className="mr-3 h-11 text-lg" onClick={() => void act({ action: 'dismiss-update-check' })}>OK</Button>}
+      <section className="settings-identity" aria-label="Build identity">
+        <h2>apparent</h2>
+        <div className="settings-version"><span className="select-text">Version {state.version}</span>
+          <TooltipProvider><Tooltip><TooltipTrigger asChild>
+            <Button variant="secondary" size="icon" className="settings-copy" aria-label="Copy version" onClick={() => void copyVersion()}>
+              {copyStatus === 'copied' ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+            </Button>
+          </TooltipTrigger><TooltipContent className="settings-help-content">Copy version</TooltipContent></Tooltip></TooltipProvider>
+          <span role="status" className="settings-metadata">{copyStatus === 'copied' ? 'Copied' : copyStatus === 'failed' ? 'Unable to copy. Try again.' : ''}</span>
+        </div>
+      </section>
+      <section className="settings-updates" aria-label="Update check" data-idle={!title || undefined}>
+        <div className="settings-update-text">
+          <div className="settings-result" role="status">{title && <>
+            {checking ? <LoaderCircle className="settings-spin" aria-hidden="true" /> : result === 'failed' ? <AlertCircle className="text-destructive" aria-hidden="true" /> : result && <CheckCircle2 className="text-success" aria-hidden="true" />}
+            <h3>{title}</h3>
+          </>}</div>
+          {!state.updates && <p className="settings-metadata">{state.linux ? 'Update checks work when Apparent runs from an AppImage.' : 'Updates work in the installed Apparent.app.'}</p>}
+          {result === 'failed' && !checking && <p className="settings-metadata">Try checking again.</p>}
+          <div className="settings-actions">
+            {result === 'available' && !checking ? <>
+              <Button onClick={() => void act({ action: 'update-now' })}>Update now</Button>
+              <Button variant="secondary" onClick={() => void act({ action: 'update-later' })}>Update later</Button>
+            </> : <Button disabled={!state.updates || checking} onClick={() => void act({ action: 'check-for-updates' })}>
+              {checking ? 'Checking…' : result === 'failed' ? 'Try again' : result ? 'Check again' : 'Check for updates'}
+            </Button>}
+          </div>
+        </div>
+        {result && !checking && <img className="settings-frog" src={result === 'available' ? availableFrog : result === 'current' ? currentFrog : failedFrog} alt="" />}
+      </section>
+      {state.linux && state.mainUpdates && <div className="settings-channel"><label htmlFor="update-channel">Update channel</label>
+        <NativeSelect id="update-channel" value={state.updateChannel} disabled={checking} onChange={event => void act({ action: 'set', key: 'updateChannel', value: event.target.value })}>
+          <NativeSelectOption value="stable">Stable releases</NativeSelectOption><NativeSelectOption value="main">Latest main</NativeSelectOption>
+        </NativeSelect>
       </div>}
     </>}
-    <p><Button variant="outline" className="mr-3 h-11 text-lg" onClick={() => void window.apparentAbout.link('source').catch(() => setError('Unable to open Source.'))}>Star on GitHub</Button></p>
-    <p><Button variant="outline" className="mr-3 h-11 text-lg" onClick={() => void window.apparentAbout.link('website').catch(() => setError('Unable to open Website.'))}>Website</Button>
-      <Button variant="outline" className="mr-3 h-11 text-lg" onClick={() => void window.apparentAbout.link('source').catch(() => setError('Unable to open Source.'))}>Source</Button>
-      <Button variant="outline" className="mr-3 h-11 text-lg" onClick={() => void act({ action: 'tour' })}>Show Welcome Tour</Button></p>
+    <section className="settings-support" aria-label="Support apparent">
+      <Button variant="link" asChild><a href="https://github.com/tryapparent/apparent" onClick={event => { event.preventDefault(); void open('source'); }}><Star aria-hidden="true" />Star on GitHub <ExternalLink aria-hidden="true" /></a></Button>
+      <p className="settings-metadata">A GitHub star won’t fix your bugs, but it will make our day.</p>
+    </section>
+    <div className="settings-links">
+      <Button variant="link" asChild><a href="https://app.tryapparent.com" onClick={event => { event.preventDefault(); void open('website'); }}>Website <ExternalLink aria-hidden="true" /></a></Button>
+      <Button variant="link" asChild><a href="https://github.com/tryapparent/apparent" onClick={event => { event.preventDefault(); void open('source'); }}>Source code <ExternalLink aria-hidden="true" /></a></Button>
+    </div>
+    <Button variant="secondary" className="settings-tour" onClick={() => void act({ action: 'tour' })}>Show welcome tour</Button>
   </section>;
 }

@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./tooltip": "./src/forms/tooltip.tsx",
+    "./native-select": "./src/forms/native-select.tsx",
+    "./settings-theme.css": "./src/settings/theme.css",
     "./button": "./src/button.tsx",
     "./tabs": "./src/tabs.tsx",
     "./theme.css": "./src/theme.css",
@@ -17,6 +20,8 @@
     "react": "^19.2.0"
   },
   "dependencies": {
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "lucide-react": "^1.67.0",
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tabs": "^1.1.13",
     "class-variance-authority": "^0.7.1",

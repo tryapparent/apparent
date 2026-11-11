@@ -4,6 +4,7 @@ import { About } from './about/about';
 import { Storage } from './storage';
 import './style.css';
 import wordmark from '../../../../../shared/assets/brand/apparent-wordmark.svg';
+import { Button } from '@apparent/ui/button';
 
 const panes = ['General', 'Recording', 'Storage', 'Permissions', 'Agents', 'About'] as const;
 // Match the native sidebar symbols without adding a renderer dependency.
@@ -22,6 +23,7 @@ declare global {
 
 function Settings() {
   const current = location.hash === '#about' ? 'About' : 'Storage';
+  useLayoutEffect(() => { document.title = `Apparent Settings — ${current}`; }, [current]);
   useLayoutEffect(() => {
     // React's DOM is committed here. The preload owns the first-frame wait;
     // a hidden page's animation scheduling must not hold up this acknowledgement.
@@ -38,14 +40,14 @@ function Settings() {
   }
   return <div className="settings-shell">
     <aside className="settings-sidebar" aria-label="Settings pages">
-      <div className="settings-brand"><img src={wordmark} alt="Apparent" /><p>CAPTURE SETTINGS</p></div>
-      <nav>{panes.map((pane, index) => <button key={pane} type="button" disabled={navigating}
+      <div className="settings-brand"><img src={wordmark} alt="Apparent" /></div>
+      <nav>{panes.map((pane, index) => <Button variant="ghost" key={pane} type="button" disabled={navigating}
         aria-current={pane === current ? 'page' : undefined}
         onClick={() => { if (pane !== current) void navigate(pane); }}>
-        <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{icons[index]}</svg>{pane}</button>)}</nav>
+        <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{icons[index]}</svg>{pane}</Button>)}</nav>
     </aside>
     <main className="settings-content">
-      <header><h1>{current}</h1>{current === 'Storage' ? <p>Choose where captures live and how long to keep them.</p> : <p>Use the sidebar to change your recording preferences, permissions and shortcuts.</p>}</header>
+      <header><h1>{current}</h1></header>
       {error && <p role="alert">{error}</p>}
       {current === 'About' ? <About /> : <Storage settings />}
     </main>

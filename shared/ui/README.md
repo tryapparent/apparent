@@ -11,6 +11,12 @@ Only import paths and formatting were adapted. Review source changes on updates;
 update underlying Radix and utility packages normally. Add controls here, not
 separate Desktop/Connect copies. Theme tokens are shared, not OS-native skins.
 
+NativeSelect and Tooltip use shadcn's MIT-licensed `new-york-v4/native-select`
+and `new-york/tooltip` registry sources. Import them from this package; Tooltip
+uses Radix for focus, hover and Escape behavior. The Settings-only theme opts
+into the accepted canonical blue Signal and Carbon roles without changing other
+surfaces or the system appearance contract.
+
 The Desktop foundation uses a `file:` dependency with npm `install-links=true`,
 so npm installs a snapshot rather than resolving dependencies from this source
 directory. After changing this package, run `npm ci` in

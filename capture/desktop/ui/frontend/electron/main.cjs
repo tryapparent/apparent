@@ -115,7 +115,7 @@ app.whenReady().then(() => {
       titleBarStyle: 'hiddenInset', resizable: false, fullscreenable: false,
       acceptFirstMouse: true,
     } : {}),
-    title: settings ? 'Apparent Settings — Storage' : 'Apparent — UI foundation',
+    title: settings ? 'Apparent Settings' : 'Apparent — UI foundation',
     backgroundColor: followWindowTheme.backgroundColor(nativeTheme),
     webPreferences: {
       preload: path.join(__dirname, settings ? 'storage-preload.cjs' : 'preload.cjs'),
