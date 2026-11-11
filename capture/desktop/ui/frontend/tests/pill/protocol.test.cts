@@ -32,3 +32,10 @@ test('waveform telemetry is a bounded chronological PCM projection',()=>{
   assert.throws(()=>view({...state,inputWaveform:invalid}));
  }
 });
+test('saved count is bounded and notes requires authoritative availability',()=>{
+ assert.equal(view(state).noteCount,0);
+ for(const noteCount of [-1,1.2,101,NaN,'1'])assert.throws(()=>view({...state,noteCount}));
+ const notes={id:'notes',label:'Open notes',enabled:true,selected:false,primary:false};
+ assert.deepEqual(command(view({...state,noteCount:12,actions:[notes]}),12,'notes'),{revision:12,action:'notes'});
+ assert.throws(()=>command(view(state),12,'notes'));
+});

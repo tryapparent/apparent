@@ -140,8 +140,12 @@ app.whenReady().then(() => {
         if (focus) { popup.focus(); if (process.platform === 'linux') popup.webContents.focus(); }
         placeSurface(popup, focus, opening, bounds);
       } else { popup.hide(); if (previous && previous.mode !== 'badge') send({ action: 'hidden' }); }
-      if (openingBadge) badge.showInactive();
-      placeSurface(badge, false, openingBadge, requestedBadge); publish();
+      if (state.embedded) badge.hide();
+      else {
+        if (openingBadge) badge.showInactive();
+        placeSurface(badge, false, openingBadge, requestedBadge);
+      }
+      publish();
     } catch { app.quit(); }
   });
   lines.on('close', () => app.quit());
