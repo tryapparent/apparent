@@ -6,13 +6,14 @@ import '@apparent/ui/status.css';
 import frogs from '../../../../../shared/assets/brand/connect-frogs.png';
 import font from '../../../../../shared/assets/fonts/HostGrotesk-Variable.ttf?url';
 import type { ConnectAction, ConnectSettings, ConnectView } from './bridge';
+import { openConnectSession } from './connect/session';
 
 export function ConnectSettingsCard() {
   const [result, setResult] = useState<ConnectSettings>({ status: 'disabled' });
   const [busy, setBusy] = useState(false);
   const generation = useRef(0);
   const polling = useRef(false);
-  async function request(action?: ConnectAction) {
+  async function request(action?: ConnectAction, opening = false) {
     const current = ++generation.current;
     setBusy(true);
     try {
@@ -26,7 +27,9 @@ export function ConnectSettingsCard() {
         'open-shared-links': bridge.openConnectSharedLinks,
       };
       const next = !bridge ? { status: 'disconnected' } as const : action
-        ? await handlers![action]() : await bridge.readConnectSettings();
+        ? await handlers![action]() : opening
+          ? await openConnectSession(bridge, () => current === generation.current)
+          : await bridge.readConnectSettings();
       if (current === generation.current) setResult(next);
     } catch {
       if (current === generation.current) setResult({ status: 'error' });
@@ -35,7 +38,7 @@ export function ConnectSettingsCard() {
     }
   }
   useEffect(() => {
-    void request();
+    void request(undefined, true);
     return () => { generation.current += 1; };
   }, []);
   useEffect(() => {

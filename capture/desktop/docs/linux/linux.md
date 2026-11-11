@@ -175,6 +175,16 @@ renegotiated streams fail rather than recording the whole display. KDE Plasma
 one 1280×800 output; all 465 frames of the saved 420×260 movie and bundle images
 matched the selected changing scene. This does not qualify scaled KDE Areas.
 
+A separate full-display check on those KDE versions used two enabled 1280×800
+outputs at 1× and 2×, confirmed by KScreen and two RandR monitors. The AppImage
+built from `9e6bf909d` (the same source tree landed as `2b71508c6`) refused the
+request with the existing unverified-output-identity reason before opening
+screen-sharing consent. The same request became `failed/start_failed`, the app
+returned idle with no active capture, and no bundle or nonempty movie remained.
+Artifact retention and owned guest/expiry cleanup passed. This qualifies the
+mixed-scale refusal, not KDE multi-output capture, pointer mapping or scaled
+single-output capture.
+
 A separate Screen check on the same KDE versions began with only Virtual-1
 enabled, then enabled Virtual-2 at the same origin while the sharing dialog
 was pending. KScreen and RandR confirmed two overlapping 1280×800 outputs at
@@ -218,6 +228,18 @@ after Electron's SUID sandbox refusal, without disabling the sandbox. This
 source-bound Screen/crossing/Finish/Cancel check does not qualify X11 Area,
 scaling, Notes editing, FUSE-mode launch or later layout-dependency changes;
 those inputs require their own acceptance.
+
+The same two-head GNOME 46/Xorg 21.1.12 fixture reported
+`global-scale-required: true` from Mutter 46.2. A separate read-only
+[`ApplyMonitorsConfig` method 0](https://github.com/GNOME/mutter/blob/46.2/data/dbus-interfaces/org.gnome.Mutter.DisplayConfig.xml)
+probe proposed 1280×800 at 1× and 1920×1440 at 2×, using modes that individually
+advertised support for those scales. Mutter rejected it with “Logical monitor
+scales must be identical”; its full reported state, serial and logical layout
+were unchanged. Retention and owned guest/expiry cleanup passed. No temporary
+or persistent layout was applied and no Apparent capture ran. This demonstrates
+that fixture's OS constraint, not mixed-scale X11 capture or a restriction on
+every GNOME/Xorg setup. The earlier operator-window timeout and an invalid
+1280×800-at-2× probe remain failed attempts.
 
 ### Hyprland
 
