@@ -22,7 +22,9 @@ or absent. A live `capture state` reply can include `app: {schema: 1, version,
 build}` from the answering GUI process. Setup compares that build label with
 the installed CLI's `--version` on both platforms, so an older running app can
 be detected even when Linux updater metadata is missing. Old apps without these
-facts remain unknown; neither a version mismatch nor an idle state authorizes
+facts remain unknown. Only clean revision labels or complete matching updater identities
+establish a build match; equal unidentified or modified labels remain unknown.
+Neither a version mismatch nor an idle state authorizes
 an automatic restart. `ready` requires every check to be ok; exit 1 means unresolved checks,
 not necessarily a failed repair. Provider stderr is intentionally omitted.
 A successful repair is rechecked and does not imply readiness or recording proof.

@@ -64,6 +64,11 @@ export function macHandler(p: Provider, target: string | undefined, scheme = 'ap
 function buildLabel(value: unknown): string | undefined {
   return typeof value === 'string' && value.length <= 200 && /^\d+\.\d+\.\d+(?:\s|[-+]|$)/.test(value) && !/[\x00-\x1f\x7f]/.test(value) ? value : undefined;
 }
+function identifiedBuild(label: string | undefined): boolean {
+  // The native producer's clean revision label identifies a build. Equal
+  // fallback or +modified labels cannot establish equal source contents.
+  return !!label && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)? · [a-f0-9]{7,40}$/.test(label);
+}
 
 export function diagnose(p: Provider, exe: string, profile?: string): Check[] {
   const checks: Check[] = [];
@@ -83,9 +88,12 @@ export function diagnose(p: Provider, exe: string, profile?: string): Check[] {
   const update = target && p.platform === 'linux' ? json(p, exe, ['update', 'status']) : undefined;
   const scalar = (v: unknown) => typeof v === 'string' ? v.slice(0, 200) : null;
   const runningBuild = knownPhase && capture?.app?.schema === 1 ? buildLabel(capture.app.build) : undefined;
-  const mismatch = update?.pendingRestart === true || !!(runningBuild && installedBuild && runningBuild !== installedBuild);
-  const matched = !!(runningBuild && installedBuild && runningBuild === installedBuild) || !!(update?.running && update?.installed && typeof update.running.updateId === 'string' && update.running.updateId === update.installed.id && update.running.updateChannel === update.installed.channel);
-  checks.push({ id: 'running', status: mismatch ? 'incompatible' : matched ? 'ok' : 'unknown', detail: mismatch ? 'Running app differs from installed CLI/update; quit/reopen manually only after checking capture.' : matched ? 'The live app build or updater identity matches the installed CLI/update.' : 'Running/installed identity is unknown; this app may predate live build facts.', evidence: { runningVersion: scalar(runningBuild ? capture.app.version : update?.running?.version), runningUpdate: scalar(update?.running?.updateId), installedUpdate: scalar(update?.installed?.id), ...(runningBuild ? { runningBuild } : {}), ...(installedBuild ? { installedBuild } : {}) } });
+  const comparable = identifiedBuild(runningBuild) && identifiedBuild(installedBuild);
+  const versionsDiffer = !!(runningBuild && installedBuild && runningBuild.split(/\s/, 1)[0] !== installedBuild.split(/\s/, 1)[0]);
+  const mismatch = update?.pendingRestart === true || versionsDiffer || (comparable && runningBuild !== installedBuild);
+  const updateMatches = typeof update?.running?.updateId === 'string' && update.running.updateId.trim().length > 0 && typeof update.running.updateChannel === 'string' && update.running.updateChannel.trim().length > 0 && update.running.updateId === update?.installed?.id && update.running.updateChannel === update.installed.channel;
+  const matched = (comparable && runningBuild === installedBuild) || updateMatches;
+  checks.push({ id: 'running', status: mismatch ? 'incompatible' : matched ? 'ok' : 'unknown', detail: mismatch ? 'Running app differs from installed CLI/update; quit/reopen manually only after checking capture.' : matched ? 'The live app build or updater identity matches the installed CLI/update.' : 'Running/installed identity is unknown; missing, unidentified or modified build facts cannot establish a match.', evidence: { runningVersion: scalar(runningBuild ? capture.app.version : update?.running?.version), runningUpdate: scalar(update?.running?.updateId), installedUpdate: scalar(update?.installed?.id), ...(runningBuild ? { runningBuild } : {}), ...(installedBuild ? { installedBuild } : {}) } });
   if (p.platform === 'linux') {
     const selection = p.run('xdg-mime', ['query', 'default', 'x-scheme-handler/apparent']);
     const id = selection.output.trim();
