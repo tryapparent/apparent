@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { _electron as electron } from '@playwright/test';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,13 +23,18 @@ for (const needsLaunch of [false, true]) test(`real Electron confirmation/preloa
   const appData = path.join(job, 'app-data'); await mkdir(appData, { mode: 0o700 });
   const bootstrap = path.join(job, 'bootstrap.cjs');
   await build({ entryPoints: [path.join(root, 'src/hermes/testing/bootstrap.cts')], outfile: bootstrap, bundle: true, platform: 'node', format: 'cjs', external: ['electron'] });
+  const appAssets = path.join(job, 'dist');
+  await cp(path.join(root, 'dist'), appAssets, { recursive: true });
+  await build({ entryPoints: { 'hermes-main': path.join(root, 'src/hermes/main.ts'), 'hermes-preload': path.join(root, 'src/hermes/preload.ts') },
+    outdir: appAssets, bundle: true, platform: 'node', format: 'cjs', external: ['electron'], outExtension: { '.js': '.cjs' } });
+  const mainBundle = path.join(appAssets, 'hermes-main.cjs');
   const keyFile = path.join(process.platform === 'linux' ? runtime : keyDirectory(), 'apparent-hermes', `${token}.key`);
   const bridgePort = await availablePort();
   const id = await mailboxId(token);
   let application: Awaited<ReturnType<typeof electron.launch>> | undefined;
   let passed = false;
   const diagnostics: unknown[] = [];
-  const launch = async (port: number) => electron.launch({ args: [bootstrap, path.join(root, 'dist/hermes-main.cjs'), '--hermes-request', `${token}/${port}`, '--apparent-executable', path.join(root, 'src/hermes/testing/cli.ts')],
+  const launch = async (port: number) => electron.launch({ args: [bootstrap, mainBundle, '--hermes-request', `${token}/${port}`, '--apparent-executable', path.join(root, 'src/hermes/testing/cli.ts')],
     env: { ...process.env, HOME: home, APPARENT_SYNTHETIC_APP_DATA: appData, XDG_RUNTIME_DIR: runtime, XDG_CONFIG_HOME: path.join(job, 'config'), APPARENT_SYNTHETIC_NEEDS_LAUNCH: needsLaunch ? '1' : '0', APPARENT_SYNTHETIC_RECEIPT: path.join(job, 'receipt.json'), APPARENT_SYNTHETIC_TRACE: path.join(job, 'trace.jsonl') } });
   try {
     application = await launch(bridgePort);

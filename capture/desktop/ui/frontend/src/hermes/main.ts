@@ -93,6 +93,10 @@ app.whenReady().then(async () => {
     window.once('ready-to-show', () => { if (view.code !== 'occupied') showWindow(); });
     ipcMain.handle('apparent:hermes-read', event => { sender(event); return view; });
     ipcMain.handle('apparent:hermes-start', async event => { sender(event); return lifecycle.run(); });
+    const state = await captureState();
+    if (state.available && !captureCanStart(state.phase)) {
+      view = { phase: 'error', code: 'occupied', message: 'Finish the current Apparent capture before recording from Hermes.' };
+    }
     await window.loadFile(path.join(__dirname, 'index.html'), { query: { surface: 'hermes' } });
   } else {
     const state = await captureState();
