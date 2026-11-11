@@ -10,6 +10,8 @@ export const shared = {
   draftReadGate: undefined as Promise<void> | undefined,
   draftReadStart: undefined as (() => void) | undefined,
   sessionCreate: { session_id: 'created-runtime', stored_session_id: 'created-stored' },
+  sessionCreateGate: undefined as Promise<void> | undefined,
+  sessionCreateStart: undefined as (() => void) | undefined,
 };
 export const host = {
   state: {
@@ -24,7 +26,11 @@ export const host = {
     if (method === 'shell.exec' && (!params || typeof params.command !== 'string' || 'session_id' in params || Object.keys(params).some(key => !['command', 'profile'].includes(key)))) throw new Error('Unexpected shell.exec parameters');
     if (method === 'session.create' && (!params || typeof params.idempotency_key !== 'string' || Object.keys(params).some(key => !['idempotency_key'].includes(key)))) throw new Error('Unexpected session.create parameters');
     shared.requests.push({ route: { ...route }, method, params: { ...params } });
-    if (method === 'session.create') return { ...shared.sessionCreate };
+    if (method === 'session.create') {
+      shared.sessionCreateStart?.();
+      if (shared.sessionCreateGate) await shared.sessionCreateGate;
+      return { ...shared.sessionCreate };
+    }
     if (params.command.includes('/apparent-hermes/')) return { code: 0, stdout: shared.key, stderr: '' };
     return { code: 0, stdout: '', stderr: '' };
   },

@@ -201,6 +201,16 @@ export default {
               typeof created.stored_session_id !== 'string' || !created.stored_session_id) {
             throw new Error('Hermes did not return both runtime and stored IDs for the new conversation. Nothing was started.');
           }
+          const routeStillCurrent = await newDraftCurrent(owner, destinationRoute);
+          // Read text after asynchronous route validation. Do not insert another
+          // await between this live snapshot and handing navigation to the SDK.
+          const latestDraft = await host.composer.getDraft('new');
+          const latestOwner = host.state.focusedSessionOwner?.get();
+          if (!routeStillCurrent || disposed || latestDraft !== originalDraft ||
+              host.state.focusedSessionId?.get() || host.state.focusedStoredSessionId?.get() ||
+              latestOwner?.connectionId !== owner.connectionId || latestOwner?.profile !== owner.profile) {
+            throw new Error('The fresh draft changed while creating the conversation. Your text was kept; no recording was started.');
+          }
           await host.openSession(created.stored_session_id, { route: destinationRoute, awaitHydration: true, expectHistory: false });
           session = host.state.focusedSessionId?.get();
           storedSession = host.state.focusedStoredSessionId?.get();

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
-import { shared } from './testing/sdk.ts';
+import { host, shared } from './testing/sdk.ts';
 import { sign } from './controller.ts';
 const hooks = registerHooks({ resolve(specifier, context, next) {
   if (['@hermes/plugin-sdk', 'react/jsx-runtime'].includes(specifier)) return { url: new URL('./testing/sdk.ts', import.meta.url).href, shortCircuit: true };
@@ -39,6 +39,7 @@ async function packet(phase: string, source = shared.source) {
   return Response.json({ payload, mac: await sign(shared.key, payload) });
 }
 function reset() {
+  shared.sessionCreateGate = undefined; shared.sessionCreateStart = undefined;
   shared.owner = { connectionId: 'ssh-A', profile: 'work' };
   shared.session = 'runtime-A'; shared.storedSession = 'stored-A';
   shared.routes = [
@@ -139,6 +140,48 @@ test('fresh drafts bind through idempotent session.create and public openSession
     assert.equal(shared.submissions.length, 0);
     assert.match(shared.draft, /typed draft must remain unchanged[\s\S]*playable video/);
   } finally { globalThis.fetch = originalFetch; f.dispose(); }
+});
+
+test('typing during fresh session creation preserves the live draft and aborts navigation and recording', async () => {
+  reset(); shared.session = null as any; shared.storedSession = null as any; shared.newDraft = 'initial text';
+  let release!: () => void;
+  shared.sessionCreateGate = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { shared.sessionCreateStart = resolve; });
+  const f = fixture();
+  try {
+    f.click(); await started;
+    shared.newDraft = 'initial text plus newly typed text';
+    release();
+    await until(() => shared.errors.length > 0);
+    assert.equal(shared.newDraft, 'initial text plus newly typed text');
+    assert.equal(shared.opens.length, 0);
+    assert.equal(shared.requests.some((request: any) => request.method === 'shell.exec'), false);
+    assert.equal(shared.insertions.length, 0);
+    assert.equal(shared.submissions.length, 0);
+  } finally { release(); f.dispose(); }
+});
+
+test('typing during the final fresh-route check aborts navigation with the latest text intact', async () => {
+  reset(); shared.session = null as any; shared.storedSession = null as any; shared.newDraft = 'initial text';
+  const originalRoutes = host.profileRoutes;
+  let calls = 0, checking = false;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  host.profileRoutes = async () => {
+    if (++calls === 4) { checking = true; await gate; }
+    return originalRoutes();
+  };
+  const f = fixture();
+  try {
+    f.click(); await until(() => checking);
+    shared.newDraft = 'initial text plus text during route validation';
+    release();
+    await until(() => shared.errors.length > 0);
+    assert.equal(shared.newDraft, 'initial text plus text during route validation');
+    assert.equal(shared.opens.length, 0);
+    assert.equal(shared.requests.some((request: any) => request.method === 'shell.exec'), false);
+    assert.equal(shared.insertions.length, 0);
+  } finally { release(); host.profileRoutes = originalRoutes; f.dispose(); }
 });
 
 test('remote destinations require an existing Connect ID and never trigger upload or read-grant changes', async () => {
