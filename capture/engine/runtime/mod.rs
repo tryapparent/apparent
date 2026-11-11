@@ -1799,7 +1799,9 @@ mod tests {
         assert!(hit(&default, s, (false, false, true, true)), "⌥⇧S");
         if cfg!(target_os = "macos") {
             assert!(!hit(&default, s, (true, false, true, true)), "legacy chord is now custom");
-            assert!(!hit(&default, KEY_S, (false, false, true, true)), "ANSI alias is not inherited");
+            if KEY_S != s {
+                assert!(!hit(&default, KEY_S, (false, false, true, true)), "ANSI alias is not inherited");
+            }
         } else {
             assert!(hit(&default, s, (true, false, true, true)), "⌥⇧⌘S");
             assert!(hit(&default, s, (false, true, true, true)), "⌃⌥⇧S");

@@ -2973,16 +2973,21 @@ mod tests {
         let dir = TempDir::new("legacy");
         let path = dir.0.join("config.json");
         let legacy = dir.0.join("legacy.json");
-        // 0.3.x wrote its default too: that stays the default (on the active layout's S).
+        // 0.3.x wrote its default too. Mac keeps that saved Alt+Shift+S explicit after Fn became
+        // the default; Linux still recognizes its former layout-S default.
         std::fs::write(
             &legacy,
             r#"{"key_code":41,"carbon_modifiers":2560,"label":"⌥⇧S"}"#,
         )
         .unwrap();
-        assert_eq!(
-            Shortcuts::load_from(&path, &legacy),
-            (Shortcuts::default(), false)
-        );
+        let (former_default, migrate) = Shortcuts::load_from(&path, &legacy);
+        if cfg!(target_os = "macos") {
+            assert!(migrate);
+            assert_eq!(former_default.record.label, "⌥⇧S");
+            assert_eq!(former_default.record.key_code, 41);
+        } else {
+            assert_eq!((former_default, migrate), (Shortcuts::default(), false));
+        }
         std::fs::write(
             &legacy,
             r#"{"key_code":15,"carbon_modifiers":6144,"label":"⌃⌥R"}"#,
