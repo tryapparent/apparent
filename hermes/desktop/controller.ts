@@ -21,7 +21,7 @@ export interface Pending {
   /** A true SDK dispatch has no durable receipt, so never automatically replay it. */
   sending?: boolean;
 }
-export const validToken = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value);
+export const validToken = (value: unknown): boolean => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value);
 export function validSource(value: unknown): value is string {
   return typeof value === 'string' && value.length <= 4096 && !/[\x00-\x1f\x7f]/.test(value)
     && (validToken(value) || (value.startsWith('/') && value.endsWith('.apparent')));
