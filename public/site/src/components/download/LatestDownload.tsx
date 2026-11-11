@@ -24,7 +24,7 @@ export function LatestDownload({ nav = false }: { nav?: boolean }) {
   const linuxArm = platform.kind === "linux" && platform.architecture === "aarch64"
   const target: DownloadPlatform = platform.kind === "mac" ? "mac" : linuxArm ? "linux-aarch64" : "linux-x86_64"
   const label = nav ? `Get the app · ${platform.kind === "mac" ? "Mac" : "Linux"}` :
-    `Download preview for ${platform.kind === "mac" ? "Mac" : linuxArm ? "Linux (ARM64)" : "Linux (x86_64)"}`
+    `Download for ${platform.kind === "mac" ? "Mac" : linuxArm ? "Linux (ARM64)" : "Linux (x86_64)"}`
 
   async function download(event: MouseEvent<HTMLAnchorElement>) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
