@@ -75,7 +75,13 @@ acceptance. Normal ready-PR platform CI must still verify the real candidate.
 
 Hosted Ubuntu checks use `.github/actions/ubuntu-apt` before installing packages.
 GitHub's image assigns Azure/Ubuntu mirrors priorities 1–3; the action prepends
-Kernel.org's Ubuntu mirror at priority 0 and preserves those fallback entries.
+Kernel.org's Ubuntu mirror at priority 0 only after a bounded HTTPS InRelease
+probe succeeds, and preserves those fallback entries. If the probe fails, it
+removes only its own exact priority-0 entry, including on a repeated invocation.
+This avoids retrying a known-unavailable preferred host for every package index.
+The disposable runner's dedicated `80apparent-transport` APT config limits HTTP
+and HTTPS inactivity to 15 seconds and acquisition retries to one. These are
+per-request bounds, not a total installation deadline; job timeouts remain.
 This addresses repeated hosted DNS/download timeouts without changing Ubuntu
 archive keys, package signatures, source suites or dependency/test requirements.
 It is restricted to disposable Linux Actions runners. macOS keeps its existing
