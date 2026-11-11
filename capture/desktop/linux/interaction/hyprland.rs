@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 
 use crate::capture::engine::runtime::{
     CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY, CARBON_SHIFT_KEY, ShortcutConfig,
@@ -64,6 +64,85 @@ fn instance_dir() -> Option<PathBuf> {
 /// `j/binds`).
 fn request(command: &str) -> Result<String> {
     request_with_timeout(command, Duration::from_secs(5))
+}
+
+/// Read JSON around the text representation, whose displayed key preserves opaque Lua chords.
+fn binds_snapshot() -> Result<String> {
+    let before = request("j/binds")?;
+    let text = request("binds")?;
+    let after = request("j/binds")?;
+    Ok(serde_json::to_string(&normalize_binds_snapshot(&before, &text, &after)?)?)
+}
+
+#[derive(Debug)]
+struct TextBind {
+    flags: String, modmask: u64, submap: String, key: String, keycode: u64,
+    catchall: String, description: String, dispatcher: String, arg: String,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct JsonBind {
+    locked: bool, mouse: bool, release: bool, repeat: bool,
+    #[serde(rename = "longPress")] long_press: bool,
+    non_consuming: bool, auto_consuming: bool, has_description: bool,
+    modmask: u64, submap: String, submap_universal: String, key: String, keycode: u64,
+    catch_all: bool, description: String, allow_input_capture: bool, dispatcher: String, arg: String,
+}
+
+fn parse_text_binds(text: &str) -> Result<Vec<TextBind>> {
+    let mut rows = Vec::new();
+    let mut current: Option<(String, std::collections::BTreeMap<String, String>)> = None;
+    for line in text.lines().filter(|line| !line.trim().is_empty()) {
+        if let Some(flags) = line.strip_prefix("bind") {
+            if let Some((flags, fields)) = current.take() { rows.push(text_bind(flags, fields)?); }
+            ensure!(flags.bytes().all(|b| b.is_ascii_lowercase()), "Malformed Hyprland binds flags");
+            current = Some((flags.to_owned(), Default::default()));
+            continue;
+        }
+        let (key, value) = line.trim().split_once(':').context("Malformed Hyprland binds field")?;
+        ensure!(["modmask", "submap", "key", "keycode", "catchall", "description", "dispatcher", "arg"].contains(&key), "Unknown Hyprland binds field");
+        let (_, fields) = current.as_mut().context("Hyprland binds field without row")?;
+        ensure!(fields.insert(key.to_owned(), value.trim().to_owned()).is_none(), "Duplicate Hyprland binds field");
+    }
+    if let Some((flags, fields)) = current { rows.push(text_bind(flags, fields)?); }
+    Ok(rows)
+}
+
+fn text_bind(flags: String, fields: std::collections::BTreeMap<String, String>) -> Result<TextBind> {
+    ensure!(fields.len() == 8, "Incomplete Hyprland binds row");
+    let number = |key: &str| -> Result<u64> { fields[key].parse().context("Malformed Hyprland binds number") };
+    Ok(TextBind { flags, modmask: number("modmask")?, submap: fields["submap"].clone(), key: fields["key"].clone(),
+        keycode: number("keycode")?, catchall: fields["catchall"].clone(), description: fields["description"].clone(),
+        dispatcher: fields["dispatcher"].clone(), arg: fields["arg"].clone() })
+}
+
+fn normalize_binds_snapshot(before: &str, text: &str, after: &str) -> Result<Vec<serde_json::Value>> {
+    let first: Vec<JsonBind> = serde_json::from_str(before).context("Malformed Hyprland bind JSON")?;
+    let last: Vec<JsonBind> = serde_json::from_str(after).context("Malformed Hyprland bind JSON")?;
+    ensure!(first == last, "Hyprland binds changed during snapshot");
+    let rows = parse_text_binds(text)?;
+    ensure!(rows.len() == first.len(), "Hyprland text/JSON bind inventory differs");
+    let mut normalized = Vec::with_capacity(first.len());
+    for (bind, row) in first.into_iter().zip(rows) {
+        let mut json = serde_json::to_value(bind)?;
+        ensure!(json["modmask"].as_u64() == Some(row.modmask) && json["submap"].as_str() == Some(row.submap.as_str())
+            && json["keycode"].as_u64() == Some(row.keycode) && json["description"].as_str() == Some(row.description.as_str())
+            && json["dispatcher"].as_str() == Some(row.dispatcher.as_str()) && json["arg"].as_str() == Some(row.arg.as_str())
+            && json["catch_all"].as_bool().map(|b| b.to_string()).as_deref() == Some(row.catchall.as_str()), "Hyprland text/JSON bind fingerprint differs");
+        let json_key = json["key"].as_str().context("Malformed Hyprland bind key")?.to_owned();
+        if json_key.is_empty() && row.key.starts_with("code:") {
+            let code = row.key.strip_prefix("code:").unwrap_or_default();
+            ensure!(!code.is_empty() && code.bytes().all(|byte| byte.is_ascii_digit()) && code.parse::<u32>().is_ok() && row.keycode == 0,
+                "Unsupported opaque Hyprland key identity");
+            json["key"] = serde_json::Value::String(row.key);
+        } else { ensure!(json_key == row.key, "Hyprland text/JSON key differs"); }
+        let flags = [("l", "locked"), ("m", "mouse"), ("r", "release"), ("e", "repeat"), ("n", "non_consuming"), ("a", "auto_consuming"), ("d", "has_description"), ("x", "allow_input_capture")];
+        let expected = flags.into_iter().filter_map(|(flag, field)| (json[field].as_bool() == Some(true)).then_some(flag)).fold(String::new(), |mut value, flag| { value.push_str(flag); value });
+        ensure!(expected == row.flags, "Hyprland text/JSON bind flags differ");
+        normalized.push(json);
+    }
+    Ok(normalized)
 }
 
 fn request_with_timeout(command: &str, timeout: Duration) -> Result<String> {
@@ -236,9 +315,7 @@ fn description(id: &str) -> String {
     format!("Apparent: {id}")
 }
 
-/// Omarchy's Lua-backed binds hide their physical key in `hyprctl binds -j`. Read the
-/// narrow, user-owned source definition and require its description in the live table;
-/// neither an empty `key` nor a description alone identifies a working Copilot bind.
+/// Require the exact physical identity, modifiers and description in a validated snapshot.
 fn external_record_from(source: &str, live: &str) -> Option<(ShortcutConfig, PathBuf)> {
     let matches: Vec<_> = source
         .lines()
@@ -280,7 +357,7 @@ fn external_record_from(source: &str, live: &str) -> Option<(ShortcutConfig, Pat
         .iter()
         .filter(|bind| {
             bind["modmask"].as_u64() == Some(u64::from(expected_mask))
-                && bind["key"].as_str() == Some("")
+                && bind["key"].as_str() == Some("code:201")
                 && bind["keycode"].as_u64() == Some(0)
         })
         .collect();
@@ -312,7 +389,7 @@ fn external_record_live() -> Option<ShortcutConfig> {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
     let source = std::fs::read_to_string(config_home.join("hypr/bindings.lua")).ok()?;
-    let live = request("j/binds").ok()?;
+    let live = binds_snapshot().ok()?;
     let (record, command) = external_record_from(&source, &live)?;
     use std::os::unix::fs::PermissionsExt;
     let executable = std::fs::metadata(command).ok()?;
@@ -698,7 +775,8 @@ pub fn bind(id: &'static str, chord: Option<(u32, &str)>) -> Result<()> {
         }
         return Ok(());
     }
-    match existing(&request("j/binds")?, mask, key, id) {
+    let inventory = if key == "Copilot" { binds_snapshot()? } else { request("j/binds")? };
+    match existing(&inventory, mask, key, id) {
         Existing::Apparent => return Ok(()),
         Existing::Other | Existing::Managed => bail!("{} is already bound", lua_chord(mask, key)),
         Existing::Free => {}
@@ -1026,10 +1104,9 @@ mod tests {
         for mixed in [format!("[{managed},{user}]"), format!("[{user},{managed}]")] {
             assert_eq!(existing(&mixed, 9, "S", "record"), Existing::Other);
         }
-        // Hyprland reports a code:201 Lua binding with an empty key and keycode 0.
-        let copilot = r#"[{"modmask":65,"key":"","keycode":0,"description":"Apparent: record"}]"#;
+        let copilot = r#"[{"modmask":65,"key":"code:201","keycode":0,"description":"Apparent: record"}]"#;
         assert_eq!(existing(copilot, 65, "Copilot", "record"), Existing::Other);
-        let managed_copilot = r#"[{"modmask":65,"key":"","keycode":0,"description":"Apparent: record [managed-v1]"}]"#;
+        let managed_copilot = r#"[{"modmask":65,"key":"code:201","keycode":0,"description":"Apparent: record [managed-v1]"}]"#;
         assert_eq!(existing(managed_copilot, 65, "Copilot", "record"), Existing::Managed);
         assert_eq!(existing(&format!("[{0},{0}]", &managed_copilot[1..managed_copilot.len()-1]), 65, "Copilot", "record"), Existing::Other);
         let wrong_action = managed_copilot.replace("record [managed-v1]", "paste [managed-v1]");
@@ -1038,10 +1115,38 @@ mod tests {
     }
 
     #[test]
+    fn paired_snapshot_recovers_only_verified_display_key() {
+        let row = serde_json::json!({"locked":false,"mouse":false,"release":false,"repeat":false,"longPress":false,
+            "non_consuming":false,"auto_consuming":false,"has_description":true,"modmask":0,"submap":"",
+            "submap_universal":"","key":"","keycode":0,"catch_all":false,"description":"Workspace",
+            "allow_input_capture":false,"dispatcher":"workspace","arg":"12"});
+        let json = serde_json::to_string(&vec![row]).unwrap();
+        let text = "bindd\n\tmodmask: 0\n\tsubmap: \n\tkey: code:12\n\tkeycode: 0\n\tcatchall: false\n\tdescription: Workspace\n\tdispatcher: workspace\n\targ: 12\n\n";
+        let normalized = normalize_binds_snapshot(&json, text, &json).unwrap();
+        assert_eq!(normalized[0]["key"], "code:12");
+        assert_eq!(existing(&serde_json::to_string(&normalized).unwrap(), 65, "Copilot", "record"), Existing::Free);
+        assert!(normalize_binds_snapshot(&json, text, "[]").is_err());
+        assert!(normalize_binds_snapshot(&json, text, &json.replace("\"arg\":\"12\"", "\"arg\":\"13\"" )).is_err());
+        assert!(normalize_binds_snapshot(&json, &text.replace("code:12", "code:12 + SHIFT"), &json).is_err());
+        assert!(normalize_binds_snapshot(&json.replace("\"modmask\":0", "\"modmask\":0,\"modmask\":0"), text, &json).is_err());
+        assert!(normalize_binds_snapshot(&json, &text.replace("description: Workspace", "unknown: bad\ndescription: Workspace"), &json).is_err());
+
+        let opaque = text.replace("modmask: 0", "modmask: 65").replace("code:12", "code:201");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value[0]["modmask"] = serde_json::json!(65);
+        let opaque_json = serde_json::to_string(&value).unwrap();
+        let normalized = normalize_binds_snapshot(&opaque_json, &opaque, &opaque_json).unwrap();
+        assert_eq!(normalized[0]["key"], "code:201");
+        assert_eq!(existing(&serde_json::to_string(&normalized).unwrap(), 65, "Copilot", "record"), Existing::Other);
+    }
+
+    #[test]
     fn external_copilot_requires_source_and_live_binding() {
         let source = "o.bind(\"SUPER + SHIFT + code:201\", \"Apparent: record\", \"env LD_PRELOAD=/usr/lib/libcblas.so.3 GST_PLUGIN_PATH=/home/simon/.local/share/scrawl-setup/gstreamer-1.28.8 GPUI_X11_SCALE_FACTOR=1.6666667 /home/simon/.local/bin/apparent shortcut record\")";
-        let live = r#"[{"modmask":65,"key":"","keycode":0,"description":"Apparent: record"}]"#;
+        let live = r#"[{"modmask":65,"key":"code:201","keycode":0,"description":"Apparent: record"}]"#;
         assert_eq!(external_record_from(source, live).unwrap().0.key_code, 201);
+        let other_code_same_mask = live.replace("]", r#",{"modmask":65,"key":"code:12","keycode":0,"description":"Workspace"}]"#);
+        assert!(external_record_from(source, &other_code_same_mask).is_some());
         let bare = source.replace("SUPER + SHIFT + code:201", "code:201");
         let bare_live = live.replace("65", "0");
         let (cfg, _) = external_record_from(&bare, &bare_live).unwrap();
@@ -1050,16 +1155,11 @@ mod tests {
         assert!(external_record_from(&bare, live).is_none());
         let conflict = bare_live.replace(
             "}]",
-            r#"},{"modmask":0,"key":"","keycode":0,"description":"User binding"}]"#,
+            r#"},{"modmask":0,"key":"code:201","keycode":0,"description":"User binding"}]"#,
         );
         assert!(external_record_from(&bare, &conflict).is_none());
-        let unrelated_same_mask = bare_live.replace(
-            "]",
-            r#",{"modmask":0,"key":"","keycode":0,"description":"Move window to workspace 1"}]"#,
-        );
-        // 0.56 hides the physical key for both rows, so even an unrelated
-        // description cannot prove that this is not a Copilot collision.
-        assert!(external_record_from(&bare, &unrelated_same_mask).is_none());
+        let unrelated_same_mask = bare_live.replace("]", r#",{"modmask":0,"key":"code:12","keycode":0,"description":"Move window to workspace 1"}]"#);
+        assert!(external_record_from(&bare, &unrelated_same_mask).is_some());
         assert!(external_record_from(source, "[]").is_none());
         assert!(external_record_from("", live).is_none());
         assert!(external_record_from(&source.replacen("env ", "false && ", 1), live).is_none());

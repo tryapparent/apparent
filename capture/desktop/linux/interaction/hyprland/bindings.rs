@@ -125,7 +125,8 @@ pub(super) fn bind(id: &'static str, chord: Option<(u32, &str)>) -> Result<()> {
         return Ok(());
     }
     let chord = lua_chord(modmask(modifiers), key);
-    let reuse = match existing(&request("j/binds")?, modmask(modifiers), key, id) {
+    let inventory = if key == "Copilot" { super::binds_snapshot()? } else { request("j/binds")? };
+    let reuse = match existing(&inventory, modmask(modifiers), key, id) {
         Existing::Apparent => return Ok(()), // Unowned/permanent: never claim its handle.
         Existing::Other => bail!("{chord} is already bound or cannot be observed"),
         Existing::Managed => true,

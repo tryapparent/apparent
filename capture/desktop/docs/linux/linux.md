@@ -282,8 +282,13 @@ The same keycode appears as `code:201` in Hyprland, so the recorder, native
 shortcut provider and compositor binding share the stored identity 201. This
 alias is Linux-only; macOS retains its existing key identities. Apparent accepts
 only the exact permanent unmodified Copilot or Super+Shift+Copilot `bindings.lua` record command when its
-matching live `hyprctl binds -j` entry is unique. The onboarding/Settings editor
-also records either chord; unrelated empty-key bindings remain untrusted.
+matching live binding is unique. On Hyprland 0.56, Apparent pairs the machine-readable
+`hyprctl binds -j` inventory with the text `hyprctl binds` display keys before recovering
+an opaque `code:201` identity. It requires the complete ordered inventories and each
+row's mask, submap, description, dispatcher and argument to match on both sides of the
+snapshot; malformed, changing or ambiguous output fails closed. Other physical keys,
+including unrelated empty-key rows, do not conflict with Copilot. The onboarding/Settings
+editor also records either chord.
 
 Clicks on the pill and the picker need four things, found in Hyprland's source (`ViewHitTester.cpp`, `XSurface.cpp`) and Omarchy's `windows.lua`, because the symptom is always the same: the click lands on the app below.
 
