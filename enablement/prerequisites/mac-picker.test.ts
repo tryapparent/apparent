@@ -15,6 +15,33 @@ function fixture(patch: Partial<PickerDriver> = {}) {
  const driver:PickerDriver={storageIdle:async()=>{},change:async()=>{calls.change++;},picker:async()=>{calls.picker++;return 'owned-picker';},openGo:async()=>{calls.openGo++;},goSheet:async()=> 'owned-go-sheet',enterPath:async()=>{},pathReady:async()=> 'owned path readback',wait:async()=>{},navigate:async()=>{calls.navigate++;},...patch};
  return {calls,driver};
 }
+test('picker calls allow bounded AppKit startup but never exceed the original overall deadline', async () => {
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const slice=(start:string,end:string)=>{
+  const from=source.indexOf(start),to=source.indexOf(end,from);
+  assert.ok(from>=0&&to>from);return source.slice(from,to);
+ };
+ const create=new Function('run','Date','assert','env','deadline','electronChild','panelScript','home','electronExecutable','pickerCommandMs',
+  slice('  const budget =','  let home,')+slice('  const osa =','  const panel =')+
+  slice('  const panel =','  const snapshot =')+slice('    const goPathOperation =','    const prepared =')+
+  'return {osa,panel,goPathOperation};');
+ let now=0;
+ const calls:Array<{timeout:number;operation:string}>=[];
+ const driver=create(async(_file:string,args:string[],options:{timeout:number})=>{
+  calls.push({timeout:options.timeout,operation:args[4]});return {stdout:'owned picker\n'};
+ },{now:()=>now},assert,{},95000,{exitCode:null,signalCode:null,pid:4801},'native script','/synthetic/home','/synthetic/electron',5000);
+ await driver.panel('cancel');
+ await driver.goPathOperation('enter-go-path','/synthetic/path');
+ assert.deepEqual(calls.map(call=>call.timeout),[5000,5000]);
+ await driver.osa('other native control');
+ assert.equal(calls.at(-1)!.timeout,3500,'Unrelated native controls keep their original cap');
+ now=94500;await driver.panel('choose');await driver.goPathOperation('navigate-go','/synthetic/path');
+ assert.deepEqual(calls.slice(-2).map(call=>call.timeout),[500,500]);
+ now=95000;const before=calls.length;
+ await assert.rejects(driver.panel('cancel'),/overall deadline exceeded/);
+ await assert.rejects(driver.goPathOperation('navigate-go','/synthetic/path'),/overall deadline exceeded/);
+ assert.equal(calls.length,before,'No native operation is sent after deadline expiry');
+});
 test('path entry and readback have separate bounded calls before one navigation', async () => {
  const order:string[]=[];
  let entered=false,observed=false,settled=false;
