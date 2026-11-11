@@ -22,7 +22,7 @@ function admitted(expression: string, needs: any, event = 'pull_request', draft 
 function parents(outputs: any = {}, reuse: any = {}) {
   return {contracts: {result: 'success'}, hermes: {result: 'success'}, select: {result: 'success', outputs}, reuse: {result: 'success', outputs: reuse}, portable: {result: 'success'}};
 }
-test('one automatic workflow, manual diagnostics, PR integration checkout and read-only verification', () => {
+test('automatic stream workflows, manual diagnostics, PR integration checkout and read-only verification', () => {
   assert.deepEqual(readdirSync(new URL('.github/workflows/', root)).filter(name =>
     Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))), ['checks.yml', 'hermes.yml']);
   assert.deepEqual(Object.keys(ci().on), ['pull_request', 'push']);
@@ -305,6 +305,11 @@ test('audited Record inputs retain Desktop and native platform consumers only', 
 test('Hermes owns independent package verification and publication; native admission has no Hermes ancestors',()=>{
  const h=workflow('hermes.yml');
  assert.equal(h.name,'continuous delivery hermes');
+ assert.equal(h.jobs.verify.strategy['fail-fast'],false);
+ const validator=h.jobs.verify.steps.find((s:any)=>s.name==='Install supported Hermes validator').run;
+ assert.match(validator,/uv sync.*--frozen --no-dev/);
+ assert.match(validator,/fetch --depth 1 origin [a-f0-9]{40}/);
+ assert.doesNotMatch(validator,/HERMES_NIX_BUILD/);
  assert.deepEqual(h.jobs.publish.needs,['contracts','clean','verify']);
  assert.match(h.jobs.publish.if,/github.event_name == 'push'/);
  assert.match(h.jobs.publish.if,/outputs.affected == 'true'/);
@@ -313,4 +318,5 @@ test('Hermes owns independent package verification and publication; native admis
  for(const name of ['linux','macos','tree-evidence','linux-admission','macos-admission'])assert.ok(!ci().jobs[name].needs.some((n:string)=>n.startsWith('hermes')));
  assert.deepEqual(selectedOwners(['.github/workflows/hermes.yml']),['hermes']);
  assert.deepEqual(selectedOwners(['hermes/desktop/package-lock.json']),['hermes']);
+ assert.deepEqual(selectedOwners(['hermes/skills/recordings/SKILL.md']),['hermes']);
 });

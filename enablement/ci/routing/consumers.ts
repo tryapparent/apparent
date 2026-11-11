@@ -26,6 +26,7 @@ const webAssets = new Set(['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.pn
 export function consumers(path: string): readonly Owner[] {
   if (documentationOnlyPath(path)) return [];
   if (publicMarkdown.has(path) && path !== 'capture/agent/skills/apparent/SKILL.md') return ['public'];
+  if (path === 'hermes/skills/recordings/SKILL.md') return ['hermes'];
   if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)\.md$/i.test(path)) return owners;
   // No extension-based native exemption: unexpected native sources in web/tool owners broaden.
   const native = /\.(rs|swift|metal|c|cc|cpp|h|mm)$/.test(path) || /(^|\/)Cargo\.(toml|lock)$/.test(path);

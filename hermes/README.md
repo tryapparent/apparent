@@ -14,8 +14,8 @@ or queueing an agent turn. Switching chats never changes that destination.
 Cancel sends nothing. New unsaved chats are refused. Native confirmation prevents
 an external URL from silently starting capture; normal permissions still apply.
 
-This is a source candidate for Hermes Desktop on macOS/Linux, not a catalog
-release. Stock 0.23.0 Desktop routing passed with a mock model; separately, a real
+The complete package targets Hermes Desktop on macOS/Linux. Catalog admission
+is separate. Stock 0.23.0 Desktop routing passed with a mock model; separately, a real
 Hermes model read the images from a native Linux recording. The installed macOS
 app and Linux AppImage passed normal URL launch, confirmation, screen consent,
 GUI Finish and signed return on isolated synthetic desktops with the microphone
@@ -175,7 +175,7 @@ hermes plugins validate ./hermes --install-deps
 hermes plugins doctor ./hermes --ci
 ```
 
-These checks need no Rust build. The repository check workflow runs the focused
+These checks need no Rust build. The `continuous delivery hermes` workflow runs the focused
 suite on Linux and macOS. Integration proof separately exercises an installed
 Apparent CLI and Hermes registry/model. Python is the explicitly authorized
 Hermes integration exception; this package imports no application internals.
