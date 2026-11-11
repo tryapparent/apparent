@@ -358,3 +358,45 @@ function copyInputHelpers(dir: string) {
   for (const name of ['inputs.ts', 'workflow-controls.ts'])
     copyFileSync(join(root, 'enablement/ci', name), join(dir, 'enablement/ci', name));
 }
+
+test('Record command plans keep package tests and native integration without unrelated owners', () => {
+  const frontend = 'capture/desktop/ui/frontend';
+  const scripts = JSON.parse(readFileSync(join(root, frontend, 'package.json'), 'utf8')).scripts;
+  for (const pkg of ['storage', 'completion']) {
+    assert.ok(scripts.test.includes(`../../../../record/${pkg}/test/*.test.ts`));
+    for (const platform of ['linux', 'darwin']) {
+      const selected = select([`record/${pkg}/src/policy.ts`]);
+      assert.deepEqual(selected, ['capture', 'desktop']);
+      const plan = commands(selected, 'base', 'head', platform);
+      assert.ok(plan.some(c => c.cwd === frontend && c.argv.at(-1) === 'test'));
+      assert.ok(plan.some(c => c.cwd === frontend && c.argv.at(-1) === 'test:electron'));
+      assert.ok(plan.some(c => c.argv.includes('--run') && c.argv.includes('platform')));
+      assert.ok(!plan.some(c => /^(connect|public|hermes)\//.test(c.cwd)));
+      assert.ok(plan.length < commands([...owners], 'base', 'head', platform).length);
+    }
+    assert.deepEqual(select([`record/${pkg}/src/policy.ts`], false), [...owners]);
+  }
+  assert.deepEqual(select(['record/completion/src/worker.ts', 'public/site/src/App.tsx']), ['capture', 'desktop', 'public']);
+});
+
+test('real Record Git deltas retain native execution and broaden for unexpected inputs', () => fixture((dir, env) => {
+  const git = (...args: string[]) => {
+    const result = spawnSync('git', args, {cwd: dir, env, encoding: 'utf8'});
+    assert.equal(result.status, 0, result.stderr); return result.stdout.trim();
+  };
+  git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'test@example.invalid');
+  mkdirSync(join(dir, 'record/storage'), {recursive: true});
+  writeFileSync(join(dir, 'record/storage/build.ts'), '// base');
+  git('add', '.'); git('commit', '-qm', 'base');
+  const base = git('rev-parse', 'HEAD');
+  writeFileSync(join(dir, 'record/storage/build.ts'), '// changed');
+  git('add', '.'); git('commit', '-qm', 'Record build input');
+  const result = selection(base, 'HEAD', dir);
+  assert.deepEqual(result.selected, ['capture', 'desktop']);
+  assert.equal(result.rustChanged, true);
+  assert.ok(commands(result.selected, base, 'HEAD', 'linux', result.rustChanged)
+    .some(c => c.argv.includes('--run') && c.argv.includes('platform')));
+  writeFileSync(join(dir, 'record/storage/native.rs'), '// unexpected native input');
+  git('add', '.'); git('commit', '-qm', 'native input');
+  assert.deepEqual(selection(base, 'HEAD', dir).selected, [...owners]);
+}));
