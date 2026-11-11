@@ -8,15 +8,14 @@ const saved = (check: boolean): ConnectSettings => ({ status: 'connected', view:
   buttons: check ? [{ command: 'check', title: 'Check connection', enabled: true }] : [],
 } });
 
-test('opening a saved session checks it once; subsequent local reads do not renew', async () => {
+test('opening a saved session reads once and returns its single connection check', async () => {
   let reads = 0, checks = 0;
   const renewed = saved(true);
   const bridge = { readConnectSettings: async () => { reads++; return saved(true); },
     checkConnectConnection: async () => { checks++; return renewed; } };
   assert.equal(await openConnectSession(bridge, () => true), renewed);
-  await bridge.readConnectSettings();
   assert.equal(checks, 1);
-  assert.equal(reads, 2);
+  assert.equal(reads, 1);
 });
 
 test('signed-out, disabled, unavailable and closed Settings never start a probe', async () => {
