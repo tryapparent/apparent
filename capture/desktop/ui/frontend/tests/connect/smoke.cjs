@@ -49,7 +49,7 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
         if (request.errorReporting === 'read') { socket.end('{"errorReporting":{"enabled":true}}\n'); continue; }
         if (request.storage || request.reference) { socket.end('{"error":"feature_disabled"}\n'); continue; }
         connect = true; requests.push(request);
-        if (request.connect === 'settings') stage = 'initial';
+        if (request.connect === 'settings' && stage === 'approval') stage = 'initial';
         if (request.command === 'connect') stage = 'consent';
         if (request.command === 'allow') stage = 'approval';
         if (request.command === 'cancel') stage = stage === 'disable-confirm' ? 'connected' : 'initial';
@@ -164,6 +164,28 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
   await expect(card.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
   assert.deepEqual(await application.evaluate(() => global.openedUris), ['https://example.com/device?code=TEST-CODE']);
   assert.equal(await page.getByText('synthetic-secret').count(), 0);
+  // A saved session checks/renews once on opening; local polling stays local.
+  stage = 'connected';
+  const checks = requests.filter(r => r.command === 'check').length;
+  await page.reload();
+  await expect.poll(() => requests.filter(r => r.command === 'check').length).toBe(checks + 1);
+  await expect(card.getByText('You’re connected.', { exact: true })).toBeVisible();
+  const reads = requests.filter(r => r.connect === 'read').length;
+  await expect.poll(() => requests.filter(r => r.connect === 'read').length).toBeGreaterThan(reads);
+  assert.equal(requests.filter(r => r.command === 'check').length, checks + 1);
+  for (const mode of ['light', 'dark']) {
+    await application.evaluate(({nativeTheme}, mode) => { nativeTheme.themeSource = mode; }, mode);
+    for (const width of [1100, 640]) {
+      await application.evaluate(({BrowserWindow}, width) => BrowserWindow.getAllWindows()[0].setSize(width, 760), width);
+      await expect(card.getByText('You’re connected.', { exact: true })).toBeVisible();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await account.focus();
+      await page.keyboard.press('Enter');
+      await expect(card.getByRole('button', {name:'Check connection', exact:true})).toBeVisible();
+      await page.keyboard.press('Escape');
+      await page.screenshot({path:path.join(os.tmpdir(), `apparent-session-${mode}-${width}.png`), fullPage:true});
+    }
+  }
   const shot = path.join(os.tmpdir(), `apparent-connect-${process.pid}.png`);
   await page.screenshot({ path: shot, fullPage: true });
   console.log(`Synthetic Connect screenshot: ${shot}`);
