@@ -195,8 +195,9 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('apparent:about-link', (event, link, ...args) => {
     validate(event, args);
-    if (!about || !['website', 'source'].includes(link)) throw new Error('Forbidden link');
-    return shell.openExternal(link === 'website' ? 'https://app.tryapparent.com' : 'https://github.com/tryapparent/apparent');
+    if (!about || !['website', 'source', 'discord'].includes(link)) throw new Error('Forbidden link');
+    const urls = { website: 'https://app.tryapparent.com', source: 'https://github.com/tryapparent/apparent', discord: 'https://discord.gg/ZRGZwV32M' };
+    return shell.openExternal(urls[link]);
   });
   ipcMain.handle('apparent:about-copy-version', (event, ...args) => {
     validate(event, args);
