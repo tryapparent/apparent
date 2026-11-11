@@ -531,32 +531,19 @@ Native fallback routing remains available until installed acceptance; disabling
 the Electron route is the existing rollback. Real platform shortcut/permission/focus
 and packaged acceptance remain separate from renderer and state-machine tests.
 
-### First-capture text note lesson
+### First-capture drawing sequence
 
-After whiteboard drawing, the whiteboard closes and the existing Electron coach
-shows **Add a note.** before the separate screen-drawing lesson:
-“Hold Shift and click a spot.”
-Its compact Shift-click illustration is presentation only, with Replay and a
-reduced-motion still. The trackpad helper appears only in the following screen-drawing lesson.
-Linux opens Whiteboard directly from its recording controls; its guide and
-illustration reflect that button rather than the Mac Screen menu. The existing
-notes editor remains the only place to enter real text; the coach
-never takes keyboard focus or submits a note. On Hyprland, the native adapter
-reconciles X11 keyboard focus after compositor placement for the same current
-owned editor request. Linux note positions convert native pixels to Electron DIP
-and placement converts back, so scaled editors retain their complete controls.
-Rust advances to screen drawing only after
-the current capture's notes session reports a nonempty durable save. Opening the
-editor, keeping a draft, dismissing, empty Enter or a failed write cannot satisfy
-this lesson. Screen marks made before the saved-note transition cannot satisfy
-the later screen-drawing prompt. An early finish still teaches paste/location, but cannot complete
-required practice without drawing and attaching a note. Completed users are not
-re-enrolled. Existing default Electron coaching and native fallback routing are
-unchanged; rollback/remove this lesson together with its durable-save check and
-illustration, rather than rendering a competing surface. Installed Mac/Linux acceptance
-must verify Whiteboard drawing → close Whiteboard → Shift-click → real editor →
-Attach/Enter → screen drawing → Finish, focus restoration,
-and bundle `notes.json`/semantic output. Renderer simulation is not native proof.
+After a real whiteboard stroke, the whiteboard closes and the Electron coach
+continues directly to **Draw on your screen.** The person must make a later,
+separate screen stroke before the coach advances to Finish. The note lesson and
+its Shift-click illustration are removed; adding notes remains optional, and the
+existing notes editor, save receipts and bundle output are unchanged. Old in-memory
+practice state at the removed `note` stage maps to screen drawing and requires a
+fresh stroke, so it cannot mistake earlier screen ink for the next action.
+Whiteboard and screen ink, paste confirmation and opening the current practice
+bundle remain the actual completion evidence. The trackpad helper still appears
+during screen drawing. Installed Mac/Linux acceptance remains required for native
+focus, capture and bundle behavior; renderer simulation is not native proof.
 
 The Electron first-capture start state keeps “Go again.” and the saved shortcut in
 the setup window, shortened to 520 pixels with the keys centered in its content. It becomes the floating coach only after capture selection
