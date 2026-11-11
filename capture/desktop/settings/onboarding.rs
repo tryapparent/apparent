@@ -2074,18 +2074,16 @@ mod tests {
     }
 
     #[test]
-    fn annotation_separates_the_drawing_lessons_and_closes_the_board_first() {
+    fn whiteboard_ink_leads_to_screen_drawing_without_a_note_lesson() {
         use super::super::practice::Stage;
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
         s.practice_whiteboard();assert!(!s.practice_desktop_stage());
         s.observe_practice(true,0,false,None);
-        assert_eq!(s.practice.as_ref().unwrap().stage,Stage::Note);
-        assert!(s.practice_desktop_stage(),"coordinator must close its board before Shift-clicking the user's screen");
-        s.observe_practice(false,1,false,None);assert_eq!(s.practice.as_ref().unwrap().stage,Stage::Note);
-        s.practice_note_saved(true);s.observe_practice(false,1,false,None);
+        assert_eq!(s.practice.as_ref().unwrap().stage,Stage::ScreenInk);
+        assert!(s.practice_desktop_stage(),"coordinator must close its board before screen drawing");
+        s.practice_note_saved(false);s.observe_practice(false,0,false,None);
         assert_eq!(s.practice.as_ref().unwrap().stage,Stage::ScreenInk);assert!(s.practice_desktop_stage());
-        s.observe_practice(false,1,false,None);assert_eq!(s.practice.as_ref().unwrap().stage,Stage::ScreenInk);
-        s.observe_practice(false,2,false,None);assert_eq!(s.practice.as_ref().unwrap().stage,Stage::Stop);
+        s.observe_practice(false,1,false,None);assert_eq!(s.practice.as_ref().unwrap().stage,Stage::Stop);
         assert!(!s.practice_desktop_stage());
     }
 
@@ -2098,7 +2096,7 @@ mod tests {
         s.input(Input::CaptureStarted);
         s.practice_whiteboard();
         s.observe_practice(true, 0, false, None);
-        s.practice_note_saved(true);s.observe_practice(false, 0, false, None);
+        s.practice_note_saved(false);s.observe_practice(false, 0, false, None);
         s.observe_practice(false, 1, true, Some(true));
         s.practice_saved_bundle(first);
         s.input(Input::CaptureEnded { completed: true });
@@ -2141,7 +2139,7 @@ mod tests {
     fn menu_bar_lesson_remains_after_paste_and_requires_opening_own_capture() {
         let mut s=coached_session();
         s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
-        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(true);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(false);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
         s.input(Input::CaptureEnded{completed:true});
         assert!(!s.practice_locating());
         s.action("practice-paste");assert!(!s.practice_locating());
@@ -2153,7 +2151,7 @@ mod tests {
     #[test]
     fn coaching_finishes_after_completion_pill_dismissal() {
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
-        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(true);
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(false);
         s.observe_practice(false,0,false,None);s.observe_practice(false,1,false,None);s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
         assert!(!s.flow.practice_recording);assert!(!s.flow.hidden);
         s.input(Input::CaptureEnded{completed:false}); // normal 25-second pill dismissal
@@ -2165,7 +2163,7 @@ mod tests {
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
         s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
         s.input(Input::CaptureStarted); // menu start, without ShortcutTriggered
-        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(true);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(false);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
         s.input(Input::CaptureEnded{completed:true});s.action("practice-paste");s.action("practice-pasted");s.practice_latest();
         assert_eq!(s.action("practice-finish"),Effect::None);assert!(!s.flow.first_capture_completed);
     }
@@ -3305,6 +3303,8 @@ mod adapter_regressions {
 #[cfg(target_os = "macos")]
 fn native_shortcut_reserved(key: u32, modifiers: u32) -> bool {
     use std::{process::Command, time::Duration};
+    // Fn is observed without suppressing it; any macOS Fn/Globe action remains active too.
+    if key == crate::capture::engine::runtime::MACOS_FN_KEY_CODE && modifiers == 0 { return false; }
     if key > 127 || modifiers & !0x1b00 != 0 { return true; }
     let Ok(path) = crate::capture::desktop::helper::path() else { return true; };
     let mut command = Command::new(path);

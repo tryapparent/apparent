@@ -957,6 +957,7 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
   let model: OnboardingModel
   var window: NSWindow?
   private var shortcutMonitor: Any?
+  private var fnCandidate = false
   private lazy var keys = HelperWindowKeys(
     window: { [weak self] in self?.window },
     enabled: { [weak self] in self?.model.shortcutEditor?.recording != true }
@@ -1021,9 +1022,26 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
   }
 
   private func listenForShortcut(_ on: Bool) {
+    if !on { fnCandidate = false }
     if on, shortcutMonitor == nil {
-      shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-        guard let self, self.model.shortcutEditor?.recording == true else { return event }
+      shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
+        guard let self else { return event }
+        guard self.model.shortcutEditor?.recording == true else {
+          self.fnCandidate = false
+          return event
+        }
+        if event.type == .flagsChanged {
+          let modifiers = ShortcutKeys.carbon(event.modifierFlags)
+          if event.keyCode == UInt16(kVK_Function) {
+            if event.modifierFlags.contains(.function) { self.fnCandidate = modifiers == 0 }
+            else if self.fnCandidate && modifiers == 0 {
+              emit(["action":"shortcut", "kind":"record", "keyCode":63, "modifiers":0, "key":"Fn", "reserved":false])
+              self.fnCandidate = false
+            } else { self.fnCandidate = false }
+          } else if modifiers != 0 { self.fnCandidate = false }
+          return event
+        }
+        self.fnCandidate = false
         if event.keyCode == UInt16(kVK_Escape) {
           emit(["action": "cancel-shortcut"])
           return nil
