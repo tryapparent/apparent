@@ -12,23 +12,30 @@ Springs and fades live in `motion::Tune`; `apparent tune list|set <key> <v>|pres
 
 ## Recording input visualization
 
-The recording pill projects the newest 80 ms of the existing capture recorder's
-16 kHz mono PCM (RMS × 4, bounded to 0–1). It opens no extra microphone stream,
-changes no permission or device selection, and makes no speech/health claim.
-Samples older than 250 ms read as zero; a busy capture buffer is skipped rather
-than blocking capture. Existing inline microphone warnings remain authoritative.
+The recording pill shows about one second of actual captured microphone history:
+24 narrow rounded strokes in a 66×28 pt region, oldest left and newest right.
+Engine reduces the existing 16 kHz mono capture PCM into overlapping 80 ms RMS
+windows at 40 ms spacing (RMS × 4, bounded to 0–1). This native signal reduction
+avoids moving raw PCM through presentation IPC. It opens no extra stream and
+changes no permission or device selection. Quiet speech uses a power-0.55 gain
+curve with a bounded 1.15 multiplier; overlapping windows give a short natural release. Silence becomes dots.
+This is an amplitude display, not a speech or microphone-health verdict.
 
-Desktop's shared Electron/React meter owns attack/release and a 300 ms transport
-expiry in `ui/frontend/src/pill/meter-policy.ts`. Silence and stalled delivery
-return to rest. Reduced motion, from either the OS media query or native readback,
-uses fixed bar geometry and indicates input through opacity without interpolation.
-The retained Mac Metal/Glass adapter projects raw amplitude with the same fixed
-geometry under reduced motion; it retains no additional animation policy.
+Samples older than 250 ms read as zero. A busy capture buffer is skipped rather
+than blocking capture; the pill reserves its waveform footprint and shows zero.
+Desktop TypeScript owns Electron gain/geometry and a 300 ms transport expiry in
+`ui/frontend/src/pill/meter-policy.ts`. It never appends synthetic timer samples.
+Reduced motion, from either OS media query or native readback, keeps fixed dots
+and indicates current input through opacity. The retained Mac Metal/Glass adapter
+projects the same signal history and gain into native raster geometry, with no
+additional history buffer or animation policy. Existing inline microphone
+warnings remain authoritative and independent.
 
 Routing stays unchanged: Mac Electron controls still require non-Glass plus
 `movableRecordingControls`; Glass and failed/unavailable Electron retain native
-controls. Both receive the same capture sample projection. Linux's native GPUI
-fallback retains its existing meter. Rollback is the existing native fallback;
-removing it still requires accepted Electron routing and platform proof. This
-slice migrates Electron meter smoothing out of the Rust coordinator into Desktop
-TypeScript, without changing capture policy or preferences/persistence.
+controls. Both receive the same capture history. Linux's native GPUI fallback
+retains its existing meter. Rollback is the existing native fallback; removing it
+still requires accepted Electron routing and platform proof. This slice moves
+Electron meter policy out of the Rust coordinator into Desktop TypeScript,
+without changing capture policy or preferences/persistence. Native fallback
+raster geometry remains until its Electron replacement is accepted.

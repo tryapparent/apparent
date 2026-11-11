@@ -86,7 +86,7 @@ function Pill() {
         {view.phase==='recording'?view.clock:view.phase==='processing'?'Processing…':view.label}
       </span>
     </div>}
-    {view.inputLevel!==null && view.phase==='recording' && <InputMeter input={view.inputLevel} receivedAt={receivedAt} reduced={view.reducedMotion || systemReduced}/>}
+    {view.inputWaveform!==null && view.phase==='recording' && <InputMeter input={view.inputWaveform} receivedAt={receivedAt} reduced={view.reducedMotion || systemReduced}/>}
     {view.warning && view.warning!==view.label && <span className="warning" role="status">{view.warning}</span>}
     {view.notice && <span className="notice" role="status">{view.notice}</span>}
     {error && <span role="alert">Action not confirmed. Use the recording shortcut or tray menu.</span>}

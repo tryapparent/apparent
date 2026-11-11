@@ -2777,10 +2777,10 @@ impl ApparentCoordinator {
                 .active_recording
                 .as_ref()
                 .and_then(ActiveRecording::mic_warning),
-            input_level: matches!(self.island_phase, IslandPhase::Recording).then(|| {
+            input_waveform: matches!(self.island_phase, IslandPhase::Recording).then(|| {
                 self.active_recording.as_ref().and_then(|recording| match &recording.source {
                     CaptureSource::Screen { audio: Some(audio), .. } =>
-                        Some(audio.input_activity().map_or(0.0, |(_, level)| level)),
+                        Some(audio.input_waveform().unwrap_or([0.0; 24])),
                     _ => None,
                 })
             }).flatten(),

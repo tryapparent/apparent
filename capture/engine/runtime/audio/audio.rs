@@ -118,6 +118,17 @@ fn input_level(samples: &[f32]) -> f32 {
     (mean_square.sqrt() * 4.0).clamp(0.0, 1.0)
 }
 
+fn pcm_waveform(samples: &[f32]) -> [f32; 24] {
+    let mut levels = [0.0; 24];
+    for (index, level) in levels.iter_mut().enumerate() {
+        let offset = (23 - index) * 640;
+        if samples.len() > offset {
+            *level = input_level(&samples[..samples.len() - offset]);
+        }
+    }
+    levels
+}
+
 #[derive(Clone, Debug)]
 pub struct RecordedAudio {
     pub sample_count: usize,
@@ -158,6 +169,14 @@ impl AudioRecorder {
         let fresh = self.health.try_lock().ok()?.last_sample
             .is_some_and(|last| last.elapsed() < Duration::from_millis(250));
         Some((samples.len(), if fresh { input_level(&samples) } else { 0.0 }))
+    }
+    /// Native signal reduction of the captured PCM: 24 overlapping 80 ms RMS
+    /// windows at 40 ms spacing, oldest first. No presentation clock or stream.
+    pub fn input_waveform(&self) -> Option<[f32; 24]> {
+        let samples = self.samples.try_lock().ok()?;
+        let fresh = self.health.try_lock().ok()?.last_sample
+            .is_some_and(|last| last.elapsed() < Duration::from_millis(250));
+        Some(if fresh { pcm_waveform(&samples) } else { [0.0; 24] })
     }
     pub fn start(bundle_dir: &std::path::Path) -> Result<Self> {
         let started = std::time::Instant::now();
@@ -706,6 +725,24 @@ mod tests {
     }
 
     #[test]
+    fn pcm_waveform_preserves_captured_history_direction_and_silence() {
+        assert_eq!(pcm_waveform(&[]), [0.0; 24]);
+        let mut samples = vec![0.0; 24 * 640];
+        samples.extend(vec![0.02; 640]);
+        let spoken = pcm_waveform(&samples);
+        assert!(spoken[23] > 0.0);
+        assert!(spoken[..23].iter().all(|level| *level == 0.0));
+        samples.extend(vec![0.0; 640]);
+        let release = pcm_waveform(&samples);
+        assert_eq!(release[22], spoken[23], "history moves left with real samples");
+        assert!(release[23] > 0.0, "overlapping PCM window releases naturally");
+        samples.extend(vec![0.0; 640]);
+        assert_eq!(pcm_waveform(&samples)[23], 0.0);
+        samples.extend(vec![0.0; 24 * 640]);
+        assert_eq!(pcm_waveform(&samples), [0.0; 24]);
+    }
+
+    #[test]
     fn input_activity_reads_capture_pcm_and_expires_a_stalled_stream() {
         let now = Instant::now();
         let recorder = AudioRecorder {
@@ -718,15 +755,19 @@ mod tests {
             pause: None,
         };
         assert_eq!(recorder.input_activity(), Some((1280, 0.0)));
+        assert_eq!(recorder.input_waveform(), Some([0.0; 24]));
         recorder.health.lock().unwrap().sample(now, 0.2);
         assert!(recorder.input_activity().unwrap().1 > 0.0);
+        assert!(recorder.input_waveform().unwrap()[23] > 0.0);
         recorder.health.lock().unwrap().last_sample = Some(now - Duration::from_secs(1));
         assert_eq!(recorder.input_activity(), Some((1280, 0.0)));
         recorder.samples.lock().unwrap().extend(vec![0.0; 1280]);
         recorder.health.lock().unwrap().sample(Instant::now(), 0.0);
         assert_eq!(recorder.input_activity(), Some((2560, 0.0)));
+        assert_eq!(recorder.input_waveform().unwrap()[23], 0.0);
         let held = recorder.samples.lock().unwrap();
         assert_eq!(recorder.input_activity(), None, "meter must never block capture");
+        assert_eq!(recorder.input_waveform(), None);
         drop(held);
     }
 

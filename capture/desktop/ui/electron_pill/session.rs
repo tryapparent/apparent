@@ -395,10 +395,10 @@ impl Session {
         }
         let mut semantic = view.clone();
         semantic.clock.clear();
-        semantic.input_level = None;
+        semantic.input_waveform = None;
         let mut previous = self.view.clone();
         previous.clock.clear();
-        previous.input_level = None;
+        previous.input_waveform = None;
         let changed =
             semantic != previous || self.generation != generation || self.selection != selection;
         if changed {
@@ -502,7 +502,7 @@ mod native_tests {
         let view = View {
             revision: 1, phase: "recording", clock: "00:01".into(), label: "Synthetic pin test".into(),
             warning: None, notice: None, reduced_motion: true,
-            draggable: false, input_level: None, actions: vec![],
+            draggable: false, input_waveform: None, actions: vec![],
         };
         let mut session = Session::open(view.clone(), 1, Default::default()).unwrap();
         let deadline = Instant::now() + Duration::from_secs(8);

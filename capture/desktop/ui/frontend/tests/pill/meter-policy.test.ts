@@ -1,17 +1,19 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {stepMeter} from '../../src/pill/meter-policy.ts';
-test('captured amplitude attacks, silence releases, stalled transport reaches rest',()=>{
- const first=stepMeter({level:0,at:0},.8,40,40,false);
- assert.ok(first.level>0 && first.level<.8);
- const quiet=stepMeter(first,0,80,80,false);
- assert.ok(quiet.level<first.level);
- const stalled=stepMeter(first,.8,40,1040,false);
- assert.equal(stalled.level,0);
- assert.equal(stepMeter(first,null,80,80,true).level,0);
+import {waveformLevels,waveformHeight,WAVEFORM_BINS} from '../../src/pill/meter-policy.ts';
+test('captured history preserves time order and curved gain makes quiet speech visible',()=>{
+ const pcm=Array(WAVEFORM_BINS).fill(0);pcm[23]=.02;
+ const levels=waveformLevels(pcm,40,40);
+ assert.ok(levels.slice(0,23).every(value=>value===0));
+ assert.ok(waveformHeight(levels[23],false)>5);
+ assert.equal(waveformHeight(0,false),2);
+ assert.equal(waveformHeight(1,false),28);
+ assert.ok(waveformLevels(Array(24).fill(.8),40,40)[23]>levels[23]);
 });
-test('reduced motion reads amplitude directly and invalid input never animates',()=>{
- assert.equal(stepMeter({level:0,at:0},.8,40,40,true).level,.8);
- for(const input of [NaN,Infinity,-1,0])assert.equal(stepMeter({level:0,at:0},input,40,40,false).level,0);
- assert.equal(stepMeter({level:0,at:0},2,40,40,true).level,1);
+test('silence and stalled delivery rest; invalid values cannot create movement',()=>{
+ assert.deepEqual(waveformLevels(Array(24).fill(.8),40,340),Array(24).fill(0));
+ for(const input of [null,[],[.8]])assert.deepEqual(waveformLevels(input,40,40),Array(24).fill(0));
+ assert.deepEqual(waveformLevels(Array(24).fill(NaN),40,40),Array(24).fill(0));
+ assert.deepEqual(waveformLevels(Array(24).fill(0),40,40),Array(24).fill(0));
+ for(const level of [0,.2,1])assert.equal(waveformHeight(level,true),2);
 });
