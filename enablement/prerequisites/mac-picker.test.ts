@@ -38,6 +38,10 @@ test('the picker runtime gets a private distinct bundle identity without changin
     calls.push(match[1]);return {stdout:''};
    }
    assert.equal(file,'/usr/bin/codesign');
+   if(args.at(-1)===source) {
+    assert.deepEqual(args,['--verify','--deep','--strict',source]);
+    calls.push('verify-source');return {stdout:''};
+   }
    assert.ok(args.at(-1)!.startsWith(home+'/picker-runtime-'));
    calls.push(args.includes('--verify')?'verify':'sign');return {stdout:''};
   };
@@ -47,7 +51,7 @@ test('the picker runtime gets a private distinct bundle identity without changin
   assert.equal(result.sourceExecutable,executable);assert.equal(result.signatureVerified,true);
   assert.equal(await files.readFile(result.executable,'utf8'),'synthetic runtime bytes');
   assert.deepEqual(JSON.parse(await files.readFile(plist,'utf8')),original);
-  assert.deepEqual(calls,['CFBundleIdentifier','CFBundleName','CFBundleDisplayName','sign','verify']);
+  assert.deepEqual(calls,['verify-source','CFBundleIdentifier','CFBundleName','CFBundleDisplayName','sign','verify']);
   await files.chmod(home,0o755);
   await assert.rejects(isolatePickerRuntime(executable,home,async()=>{throw Error('Must refuse before native calls');}),/owned private/);
  } finally {await files.rm(directory,{recursive:true,force:true});}
@@ -61,15 +65,35 @@ test('a native signature failure refuses the isolated runtime instead of launchi
   await files.writeFile(executable,'unchanged source');await files.writeFile(join(source,'Contents/Info.plist'),'source metadata');
   const failure=Error('synthetic signature refusal');
   await assert.rejects(isolatePickerRuntime(executable,home,async(file,args)=>{
-   if(file==='/usr/bin/codesign')throw failure;
+   if(file==='/usr/bin/codesign'&&args.includes('--sign'))throw failure;
    return {stdout:args[1].startsWith('Print')?'com.github.Electron\n':''};
   }),error=>error===failure);
   assert.equal(await files.readFile(executable,'utf8'),'unchanged source');
  } finally {await files.rm(directory,{recursive:true,force:true});}
 });
+test('unsigned source helpers are refused before copying or changing any runtime identity', async () => {
+ const directory=await files.mkdtemp(join(tmpdir(),'picker-unsigned-'));
+ try {
+  const source=join(directory,'Electron.app'),home=join(directory,'home');
+  await files.mkdir(join(source,'Contents/MacOS'),{recursive:true});await files.mkdir(home,{mode:0o700});
+  const executable=join(source,'Contents/MacOS/Electron');
+  await files.writeFile(executable,'unsigned source');
+  const failure=Error('unsigned nested helper');
+  const calls:string[]=[];
+  await assert.rejects(isolatePickerRuntime(executable,home,async(file,args)=>{
+   calls.push(file);assert.equal(file,'/usr/bin/codesign');
+   assert.deepEqual(args,['--verify','--deep','--strict',source]);throw failure;
+  }),error=>error===failure);
+  assert.deepEqual(calls,['/usr/bin/codesign']);
+  assert.deepEqual(await files.readdir(home),[],'No private runtime is prepared after source verification fails');
+  assert.equal(await files.readFile(executable,'utf8'),'unsigned source');
+ } finally {await files.rm(directory,{recursive:true,force:true});}
+});
 test('runtime isolation preserves strict window identity and adds native bundle and AX PID checks', () => {
  const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
  assert.match(source,/executablePath: electronExecutable/);
+ assert.match(source,/Contents\/Resources\/settings\/runtime\/Electron\.app\/Contents\/MacOS\/Electron/);
+ assert.doesNotMatch(source,/realpath\(require\('electron'\)\)/,'The raw npm runtime may contain unsigned helpers');
  assert.match(source,/report\.fixtureRuntime = fixtureRuntime/);
  assert.match(source,/fixtureRuntime\.bundleId/);
  assert.match(source,/title=Apparent — UI foundation/);
