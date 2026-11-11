@@ -1,7 +1,7 @@
 import { Copy } from "./Copy"
 import "./setup-prompt.css"
 
-const prompt = "Install and launch Apparent for this Mac or Linux computer using https://github.com/tryapparent/apparent, asking before system changes. If you’re Hermes, also install Apparent’s Hermes plugin using the repo instructions."
+const prompt = "Install and launch Apparent using https://github.com/tryapparent/apparent. If you’re Hermes, install and enable both the Agent and Desktop plugin halves, help the user to rescan/reload Desktop plugins."
 
 export function SetupPrompt() {
   return <div className="setup-prompt">
