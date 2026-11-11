@@ -33,6 +33,7 @@ Cookie-authenticated mutations require **`X-CSRF-Token`** from session plus an e
 - `POST /v1/waitlist` JSON `{interestedAtFiveDollars:boolean}` -> `{ok:true}`. Authentication required; no billing.
 - `GET /v1/device?userCode=...` requires browser session; returns `{scope:'read'|'upload',status:'pending'|'approved'|'rejected'|'expired',expiresAt:'ISO UTC timestamp'}`. No device secret/token returned. UI must show scope and ask explicit approval.
 - `POST /v1/device/approve` JSON `{userCode}` -> `{ok:true}`. Active beta required; binds the requested immutable scope to the approving account. No automatic approval on login.
+- `POST /v1/device/waitlist` JSON `{userCode}` -> `{status:"waitlisted"}`. Requires a verified waitlisted browser session and CSRF. Binds only an unapproved, unexpired, unrevoked request to that account for eligibility reporting. It never approves the device or issues credentials. Other-account replacement is refused. Its secret-holding native caller receives `{status:"waitlisted"}` from device polling while that account remains waitlisted; later eligibility never automatically approves the request. Start a new explicit connection after access changes.
 - `POST /v1/device/reject` JSON `{userCode}` -> `{ok:true}`.
 
 ## Device and capture contract

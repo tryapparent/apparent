@@ -18,7 +18,6 @@
 //! AppKit mouse monitor that needs no permission, keys from an Accessibility event tap.
 
 use std::collections::{BTreeMap, BTreeSet};
-mod account;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -971,6 +970,7 @@ pub enum Event {
     Action(String),
     /// The inline recorder uses the same actions and validation as Settings.
     Shortcut(crate::capture::desktop::settings::Action),
+    Board(serde_json::Value),
     Exited,
     /// Reader callbacks belong to the session that created their transport.
     Session { source: u64, event: Box<Event> },
@@ -1075,7 +1075,6 @@ pub fn poll_grants(
 /// The open welcome window: the `Flow` and the window drawing it. On macOS the app
 /// supplies permission updates even while this window is closed; other platforms poll here.
 pub struct Session {
-    account: Option<account::Account>,
     source: u64,
     transport_generation: u64,
     flow: Flow,
@@ -1097,6 +1096,7 @@ pub struct Session {
     practice: Option<super::practice::Practice>,
     anchor: Option<[f32;4]>,
     practice_board: Option<[f32;4]>,
+    board_view: Option<serde_json::Value>,
     practice_completed: bool,
     practice_bundle: Option<std::path::PathBuf>,
     practice_receipt: Option<(u64, String, Option<String>)>,
@@ -1111,7 +1111,6 @@ impl Session {
     #[cfg(test)]
     pub(crate) fn for_test(flow: Flow) -> Self {
         Self {
-            account: None,
             source: next_session_source(),
             transport_generation: next_session_source(),
             flow,
@@ -1133,6 +1132,7 @@ impl Session {
             practice: None,
             anchor: None,
             practice_board: None,
+            board_view: None,
             practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
         }
     }
@@ -1197,7 +1197,6 @@ impl Session {
         let progress = Progress::load();
         let allowed = relaunch_allowed(&progress, unix_ms());
         let mut session = Self {
-            account: Some(account::Account::new(crate::shared::handoff::default_config_path())),
             source,
             transport_generation,
             flow: flow
@@ -1227,6 +1226,7 @@ impl Session {
             practice: shell.then(super::practice::Practice::default),
             anchor: None,
             practice_board: None,
+            board_view: None,
             practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
         };
         session.shortcut_changed(shortcut);
@@ -1302,6 +1302,7 @@ impl Session {
                         continue;
                     };
                     let action = action.to_owned();
+                    if action=="board" {events(Event::Board(value));continue;}
                     #[cfg(target_os="linux")]
                     if action=="shortcut-key" {
                         if let (Some(key),Some(modifiers))=(value["key"].as_str(),value["modifiers"].as_u64()) {
@@ -1346,7 +1347,6 @@ impl Session {
     }
 
     pub fn restore_native(&mut self) -> bool {
-        if let Some(account) = self.account.as_mut() { account.cancel(); }
         // Invalidate queued actions/EOF before dropping the old child's input.
         if self.fallback.is_some() { self.transport_generation = next_session_source(); }
         if self.fallback.is_some() && self.flow.hidden {
@@ -1483,22 +1483,6 @@ impl Session {
 
     /// An action string from the helper as an `Input`.
     pub fn action(&mut self, action: &str) -> Effect {
-        if self.flow.step() == Step::Welcome && !self.pen_picker && matches!(action, "sign-in" | "cancel-sign-in" | "open-sign-in") {
-            if let Some(account) = self.account.as_mut() {
-                match action {
-                    "sign-in" => account.start(),
-                    "cancel-sign-in" => account.cancel(),
-                    "open-sign-in" => if let Some(uri) = account.browser_uri() {
-                        if crate::shared::handoff::open_path(Path::new(uri)).is_err() { account.browser_failed(); }
-                    },
-                    _ => (),
-                }
-            }
-            self.sync(); return Effect::None;
-        }
-        if matches!(action, "continue" | "later" | "close" | "back") {
-            if let Some(account) = self.account.as_mut() { account.cancel(); }
-        }
         if self.practice.is_some() && self.flow.step()==Step::Welcome {
             if action=="continue" && !self.pen_picker {self.pen_picker=true;self.sync();return Effect::None;}
             if let Some(name)=action.strip_prefix("pen:") {
@@ -1612,15 +1596,14 @@ impl Session {
             if let Some(practice)=self.practice.as_mut() {practice.observe_note(saved);}
         }
     }
+    pub fn electron_practice(&self)->bool {self.practice_active() && self.fallback.is_some() && !self.fallback_pending}
+    pub fn board_view(&mut self, view: Option<serde_json::Value>) {self.board_view=view;}
     pub fn practice_anchor(&mut self,anchor:Option<[f32;4]>) {self.anchor=anchor;}
     pub fn practice_board(&mut self, frame: Option<[f32;4]>) {
         self.practice_board=frame;
         if let Some(p)=self.practice.as_mut() { p.whiteboard_visible(frame.is_some()); }
     }
     pub fn practice_active(&self)->bool {self.practice.is_some() && self.flow.step()==Step::TryIt}
-    pub fn refresh_account(&mut self) {
-        if self.account.as_mut().is_some_and(|account| account.poll()) { self.sync(); }
-    }
     pub fn practice_locating(&self)->bool {self.practice.as_ref().is_some_and(|p|p.stage==super::practice::Stage::Locate)}
     pub fn practice_desktop_stage(&self)->bool {self.practice.as_ref().is_some_and(|p|matches!(p.stage,super::practice::Stage::Note|super::practice::Stage::ScreenInk))}
     pub fn practice_whiteboard(&mut self) {if let Some(p)=self.practice.as_mut(){p.whiteboard();}self.sync();}
@@ -1658,12 +1641,12 @@ impl Session {
         }
         let mut view = serde_json::to_value(self.flow.view()).unwrap_or_default();
         view["type"] = "state".into();
-        view["account"] = serde_json::to_value(self.account.as_ref().map(|a| a.view())).unwrap_or_default();
         if let Some(practice)=self.practice.as_ref() {view["practice"]=serde_json::json!(practice.stage);}
         view["shortcut"]=self.shortcut_label.clone().into();
         view["platform"]=std::env::consts::OS.into();
         view["shortcutEditor"]=serde_json::json!(self.editor);
         view["anchor"]=serde_json::json!(self.anchor);
+        view["boardView"]=serde_json::json!(self.board_view);
         view["practiceBoard"]=serde_json::json!(self.practice_board);
         view["testInstance"]=false.into();
         view["penPicker"]=self.pen_picker.into();view["penSelected"]=self.pen_selected.into();view["penError"]=self.pen_error.into();
@@ -1816,7 +1799,6 @@ fn retire_transport(transport: Transport) {
 
 impl Drop for Session {
     fn drop(&mut self) {
-        if let Some(account) = self.account.as_mut() { account.cancel(); }
         self.polling
             .store(false, std::sync::atomic::Ordering::Release);
         if let Some(adapter) = self.permission_adapter.take() { retire_transport(adapter); }
@@ -1999,18 +1981,16 @@ mod tests {
     }
 
     #[test]
-    fn annotation_separates_the_drawing_lessons_and_closes_the_board_first() {
+    fn whiteboard_ink_leads_to_screen_drawing_without_a_note_lesson() {
         use super::super::practice::Stage;
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
         s.practice_whiteboard();assert!(!s.practice_desktop_stage());
         s.observe_practice(true,0,false,None);
-        assert_eq!(s.practice.as_ref().unwrap().stage,Stage::Note);
-        assert!(s.practice_desktop_stage(),"coordinator must close its board before Shift-clicking the user's screen");
-        s.observe_practice(false,1,false,None);assert_eq!(s.practice.as_ref().unwrap().stage,Stage::Note);
-        s.practice_note_saved(true);s.observe_practice(false,1,false,None);
+        assert_eq!(s.practice.as_ref().unwrap().stage,Stage::ScreenInk);
+        assert!(s.practice_desktop_stage(),"coordinator must close its board before screen drawing");
+        s.practice_note_saved(false);s.observe_practice(false,0,false,None);
         assert_eq!(s.practice.as_ref().unwrap().stage,Stage::ScreenInk);assert!(s.practice_desktop_stage());
-        s.observe_practice(false,1,false,None);assert_eq!(s.practice.as_ref().unwrap().stage,Stage::ScreenInk);
-        s.observe_practice(false,2,false,None);assert_eq!(s.practice.as_ref().unwrap().stage,Stage::Stop);
+        s.observe_practice(false,1,false,None);assert_eq!(s.practice.as_ref().unwrap().stage,Stage::Stop);
         assert!(!s.practice_desktop_stage());
     }
 
@@ -2023,7 +2003,7 @@ mod tests {
         s.input(Input::CaptureStarted);
         s.practice_whiteboard();
         s.observe_practice(true, 0, false, None);
-        s.practice_note_saved(true);s.observe_practice(false, 0, false, None);
+        s.practice_note_saved(false);s.observe_practice(false, 0, false, None);
         s.observe_practice(false, 1, true, Some(true));
         s.practice_saved_bundle(first);
         s.input(Input::CaptureEnded { completed: true });
@@ -2066,7 +2046,7 @@ mod tests {
     fn menu_bar_lesson_remains_after_paste_and_requires_opening_own_capture() {
         let mut s=coached_session();
         s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
-        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(true);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(false);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
         s.input(Input::CaptureEnded{completed:true});
         assert!(!s.practice_locating());
         s.action("practice-paste");assert!(!s.practice_locating());
@@ -2078,7 +2058,7 @@ mod tests {
     #[test]
     fn coaching_finishes_after_completion_pill_dismissal() {
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
-        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(true);
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(false);
         s.observe_practice(false,0,false,None);s.observe_practice(false,1,false,None);s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
         assert!(!s.flow.practice_recording);assert!(!s.flow.hidden);
         s.input(Input::CaptureEnded{completed:false}); // normal 25-second pill dismissal
@@ -2090,7 +2070,7 @@ mod tests {
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
         s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
         s.input(Input::CaptureStarted); // menu start, without ShortcutTriggered
-        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(true);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(false);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
         s.input(Input::CaptureEnded{completed:true});s.action("practice-paste");s.action("practice-pasted");s.practice_latest();
         assert_eq!(s.action("practice-finish"),Effect::None);assert!(!s.flow.first_capture_completed);
     }

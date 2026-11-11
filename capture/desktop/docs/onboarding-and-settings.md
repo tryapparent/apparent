@@ -152,14 +152,44 @@ renderer JavaScript errors and hangs remain outside this slice's coverage.
 
 ## Onboarding (`capture/desktop/settings/onboarding.rs`, `capture/desktop/native/Onboarding.swift`)
 
-The shared Electron Welcome page offers Google sign-in through Connect's existing
-read-only device approval. It shows the public code and opens only the current
-native-validated approval URL on an explicit click. Cancel, leaving Welcome,
-renderer fallback and closing the session cancel pending enrollment; late replies
-cannot update a successor. Local setup remains available when offline or rejected.
-Sign-in does not enable uploads, grant upload consent or complete tour milestones.
-Connect remains the sole credential/config writer; the native onboarding adapter
-owns worker lifetime, while TypeScript owns account presentation and coach placement.
+The shared Electron Welcome page asks **Where’s ur agent at?** with equally
+prominent **Right here** and **Up in the cloud** illustrations. Right here uses
+the existing pen picker without signup. **idk??** explains both routes. The cloud
+route offers Connect, with **Keep it local** as an explicit secondary opt-out.
+There is no second pen picker or separate read-only onboarding enrollment.
+
+The cloud route displays the upload scope beside **Continue with Google**. That
+single explicit click admits local upload consent through the existing Connect
+controller, starts device authorization and opens its validated browser URL once.
+The browser enters Google directly for a valid signed-out device request, then
+requires an explicit **Allow uploads** action after displaying the scope. There
+is no additional checkbox or Done action. Google sign-in alone grants no device
+access. Starting from Welcome takes three apparent-controlled clicks including
+the cloud choice; Google login/account selection/MFA may add interactions.
+
+The browser reports a verified waitlisted account to its exact pending device
+request. Native polling returns a waitlist receipt without credentials or enabled
+uploads; **Continue locally** then leads to the existing pen picker. Pricing
+interest is optional and never required to proceed. Unknown/offline/expired state
+is not a waitlist receipt. Access granted later needs explicit reconnection from
+Settings. Signup does not independently grant an agent read access or make shared
+links available; existing sharing and encryption gates remain authoritative.
+
+TypeScript owns fast-flow sequencing and presentation. The same-user Connect
+socket/controller used by Settings remains the credential/config writer and
+durable cancellation authority: these queue-lock/revocation mechanisms cannot be
+replaced by a competing frontend writer. Explicit local opt-out disables uploads
+and waits for fresh uploads-off readback; failed writes offer a durable retry.
+Closing, renderer replacement and stale responses cannot open a successor's
+browser or complete onboarding. Opening a page never starts authorization.
+
+The packaged Electron route and native fallback are unchanged. Missing assets or
+renderer failure retain the existing local-only native presentation. Roll back
+the changed Welcome and Connect presentation together with their bridge and
+protocol consumers; retain the existing pen picker and consent/cancellation
+guards. Native adapters can be removed only after installed macOS/Linux
+authorization, cancellation, resume and pen-persistence acceptance. Synthetic
+browser/Electron fixtures do not establish live Google or installed native proof.
 
 On Omarchy the shortcut page shows the actual desktop chord before acceptance and
 also offers a custom shortcut. A custom choice uses the existing validated shortcut
@@ -227,7 +257,7 @@ the guided capture lesson. Permission-repair windows retain their existing behav
 macOS and Linux. Opening it does not sign in, grant upload consent or enable
 uploads. To hide the controls, set `"connectSettings": false` in the existing
 `experiments` object in `~/.config/apparent/config.json`, then close and reopen
-Settings. It adds no onboarding step and does not require `hostedSharing`. Without a configured `cloud.server`, sign-in uses
+Settings. Onboarding reuses this controller and does not require `hostedSharing`. Without a configured `cloud.server`, sign-in uses
 `https://hosted.tryapparent.com`; an existing valid custom origin is preserved.
 
 **Sign in to Connect… → Allow and continue → Open browser** explains the full
@@ -484,7 +514,7 @@ The default first-capture tour offers no preselected Record combination and no
 accept-current shortcut action. Save a valid combination in the existing editor,
 then press and release that combination once. Rust consumes the normal shortcut
 release as a trial: no capture, picker, microphone admission or clipboard handoff
-starts. Continue remains disabled until the trial succeeds. Changing the saved
+starts. The Electron setup advances on the native receipt; its native fallback keeps Continue until the trial succeeds. Changing the saved
 combination invalidates the trial. `onboarding.shortcutTestedFor` stores the exact
 effective label for restart checks; a mismatched binding returns to the trial.
 Completed users retain completion, and a desktop-managed Linux binding keeps its
@@ -508,32 +538,24 @@ Native fallback routing remains available until installed acceptance; disabling
 the Electron route is the existing rollback. Real platform shortcut/permission/focus
 and packaged acceptance remain separate from renderer and state-machine tests.
 
-### First-capture text note lesson
+### First-capture drawing sequence
 
-After whiteboard drawing, the whiteboard closes and the existing Electron coach
-shows **Add a note.** before the separate screen-drawing lesson:
-“Hold Shift and click a spot.”
-Its compact Shift-click illustration is presentation only, with Replay and a
-reduced-motion still. The trackpad helper appears only in the following screen-drawing lesson.
-Linux opens Whiteboard directly from its recording controls; its guide and
-illustration reflect that button rather than the Mac Screen menu. The existing
-notes editor remains the only place to enter real text; the coach
-never takes keyboard focus or submits a note. On Hyprland, the native adapter
-reconciles X11 keyboard focus after compositor placement for the same current
-owned editor request. Linux note positions convert native pixels to Electron DIP
-and placement converts back, so scaled editors retain their complete controls.
-Rust advances to screen drawing only after
-the current capture's notes session reports a nonempty durable save. Opening the
-editor, keeping a draft, dismissing, empty Enter or a failed write cannot satisfy
-this lesson. Screen marks made before the saved-note transition cannot satisfy
-the later screen-drawing prompt. An early finish still teaches paste/location, but cannot complete
-required practice without drawing and attaching a note. Completed users are not
-re-enrolled. Existing default Electron coaching and native fallback routing are
-unchanged; rollback/remove this lesson together with its durable-save check and
-illustration, rather than rendering a competing surface. Installed Mac/Linux acceptance
-must verify Whiteboard drawing → close Whiteboard → Shift-click → real editor →
-Attach/Enter → screen drawing → Finish, focus restoration,
-and bundle `notes.json`/semantic output. Renderer simulation is not native proof.
+After a real whiteboard stroke, the whiteboard closes and the Electron coach
+continues directly to **Draw on your screen.** The person must make a later,
+separate screen stroke before the coach advances to Finish. The note lesson and
+its Shift-click illustration are removed; adding notes remains optional, and the
+existing notes editor, save receipts and bundle output are unchanged. Old in-memory
+practice state at the removed `note` stage maps to screen drawing and requires a
+fresh stroke, so it cannot mistake earlier screen ink for the next action.
+Whiteboard and screen ink, paste confirmation and opening the current practice
+bundle remain the actual completion evidence. The trackpad helper still appears
+during screen drawing. Installed Mac/Linux acceptance remains required for native
+focus, capture and bundle behavior; renderer simulation is not native proof.
+
+Optional notes still use the existing editor and durable save receipt. On Hyprland,
+the native adapter reconciles keyboard focus after placement for the current owned
+editor request. Note positions convert native pixels to Electron DIP and back, so
+scaled editors retain their complete controls.
 
 The Electron first-capture start state keeps “Go again.” and the saved shortcut in
 the setup window, shortened to 520 pixels with the keys centered in its content. It becomes the floating coach only after capture selection
@@ -541,3 +563,38 @@ begins; the next shortcut still uses the existing native recording path. Returni
 to the start state restores the setup window. Native fallback routing is unchanged.
 
 The removed demonstration has no Electron renderer/assets. Both Electron and native fallback skip its legacy step through the authoritative Rust route; rollback requires reverting that route together with presentation changes.
+
+### Inline shortcut trial and whiteboard guide
+
+Linux records a full display directly. While the native sharing prompt is pending,
+the guide asks for a display; it does not animate the retired Screen selector.
+The recording illustration points directly to Whiteboard, and the tray-menu
+illustration omits Choose What to Record. macOS retains its Screen-to-Whiteboard
+and menu sequence. These illustrations never issue capture or completion actions.
+
+Electron setup keeps shortcut choice, the native non-recording trial and **Go
+again.** in the setup window. Saved shortcuts render as individual keys. Once
+saved, the main prompt asks for the shortcut; no disabled Continue competes
+with it. Only the native trial receipt advances setup. Finish shows those same
+keys without a second Finish-to-Copied illustration. The shortcut prompt and keys
+form one centred group. Finish uses a small close control instead of the Close
+guide button and Recording continues detail; it keeps the same dismissal action.
+
+During Electron first-capture practice, opening Whiteboard routes the existing
+setup renderer to the paper surface instead of opening GPUI or a separate coach.
+If the native drawing stage arrives before the board surface, the shared renderer
+stays hidden until that surface is ready, avoiding a transient drawing coach.
+Pointer input uses the private onboarding pipe, gated by the current transport,
+session, recording and per-open board identity. Rust's existing Board remains
+authoritative for human ink, undo/clear and export; no configuration writer is
+added. Coordinates remain paper points. The finite selected-pen scribble is a
+separate inert SVG, removed before **Your turn.** Replay affects only that SVG;
+reduced motion briefly shows a still. Drawing is available throughout.
+
+Other whiteboard uses retain GPUI. Missing Electron assets use the native route;
+a lost renderer restores the native board with its current human ink during the
+same recording. This is the bounded migration slice, not general whiteboard
+migration. Remove the GPUI donor only after the remaining consumers migrate and
+installed Mac/Linux focus, shortcuts, close/reopen, capture-bound drawing and
+bundle acceptance pass. Native acceptance for this revision remains unrun until
+parent verification; renderer tests do not establish it.

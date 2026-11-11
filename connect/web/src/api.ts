@@ -62,6 +62,7 @@ export async function device(userCode: string): Promise<Device> {
 }
 export const joinWaitlist = (csrf: string, interestedAtFiveDollars: boolean) => request("/v1/waitlist", csrf, { interestedAtFiveDollars })
 export const approveDevice = (csrf: string, userCode: string) => request("/v1/device/approve", csrf, { userCode })
+export const reportDeviceWaitlist = (csrf: string, userCode: string) => request("/v1/device/waitlist", csrf, { userCode })
 export const logout = (csrf: string) => request("/auth/logout", csrf)
 
 export type Share = { id: string; captureId: string; title: string; status: string; createdAt: string; expiresAt: string; url?: string }

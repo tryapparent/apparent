@@ -53,6 +53,8 @@ export type ErrorReporting = { status: 'connected'; enabled: boolean } |
   { status: 'disconnected' | 'incompatible' } | { status: 'error'; code: string };
 export type ConnectAction = 'connect' | 'allow' | 'cancel' | 'check' | 'disable' | 'disconnect' | 'open-browser' | 'request-disable' | 'request-disconnect' | 'open-shared-links';
 export type ConnectView = {
+  phase?: 'disconnected' | 'consent' | 'starting' | 'approval' | 'connected' | 'cancelling' | 'waitlisted' | 'failed';
+  localReady?: boolean;
   title: string; status: string; detail: string; server: string | null;
   verificationUri: string | null; userCode: string | null;
   buttons: ConnectButton[]; note: string;

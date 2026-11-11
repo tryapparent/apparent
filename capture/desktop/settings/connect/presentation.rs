@@ -73,6 +73,7 @@ impl Controller {
         }
         if let Some(error) = self.error {
             let title = match error {
+                SafeError::Waitlisted => "You’re on the Connect waitlist.",
                 SafeError::Cancelled => "Connection cancelled.",
                 SafeError::Offline => "Connect is offline.",
                 SafeError::AuthRequired => "Sign in again.",

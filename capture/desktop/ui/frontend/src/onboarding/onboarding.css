@@ -1,5 +1,23 @@
 @import '../../../../../../shared/ui/src/tokens.css';
 
+.native-agent-setup { width: 100%; }
+.native-setup[data-agent-setup=true] { border-radius: 0; }
+.native-setup[data-agent-setup=true] header { padding: 16px 32px; }
+.native-setup[data-agent-setup=true] footer { display: none; }
+.native-agent-setup h1 { text-align: left; }
+.native-agent-setup h1:focus { outline: none; }
+.native-agent-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.native-agent-choices button { display: flex; flex-direction: column; height: auto; min-height: 44px; padding: 0 0 16px; border: 1px solid var(--apparent-foreground); border-radius: 0; background: var(--apparent-background); color: var(--apparent-foreground); white-space: normal; }
+.native-agent-choices img { display: block; width: 100%; aspect-ratio: 620 / 490; object-fit: contain; }
+.native-agent-choices strong { font-size: 1.125rem; font-weight: 700; padding: 0 8px; }
+.native-agent-setup .native-agent-idk { display: block; margin: 24px auto 0; color: var(--apparent-primary); font-weight: 700; }
+.native-agent-explanation { padding: 16px 0; border-top: 1px solid var(--apparent-border); }
+.native-agent-explanation h2 { font-size: 1.125rem; font-weight: 700; margin: 0 0 8px; }
+.native-agent-setup .native-connect-disclosure { font-size: 1rem; line-height: 1.5; }
+.native-connect-art { display: block; width: 180px; max-width: 100%; margin: 0 auto 16px; }
+.native-brand-name { color: var(--apparent-primary); font-weight: 700; }
+@media (max-width: 480px) { .native-agent-choices { gap: 12px; } }
+
 /* Scope brand roles to onboarding; other Settings consumers keep their routing/style.
    Frog/puddle artwork, popup silhouettes and their motion are user-approved exceptions. */
 html.native-onboarding-shell {
@@ -67,7 +85,7 @@ html.native-onboarding-shell body { background: transparent !important; margin: 
 .native-setup[data-shortcut-state=true] .native-shortcut { flex: 1; margin: 0; }
 .native-shortcut kbd { font-family: inherit; display: grid; place-items: center; min-width: 120px; min-height: 100px; max-width: 100%; overflow-wrap: anywhere; text-align: center; padding: 20px 28px; background: var(--apparent-secondary); font-size: 2.5rem; font-weight: 500; color: var(--apparent-secondary-foreground); }
 .native-shortcut [role=group] { max-width: 100%; }
-.native-coach { position: absolute; top: 56px; left: 24px; right: 24px; max-width: 332px; background: var(--apparent-surface); border: 1px solid var(--apparent-border); border-radius: 24px 24px 24px 6px; padding: 24px; box-shadow: 0 1px 3px var(--apparent-shadow), 0 12px 30px var(--apparent-shadow); }
+.native-coach { position: absolute; top: 56px; left: 24px; right: 24px; max-width: 332px; background: var(--apparent-surface); border: 1px solid var(--apparent-border); border-radius: 24px 24px 24px 6px; padding: 24px; }
 /* Keep the frog outside the scroll area, including at 200% text size. */
 .native-coach-content { max-height: calc(100vh - 136px); overflow: auto; overflow-wrap: anywhere; }
 .native-coach > img { position: absolute; top: -43px; left: -5px; width: 80px; height: 55px; object-fit: contain; pointer-events: none; animation: native-guide-hop .42s cubic-bezier(.2,.7,.3,1); }
@@ -82,9 +100,6 @@ html.native-onboarding-shell body { background: transparent !important; margin: 
 .native-shortcut[data-managed=true] { gap: 12px; }
 .native-shortcut[data-managed=true] p { margin: 0; }
 .native-shortcut[data-managed=true] kbd { min-height: 64px; padding: 8px 16px; font-size: 2rem; }
-.native-account { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 36rem; }
-.native-account p { font-size: 1rem; margin: 0; }
-.native-account code { font-size: 1.25rem; letter-spacing: .12em; }
 .native-coach [role=alert], .native-setup [role=alert] { color: var(--apparent-destructive); background: var(--apparent-paper); padding: 8px; }
 .native-coach[data-arrow=true]:before { content: ''; position: absolute; top: -10px; left: calc(var(--coach-arrow,50%) - 9px); width: 18px; height: 18px; background: var(--apparent-surface); border-top: 1px solid var(--apparent-border); border-left: 1px solid var(--apparent-border); transform: rotate(45deg); }
 .native-pencils { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; max-width: 100%; margin: 32px 0 16px; }
@@ -140,7 +155,24 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 .native-trackpad-helper p { margin: 0; text-wrap: balance; }
 @media (min-width: 700px) {
   .native-coach[data-paired=true] { right: auto; width: 332px; }
-  body > #root > .native-trackpad-helper { position: absolute; left: 388px; top: 164px; width: 308px; margin: 0; box-shadow: 0 6px 16px var(--apparent-shadow); }
+  body > #root > .native-trackpad-helper { position: absolute; left: 388px; top: 164px; width: 308px; margin: 0; }
   body > #root > .native-trackpad-helper .native-trackpad-helper-content { max-height: calc(100vh - 222px); overflow: auto; }
   body > #root > .native-trackpad-helper:before { content: ''; position: absolute; left: -7px; top: calc(50% - 6px); width: 12px; height: 12px; transform: rotate(45deg); background: var(--apparent-surface); border-left: 1px solid var(--apparent-border); border-bottom: 1px solid var(--apparent-border); }
 }
+
+.native-wordmark { width: 138px; height: auto; }
+.native-saved-keys { display:flex; flex-wrap:wrap; justify-content:center; gap:12px; }
+.native-saved-keys kbd { min-width:76px; min-height:84px; padding:16px 24px; border-radius:6px; box-shadow:0 4px 0 var(--apparent-border); }
+
+.native-coach .native-saved-keys kbd { min-width:44px; min-height:48px; padding:8px 12px; font-size:24px; background:var(--apparent-lilac); color:var(--apparent-carbon); }
+
+/* Keep the instruction and keys together in the centre of the setup window. */
+.native-setup[data-shortcut-state=true] section { justify-content:center; text-align:center; gap:24px; }
+.native-setup[data-shortcut-state=true] section > h1,
+.native-setup[data-shortcut-state=true] section > p { margin:0; }
+.native-setup[data-shortcut-state=true] .native-shortcut { flex:0; margin:0; }
+
+.native-coach[data-stage=stop] .native-coach-content { position:relative; padding-top:8px; }
+.native-coach[data-stage=stop] h1 { text-align:center; padding-inline:44px; margin:0 0 24px; }
+.native-coach[data-stage=stop] .native-saved-keys { gap:16px; padding-bottom:8px; }
+.native-coach[data-stage=stop] .native-finish-close { position:absolute; top:0; right:0; padding:0; font-size:24px; }

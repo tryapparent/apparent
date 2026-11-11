@@ -390,7 +390,7 @@ test('permission refresh keeps setup unfocused and avoids repeating native geome
  // This Node fixture impersonates Electron before any bundle exists. Execute
  // the real TS policies; a cached dist directory must not be a test dependency.
  const hostRequire=require('node:module').createRequire(require.resolve('../electron/onboarding.cjs'));
- const policies=new Map(['presentation','account','hyprland'].map(name=>[`../dist/onboarding-${name}.cjs`,`./onboarding/${name}.ts`]));
+ const policies=new Map(['presentation','hyprland'].map(name=>[`../dist/onboarding-${name}.cjs`,`./onboarding/${name}.ts`]));
  const load=name=>{
   if(name==='electron')return electron;
   if(name.startsWith('../dist/'))assert.ok(policies.has(name),`Map the production policy source for ${name}`);
@@ -405,4 +405,31 @@ test('permission refresh keeps setup unfocused and avoids repeating native geome
  assert.equal(calls.filter(x=>x==='position').length,1,'same mode must preserve a user-moved window');
  stdin.emit('data','{"type":"show"}\n');
  assert.equal(calls.filter(x=>x==='show').length,2,'explicit parent show may reactivate setup');
+  // Native board stage precedes its identity; hide the existing window rather
+  // than resizing/showing a retired drawing coach. CDP focus emulation cannot
+  // establish BrowserWindow visibility, so assert the real host's window calls.
+  const opening=JSON.stringify({type:'state',step:'try-it',rows:[],ready:true,practice:'board-ink'});
+  const beforePending=calls.slice();
+  stdin.emit('data',opening+'\n');
+  assert.equal(window.visible,false);
+  assert.deepEqual(calls.slice(beforePending.length),['state']);
+  stdin.emit('data',JSON.stringify({type:'state',step:'try-it',rows:[],ready:true,practice:'note'})+'\n');
+  assert.equal(window.visible,true,'the next lesson must restore the coach');
+  assert.equal(calls.at(-1),'showInactive','restoring a coach must not take keyboard focus');
+});
+
+test('whiteboard bridge admits only finite paper input and copies a minimal command',()=>{
+ const {parseAction}=require('../electron/onboarding-protocol.cjs');
+ const base={action:'board',id:'apparent-123-a',operation:'begin',point:[40,60]};
+ assert.deepEqual(parseAction({...base,strokes:[[1,2]],demo:true}),base);
+ for(const point of [[NaN,1],[Infinity,1],[-1,1],[1600,1],[1,1100],[1],['1',2]])assert.throws(()=>parseAction({...base,point}));
+ for(const operation of ['replay','complete','export','stroke'])assert.throws(()=>parseAction({...base,operation}));
+ for(const id of ['', '../capture', 'x'.repeat(81)])assert.throws(()=>parseAction({...base,id}));
+ for(const operation of ['end','undo','clear','close'])assert.deepEqual(parseAction({...base,operation}),{action:'board',id:base.id,operation});
+});
+test('saved shortcut keys retain every modifier and a literal plus key',async()=>{
+ const {recordKeys}=await import('../src/onboarding/shortcut/keys.ts');
+ assert.deepEqual(recordKeys('⌃⌥⇧⌘A'),['⌃','⌥','⇧','⌘','A']);
+ assert.deepEqual(recordKeys('Ctrl + Alt + +'),['Ctrl','Alt','+']);
+ assert.deepEqual(recordKeys('Super + Shift + S'),['Super','Shift','S']);
 });
