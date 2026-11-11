@@ -595,27 +595,37 @@ fn ink_rule_key() -> String {
 /// guards prevent a delayed registration/cleanup from changing a successor.
 pub fn prepare_ink_rule(xid: u32, lifetime: u64) -> Result<()> {
     let key = ink_rule_key();
+    ink_rule_request(&ink_prepare_command(&key, xid, lifetime))
+}
+
+fn ink_prepare_command(key: &str, xid: u32, lifetime: u64) -> String {
     let title = ink_title(xid, lifetime, false);
-    let command = format!(
+    let visual_title = format!("{}(Draw|Fade)", title.strip_suffix("Fade").unwrap());
+    format!(
         "eval local r = _G['{key}']; \
          if not r or r.generation < {lifetime} then \
            local rule = hl.window_rule({{ name = '{key}', match = {{ class = '^Apparent$', title = '^{title}$' }}, no_focus = true }}); \
-           r = {{ generation = {lifetime}, closed = false, rule = rule }}; _G['{key}'] = r; \
-         end; assert(r.generation == {lifetime} and not r.closed and r.rule:is_enabled(), 'Ink rule unavailable')"
-    );
-    ink_rule_request(&command)
+           local ok, visual = pcall(hl.window_rule, {{ name = '{key}_visual', match = {{ class = '^Apparent$', title = '^{visual_title}$' }}, no_blur = true, no_shadow = true }}); \
+           if not ok then rule:set_enabled(false); error(visual) end; \
+           r = {{ generation = {lifetime}, closed = false, rule = rule, visual = visual }}; _G['{key}'] = r; \
+         end; assert(r.generation == {lifetime} and not r.closed and r.rule:is_enabled() and r.visual:is_enabled(), 'Ink rule unavailable')"
+    )
 }
 
 pub fn disable_ink_rule(lifetime: u64) -> Result<()> {
     let key = ink_rule_key();
-    let command = format!(
+    ink_rule_request(&ink_disable_command(&key, lifetime))
+}
+
+fn ink_disable_command(key: &str, lifetime: u64) -> String {
+    format!(
         "eval local r = _G['{key}']; \
          if not r or r.generation <= {lifetime} then \
            if r and r.rule then r.rule:set_enabled(false); assert(not r.rule:is_enabled(), 'Ink rule still enabled') end; \
-           _G['{key}'] = {{ generation = {lifetime}, closed = true, rule = r and r.rule }}; \
+           if r and r.visual then r.visual:set_enabled(false); assert(not r.visual:is_enabled(), 'Ink visual rule still enabled') end; \
+           _G['{key}'] = {{ generation = {lifetime}, closed = true, rule = r and r.rule, visual = r and r.visual }}; \
          end"
-    );
-    ink_rule_request(&command)
+    )
 }
 
 fn ink_rule_request(command: &str) -> Result<()> {
@@ -926,6 +936,20 @@ pub fn watch_reloads(reloaded: impl Fn() + Send + 'static) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ink_visual_rule_covers_draw_and_fade_without_taking_focus_policy() {
+        let command = ink_prepare_command("owned_ink", 0x123, 7);
+        let prefix = ink_title(0x123, 7, false).strip_suffix("Fade").unwrap().to_owned();
+        assert!(command.contains(&format!("title = '^{prefix}(Draw|Fade)$'")));
+        assert!(command.contains("no_blur = true, no_shadow = true"));
+        // Only the separate exact Fade rule may prevent focus; Draw needs input.
+        assert_eq!(command.matches("no_focus = true").count(), 1);
+        assert!(command.contains(&format!("title = '^{}$' }}, no_focus = true", ink_title(0x123, 7, false))));
+        let cleanup = ink_disable_command("owned_ink", 7);
+        assert!(cleanup.contains("r.visual:set_enabled(false)"));
+        assert!(cleanup.contains("not r.visual:is_enabled()"));
+    }
 
     const ALT_SHIFT: u32 = CARBON_OPTION_KEY | CARBON_SHIFT_KEY;
 

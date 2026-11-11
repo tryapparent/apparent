@@ -70,6 +70,23 @@ On Hyprland 0.56.2 with Lua configuration, the released overlay stays visible fo
 
 A click's position is right over X11 apps and with an absolute pointing device. With a mouse or touchpad over a Wayland app, XWayland still has the pointer where it last saw it, so the click's position is stale: the keyframe is cut at the right moment, but its ripple can be in the wrong place. A GNOME Shell extension that reports the pointer would close this gap (see the PR's open questions).
 
+On Lua Hyprland, Apparent also registers a process/session/window/lifetime-scoped
+visual rule before mapping its ink overlay. Both Draw and Fade disable compositor
+blur and shadow, so the transparent full-screen window does not blur the desktop.
+Only Fade receives the separate no-focus rule; Draw still accepts ink input.
+Both rules are disabled on ordinary cleanup and re-established after config reload.
+No user Hyprland files are written. This stays in the native adapter because the
+rules must be admitted before the native overlay maps; Electron controls and
+TypeScript recording policy keep their existing routing. Reverting the adapter
+restores the previous compositor behavior without changing saved recordings.
+
+The Linux Electron pill uses the existing X11 UI scale: an explicit
+`GPUI_X11_SCALE_FACTOR`, otherwise `Xft.dpi / 96`, otherwise 1. Hyprland may also
+scale XWayland windows. An old launcher forcing `GPUI_X11_SCALE_FACTOR=1.6666667`
+can therefore make the pill oversized; use `GPUI_X11_SCALE_FACTOR=1` for an
+unscaled XWayland presentation and restart Apparent. Explicit overrides remain
+supported rather than being silently ignored by the app.
+
 Without the `input` group, a capture on Wayland has no clicks, keys or ⇧ ink outside Apparent's own windows, and records only the screen and voice.
 
 ### Picker and portal limits
