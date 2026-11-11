@@ -574,10 +574,17 @@ pub enum LoginItem {
 /// Apply an explicit file preference to OS registration, without fighting approval switches.
 fn reconcile_login_item_in(
     path: &Path,
-    current: LoginItem,
-    stale_command: bool,
+    observe: impl FnOnce() -> (LoginItem, bool),
     mut set: impl FnMut(bool) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
+    // OS status can perform synchronous ServiceManagement IPC. With no
+    // explicit preference there is nothing to reconcile; never acquire it.
+    if crate::shared::handoff::load_config_from(path).launch_at_login.is_none() {
+        return Ok(());
+    }
+    let (current, stale_command) = observe();
+    // Preserve the original fresh preference read after OS observation: a user
+    // can edit or remove it while a native service is blocked.
     let Some(wanted) = crate::shared::handoff::load_config_from(path).launch_at_login else {
         return Ok(());
     };
@@ -596,7 +603,7 @@ pub fn reconcile_login_item() {
         return;
     }
     if let Err(error) = reconcile_login_item_in(
-        &crate::shared::handoff::default_config_path(), login_item(), login_command_stale(), set_login_item,
+        &crate::shared::handoff::default_config_path(), || (login_item(), login_command_stale()), set_login_item,
     ) {
         crate::capture::engine::runtime::apparent_log(format!("Launch at login: {error:#}"));
     }
@@ -2654,20 +2661,51 @@ mod tests {
     }
 
     #[test]
+    fn absent_login_preference_never_queries_the_os() {
+        let dir = TempDir::new("login-no-observation");
+        let path = dir.0.join("config.json");
+        let reconcile = || reconcile_login_item_in(&path,
+            || panic!("unconfigured login reconciliation must not enter an OS service"),
+            |_| panic!("unconfigured login reconciliation must not change registration"));
+        reconcile().unwrap();
+        let bytes = br#"{"unrelated":{"secret":"preserved"}}"#;
+        std::fs::write(&path, bytes).unwrap();
+        reconcile().unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn login_preference_is_rechecked_after_os_observation() {
+        let dir = TempDir::new("login-edit-during-observation");
+        let path = dir.0.join("config.json");
+        crate::shared::handoff::set_config_value_in(&path, "launchAtLogin", true.into()).unwrap();
+        let mut applied = Vec::new();
+        reconcile_login_item_in(&path, || {
+            crate::shared::handoff::set_config_value_in(&path, "launchAtLogin", false.into()).unwrap();
+            (LoginItem::On, false)
+        }, |on| { applied.push(on); Ok(()) }).unwrap();
+        assert_eq!(applied, [false], "use the preference edited during OS observation");
+        reconcile_login_item_in(&path, || {
+            crate::shared::handoff::set_config_value_in(&path, "launchAtLogin", serde_json::Value::Null).unwrap();
+            (LoginItem::On, false)
+        }, |_| panic!("a removed preference must not change OS registration")).unwrap();
+    }
+
+    #[test]
     fn external_login_preference_applies_only_when_it_differs_from_the_os() {
         let dir = TempDir::new("login-reconcile");
         let path = dir.0.join("config.json");
         let mut applied = Vec::new();
-        reconcile_login_item_in(&path, LoginItem::Off, false, |on| { applied.push(on); Ok(()) }).unwrap();
+        reconcile_login_item_in(&path, || (LoginItem::Off, false), |on| { applied.push(on); Ok(()) }).unwrap();
         assert!(applied.is_empty(), "an absent preference must not change existing OS state");
         crate::shared::handoff::set_config_value_in(&path, "launchAtLogin", true.into()).unwrap();
-        reconcile_login_item_in(&path, LoginItem::Off, false, |on| { applied.push(on); Ok(()) }).unwrap();
-        reconcile_login_item_in(&path, LoginItem::On, false, |on| { applied.push(on); Ok(()) }).unwrap();
-        reconcile_login_item_in(&path, LoginItem::On, true, |on| { applied.push(on); Ok(()) }).unwrap();
-        reconcile_login_item_in(&path, LoginItem::NeedsApproval, true, |on| { applied.push(on); Ok(()) }).unwrap();
+        reconcile_login_item_in(&path, || (LoginItem::Off, false), |on| { applied.push(on); Ok(()) }).unwrap();
+        reconcile_login_item_in(&path, || (LoginItem::On, false), |on| { applied.push(on); Ok(()) }).unwrap();
+        reconcile_login_item_in(&path, || (LoginItem::On, true), |on| { applied.push(on); Ok(()) }).unwrap();
+        reconcile_login_item_in(&path, || (LoginItem::NeedsApproval, true), |on| { applied.push(on); Ok(()) }).unwrap();
         assert_eq!(applied, [true, true]);
         crate::shared::handoff::set_config_value_in(&path, "launchAtLogin", false.into()).unwrap();
-        reconcile_login_item_in(&path, LoginItem::On, false, |on| { applied.push(on); Ok(()) }).unwrap();
+        reconcile_login_item_in(&path, || (LoginItem::On, false), |on| { applied.push(on); Ok(()) }).unwrap();
         assert_eq!(applied, [true, true, false]);
     }
 

@@ -11,27 +11,105 @@ pub(super) fn generation() -> u64 {
 }
 
 pub(in crate::capture::desktop) fn assets() -> Option<(PathBuf, PathBuf)> {
-    let executable = std::env::current_exe().ok()?;
-    let parent = executable.parent()?;
+    settings_assets().ok()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum OnboardingAssetFailure {
+    Executable,
+    AppDirectory,
+    Runtime,
+    SettingsHtml,
+    SettingsEntry,
+    Html,
+    Entry,
+}
+
+impl OnboardingAssetFailure {
+    pub(super) fn stage(self) -> &'static str {
+        match self {
+            Self::Executable => "executable_lookup_failed",
+            Self::AppDirectory => "app_directory_missing",
+            Self::Runtime => "runtime_missing",
+            Self::SettingsHtml => "settings_html_missing",
+            Self::SettingsEntry => "settings_entry_missing",
+            Self::Html => "onboarding_html_missing",
+            Self::Entry => "onboarding_entry_missing",
+        }
+    }
+}
+
+fn check_settings_assets(
+    app: &std::path::Path,
+    runtime: &std::path::Path,
+) -> Result<(), OnboardingAssetFailure> {
+    if !app.is_dir() {
+        return Err(OnboardingAssetFailure::AppDirectory);
+    }
+    if !runtime.is_file() {
+        return Err(OnboardingAssetFailure::Runtime);
+    }
+    if !app.join("dist/settings.html").is_file() {
+        return Err(OnboardingAssetFailure::SettingsHtml);
+    }
+    if !app.join("electron/main.cjs").is_file() {
+        return Err(OnboardingAssetFailure::SettingsEntry);
+    }
+    Ok(())
+}
+
+fn check_onboarding_assets(
+    app: &std::path::Path,
+    runtime: &std::path::Path,
+) -> Result<(), OnboardingAssetFailure> {
+    check_settings_assets(app, runtime)?;
+    if !app.join("dist/onboarding.html").is_file() {
+        return Err(OnboardingAssetFailure::Html);
+    }
+    if !app.join("electron/onboarding.cjs").is_file() {
+        return Err(OnboardingAssetFailure::Entry);
+    }
+    Ok(())
+}
+
+pub(super) fn onboarding_assets() -> Result<(PathBuf, PathBuf), OnboardingAssetFailure> {
+    // Preserve the original candidate selection: choose a complete Settings
+    // bundle first, then require its onboarding entry points.
+    let (app, runtime) = settings_assets()?;
+    check_onboarding_assets(&app, &runtime)?;
+    Ok((app, runtime))
+}
+
+fn settings_assets() -> Result<(PathBuf, PathBuf), OnboardingAssetFailure> {
+    let executable = std::env::current_exe().map_err(|_| OnboardingAssetFailure::Executable)?;
+    let parent = executable.parent().ok_or(OnboardingAssetFailure::Executable)?;
     #[cfg(target_os = "macos")]
-    let root = parent.parent()?.join("Resources/settings");
+    let root = parent
+        .parent()
+        .ok_or(OnboardingAssetFailure::Executable)?
+        .join("Resources/settings");
     #[cfg(not(target_os = "macos"))]
-    let root = parent.parent()?.join("share/apparent/settings");
+    let root = parent
+        .parent()
+        .ok_or(OnboardingAssetFailure::Executable)?
+        .join("share/apparent/settings");
     let development = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("capture/desktop/ui/frontend");
     let mut candidates = vec![(root.join("app"), root.join("runtime"))];
     if executable.starts_with(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target")) {
         candidates.push((development.clone(), development.join("node_modules/electron/dist")));
     }
+    let mut failure = OnboardingAssetFailure::AppDirectory;
     for (app, runtime) in candidates {
         #[cfg(target_os = "macos")]
         let runtime = runtime.join("Electron.app/Contents/MacOS/Electron");
         #[cfg(not(target_os = "macos"))]
         let runtime = runtime.join("electron");
-        if runtime.is_file() && app.join("dist/settings.html").is_file() && app.join("electron/main.cjs").is_file() {
-            return Some((app, runtime));
+        match check_settings_assets(&app, &runtime) {
+            Ok(()) => return Ok((app, runtime)),
+            Err(stage) => failure = stage,
         }
     }
-    None
+    Err(failure)
 }
 
 pub(super) fn open(about: bool, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyhow::Result<Transport> {
@@ -130,6 +208,59 @@ mod tests {
             expected.extend(mode);
             assert_eq!(args, expected);
         }
+    }
+
+    #[test]
+    fn onboarding_appimage_layout_reports_the_missing_asset_stage() {
+        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "apparent-onboarding-assets-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let app = root.join("app");
+        let runtime = root.join("runtime/electron");
+        assert_eq!(
+            check_onboarding_assets(&app, &runtime),
+            Err(OnboardingAssetFailure::AppDirectory)
+        );
+        assert_eq!(OnboardingAssetFailure::AppDirectory.stage(), "app_directory_missing");
+        std::fs::create_dir_all(&app).unwrap();
+        assert_eq!(
+            check_onboarding_assets(&app, &runtime),
+            Err(OnboardingAssetFailure::Runtime)
+        );
+        assert_eq!(OnboardingAssetFailure::Runtime.stage(), "runtime_missing");
+        std::fs::create_dir_all(runtime.parent().unwrap()).unwrap();
+        std::fs::write(&runtime, "synthetic runtime").unwrap();
+        assert_eq!(check_onboarding_assets(&app, &runtime), Err(OnboardingAssetFailure::SettingsHtml));
+        std::fs::create_dir_all(app.join("dist")).unwrap();
+        std::fs::write(app.join("dist/settings.html"), "synthetic settings").unwrap();
+        assert_eq!(check_onboarding_assets(&app, &runtime), Err(OnboardingAssetFailure::SettingsEntry));
+        std::fs::create_dir_all(app.join("electron")).unwrap();
+        std::fs::write(app.join("electron/main.cjs"), "synthetic settings entry").unwrap();
+        assert_eq!(
+            check_onboarding_assets(&app, &runtime),
+            Err(OnboardingAssetFailure::Html)
+        );
+        assert_eq!(OnboardingAssetFailure::Html.stage(), "onboarding_html_missing");
+        std::fs::create_dir_all(app.join("dist")).unwrap();
+        std::fs::write(app.join("dist/onboarding.html"), "synthetic html").unwrap();
+        assert_eq!(
+            check_onboarding_assets(&app, &runtime),
+            Err(OnboardingAssetFailure::Entry)
+        );
+        assert_eq!(OnboardingAssetFailure::Entry.stage(), "onboarding_entry_missing");
+        std::fs::create_dir_all(app.join("electron")).unwrap();
+        std::fs::write(app.join("electron/onboarding.cjs"), "synthetic entry").unwrap();
+        assert_eq!(check_onboarding_assets(&app, &runtime), Ok(()));
+        // Onboarding files alone must never bypass the original Settings gate.
+        std::fs::remove_file(app.join("dist/settings.html")).unwrap();
+        assert_eq!(check_onboarding_assets(&app, &runtime), Err(OnboardingAssetFailure::SettingsHtml));
+        std::fs::write(app.join("dist/settings.html"), "synthetic settings").unwrap();
+        std::fs::remove_file(app.join("electron/main.cjs")).unwrap();
+        assert_eq!(check_onboarding_assets(&app, &runtime), Err(OnboardingAssetFailure::SettingsEntry));
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
 
