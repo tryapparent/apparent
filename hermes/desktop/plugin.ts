@@ -24,7 +24,7 @@ export default {
         if (!route) throw new Error('The local Apparent route is unavailable. The capture remains saved locally.');
         const result = await host.requestProfile(route, 'shell.exec', { command: keyCommand(operation.token) });
         const key = result?.stdout?.trim();
-        if (result?.code !== 0 || !validToken(key) || key === operation.token) throw new Error('Apparent recording bridge is unavailable');
+        if (result?.code !== 0 || typeof key !== 'string' || !validToken(key) || key === operation.token) throw new Error('Apparent recording bridge is unavailable');
         bridgeKey = { token: operation.token, value: key };
       }
       const secret = bridgeKey.value;
@@ -164,7 +164,7 @@ export default {
     Promise.resolve(ctx.storage.get('recording')).then(async value => {
       if (disposed || pending || !value) return;
       if (value.version !== 3) { await ctx.storage.set('recording', null); report('This older recording handoff cannot resume safely. Copy its recording from Apparent into Hermes.'); return; }
-      if (!validToken(value.token) || !Number.isInteger(value.port) || value.port < 32768 || value.port > 60999 || !Number.isFinite(value.created)) return;
+      if (typeof value.token !== 'string' || !validToken(value.token) || !Number.isInteger(value.port) || value.port < 32768 || value.port > 60999 || !Number.isFinite(value.created)) return;
       if (!value.destination || !['session', 'storedSession', 'connectionId', 'profile', 'targetProfile', 'mode'].every(key => typeof value.destination[key] === 'string' && value.destination[key]) || typeof value.destination.local !== 'boolean') return;
       if (!value.localRoute || !['connectionId', 'profile', 'targetProfile'].every(key => typeof value.localRoute[key] === 'string' && value.localRoute[key])) return;
       if (value.source !== undefined && !validSource(value.source)) return;
