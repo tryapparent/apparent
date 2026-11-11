@@ -894,8 +894,6 @@ pub struct ApparentCoordinator {
     electron_pill_routed: bool,
     #[cfg(target_os="macos")]
     electron_pill_exclusions: Vec<u32>,
-    #[cfg(target_os = "linux")]
-    electron_equalizer: InputEqualizer,
     iphone_preview: Option<PhoneSession>,
     island_phase: IslandPhase,
     island_prev_phase: IslandPhase,
@@ -1032,8 +1030,6 @@ impl ApparentCoordinator {
             electron_pill_routed: false,
             #[cfg(target_os="macos")]
             electron_pill_exclusions: Vec::new(),
-            #[cfg(target_os = "linux")]
-            electron_equalizer: InputEqualizer::default(),
             iphone_preview: None,
             island_phase: IslandPhase::Hidden,
             island_prev_phase: IslandPhase::Hidden,
@@ -2781,6 +2777,13 @@ impl ApparentCoordinator {
                 .active_recording
                 .as_ref()
                 .and_then(ActiveRecording::mic_warning),
+            input_level: matches!(self.island_phase, IslandPhase::Recording).then(|| {
+                self.active_recording.as_ref().and_then(|recording| match &recording.source {
+                    CaptureSource::Screen { audio: Some(audio), .. } =>
+                        Some(audio.input_activity().map_or(0.0, |(_, level)| level)),
+                    _ => None,
+                })
+            }).flatten(),
             reduced_motion: self.reduced_motion,
             style: PillStyle::current(),
         }

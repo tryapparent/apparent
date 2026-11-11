@@ -710,7 +710,7 @@ fn layout_of_warning(
         Pres::Recording { chips, has_iphone }
         | Pres::RecordingWarning { chips, has_iphone } => {
             let clock_w = m.clock_width(clock);
-            let lead_w = CHIP_H + clock_w + LEAD_TRAIL;
+            let lead_w = CHIP_H + clock_w + LEAD_TRAIL + 32.0;
             raw.push((ElemId::Lead, lead_w, CHIP_CORE_ROUND, 0.0, true));
             raw.push((ElemId::DividerLead, DIVIDER_W, 0.0, 0.0, false));
             if let Some(warning) = warning {
@@ -893,10 +893,12 @@ pub struct FrameElem {
 #[derive(Clone, Debug)]
 pub struct FrameState {
     pub t: f32,
+    pub reduced_motion: bool,
     pub shape: Silhouette,
     pub ghost: Option<Silhouette>,
     pub is_completed: bool,
     pub mic_warning: Option<InputWarning>,
+    pub input_level: Option<f32>,
     pub completed_warning: bool,
     pub content_blur: f32,
     pub content_alpha: f32,
@@ -929,6 +931,7 @@ pub struct PillModel {
     pub labels: LabelWidths,
     pub metrics: Metrics,
     pub mic_warning: Option<InputWarning>,
+    pub input_level: Option<f32>,
 }
 
 impl PillModel {
@@ -960,6 +963,7 @@ impl PillModel {
             labels: LabelWidths::default(),
             metrics,
             mic_warning: None,
+            input_level: None,
         }
     }
 
@@ -1675,11 +1679,13 @@ impl PillModel {
         }
 
         FrameState {
+            reduced_motion: self.reduced,
             t: self.t,
             shape,
             ghost,
             is_completed: matches!(self.geo_pres, Pres::Completed { .. }),
             mic_warning: self.mic_warning,
+            input_level: self.input_level,
             completed_warning: matches!(self.geo_pres, Pres::Completed { warning: true, .. }),
             content_blur: max_blur,
             content_alpha: max_alpha,

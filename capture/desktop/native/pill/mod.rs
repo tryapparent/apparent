@@ -553,6 +553,10 @@ impl NativePill {
                 st.dirty = true;
             }
             st.model.reduced = snapshot.reduced_motion;
+            if st.model.input_level != snapshot.input_level {
+                st.model.input_level = snapshot.input_level;
+                st.dirty = true;
+            }
             if st.model.clock != snapshot.clock {
                 st.pipelines.atlas.update_clock(&snapshot.clock);
                 st.model.set_clock(&snapshot.clock);
@@ -1075,6 +1079,8 @@ impl MetalPipelines {
                 [slot_x + TILE_PAD_PT, slot_y + TILE_PAD_PT],
                 frame.t,
                 frame.mic_warning,
+                frame.input_level,
+                frame.reduced_motion,
                 frame.completed_warning,
                 theme,
                 frame
@@ -1259,6 +1265,8 @@ fn emit_elem_prims(
     [ox, oy]: [f32; 2],
     t: f32,
     mic_warning: Option<crate::capture::engine::runtime::audio::audio::InputWarning>,
+    input_level: Option<f32>,
+    reduced_motion: bool,
     completed_warning: bool,
     theme: PillTheme,
     recording_warning: bool,
@@ -1422,6 +1430,17 @@ fn emit_elem_prims(
         ElemId::Lead => {
             if is_glass {
                 push_shape(out, [ox, oy, bw, bh], bh * 0.5, [0.06, 0.07, 0.10, 0.24]);
+            }
+            // Native fallback/Glass only projects capture amplitude into geometry. The
+            // Electron presentation owns smoothing; no synthetic oscillator drives bars.
+            if let Some(level) = input_level {
+                for (index, gain) in [0.55, 0.8, 1.0, 0.75, 0.5].iter().enumerate() {
+                    let height = if reduced_motion { 10.0 } else { 3.0 + 15.0 * gain * level };
+                    let alpha = if reduced_motion && level <= 0.01 { 0.4 } else { 1.0 };
+                    push_shape(out, [ox + bw - 30.0 + index as f32 * 5.0,
+                        oy + (bh - height) * 0.5, 3.0, height], 1.5,
+                        color(theme.text(), alpha));
+                }
             }
             let tx = atlas.clock_sprite;
             let cycle = 1.6_f32;
@@ -1746,6 +1765,37 @@ mod tests {
             height: h as u32,
             rgba,
             badge_bottom_left: false,
+        }
+    }
+
+    #[test]
+    fn captured_input_changes_native_pixels_without_changing_control_geometry() {
+        let mut pipelines = MetalPipelines::new(2.0).expect("MetalPipelines::new failed");
+        let mut model = PillModel::new(atlas::measure_metrics());
+        let pres = Pres::Recording { chips: false, has_iphone: false };
+        for dark in [true, false] {
+            for reduced in [true, false] {
+                model.reduced = reduced;
+                model.input_level = Some(0.0);
+                let quiet = still_with_theme(&mut pipelines, &mut model, &pres, 1.5, PillTheme { dark });
+                let quiet_frame = model.frame();
+                model.input_level = Some(0.8);
+                // Same timestamp and layout: only the captured amplitude differs.
+                let active = still_with_theme(&mut pipelines, &mut model, &pres, 0.0, PillTheme { dark });
+                assert_ne!(quiet.rgba, active.rgba, "captured input must change pixels");
+                for (before, after) in quiet_frame.elems.iter().zip(model.frame().elems.iter()) {
+                    assert_eq!(before.base_size, after.base_size);
+                    assert_eq!(before.rect, after.rect);
+                }
+                if let Some(dir) = std::env::var_os("APPARENT_PILL_STILLS") {
+                    let dir = std::path::PathBuf::from(dir);
+                    std::fs::create_dir_all(&dir).unwrap();
+                    for (name, frame) in [("quiet", quiet), ("active", active)] {
+                        crate::capture::engine::render::save_png(&frame,
+                            &dir.join(format!("meter-{name}-dark-{dark}-reduced-{reduced}.png"))).unwrap();
+                    }
+                }
+            }
         }
     }
 

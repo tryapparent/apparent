@@ -5,6 +5,7 @@ fn snapshot(pres: Pres) -> PillSnapshot {
         pres,
         clock: "00:12".into(),
         mic_warning: None,
+        input_level: None,
         reduced_motion: false,
         style: PillStyle::Black,
     }
@@ -299,4 +300,11 @@ fn electron_pill_requires_an_explicit_capture_for_handoff() {
         view.admit(command(1, "dismiss")),
         Some(PillAction::DismissCompleted)
     ));
+}
+
+#[test]
+fn captured_level_projects_to_shared_pill_without_a_platform_gate() {
+    let mut source = snapshot(Pres::Recording { chips: false, has_iphone: false });
+    source.input_level = Some(0.6);
+    assert_eq!(View::new(&source, 1, false).input_level, Some(0.6));
 }

@@ -48,7 +48,7 @@ impl View {
                 .map(|warning| warning.announcement().to_owned()),
             reduced_motion: snapshot.reduced_motion,
             draggable: false,
-            input_level: None,
+            input_level: snapshot.input_level,
             actions: vec![],
         };
         match &snapshot.pres {

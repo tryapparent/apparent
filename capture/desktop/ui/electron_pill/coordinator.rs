@@ -68,23 +68,8 @@ impl ApparentCoordinator {
         if self.electron_pill.is_none() {
             return;
         }
-        let mut view = self.electron_pill_view(0);
+        let view = self.electron_pill_view(0);
         let selection = self.electron_pill_selection();
-        #[cfg(target_os = "linux")]
-        if matches!(self.island_phase, IslandPhase::Recording) {
-            let activity =
-                self.active_recording
-                    .as_ref()
-                    .and_then(|recording| match &recording.source {
-                        crate::capture::desktop::CaptureSource::Screen {
-                            audio: Some(audio),
-                            ..
-                        } => audio.input_activity(),
-                        _ => None,
-                    });
-            self.electron_equalizer.step(activity, self.reduced_motion);
-            view.input_level = Some(self.electron_equalizer.level.clamp(0.0, 1.0));
-        }
         if let Some(session) = &mut self.electron_pill {
             session.update(view, self.capture_generation, selection);
         }
