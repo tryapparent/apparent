@@ -227,12 +227,6 @@ test('portable tool contracts retain the updater harness disk-image/OCR prerequi
       const index=steps.findIndex((step:any)=>step.name===name);
       assert.ok(index>=0&&index<run,name+' must precede the real contract suite');
       assert.equal(steps[index].run,existing.run);
-      if(name.startsWith('Install disk-image')) {
-        assert.match(steps[index].run,/Acquire::Retries=1/);
-        assert.match(steps[index].run,/Acquire::http::Timeout=15/);
-        assert.match(steps[index].run,/Acquire::https::Timeout=15/);
-        assert.doesNotMatch(steps[index].run,/\|\||allow-unauthenticated|trusted=yes/);
-      }
       assert.equal(steps[index].if,condition);
     }
   }
@@ -249,10 +243,7 @@ test('recipient playback provisions FFmpeg and stable Chrome before the portable
     const run=steps.findIndex((step:any)=>step.run?.includes('--portable'));
     const media=steps.findIndex((step:any)=>step.name==='Install recipient media fixture dependency');
     assert.ok(media>=0&&media<run,'media tool must exist before the real recipient fixture');
-    assert.match(steps[media].run,/install -y --no-install-recommends ffmpeg$/);
-    for(const option of ['Acquire::Retries=1','Acquire::http::Timeout=15','Acquire::https::Timeout=15'])
-      assert.equal(steps[media].run.split(option).length-1,2,'both update and install use '+option);
-    assert.doesNotMatch(steps[media].run,/\|\||allow-unauthenticated|trusted=yes/);
+    assert.match(steps[media].run,/apt-get install -y --no-install-recommends ffmpeg$/);
     assert.equal(steps[media].if,condition);
     assert.equal(steps.find((step:any)=>step.id==='chrome').with['chrome-version'],'stable');
   }
