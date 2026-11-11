@@ -12,9 +12,61 @@ function deferred<T>() {
 }
 function fixture(patch: Partial<PickerDriver> = {}) {
  const calls={change:0,openGo:0,navigate:0,picker:0};
- const driver:PickerDriver={storageIdle:async()=>{},change:async()=>{calls.change++;},picker:async()=>{calls.picker++;return 'owned-picker';},openGo:async()=>{calls.openGo++;},goSheet:async()=> 'owned-go-sheet',navigate:async()=>{calls.navigate++;},...patch};
+ const driver:PickerDriver={storageIdle:async()=>{},change:async()=>{calls.change++;},picker:async()=>{calls.picker++;return 'owned-picker';},openGo:async()=>{calls.openGo++;},goSheet:async()=> 'owned-go-sheet',enterPath:async()=>{},pathReady:async()=> 'owned path readback',wait:async()=>{},navigate:async()=>{calls.navigate++;},...patch};
  return {calls,driver};
 }
+test('path entry and readback have separate bounded calls before one navigation', async () => {
+ const order:string[]=[];
+ let entered=false,observed=false,settled=false;
+ const {driver}=fixture();
+ Object.assign(driver,{
+  enterPath:async(path:string)=>{assert.equal(path,'/synthetic/selected captures');order.push('enter');entered=true;},
+  pathReady:async(path:string)=>{assert.ok(entered);assert.equal(path,'/synthetic/selected captures');order.push('readback');observed=true;return 'owned path readback';},
+  wait:async(ms:number)=>{assert.ok(observed);assert.equal(ms,1000);order.push('autocomplete');settled=true;},
+  navigate:async()=>{assert.ok(settled,'Return must not share the path-entry subprocess');order.push('navigate');},
+ });
+ const receipt={};
+ await prepareStorageChange(driver,'/synthetic/selected captures',receipt);
+ assert.deepEqual(order,['enter','readback','autocomplete','navigate']);
+ assert.equal((receipt as Record<string,unknown>).pathEntered,true);
+ assert.equal((receipt as Record<string,unknown>).pathReadback,'owned path readback');
+});
+test('unknown path entry or failed readback never replays entry or sends Return', async () => {
+ for (const phase of ['entry','readback','autocomplete']) {
+  let entries=0,reads=0,navigations=0;
+  const failure=Object.assign(Error(`${phase} native deadline`),{signal:'SIGKILL'});
+  const {driver}=fixture({
+   enterPath:async()=>{entries++;if(phase==='entry')throw failure;},
+   pathReady:async()=>{reads++;if(phase==='readback')throw failure;return 'owned path readback';},
+   wait:async()=>{if(phase==='autocomplete')throw failure;},
+   navigate:async()=>{navigations++;},
+  });
+  const receipt:Record<string,unknown>={};
+  await assert.rejects(prepareStorageChange(driver,'/synthetic/path',receipt),error=>error===failure);
+  assert.equal(entries,1);assert.equal(navigations,0);
+  assert.equal(reads,phase==='entry'?0:1);
+  assert.equal(receipt.pathEntered,phase==='entry'?undefined:true);
+  assert.equal(receipt.pathReadback,phase==='autocomplete'?'owned path readback':undefined);
+ }
+});
+test('native path entry, read-only readback and Return remain distinct owned operations', () => {
+ const source=readFileSync('enablement/prerequisites/mac-picker.ts','utf8');
+ const start=source.indexOf('        if operation is "enter-go-path" then');
+ const read=source.indexOf('        else if operation is "inspect-go-path" then',start);
+ const navigate=source.indexOf('        else if operation is "navigate-go" then',read);
+ const end=source.indexOf('      else if operation is "open-go"',navigate);
+ assert.ok(start>0&&read>start&&navigate>read&&end>navigate);
+ assert.match(source.slice(start,read),/set value of pathField to \(item 2 of argv\)/);
+ assert.doesNotMatch(source.slice(start,read),/key code|delay|value of pathField as text/);
+ assert.match(source.slice(read,navigate),/Go to Folder path readback differs/);
+ assert.doesNotMatch(source.slice(read,navigate),/set value|key code|delay/);
+ const mutation=source.slice(navigate,end);
+ assert.doesNotMatch(mutation,/set value|delay/);
+ assert.match(mutation,/requireNativeFocus/);
+ assert.match(mutation,/Go to Folder sheet disappeared before navigation/);
+ assert.match(mutation,/Go to Folder path changed before navigation/);
+ assert.equal(mutation.match(/key code 36/g)?.length,1);
+});
 test('query timing preserves the exact selector and stable source-line identities', () => {
  const source=readFileSync('enablement/prerequisites/mac-picker.ts','utf8');
  const original=source.slice(source.indexOf('const pickerScript = `')+'const pickerScript = `'.length,source.indexOf('\n`;')+1);

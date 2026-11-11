@@ -537,18 +537,25 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       await expect(card.getByRole('button', { name: 'Refresh usage', exact: true })).toBeEnabled({ timeout: budget() });
       await expect(card.getByText(/ in captures$/)).toBeVisible({ timeout: budget() });
     };
+    const goPathOperation = (operation, target) => {
+      assert.equal(electronChild.exitCode, null, 'Owned Electron exited before picker navigation');
+      assert.equal(electronChild.signalCode, null, 'Owned Electron was signalled before picker navigation');
+      return osa(panelScript, [String(electronChild.pid), target, operation, electronExecutable]);
+    };
     const prepared = await prepareStorageChange({
       storageIdle: waitStorageIdle,
       change: async () => { startNativeChange(); },
       picker: () => poll(() => panel('inspect'), 'Native Change picker readiness'),
       openGo: () => panel('open-go'),
       goSheet: () => poll(() => panel('inspect-go'), 'Owned Go to Folder readiness'),
-      // Only the OS picker receives the path, as argv data, never renderer/IPC.
-      navigate: (target) => {
-        assert.equal(electronChild.exitCode, null, 'Owned Electron exited before picker navigation');
-        assert.equal(electronChild.signalCode, null, 'Owned Electron was signalled before picker navigation');
-        return osa(panelScript, [String(electronChild.pid), target, 'navigate-go', electronExecutable]);
+      enterPath: (target) => goPathOperation('enter-go-path', target),
+      pathReady: (target) => poll(() => goPathOperation('inspect-go-path', target), 'Owned Go path readback readiness'),
+      wait: async (ms) => {
+        assert.equal(budget(ms), ms, 'Insufficient native autocomplete budget');
+        await new Promise(resolve => setTimeout(resolve, ms));
       },
+      // Only the OS picker receives the path, as argv data, never renderer/IPC.
+      navigate: (target) => goPathOperation('navigate-go', target),
     }, selected, report.nativePickerPreparation = {});
     report.nativeBeforeGo = prepared.beforeGo;
     report.nativeGoSheet = prepared.goSheet;
