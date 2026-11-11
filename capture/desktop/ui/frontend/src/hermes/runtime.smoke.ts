@@ -139,7 +139,16 @@ test('trusted local autostart records through the signed mailbox without creatin
   try {
     application = await electron.launch({ args: [bootstrap, mainBundle, '--hermes-request', `${token}/${port}`, '--hermes-autostart', '--apparent-executable', path.join(root, 'src/hermes/testing/cli.ts')],
       env: { ...process.env, HOME: home, APPARENT_SYNTHETIC_APP_DATA: appData, XDG_RUNTIME_DIR: runtime, XDG_CONFIG_HOME: path.join(job, 'config'), APPARENT_SYNTHETIC_NEEDS_LAUNCH: '1', APPARENT_SYNTHETIC_RECEIPT: path.join(job, 'receipt.json'), APPARENT_SYNTHETIC_TRACE: path.join(job, 'trace.jsonl') } });
-    const key = await readFile(keyFile, 'utf8');
+    // A windowless launch has no firstWindow() readiness barrier. The key is
+    // published only after the bridge binds; launch() can resolve before that.
+    let key = '';
+    await until(async () => {
+      try { key = await readFile(keyFile, 'utf8'); return true; }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        return false;
+      }
+    });
     const stateURL = `http://127.0.0.1:${port}/${id}/state/${await sign(key, `state:${id}`)}`;
     const readState = async () => authenticatedState(key, await (await fetch(stateURL, { headers: { Origin: 'null' } })).json());
     await until(async () => (await readState() as any)?.phase === 'recording');
