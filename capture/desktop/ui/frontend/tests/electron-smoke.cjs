@@ -524,7 +524,12 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('alert')).toHaveText('The colour could not be saved. Try choosing it again.');
   await expect(page.getByRole('button',{name:'blue pen',exact:true})).toBeEnabled();
   assert.equal(advances(),beforeBack);
-  await page.getByRole('alert').scrollIntoViewIfNeeded();
+  for(const width of [760,320]){
+    await page.setViewportSize({width,height:720});
+    await page.locator('.native-setup section').evaluate(section=>section.scrollTop=0);
+    const alert=await page.getByRole('alert').boundingBox(),section=await page.locator('.native-setup section').boundingBox();
+    assert.ok(alert.y>=section.y&&alert.y+alert.height<=section.y+section.height,'save feedback must be visible above the footer without scrolling');
+  }
   if(process.env.APPARENT_PEN_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_PEN_EVIDENCE,'picker-save-error-dark-320.png')});
   await page.getByRole('button',{name:'blue pen',exact:true}).press('Space');
   await expect.poll(saves).toBe(beforeSave+2);
