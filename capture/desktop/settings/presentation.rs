@@ -41,9 +41,6 @@ pub(super) fn open(about: bool, events: Arc<dyn Fn(Event) + Send + Sync>) -> any
     if about { launch.arg("--settings-about"); }
     let mut child = launch
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
-    crate::capture::engine::runtime::apparent_log(format!(
-        "Settings Electron launched: pid={} pane={}", child.id(), if about { "About" } else { "Storage" }
-    ));
     let stdin = child.stdin.take();
     let stdout = child.stdout.take();
     let child = crate::capture::ui_process::UiChild::new(child);
