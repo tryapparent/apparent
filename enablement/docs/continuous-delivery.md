@@ -26,7 +26,7 @@ older client/server source.
 
 ## Continuous delivery
 
-`checks.yml` is the only automatic workflow, on PRs targeting main and main
+`checks.yml` is the native/shared automatic workflow, on PRs targeting main and main
 pushes. PR updates coalesce; main commits have distinct concurrency groups so
 later documentation cannot cancel earlier code verification. Drafts retain cheap
 contracts and relevant Public checks; ready PRs verify the proposed merge tree.
@@ -38,7 +38,7 @@ agent skill embedded in the CLI retains native coverage. Public and Connect web
 source do not select Rust or Electron. Shared UI/assets retain their real web,
 service, Desktop and native consumers. Service changes retain client/root API
 integration and run the canonical service build, serial tests and recipient browser.
-Hermes inspection runs on Linux and Mac only for its relevant inputs. Audited
+Hermes inspection and complete compiled package delivery run independently in `hermes.yml` (continuous delivery hermes), on Linux and Mac for every PR/main candidate. Native admission does not consume Hermes results. Audited
 Linux drivers run launch-free contracts. Unknown inputs/history, empty deltas,
 unsafe modes/types, embedded instructions and execution-sensitive CI retain broad checks.
 Repository `AGENTS.md` guidance runs cheap contracts only in local pushes and

@@ -14,3 +14,5 @@ __pycache__/
 /capture/desktop/ui/frontend/.storage-policy-build/
 
 /capture/desktop/ui/frontend/electron/connect.cjs
+
+/hermes/desktop/node_modules/

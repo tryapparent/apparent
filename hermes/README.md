@@ -1,6 +1,6 @@
 # Apparent for Hermes
 
-Native plugin source candidate, version **0.3.1**. Paste an Apparent recording handoff into
+Version **0.3.2**. Paste an Apparent recording handoff into
 Hermes and press Send. `apparent_inspect` returns the spoken instructions,
 timestamped interaction context and actual contact-sheet pixels together.
 Pass `frame` to read a numbered keyframe when a detail needs closer inspection.
@@ -24,20 +24,36 @@ Fresh onboarding and microphone capture on both platforms remain release gates.
 
 ## Desktop package and routing
 
-The desktop half is TypeScript. Hermes loads `desktop/plugin.js`, so generate a
-package before installing it to get the button:
+Install the complete `apparent-hermes-0.3.2.tar.gz` and matching `.sha256` from
+[Hermes releases](https://github.com/tryapparent/apparent/releases?q=hermes-v).
+Each prerelease tag includes the plugin version and exact verified main SHA.
+Verify `sha256sum -c apparent-hermes-0.3.2.tar.gz.sha256` (on macOS use
+`shasum -a 256 -c`), extract into a private directory, then run:
 
 ```sh
-npm ci --ignore-scripts --prefix capture/desktop/ui/frontend
-node --experimental-strip-types hermes/desktop/package.ts /tmp/apparent-dev-hermes-JOB/plugin
-hermes plugins validate /tmp/apparent-dev-hermes-JOB/plugin
+node install.cjs --profile /absolute/path/to/active/hermes/profile
+hermes plugins validate /absolute/path/to/active/hermes/profile/plugins/apparent --install-deps
+hermes plugins doctor /absolute/path/to/active/hermes/profile/plugins/apparent --ci
+hermes plugins enable apparent
 ```
 
-Use a new private per-job `/tmp/apparent-dev-…` directory. This build needs Node
-and the frontend's locked dependencies, without Rust or cached Rust outputs.
-Install the staged package through Hermes's normal reviewed install flow, then
-enable its Desktop and Agent halves. Source/Git installation alone has no
-generated desktop entry. This command publishes no catalog artifact.
+Use Node >=22.23.0 for the installer. Set `HERMES_HOME` to that profile for
+Hermes commands. The writer installs only `plugins/apparent`, leaves config and
+activation untouched. It fills missing package files and accepts identical files,
+preserving unrelated files. Modified package files and symlinks are refused.
+Profile ancestors must be owned by the user/root and not writable by other users
+(root-owned sticky temporary roots are allowed). Concurrent malicious processes
+running as the same user are outside this local installer trust boundary.
+Back up/move an older or modified plugin explicitly before replacement. Restart Hermes
+Desktop and Agent after enabling. No source checkout or compiler is needed.
+`compatibility.json` records plugin version, source revision, required Hermes SDK
+capabilities and native Apparent capabilities. Recording requires the compatible
+installed native app and normal consent; this artifact does not install it.
+
+Developers can build independently with `npm ci --ignore-scripts --prefix
+hermes/desktop` then `node --experimental-strip-types hermes/desktop/package.ts
+/tmp/apparent-dev-hermes-JOB/release` (destination must not exist). Only the
+Hermes lockfile is used; no Desktop frontend, Rust or unrelated builds are needed.
 
 Recorder adapters that preflight `capture state` must use
 `captureCanStart` from `desktop/controller.ts`: both `idle` and `completed`
@@ -164,8 +180,16 @@ suite on Linux and macOS. Integration proof separately exercises an installed
 Apparent CLI and Hermes registry/model. Python is the explicitly authorized
 Hermes integration exception; this package imports no application internals.
 
-Plugin versions are independent of app versions. A future `hermes-v<version>`
-tag and catalog PR must identify the exact tested SHA (`subdir: hermes`), with
-the same version as `plugin.yaml`. No catalog submission or self-updater is
-part of this slice. [#837](https://github.com/tryapparent/apparent/issues/837)
-tracks the broader experience.
+Plugin versions are independent of app versions. `continuous delivery hermes`
+runs Python inspection (both supported Pillow ranges), routing/bridge contracts,
+archive and empty/partial-profile installation tests on Linux and macOS. It
+validates the installed artifact using a pinned upstream Hermes runtime. Main
+publishes the exact Linux job archive only after both platforms pass; publication
+uses only the existing GitHub token and never waits for another stream release.
+The archive includes both integration halves, not build dependencies or tests.
+
+Catalog discovery is separate: a maintainer must obtain admission to Hermes's
+curated catalog and submit an entry referencing a complete compiled package via
+a catalog-supported distribution route. GitHub release assets are not catalog
+entries. Source/Git installation from `subdir: hermes` remains incomplete and is
+not the supported end-user route. No catalog publication or access is claimed.

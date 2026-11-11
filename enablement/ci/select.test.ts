@@ -24,7 +24,7 @@ function parents(outputs: any = {}, reuse: any = {}) {
 }
 test('one automatic workflow, manual diagnostics, PR integration checkout and read-only verification', () => {
   assert.deepEqual(readdirSync(new URL('.github/workflows/', root)).filter(name =>
-    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))), ['checks.yml']);
+    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))), ['checks.yml', 'hermes.yml']);
   assert.deepEqual(Object.keys(ci().on), ['pull_request', 'push']);
   assert.deepEqual(ci().on.pull_request.types, ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft']);
   assert.equal(ci().permissions.contents, 'read');
@@ -43,9 +43,9 @@ test('PR updates coalesce but main commits cannot cancel earlier code verificati
     assert.equal(admitted(c['cancel-in-progress'].slice(3, -2), {}, String(event)), expected);
 });
 test('source suites run on ready PRs and main; unknown selection broadens and cancellation prevents allocation', () => {
-  for (const name of ['linux', 'macos', 'hermes-macos']) {
+  for (const name of ['linux', 'macos']) {
     const job = ci().jobs[name];
-    assert.deepEqual(job.needs, ['contracts', 'hermes', 'select', 'reuse', 'portable']);
+    assert.deepEqual(job.needs, ['contracts', 'select', 'reuse', 'portable']);
     for (const result of ['success', 'failure', 'skipped', 'cancelled']) {
       const needs = parents({platform: 'true', macos: 'true', mac_rust: 'true', hermes: 'true'});
       needs.select.result = result;
@@ -64,14 +64,12 @@ test('each consumer can be skipped independently; skipping Hermes does not block
   needs.hermes.result = 'skipped';
   assert.equal(admitted(jobs.linux.if, needs), true);
   assert.equal(admitted(jobs.macos.if, needs), true);
-  assert.equal(admitted(jobs['hermes-macos'].if, needs), false);
-  assert.equal(admitted(jobs.hermes.if, needs), false);
   needs.select.outputs.platform = 'false';
   assert.equal(admitted(jobs.linux.if, needs), false);
   assert.equal(admitted(jobs.macos.if, needs), false);
 });
 test('main reuses only explicit passed evidence; PRs cannot claim main reuse', () => {
-  for (const key of ['linux', 'macos', 'portable', 'hermes', 'hermes_macos']) {
+  for (const key of ['linux', 'macos', 'portable']) {
     const name = key === 'hermes_macos' ? 'hermes-macos' : key;
     const needs = parents({platform: 'true', macos: 'true', mac_rust: 'true', portable: 'true', hermes: 'true'}, {[key]: 'true'});
     assert.equal(admitted(ci().jobs[name].if, needs, 'push'), false, name);
@@ -302,4 +300,17 @@ test('audited Record inputs retain Desktop and native platform consumers only', 
   }
   assert.deepEqual(selectedOwners(['record/unknown/src/policy.ts']), selectedOwners(null));
   assert.deepEqual(selectedOwners(['record/storage/src/policy.ts', 'connect/web/src/api.ts']), ['capture', 'desktop', 'web']);
+});
+
+test('Hermes owns independent package verification and publication; native admission has no Hermes ancestors',()=>{
+ const h=workflow('hermes.yml');
+ assert.equal(h.name,'continuous delivery hermes');
+ assert.deepEqual(h.jobs.publish.needs,['contracts','clean','verify']);
+ assert.match(h.jobs.publish.if,/github.event_name == 'push'/);
+ assert.match(h.jobs.publish.if,/outputs.affected == 'true'/);
+ assert.equal(h.jobs.verify.strategy.matrix.os.length,2);
+ for(const name of ['hermes','hermes-macos'])assert.equal(ci().jobs[name],undefined);
+ for(const name of ['linux','macos','tree-evidence','linux-admission','macos-admission'])assert.ok(!ci().jobs[name].needs.some((n:string)=>n.startsWith('hermes')));
+ assert.deepEqual(selectedOwners(['.github/workflows/hermes.yml']),['hermes']);
+ assert.deepEqual(selectedOwners(['hermes/desktop/package-lock.json']),['hermes']);
 });

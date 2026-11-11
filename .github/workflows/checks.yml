@@ -23,9 +23,9 @@ jobs:
   # PR checkout is GitHub's proposed merge, so these checks cover integration.
   # Draft updates retain cheap feedback without allocating full platform suites.
   linux:
-    needs: [contracts, hermes, select, reuse, portable]
+    needs: [contracts, select, reuse, portable]
     if: >-
-      !cancelled() && needs.contracts.result == 'success' && (needs.hermes.result == 'success' || needs.hermes.result == 'skipped') && (needs.portable.result == 'success' || needs.portable.result == 'skipped') &&
+      !cancelled() && needs.contracts.result == 'success' && (needs.portable.result == 'success' || needs.portable.result == 'skipped') &&
       (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
       && (needs.select.result != 'success' || needs.select.outputs.platform != 'false')
       && needs.reuse.outputs.linux != 'true'
@@ -55,12 +55,12 @@ jobs:
 
   macos:
     # Share the cheap admission barrier; neither full platform waits for the other.
-    needs: [contracts, hermes, select, reuse, portable]
+    needs: [contracts, select, reuse, portable]
     # Only a successful explicit false can exempt a reviewed ready-PR delta.
     # Renderer-only PRs retain Electron; only their root Rust job is omitted.
     # Failed/unknown selection keeps Mac coverage after the cheap guards pass.
     if: >-
-      !cancelled() && needs.contracts.result == 'success' && (needs.hermes.result == 'success' || needs.hermes.result == 'skipped') && (needs.portable.result == 'success' || needs.portable.result == 'skipped') &&
+      !cancelled() && needs.contracts.result == 'success' && (needs.portable.result == 'success' || needs.portable.result == 'skipped') &&
       (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
       && (needs.select.result != 'success' || needs.select.outputs.macos != 'false' || needs.select.outputs.mac_rust == 'false')
       && (needs.select.result != 'success' || needs.select.outputs.platform != 'false')
@@ -179,63 +179,6 @@ jobs:
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: node --experimental-strip-types enablement/ci/routing/run.ts --portable
 
-  hermes:
-    needs: [select, reuse]
-    if: always() && !cancelled() && (needs.select.result != 'success' || needs.select.outputs.hermes != 'false') && needs.reuse.outputs.hermes != 'true'
-    name: Hermes inspection (ubuntu-24.04)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Install plugin image dependency
-        run: python -m pip install 'Pillow>=10.2,<13'
-      - name: Verify recording inspection and evidence boundaries
-        run: python -m unittest discover -s hermes/tests -v
-      - name: Verify inspection with Pillow 13
-        run: |
-          python -m pip install 'Pillow>=13,<14'
-          python -m unittest discover -s hermes/tests -v
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22.23.0'
-      - name: Verify recording routing and local bridge boundaries
-        run: node --experimental-strip-types --test hermes/desktop/*.test.ts capture/desktop/ui/frontend/src/hermes/*.test.ts
-
-  hermes-macos:
-    needs: [contracts, hermes, select, reuse, portable]
-    if: >-
-      !cancelled() && needs.contracts.result == 'success' && (needs.hermes.result == 'success' || needs.hermes.result == 'skipped') && (needs.portable.result == 'success' || needs.portable.result == 'skipped') &&
-      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
-      && (needs.select.result != 'success' || needs.select.outputs.hermes != 'false') && needs.reuse.outputs.hermes_macos != 'true'
-    name: Hermes inspection (macos-15-intel)
-    runs-on: macos-15-intel
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Install plugin image dependency
-        run: python -m pip install 'Pillow>=10.2,<13'
-      - name: Verify recording inspection and evidence boundaries
-        run: python -m unittest discover -s hermes/tests -v
-      - name: Verify inspection with Pillow 13
-        run: |
-          python -m pip install 'Pillow>=13,<14'
-          python -m unittest discover -s hermes/tests -v
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22.23.0'
-      - name: Verify recording routing and local bridge boundaries
-        run: node --experimental-strip-types --test hermes/desktop/*.test.ts capture/desktop/ui/frontend/src/hermes/*.test.ts
   contracts:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-24.04
@@ -263,10 +206,10 @@ jobs:
       - name: Validate workflow syntax and job dependencies
         uses: docker://rhysd/actionlint:1.7.12
         with:
-          args: -shellcheck= -pyflakes= .github/workflows/checks.yml .github/workflows/linux-updater-harness.yml .github/workflows/verification.yml .github/workflows/verification-mac.yml .github/workflows/verification-platform.yml .github/workflows/release-linux.yml .github/workflows/release-mac-preview.yml .github/workflows/web-delivery.yml .github/workflows/stream-public.yml
+          args: -shellcheck= -pyflakes= .github/workflows/checks.yml .github/workflows/linux-updater-harness.yml .github/workflows/verification.yml .github/workflows/verification-mac.yml .github/workflows/verification-platform.yml .github/workflows/release-linux.yml .github/workflows/release-mac-preview.yml .github/workflows/web-delivery.yml .github/workflows/stream-public.yml .github/workflows/hermes.yml
 
   tree-evidence:
-    needs: [select, contracts, linux, macos, portable, hermes, hermes-macos]
+    needs: [select, contracts, linux, macos, portable]
     if: always() && !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.select.result == 'success'
     runs-on: ubuntu-24.04
     steps:
@@ -289,7 +232,7 @@ jobs:
 
   linux-admission:
     name: Linux verification
-    needs: [select, contracts, reuse, linux, portable, hermes]
+    needs: [select, contracts, reuse, linux, portable]
     if: always() && !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     steps:
@@ -309,7 +252,7 @@ jobs:
 
   macos-admission:
     name: Mac verification
-    needs: [select, contracts, reuse, macos, portable, hermes, hermes-macos]
+    needs: [select, contracts, reuse, macos, portable]
     if: always() && !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     steps:
