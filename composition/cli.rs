@@ -193,6 +193,12 @@ enum TuneCommand {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Diagnose or repair supported Hermes setup (requires Node 22.23+).
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    Setup {
+        #[command(subcommand)]
+        command: SetupCommand,
+    },
     /// Preview or explicitly submit text-only feedback to Apparent's GitHub repository.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     Issue(super::issues::IssueArgs),
@@ -667,6 +673,45 @@ pub(crate) fn run() -> Result<()> {
     run_cli(cli)
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[derive(Subcommand)]
+enum SetupCommand {
+    /// Check without mutation, or apply bounded repairs through existing providers.
+    Hermes {
+        #[arg(long)]
+        check: bool,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        profile: Option<PathBuf>,
+        /// Official Hermes release archive.
+        #[arg(long)]
+        package: Option<PathBuf>,
+        /// Expected archive SHA-256 from the official release.
+        #[arg(long, requires = "package")]
+        sha256: Option<String>,
+    },
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn setup_hermes(check: bool, json: bool, profile: Option<PathBuf>, package: Option<PathBuf>, sha256: Option<String>) -> Result<()> {
+    // Embed the Agent-owned policy so installed apps do not depend on a source checkout.
+    // Native composition only transports argv and status; it owns no setup decisions.
+    let source = concat!(include_str!("../capture/agent/setup/hermes.ts"),
+        "\nprocess.exitCode = main(process.argv.slice(1));\n");
+    let mut node = std::process::Command::new("node");
+    node.args(["--input-type=module-typescript", "--eval", source, "--", "--executable"]);
+    node.arg(std::env::var_os("APPIMAGE").map(PathBuf::from)
+        .unwrap_or(std::env::current_exe()?));
+    if check { node.arg("--check"); }
+    if json { node.arg("--json"); }
+    if let Some(profile) = profile { node.arg("--profile").arg(profile); }
+    if let Some(package) = package { node.arg("--package").arg(package); }
+    if let Some(sha256) = sha256 { node.arg("--sha256").arg(sha256); }
+    let status = node.status().context("Hermes setup requires Node 22.23+ on PATH")?;
+    std::process::exit(status.code().unwrap_or(1));
+}
+
 fn run_cli(cli: Cli) -> Result<()> {
     let command = match cli.command {
         Some(command) => command,
@@ -686,6 +731,9 @@ fn run_cli(cli: Cli) -> Result<()> {
         },
     };
     match command {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        Command::Setup { command: SetupCommand::Hermes { check, json, profile, package, sha256 } } =>
+            setup_hermes(check, json, profile, package, sha256),
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Connect { command } => hosted::command(command),
         #[cfg(any(target_os = "macos", target_os = "linux"))]
