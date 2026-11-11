@@ -131,11 +131,27 @@ fn normalize_binds_snapshot(before: &str, text: &str, after: &str) -> Result<Vec
             && json["dispatcher"].as_str() == Some(row.dispatcher.as_str()) && json["arg"].as_str() == Some(row.arg.as_str())
             && json["catch_all"].as_bool().map(|b| b.to_string()).as_deref() == Some(row.catchall.as_str()), "Hyprland text/JSON bind fingerprint differs");
         let json_key = json["key"].as_str().context("Malformed Hyprland bind key")?.to_owned();
-        if json_key.is_empty() && row.key.starts_with("code:") {
-            let code = row.key.strip_prefix("code:").unwrap_or_default();
+        if json_key.is_empty() && !row.key.is_empty() {
+            let mut parts = row.key.split('+').map(str::trim).peekable();
+            let mut mask = 0_u64;
+            while let Some(part) = parts.next() {
+                if parts.peek().is_none() {
+                    let code = part.strip_prefix("code:").context("Unsupported opaque Hyprland key identity")?;
+                    ensure!(!code.is_empty() && code.bytes().all(|b| b.is_ascii_digit()) && code.parse::<u32>().is_ok(), "Malformed Hyprland keycode");
+                    ensure!(mask == row.modmask && row.keycode == 0, "Hyprland displayed chord modifiers differ");
+                    json["key"] = serde_json::Value::String(format!("code:{code}"));
+                    break;
+                }
+                mask |= match part.to_ascii_uppercase().as_str() {
+                    "SHIFT" => 1, "CAPS" => 2, "CTRL" | "CONTROL" => 4,
+                    "ALT" | "MOD1" => 8, "MOD2" => 16, "MOD3" => 32,
+                    "SUPER" | "WIN" | "LOGO" | "MOD4" | "META" => 64, "MOD5" => 128,
+                    _ => bail!("Unsupported Hyprland chord component"),
+                };
+            }
+            let code = json["key"].as_str().unwrap_or_default().strip_prefix("code:").unwrap_or_default();
             ensure!(!code.is_empty() && code.bytes().all(|byte| byte.is_ascii_digit()) && code.parse::<u32>().is_ok() && row.keycode == 0,
                 "Unsupported opaque Hyprland key identity");
-            json["key"] = serde_json::Value::String(row.key);
         } else { ensure!(json_key == row.key, "Hyprland text/JSON key differs"); }
         let flags = [("l", "locked"), ("m", "mouse"), ("r", "release"), ("e", "repeat"), ("n", "non_consuming"), ("a", "auto_consuming"), ("d", "has_description"), ("x", "allow_input_capture")];
         let expected = flags.into_iter().filter_map(|(flag, field)| (json[field].as_bool() == Some(true)).then_some(flag)).fold(String::new(), |mut value, flag| { value.push_str(flag); value });
@@ -357,7 +373,7 @@ fn external_record_from(source: &str, live: &str) -> Option<(ShortcutConfig, Pat
         .iter()
         .filter(|bind| {
             bind["modmask"].as_u64() == Some(u64::from(expected_mask))
-                && bind["key"].as_str() == Some("code:201")
+                && bind["key"].as_str().is_some_and(|key| ["code:201", "F23", "XF86Assistant", "LaunchAssistant"].iter().any(|alias| key.eq_ignore_ascii_case(alias)))
                 && bind["keycode"].as_u64() == Some(0)
         })
         .collect();
@@ -469,7 +485,9 @@ fn existing(binds_json: &str, mask: u32, key: &str, id: &str) -> Existing {
             .is_some_and(|k| k.eq_ignore_ascii_case(&key_name(key)))
             || (key == "Copilot"
                 && bind["key"].as_str() == Some("")
-                && bind["keycode"].as_u64() == Some(0));
+                && bind["keycode"].as_u64() == Some(0))
+            || (key == "Copilot" && bind["key"].as_str().is_some_and(|k|
+                ["F23", "XF86Assistant", "LaunchAssistant"].iter().any(|alias| k.eq_ignore_ascii_case(alias))));
         if !(same_mask && same_key) {
             continue;
         }
@@ -1131,13 +1149,21 @@ mod tests {
         assert!(normalize_binds_snapshot(&json.replace("\"modmask\":0", "\"modmask\":0,\"modmask\":0"), text, &json).is_err());
         assert!(normalize_binds_snapshot(&json, &text.replace("description: Workspace", "unknown: bad\ndescription: Workspace"), &json).is_err());
 
-        let opaque = text.replace("modmask: 0", "modmask: 65").replace("code:12", "code:201");
+        let opaque = text.replace("modmask: 0", "modmask: 65").replace("code:12", "SUPER + SHIFT + code:201");
         let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
         value[0]["modmask"] = serde_json::json!(65);
         let opaque_json = serde_json::to_string(&value).unwrap();
         let normalized = normalize_binds_snapshot(&opaque_json, &opaque, &opaque_json).unwrap();
         assert_eq!(normalized[0]["key"], "code:201");
         assert_eq!(existing(&serde_json::to_string(&normalized).unwrap(), 65, "Copilot", "record"), Existing::Other);
+        assert!(normalize_binds_snapshot(&opaque_json, &opaque.replace("SUPER + SHIFT +", "SUPER +"), &opaque_json).is_err());
+        let unrelated = opaque.replace("code:201", "code:12");
+        let normalized = normalize_binds_snapshot(&opaque_json, &unrelated, &opaque_json).unwrap();
+        assert_eq!(existing(&serde_json::to_string(&normalized).unwrap(), 65, "Copilot", "record"), Existing::Free);
+        for alias in ["F23", "XF86Assistant", "LaunchAssistant"] {
+            let live = serde_json::json!([{"modmask":65,"key":alias,"description":"Foreign"}]);
+            assert_eq!(existing(&live.to_string(), 65, "Copilot", "record"), Existing::Other);
+        }
     }
 
     #[test]
