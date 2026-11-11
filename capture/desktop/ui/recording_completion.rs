@@ -6,6 +6,7 @@ use std::time::Instant;
 use super::super::CaptureSource;
 use super::whiteboard;
 use crate::capture::engine::runtime::apparent_log;
+use crate::capture::engine::runtime::recording::diagnostics::{Diagnose, Stage};
 use crate::shared::model::{ApparentBundle, InteractionEvent, Stroke, TargetInfo};
 
 pub(in crate::capture::desktop) type CaptureResult =
@@ -29,7 +30,7 @@ pub(in crate::capture::desktop) fn finalize(
         } => (session, audio, windows),
         CaptureSource::Phone(session) => {
             // Stop the producer before waiting for a possibly contended writer lease.
-            let finalized = session.stop().and_then(|recording| {
+            let finalized = session.stop().stage(Stage::PhoneStop).and_then(|recording| {
                 complete_bundle(&bundle_dir, &final_whiteboard, || {
                     crate::capture::engine::runtime::phone::finalize_live_capture(
                         &bundle_dir,
@@ -37,7 +38,7 @@ pub(in crate::capture::desktop) fn finalize(
                         events,
                         strokes,
                         None,
-                    )
+                    ).stage(Stage::PhoneBundle)
                 })
             });
             // Only the outer publication result may enqueue native movie shrinking.
@@ -75,7 +76,7 @@ pub(in crate::capture::desktop) fn finalize(
     let duration_ms = recording.duration_ms;
     let recorded_audio = match recorded_audio {
         Ok(audio) => audio,
-        Err(error) => return (Err(error), duration_ms),
+        Err(error) => return (Err(error).stage(Stage::AudioStop), duration_ms),
     };
     let finalized = complete_bundle(&bundle_dir, &final_whiteboard, || {
         if let Some(receipt) = notes_finished {
@@ -92,7 +93,7 @@ pub(in crate::capture::desktop) fn finalize(
                 crate::capture::engine::bundle::recover::write(
                     &bundle_dir,
                     &crate::capture::engine::bundle::recover::Unfinished {
-                        context: crate::capture::engine::bundle::recover::capture_context(&bundle_dir)?,
+                        context: crate::capture::engine::bundle::recover::capture_context(&bundle_dir).stage(Stage::RecoveryJournal)?,
                         target: target.clone(),
                         duration_ms,
                         video: recording
@@ -109,8 +110,8 @@ pub(in crate::capture::desktop) fn finalize(
                         windows: activity.windows,
                         cursor: activity.cursor,
                     },
-                )?;
-                return Err(anyhow::anyhow!(error));
+                ).stage(Stage::RecoveryJournal)?;
+                return Err(anyhow::anyhow!(error)).stage(Stage::NotesReceipt);
             }
         }
         crate::capture::engine::bundle::bundle_processing::finalize_capture_bundle(
@@ -147,7 +148,7 @@ fn complete_bundle(
 ) -> CaptureResult {
     complete_bundle_with(path, build, |dir, bundle, summary| {
         whiteboard::finish_handoff(dir, bundle, summary, board)
-    })
+    }).stage(Stage::Publication)
 }
 
 fn complete_bundle_with(

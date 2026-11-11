@@ -263,31 +263,26 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await page.evaluate(()=>document.fonts.ready);
   await expect(page.locator('.native-setup')).toHaveCSS('font-family', '"Host Grotesk", system-ui, sans-serif');
   await expect(page.getByRole('heading',{name:'Pick your pen.',exact:true})).toHaveCSS('font-size','36px');
-  await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toHaveCSS('font-size','18px');
+  await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toHaveCount(0);
   for(const scheme of ['light','dark','light']){
     await page.emulateMedia({colorScheme:scheme});
     await expect(page.locator('.native-setup')).toHaveCSS('background-color',scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)');
-    await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toHaveCSS('background-color','rgb(122, 88, 199)');
-    await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toHaveCSS('color','rgb(245, 240, 232)');
     const tip=await page.locator('.native-pencils button span').first().evaluate(el=>getComputedStyle(el,'::after').borderTopColor);
     assert.notEqual(tip,scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)','pen tip must remain visible against the page');
   }
 
-  await page.getByRole('button',{name:'purple pen',exact:true}).click();
-  await expect.poll(()=>output).toContain('pen:purple');
-  send({penPicker:true,penSelected:true,penRgb:[122,88,199]});
-  await expect(page.locator('.native-puddle path')).toHaveCSS('fill','rgb(122, 88, 199)');
-  const centres=await page.evaluate(()=>{
-    const h=document.querySelector('.native-pen-picker h1').getBoundingClientRect();
-    const button=[...document.querySelectorAll('footer button')].at(-1).getBoundingClientRect();
-    return [h.x+h.width/2,button.x+button.width/2,innerWidth/2];
-  });
-  assert.ok(Math.abs(centres[0]-centres[2])<2&&Math.abs(centres[1]-centres[2])<2);
-  // Hold the first image decode, as on a cold launch. No wall-clock timeout may skip the hop.
+  // Hold the first image decode, as on a cold launch. Save must finish first.
   await page.locator('.native-pond-frog').evaluate(img=>{const decode=img.decode.bind(img);img.decode=()=>decode().then(()=>new Promise(resolve=>{window.releasePenImage=resolve}));});
   const before=await page.locator('.native-pond-frog').boundingBox();
-  await page.getByRole('button',{name:'Use this pen',exact:true}).click();
-  await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'purple pen',exact:true}).click();
+  await expect.poll(()=>output).toContain('pen:purple:');
+  const penSaveId=JSON.parse(output.trim().split('\n').at(-1)).action.split(':')[2];
+  send({penPicker:true,penSelected:true,penRgb:[122,88,199]});
+  await page.waitForTimeout(100);
+  assert.equal(output.includes('"action":"continue"'),false,'stale selection cannot acknowledge this save');
+  send({penPicker:true,penSelected:true,penRgb:[122,88,199],penSaveId});
+  await expect(page.locator('.native-puddle path')).toHaveCSS('fill','rgb(122, 88, 199)');
+  await expect(page.getByRole('button',{name:'purple pen',exact:true})).toBeDisabled();
   await new Promise(resolve=>setTimeout(resolve,1400));
   assert.equal(output.includes('"action":"continue"'),false,'cold image readiness must not be bypassed by a timer');
   await page.evaluate(()=>window.releasePenImage());
@@ -529,11 +524,59 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await page.emulateMedia({reducedMotion:'reduce'});
   send({penPicker:true,penSelected:true,penRgb:[59,121,189]});
   await expect(page.getByRole('heading',{name:'Pick your pen.',exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'Use this pen',exact:true}).click();
+  await page.getByRole('button',{name:'blue pen',exact:true}).click();
+  await expect.poll(()=>output).toContain('pen:blue:');
+  const blueSaveId=JSON.parse(output.trim().split('\n').at(-1)).action.split(':')[2];
+  send({penPicker:true,penSelected:true,penRgb:[59,121,189],penSaveId:blueSaveId});
   await expect.poll(()=>output.match(/"action":"continue"/g)?.length).toBe(beforeTrialAdvance+2);
   await expect(page.locator('.native-pond-frog')).toHaveCSS('animation-name','none');
   await page.setViewportSize({width:320,height:720});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'pen picker must reflow at 320 CSS pixels');
   await page.setViewportSize({width:760,height:720});
 
+  // Back returns to a stable picker; an old success must never replay advance.
+  const advances=()=>output.match(/"action":"continue"/g)?.length??0;
+  const beforeBack=advances();
+  send({step:'permissions',index:1});
+  await page.getByRole('button',{name:'Back',exact:true}).click();
+  await expect.poll(()=>output).toContain('"action":"back"');
+  send({penPicker:true,penSelected:true,penRgb:[59,121,189],penSaveId:blueSaveId});
+  await expect(page.getByRole('button',{name:'blue pen',exact:true})).toBeEnabled();
+  await page.waitForTimeout(120);
+  assert.equal(advances(),beforeBack);
+  for(const scheme of ['light','dark'])for(const width of [760,320]){
+    await page.emulateMedia({colorScheme:scheme});
+    await page.setViewportSize({width,height:720});
+    await page.getByRole('button',{name:'blue pen',exact:true}).focus();
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    const back=await page.getByRole('button',{name:'Back',exact:true}).boundingBox();
+    assert.ok(back.x<60,'Back stays at the leading edge after removing confirmation');
+    if(process.env.APPARENT_PEN_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_PEN_EVIDENCE,`picker-${scheme}-${width}.png`)});
+  }
+  // Keyboard selection and an immediate duplicate click produce just one save.
+  const saves=()=>output.match(/pen:blue:/g)?.length??0;
+  const beforeSave=saves();
+  await page.getByRole('button',{name:'blue pen',exact:true}).press('Enter');
+  await page.getByRole('button',{name:'blue pen',exact:true}).evaluate(button=>button.click());
+  await expect.poll(saves).toBe(beforeSave+1);
+  const failedId=JSON.parse(output.trim().split('\n').at(-1)).action.split(':')[2];
+  assert.notEqual(failedId,blueSaveId,'same-colour reselection has a fresh receipt');
+  send({penPicker:true,penSelected:false,penError:true,penSaveId:failedId});
+  await expect(page.getByRole('alert')).toHaveText('The colour could not be saved. Try choosing it again.');
+  await expect(page.getByRole('button',{name:'blue pen',exact:true})).toBeEnabled();
+  assert.equal(advances(),beforeBack);
+  for(const width of [760,320]){
+    await page.setViewportSize({width,height:720});
+    await page.locator('.native-setup section').evaluate(section=>section.scrollTop=0);
+    const alert=await page.getByRole('alert').boundingBox(),section=await page.locator('.native-setup section').boundingBox();
+    assert.ok(alert.y>=section.y&&alert.y+alert.height<=section.y+section.height,'save feedback must be visible above the footer without scrolling');
+  }
+  if(process.env.APPARENT_PEN_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_PEN_EVIDENCE,'picker-save-error-dark-320.png')});
+  await page.getByRole('button',{name:'blue pen',exact:true}).press('Space');
+  await expect.poll(saves).toBe(beforeSave+2);
+  const retryId=JSON.parse(output.trim().split('\n').at(-1)).action.split(':')[2];
+  send({penPicker:true,penSelected:false,penError:true,penSaveId:failedId});
+  await page.waitForTimeout(100);assert.equal(advances(),beforeBack);
+  send({penPicker:true,penSelected:true,penRgb:[59,121,189],penSaveId:retryId});
+  await expect.poll(advances).toBe(beforeBack+1);
 });
