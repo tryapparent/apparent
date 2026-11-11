@@ -75,7 +75,7 @@ Verification is proportional to changed behavior, not commit IDs. For mechanical
 feature pushes while preserving exact-HEAD/clean-tree guards. Explicit local
 `enablement/verification.py --run` and direct main pushes retain conservative
 changed-tree build/tests. Continuous delivery runs the cheap contracts and workflow
-validation automatically on PRs and main pushes. Affected Linux/macOS suites run for ready PRs. Main reuses successful PR suites only with authenticated identical-tree evidence and runs affected missing suites before fresh exact-main admission. Public-only README/site inputs retain Public verification without native suites; native-embedded text, agent instructions and unknown inputs retain their consumers. Drafts retain cheap checks.
+validation automatically on PRs and main pushes. Affected Linux/macOS suites run for ready PRs. Main reuses successful PR suites only with authenticated identical-tree evidence and runs affected missing suites before fresh exact-main admission. Public-only README/site inputs retain Public verification without native suites; native-embedded text, embedded agent instructions and unknown inputs retain their consumers. Drafts retain cheap checks.
 Separate platform diagnostics remain manual. Linux latest-Main publication runs automatically after exact-main Linux/shared admission, independently of Mac; Connect publication remains manual and requires the
 exact commit's successful Linux/shared verification. Public publication uses its own
 successful web/shared checks and sealed artifact in `stream-public.yml`, without
@@ -83,7 +83,9 @@ requiring Rust, Desktop or Connect verification. Mac publication additionally
 requires its successful Mac verification. A queued or failed Mac run does not block
 Linux publication, and Linux success never substitutes for Mac verification. Native/product acceptance still applies to changed
 behavior. Fetch main before publishing; feature planning compares the full delta
-from its merge-base. Details: `enablement/docs/continuous-delivery.md`.
+from its merge-base. Repository `AGENTS.md`-only changes run cheap contracts, not
+product builds; embedded instructions and mixed code changes retain their actual
+consumers. Details: `enablement/docs/continuous-delivery.md`.
 
 When output/UX changes or a capture test affects output, inspect the relevant real bundle's text and images; for mechanical moves reuse relevant evidence after checking source/import/build-input preservation. Report unavailable evidence and concrete output/UX issues; do not make a capture solely because files moved. Documentation/tooling-only changes need no bundle inspection.
 

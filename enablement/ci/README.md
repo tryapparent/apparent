@@ -71,3 +71,12 @@ APPARENT_EARLY_CARGO_FIXTURE=1 node --experimental-strip-types --test enablement
 On Clanker, run that command through `t3-build --jobs 3 --min-jobs 3 --`.
 This fixture proves filter semantics and failure propagation, not Mac native
 acceptance. Normal ready-PR platform CI must still verify the real candidate.
+
+Hosted Ubuntu checks use `.github/actions/ubuntu-apt` before installing packages.
+GitHub's image assigns Azure/Ubuntu mirrors priorities 1–3; the action prepends
+Kernel.org's Ubuntu mirror at priority 0 and preserves those fallback entries.
+This addresses repeated hosted DNS/download timeouts without changing Ubuntu
+archive keys, package signatures, source suites or dependency/test requirements.
+It is restricted to disposable Linux Actions runners. macOS keeps its existing
+Homebrew/native setup. Tests execute the shipped mirror-list transformation
+against isolated files, including idempotence and unsafe-target refusal.
