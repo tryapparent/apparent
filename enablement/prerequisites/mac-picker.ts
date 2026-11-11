@@ -8,22 +8,33 @@ export type PickerDriver = {
   goSheet: () => Promise<string>;
   navigate: (path: string) => Promise<void>;
 };
-export async function prepareStorageChange(driver: PickerDriver, path: string) {
+export type PickerPreparation = Partial<{
+  beforeGo: string; openGoReturned: boolean; goSheet: string; beforeChoose: string;
+}>;
+export async function prepareStorageChange(driver: PickerDriver, path: string, receipt: PickerPreparation = {}) {
   await driver.storageIdle();
   await driver.change();
   const beforeGo = await driver.picker();
+  receipt.beforeGo = beforeGo;
   await driver.openGo();
+  receipt.openGoReturned = true;
   const goSheet = await driver.goSheet();
+  receipt.goSheet = goSheet;
   await driver.navigate(path);
   const beforeChoose = await driver.picker();
+  receipt.beforeChoose = beforeChoose;
   return {beforeGo, goSheet, beforeChoose};
 }
 
 const pickerScript = `
+use framework "AppKit"
+use scripting additions
 on run argv
   set targetPID to (item 1 of argv) as integer
   set operation to item 3 of argv
+  set expectedExecutable to item 4 of argv
   set goMode to operation is "inspect-go" or operation is "navigate-go"
+  my ownedApplication(targetPID, expectedExecutable)
   tell application "System Events"
     set owned to first application process whose unix id is targetPID
     tell owned
@@ -75,6 +86,9 @@ on run argv
       end if
       if goMode then
         if depth is 0 or goParent is missing value then error "Owned Go to Folder sheet not ready: " & trace
+        -- One attached sheet is the picker itself, not a Go sheet. Do not pop
+        -- it and misclassify the application's root window as a picker.
+        if depth is 1 and (name of outerWindow as text) is "Apparent — UI foundation" then error "Owned Go to Folder sheet not ready: " & trace
         set goSheet to picker
         if (role of goSheet as text) is not "AXSheet" then error "Unexpected owned Go to Folder role: " & trace
         set picker to goParent
@@ -93,9 +107,18 @@ on run argv
       set controls to picker
       if (count of buttons of controls) is 0 then
         set containers to UI elements of picker
-        if (count of containers) is not 1 then error "Unsupported picker control containers: " & trace
-        set controls to item 1 of containers
-        if (role of controls as text) is not "AXSplitGroup" then error "Unsupported picker control container role: " & trace
+        if (count of containers) > 16 then error "Oversized picker control containers: " & trace
+        set footerContainers to {}
+        repeat with candidateContainer in containers
+          set containerRole to role of candidateContainer as text
+          if containerRole is "AXSplitGroup" then
+            set end of footerContainers to contents of candidateContainer
+          else if not goMode or containerRole is not "AXSheet" then
+            error "Unsupported picker control container role: " & trace
+          end if
+        end repeat
+        if (count of footerContainers) is not 1 then error "Unsupported picker control containers: " & trace
+        set controls to item 1 of footerContainers
       end if
       set chooseMatches to {}
       set cancelMatches to {}
@@ -118,7 +141,7 @@ on run argv
       set xy to position of outerWindow
       set wh to size of outerWindow
       if goMode then
-        if not frontmost then error "Focus left owned Electron process"
+        my requireNativeFocus(targetPID, expectedExecutable)
         set goSheets to sheets of picker
         if (count of goSheets) is not 1 then error "Owned Go to Folder sheet missing or ambiguous"
         set goSheet to item 1 of goSheets
@@ -132,7 +155,7 @@ on run argv
           if (value of pathField as text) is not (item 2 of argv) then error "Go to Folder path readback differs"
           -- Preserve the bounded autocomplete interval and exactly one Return.
           delay 1
-          if not frontmost then error "Focus left owned Electron process"
+          my requireNativeFocus(targetPID, expectedExecutable)
           -- Recheck the exact owned modal before Return. Never let a vanished
           -- Go sheet turn a navigation key into the parent picker's Choose.
           set currentGoSheets to sheets of picker
@@ -143,9 +166,12 @@ on run argv
           key code 36
         end if
       else if operation is "open-go" or operation is "choose" or operation is "cancel" then
-        set frontmost to true
-        if not frontmost then error "Owned Electron process is not frontmost"
+        -- AX frontmost can disagree with AppKit for the same owned process.
+        -- Activate once, then observe actual native ownership before input.
+        my activateOwned(targetPID, expectedExecutable)
+        set trace to trace & "native-focus-pid=" & targetPID & linefeed
         if operation is "open-go" then
+          if (count of sheets of picker) is not 0 then error "Owned picker changed before Go shortcut"
           keystroke "g" using {command down, shift down}
         else if operation is "choose" then
           click chooseButton
@@ -157,6 +183,36 @@ on run argv
     end tell
   end tell
 end run
+
+on ownedApplication(targetPID, expectedExecutable)
+  set nativeApp to current application's NSRunningApplication's runningApplicationWithProcessIdentifier:targetPID
+  if nativeApp is missing value then error "Owned Electron process is absent"
+  if ((nativeApp's isTerminated()) as boolean) then error "Owned Electron process exited"
+  if ((nativeApp's executableURL()'s |path|()) as text) is not expectedExecutable then error "Owned Electron executable changed"
+  return nativeApp
+end ownedApplication
+
+on hasNativeFocus(targetPID, expectedExecutable)
+  set nativeApp to my ownedApplication(targetPID, expectedExecutable)
+  set frontApp to current application's NSWorkspace's sharedWorkspace()'s frontmostApplication()
+  if frontApp is missing value then return false
+  return ((nativeApp's isActive()) as boolean) and ((frontApp's processIdentifier()) as integer) is targetPID
+end hasNativeFocus
+
+on requireNativeFocus(targetPID, expectedExecutable)
+  if not (my hasNativeFocus(targetPID, expectedExecutable)) then error "Focus left owned Electron process"
+end requireNativeFocus
+
+on activateOwned(targetPID, expectedExecutable)
+  set nativeApp to my ownedApplication(targetPID, expectedExecutable)
+  if not ((nativeApp's activateWithOptions:(current application's NSApplicationActivateIgnoringOtherApps)) as boolean) then error "Owned Electron activation refused"
+  set focusDeadline to ((current application's NSProcessInfo's processInfo()'s systemUptime()) as real) + 1
+  repeat
+    if my hasNativeFocus(targetPID, expectedExecutable) then return
+    if ((current application's NSProcessInfo's processInfo()'s systemUptime()) as real) >= focusDeadline then error "Owned native focus readiness expired"
+    delay 0.05
+  end repeat
+end activateOwned
 `;
 
 // Preserve the last AX query in subprocess stderr when a hosted runner stalls.
@@ -164,9 +220,11 @@ end run
 // reached query. AppleScript's local date arithmetic adds no AX request. This is
 // coarse diagnostic timing, not evidence that a reached query completed.
 // Ownership checks, queries, mutations and the caller's deadline are unchanged.
+let inRun = false;
 export const panelScript = pickerScript.split('\n').flatMap((line, index) => {
-  if (line === 'on run argv') return [line, '  set axProbeStartedAt to current date'];
-  const query = /^\s*(set|if)\b/.test(line) &&
+  if (line === 'on run argv') { inRun = true; return [line, '  set axProbeStartedAt to current date']; }
+  if (line === 'end run') inRun = false;
+  const query = inRun && /^\s*(set|if)\b/.test(line) &&
     /\b(application process|windows?|name|role|buttons|sheets|UI elements|position|size|enabled|frontmost|text fields|value)\b/.test(line);
   return query ? [`${line.match(/^\s*/)![0]}log ("AX probe source-line=${index + 1} elapsedSeconds=" & (my axProbeElapsed(axProbeStartedAt)))`, line] : [line];
 }).join('\n') + `

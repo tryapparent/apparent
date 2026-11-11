@@ -1,7 +1,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {readFileSync} from 'node:fs';
+import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {panelScript, prepareStorageChange, type PickerDriver} from './mac-picker.ts';
 function deferred<T>() {
  let resolve!: (value:T)=>void;
@@ -30,7 +32,16 @@ test('query timing preserves the exact selector and stable source-line identitie
   assert.equal(lines[index+1],original.split('\n')[Number(match[1])-1]);
  }
  assert.ok(queries>20,'All existing query boundaries remain instrumented');
- assert.match(panelScript,/source-line=96 elapsedSeconds=/);
+ const boundsLine=original.split('\n').findIndex(line=>line.trim()==='set xy to position of outerWindow')+1;
+ assert.ok(boundsLine>0);
+ assert.ok(panelScript.includes(`source-line=${boundsLine} elapsedSeconds=`));
+ assert.doesNotMatch(panelScript.slice(panelScript.indexOf('on ownedApplication'),panelScript.indexOf('-- Explicit script target:')),/axProbeStartedAt/,
+  'Native helper handlers cannot reference the run handler\'s local diagnostic clock');
+});
+test('the actual AppKit picker adapter compiles without running UI actions',{skip:process.platform!=='darwin'},()=>{
+ const directory=mkdtempSync(join(tmpdir(),'apparent-dev-picker-syntax-'));
+ try {execFileSync('/usr/bin/osacompile',['-o',join(directory,'picker.scpt'),'-e',panelScript],{stdio:'pipe'});}
+ finally {rmSync(directory,{recursive:true,force:true});}
 });
 test('the actual Storage/Retention receipt precedes Change, and Go sheet readiness precedes path entry',async()=>{
  const storage=deferred<void>(),go=deferred<string>(),opened=deferred<void>();
@@ -50,9 +61,11 @@ test('Storage readiness failure never issues a Change mutation',async()=>{
  assert.deepEqual(calls,{change:0,openGo:0,navigate:0,picker:0});
 });
 test('missing or ambiguous owned Go sheet fails without retrying the shortcut or entering data',async()=>{
+ const receipt={};
  const {calls,driver}=fixture({goSheet:async()=>{throw Error('Owned Go to Folder sheet missing or ambiguous');}});
- await assert.rejects(prepareStorageChange(driver,'/synthetic/path'),/missing or ambiguous/);
+ await assert.rejects(prepareStorageChange(driver,'/synthetic/path',receipt),/missing or ambiguous/);
  assert.deepEqual(calls,{change:1,openGo:1,navigate:0,picker:1});
+ assert.deepEqual(receipt,{beforeGo:'owned-picker',openGoReturned:true},'Completed native observations survive a later readiness failure');
 });
 test('an unknown navigation outcome is never replayed',async()=>{
  const {calls,driver}=fixture();

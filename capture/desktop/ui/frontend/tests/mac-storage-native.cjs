@@ -218,13 +218,18 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     }
   };
   let env;
+  const electronExecutable = await fs.realpath(require('electron'));
   const osa = async (script, args = [], cap = 3500) => {
     const { stdout } = await run('/usr/bin/osascript', ['-e', script, ...args], {
       env, timeout: budget(cap), killSignal: 'SIGKILL', maxBuffer: 32768,
     });
     return stdout.trim();
   };
-  const panel = (operation) => osa(panelScript, [String(electronChild.pid), home, operation]);
+  const panel = (operation) => {
+    assert.equal(electronChild.exitCode, null, 'Owned Electron exited before native picker observation');
+    assert.equal(electronChild.signalCode, null, 'Owned Electron was signalled before native picker observation');
+    return osa(panelScript, [String(electronChild.pid), home, operation, electronExecutable]);
+  };
   const snapshot = async () => {
     const runtime = await within(page.evaluate(() => window.apparent.readRuntimeState()), budget(), 'Runtime read');
     assert.deepEqual(runtime, { status: 'connected', phase: 'idle' });
@@ -361,11 +366,13 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     await bootstrap;
     report.electron = await within(application.evaluate(({ app, BrowserWindow }) => ({
       pid: process.pid, version: process.versions.electron, platform: process.platform,
+      executable: process.execPath,
       home: process.env.HOME, userData: app.getPath('userData'),
       windowCount: BrowserWindow.getAllWindows().length,
       title: BrowserWindow.getAllWindows()[0].getTitle(),
     })), budget(), 'Electron process identity');
     assert.equal(report.electron.pid, electronChild.pid);
+    assert.equal(await fs.realpath(report.electron.executable), electronExecutable);
     assert.equal(report.electron.home, home);
     assert.ok(report.electron.userData.startsWith(home + path.sep), 'Electron profile escaped private HOME');
     assert.equal(report.electron.platform, 'darwin');
@@ -518,8 +525,12 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       openGo: () => panel('open-go'),
       goSheet: () => poll(() => panel('inspect-go'), 'Owned Go to Folder readiness'),
       // Only the OS picker receives the path, as argv data, never renderer/IPC.
-      navigate: (target) => osa(panelScript, [String(electronChild.pid), target, 'navigate-go']),
-    }, selected);
+      navigate: (target) => {
+        assert.equal(electronChild.exitCode, null, 'Owned Electron exited before picker navigation');
+        assert.equal(electronChild.signalCode, null, 'Owned Electron was signalled before picker navigation');
+        return osa(panelScript, [String(electronChild.pid), target, 'navigate-go', electronExecutable]);
+      },
+    }, selected, report.nativePickerPreparation = {});
     report.nativeBeforeGo = prepared.beforeGo;
     report.nativeGoSheet = prepared.goSheet;
     report.nativeBeforeChoose = prepared.beforeChoose;
