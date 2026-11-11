@@ -29,16 +29,40 @@ sends nothing. Closing the bridge leaves any admitted capture intact and ends
 the return service. It expires after one hour. See the
 [plugin routing and acceptance limits](../../../hermes/README.md).
 
-Stock Hermes 0.23.0 blocks custom schemes in its external-link API. The plugin
-uses its supported session-scoped safe-shell API for local conversations to
-invoke the OS opener with this strictly validated URI. Remote and sandboxed
-terminal refusals retain manual paste; the plugin changes no Hermes code or
-OS registration.
+The portable Hermes plugin uses the trusted local command below instead of
+opening an app URL. Its local helper remains on the recording computer even
+when the destination agent runs remotely. A refused local terminal retains
+manual paste; the plugin changes no Hermes code or OS registration.
 
 Rollback is removal/disablement of the desktop plugin; manual paste is retained.
 Remove the bridge after installed plugin consumers no longer use its URL or
 `capture handoff` contract. Installed macOS/Linux launch, capture, permissions,
 actual Hermes networking, model vision and receiver proof remain required.
+
+The installed Hermes plugin may instead call the checked local command
+`apparent hermes record <token>/<port>` through Hermes' session-scoped safe-shell
+API. The token is 32 lowercase hexadecimal characters and the loopback port is
+32768–60999; malformed destinations fail before Electron starts. This trusted
+local path starts the same packaged Electron runtime with `--hermes-autostart`:
+it opens no confirmation or status window, starts the token-bound native capture
+immediately, and reports saved, cancelled, occupied or failed state through the
+same signed mailbox for the plugin's toast. The private one-use journal, native
+permission and occupied-capture admission, replay protection and capture
+resource safety still apply. Hermes continues to use its own authenticated
+connection to send the exact saved handoff; Apparent does not send it.
+
+If the native app is stopped, the helper uses `apparent launch --background`
+to start its capture runtime without opening Settings or raising an existing
+instance. Required onboarding and permission checks still apply. This explicit
+CLI mode accepts no URL; ordinary launches continue to open Settings.
+
+The URL route always keeps confirmation, including URLs opened locally. An
+external website cannot select trusted direct mode, and a website button cannot
+authorize recording. Errors from direct local mode stay in the signed mailbox;
+the only read receipt is the exact saved source. The Electron main adapter uses
+the headless lifecycle owner in `record/capture-request/` for start, inspect,
+observed cancellation and saved-state sequencing. Routing can be rolled back by removing the
+local plugin integration; the URL confirmation contract remains available.
 
 ## Open the idle app
 
@@ -128,6 +152,9 @@ is defined here.
 Required native proof is separate on each OS: browser user gesture → actual OS
 handler → cold app; repeat with a running app and confirm one GUI owner; reject
 malformed URLs and flag-off requests; open during a real capture and confirm the
-same capture continues. Inspect the saved bundle and movie. PR #162 records
+same capture continues. The trusted local plugin path also needs an installed
+Hermes request to start immediately with no confirmation/status window, save the
+actual bundle, keep an occupied capture untouched, and refuse replay. Inspect
+the saved bundle and movie. PR #162 records
 Mac and isolated Linux proof of that contract. Default promotion preserves the
 handler and OS-registration behavior; unit tests and packaging checks alone do not establish Mac parity.

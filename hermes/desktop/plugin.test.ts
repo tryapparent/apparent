@@ -20,7 +20,7 @@ function fixture(external = true, stored: any = null) {
     storage: { get: () => stored, set: (_key: string, value: unknown) => { saved = structuredClone(value); } },
     os: { openExternal: async (url: string) => { launch = url; return external; } }, register: (c: any) => { if (c.id === 'record') contribution = c; else discard = c; } };
   plugin.register(ctx);
-  return { click: () => contribution.render().props.onClick(), discard: () => discard.data.run(), tick: () => interval?.(), saved: () => saved, launch: () => launch, watching: () => Boolean(interval), dispose: () => dispose() };
+  return { click: () => contribution.render().props.onClick(), discard: () => discard.data.run(), tick: () => interval?.(), saved: () => saved, launch: () => launch || (shared.submissions.find((v: any) => v.method === 'shell.exec' && v.params.command.includes('hermes record')) as any)?.params.command, watching: () => Boolean(interval), dispose: () => dispose() };
 }
 async function packet(secret: string, phase: string) {
   const payload = JSON.stringify({ phase, ...(phase === 'saved' ? { source: '/private/owned.apparent' } : {}) });
@@ -28,9 +28,14 @@ async function packet(secret: string, phase: string) {
 }
 function reset() {
   shared.submissions = []; shared.failSubmit = false; shared.session = 'runtime-A'; shared.owner = { connectionId: 'local-A', profile: 'work' };
+  shared.draftText = ''; shared.draftInserts = []; shared.draftSubmits = [];
+  shared.captureBundle = '/private/owned.apparent'; shared.handoffSource = 'c'.repeat(32);
+  shared.runtimeCalls = 0; shared.runtimeDescribeHook = null;
   shared.routes = [{ connectionId: 'local-A', profile: 'work', targetProfile: 'work', mode: 'local' }];
   shared.runtime.instance_id = 'runtime-instance-A';
   shared.launchWait = null; shared.keyReads = []; shared.failLaunch = false;
+  (globalThis as any).localStorage = { getItem: () => 'fresh-draft-1' };
+  (globalThis as any).document = { querySelectorAll: () => [{ isConnected: true }] };
 }
 test('completion submits once to captured gateway/session after foreground switches; next click records again', async () => {
   reset(); const originalFetch = globalThis.fetch;
@@ -41,18 +46,19 @@ test('completion submits once to captured gateway/session after foreground switc
   };
   try {
     f.click(); await until(() => f.launch());
-    assert.match(f.launch()!, /^apparent:\/\/hermes\/[a-f0-9]{32}\/\d+$/);
+    assert.match(f.launch()!, /hermes record '[a-f0-9]{32}\/\d+'/);
     const first = f.saved();
     shared.session = 'runtime-B'; shared.owner = { connectionId: 'other-gateway', profile: 'work' };
     phase = 'saved'; f.tick(); await until(() => acknowledgements === 1);
     f.tick(); await new Promise(resolve => setTimeout(resolve, 5));
-    assert.equal(shared.submissions.length, 1);
-    assert.equal((shared.submissions[0] as any).params.session_id, 'runtime-A');
-    assert.equal((shared.submissions[0] as any).route.connectionId, 'local-A');
-    assert.equal((shared.submissions[0] as any).params.input_id, first.token);
+    const sent = shared.submissions.filter((v: any) => v.method === 'prompt.submit') as any[];
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].params.session_id, 'runtime-A');
+    assert.equal(sent[0].route.connectionId, 'local-A');
+    assert.equal(sent[0].params.input_id, first.token);
     assert.equal(shared.keyReads.length, 1);
     assert.equal(shared.keyReads[0].route.connectionId, 'local-A');
-    assert.equal(shared.keyReads[0].params.session_id, 'runtime-A');
+    assert.equal(shared.keyReads[0].params.session_id, 'local-helper');
     assert.ok(!JSON.stringify(f.saved()).includes(shared.key));
     shared.owner = { connectionId: 'local-A', profile: 'work' }; phase = 'recording';
     f.click(); await until(() => f.saved()?.token && f.saved().token !== first.token);
@@ -63,20 +69,20 @@ test('lost submit replies retry only original input_id and stop; no title lookup
   globalThis.fetch = async () => packet(shared.key, 'saved');
   try {
     f.click(); await until(() => f.launch()); f.tick(); await until(() => !f.watching());
-    assert.equal(shared.submissions.length, 2);
-    assert.deepEqual(shared.submissions[0], shared.submissions[1]);
-    assert.equal((shared.submissions[0] as any).method, 'prompt.submit');
-    f.tick(); assert.equal(shared.submissions.length, 2);
+    const sends = shared.submissions.filter((v: any) => v.method === 'prompt.submit');
+    assert.equal(sends.length, 2);
+    assert.deepEqual(sends[0], sends[1]);
+    f.tick(); assert.equal(shared.submissions.filter((v: any) => v.method === 'prompt.submit').length, 2);
   } finally { shared.failSubmit = false; globalThis.fetch = originalFetch; }
 });
 test('a listener knowing the public launch ID cannot forge completion', async () => {
   reset(); const originalFetch = globalThis.fetch; const f = fixture(); let requested: string | undefined;
-  globalThis.fetch = async url => { requested = String(url); return packet(f.launch()!.split('/')[3], 'saved'); };
+  globalThis.fetch = async url => { requested = String(url); return packet(f.saved().token, 'saved'); };
   try {
     f.click(); await until(() => f.launch()); f.tick(); await until(() => requested);
     await new Promise(resolve => setTimeout(resolve, 10));
     assert.ok(!requested!.includes(shared.key));
-    assert.equal(shared.submissions.length, 0);
+    assert.equal(shared.submissions.filter((v: any) => v.method === 'prompt.submit').length, 0);
     assert.equal(f.saved().source, undefined);
   } finally { globalThis.fetch = originalFetch; }
 });
@@ -101,13 +107,13 @@ test('changed route mapping or replaced runtime cannot receive the saved recordi
       await savedRead;
       change(); phase = 'saved'; releaseSaved();
       await until(() => !f.watching());
-      assert.equal(shared.submissions.length, 0);
+      assert.equal(shared.submissions.filter((v: any) => v.method === 'prompt.submit').length, 0);
       assert.equal(f.saved().source, '/private/owned.apparent');
       await f.discard(); assert.equal(f.saved(), null);
     }
   } finally { reset(); globalThis.fetch = originalFetch; }
 });
-test('stock app-link refusal uses only the original local session safe shell; remote routes never execute', async () => {
+test('remote destinations still start recording through the dedicated local helper only', async () => {
   reset();
   const f = fixture(false);
   f.click(); await until(() => f.watching());
@@ -115,14 +121,14 @@ test('stock app-link refusal uses only the original local session safe shell; re
   const call = shared.submissions[0] as any;
   assert.equal(call.method, 'shell.exec');
   assert.equal(call.route.connectionId, 'local-A');
-  assert.equal(call.params.session_id, 'runtime-A');
+  assert.equal(call.params.session_id, 'local-helper');
   assert.ok(call.params.command.includes(f.launch()));
-  reset(); shared.routes[0].mode = 'ssh';
+  reset(); shared.owner = { connectionId: 'remote-A', profile: 'work' };
+  shared.routes = [{ connectionId: 'remote-A', profile: 'work', targetProfile: 'work', mode: 'ssh' }, { connectionId: 'local-A', profile: 'work', targetProfile: 'work', mode: 'local' }];
   const remote = fixture(false); remote.click();
-  await until(() => remote.saved() === null);
-  assert.equal(remote.launch(), undefined);
-  assert.equal(shared.submissions.length, 0);
-  assert.equal(remote.watching(), false);
+  await until(() => remote.launch());
+  assert.match(remote.launch()!, /hermes record '[a-f0-9]{32}\/\d+'/);
+  assert.equal((shared.submissions[0] as any).route.connectionId, 'local-A');
   reset();
 });
 test('a lost local launch reply retains the original pending handoff without launching again', async () => {
@@ -174,4 +180,137 @@ test('reload obtains the private key again and retries the same saved handoff wi
     assert.equal((shared.submissions[0] as any).params.session_id, stored.destination.session);
     resumed.dispose();
   } finally { reset(); globalThis.fetch = originalFetch; }
+});
+
+test('empty new draft submits after recording and typed draft is preserved with an acknowledged insertion', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const typed of ['', 'Please inspect this carefully']) {
+      reset(); shared.session = null; shared.draftText = typed; const f = fixture();
+      globalThis.fetch = async url => String(url).includes('/ack/') ? Response.json({ ok: true }) : packet(shared.key, 'saved');
+      f.click(); await until(() => f.launch()); f.tick();
+      await until(() => typed ? shared.draftInserts.length === 1 : shared.draftSubmits.length === 1);
+      if (typed) {
+        assert.equal(shared.draftInserts[0].id, 'new');
+        assert.equal(shared.draftInserts[0].opts.mode, 'block');
+        assert.equal(shared.draftInserts[0].text.includes('/private/owned.apparent'), true);
+        assert.equal(shared.draftSubmits.length, 0);
+        assert.equal(shared.draftText, typed);
+      } else {
+        assert.equal(shared.draftSubmits[0].id, 'new');
+        assert.equal(shared.draftSubmits[0].text.includes('/private/owned.apparent'), true);
+      }
+      f.dispose();
+    }
+  } finally { globalThis.fetch = originalFetch; reset(); }
+});
+
+test('new-draft identity change blocks return; explicit retry binds to the current fresh draft', async () => {
+  const originalFetch = globalThis.fetch; reset(); shared.session = null; const f = fixture(); let key = 'fresh-draft-1';
+  (globalThis as any).localStorage = { getItem: () => key };
+  globalThis.fetch = async url => String(url).includes('/ack/') ? Response.json({ ok: true }) : packet(shared.key, 'saved');
+  try {
+    f.click(); await until(() => f.launch()); key = 'fresh-draft-2'; f.tick(); await until(() => !f.watching());
+    assert.equal(shared.draftSubmits.length, 0);
+    assert.ok(f.saved()?.source);
+    key = 'fresh-draft-3'; f.click(); await until(() => shared.draftSubmits.length === 1);
+    assert.equal(shared.draftSubmits[0].id, 'new');
+  } finally { f.dispose(); reset(); }
+});
+
+test('draft navigation during the final awaited runtime check prevents capture startup', async () => {
+  reset(); shared.session = null; const f = fixture();
+  shared.runtimeDescribeHook = count => { if (count === 4) (globalThis as any).localStorage = { getItem: () => 'fresh-draft-moved' }; };
+  try {
+    f.click(); await until(() => f.saved() === null);
+    assert.equal(f.launch(), undefined);
+    assert.equal(shared.submissions.some((v: any) => v.method === 'shell.exec' && v.params.command.includes('hermes record')), false);
+  } finally { f.dispose(); reset(); }
+});
+
+test('new-draft navigation during the final post-read runtime await blocks composer mutation', async () => {
+  reset(); shared.session = null; const stored = { version: 3, token: 'f'.repeat(32), port: 45000, created: Date.now(), source: '/private/owned.apparent', draftKey: 'current-draft',
+    destination: { session: '', connectionId: 'local-A', profile: 'work', targetProfile: 'work', mode: 'local', local: true },
+    runtime: shared.runtime, localRoute: { connectionId: 'local-A', profile: 'work', targetProfile: 'work' }, localRuntime: shared.runtime, helper: 'local-helper' };
+  const f = fixture(true, stored);
+  try {
+    await new Promise(resolve => setTimeout(resolve, 5));
+    const finalRuntimeCall = shared.runtimeCalls + 2;
+    shared.runtimeDescribeHook = count => { if (count === finalRuntimeCall) (globalThis as any).localStorage = { getItem: () => 'new-draft-after-read' }; };
+    f.click(); await until(() => !f.watching());
+    assert.equal(shared.draftSubmits.length, 0);
+    assert.equal(shared.draftInserts.length, 0);
+    assert.ok(f.saved()?.source);
+  } finally { f.dispose(); reset(); }
+});
+
+test('restored new draft stays paused until explicit click and does not launch a second capture', async () => {
+  reset(); shared.session = null;
+  const stored = { version: 3, token: 'e'.repeat(32), port: 45000, created: Date.now(), source: '/private/owned.apparent', draftKey: 'prior-draft',
+    destination: { session: '', connectionId: 'local-A', profile: 'work', targetProfile: 'work', mode: 'local', local: true },
+    runtime: shared.runtime, localRoute: { connectionId: 'local-A', profile: 'work', targetProfile: 'work' }, localRuntime: shared.runtime, helper: 'local-helper' };
+  const originalFetch = globalThis.fetch; const f = fixture(true, stored);
+  globalThis.fetch = async url => String(url).includes('/ack/') ? Response.json({ ok: true }) : packet(shared.key, 'saved');
+  try {
+    await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(f.watching(), false);
+    assert.equal(f.launch(), undefined);
+    f.click(); await until(() => shared.draftSubmits.length === 1);
+    assert.equal(f.launch(), undefined);
+    assert.equal(shared.submissions.some((v: any) => v.method === 'shell.exec' && v.params.command.includes('hermes record')), false);
+  } finally { f.dispose(); globalThis.fetch = originalFetch; reset(); }
+});
+
+test('remote retry refreshes the same capture source and sends only its Connect ID', async () => {
+  reset(); shared.owner = { connectionId: 'remote-A', profile: 'work' };
+  shared.routes = [{ connectionId: 'remote-A', profile: 'work', targetProfile: 'work', mode: 'ssh' }, { connectionId: 'local-A', profile: 'work', targetProfile: 'work', mode: 'local' }];
+  const originalFetch = globalThis.fetch; const f = fixture(); let connectReady = false;
+  globalThis.fetch = async url => {
+    if (String(url).includes('/ack/')) return Response.json({ ok: true });
+    const payload = JSON.stringify({ phase: 'saved', source: '/private/owned.apparent' });
+    return Response.json({ payload, mac: await sign(shared.key, payload) });
+  };
+  try {
+    f.click(); await until(() => f.launch()); f.tick(); await until(() => !f.watching());
+    assert.equal(shared.submissions.filter((v: any) => v.method === 'prompt.submit').length, 0);
+    assert.equal(f.saved().source, '/private/owned.apparent');
+    connectReady = true; shared.handoffSource = 'd'.repeat(32); f.click(); await until(() => f.saved() === null);
+    const sent = shared.submissions.filter((v: any) => v.method === 'prompt.submit') as any[];
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].params.text, /d{32}/);
+    assert.ok(!sent[0].params.text.includes('/private/owned.apparent'));
+  } finally { globalThis.fetch = originalFetch; reset(); }
+});
+
+test('local destination resolves a Connect handoff ID to its exact saved local bundle', async () => {
+  reset(); const originalFetch = globalThis.fetch; const f = fixture();
+  globalThis.fetch = async url => String(url).includes('/ack/') ? Response.json({ ok: true }) : packet(shared.key, 'saved').then(async response => {
+    const packet = await response.json(); const payload = JSON.stringify({ phase: 'saved', source: shared.handoffSource });
+    return Response.json({ payload, mac: await sign(shared.key, payload) });
+  });
+  try {
+    f.click(); await until(() => f.launch()); f.tick(); await until(() => f.saved() === null);
+    const sent = shared.submissions.filter((v: any) => v.method === 'prompt.submit') as any[];
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].params.text, /\/private\/owned\.apparent/);
+    assert.ok(shared.submissions.some((v: any) => v.method === 'shell.exec' && v.params.command.includes('capture inspect')));
+    assert.ok(shared.submissions.some((v: any) => v.method === 'shell.exec' && v.params.command.includes('capture handoff')));
+  } finally { globalThis.fetch = originalFetch; reset(); }
+});
+
+test('text typed during the final connection check is preserved instead of submitted over', async () => {
+  reset(); shared.session = null;
+  const stored = { version: 3, token: 'e'.repeat(32), port: 45000, created: Date.now(), source: '/private/owned.apparent', draftKey: 'prior-draft',
+    destination: { session: '', connectionId: 'local-A', profile: 'work', targetProfile: 'work', mode: 'local', local: true },
+    runtime: shared.runtime, localRoute: { connectionId: 'local-A', profile: 'work', targetProfile: 'work' }, localRuntime: shared.runtime, helper: 'local-helper' };
+  const originalFetch = globalThis.fetch; const f = fixture(true, stored);
+  globalThis.fetch = async () => Response.json({ ok: true });
+  try {
+    await new Promise(resolve => setTimeout(resolve, 5));
+    shared.runtimeDescribeHook = count => { if (count === 2) shared.draftText = 'Keep this unfinished instruction'; };
+    f.click(); await until(() => f.saved() === null);
+    assert.equal(shared.draftSubmits.length, 0);
+    assert.equal(shared.draftInserts.length, 1);
+    assert.equal(shared.draftText, 'Keep this unfinished instruction');
+  } finally { f.dispose(); globalThis.fetch = originalFetch; reset(); }
 });

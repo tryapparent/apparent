@@ -1,16 +1,27 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { launchURL, launchCommand, keyCommand, submission, captureCanStart } from './controller.ts';
+import { recordCommand, captureInspectCommand, captureHandoffCommand, keyCommand, shellQuote, submission, captureCanStart } from './controller.ts';
 const token = '0123456789abcdef0123456789abcdef';
 const destination = { session: 'runtime-chat-A', connectionId: 'local', profile: 'default', local: true, mode: 'local', targetProfile: 'default' };
-test('launch exposes only a public request ID and port, with strictly bounded shell arguments', () => {
-  assert.equal(launchURL(token, 45000), `apparent://hermes/${token}/45000`);
-  assert.throws(() => launchURL(token, 80));
-  assert.throws(() => launchURL('bad', 45000));
-  assert.match(launchCommand(token, 45000), /Darwin\) open 'apparent:\/\/hermes\//);
-  assert.throws(() => launchCommand("a'; touch /tmp/unowned; #", 45000));
+test('private key helper command only reads the token-scoped key', () => {
   assert.match(keyCommand(token), new RegExp(`apparent-hermes/${token}\\.key`));
   assert.throws(() => keyCommand('../unrelated'));
+});
+test('portable recording command discovers the local CLI and invokes the native Hermes contract', () => {
+  const command = recordCommand(token, 45000);
+  assert.match(command, /command -v apparent/);
+  assert.match(command, /Darwin\|Linux/);
+  assert.match(command, /mdfind/);
+  assert.match(command, /hermes record '0123456789abcdef0123456789abcdef\/45000'/);
+  assert.throws(() => recordCommand('../bad', 45000));
+  assert.throws(() => recordCommand(token, 80));
+  assert.equal(shellQuote("a'b"), "'a'\\''b'");
+});
+test('capture refresh commands address only the exact owned capture token', () => {
+  assert.match(captureInspectCommand(token), /"\$apparent_bin" capture inspect '0123456789abcdef0123456789abcdef'/);
+  assert.match(captureHandoffCommand(token), /"\$apparent_bin" capture handoff '0123456789abcdef0123456789abcdef'/);
+  assert.throws(() => captureInspectCommand('../../etc/passwd'));
+  assert.throws(() => captureHandoffCommand('bad'));
 });
 test('submission retains exact runtime session and idempotency token', () => {
   const params = submission(destination, token, '/private/recording.apparent');
