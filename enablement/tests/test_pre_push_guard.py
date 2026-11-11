@@ -54,7 +54,7 @@ class PrePushGuardTests(unittest.TestCase):
             path = self.repo / "enablement" / name
             path.parent.mkdir(exist_ok=True)
             path.write_text("import {test} from 'node:test'; test('fixture', () => {});\n")
-        for name in ("hermes/desktop/controller.test.ts", "hermes/desktop/plugin.test.ts",
+        for name in ("hermes/distribution/package.test.ts", "hermes/desktop/controller.test.ts", "hermes/desktop/plugin.test.ts",
                      "capture/desktop/ui/frontend/src/hermes/protocol.test.ts",
                      "capture/desktop/ui/frontend/src/hermes/mailbox.test.ts"):
             path = self.repo / name
