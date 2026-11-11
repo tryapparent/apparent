@@ -104,6 +104,7 @@ test('native temporary environment and Desktop gates fail before expensive Rust 
 });
 
 test('real command execution stops at temporary-root or Electron failure without reaching Rust', () => fixture((dir, env) => {
+  assert.equal(spawnSync('git', ['init', '-q'], {cwd: dir, env}).status, 0);
   const bin = join(dir, 'bin'); mkdirSync(bin);
   const trace = join(dir, 'trace');
   for (const name of ['python3', 'npm', 'xvfb-run']) {
@@ -352,7 +353,7 @@ test('installed hook proves control-only selection, mandatory commands, failure 
 function copyInputHelpers(dir: string) {
   mkdirSync(join(dir, 'enablement/ci/routing'), {recursive: true});
   copyFileSync(join(root, 'enablement/ci/routing/consumers.ts'), join(dir, 'enablement/ci/routing/consumers.ts'));
-  for (const name of ['service.ts', 'receipt.ts'])
+  for (const name of ['service.ts', 'receipt.ts', 'desktop-install.ts'])
     copyFileSync(join(root, 'enablement/local-tests', name), join(dir, 'enablement/local-tests', name));
   mkdirSync(join(dir, 'enablement/ci'), {recursive: true});
   for (const name of ['inputs.ts', 'workflow-controls.ts'])

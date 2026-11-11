@@ -26,6 +26,55 @@ generated output is rebuilt; a runtime or generator failure stops preparation.
 Rerun after disposable outputs are cleaned. This prepares inputs without Cargo
 or a GUI launch; it does not establish app readiness or native acceptance.
 
+## Desktop dependency installation
+
+On local macOS/Linux pushes, the Desktop block can reuse a successful
+`npm ci --no-audit --no-fund` installation in the same worktree. Both `npm test`
+and the complete `test:electron` build/suite execute on every push, including
+installation hits. CI, missing admission and unsupported command/environment or
+dependency lifecycle shapes retain the original clean install. Hosted workflows
+and native/release gates are unchanged.
+
+`desktop-install.ts` binds the frontend manifest/lock, npm configuration and config
+files, Node/npm bytes and versions, OS/architecture, install environment, and
+source inputs of the two supported local file packages (Shared UI and Record
+Storage). Other local packages, linked lock entries and new dependency install
+scripts fall back to fresh execution. Operational IDs are removed from the actual
+install as well as its fingerprint; loader/runtime overrides run fresh.
+Ordinary frontend source edits are not installation inputs.
+
+The installed tree's complete bytes, modes, inventory and internal symlink targets
+must match the saved output. Missing/modified dependencies trigger installation;
+timestamps and inode identity additionally detect changes during lookup.
+Desktop's build restages Record's compiled exports in `node_modules`, so cold
+qualification saves output only after both fresh Desktop suites succeed, with
+unchanged install inputs. On a hit the same suites run again. Generated local
+package `dist` is rebuilt by those checks, not used as an install-input receipt.
+The logged cold qualification duration includes those checks; it is not the time
+saved by skipping installation.
+
+Evidence uses the existing private six-hour receipt mechanism, in a separate
+namespace keyed by the frontend directory. Failed installs/checks cannot publish
+a new receipt. Cleanup, contention, expiry, invalid seals and uncertain inputs
+lose the optimization. No cross-worktree `node_modules` or persistent config is
+shared. This trusts the same local account as the hook. Roll back by removing
+the `desktopDependencies` call; the runner's canonical command plan stays intact.
+
+A per-worktree runtime mutex under Git's administrative directory protects the
+whole install/check block, including hits and fresh fallbacks, from another
+invocation replacing `node_modules`. A busy/unavailable mutex fails the push
+before running Desktop commands. Normal completion and exceptions release it;
+an interrupted owner leaves a lock that requires verification before removal.
+This required runtime state is separate from disposable `/tmp` evidence.
+
+The installed-hook regression uses real Git pushes and npm file dependencies in
+a synthetic package: consecutive source-only pushes install once and execute
+both suites twice. It also checks dependency damage, mode/deletion changes,
+local-package changes, environment changes, fresh CI fallback and failed checks.
+This proves tooling behavior, not native Electron application acceptance.
+
+## Connect service test reuse
+
 The local runner reuses successful Connect service serial Node tests on Linux x64/glibc by
 default when their qualified inputs match. The audited closure is pinned in
 `service.ts` to the service, shared UI and shared assets at `49d3414b2`. Changing

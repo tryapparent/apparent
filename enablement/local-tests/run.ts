@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {changedPaths as inputPaths, workflowControlPaths, regularFileDelta} from '../ci/inputs.ts';
 import {serviceTests} from './service.ts';
+import {desktopDependencies} from './desktop-install.ts';
 import {owners, selectedOwners, nativeInputs} from '../ci/routing/consumers.ts';
 export {owners} from '../ci/routing/consumers.ts';
 import type {Admission} from './service.ts';
@@ -106,7 +107,7 @@ export function contractTests(cwd = root): Command[] {
     .map(name => `enablement/prerequisites/${name}`);
   if (!prerequisites.length) throw Error('Native prerequisite contract inventory is empty');
   return [
-    { argv: ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/run.test.ts', 'enablement/local-tests/reuse.test.ts',
+    { argv: ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/run.test.ts', 'enablement/local-tests/reuse.test.ts', 'enablement/local-tests/desktop-install.test.ts',
       ...prerequisites, 'enablement/timing/command.test.ts', 'enablement/timing/mac-cache.test.ts'], cwd: '.' },
     { argv: ['bun', 'test', 'enablement/ci/'], cwd: '.' },
   ];
@@ -126,7 +127,9 @@ export function execute(plan: Command[], cwd = root, admission?: Admission): voi
     if (result.error) throw result.error;
     if (result.status !== 0) throw Error(`Local test command failed (${result.signal || result.status}): ${argv.join(' ')}`);
   };
-  for (const command of plan) {
+  for (let index = 0; index < plan.length; index++) {
+    const command = plan[index];
+    if (desktopDependencies(plan.slice(index, index + 3), cwd, env, admission, run)) { index += 2; continue; }
     if (!serviceTests(command, cwd, {...env, ...command.env}, admission, run)) run(command);
   }
 }
