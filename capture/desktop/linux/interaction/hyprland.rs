@@ -1032,7 +1032,7 @@ mod tests {
         assert_eq!(existing(copilot, 65, "Copilot", "record"), Existing::Other);
         let managed_copilot = r#"[{"modmask":65,"key":"","keycode":0,"description":"Apparent: record [managed-v1]"}]"#;
         assert_eq!(existing(managed_copilot, 65, "Copilot", "record"), Existing::Managed);
-        assert_eq!(existing(&format!("[{managed_copilot},{}]", &managed_copilot[1..managed_copilot.len()-1]), 65, "Copilot", "record"), Existing::Other);
+        assert_eq!(existing(&format!("[{0},{0}]", &managed_copilot[1..managed_copilot.len()-1]), 65, "Copilot", "record"), Existing::Other);
         let wrong_action = managed_copilot.replace("record [managed-v1]", "paste [managed-v1]");
         assert_eq!(existing(&wrong_action, 65, "Copilot", "record"), Existing::Other);
         assert_eq!(existing(copilot, 65, "S", "record"), Existing::Free);
