@@ -141,12 +141,16 @@ app.whenReady().then(()=>{
       const width=Math.min(area.width,Math.max(100,Math.ceil(size.width)));
       const height=Math.min(160,Math.max(58,Math.ceil(size.height)));
       const before=window.getBounds();
-      if(before.width!==width || before.height!==height)position({x:Math.round(before.x+(before.width-width)/2),y:before.y,width,height});
+      const resized=before.width!==width || before.height!==height;
+      if(resized)position({x:Math.round(before.x+(before.width-width)/2),y:before.y,width,height});
       visibleWidth=current.phase==='recording' && current.noteCount===0?width-72:width;
       if(process.platform==='linux'){
         const scale=screen.getDisplayMatching(window.getBounds()).scaleFactor;
         const key=JSON.stringify([visibleWidth,height,scale]);
         if(key!==appliedShape){window.setShape(geometry.shape(visibleWidth,height));appliedShape=key;}
+        // XWayland can retain the previous warning row inside the newly
+        // transparent notes reservation until another event damages the surface.
+        if(resized)window.webContents.invalidate();
       }
       return size.revision===current?.revision;
     }catch{app.exit(1);}
