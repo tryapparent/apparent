@@ -1,10 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@apparent/ui/button';
-import {RetentionController, type RetentionState, type RetentionResult, type UsageResult} from '@apparent/record-storage';
+import {RetentionController, retentionForPreset, type RetentionPreset, type RetentionState, type RetentionResult, type UsageResult} from '@apparent/record-storage';
 import {retentionPorts} from './storage/transport';
 import { NativeSelect, NativeSelectOption } from '@apparent/ui/native-select';
 import { Help } from './storage/help';
 import { RefreshCw } from 'lucide-react';
+
+function retentionLabel(preset: RetentionPreset) {
+  const {mediaDays, bundleDays} = retentionForPreset(preset);
+  const duration = (days: number | null) => days === null ? 'forever' : `${days} days`;
+  return mediaDays === null && bundleDays === null ? 'Forever'
+    : `Video/audio ${duration(mediaDays)} · other files ${duration(bundleDays)}`;
+}
 
 function problem(result: RetentionResult | UsageResult | undefined) {
   if (!result || result.status === 'connected' || result.status === 'cancelled') return '';
@@ -49,7 +56,7 @@ export function Retention({ effectivePath, settings = false }: { effectivePath: 
         <NativeSelect id="retention-preset" className="settings-policy" disabled={busy || scanning} value={preset}
           onChange={event => controller.current?.select(event.target.value)}>
           <NativeSelectOption value="" disabled>Custom policy (config file)</NativeSelectOption>
-          {snapshot.retention.options.map(option => <NativeSelectOption key={option.id} value={option.id}>{option.label}</NativeSelectOption>)}
+          {snapshot.retention.options.map(option => <NativeSelectOption key={option.id} value={option.id}>{retentionLabel(option.id)}</NativeSelectOption>)}
         </NativeSelect>
         {!snapshot.retention.preset && <p className="settings-metadata">{snapshot.retention.note}</p>}
         <div className="settings-actions">

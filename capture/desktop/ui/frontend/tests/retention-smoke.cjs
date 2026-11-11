@@ -105,6 +105,11 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   initialRetentionBusy = false;
   await page.getByRole('button', { name: 'Refresh retention', exact: true }).click();
   await expect(select).toHaveValue('week');
+  await expect(select.locator('option:checked')).toHaveText('Video/audio 7 days · other files 30 days');
+  if (process.env.APPARENT_SETTINGS_PROOF) {
+    await fs.mkdir(process.env.APPARENT_SETTINGS_PROOF, { recursive: true });
+    await page.screenshot({ animations: 'disabled', path: path.join(process.env.APPARENT_SETTINGS_PROOF, 'storage-week.png') });
+  }
   const help = page.getByRole('button', { name: 'About keeping recordings', exact: true });
   await help.focus();
   await expect(page.getByRole('tooltip')).toContainText('Saving schedules cleanup');
@@ -116,6 +121,7 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   await select.selectOption('month');
   await page.getByRole('button', { name: 'Save retention', exact: true }).click();
   await expect(select).toHaveValue('month');
+  await expect(select.locator('option:checked')).toHaveText('Video/audio 30 days · other files 90 days');
   assert.equal(preset, 'month');
   t.diagnostic('Retention saved');
   await page.getByRole('button', { name: 'Refresh retention', exact: true }).click();
@@ -212,6 +218,12 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   }
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(640, 530));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  assert.equal(await select.evaluate(element => {
+    const style = getComputedStyle(element), context = document.createElement('canvas').getContext('2d');
+    context.font = style.font;
+    return [...element.options].every(option => context.measureText(option.label).width <=
+      element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
+  }), true, 'both retention durations remain readable at the minimum window width');
   await select.focus(); await expect(select).toBeFocused();
   // Isolate the suspected macOS CDP select-menu shutdown hang: Escape alone
   // did not fix it. Keep this keyboard check Linux-only; selectOption above
