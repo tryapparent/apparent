@@ -97,6 +97,6 @@ includes both Record test inventories; its Electron build generates the Storage
 adapters and Completion worker, which settings packaging stages for the native
 app. Root/platform integration and Mac admission remain selected. Isolated inputs
 omit unrelated Connect, Public and Hermes suites; mixed edits retain the union.
-Instructions, unexpected files/native sources, unknown Record packages and
+Embedded instructions, unexpected files/native sources, unknown Record packages and
 unknown history keep the broad fallback. Rollback is reverting these consumer
 rules and their regression expectations; no elapsed-time savings are claimed.

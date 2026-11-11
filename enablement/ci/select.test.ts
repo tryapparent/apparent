@@ -296,7 +296,8 @@ test('audited Record inputs retain Desktop and native platform consumers only', 
       assert.equal(macDecision(paths).macos, true);
       assert.equal(requiresMacRust(paths, []), true);
     }
-    for (const input of ['AGENTS.md', 'src/SKILL.md', 'native.rs', 'native.swift', 'native.S', 'Cargo.toml', 'src/unknown.bin', 'build.sh'])
+    assert.deepEqual(selectedOwners([`record/${pkg}/AGENTS.md`]), []);
+    for (const input of ['instructions/AGENTS.md', 'src/SKILL.md', 'native.rs', 'native.swift', 'native.S', 'Cargo.toml', 'src/unknown.bin', 'build.sh'])
       assert.deepEqual(selectedOwners([`record/${pkg}/${input}`]), selectedOwners(null));
   }
   assert.deepEqual(selectedOwners(['record/unknown/src/policy.ts']), selectedOwners(null));
