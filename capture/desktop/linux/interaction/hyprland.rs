@@ -377,7 +377,8 @@ fn external_record_from(source: &str, live: &str) -> Option<(ShortcutConfig, Pat
                 && bind["keycode"].as_u64() == Some(0)
         })
         .collect();
-    (live_matches.len() == 1)
+    (live_matches.len() == 1
+        && live_matches[0]["description"].as_str() == Some("Apparent: record"))
     .then(|| {
         (
             ShortcutConfig {
@@ -1175,6 +1176,7 @@ mod tests {
         let source = "o.bind(\"SUPER + SHIFT + code:201\", \"Apparent: record\", \"env LD_PRELOAD=/usr/lib/libcblas.so.3 GST_PLUGIN_PATH=/home/simon/.local/share/scrawl-setup/gstreamer-1.28.8 GPUI_X11_SCALE_FACTOR=1.6666667 /home/simon/.local/bin/apparent shortcut record\")";
         let live = r#"[{"modmask":65,"key":"code:201","keycode":0,"description":"Apparent: record"}]"#;
         assert_eq!(external_record_from(source, live).unwrap().0.key_code, 201);
+        assert!(external_record_from(source, &live.replace("Apparent: record", "Omarchy menu")).is_none());
         let other_code_same_mask = live.replace("]", r#",{"modmask":65,"key":"code:12","keycode":0,"description":"Workspace"}]"#);
         assert!(external_record_from(source, &other_code_same_mask).is_some());
         let bare = source.replace("SUPER + SHIFT + code:201", "code:201");
