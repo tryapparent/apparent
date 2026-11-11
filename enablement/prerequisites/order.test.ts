@@ -113,17 +113,21 @@ test('Linux retains its required full-build-before-bridge order and never admits
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(result.executed, [preflight, full, linuxBridge]);
   assert.deepEqual(result.trace.split('\n').filter(line => line.startsWith(preflight + '|')), [
-    preflight + '|test -j 3 --locked ' + earlyFilters[0] + ' -- --test-threads=2',
-    preflight + '|test -j 3 --locked ' + earlyFilters[1] + ' -- --exact',
+    preflight + '|test -j 3 --locked --timings -- --test-threads=2 ' + earlyFilters.slice(0, 2).join(' '),
   ]);
   assert.doesNotMatch(result.trace, /native-(storage|copy|reference)-assertions|command.ts packaging/);
+});
+test('Linux early Cargo failure prevents the full verifier and bridge checks', t => {
+  const result = execute(t, 'Linux', 'test -j 3');
+  assert.equal(result.status, 31);
+  assert.deepEqual(result.executed, [preflight]);
 });
 
 // Explicit opt-in: cheap contracts must not need Rust or compile the app.
 // Run through t3-build on Clanker. This uses real Cargo/libtest with the actual
 // workflow shell, a cold target and no dependencies/native helpers.
 const cargoFixture = process.env.APPARENT_EARLY_CARGO_FIXTURE === '1' ? test : test.skip;
-cargoFixture('real Cargo ORs every early Mac filter and propagates each assertion failure', t => {
+for (const os of ['macOS', 'Linux']) cargoFixture(`real Cargo ORs every early ${os} filter and propagates each assertion failure`, t => {
   const directory = mkdtempSync('/tmp/apparent-dev-early-cargo-');
   t.after(() => rmSync(directory, {recursive: true, force: true}));
   const names = [earlyFilters[0] + 'abbreviates_only_paths_inside_home',
@@ -143,15 +147,17 @@ cargoFixture('real Cargo ORs every early Mac filter and propagates each assertio
   writeFileSync(join(directory, 'lib.rs'), render(tree) + '\n#[test] fn unselected() { panic!("unselected test ran"); }\n');
   const shell = steps.find(step => step.name === preflight)!.run!
     .replaceAll('${{ needs.select.outputs.root }}', 'true');
-  for (const failure of ['', ...names]) {
+  const selected = os === 'macOS' ? names : names.filter(name => name !== earlyFilters[2]);
+  for (const failure of ['', ...selected]) {
     const result = spawnSync('bash', ['-e', '-c', shell], {cwd: directory, encoding: 'utf8', timeout: 30_000,
-      env: {...process.env, RUNNER_OS: 'macOS', EARLY_FAIL: failure, CARGO_TARGET_DIR: join(directory, 'target'),
+      env: {...process.env, RUNNER_OS: os, EARLY_FAIL: failure, CARGO_TARGET_DIR: join(directory, 'target'),
         CARGO_NET_OFFLINE: 'true', RUSTC_WRAPPER: ''}});
     assert.equal(result.status, failure ? 101 : 0, result.stdout + result.stderr);
     const executed = [...result.stdout.matchAll(/^test (\S+) \.\.\. (?:ok|FAILED)$/gm)].map(match => match[1]).sort();
-    assert.deepEqual(executed, names, result.stdout);
-    if (failure) assert.match(result.stdout, /test result: FAILED\. 3 passed; 1 failed;/);
-    else assert.match(result.stdout, /test result: ok\. 4 passed; 0 failed;/);
+    assert.deepEqual(executed, selected, result.stdout);
+    assert.ok(result.stdout.includes(failure
+      ? `test result: FAILED. ${selected.length - 1} passed; 1 failed;`
+      : `test result: ok. ${selected.length} passed; 0 failed;`), result.stdout);
   }
 });
 test('Engine-only selections do not launch the application or native controls', t => {

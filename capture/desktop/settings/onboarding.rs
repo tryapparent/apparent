@@ -1104,6 +1104,7 @@ pub struct Session {
     pen_picker: bool,
     pen_selected: bool,
     pen_error: bool,
+    pen_save_id: Option<String>,
 }
 
 impl Session {
@@ -1133,7 +1134,7 @@ impl Session {
             practice: None,
             anchor: None,
             practice_board: None,
-            practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
+            practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,pen_save_id:None,
         }
     }
 
@@ -1154,7 +1155,6 @@ impl Session {
         let events = move |event| {
             if event_alive.load(std::sync::atomic::Ordering::Acquire) { events(event); }
         };
-        let electron = super::presentation::assets().filter(|(app, _)| app.join("dist/onboarding.html").is_file() && app.join("electron/onboarding.cjs").is_file());
         let native_events = events.clone();
         let native_shortcut = shortcut.to_owned();
         let native = move |generation| {
@@ -1171,9 +1171,30 @@ impl Session {
                 Ok(Transport::InProcess(Some(sender)))
             }
         };
-        let attempted = electron.and_then(|(app, runtime)| {
-            Self::spawn_renderer_transport(&mut super::presentation::onboarding_command(runtime, app), transport_generation, events.clone()).ok()
-        });
+        let attempted = match super::presentation::onboarding_assets() {
+            Err(stage) => {
+                crate::capture::engine::runtime::apparent_log(format!(
+                    "onboarding renderer unavailable stage={}",
+                    stage.stage()
+                ));
+                None
+            }
+            Ok((app, runtime)) => {
+                let mut command = super::presentation::onboarding_command(runtime, app);
+                match Self::spawn_renderer_transport(&mut command, transport_generation, events.clone()) {
+                    Ok(transport) => Some(transport),
+                    Err(error) => {
+                        let kind = error.downcast_ref::<std::io::Error>()
+                            .map(|error| format!("io_{:?}", error.kind()))
+                            .unwrap_or_else(|| "other".to_owned());
+                        crate::capture::engine::runtime::apparent_log(format!(
+                            "onboarding renderer unavailable stage=spawn_error kind={kind}"
+                        ));
+                        None
+                    }
+                }
+            }
+        };
         let shell = attempted.is_some();
         let (transport, fallback) = match attempted {
             Some(transport) => (transport, Some(Box::new(native) as Box<dyn Fn(u64) -> anyhow::Result<Transport>>)),
@@ -1227,7 +1248,7 @@ impl Session {
             practice: shell.then(super::practice::Practice::default),
             anchor: None,
             practice_board: None,
-            practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,
+            practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,pen_save_id:None,
         };
         session.shortcut_changed(shortcut);
         session.sync();
@@ -1341,7 +1362,10 @@ impl Session {
                     events(Event::Action(action));
                 }
             }
-            if !closed { events(Event::Exited); }
+            if !closed {
+                crate::capture::engine::runtime::apparent_log("onboarding renderer transport stdout closed");
+                events(Event::Exited);
+            }
         });
     }
 
@@ -1359,6 +1383,7 @@ impl Session {
         }
         self.fallback_pending = false;
         let Some(fallback) = self.fallback.take() else { return false; };
+        crate::capture::engine::runtime::apparent_log("onboarding native fallback requested");
         if let Some(adapter) = self.permission_adapter.take() { retire_transport(adapter); }
         let old = std::mem::replace(&mut self.transport, Transport::InProcess(None));
         retire_transport(old);
@@ -1376,7 +1401,16 @@ impl Session {
                 if self.flow.hidden { self.send(&serde_json::json!({"type": "hide"})); }
                 true
             }
-            Err(_) => false,
+            Err(error) => {
+                let kind = error
+                    .downcast_ref::<std::io::Error>()
+                    .map(|error| format!("io_{:?}", error.kind()))
+                    .unwrap_or_else(|| "other".to_owned());
+                crate::capture::engine::runtime::apparent_log(format!(
+                    "onboarding native fallback failed kind={kind}"
+                ));
+                false
+            }
         }
     }
 
@@ -1502,7 +1536,15 @@ impl Session {
         if self.practice.is_some() && self.flow.step()==Step::Welcome {
             if action=="continue" && !self.pen_picker {self.pen_picker=true;self.sync();return Effect::None;}
             if let Some(name)=action.strip_prefix("pen:") {
-                if self.pen_picker {self.pen_error=crate::shared::handoff::pen::save(name).is_err();self.pen_selected=!self.pen_error;self.sync();}
+                if self.pen_picker {
+                    let (name, receipt) = name.split_once(':').map_or((name, None), |(name, id)| (name, Some(id)));
+                    if receipt.is_some_and(|id| id.len()!=36 || !id.bytes().all(|c| c.is_ascii_hexdigit() || c==b'-')) {return Effect::None;}
+                    self.pen_error=crate::shared::handoff::pen::save(name).is_err();
+                    self.pen_selected=!self.pen_error;
+                    // Echo only after the authoritative config writer has returned.
+                    self.pen_save_id=receipt.map(str::to_owned);
+                    self.sync();
+                }
                 return Effect::None;
             }
             if action=="continue" && !self.pen_selected {return Effect::None;}
@@ -1666,6 +1708,7 @@ impl Session {
         view["anchor"]=serde_json::json!(self.anchor);
         view["practiceBoard"]=serde_json::json!(self.practice_board);
         view["testInstance"]=false.into();
+        view["penSaveId"]=serde_json::json!(self.pen_save_id);
         view["penPicker"]=self.pen_picker.into();view["penSelected"]=self.pen_selected.into();view["penError"]=self.pen_error.into();
         view["penRgb"]=serde_json::json!(crate::shared::handoff::pen::rgb());
         view["speech"] = serde_json::to_value(crate::capture::engine::runtime::audio::transcription::speech_model::current()).unwrap_or_default();
@@ -1893,6 +1936,64 @@ pub fn relaunch() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn pen_save_receipts_follow_the_real_config_transaction() {
+        const CHILD: &str = "APPARENT_PEN_RECEIPT_CHILD";
+        if let Some(path) = std::env::var_os(CHILD) {
+            let path = std::path::PathBuf::from(path);
+            assert_eq!(crate::shared::handoff::default_config_path(), path);
+            let original: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            assert_eq!(original, serde_json::json!({"secret":"synthetic-pen-receipt","microphoneEnabled":false}));
+            let mut session = Session::for_test(Flow::tour(Step::Welcome, Some(grants(&[]))));
+            session.practice = Some(super::super::practice::Practice::default());
+            session.pen_picker = true;
+            let (tx, rx) = flume::unbounded();
+            session.transport = Transport::InProcess(Some(tx));
+            let receive = || rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
+            for id in ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"] {
+                assert_eq!(session.action(&format!("pen:purple:{id}")), Effect::None);
+                let view = receive();
+                assert_eq!(view["penSaveId"], id);
+                assert_eq!(view["penError"], false);
+                assert_eq!(view["penSelected"], true);
+                assert_eq!(view["step"], "welcome", "the renderer owns advancing after its hop");
+                let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                assert_eq!(saved["penColor"], "purple");
+                assert_eq!(saved["secret"], original["secret"]);
+                assert_eq!(saved["microphoneEnabled"], false);
+            }
+            session.action("continue");
+            assert_eq!(receive()["step"], "permissions");
+            session.action("back");
+            assert_eq!(receive()["step"], "welcome");
+            assert!(session.pen_picker, "Back must return to the pen choices");
+            std::fs::write(&path, b"broken config").unwrap();
+            let failed_id = "33333333-3333-4333-8333-333333333333";
+            session.action(&format!("pen:blue:{failed_id}"));
+            let failed = receive();
+            assert_eq!(failed["penSaveId"], failed_id);
+            assert_eq!(failed["penError"], true);
+            assert_eq!(failed["penSelected"], false);
+            assert_eq!(std::fs::read(&path).unwrap(), b"broken config");
+            session.action("pen:green:invalid-receipt");
+            assert!(rx.try_recv().is_err(), "invalid receipt must not emit a new acknowledgement");
+            assert_eq!(session.pen_save_id.as_deref(), Some(failed_id));
+            return;
+        }
+        struct Fixture(std::path::PathBuf);
+        impl Drop for Fixture { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }
+        use std::os::unix::fs::DirBuilderExt;
+        let fixture = Fixture(std::env::temp_dir().join(format!("pen-provider-{}", crate::shared::ids::make_bundle_id())));
+        std::fs::DirBuilder::new().mode(0o700).create(&fixture.0).unwrap();
+        let config = fixture.0.join("config.json");
+        std::fs::write(&config, br#"{"secret":"synthetic-pen-receipt","microphoneEnabled":false}"#).unwrap();
+        let name = "capture::desktop::settings::onboarding::tests::pen_save_receipts_follow_the_real_config_transaction";
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", name, "--nocapture"]).env(CHILD, &config).env("APPARENT_CONFIG", &config).output().unwrap();
+        assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"), "child must execute the exact provider test");
+    }
+
     fn coached_session()->Session {
         let mut session=Session::for_test(Flow::tour(Step::TryIt,Some(grants(&Permission::REQUIRED))).with_first_capture(true, true, true, false));
         session.practice=Some(super::super::practice::Practice::default());session
@@ -2006,18 +2107,16 @@ mod tests {
     }
 
     #[test]
-    fn annotation_separates_the_drawing_lessons_and_closes_the_board_first() {
+    fn whiteboard_ink_leads_to_screen_drawing_without_a_note_lesson() {
         use super::super::practice::Stage;
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
         s.practice_whiteboard();assert!(!s.practice_desktop_stage());
         s.observe_practice(true,0,false,None);
-        assert_eq!(s.practice.as_ref().unwrap().stage,Stage::Note);
-        assert!(s.practice_desktop_stage(),"coordinator must close its board before Shift-clicking the user's screen");
-        s.observe_practice(false,1,false,None);assert_eq!(s.practice.as_ref().unwrap().stage,Stage::Note);
-        s.practice_note_saved(true);s.observe_practice(false,1,false,None);
+        assert_eq!(s.practice.as_ref().unwrap().stage,Stage::ScreenInk);
+        assert!(s.practice_desktop_stage(),"coordinator must close its board before screen drawing");
+        s.practice_note_saved(false);s.observe_practice(false,0,false,None);
         assert_eq!(s.practice.as_ref().unwrap().stage,Stage::ScreenInk);assert!(s.practice_desktop_stage());
-        s.observe_practice(false,1,false,None);assert_eq!(s.practice.as_ref().unwrap().stage,Stage::ScreenInk);
-        s.observe_practice(false,2,false,None);assert_eq!(s.practice.as_ref().unwrap().stage,Stage::Stop);
+        s.observe_practice(false,1,false,None);assert_eq!(s.practice.as_ref().unwrap().stage,Stage::Stop);
         assert!(!s.practice_desktop_stage());
     }
 
@@ -2030,7 +2129,7 @@ mod tests {
         s.input(Input::CaptureStarted);
         s.practice_whiteboard();
         s.observe_practice(true, 0, false, None);
-        s.practice_note_saved(true);s.observe_practice(false, 0, false, None);
+        s.practice_note_saved(false);s.observe_practice(false, 0, false, None);
         s.observe_practice(false, 1, true, Some(true));
         s.practice_saved_bundle(first);
         s.input(Input::CaptureEnded { completed: true });
@@ -2073,7 +2172,7 @@ mod tests {
     fn menu_bar_lesson_remains_after_paste_and_requires_opening_own_capture() {
         let mut s=coached_session();
         s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
-        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(true);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(false);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
         s.input(Input::CaptureEnded{completed:true});
         assert!(!s.practice_locating());
         s.action("practice-paste");assert!(!s.practice_locating());
@@ -2085,7 +2184,7 @@ mod tests {
     #[test]
     fn coaching_finishes_after_completion_pill_dismissal() {
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
-        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(true);
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(false);
         s.observe_practice(false,0,false,None);s.observe_practice(false,1,false,None);s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
         assert!(!s.flow.practice_recording);assert!(!s.flow.hidden);
         s.input(Input::CaptureEnded{completed:false}); // normal 25-second pill dismissal
@@ -2097,7 +2196,7 @@ mod tests {
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
         s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
         s.input(Input::CaptureStarted); // menu start, without ShortcutTriggered
-        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(true);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(false);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
         s.input(Input::CaptureEnded{completed:true});s.action("practice-paste");s.action("practice-pasted");s.practice_latest();
         assert_eq!(s.action("practice-finish"),Effect::None);assert!(!s.flow.first_capture_completed);
     }
@@ -3237,6 +3336,8 @@ mod adapter_regressions {
 #[cfg(target_os = "macos")]
 fn native_shortcut_reserved(key: u32, modifiers: u32) -> bool {
     use std::{process::Command, time::Duration};
+    // Fn is observed without suppressing it; any macOS Fn/Globe action remains active too.
+    if key == crate::capture::engine::runtime::MACOS_FN_KEY_CODE && modifiers == 0 { return false; }
     if key > 127 || modifiers & !0x1b00 != 0 { return true; }
     let Ok(path) = crate::capture::desktop::helper::path() else { return true; };
     let mut command = Command::new(path);

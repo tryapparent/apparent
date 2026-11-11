@@ -274,7 +274,7 @@ if __name__ == "__main__":
 class ScopedPublicationFeedTests(unittest.TestCase):
     def test_live_feed_cannot_repeat_or_overtake_candidate_before_publication(self):
         workflow = (ROOT / '.github/workflows/release-mac-preview.yml').read_text()
-        marker = '      - name: Recheck scoped candidate against live feed before public release\n'
+        marker = '      - name: Recheck candidate against live feed before public release\n'
         self.assertLess(workflow.index(marker), workflow.index('      - name: Publish a uniquely versioned prerelease'))
         block = workflow.split(marker, 1)[1].split('      - name:', 1)[0]
         script = textwrap.dedent(block.split('        run: |\n', 1)[1])

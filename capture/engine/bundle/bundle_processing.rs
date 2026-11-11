@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use crate::capture::engine::runtime::recording::diagnostics::{Diagnose, Stage};
 
 use crate::capture::engine::runtime::audio::audio::RecordedAudio;
 pub mod publication;
@@ -330,7 +331,7 @@ pub fn finalize_capture_bundle(
 ) -> Result<(PathBuf, ApparentBundle, String)> {
     publication::publish_after(bundle_dir, || {
         let mut events = events;
-        merge_capture_notes(bundle_dir, &mut events)?;
+        merge_capture_notes(bundle_dir, &mut events).stage(Stage::NotesRead)?;
         let started_at = activity
             .stop_started
             .unwrap_or_else(std::time::Instant::now);
@@ -346,29 +347,29 @@ pub fn finalize_capture_bundle(
             // The MP4 stream can succeed even when every screenshot fails. Do not turn
             // it into keyframes here: the sampler drops screenshots while a system
             // permission prompt is visible, but the movie may still contain it.
-            recover::mark_unsafe_video(bundle_dir)?;
+            recover::mark_unsafe_video(bundle_dir).stage(Stage::RecoveryJournal)?;
             let message = "No screen frames were captured. Choose a screen in the sharing dialog and try again.";
             if let Some(ref video) = video_path {
-                anyhow::bail!("{message} The raw video was kept at {}.", video.display());
+                return Err(anyhow::anyhow!("{message} The raw video was kept at {}.", video.display())).stage(Stage::NoSafeFrames);
             }
-            anyhow::bail!("{message}");
+            return Err(anyhow::anyhow!("{message}")).stage(Stage::NoSafeFrames);
         }
         if let Some(ref audio) = recorded_audio {
             // The incremental recorder owns any persisted prefix; never replace it.
             if !bundle_dir.join("audio.wav").exists() {
                 publication::write(bundle_dir, "audio.wav", &audio.wav_bytes)
-                    .context("Could not persist captured audio")?;
+                    .context("Could not persist captured audio").stage(Stage::AudioPersist)?;
             }
         }
         let wav_path = bundle_dir.join("audio.wav");
         let has_wav = wav_path.exists();
         let wav_required = recorded_audio.is_some() || has_wav;
-        publication::preflight_sources(bundle_dir, video_path.as_deref())?;
+        publication::preflight_sources(bundle_dir, video_path.as_deref()).stage(Stage::SourcePreflight)?;
         recover::write(
             bundle_dir,
             &recover::Unfinished {
                 context: recover::capture_context(bundle_dir)
-                    .context("Could not persist recovery journal")?,
+                    .context("Could not persist recovery journal").stage(Stage::RecoveryJournal)?,
                 target: target.clone(),
                 duration_ms,
                 video: video_path
@@ -384,7 +385,7 @@ pub fn finalize_capture_bundle(
                 windows: activity.windows.clone(),
                 cursor: activity.cursor.clone(),
             },
-        )?;
+        ).stage(Stage::RecoveryJournal)?;
         let crop_settings = (target.mode == CaptureMode::Display)
             .then(autocrop::Settings::configured)
             .flatten();
@@ -480,11 +481,10 @@ pub fn finalize_capture_bundle(
                 ..SourceExtras::default()
             },
         );
-        let built = built?;
-        anyhow::ensure!(
-            !wav_required || built.1.audio.as_deref() == Some("audio.wav"),
-            "captured audio disappeared during bundle construction"
-        );
+        let built = built.stage(Stage::BundleBuild)?;
+        if wav_required && built.1.audio.as_deref() != Some("audio.wav") {
+            return Err(anyhow::anyhow!("captured audio disappeared during bundle construction")).stage(Stage::AudioMissing);
+        }
         Ok(built)
     })
 }

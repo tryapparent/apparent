@@ -263,31 +263,26 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await page.evaluate(()=>document.fonts.ready);
   await expect(page.locator('.native-setup')).toHaveCSS('font-family', '"Host Grotesk", system-ui, sans-serif');
   await expect(page.getByRole('heading',{name:'Pick your pen.',exact:true})).toHaveCSS('font-size','36px');
-  await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toHaveCSS('font-size','18px');
+  await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toHaveCount(0);
   for(const scheme of ['light','dark','light']){
     await page.emulateMedia({colorScheme:scheme});
     await expect(page.locator('.native-setup')).toHaveCSS('background-color',scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)');
-    await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toHaveCSS('background-color','rgb(122, 88, 199)');
-    await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toHaveCSS('color','rgb(245, 240, 232)');
     const tip=await page.locator('.native-pencils button span').first().evaluate(el=>getComputedStyle(el,'::after').borderTopColor);
     assert.notEqual(tip,scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)','pen tip must remain visible against the page');
   }
 
-  await page.getByRole('button',{name:'purple pen',exact:true}).click();
-  await expect.poll(()=>output).toContain('pen:purple');
-  send({penPicker:true,penSelected:true,penRgb:[122,88,199]});
-  await expect(page.locator('.native-puddle path')).toHaveCSS('fill','rgb(122, 88, 199)');
-  const centres=await page.evaluate(()=>{
-    const h=document.querySelector('.native-pen-picker h1').getBoundingClientRect();
-    const button=[...document.querySelectorAll('footer button')].at(-1).getBoundingClientRect();
-    return [h.x+h.width/2,button.x+button.width/2,innerWidth/2];
-  });
-  assert.ok(Math.abs(centres[0]-centres[2])<2&&Math.abs(centres[1]-centres[2])<2);
-  // Hold the first image decode, as on a cold launch. No wall-clock timeout may skip the hop.
+  // Hold the first image decode, as on a cold launch. Save must finish first.
   await page.locator('.native-pond-frog').evaluate(img=>{const decode=img.decode.bind(img);img.decode=()=>decode().then(()=>new Promise(resolve=>{window.releasePenImage=resolve}));});
   const before=await page.locator('.native-pond-frog').boundingBox();
-  await page.getByRole('button',{name:'Use this pen',exact:true}).click();
-  await expect(page.getByRole('button',{name:'Use this pen',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'purple pen',exact:true}).click();
+  await expect.poll(()=>output).toContain('pen:purple:');
+  const penSaveId=JSON.parse(output.trim().split('\n').at(-1)).action.split(':')[2];
+  send({penPicker:true,penSelected:true,penRgb:[122,88,199]});
+  await page.waitForTimeout(100);
+  assert.equal(output.includes('"action":"continue"'),false,'stale selection cannot acknowledge this save');
+  send({penPicker:true,penSelected:true,penRgb:[122,88,199],penSaveId});
+  await expect(page.locator('.native-puddle path')).toHaveCSS('fill','rgb(122, 88, 199)');
+  await expect(page.getByRole('button',{name:'purple pen',exact:true})).toBeDisabled();
   await new Promise(resolve=>setTimeout(resolve,1400));
   assert.equal(output.includes('"action":"continue"'),false,'cold image readiness must not be bypassed by a timer');
   await page.evaluate(()=>window.releasePenImage());
@@ -315,7 +310,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('heading', { name:'apparent lives here.', exact:true })).toBeVisible();
   await expect(page.getByText('Click the a in your menu bar, then Open Latest Capture.', { exact:true })).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveAttribute('data-arrow','true');
-  for(const phase of ['screen','whiteboard','board-ink','note','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
+  for(const phase of ['screen','whiteboard','board-ink','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
     send({step:'try-it',practice:phase});
     await expect(page.locator('.native-coach')).toHaveAttribute('data-stage',phase);
     if(phase==='screen-ink'){
@@ -336,16 +331,10 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     for(const button of layout.buttons){assert.ok(button.font>=18&&button.width>=44&&button.height>=44,phase+' button violates brand minimum');assert.equal(button.radius,'0px');}
   }
   send({step:'try-it',practice:'note',firstCaptureRequired:true});
-  await expect(page.getByRole('heading',{name:'Add a note.',exact:true})).toBeVisible();
-  await expect(page.getByText('Hold Shift and click without dragging. Type a note, then save it.',{exact:true})).toBeVisible();
-  await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','note');
-  assert.equal(await page.getByRole('textbox').count(),0,'the coach must not compete with the real note editor');
-  const beforeNoteReplay=output;
-  await page.getByRole('button',{name:'Replay note guide',exact:true}).click();
-  assert.equal(output,beforeNoteReplay,'note replay cannot claim a durable save');
-  await page.emulateMedia({reducedMotion:'reduce'});
-  assert.equal(await page.locator('.native-gesture').evaluate(el=>el.getAnimations({subtree:true}).length),0);
-  await expect(page.getByRole('button',{name:'Replay note guide',exact:true})).toBeHidden();
+  await expect(page.locator('.native-coach')).toHaveAttribute('data-stage','screen-ink');
+  await expect(page.getByRole('heading',{name:'Draw on your screen.',exact:true})).toBeVisible();
+  await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','draw');
+  assert.equal(await page.getByRole('textbox').count(),0,'the coach must not replace the real note editor');
   await page.emulateMedia({reducedMotion:'no-preference'});
   // All three control examples remain presentation only, and settle once.
   for(const [phase,kind] of [['whiteboard','whiteboard'],['stop','finish'],['locate','locate']]){
@@ -473,26 +462,121 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   send({step:'try-it',practice:null,firstCaptureRequired:true});
   await expect(page.getByRole('heading',{name:'Go again.',exact:true})).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,520]);
+  const fnChoiceStart=output.length;
+  send({step:'shortcut',platform:'macos',shortcutChosen:false,shortcutEditor:{recording:false,externallyManaged:false,error:null}});
+  await page.getByRole('button',{name:'Use Fn',exact:true}).click();
+  await expect.poll(()=>output.slice(fnChoiceStart)).toContain('\"keyCode\":63');
+  assert.ok(output.slice(fnChoiceStart).indexOf('change-shortcut')<output.slice(fnChoiceStart).indexOf('\"keyCode\":63'),'open the provider editor before Fn selection');
   send({step:'shortcut',shortcutEditor:{recording:true,externallyManaged:false}});
+  const recorder=page.getByRole('group',{name:'Shortcut recorder'});
+  await recorder.focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('button',{name:'Close setup'})).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(recorder).toBeFocused();
+  await expect(recorder).toHaveCSS('outline-style','solid');
+  const screenshot=async name=>{
+    if(!process.env.APPARENT_FN_EVIDENCE)return;
+    await fs.mkdir(process.env.APPARENT_FN_EVIDENCE,{recursive:true});
+    await page.screenshot({path:path.join(process.env.APPARENT_FN_EVIDENCE,name+'.png'),fullPage:true});
+  };
+  await screenshot('shortcut-listening-normal-light');
+  await page.setViewportSize({width:320,height:520});
+  for(const scheme of ['light','dark']){
+    await page.emulateMedia({colorScheme:scheme});
+    await expect(page.locator('.native-setup')).toHaveCSS('background-color',scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)');
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`shortcut editor overflows at 320px in ${scheme} mode`);
+    await expect(recorder).toBeInViewport();
+    await screenshot(`shortcut-listening-320-${scheme}`);
+  }
+  await page.emulateMedia({colorScheme:'light'});
+  const priorFnCount=(output.match(/"keyCode":63/g)||[]).length;
+  await recorder.evaluate(element=>element.dispatchEvent(new KeyboardEvent('keydown',{key:'Fn',code:'Fn',metaKey:true,bubbles:true})));
+  await expect(page.getByRole('alert')).toContainText('Fn alone');
+  await screenshot('shortcut-rejected-fn-modifier');
+  assert.equal((output.match(/"keyCode":63/g)||[]).length,priorFnCount,'Fn with another modifier must not be accepted');
+  await recorder.getByRole('button',{name:'Use Fn',exact:true}).click();
+  await expect.poll(()=>output).toContain('"keyCode":63,"modifiers":0,"key":"Fn"');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await screenshot('shortcut-fn-error-recovered');
+  send({step:'shortcut',platform:'macos',shortcut:'Fn',shortcutChosen:true,shortcutTested:false,shortcutEditor:{recording:false,externallyManaged:false,error:null}});
+  await expect(page.getByRole('heading',{name:'Try your shortcut.',exact:true})).toBeVisible();
+  await expect(page.locator('.native-shortcut kbd')).toHaveText('Fn');
+  await screenshot('shortcut-accepted-fn');
+  send({step:'shortcut',platform:'macos',shortcut:'Fn',shortcutChosen:true,shortcutEditor:{recording:true,externallyManaged:false,error:null}});
+  await page.getByRole('group',{name:'Shortcut recorder'}).focus();
   await page.getByRole('group',{name:'Shortcut recorder'}).press('Control+Alt+k');
   await expect.poll(()=>output).toContain('"keyCode":40');
   await expect.poll(()=>output).toContain('"modifiers":6144');
   await page.getByRole('group',{name:'Shortcut recorder'}).evaluate(element=>element.dispatchEvent(new KeyboardEvent('keydown',{key:'ß',code:'KeyS',altKey:true,bubbles:true})));
   await expect.poll(()=>output).toContain('"keyCode":1,"modifiers":2048,"key":"s"');
   await page.getByRole('group',{name:'Shortcut recorder'}).press('Tab');
+  await expect(page.getByRole('button',{name:'Use Fn',exact:true})).toBeFocused();
+  await page.getByRole('button',{name:'Use Fn',exact:true}).press('Tab');
   await expect(page.getByRole('button',{name:'Cancel',exact:true})).toBeFocused();
   await page.getByRole('button',{name:'Cancel',exact:true}).press('Enter');
   await expect.poll(()=>output).toContain('cancel-shortcut');
-
+  send({step:'shortcut',platform:'linux',shortcutChosen:false,shortcutEditor:{recording:false,externallyManaged:false,error:null}});
+  await expect(page.getByRole('button',{name:'Use Fn',exact:true})).toHaveCount(0);
+  send({shortcutEditor:{recording:true,externallyManaged:false,error:null}});
+  await expect(page.getByRole('button',{name:'Use Fn',exact:true})).toHaveCount(0);
 
   await page.emulateMedia({reducedMotion:'reduce'});
   send({penPicker:true,penSelected:true,penRgb:[59,121,189]});
   await expect(page.getByRole('heading',{name:'Pick your pen.',exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'Use this pen',exact:true}).click();
+  await page.getByRole('button',{name:'blue pen',exact:true}).click();
+  await expect.poll(()=>output).toContain('pen:blue:');
+  const blueSaveId=JSON.parse(output.trim().split('\n').at(-1)).action.split(':')[2];
+  send({penPicker:true,penSelected:true,penRgb:[59,121,189],penSaveId:blueSaveId});
   await expect.poll(()=>output.match(/"action":"continue"/g)?.length).toBe(beforeTrialAdvance+2);
   await expect(page.locator('.native-pond-frog')).toHaveCSS('animation-name','none');
   await page.setViewportSize({width:320,height:720});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'pen picker must reflow at 320 CSS pixels');
   await page.setViewportSize({width:760,height:720});
 
+  // Back returns to a stable picker; an old success must never replay advance.
+  const advances=()=>output.match(/"action":"continue"/g)?.length??0;
+  const beforeBack=advances();
+  send({step:'permissions',index:1});
+  await page.getByRole('button',{name:'Back',exact:true}).click();
+  await expect.poll(()=>output).toContain('"action":"back"');
+  send({penPicker:true,penSelected:true,penRgb:[59,121,189],penSaveId:blueSaveId});
+  await expect(page.getByRole('button',{name:'blue pen',exact:true})).toBeEnabled();
+  await page.waitForTimeout(120);
+  assert.equal(advances(),beforeBack);
+  for(const scheme of ['light','dark'])for(const width of [760,320]){
+    await page.emulateMedia({colorScheme:scheme});
+    await page.setViewportSize({width,height:720});
+    await page.getByRole('button',{name:'blue pen',exact:true}).focus();
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    const back=await page.getByRole('button',{name:'Back',exact:true}).boundingBox();
+    assert.ok(back.x<60,'Back stays at the leading edge after removing confirmation');
+    if(process.env.APPARENT_PEN_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_PEN_EVIDENCE,`picker-${scheme}-${width}.png`)});
+  }
+  // Keyboard selection and an immediate duplicate click produce just one save.
+  const saves=()=>output.match(/pen:blue:/g)?.length??0;
+  const beforeSave=saves();
+  await page.getByRole('button',{name:'blue pen',exact:true}).press('Enter');
+  await page.getByRole('button',{name:'blue pen',exact:true}).evaluate(button=>button.click());
+  await expect.poll(saves).toBe(beforeSave+1);
+  const failedId=JSON.parse(output.trim().split('\n').at(-1)).action.split(':')[2];
+  assert.notEqual(failedId,blueSaveId,'same-colour reselection has a fresh receipt');
+  send({penPicker:true,penSelected:false,penError:true,penSaveId:failedId});
+  await expect(page.getByRole('alert')).toHaveText('The colour could not be saved. Try choosing it again.');
+  await expect(page.getByRole('button',{name:'blue pen',exact:true})).toBeEnabled();
+  assert.equal(advances(),beforeBack);
+  for(const width of [760,320]){
+    await page.setViewportSize({width,height:720});
+    await page.locator('.native-setup section').evaluate(section=>section.scrollTop=0);
+    const alert=await page.getByRole('alert').boundingBox(),section=await page.locator('.native-setup section').boundingBox();
+    assert.ok(alert.y>=section.y&&alert.y+alert.height<=section.y+section.height,'save feedback must be visible above the footer without scrolling');
+  }
+  if(process.env.APPARENT_PEN_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_PEN_EVIDENCE,'picker-save-error-dark-320.png')});
+  await page.getByRole('button',{name:'blue pen',exact:true}).press('Space');
+  await expect.poll(saves).toBe(beforeSave+2);
+  const retryId=JSON.parse(output.trim().split('\n').at(-1)).action.split(':')[2];
+  send({penPicker:true,penSelected:false,penError:true,penSaveId:failedId});
+  await page.waitForTimeout(100);assert.equal(advances(),beforeBack);
+  send({penPicker:true,penSelected:true,penRgb:[59,121,189],penSaveId:retryId});
+  await expect.poll(advances).toBe(beforeBack+1);
 });

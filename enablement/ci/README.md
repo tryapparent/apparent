@@ -34,7 +34,8 @@ ORs the three positional substring filters, retaining both command-line row
 cases, competing-launch socket ownership and Darwin ACL fail-closed checks.
 They use two test threads, as the later full suite already does. The cases use
 independent fixtures; the early groups no longer require separate processes.
-Linux's early commands are unchanged. Packaging, native assertions, the later
+Linux batches its two early filters (three cases) into one invocation with two
+test threads as well, removing one Cargo freshness traversal. Packaging, native assertions, the later
 unfiltered verifier and cache-completion/publication guards remain required.
 No artifact or test receipt is restored by this change; cold caches still build.
 
@@ -62,12 +63,27 @@ remain Cargo's responsibility, without copying targets across worktrees.
 
 The ordinary prerequisite contracts exercise workflow ordering and failure
 gates without Rust. For cold-build, real Cargo/libtest selection and a failing
-assertion in each of the four cases (synthetic dependency-free sources):
+assertion in each selected case on both workflow branches (synthetic dependency-free sources):
 
 ```sh
 APPARENT_EARLY_CARGO_FIXTURE=1 node --experimental-strip-types --test enablement/prerequisites/order.test.ts
 ```
 
 On Clanker, run that command through `t3-build --jobs 3 --min-jobs 3 --`.
-This fixture proves filter semantics and failure propagation, not Mac native
+This fixture proves filter semantics and failure propagation, not platform native
 acceptance. Normal ready-PR platform CI must still verify the real candidate.
+
+Hosted Ubuntu checks use `.github/actions/ubuntu-apt` before installing packages.
+GitHub's image assigns Azure/Ubuntu mirrors priorities 1–3; the action prepends
+Kernel.org's Ubuntu mirror at priority 0 and preserves those fallback entries.
+This addresses repeated hosted DNS/download timeouts without changing Ubuntu
+archive keys, package signatures, source suites or dependency/test requirements.
+It is restricted to disposable Linux Actions runners. macOS keeps its existing
+Homebrew/native setup. Tests execute the shipped mirror-list transformation
+against isolated files, including idempotence and unsafe-target refusal.
+The updater harness, manual web verifier and x86 Linux packaging also prepare
+transport before package installation. Packaging pins the reviewed action so
+older checked-out release tags need not contain it. ARM packaging uses the
+existing Ubuntu ports path; the x86 archive mirror is not ARM transport proof.
+The workflow regression enumerates all package-install callers, including manual
+workflows, so a new caller cannot silently omit preparation.

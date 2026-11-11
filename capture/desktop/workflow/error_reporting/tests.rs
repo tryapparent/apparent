@@ -3,6 +3,52 @@ use super::*;
 use std::net::{TcpListener, TcpStream};
 
 #[test]
+fn finalization_report_identifies_real_empty_frame_failure_without_private_content() {
+    let scratch = Scratch::new();
+    let target = serde_json::from_value(json!({"mode":"display","displayId":0,"frame":{"x":0,"y":0,"width":32,"height":32,"scale":1}})).unwrap();
+    let error = crate::capture::engine::bundle::bundle_processing::finalize_capture_bundle(
+        &scratch.0, target,
+        crate::capture::engine::runtime::ScreenRecording {
+            frames: vec![], video: Some(scratch.0.join("private-recording-canary.mp4")),
+            duration_ms: 100, video_offset_ms: 0, video_ink: None,
+        }, vec![], vec![], None, None, Default::default(), None,
+    ).unwrap_err();
+    let report = Report::finalization(&error, std::panic::Location::caller(), Consent { generation: "private-generation-canary".into() });
+    let payload = report.payload("phc_synthetic").unwrap();
+    let stages = payload["properties"]["finalization"]["stages"].as_array().expect("structured finalization stages");
+    assert!(stages.iter().any(|frame| frame["stage"] == "no_safe_frames"));
+    assert!(stages.iter().any(|frame| frame["file"] == "capture/engine/bundle/bundle_processing.rs" && frame["line"].as_u64().unwrap() > 0));
+    let serialized = payload.to_string();
+    for private in ["private-recording-canary", "private-generation-canary", scratch.0.to_str().unwrap(), "No screen frames were captured"] {
+        assert!(!serialized.contains(private), "leaked {private}");
+    }
+}
+
+#[test]
+fn finalization_bounds_provenance_keeps_specific_cause_and_does_not_format_unknown_errors() {
+    use crate::capture::engine::runtime::recording::diagnostics::{at, Stage};
+    struct PrivateError;
+    impl std::fmt::Debug for PrivateError {
+        fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { panic!("must never debug private error") }
+    }
+    impl std::fmt::Display for PrivateError {
+        fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { panic!("must never format private error") }
+    }
+    impl std::error::Error for PrivateError {}
+    let mut result: anyhow::Result<()> = at(Err(anyhow::Error::new(PrivateError)), Stage::NoSafeFrames);
+    for _ in 0..16 { result = at(result, Stage::Publication); }
+    let report = Report::finalization(&result.unwrap_err(), std::panic::Location::caller(), Consent { generation: "initial".into() });
+    let payload = report.payload("phc_synthetic").unwrap();
+    let diagnostics = &payload["properties"]["finalization"];
+    assert_eq!(diagnostics["stages"].as_array().unwrap().len(), 8);
+    assert_eq!(diagnostics["stages"][7]["stage"], "no_safe_frames");
+    assert!(diagnostics["io_kind"].is_null());
+    let unknown = Report::finalization(&anyhow::Error::new(PrivateError), std::panic::Location::caller(), Consent { generation: "initial".into() }).payload("phc_synthetic").unwrap();
+    assert_eq!(unknown["properties"]["finalization"]["stages"], json!([]));
+    assert_ne!(payload["properties"]["$exception_fingerprint"], unknown["properties"]["$exception_fingerprint"]);
+}
+
+#[test]
 fn development_children_cannot_inherit_a_production_reporting_marker() {
     let mut command = Command::new("unused");
     command.env("APPARENT_DESKTOP_REPORTING", "1");
@@ -146,6 +192,7 @@ fn exception_names_identify_each_category_without_changing_fingerprints() {
         (Failure::RustPanic, "RustPanic"),
     ] {
         let report = Report {
+            finalization: None,
             failure,
             file: Some("capture/desktop/mod.rs".into()),
             line: 42,
@@ -300,14 +347,20 @@ fn real_curl_transport_posts_the_exception_and_never_follows_redirects() {
         stream.write_all(b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
         payload
     });
-    let report = Report::new(
-        Failure::ScreenStart,
+    use crate::capture::engine::runtime::recording::diagnostics::{at, Stage};
+    let error = at::<()>(Err(std::io::Error::from_raw_os_error(libc::ENOSPC).into()), Stage::PublicationSync).unwrap_err();
+    let original = error.to_string();
+    assert_eq!(original, std::io::Error::from_raw_os_error(libc::ENOSPC).to_string());
+    let report = Report::finalization(
+        &error,
         std::panic::Location::caller(),
         Consent {
             generation: "initial".into(),
         },
     );
     let payload = report.payload("phc_synthetic_public_token").unwrap();
+    assert_eq!(payload["properties"]["finalization"]["io_kind"], "storage_full");
+    assert_eq!(payload["properties"]["finalization"]["os_error_code"], libc::ENOSPC);
     assert!(send(&endpoint, &payload).unwrap());
     assert_eq!(server.join().unwrap(), payload);
 }
