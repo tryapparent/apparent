@@ -42,7 +42,7 @@ done
 // Resolve only window 1 of the exact owned PID, then descend its sheets. Do not
 // search other processes, use coordinates, or guess which Return commits a picker.
 // Unknown AX shapes fail with bounded diagnostics from this process alone.
-const { panelScript, prepareStorageChange } = require('../../../../../enablement/prerequisites/mac-picker.ts');
+const { panelScript, prepareStorageChange, pickerCommandMs } = require('../../../../../enablement/prerequisites/mac-picker.ts');
 const { assertReportingRead } = require('../../../../../enablement/prerequisites/reporting-read.ts');
 
 // A direct authoritative read does not update the renderer's terminal app_busy.
@@ -255,7 +255,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
   const panel = (operation) => {
     assert.equal(electronChild.exitCode, null, 'Owned Electron exited before native picker observation');
     assert.equal(electronChild.signalCode, null, 'Owned Electron was signalled before native picker observation');
-    return osa(panelScript, [String(electronChild.pid), home, operation, electronExecutable]);
+    return osa(panelScript, [String(electronChild.pid), home, operation, electronExecutable], pickerCommandMs);
   };
   const snapshot = async () => {
     const runtime = await within(page.evaluate(() => window.apparent.readRuntimeState()), budget(), 'Runtime read');
@@ -540,7 +540,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     const goPathOperation = (operation, target) => {
       assert.equal(electronChild.exitCode, null, 'Owned Electron exited before picker navigation');
       assert.equal(electronChild.signalCode, null, 'Owned Electron was signalled before picker navigation');
-      return osa(panelScript, [String(electronChild.pid), target, operation, electronExecutable]);
+      return osa(panelScript, [String(electronChild.pid), target, operation, electronExecutable], pickerCommandMs);
     };
     const prepared = await prepareStorageChange({
       storageIdle: waitStorageIdle,
