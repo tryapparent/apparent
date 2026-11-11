@@ -453,7 +453,7 @@ pub fn prepare_pill_motion(xid: u32, pid: u32) -> Result<bool> {
     let title = pill_title(xid);
     let reply = request_with_timeout(&format!(
         "eval assert(not _G['{key}'], 'Pill motion rule already owned'); \
-         local r = hl.window_rule({{ name = '{key}', match = {{ title = '^{title}$' }}, no_anim = true }}); \
+         local r = hl.window_rule({{ name = '{key}', match = {{ title = '^{title}$' }}, no_anim = true, no_blur = true, no_shadow = true }}); \
          _G['{key}'] = r; assert(r:is_enabled(), 'Pill motion rule unavailable')"
     ), Duration::from_millis(200))?;
     anyhow::ensure!(reply.trim() == "ok", "Hyprland pill motion: {}", reply.trim());

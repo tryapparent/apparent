@@ -91,6 +91,12 @@ returned for a Monitor request is still rejected. Finishing during consent cance
 the pending session. A failed or empty capture reports an error rather than
 producing demo imagery, and `latest` skips its unfinished directory. Window
 recording remains disabled pending original-window lifetime safety (#230).
+After a failed screen start is durably cancelled, a desktop notification explains
+that nothing was saved and directs the user to select the screen under **Outputs**
+on retry. Finish before the first frame likewise explains that sharing had not
+started; it does not offer Paste for an empty recording. These messages use the
+desktop's notification service and may be hidden by Do Not Disturb. A cancellation
+that cannot persist its marker retains ownership and never claims successful cleanup.
 Existing bundles remain readable. Native Area/source-validation adapters remain
 unchanged; the Area results below describe their bounded historical checks,
 not an Area offered by the current Linux GUI. Restoring interactive selection
