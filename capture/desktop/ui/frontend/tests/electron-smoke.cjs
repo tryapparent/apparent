@@ -329,6 +329,31 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     assert.equal(layout.scroll,false,phase+' needs scrolling at normal text size');
     for(const button of layout.buttons){assert.ok(button.font>=18&&button.width>=44&&button.height>=44,phase+' button violates brand minimum');assert.equal(button.radius,'0px');}
   }
+  // Illustrations must teach each platform's current controls, never the retired Linux picker.
+  for(const platform of ['linux','macos'])for(const phase of ['screen','whiteboard','locate']){
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    send({step:'try-it',practice:phase,platform});
+    await expect(page.locator('.native-coach')).toHaveAttribute('data-stage',phase);
+    if(phase==='screen'){
+      await expect(page.getByRole('heading',{name:platform==='linux'?'Choose a display.':'Choose Screen.',exact:true})).toBeVisible();
+      assert.equal(await page.locator('.native-control').count(),platform==='linux'?0:1);
+    }else if(phase==='whiteboard'){
+      await expect(page.locator('.native-control')).toHaveAttribute('data-direct-whiteboard',String(platform==='linux'));
+      await expect(page.getByRole('button',{name:platform==='linux'?'Replay Whiteboard guide':'Replay Screen and Whiteboard guide',exact:true})).toBeVisible();
+    }else{
+      assert.equal(await page.locator('.control-menu').getByText('Choose What to Record…',{exact:true}).count(),platform==='linux'?0:1);
+    }
+    for(const scheme of ['light','dark']){
+      await page.emulateMedia({colorScheme:scheme,reducedMotion:'reduce'});
+      const layout=await page.locator('.native-coach').evaluate(el=>({inside:el.getBoundingClientRect().bottom<=innerHeight,overflow:el.scrollWidth>el.clientWidth}));
+      assert.deepEqual(layout,{inside:true,overflow:false});
+      if(process.env.APPARENT_ONBOARDING_EVIDENCE_DIR){
+        await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE_DIR,{recursive:true,mode:0o700});
+        await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE_DIR,`${platform}-${phase}-${scheme}.png`)});
+      }
+    }
+  }
+  await page.emulateMedia({colorScheme:'light',reducedMotion:'no-preference'});
   send({step:'try-it',practice:'stop',shortcut:'⌃⌥⇧9',firstCaptureRequired:true});
   await expect(page.getByRole('heading',{name:'Finish your capture.',exact:true})).toBeVisible();
   assert.deepEqual(await page.locator('.native-saved-keys kbd').allTextContents(),['⌃','⌥','⇧','9']);

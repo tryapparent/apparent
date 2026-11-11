@@ -513,6 +513,12 @@ The removed demonstration has no Electron renderer/assets. Both Electron and nat
 
 ### Inline shortcut trial and whiteboard guide
 
+Linux records a full display directly. While the native sharing prompt is pending,
+the guide asks for a display; it does not animate the retired Screen selector.
+The recording illustration points directly to Whiteboard, and the tray-menu
+illustration omits Choose What to Record. macOS retains its Screen-to-Whiteboard
+and menu sequence. These illustrations never issue capture or completion actions.
+
 Electron setup keeps shortcut choice, the native non-recording trial and **Go
 again.** in the setup window. Saved shortcuts render as individual keys. Once
 saved, the main prompt asks for the shortcut; no disabled Continue competes
