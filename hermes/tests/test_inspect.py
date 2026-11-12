@@ -235,6 +235,36 @@ class InspectionTests(unittest.TestCase):
                 execute(sys.executable, args, **options)
             self.assertEqual(error.exception.code, code)
 
+    def test_cli_and_supervisor_receive_only_documented_environment(self):
+        allowed = {
+            "PATH": os.environ.get("PATH", os.defpath),
+            "HOME": self.temp.name, "TMPDIR": self.temp.name,
+            "APPARENT_CONFIG": str(Path(self.temp.name) / "config.json"),
+        }
+        excluded = dict.fromkeys(("OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+                                  "HERMES_TOKEN", "APPARENT_UNDOCUMENTED_SECRET",
+                                  "PYTHONPATH", "LD_PRELOAD", "APPARENT_CAPTURES_DIR",
+                                  "XDG_RUNTIME_DIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+                                  "XDG_CACHE_HOME"), "synthetic-secret")
+        original_popen = subprocess.Popen
+        launches = []
+        def launch(*args, **kwargs):
+            launches.append(kwargs.get("env"))
+            return original_popen(*args, **kwargs)
+        with patch.dict(os.environ, allowed | excluded, clear=True), \
+                patch("apparent_plugin.process.subprocess.Popen", side_effect=launch):
+            output = execute(sys.executable, ["-c", "import json, os; print(json.dumps(dict(os.environ)))"])
+        self.assertEqual(launches, [allowed])
+        received = json.loads(output)
+        # CPython may set LC_CTYPE internally when coercing its default locale.
+        received.pop("LC_CTYPE", None)
+        self.assertEqual(received, allowed)
+
+    def test_cli_environment_does_not_require_optional_variables(self):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "synthetic-secret"}, clear=True):
+            output = execute(sys.executable, ["-c", "import os; print(os.environ.get('OPENAI_API_KEY', 'absent'))"])
+        self.assertEqual(output, "absent\n")
+
     def test_group_is_signalled_before_its_ownership_anchor_is_reaped(self):
         original_wait, original_kill = subprocess.Popen.wait, os.killpg
         for script, options in [("print('done')", {}), ("print('x'*100000)", {"limit": 1024}),
