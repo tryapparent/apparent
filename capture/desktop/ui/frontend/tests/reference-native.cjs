@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
-const { spawn, execFile } = require('node:child_process');
+const { spawn, execFile, execFileSync } = require('node:child_process');
 const { promisify } = require('node:util');
 const { _electron: electron, expect } = require('@playwright/test');
 const { captureReference } = require('../electron/runtime.cjs');
@@ -80,7 +80,19 @@ test('selected capture reference: real Rust selection and native clipboard', { t
   async function stopRust() {
     if (rust?.pid) {
       const pid = rust.pid;
-      const absent = () => { try { process.kill(-pid, 0); return false; } catch (error) { if (error.code === 'ESRCH') return true; throw error; } };
+      const absent = () => {
+        try { process.kill(-pid, 0); return false; }
+        catch (error) {
+          if (error.code === 'ESRCH') return true;
+          if (error.code !== 'EPERM') throw error;
+          // A denied signal probe is not proof of absence. Independently inspect
+          // the process table; any member (including a zombie) retains the gate.
+          const rows = execFileSync('/bin/ps', ['-axo', 'pgid='],
+            {encoding:'utf8', timeout:1000, maxBuffer:1024*1024}).trim().split(/\s+/);
+          assert.ok(rows.every(value => /^\d+$/.test(value)), 'Invalid process-group inventory');
+          return !rows.some(value => Number(value) === pid);
+        }
+      };
       assert.equal(rust.exitCode, null, 'Rust supervisor exited before owned group cleanup');
       assert.equal(rust.signalCode, null, 'Rust supervisor was signalled before owned group cleanup');
       process.kill(-pid, 'SIGTERM');

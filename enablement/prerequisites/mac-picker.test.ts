@@ -486,7 +486,7 @@ test('reference cleanup stops descendants after backend exit, survives restart, 
  const start=source.indexOf('  async function stopRust()');
  const end=source.indexOf('  t.after(',start);
  const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
- const stop=new AsyncFunction('rust','assert','process',source.slice(start,end).replace('    await log?.close(); log = undefined;','')+';await stopRust();');
+ const stop=new AsyncFunction('rust','assert','process','execFileSync',source.slice(start,end).replace('    await log?.close(); log = undefined;','')+';await stopRust();');
  const foreign=spawn('/bin/sleep',['60'],{stdio:'ignore'});
  const groups=[];
  try {
@@ -499,8 +499,15 @@ test('reference cleanup stops descendants after backend exit, survives restart, 
    const descendant=Number(output.trim());assert.ok(descendant>1);
    process.kill(descendant,0);
    assert.equal(root.exitCode,null,'supervisor remains the live group anchor');
-   await stop(root,assert,process);
-   assert.throws(()=>process.kill(-root.pid!,0),(e:any)=>e.code==='ESRCH');
+   // Exercise both native signal probing and a denied probe. The latter must
+   // still observe the live group and wait for its independently proven absence.
+   const probe=cycle===0?process:{kill:(pid:number,signal:any)=>{
+    if(signal===0)throw Object.assign(Error('denied probe'),{code:'EPERM'});
+    return process.kill(pid,signal);
+   }};
+   await stop(root,assert,probe,execFileSync);
+   const groupsLeft=execFileSync('/bin/ps',['-axo','pgid='],{encoding:'utf8'}).trim().split(/\s+/).map(Number);
+   assert.ok(!groupsLeft.includes(root.pid!));
    assert.throws(()=>process.kill(descendant,0),(e:any)=>e.code==='ESRCH');
    process.kill(foreign.pid!,0);
   }
