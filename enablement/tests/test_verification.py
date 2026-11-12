@@ -212,14 +212,19 @@ class SelectionTests(unittest.TestCase):
         selection = {"root": True, "engine": False, "browser": False, "focused": []}
         command = ["node", "--experimental-strip-types", "--test",
                    "connect/client/tests/encryption-default.test.ts", "enablement/cli-version.test.ts"]
-        with patch.object(verification, "prepare_connect_typescript"), patch.object(
+        with patch.object(verification, "prepare_connect_typescript"), patch.dict(
+                verification.os.environ, {"LD_LIBRARY_PATH": "/custom/lib"}), patch.object(
                 verification.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
             verification.run_checks(selection, execution="platform")
             calls = run.call_args_list
             cli = next(i for i, call in enumerate(calls) if call.args[0] == command)
             self.assertTrue(any("build" in call.args[0] for call in calls[:cli]))
             self.assertTrue(any("test" in call.args[0] for call in calls[:cli]))
-            self.assertTrue(Path(calls[cli].kwargs["env"]["APPARENT_BIN"]).is_absolute())
+            candidate = Path(calls[cli].kwargs["env"]["APPARENT_BIN"])
+            self.assertTrue(candidate.is_absolute())
+            if sys.platform.startswith("linux"):
+                library_path = calls[cli].kwargs["env"]["LD_LIBRARY_PATH"].split(os.pathsep)
+                self.assertEqual(library_path, [str(candidate.parent / "deps"), "/custom/lib"])
         def execute(argv, **kwargs):
             if argv == command:
                 raise subprocess.CalledProcessError(7, argv)

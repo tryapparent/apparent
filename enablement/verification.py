@@ -288,10 +288,18 @@ def run_checks(selection, offline=True, execution="full", overlap_root_build=Fal
         # Rust cfg(test) suppresses runtime experiment defaults. Check the rebuilt
         # production CLI too, using isolated config with no upload permission.
         candidate = (ROOT / os.environ.get("CARGO_TARGET_DIR", "target") / "debug/apparent").resolve()
+        test_env = dict(os.environ, APPARENT_BIN=str(candidate))
+        if sys.platform.startswith("linux"):
+            # build.rs stages Linux runtime libraries beside Cargo test binaries
+            # in debug/deps; the production CLI is one directory above them.
+            staged_runtime = str(candidate.parent / "deps")
+            existing = test_env.get("LD_LIBRARY_PATH", "").split(os.pathsep)
+            test_env["LD_LIBRARY_PATH"] = os.pathsep.join(
+                [staged_runtime, *(path for path in existing if path and path != staged_runtime)])
         observed_run(["node", "--experimental-strip-types", "--test",
                       "connect/client/tests/encryption-default.test.ts",
                       "enablement/cli-version.test.ts"], cwd=ROOT,
-                     env=dict(os.environ, APPARENT_BIN=str(candidate)), check=True)
+                     env=test_env, check=True)
     if native and selection["engine"]:
         for command in ("build", "test"):
             args = cargo + [command, "--manifest-path", "capture/engine/Cargo.toml", "-j", jobs, dependency_mode] + timings
