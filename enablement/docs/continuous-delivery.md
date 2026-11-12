@@ -312,7 +312,11 @@ checks do not replace current-main integration and review before merge.
 
 ## Verification timing diagnostics
 
-Mac verification pins Rust 1.99.1 and checks the disposable Intel hosted runner's
+Native verification and Linux packaging pin Rust 1.99.1. Cargo 1.100 changes
+the build-output layout; the current native runtime staging assumes the older
+layout and leaves the direct CLI unable to load its transcription library.
+Upgrade only after staging and direct CLI execution pass on the new layout.
+Mac verification also checks the disposable Intel hosted runner's
 compiler inventory before dependency-cache restore. Only the known unused 1.98.0
 stable toolchain may be removed; unknown identities fail before mutation. Keep all
 three workspace paths in the Rust cache even if client execution moves jobs:

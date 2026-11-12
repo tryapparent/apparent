@@ -55,7 +55,7 @@ rustup() {
 
 test('cache compatibility retains full paths, invalidation defaults and branch seeds', () => {
   const rust = workflow.slice(workflow.indexOf('\n  rust:'))
-  assert.match(rust, /toolchain: \$\{\{ runner\.os == 'macOS' && '1\.99\.1' \|\| 'stable' \}\}/)
+  assert.match(rust, /toolchain: '1\.99\.1'/)
   assert.ok(rust.indexOf('uses: ./.github/actions/mac-rust-cache') < rust.indexOf('uses: Swatinem/rust-cache@v2'))
   const cache = rust.split('uses: Swatinem/rust-cache@v2')[1].split('      - uses:')[0]
   assert.doesNotMatch(cache, /cache-on-failure:/)
