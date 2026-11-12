@@ -646,8 +646,11 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     const beforeCancelStat = await fs.stat(config, { bigint: true });
     await waitStorageIdle();
     await startNativeChange();
-    report.nativeBeforeCancel = await poll(() => panel('inspect'), 'Reopened native picker');
-    await panel('cancel');
+    // The owned Cancel operation performs the same PID, bundle, window and
+    // control checks immediately before its one click. A separate readiness
+    // probe repeats the expensive AppKit/AX startup without admitting a
+    // different action, and can consume the remaining native command budget.
+    report.nativeBeforeCancel = await panel('cancel');
     await settleNativeChange();
     await expect(change).toBeEnabled({ timeout: budget() });
     assert.deepEqual(await fs.readFile(config), beforeCancel, 'Cancel changed config bytes');
