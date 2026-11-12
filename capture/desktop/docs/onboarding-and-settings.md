@@ -482,6 +482,19 @@ video uses synthetic onboarding state; actual Electron checks cover layout,
 saved platform keys, finite playback, replay isolation and reduced motion. New
 installed Mac/Linux acceptance is still required before publishing these illustrations.
 
+During the whiteboard lesson, the Electron board view mirrors only human strokes
+from the native board. Its loose animated example is a separate, inert overlay;
+it is never sent to the capture adapter or counted as completion. Clear removes
+the real practice ink before the learner draws. Pointer cancellation and renderer
+loss discard only an unfinished stroke; guide dismissal restores the native
+whiteboard with completed human ink intact. Finish keeps its saved shortcut
+keycaps and accessible close control; closing the guide leaves recording active.
+Linux illustrates opening the already-visible Whiteboard control because capture
+is display-only there; macOS retains the supported Screen → Whiteboard sequence.
+Rollback is the existing onboarding renderer fallback. Keep the native board
+adapter until both platforms accept the Electron path; removal requires verified
+Mac and isolated Linux focus, geometry, capture and handoff behavior.
+
 The control illustrations additionally cover Screen → Whiteboard, Finish →
 Copied and the Apparent menu → Open Latest Capture. The real Rust capture phase
 selects the coach; replay/illustrated clicks are local presentation only. Screen

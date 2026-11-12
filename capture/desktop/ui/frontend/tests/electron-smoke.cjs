@@ -330,6 +330,46 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     assert.equal(layout.scroll,false,phase+' needs scrolling at normal text size');
     for(const button of layout.buttons){assert.ok(button.font>=18&&button.width>=44&&button.height>=44,phase+' button violates brand minimum');assert.equal(button.radius,'0px');}
   }
+  send({step:'try-it',practice:'stop',shortcut:'⌃⌥⇧9',firstCaptureRequired:true});
+  await expect(page.getByRole('heading',{name:'Finish your capture.',exact:true})).toBeVisible();
+  assert.deepEqual(await page.locator('.native-saved-keys kbd').allTextContents(),['⌃','⌥','⇧','9']);
+  assert.equal(await page.locator('.native-control').count(),0);
+  await expect(page.getByRole('button',{name:'Close guide'})).toBeVisible();
+  const human=[[20,30],[40,50],[70,60],[90,80]];
+  const board={id:'apparent-test-1',strokes:[human],color:[59,121,189]};
+  send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:board});
+  await expect(page.locator('.native-board')).toBeVisible();
+  await expect(page.getByRole('status')).toHaveText('Watch this.');
+  const beforeGuide=output;
+  await expect(page.getByRole('status')).toHaveText('Your turn.');
+  assert.equal(output,beforeGuide,'the demonstration cannot emit native input');
+  await expect(page.locator('.native-board-paper > svg polyline')).toHaveCount(1);
+  await page.getByRole('button',{name:'Clear',exact:true}).click();
+  await expect.poll(()=>output).toContain('"operation":"clear"');
+  send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{id:'apparent-test-1',strokes:[],color:[59,121,189]}});
+  await expect(page.locator('.native-board-paper > svg polyline')).toHaveCount(0);
+  const beforeReplay=output;
+  await page.getByRole('button',{name:'Replay guide',exact:true}).click();
+  assert.equal(output,beforeReplay,'replay cannot clear or export human ink');
+  const canvas=await page.getByLabel('Whiteboard drawing canvas').boundingBox();
+  await page.mouse.move(canvas.x+20,canvas.y+30);await page.mouse.down();
+  await page.mouse.move(canvas.x+100,canvas.y+90,{steps:5});await page.mouse.up();
+  await expect.poll(()=>output).toContain('"operation":"end"');
+  assert.ok(output.includes('"id":"apparent-test-1","operation":"begin"'));
+  await page.mouse.move(canvas.x+150,canvas.y+120);await page.mouse.down();
+  await page.mouse.move(canvas.x+190,canvas.y+150,{steps:3});
+  send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:null});
+  await expect(page.locator('.native-board')).toHaveCount(0);
+  await expect.poll(()=>output).toContain('"operation":"cancel"');
+  await page.mouse.up();
+  send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{id:'apparent-test-1',strokes:[human],color:[59,121,189]}});
+  await expect(page.locator('.native-board')).toBeVisible();
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.getByRole('button',{name:'Replay guide',exact:true}).click();
+  await expect(page.getByRole('status')).toHaveText('Your turn.');
+  await page.getByRole('button',{name:'Close whiteboard',exact:true}).click();
+  await expect.poll(()=>output).toContain('"operation":"close"');
+  await page.emulateMedia({reducedMotion:'no-preference'});
   send({step:'try-it',practice:'note',firstCaptureRequired:true});
   await expect(page.locator('.native-coach')).toHaveAttribute('data-stage','screen-ink');
   await expect(page.getByRole('heading',{name:'Draw on your screen.',exact:true})).toBeVisible();
@@ -337,7 +377,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   assert.equal(await page.getByRole('textbox').count(),0,'the coach must not replace the real note editor');
   await page.emulateMedia({reducedMotion:'no-preference'});
   // All three control examples remain presentation only, and settle once.
-  for(const [phase,kind] of [['whiteboard','whiteboard'],['stop','finish'],['locate','locate']]){
+  for(const [phase,kind] of [['whiteboard','whiteboard'],['locate','locate']]){
     send({step:'try-it',practice:phase,firstCaptureRequired:true});
     await expect(page.locator('.native-control')).toHaveAttribute('data-kind',kind);
     const before=output;
@@ -354,7 +394,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.locator('.native-control button')).toBeHidden();
   await page.emulateMedia({reducedMotion:'no-preference'});
   send({step:'try-it',practice:'whiteboard',platform:'linux',firstCaptureRequired:true});
-  await expect(page.getByText('Open Whiteboard from the recording controls.',{exact:true})).toBeVisible();
+  assert.equal(await page.getByText('Click Whiteboard in the recording controls.',{exact:true}).count(),0);
   await expect(page.getByRole('figure',{name:'Example: click Whiteboard',exact:true})).toBeVisible();
   await expect(page.locator('.control-screen')).toBeHidden();
   await expect(page.locator('.control-board')).toHaveCSS('opacity','1');

@@ -964,6 +964,7 @@ pub fn launch_plan(progress: &Progress, grants: &Grants) -> Option<Flow> {
 /// From the welcome window's helper process and the permission poller.
 #[derive(Clone, Debug)]
 pub enum Event {
+    Board(serde_json::Value),
     /// Grants read at launch, to decide whether onboarding opens (`launch_plan`).
     Launch(Grants),
     Grants(Grants),
@@ -1097,6 +1098,7 @@ pub struct Session {
     practice: Option<super::practice::Practice>,
     anchor: Option<[f32;4]>,
     practice_board: Option<[f32;4]>,
+    board_view: Option<serde_json::Value>,
     practice_completed: bool,
     practice_bundle: Option<std::path::PathBuf>,
     practice_receipt: Option<(u64, String, Option<String>)>,
@@ -1134,6 +1136,7 @@ impl Session {
             practice: None,
             anchor: None,
             practice_board: None,
+            board_view: None,
             practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,pen_save_id:None,
         }
     }
@@ -1248,6 +1251,7 @@ impl Session {
             practice: shell.then(super::practice::Practice::default),
             anchor: None,
             practice_board: None,
+            board_view: None,
             practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,pen_save_id:None,
         };
         session.shortcut_changed(shortcut);
@@ -1319,6 +1323,10 @@ impl Session {
                     let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
                         continue;
                     };
+                    if value.get("action").and_then(|v| v.as_str()) == Some("board") {
+                        events(Event::Board(value));
+                        continue;
+                    }
                     let Some(action) = value.get("action").and_then(|v| v.as_str()) else {
                         continue;
                     };
@@ -1685,6 +1693,8 @@ impl Session {
         self.practice_board=frame;
         if let Some(p)=self.practice.as_mut() { p.whiteboard_visible(frame.is_some()); }
     }
+    pub fn board_view(&mut self, view: Option<serde_json::Value>) { self.board_view=view; }
+    pub fn electron_practice(&self)->bool { self.practice_active() && self.fallback.is_some() && !self.fallback_pending }
     pub fn practice_active(&self)->bool {self.practice.is_some() && self.flow.step()==Step::TryIt}
     pub fn refresh_account(&mut self) {
         if self.account.as_mut().is_some_and(|account| account.poll()) { self.sync(); }
@@ -1733,6 +1743,7 @@ impl Session {
         view["shortcutEditor"]=serde_json::json!(self.editor);
         view["anchor"]=serde_json::json!(self.anchor);
         view["practiceBoard"]=serde_json::json!(self.practice_board);
+        view["boardView"]=serde_json::json!(self.board_view);
         view["testInstance"]=false.into();
         view["penSaveId"]=serde_json::json!(self.pen_save_id);
         view["penPicker"]=self.pen_picker.into();view["penSelected"]=self.pen_selected.into();view["penError"]=self.pen_error.into();

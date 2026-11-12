@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@apparent/ui/button';
 import icon from '../../../../../../shared/assets/brand/apparent-app-icon.svg';
+import { Whiteboard, type BoardView } from './board/whiteboard';
+import { recordKeys } from './shortcut/keys';
 import frog from '../../../../assets/onboarding/frog.png';
 import './onboarding.css';
 import { savePen } from './pen/save';
@@ -12,9 +14,9 @@ import type { AccountState } from '../../electron/onboarding/account';
 import { subscribeOnboardingState } from './state';
 import { desktopShortcutSelection, fnSelectionActions, shortcutCapture, shortcutInput } from '../../electron/onboarding/shortcut-editor.ts';
 import { Permissions, type PermissionRow as Row } from './permissions';
-type Action=string|{action:'shortcut';kind:'record';keyCode:number;modifiers:number;key:string;reserved:false};
+type Action=string|{action:'board';id:string;operation:string;point?:number[]}|{action:'shortcut';kind:'record';keyCode:number;modifiers:number;key:string;reserved:false};
 type Editor={recording:boolean;externallyManaged:boolean;error:string|null};
-type State={account:AccountState|null;tutorial:'skipped'|'watched'|'practiced'|null;platform:'macos'|'linux';shortcutEditor:Editor|null;step:string;ready:boolean;fix:boolean;rows:Row[];index:number;count:number;shortcut:string;shortcutEditing:boolean;shortcutChosen:boolean;shortcutTested:boolean;practice:string|null;firstCaptureRequired:boolean;penSaveId?:string;penPicker:boolean;penSelected:boolean;penError:boolean;penRgb:number[];testInstance:boolean;coachArrow?:number;coachPointsUp?:boolean};
+type State={boardView?:BoardView|null;account:AccountState|null;tutorial:'skipped'|'watched'|'practiced'|null;platform:'macos'|'linux';shortcutEditor:Editor|null;step:string;ready:boolean;fix:boolean;rows:Row[];index:number;count:number;shortcut:string;shortcutEditing:boolean;shortcutChosen:boolean;shortcutTested:boolean;practice:string|null;firstCaptureRequired:boolean;penSaveId?:string;penPicker:boolean;penSelected:boolean;penError:boolean;penRgb:number[];testInstance:boolean;coachArrow?:number;coachPointsUp?:boolean};
 declare global {interface Window {nativeOnboarding?:{readState:()=>Promise<State|null>;action:(action:Action)=>Promise<boolean>;onState:(listener:(state:State)=>void)=>()=>void;onDesktopShortcut?:(listener:(key:unknown)=>void)=>()=>void}}}
 export function NativeOnboarding(){
   const [wideCoach,setWideCoach]=useState(window.innerWidth>=700);
@@ -106,14 +108,15 @@ export function NativeOnboarding(){
   const trackpadHint=practiceStage==='screen-ink';
   const helper=<aside className="native-trackpad-helper" aria-label="Trackpad drawing hint"><div className="native-trackpad-helper-content"><strong>Pressing down on your trackpad?</strong><p>No need. Just hold Shift and glide.</p></div></aside>;
   document.title=state.testInstance?'apparent onboarding preview 9':'apparent setup';
+  if(state.boardView)return <Whiteboard key={state.boardView.id} board={state.boardView} action={value=>action(value)}/>;
   if(practice){
     const content:Record<string,{title:string;text:string;button?:string;action?:string}>={
       start:{title:'Go again.',text:''},
       screen:{title:'Choose Screen.',text:'Choose Screen in the capture controls. Whiteboard becomes available once recording starts.'},
-      whiteboard:{title:`Open ${boardName}.`,text:'Open Whiteboard from the recording controls.'},
-      'board-ink':{title:'Draw on the whiteboard.',text:'Draw a circle or arrow on the white paper. You don’t need Shift here. Release to continue.'},
+      whiteboard:{title:`Open ${boardName}.`,text:''},
+      'board-ink':{title:'Draw on the whiteboard.',text:''},
       'screen-ink':{title:'Draw on your screen.',text:'Hold Shift and circle something in your window.'},
-      stop:{title:'Finish your capture.',text:`Press ${state.shortcut} again. Your sketch and screen marks stay together.`},
+      stop:{title:'Finish your capture.',text:''},
       preparing:{title:'Preparing your capture…',text:'Recording has stopped. Your marks and context are being brought together.'},
       copied:{title:'Copied. Try pasting it.',text:'Your capture is copied. Paste it into your agent.',button:'Show paste steps',action:'practice-paste'},
       paste:{title:'Paste your capture.',text:`In your agent, press ${state.platform==='linux'?'Ctrl':'⌘'} V. Confirm when it appears.`,button:'Confirm paste',action:'practice-pasted'},
@@ -123,7 +126,8 @@ export function NativeOnboarding(){
       'copy-failed':{title:'Saved, but not copied.',text:'Your capture is saved. Find it in apparent’s menu.',button:'Find saved capture',action:'practice-locate'},
     };
     const c=content[practiceStage??'start']??content.start,exit=practiceExit(practiceStage??'start');
-    return <><main className="native-coach" data-paired={trackpadHint&&wideCoach} data-stage={practiceStage} data-arrow={state.coachPointsUp} style={{'--coach-arrow':`${(state.coachArrow??190)-24}px`} as React.CSSProperties}><img key={practiceStage} src={frog} alt="Frog guide"/><div className="native-coach-content"><div className="native-coach-label">Your first capture</div><h1>{c.title}</h1>{c.text&&<p>{c.text}</p>}{(['start','retry','screen-ink','copied','paste'].includes(practiceStage??'start'))&&<GestureGuide key={practiceStage} kind={practiceStage==='screen-ink'?'draw':practiceStage==='copied'||practiceStage==='paste'?'paste':'record'} shortcut={state.shortcut} platform={state.platform}/>}{['screen','whiteboard','stop','locate'].includes(practiceStage??'')&&<ControlGuide key={practiceStage} kind={practiceStage==='stop'?'finish':practiceStage==='locate'?'locate':'whiteboard'} screenOnly={practiceStage==='screen'} directWhiteboard={state.platform==='linux'&&practiceStage==='whiteboard'}/>} {c.button&&<Button onClick={()=>void action(c.action!)}>{c.button}</Button>}{trackpadHint&&!wideCoach&&helper}{error&&<p role="alert">{error}</p>}<div className="native-coach-actions"><Button variant="outline" className="native-later" onClick={()=>void action('later')}>{exit.label}</Button><small className="native-exit-detail">{exit.detail}</small></div></div></main>{trackpadHint&&wideCoach&&helper}</>;
+    const guideKind=state.practice==='screen-ink'||state.practice==='note'?'draw':state.practice==='copied'||state.practice==='paste'?'paste':'record';
+    return <><main className="native-coach" data-paired={trackpadHint&&wideCoach} data-stage={practiceStage} data-arrow={state.coachPointsUp} style={{'--coach-arrow':`${(state.coachArrow??190)-24}px`} as React.CSSProperties}><img key={practiceStage} src={frog} alt="Frog guide"/><div className="native-coach-content"><h1>{c.title}</h1>{c.text&&<p>{c.text}</p>}{state.practice==='stop'&&<div className="native-saved-keys" aria-label={state.shortcut}>{recordKeys(state.shortcut).map((key,index)=><kbd key={index}>{key}</kbd>)}</div>}{(['start','retry','screen-ink','note','copied','paste'].includes(practiceStage??'start'))&&<GestureGuide key={practiceStage} kind={guideKind} shortcut={state.shortcut} platform={state.platform}/>} {['screen','whiteboard','locate'].includes(state.practice??'')&&<ControlGuide key={state.practice} kind={state.practice==='locate'?'locate':'whiteboard'} screenOnly={state.practice==='screen'} directWhiteboard={state.platform==='linux'&&state.practice==='whiteboard'}/>} {c.button&&<Button onClick={()=>void action(c.action!)}>{c.button}</Button>}{trackpadHint&&!wideCoach&&helper}{error&&<p role="alert">{error}</p>}{state.practice==='stop'?<Button variant="ghost" size="icon" className="native-finish-close" aria-label="Close guide" onClick={()=>void action('later')}>×</Button>:<div className="native-coach-actions"><Button variant="outline" className="native-later" onClick={()=>void action('later')}>{exit.label}</Button><small className="native-exit-detail">{exit.detail}</small></div>}</div></main>{trackpadHint&&wideCoach&&helper}</>;
   }
   return <main className="native-setup" data-shortcut-state={state.step==='shortcut'||goAgain}><header><span>{state.testInstance?'apparent · onboarding preview 9':'apparent · setup'}</span><Button variant="ghost" size="icon" aria-label="Close setup" onClick={()=>void action('close')}>×</Button></header><section>
     {state.step==='welcome'&&!state.penPicker&&<div className="native-welcome"><h1>Welcome.</h1><img src={icon} alt="apparent"/><OnboardingAccount state={state.account} action={action}/></div>}
