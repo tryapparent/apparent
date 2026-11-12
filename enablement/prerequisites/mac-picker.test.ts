@@ -4,7 +4,7 @@ import {execFileSync} from 'node:child_process';
 import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {panelScript, prepareStorageChange, type PickerDriver} from './mac-picker.ts';
+import {panelScript, pickerCommandMs, prepareStorageChange, type PickerDriver} from './mac-picker.ts';
 import {isolatePickerRuntime} from './mac-runtime.ts';
 import * as files from 'node:fs/promises';
 function deferred<T>() {
@@ -119,10 +119,10 @@ test('picker calls allow bounded AppKit startup but never exceed the original ov
  const calls:Array<{timeout:number;operation:string}>=[];
  const driver=create(async(_file:string,args:string[],options:{timeout:number})=>{
   calls.push({timeout:options.timeout,operation:args[4]});return {stdout:'owned picker\n'};
- },{now:()=>now},assert,{},95000,{exitCode:null,signalCode:null,pid:4801},'native script','/synthetic/home','/synthetic/electron',5000,{bundleId:'com.tryapparent.synthetic'});
+ },{now:()=>now},assert,{},95000,{exitCode:null,signalCode:null,pid:4801},'native script','/synthetic/home','/synthetic/electron',pickerCommandMs,{bundleId:'com.tryapparent.synthetic'});
  await driver.panel('cancel');
  await driver.goPathOperation('enter-go-path','/synthetic/path');
- assert.deepEqual(calls.map(call=>call.timeout),[5000,5000]);
+ assert.deepEqual(calls.map(call=>call.timeout),[pickerCommandMs,pickerCommandMs]);
  await driver.osa('other native control');
  assert.equal(calls.at(-1)!.timeout,3500,'Unrelated native controls keep their original cap');
  now=94500;await driver.panel('choose');await driver.goPathOperation('navigate-go','/synthetic/path');

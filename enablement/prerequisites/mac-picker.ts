@@ -1,9 +1,10 @@
 // Disposable hosted-Mac CI driver, not application behavior or native proof.
 // Readiness callbacks may poll read-only state; mutation callbacks run once.
-// Hosted-Mac receipts show AppKit ownership checks taking ~3s before the first
-// AX query. Give the complete picker command a finite allowance for that startup;
+// Hosted-Mac receipts show AppKit ownership checks taking 3–4s before the first
+// AX query, with a 5s command killed during the subsequent sheet traversal.
+// Allow the same 8s as the existing picker-readiness observation window;
 // the caller still clips every call to the original 95s overall test deadline.
-export const pickerCommandMs = 5000;
+export const pickerCommandMs = 8000;
 export type PickerDriver = {
   storageIdle: () => Promise<void>;
   change: () => Promise<void>;
