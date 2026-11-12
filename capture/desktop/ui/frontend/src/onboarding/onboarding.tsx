@@ -119,7 +119,7 @@ export function NativeOnboarding(){
       preparing:{title:'Preparing your capture…',text:'Recording has stopped. Your marks and context are being brought together.'},
       copied:{title:'Copied. Try pasting it.',text:'Your capture is copied. Paste it into your agent.',button:'Show paste steps',action:'practice-paste'},
       paste:{title:'Paste your capture.',text:`In your agent, press ${state.platform==='linux'?'Ctrl':'⌘'} V. Confirm when it appears.`,button:'Confirm paste',action:'practice-pasted'},
-      locate:{title:'apparent lives here.',text:`Click the a in your ${state.platform==='linux'?'system tray':'menu bar'}, then Open Latest Capture.`},
+      locate:{title:'apparent lives here.',text:state.platform==='linux'?'Right-click the tray icon. Open Latest Capture.':'Click the a in your menu bar, then Open Latest Capture.'},
       complete:{title:'Ready for your next idea.',text:'You can record, draw, add notes, paste, and find your captures. Your setup is complete.',button:'Finish setup',action:'practice-finish'},
       retry:{title:'Try another capture.',text:`Press ${state.shortcut} to start again, then follow the drawing prompts. Your previous capture is saved.`},
       'copy-failed':{title:'Saved, but not copied.',text:'Your capture is saved. Find it in apparent’s menu.',button:'Find saved capture',action:'practice-locate'},

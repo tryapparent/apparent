@@ -647,4 +647,15 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await page.waitForTimeout(100);assert.equal(advances(),beforeBack);
   send({penPicker:true,penSelected:true,penRgb:[59,121,189],penSaveId:retryId});
   await expect.poll(advances).toBe(beforeBack+1);
+  send({step:'try-it',practice:'locate',platform:'linux'});
+  await expect(page.getByText('Right-click the tray icon. Open Latest Capture.', {exact:true})).toBeVisible();
+  for(const width of [380,320])for(const scheme of ['light','dark']){
+    await page.setViewportSize({width,height:440});
+    await page.emulateMedia({colorScheme:scheme});
+    await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+    if(process.env.APPARENT_ONBOARDING_EVIDENCE){await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,`locate-${scheme}-${width}.png`)});}
+    const fit=await page.locator('.native-coach-content').evaluate(el=>({w:el.clientWidth,h:el.clientHeight,sw:el.scrollWidth,sh:el.scrollHeight}));
+    assert.ok(fit.sw<=fit.w&&fit.sh<=fit.h,'Linux tray guidance must fit '+JSON.stringify({width,scheme,fit}));
+  }
+
 });
