@@ -19,3 +19,7 @@ The Mac download action resolves the latest published Apple silicon DMG on click
 including Safari and other browsers that cannot identify the chip. Its label
 discloses Apple silicon; known Intel Macs remain unsupported. Release lookup
 failures and modified clicks retain the GitHub Releases fallback.
+
+Linux also downloads its latest published AppImage on activation. Detected
+ARM64 browsers get ARM64; unknown CPUs default to the explicitly labeled x86_64
+download. Release lookup failures retain the same Releases fallback.

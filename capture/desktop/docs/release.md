@@ -75,6 +75,14 @@ kept in a hidden `.apparent-previous-<UUID>.backup` beside the new app. If Appli
 requires privileges, use Finder; this installer does not request elevated access.
 The installer is separately signed/notarized before the DMG; the Sparkle ZIP
 continues to contain only the regular `Apparent Preview.app` with its existing feed.
+The Electron host compares canonical adapter paths so macOS aliases such as
+`/tmp` and `/private/tmp` identify the same bundled executable. It still rejects
+a linked or non-regular bundled adapter and never executes a caller-selected path.
+Each build uses installer bundle ID `dev.simonvanlaak.apparent.preview.installer.b<build>`
+so an older windowless installer cannot intercept a fresh download's Finder launch.
+Reopening a running installer restores and focuses its window. Startup failures show
+a native error with the Finder installation fallback, then exit; they do not leave
+a windowless process running. No other installer or Apparent process is quit.
 Native acceptance must exercise the signed DMG installation and launch on Mac;
 renderer tests and safe-copy fixtures alone do not establish installed behavior.
 

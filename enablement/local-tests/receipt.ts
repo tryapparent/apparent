@@ -42,8 +42,10 @@ export function receiptStore(cwd: string): string {
   return path;
 }
 
-export function reuse(cwd: string, snapshot: () => Snapshot, run: () => void,
-  report: (message: string) => void = console.error): void {
+export function reuse<T extends Snapshot>(cwd: string, snapshot: () => T, run: () => void,
+  report: (message: string) => void = console.error,
+  options: {label?: string; refreshed?: (before: T, after: T) => boolean} = {}): void {
+  const label = options.label ?? 'service tests';
   let directory: string, identity: string, key: Buffer;
   let trusted: (() => void) | undefined;
   const invalidate = () => {
@@ -93,7 +95,7 @@ export function reuse(cwd: string, snapshot: () => Snapshot, run: () => void,
   const seal = (payload: string) => createHmac('sha256', key).update(payload).digest('hex');
   let temporary: string | undefined;
   try {
-    let before: Snapshot;
+    let before: T;
     try { before = snapshot(); } catch {
       // Discard any earlier success before attempting an unqualified command.
       try { trusted(); rmSync(receipt, {force: true}); } catch { /* no reusable evidence */ }
@@ -113,7 +115,7 @@ export function reuse(cwd: string, snapshot: () => Snapshot, run: () => void,
       if (JSON.stringify(before) !== JSON.stringify(after)) throw Error('inputs changed during lookup');
       trusted();
       if (epoch() !== generation) throw Error('evidence invalidated during lookup');
-      report(`local-reuse: reused service tests from ${data.head} (${Math.round(data.elapsedMs)} ms), receipt ${receipt}`);
+      report(`local-reuse: reused ${label} from ${data.head} (${Math.round(data.elapsedMs)} ms), receipt ${receipt}`);
       return;
     } catch { /* Missing, malformed, expired or mutated evidence executes fresh. */ }
     try {
@@ -131,17 +133,20 @@ export function reuse(cwd: string, snapshot: () => Snapshot, run: () => void,
     const elapsedMs = performance.now() - started;
     try {
       const after = snapshot();
-      if (JSON.stringify(before) !== JSON.stringify(after)) throw Error('inputs changed during tests');
+      // An installer intentionally replaces its output. Its owner must separately
+      // prove immutable install inputs and publish the newly checked output key.
+      if (options.refreshed ? !options.refreshed(before, after)
+        : JSON.stringify(before) !== JSON.stringify(after)) throw Error('inputs changed during command');
       trusted();
       if (generation === undefined || epoch() !== generation) throw Error('concurrent execution invalidated evidence');
-      const payload = JSON.stringify({schema: 2, epoch: generation, key: before.key, head: before.head, finished: Date.now(), elapsedMs});
+      const payload = JSON.stringify({schema: 2, epoch: generation, key: after.key, head: after.head, finished: Date.now(), elapsedMs});
       temporary = join(directory, `receipt-${randomBytes(12).toString('hex')}`);
       const fd = openSync(temporary, 'wx', 0o600);
       try { writeFileSync(fd, JSON.stringify({payload, seal: seal(payload)})); fsyncSync(fd); } finally { closeSync(fd); }
       trusted();
       renameSync(temporary, receipt);
       if (epoch() !== generation) { rmSync(receipt, {force: true}); throw Error('evidence invalidated during publication'); }
-      report(`local-reuse: saved service tests (${Math.round(elapsedMs)} ms), receipt ${receipt}`);
+      report(`local-reuse: saved ${label} (${Math.round(elapsedMs)} ms), receipt ${receipt}`);
     } catch { report('local-reuse: success not saved (inputs or storage changed)'); }
   } finally {
     // Cleanup must neither hide a test failure nor touch replacement storage.
