@@ -258,6 +258,11 @@ class InspectionTests(unittest.TestCase):
         received = json.loads(output)
         # CPython may set LC_CTYPE internally when coercing its default locale.
         received.pop("LC_CTYPE", None)
+        # CoreFoundation may add this after process startup on macOS; it was
+        # not forwarded (the exact Popen environment is asserted above).
+        if sys.platform == "darwin" and "__CF_USER_TEXT_ENCODING" in received:
+            self.assertRegex(received.pop("__CF_USER_TEXT_ENCODING"),
+                             r"^0x[0-9A-Fa-f]+:0x[0-9A-Fa-f]+:0x[0-9A-Fa-f]+$")
         self.assertEqual(received, allowed)
 
     def test_cli_environment_does_not_require_optional_variables(self):
