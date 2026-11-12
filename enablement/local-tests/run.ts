@@ -39,9 +39,22 @@ export function captureToolTests(cwd = root): Command[] {
   // and does not recurse into these non-package test folders.
   const result = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/', 'capture/agent/scripts/'], { cwd, encoding: 'utf8' });
   if (result.error || result.status !== 0) throw Error('Cannot enumerate capture tooling tests');
-  return result.stdout.split('\0').filter(path => /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort()
-    .map(path => ({ argv: path.endsWith('.ts') ? ['node', '--experimental-strip-types', '--test', path] : ['python3', '-m', 'unittest', path], cwd: '.',
-      ...(path.endsWith('/test_issue_cli.py') ? {env: {APPARENT_BIN: resolve(cwd, process.env.CARGO_TARGET_DIR || 'target', 'debug/apparent')}} : {}) }));
+  const paths = result.stdout.split('\0').filter(path => /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort();
+  const nodeTests = paths.filter(path => path.endsWith('.test.ts'));
+  // Node's test runner isolates files in workers; keep it serial to retain the
+  // former sorted file order while paying for one runtime startup. Python tests
+  // remain separate because their imported modules can mutate process globals.
+  const nodeCommand = {argv: ['node', '--experimental-strip-types', '--test', '--test-concurrency=1', ...nodeTests], cwd: '.'};
+  const firstNode = paths.find(path => path.endsWith('.test.ts'));
+  const commands: Command[] = [];
+  for (const path of paths) {
+    if (path === firstNode) commands.push(nodeCommand);
+    else if (!path.endsWith('.test.ts')) commands.push({
+      argv: ['python3', '-m', 'unittest', path], cwd: '.',
+      ...(path.endsWith('/test_issue_cli.py') ? {env: {APPARENT_BIN: resolve(cwd, process.env.CARGO_TARGET_DIR || 'target', 'debug/apparent')}} : {})
+    });
+  }
+  return commands;
 }
 
 export function installationContracts(paths: string[] | null, workflowControls: string[] = []): Command[] {
@@ -70,8 +83,9 @@ export function commands(selected: Owner[], base: string, head: string, platform
   result.push(...tools.filter(command => !command.env?.APPARENT_BIN));
   if (selected.includes('tooling')) add(['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py']);
   if (selected.includes('hermes')) {
+    add(['npm', 'ci', '--ignore-scripts', '--prefix', 'hermes/desktop']);
     add(['python3', '-m', 'unittest', 'discover', '-s', 'hermes/tests', '-p', 'test_*.py']);
-    add(['node', '--experimental-strip-types', '--test', 'hermes/desktop/controller.test.ts', 'hermes/desktop/plugin.test.ts',
+    add(['node', '--experimental-strip-types', '--test', 'hermes/desktop/controller.test.ts', 'hermes/desktop/plugin.test.ts', 'hermes/distribution/package.test.ts', 'hermes/distribution/consumer.test.ts', 'capture/agent/setup/hermes.test.ts',
       'capture/desktop/ui/frontend/src/hermes/protocol.test.ts', 'capture/desktop/ui/frontend/src/hermes/mailbox.test.ts']);
   }
   // These TypeScript/renderer checks are independent of Rust. Run their real
