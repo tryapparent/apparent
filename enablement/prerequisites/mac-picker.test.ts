@@ -102,6 +102,24 @@ test('runtime isolation preserves strict window identity and adds native bundle 
  assert.match(panelScript,/Owned AX process identifier differs/);
  assert.doesNotMatch(panelScript,/Apparent Settings — About/,'The unrelated Settings window is never an admitted picker parent');
 });
+test('native focus retains the admitted app instance and rechecks identity after servicing AppKit', () => {
+ // A new factory lookup after activation returned missing for the same live PID
+ // in hosted receipts. Resolve once per command; this is a source contract, not
+ // a substitute for the actual Mac syntax and installed-app acceptance tests.
+ assert.equal(panelScript.match(/my ownedApplication\(/g)?.length,1);
+ const focus=panelScript.slice(panelScript.indexOf('on hasNativeFocus('),panelScript.indexOf('end hasNativeFocus'));
+ const refresh=focus.indexOf('runUntilDate:'),check=focus.indexOf('my assertOwnedApplication(');
+ assert.ok(refresh>=0&&check>refresh);
+ assert.match(focus,/nativeApp's isActive/);
+ assert.match(focus,/frontApp's processIdentifier/);
+ const identity=panelScript.slice(panelScript.indexOf('on assertOwnedApplication('),panelScript.indexOf('end assertOwnedApplication'));
+ for(const guard of ['processIdentifier()', 'isTerminated()', 'executableURL()'])assert.ok(identity.includes(guard),guard);
+ const activate=panelScript.slice(panelScript.indexOf('on activateOwned('),panelScript.indexOf('end activateOwned'));
+ const admit=activate.indexOf('my assertOwnedApplication('),dispatch=activate.indexOf('activateWithOptions:');
+ assert.ok(admit>=0&&dispatch>admit);
+ assert.match(activate,/my hasNativeFocus\(nativeApp, targetPID, expectedExecutable\)/);
+ assert.equal(activate.match(/activateWithOptions:/g)?.length,1,'Activation is never replayed');
+});
 test('picker calls allow bounded AppKit startup but never exceed the original overall deadline', async () => {
  const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
  const slice=(start:string,end:string)=>{

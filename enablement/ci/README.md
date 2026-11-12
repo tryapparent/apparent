@@ -4,6 +4,14 @@ Publication admission uses completed platform receipts even when GitHub marks
 the overall run `queued` because another platform is waiting for a runner.
 Exact main identity and successful platform/shared checks remain required.
 
+The hosted Mac picker driver resolves the owned `NSRunningApplication` once per
+command and retains that instance through activation. Hosted receipts captured a
+fresh PID lookup returning absent immediately after activation of the same live
+process. Focus observations service AppKit's run loop, recheck the retained
+instance's PID/executable/termination state, and require the matching frontmost
+PID. AX/window guards, one activation, input ordering and deadlines remain intact.
+This is a Mac AppKit mechanism; Linux's owned QMP input adapter is unchanged.
+
 Ready-PR/manual platform verification opts into root test/build overlap. The
 verifier retains the Cargo inventory; `root.ts` starts the real app build only
 after Cargo reports successful test compilation. Two test threads overlap one
