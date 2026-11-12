@@ -16,6 +16,16 @@ native build. No checks are omitted or duplicated, and no sandbox permissions or
 host configuration are changed. Repair the reported prerequisite and rerun the
 normal command; this ordering does not turn renderer checks into native proof.
 
+For native integration setup, install the locked frontend dependencies with
+`npm --prefix capture/desktop/ui/frontend ci --no-audit --no-fund`, then run
+`node --experimental-strip-types enablement/prerequisites/native.ts` from the
+repository root. CI uses the same preparation entrypoint. It checks the local
+Electron executable before compiling Storage, Connect and Record artifacts,
+then validates the required files (and parses the Mac picker on macOS). Missing
+generated output is rebuilt; a runtime or generator failure stops preparation.
+Rerun after disposable outputs are cleaned. This prepares inputs without Cargo
+or a GUI launch; it does not establish app readiness or native acceptance.
+
 The local runner reuses successful Connect service serial Node tests on Linux x64/glibc by
 default when their qualified inputs match. The audited closure is pinned in
 `service.ts` to the service, shared UI and shared assets at `49d3414b2`. Changing
