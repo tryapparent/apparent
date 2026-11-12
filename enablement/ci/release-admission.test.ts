@@ -54,6 +54,20 @@ test('Linux can publish while Mac remains pending', () => {
   assert.equal(admitsCD(active, pending, repo, sha, 'macos'), false);
 });
 
+test('queued aggregate status cannot hold completed Linux admission behind Mac capacity', () => {
+  // Main run 43064806937: Linux passed while the remaining Mac jobs were queued.
+  const queued = { ...run, status: 'queued', conclusion: null };
+  const pending = jobs.map(job => job.name.startsWith('macos /') || job.name === 'Hermes inspection (macos-15-intel)'
+    ? { ...job, status: 'queued', conclusion: null } : job);
+  const marker = { name: 'Linux verification', status: 'completed', conclusion: 'success' };
+  assert.ok(admitsCD(queued, [...pending, marker], repo, sha, 'linux'));
+  assert.equal(admitsCD(queued, [...pending, marker], repo, sha, 'macos'), false);
+  assert.equal(admitsCD(queued, [], repo, sha, 'linux'), false);
+  assert.equal(admitsCD(queued, pending.map(job => job.name === 'contracts'
+    ? { ...job, status: 'queued', conclusion: null } : job), repo, sha, 'linux'), false);
+  assert.equal(admitsCD({ ...queued, conclusion: 'cancelled' }, [...pending, marker], repo, sha, 'linux'), false);
+});
+
 test('fresh exact-main owner admission supports targeted execution and authenticated PR reuse', () => {
   for (const platform of ['linux','macos']) {
     const marker = {name: platform === 'linux' ? 'Linux verification' : 'Mac verification', status:'completed', conclusion:'success'};
