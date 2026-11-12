@@ -17,8 +17,7 @@ const plan = parsePlan(process.env.VERIFICATION_PLAN);
 if (process.argv.includes('--outputs')) {
   appendFileSync(process.env.GITHUB_OUTPUT!, Object.entries(plan).map(([key,value]) => `${key}=${value}\n`).join(''));
 } else if (process.argv.includes('--portable')) {
-  const selected = [plan.browser ? 'web' : null, plan.service ? 'service' : null, plan.tools ? 'capture-tools' : null,
-    plan.foreground ? 'client-foreground' : null].filter(Boolean) as ('web'|'service'|'capture-tools'|'client-foreground')[];
+  const selected = [plan.browser ? 'web' : null, plan.service ? 'service' : null, plan.tools ? 'capture-tools' : null, plan.foreground ? 'client-foreground' : null].filter(Boolean) as ('web'|'service'|'capture-tools'|'client-foreground')[];
   for (const command of commands(selected, 'unknown', 'HEAD', process.platform, false).slice(1)) {
     console.log(`[${command.cwd}] ${command.argv.join(' ')}`);
     const result = spawnSync(command.argv[0], command.argv.slice(1), {cwd: `${root}/${command.cwd}`, stdio: 'inherit', env: {...process.env, ...command.env}});

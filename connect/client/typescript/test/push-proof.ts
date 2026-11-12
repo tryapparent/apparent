@@ -20,6 +20,8 @@ function run(command:string,args:string[],cwd=work,extra:NodeJS.ProcessEnv={},in
   return r.stdout.trim();
 }
 const sourceSha=run('git',['rev-parse','HEAD'],source);
+const authorityBase='ee1992ff1dcee7ddde86c62004d43a299165b161';
+run('git',['merge-base','--is-ancestor',authorityBase,sourceSha],source);
 const archive=spawnSync('git',['archive',sourceSha],{cwd:source,env,maxBuffer:512*1024*1024});
 assert.equal(archive.status,0);
 run('tar',['-xf','-'],work,{},archive.stdout);
@@ -86,7 +88,7 @@ assert.match(rejected.output,/pre-push: verification failed/);
 assert.doesNotMatch(rejected.output,/pre-push: \[connect\/client\/typescript\] npm run typecheck/,'failure stops later package checks');
 assert.equal(run('git',['--git-dir='+remote,'rev-parse','refs/heads/policy-proof']),good,'failed push never updates remote');
 assert.ok(!existsSync(denied),'no forbidden PATH command was observed');
-const report={sourceSha,base,acceptedHead:good,localSelected:local.selected,hostedPlan:hosted.plan,
+const report={sourceSha,authorityBase,base,acceptedHead:good,localSelected:local.selected,hostedPlan:hosted.plan,
   packageCommands,acceptedMs:accepted.elapsedMs,rejectedMs:rejected.elapsedMs,rejectedRemoteUnchanged:true,
   forbiddenPathCommandObserved:false,scope:'isolated local Git push; synthetic accepted base; PATH guard only; no hosted CI or live portable-only PR proof',job:resolve(job)};
 writeFileSync(join(job,'report.json'),JSON.stringify(report,null,2)+'\n');

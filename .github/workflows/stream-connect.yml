@@ -3,9 +3,89 @@ name: Connect continuous delivery
 on:
   pull_request:
     branches: [main]
+    paths:
+      - "**"
+      - "!capture/**"
+      - "!record/**"
+      - "!connect/**"
+      - "!public/**"
+      - "!hermes/**"
+      - "!enablement/**"
+      - "!shared/**"
+      - "!composition/**"
+      - "!.cargo/**"
+      - "!.github/**"
+      - "!.githooks/**"
+      - "!AGENTS.md"
+      - "!README.md"
+      - "!Cargo.toml"
+      - "!Cargo.lock"
+      - "!build.rs"
+      - "!main.rs"
+      - "shared/**"
+      - "composition/**"
+      - "enablement/**"
+      - ".github/**"
+      - ".githooks/**"
+      - "!.github/workflows/hermes.yml"
+      - "!.github/workflows/stream-public.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "build.rs"
+      - "main.rs"
+      - ".cargo/**"
+      - ".github/workflows/verification-platform.yml"
+      - "enablement/verification.py"
+      - "enablement/prerequisites/**"
+      - "enablement/local-tests/**"
+      - "enablement/native-build/**"
+      - "connect/**"
+      - "public/site/**"
+      - ".github/workflows/stream-connect.yml"
+      - "enablement/release_gate.py"
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
   push:
     branches: [main]
+    paths:
+      - "**"
+      - "!capture/**"
+      - "!record/**"
+      - "!connect/**"
+      - "!public/**"
+      - "!hermes/**"
+      - "!enablement/**"
+      - "!shared/**"
+      - "!composition/**"
+      - "!.cargo/**"
+      - "!.github/**"
+      - "!.githooks/**"
+      - "!AGENTS.md"
+      - "!README.md"
+      - "!Cargo.toml"
+      - "!Cargo.lock"
+      - "!build.rs"
+      - "!main.rs"
+      - "shared/**"
+      - "composition/**"
+      - "enablement/**"
+      - ".github/**"
+      - ".githooks/**"
+      - "!.github/workflows/hermes.yml"
+      - "!.github/workflows/stream-public.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "build.rs"
+      - "main.rs"
+      - ".cargo/**"
+      - ".github/workflows/verification-platform.yml"
+      - "enablement/verification.py"
+      - "enablement/prerequisites/**"
+      - "enablement/local-tests/**"
+      - "enablement/native-build/**"
+      - "connect/**"
+      - "public/site/**"
+      - ".github/workflows/stream-connect.yml"
+      - "enablement/release_gate.py"
   workflow_dispatch:
 
 permissions:
@@ -23,6 +103,7 @@ jobs:
       plan: ${{ steps.paths.outputs.plan }}
       native: ${{ steps.paths.outputs.native }}
       portable: ${{ steps.paths.outputs.portable }}
+      publish: ${{ steps.paths.outputs.publish }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,16 +114,17 @@ jobs:
           bun-version: '1.3.10'
       - id: paths
         env:
-          # Every main candidate verifies the complete Connect tree. Otherwise a
-          # newer unrelated push could strand an earlier failed/stale delivery.
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
-        run: bun enablement/ci/routing/connect.ts
+          # Every affected main candidate verifies the complete Connect tree;
+          # irrelevant main advances do not supersede its pending delivery.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: bun enablement/ci/routing/connect.ts --admit
 
   contracts:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
@@ -57,6 +139,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/ubuntu-apt
         if: runner.os == 'Linux'
@@ -110,6 +193,7 @@ jobs:
       vars.HOSTED_CD_ENABLED == 'true' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       needs.select.result == 'success' && needs.contracts.result == 'success' && needs.portable.result == 'success' &&
+      needs.select.outputs.publish != 'false' &&
       (needs.select.outputs.native == 'false' || (needs.linux.result == 'success' && needs.macos.result == 'success'))
     permissions:
       contents: read
@@ -121,8 +205,8 @@ jobs:
       # Admission code comes from trusted main, never an unchecked event SHA.
       - uses: actions/checkout@v4
         with:
-          ref: main
           fetch-depth: 0
+          ref: main
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -138,7 +222,7 @@ jobs:
           [[ "$GITHUB_REPOSITORY" == tryapparent/apparent && "$GITHUB_REF" == refs/heads/main ]]
           [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
           [[ "$GITHUB_WORKFLOW_REF" == tryapparent/apparent/.github/workflows/stream-connect.yml@refs/heads/main ]]
-          [[ "$(git rev-parse origin/main)" == "$REQUEST_SHA" ]] || exit 0
+          node --experimental-strip-types enablement/ci/routing/streams.ts connect "$REQUEST_SHA" || exit 0
           echo "sha=$REQUEST_SHA" >> "$GITHUB_OUTPUT"
 
   verify:
@@ -149,6 +233,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.admit.outputs.sha }}
       - name: Prepare hosted Ubuntu package transport
@@ -248,6 +333,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.admit.outputs.sha }}
       - uses: actions/setup-node@v4
@@ -266,7 +352,8 @@ jobs:
           set -euo pipefail
           export GITHUB_SHA="${{ needs.admit.outputs.sha }}"
           test -n "$CLOUDFLARE_API_TOKEN"
-          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          git fetch origin main
+          node --experimental-strip-types enablement/ci/routing/streams.ts connect "$GITHUB_SHA"
           cd connect/service
           ./node_modules/.bin/wrangler deploy --config wrangler.cd.json --tag "$GITHUB_SHA" --message "GitHub Actions $GITHUB_RUN_ID commit $GITHUB_SHA" --strict --no-autoconfig
           cd ../..

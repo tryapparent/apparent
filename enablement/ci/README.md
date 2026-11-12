@@ -1,4 +1,4 @@
-Consumer selection, exact-tree PR evidence reuse and automatic Linux Main publication are documented in [continuous delivery](../docs/continuous-delivery.md). `routing/consumers.ts` owns the shared facts; native commands remain in the existing verifier adapter.
+Consumer selection, exact-tree PR evidence reuse and automatic Linux Main publication are documented in [continuous delivery](../docs/continuous-delivery.md). `routing/consumers.ts` owns directory triggers, named suites and shared consumer facts; local pushes and workflows both call `selectRange`. `routing/streams.ts` only compares publication inputs; native commands remain in the existing verifier adapter.
 
 Publication admission uses completed platform receipts even when GitHub marks
 the overall run `queued` because another platform is waiting for a runner.
@@ -25,7 +25,7 @@ disconnect. The caller waits for that leader to exit; it never signals a possibl
 reused child PGID. The enclosing workflow still owns its existing job deadline.
 
 `inputs.ts` supplies the committed, no-rename path facts to hosted and local
-selectors. Hosted execution/acceptance stays conservative. Local feature pushes
+selectors. Local and hosted selectors share the same control-only proof. Feature PRs/pushes
 may classify modifications to existing regular `checks.yml` and
 `stream-public.yml` files as control-only: the ordinary top-level concurrency
 block must change, parsed execution fields must match, and bytes outside that
@@ -36,7 +36,7 @@ still select their own coverage; unknown/execution-sensitive inputs stay broad.
 
 Eligible pushes run the mandatory theme, hook, selector, YAML/workflow,
 prerequisite, timing and release-admission contracts plus tooling width checks.
-Only unrelated product suites are omitted. Main/tag pushes disable this local
+Only unrelated product suites are omitted. Main/tag pushes and hosted main selection disable this
 exception; explicit conservative verification, hosted platform gates and release
 or native acceptance are unchanged. Selection tests prove command omission and
 failure propagation, not measured per-push savings or native behavior.

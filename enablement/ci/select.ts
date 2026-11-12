@@ -2,9 +2,9 @@ import {execFileSync} from 'node:child_process';
 import {appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
-import {changedPaths as inputPaths} from './inputs.ts';
+import {changedPaths as inputPaths, workflowControlPaths} from './inputs.ts';
 
-import {publicMarkdown, documentationOnlyPath, linuxDrivers, selectedOwners, suitePlan} from './routing/consumers.ts';
+import {portableForegroundInputs, foregroundPortableChange, routingProblems, onboardingInput, onboardingPureInputs, routeDecision, documentationOnlyPath, linuxDrivers, suitePlan} from './routing/consumers.ts';
 export {documentationOnlyPath} from './routing/consumers.ts';
 
 export function needsPlatform(paths: string[] | null): boolean {
@@ -12,22 +12,9 @@ export function needsPlatform(paths: string[] | null): boolean {
   return plan.root || plan.engine || plan.desktop || plan.client;
 }
 
-// Preserve main's Public/updater input sets and ordinary-prose exception.
 export function select(paths: string[] | null): {public: boolean; updater: boolean} {
-  if (!paths?.length) return {public: true, updater: true};
-  paths = paths.filter(path => !documentationOnlyPath(path));
-  if (!paths.length) return {public: false, updater: false};
-  const orchestration = paths.some(path => path === '.github/workflows/checks.yml' || path.startsWith('enablement/ci/'));
-  return {
-    public: selectedOwners(paths).includes('public') || orchestration || paths.some(path =>
-      publicMarkdown.has(path) ||
-      ['public/site/', 'shared/ui/', 'shared/analytics/', 'shared/assets/'].some(prefix => path.startsWith(prefix)) ||
-      path === '.github/workflows/stream-public.yml'),
-    updater: orchestration || paths.some(path =>
-      ['capture/desktop/scripts/linux/gui/', 'capture/desktop/scripts/linux/updater/'].some(prefix => path.startsWith(prefix)) ||
-      ['.github/workflows/linux-updater-harness.yml', 'capture/desktop/linux/update.rs',
-        'capture/desktop/settings/settings.rs', 'capture/desktop/settings/settings_window.rs'].includes(path)),
-  };
+  const {public: publicSelected, updater} = routeDecision(paths);
+  return {public: publicSelected, updater};
 }
 
 // Exact portable Settings renderer inputs, not a directory/extension exemption.
@@ -77,18 +64,18 @@ export function requiresMac(paths: string[] | null, nonModifications: string[] |
 }
 
 type Change = {path: string; status: string; oldMode: string; newMode: string};
-const git = (args: string[]) => execFileSync('git', args,
-  {encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe']});
+const git = (args: string[], cwd = process.cwd()) => execFileSync('git', args,
+  {cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe']});
 
-function changes(base: string, head: string): Change[] | null {
+function changes(base: string, head: string, cwd = process.cwd()): Change[] | null {
   if (!/^[a-f0-9]{40}$/.test(base) || /^0+$/.test(base) || !/^[a-f0-9]{40}$/.test(head)) return null;
   try {
-    if (git(['rev-parse', '--is-shallow-repository']).trim() !== 'false') return null;
-    git(['merge-base', '--is-ancestor', base, head]);
-    const sharedPaths = inputPaths(base, head, process.cwd());
+    if (git(['rev-parse', '--is-shallow-repository'], cwd).trim() !== 'false') return null;
+    git(['merge-base', '--is-ancestor', base, head], cwd);
+    const sharedPaths = inputPaths(base, head, cwd);
     // No rename folding: both owner sides remain verification inputs.
     const raw = git(['diff', '--no-renames', '--no-ext-diff', '--no-textconv', '--ignore-submodules=none',
-      '--raw', '--no-abbrev', '-z', base, head, '--']);
+      '--raw', '--no-abbrev', '-z', base, head, '--'], cwd);
     if (!raw) return sharedPaths.length ? null : [];
     const parts = raw.split('\0');
     if (parts.pop() !== '' || parts.length % 2 !== 0) return null;
@@ -119,17 +106,35 @@ export function changedPaths(base: string, head: string, nonModificationsOnly = 
   return changes(base, head)?.filter(change => !nonModificationsOnly || unsupported(change)).map(change => change.path) ?? null;
 }
 
-export function selectRange(base: string, head: string) {
-  const delta = changes(base, head);
+export function selectRange(base: string, head: string, cwd = process.cwd(), conservativeWorkflows = process.env.GITHUB_EVENT_NAME === 'push' && process.env.GITHUB_REF === 'refs/heads/main') {
+  try {
+    base = git(['rev-parse', '--verify', '--end-of-options', base + '^{commit}'], cwd).trim();
+    head = git(['rev-parse', '--verify', '--end-of-options', head + '^{commit}'], cwd).trim();
+  } catch { /* Unknown revisions retain conservative selection. */ }
+  const delta = changes(base, head, cwd);
   const paths = delta?.map(change => change.path) ?? null;
-  const unsafe = delta?.some(change => !regularFileChange(change)) ?? false;
+  const changedPolicyImports = paths?.filter(path => onboardingPureInputs.has(path)).filter(path => {
+    try {return /\b(?:import|require)\b|\bexport\s+[^;]*\bfrom\s*['"]/.test(git(['show', head + ':' + path], cwd));}
+    catch {return true;}
+  }) ?? [];
+  const toolingManifests = new Set(['package.json', 'package-lock.json'].map(name => 'capture/desktop/ui/frontend/tests/onboarding/' + name));
+  const supportedToolingAddition = (change: Change) => toolingManifests.has(change.path) && change.status === 'A' && regularFileChange(change);
+  const changedOnboardingBoundary = delta?.filter(change => change.path.startsWith('capture/desktop/') && onboardingInput(change.path) && unsupported(change) && !supportedToolingAddition(change)).map(change => change.path) ?? [];
+  const unsafe = changedOnboardingBoundary.length > 0 || (delta?.some(change => !regularFileChange(change)) ?? false) || changedPolicyImports.length > 0;
   const effective = unsafe ? null : paths;
-  const plan = suitePlan(effective);
+  const workflowControls = !conservativeWorkflows && effective?.length ? workflowControlPaths(base, head, effective, cwd) : [];
+  const foregroundBoundaries = delta?.filter(change => portableForegroundInputs.has(change.path)).filter(change => {
+    if (unsupported(change)) return true;
+    try {return !foregroundPortableChange(change.path, git(['show', base + ':' + change.path], cwd), git(['show', head + ':' + change.path], cwd));}
+    catch {return true;}
+  }).map(change => change.path) ?? [];
+  const routing = routeDecision(effective, workflowControls, foregroundBoundaries.length > 0);
+  const plan = routing.plan;
   const mac = macDecision(effective, delta?.filter(change => unsupported(change) && needsPlatform([change.path])).map(change => change.path) ?? null);
-  const platform = needsPlatform(effective);
-  return {...select(effective), ...mac, platform, plan,
+  const platform = plan.root || plan.engine || plan.desktop || plan.client;
+  return {...routing, paths: paths ?? [], historyKnown: paths !== null, inputProofKnown: paths !== null && !unsafe, workflowControls, ...mac, platform, plan,
     hermes: plan.hermes, portable: plan.browser || plan.service || plan.tools || plan.foreground,
-    reasons: mac.reasons};
+    reasons: [...routing.reasons, ...foregroundBoundaries.map(path => 'foreground:native-boundary:' + path), ...changedPolicyImports.map(path => 'fallback:onboarding-new-import:' + path), ...changedOnboardingBoundary.map(path => 'fallback:onboarding-boundary-change:' + path), ...mac.reasons]};
 }
 
 export function requiresMacRustRange(base: string, head: string): boolean {
@@ -140,11 +145,16 @@ export function requiresMacRustRange(base: string, head: string): boolean {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const {reasons, plan, ...result} = selectRange(process.env.BASE_SHA ?? '', process.env.GITHUB_SHA ?? '');
+  const decision = selectRange(process.env.BASE_SHA ?? '', process.env.GITHUB_SHA ?? '');
+  if (process.argv.includes('--admit') && process.env.GITHUB_EVENT_NAME !== 'workflow_dispatch') {
+    const problems = routingProblems(decision);
+    if (problems.length) throw Error(problems.join('\n'));
+  }
+  const {reasons, plan, ...result} = decision;
   const mac_rust = requiresMacRustRange(process.env.BASE_SHA ?? '', process.env.GITHUB_SHA ?? '');
   const macEnabled = result.macos || !mac_rust;
   const macPlan = {...plan, root: plan.root && mac_rust && macEnabled, engine: plan.engine && mac_rust && macEnabled,
     desktop: plan.desktop && macEnabled, client: plan.client && macEnabled};
   console.log(JSON.stringify({...result, mac_rust, plan, mac_plan: macPlan, reasons}));
-  appendFileSync(process.env.GITHUB_OUTPUT!, Object.entries({...result, mac_rust, plan: JSON.stringify(plan), mac_plan: JSON.stringify(macPlan)}).map(([key, value]) => key + '=' + value + '\n').join(''));
+  appendFileSync(process.env.GITHUB_OUTPUT!, Object.entries({...result, mac_rust, plan: JSON.stringify(plan), mac_plan: JSON.stringify(macPlan)}).map(([key, value]) => key + '=' + (typeof value === 'object' ? JSON.stringify(value) : String(value)) + '\n').join(''));
 }
