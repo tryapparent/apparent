@@ -53,10 +53,9 @@ older files. The repair intentionally retains that bounded directory traversal,
 global-selector fallback and all native receipt/output validation.
 
 Callers must export `DEVELOPER_DIR` before invoking Cargo to use this optimization.
-Both `verification-platform.yml` and the private onboarding candidate in
-`verification-mac.yml` persist the canonical global selection immediately after
+`verification-platform.yml` persists the canonical global selection immediately after
 setup-xcode, clearing any inherited override during discovery. The workflow
-contract executes both pinning steps and checks their order before native builds.
+contract executes the pinning step and checks its order before native builds.
 Xcode selection, SDK version and verification gates stay the same.
 
 SDK/tool identity is rechecked whenever Cargo invokes the script; this does not
@@ -143,7 +142,7 @@ for revision in "$BASE" "$CANDIDATE" "$BASE"; do
   git switch --detach "$revision" || exit 1
   git rev-parse HEAD > "$proof/$round.sha"
   shasum -a 256 Cargo.lock build.rs enablement/native-build/build.ts \
-    .github/workflows/verification-platform.yml .github/workflows/verification-mac.yml > "$proof/$round.sources"
+    .github/workflows/verification-platform.yml > "$proof/$round.sources"
   taskpolicy -c utility cargo build -j 3 --offline -vv > "$proof/$round.warm.log" 2>&1 || exit 1
   record_inputs > "$proof/$round.before.inputs" 2>&1
   cmp "$proof/1.before.inputs" "$proof/$round.before.inputs" || exit 1

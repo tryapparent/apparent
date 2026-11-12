@@ -28,7 +28,7 @@ test('independent stream workflows, manual diagnostics, PR integration checkout 
   assert.deepEqual(Object.keys(ci().on), ['pull_request', 'push']);
   assert.deepEqual(ci().on.pull_request.types, ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft']);
   assert.equal(ci().permissions.contents, 'read');
-  for (const name of ['verification.yml', 'verification-mac.yml']) assert.deepEqual(Object.keys(workflow(name).on), ['workflow_dispatch']);
+  for (const name of ['verification.yml']) assert.deepEqual(Object.keys(workflow(name).on), ['workflow_dispatch']);
   for (const job of Object.values(ci().jobs) as any[]) for (const step of job.steps ?? []) {
     if (step.uses === 'actions/checkout@v4') {
       assert.equal(step.with.ref, undefined, 'verify the proposed merge, not only the branch head');

@@ -336,7 +336,7 @@ jobs:
       - name: Validate workflow syntax and job dependencies
         uses: docker://rhysd/actionlint:1.7.12
         with:
-          args: -shellcheck= -pyflakes= .github/workflows/checks.yml .github/workflows/linux-updater-harness.yml .github/workflows/verification.yml .github/workflows/verification-mac.yml .github/workflows/verification-platform.yml .github/workflows/release-linux.yml .github/workflows/release-mac-preview.yml .github/workflows/stream-public.yml .github/workflows/stream-connect.yml .github/workflows/hermes.yml
+          args: -shellcheck= -pyflakes= .github/workflows/checks.yml .github/workflows/linux-updater-harness.yml .github/workflows/verification.yml .github/workflows/verification-platform.yml .github/workflows/release-linux.yml .github/workflows/release-mac-preview.yml .github/workflows/stream-public.yml .github/workflows/stream-connect.yml .github/workflows/hermes.yml
 
   tree-evidence:
     needs: [select, contracts, linux, macos, portable, onboarding-policy]

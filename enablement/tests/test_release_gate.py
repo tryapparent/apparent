@@ -43,7 +43,7 @@ class AdmissionTests(unittest.TestCase):
 
     def test_baseline_restoration_does_not_publish_or_start_full_platform_runs(self):
         root = Path(__file__).resolve().parents[2] / '.github/workflows'
-        for name in ('verification.yml', 'verification-mac.yml',
+        for name in ('verification.yml',
                      'release-linux.yml', 'release-mac-preview.yml'):
             workflow = (root / name).read_text()
             events = workflow.split('\non:\n', 1)[1].split('\npermissions:', 1)[0]
@@ -178,30 +178,13 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.admit('macos', '84')
 
-    def test_native_artifact_is_explicit_without_changing_ordinary_verification(self):
-        workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/verification-mac.yml').read_text()
-        inputs = workflow.split('\npermissions:', 1)[0]
-        self.assertIn('      native_candidate:', inputs)
-        self.assertIn('        type: boolean\n        default: false', inputs)
-        verify = re.search(r'^  verify:\n(.*?)(?=^  [a-z]|\Z)', workflow, re.M | re.S)[1]
-        self.assertIn('uses: ./.github/workflows/verification-platform.yml', verify)
-        self.assertIn('runner: macos-15-intel', verify)
-        self.assertNotIn('if:', verify)
-        artifact = workflow.split('\n  native-candidate:\n', 1)[1]
-        self.assertIn("github.event_name == 'workflow_dispatch' && inputs.native_candidate", artifact)
-        self.assertIn("APPARENT_NO_LAUNCH: '1'", artifact)
-        self.assertIn('retention-days: 3', artifact)
-        self.assertNotIn('secrets.', artifact)
-        self.assertNotIn('contents: write', workflow)
-
-    def test_native_artifact_uses_complete_preparation_before_cargo(self):
-        workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/verification-mac.yml').read_text()
-        artifact = workflow.split('\n  native-candidate:\n', 1)[1]
-        prepare = 'node --experimental-strip-types enablement/prerequisites/native.ts'
-        self.assertNotIn('scripts/build-storage-policy.ts', artifact)
-        self.assertLess(artifact.index('npm --prefix capture/desktop/ui/frontend ci'), artifact.index(prepare))
-        self.assertLess(artifact.index('node capture/desktop/ui/frontend/node_modules/electron/install.js'), artifact.index(prepare))
-        self.assertLess(artifact.index(prepare), artifact.index('cargo fetch --locked'))
+    def test_manual_mac_workflow_is_retired_but_automatic_verification_remains(self):
+        root = Path(__file__).resolve().parents[2] / '.github/workflows'
+        self.assertFalse((root / 'verification-mac.yml').exists())
+        checks = (root / 'checks.yml').read_text()
+        self.assertIn('  macos:', checks)
+        self.assertIn('    name: Mac verification', checks)
+        self.assertNotIn('verification-mac.yml', checks)
 
     def test_manual_main_verification_retains_identity_and_required_job_checks(self):
         for run in self.runs.values():
@@ -218,9 +201,7 @@ class AdmissionTests(unittest.TestCase):
         self.jobs['linux'][-1]['conclusion'] = 'skipped'
         with self.assertRaises(ValueError): self.admit()
 
-    def test_intel_mac_receipt_matches_workflow_and_is_required(self):
-        workflow = Path(__file__).resolve().parents[2] / gate.WORKFLOWS['macos']
-        self.assertIn('runner: macos-15-intel', workflow.read_text())
+    def test_historical_intel_mac_receipt_is_required(self):
         names = ['verify / select', 'verify / desktop-ui (macos-15-intel)',
                  'verify / rust (macos-15-intel)', 'verify / connect-client (macos-15-intel)',
                  'verify / Release verification']
