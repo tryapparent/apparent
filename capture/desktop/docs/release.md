@@ -75,6 +75,9 @@ kept in a hidden `.apparent-previous-<UUID>.backup` beside the new app. If Appli
 requires privileges, use Finder; this installer does not request elevated access.
 The installer is separately signed/notarized before the DMG; the Sparkle ZIP
 continues to contain only the regular `Apparent Preview.app` with its existing feed.
+The Electron host compares canonical adapter paths so macOS aliases such as
+`/tmp` and `/private/tmp` identify the same bundled executable. It still rejects
+a linked or non-regular bundled adapter and never executes a caller-selected path.
 Native acceptance must exercise the signed DMG installation and launch on Mac;
 renderer tests and safe-copy fixtures alone do not establish installed behavior.
 

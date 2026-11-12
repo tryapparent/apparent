@@ -2,10 +2,12 @@ import {app, BrowserWindow, ipcMain, session} from 'electron';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {execFile} from 'node:child_process';
-import {lstatSync} from 'node:fs';
+import {lstatSync, realpathSync} from 'node:fs';
 const adapter = process.argv.find(value => value.startsWith('--installer-adapter='))?.slice('--installer-adapter='.length);
 const bundledAdapter = path.resolve(__dirname, '../../../../MacOS/Installer');
-if (process.platform !== 'darwin' || adapter !== bundledAdapter) throw Error('Installer requires its bundled Mac adapter');
+// Foundation and Node can spell macOS system-directory aliases differently.
+// Compare their canonical paths; still execute only the fixed bundled path below.
+if (process.platform !== 'darwin' || !adapter || realpathSync(adapter) !== realpathSync(bundledAdapter)) throw Error('Installer requires its bundled Mac adapter');
 const adapterFile = lstatSync(bundledAdapter);
 if (!adapterFile.isFile() || adapterFile.isSymbolicLink()) throw Error('Installer adapter must be a regular bundled executable');
 app.setName('Install apparent');
