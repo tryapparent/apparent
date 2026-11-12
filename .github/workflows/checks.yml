@@ -37,11 +37,13 @@ jobs:
       plan: ${{ needs.select.outputs.plan }}
 
   release-linux:
-    needs: [linux-admission]
+    needs: [linux-admission, select]
     # Reused/unselected suites intentionally skip ancestors. Override implicit
     # success(), while retaining the fresh exact-main Linux admission gate.
     if: >-
       !cancelled() && needs['linux-admission'].result == 'success' &&
+      needs.select.result == 'success' &&
+      (needs.select.outputs.hermes != 'true' || needs.select.outputs.platform != 'false' || needs.select.outputs.portable != 'false' || needs.select.outputs.public != 'false') &&
       github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'tryapparent/apparent'
     permissions:
       contents: write

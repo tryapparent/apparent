@@ -81,7 +81,7 @@ test('main reuses only explicit passed evidence; PRs cannot claim main reuse', (
 });
 test('Linux release waits for exact-main admission without waiting for Mac', () => {
   const job = ci().jobs['release-linux'];
-  assert.deepEqual(job.needs, ['linux-admission']);
+  assert.deepEqual(job.needs, ['linux-admission','select']);
   assert.equal(job.uses, './.github/workflows/release-linux.yml');
   assert.equal(job.with.publish_main, true);
   assert.match(ci().jobs['linux-admission'].if, /github.event_name == 'push'/);
@@ -89,17 +89,31 @@ test('Linux release waits for exact-main admission without waiting for Mac', () 
   assert.equal(workflow('release-linux.yml').concurrency['cancel-in-progress'], false);
   assert.match(workflow('release-linux.yml').jobs.admit.steps.find((s: any) => s.id === 'gate').run, /--platform linux --sha/);
 });
+test('Hermes-only changes never start unrelated Linux packaging; mixed and unknown inputs retain publication',()=>{
+ const expression=ci().jobs['release-linux'].if;
+ const outputs=(paths:string[]|null)=>{
+  const plan=suitePlan(paths);
+  return {hermes:String(plan.hermes),platform:String(needsPlatform(paths)),public:String(select(paths).public),portable:String(plan.browser||plan.service||plan.tools)};
+ };
+ const allowed=(value:any)=>admitted(expression,{...parents(value),'linux-admission':{result:'success'}},'push');
+ for(const path of ['hermes/desktop/controller.ts','hermes/plugin.yaml','hermes/tests/test_inspect.py','.github/workflows/hermes.yml'])assert.equal(allowed(outputs([path])),false,path);
+ for(const path of ['capture/engine/runtime/recording/mod.rs','capture/agent/setup/hermes.ts','public/site/src/main.tsx','connect/web/src/main.tsx'])assert.equal(allowed(outputs(['hermes/plugin.yaml',path])),true,path);
+ assert.equal(allowed(outputs(null)),true);
+ for(const key of ['hermes','platform','public','portable']){
+  const unknown:any=outputs(['hermes/plugin.yaml']);delete unknown[key];assert.equal(allowed(unknown),true,key);
+ }
+});
 test('Linux publication survives intentional ancestor skips but requires successful exact-main admission', () => {
   const expression = ci().jobs['release-linux'].if;
   for (const ancestors of [['success'], ['success', 'skipped'], ['skipped', 'skipped']]) {
-    const needs = {'linux-admission': {result: 'success'}};
+    const needs = {...parents(), 'linux-admission': {result: 'success'}};
     assert.equal(admitted(expression, needs, 'push', false, false, {ancestors}), true);
     for (const result of ['failure', 'skipped', 'cancelled', undefined]) {
       needs['linux-admission'].result = result as string;
       assert.equal(admitted(expression, needs, 'push', false, false, {ancestors}), false, String(result));
     }
   }
-  const needs = {'linux-admission': {result: 'success'}};
+  const needs = {...parents(), 'linux-admission': {result: 'success'}};
   assert.equal(admitted(expression, needs, 'push', false, true), false);
   assert.equal(admitted(expression, needs, 'pull_request'), false);
   assert.equal(admitted(expression, needs, 'push', false, false, {repository: 'fork/apparent'}), false);
