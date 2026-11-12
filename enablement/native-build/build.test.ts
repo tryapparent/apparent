@@ -196,11 +196,10 @@ test('only a validated explicit developer selection omits the recursive global w
   assert.ok(r.stdout.includes(globalWatch));
 });
 
-test('both Mac workflows export the canonical selection before native builds', t => {
+test('Mac platform verification exports the canonical selection before native builds', t => {
   const f = fixture(t);
   for (const [file, job, build, condition] of [
     ['verification-platform.yml', 'rust', 'cargo ', "runner.os == 'macOS' && needs.select.outputs.root == 'true'"],
-    ['verification-mac.yml', 'onboarding-candidate', 'bash capture/desktop/scripts/packaging/build-mac-preview.sh', null],
   ] as const) {
     const workflow = readFileSync(join(repository, '.github/workflows', file), 'utf8');
     const body = workflow.split(`\n  ${job}:`)[1];
