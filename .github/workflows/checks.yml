@@ -4,10 +4,31 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - "**"
+      - "!capture/**"
+      - "!record/**"
+      - "!connect/**"
+      - "!public/**"
+      - "!hermes/**"
+      - "!enablement/**"
+      - "!shared/**"
+      - "!composition/**"
+      - "!.cargo/**"
+      - "!.github/**"
+      - "!.githooks/**"
+      - "!AGENTS.md"
+      - "!README.md"
+      - "!Cargo.toml"
+      - "!Cargo.lock"
+      - "!build.rs"
+      - "!main.rs"
       - "shared/**"
       - "composition/**"
-      - "enablement/ci/**"
-      - ".github/actions/**"
+      - "enablement/**"
+      - ".github/**"
+      - ".githooks/**"
+      - "!.github/workflows/hermes.yml"
+      - "!.github/workflows/stream-public.yml"
       - "Cargo.toml"
       - "Cargo.lock"
       - "build.rs"
@@ -20,9 +41,8 @@ on:
       - "enablement/native-build/**"
       - "capture/**"
       - "record/**"
-      - "connect/client/**"
-      - "connect/hosted.rs"
-      - "connect/mod.rs"
+      - "connect/**"
+      - "!connect/web/**"
       - "enablement/**"
       - ".githooks/**"
       - "AGENTS.md"
@@ -37,10 +57,31 @@ on:
   push:
     branches: [main]
     paths:
+      - "**"
+      - "!capture/**"
+      - "!record/**"
+      - "!connect/**"
+      - "!public/**"
+      - "!hermes/**"
+      - "!enablement/**"
+      - "!shared/**"
+      - "!composition/**"
+      - "!.cargo/**"
+      - "!.github/**"
+      - "!.githooks/**"
+      - "!AGENTS.md"
+      - "!README.md"
+      - "!Cargo.toml"
+      - "!Cargo.lock"
+      - "!build.rs"
+      - "!main.rs"
       - "shared/**"
       - "composition/**"
-      - "enablement/ci/**"
-      - ".github/actions/**"
+      - "enablement/**"
+      - ".github/**"
+      - ".githooks/**"
+      - "!.github/workflows/hermes.yml"
+      - "!.github/workflows/stream-public.yml"
       - "Cargo.toml"
       - "Cargo.lock"
       - "build.rs"
@@ -53,9 +94,8 @@ on:
       - "enablement/native-build/**"
       - "capture/**"
       - "record/**"
-      - "connect/client/**"
-      - "connect/hosted.rs"
-      - "connect/mod.rs"
+      - "connect/**"
+      - "!connect/web/**"
       - "enablement/**"
       - ".githooks/**"
       - "AGENTS.md"
@@ -78,6 +118,36 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  onboarding-policy:
+    name: Onboarding policy
+    needs: select
+    if: >-
+      !cancelled() && (needs.select.result != 'success' || fromJSON(needs.select.outputs.plan).onboarding)
+    runs-on: ubuntu-24.04
+    container: node:22.23.0-bookworm-slim
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: capture/desktop/ui/frontend
+    steps:
+      # checkout v4 uses its REST archive fallback without Git. These checks
+      # need source files only, not repository history or native packages.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check policy from source without native tools or generated output
+        run: |
+          if command -v cargo || command -v rustc; then
+            echo 'Policy checks must run without Rust tools.' >&2
+            exit 1
+          fi
+          test ! -d node_modules
+          test ! -d dist
+          test ! -d ../../../../target
+          node --experimental-strip-types ../../../../enablement/local-tests/run.ts --onboarding
+          test ! -d node_modules/electron/dist
+          test ! -d tests/onboarding/node_modules/electron
+
   # Main reuses only passed PR suites bound to its identical complete tree.
   # Missing evidence runs affected suites before exact-main publication admission.
   # PR checkout is GitHub's proposed merge, so these checks cover integration.
@@ -103,7 +173,7 @@ jobs:
     if: >-
       !cancelled() && needs['linux-admission'].result == 'success' &&
       needs.select.result == 'success' &&
-      (needs.select.outputs.hermes != 'true' || needs.select.outputs.platform != 'false' || needs.select.outputs.portable != 'false' || needs.select.outputs.public != 'false') &&
+      needs.select.outputs.installer != 'false' &&
       github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'tryapparent/apparent'
     permissions:
       contents: write
@@ -144,6 +214,7 @@ jobs:
       public: ${{ steps.paths.outputs.public }}
       updater: ${{ steps.paths.outputs.updater }}
       platform: ${{ steps.paths.outputs.platform }}
+      installer: ${{ steps.paths.outputs.installer }}
       plan: ${{ steps.paths.outputs.plan }}
       mac_plan: ${{ steps.paths.outputs.mac_plan }}
       hermes: ${{ steps.paths.outputs.hermes }}
@@ -159,7 +230,7 @@ jobs:
       - id: paths
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: bun enablement/ci/select.ts
+        run: bun enablement/ci/select.ts --admit
 
   reuse:
     needs: select
@@ -258,13 +329,17 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: python3 enablement/verification.py --base "$BASE_SHA" --pr
+      - name: Verify the shared selected tooling suite
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node --experimental-strip-types enablement/local-tests/run.ts --tooling
       - name: Validate workflow syntax and job dependencies
         uses: docker://rhysd/actionlint:1.7.12
         with:
           args: -shellcheck= -pyflakes= .github/workflows/checks.yml .github/workflows/linux-updater-harness.yml .github/workflows/verification.yml .github/workflows/verification-mac.yml .github/workflows/verification-platform.yml .github/workflows/release-linux.yml .github/workflows/release-mac-preview.yml .github/workflows/stream-public.yml .github/workflows/stream-connect.yml .github/workflows/hermes.yml
 
   tree-evidence:
-    needs: [select, contracts, linux, macos, portable]
+    needs: [select, contracts, linux, macos, portable, onboarding-policy]
     if: always() && !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.select.result == 'success'
     runs-on: ubuntu-24.04
     steps:
@@ -287,7 +362,7 @@ jobs:
 
   linux-admission:
     name: Linux verification
-    needs: [select, contracts, reuse, linux, portable]
+    needs: [select, contracts, reuse, linux, portable, onboarding-policy]
     if: always() && !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     steps:
@@ -307,7 +382,7 @@ jobs:
 
   macos-admission:
     name: Mac verification
-    needs: [select, contracts, reuse, macos, portable]
+    needs: [select, contracts, reuse, macos, portable, onboarding-policy]
     if: always() && !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     steps:

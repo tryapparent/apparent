@@ -29,23 +29,75 @@ older client/server source.
 `checks.yml` verifies the native application and shared integration on PRs targeting
 main and main pushes. Public and Connect have direct automatic entrypoints in
 `stream-public.yml` and `stream-connect.yml`; neither depends on a default CD run.
-Automatic PR and main triggers use positive directory filters for each value
-stream. `enablement/ci/routing/streams.ts` records the exact inventory; cheap
-contracts require both event filters to match it. Capture retains the existing
-combined native workflow for `capture/` and `record/`, shared/composition inputs,
-root native build inputs and the installed Connect client. Connect owns
-`connect/`; Public owns `public/`; Hermes owns `hermes/` plus its Capture
-setup/bridge consumers. All include shared/composition and their CI dependencies.
-Capture also runs cheap contracts for repository guidance and Enablement changes.
-Unknown top-level directories/files fail the cheap ownership contract instead of
-implicitly starting every workflow. Unknown inputs inside an owned directory
-still reach that stream's conservative selector; missing history stays broad.
+Automatic PR and main triggers follow directory ownership. The sole authority is
+`enablement/ci/routing/consumers.ts`: directory/consumer rules, named suites,
+workflow input inventory and admission explanations. `selectRange` reads the
+complete no-rename Git delta and applies that authority for both the ordinary
+local hook and hosted workflows. Local `selection` delegates to it; executors
+consume its plan instead of independently reclassifying paths. Plan fields are
+`root`, `engine`, `desktop`, `client`, `foreground`, `browser`, `service`, `tools`,
+`hermes`, `public`, `tooling` and `onboarding`. Mac projection retains the
+existing platform exemptions, with reasons; it does not redefine ownership.
+
+Both event filters are contract-checked against this authority, including every
+tracked path's transitive consumers. Known unrelated directories are excluded;
+shared/composition and explicit build/verification dependencies remain. A final
+unknown-root guard reaches cheap ownership validation instead of silently losing
+a new owner. Capture retains its combined native build and Record/installed
+Connect client consumers. Public and Hermes do not acquire native dependencies
+from root Cargo version/config changes. CI orchestration and unknown global
+inputs retain conservative coverage; isolated prerequisite tests stay tooling.
+
+Unknown history, unsafe boundary changes and newly imported dependencies in the
+exact pure onboarding policy closure retain the full named plan and reasons.
+Ordinary pushes with known history and automatic workflow selectors use the same
+admission check (local missing-history diagnostics still execute every suite):
+missing ownership, unavailable input proof, or conservative suites excluded by
+static filters fail explicitly before publication. Expand/audit the owning
+input contract rather than accepting omitted coverage. Explicit manual diagnostics
+retain their full-suite path. Additions/deletions and both rename sides are
+included in the delta; unsafe onboarding moves cannot inherit a pure-file exemption.
+
+Onboarding is the first focused subdirectory group, not a new top-level owner.
+Ordinary account/presentation/state policy and renderer edits select onboarding
+plus their real Desktop/Electron consumers, without app/Engine/client/service/web/
+Public/Hermes suites. Existing scoped policy test/toolchain changes select the
+onboarding suite. Protocol, preload, host, shortcut validation, durable pen-save,
+Hyprland and native/provider changes retain native integration and platform gates.
+Unknown onboarding files/imports do not inherit the audited pure-policy exemption.
+Shared UI and Record changes retain their real consumers, including onboarding.
+
+Both the hook and clean Node CI job consume `onboardingCommands()` through
+`enablement/local-tests/run.ts --onboarding`: source policy tests FIRST, then
+locked `tests/onboarding` installation without lifecycle scripts, then scoped
+TypeScript checking. Its small locked manifest contains only TypeScript and Node
+types. The clean job rejects Rust, frontend dependencies/generated output and
+Electron; its source-only executor does not require Git or repository history.
+The parent Desktop test command still consumes the same scoped typecheck; renderer
+and bridge changes keep the canonical Desktop/Electron checks. Portable tests do
+not establish native durability, permission, compositor or registration behavior.
+
+Connect foreground uses the same authority's `foreground` suite for the exact
+`connect/client/typescript/{src/foreground.ts,test/foreground.test.ts}` pair.
+Only regular modifications with the audited Node import closure and unchanged
+wire types/operations/stdio contract qualify for portable-only selection. Initial
+adoption, deletion, moves, unsafe modes, new dependencies, protocol or native/
+crypto/staging changes retain real native consumers. The shared executor inventory
+is `foregroundCommands()`: locked npm install, package tests, typecheck and build;
+hosted portable execution consumes it too. This registers the contract without
+importing the separately held foreground runtime/UI/native implementation.
+
+Foreground source is an installer payload input when adopted; its tests are not.
+Portable policy checks do not imply a Rust-independent installer: main publication
+may still rebuild the native shell to package the checked TypeScript. Worker
+publication depends on its own runtime inputs, so foreground-only checks do not
+deploy or invalidate an unchanged Worker. Existing activation gates remain.
 
 Cross-directory dependencies are explicit: Public publishes the listed Capture
 guides/skill and README; Capture embeds the Public wordmark. Connect's existing
 browser composition verification still builds Public from source, so
-`public/site/**` remains a Connect verification dependency until that fixture is
-independent. These filters do not claim full package independence or split the
+`public/site/**` remains an explicit Connect entry dependency until that fixture is
+independent; the named suite plan determines which consumer checks actually run. These filters do not claim full package independence or split the
 native application's current build into new workflows. Root native manifests
 and verification adapters retain their consumers. PR updates coalesce; main commits have distinct concurrency groups so
 later documentation cannot cancel earlier code verification. Drafts retain cheap
@@ -140,8 +192,10 @@ main, or that would overwrite an equal/newer deployed website. Public fetches fu
 main history and compares all changed paths, including both rename sides; an
 unrelated main advance can no longer strand its pending exact-SHA artifact.
 Connect admission and pre-deploy checks, and automatic Linux admission, use the
-same stream input comparison. A newer affected change still supersedes the old
-candidate; failed ancestry/history/input checks cannot admit it. Exact-SHA checks,
+same authority for payload-input comparison. Verification-only policy tests and
+native-client checks do not supersede unchanged installer/Worker payloads; main
+policy-test-only plans also skip installer publication. A newer affected change
+still supersedes the old candidate; failed ancestry/history/input checks cannot admit it. Exact-SHA checks,
 sealed artifacts, publication ordering and existing activation gates remain. Superseded candidates
 skip without upload or a new receipt; transport, auth and integrity failures remain
 failures. Dispatch current main to publish a replacement when appropriate.

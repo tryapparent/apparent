@@ -4,10 +4,31 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - "**"
+      - "!capture/**"
+      - "!record/**"
+      - "!connect/**"
+      - "!public/**"
+      - "!hermes/**"
+      - "!enablement/**"
+      - "!shared/**"
+      - "!composition/**"
+      - "!.cargo/**"
+      - "!.github/**"
+      - "!.githooks/**"
+      - "!AGENTS.md"
+      - "!README.md"
+      - "!Cargo.toml"
+      - "!Cargo.lock"
+      - "!build.rs"
+      - "!main.rs"
       - "shared/**"
       - "composition/**"
-      - "enablement/ci/**"
-      - ".github/actions/**"
+      - "enablement/**"
+      - ".github/**"
+      - ".githooks/**"
+      - "!.github/workflows/hermes.yml"
+      - "!.github/workflows/stream-public.yml"
       - "Cargo.toml"
       - "Cargo.lock"
       - "build.rs"
@@ -26,10 +47,31 @@ on:
   push:
     branches: [main]
     paths:
+      - "**"
+      - "!capture/**"
+      - "!record/**"
+      - "!connect/**"
+      - "!public/**"
+      - "!hermes/**"
+      - "!enablement/**"
+      - "!shared/**"
+      - "!composition/**"
+      - "!.cargo/**"
+      - "!.github/**"
+      - "!.githooks/**"
+      - "!AGENTS.md"
+      - "!README.md"
+      - "!Cargo.toml"
+      - "!Cargo.lock"
+      - "!build.rs"
+      - "!main.rs"
       - "shared/**"
       - "composition/**"
-      - "enablement/ci/**"
-      - ".github/actions/**"
+      - "enablement/**"
+      - ".github/**"
+      - ".githooks/**"
+      - "!.github/workflows/hermes.yml"
+      - "!.github/workflows/stream-public.yml"
       - "Cargo.toml"
       - "Cargo.lock"
       - "build.rs"
@@ -61,6 +103,7 @@ jobs:
       plan: ${{ steps.paths.outputs.plan }}
       native: ${{ steps.paths.outputs.native }}
       portable: ${{ steps.paths.outputs.portable }}
+      publish: ${{ steps.paths.outputs.publish }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -73,8 +116,8 @@ jobs:
         env:
           # Every affected main candidate verifies the complete Connect tree;
           # irrelevant main advances do not supersede its pending delivery.
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
-        run: bun enablement/ci/routing/connect.ts
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: bun enablement/ci/routing/connect.ts --admit
 
   contracts:
     runs-on: ubuntu-24.04
@@ -150,6 +193,7 @@ jobs:
       vars.HOSTED_CD_ENABLED == 'true' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       needs.select.result == 'success' && needs.contracts.result == 'success' && needs.portable.result == 'success' &&
+      needs.select.outputs.publish != 'false' &&
       (needs.select.outputs.native == 'false' || (needs.linux.result == 'success' && needs.macos.result == 'success'))
     permissions:
       contents: read

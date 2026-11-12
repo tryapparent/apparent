@@ -3,10 +3,42 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - "**"
+      - "!capture/**"
+      - "!record/**"
+      - "!connect/**"
+      - "!public/**"
+      - "!hermes/**"
+      - "!enablement/**"
+      - "!shared/**"
+      - "!composition/**"
+      - "!.cargo/**"
+      - "!.github/**"
+      - "!.githooks/**"
+      - "!AGENTS.md"
+      - "!README.md"
+      - "!Cargo.toml"
+      - "!Cargo.lock"
+      - "!build.rs"
+      - "!main.rs"
       - "shared/**"
       - "composition/**"
-      - "enablement/ci/**"
-      - ".github/actions/**"
+      - "enablement/**"
+      - ".github/**"
+      - ".githooks/**"
+      - "!.github/workflows/checks.yml"
+      - "!.github/workflows/linux-updater-harness.yml"
+      - "!.github/workflows/release-linux.yml"
+      - "!.github/workflows/release-mac-preview.yml"
+      - "!.github/workflows/verification-mac.yml"
+      - "!.github/workflows/verification-platform.yml"
+      - "!.github/workflows/verification.yml"
+      - "!enablement/prerequisites/**"
+      - "!enablement/native-build/**"
+      - "!enablement/verification.py"
+      - "!enablement/build_version.rs"
+      - "!.github/workflows/stream-connect.yml"
+      - "!.github/workflows/stream-public.yml"
       - "hermes/**"
       - "capture/agent/setup/**"
       - "capture/desktop/ui/frontend/src/hermes/**"
@@ -14,10 +46,42 @@ on:
   push:
     branches: [main]
     paths:
+      - "**"
+      - "!capture/**"
+      - "!record/**"
+      - "!connect/**"
+      - "!public/**"
+      - "!hermes/**"
+      - "!enablement/**"
+      - "!shared/**"
+      - "!composition/**"
+      - "!.cargo/**"
+      - "!.github/**"
+      - "!.githooks/**"
+      - "!AGENTS.md"
+      - "!README.md"
+      - "!Cargo.toml"
+      - "!Cargo.lock"
+      - "!build.rs"
+      - "!main.rs"
       - "shared/**"
       - "composition/**"
-      - "enablement/ci/**"
-      - ".github/actions/**"
+      - "enablement/**"
+      - ".github/**"
+      - ".githooks/**"
+      - "!.github/workflows/checks.yml"
+      - "!.github/workflows/linux-updater-harness.yml"
+      - "!.github/workflows/release-linux.yml"
+      - "!.github/workflows/release-mac-preview.yml"
+      - "!.github/workflows/verification-mac.yml"
+      - "!.github/workflows/verification-platform.yml"
+      - "!.github/workflows/verification.yml"
+      - "!enablement/prerequisites/**"
+      - "!enablement/native-build/**"
+      - "!enablement/verification.py"
+      - "!enablement/build_version.rs"
+      - "!.github/workflows/stream-connect.yml"
+      - "!.github/workflows/stream-public.yml"
       - "hermes/**"
       - "capture/agent/setup/**"
       - "capture/desktop/ui/frontend/src/hermes/**"
@@ -44,8 +108,10 @@ jobs:
       - id: select
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: bun enablement/ci/select.ts
+        run: bun enablement/ci/select.ts --admit
   clean:
+    needs: contracts
+    if: needs.contracts.outputs.affected != 'false'
     runs-on: ubuntu-24.04
     container: node:22.23.0-bookworm-slim
     steps:
@@ -68,6 +134,8 @@ jobs:
           npm ci --ignore-scripts --prefix hermes/desktop
           node --experimental-strip-types --test hermes/desktop/*.test.ts hermes/distribution/package.test.ts
   verify:
+    needs: contracts
+    if: needs.contracts.outputs.affected != 'false'
     strategy:
       fail-fast: false
       matrix:

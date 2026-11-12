@@ -13,10 +13,10 @@ test('native Capture entry is bounded by owner directories and explicit consumer
   const checks = workflow('checks.yml');
   for (const event of ['push', 'pull_request']) {
     const patterns = checks.on[event].paths;
-    for (const path of ['connect/web/src/main.tsx', 'connect/service/src/worker.ts', 'public/site/src/App.tsx', 'unknown/file.ts'])
+    for (const path of ['connect/web/src/main.tsx', 'public/site/src/App.tsx'])
       assert.equal(matches(patterns, path), false, path);
     for (const path of ['capture/engine/runtime/mod.rs', 'shared/ui/button.tsx', 'composition/main.rs',
-      'connect/client/src/lib.rs', 'connect/hosted.rs', 'record/storage/src/config.ts', 'Cargo.toml'])
+      'connect/client/src/lib.rs', 'connect/service/src/worker.ts', 'unknown/file.ts', 'connect/hosted.rs', 'record/storage/src/config.ts', 'Cargo.toml'])
       assert.equal(matches(patterns, path), true, path);
   }
   assert.equal(checks.jobs.public, undefined);
