@@ -38,6 +38,14 @@ acceptance before delivery; their coverage and release admission are unchanged.
 These focused checks are a fast product-development loop, not an independent
 onboarding release lane.
 
+The separate **Onboarding policy** CI job runs these focused checks for Desktop
+changes, including draft PRs. A plain Node Linux container runs tests before any
+dependency install and rejects Rust tools or generated Desktop output. The locked
+typechecking install skips lifecycle scripts and does not download the Electron runtime.
+This gives early policy feedback; the full platform jobs and release admission
+remain required and unchanged. The container job does not prove native behavior
+or macOS integration.
+
 The separate installed `--controls` presentation is Linux's no-tray fallback.
 It reuses this packaged runtime and shared buttons, with four allowlisted parent-pipe
 commands: Record screen, Choose target, Latest capture and Settings. Rust owns
