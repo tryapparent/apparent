@@ -47,7 +47,7 @@ agent skill embedded in the CLI retains native coverage. Public and Connect web
 source do not select Rust or Electron. Shared UI/assets retain their real web,
 service, Desktop and native consumers. Service changes retain client/root API
 integration and run the canonical service build, serial tests and recipient browser.
-Hermes inspection runs on Linux and Mac only for its relevant inputs. Audited
+Hermes inspection and complete compiled package delivery run independently in `hermes.yml` (continuous delivery hermes), on Linux and Mac for every PR/main candidate. Native admission does not consume Hermes results. Hermes-only changes skip automatic Linux app packaging; mixed or unknown inputs retain the existing publication gates. Audited
 Linux drivers run launch-free contracts. Unknown inputs/history, empty deltas,
 unsafe modes/types, embedded instructions and execution-sensitive CI retain broad checks.
 Repository `AGENTS.md` guidance runs cheap contracts only in local pushes and

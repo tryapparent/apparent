@@ -23,9 +23,19 @@ const webAssets = new Set(['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.pn
   'hosted/agent-reading-v4.png', 'fonts/HostGrotesk-Variable.ttf', 'brand/apparent-wordmark.svg']
   .map(path => 'public/site/public/assets/' + path));
 
+// These are isolated Enablement regression tests. They are also run by the
+// always-on contracts command; changing them does not change their tested
+// runtime/build consumers. Keep this inventory exact so new Enablement files
+// and execution inputs retain the conservative owner fallback.
+const toolingRegressionTests = new Set([
+  'enablement/local-tests/reuse.test.ts',
+  'enablement/prerequisites/native.test.ts',
+]);
+
 export function consumers(path: string): readonly Owner[] {
   if (documentationOnlyPath(path)) return [];
   if (publicMarkdown.has(path) && path !== 'capture/agent/skills/apparent/SKILL.md') return ['public'];
+  if (path === 'hermes/skills/recordings/SKILL.md') return ['hermes'];
   if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)\.md$/i.test(path)) return owners;
   // No extension-based native exemption: unexpected native sources in web/tool owners broaden.
   const native = /\.(rs|swift|metal|c|cc|cpp|h|mm)$/.test(path) || /(^|\/)Cargo\.(toml|lock)$/.test(path);
@@ -37,6 +47,8 @@ export function consumers(path: string): readonly Owner[] {
   if (!native && path.startsWith('connect/web/')) return ['web'];
   if (path.startsWith('connect/client/')) return ['client', 'capture'];
   if (!native && path.startsWith('connect/service/')) return ['service', 'client', 'web', 'public', 'capture'];
+  if (path.startsWith('capture/agent/setup/')) return ['capture', 'engine', 'hermes'];
+  if (path === '.github/workflows/hermes.yml') return ['hermes'];
   if (!native && path.startsWith('hermes/')) return ['hermes'];
   if (linuxDrivers.has(path)) return ['capture-tools'];
   if (path.startsWith('capture/desktop/ui/frontend/src/hermes/')) return ['desktop', 'capture', 'hermes'];
@@ -49,6 +61,7 @@ export function consumers(path: string): readonly Owner[] {
   if (path.startsWith('shared/ui/')) return ['public', 'web', 'desktop', 'service', 'capture'];
   if (path.startsWith('shared/assets/')) return ['public', 'web', 'desktop', 'service', 'capture'];
   // Native build helpers and execution-sensitive CI still exercise the complete integration.
+  if (toolingRegressionTests.has(path)) return ['tooling'];
   if (path.startsWith('enablement/timing/') && !native) return ['tooling'];
   if (path.startsWith('enablement/directory-width/') && !native) return ['tooling'];
   return owners;

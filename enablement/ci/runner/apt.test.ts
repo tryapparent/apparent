@@ -101,13 +101,28 @@ test('runner mirror transport preserves sources and is idempotent; unsafe target
   assert.doesNotMatch(script,/trusted=yes|allow-unauthenticated|allow-insecure|Signed-By/);
  }finally{rmSync(job,{recursive:true,force:true});}
 });
+// A plugin's --install-deps flag installs Python packages, not OS packages.
+const installsApt=(command:string)=>/apt-get|(?<!-)install-deps|with-deps|appimage\/dependencies/.test(command);
+test('APT inventory distinguishes OS provisioning from plugin Python dependencies',()=>{
+ for(const command of ['sudo apt-get update', 'npx --no-install playwright install-deps chromium',
+  './node_modules/.bin/playwright-core install --with-deps chromium', './capture/desktop/scripts/linux/appimage/dependencies.sh'])
+  assert.equal(installsApt(command),true,command);
+ assert.equal(installsApt('hermes plugins validate "$PACKAGE" --install-deps'),false);
+});
 test('each affected hosted dependency consumer prepares transport before installation',()=>{
  for(const workflow of readdirSync(new URL('.github/workflows/',root)).filter(name=>name.endsWith('.yml'))){
   const source=read(`.github/workflows/${workflow}`);
   for(const [name,job] of Object.entries(source.jobs) as [string,any][]){
    const steps=job.steps??[];
-   const install=steps.findIndex((s:any)=>/apt-get|install-deps|with-deps|appimage\/dependencies/.test(s.run??''));
+   const install=steps.findIndex((s:any)=>installsApt(s.run??''));
    if(install<0)continue;
+   if(workflow==='hermes.yml' && name==='clean'){
+    // Audited Rust-free package proof uses Debian's sources/keyring, not
+    // the hosted Ubuntu mirror list. A different image requires re-audit.
+    assert.equal(job.container,'node:22.23.0-bookworm-slim');
+    assert.ok(!steps.some((s:any)=>(s.uses??'').includes('/ubuntu-apt')));
+    continue;
+   }
    const transport=steps.findIndex((s:any)=>s.uses==='./.github/actions/ubuntu-apt' || s.uses==='tryapparent/apparent/.github/actions/ubuntu-apt@22b91130f8b1e8ed98d505e5a64241d34848e6a8');
    assert.ok(transport>=0 && transport<install,`${workflow}/${name}`);
    assert.equal(steps[transport].if,workflow==='release-linux.yml'?"runner.os == 'Linux' && runner.arch == 'X64'":"runner.os == 'Linux'");

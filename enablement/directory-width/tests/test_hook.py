@@ -74,6 +74,15 @@ class DirectoryWidthHookTests(unittest.TestCase):
         self.assertIn(b"src/shared: 11 files, 0 subdirectories (limit 10 each)", blocked.stderr)
         self.assertIn(b"Split changes by responsibility and stage", blocked.stderr)
 
+    def test_named_hermes_workflow_has_one_bounded_tool_slot(self) -> None:
+        paths = self.seed_code_files(10, ".github/workflows")
+        self.put(".github/workflows/hermes.yml")
+        self.stage(*paths, ".github/workflows/hermes.yml")
+        self.assertEqual(self.run_hook().returncode, 0)
+        self.put(".github/workflows/extra.yml")
+        self.stage(".github/workflows/extra.yml")
+        self.assertEqual(self.run_hook().returncode, 1)
+
     def test_eleven_immediate_subdirectories_block(self) -> None:
         for i in range(11):
             self.put(f"src/shared/part-{i:02d}/lib.rs")
