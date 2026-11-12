@@ -131,7 +131,7 @@ test('selected capture reference: real Rust selection and native clipboard', { t
   for (const name of [newer, older]) {
     await run(binary, ['demo', '--out', path.join(captures, name)], { env, timeout: 20000, maxBuffer: 1048576 });
   }
-  async function startRust(name) {
+  async function startRust(name, expected = name ?? null) {
     await stopRust();
     log = await fs.open(path.join(output, `rust-${report.checks.length}.log`), 'a', 0o600);
     rust = spawn('/bin/bash', ['-c', rustSupervisor, 'reference-supervisor', binary,
@@ -142,7 +142,7 @@ test('selected capture reference: real Rust selection and native clipboard', { t
       assert.equal(rust.exitCode, null, 'Owned backend exited');
       const r = await captureReference(home);
       return r.status === 'connected' ? r.id : r.status;
-    }, { timeout: 15000 }).toBe(name ?? null);
+    }, { timeout: 15000 }).toBe(expected);
   }
   await startRust(newer);
   application = await electron.launch({ args: [path.join(__dirname, '..')], env });
@@ -250,9 +250,7 @@ test('selected capture reference: real Rust selection and native clipboard', { t
   await page.screenshot({ path: path.join(output, 'no-selection.png'), fullPage: true });
   await stopRust();
   await fs.writeFile(config, JSON.stringify({ onboarding: { seen: true }, experiments: { copyCaptureId: false } }));
-  log = await fs.open(path.join(output, 'rust-disabled.log'), 'a', 0o600);
-  rust = spawn(binary, ['preview', path.join(captures, older)], { env, stdio: ['ignore', log.fd, log.fd] });
-  await expect.poll(async () => (await captureReference(home)).status, { timeout: 15000 }).toBe('disabled');
+  await startRust(older, 'disabled');
   await refresh.click(); await expect(card).toHaveCount(0);
   await page.screenshot({ path: path.join(output, 'explicit-false.png'), fullPage: true });
   report.checks.push({ label: 'no selection disables copy; explicit false hides action; argument/frame guards reject' });

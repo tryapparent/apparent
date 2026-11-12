@@ -482,6 +482,8 @@ test('bootstrap telemetry observes existing and future renderers with bounded co
 import {once} from 'node:events';
 test('reference cleanup stops descendants after backend exit, survives restart, and leaves foreign processes alive', {timeout:20000}, async()=>{
  const source=readFileSync('capture/desktop/ui/frontend/tests/reference-native.cjs','utf8');
+ assert.deepEqual([...source.matchAll(/rust = spawn\(([^,\n]+)/g)].map(match=>match[1]),["'/bin/bash'"]);
+ assert.match(source,/await startRust\(older, 'disabled'\)/,'disabled-state backend uses the same supervised lifecycle');
  const supervisor=new Function(source.slice(source.indexOf('const rustSupervisor ='),source.indexOf("test('selected capture"))+';return rustSupervisor;')();
  const start=source.indexOf('  async function stopRust()');
  const end=source.indexOf('  t.after(',start);
