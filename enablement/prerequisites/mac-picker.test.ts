@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {basename, join} from 'node:path';
 import {panelScript, prepareStorageChange, type PickerDriver} from './mac-picker.ts';
 import {isolatePickerRuntime} from './mac-runtime.ts';
 import * as files from 'node:fs/promises';
@@ -24,7 +24,7 @@ test('the picker runtime gets a private distinct bundle identity without changin
   await files.mkdir(join(source,'Contents/MacOS'),{recursive:true});
   await files.mkdir(home,{mode:0o700});
   const executable=join(source,'Contents/MacOS/Electron'),plist=join(source,'Contents/Info.plist');
-  const original={CFBundleIdentifier:'com.github.Electron',CFBundleName:'Electron',CFBundleDisplayName:'Electron'};
+  const original={CFBundleIdentifier:'com.github.Electron',CFBundleName:'Electron',CFBundleDisplayName:'Electron',CFBundleExecutable:'Electron'};
   await files.writeFile(executable,'synthetic runtime bytes');
   await files.writeFile(plist,JSON.stringify(original));
   const calls:string[]=[];
@@ -33,7 +33,7 @@ test('the picker runtime gets a private distinct bundle identity without changin
     const target=args[2],value=JSON.parse(await files.readFile(target,'utf8'));
     if(args[1]==='Print :CFBundleIdentifier')return {stdout:value.CFBundleIdentifier+'\n'};
     assert.ok(target.startsWith(home+'/picker-runtime-'),'Metadata writes stay in the private copy');
-    const match=args[1].match(/^Set :(CFBundleIdentifier|CFBundleName|CFBundleDisplayName) ([A-Za-z0-9.-]+)$/);
+    const match=args[1].match(/^Set :(CFBundleIdentifier|CFBundleName|CFBundleDisplayName|CFBundleExecutable) ([A-Za-z0-9.-]+)$/);
     assert.ok(match);value[match[1]]=match[2];await files.writeFile(target,JSON.stringify(value));
     calls.push(match[1]);return {stdout:''};
    }
@@ -49,9 +49,14 @@ test('the picker runtime gets a private distinct bundle identity without changin
   assert.match(result.bundleId,/^com\.tryapparent\.storagefixture\.f[a-f0-9]{32}$/);
   assert.notEqual(result.bundleId,result.sourceBundleId);
   assert.equal(result.sourceExecutable,executable);assert.equal(result.signatureVerified,true);
+  assert.match(basename(result.executable),/^StorageFixture-[a-f0-9]{32}$/);
+  const copiedPlist=JSON.parse(await files.readFile(join(result.executable,'../../Info.plist'),'utf8'));
+  assert.equal(copiedPlist.CFBundleExecutable,basename(result.executable));
+  await assert.rejects(files.stat(join(result.executable,'../Electron')), {code:'ENOENT'});
+  assert.equal(await files.readFile(executable,'utf8'),'synthetic runtime bytes');
   assert.equal(await files.readFile(result.executable,'utf8'),'synthetic runtime bytes');
   assert.deepEqual(JSON.parse(await files.readFile(plist,'utf8')),original);
-  assert.deepEqual(calls,['verify-source','CFBundleIdentifier','CFBundleName','CFBundleDisplayName','sign','verify']);
+  assert.deepEqual(calls,['verify-source','CFBundleIdentifier','CFBundleName','CFBundleDisplayName','CFBundleExecutable','sign','verify']);
   await files.chmod(home,0o755);
   await assert.rejects(isolatePickerRuntime(executable,home,async()=>{throw Error('Must refuse before native calls');}),/owned private/);
  } finally {await files.rm(directory,{recursive:true,force:true});}
