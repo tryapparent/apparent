@@ -47,7 +47,7 @@ export function onboardingInput(path: string): boolean {
     path.startsWith('capture/desktop/settings/onboarding') || path.endsWith('/practice.rs') ||
     path.startsWith('shared/ui/') || path.startsWith('record/');
 }
-const nativeWorkflowPaths = [".github/workflows/checks.yml",".github/workflows/linux-updater-harness.yml",".github/workflows/release-linux.yml",".github/workflows/release-mac-preview.yml",".github/workflows/verification-mac.yml",".github/workflows/verification-platform.yml",".github/workflows/verification.yml"];
+const nativeWorkflowPaths = [".github/workflows/checks.yml",".github/workflows/linux-updater-harness.yml",".github/workflows/release-linux.yml",".github/workflows/release-mac-preview.yml",".github/workflows/verification-platform.yml",".github/workflows/verification.yml"];
 
 export const portableForegroundInputs = new Set([
   'connect/client/typescript/src/foreground.ts', 'connect/client/typescript/test/foreground.test.ts',
@@ -161,7 +161,7 @@ const nativeOnlyTriggers = [...nativeWorkflowPaths.map(path => '!' + path),
 const directoryPaths = {
   capture: [...common, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, 'capture/**', 'record/**', 'connect/**', '!connect/web/**',
     'enablement/**', '.githooks/**', 'AGENTS.md', '.github/workflows/checks.yml',
-    '.github/workflows/verification.yml', '.github/workflows/verification-mac.yml',
+    '.github/workflows/verification.yml',
     '.github/workflows/release-linux.yml', '.github/workflows/release-mac-preview.yml',
     '.github/workflows/linux-updater-harness.yml',
     // The app embeds this wordmark; the remaining Public tree is independent.
