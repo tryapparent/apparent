@@ -1,5 +1,5 @@
 name: Hosted Ubuntu package transport
-description: Prefer the Kernel.org Ubuntu mirror while retaining Ubuntu archive signature checks.
+description: Bound mirror failures and retain Ubuntu archive signature checks.
 runs:
   using: composite
   steps:
@@ -8,13 +8,38 @@ runs:
         set -euo pipefail
         test "$RUNNER_OS" = Linux
         test "$GITHUB_ACTIONS" = true
+        test "$RUNNER_ENVIRONMENT" = github-hosted
         mirror_file=/etc/apt/apt-mirrors.txt
         test -f "$mirror_file"
         test ! -L "$mirror_file"
+        . /etc/os-release
+        test "$ID" = ubuntu
+        test -n "$VERSION_CODENAME"
+        transport_file=/etc/apt/apt.conf.d/80apparent-transport
+        test ! -L "$transport_file"
+        if test -e "$transport_file"; then test -f "$transport_file"; fi
+        job=$(mktemp -d /tmp/apparent-dev-apt-XXXXXX)
+        trap 'rm -rf "$job"' EXIT
+        # Bound inactive requests, including later index/package failures after
+        # the probe. Neither setting relaxes signature/hash verification.
+        cat > "$job/transport" <<'APT'
+        Acquire::Retries "1";
+        Acquire::http::Timeout "15";
+        Acquire::https::Timeout "15";
+        APT
+        sudo install -o root -g root -m 0644 "$job/transport" "$transport_file"
         mirror=$(printf 'https://mirrors.edge.kernel.org/ubuntu/\tpriority:0')
-        if ! grep -Fxq "$mirror" "$mirror_file"; then
-          job=$(mktemp -d /tmp/apparent-dev-apt-XXXXXX)
-          trap 'rm -rf "$job"' EXIT
-          { printf '%s\n' "$mirror"; cat "$mirror_file"; } > "$job/mirrors"
-          sudo install -o root -g root -m 0644 "$job/mirrors" "$mirror_file"
+        # APT's mirror method can retry an unavailable priority-0 host for every
+        # index even after another host supplied InRelease. Do not promote a
+        # currently unreachable host. Remove only our exact entry on recovery.
+        if curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+          --connect-timeout 5 --max-time 10 --retry 0 --output /dev/null \
+          "https://mirrors.edge.kernel.org/ubuntu/dists/$VERSION_CODENAME/InRelease"; then
+          printf '%s\n' "$mirror" > "$job/mirrors"
+        else
+          echo 'Kernel.org probe failed; retaining hosted Ubuntu fallback mirrors' >&2
+          : > "$job/mirrors"
         fi
+        awk -v mirror="$mirror" '$0 != mirror' "$mirror_file" >> "$job/mirrors"
+        test -s "$job/mirrors"
+        sudo install -o root -g root -m 0644 "$job/mirrors" "$mirror_file"

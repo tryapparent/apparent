@@ -52,7 +52,8 @@ on run argv
   if ((nativeApp's bundleIdentifier()) as text) is not (item 5 of argv) then error "Owned Electron bundle identity differs"
   tell application "System Events"
     set owned to first application process whose unix id is targetPID
-    if (unix id of owned) is not targetPID then error "Owned AX process identifier differs"
+    set observedPID to unix id of owned
+    if observedPID is not targetPID then error "Owned AX process identifier differs; expected=" & targetPID & ";observed=" & observedPID
     tell owned
       if (count of windows) is 0 then error "Owned process has no AX windows; frontmost=" & (frontmost as text)
       set outerWindow to window 1
@@ -60,7 +61,7 @@ on run argv
         if (count of windows) is not 1 then error "Change focus requires one owned window"
         if (role of outerWindow as text) is not "AXWindow" or (name of outerWindow as text) is not "Apparent — UI foundation" then error "Change focus requires Foundation"
         if (count of sheets of outerWindow) is not 0 then error "Change focus refuses an existing modal"
-        my activateOwned(targetPID, expectedExecutable)
+        my activateOwned(nativeApp, targetPID, expectedExecutable)
         return "native-focus-pid=" & targetPID & ";title=Apparent — UI foundation"
       end if
       set picker to outerWindow
@@ -164,7 +165,7 @@ on run argv
       set xy to position of outerWindow
       set wh to size of outerWindow
       if goMode then
-        my requireNativeFocus(targetPID, expectedExecutable)
+        my requireNativeFocus(nativeApp, targetPID, expectedExecutable)
         set goSheets to sheets of picker
         if (count of goSheets) is not 1 then error "Owned Go to Folder sheet missing or ambiguous"
         set goSheet to item 1 of goSheets
@@ -180,7 +181,7 @@ on run argv
         else if operation is "navigate-go" then
           -- The TypeScript driver waited for readback and autocomplete separately.
           -- This call contains exactly one Return and no path-entry mutation.
-          my requireNativeFocus(targetPID, expectedExecutable)
+          my requireNativeFocus(nativeApp, targetPID, expectedExecutable)
           -- Recheck the exact owned modal before Return. Never let a vanished
           -- Go sheet turn a navigation key into the parent picker's Choose.
           set currentGoSheets to sheets of picker
@@ -193,7 +194,7 @@ on run argv
       else if operation is "open-go" or operation is "choose" or operation is "cancel" then
         -- AX frontmost can disagree with AppKit for the same owned process.
         -- Activate once, then observe actual native ownership before input.
-        my activateOwned(targetPID, expectedExecutable)
+        my activateOwned(nativeApp, targetPID, expectedExecutable)
         set trace to trace & "native-focus-pid=" & targetPID & linefeed
         if operation is "open-go" then
           if (count of sheets of picker) is not 0 then error "Owned picker changed before Go shortcut"
@@ -210,30 +211,45 @@ on run argv
 end run
 
 on ownedApplication(targetPID, expectedExecutable)
+  -- Numeric observations only, before any activation/input. A later diagnostic
+  -- can succeed after this lookup failed; retain the actual lookup argument.
+  log ("Owned AppKit lookup pid=" & targetPID)
   set nativeApp to current application's NSRunningApplication's runningApplicationWithProcessIdentifier:targetPID
-  if nativeApp is missing value then error "Owned Electron process is absent"
-  if ((nativeApp's isTerminated()) as boolean) then error "Owned Electron process exited"
-  if ((nativeApp's executableURL()'s |path|()) as text) is not expectedExecutable then error "Owned Electron executable changed"
+  if nativeApp is missing value then error "Owned Electron process is absent; expected=" & targetPID
+  log ("Owned AppKit result pid=" & ((nativeApp's processIdentifier()) as integer))
+  my assertOwnedApplication(nativeApp, targetPID, expectedExecutable)
   return nativeApp
 end ownedApplication
 
-on hasNativeFocus(targetPID, expectedExecutable)
-  set nativeApp to my ownedApplication(targetPID, expectedExecutable)
+on assertOwnedApplication(nativeApp, targetPID, expectedExecutable)
+  if ((nativeApp's processIdentifier()) as integer) is not targetPID then error "Owned AppKit process identifier differs"
+  if ((nativeApp's isTerminated()) as boolean) then error "Owned Electron process exited; expected=" & targetPID
+  if ((nativeApp's executableURL()'s |path|()) as text) is not expectedExecutable then error "Owned Electron executable changed"
+end assertOwnedApplication
+
+on hasNativeFocus(nativeApp, targetPID, expectedExecutable)
+  -- Retain the verified app instance across activation. Re-discovery by PID can
+  -- return missing during activation even while this instance remains alive.
+  -- AppKit's time-varying properties refresh on the main run loop, so service
+  -- that loop before checking termination and focus. The caller's deadline and
+  -- one-second focus allowance still bound every observation.
+  current application's NSRunLoop's currentRunLoop()'s runUntilDate:(current application's NSDate's dateWithTimeIntervalSinceNow:0.001)
+  my assertOwnedApplication(nativeApp, targetPID, expectedExecutable)
   set frontApp to current application's NSWorkspace's sharedWorkspace()'s frontmostApplication()
   if frontApp is missing value then return false
   return ((nativeApp's isActive()) as boolean) and ((frontApp's processIdentifier()) as integer) is targetPID
 end hasNativeFocus
 
-on requireNativeFocus(targetPID, expectedExecutable)
-  if not (my hasNativeFocus(targetPID, expectedExecutable)) then error "Focus left owned Electron process"
+on requireNativeFocus(nativeApp, targetPID, expectedExecutable)
+  if not (my hasNativeFocus(nativeApp, targetPID, expectedExecutable)) then error "Focus left owned Electron process"
 end requireNativeFocus
 
-on activateOwned(targetPID, expectedExecutable)
-  set nativeApp to my ownedApplication(targetPID, expectedExecutable)
+on activateOwned(nativeApp, targetPID, expectedExecutable)
+  my assertOwnedApplication(nativeApp, targetPID, expectedExecutable)
   if not ((nativeApp's activateWithOptions:(current application's NSApplicationActivateIgnoringOtherApps)) as boolean) then error "Owned Electron activation refused"
   set focusDeadline to ((current application's NSProcessInfo's processInfo()'s systemUptime()) as real) + 1
   repeat
-    if my hasNativeFocus(targetPID, expectedExecutable) then return
+    if my hasNativeFocus(nativeApp, targetPID, expectedExecutable) then return
     if ((current application's NSProcessInfo's processInfo()'s systemUptime()) as real) >= focusDeadline then error "Owned native focus readiness expired"
     delay 0.05
   end repeat
