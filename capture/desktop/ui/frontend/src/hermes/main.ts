@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, session } from 'electron';
-import { execFile, spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { mkdir, open } from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -8,6 +8,7 @@ import { Recording, destination, type Receipt, type View } from './protocol';
 import { mailbox } from './mailbox';
 import { keyDirectory, publishKey } from './key';
 import { captureCanStart } from '../../../../../../hermes/desktop/controller';
+import { launchRecorder } from './launch';
 
 const option = (key: string) => process.argv[process.argv.indexOf(key) + 1];
 const request = destination(option('--hermes-request'));
@@ -56,9 +57,7 @@ app.whenReady().then(async () => {
       try { await journal.writeFile(JSON.stringify({ created: Date.now() })); } finally { await journal.close(); }
       try { await ready(); }
       catch {
-        const child = spawn(executable, ['launch', '--background'], { detached: true, stdio: 'ignore' });
-        await new Promise<void>((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
-        child.unref();
+        await launchRecorder(executable);
         for (let attempt = 0; ; attempt++) {
           try { await ready(); break; }
           catch { if (attempt === 9) throw new Error('Open Apparent and complete onboarding, then try again.'); await new Promise(resolve => setTimeout(resolve, 500)); }

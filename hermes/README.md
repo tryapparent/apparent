@@ -15,6 +15,12 @@ submitted through Hermes's supported composer API only while the captured
 connection, profile, stored session and visible composer still match. Typed
 drafts remain separate.
 
+On macOS, a cold start of the installed `.app` uses Launch Services without
+activating the app, so recording runs under Apparent's app identity rather than
+the caller's terminal process tree. First-run setup and OS consent are still
+required. Unbundled development executables use the direct launch route and do
+not establish installed-app permission behavior.
+
 For an unsaved chat, the plugin first reads the visible fresh draft, then uses
 the route's supported `session.create` call with an `idempotency_key` and opens
 the returned stored session through `host.openSession` with that route and
