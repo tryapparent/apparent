@@ -14,3 +14,8 @@ focus; Copy writes the full value and reports clipboard success or failure.
 The prompt covers app installation and launch, enabling both Hermes plugin halves,
 and helping the user rescan/reload Desktop plugins. It leaves onboarding to the app's normal
 launch behavior instead of asking an agent to find or restart the tour in Settings.
+
+The Mac download action resolves the latest published Apple silicon DMG on click,
+including Safari and other browsers that cannot identify the chip. Its label
+discloses Apple silicon; known Intel Macs remain unsupported. Release lookup
+failures and modified clicks retain the GitHub Releases fallback.
