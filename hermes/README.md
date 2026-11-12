@@ -160,7 +160,13 @@ agent-owned private directory, inspect/zoom there, then clean up that download.
 Local bundles remain available for normal frame/zoom/vision tools.
 
 The plugin runs bounded subprocesses and reads only the explicitly selected
-recording. Connect network/authentication belongs to the existing CLI. Loading
+recording. Both the supervisor and CLI receive only `PATH`, `HOME`, `TMPDIR`,
+and the documented `APPARENT_CONFIG` override when set. These preserve executable
+discovery, saved configuration/authorization and temporary storage selection.
+Provider keys, interpreter/loader overrides and arbitrary
+`APPARENT_*` variables are not forwarded. Connect uses its existing saved
+authorization; the plugin does not pass Hermes provider credentials to it.
+Connect network/authentication belongs to the existing CLI. Loading
 registers the tool, skill, message hook and desktop control; it starts no new
 capture. An in-flight handoff can resume with its original destination and
 message identity. No settings or credentials are rewritten.
