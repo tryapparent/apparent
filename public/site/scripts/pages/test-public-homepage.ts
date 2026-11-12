@@ -119,11 +119,12 @@ test("homepage renders the accepted photos and sequential features without overl
   }
 })
 
-test("download actions fall back safely until the visitor's architecture is known", () => {
+test("Mac download is actionable before chip detection", () => {
   const html = readFileSync(join(publicDir, "index.html"), "utf8")
   const bundle = html.match(/<script\b[^>]*\bsrc="\/assets\/([^"]+\.js)"[^>]*><\/script>/)?.[1]
   assert.ok(bundle)
-  assert.equal(html.match(/Choose Mac download/g)?.length, 1)
+  assert.match(html, /Download for Mac \(Apple silicon\)/)
+  assert.doesNotMatch(html, /Choose Mac download/)
   assert.match(readFileSync(join(publicDir, "assets", bundle), "utf8"), /api\.github\.com\/repos\/tryapparent\/apparent\/releases/)
   assert.doesNotMatch(html, /class="release-note"/)
 })
@@ -463,6 +464,46 @@ test("source homepage preserves accepted responsive layout and interactions", as
             await page.screenshot({ path: join(process.env.SITE_EVIDENCE, `source-${engine.name()}-${width}.png`), fullPage: true })
           }
           receipts.push({ engine: engine.name(), width, errors })
+          if (width === 1280 || width === 320) {
+            const installer = "https://github.com/tryapparent/apparent/releases/download/test/Apparent-Preview-9.0.0-arm64.dmg"
+            let releaseLookup: import("playwright-core").Route | undefined
+            await page.route("https://api.github.com/repos/tryapparent/apparent/releases?*", route => { releaseLookup = route })
+            await page.route(installer, route => route.fulfill({
+              contentType: "application/octet-stream", headers: { "Content-Disposition": 'attachment; filename="test.dmg"' }, body: "synthetic installer",
+            }))
+            await page.goto(origin + "/?platform=mac")
+            const macDownload = page.getByRole("link", { name: "Download for Mac (Apple silicon)", exact: false })
+            await macDownload.waitFor()
+            for (const colorScheme of ["light", "dark"] as const) {
+              await page.emulateMedia({ colorScheme })
+              await macDownload.focus()
+              assert.equal(await macDownload.evaluate(element => element.matches(":focus-visible")), true)
+              assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+              const bounds = await macDownload.boundingBox()
+              assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width && bounds.height >= 44)
+              if (process.env.SITE_EVIDENCE) await page.screenshot({ path: join(process.env.SITE_EVIDENCE, `mac-download-${engine.name()}-${width}-${colorScheme}.png`) })
+            }
+            const downloaded = page.waitForEvent("download")
+            if (width === 320) await macDownload.press("Enter")
+            else await macDownload.click()
+            await page.waitForFunction(() => document.querySelector('[data-download-platform="mac"]')?.getAttribute("aria-busy") === "true")
+            assert.equal(await page.getByRole("link", { name: "Finding download…", exact: false }).count(), 1)
+            assert.ok(releaseLookup, "click must look up current releases, not open their listing")
+            await releaseLookup.fulfill({ json: [
+              { draft: false, published_at: "2026-11-12", assets: [{ name: "Apparent-Preview-9.0.0-arm64.dmg", browser_download_url: installer }] },
+              { draft: false, published_at: "2026-11-13", assets: [{ name: "Apparent-9.0.0-linux-x86_64.AppImage", browser_download_url: "https://github.com/tryapparent/apparent/releases/download/test/Apparent-9.0.0-linux-x86_64.AppImage" }] },
+            ] })
+            assert.equal((await downloaded).url(), installer)
+            assert.equal(page.url(), origin + "/?platform=mac", "download leaves the visitor on the homepage")
+            await page.route("https://github.com/tryapparent/apparent/releases", route => route.fulfill({ contentType: "text/html", body: "Synthetic release picker" }))
+            await page.unroute("https://api.github.com/repos/tryapparent/apparent/releases?*")
+            await page.route("https://api.github.com/repos/tryapparent/apparent/releases?*", route => route.fulfill({ status: 503, body: "unavailable" }))
+            await macDownload.click()
+            await page.waitForURL("https://github.com/tryapparent/apparent/releases")
+            await page.goto(origin + "/?platform=mac-intel")
+            await page.getByText("Apple silicon only", { exact: true }).waitFor()
+            assert.equal(await page.locator('a[data-download-platform="mac"]').count(), 0)
+          }
           await page.close()
         }
       } finally { await browser.close() }

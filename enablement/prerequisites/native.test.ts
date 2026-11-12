@@ -1,14 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, readFileSync, realpathSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
-import { checkNativeInputs } from './native.ts';
+import { checkNativeInputs, prepareNativeInputs } from './native.ts';
 import { spawnSync } from 'node:child_process';
 import '../native-build/build.test.ts';
 
 function fixture(t: any) {
-  const root = mkdtempSync(resolve(tmpdir(), 'native-inputs-'));
+  const root = realpathSync(mkdtempSync('/tmp/apparent-dev-native-inputs-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const put = (file: string, text = 'fixture') => {
     const path = resolve(root, file);
@@ -31,6 +30,49 @@ function fixture(t: any) {
   }
   return { root, put, electron };
 }
+
+function generators(f: ReturnType<typeof fixture>, fail = '') {
+  const outputs = {
+    'storage-policy': ['electron/storage-policy.cjs', ...['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json'].map(name => 'electron/storage-owner/' + name)],
+    'connect-transport': ['electron/connect.cjs'],
+    'pill': ['worker.js', 'policy.js', 'package.json'].map(name => 'electron/record-completion/' + name),
+  };
+  for (const [name, files] of Object.entries(outputs)) {
+    for (const file of files) rmSync(resolve(f.root, 'capture/desktop/ui/frontend', file));
+    f.put(`capture/desktop/ui/frontend/scripts/build-${name}.ts`, `
+import {appendFileSync, mkdirSync, writeFileSync} from 'node:fs';
+import {dirname} from 'node:path';
+appendFileSync('trace', '${name}\\n');
+${name === fail ? 'process.exit(19);' : ''}
+for (const file of ${JSON.stringify(files)}) {
+  mkdirSync(dirname(file), {recursive:true});
+  writeFileSync(file, 'generated');
+}
+`);
+  }
+  return () => readFileSync(resolve(f.root, 'capture/desktop/ui/frontend/trace'), 'utf8');
+}
+
+test('one preparation entrypoint rebuilds absent native artifacts and can run again', t => {
+  const f = fixture(t), trace = generators(f);
+  assert.equal(prepareNativeInputs(f.root, 'linux'), f.electron);
+  assert.equal(trace(), 'storage-policy\nconnect-transport\npill\n');
+  assert.equal(prepareNativeInputs(f.root, 'linux'), f.electron);
+  assert.equal(trace(), 'storage-policy\nconnect-transport\npill\nstorage-policy\nconnect-transport\npill\n');
+});
+test('missing runtime stops before generating artifacts', t => {
+  const f = fixture(t);
+  generators(f);
+  rmSync(f.electron);
+  assert.throws(() => prepareNativeInputs(f.root, 'linux'), /ENOENT/);
+  assert.throws(() => readFileSync(resolve(f.root, 'capture/desktop/ui/frontend/trace')), /ENOENT/);
+});
+test('a failed generator stops preparation before subsequent generators', t => {
+  const f = fixture(t), trace = generators(f, 'connect-transport');
+  assert.throws(() => prepareNativeInputs(f.root, 'linux'));
+  assert.equal(trace(), 'storage-policy\nconnect-transport\n');
+  assert.throws(() => checkNativeInputs(f.root, 'linux'), /ENOENT/);
+});
 
 test('ready Linux inputs resolve the installed executable without launching it', t => {
   const f = fixture(t);
@@ -83,14 +125,10 @@ test('workflow installs and checks prerequisites before every Cargo command, pre
   const workflow = readFileSync('.github/workflows/verification-platform.yml', 'utf8');
   const rust = workflow.split('\n  rust:')[1].split('\n  release-ready:')[0];
   const firstCargo = rust.indexOf('cargo ');
-  for (const marker of ['--preflight', 'npm --prefix capture/desktop/ui/frontend ci', 'node_modules/electron/install.js', 'scripts/build-storage-policy.ts', 'enablement/prerequisites/native.ts']) {
+  for (const marker of ['--preflight', 'npm --prefix capture/desktop/ui/frontend ci', 'node_modules/electron/install.js', 'enablement/prerequisites/native.ts']) {
     assert.ok(rust.indexOf(marker) >= 0 && rust.indexOf(marker) < firstCargo, marker);
   }
-  assert.ok(rust.indexOf('scripts/build-storage-policy.ts') < rust.indexOf('enablement/prerequisites/native.ts'));
-  const prerequisite = readFileSync('enablement/prerequisites/native.ts', 'utf8');
-  assert.ok(prerequisite.indexOf("await import('../../capture/desktop/ui/frontend/scripts/build-connect-transport.ts')") < prerequisite.indexOf("console.log('Native prerequisites ready:"));
-  const recordBuild = prerequisite.indexOf("await import('../../capture/desktop/ui/frontend/scripts/build-pill.ts')");
-  assert.ok(recordBuild >= 0 && recordBuild < prerequisite.indexOf("console.log('Native prerequisites ready:"));
+  assert.doesNotMatch(rust, /scripts\/build-storage-policy.ts/, 'CI uses the complete preparation entrypoint');
   assert.equal((rust.match(/npm --prefix capture\/desktop\/ui\/frontend ci/g) || []).length, 1);
   assert.match(rust, /timeout-minutes: 5/);
   assert.match(rust, /_electron_rust_roundtrip -- --ignored --nocapture/);

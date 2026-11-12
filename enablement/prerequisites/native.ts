@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
-export function checkNativeInputs(root: string, platform = process.platform): string {
+function checkElectron(root: string): string {
   const frontend = resolve(root, 'capture/desktop/ui/frontend');
   const require = createRequire(resolve(frontend, 'package.json'));
   const electron: unknown = require('electron');
@@ -14,6 +14,11 @@ export function checkNativeInputs(root: string, platform = process.platform): st
   }
   accessSync(electron, constants.X_OK);
   if (!statSync(electron).isFile()) throw new Error('Electron executable is not a file');
+  return electron;
+}
+
+export function checkNativeInputs(root: string, platform = process.platform): string {
+  const electron = checkElectron(root);
   const inputs = [
     'capture/desktop/ui/frontend/tests/reference-native.cjs',
     'capture/desktop/ui/frontend/electron/main.cjs',
@@ -49,17 +54,23 @@ export function checkNativeInputs(root: string, platform = process.platform): st
   return electron;
 }
 
+export function prepareNativeInputs(root: string, platform = process.platform): string {
+  // Refuse a missing runtime before paying for any TypeScript compilation.
+  checkElectron(root);
+  const frontend = resolve(root, 'capture/desktop/ui/frontend');
+  for (const generator of ['storage-policy', 'connect-transport', 'pill']) {
+    execFileSync(process.execPath, ['--experimental-strip-types', `scripts/build-${generator}.ts`],
+      {cwd: frontend, stdio: 'inherit'});
+  }
+  return checkNativeInputs(root, platform);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  // The existing workflow invokes this entrypoint after the locked frontend
-  // install and before Cargo. Prepare the TS-owned artifact here as well as in
-  // owner-local build/test commands; a clean checkout has no committed CJS donor.
-  await import('../../capture/desktop/ui/frontend/scripts/build-connect-transport.ts');
-  // Rust-only provider jobs need Record's packaged worker even without a
-  // renderer build. Use the same generator as Desktop build and staging.
-  await import('../../capture/desktop/ui/frontend/scripts/build-pill.ts');
+  // Use the same complete preparation from CI and clean local checkouts.
+  const electron = prepareNativeInputs(process.cwd());
   // Parse the real native picker adapter before Cargo/installed-GUI setup.
   // The Mac-only contract compiles AppleScript; it performs no UI actions.
   if (process.platform === 'darwin') execFileSync(process.execPath,
     ['--experimental-strip-types', '--test', 'enablement/prerequisites/mac-picker.test.ts'], {stdio: 'inherit'});
-  console.log('Native prerequisites ready: ' + checkNativeInputs(process.cwd()));
+  console.log('Native prerequisites ready: ' + electron);
 }

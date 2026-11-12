@@ -1,5 +1,5 @@
 // Disposable native-test runtime identity, never an installed product mutation.
-import {cp, lstat, mkdtemp, readFile, realpath} from 'node:fs/promises';
+import {cp, lstat, mkdtemp, readFile, realpath, rename} from 'node:fs/promises';
 import {join, relative, resolve} from 'node:path';
 import {randomUUID, createHash} from 'node:crypto';
 
@@ -21,14 +21,19 @@ export async function isolatePickerRuntime(sourceExecutable:string, home:string,
  const directory=await mkdtemp(join(home,'picker-runtime-'));
  const bundle=join(directory,'StorageFixture.app');
  await cp(sourceBundle,bundle,{recursive:true,force:false,errorOnExist:true,verbatimSymlinks:true});
- const executable=join(bundle,'Contents/MacOS/Electron'),plist=join(bundle,'Contents/Info.plist');
- for(const file of [executable,plist]) {
+ const copiedExecutable=join(bundle,'Contents/MacOS/Electron'),plist=join(bundle,'Contents/Info.plist');
+ for(const file of [copiedExecutable,plist]) {
   const info=await lstat(file);
   if(!info.isFile()||info.isSymbolicLink())throw Error('Picker runtime identity files must be regular copies');
  }
  const nonce=randomUUID().replaceAll('-','');
  const bundleId=`com.tryapparent.storagefixture.f${nonce}`,name=`ApparentStorageFixture-${nonce}`;
- for(const [key,value] of [['CFBundleIdentifier',bundleId],['CFBundleName',name],['CFBundleDisplayName',name]])
+ // Both launched apps otherwise retain the executable name Electron. Isolate
+ // the copy's process name too, to avoid name-based AX reference collisions;
+ // never relax the subsequent exact-PID check.
+ const executableName=`StorageFixture-${nonce}`,executable=join(bundle,'Contents/MacOS',executableName);
+ await rename(copiedExecutable,executable);
+ for(const [key,value] of [['CFBundleIdentifier',bundleId],['CFBundleName',name],['CFBundleDisplayName',name],['CFBundleExecutable',executableName]])
   await run('/usr/libexec/PlistBuddy',['-c',`Set :${key} ${value}`,plist]);
  // Only the copied parent identity changed. Nested binaries keep their verified
  // signatures; preserve the parent's entitlements and flags when signing it.

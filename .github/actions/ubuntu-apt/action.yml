@@ -1,5 +1,5 @@
 name: Hosted Ubuntu package transport
-description: Prefer the Kernel.org Ubuntu mirror while retaining Ubuntu archive signature checks.
+description: Bound mirror failures and retain Ubuntu archive signature checks.
 runs:
   using: composite
   steps:
@@ -8,13 +8,76 @@ runs:
         set -euo pipefail
         test "$RUNNER_OS" = Linux
         test "$GITHUB_ACTIONS" = true
+        test "$RUNNER_ENVIRONMENT" = github-hosted
+        test "$RUNNER_ARCH" = X64
         mirror_file=/etc/apt/apt-mirrors.txt
         test -f "$mirror_file"
         test ! -L "$mirror_file"
-        mirror=$(printf 'https://mirrors.edge.kernel.org/ubuntu/\tpriority:0')
-        if ! grep -Fxq "$mirror" "$mirror_file"; then
-          job=$(mktemp -d /tmp/apparent-dev-apt-XXXXXX)
-          trap 'rm -rf "$job"' EXIT
-          { printf '%s\n' "$mirror"; cat "$mirror_file"; } > "$job/mirrors"
-          sudo install -o root -g root -m 0644 "$job/mirrors" "$mirror_file"
+        . /etc/os-release
+        test "$ID" = ubuntu
+        test -n "$VERSION_CODENAME"
+        transport_file=/etc/apt/apt.conf.d/zzzz-apparent-transport
+        test ! -L "$transport_file"
+        if test -e "$transport_file"; then test -f "$transport_file"; fi
+        job=$(mktemp -d /tmp/apparent-dev-apt-XXXXXX)
+        trap 'rm -rf "$job"' EXIT
+        # Bound inactive requests, including later index/package failures after
+        # the probe. Neither setting relaxes signature/hash verification.
+        cat > "$job/transport" <<'APT'
+        Acquire::Retries "1";
+        Acquire::http::Timeout "15";
+        Acquire::https::Timeout "15";
+        APT
+        sudo install -o root -g root -m 0644 "$job/transport" "$transport_file"
+        # Runner fragments after 80-* can override identical file contents.
+        # Check the merged values through the same sudo boundary as apt-get.
+        effective=$(sudo apt-config shell apparentRetries Acquire::Retries \
+          apparentHttp Acquire::http::Timeout apparentHttps Acquire::https::Timeout)
+        expected=$(printf "%s\n" "apparentRetries='1'" "apparentHttp='15'" "apparentHttps='15'")
+        if [ "$effective" != "$expected" ]; then
+          echo 'Effective APT acquisition limits differ from required retries=1 / inactivity=15s' >&2
+          exit 1
         fi
+        printf '%s\n' "$effective"
+        # curl can succeed while APT's acquire backend stalls for the same host.
+        # Probe that backend and its real by-hash index route, under one bound.
+        cat > "$job/probe.sh" <<'PROBE'
+        set -euo pipefail
+        base=$1
+        suite=$2
+        work=$3
+        /usr/lib/apt/apt-helper -o Acquire::Retries=0 \
+          -o Acquire::http::Timeout=5 -o Acquire::https::Timeout=5 \
+          download-file "$base/dists/$suite/InRelease" "$work/InRelease"
+        digest=$(awk '$3 == "main/binary-amd64/Packages.xz" && length($1) == 64 {print $1}' "$work/InRelease")
+        [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+        /usr/lib/apt/apt-helper -o Acquire::Retries=0 \
+          -o Acquire::http::Timeout=5 -o Acquire::https::Timeout=5 \
+          download-file "$base/dists/$suite/main/binary-amd64/by-hash/SHA256/$digest" \
+          "$work/Packages.xz" "SHA256:$digest"
+        PROBE
+        selected=''
+        probe_index=0
+        for candidate in https://archive.ubuntu.com/ubuntu https://mirrors.edge.kernel.org/ubuntu; do
+          probe_index=$((probe_index + 1))
+          probe="$job/probe-$probe_index"
+          mkdir "$probe"
+          # timeout runs after sudo so it can terminate all owned APT children.
+          if sudo timeout --signal=TERM --kill-after=2s 10s bash "$job/probe.sh" \
+            "$candidate" "$VERSION_CODENAME-updates" "$probe"; then
+            selected=$candidate
+            break
+          fi
+        done
+        if [ -z "$selected" ]; then
+          echo 'No tested Ubuntu mirror completed the bounded APT manifest/index probe' >&2
+          exit 1
+        fi
+        printf 'APT mirror selected: %s\n' "$selected"
+        printf '%s/\tpriority:0\n' "$selected" > "$job/mirrors"
+        kernel=$(printf 'https://mirrors.edge.kernel.org/ubuntu/\tpriority:0')
+        archive=$(printf 'https://archive.ubuntu.com/ubuntu/\tpriority:0')
+        # Remove only our exact priority entries, retaining hosted fallbacks.
+        awk -v kernel="$kernel" -v archive="$archive" '$0 != kernel && $0 != archive' "$mirror_file" >> "$job/mirrors"
+        test -s "$job/mirrors"
+        sudo install -o root -g root -m 0644 "$job/mirrors" "$mirror_file"

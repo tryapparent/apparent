@@ -14,17 +14,15 @@ export function LatestDownload({ nav = false }: { nav?: boolean }) {
   if (platform.kind === "other") return <span className={className} aria-disabled="true">Platform unsupported</span>
   if (platform.kind === "mac-intel") return <span className={className} aria-disabled="true">Apple silicon only</span>
   if (platform.kind === "mobile") return <a className={className} href={RELEASES}>Get the desktop app</a>
-  // Safari does not reveal the Mac chip, and some Linux browsers omit their
-  // architecture. Let the visitor choose instead of downloading the wrong CPU.
-  if (platform.kind === "mac" && platform.architecture !== "arm")
-    return <a className={className} href={RELEASES}>Choose Mac download</a>
+  // Unknown Mac chips use the published Apple silicon installer. Known Intel
+  // Macs remain unsupported above; uncertain Linux CPUs still need a choice.
   if (platform.kind === "linux" && !platform.architecture)
     return <a className={className} href={RELEASES}>Choose Linux download</a>
 
   const linuxArm = platform.kind === "linux" && platform.architecture === "aarch64"
   const target: DownloadPlatform = platform.kind === "mac" ? "mac" : linuxArm ? "linux-aarch64" : "linux-x86_64"
-  const label = nav ? `Get the app · ${platform.kind === "mac" ? "Mac" : "Linux"}` :
-    `Download preview for ${platform.kind === "mac" ? "Mac" : linuxArm ? "Linux (ARM64)" : "Linux (x86_64)"}`
+  const label = nav ? `Get the app · ${platform.kind === "mac" ? "Mac (Apple silicon)" : "Linux"}` :
+    `Download for ${platform.kind === "mac" ? "Mac (Apple silicon)" : linuxArm ? "Linux (ARM64)" : "Linux (x86_64)"}`
 
   async function download(event: MouseEvent<HTMLAnchorElement>) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
