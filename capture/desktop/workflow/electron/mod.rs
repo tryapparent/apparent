@@ -8,6 +8,22 @@ pub(crate) struct Resources {
     pub root: PathBuf,
 }
 
+/// Preserve Chromium's namespace/renderer sandbox for user-owned Linux packages.
+/// An unusable privileged helper must not prevent the ordinary sandbox route.
+pub(crate) fn configure_sandbox(command: &mut std::process::Command, executable: &Path) -> Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let helper = std::fs::metadata(executable.parent().context("Missing runtime directory")?.join("chrome-sandbox"))?;
+        if helper.uid() != 0 || helper.permissions().mode() & 0o4000 == 0 {
+            command.arg("--disable-setuid-sandbox");
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (command, executable);
+    Ok(())
+}
+
 pub(crate) fn resolve() -> Result<Resources> {
     let exe = std::env::current_exe()?;
     let installed = exe.parent().context("Missing app directory")?;
@@ -41,6 +57,20 @@ fn resolve_from(installed: &Path, development: &Path) -> Result<Resources> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn user_owned_runtime_keeps_namespace_and_renderer_sandbox_enabled() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
+        std::fs::create_dir(&dir).unwrap();
+        let helper = dir.join("chrome-sandbox");
+        std::fs::write(&helper, "synthetic helper").unwrap();
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let mut command = std::process::Command::new(dir.join("electron"));
+        configure_sandbox(&mut command, &dir.join("electron")).unwrap();
+        assert_eq!(command.get_args().collect::<Vec<_>>(), ["--disable-setuid-sandbox"]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn installed_popups_use_settings_runtime_and_never_a_stale_duplicate() {
         let dir = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());

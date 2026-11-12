@@ -11,6 +11,7 @@ impl ApparentCoordinator {
             crate::shared::handoff::experiment("movableRecordingControls"),
         )
         .with_handoff(self.completed_dir.is_some(), self.review_bundle.is_some())
+        .with_notes(self.note_ui.as_ref().map_or(0, |notes| notes.saved_count()))
     }
     fn electron_pill_selection(&self) -> super::session::Selection {
         (
@@ -36,8 +37,7 @@ impl ApparentCoordinator {
     fn electron_pill_compatible() -> bool {
         #[cfg(target_os = "macos")]
         return crate::capture::desktop::native::pill::PillStyle::current()
-            != crate::capture::desktop::native::pill::PillStyle::Glass
-            && crate::shared::handoff::experiment("movableRecordingControls");
+            != crate::capture::desktop::native::pill::PillStyle::Glass;
         #[cfg(target_os = "linux")]
         true
     }
@@ -68,23 +68,8 @@ impl ApparentCoordinator {
         if self.electron_pill.is_none() {
             return;
         }
-        let mut view = self.electron_pill_view(0);
+        let view = self.electron_pill_view(0);
         let selection = self.electron_pill_selection();
-        #[cfg(target_os = "linux")]
-        if matches!(self.island_phase, IslandPhase::Recording) {
-            let activity =
-                self.active_recording
-                    .as_ref()
-                    .and_then(|recording| match &recording.source {
-                        crate::capture::desktop::CaptureSource::Screen {
-                            audio: Some(audio),
-                            ..
-                        } => audio.input_activity(),
-                        _ => None,
-                    });
-            self.electron_equalizer.step(activity, self.reduced_motion);
-            view.input_level = Some(self.electron_equalizer.level.clamp(0.0, 1.0));
-        }
         if let Some(session) = &mut self.electron_pill {
             session.update(view, self.capture_generation, selection);
         }
@@ -110,16 +95,28 @@ impl ApparentCoordinator {
             return;
         }
         if !self.electron_pill_routed {
-            #[cfg(target_os = "linux")]
-            if let Some(id) = self.electron_pill.as_ref().and_then(Session::window_number) {
+            {
                 let mut excluded = self
                     .telemetry
                     .excluded_window_ids
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if !excluded.contains(&id) {
-                    excluded.push(id);
-                }
+                super::restore_capture_exclusion(&mut excluded,
+                    self.electron_pill.as_ref().and_then(Session::window_number),
+                    cfg!(target_os = "linux") || !crate::shared::handoff::experiment("movableRecordingControls"));
+            }
+            #[cfg(target_os = "macos")]
+            if (self.is_recording() || self.is_processing())
+                && !crate::shared::handoff::experiment("movableRecordingControls")
+                && !super::capture_exclusion_ready(
+                    self.electron_pill.as_ref().and_then(Session::window_number),
+                    &self.telemetry.applied_excluded_window_ids.lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner),
+                    !self.lab && self.telemetry.capture_mode.load(std::sync::atomic::Ordering::Acquire) != 3)
+            {
+                // Keep the already excluded native surface until SCK confirms
+                // this child's ID is in the actual filter, not merely requested.
+                return;
             }
             self.electron_pill_routed = true;
             self.island_await_frame = false;

@@ -615,6 +615,9 @@ pub struct SharedCaptureTelemetry {
     pub active_laser: Mutex<Option<Stroke>>,
     pub live_ink: Mutex<Option<Stroke>>,
     pub excluded_window_ids: Arc<Mutex<Vec<u32>>>,
+    /// Native capture filter receipt, distinct from requested exclusions.
+    #[cfg(target_os = "macos")]
+    pub applied_excluded_window_ids: Arc<Mutex<Vec<u32>>>,
     /// Raised when a click, ink stroke or shortcut starts, so the Screen-mode window log takes
     /// a snapshot right away.
     pub window_log_request: Arc<AtomicBool>,
@@ -698,6 +701,8 @@ impl SharedCaptureTelemetry {
             active_laser: Mutex::new(None),
             live_ink: Mutex::new(None),
             excluded_window_ids: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(target_os = "macos")]
+            applied_excluded_window_ids: Arc::new(Mutex::new(Vec::new())),
             window_log_request: Arc::new(AtomicBool::new(false)),
             ui_sender,
             passthrough_window_ids: Mutex::new(Vec::new()),
@@ -888,6 +893,9 @@ impl SharedCaptureTelemetry {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clear();
+        #[cfg(target_os = "macos")]
+        self.applied_excluded_window_ids.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner).clear();
         self.next_note_pin.store(0, Ordering::Release);
         self.shift_held.store(false, Ordering::Release);
         self.window_log_request.store(false, Ordering::Release);

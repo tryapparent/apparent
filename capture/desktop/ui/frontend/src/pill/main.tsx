@@ -1,8 +1,10 @@
 import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Button} from '@apparent/ui/button';
+import {StickyNote} from '@apparent/ui/icons';
 import type {PillView} from './bridge';
 import './style.css';
+import {InputMeter} from './input-meter';
 import {Check,Circle,ClipboardPaste,Link,LoaderCircle,Monitor,PenLine,Scan,ScanEye,Smartphone,Square,X,type LucideIcon} from 'lucide-react';
 
 const actionIcons:Record<string,LucideIcon>={
@@ -13,6 +15,13 @@ const actionIcons:Record<string,LucideIcon>={
 
 function Pill() {
   const [view,setView]=useState<PillView|null>(null);
+  const [receivedAt,setReceivedAt]=useState(0);
+  const [systemReduced,setSystemReduced]=useState(false);
+  useEffect(()=>{
+    const media=matchMedia('(prefers-reduced-motion: reduce)');
+    const update=()=>setSystemReduced(media.matches);update();
+    media.addEventListener('change',update);return()=>media.removeEventListener('change',update);
+  },[]);
   const [pending,setPending]=useState(false);
   const [error,setError]=useState(false);
   const current=useRef<PillView|null>(null);
@@ -25,7 +34,7 @@ function Pill() {
     const apply=(next:PillView|null)=>{
       if(!active || !next || current.current && next.revision<current.current.revision)return;
       if(next.revision!==current.current?.revision){busy.current=false;setPending(false);setError(false);}
-      current.current=next;setView(next);
+      current.current=next;setReceivedAt(performance.now());setView(next);
     };
     const unsubscribe=bridge.subscribe(apply);
     void bridge.read().then(apply).catch(()=>{if(active)setError(true);});
@@ -68,6 +77,7 @@ function Pill() {
   if(!view)return <div role="status" className="pill connection">{error?'Recording controls unavailable':'Connecting…'}</div>;
   if(view.phase==='hidden')return null;
   return <main data-revision={view.revision} className="pill settings-shell" aria-label={view.phase==='selecting'?view.label:undefined} data-phase={view.phase} data-reduced={view.reducedMotion} data-warning={view.warning!==null}>
+    <div className="pill-surface">
     <div className="pill-row">
     {(view.phase!=='selecting') && <div className={`lead ${view.draggable?'movable':''} ${window.apparentPill?.manualDrag?'manual-drag':''}`} title={view.draggable?'Drag recording controls':undefined}
       onPointerDown={event=>{if(view.draggable && !(event.target as HTMLElement).closest('button') && window.apparentPill?.manualDrag && event.button===0 && event.isPrimary)void window.apparentPill.beginDrag(view.revision).catch(()=>{});}}>
@@ -78,12 +88,12 @@ function Pill() {
         {view.phase==='recording'?view.clock:view.phase==='processing'?'Processing…':view.label}
       </span>
     </div>}
-    {view.inputLevel!==null && view.phase==='recording' && <span className="meter" aria-label="Microphone input level">{[.55,.8,1,.75,.5].map((gain,index)=><i key={index} style={{height:`${3+19*gain*view.inputLevel!}px`}}/>)}</span>}
+    {view.inputWaveform!==null && view.phase==='recording' && <InputMeter input={view.inputWaveform} receivedAt={receivedAt} reduced={view.reducedMotion || systemReduced}/>}
     {view.warning && view.warning!==view.label && <span className="warning" role="status">{view.warning}</span>}
     {view.notice && <span className="notice" role="status">{view.notice}</span>}
     {error && <span role="alert">Action not confirmed. Use the recording shortcut or tray menu.</span>}
     {view.actions.length>0 && <div className="controls" role="group" aria-label="Recording controls" aria-busy={pending}>
-      {view.actions.map(action=>{const Icon=actionIcons[action.id];const iconOnly=action.id==='cancel'||action.id==='dismiss';return <Button key={action.id} variant={action.primary?'default':action.selected?'secondary':'ghost'}
+      {view.actions.filter(action=>action.id!=='notes').map(action=>{const Icon=actionIcons[action.id];const iconOnly=action.id==='cancel'||action.id==='dismiss';return <Button key={action.id} variant={action.primary?'default':action.selected?'secondary':'ghost'}
         size={iconOnly?'icon':'default'} data-icon-only={iconOnly} aria-label={action.label} title={iconOnly?action.label:undefined}
         data-primary={action.primary}
         aria-pressed={action.id.startsWith('select-')?action.selected:undefined}
@@ -93,6 +103,10 @@ function Pill() {
         onPointerCancel={()=>{pasteStart.current=null;void window.apparentPill?.cancelPaste();}}
         onClick={event=>{if(action.id!=='paste' || event.detail===0)void act(action.id);}}>{Icon && <Icon aria-hidden="true"/>}{!iconOnly && <span>{action.label}</span>}</Button>;})}
     </div>}
+    </div>
+    {view.phase==='recording' && view.noteCount>0 && <div className="pill-notes-layer"><Button className="pill-notes" variant="ghost"
+      aria-label={`${view.noteCount} saved ${view.noteCount===1?'note':'notes'}. Open notes`} disabled={pending || !view.actions.some(a=>a.id==='notes' && a.enabled)}
+      onClick={()=>void act('notes')}><StickyNote aria-hidden="true"/><span>{view.noteCount>99?'99+':view.noteCount}</span></Button></div>}
     </div>
   </main>;
 }

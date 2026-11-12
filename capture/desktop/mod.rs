@@ -894,8 +894,6 @@ pub struct ApparentCoordinator {
     electron_pill_routed: bool,
     #[cfg(target_os="macos")]
     electron_pill_exclusions: Vec<u32>,
-    #[cfg(target_os = "linux")]
-    electron_equalizer: InputEqualizer,
     iphone_preview: Option<PhoneSession>,
     island_phase: IslandPhase,
     island_prev_phase: IslandPhase,
@@ -1032,8 +1030,6 @@ impl ApparentCoordinator {
             electron_pill_routed: false,
             #[cfg(target_os="macos")]
             electron_pill_exclusions: Vec::new(),
-            #[cfg(target_os = "linux")]
-            electron_equalizer: InputEqualizer::default(),
             iphone_preview: None,
             island_phase: IslandPhase::Hidden,
             island_prev_phase: IslandPhase::Hidden,
@@ -2789,6 +2785,13 @@ impl ApparentCoordinator {
                 .active_recording
                 .as_ref()
                 .and_then(ActiveRecording::mic_warning),
+            input_waveform: matches!(self.island_phase, IslandPhase::Recording).then(|| {
+                self.active_recording.as_ref().and_then(|recording| match &recording.source {
+                    CaptureSource::Screen { audio: Some(audio), .. } =>
+                        Some(audio.input_waveform().unwrap_or([0.0; 24])),
+                    _ => None,
+                })
+            }).flatten(),
             reduced_motion: self.reduced_motion,
             style: PillStyle::current(),
         }
@@ -2821,6 +2824,12 @@ impl ApparentCoordinator {
                 cx.defer(move |cx| whiteboard::open(&coord, cx));
             }
             PillAction::Finish => self.finish_recording(cx),
+            PillAction::Notes => {
+                if self.is_recording() {
+                    let (focus, owner) = platform::note_focus();
+                    if let Some(ui) = &self.note_ui { ui.show_list(focus, owner); }
+                }
+            },
             PillAction::Paste(target) => self.paste_completed_bundle(target, cx),
             PillAction::CopyLink => self.copy_completed_link(cx),
             PillAction::Inspect => self.inspect_completed_bundle(cx),
@@ -3005,6 +3014,7 @@ impl ApparentCoordinator {
             platform::tick_pill_drag();
         }
         if self.note_ui.is_some() {
+            if let Some(ui) = self.note_ui.as_mut() { ui.set_embedded(self.electron_pill_routed); }
             let anchor = self.native_pill.as_ref().and_then(|p| p.note_badge_anchor());
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             let anchor = self.electron_pill.as_ref().filter(|_| self.electron_pill_routed)
@@ -3448,11 +3458,12 @@ impl ApparentCoordinator {
 
         self.telemetry.set_capture_mode(target.mode);
         self.telemetry.reset_for_session(target.frame);
-        #[cfg(target_os="linux")]
-        if let Some(id)=self.electron_pill.as_ref().and_then(ui::electron_pill::Session::window_number) {
-            self.telemetry.excluded_window_ids.lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner).push(id);
-        }
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        ui::electron_pill::restore_capture_exclusion(
+            &mut self.telemetry.excluded_window_ids.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            self.electron_pill.as_ref().and_then(ui::electron_pill::Session::window_number),
+            cfg!(target_os = "linux") || !crate::shared::handoff::experiment("movableRecordingControls"));
         #[cfg(target_os="macos")]
         self.telemetry.excluded_window_ids.lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -3548,10 +3559,12 @@ impl ApparentCoordinator {
         }};
         start_metric("audio_start_ms", stage);
         let stage = Instant::now();
-        let screen_session = match ScreenCaptureSession::start(
+        let screen_session = match ScreenCaptureSession::start_with_exclusion_receipt(
             target.clone(),
             Some(video_path),
             Arc::clone(&self.telemetry.excluded_window_ids),
+            #[cfg(target_os = "macos")]
+            Arc::clone(&self.telemetry.applied_excluded_window_ids),
         ) {
             Ok(session) => session,
             Err(error) => {
@@ -6966,9 +6979,9 @@ pub fn run_app(
         }
         let has_initial = initial_bundle.is_some();
         let coordinator = cx.new(|_| ApparentCoordinator::new(telemetry, initial_bundle));
-        // Warm the hidden Linux controls before the first capture. Capture
+        // Warm the hidden shared controls before the first capture. Capture
         // admission and shortcuts do not wait for renderer startup.
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         coordinator.update(cx, |coord, _| coord.ensure_electron_pill());
         set_status_inbox_count(coordinator.read(cx).inbox.len());
         #[cfg(target_os = "macos")]

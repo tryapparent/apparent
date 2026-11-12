@@ -108,6 +108,9 @@ jobs:
       - name: Linux Electron dependencies and sandbox
         if: runner.os == 'Linux'
         run: |
+          # Notes smoke verifies native mapped/unmapped windows with xwininfo.
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends x11-utils
           npx --no-install playwright install-deps chromium
           # The controls smoke keeps Chromium's sandbox enabled. Configure the
           # locked Electron helper on this disposable runner, not user desktops.
