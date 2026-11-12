@@ -48,9 +48,13 @@ fn main() {
 /// init_backends_default uses dladdr to search next to the loaded libtranscribe.
 fn stage_transcribe_shared_objects() {
     let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    // Cargo layouts include build/<package>-<hash>/out and, in newer Cargo,
+    // build/<package>/<hash>/out. Locate the profile by its build directory,
+    // rather than staging into build/ when the package adds another level.
     let profile = out_dir
         .ancestors()
-        .nth(3)
+        .find(|path| path.file_name().is_some_and(|name| name == "build"))
+        .and_then(|path| path.parent())
         .expect("Unexpected OUT_DIR layout");
     for key in [
         "DEP_TRANSCRIBE_CPP_RUNTIME_DIR",
