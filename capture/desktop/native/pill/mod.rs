@@ -553,6 +553,10 @@ impl NativePill {
                 st.dirty = true;
             }
             st.model.reduced = snapshot.reduced_motion;
+            if st.model.input_waveform != snapshot.input_waveform {
+                st.model.set_input_waveform(snapshot.input_waveform);
+                st.dirty = true;
+            }
             if st.model.clock != snapshot.clock {
                 st.pipelines.atlas.update_clock(&snapshot.clock);
                 st.model.set_clock(&snapshot.clock);
@@ -1075,6 +1079,8 @@ impl MetalPipelines {
                 [slot_x + TILE_PAD_PT, slot_y + TILE_PAD_PT],
                 frame.t,
                 frame.mic_warning,
+                frame.input_waveform,
+                frame.reduced_motion,
                 frame.completed_warning,
                 theme,
                 frame
@@ -1259,6 +1265,8 @@ fn emit_elem_prims(
     [ox, oy]: [f32; 2],
     t: f32,
     mic_warning: Option<crate::capture::engine::runtime::audio::audio::InputWarning>,
+    input_waveform: Option<[f32; 24]>,
+    reduced_motion: bool,
     completed_warning: bool,
     theme: PillTheme,
     recording_warning: bool,
@@ -1422,6 +1430,19 @@ fn emit_elem_prims(
         ElemId::Lead => {
             if is_glass {
                 push_shape(out, [ox, oy, bw, bh], bh * 0.5, [0.06, 0.07, 0.10, 0.24]);
+            }
+            // Native fallback/Glass projects the same captured PCM history as
+            // Electron. No display-time oscillator or second stream supplies data.
+            if let Some(levels) = input_waveform {
+                for (index, level) in levels.iter().enumerate() {
+                    let gain = (level.clamp(0.0, 1.0).powf(0.55) * 1.15).min(1.0);
+                    let height = if reduced_motion { 2.0 } else { 2.0 + 26.0 * gain };
+                    let active = levels.last().is_some_and(|level| *level > 0.002);
+                    let alpha = if reduced_motion && !active { 0.4 } else { 1.0 };
+                    push_shape(out, [ox + bw - 68.0 + index as f32 * 2.75,
+                        oy + (bh - height) * 0.5, 2.0, height], 1.0,
+                        color(theme.text(), alpha * (0.35 + 0.65 * index as f32 / 23.0)));
+                }
             }
             let tx = atlas.clock_sprite;
             let cycle = 1.6_f32;
@@ -1746,6 +1767,37 @@ mod tests {
             height: h as u32,
             rgba,
             badge_bottom_left: false,
+        }
+    }
+
+    #[test]
+    fn captured_input_changes_native_pixels_without_changing_control_geometry() {
+        let mut pipelines = MetalPipelines::new(2.0).expect("MetalPipelines::new failed");
+        let mut model = PillModel::new(atlas::measure_metrics());
+        let pres = Pres::Recording { chips: false, has_iphone: false };
+        for dark in [true, false] {
+            for reduced in [true, false] {
+                model.reduced = reduced;
+                model.set_input_waveform(Some([0.0; 24]));
+                let quiet = still_with_theme(&mut pipelines, &mut model, &pres, 1.5, PillTheme { dark });
+                let quiet_frame = model.frame();
+                model.set_input_waveform(Some([0.8; 24]));
+                // Same timestamp and layout: only the captured amplitude differs.
+                let active = still_with_theme(&mut pipelines, &mut model, &pres, 0.0, PillTheme { dark });
+                assert_ne!(quiet.rgba, active.rgba, "captured input must change pixels");
+                for (before, after) in quiet_frame.elems.iter().zip(model.frame().elems.iter()) {
+                    assert_eq!(before.base_size, after.base_size);
+                    assert_eq!(before.rect, after.rect);
+                }
+                if let Some(dir) = std::env::var_os("APPARENT_PILL_STILLS") {
+                    let dir = std::path::PathBuf::from(dir);
+                    std::fs::create_dir_all(&dir).unwrap();
+                    for (name, frame) in [("quiet", quiet), ("active", active)] {
+                        crate::capture::engine::render::save_png(&frame,
+                            &dir.join(format!("meter-{name}-dark-{dark}-reduced-{reduced}.png"))).unwrap();
+                    }
+                }
+            }
         }
     }
 

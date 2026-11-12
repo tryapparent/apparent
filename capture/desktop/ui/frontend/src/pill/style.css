@@ -26,11 +26,26 @@ body { font-family:'Host Grotesk',system-ui,sans-serif; }
 .pill[data-phase=processing] .pill-row { padding-inline:16px; }
 .pill[data-phase=processing] .lead { padding:0; }
 .pill[data-phase=processing] .indicator-slot { width:24px; }
-.meter { display:flex;align-items:center;justify-content:center;gap:3px;width:40px;min-width:40px;height:24px; }
-.meter i { width:3px;min-width:3px;border-radius:2px;background:var(--apparent-muted-foreground); }
+.meter { display:flex;align-items:center;justify-content:center;gap:.75px;width:66px;min-width:66px;height:28px; }
+.meter[data-reduced=true][data-active=false] { opacity:.4; }
+.meter i { width:2px;min-width:2px;border-radius:1px;background:var(--apparent-muted-foreground); }
 .pill.connection { color:var(--apparent-foreground);background:var(--apparent-background); }
 @media(prefers-reduced-motion:reduce){.pill * { animation:none!important;transition:none!important; }}
 .pill[data-reduced=true] * { animation:none!important;transition:none!important; }
 
 .warning,.notice,[role=alert] { max-width:300px;font-size:16px;line-height:22px;padding:4px 8px;overflow-wrap:anywhere; }
 .warning { color:var(--apparent-foreground); }
+
+/* The main row never participates in count layout. Reserve native footprint,
+   not a visible gap or pointer target, for the right-hand extension. */
+.pill-surface { position:relative;width:max-content;max-width:var(--pill-limit,1200px); }
+.pill[data-phase=recording] .pill-surface { padding-right:72px; }
+.pill-surface .pill-row { position:relative;z-index:1; }
+.pill[data-phase=recording] .pill-row { max-width:calc(var(--pill-limit,1200px) - 72px); }
+.pill[data-phase=recording] .controls { min-width:0;max-width:100%;flex-shrink:1;flex-wrap:wrap; }
+.pill-notes-layer { position:absolute;inset:0 0 0 28px;border:1px solid var(--apparent-border);border-radius:28px;background:var(--apparent-brand);pointer-events:none; }
+.pill-notes { position:absolute;right:0;top:0;width:71px;height:100%;border-radius:0 28px 28px 0;background:transparent;color:var(--apparent-brand-foreground);justify-content:flex-start;padding:0 12px 0 8px;gap:6px;font-family:inherit;font-size:18px;font-weight:500;line-height:24px;font-variant-numeric:tabular-nums;pointer-events:auto; }
+.pill-notes:hover { background:var(--apparent-brand); }
+.pill-notes > svg { width:18px;height:18px; }
+.pill-notes > span { text-align:left; }
+.pill-notes:focus-visible { outline:2px solid var(--apparent-brand-foreground);outline-offset:-4px; }

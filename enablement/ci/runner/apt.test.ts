@@ -129,3 +129,13 @@ test('each affected hosted dependency consumer prepares transport before install
   }
  }
 });
+test('Linux desktop smoke provisions the native window visibility observer',()=>{
+ const steps=read('.github/workflows/verification-platform.yml').jobs['desktop-ui'].steps;
+ const setup=steps.findIndex((s:any)=>/apt-get install[^\n]*\bx11-utils\b/.test(s.run??''));
+ const smoke=steps.findIndex((s:any)=>/npm run test:electron/.test(s.run??''));
+ assert.ok(setup>=0 && setup<smoke);
+ assert.equal(steps[setup].if,"runner.os == 'Linux'");
+ const notes=readFileSync(new URL('capture/desktop/ui/frontend/tests/notes/smoke.cjs',root),'utf8');
+ assert.match(notes,/execFileSync\('xwininfo'/);
+ assert.match(notes,/Map State: IsViewable/);
+});

@@ -127,7 +127,7 @@ app.whenReady().then(()=>{
   });
   // Renderer never chooses native dimensions or screen coordinates.
   // Parent's bounded state defines content; main measures its own trusted document.
-  let appliedShape=null;
+  let appliedShape=null,visibleWidth=0;
   async function measure(revision){
     if(!loaded || window.isDestroyed())return;
     if(current?.phase!=='hidden' && Date.now()-lastInput>5000){app.exit(1);return;}
@@ -141,11 +141,18 @@ app.whenReady().then(()=>{
       const width=Math.min(area.width,Math.max(100,Math.ceil(size.width)));
       const height=Math.min(160,Math.max(58,Math.ceil(size.height)));
       const before=window.getBounds();
-      if(before.width!==width || before.height!==height)position({x:Math.round(before.x+(before.width-width)/2),y:before.y,width,height});
+      const resized=before.width!==width || before.height!==height;
+      // Hyprland must remap a resized transparent XWayland surface, as for
+      // movement above. Otherwise old warning pixels can survive in its margin.
+      // The committed-layout handler restores visibility after shape admission.
+      if(resized && hyprland && window.isVisible())window.hide();
+      if(resized)position({x:Math.round(before.x+(before.width-width)/2),y:before.y,width,height});
+      visibleWidth=current.phase==='recording' && current.noteCount===0?width-72:width;
       if(process.platform==='linux'){
         const scale=screen.getDisplayMatching(window.getBounds()).scaleFactor;
-        const key=JSON.stringify([width,height,scale]);
-        if(key!==appliedShape){window.setShape(geometry.shape(width,height));appliedShape=key;}
+        const key=JSON.stringify([visibleWidth,height,scale]);
+        if(key!==appliedShape){window.setShape(geometry.shape(visibleWidth,height));appliedShape=key;}
+        if(resized)window.webContents.invalidate();
       }
       return size.revision===current?.revision;
     }catch{app.exit(1);}
@@ -190,7 +197,7 @@ app.whenReady().then(()=>{
   });
   const pointerTimer=setInterval(()=>{
     if(!loaded || window.isDestroyed())return;
-    const inside=window.isVisible() && geometry.contains(screen.getCursorScreenPoint(),window.getBounds());
+    const inside=window.isVisible() && geometry.contains(screen.getCursorScreenPoint(),{...window.getBounds(),width:visibleWidth||window.getBounds().width});
     // A focused XWayland app can sit above the visually pinned pill in X11's
     // input stack. Raise this exact child surface without taking focus.
     if(process.platform==='linux' && inside && (!hovered || Date.now()-lastRaise>250)){

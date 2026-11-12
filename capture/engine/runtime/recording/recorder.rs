@@ -10,6 +10,13 @@ use super::super::{MAX_CAPTURE_SCALE, platform};
 use crate::shared::model::{RgbaFrame, TargetInfo};
 
 pub const FRAME_SAMPLE_INTERVAL: Duration = Duration::from_millis(220);
+
+/// Missing native windows can become enumerable without changing the request.
+/// Bound retries independently from the candidate-sampling clock.
+#[cfg(any(test, target_os = "macos"))]
+pub(crate) fn exclusion_retry_due(requested: &[u32], applied: &[u32], elapsed: Duration) -> bool {
+    elapsed >= Duration::from_millis(250) && requested.iter().any(|id| !applied.contains(id))
+}
 /// Candidate frames only feed scene diffs and keyframe selection; the keyframes themselves are
 /// decoded from `recording.mp4` at full size afterwards.
 pub const CANDIDATE_EDGE: f64 = 480.0;
@@ -133,6 +140,8 @@ pub(crate) struct Sampler {
     /// Apparent's own windows to leave out of the recording.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub excluded_window_ids: Arc<Mutex<Vec<u32>>>,
+    #[cfg(target_os = "macos")]
+    pub applied_excluded_window_ids: Arc<Mutex<Vec<u32>>>,
     pub started_at: Instant,
     pub stopping: Arc<AtomicBool>,
     pub urgent: Arc<AtomicBool>,
@@ -200,6 +209,19 @@ impl ScreenCaptureSession {
         video_output_path: Option<PathBuf>,
         excluded_window_ids: Arc<Mutex<Vec<u32>>>,
     ) -> anyhow::Result<Self> {
+        Self::start_with_exclusion_receipt(target, video_output_path, excluded_window_ids,
+            #[cfg(target_os = "macos")]
+            Arc::new(Mutex::new(Vec::new())),
+        )
+    }
+
+    pub fn start_with_exclusion_receipt(
+        target: TargetInfo,
+        video_output_path: Option<PathBuf>,
+        excluded_window_ids: Arc<Mutex<Vec<u32>>>,
+        #[cfg(target_os = "macos")]
+        applied_excluded_window_ids: Arc<Mutex<Vec<u32>>>,
+    ) -> anyhow::Result<Self> {
         super::super::ensure_recording_mode(target.mode)?;
         if let Some(directory) = video_output_path.as_deref().and_then(std::path::Path::parent) {
             crate::capture::engine::bundle::recover::adopt_microphone_intent(directory, &target)?;
@@ -227,6 +249,8 @@ impl ScreenCaptureSession {
                     target: sampler_target,
                     video_output_path,
                     excluded_window_ids,
+                    #[cfg(target_os = "macos")]
+                    applied_excluded_window_ids,
                     started_at,
                     stopping: thread_stopping,
                     urgent: thread_urgent,

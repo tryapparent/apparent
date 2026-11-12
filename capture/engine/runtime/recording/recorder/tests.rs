@@ -7,6 +7,18 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[test]
+fn exclusion_retry_recovers_a_late_window_without_new_requested_ids() {
+    let requested = [42];
+    let mut applied = Vec::new();
+    assert!(!super::exclusion_retry_due(&requested, &applied, Duration::from_millis(249)));
+    assert!(super::exclusion_retry_due(&requested, &applied, Duration::from_millis(250)));
+    // A failed update leaves the receipt unchanged and schedules another bounded attempt.
+    assert!(super::exclusion_retry_due(&requested, &applied, Duration::from_millis(500)));
+    applied.push(42); // Native success when the same window finally becomes enumerable.
+    assert!(!super::exclusion_retry_due(&requested, &applied, Duration::from_secs(1)));
+}
+
 #[cfg(target_os = "linux")]
 impl ScreenCaptureSession {
     /// Controlled producer for coordinator lifecycle tests; no native capture or output.
