@@ -318,9 +318,21 @@ shared by both tests and concurrent first launches can race during extraction.
 npm test                    # real Unix-socket fixtures; no GUI or Rust launch
 npm run build               # strict TypeScript and production bundle
 npm run test:electron       # real Electron, synthetic socket; needs a display
+npm run test:electron:onboarding # real Electron onboarding renderer and synthetic parent state
 # On a headless Linux host:
 xvfb-run -a npm run test:electron
+xvfb-run -a npm run test:electron:onboarding
 ```
+
+`test:electron:onboarding` builds the production frontend, then runs the onboarding
+window/coach, permissions and shortcut renderer smokes in one Electron process
+slot. The window/coach check launches the packaged `--onboarding` Electron host
+with its real preload and parent pipe, using synthetic state only; the other two
+checks keep their existing real Electron/preload paths and synthetic native
+receipts. The canonical `test:electron` still runs these same three test files
+alongside the generic foundation and all other existing renderer smokes. Linux
+Xvfb runs verify renderer integration only, not native permissions or platform
+acceptance.
 
 The Electron smoke checks controls/keyboard use, disconnected/error/reconnect,
 renderer reload, minimum-width layout, sandbox/Node isolation, navigation/network
