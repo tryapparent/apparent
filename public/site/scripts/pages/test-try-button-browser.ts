@@ -24,7 +24,7 @@ try {
     { name: 'linux-arm', width: 768, platform: 'Linux', architecture: 'arm', asset: 'Apparent-0.3.13-linux-aarch64.AppImage' },
     { name: 'mac-arm', width: 390, platform: 'macOS', architecture: 'arm', asset: 'Apparent-Preview-0.5.1-arm64.dmg', keyboard: true },
     { name: 'api-failure', width: 320, platform: 'Linux', architecture: 'x86', failAPI: true },
-    { name: 'unknown-cpu', width: 1280, platform: 'Linux', architecture: '' },
+    { name: 'unknown-cpu', width: 1280, platform: 'Linux', architecture: '', asset: 'Apparent-0.3.13-linux-x86_64.AppImage' },
     { name: 'unsupported', width: 390, platform: 'Unknown', architecture: '' },
   ]
   const results = []
