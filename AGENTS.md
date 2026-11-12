@@ -67,6 +67,8 @@ Canonical repositories and Git metadata, provider histories, credentials, requir
 
 ## Understand, change and verify
 
+Name new GitHub workflows (`name`) `<Owner> · <Plain-language purpose>`, e.g. `Connect · Check and deploy`. Use sentence case, avoid acronyms, and add platform qualifiers only where needed.
+
 Read the relevant owner docs before changing a subsystem. Keep `Cargo.toml` and `Cargo.lock` stable unless explicitly required. After Rust changes, rebuild before running `target/debug/apparent` (`cargo test` does not rebuild it). For broad root checkpoints use `cargo build -j 3 --offline` and `cargo test -j 3 --offline -- --test-threads=2` (on macOS add `taskpolicy -c utility`); on Clanker run each heavy command or hook-backed push once through `/home/simon/.local/bin/t3-build`, never nested, honoring `T3_BUILD_JOBS`.
 
 Verification is proportional to changed behavior, not commit IDs. For mechanical moves verify preserved content/build inputs, imports/visibility, affected compilation on macOS/Linux and focused existing tests. Reuse evidence only for unchanged inputs and state its source. Broad suites are for shared/build/security/lifecycle changes, integration checkpoints or uncertain impact. New native proof is for changed native behavior. Never turn an unrun check into a pass or waive unresolved failures/platform gates; investigate red tests, fix the underlying issue and rerun focused then full affected-platform tests.

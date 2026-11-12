@@ -145,6 +145,7 @@ impl Modifiers {
 /// The keysym a virtual key is bound by (unshifted: `s`, `1`, `F5`).
 fn keysym_for_vk(vk: u32) -> Option<u32> {
     match vk {
+        95 => Some(0x1008ff2b), // X1 standalone Fn (XF86WakeUp).
         0x41..=0x5A => Some(vk + 0x20),
         0x30..=0x39 | 0x20 => Some(vk),
         0x70..=0x87 => Some(0xffbe + vk - 0x70),
@@ -156,6 +157,7 @@ fn keysym_for_vk(vk: u32) -> Option<u32> {
 /// The virtual key a keysym stands for, for the keys Apparent notices.
 fn vk_for_keysym(sym: u32) -> Option<u16> {
     Some(match sym {
+        0x1008ff2b => 95,
         0x61..=0x7a => (sym - 0x20) as u16,
         0x41..=0x5a | 0x30..=0x39 | 0x20 => sym as u16,
         0xff0d => 0x0D,
@@ -232,6 +234,9 @@ pub fn modifier_flags() -> u64 {
 /// The virtual key and label for a key GPUI names (`a`, `f5`, `space`).
 fn key_from_name(key: &str) -> Option<(u16, String)> {
     let lower = key.to_ascii_lowercase();
+    if matches!(lower.as_str(), "fn" | "wakeup" | "xf86wakeup") {
+        return Some((95, "Fn".into()));
+    }
     // On the supported Omarchy keymap, evdev KEY_F23 (193) maps to XKB keycode
     // 201 with F23/XF86Assistant symbols. GPUI reports that symbol identity;
     // the physical device key cannot be distinguished from this event alone.
@@ -752,6 +757,15 @@ fn emit(telemetry: &SharedCaptureTelemetry, kind: ShortcutKind) {
     }
 }
 
+fn ipc_record(telemetry: &SharedCaptureTelemetry) {
+    if telemetry.shortcuts_paused.load(Ordering::Acquire) {
+        apparent_log("shortcut recorder: paused desktop callback");
+        let _=telemetry.ui_sender.try_send(LiveOverlayEvent::DesktopShortcutWhilePaused);
+    } else {
+        emit(telemetry,ShortcutKind::Record);
+    }
+}
+
 /// Reads the grabbed keys' presses off their connection.
 fn run_grab_events(telemetry: Arc<SharedCaptureTelemetry>) {
     let Some(grabs) = grabs() else {
@@ -790,6 +804,7 @@ fn run_grab_events(telemetry: Arc<SharedCaptureTelemetry>) {
 }
 
 fn shortcut_key(cfg: &ShortcutConfig) -> String {
+    if cfg.key_code==95 { return "XF86WakeUp".into(); }
     cfg.key_label().to_owned()
 }
 
@@ -834,7 +849,7 @@ pub fn install_global_hotkeys(telemetry: &Arc<SharedCaptureTelemetry>) {
     }
     let ipc_telemetry = Arc::clone(telemetry);
     linux::ipc::listen(move |line| match line {
-        "shortcut record" => emit(&ipc_telemetry, ShortcutKind::Record),
+        "shortcut record" => ipc_record(&ipc_telemetry),
         "shortcut paste" => emit(&ipc_telemetry, ShortcutKind::Paste),
         "open" => linux::ipc::request_open(),
         other => apparent_log(format!("ipc: unknown request {other:?}")),
@@ -1241,6 +1256,21 @@ mod tests {
             rx.try_recv(),
             Ok(LiveOverlayEvent::PasteLatestShortcut)
         ));
+    }
+
+    #[test]
+    fn paused_compositor_record_is_metadata_never_a_capture_or_paste() {
+        let (tx,rx)=flume::unbounded();
+        let telemetry=SharedCaptureTelemetry::new(tx);
+        telemetry.shortcuts_paused.store(true,Ordering::Release);
+        ipc_record(&telemetry);
+        assert!(matches!(rx.try_recv(),Ok(LiveOverlayEvent::DesktopShortcutWhilePaused)));
+        emit(&telemetry,ShortcutKind::Record);
+        emit(&telemetry,ShortcutKind::Paste);
+        assert!(rx.try_recv().is_err());
+        telemetry.shortcuts_paused.store(false,Ordering::Release);
+        ipc_record(&telemetry);
+        assert!(matches!(rx.try_recv(),Ok(LiveOverlayEvent::CaptureShortcut)));
     }
 
     #[test]
