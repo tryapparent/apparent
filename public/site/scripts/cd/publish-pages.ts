@@ -222,7 +222,7 @@ export async function main(deps: PublisherDeps = {}) {
   if (process.env.GITHUB_REPOSITORY !== 'tryapparent/apparent' ||
       process.env.GITHUB_WORKFLOW_REF !== 'tryapparent/apparent/.github/workflows/stream-public.yml@refs/heads/main' ||
       process.env.GITHUB_JOB !== 'deploy' ||
-      process.env.GITHUB_EVENT_NAME !== 'workflow_dispatch') throw new Error('Public publication requires the canonical manual deploy job')
+      !['push', 'workflow_dispatch'].includes(process.env.GITHUB_EVENT_NAME ?? '')) throw new Error('Public publication requires the canonical deploy job')
   const artifact = join(root, '.build/website'), manifest = verifyArtifact(sha, artifact), packagePath = join(artifact, 'dist-apparent')
   if (!existsSync(join(packagePath, '404.html')) || !existsSync(join(packagePath, '_routes.json'))) throw new Error('Missing Public routing preparation')
   if (lstatSync(packagePath).isSymbolicLink() || Object.entries(inventory(packagePath)).some(([name]) => statSync(join(packagePath, name)).size > MAX_ASSET)) throw new Error('Package has a symlink or oversized asset')

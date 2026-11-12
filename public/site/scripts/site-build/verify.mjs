@@ -14,6 +14,7 @@ function run(command, args, extraEnv = {}) {
 run('bun', ['install', '--frozen-lockfile'])
 run('npm', ['run', 'build'])
 run('node', ['scripts/site-build/package-apparent.mjs'])
+run('bun', ['test', 'scripts/cd/workflow.test.ts'])
 const tests = [
   'brand/test-brand-favicon.mjs', 'brand/test-social-preview.mjs', 'browser-proof/test-github-stars.mjs',
   'pages/test-latest-download.mjs', 'pages/test-platform-os.mjs',

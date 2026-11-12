@@ -214,10 +214,10 @@ test('publisher stages exact bytes, writes success receipt, skips superseded can
         return new Response(readFileSync(join(packagePath, paths[url.pathname])), { headers })
       },
     }
-    for (const [key, invalid] of [['GITHUB_REPOSITORY', 'fork/apparent'], ['GITHUB_WORKFLOW_REF', 'tryapparent/apparent/.github/workflows/web-delivery.yml@refs/heads/main'], ['GITHUB_WORKFLOW_REF', undefined], ['GITHUB_JOB', 'website'], ['GITHUB_EVENT_NAME', 'push'], ['GITHUB_EVENT_NAME', 'pull_request']]) {
+    for (const [key, invalid] of [['GITHUB_REPOSITORY', 'fork/apparent'], ['GITHUB_WORKFLOW_REF', 'tryapparent/apparent/.github/workflows/web-delivery.yml@refs/heads/main'], ['GITHUB_WORKFLOW_REF', undefined], ['GITHUB_JOB', 'website'], ...['pull_request', 'pull_request_target', 'workflow_call', 'workflow_run', 'schedule', undefined].map(event => ['GITHUB_EVENT_NAME', event])]) {
       const original = process.env[key!]
       if (invalid === undefined) delete process.env[key!]; else process.env[key!] = invalid
-      await assert.rejects(main(deps), /canonical manual deploy job/)
+      await assert.rejects(main(deps), /canonical (?:manual )?deploy job/)
       if (original === undefined) delete process.env[key!]; else process.env[key!] = original
     }
     assert.equal(staged.length, 0, 'Other workflow contexts must fail before publication')
@@ -228,16 +228,21 @@ test('publisher stages exact bytes, writes success receipt, skips superseded can
     assert.equal(staged.length, 1)
     assert.equal(existsSync(staged[0]), false)
 
+    process.env.GITHUB_EVENT_NAME = 'push'
+    await main(deps)
+    assert.equal(staged.length, 2, 'automatic main pushes publish the same sealed artifact and read it back')
+    assert.equal(existsSync(staged[1]), false)
+
     await assert.rejects(main({ ...deps, api: async () => ({}) }), /Missing canonical deployment identity/)
   await main({ ...deps, publicationNeeded: async () => false })
-    assert.equal(staged.length, 1)
+    assert.equal(staged.length, 2)
 
     process.env.GITHUB_REF = 'refs/heads/feature'
     await assert.rejects(main(deps), /Only exact main revisions/)
     process.env.GITHUB_REF = 'refs/heads/main'
     delete process.env.WEBSITE_PAGES_API_TOKEN
     await assert.rejects(main(deps), /WEBSITE_PAGES_API_TOKEN is required/)
-    assert.equal(staged.length, 1)
+    assert.equal(staged.length, 2)
     process.env.WEBSITE_PAGES_API_TOKEN = 'synthetic'
     writeFileSync(join(artifact, 'dist-apparent/index.html'), 'changed after verification')
     await assert.rejects(main(deps), /checksum/)
