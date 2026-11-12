@@ -14,10 +14,8 @@ export function LatestDownload({ nav = false }: { nav?: boolean }) {
   if (platform.kind === "other") return <span className={className} aria-disabled="true">Platform unsupported</span>
   if (platform.kind === "mac-intel") return <span className={className} aria-disabled="true">Apple silicon only</span>
   if (platform.kind === "mobile") return <a className={className} href={RELEASES}>Get the desktop app</a>
-  // Unknown Mac chips use the published Apple silicon installer. Known Intel
-  // Macs remain unsupported above; uncertain Linux CPUs still need a choice.
-  if (platform.kind === "linux" && !platform.architecture)
-    return <a className={className} href={RELEASES}>Choose Linux download</a>
+  // Unknown CPUs use the labeled default: Apple silicon on Mac, x86_64 on
+  // Linux. Detected Linux ARM64 keeps its matching installer.
 
   const linuxArm = platform.kind === "linux" && platform.architecture === "aarch64"
   const target: DownloadPlatform = platform.kind === "mac" ? "mac" : linuxArm ? "linux-aarch64" : "linux-x86_64"

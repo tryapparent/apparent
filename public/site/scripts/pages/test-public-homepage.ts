@@ -465,44 +465,59 @@ test("source homepage preserves accepted responsive layout and interactions", as
           }
           receipts.push({ engine: engine.name(), width, errors })
           if (width === 1280 || width === 320) {
-            const installer = "https://github.com/tryapparent/apparent/releases/download/test/Apparent-Preview-9.0.0-arm64.dmg"
-            let releaseLookup: import("playwright-core").Route | undefined
-            await page.route("https://api.github.com/repos/tryapparent/apparent/releases?*", route => { releaseLookup = route })
-            await page.route(installer, route => route.fulfill({
-              contentType: "application/octet-stream", headers: { "Content-Disposition": 'attachment; filename="test.dmg"' }, body: "synthetic installer",
-            }))
-            await page.goto(origin + "/?platform=mac")
-            const macDownload = page.getByRole("link", { name: "Download for Mac (Apple silicon)", exact: false })
-            await macDownload.waitFor()
-            for (const colorScheme of ["light", "dark"] as const) {
-              await page.emulateMedia({ colorScheme })
-              await macDownload.focus()
-              assert.equal(await macDownload.evaluate(element => element.matches(":focus-visible")), true)
-              assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
-              const bounds = await macDownload.boundingBox()
-              assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width && bounds.height >= 44)
-              if (process.env.SITE_EVIDENCE) await page.screenshot({ path: join(process.env.SITE_EVIDENCE, `mac-download-${engine.name()}-${width}-${colorScheme}.png`) })
+            for (const scenario of [
+              { id: "mac", query: "?platform=mac", label: "Mac (Apple silicon)", asset: "Apparent-Preview-9.0.0-arm64.dmg", platform: "mac" },
+              { id: "linux-unknown", query: "?platform=linux", label: "Linux (x86_64)", asset: "Apparent-9.0.0-linux-x86_64.AppImage", platform: "linux" },
+              { id: "linux-arm", query: "", label: "Linux (ARM64)", asset: "Apparent-9.0.0-linux-aarch64.AppImage", platform: "linux" },
+            ]) {
+              if (scenario.id === "linux-arm") await page.addInitScript(() => {
+                Object.defineProperty(navigator, "userAgentData", { value: {
+                  platform: "Linux", mobile: false,
+                  getHighEntropyValues: async () => ({ architecture: "arm", bitness: "64" }),
+                } })
+              })
+              const installer = "https://github.com/tryapparent/apparent/releases/download/test/" + scenario.asset
+              let releaseLookup: import("playwright-core").Route | undefined
+              await page.unroute("https://api.github.com/repos/tryapparent/apparent/releases?*")
+              await page.route("https://api.github.com/repos/tryapparent/apparent/releases?*", route => { releaseLookup = route })
+              await page.route(installer, route => route.fulfill({
+                contentType: "application/octet-stream", headers: { "Content-Disposition": 'attachment; filename="test.dmg"' }, body: "synthetic installer",
+              }))
+              await page.goto(origin + "/" + scenario.query)
+              const downloadAction = page.getByRole("link", { name: "Download for " + scenario.label, exact: false })
+              await downloadAction.waitFor()
+              await page.evaluate(() => document.fonts.ready)
+              for (const colorScheme of ["light", "dark"] as const) {
+                await page.emulateMedia({ colorScheme })
+                await page.evaluate(() => new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done()))))
+                await downloadAction.focus()
+                assert.equal(await downloadAction.evaluate(element => element.matches(":focus-visible")), true)
+                assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+                const bounds = await downloadAction.boundingBox()
+                assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width && bounds.height >= 44)
+                if (process.env.SITE_EVIDENCE) await page.screenshot({ path: join(process.env.SITE_EVIDENCE, `${scenario.id}-download-${engine.name()}-${width}-${colorScheme}.png`) })
+              }
+              const downloaded = page.waitForEvent("download")
+              if (width === 320) await downloadAction.press("Enter")
+              else await downloadAction.click()
+              await page.waitForFunction(platform => document.querySelector(`[data-download-platform="${platform}"]`)?.getAttribute("aria-busy") === "true", scenario.platform)
+              assert.equal(await page.getByRole("link", { name: "Finding download…", exact: false }).count(), 1)
+              assert.ok(releaseLookup, "click must look up current releases, not open their listing")
+              await releaseLookup.fulfill({ json: [
+                { draft: false, published_at: "2026-11-12", assets: ["Apparent-Preview-9.0.0-arm64.dmg", "Apparent-9.0.0-linux-x86_64.AppImage", "Apparent-9.0.0-linux-aarch64.AppImage"].map(name => ({ name, browser_download_url: "https://github.com/tryapparent/apparent/releases/download/test/" + name })) },
+                { draft: false, published_at: "2026-11-13", assets: [] },
+              ] })
+              assert.equal((await downloaded).url(), installer)
+              assert.equal(page.url(), origin + "/" + scenario.query, "download leaves the visitor on the homepage")
+              await page.route("https://github.com/tryapparent/apparent/releases", route => route.fulfill({ contentType: "text/html", body: "Synthetic release picker" }))
+              await page.unroute("https://api.github.com/repos/tryapparent/apparent/releases?*")
+              await page.route("https://api.github.com/repos/tryapparent/apparent/releases?*", route => route.fulfill({ status: 503, body: "unavailable" }))
+              await downloadAction.click()
+              await page.waitForURL("https://github.com/tryapparent/apparent/releases")
+              await page.goto(origin + "/?platform=mac-intel")
+              await page.getByText("Apple silicon only", { exact: true }).waitFor()
+              assert.equal(await page.locator('a[data-download-platform="mac"]').count(), 0)
             }
-            const downloaded = page.waitForEvent("download")
-            if (width === 320) await macDownload.press("Enter")
-            else await macDownload.click()
-            await page.waitForFunction(() => document.querySelector('[data-download-platform="mac"]')?.getAttribute("aria-busy") === "true")
-            assert.equal(await page.getByRole("link", { name: "Finding download…", exact: false }).count(), 1)
-            assert.ok(releaseLookup, "click must look up current releases, not open their listing")
-            await releaseLookup.fulfill({ json: [
-              { draft: false, published_at: "2026-11-12", assets: [{ name: "Apparent-Preview-9.0.0-arm64.dmg", browser_download_url: installer }] },
-              { draft: false, published_at: "2026-11-13", assets: [{ name: "Apparent-9.0.0-linux-x86_64.AppImage", browser_download_url: "https://github.com/tryapparent/apparent/releases/download/test/Apparent-9.0.0-linux-x86_64.AppImage" }] },
-            ] })
-            assert.equal((await downloaded).url(), installer)
-            assert.equal(page.url(), origin + "/?platform=mac", "download leaves the visitor on the homepage")
-            await page.route("https://github.com/tryapparent/apparent/releases", route => route.fulfill({ contentType: "text/html", body: "Synthetic release picker" }))
-            await page.unroute("https://api.github.com/repos/tryapparent/apparent/releases?*")
-            await page.route("https://api.github.com/repos/tryapparent/apparent/releases?*", route => route.fulfill({ status: 503, body: "unavailable" }))
-            await macDownload.click()
-            await page.waitForURL("https://github.com/tryapparent/apparent/releases")
-            await page.goto(origin + "/?platform=mac-intel")
-            await page.getByText("Apple silicon only", { exact: true }).waitFor()
-            assert.equal(await page.locator('a[data-download-platform="mac"]').count(), 0)
           }
           await page.close()
         }
