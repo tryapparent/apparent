@@ -294,6 +294,10 @@ enum Command {
         #[arg(long)]
         watch: Option<u64>,
     },
+    /// Passive permission check in a fresh recording executable, never a capture/request.
+    #[cfg(any(target_os = "macos", test))]
+    #[command(hide = true)]
+    ScreenPermissionStatus,
     /// Verify that this Linux runtime can decode an H.264 MP4 into keyframes.
     #[cfg(target_os = "linux")]
     #[command(hide = true)]
@@ -1369,6 +1373,11 @@ fn run_cli(cli: Cli) -> Result<()> {
             println!("Encoded and decoded H.264 MP4: {}", movie.display());
             Ok(())
         }
+        #[cfg(any(target_os = "macos", test))]
+        Command::ScreenPermissionStatus => {
+            println!("{}", crate::capture::engine::runtime::screen_capture_granted());
+            Ok(())
+        }
         Command::SckProbe { watch } => {
             let end =
                 std::time::Instant::now() + std::time::Duration::from_secs(watch.unwrap_or(0));
@@ -1748,6 +1757,17 @@ fn copy_confirmation(dir: &std::path::Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn passive_screen_permission_command_is_distinct_from_capture_probe() {
+        assert!(matches!(
+            Cli::try_parse_from(["apparent", "screen-permission-status"]).unwrap().command,
+            Some(Command::ScreenPermissionStatus)
+        ));
+        assert!(Cli::try_parse_from(["apparent", "screen-permission-status", "--watch", "1"]).is_err());
+        let help = Cli::try_parse_from(["apparent", "--help"]).err().unwrap().to_string();
+        assert!(!help.contains("screen-permission-status"));
+    }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]

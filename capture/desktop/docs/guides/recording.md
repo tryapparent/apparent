@@ -46,7 +46,7 @@ A Screen Recording grant may not reach a running app, and macOS offers **Quit & 
 **Later** as soon as it's granted. Either way nobody reopens Apparent by hand. If you pick **Quit &
 Reopen**, macOS restarts Apparent and the tour opens on the permissions screen again, Screen
 Recording checked. If you pick **Later** (or nothing), Apparent checks whether it can capture anyway
-(a one-frame ScreenCaptureKit screenshot, tried only once a fresh helper reports the grant), and if
+(a one-frame ScreenCaptureKit screenshot, tried only once a fresh recording executable reports the grant), and if
 it can't, the row shows "Reopening Apparent" for a second and Apparent relaunches itself into the same
 screen. It only does that once in two minutes (`relaunchedAt` in the config); if a fresh copy
 still can't capture, the row's button becomes **Reopen Apparent**. The relaunch waits for this copy

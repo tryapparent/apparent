@@ -39,8 +39,13 @@ fn run_program<T: for<'de> Deserialize<'de>>(
     args: &[&std::ffi::OsStr],
     timeout: Duration,
 ) -> Result<T> {
-    let mut child = Command::new(program)
-        .args(args)
+    let mut command = Command::new(program);
+    command.args(args);
+    run_command(command, timeout)
+}
+
+fn run_command<T: for<'de> Deserialize<'de>>(mut command: Command, timeout: Duration) -> Result<T> {
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -48,14 +53,9 @@ fn run_program<T: for<'de> Deserialize<'de>>(
         .context("Could not start apparent-helper")?;
     let mut stdout = child.stdout.take().context("No helper stdout")?;
     let mut stderr = child.stderr.take().context("No helper stderr")?;
-    let caller = std::thread::current();
-    let eof = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let reader_eof = std::sync::Arc::clone(&eof);
     let reader = std::thread::spawn(move || {
         let mut out = Vec::new();
         let _ = stdout.read_to_end(&mut out);
-        reader_eof.store(true, std::sync::atomic::Ordering::Release);
-        caller.unpark();
         out
     });
     let deadline = Instant::now() + timeout;
@@ -63,16 +63,13 @@ fn run_program<T: for<'de> Deserialize<'de>>(
         if let Some(status) = child.try_wait()? {
             break status;
         }
-        if eof.load(std::sync::atomic::Ordering::Acquire) {
-            break child.wait()?;
-        }
         let now = Instant::now();
         if now >= deadline {
             let _ = child.kill();
             let _ = child.wait();
-            bail!("apparent-helper {:?} timed out", args.first());
+            bail!("apparent child process timed out");
         }
-        std::thread::park_timeout(deadline - now);
+        std::thread::sleep((deadline - now).min(Duration::from_millis(20)));
     };
     let out = reader.join().unwrap_or_default();
     if !status.success() {
@@ -101,6 +98,23 @@ pub struct PhoneDevice {
 pub fn permissions()
 -> Result<std::collections::BTreeMap<crate::capture::desktop::settings::onboarding::Permission, crate::capture::desktop::settings::onboarding::Status>> {
     run(&[os("permissions")], Duration::from_secs(5))
+}
+
+/// Read Screen Recording with the recording executable's code identity, in a fresh
+/// process so a cached preflight cannot conceal either a grant or revocation.
+/// The hidden command only calls CGPreflightScreenCaptureAccess; it never captures
+/// pixels, requests permission, starts the app or writes preferences.
+#[cfg(target_os = "macos")]
+pub fn screen_permission() -> Result<bool> {
+    screen_permission_from(&std::env::current_exe().context("Could not locate apparent")?)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn screen_permission_from(program: &Path) -> Result<bool> {
+    let mut command = Command::new(program);
+    command.arg("screen-permission-status").env_remove("APPARENT_BENCH_START");
+    run_command(command, Duration::from_secs(5))
+        .context("Could not read recording-process Screen Recording permission")
 }
 
 /// Cabled iPhones and iPads, from the USB registry (no camera permission needed). `id` is the
@@ -413,6 +427,46 @@ pub fn qr(text: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn screen_permission_transport_timeout_survives_early_stdout_close() {
+        let started = Instant::now();
+        let result: Result<bool> = run_program(
+            Path::new("/bin/sh"),
+            &[os("-c"), os("exec 1>&-; exec sleep 10")],
+            Duration::from_millis(100),
+        );
+        assert!(result.unwrap_err().to_string().contains("timed out"));
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn screen_permission_reader_requires_a_successful_boolean_from_the_exact_command() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
+        std::fs::create_dir(&dir).unwrap();
+        struct Cleanup(PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        }
+        let _cleanup = Cleanup(dir.clone());
+        let program = dir.join("recording-app");
+        for (output, exit, expected) in [
+            ("true", 0, Some(true)),
+            ("false", 0, Some(false)),
+            ("true", 1, None),
+            ("null", 0, None),
+            ("{}", 0, None),
+            ("not-json", 0, None),
+        ] {
+            std::fs::write(&program, format!(
+                "#!/bin/sh\n[ \"$#\" -eq 1 ] && [ \"$1\" = screen-permission-status ] || exit 19\nprintf '%s\\n' '{output}'\nexit {exit}\n"
+            )).unwrap();
+            std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+            assert_eq!(screen_permission_from(&program).ok(), expected, "{output}, exit {exit}");
+        }
+        assert!(screen_permission_from(&dir.join("missing-app")).is_err());
+    }
 
     #[test]
     fn a_superseded_install_stops_without_waiting_for_the_helper() {
