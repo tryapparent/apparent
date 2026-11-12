@@ -4,7 +4,7 @@ import {readFileSync, readdirSync, mkdtempSync, rmSync, mkdirSync, writeFileSync
 import {execFileSync} from 'node:child_process';
 import {YAML} from 'bun';
 import {select, changedPaths, macDecision, requiresMacRust, selectRange, documentationOnlyPath, needsPlatform, requiresMacRustRange, presentationInputs} from './select.ts';
-import {selectedOwners, suitePlan, routeDecision, publicMarkdown, linuxDrivers, owners} from './routing/consumers.ts';
+import {selectedOwners, suitePlan, routeDecision, routingProblems, publicMarkdown, linuxDrivers, owners} from './routing/consumers.ts';
 import {selection as localSelection, commands as localCommands, contractTests} from '../local-tests/run.ts';
 
 const root = new URL('../../', import.meta.url);
@@ -261,6 +261,26 @@ test('regular Public additions/deletions stay owner-local; unsafe mode/type chan
   chmodSync('README.md',0o755);git('add','.');git('commit','-qm','mode');assert.equal(cli(edited,git('rev-parse','HEAD'),dir).platform,true);
   git('checkout','--detach',edited);unlinkSync('README.md');symlinkSync('build.rs','README.md');git('add','.');git('commit','-qm','type');assert.equal(cli(edited,git('rev-parse','HEAD'),dir).platform,true);
   git('checkout','--detach',edited);git('rm','README.md');git('commit','-qm','delete');assert.equal(cli(edited,git('rev-parse','HEAD'),dir).platform,false);
+}));
+
+test('renderer onboarding test tooling additions stay Desktop plus onboarding', () => repository((git,dir) => {
+  mkdirSync('capture/desktop/ui/frontend/tests/onboarding/renderer', {recursive: true});
+  writeFileSync('capture/desktop/ui/frontend/tests/onboarding/account.test.ts', 'before');
+  git('add','.'); git('commit','-qm','base'); const base=git('rev-parse','HEAD');
+  for (const path of ['capture/desktop/ui/frontend/tests/onboarding/renderer/window-coach.smoke.ts',
+    'capture/desktop/ui/frontend/tests/onboarding/renderer/tsconfig.json']) {
+    writeFileSync(path, path.endsWith('.json') ? '{"extends":"../../tsconfig.json"}' : 'export {};');
+  }
+  git('add','.'); git('commit','-qm','approved renderer tests'); const head=git('rev-parse','HEAD');
+  const hosted=cli(base,head,dir), local=localSelection(base,head,dir);
+  for (const result of [hosted,local]) {
+    assert.equal(result.historyKnown,true); assert.equal(result.inputProofKnown,true);
+    assert.equal(result.plan.desktop,true); assert.equal(result.plan.onboarding,true);
+    for (const suite of ['root','engine','client','browser','service','tools','public','hermes','tooling'])
+      assert.equal(result.plan[suite as keyof typeof result.plan],false,suite);
+  }
+  assert.deepEqual(hosted.plan,local.plan); assert.deepEqual(hosted.reasons,local.reasons);
+  assert.deepEqual(routingProblems(hosted),[]);
 }));
 for (const path of presentationInputs) test('renderer-only proof retains Mac Electron while mixed/native and unsafe statuses retain Rust: '+path, () => repository((git,dir) => {
   mkdirSync(path.slice(0,path.lastIndexOf('/')),{recursive:true});writeFileSync(path,'before');git('add','.');git('commit','-qm','base');const base=git('rev-parse','HEAD');

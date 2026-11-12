@@ -40,6 +40,10 @@ export const onboardingPureInputs = new Set([
 ].map(path => 'capture/desktop/ui/frontend/' + path));
 export const onboardingRoots = ['capture/desktop/ui/frontend/src/onboarding/',
   'capture/desktop/ui/frontend/electron/onboarding/', 'capture/desktop/ui/frontend/tests/onboarding/'];
+const onboardingRendererTestInputs = new Set([
+  'capture/desktop/ui/frontend/tests/onboarding/renderer/window-coach.smoke.ts',
+  'capture/desktop/ui/frontend/tests/onboarding/renderer/tsconfig.json',
+]);
 export function onboardingInput(path: string): boolean {
   return onboardingRoots.some(root => path.startsWith(root)) ||
     ['onboarding.html', 'electron/onboarding.cjs', 'electron/onboarding-preload.cjs', 'electron/onboarding-protocol.cjs']
@@ -83,6 +87,7 @@ export function foregroundPortableChange(path: string, before: string, after: st
 function directConsumers(path: string): readonly Owner[] {
   if (portableForegroundInputs.has(path)) return ['client-foreground'];
   if (onboardingPureInputs.has(path)) return ['desktop', 'onboarding'];
+  if (onboardingRendererTestInputs.has(path)) return ['desktop', 'onboarding'];
   if (path.startsWith('capture/desktop/ui/frontend/tests/onboarding/') &&
       (/\.test\.ts$/.test(path) || ['package.json','package-lock.json','tsconfig.json'].some(name => path.endsWith('/' + name)))) return ['onboarding'];
   if (path.startsWith('capture/desktop/ui/frontend/src/onboarding/') && /\.(tsx|css)$/.test(path) ||
