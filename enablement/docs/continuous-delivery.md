@@ -26,8 +26,14 @@ older client/server source.
 
 ## Continuous delivery
 
-`checks.yml` is the only automatic workflow, on PRs targeting main and main
-pushes. PR updates coalesce; main commits have distinct concurrency groups so
+`checks.yml` verifies the native application and shared integration on PRs targeting
+main and main pushes. Public and Connect have direct automatic entrypoints in
+`stream-public.yml` and `stream-connect.yml`; neither depends on a default CD run.
+The ordered default-workflow path filters exclude audited Public-only inputs and
+`connect/**`. Mixed deltas, shared inputs, unknown Public paths, embedded
+instructions and native Public tooling retain the default workflow. Connect owns
+its native client/service consumer checks on Linux and Mac, so excluding its
+paths does not exempt those consumers from verification. PR updates coalesce; main commits have distinct concurrency groups so
 later documentation cannot cancel earlier code verification. Drafts retain cheap
 contracts and relevant Public checks; ready PRs verify the proposed merge tree.
 
@@ -391,3 +397,35 @@ in the shared consumer map. Public-only source and new browser files avoid Rust;
 an unexpected native source in a web owner remains broad. Expand exemptions only
 with a consumer audit and adverse/mixed-delta tests. Selector tests are command
 selection evidence, not measured savings or native product acceptance.
+
+## Stream-owned delivery
+
+Public PRs use the complete Git delta and fail-closed selector. Every main push
+checks the full Public tree, so a later unrelated commit carries a failed or
+superseded website update forward. Its canonical-main publisher requires fresh
+verification, `WEBSITE_CD_ENABLED`, the website environment, a sealed exact-SHA
+artifact and live readback. Main and manual publication share a noncancelling lock.
+The default workflow no longer invokes Public.
+
+Connect PRs derive a complete-delta plan from the same consumer map. Browser-only
+edits run portable checks; service/client changes retain the existing root/client
+consumers on both platforms. Unknown inputs fail closed. Every main/manual run
+checks Connect's complete tree, including native consumers, rather than allowing an
+unrelated follow-up commit to hide a failed delivery. This conservative main
+coverage is intentional and is not a measured build-time reduction.
+
+`stream-connect.yml` admits its publisher only after its own successful
+contracts, portable checks and affected Linux/Mac suites, on canonical main with
+`HOSTED_CD_ENABLED`. That automatic route does not require a `checks.yml` Linux
+receipt. Manual dispatch uses the same stream-owned checks and admission; the
+old `web-delivery.yml` entrypoint has been replaced. Worker publication retains its production environment,
+noncancelling lock, current-main check, approved bindings and version/CORS readback.
+No resource migration or disabled-service activation is included. The existing
+Connect composition/browser verification remains in the publisher. This slice
+does not add a new Connect browser Pages publisher or migrate native packaging.
+
+GitHub path filtering uses its documented complete changed-file limits: rename
+sides and mixed inputs are covered by routing contracts; diffs beyond GitHub's
+300-file filter window can be omitted upstream. The workflow cannot recover an
+event GitHub did not start. Very large cross-owner changes should be split or
+explicitly verified through the manual platform/stream entrypoints.

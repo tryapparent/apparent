@@ -22,9 +22,9 @@ function admitted(expression: string, needs: any, event = 'pull_request', draft 
 function parents(outputs: any = {}, reuse: any = {}) {
   return {contracts: {result: 'success'}, hermes: {result: 'success'}, select: {result: 'success', outputs}, reuse: {result: 'success', outputs: reuse}, portable: {result: 'success'}};
 }
-test('one automatic workflow, manual diagnostics, PR integration checkout and read-only verification', () => {
+test('independent stream workflows, manual diagnostics, PR integration checkout and read-only verification', () => {
   assert.deepEqual(readdirSync(new URL('.github/workflows/', root)).filter(name =>
-    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))), ['checks.yml']);
+    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))).sort(), ['checks.yml', 'stream-connect.yml', 'stream-public.yml']);
   assert.deepEqual(Object.keys(ci().on), ['pull_request', 'push']);
   assert.deepEqual(ci().on.pull_request.types, ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft']);
   assert.equal(ci().permissions.contents, 'read');

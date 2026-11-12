@@ -86,7 +86,7 @@ legacy `/hosted` redirects and `connect.tryapparent.com` aliases retain their co
 queries there. Public uploads no Connect documents, redirects or application
 assets. No routing cutover is part of this split.
 
-`web-delivery.yml` retains Connect's existing service and cross-origin browser
+`stream-connect.yml` retains Connect's existing service and cross-origin browser
 checks and its separately gated hosted deploy job. Those integration fixtures
 still compose Public and Connect locally; they cannot publish Pages. Public's own
 checks and publication do not depend on that workflow.
