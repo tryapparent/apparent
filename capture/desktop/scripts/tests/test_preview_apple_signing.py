@@ -101,7 +101,7 @@ fi''',
             installer_staple = trace.index("stapler staple " + str(installer))
             self.assertLess(app_staple, installer_staple)
             self.assertLess(installer_staple, trace.index("hdiutil create"))
-            self.assertIn("--identifier dev.simonvanlaak.apparent.preview.installer " + str(installer), trace)
+            self.assertIn("--identifier dev.simonvanlaak.apparent.preview.installer.b123.2 " + str(installer), trace)
             self.assertIn("codesign --verify --deep --strict " + str(installer), trace)
             self.assertIn("stapler validate", trace)
             self.assertIn("spctl --assess", trace)

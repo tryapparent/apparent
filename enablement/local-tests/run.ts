@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {changedPaths as inputPaths, workflowControlPaths, regularFileDelta} from '../ci/inputs.ts';
 import {serviceTests} from './service.ts';
+import {desktopDependencies, desktopPackage} from './desktop-install.ts';
 import {owners, selectedOwners, nativeInputs} from '../ci/routing/consumers.ts';
 export {owners} from '../ci/routing/consumers.ts';
 import type {Admission} from './service.ts';
@@ -43,7 +44,20 @@ export function captureToolTests(cwd = root): Command[] {
       ...(path.endsWith('/test_issue_cli.py') ? {env: {APPARENT_BIN: resolve(cwd, process.env.CARGO_TARGET_DIR || 'target', 'debug/apparent')}} : {}) }));
 }
 
-export function commands(selected: Owner[], base: string, head: string, platform = process.platform, rustChanged = true): Command[] {
+export function installationContracts(paths: string[] | null, workflowControls: string[] = []): Command[] {
+  if (paths?.length && paths.every(path => workflowControls.includes(path))) return [];
+  const manifests = new Set(['package.json', 'package-lock.json', '.npmrc', '.npmignore', '.gitignore']);
+  const inputs = [desktopPackage, 'shared/ui', 'record/storage'];
+  const affected = !paths?.length || selectedOwners(paths).includes('tooling') || paths.some(path =>
+    ['shared/ui/', 'record/storage/'].some(root => path.startsWith(root)) ||
+    path.startsWith(desktopPackage + '/scripts/') ||
+    new RegExp('^' + desktopPackage + '/(?:tsconfig[^/]*\\.json|vite\\.config\\.[^/]+)$').test(path) ||
+    inputs.some(root => path.startsWith(root + '/') && manifests.has(path.slice(root.length + 1))));
+  return affected ? [{argv: ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'], cwd: '.'}] : [];
+}
+
+export function commands(selected: Owner[], base: string, head: string, platform = process.platform, rustChanged = true,
+  installScope: {paths: string[] | null; workflowControls?: string[]} = {paths: null}): Command[] {
   const result: Command[] = [];
   const add = (argv: string[], cwd = '.') => result.push({ argv, cwd });
   // Diagnose invalid/private/overlong temporary roots before any selected work.
@@ -51,6 +65,7 @@ export function commands(selected: Owner[], base: string, head: string, platform
     add(['python3', 'enablement/verification.py', '--base', base, '--preflight']);
   // These cheap contracts were previously missing from feature pushes.
   add(['python3', 'enablement/verification.py', '--base', base, '--head', head, '--pr']);
+  if (selected.includes('desktop') || selected.includes('tooling')) result.push(...installationContracts(installScope.paths, installScope.workflowControls));
   const tools = selected.includes('capture-tools') ? captureToolTests() : [];
   result.push(...tools.filter(command => !command.env?.APPARENT_BIN));
   if (selected.includes('tooling')) add(['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py']);
@@ -127,7 +142,9 @@ export function execute(plan: Command[], cwd = root, admission?: Admission): voi
     if (result.error) throw result.error;
     if (result.status !== 0) throw Error(`Local test command failed (${result.signal || result.status}): ${argv.join(' ')}`);
   };
-  for (const command of plan) {
+  for (let index = 0; index < plan.length; index++) {
+    const command = plan[index];
+    if (desktopDependencies(plan.slice(index, index + 3), cwd, env, admission, run)) { index += 2; continue; }
     if (!serviceTests(command, cwd, {...env, ...command.env}, admission, run)) run(command);
   }
 }
@@ -142,7 +159,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   if (!args.includes('--base') || !args.includes('--head')) throw Error('--base and --head are required');
   const base = value('--base'), head = value('--head');
   const result = selection(base, head, root, args.includes('--conservative-workflows'));
-  const plan = commands(result.selected, base, head, process.platform, result.rustChanged);
+  const paths = result.historyKnown ? result.paths : null;
+  const plan = args.includes('--desktop-install-contracts') ? installationContracts(paths, result.workflowControls)
+    : commands(result.selected, base, head, process.platform, result.rustChanged, {paths, workflowControls: result.workflowControls});
   console.log(JSON.stringify({ ...result, commands: plan }));
   if (args.includes('--run')) execute(plan, root, result.historyKnown ? {base, head} : undefined);
 }

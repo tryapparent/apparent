@@ -2,10 +2,11 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHmac} from 'node:crypto';
 import {spawnSync, execFileSync} from 'node:child_process';
-import {chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync} from 'node:fs';
+import {chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {digest, receiptStore, reuse} from './receipt.ts';
 import {files, glibcNative, loaderPaths, npmConfiguration, serviceEnvironment, serviceTests} from './service.ts';
+import type {FileDigests} from './service.ts';
 import {root} from './run.ts';
 
 function fixture(action: (dir: string, env: NodeJS.ProcessEnv) => void) {
@@ -147,6 +148,22 @@ test('file identities include bytes, modes, link targets, inventory and dependen
   writeFileSync(input, 'mutated install'); assert.notEqual(before.key, files([linked], [dir]).key);
   rmSync(linked); symlinkSync('/etc/passwd', linked);
   assert.throws(() => files([linked], [dir]), /external symlink/);
+}));
+
+test('invocation-local digest memo detects restored mtimes, replacement, modes and inventory changes', () => fixture(dir => {
+  const path = join(dir, 'module'); writeFileSync(path, 'original');
+  const memo: FileDigests = new Map();
+  const snapshot = () => files([dir], [dir], new Map(), memo);
+  const first = snapshot(), stamp = statSync(path);
+  assert.equal(snapshot().key, first.key);
+  writeFileSync(path, 'modified'); utimesSync(path, stamp.atime, stamp.mtime);
+  const modified = snapshot(); assert.notEqual(modified.key, first.key, 'ctime defeats mtime restoration');
+  writeFileSync(join(dir, 'replacement'), 'modified'); renameSync(join(dir, 'replacement'), path);
+  const replaced = snapshot(); assert.equal(replaced.key, modified.key); assert.notEqual(replaced.stable, modified.stable);
+  chmodSync(path, 0o755); assert.notEqual(snapshot().key, replaced.key);
+  writeFileSync(join(dir, 'added'), 'new'); assert.notEqual(snapshot().key, replaced.key);
+  const committed = new Map([[path, {oid: '0'.repeat(40), executable: true}]]);
+  assert.throws(() => files([path], [dir], committed, memo), /source bytes differ from HEAD/);
 }));
 
 test('source blobs and modes must match HEAD even when Git stat settings conceal edits', () => fixture((dir, env) => {

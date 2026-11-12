@@ -140,6 +140,9 @@ fi
 # A separately signed launcher uses the shared React installer and the payload's
 # already signed Electron runtime. Sparkle ZIP below still contains only the app.
 installer="$dist/Install Apparent.app"
+# Finder reuses a running app by bundle identity, even when it has no window.
+# A fresh build must not route to a failed installer left by an older download.
+installer_id="dev.simonvanlaak.apparent.preview.installer.b${BUILD_NUMBER}"
 rm -rf "$installer"
 mkdir -p "$installer/Contents/MacOS" "$installer/Contents/Resources" "$installer/Contents/SharedSupport"
 cp capture/desktop/assets/Apparent.icns "$installer/Contents/Resources/Apparent.icns"
@@ -148,11 +151,11 @@ case "$installer_arch" in arm64|x86_64) ;; *) echo 'Installer needs a single sup
 xcrun swiftc -O -parse-as-library -target "$installer_arch-apple-macos15.0" capture/desktop/native/installer/Installer.swift -o "$installer/Contents/MacOS/Installer"
 ditto "$app" "$installer/Contents/SharedSupport/Apparent Preview.app"
 ditto "$app/Contents/Resources/settings/app" "$installer/Contents/Resources/installer-ui"
-python3 - "$installer" "$VERSION" "$BUILD_NUMBER" <<'PYINSTALLER'
+python3 - "$installer" "$VERSION" "$BUILD_NUMBER" "$installer_id" <<'PYINSTALLER'
 import json, pathlib, plistlib, sys
 app = pathlib.Path(sys.argv[1])
 (app / 'Contents/Info.plist').write_bytes(plistlib.dumps({
-    'CFBundleIdentifier': 'dev.simonvanlaak.apparent.preview.installer',
+    'CFBundleIdentifier': sys.argv[4],
     'CFBundleName': 'Install Apparent', 'CFBundleDisplayName': 'Install Apparent',
     'CFBundleExecutable': 'Installer', 'CFBundlePackageType': 'APPL', 'CFBundleIconFile': 'Apparent',
     'CFBundleShortVersionString': sys.argv[2], 'CFBundleVersion': sys.argv[3],
@@ -162,7 +165,7 @@ app = pathlib.Path(sys.argv[1])
     'name': 'apparent-installer', 'version': '0.0.0', 'main': 'electron/installer/main.cjs',
 }) + '\n')
 PYINSTALLER
-"${SIGN[@]}" --identifier dev.simonvanlaak.apparent.preview.installer "$installer"
+"${SIGN[@]}" --identifier "$installer_id" "$installer"
 codesign --verify --deep --strict "$installer"
 if [[ "$NOTARIZE" == true ]]; then
   installer_notary="$dist/installer-notary.zip"
