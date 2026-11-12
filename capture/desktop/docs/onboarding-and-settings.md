@@ -492,6 +492,20 @@ tint. These remain finite, replayable and static under reduced motion.
 
 ### Required shortcut choice and trial
 
+The Electron recorder keeps listening while Control, Shift, Alt or Super/Command
+are pressed; press the final key after holding the desired modifiers. Linux
+Copilot accepts any of these modifier combinations, including Control+Shift, or
+no modifiers. Actual compositor binding conflicts still refuse the shortcut.
+On the X1 keymap, Chromium can report XF86Assistant with no key identity; the
+Linux adapter confirms the held physical code 201 against the native keymap
+before passing it to the existing editor. An unidentified or already released
+key cannot be guessed into a saved Copilot shortcut; retry if identification
+fails. Linux keyboards that handle Fn entirely in firmware do not expose Fn
+alone to applications. The current Linux recorder has no standalone Fn binding; it
+explains this limit; Mac retains its native standalone Fn choice.
+The existing Electron route, native fallback, single config writer and rollback
+are unchanged. Removing the fallback still requires its existing acceptance gates.
+
 The default first-capture tour offers no preselected Record combination and no
 accept-current shortcut action. Save a valid combination in the existing editor,
 then press and release that combination once. Rust consumes the normal shortcut

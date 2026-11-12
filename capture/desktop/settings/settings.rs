@@ -311,7 +311,7 @@ impl Rejection {
                 "Hold Ctrl, Alt or Super with the key.".to_owned()
             }
             Self::NoModifier => "Hold ⌘, ⌥ or ⌃ with the key.".to_owned(),
-            Self::UnsupportedKey => "Apparent can't use that key. Try a letter or number.".to_owned(),
+            Self::UnsupportedKey => "Apparent could not identify that key. Try again, or choose a letter or number.".to_owned(),
             Self::Reserved(label) if cfg!(not(target_os = "macos")) => {
                 let system = if cfg!(target_os = "windows") {
                     "Windows"
@@ -471,7 +471,9 @@ fn reserved(modifiers: u32, key: &str) -> bool {
     if cfg!(target_os = "linux") {
         // Super (⌘'s bit) with a key, alone or with Shift, is the desktop's (Super+A, the
         // workspaces…); Ctrl with one key is an app's. Then Alt+Tab, Alt+F2, Ctrl+Alt+T…
-        if key == "Copilot" && (modifiers == 0 || modifiers == CMD | SHIFT) { return false; }
+        // Copilot has no ordinary application shortcut reservation. Actual
+        // compositor conflicts are still checked by the native binder.
+        if key == "Copilot" { return false; }
         return modifiers & CMD != 0 && modifiers & (CTRL | OPT) == 0
             || modifiers & (CTRL | CMD | OPT) == CTRL
             || [
@@ -525,7 +527,7 @@ pub fn validate(
         & (CARBON_CMD_KEY | CARBON_CONTROL_KEY | CARBON_OPTION_KEY | CARBON_SHIFT_KEY);
     let key = key_label(pressed.key_code, &pressed.key).ok_or(Rejection::UnsupportedKey)?;
     let strong = modifiers & (CARBON_CMD_KEY | CARBON_CONTROL_KEY | CARBON_OPTION_KEY) != 0;
-    let unmodified_copilot = cfg!(target_os = "linux") && pressed.key_code == 201 && modifiers == 0;
+    let copilot = cfg!(target_os = "linux") && pressed.key_code == 201;
     let fn_only = cfg!(target_os = "macos") && kind == ShortcutKind::Record && pressed.key_code == MACOS_FN_KEY_CODE && modifiers == 0;
     if cfg!(target_os = "macos") && pressed.key_code == MACOS_FN_KEY_CODE && (modifiers != 0 || kind != ShortcutKind::Record) {
         return Err(Rejection::UnsupportedKey);
@@ -533,7 +535,7 @@ pub fn validate(
     if pressed.reserved || reserved(modifiers, &key) {
         return Err(Rejection::Reserved(format!("{}{key}", modifier_symbols(modifiers))));
     }
-    if !strong && !is_function_key(pressed.key_code) && !unmodified_copilot && !fn_only && modifiers != 0 {
+    if !strong && !is_function_key(pressed.key_code) && !copilot && !fn_only && modifiers != 0 {
         return Err(Rejection::NoModifier);
     }
     let label = format!("{}{key}", modifier_symbols(modifiers));
@@ -2988,6 +2990,15 @@ mod tests {
             &ShortcutKind::Paste.default_config(),
         ).unwrap();
         assert_eq!(bare.label, "Copilot");
+        for modifiers in [CARBON_CONTROL_KEY | CARBON_SHIFT_KEY, CARBON_SHIFT_KEY, CARBON_CMD_KEY] {
+            let selected = validate(ShortcutKind::Record,
+                &Pressed { key_code:201, modifiers, key:"Copilot".into(), reserved:false },
+                &ShortcutKind::Paste.default_config()).unwrap();
+            assert_eq!(selected.carbon_modifiers, modifiers);
+            assert_eq!(validate(ShortcutKind::Record,
+                &Pressed { key_code:201, modifiers, key:"Copilot".into(), reserved:true },
+                &ShortcutKind::Paste.default_config()), Err(Rejection::Reserved(selected.label)));
+        }
         save_shortcut_in(&path, ShortcutKind::Record, &cfg).unwrap();
         assert_eq!(Shortcuts::load_from(&path, &dir.0.join("legacy.json")).0.record, cfg);
         let saved = read_json(&path);

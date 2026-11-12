@@ -4,6 +4,17 @@ export type ShortcutKeyEvent = {
 
 export type ShortcutCapture = { keyCode: number; modifiers: number; key: string };
 
+// Modifier keydowns are intermediate input, not invalid shortcuts. In particular,
+// do not end listening before a person has pressed the chord's final key.
+export function shortcutInput(event: ShortcutKeyEvent, platform: 'macos'|'linux') {
+  if (['Control','Shift','Alt','Meta','AltGraph'].includes(event.key)) return 'pending';
+  if (platform === 'linux' && (event.key === 'Fn' || event.code === 'Fn')) return 'fn-unavailable';
+  // Chromium loses both identities for XF86Assistant on the X1 keymap. Ask the
+  // native adapter to confirm the held physical key; never infer it from null.
+  if (platform === 'linux' && event.key === '\u0000' && !event.code) return 'native-copilot';
+  return 'key';
+}
+
 // Fn flags changes do not reliably reach the renderer as keyboard events.
 export function fnShortcut(platform: 'macos'|'linux'): ShortcutCapture | null {
   return platform === 'macos' ? { keyCode: 63, modifiers: 0, key: 'Fn' } : null;
@@ -27,9 +38,8 @@ export function shortcutCapture(event: ShortcutKeyEvent, platform: 'macos'|'linu
   // whose keymap symbols include F23 and XF86Assistant. Electron may report the
   // F23 identity even though it is the Copilot physical key on this layout.
   const copilot = platform === 'linux' && (event.key === 'Copilot' || event.key === 'LaunchAssistant' || event.key === 'XF86Assistant' || event.key === 'F23' || event.key === '\u0000' && event.code === 'F23' || event.code === 'LaunchAssistant' || event.code === 'XF86Assistant' || event.code === 'Copilot' || event.code === 'F23');
-  if (copilot && !event.ctrlKey && !event.altKey &&
-      ((!event.metaKey && !event.shiftKey) || (event.metaKey && event.shiftKey))) {
-    return { keyCode: 201, modifiers: event.metaKey ? 768 : 0, key: 'Copilot' };
+  if (copilot) {
+    return { keyCode: 201, modifiers:(event.metaKey?256:0)|(event.shiftKey?512:0)|(event.altKey?2048:0)|(event.ctrlKey?4096:0), key: 'Copilot' };
   }
   const physical = /^(Key[A-Z]|Digit[0-9])$/.test(event.code) ? event.code.replace(/^(Key|Digit)/, '').toLowerCase() : event.key.toLowerCase();
   const key = platform === 'macos' ? physical : event.key.toLowerCase();

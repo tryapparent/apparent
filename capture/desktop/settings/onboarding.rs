@@ -1324,6 +1324,19 @@ impl Session {
                     };
                     let action = action.to_owned();
                     #[cfg(target_os="linux")]
+                    if action=="resolve-copilot" {
+                        // Chromium's XF86Assistant event has no key/code on the
+                        // X1 keymap. Resolve only a currently held native key,
+                        // never an arbitrary unidentified renderer event.
+                        let pressed = native_copilot_press().unwrap_or(crate::capture::desktop::settings::Pressed {
+                            key_code: 0, modifiers: 0, key: String::new(), reserved: false,
+                        });
+                        events(Event::Shortcut(crate::capture::desktop::settings::Action::Shortcut {
+                            kind: crate::capture::engine::runtime::ShortcutKind::Record, pressed,
+                        }));
+                        continue;
+                    }
+                    #[cfg(target_os="linux")]
                     if action=="shortcut-key" {
                         if let (Some(key),Some(modifiers))=(value["key"].as_str(),value["modifiers"].as_u64()) {
                             if key.len()<=32 && modifiers & !0x1b00 == 0 {
@@ -1843,6 +1856,21 @@ fn permission_guide_messages(view: &View) -> Vec<serde_json::Value> {
     }
     view.rows.iter().filter(|row|row.status==Status::Granted)
         .map(|row|serde_json::json!({"type":"close-guide","permission":row.permission})).collect()
+}
+
+#[cfg(target_os="linux")]
+fn native_copilot_press() -> Option<crate::capture::desktop::settings::Pressed> {
+    use crate::capture::desktop::linux::x11;
+    use crate::capture::engine::runtime::{CARBON_CMD_KEY, CARBON_SHIFT_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY};
+    let keys = x11::keys_down()?;
+    // This stored identity is valid only on a keymap exposing F23/Assistant at
+    // code 201. Do not silently bind another physical key on a different map.
+    if !x11::key_is_down(&keys, 201) || !matches!(x11::keysym_at(201), Some(0xffd4 | 0x10081247)) { return None; }
+    let m = x11::pointer_state()?;
+    let modifiers = [(m.super_key, CARBON_CMD_KEY), (m.shift, CARBON_SHIFT_KEY),
+        (m.ctrl, CARBON_CONTROL_KEY), (m.alt, CARBON_OPTION_KEY)]
+        .into_iter().filter(|(held, _)| *held).fold(0, |bits, (_, bit)| bits | bit);
+    Some(crate::capture::desktop::settings::Pressed { key_code:201, modifiers, key:"Copilot".into(), reserved:false })
 }
 
 fn read_protocol_line(reader: &mut impl std::io::BufRead, line: &mut Vec<u8>) -> std::io::Result<usize> {

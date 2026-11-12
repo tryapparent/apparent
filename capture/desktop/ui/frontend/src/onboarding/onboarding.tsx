@@ -10,7 +10,7 @@ import { practiceExit } from '../../electron/onboarding/presentation.ts';
 import { OnboardingAccount } from './account';
 import type { AccountState } from '../../electron/onboarding/account';
 import { subscribeOnboardingState } from './state';
-import { fnSelectionActions, shortcutCapture } from '../../electron/onboarding/shortcut-editor.ts';
+import { fnSelectionActions, shortcutCapture, shortcutInput } from '../../electron/onboarding/shortcut-editor.ts';
 import { Permissions, type PermissionRow as Row } from './permissions';
 type Action=string|{action:'shortcut';kind:'record';keyCode:number;modifiers:number;key:string;reserved:false};
 type Editor={recording:boolean;externallyManaged:boolean;error:string|null};
@@ -121,11 +121,16 @@ export function NativeOnboarding(){
       {state.shortcutEditor?.recording?<div ref={shortcutRecorder} tabIndex={0} role="group" aria-label="Shortcut recorder" onKeyDown={event=>{
       if(event.key==='Tab'||event.target!==event.currentTarget)return;
       event.preventDefault();if(event.key==='Escape'){void action('cancel-shortcut');return;}
+      if(event.repeat)return;
+      const input=shortcutInput(event,state.platform);
+      if(input==='pending'){setError('');return;}
+      if(input==='fn-unavailable'){setError('Fn is not available in this Linux shortcut recorder. Choose Copilot or another key.');return;}
+      if(input==='native-copilot'){void action('resolve-copilot');return;}
       const pressed=shortcutCapture(event,state.platform);
-      if(!pressed){setError(state.platform==='linux'?'Use a supported key by itself or with Control, Alt or Super, or Copilot alone or with Super+Shift.':'Use a supported key by itself or with Control, Option or Command, or Fn alone.');return;}
+      if(!pressed){setError(state.platform==='linux'?'Apparent cannot use that key. Try Copilot, a letter or a number.':'Apparent cannot use that key. Choose Fn, a letter or a number.');return;}
       setError('');
       void action({action:'shortcut',kind:'record',...pressed,reserved:false});
-      }}><p>Press a supported key or shortcut{state.platform==='macos'?', or choose Fn below.':'.'}</p><div className="native-shortcut-choices">{state.platform==='macos'&&<Button onClick={chooseFn}>Use Fn</Button>}<Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div></div>:<>
+      }}><p>Hold any modifiers, then press a key.</p>{state.platform==='linux'&&<p className="native-shortcut-detail">Copilot works alone or with modifiers. Linux may not receive the Fn key.</p>}<div className="native-shortcut-choices">{state.platform==='macos'&&<Button onClick={chooseFn}>Use Fn</Button>}<Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div></div>:<>
         {state.shortcutChosen?<kbd>{state.shortcut}</kbd>:state.shortcutEditor?.externallyManaged?<><p>Your desktop already has a recording shortcut:</p><kbd>{state.shortcut}</kbd></>:<p>No shortcut selected.</p>}
         <div className="native-shortcut-choices">{state.platform==='macos'&&!state.shortcutChosen&&<Button onClick={chooseFn}>Use Fn</Button>}{state.shortcutEditor?.externallyManaged&&<Button onClick={()=>void action('use-desktop-shortcut')}>Use {state.shortcut}</Button>}
         <Button variant="outline" onClick={()=>void action('change-shortcut')}>{state.shortcutEditor?.externallyManaged?'Choose another shortcut':state.shortcutChosen?'Change shortcut':'Choose shortcut'}</Button></div>{state.shortcutEditor?.externallyManaged&&<p className="native-shortcut-detail">Choosing another shortcut keeps the desktop binding available too.</p>}
