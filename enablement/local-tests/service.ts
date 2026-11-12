@@ -35,8 +35,9 @@ function git(cwd: string, env: NodeJS.ProcessEnv, args: string[]): string {
 
 // Content/mode/link identity permits an identical npm ci reinstall. The separate
 // stat identity detects replacement and mutate/restore races during one command.
+export type FileDigests = Map<string, {stamp: string; hash: string; native: boolean}>;
 export function files(paths: string[], allowedRoots: string[], committed = new Map<string, {oid: string; executable: boolean}>(),
-  identityRoots?: string[]) {
+  digests?: FileDigests, identityRoots?: string[]) {
   const content = createHash('sha256'), stability = createHash('sha256');
   const visited = new Set<string>(), keyedVisited = new Set<string>(), native = new Set<string>();
   const inside = (path: string) => allowedRoots.some(root => path === root || (!relative(root, path).startsWith('..') && !isAbsolute(relative(root, path))));
@@ -61,10 +62,19 @@ export function files(paths: string[], allowedRoots: string[], committed = new M
     } else if (before.isDirectory()) {
       for (const name of readdirSync(path).sort()) walk(join(path, name), includeKey);
     } else if (before.isFile()) {
-      const bytes = readFileSync(path);
-      if (expected && createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex') !== expected.oid) throw Error('source bytes differ from HEAD');
-      if (includeKey) content.update(digest(bytes));
-      if (bytes.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) native.add(path);
+      const identity = JSON.stringify(stamp());
+      let cached = digests?.get(path);
+      // Invocation-local only: re-stat every file, directory and link. ctime,
+      // inode, device, mode, size and mtime must all match before digest reuse.
+      // Committed-blob assertions always read bytes independently of this memo.
+      if (expected || cached?.stamp !== identity) {
+        const bytes = readFileSync(path);
+        if (expected && createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex') !== expected.oid) throw Error('source bytes differ from HEAD');
+        cached = {stamp: identity, hash: digest(bytes), native: bytes.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))};
+        if (!expected) digests?.set(path, cached);
+      }
+      if (includeKey) content.update(cached!.hash);
+      if (cached!.native) native.add(path);
     } else throw Error('unqualified special file');
     const after = lstatSync(path, {bigint: true});
     if (before.ino !== after.ino || before.dev !== after.dev || before.ctimeNs !== after.ctimeNs || before.mtimeNs !== after.mtimeNs) throw Error('input changed during hashing');
@@ -123,7 +133,7 @@ export function serviceSnapshot(cwd: string, env: NodeJS.ProcessEnv, admission: 
   // stability checks, while only service inputs contribute to test identity.
   // The service test closure also includes the full shared UI and asset trees:
   // recipient build/Tailwind and generated render assets consume them.
-  const source = files([...tracked, service], [cwd], committed,
+  const source = files([...tracked, service], [cwd], committed, undefined,
     [service, join(cwd, 'shared/ui'), join(cwd, 'shared/assets')]);
   const node = realpathSync(process.execPath);
   const runtimePaths = new Set([node, '/usr/bin/ldd', '/etc/ld.so.cache', '/etc/os-release',

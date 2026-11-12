@@ -2,10 +2,11 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHmac} from 'node:crypto';
 import {spawnSync, execFileSync} from 'node:child_process';
-import {chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync} from 'node:fs';
+import {chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {digest, receiptStore, reuse} from './receipt.ts';
 import {files, glibcNative, loaderPaths, npmConfiguration, serviceEnvironment, serviceTests} from './service.ts';
+import type {FileDigests} from './service.ts';
 import {root} from './run.ts';
 
 function fixture(action: (dir: string, env: NodeJS.ProcessEnv) => void) {
@@ -155,13 +156,13 @@ test('service identity ignores unrelated tracked bytes but preserves whole-sourc
   const serviceInput = join(service, 'package.json'), uiInput = join(ui, 'theme.css'), otherInput = join(unrelated, 'policy.rs');
   writeFileSync(serviceInput, 'service'); writeFileSync(uiInput, 'ui'); writeFileSync(otherInput, 'unrelated');
   const paths = [serviceInput, uiInput, otherInput], roots = [service, ui];
-  const initial = files(paths, [dir], new Map(), roots);
+  const initial = files(paths, [dir], new Map(), undefined, roots);
   writeFileSync(otherInput, 'changed unrelated');
-  const unrelatedChange = files(paths, [dir], new Map(), roots);
+  const unrelatedChange = files(paths, [dir], new Map(), undefined, roots);
   assert.equal(unrelatedChange.key, initial.key, 'unconsumed source bytes do not invalidate service tests');
   assert.notEqual(unrelatedChange.stable, initial.stable, 'all tracked source remains covered by mutation detection');
   writeFileSync(uiInput, 'changed ui');
-  assert.notEqual(files(paths, [dir], new Map(), roots).key, unrelatedChange.key, 'a consumed shared UI change invalidates service tests');
+  assert.notEqual(files(paths, [dir], new Map(), undefined, roots).key, unrelatedChange.key, 'a consumed shared UI change invalidates service tests');
 }));
 
 test('a qualified symlink binds its in-repository target even when first visited outside the closure', () => fixture(dir => {
@@ -169,9 +170,25 @@ test('a qualified symlink binds its in-repository target even when first visited
   mkdirSync(service, {recursive: true}); mkdirSync(outside, {recursive: true});
   const target = join(outside, 'shared-input'), link = join(service, 'shared-input');
   writeFileSync(target, 'one'); symlinkSync('../../capture/engine/shared-input', link);
-  const roots = [service], initial = files([target, link], [dir], new Map(), roots);
+  const roots = [service], initial = files([target, link], [dir], new Map(), undefined, roots);
   writeFileSync(target, 'two');
-  assert.notEqual(files([target, link], [dir], new Map(), roots).key, initial.key);
+  assert.notEqual(files([target, link], [dir], new Map(), undefined, roots).key, initial.key);
+}));
+
+test('invocation-local digest memo detects restored mtimes, replacement, modes and inventory changes', () => fixture(dir => {
+  const path = join(dir, 'module'); writeFileSync(path, 'original');
+  const memo: FileDigests = new Map();
+  const snapshot = () => files([dir], [dir], new Map(), memo);
+  const first = snapshot(), stamp = statSync(path);
+  assert.equal(snapshot().key, first.key);
+  writeFileSync(path, 'modified'); utimesSync(path, stamp.atime, stamp.mtime);
+  const modified = snapshot(); assert.notEqual(modified.key, first.key, 'ctime defeats mtime restoration');
+  writeFileSync(join(dir, 'replacement'), 'modified'); renameSync(join(dir, 'replacement'), path);
+  const replaced = snapshot(); assert.equal(replaced.key, modified.key); assert.notEqual(replaced.stable, modified.stable);
+  chmodSync(path, 0o755); assert.notEqual(snapshot().key, replaced.key);
+  writeFileSync(join(dir, 'added'), 'new'); assert.notEqual(snapshot().key, replaced.key);
+  const committed = new Map([[path, {oid: '0'.repeat(40), executable: true}]]);
+  assert.throws(() => files([path], [dir], committed, memo), /source bytes differ from HEAD/);
 }));
 
 test('source blobs and modes must match HEAD even when Git stat settings conceal edits', () => fixture((dir, env) => {

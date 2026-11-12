@@ -170,6 +170,7 @@ test('standalone Enablement regression tests select tooling while execution inpu
       browser:false, service:false, tools:false, hermes:false}, path);
     assert.deepEqual(localCommands(['tooling'], 'base', 'head').map(command => command.argv), [
       ['python3', 'enablement/verification.py', '--base', 'base', '--head', 'head', '--pr'],
+      ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'],
       ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'],
     ]);
     assert.ok(contractTests().some(command => command.argv.includes(path)), `${path} remains in the mandatory full contract inventory`);
