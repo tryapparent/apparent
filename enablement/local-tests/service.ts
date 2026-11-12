@@ -23,10 +23,10 @@ export function loaderPaths(output: string): string[] {
   });
 }
 const qualifiedPaths = ['connect/service', 'shared/ui', 'shared/assets'];
-// 49d3414b2: complete service tests/helpers/scripts/lock and shared source/assets.
+// 5d2931bb1: complete service tests/helpers/scripts/lock and shared source/assets.
 // Test fixtures use in-memory Miniflare and synthetic loopback services. No Git
 // ancestry, production credentials, browser, remote service or native app proof.
-const qualifiedTree = '88ca1a14744a5a67a2c398f2838e7facb8f35a20cabc46746f5059eb2aa6c045';
+const qualifiedTree = '3e42becfa9034cc4643bd8c49fcb021fe775db14510df6b27e398d330c73b9c6';
 const canonicalTest = 'npm run build && node --test --test-concurrency=1 test/*/*.test.mjs';
 
 function git(cwd: string, env: NodeJS.ProcessEnv, args: string[]): string {
@@ -35,30 +35,35 @@ function git(cwd: string, env: NodeJS.ProcessEnv, args: string[]): string {
 
 // Content/mode/link identity permits an identical npm ci reinstall. The separate
 // stat identity detects replacement and mutate/restore races during one command.
-export function files(paths: string[], allowedRoots: string[], committed = new Map<string, {oid: string; executable: boolean}>()) {
+export function files(paths: string[], allowedRoots: string[], committed = new Map<string, {oid: string; executable: boolean}>(),
+  identityRoots?: string[]) {
   const content = createHash('sha256'), stability = createHash('sha256');
-  const visited = new Set<string>(), native = new Set<string>();
+  const visited = new Set<string>(), keyedVisited = new Set<string>(), native = new Set<string>();
   const inside = (path: string) => allowedRoots.some(root => path === root || (!relative(root, path).startsWith('..') && !isAbsolute(relative(root, path))));
-  function walk(path: string) {
-    if (visited.has(path)) return;
+  const keyed = (path: string) => !identityRoots || identityRoots.some(root => path === root || path.startsWith(root + '/'));
+  function walk(path: string, inheritedKey = false) {
+    const includeKey = inheritedKey || keyed(path);
+    if (includeKey ? keyedVisited.has(path) : visited.has(path)) return;
+    const firstVisit = !visited.has(path);
+    if (includeKey) keyedVisited.add(path);
     visited.add(path);
     const before = lstatSync(path, {bigint: true});
     const expected = committed.get(path);
     if (expected && (!before.isFile() || Boolean(Number(before.mode) & 0o100) !== expected.executable)) throw Error('source type or mode differs from HEAD');
     const stamp = () => [before.dev, before.ino, before.mode, before.size, before.mtimeNs, before.ctimeNs].map(String);
-    stability.update(JSON.stringify([path, stamp()]));
-    content.update(JSON.stringify([path, String(before.mode)]));
+    if (firstVisit) stability.update(JSON.stringify([path, stamp()]));
+    if (includeKey) content.update(JSON.stringify([path, String(before.mode)]));
     if (before.isSymbolicLink()) {
-      content.update(readlinkSync(path));
+      if (includeKey) content.update(readlinkSync(path));
       const target = realpathSync(path);
       if (!inside(target)) throw Error('unqualified external symlink');
-      walk(target);
+      walk(target, includeKey);
     } else if (before.isDirectory()) {
-      for (const name of readdirSync(path).sort()) walk(join(path, name));
+      for (const name of readdirSync(path).sort()) walk(join(path, name), includeKey);
     } else if (before.isFile()) {
       const bytes = readFileSync(path);
       if (expected && createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex') !== expected.oid) throw Error('source bytes differ from HEAD');
-      content.update(digest(bytes));
+      if (includeKey) content.update(digest(bytes));
       if (bytes.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) native.add(path);
     } else throw Error('unqualified special file');
     const after = lstatSync(path, {bigint: true});
@@ -114,7 +119,12 @@ export function serviceSnapshot(cwd: string, env: NodeJS.ProcessEnv, admission: 
   const npm = npmConfiguration(service, env);
   // Hash ignored package inputs as well as every tracked source. Unknown extra
   // state in this package is included; escaping links and special files fail closed.
-  const source = files([...tracked, service], [cwd], committed);
+  // Validate every committed file against HEAD and retain whole-source
+  // stability checks, while only service inputs contribute to test identity.
+  // The service test closure also includes the full shared UI and asset trees:
+  // recipient build/Tailwind and generated render assets consume them.
+  const source = files([...tracked, service], [cwd], committed,
+    [service, join(cwd, 'shared/ui'), join(cwd, 'shared/assets')]);
   const node = realpathSync(process.execPath);
   const runtimePaths = new Set([node, '/usr/bin/ldd', '/etc/ld.so.cache', '/etc/os-release',
     '/etc/hosts', '/etc/resolv.conf', '/etc/nsswitch.conf', '/etc/localtime', '/proc/sys/kernel/random/boot_id',
@@ -130,7 +140,7 @@ export function serviceSnapshot(cwd: string, env: NodeJS.ProcessEnv, admission: 
   const runtime = files([...runtimePaths].map(path => realpathSync(path)), ['/']);
   const endMain = admitted(cwd, env, admission);
   if (main !== endMain) throw Error('base changed during fingerprint');
-  const identity = {tree, source: source.key, runtime: runtime.key, npm: npm.key, argv, cwd,
+  const identity = {source: source.key, runtime: runtime.key, npm: npm.key, argv, cwd,
     environment: Object.entries(env).sort(([a], [b]) => a.localeCompare(b)),
     versions: process.versions, platform: process.platform, arch: arch(), kernel: release(), umask: process.umask()};
   return {key: digest(JSON.stringify(identity)), stable: digest(JSON.stringify([source.stable, runtime.stable, npm.stable, main])), head: admission.head};

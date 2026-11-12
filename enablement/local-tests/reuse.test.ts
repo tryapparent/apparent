@@ -149,6 +149,31 @@ test('file identities include bytes, modes, link targets, inventory and dependen
   assert.throws(() => files([linked], [dir]), /external symlink/);
 }));
 
+test('service identity ignores unrelated tracked bytes but preserves whole-source stability and closure invalidation', () => fixture(dir => {
+  const service = join(dir, 'connect/service'), ui = join(dir, 'shared/ui'), unrelated = join(dir, 'capture/engine');
+  mkdirSync(service, {recursive: true}); mkdirSync(ui, {recursive: true}); mkdirSync(unrelated, {recursive: true});
+  const serviceInput = join(service, 'package.json'), uiInput = join(ui, 'theme.css'), otherInput = join(unrelated, 'policy.rs');
+  writeFileSync(serviceInput, 'service'); writeFileSync(uiInput, 'ui'); writeFileSync(otherInput, 'unrelated');
+  const paths = [serviceInput, uiInput, otherInput], roots = [service, ui];
+  const initial = files(paths, [dir], new Map(), roots);
+  writeFileSync(otherInput, 'changed unrelated');
+  const unrelatedChange = files(paths, [dir], new Map(), roots);
+  assert.equal(unrelatedChange.key, initial.key, 'unconsumed source bytes do not invalidate service tests');
+  assert.notEqual(unrelatedChange.stable, initial.stable, 'all tracked source remains covered by mutation detection');
+  writeFileSync(uiInput, 'changed ui');
+  assert.notEqual(files(paths, [dir], new Map(), roots).key, unrelatedChange.key, 'a consumed shared UI change invalidates service tests');
+}));
+
+test('a qualified symlink binds its in-repository target even when first visited outside the closure', () => fixture(dir => {
+  const service = join(dir, 'connect/service'), outside = join(dir, 'capture/engine');
+  mkdirSync(service, {recursive: true}); mkdirSync(outside, {recursive: true});
+  const target = join(outside, 'shared-input'), link = join(service, 'shared-input');
+  writeFileSync(target, 'one'); symlinkSync('../../capture/engine/shared-input', link);
+  const roots = [service], initial = files([target, link], [dir], new Map(), roots);
+  writeFileSync(target, 'two');
+  assert.notEqual(files([target, link], [dir], new Map(), roots).key, initial.key);
+}));
+
 test('source blobs and modes must match HEAD even when Git stat settings conceal edits', () => fixture((dir, env) => {
   const git = (...args: string[]) => execFileSync('git', args, {cwd: dir, env, encoding: 'utf8'}).trim();
   git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');

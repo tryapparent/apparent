@@ -4,8 +4,8 @@ import {readFileSync, readdirSync, mkdtempSync, rmSync, mkdirSync, writeFileSync
 import {execFileSync} from 'node:child_process';
 import {YAML} from 'bun';
 import {select, changedPaths, macDecision, requiresMacRust, selectRange, documentationOnlyPath, needsPlatform, requiresMacRustRange, presentationInputs} from './select.ts';
-import {selectedOwners, suitePlan, publicMarkdown, linuxDrivers} from './routing/consumers.ts';
-import {selection as localSelection, commands as localCommands} from '../local-tests/run.ts';
+import {selectedOwners, suitePlan, publicMarkdown, linuxDrivers, owners} from './routing/consumers.ts';
+import {selection as localSelection, commands as localCommands, contractTests} from '../local-tests/run.ts';
 
 const root = new URL('../../', import.meta.url);
 const workflow = (name: string) => YAML.parse(readFileSync(new URL(`.github/workflows/${name}`, root), 'utf8')) as any;
@@ -162,6 +162,24 @@ test('Linux drivers select launch-free contracts and Hermes changes select inspe
   assert.equal(suitePlan(['public/site/src/main.tsx']).hermes, false);
   assert.equal(suitePlan(['capture/desktop/ui/frontend/src/hermes/mailbox.ts']).hermes, true);
 });
+test('standalone Enablement regression tests select tooling while execution inputs and mixed changes retain consumers', () => {
+  const audited = ['enablement/local-tests/reuse.test.ts', 'enablement/prerequisites/native.test.ts'];
+  for (const path of audited) {
+    assert.deepEqual(selectedOwners([path]), ['tooling'], path);
+    assert.deepEqual(suitePlan([path]), {root:false, engine:false, desktop:false, client:false,
+      browser:false, service:false, tools:false, hermes:false}, path);
+    assert.deepEqual(localCommands(['tooling'], 'base', 'head').map(command => command.argv), [
+      ['python3', 'enablement/verification.py', '--base', 'base', '--head', 'head', '--pr'],
+      ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'],
+    ]);
+    assert.ok(contractTests().some(command => command.argv.includes(path)), `${path} remains in the mandatory full contract inventory`);
+  }
+  for (const path of ['enablement/prerequisites/native.ts', 'enablement/native-build/build.ts',
+    'enablement/prerequisites/new-regression.test.ts'])
+    assert.deepEqual(selectedOwners([path]), [...owners], path);
+  assert.deepEqual(selectedOwners([audited[0], 'capture/engine/src/lib.rs']), ['engine', 'tooling']);
+});
+
 function repository(action: (git: (...args: string[]) => string, dir: string) => void) {
   const dir = mkdtempSync((process.env.TMPDIR || '/tmp') + '/apparent-dev-selector-');
   const previous = process.cwd(), inherited = {...process.env};

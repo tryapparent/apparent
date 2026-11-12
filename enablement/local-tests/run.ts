@@ -38,9 +38,22 @@ export function captureToolTests(cwd = root): Command[] {
   // and does not recurse into these non-package test folders.
   const result = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/', 'capture/agent/scripts/'], { cwd, encoding: 'utf8' });
   if (result.error || result.status !== 0) throw Error('Cannot enumerate capture tooling tests');
-  return result.stdout.split('\0').filter(path => /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort()
-    .map(path => ({ argv: path.endsWith('.ts') ? ['node', '--experimental-strip-types', '--test', path] : ['python3', '-m', 'unittest', path], cwd: '.',
-      ...(path.endsWith('/test_issue_cli.py') ? {env: {APPARENT_BIN: resolve(cwd, process.env.CARGO_TARGET_DIR || 'target', 'debug/apparent')}} : {}) }));
+  const paths = result.stdout.split('\0').filter(path => /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort();
+  const nodeTests = paths.filter(path => path.endsWith('.test.ts'));
+  // Node's test runner isolates files in workers; keep it serial to retain the
+  // former sorted file order while paying for one runtime startup. Python tests
+  // remain separate because their imported modules can mutate process globals.
+  const nodeCommand = {argv: ['node', '--experimental-strip-types', '--test', '--test-concurrency=1', ...nodeTests], cwd: '.'};
+  const firstNode = paths.find(path => path.endsWith('.test.ts'));
+  const commands: Command[] = [];
+  for (const path of paths) {
+    if (path === firstNode) commands.push(nodeCommand);
+    else if (!path.endsWith('.test.ts')) commands.push({
+      argv: ['python3', '-m', 'unittest', path], cwd: '.',
+      ...(path.endsWith('/test_issue_cli.py') ? {env: {APPARENT_BIN: resolve(cwd, process.env.CARGO_TARGET_DIR || 'target', 'debug/apparent')}} : {})
+    });
+  }
+  return commands;
 }
 
 export function commands(selected: Owner[], base: string, head: string, platform = process.platform, rustChanged = true): Command[] {

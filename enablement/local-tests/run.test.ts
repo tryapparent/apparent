@@ -201,7 +201,7 @@ test('capture script changes execute offline contracts including hyphenated and 
   }
   for (const args of [['init', '-q'], ['add', '.']]) assert.equal(spawnSync('git', args, { cwd: dir, env }).status, 0);
   const suites = captureToolTests(dir);
-  assert.equal(suites.length, 6);
+  assert.equal(suites.length, 6, 'five Python files stay isolated and the Node files share one runner');
   assert.ok(suites.some(command => command.argv.includes('capture/desktop/scripts/new/test_new.py')));
   const hyphenated = suites.find(command => command.argv.includes('capture/desktop/scripts/linux/gui/test-gui-vm.py'))!;
   assert.ok(hyphenated);
@@ -210,14 +210,36 @@ test('capture script changes execute offline contracts including hyphenated and 
   assert.throws(() => execute([hyphenated], dir), /failed \(1\)/);
   assert.equal(readFileSync(receipt, 'utf8'), 'executed');
   const typescript = suites.find(command => command.argv.includes('capture/desktop/scripts/linux/gui/input/qmp.test.ts'))!;
-  writeFileSync(join(dir, typescript.argv.at(-1)!), "import {test} from 'node:test'; test('must run', () => { throw Error('native input regression reached'); });\n");
+  const tsPath = 'capture/desktop/scripts/linux/gui/input/qmp.test.ts';
+  writeFileSync(join(dir, tsPath), "import {test} from 'node:test'; test('must run', () => { throw Error('native input regression reached'); });\n");
   // A nested Node runner otherwise inherits this test worker's recursion guard
   // and silently skips its files. Exercise the real hook's outside-worker env.
   const context = process.env.NODE_TEST_CONTEXT;
   delete process.env.NODE_TEST_CONTEXT;
   try { assert.throws(() => execute([typescript], dir), /failed \(1\)/); }
   finally { if (context !== undefined) process.env.NODE_TEST_CONTEXT = context; }
+  assert.ok(typescript.argv.includes('--test-concurrency=1'));
+  assert.ok(typescript.argv.indexOf('capture/agent/scripts/tests/provision-narrator.test.ts') < typescript.argv.indexOf(tsPath));
 }));
+
+test('real capture-tool inventory is unchanged while TypeScript tests use one ordered runner', () => {
+  const plan = captureToolTests();
+  const python = plan.filter(command => command.argv[0] === 'python3');
+  const node = plan.filter(command => command.argv[0] === 'node');
+  assert.equal(node.length, 1);
+  const tracked = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/', 'capture/agent/scripts/'],
+    {cwd: root, encoding: 'utf8'});
+  assert.equal(tracked.status, 0);
+  const inventory = tracked.stdout.split('\0').filter(path => /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort();
+  const pythonInventory = python.map(command => command.argv.at(-1)!);
+  const nodeCommand = node[0].argv;
+  const nodeInventory = nodeCommand.filter(arg => arg.endsWith('.test.ts'));
+  assert.deepEqual([...pythonInventory, ...nodeInventory].sort(), inventory);
+  assert.equal(python.length, inventory.filter(path => path.endsWith('.py')).length);
+  assert.ok(nodeCommand.includes('--test-concurrency=1'));
+  assert.ok(python.find(command => command.argv.at(-1)?.endsWith('/test_issue_cli.py'))?.env?.APPARENT_BIN,
+    'the CLI integration keeps its rebuilt-binary environment override');
+});
 
 test('new native prerequisite tests join the mandatory contract inventory automatically', () => fixture((dir) => {
   const folder = join(dir, 'enablement/prerequisites');

@@ -8,6 +8,16 @@ inputs and unsafe Git modes/types stay broad. Only proven concurrency-only
 workflow edits select tooling alone; execution-sensitive workflow changes retain
 integration coverage. Hosted and local execution use the same owner facts.
 
+The audited standalone regression files `local-tests/reuse.test.ts` and
+`prerequisites/native.test.ts` select tooling alone. Both remain in the always-run
+contract inventory. Execution sources, unknown test files and mixed changes keep
+their existing consumer coverage; this is not a blanket test-file exemption.
+
+Capture-tool Node tests share one serial `node --test` invocation with per-file
+worker isolation. Python tests retain separate interpreters, and the CLI test
+requiring `APPARENT_BIN` still follows the rebuilt native executable. The tracked
+file inventory and failure propagation remain required on both platforms.
+
 Local selections that need Rust check the existing private temporary-root contract
 before other commands. When Desktop is selected, its locked install, unit tests
 and complete Electron suite run before Rust verification. This catches missing
@@ -28,7 +38,7 @@ or a GUI launch; it does not establish app readiness or native acceptance.
 
 The local runner reuses successful Connect service serial Node tests on Linux x64/glibc by
 default when their qualified inputs match. The audited closure is pinned in
-`service.ts` to the service, shared UI and shared assets at `49d3414b2`. Changing
+`service.ts` to the service, shared UI and shared assets at `5d2931bb1`. Changing
 that closure runs the original `npm test`. Expanding qualification requires
 reviewing the command's transitive reads, subprocesses and environment again.
 The service's 102 tests use synthetic identities and in-memory Miniflare, including
@@ -58,9 +68,12 @@ same verifier prerequisite command before its package Cargo checks.
 
 Qualification also requires a clean checked-out exact HEAD, no hidden index
 flags and integration with the current `origin/main` checkpoint. The runner
-hashes the entire committed tree and actual source bytes, verifies every tracked
-file against its committed blob and executable bit independently of Git's stat
-cache, and binds all installed service
+verifies every tracked file against its committed blob and executable bit
+independently of Git's stat cache. The reusable identity binds the audited
+service, shared UI and shared asset inputs rather than unrelated tracked files,
+so a clean unrelated commit can reuse tests. All tracked files retain mutation
+detection during qualification and execution. Consumed symlink targets remain
+part of the identity even outside the named input directories. It also binds all installed service
 dependencies, generated build output, modes and internal symlink targets. The
 Node executable, kernel/boot, OS configuration and transitive ELF loader libraries
 of Node and installed glibc native dependencies are included. npm's inactive musl
