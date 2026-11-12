@@ -163,7 +163,6 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
-          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -193,7 +192,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.admit.outputs.sha }}
-          fetch-depth: 0
       - name: Prepare hosted Ubuntu package transport
         if: runner.os == 'Linux'
         uses: ./.github/actions/ubuntu-apt
