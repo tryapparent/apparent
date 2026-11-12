@@ -598,7 +598,8 @@ readable. Native focus, positioning, Shift input and real output acceptance on
 both platforms remain distinct from synthetic Electron/pipe tests.
 
 The shared Rust resolver is `capture::desktop::workflow::electron::resolve() -> Result<Resources>`;
-`Resources { executable, root }` supplies paths only. Surface owners launch their own
+`Resources { executable, root, native_executable }` supplies paths only; the native
+executable is resolved through CLI symlinks before locating assets. Surface owners launch their own
 entry and own protocol, child cleanup and native acceptance. Assets remain in
 `Contents/Resources/note-ui` on Mac and `usr/lib/apparent/note-ui` in Linux AppImages.
 The executable is the existing Settings runtime at `Contents/Resources/settings/runtime`

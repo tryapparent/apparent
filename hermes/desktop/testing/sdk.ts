@@ -1,21 +1,66 @@
-export const shared = { owner: { connectionId: 'local-A', profile: 'work' }, session: 'runtime-A', submissions: [] as unknown[], keyReads: [] as any[], key: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', routes: [{ connectionId: 'local-A', profile: 'work', targetProfile: 'work', mode: 'local' }], failSubmit: false, failLaunch: false, launchWait: null as Promise<void> | null, runtime: { instance_id: 'runtime-instance-A', profile_id: 'profile-A', authority_epoch: 1, capabilities: ['durable-admission-v1'] } };
+export const shared = {
+  owner: { connectionId: 'ssh-A', profile: 'work' }, session: 'runtime-A', storedSession: 'stored-A',
+  routes: [
+    { connectionId: 'ssh-A', profile: 'work', targetProfile: 'work', mode: 'remote' },
+    { connectionId: 'local-A', profile: 'default', targetProfile: 'default', mode: 'local' },
+  ],
+  requests: [] as unknown[], submissions: [] as Array<{ session: string; text: string }>, insertions: [] as Array<{ session: string; text: string; mode?: string }>, draftReads: [] as string[], opens: [] as unknown[], errors: [] as string[],
+  key: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', source: 'cccccccccccccccccccccccccccccccc',
+  draft: 'typed draft must remain unchanged', newDraft: 'typed draft must remain unchanged', acceptSubmit: true, acceptInsert: true,
+  draftReadGate: undefined as Promise<void> | undefined,
+  draftReadStart: undefined as (() => void) | undefined,
+  sessionCreate: { session_id: 'created-runtime', stored_session_id: 'created-stored' },
+  sessionCreateGate: undefined as Promise<void> | undefined,
+  sessionCreateStart: undefined as (() => void) | undefined,
+};
 export const host = {
-  state: { focusedSessionOwner: { get: () => shared.owner }, focusedSessionId: { get: () => shared.session } },
-  profileRoutes: async () => shared.routes,
-  retainProfile: async () => () => {},
-  requestProfile: async (route: unknown, method: string, params: unknown) => {
-    if (method === 'runtime.describe') return shared.runtime;
-    if (method === 'session.resume') return { session_id: (params as { session_id: string }).session_id, authority_epoch: shared.runtime.authority_epoch };
-    if (method === 'shell.exec' && (params as { command: string }).command.includes('cat "$apparent_bridge_dir/')) {
-      shared.keyReads.push({ route: { ...route as object }, params: { ...params as object } });
-      return { code: 0, stdout: shared.key, stderr: '' };
-    }
-    shared.submissions.push({ route: { ...route as object }, method, params: { ...params as object } });
-    if (method === 'shell.exec') await shared.launchWait;
-    if (method === 'shell.exec' ? shared.failLaunch : shared.failSubmit) throw new Error('Lost reply');
-    return method === 'shell.exec' ? { code: 0, stdout: '', stderr: '' } : { admission_id: 'accepted' };
+  state: {
+    focusedSessionOwner: { get: () => shared.owner },
+    focusedSessionId: { get: () => shared.session },
+    focusedStoredSessionId: { get: () => shared.storedSession },
   },
-  notify: () => {},
+  profileRoutes: async () => shared.routes,
+  requestProfile: async (route: any, method: string, params: any) => {
+    if (!['shell.exec', 'session.create'].includes(method)) throw new Error(`Unsupported stock profile contract method: ${method}`);
+    if (!route?.mode || !route?.connectionId || !route?.profile) throw new Error('Expected a profile route descriptor');
+    if (method === 'shell.exec' && (!params || typeof params.command !== 'string' || 'session_id' in params || Object.keys(params).some(key => !['command', 'profile'].includes(key)))) throw new Error('Unexpected shell.exec parameters');
+    if (method === 'session.create' && (!params || typeof params.idempotency_key !== 'string' || Object.keys(params).some(key => !['idempotency_key'].includes(key)))) throw new Error('Unexpected session.create parameters');
+    shared.requests.push({ route: { ...route }, method, params: { ...params } });
+    if (method === 'session.create') {
+      shared.sessionCreateStart?.();
+      if (shared.sessionCreateGate) await shared.sessionCreateGate;
+      return { ...shared.sessionCreate };
+    }
+    if (params.command.includes('/apparent-hermes/')) return { code: 0, stdout: shared.key, stderr: '' };
+    return { code: 0, stdout: '', stderr: '' };
+  },
+  openSession: async (storedSession: string, options: any) => {
+    shared.opens.push({ storedSession, options: structuredClone(options) });
+    shared.owner = { connectionId: options.route.connectionId, profile: options.route.profile };
+    shared.session = 'resumed-runtime';
+    shared.storedSession = storedSession;
+  },
+  composer: {
+    getDraft: async (session: string) => {
+      shared.draftReads.push(session);
+      if (shared.draftReadGate) { shared.draftReadStart?.(); await shared.draftReadGate; }
+      if (session === 'new') return shared.newDraft;
+      return session === shared.session || session === shared.storedSession ? shared.draft : null;
+    },
+    insertText: async (session: string, text: string, options?: { mode?: string }) => {
+      if (session !== shared.session || !shared.acceptInsert) return false;
+      shared.insertions.push({ session, text, mode: options?.mode });
+      shared.draft = shared.draft ? `${shared.draft}\n\n${text}` : text;
+      return true;
+    },
+    setDraft: async () => { throw new Error('Plugin must not replace composer drafts'); },
+    submit: (session: string, text: string) => {
+      if (session !== shared.session || !shared.acceptSubmit) return false;
+      shared.submissions.push({ session, text });
+      return true;
+    },
+  },
+  notify: (notice: { message: string }) => { shared.errors.push(notice.message); },
 };
 export const COMPOSER_AREAS = { actions: 'composer.actions' };
 export const PALETTE_AREA = 'palette';

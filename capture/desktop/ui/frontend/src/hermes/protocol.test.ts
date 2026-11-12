@@ -1,7 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Recording, destination } from './protocol.ts';
+import { recorderLaunch } from './launch.ts';
 const id = '0123456789abcdef0123456789abcdef';
+test('installed Mac cold launch selects the exact bundle through Launch Services without activation or a duplicate instance', () => {
+  const bundle = '/Users/test/My Apps/Apparent Preview.app';
+  assert.deepEqual(recorderLaunch(`${bundle}/Contents/MacOS/apparent`, 'darwin'), {
+    file: '/usr/bin/open', args: ['-g', '-a', bundle, '--args', 'launch', '--background'], waitForExit: true,
+  });
+});
+test('Linux and unbundled development retain direct background launch; malformed executable paths are refused', () => {
+  for (const [executable, platform] of [['/opt/Apparent.AppImage', 'linux'], ['/private/job/cli.ts', 'darwin']] as const) {
+    assert.deepEqual(recorderLaunch(executable, platform), {
+      file: executable, args: ['launch', '--background'], waitForExit: false,
+    });
+  }
+  for (const executable of ['apparent', '/Applications/Apparent.app/Contents/MacOS/apparent\0']) assert.throws(() => recorderLaunch(executable, 'darwin'));
+});
 test('capture ownership survives readiness timeout without starting another take', async () => {
   const calls: string[][] = [];
   const recording = new Recording(id, async args => { calls.push(args); return { capture_id: id, status: args[1] === 'start' ? 'starting' : 'saved', error: args[1] === 'start' ? 'timeout' : null, source: '/private/owned.apparent' }; });

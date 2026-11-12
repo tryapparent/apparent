@@ -1,9 +1,10 @@
 // Disposable hosted-Mac CI driver, not application behavior or native proof.
 // Readiness callbacks may poll read-only state; mutation callbacks run once.
-// Hosted-Mac receipts show AppKit ownership checks taking ~3s before the first
-// AX query. Give the complete picker command a finite allowance for that startup;
+// Hosted-Mac receipts show AppKit ownership checks taking 3–4s before the first
+// AX query, with a 5s command killed during the subsequent sheet traversal.
+// Allow the same 8s as the existing picker-readiness observation window;
 // the caller still clips every call to the original 95s overall test deadline.
-export const pickerCommandMs = 5000;
+export const pickerCommandMs = 8000;
 export type PickerDriver = {
   storageIdle: () => Promise<void>;
   change: () => Promise<void>;
@@ -51,8 +52,10 @@ on run argv
   set nativeApp to my ownedApplication(targetPID, expectedExecutable)
   if ((nativeApp's bundleIdentifier()) as text) is not (item 5 of argv) then error "Owned Electron bundle identity differs"
   tell application "System Events"
-    set owned to first application process whose unix id is targetPID
-    set observedPID to unix id of owned
+    -- Retain the PID filter itself, rather than a resolved process reference
+    -- that System Events may address by a shared Electron process name.
+    set owned to a reference to (first application process whose unix id is targetPID)
+    set observedPID to (get unix id of owned) as integer
     if observedPID is not targetPID then error "Owned AX process identifier differs; expected=" & targetPID & ";observed=" & observedPID
     tell owned
       if (count of windows) is 0 then error "Owned process has no AX windows; frontmost=" & (frontmost as text)
