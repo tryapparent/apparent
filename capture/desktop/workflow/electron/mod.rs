@@ -6,15 +6,19 @@ use std::path::{Path, PathBuf};
 pub(crate) struct Resources {
     pub executable: PathBuf,
     pub root: PathBuf,
+    pub native_executable: PathBuf,
 }
 
 pub(crate) fn resolve() -> Result<Resources> {
     let exe = std::env::current_exe()?;
-    let installed = exe.parent().context("Missing app directory")?;
-    resolve_from(installed, &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("capture/desktop/ui/frontend"))
+    resolve_from(&exe, &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("capture/desktop/ui/frontend"))
 }
 
-fn resolve_from(installed: &Path, development: &Path) -> Result<Resources> {
+fn resolve_from(executable: &Path, development: &Path) -> Result<Resources> {
+    // macOS current_exe() may identify ~/bin/apparent rather than the bundle
+    // target. Resolve it once for both asset discovery and subsequent launch.
+    let native_executable = executable.canonicalize().context("Missing app executable")?;
+    let installed = native_executable.parent().context("Missing app directory")?;
     #[cfg(target_os = "macos")]
     let root = installed.join("../Resources/note-ui");
     #[cfg(target_os = "linux")]
@@ -35,7 +39,7 @@ fn resolve_from(installed: &Path, development: &Path) -> Result<Resources> {
         binary.is_file() && root.join("dist/index.html").is_file(),
         "Desktop UI is missing; rebuild the packaged Electron frontend"
     );
-    Ok(Resources { executable: binary, root })
+    Ok(Resources { executable: binary, root, native_executable })
 }
 
 #[cfg(test)]
@@ -56,11 +60,19 @@ mod tests {
             std::fs::write(file, b"synthetic").unwrap();
         }
         std::fs::create_dir_all(&bin).unwrap();
-        let resources = resolve_from(&bin, &dir.join("unavailable-development")).unwrap();
-        assert_eq!(resources.executable.canonicalize().unwrap(), runtime.canonicalize().unwrap());
-        assert_eq!(resources.root.canonicalize().unwrap(), assets.canonicalize().unwrap());
+        let native = bin.join("apparent");
+        std::fs::write(&native, b"synthetic native executable").unwrap();
+        let alias = dir.join("bin/apparent");
+        std::fs::create_dir_all(alias.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&native, &alias).unwrap();
+        for executable in [&native, &alias] {
+            let resources = resolve_from(executable, &dir.join("unavailable-development")).unwrap();
+            assert_eq!(resources.executable.canonicalize().unwrap(), runtime.canonicalize().unwrap());
+            assert_eq!(resources.root.canonicalize().unwrap(), assets.canonicalize().unwrap());
+            assert_eq!(resources.native_executable, native.canonicalize().unwrap());
+        }
         std::fs::remove_file(runtime).unwrap();
-        assert!(resolve_from(&bin, &dir.join("unavailable-development")).is_err(), "an old popup runtime cannot mask a broken installed package");
+        assert!(resolve_from(&alias, &dir.join("unavailable-development")).is_err(), "an old popup runtime cannot mask a broken installed package");
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

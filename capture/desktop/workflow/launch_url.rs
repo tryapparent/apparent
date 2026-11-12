@@ -31,7 +31,7 @@ pub fn open_hermes(destination: &str, auto_start: bool) -> anyhow::Result<()> {
     command.arg(resources.root.join("dist/hermes-main.cjs"))
         .arg("--hermes-request").arg(destination);
     if auto_start { command.arg("--hermes-autostart"); }
-    command.arg("--apparent-executable").arg(std::env::current_exe()?)
+    command.arg("--apparent-executable").arg(resources.native_executable)
         .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()?;
     Ok(())
 }
