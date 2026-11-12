@@ -142,7 +142,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ runner.os == 'macOS' && '1.99.1' || 'stable' }}
+          toolchain: '1.99.1'
       - name: Normalize the disposable Intel Mac compiler inventory
         if: runner.os == 'macOS'
         uses: ./.github/actions/mac-rust-cache
@@ -231,8 +231,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         if: needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true'
         with:
-          # Keep the Mac cache compiler stable across hosted-image updates.
-          toolchain: ${{ runner.os == 'macOS' && '1.99.1' || 'stable' }}
+          # Keep both platforms on the validated native build-output layout.
+          toolchain: '1.99.1'
       - name: Normalize the disposable Intel Mac compiler inventory
         if: runner.os == 'macOS' && (needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true')
         uses: ./.github/actions/mac-rust-cache
