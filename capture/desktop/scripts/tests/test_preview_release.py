@@ -92,7 +92,7 @@ class PreviewReleaseTest(unittest.TestCase):
             self.assertTrue((root / "dist/preview-staging/Applications").is_symlink())
             installer = root / "dist/preview-staging/Install Apparent.app"
             installer_info = plistlib.loads((installer / "Contents/Info.plist").read_bytes())
-            self.assertEqual(installer_info["CFBundleIdentifier"], "dev.simonvanlaak.apparent.preview.installer")
+            self.assertEqual(installer_info["CFBundleIdentifier"], "dev.simonvanlaak.apparent.preview.installer.b123.2")
             self.assertEqual(installer_info["CFBundleVersion"], info["CFBundleVersion"])
             self.assertTrue((installer / "Contents/MacOS/Installer").is_file())
             payload = installer / "Contents/SharedSupport/Apparent Preview.app"
@@ -103,6 +103,14 @@ class PreviewReleaseTest(unittest.TestCase):
             # The updater archive remains the regular app, never the installer container.
             archive = (root / "dist/Apparent-Preview-0.123.2-arm64.zip").read_text()
             self.assertEqual(archive, "fake zip:" + str(root / "dist/Apparent Preview.app"))
+            # Another build must not reuse a stuck older installer's identity.
+            env["APPARENT_PREVIEW_BUILD_NUMBER"] = "123.3"
+            newer = subprocess.run(["bash", str(root / "capture/desktop/scripts/packaging/build-mac-preview.sh")],
+                                   env=env, capture_output=True, text=True, cwd=root)
+            self.assertEqual(newer.returncode, 0, newer.stderr)
+            newer_info = plistlib.loads((installer / "Contents/Info.plist").read_bytes())
+            self.assertEqual(newer_info["CFBundleIdentifier"], "dev.simonvanlaak.apparent.preview.installer.b123.3")
+            self.assertNotEqual(newer_info["CFBundleIdentifier"], installer_info["CFBundleIdentifier"])
 
 
     def test_app_icon_uses_the_approved_boxed_a_not_the_wordmark_or_brush(self):
