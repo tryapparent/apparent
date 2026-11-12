@@ -29,14 +29,27 @@ shortcut capture/protocol admission, coach geometry, state subscription and pen
 save receipts. Newly added `tests/onboarding/*.test.ts` files join automatically;
 keep that suffix for headless checks and use `*.smoke.ts` for renderer checks.
 
-After `npm ci`, `npm run typecheck:onboarding-policy` checks those tests and their
-TypeScript policy providers without building the Desktop frontend. The canonical
-`npm test` also runs this typecheck, so CI catches policy/test type errors. Neither
-command exercises React rendering or the real Rust/native providers. Continue
+For source tests and scoped typechecking together, run from the repository root:
+
+```sh
+node --experimental-strip-types enablement/local-tests/run.ts --onboarding
+```
+
+This is the same inventory used by the clean Node CI job: source tests first,
+then a locked install of only the onboarding TypeScript toolchain, then its
+typecheck. It needs no frontend installation, Electron, display or Rust outputs.
+After a full frontend `npm ci`, `npm run typecheck:onboarding-policy` remains
+available; canonical `npm test` also runs that check. These policy commands do
+not exercise React rendering or the real Rust/native providers. Continue
 to run the canonical `npm test`, `npm run test:electron` and affected native
 acceptance before delivery; their coverage and release admission are unchanged.
 These focused checks are a fast product-development loop, not an independent
 onboarding release lane.
+
+Ordinary `git push` uses the shared range selector and executor under
+`enablement/local-tests/`; use the normal hook rather than replacing it with a
+focused command. Policy-only changes retain their Desktop/Electron consumers;
+bridge, persistence, native and mixed changes retain their integration gates.
 
 The separate installed `--controls` presentation is Linux's no-tray fallback.
 It reuses this packaged runtime and shared buttons, with four allowlisted parent-pipe
