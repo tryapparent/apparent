@@ -163,7 +163,7 @@ jobs:
         if: runner.os == 'Linux' && runner.arch == 'X64'
         # Pin the reviewed helper independently of the checked-out release tag.
         # ARM uses ubuntu-ports and retains its existing package source path.
-        uses: tryapparent/apparent/.github/actions/ubuntu-apt@24373d9bf2f3bcd3cfbf9a833c9e6dfebf3d16f6
+        uses: tryapparent/apparent/.github/actions/ubuntu-apt@22b91130f8b1e8ed98d505e5a64241d34848e6a8
       - uses: actions/setup-node@v4
         with:
           node-version: '22.23.0'
