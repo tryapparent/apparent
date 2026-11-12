@@ -334,6 +334,8 @@ alongside the generic foundation and all other existing renderer smokes. Linux
 Xvfb runs verify renderer integration only, not native permissions or platform
 acceptance.
 
+Both Electron commands run `typecheck:onboarding-renderer` before the production build. Its renderer-local strict TypeScript config checks `window-coach.smoke.ts` with the frontend Node and Playwright types, so unresolved imports and fixture typing errors fail before Electron starts. The scoped config lives under `tests/onboarding/renderer/`; the smoke still resolves `path.join(__dirname, '..')` to the frontend root. This check does not replace the renderer or native acceptance gates.
+
 The Electron smoke checks controls/keyboard use, disconnected/error/reconnect,
 renderer reload, minimum-width layout, sandbox/Node isolation, navigation/network
 refusal and rejection of a second renderer. It is not native platform acceptance.
