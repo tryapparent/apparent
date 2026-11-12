@@ -1,5 +1,9 @@
 Consumer selection, exact-tree PR evidence reuse and automatic Linux Main publication are documented in [continuous delivery](../docs/continuous-delivery.md). `routing/consumers.ts` owns the shared facts; native commands remain in the existing verifier adapter.
 
+Publication admission uses completed platform receipts even when GitHub marks
+the overall run `queued` because another platform is waiting for a runner.
+Exact main identity and successful platform/shared checks remain required.
+
 Ready-PR/manual platform verification opts into root test/build overlap. The
 verifier retains the Cargo inventory; `root.ts` starts the real app build only
 after Cargo reports successful test compilation. Two test threads overlap one

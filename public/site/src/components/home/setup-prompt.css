@@ -1,0 +1,9 @@
+.hero-setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px; margin-top: 26px; pointer-events: auto; }
+:root .pond-copy .hero-setup-actions .pond-download { margin-top: 0; }
+:root .hero-setup-actions .pond-download .btn-primary { background: var(--apparent-site-paper) !important; color: var(--apparent-site-carbon) !important; border: 1px solid var(--color-border); }
+.setup-prompt { position: relative; z-index: 2; pointer-events: auto; width: 280px; max-width: 100%; }
+.setup-prompt-field { display: flex; align-items: center; gap: 4px; padding: 3px; border: 1px solid var(--color-border); background: var(--color-surface); }
+.setup-prompt-field input { min-width: 0; width: 100%; padding: 8px; border: 0; border-radius: 0; background: transparent; color: var(--color-foreground); font: inherit; font-size: 14px; text-overflow: ellipsis; }
+.setup-prompt-field .copy { flex: none; min-width: 68px; min-height: 40px; padding: 8px 12px; border: 0; border-radius: 0; background: var(--color-primary); color: var(--color-primary-foreground); font: inherit; font-size: 14px; cursor: pointer; transition: none; }
+.setup-prompt-field .copy:hover { opacity: .9; }
+.setup-prompt-field :is(input,button):focus-visible { outline: 2px solid var(--color-ring); outline-offset: 2px; }
