@@ -16,6 +16,7 @@ for (const key of Object.keys(environment)) {
 }
 let directory: string;
 let emitter: string;
+let staging: string;
 
 function run(command: string, args: string[], cwd: string, env = environment): string {
   const result = spawnSync(command, args, { cwd, env, encoding: 'utf8', timeout: 30_000 });
@@ -29,6 +30,8 @@ before(() => {
   copyFileSync(join(root, 'enablement/build_version.rs'), join(directory, 'build_version.rs'));
   writeFileSync(join(directory, 'main.rs'), 'mod build_version;\nfn main() { build_version::emit(); }\n');
   run('rustc', ['--edition=2024', join(directory, 'main.rs'), '-o', emitter], root);
+  staging = join(directory, 'staging');
+  run('rustc', ['--edition=2024', join(root, 'build.rs'), '-o', staging], root);
 });
 after(() => { if (directory) rmSync(directory, { recursive: true, force: true }); });
 
@@ -39,6 +42,27 @@ function identity(source: string, githubSha = ''): Record<string, string> {
   return Object.fromEntries([...output.matchAll(/^cargo:rustc-env=([^=]+)=(.*)$/gm)]
     .map(match => [match[1], match[2]]));
 }
+
+test('Linux runtime staging follows both Cargo output layouts to the binary and test directories', () => {
+  const runtime = join(directory, 'runtime'), modules = join(directory, 'modules');
+  mkdirSync(runtime); mkdirSync(modules);
+  writeFileSync(join(runtime, 'libtranscribe.so.0.2'), 'synthetic runtime');
+  writeFileSync(join(modules, 'libggml-cpu-x64.so'), 'synthetic backend');
+  writeFileSync(join(runtime, 'not-a-library.txt'), 'exclude');
+  for (const layout of ['apparent-hash/out', 'apparent/hash/out']) {
+    const profile = join(directory, layout.includes('-') ? 'legacy/debug' : 'current/custom-profile');
+    const output = join(profile, 'build', layout);
+    mkdirSync(output, { recursive: true });
+    run(staging, [], root, { ...environment, CARGO_MANIFEST_DIR: root, CARGO_PKG_VERSION: version,
+      CARGO_CFG_TARGET_OS: 'linux', OUT_DIR: output,
+      DEP_TRANSCRIBE_CPP_RUNTIME_DIR: runtime, DEP_TRANSCRIBE_CPP_MODULE_DIR: modules });
+    for (const destination of [profile, join(profile, 'deps')]) {
+      assert.equal(readFileSync(join(destination, 'libtranscribe.so.0.2'), 'utf8'), 'synthetic runtime');
+      assert.equal(readFileSync(join(destination, 'libggml-cpu-x64.so'), 'utf8'), 'synthetic backend');
+      assert.equal(existsSync(join(destination, 'not-a-library.txt')), false);
+    }
+  }
+});
 
 test('ordinary long version matches the compiled candidate; short version stays compatible', () => {
   const binary = process.env.APPARENT_BIN;

@@ -4,7 +4,7 @@ import {readFileSync, readdirSync, mkdtempSync, rmSync, mkdirSync, writeFileSync
 import {execFileSync} from 'node:child_process';
 import {YAML} from 'bun';
 import {select, changedPaths, macDecision, requiresMacRust, selectRange, documentationOnlyPath, needsPlatform, requiresMacRustRange, presentationInputs} from './select.ts';
-import {selectedOwners, suitePlan, publicMarkdown, linuxDrivers, owners} from './routing/consumers.ts';
+import {selectedOwners, suitePlan, routeDecision, publicMarkdown, linuxDrivers, owners} from './routing/consumers.ts';
 import {selection as localSelection, commands as localCommands, contractTests} from '../local-tests/run.ts';
 
 const root = new URL('../../', import.meta.url);
@@ -89,18 +89,19 @@ test('Linux release waits for exact-main admission without waiting for Mac', () 
   assert.equal(workflow('release-linux.yml').concurrency['cancel-in-progress'], false);
   assert.match(workflow('release-linux.yml').jobs.admit.steps.find((s: any) => s.id === 'gate').run, /--platform linux --sha/);
 });
-test('Hermes-only changes never start unrelated Linux packaging; mixed and unknown inputs retain publication',()=>{
+test('only installer inputs publish Linux; unknown installer selection remains conservative',()=>{
  const expression=ci().jobs['release-linux'].if;
  const outputs=(paths:string[]|null)=>{
   const plan=suitePlan(paths);
-  return {hermes:String(plan.hermes),platform:String(needsPlatform(paths)),public:String(select(paths).public),portable:String(plan.browser||plan.service||plan.tools)};
+  return {installer:String(routeDecision(paths).installer),hermes:String(plan.hermes),platform:String(needsPlatform(paths)),public:String(select(paths).public),portable:String(plan.browser||plan.service||plan.tools)};
  };
  const allowed=(value:any)=>admitted(expression,{...parents(value),'linux-admission':{result:'success'}},'push');
  for(const path of ['hermes/desktop/controller.ts','hermes/plugin.yaml','hermes/tests/test_inspect.py','.github/workflows/hermes.yml'])assert.equal(allowed(outputs([path])),false,path);
- for(const path of ['capture/engine/runtime/recording/mod.rs','capture/agent/setup/hermes.ts','public/site/src/main.tsx','connect/web/src/main.tsx'])assert.equal(allowed(outputs(['hermes/plugin.yaml',path])),true,path);
+ for(const path of ['capture/engine/runtime/recording/mod.rs','capture/agent/setup/hermes.ts'])assert.equal(allowed(outputs(['hermes/plugin.yaml',path])),true,path);
+ for(const path of ['public/site/src/main.tsx','connect/web/src/main.tsx','capture/desktop/ui/frontend/tests/onboarding/account.test.ts','AGENTS.md'])assert.equal(allowed(outputs([path])),false,path);
  assert.equal(allowed(outputs(null)),true);
- for(const key of ['hermes','platform','public','portable']){
-  const unknown:any=outputs(['hermes/plugin.yaml']);delete unknown[key];assert.equal(allowed(unknown),true,key);
+ for(const key of ['installer','hermes','platform','public','portable']){
+  const unknown:any=outputs(['hermes/plugin.yaml']);delete unknown[key];assert.equal(allowed(unknown),key==='installer',key);
  }
 });
 test('Linux publication survives intentional ancestor skips but requires successful exact-main admission', () => {
@@ -163,7 +164,7 @@ test('ordinary prose composes with Linux-only exemptions; shipped instructions a
   }
   for (const path of ['unknown.md', 'unknown/docs/test.md',
     'Cargo.toml', 'Cargo.lock', 'build.rs', 'enablement/native-build/build.ts',
-    'capture/desktop/native/Settings.swift', 'capture/desktop/assets/app-icon.png', 'public/site/unknown.rs']) {
+    'capture/desktop/native/Settings.swift', 'capture/desktop/assets/app-icon.png']) {
     assert.equal(needsPlatform([path]), true, path);
   }
   for (const paths of [null, []]) assert.equal(needsPlatform(paths), true);
@@ -178,8 +179,8 @@ test('standalone Enablement regression tests select tooling while execution inpu
   const audited = ['enablement/local-tests/reuse.test.ts', 'enablement/prerequisites/native.test.ts'];
   for (const path of audited) {
     assert.deepEqual(selectedOwners([path]), ['tooling'], path);
-    assert.deepEqual(suitePlan([path]), {root:false, engine:false, desktop:false, client:false,
-      browser:false, service:false, tools:false, hermes:false}, path);
+    assert.deepEqual(suitePlan([path]), {root:false, engine:false, desktop:false, client:false, foreground:false,
+      browser:false, service:false, tools:false, hermes:false, public:false, tooling:true, onboarding:false}, path);
     assert.deepEqual(localCommands(['tooling'], 'base', 'head').map(command => command.argv), [
       ['python3', 'enablement/verification.py', '--base', 'base', '--head', 'head', '--pr'],
       ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'],
@@ -187,9 +188,9 @@ test('standalone Enablement regression tests select tooling while execution inpu
     ]);
     assert.ok(contractTests().some(command => command.argv.includes(path)), `${path} remains in the mandatory full contract inventory`);
   }
-  for (const path of ['enablement/prerequisites/native.ts', 'enablement/native-build/build.ts',
-    'enablement/prerequisites/new-regression.test.ts'])
-    assert.deepEqual(selectedOwners([path]), [...owners], path);
+  assert.deepEqual(selectedOwners(['enablement/prerequisites/native.ts']), ['capture', 'engine', 'desktop', 'client']);
+  assert.deepEqual(selectedOwners(['enablement/native-build/build.ts']), ['capture', 'engine', 'desktop', 'capture-tools', 'client']);
+  assert.deepEqual(selectedOwners(['enablement/prerequisites/new-regression.test.ts']), ['tooling']);
   assert.deepEqual(selectedOwners([audited[0], 'capture/engine/src/lib.rs']), ['engine', 'tooling']);
 });
 
@@ -319,9 +320,9 @@ test('audited Record inputs retain Desktop and native platform consumers only', 
   for (const pkg of ['storage', 'completion']) {
     for (const input of ['src/policy.ts', 'test/policy.test.ts', 'package.json', 'package-lock.json', 'tsconfig.json', ...(pkg === 'storage' ? ['build.ts'] : [])]) {
       const paths = [`record/${pkg}/${input}`];
-      assert.deepEqual(selectedOwners(paths), ['capture', 'desktop']);
-      assert.deepEqual(suitePlan(paths), {root: true, engine: false, desktop: true, client: false,
-        browser: false, service: false, tools: false, hermes: false});
+      assert.deepEqual(selectedOwners(paths), ['capture', 'desktop', 'onboarding']);
+      assert.deepEqual(suitePlan(paths), {root: true, engine: false, desktop: true, client: false, foreground: false,
+        browser: false, service: false, tools: false, hermes: false, public: false, tooling: false, onboarding: true});
       assert.deepEqual(select(paths), {public: false, updater: false});
       assert.equal(needsPlatform(paths), true);
       assert.equal(macDecision(paths).macos, true);
@@ -329,10 +330,10 @@ test('audited Record inputs retain Desktop and native platform consumers only', 
     }
     assert.deepEqual(selectedOwners([`record/${pkg}/AGENTS.md`]), []);
     for (const input of ['instructions/AGENTS.md', 'src/SKILL.md', 'native.rs', 'native.swift', 'native.S', 'Cargo.toml', 'src/unknown.bin', 'build.sh'])
-      assert.deepEqual(selectedOwners([`record/${pkg}/${input}`]), selectedOwners(null));
+      assert.deepEqual(selectedOwners([`record/${pkg}/${input}`]), ['capture', 'engine', 'desktop', 'onboarding']);
   }
-  assert.deepEqual(selectedOwners(['record/unknown/src/policy.ts']), selectedOwners(null));
-  assert.deepEqual(selectedOwners(['record/storage/src/policy.ts', 'connect/web/src/api.ts']), ['capture', 'desktop', 'web']);
+  assert.deepEqual(selectedOwners(['record/unknown/src/policy.ts']), ['capture', 'engine', 'desktop', 'onboarding']);
+  assert.deepEqual(selectedOwners(['record/storage/src/policy.ts', 'connect/web/src/api.ts']), ['capture', 'desktop', 'web', 'onboarding']);
 });
 
 test('Hermes owns independent package verification and publication; native admission has no Hermes ancestors',()=>{

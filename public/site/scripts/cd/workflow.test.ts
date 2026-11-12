@@ -5,6 +5,7 @@ import {mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync, 
 import {dirname, join} from 'node:path'
 import {tmpdir} from 'node:os'
 import {YAML} from 'bun'
+import {streamPaths} from '../../../../enablement/ci/routing/streams.ts'
 import {selectRange} from '../../../../enablement/ci/select.ts'
 
 const root = new URL('../../../../', import.meta.url)
@@ -36,7 +37,7 @@ test('Public owns direct main/PR/dispatch entrypoints and full-delta selection',
   assert.deepEqual(Object.keys(workflow.on), ['pull_request', 'push', 'workflow_dispatch'])
   for (const event of ['push', 'pull_request']) {
     assert.deepEqual(workflow.on[event].branches, ['main'])
-    assert.equal(workflow.on[event].paths, undefined, 'unknown inputs must reach the fail-closed selector')
+    assert.deepEqual(workflow.on[event].paths, streamPaths.public, 'automatic entry follows directory ownership')
     assert.equal(workflow.on[event]['paths-ignore'], undefined)
   }
   assert.deepEqual(workflow.on.pull_request.types, ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft'])
@@ -46,11 +47,11 @@ test('Public owns direct main/PR/dispatch entrypoints and full-delta selection',
   assert.equal(checkout.with.ref, undefined, 'PRs verify GitHub’s proposed merge')
   const select = jobs.select.steps.find((s: any) => s.id === 'paths')
   assert.equal(select.env.BASE_SHA, '${{ github.event.pull_request.base.sha || github.event.before }}')
-  assert.equal(select.run, 'node --experimental-strip-types enablement/ci/select.ts')
+  assert.equal(select.run, 'node --experimental-strip-types enablement/ci/select.ts --admit')
   assert.equal(jobs.select.outputs.public, '${{ steps.paths.outputs.public }}')
   assert.equal(jobs.verify.needs, 'select')
   assert(jobs.verify.steps.some((s: any) => s.run === 'npm run verify'))
-  assert.equal(jobs.deploy.needs, 'verify')
+  assert.deepEqual(jobs.deploy.needs, ['select', 'verify'])
   assert(!Object.values(jobs).some((job: any) => job.uses?.includes('checks.yml')))
 })
 
@@ -61,7 +62,7 @@ test('only explicit irrelevant PR selection skips Public; failed/unknown routing
   for (const selected of ['true', '', 'unknown', undefined])
     assert.equal(admitted(jobs.verify, {event: 'pull_request', selected}), true, String(selected))
   for (const event of ['push', 'workflow_dispatch'])
-    assert.equal(admitted(jobs.verify, {event, selected: 'false'}), true, 'main carries unfinished Public changes')
+    assert.equal(admitted(jobs.verify, {event, selected: 'false'}), false, 'local and hosted selection use the same explicit suite plan')
   assert.equal(admitted(jobs.verify, {cancelled: true}), false)
 })
 

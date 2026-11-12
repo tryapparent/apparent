@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { currentStream } from '../../../../enablement/ci/routing/streams.ts'
 import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
@@ -47,12 +48,17 @@ async function ghCompare(path: string): Promise<{ status: string }> {
   if (!['ahead', 'identical', 'behind', 'diverged'].includes(status)) throw new Error('Invalid GitHub comparison status')
   return { status }
 }
-export async function publicationNeeded(repo: string, sha: string, published: string | null, compare = ghCompare): Promise<boolean> {
+function unchangedPublic(sha: string): boolean {
+  const result = spawnSync('git', ['fetch', 'origin', 'main'], {cwd: ROOT, encoding: 'utf8'})
+  if (result.status !== 0) throw new Error('Cannot refresh main publication inputs')
+  return currentStream('public', sha, 'origin/main', ROOT)
+}
+export async function publicationNeeded(repo: string, sha: string, published: string | null, compare = ghCompare, unchanged = unchangedPublic): Promise<boolean> {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) throw new Error('Invalid repository')
   for (const value of [sha, published]) if (value !== null && !/^[0-9a-f]{40}$/.test(value)) throw new Error('Unknown publication revision; refusing to guess ordering')
   const mainStatus = (await compare(`repos/${repo}/compare/${sha}...main`)).status
-  if (mainStatus === 'ahead') throw new SupersededMain('Candidate is no longer current main')
-  if (mainStatus !== 'identical') throw new Error('Candidate is no longer on main')
+  if (mainStatus === 'ahead' && !unchanged(sha)) throw new SupersededMain('Candidate is no longer current main for Public')
+  if (!['ahead', 'identical'].includes(mainStatus)) throw new Error('Candidate is no longer on main')
   if (published === null) return true
   const status = (await compare(`repos/${repo}/compare/${published}...${sha}`)).status
   if (status === 'ahead') return true
