@@ -108,7 +108,7 @@ test('each affected hosted dependency consumer prepares transport before install
    const steps=job.steps??[];
    const install=steps.findIndex((s:any)=>/apt-get|install-deps|with-deps|appimage\/dependencies/.test(s.run??''));
    if(install<0)continue;
-   const transport=steps.findIndex((s:any)=>s.uses==='./.github/actions/ubuntu-apt' || s.uses==='tryapparent/apparent/.github/actions/ubuntu-apt@24373d9bf2f3bcd3cfbf9a833c9e6dfebf3d16f6');
+   const transport=steps.findIndex((s:any)=>s.uses==='./.github/actions/ubuntu-apt' || s.uses==='tryapparent/apparent/.github/actions/ubuntu-apt@22b91130f8b1e8ed98d505e5a64241d34848e6a8');
    assert.ok(transport>=0 && transport<install,`${workflow}/${name}`);
    assert.equal(steps[transport].if,workflow==='release-linux.yml'?"runner.os == 'Linux' && runner.arch == 'X64'":"runner.os == 'Linux'");
   }
