@@ -22,9 +22,9 @@ function admitted(expression: string, needs: any, event = 'pull_request', draft 
 function parents(outputs: any = {}, reuse: any = {}) {
   return {contracts: {result: 'success'}, hermes: {result: 'success'}, select: {result: 'success', outputs}, reuse: {result: 'success', outputs: reuse}, portable: {result: 'success'}};
 }
-test('one automatic workflow, manual diagnostics, PR integration checkout and read-only verification', () => {
+test('automatic stream workflows, manual diagnostics, PR integration checkout and read-only verification', () => {
   assert.deepEqual(readdirSync(new URL('.github/workflows/', root)).filter(name =>
-    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))), ['checks.yml']);
+    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))), ['checks.yml', 'hermes.yml']);
   assert.deepEqual(Object.keys(ci().on), ['pull_request', 'push']);
   assert.deepEqual(ci().on.pull_request.types, ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft']);
   assert.equal(ci().permissions.contents, 'read');
@@ -43,9 +43,9 @@ test('PR updates coalesce but main commits cannot cancel earlier code verificati
     assert.equal(admitted(c['cancel-in-progress'].slice(3, -2), {}, String(event)), expected);
 });
 test('source suites run on ready PRs and main; unknown selection broadens and cancellation prevents allocation', () => {
-  for (const name of ['linux', 'macos', 'hermes-macos']) {
+  for (const name of ['linux', 'macos']) {
     const job = ci().jobs[name];
-    assert.deepEqual(job.needs, ['contracts', 'hermes', 'select', 'reuse', 'portable']);
+    assert.deepEqual(job.needs, ['contracts', 'select', 'reuse', 'portable']);
     for (const result of ['success', 'failure', 'skipped', 'cancelled']) {
       const needs = parents({platform: 'true', macos: 'true', mac_rust: 'true', hermes: 'true'});
       needs.select.result = result;
@@ -64,14 +64,12 @@ test('each consumer can be skipped independently; skipping Hermes does not block
   needs.hermes.result = 'skipped';
   assert.equal(admitted(jobs.linux.if, needs), true);
   assert.equal(admitted(jobs.macos.if, needs), true);
-  assert.equal(admitted(jobs['hermes-macos'].if, needs), false);
-  assert.equal(admitted(jobs.hermes.if, needs), false);
   needs.select.outputs.platform = 'false';
   assert.equal(admitted(jobs.linux.if, needs), false);
   assert.equal(admitted(jobs.macos.if, needs), false);
 });
 test('main reuses only explicit passed evidence; PRs cannot claim main reuse', () => {
-  for (const key of ['linux', 'macos', 'portable', 'hermes', 'hermes_macos']) {
+  for (const key of ['linux', 'macos', 'portable']) {
     const name = key === 'hermes_macos' ? 'hermes-macos' : key;
     const needs = parents({platform: 'true', macos: 'true', mac_rust: 'true', portable: 'true', hermes: 'true'}, {[key]: 'true'});
     assert.equal(admitted(ci().jobs[name].if, needs, 'push'), false, name);
@@ -83,7 +81,7 @@ test('main reuses only explicit passed evidence; PRs cannot claim main reuse', (
 });
 test('Linux release waits for exact-main admission without waiting for Mac', () => {
   const job = ci().jobs['release-linux'];
-  assert.deepEqual(job.needs, ['linux-admission']);
+  assert.deepEqual(job.needs, ['linux-admission','select']);
   assert.equal(job.uses, './.github/workflows/release-linux.yml');
   assert.equal(job.with.publish_main, true);
   assert.match(ci().jobs['linux-admission'].if, /github.event_name == 'push'/);
@@ -91,17 +89,31 @@ test('Linux release waits for exact-main admission without waiting for Mac', () 
   assert.equal(workflow('release-linux.yml').concurrency['cancel-in-progress'], false);
   assert.match(workflow('release-linux.yml').jobs.admit.steps.find((s: any) => s.id === 'gate').run, /--platform linux --sha/);
 });
+test('Hermes-only changes never start unrelated Linux packaging; mixed and unknown inputs retain publication',()=>{
+ const expression=ci().jobs['release-linux'].if;
+ const outputs=(paths:string[]|null)=>{
+  const plan=suitePlan(paths);
+  return {hermes:String(plan.hermes),platform:String(needsPlatform(paths)),public:String(select(paths).public),portable:String(plan.browser||plan.service||plan.tools)};
+ };
+ const allowed=(value:any)=>admitted(expression,{...parents(value),'linux-admission':{result:'success'}},'push');
+ for(const path of ['hermes/desktop/controller.ts','hermes/plugin.yaml','hermes/tests/test_inspect.py','.github/workflows/hermes.yml'])assert.equal(allowed(outputs([path])),false,path);
+ for(const path of ['capture/engine/runtime/recording/mod.rs','capture/agent/setup/hermes.ts','public/site/src/main.tsx','connect/web/src/main.tsx'])assert.equal(allowed(outputs(['hermes/plugin.yaml',path])),true,path);
+ assert.equal(allowed(outputs(null)),true);
+ for(const key of ['hermes','platform','public','portable']){
+  const unknown:any=outputs(['hermes/plugin.yaml']);delete unknown[key];assert.equal(allowed(unknown),true,key);
+ }
+});
 test('Linux publication survives intentional ancestor skips but requires successful exact-main admission', () => {
   const expression = ci().jobs['release-linux'].if;
   for (const ancestors of [['success'], ['success', 'skipped'], ['skipped', 'skipped']]) {
-    const needs = {'linux-admission': {result: 'success'}};
+    const needs = {...parents(), 'linux-admission': {result: 'success'}};
     assert.equal(admitted(expression, needs, 'push', false, false, {ancestors}), true);
     for (const result of ['failure', 'skipped', 'cancelled', undefined]) {
       needs['linux-admission'].result = result as string;
       assert.equal(admitted(expression, needs, 'push', false, false, {ancestors}), false, String(result));
     }
   }
-  const needs = {'linux-admission': {result: 'success'}};
+  const needs = {...parents(), 'linux-admission': {result: 'success'}};
   assert.equal(admitted(expression, needs, 'push', false, true), false);
   assert.equal(admitted(expression, needs, 'pull_request'), false);
   assert.equal(admitted(expression, needs, 'push', false, false, {repository: 'fork/apparent'}), false);
@@ -321,4 +333,31 @@ test('audited Record inputs retain Desktop and native platform consumers only', 
   }
   assert.deepEqual(selectedOwners(['record/unknown/src/policy.ts']), selectedOwners(null));
   assert.deepEqual(selectedOwners(['record/storage/src/policy.ts', 'connect/web/src/api.ts']), ['capture', 'desktop', 'web']);
+});
+
+test('Hermes owns independent package verification and publication; native admission has no Hermes ancestors',()=>{
+ const h=workflow('hermes.yml');
+ assert.equal(h.name,'continuous delivery hermes');
+ assert.equal(h.jobs.verify.strategy['fail-fast'],false);
+ const validator=h.jobs.verify.steps.find((s:any)=>s.name==='Install supported Hermes validator').run;
+ assert.match(validator,/uv sync.*--frozen --no-dev/);
+ assert.match(validator,/fetch --depth 1 origin [a-f0-9]{40}/);
+ assert.doesNotMatch(validator,/HERMES_NIX_BUILD/);
+ assert.deepEqual(h.jobs.publish.needs,['contracts','clean','verify']);
+ assert.match(h.jobs.publish.if,/github.event_name == 'push'/);
+ assert.match(h.jobs.publish.if,/outputs.affected == 'true'/);
+ assert.equal(h.jobs.verify.strategy.matrix.os.length,2);
+ const consumer=h.jobs.verify.steps.find((s:any)=>s.name==='Verify Agent setup consumes the exact compiled archive');
+ assert.equal(consumer.env.HERMES_PACKAGE,'${{ steps.package.outputs.directory }}');
+ assert.match(consumer.run,/hermes\/distribution\/consumer\.test\.ts/);
+ const routing=h.jobs.verify.steps.find((s:any)=>s.name==='Routing, bridge and package installation contracts');
+ assert.match(routing.run,/capture\/agent\/setup\/hermes\.test\.ts/);
+ assert.doesNotMatch(routing.run,/if \[/);
+ const isolated=h.jobs.clean.steps.find((s:any)=>s.name==='Prove isolated package build and compiled integration tests').run;
+ assert.doesNotMatch(isolated,/consumer\.test|capture\/agent/);
+ for(const name of ['hermes','hermes-macos'])assert.equal(ci().jobs[name],undefined);
+ for(const name of ['linux','macos','tree-evidence','linux-admission','macos-admission'])assert.ok(!ci().jobs[name].needs.some((n:string)=>n.startsWith('hermes')));
+ assert.deepEqual(selectedOwners(['.github/workflows/hermes.yml']),['hermes']);
+ assert.deepEqual(selectedOwners(['hermes/desktop/package-lock.json']),['hermes']);
+ assert.deepEqual(selectedOwners(['hermes/skills/recordings/SKILL.md']),['hermes']);
 });

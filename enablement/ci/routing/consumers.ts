@@ -35,6 +35,7 @@ const toolingRegressionTests = new Set([
 export function consumers(path: string): readonly Owner[] {
   if (documentationOnlyPath(path)) return [];
   if (publicMarkdown.has(path) && path !== 'capture/agent/skills/apparent/SKILL.md') return ['public'];
+  if (path === 'hermes/skills/recordings/SKILL.md') return ['hermes'];
   if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)\.md$/i.test(path)) return owners;
   // No extension-based native exemption: unexpected native sources in web/tool owners broaden.
   const native = /\.(rs|swift|metal|c|cc|cpp|h|mm)$/.test(path) || /(^|\/)Cargo\.(toml|lock)$/.test(path);
@@ -46,6 +47,8 @@ export function consumers(path: string): readonly Owner[] {
   if (!native && path.startsWith('connect/web/')) return ['web'];
   if (path.startsWith('connect/client/')) return ['client', 'capture'];
   if (!native && path.startsWith('connect/service/')) return ['service', 'client', 'web', 'public', 'capture'];
+  if (path.startsWith('capture/agent/setup/')) return ['capture', 'engine', 'hermes'];
+  if (path === '.github/workflows/hermes.yml') return ['hermes'];
   if (!native && path.startsWith('hermes/')) return ['hermes'];
   if (linuxDrivers.has(path)) return ['capture-tools'];
   if (path.startsWith('capture/desktop/ui/frontend/src/hermes/')) return ['desktop', 'capture', 'hermes'];

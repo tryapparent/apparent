@@ -83,8 +83,9 @@ export function commands(selected: Owner[], base: string, head: string, platform
   result.push(...tools.filter(command => !command.env?.APPARENT_BIN));
   if (selected.includes('tooling')) add(['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py']);
   if (selected.includes('hermes')) {
+    add(['npm', 'ci', '--ignore-scripts', '--prefix', 'hermes/desktop']);
     add(['python3', '-m', 'unittest', 'discover', '-s', 'hermes/tests', '-p', 'test_*.py']);
-    add(['node', '--experimental-strip-types', '--test', 'hermes/desktop/controller.test.ts', 'hermes/desktop/plugin.test.ts',
+    add(['node', '--experimental-strip-types', '--test', 'hermes/desktop/controller.test.ts', 'hermes/desktop/plugin.test.ts', 'hermes/distribution/package.test.ts', 'hermes/distribution/consumer.test.ts', 'capture/agent/setup/hermes.test.ts',
       'capture/desktop/ui/frontend/src/hermes/protocol.test.ts', 'capture/desktop/ui/frontend/src/hermes/mailbox.test.ts']);
   }
   // These TypeScript/renderer checks are independent of Rust. Run their real

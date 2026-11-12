@@ -1,5 +1,5 @@
 name: apparent
-version: "0.3.1"
+version: "0.3.2"
 description: Read Apparent recordings as spoken instructions and visual evidence.
 author: Apparent
 requires_hermes: ">=0.23.0"
