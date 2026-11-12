@@ -47,7 +47,41 @@ function run(argv) {
 }`, scheme, bundleId]);
     assert(selection.ok && selection.output.trim() === '0', `Synthetic handler selection failed: ${selection.output.slice(0, 100)}`);
     const observed = macHandler(system, realpathSync(executable), scheme);
-    assert.equal(observed.status, 'ok', JSON.stringify(observed));
+    if (observed.status !== 'ok') {
+      // Distinguish invalid fixture metadata, missing registration and missing
+      // selection. Report only booleans/counts for this owned scheme/bundle;
+      // never dump the account's LaunchServices database or provider stderr.
+      const diagnostics = system.run('/usr/bin/osascript', ['-l', 'JavaScript', '-e', `
+ObjC.import('AppKit');
+ObjC.import('CoreServices');
+function run(argv) {
+  var result = {};
+  function probe(key, read) {
+    try { result[key] = read(); } catch (_) { result[key] = 'unavailable'; }
+  }
+  var workspace = $.NSWorkspace.sharedWorkspace;
+  var bundle = $.NSBundle.bundleWithPath($(argv[1]));
+  function samePath(actual, expected) {
+    return ObjC.unwrap(actual.stringByResolvingSymlinksInPath) === ObjC.unwrap($(expected).stringByResolvingSymlinksInPath);
+  }
+  probe('bundleReadable', function () { return !bundle.isNil(); });
+  probe('bundleIdentifierMatches', function () { return ObjC.unwrap(bundle.bundleIdentifier) === argv[2]; });
+  probe('bundleExecutableMatches', function () { return samePath(bundle.executablePath, argv[3]); });
+  probe('executableRunnable', function () { return !!$.NSFileManager.defaultManager.isExecutableFileAtPath($(argv[3])); });
+  probe('defaultIdentifierMatches', function () {
+    return ObjC.unwrap($.LSCopyDefaultHandlerForURLScheme($(argv[0]))) === argv[2];
+  });
+  probe('identifierResolvesToFixture', function () {
+    var url = workspace.URLForApplicationWithBundleIdentifier($(argv[2]));
+    return !url.isNil() && samePath(url.path, argv[1]);
+  });
+  probe('schemeCandidateCount', function () {
+    return Number(workspace.URLsForApplicationsToOpenURL($.NSURL.URLWithString(argv[0] + '://open')).count);
+  });
+  return JSON.stringify(result);
+}`, scheme, bundle, bundleId, executable]);
+      assert.fail(JSON.stringify({ observed, diagnostics: { ok: diagnostics.ok, output: diagnostics.output.slice(0, 2000) } }));
+    }
     assert.equal(realpathSync(observed.evidence!.bundle!), realpathSync(bundle));
     assert.equal(macHandler(system, realpathSync(process.execPath), scheme).status, 'incompatible');
     assert.equal(readFileSync(join(bundle, 'Contents/Info.plist'), 'utf8').includes(scheme), true);
