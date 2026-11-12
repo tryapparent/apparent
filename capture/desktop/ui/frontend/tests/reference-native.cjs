@@ -10,6 +10,21 @@ const { promisify } = require('node:util');
 const { _electron: electron, expect } = require('@playwright/test');
 const { captureReference } = require('../electron/runtime.cjs');
 const run = promisify(execFile);
+// Keep an owned group leader alive while Rust and its Electron children run.
+const rustSupervisor = `
+set +e
+set +m
+trap ':' TERM
+"$@" &
+while :; do
+  IFS= read -r line
+  if [ "$?" -eq 1 ]; then
+    kill -TERM -- -$$ 2>/dev/null || true
+    sleep 0.2
+    kill -KILL -- -$$
+  fi
+done
+`;
 
 test('selected capture reference: real Rust selection and native clipboard', { timeout: 120000 }, async (t) => {
   const binary = process.env.APPARENT_REFERENCE_BINARY;
@@ -63,7 +78,19 @@ test('selected capture reference: real Rust selection and native clipboard', { t
     }
   }
   async function stopRust() {
-    await stopOwned(rust);
+    if (rust?.pid) {
+      const pid = rust.pid;
+      const absent = () => { try { process.kill(-pid, 0); return false; } catch (error) { if (error.code === 'ESRCH') return true; throw error; } };
+      assert.equal(rust.exitCode, null, 'Rust supervisor exited before owned group cleanup');
+      process.kill(-pid, 'SIGTERM');
+      const until = Date.now() + 2500;
+      while (!absent() && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 50));
+      if (!absent()) process.kill(-pid, 'SIGKILL');
+      const deadline = Date.now() + 1500;
+      while (!absent() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+      assert.ok(absent(), `Owned Rust process group ${pid} survived cleanup`);
+      if (rust.exitCode === null && rust.signalCode === null) await new Promise(resolve => rust.once('exit', resolve));
+    }
     await log?.close(); log = undefined;
     rust = undefined;
   }
@@ -90,7 +117,9 @@ test('selected capture reference: real Rust selection and native clipboard', { t
   async function startRust(name) {
     await stopRust();
     log = await fs.open(path.join(output, `rust-${report.checks.length}.log`), 'a', 0o600);
-    rust = spawn(binary, name ? ['preview', path.join(captures, name)] : ['app'], { env, stdio: ['ignore', log.fd, log.fd] });
+    rust = spawn('/bin/bash', ['-c', rustSupervisor, 'reference-supervisor', binary,
+      ...(name ? ['preview', path.join(captures, name)] : ['app'])],
+    { env, detached: true, stdio: ['pipe', log.fd, log.fd] });
     rust.once('error', (error) => { report.launchError = error.message; });
     await expect.poll(async () => {
       assert.equal(rust.exitCode, null, 'Owned backend exited');
