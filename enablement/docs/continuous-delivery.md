@@ -30,11 +30,13 @@ older client/server source.
 main and main pushes. Public and Connect have direct automatic entrypoints in
 `stream-public.yml` and `stream-connect.yml`; neither depends on a default CD run.
 The ordered default-workflow path filters exclude audited Public-only inputs and
-`connect/{web,service,client}/**`. Embedded instructions and unexpected native
+`connect/{web,service}/**`. The native client and its embedded TypeScript
+policy remain application inputs, retaining application installer publication. Embedded instructions and unexpected native
 files in web/service remain default inputs. Mixed deltas, shared inputs, unknown Public paths, embedded
-instructions and native Public tooling retain the default workflow. Connect owns
-its native client/service consumer checks on Linux and Mac, so excluding its
-paths does not exempt those consumers from verification. PR updates coalesce; main commits have distinct concurrency groups so
+instructions and native Public tooling retain the default workflow. Connect owns its service consumer checks on Linux and Mac; excluding browser
+and service source does not exempt those consumers from verification. Native
+client changes retain default application delivery until their installed consumer
+and packaging boundary can be migrated together. PR updates coalesce; main commits have distinct concurrency groups so
 later documentation cannot cancel earlier code verification. Drafts retain cheap
 contracts and relevant Public checks; ready PRs verify the proposed merge tree.
 

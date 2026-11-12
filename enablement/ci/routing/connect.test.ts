@@ -13,11 +13,12 @@ test('stream-only deltas do not allocate default CD; mixed, shared, unknown and 
   const checks = workflow('checks.yml');
   for (const event of ['push', 'pull_request']) {
     const patterns = checks.on[event].paths;
-    for (const path of ['connect/web/src/main.tsx', 'connect/service/src/worker.ts', 'connect/client/src/lib.rs',
+    for (const path of ['connect/web/src/main.tsx', 'connect/service/src/worker.ts',
       'public/site/src/App.tsx', 'public/site/package.json',
       'public/site/scripts/pages/prepare-pages.mjs', 'README.md']) assert.equal(matches(patterns, path), false, path);
     for (const path of ['shared/ui/button.tsx', 'unknown/file.ts', 'capture/engine/runtime/mod.rs',
       'public/site/video-demo/src/main.rs', 'public/site/src/unexpected.rs',
+      'connect/client/src/lib.rs', 'connect/client/typescript/src/shares.ts',
       'connect/hosted.rs', 'connect/unknown.swift', 'connect/unknown.ts',
       'connect/skills/example/SKILL.md', 'connect/client/src/CLAUDE.md',
       'public/site/src/SKILL.md', 'public/site/src/CLAUDE.md', 'public/site/src/GEMINI.md',
@@ -36,7 +37,7 @@ test('stream-only deltas do not allocate default CD; mixed, shared, unknown and 
 test('Connect retains real native client/service consumers and skips native for web-only edits', () => {
   const web = connectPlan(suitePlan(['connect/web/src/main.tsx']));
   assert.equal(web.browser, true); assert.equal(web.root, false); assert.equal(web.client, false);
-  for (const path of ['connect/service/src/worker.ts', 'connect/client/src/lib.rs', 'connect/hosted.rs']) {
+  for (const path of ['connect/service/src/worker.ts', 'connect/hosted.rs']) {
     const plan = connectPlan(suitePlan([path]));
     assert.equal(plan.root, true, path); assert.equal(plan.client, true, path);
   }
