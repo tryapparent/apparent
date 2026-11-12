@@ -8,6 +8,10 @@ Use this with [Make It Apparent](../skills/make-it-apparent/SKILL.md) when an ag
 2. Choose one visible claim and rehearse it on a safe capture surface. Hide unrelated material before recording; post-production cropping cannot remove secrets from the retained raw movie.
 3. Set a startup deadline and a separate finalization deadline before running the driver. Poll with a bounded interval, recording the last response and elapsed time. On timeout, stop the driver and report the phase; do not toggle recording or cancel an unknown capture to recover.
 4. Read `apparent capture state` to understand the running app. A socket pathname is not readiness. Do not toggle a shortcut or cancel an existing capture to obtain an idle app.
+   Newer apps include an additive `app` object with `schema: 1`, `version` and
+   `build`, supplied by the GUI answering this request. Compare it with the
+   installed CLI's `--version` when checking an old running app against an update.
+   Missing build facts mean unknown, not absence; this read starts or stops nothing.
 5. Run `apparent capture start --wait --timeout 30`. Retain the top-level `capture_id` from its JSON reply, including a failed or timed-out reply. Success requires `status == "recording"`: a real screen frame has arrived. `starting` is not recording; portal consent may still be needed. Keep JSON stdout separate from stderr and reject failed, malformed or incomplete responses. Admission runs on the GUI thread and refuses a recording, pending chooser, picker, preview or processing job atomically.
 
 The start reply identifies that request; a later global state read does not establish ownership. For crash-safe driver retries, generate and privately retain a 32-hex-character request ID before sending, then use `capture start --request-id <id> --wait --timeout 30`. Retrying that ID returns its existing receipt, never a second recording. Rejected IDs stay rejected; deliberately choose a new ID for a new attempt. Use an isolated app/session for unattended trials: CLI identity does not reserve the physical desktop from human input.

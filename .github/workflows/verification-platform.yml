@@ -256,6 +256,11 @@ jobs:
           node --experimental-strip-types --test enablement/timing/mac-cache.test.ts
           echo "APPARENT_TIMING_FILE=$RUNNER_TEMP/verification-timings.jsonl" >> "$GITHUB_ENV"
           touch "$RUNNER_TEMP/verification-timings.jsonl"
+      - name: Agent setup policy and native metadata contracts (no Rust required)
+        if: needs.select.outputs.root == 'true'
+        env:
+          APPARENT_SETUP_NATIVE_FIXTURE: '1'
+        run: node --test capture/agent/setup/*.test.ts
       - name: Local Desktop install reuse contracts
         if: runner.os == 'macOS'
         env:
