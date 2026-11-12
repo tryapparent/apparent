@@ -177,6 +177,8 @@ jobs:
       - name: Install build and packaging dependencies
         run: ./capture/desktop/scripts/linux/appimage/dependencies.sh
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-linux-${{ matrix.arch }}

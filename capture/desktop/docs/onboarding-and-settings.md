@@ -196,6 +196,11 @@ completion. Native fallback remains available if the Electron transport fails;
 its legacy account presentation remains local-only.
 
 Rust decides what shows (`Flow`, `launch_plan`, `Gate`, tested) and stores progress under `"onboarding"` in `~/.config/apparent/config.json`, including the tour's current step (`resume`), so any quit (macOS's "Quit & Reopen" too) picks up there; the SwiftUI window in `apparent-helper onboarding` only renders the state it's sent and reports buttons (`grant:<permission>` for a row).
+Progress saves on both platforms update only the current schema's leaves through
+the shared durable config transaction. Unknown nested onboarding fields and other
+settings survive; omitted optional schema fields are removed. A non-object
+`onboarding` value rejects the save without replacing the existing file. This
+native durability boundary remains the sole writer while practice policy is migrated.
 
 Tour: Welcome → Permissions (one checklist of three required rows, Screen Recording first, then Microphone and Accessibility; any order works) → Shortcut → TryIt → Done. The default first-capture shortcut page starts with no selection and uses Settings' validation/save/cancel behavior. A saved combination must pass a non-recording press-and-release trial. The pen picker goes directly to permissions or shortcut choice; the demonstration page is removed. An explicit replay from Settings clears only tour milestones, requiring shortcut selection and its non-recording trial again; ordinary quit/relaunch resumes unfinished shortcut setup, but never re-enrols a user whose shortcut setup is complete. The Electron tour then advances automatically to **Go again.** The next shortcut starts the real guided capture. The native fallback retains its Continue action. The explicit optional-practice opt-out retains the legacy advance behavior. Leaving the page cancels an unfinished recording and resumes hotkeys. On Omarchy, the existing Hyprland chord can be explicitly accepted or a custom app chord chosen while preserving the permanent binding. Camera (iPhone) is never in the tour: its first use opens `Flow::fix(vec![Camera])`, the same screen with one row.
 

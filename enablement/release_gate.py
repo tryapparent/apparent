@@ -11,6 +11,8 @@ import re
 import subprocess
 from pathlib import Path
 
+# Historical verification receipts remain valid after manual Mac workflow retirement.
+# New Mac verification is discovered through checks.yml below.
 WORKFLOWS = {
     'linux': '.github/workflows/verification.yml',
     'macos': '.github/workflows/verification-mac.yml',

@@ -35,7 +35,7 @@ test('client runs independently on both platforms with isolated cache and unchan
   // Client remains unconditional for ready PRs even when renderer-only root Rust is omitted.
   assert.equal(client.match(/^    if: (.+)$/m)?.[1],
     "needs.select.outputs.client == 'true'");
-  assert.match(client, /toolchain: \$\{\{ runner\.os == 'macOS' && '1\.99\.1' \|\| 'stable' \}\}/);
+  assert.match(client, /toolchain: '1\.99\.1'/);
   assert.ok(client.indexOf('uses: ./.github/actions/mac-rust-cache') < client.indexOf('uses: Swatinem/rust-cache'));
   assert.match(client, /key: connect-client\n          workspaces: connect\/client -> target/);
   assert.doesNotMatch(client, /cache-on-failure:|continue-on-error:|setup-chrome|MetalToolchain/);
