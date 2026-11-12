@@ -255,6 +255,8 @@ jobs:
           touch "$RUNNER_TEMP/verification-timings.jsonl"
       - name: Agent setup policy and native metadata contracts (no Rust required)
         if: needs.select.outputs.root == 'true'
+        env:
+          APPARENT_SETUP_NATIVE_FIXTURE: '1'
         run: node --test capture/agent/setup/*.test.ts
       - name: Prepare private temporary root before first Cargo
         if: needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true'

@@ -79,6 +79,10 @@ require separate real platform acceptance. Synthetic fixtures establish policy
 and idempotence, not GUI or recording success. Live X1 is not a test fixture.
 
 `node --test capture/agent/setup/*.test.ts` runs the policy suite independently.
-On macOS it also registers and removes a unique synthetic URL scheme to verify
-the real OS lookup without altering the actual `apparent` handler or launching
-anything. That native contract is skipped on Linux, not counted as Mac proof.
+The native fixture runs only on disposable GitHub-hosted Macs with CI's explicit
+`APPARENT_SETUP_NATIVE_FIXTURE=1` flag; it refuses ordinary or self-hosted accounts.
+It registers and selects an app for a unique synthetic URL scheme, queries the
+real OS, then unregisters the fixture app and removes its files. Selection can
+leave an OS-owned preference for that unique scheme until the disposable account
+is destroyed. The actual `apparent` handler is untouched and nothing is launched.
+Local Mac and Linux runs skip this contract; those skips are not Mac proof.
