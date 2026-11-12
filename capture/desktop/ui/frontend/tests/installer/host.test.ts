@@ -14,23 +14,23 @@ const directory = '/Fixture/Install Apparent.app/Contents/Resources/installer-ui
 const expected = '/Fixture/Install Apparent.app/Contents/MacOS/Installer';
 function load(adapter:string, linked=false) {
   let started = 0;
-  const failures: string[] = [], exits: number[] = [];
-  const context = {__dirname:directory,exports:{},process:{platform:'darwin',argv:['electron','host',`--installer-adapter=${adapter}`]},
+  const failures: string[] = [], diagnostics: string[] = [], exits: number[] = [];
+  const context = {__dirname:directory,exports:{},console:{error:(_label:string,error:unknown)=>diagnostics.push(String(error))},process:{platform:'darwin',argv:['electron','host',`--installer-adapter=${adapter}`]},
     require:(name:string)=>{
       if(name==='electron')return{dialog:{showErrorBox:(_title:string,message:string)=>failures.push(message)},app:{exit:(code:number)=>exits.push(code),setName:()=>{},whenReady:()=>{started++;return{then:()=>({catch:()=>{}})};},on:()=>{}}};
       if(name==='node:fs')return{realpathSync:(file:string)=>file,lstatSync:(file:string)=>{assert.equal(file,expected);return{isFile:()=>!linked,isSymbolicLink:()=>linked};}};
       if(name==='node:child_process')return{execFile:()=>{throw Error('No native execution permitted in host guard test');}};
       return require(name);
     }};
-  return {run:()=>vm.runInNewContext(code,context),started:()=>started,failures,exits};
+  return {run:()=>vm.runInNewContext(code,context),started:()=>started,failures,diagnostics,exits};
 }
 test('installer host rejects an arbitrary absolute adapter before startup',()=>{
   const fixture=load('/tmp/other-executable');
-  fixture.run();assert.match(fixture.failures[0],/bundled Mac adapter/);assert.deepEqual(fixture.exits,[1]);assert.equal(fixture.started(),0);
+  fixture.run();assert.match(fixture.diagnostics[0],/bundled Mac adapter/);assert.match(fixture.failures[0],/Drag Apparent Preview/);assert.deepEqual(fixture.exits,[1]);assert.equal(fixture.started(),0);
 });
 test('installer host admits only its fixed regular bundled adapter',()=>{
   const fixture=load(expected);fixture.run();assert.equal(fixture.started(),1);
-  const link=load(expected,true);link.run();assert.match(link.failures[0],/regular bundled executable/);assert.deepEqual(link.exits,[1]);assert.equal(link.started(),0);
+  const link=load(expected,true);link.run();assert.match(link.diagnostics[0],/regular bundled executable/);assert.match(link.failures[0],/Drag Apparent Preview/);assert.deepEqual(link.exits,[1]);assert.equal(link.started(),0);
 });
 test('installer actual host binds requests to its page and closes only after successful native Open', async()=>{
   let ready:()=>Promise<void>, invoke:(event:any,request:any)=>Promise<any>, close:(event:any)=>void;
@@ -154,6 +154,7 @@ for (const phase of ['window', 'load', 'dialog', 'activate']) test(`installer st
   } else {
     assert.equal(errors.length, 1, 'startup failure must show a visible recovery message');
     assert.match(errors[0][1], /Drag Apparent Preview to Applications/);
+    assert.doesNotMatch(errors[0][1], /fixture|ERR_|file:/, 'technical startup errors stay out of the recovery instructions');
     assert.deepEqual(exits, [1], 'failed startup must exit even if the native dialog fails');
   }
 });

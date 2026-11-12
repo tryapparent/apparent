@@ -5,9 +5,9 @@ import {execFile} from 'node:child_process';
 import {lstatSync, realpathSync} from 'node:fs';
 function failStartup(error: unknown) {
   try {
-    const reason = error instanceof Error ? error.message : String(error);
+    console.error('Installer startup failed:', error);
     dialog.showErrorBox('Installer could not open',
-      'Drag Apparent Preview to Applications in Finder, then open it from Applications.\n\n' + reason);
+      'Drag Apparent Preview to Applications in Finder, then open it from Applications.');
   } finally {
     // A failed, windowless installer must not intercept future Finder launches.
     app.exit(1);
