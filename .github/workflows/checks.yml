@@ -3,9 +3,139 @@ name: Continuous delivery
 on:
   pull_request:
     branches: [main]
+    paths:
+      - '**'
+      - '!public/site/src/**'
+      - '!public/site/docs/**'
+      - '!public/site/public/assets/pond/**'
+      - '!public/site/public/assets/team/**'
+      - '!public/site/public/assets/feature-demos/**'
+      - '!public/site/public/assets/media/**'
+      - '!public/site/public/assets/brand/**'
+      - '!public/site/scripts/artifact/**'
+      - '!public/site/scripts/brand/**'
+      - '!public/site/scripts/commerce/**'
+      - '!public/site/scripts/browser-proof/**'
+      - '!public/site/scripts/site-build/**'
+      - '!public/site/scripts/pages/**'
+      - '!public/site/scripts/cd/publish-pages.ts'
+      - '!public/site/scripts/cd/publish-pages.test.ts'
+      - '!public/site/scripts/cd/workflow.test.ts'
+      - '!public/site/scripts/cd/analytics-smoke.ts'
+      - '!public/site/lib/pages-worker.ts'
+      - '!public/site/lib/pages-video-metadata.js'
+      - '!public/site/lib/public-assets.mjs'
+      - '!public/site/lib/public-assets.d.mts'
+      - '!public/site/functions/**'
+      - '!public/site/index.html'
+      - '!public/site/package.json'
+      - '!public/site/bun.lock'
+      - '!public/site/tsconfig.json'
+      - '!public/site/vite.config.ts'
+      - '!public/site/wrangler.pages.jsonc'
+      - '!README.md'
+      - '!capture/agent/docs/usage.md'
+      - '!capture/desktop/docs/guides/recording.md'
+      - '!capture/engine/docs/guides/processing.md'
+      - 'public/site/public/assets/brand/apparent-wordmark.svg'
+      - 'public/site/scripts/browser-proof/test-hosted-browser.mjs'
+      - 'public/site/scripts/site-build/verify-composed.mjs'
+      - '!connect/web/**'
+      - '!connect/service/**'
+      - '**/*.rs'
+      - '**/*.swift'
+      - '**/*.metal'
+      - '**/*.c'
+      - '**/*.cc'
+      - '**/*.cpp'
+      - '**/*.h'
+      - '**/*.mm'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '**/skills/**/*.md'
+      - '**/prompts/**/*.md'
+      - '**/instructions/**/*.md'
+      - '**/tests/**/*.md'
+      - '**/fixtures/**/*.md'
+      - '**/templates/**/*.md'
+      - '**/[Aa][Gg][Ee][Nn][Tt][Ss].[mM][dD]'
+      - '**/[Ss][Kk][Ii][Ll][Ll].[mM][dD]'
+      - '**/[Cc][Ll][Aa][Uu][Dd][Ee].[mM][dD]'
+      - '**/[Gg][Ee][Mm][Ii][Nn][Ii].[mM][dD]'
+      - '**/skill/**/*.md'
+      - '**/prompt/**/*.md'
+      - '**/instruction/**/*.md'
+      - '**/test/**/*.md'
+      - '**/fixture/**/*.md'
+      - '**/template/**/*.md'
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
   push:
     branches: [main]
+    paths:
+      - '**'
+      - '!public/site/src/**'
+      - '!public/site/docs/**'
+      - '!public/site/public/assets/pond/**'
+      - '!public/site/public/assets/team/**'
+      - '!public/site/public/assets/feature-demos/**'
+      - '!public/site/public/assets/media/**'
+      - '!public/site/public/assets/brand/**'
+      - '!public/site/scripts/artifact/**'
+      - '!public/site/scripts/brand/**'
+      - '!public/site/scripts/commerce/**'
+      - '!public/site/scripts/browser-proof/**'
+      - '!public/site/scripts/site-build/**'
+      - '!public/site/scripts/pages/**'
+      - '!public/site/scripts/cd/publish-pages.ts'
+      - '!public/site/scripts/cd/publish-pages.test.ts'
+      - '!public/site/scripts/cd/workflow.test.ts'
+      - '!public/site/scripts/cd/analytics-smoke.ts'
+      - '!public/site/lib/pages-worker.ts'
+      - '!public/site/lib/pages-video-metadata.js'
+      - '!public/site/lib/public-assets.mjs'
+      - '!public/site/lib/public-assets.d.mts'
+      - '!public/site/functions/**'
+      - '!public/site/index.html'
+      - '!public/site/package.json'
+      - '!public/site/bun.lock'
+      - '!public/site/tsconfig.json'
+      - '!public/site/vite.config.ts'
+      - '!public/site/wrangler.pages.jsonc'
+      - '!README.md'
+      - '!capture/agent/docs/usage.md'
+      - '!capture/desktop/docs/guides/recording.md'
+      - '!capture/engine/docs/guides/processing.md'
+      - 'public/site/public/assets/brand/apparent-wordmark.svg'
+      - 'public/site/scripts/browser-proof/test-hosted-browser.mjs'
+      - 'public/site/scripts/site-build/verify-composed.mjs'
+      - '!connect/web/**'
+      - '!connect/service/**'
+      - '**/*.rs'
+      - '**/*.swift'
+      - '**/*.metal'
+      - '**/*.c'
+      - '**/*.cc'
+      - '**/*.cpp'
+      - '**/*.h'
+      - '**/*.mm'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '**/skills/**/*.md'
+      - '**/prompts/**/*.md'
+      - '**/instructions/**/*.md'
+      - '**/tests/**/*.md'
+      - '**/fixtures/**/*.md'
+      - '**/templates/**/*.md'
+      - '**/[Aa][Gg][Ee][Nn][Tt][Ss].[mM][dD]'
+      - '**/[Ss][Kk][Ii][Ll][Ll].[mM][dD]'
+      - '**/[Cc][Ll][Aa][Uu][Dd][Ee].[mM][dD]'
+      - '**/[Gg][Ee][Mm][Ii][Nn][Ii].[mM][dD]'
+      - '**/skill/**/*.md'
+      - '**/prompt/**/*.md'
+      - '**/instruction/**/*.md'
+      - '**/test/**/*.md'
+      - '**/fixture/**/*.md'
+      - '**/template/**/*.md'
 
 permissions:
   contents: read
@@ -126,13 +256,6 @@ jobs:
         run: node --experimental-strip-types enablement/ci/routing/evidence.ts --reuse
 
 
-  public:
-    needs: select
-    if: always() && !cancelled() && (needs.select.result != 'success' || needs.select.outputs.public != 'false')
-    uses: ./.github/workflows/stream-public.yml
-    secrets:
-      APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
-
   updater:
     needs: select
     if: github.event_name == 'push' && needs.select.outputs.updater == 'true'
@@ -208,7 +331,7 @@ jobs:
       - name: Validate workflow syntax and job dependencies
         uses: docker://rhysd/actionlint:1.7.12
         with:
-          args: -shellcheck= -pyflakes= .github/workflows/checks.yml .github/workflows/linux-updater-harness.yml .github/workflows/verification.yml .github/workflows/verification-mac.yml .github/workflows/verification-platform.yml .github/workflows/release-linux.yml .github/workflows/release-mac-preview.yml .github/workflows/web-delivery.yml .github/workflows/stream-public.yml .github/workflows/hermes.yml
+          args: -shellcheck= -pyflakes= .github/workflows/checks.yml .github/workflows/linux-updater-harness.yml .github/workflows/verification.yml .github/workflows/verification-mac.yml .github/workflows/verification-platform.yml .github/workflows/release-linux.yml .github/workflows/release-mac-preview.yml .github/workflows/stream-public.yml .github/workflows/stream-connect.yml .github/workflows/hermes.yml
 
   tree-evidence:
     needs: [select, contracts, linux, macos, portable]
