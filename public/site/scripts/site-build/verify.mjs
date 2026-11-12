@@ -1,5 +1,5 @@
 // Standalone Public verification and Pages preparation. Connect integration
-// stays in web-delivery.yml; this command uses no Connect implementation.
+// stays in stream-connect.yml; this command uses no Connect implementation.
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 

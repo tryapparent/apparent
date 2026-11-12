@@ -14,11 +14,14 @@ test('stream-only deltas do not allocate default CD; mixed, shared, unknown and 
   for (const event of ['push', 'pull_request']) {
     const patterns = checks.on[event].paths;
     for (const path of ['connect/web/src/main.tsx', 'connect/service/src/worker.ts', 'connect/client/src/lib.rs',
-      'connect/hosted.rs', 'public/site/src/App.tsx', 'public/site/package.json',
+      'public/site/src/App.tsx', 'public/site/package.json',
       'public/site/scripts/pages/prepare-pages.mjs', 'README.md']) assert.equal(matches(patterns, path), false, path);
     for (const path of ['shared/ui/button.tsx', 'unknown/file.ts', 'capture/engine/runtime/mod.rs',
       'public/site/video-demo/src/main.rs', 'public/site/src/unexpected.rs',
-      'public/site/new-root.ts', 'public/site/public/assets/brand/apparent-wordmark.svg',
+      'connect/hosted.rs', 'connect/unknown.swift', 'connect/unknown.ts',
+      'connect/skills/example/SKILL.md', 'connect/client/src/CLAUDE.md',
+      'public/site/src/SKILL.md', 'public/site/src/CLAUDE.md', 'public/site/src/GEMINI.md',
+      'public/site/src/fixture/example.md', 'public/site/new-root.ts', 'public/site/public/assets/brand/apparent-wordmark.svg',
       'public/site/scripts/browser-proof/test-hosted-browser.mjs',
       'capture/agent/skills/apparent/SKILL.md']) assert.equal(matches(patterns, path), true, path);
     // GitHub evaluates every changed path, including both sides of a rename.

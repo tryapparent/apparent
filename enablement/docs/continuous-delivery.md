@@ -30,7 +30,8 @@ older client/server source.
 main and main pushes. Public and Connect have direct automatic entrypoints in
 `stream-public.yml` and `stream-connect.yml`; neither depends on a default CD run.
 The ordered default-workflow path filters exclude audited Public-only inputs and
-`connect/**`. Mixed deltas, shared inputs, unknown Public paths, embedded
+`connect/{web,service,client}/**`. Embedded instructions and unexpected native
+files in web/service remain default inputs. Mixed deltas, shared inputs, unknown Public paths, embedded
 instructions and native Public tooling retain the default workflow. Connect owns
 its native client/service consumer checks on Linux and Mac, so excluding its
 paths does not exempt those consumers from verification. PR updates coalesce; main commits have distinct concurrency groups so
@@ -109,12 +110,14 @@ build, allowlisted resource graph, browser and shared appearance/analytics check
 publication contracts, compiled movie worker in workerd, and Public-only Pages
 preparation. It seals `.build/website` with the run SHA and every file's checksum.
 The deploy job downloads only that workflow run's SHA-named artifact and validates
-it before uploading. PR/push jobs have no production credentials and cannot deploy.
+it before uploading. Credential-free verification jobs cannot deploy; only the
+gated canonical-main deploy job receives production credentials.
 
 Connect's credential-free job retains its publication contracts, full hosted
 TypeScript/workerd/D1/R2 suite, independent browser build, composed website checks
 and credentialed cross-origin synthetic browser scenarios. Its production gate
-still requires full Linux/shared verification for the same commit. Its local
+requires its own same-run portable and affected Linux/Mac consumer verification
+for the same commit. Its local
 composition is an integration fixture, not a Public publication prerequisite.
 
 Node 22.23.0 and Bun 1.3.10 remain pinned. Browsers use the website lockfile's
@@ -421,8 +424,13 @@ receipt. Manual dispatch uses the same stream-owned checks and admission; the
 old `web-delivery.yml` entrypoint has been replaced. Worker publication retains its production environment,
 noncancelling lock, current-main check, approved bindings and version/CORS readback.
 No resource migration or disabled-service activation is included. The existing
-Connect composition/browser verification remains in the publisher. This slice
-does not add a new Connect browser Pages publisher or migrate native packaging.
+Connect composition/browser verification remains in the publisher. The restored baseline has no browser Worker publisher; the pre-change
+`web-delivery.yml` only deployed `apparent-hosted`. This workflow preserves that
+existing disabled activation boundary and does not replace or cut over the
+separately deployed `apparent-connect-web` browser Worker. Porting that retained
+implementation and its installed API profile requires a separate compatible
+source/runtime slice; this change does not claim full Connect runtime migration
+or independently released native packaging.
 
 GitHub path filtering uses its documented complete changed-file limits: rename
 sides and mixed inputs are covered by routing contracts; diffs beyond GitHub's
