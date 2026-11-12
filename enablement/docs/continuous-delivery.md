@@ -29,14 +29,25 @@ older client/server source.
 `checks.yml` verifies the native application and shared integration on PRs targeting
 main and main pushes. Public and Connect have direct automatic entrypoints in
 `stream-public.yml` and `stream-connect.yml`; neither depends on a default CD run.
-The ordered default-workflow path filters exclude audited Public-only inputs and
-`connect/{web,service}/**`. The native client and its embedded TypeScript
-policy remain application inputs, retaining application installer publication. Embedded instructions and unexpected native
-files in web/service remain default inputs. Mixed deltas, shared inputs, unknown Public paths, embedded
-instructions and native Public tooling retain the default workflow. Connect owns its service consumer checks on Linux and Mac; excluding browser
-and service source does not exempt those consumers from verification. Native
-client changes retain default application delivery until their installed consumer
-and packaging boundary can be migrated together. PR updates coalesce; main commits have distinct concurrency groups so
+Automatic PR and main triggers use positive directory filters for each value
+stream. `enablement/ci/routing/streams.ts` records the exact inventory; cheap
+contracts require both event filters to match it. Capture retains the existing
+combined native workflow for `capture/` and `record/`, shared/composition inputs,
+root native build inputs and the installed Connect client. Connect owns
+`connect/`; Public owns `public/`; Hermes owns `hermes/` plus its Capture
+setup/bridge consumers. All include shared/composition and their CI dependencies.
+Capture also runs cheap contracts for repository guidance and Enablement changes.
+Unknown top-level directories/files fail the cheap ownership contract instead of
+implicitly starting every workflow. Unknown inputs inside an owned directory
+still reach that stream's conservative selector; missing history stays broad.
+
+Cross-directory dependencies are explicit: Public publishes the listed Capture
+guides/skill and README; Capture embeds the Public wordmark. Connect's existing
+browser composition verification still builds Public from source, so
+`public/site/**` remains a Connect verification dependency until that fixture is
+independent. These filters do not claim full package independence or split the
+native application's current build into new workflows. Root native manifests
+and verification adapters retain their consumers. PR updates coalesce; main commits have distinct concurrency groups so
 later documentation cannot cancel earlier code verification. Drafts retain cheap
 contracts and relevant Public checks; ready PRs verify the proposed merge tree.
 
@@ -47,9 +58,9 @@ agent skill embedded in the CLI retains native coverage. Public and Connect web
 source do not select Rust or Electron. Shared UI/assets retain their real web,
 service, Desktop and native consumers. Service changes retain client/root API
 integration and run the canonical service build, serial tests and recipient browser.
-Hermes inspection and complete compiled package delivery run independently in `hermes.yml` (continuous delivery hermes), on Linux and Mac for every PR/main candidate. Native admission does not consume Hermes results. Hermes-only changes skip automatic Linux app packaging; mixed or unknown inputs retain the existing publication gates. Audited
-Linux drivers run launch-free contracts. Unknown inputs/history, empty deltas,
-unsafe modes/types, embedded instructions and execution-sensitive CI retain broad checks.
+Hermes inspection and complete compiled package delivery run independently in `hermes.yml` (continuous delivery hermes), on Linux and Mac for every affected PR/main candidate. Native admission does not consume Hermes results. Hermes-only changes skip automatic Linux app packaging; mixed or unknown inputs retain the existing publication gates. Audited
+Linux drivers run launch-free contracts. Within a triggered workflow, unknown inputs/history, empty deltas, unsafe
+modes/types, embedded instructions and execution-sensitive CI retain broad checks.
 Repository `AGENTS.md` guidance runs cheap contracts only in local pushes and
 hosted CI, including regular additions, deletions and renames between guidance
 paths. Guidance under skills, prompts, instructions, tests, fixtures or templates
@@ -124,8 +135,14 @@ composition is an integration fixture, not a Public publication prerequisite.
 
 Node 22.23.0 and Bun 1.3.10 remain pinned. Browsers use the website lockfile's
 `playwright-core`. Public and Connect production publication use separate locks
-that never cancel an upload. Public rejects a candidate that is no longer current
-main or would overwrite an equal/newer deployed website. Superseded candidates
+that never cancel an upload. Public rejects a candidate outside main ancestry, with newer Public inputs on
+main, or that would overwrite an equal/newer deployed website. Public fetches full
+main history and compares all changed paths, including both rename sides; an
+unrelated main advance can no longer strand its pending exact-SHA artifact.
+Connect admission and pre-deploy checks, and automatic Linux admission, use the
+same stream input comparison. A newer affected change still supersedes the old
+candidate; failed ancestry/history/input checks cannot admit it. Exact-SHA checks,
+sealed artifacts, publication ordering and existing activation gates remain. Superseded candidates
 skip without upload or a new receipt; transport, auth and integrity failures remain
 failures. Dispatch current main to publish a replacement when appropriate.
 

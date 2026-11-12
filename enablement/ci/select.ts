@@ -4,6 +4,7 @@ import {pathToFileURL} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
 import {changedPaths as inputPaths} from './inputs.ts';
 
+import {affectsStream} from './routing/streams.ts';
 import {publicMarkdown, documentationOnlyPath, linuxDrivers, selectedOwners, suitePlan} from './routing/consumers.ts';
 export {documentationOnlyPath} from './routing/consumers.ts';
 
@@ -19,7 +20,7 @@ export function select(paths: string[] | null): {public: boolean; updater: boole
   if (!paths.length) return {public: false, updater: false};
   const orchestration = paths.some(path => path === '.github/workflows/checks.yml' || path.startsWith('enablement/ci/'));
   return {
-    public: selectedOwners(paths).includes('public') || orchestration || paths.some(path =>
+    public: paths.some(path => affectsStream('public', path)) || selectedOwners(paths).includes('public') || orchestration || paths.some(path =>
       publicMarkdown.has(path) ||
       ['public/site/', 'shared/ui/', 'shared/analytics/', 'shared/assets/'].some(prefix => path.startsWith(prefix)) ||
       path === '.github/workflows/stream-public.yml'),

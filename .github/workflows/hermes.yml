@@ -2,8 +2,26 @@ name: continuous delivery hermes
 on:
   pull_request:
     branches: [main]
+    paths:
+      - "shared/**"
+      - "composition/**"
+      - "enablement/ci/**"
+      - ".github/actions/**"
+      - "hermes/**"
+      - "capture/agent/setup/**"
+      - "capture/desktop/ui/frontend/src/hermes/**"
+      - ".github/workflows/hermes.yml"
   push:
     branches: [main]
+    paths:
+      - "shared/**"
+      - "composition/**"
+      - "enablement/ci/**"
+      - ".github/actions/**"
+      - "hermes/**"
+      - "capture/agent/setup/**"
+      - "capture/desktop/ui/frontend/src/hermes/**"
+      - ".github/workflows/hermes.yml"
 permissions:
   contents: read
 concurrency:

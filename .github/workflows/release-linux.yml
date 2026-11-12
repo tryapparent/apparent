@@ -87,7 +87,7 @@ jobs:
             REQUEST_SHA=$(git rev-parse --verify "refs/tags/$TAG^{commit}")
           fi
           # Superseded automatic candidates need no more runner time.
-          if [[ ( "$GITHUB_EVENT_NAME" == workflow_run || "$GITHUB_EVENT_NAME" == push ) && "$(git rev-parse origin/main)" != "$REQUEST_SHA" ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == workflow_run || "$GITHUB_EVENT_NAME" == push ]] && ! node --experimental-strip-types enablement/ci/routing/streams.ts capture "$REQUEST_SHA"; then
             echo 'Skipping superseded main candidate'
             exit 0
           fi

@@ -5,6 +5,7 @@ import {mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync, 
 import {dirname, join} from 'node:path'
 import {tmpdir} from 'node:os'
 import {YAML} from 'bun'
+import {streamPaths} from '../../../../enablement/ci/routing/streams.ts'
 import {selectRange} from '../../../../enablement/ci/select.ts'
 
 const root = new URL('../../../../', import.meta.url)
@@ -36,7 +37,7 @@ test('Public owns direct main/PR/dispatch entrypoints and full-delta selection',
   assert.deepEqual(Object.keys(workflow.on), ['pull_request', 'push', 'workflow_dispatch'])
   for (const event of ['push', 'pull_request']) {
     assert.deepEqual(workflow.on[event].branches, ['main'])
-    assert.equal(workflow.on[event].paths, undefined, 'unknown inputs must reach the fail-closed selector')
+    assert.deepEqual(workflow.on[event].paths, streamPaths.public, 'automatic entry follows directory ownership')
     assert.equal(workflow.on[event]['paths-ignore'], undefined)
   }
   assert.deepEqual(workflow.on.pull_request.types, ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft'])

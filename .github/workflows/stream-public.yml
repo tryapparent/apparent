@@ -3,16 +3,40 @@ name: Public — checks & deploy
 on:
   pull_request:
     branches: [main]
+    paths:
+      - "shared/**"
+      - "composition/**"
+      - "enablement/ci/**"
+      - ".github/actions/**"
+      - "public/**"
+      - ".github/workflows/stream-public.yml"
+      - "README.md"
+      - "capture/agent/skills/apparent/SKILL.md"
+      - "capture/agent/docs/usage.md"
+      - "capture/desktop/docs/guides/recording.md"
+      - "capture/engine/docs/guides/processing.md"
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
   push:
     branches: [main]
+    paths:
+      - "shared/**"
+      - "composition/**"
+      - "enablement/ci/**"
+      - ".github/actions/**"
+      - "public/**"
+      - ".github/workflows/stream-public.yml"
+      - "README.md"
+      - "capture/agent/skills/apparent/SKILL.md"
+      - "capture/agent/docs/usage.md"
+      - "capture/desktop/docs/guides/recording.md"
+      - "capture/engine/docs/guides/processing.md"
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Unknown PR inputs must reach selection, so there is no incomplete positive
-# path filter. Automatic main and manual publication share one noncancelling lock.
+# Directory ownership bounds automatic entry. Automatic main and manual
+# publication share one noncancelling lock.
 concurrency:
   group: public-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -37,8 +61,8 @@ jobs:
 
   verify:
     needs: select
-    # Main always checks the complete Public tree: a later unrelated commit must
-    # carry a failed/queued website update that the current-main guard supersedes.
+    # Each affected main candidate checks the complete Public tree. Unrelated
+    # main advances leave pending candidates eligible when Public inputs match.
     # Only an explicit successful PR selection may omit Public browser checks.
     if: >-
       !cancelled() && (github.event_name != 'pull_request' ||
@@ -48,6 +72,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Prepare hosted Ubuntu package transport
         if: runner.os == 'Linux'
@@ -92,6 +117,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:

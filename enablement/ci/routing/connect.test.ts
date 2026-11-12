@@ -9,27 +9,15 @@ const workflow = (name: string) => YAML.parse(readFileSync(new URL(`../../../.gi
 const matches = (patterns: string[], path: string) => patterns.reduce((match, pattern) =>
   new Glob(pattern.replace(/^!/, '')).match(path) ? !pattern.startsWith('!') : match, false);
 
-test('stream-only deltas do not allocate default CD; mixed, shared, unknown and native Public inputs do', () => {
+test('native Capture entry is bounded by owner directories and explicit consumers', () => {
   const checks = workflow('checks.yml');
   for (const event of ['push', 'pull_request']) {
     const patterns = checks.on[event].paths;
-    for (const path of ['connect/web/src/main.tsx', 'connect/service/src/worker.ts',
-      'public/site/src/App.tsx', 'public/site/package.json',
-      'public/site/scripts/pages/prepare-pages.mjs', 'README.md']) assert.equal(matches(patterns, path), false, path);
-    for (const path of ['shared/ui/button.tsx', 'unknown/file.ts', 'capture/engine/runtime/mod.rs',
-      'public/site/video-demo/src/main.rs', 'public/site/src/unexpected.rs',
-      'connect/client/src/lib.rs', 'connect/client/typescript/src/shares.ts',
-      'connect/hosted.rs', 'connect/unknown.swift', 'connect/unknown.ts',
-      'connect/skills/example/SKILL.md', 'connect/client/src/CLAUDE.md',
-      'public/site/src/SKILL.md', 'public/site/src/CLAUDE.md', 'public/site/src/GEMINI.md',
-      'public/site/src/skill.md', 'public/site/src/claude.md', 'public/site/src/gemini.md',
-      'public/site/src/agents.md', 'public/site/src/sKiLl.md', 'connect/web/src/gEmInI.md',
-      'public/site/src/fixture/example.md', 'public/site/new-root.ts', 'public/site/public/assets/brand/apparent-wordmark.svg',
-      'public/site/scripts/browser-proof/test-hosted-browser.mjs',
-      'capture/agent/skills/apparent/SKILL.md']) assert.equal(matches(patterns, path), true, path);
-    // GitHub evaluates every changed path, including both sides of a rename.
-    assert.equal(['connect/web/old.ts', 'capture/desktop/new.ts'].some(p => matches(patterns, p)), true);
-    assert.equal(['public/site/src/deleted.ts', 'shared/new.ts'].some(p => matches(patterns, p)), true);
+    for (const path of ['connect/web/src/main.tsx', 'connect/service/src/worker.ts', 'public/site/src/App.tsx', 'unknown/file.ts'])
+      assert.equal(matches(patterns, path), false, path);
+    for (const path of ['capture/engine/runtime/mod.rs', 'shared/ui/button.tsx', 'composition/main.rs',
+      'connect/client/src/lib.rs', 'connect/hosted.rs', 'record/storage/src/config.ts', 'Cargo.toml'])
+      assert.equal(matches(patterns, path), true, path);
   }
   assert.equal(checks.jobs.public, undefined);
 });
