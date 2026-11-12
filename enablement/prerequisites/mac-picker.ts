@@ -52,8 +52,10 @@ on run argv
   if ((nativeApp's bundleIdentifier()) as text) is not (item 5 of argv) then error "Owned Electron bundle identity differs"
   tell application "System Events"
     set owned to first application process whose unix id is targetPID
-    set observedPID to unix id of owned
-    if observedPID is not targetPID then error "Owned AX process identifier differs; expected=" & targetPID & ";observed=" & observedPID
+    -- Materialize the remote property before comparison. Comparing a System
+    -- Events object property directly can retain an unresolved object specifier.
+    set observedPID to (unix id of owned) as integer
+    if observedPID is not targetPID then error "Owned AX process identifier differs; expectedPID=" & targetPID & ";observedPID=" & observedPID & ";expectedBundle=" & (item 5 of argv)
     tell owned
       if (count of windows) is 0 then error "Owned process has no AX windows; frontmost=" & (frontmost as text)
       set outerWindow to window 1

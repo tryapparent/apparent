@@ -564,6 +564,32 @@ window and requires no experiment. Packagers ship its production assets and
 Electron runtime via `scripts/package-notes.mjs`; development must run `npm ci`
 and `npm run build` before starting the rebuilt Rust app.
 
+Desktop TypeScript in `src/notes/presentation.ts` owns the editor/list/badge
+transitions, embedded badge hide/restore, list anchoring and work-area placement.
+The Rust actor emits ordered events only after Store admission/success; failures
+retain the previous presentation and recoverable draft. Events queued before
+Ready are delivered together at Ready. Electron main applies the generated
+`electron/notes/presentation.cjs`, which packaging requires and copies with the
+entrypoint. Generated policy is excluded from Git. Repeated list requests request
+fresh popup focus even when its mode has not changed.
+
+`npm run test:notes-policy` builds and tests this boundary using Node/TypeScript
+alone, without Rust tools, cached Rust output or Electron APIs/runtime. The pure
+policy tests can also run directly with Node's type stripping before npm install:
+`node --experimental-strip-types --test tests/notes/presentation.test.ts`.
+Rust retains the sole Engine Store writer, admitted-pin validation, fresh native
+return targets, validated owned surfaces, OS focus/coordinates and finish-drain
+safety. The private presentation receipt only observes popup activity for native
+input exclusion/placement admission; it does not select a mode.
+
+Routing is unchanged and there is no second notes presentation. Roll back this
+slice by reverting the paired Rust event protocol, generated policy build and
+Electron consumer together; unrelated native control routing remains bounded.
+Do not remove native integration until packaged macOS and isolated Linux
+acceptance verifies focus, placement, hide/restore, save/delete/error recovery
+and finish receipts. A provider test must observe actual Ready before injecting
+requests; a pre-Ready child exit is a failed native gate, never a policy pass.
+
 A private inherited pipe carries click-time anchors and bounded note commands.
 Only trusted local main frames can submit draft/save/edit/delete/dismiss/list;
 no renderer paths, window IDs, IPC names, shell or network commands are accepted.

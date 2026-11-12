@@ -11,6 +11,19 @@ use crate::capture::desktop::{
 };
 pub use session::Session;
 
+/// Restore an externally hosted control's native window ID after capture reset,
+/// or before its first visible frame when the child becomes ready later.
+pub(crate) fn restore_capture_exclusion(ids: &mut Vec<u32>, window: Option<u32>, exclude: bool) {
+    if exclude && let Some(id) = window.filter(|id| *id > 0) && !ids.contains(&id) {
+        ids.push(id);
+    }
+}
+
+#[cfg(any(test, target_os = "macos"))]
+pub(crate) fn capture_exclusion_ready(window: Option<u32>, applied: &[u32], screen_capture: bool) -> bool {
+    !screen_capture || window.is_some_and(|id| id > 0 && applied.contains(&id))
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct View {
@@ -22,7 +35,8 @@ pub struct View {
     pub notice: Option<String>,
     pub reduced_motion: bool,
     pub draggable: bool,
-    pub input_level: Option<f32>,
+    pub input_waveform: Option<[f32; 24]>,
+    pub note_count: usize,
     pub actions: Vec<Control>,
 }
 
@@ -48,7 +62,8 @@ impl View {
                 .map(|warning| warning.announcement().to_owned()),
             reduced_motion: snapshot.reduced_motion,
             draggable: false,
-            input_level: None,
+            input_waveform: snapshot.input_waveform,
+            note_count: 0,
             actions: vec![],
         };
         match &snapshot.pres {
@@ -77,10 +92,11 @@ impl View {
                 if *chips {
                     view.modes(*has_iphone, None, true);
                 } else {
+                    view.control("cancel", "Cancel", true, false, false);
                     view.control("whiteboard", "Whiteboard", true, false, false);
                     view.control("finish", "Finish", true, false, view.warning.is_none());
                 }
-                view.control("cancel", "Cancel", true, false, false);
+                if *chips { view.control("cancel", "Cancel", true, false, false); }
             }
             Pres::Processing => {
                 view.phase = "processing";
@@ -117,6 +133,14 @@ impl View {
                 _ => true,
             };
             action.enabled &= available;
+        }
+        self
+    }
+
+    pub fn with_notes(mut self, count: usize) -> Self {
+        if self.phase == "recording" && count > 0 {
+            self.note_count = count.min(100);
+            self.control("notes", "Open notes", true, false, false);
         }
         self
     }
@@ -199,6 +223,7 @@ impl View {
             "cancel" => PillAction::Cancel,
             "finish" => PillAction::Finish,
             "whiteboard" => PillAction::Whiteboard,
+            "notes" => PillAction::Notes,
             "paste" => PillAction::Paste(command.target),
             "copy-link" => PillAction::CopyLink,
             "inspect" => PillAction::Inspect,

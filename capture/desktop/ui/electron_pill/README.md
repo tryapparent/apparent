@@ -6,9 +6,21 @@ capture generation and exact handoff selection before dispatch. The renderer
 receives no bundle paths, credentials, configuration or capture contents.
 
 The row covers selection, recording, processing and completion. It reuses
-shared shadcn Button controls and Lucide icons. Cancel/dismiss is the rightmost
-×; ordinary actions retain labels. Warnings and rejected actions remain inline;
-there is no expandable panel, notes extension or Record-package dependency.
+shared shadcn Button controls and Lucide icons. Cancel/dismiss uses ×; ordinary actions retain labels.
+During ordinary recording, Cancel precedes
+Whiteboard and Finish, matching the approved extension composition. Warnings and rejected actions remain inline;
+there is no expandable panel or Record-package dependency.
+
+During recording, durable saved notes appear in the approved flush lilac extension
+on the right, using the shared Lucide StickyNote icon. Zero hides the extension;
+drafts never count. The 72px transparent footprint keeps Whiteboard, Finish and
+Cancel fixed for 0, 1 and multi-digit counts. Its hidden region is excluded from
+Linux input shape and hover. Clicking opens the existing notes list. Rust projects
+the existing durable Store receipt and retains its sole persistence writer;
+TypeScript owns the count presentation. The separate badge is suppressed only
+while Electron owns the visible pill, and returns on native/Glass fallback.
+The existing note editor and saved format are unchanged. Remove the fallback
+badge only after all compatibility routes have accepted replacements.
 
 Build the frontend with `npm ci && npm run build` in `../frontend`. Its build
 transpiles the preserved CommonJS Electron host from `.cts`; generated `.cjs`
@@ -38,9 +50,19 @@ Other compositors and older Hyprlang retain their own window-animation
 policy; application CSS motion is still disabled. Startup/watchdog and native
 fallback remain active. Rollback restores the previous presentation host and
 geometry polling together; no capture or persisted preference format changes.
-macOS retains native caption
-dragging; Glass or explicitly disabled movable controls retain native routing.
+macOS Black uses this shared presentation by default. The existing movable-controls
+feature retains dragging and Mac movie inclusion, not presentation admission.
+It is enabled by default. Explicitly set `experiments.movableRecordingControls`
+to `false` to exercise the excluded Mac route; omitting it tests the included route.
+Glass retains native routing.
 There is one visible pill. Missing packaged assets retain the native route.
+On Mac with movable controls explicitly disabled, capture reset restores the child
+window's explicit exclusion. If the
+child becomes ready during capture, the native controls remain visible until
+ScreenCaptureKit acknowledges that exact child ID in its applied filter. Failed
+filter updates never acknowledge the requested ID or advance the candidate filter.
+Unresolved window IDs retry at a bounded 250 ms cadence, even when requests stay
+unchanged. Device capture uses its phone stream and does not wait for an SCK receipt.
 
 Rollback is removal of the Electron routing calls and fields in Desktop's
 coordinator; the native implementation remains required for failure recovery

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./icons": "./src/icons.ts",
     "./tooltip": "./src/forms/tooltip.tsx",
     "./native-select": "./src/forms/native-select.tsx",
     "./settings-theme.css": "./src/settings/theme.css",

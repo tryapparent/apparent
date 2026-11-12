@@ -13,6 +13,8 @@ test('notes snapshot retains an exact click time and validates draft and saved t
   const n = { pin: 1, t: 1234, x: .25, y: .5, text: 'Keep me' };
   const s = { mode: 'editor', current: 1, position: [-300, 42], notes: [], drafts: [n], error: null };
   assert.equal(validSnapshot(s), true);
+  assert.equal(validSnapshot({...s,embedded:true}),true);
+  assert.equal(validSnapshot({...s,embedded:1}),false);
   assert.equal(validSnapshot({ ...s, drafts: [{ ...n, x: NaN }] }), false);
   assert.equal(validSnapshot({ ...s, notes: [{ ...n, text: '\0' }] }), false);
 });

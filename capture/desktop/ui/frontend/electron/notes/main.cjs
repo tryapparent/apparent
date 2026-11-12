@@ -11,6 +11,7 @@ const profile = suppliedProfile || fs.mkdtempSync(path.join(require('node:os').t
 const { pathToFileURL } = require('node:url');
 const readline = require('node:readline');
 const { validCommand, validSnapshot, popupBounds, badgeBounds } = require('./protocol.cjs');
+const { initialPresentation, projectSnapshot } = require('./presentation.cjs');
 app.setName('Apparent Notes');
 nativeTheme.themeSource = 'system';
 app.setPath('userData', profile);
@@ -25,6 +26,7 @@ app.on('quit', () => {
 const frame = process.argv.find(v => v.startsWith('--capture-frame='))?.slice('--capture-frame='.length).split(',').map(Number);
 if (!frame || frame.length !== 4 || !frame.every(Number.isFinite)) app.exit(1);
 let latest, popup, badge;
+let presentation = initialPresentation([frame[0] + frame[2] / 2, frame[1] + 80]);
 let finishing = false, finished = false;
 const send = (value) => process.stdout.write(JSON.stringify(value) + '\n');
 app.whenReady().then(() => {
@@ -118,8 +120,16 @@ app.whenReady().then(() => {
         return;
       }
       if (finishing) return;
-      if (!validSnapshot(state)) return app.quit();
-      const previous = latest; latest = state;
+      if (!Number.isSafeInteger(state.revision) || state.revision <= 0) return app.quit();
+      const previous = latest;
+      const projected = projectSnapshot(presentation, state);
+      if (!validSnapshot(projected)) return app.quit();
+      presentation = projected;
+      // Only this typed owner chooses presentation. Rust receives an observation
+      // for native placement admission/capture telemetry, never another policy.
+      send({ action: 'presentation', revision: state.revision, active: projected.mode !== 'badge' });
+      Object.assign(state, projected);
+      latest = state;
       let requestedBadge;
       const openingBadge = !badge.isVisible();
       if (state.badgeRect) {
@@ -136,12 +146,16 @@ app.whenReady().then(() => {
         const opening = !popup.isVisible();
         setRequestedBounds(popup, bounds, opening);
         if (opening) popup.show();
-        const focus = !previous || previous.mode !== state.mode || previous.current !== state.current;
+        const focus = !previous || previous.focusRevision !== state.focusRevision;
         if (focus) { popup.focus(); if (process.platform === 'linux') popup.webContents.focus(); }
         placeSurface(popup, focus, opening, bounds);
       } else { popup.hide(); if (previous && previous.mode !== 'badge') send({ action: 'hidden' }); }
-      if (openingBadge) badge.showInactive();
-      placeSurface(badge, false, openingBadge, requestedBadge); publish();
+      if (state.embedded) badge.hide();
+      else {
+        if (openingBadge) badge.showInactive();
+        placeSurface(badge, false, openingBadge, requestedBadge);
+      }
+      publish();
     } catch { app.quit(); }
   });
   lines.on('close', () => app.quit());
