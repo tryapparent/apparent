@@ -492,6 +492,33 @@ tint. These remain finite, replayable and static under reduced motion.
 
 ### Required shortcut choice and trial
 
+The Electron recorder keeps listening while Control, Shift, Alt or Super/Command
+are pressed; press the final key after holding the desired modifiers. Linux
+Copilot accepts any of these modifier combinations, including Control+Shift, or
+no modifiers. Actual compositor binding conflicts still refuse the shortcut.
+On the X1 keymap, Chromium can report XF86Assistant with no key identity; the
+Linux adapter confirms the held physical code 201 against the native keymap
+before passing it to the existing editor. An unidentified or already released
+key cannot be guessed into a saved Copilot shortcut; retry if identification
+fails. The observed X1 Carbon Gen 13 sends `XF86WakeUp` for standalone Fn.
+The Linux recorder stores that as key code 95, label `Fn`, with no modifiers;
+native X11/Hyprland registration uses `XF86WakeUp` and evdev `KEY_WAKEUP` maps
+to that same identity. A dedicated WakeUp key is indistinguishable on this
+input path. Firmware-only Fn keys that send no event remain unavailable. This
+mapping targets X11 and Hyprland. KDE 5's KGlobalAccel adapter rejects this key;
+other Wayland shortcut portals remain unverified and can refuse registration.
+Mac retains its separate native Fn identity and explicit choice.
+A permanent Hyprland Copilot binding can consume the key before Electron sees
+it. During listening, its native Record callback offers the known desktop
+binding to the shared TypeScript recorder, which submits it through the same
+validated editor. Late offers after leaving/cancelling the recorder do not
+select a shortcut. The permanent binding is preserved, not removed or rewritten.
+While bindings are paused, Engine forwards this IPC callback as a separate
+metadata event instead of a capture event. Desktop ignores it outside the
+active onboarding recorder; ordinary capture/paste callbacks remain paused.
+The existing Electron route, native fallback, single config writer and rollback
+are unchanged. Removing the fallback still requires its existing acceptance gates.
+
 The default first-capture tour offers no preselected Record combination and no
 accept-current shortcut action. Save a valid combination in the existing editor,
 then press and release that combination once. Rust consumes the normal shortcut

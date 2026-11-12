@@ -10,16 +10,17 @@ import { practiceExit } from '../../electron/onboarding/presentation.ts';
 import { OnboardingAccount } from './account';
 import type { AccountState } from '../../electron/onboarding/account';
 import { subscribeOnboardingState } from './state';
-import { fnSelectionActions, shortcutCapture } from '../../electron/onboarding/shortcut-editor.ts';
+import { desktopShortcutSelection, fnSelectionActions, shortcutCapture, shortcutInput } from '../../electron/onboarding/shortcut-editor.ts';
 import { Permissions, type PermissionRow as Row } from './permissions';
 type Action=string|{action:'shortcut';kind:'record';keyCode:number;modifiers:number;key:string;reserved:false};
 type Editor={recording:boolean;externallyManaged:boolean;error:string|null};
 type State={account:AccountState|null;tutorial:'skipped'|'watched'|'practiced'|null;platform:'macos'|'linux';shortcutEditor:Editor|null;step:string;ready:boolean;fix:boolean;rows:Row[];index:number;count:number;shortcut:string;shortcutEditing:boolean;shortcutChosen:boolean;shortcutTested:boolean;practice:string|null;firstCaptureRequired:boolean;penSaveId?:string;penPicker:boolean;penSelected:boolean;penError:boolean;penRgb:number[];testInstance:boolean;coachArrow?:number;coachPointsUp?:boolean};
-declare global {interface Window {nativeOnboarding?:{readState:()=>Promise<State|null>;action:(action:Action)=>Promise<boolean>;onState:(listener:(state:State)=>void)=>()=>void}}}
+declare global {interface Window {nativeOnboarding?:{readState:()=>Promise<State|null>;action:(action:Action)=>Promise<boolean>;onState:(listener:(state:State)=>void)=>()=>void;onDesktopShortcut?:(listener:(key:unknown)=>void)=>()=>void}}}
 export function NativeOnboarding(){
   const [wideCoach,setWideCoach]=useState(window.innerWidth>=700);
   useEffect(()=>{const resize=()=>setWideCoach(window.innerWidth>=700);window.addEventListener('resize',resize);return()=>window.removeEventListener('resize',resize)},[]);
   const [state,setState]=useState<State|null>(null),[error,setError]=useState('');
+  const currentShortcutState=useRef<State|null>(null),shortcutCancelled=useRef(false);
   const [penPhase,setPenPhase]=useState<'idle'|'preparing'|'hopping'>('idle');
   const penLanding=penPhase==='hopping',penBusy=penPhase!=='idle';
   const penFrog=useRef<HTMLImageElement|null>(null),penRun=useRef(0),penActive=useRef(false);
@@ -28,9 +29,20 @@ export function NativeOnboarding(){
   useEffect(()=>()=>{penRun.current++;penSave.current?.abort();if(penTimer.current)clearTimeout(penTimer.current)},[]);
   useEffect(()=>{if(state?.step!=='welcome'||!state?.penPicker){penRun.current++;penSave.current?.abort();penActive.current=false;if(penTimer.current)clearTimeout(penTimer.current);penTimer.current=null;setPenPhase('idle');penCommitted.current=false}},[state?.step,state?.penPicker]);
   document.documentElement.classList.add('native-onboarding-shell');
-  useEffect(()=>{const bridge=window.nativeOnboarding;return bridge?subscribeOnboardingState(bridge,setState):undefined},[]);
-  async function sendAction(value:Action){try{setError('');return await window.nativeOnboarding?.action(value)??false}catch{setError('The app connection was interrupted. Close setup and reopen it from apparent.');return false;}}
+  useEffect(()=>{const bridge=window.nativeOnboarding;return bridge?subscribeOnboardingState(bridge,next=>{
+    const previous=currentShortcutState.current;
+    if(next?.shortcutEditor?.recording&&(!previous?.shortcutEditor?.recording||next.platform!==previous.platform||next.step!==previous.step))shortcutCancelled.current=false;
+    currentShortcutState.current=next;setState(next);
+  }):undefined},[]);
+  async function sendAction(value:Action){
+    if(typeof value==='string'&&['cancel-shortcut','back','close','later'].includes(value))shortcutCancelled.current=true;
+    try{setError('');return await window.nativeOnboarding?.action(value)??false}catch{setError('The app connection was interrupted. Close setup and reopen it from apparent.');return false;}
+  }
   async function action(value:Action){await sendAction(value)}
+  useEffect(()=>window.nativeOnboarding?.onDesktopShortcut?.(key=>{
+    const selection=desktopShortcutSelection(shortcutCancelled.current?null:currentShortcutState.current,key);
+    if(selection)void action(selection);
+  }),[]);
   const shortcutAdvance=useRef<string|null>(null);
   useEffect(()=>{
     const ready=state?.step==='shortcut'&&state.firstCaptureRequired&&state.shortcutChosen&&state.shortcutTested&&!state.shortcutEditing&&!state.shortcutEditor?.recording;
@@ -121,11 +133,16 @@ export function NativeOnboarding(){
       {state.shortcutEditor?.recording?<div ref={shortcutRecorder} tabIndex={0} role="group" aria-label="Shortcut recorder" onKeyDown={event=>{
       if(event.key==='Tab'||event.target!==event.currentTarget)return;
       event.preventDefault();if(event.key==='Escape'){void action('cancel-shortcut');return;}
+      if(event.repeat)return;
+      const input=shortcutInput(event,state.platform);
+      if(input==='pending'){setError('');return;}
+      if(input==='fn-unavailable'){setError('Fn is not available in this Linux shortcut recorder. Choose Copilot or another key.');return;}
+      if(input==='native-copilot'){void action('resolve-copilot');return;}
       const pressed=shortcutCapture(event,state.platform);
-      if(!pressed){setError(state.platform==='linux'?'Use a supported key by itself or with Control, Alt or Super, or Copilot alone or with Super+Shift.':'Use a supported key by itself or with Control, Option or Command, or Fn alone.');return;}
+      if(!pressed){setError(state.platform==='linux'?'Apparent cannot use that key. Try Copilot, a letter or a number.':'Apparent cannot use that key. Choose Fn alone, a letter or a number.');return;}
       setError('');
       void action({action:'shortcut',kind:'record',...pressed,reserved:false});
-      }}><p>Press a supported key or shortcut{state.platform==='macos'?', or choose Fn below.':'.'}</p><div className="native-shortcut-choices">{state.platform==='macos'&&<Button onClick={chooseFn}>Use Fn</Button>}<Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div></div>:<>
+      }}><p>Hold any modifiers, then press a key.</p>{state.platform==='linux'&&<p className="native-shortcut-detail">Copilot works alone or with modifiers. Fn works when your keyboard sends it to the app.</p>}<div className="native-shortcut-choices">{state.platform==='macos'&&<Button onClick={chooseFn}>Use Fn</Button>}<Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div></div>:<>
         {state.shortcutChosen?<kbd>{state.shortcut}</kbd>:state.shortcutEditor?.externallyManaged?<><p>Your desktop already has a recording shortcut:</p><kbd>{state.shortcut}</kbd></>:<p>No shortcut selected.</p>}
         <div className="native-shortcut-choices">{state.platform==='macos'&&!state.shortcutChosen&&<Button onClick={chooseFn}>Use Fn</Button>}{state.shortcutEditor?.externallyManaged&&<Button onClick={()=>void action('use-desktop-shortcut')}>Use {state.shortcut}</Button>}
         <Button variant="outline" onClick={()=>void action('change-shortcut')}>{state.shortcutEditor?.externallyManaged?'Choose another shortcut':state.shortcutChosen?'Change shortcut':'Choose shortcut'}</Button></div>{state.shortcutEditor?.externallyManaged&&<p className="native-shortcut-detail">Choosing another shortcut keeps the desktop binding available too.</p>}
