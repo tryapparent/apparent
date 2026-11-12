@@ -65,7 +65,10 @@ Connect web/service/driver checks run once on Linux. Desktop renderer tests run 
 Electron on each selected platform; native root/staged Engine and standalone
 client suites are separately selected. The finite renderer-only Mac Rust
 exemption retains Mac Electron. Ordinary prose cannot undo a Linux exemption.
-Manual platform workflows default to all suites and retain full-tree diagnostics.
+The manual Linux workflow defaults to all suites and retains full-tree diagnostics.
+The standalone manual Mac workflow and its candidate-build jobs are retired;
+automatic Mac suites and exact-main admission remain in `checks.yml`.
+Historical exact-commit Mac receipts remain valid for release admission.
 The advisory owner report does not control admission.
 
 Main first runs fresh cheap contracts and selection. Ready PRs record their actual
