@@ -37,7 +37,15 @@ test('LaunchServices resolves an owned synthetic scheme to its actual executable
 </dict></plist>`);
     assert.equal(macHandler(system, executable, scheme).status, 'absent');
     registrationAttempted = true;
-    assert(system.run(registry, ['-f', bundle]).ok, 'Synthetic registration failed');
+    // lsregister's process exit alone did not establish registration on hosted
+    // Macs. Require the native operation's actual OSStatus before selection.
+    const registration = system.run('/usr/bin/osascript', ['-l', 'JavaScript', '-e', `
+ObjC.import('Foundation');
+ObjC.import('CoreServices');
+function run(argv) {
+  return String($.LSRegisterURL($.NSURL.fileURLWithPath($(argv[0])), true));
+}`, bundle]);
+    assert(registration.ok && registration.output.trim() === '0', `Synthetic registration OSStatus: ${registration.output.slice(0, 100)}`);
     // Registration supplies a candidate; this test queries the selected handler.
     // Select only this fresh, owned scheme, never the real Apparent scheme.
     const selection = system.run('/usr/bin/osascript', ['-l', 'JavaScript', '-e', `
