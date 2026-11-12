@@ -44,7 +44,7 @@ class AdmissionTests(unittest.TestCase):
     def test_baseline_restoration_does_not_publish_or_start_full_platform_runs(self):
         root = Path(__file__).resolve().parents[2] / '.github/workflows'
         for name in ('verification.yml', 'verification-mac.yml',
-                     'release-linux.yml', 'release-mac-preview.yml', 'web-delivery.yml'):
+                     'release-linux.yml', 'release-mac-preview.yml'):
             workflow = (root / name).read_text()
             events = workflow.split('\non:\n', 1)[1].split('\npermissions:', 1)[0]
             triggers = re.findall(r'^  ([a-z_]+):', events, re.M)
@@ -73,23 +73,24 @@ class AdmissionTests(unittest.TestCase):
         self.status = 'identical'
         self.calls = []
 
-    def test_public_uses_its_own_checks_and_never_publishes_on_push_or_pr(self):
+    def test_public_uses_its_own_checks_and_only_publishes_checked_main(self):
         root = Path(__file__).resolve().parents[2] / '.github/workflows'
         workflow = (root / 'stream-public.yml').read_text()
         checks, deploy = workflow.split('\n  deploy:\n')
-        for event in ('workflow_call', 'workflow_dispatch'):
+        for event in ('pull_request', 'push', 'workflow_dispatch'):
             self.assertIn('\n  ' + event + ':', checks)
+        self.assertNotIn('\n  workflow_call:', checks)
         self.assertIn('npm run verify', checks)
         self.assertNotIn('connect/', checks)
         self.assertNotIn('release_gate.py', workflow)
-        self.assertIn('needs: verify', deploy)
+        self.assertIn('verify', deploy.split('runs-on:', 1)[0])
         for guard in ("github.event_name == 'workflow_dispatch'", "github.ref == 'refs/heads/main'",
                       "github.repository == 'tryapparent/apparent'", "vars.WEBSITE_CD_ENABLED == 'true'"):
             self.assertIn(guard, deploy)
         self.assertIn('name: public-${{ github.sha }}', checks)
         self.assertIn('name: public-${{ github.sha }}', deploy)
-        self.assertNotIn('publish-pages.ts', (root / 'web-delivery.yml').read_text())
-        self.assertNotIn('\n  website:\n', (root / 'web-delivery.yml').read_text())
+        self.assertNotIn('publish-pages.ts', (root / 'stream-connect.yml').read_text())
+        self.assertNotIn('\n  website:\n', (root / 'stream-connect.yml').read_text())
 
     def fetch(self, path):
         self.calls.append(path)

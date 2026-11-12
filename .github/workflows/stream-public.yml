@@ -1,24 +1,48 @@
 name: Public — checks & deploy
 
 on:
-  workflow_call:
-    secrets:
-      APPARENT_POSTHOG_TOKEN:
-        required: false
-      WEBSITE_PAGES_API_TOKEN:
-        required: false
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Main checks preserve active runs. PR checks may coalesce; publication has its own lock.
+# Unknown PR inputs must reach selection, so there is no incomplete positive
+# path filter. Automatic main and manual publication share one noncancelling lock.
 concurrency:
-  group: public-${{ github.event_name == 'workflow_dispatch' && 'production' || github.event.pull_request.number || github.ref }}
+  group: public-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  select:
+    runs-on: ubuntu-24.04
+    outputs:
+      public: ${{ steps.paths.outputs.public }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - id: paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node --experimental-strip-types enablement/ci/select.ts
+
   verify:
+    needs: select
+    # Main always checks the complete Public tree: a later unrelated commit must
+    # carry a failed/queued website update that the current-main guard supersedes.
+    # Only an explicit successful PR selection may omit Public browser checks.
+    if: >-
+      !cancelled() && (github.event_name != 'pull_request' ||
+      needs.select.result != 'success' || needs.select.outputs.public != 'false')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -59,7 +83,7 @@ jobs:
 
   deploy:
     needs: verify
-    if: github.repository == 'tryapparent/apparent' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && vars.WEBSITE_CD_ENABLED == 'true'
+    if: github.repository == 'tryapparent/apparent' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && vars.WEBSITE_CD_ENABLED == 'true'
     environment:
       name: website-production
       url: https://app.tryapparent.com
