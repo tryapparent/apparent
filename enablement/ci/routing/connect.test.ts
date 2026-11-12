@@ -21,6 +21,8 @@ test('stream-only deltas do not allocate default CD; mixed, shared, unknown and 
       'connect/hosted.rs', 'connect/unknown.swift', 'connect/unknown.ts',
       'connect/skills/example/SKILL.md', 'connect/client/src/CLAUDE.md',
       'public/site/src/SKILL.md', 'public/site/src/CLAUDE.md', 'public/site/src/GEMINI.md',
+      'public/site/src/skill.md', 'public/site/src/claude.md', 'public/site/src/gemini.md',
+      'public/site/src/agents.md', 'public/site/src/sKiLl.md', 'connect/web/src/gEmInI.md',
       'public/site/src/fixture/example.md', 'public/site/new-root.ts', 'public/site/public/assets/brand/apparent-wordmark.svg',
       'public/site/scripts/browser-proof/test-hosted-browser.mjs',
       'capture/agent/skills/apparent/SKILL.md']) assert.equal(matches(patterns, path), true, path);
