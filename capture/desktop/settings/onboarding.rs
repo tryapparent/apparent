@@ -900,9 +900,24 @@ impl Progress {
         let _ = self.save_to(&crate::shared::handoff::default_config_path());
     }
 
-    /// Writes `"onboarding"`, keeping the rest of the config (and its `0600` mode) as it is.
+    /// Replace only this schema's leaves through the shared durable writer.
+    /// Future onboarding fields and unrelated config retain their exact values.
     pub fn save_to(&self, path: &Path) -> anyhow::Result<()> {
-        crate::shared::handoff::set_config_value_in(path, "onboarding", serde_json::to_value(self)?)
+        const KEYS: [&str; 10] = ["tourRevision", "seen", "resume", "granted", "relaunchedAt",
+            "reopenFix", "tutorial", "shortcutChosen", "shortcutTestedFor", "firstCaptureCompleted"];
+        let value = serde_json::to_value(self)?;
+        crate::shared::handoff::update_config_in(path, |config| {
+            let root = config.as_object_mut().ok_or_else(|| anyhow::anyhow!("Invalid config"))?;
+            let progress = root.entry("onboarding").or_insert_with(|| serde_json::json!({}));
+            let target = progress.as_object_mut().ok_or_else(|| anyhow::anyhow!("Invalid onboarding progress"))?;
+            for key in KEYS {
+                match value.get(key) {
+                    Some(value) => { target.insert(key.into(), value.clone()); }
+                    None => { target.remove(key); }
+                }
+            }
+            Ok(())
+        })
     }
 
     /// Remembers what's granted now; returns whether anything new was.
@@ -3109,7 +3124,7 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
         }
-        std::fs::write(&path, r#"{"agentHost":"studio","autocrop":false}"#).unwrap();
+        std::fs::write(&path, r#"{"agentHost":"studio","autocrop":false,"onboarding":{"future":{"number":18446744073709551615,"token":"synthetic-secret"}}}"#).unwrap();
         assert_eq!(Progress::load_from(&path), Progress::default());
         let progress = Progress {
             tour_revision: 0,
@@ -3137,6 +3152,19 @@ mod tests {
         assert_eq!(config["onboarding"]["reopenFix"], true);
         assert_eq!(config["onboarding"]["tutorial"], "practiced");
         assert_eq!(config["onboarding"]["shortcutTestedFor"], "⌥⇧S");
+        assert_eq!(config["onboarding"]["future"], serde_json::json!({"number":18446744073709551615_u64,"token":"synthetic-secret"}));
+        // Clearing optional schema leaves must not clear a future owner's data.
+        Progress::default().save_to(&path).unwrap();
+        let cleared: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(cleared["onboarding"]["future"], config["onboarding"]["future"]);
+        for key in ["resume", "relaunchedAt", "reopenFix", "tutorial", "shortcutTestedFor"] {
+            assert!(cleared["onboarding"].get(key).is_none(), "stale schema leaf: {key}");
+        }
+        for invalid in [r#"{"onboarding":null,"keep":"synthetic"}"#, r#"{"onboarding":[],"keep":"synthetic"}"#] {
+            std::fs::write(&path, invalid).unwrap();
+            assert!(progress.save_to(&path).is_err());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), invalid);
+        }
         // A resume point saved by 0.3.2's one-permission-per-step tour still loads.
         std::fs::write(
             &path,
