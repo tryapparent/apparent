@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawn} from 'node:child_process';
 import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {basename, join} from 'node:path';
@@ -477,4 +477,35 @@ test('bootstrap telemetry observes existing and future renderers with bounded co
  for(let i=0;i<30;i++)second.webContents.emit('did-start-loading');
  assert.equal(events.length,16);
  delete (globalThis as any).__apparentStorageWindowProbe;
+});
+
+import {once} from 'node:events';
+test('reference cleanup stops descendants after backend exit, survives restart, and leaves foreign processes alive', {timeout:20000}, async()=>{
+ const source=readFileSync('capture/desktop/ui/frontend/tests/reference-native.cjs','utf8');
+ const supervisor=new Function(source.slice(source.indexOf('const rustSupervisor ='),source.indexOf("test('selected capture"))+';return rustSupervisor;')();
+ const start=source.indexOf('  async function stopRust()');
+ const end=source.indexOf('  t.after(',start);
+ const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+ const stop=new AsyncFunction('rust','assert','process',source.slice(start,end).replace('    await log?.close(); log = undefined;','')+';await stopRust();');
+ const foreign=spawn('/bin/sleep',['60'],{stdio:'ignore'});
+ const groups=[];
+ try {
+  for(let cycle=0;cycle<2;cycle++) {
+   // The backend exits immediately, leaving a descendant in the owned group.
+   const root=spawn('/bin/bash',['-c',supervisor,'reference-supervisor','/bin/bash','-c','sleep 60 & echo $!'],{detached:true,stdio:['pipe','pipe','pipe']});
+   groups.push(root);
+   let output='';
+   for await(const chunk of root.stdout!) {output+=chunk.toString();if(output.includes('\n'))break;}
+   const descendant=Number(output.trim());assert.ok(descendant>1);
+   process.kill(descendant,0);
+   assert.equal(root.exitCode,null,'supervisor remains the live group anchor');
+   await stop(root,assert,process);
+   assert.throws(()=>process.kill(-root.pid!,0),(e:any)=>e.code==='ESRCH');
+   assert.throws(()=>process.kill(descendant,0),(e:any)=>e.code==='ESRCH');
+   process.kill(foreign.pid!,0);
+  }
+ } finally {
+  for(const root of groups)if(root.exitCode===null&&root.signalCode===null)try{process.kill(-root.pid!,'SIGKILL');}catch{}
+  const ended=once(foreign,'exit');foreign.kill();await ended;
+ }
 });

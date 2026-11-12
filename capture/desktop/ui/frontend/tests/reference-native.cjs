@@ -82,10 +82,15 @@ test('selected capture reference: real Rust selection and native clipboard', { t
       const pid = rust.pid;
       const absent = () => { try { process.kill(-pid, 0); return false; } catch (error) { if (error.code === 'ESRCH') return true; throw error; } };
       assert.equal(rust.exitCode, null, 'Rust supervisor exited before owned group cleanup');
+      assert.equal(rust.signalCode, null, 'Rust supervisor was signalled before owned group cleanup');
       process.kill(-pid, 'SIGTERM');
       const until = Date.now() + 2500;
       while (!absent() && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 50));
-      if (!absent()) process.kill(-pid, 'SIGKILL');
+      if (!absent()) {
+        assert.equal(rust.exitCode, null, 'Refusing group escalation after supervisor exit');
+        assert.equal(rust.signalCode, null, 'Refusing group escalation after supervisor signal');
+        process.kill(-pid, 'SIGKILL');
+      }
       const deadline = Date.now() + 1500;
       while (!absent() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
       assert.ok(absent(), `Owned Rust process group ${pid} survived cleanup`);
