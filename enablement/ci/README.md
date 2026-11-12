@@ -86,17 +86,24 @@ This fixture proves filter semantics and failure propagation, not platform nativ
 acceptance. Normal ready-PR platform CI must still verify the real candidate.
 
 Hosted Ubuntu checks use `.github/actions/ubuntu-apt` before installing packages.
-GitHub's image assigns Azure/Ubuntu mirrors priorities 1–3; the action prepends
-Kernel.org's Ubuntu mirror at priority 0 only after a bounded HTTPS InRelease
-probe succeeds, and preserves those fallback entries. If the probe fails, it
-removes only its own exact priority-0 entry, including on a repeated invocation.
-This avoids retrying a known-unavailable preferred host for every package index.
-The disposable runner's dedicated `80apparent-transport` APT config limits HTTP
+GitHub's image assigns Azure/Ubuntu mirrors priorities 1–3. The action tests
+Ubuntu's HTTPS archive and then Kernel.org with APT's own acquire backend, since
+curl can succeed for a host that stalls APT. Each candidate must supply the
+updates suite's InRelease and its amd64 main by-hash package index (hash checked),
+within one ten-second timeout plus two seconds of termination headroom. The first
+passing candidate is promoted to priority 0; only this helper's exact priority
+entries are replaced, preserving hosted fallbacks. If neither candidate passes,
+preparation fails before installation instead of promoting an untested mirror.
+The disposable runner's dedicated `zzzz-apparent-transport` APT config limits HTTP
 and HTTPS inactivity to 15 seconds and acquisition retries to one. These are
 per-request bounds, not a total installation deadline; job timeouts remain.
+The helper verifies APT's merged acquisition values through `sudo apt-config`
+before mirror promotion and refuses unexpected overrides. This matters because
+later runner fragments can override a correctly written `80-*` file. The real
+APT regression exercises that precedence in an isolated configuration tree.
 This addresses repeated hosted DNS/download timeouts without changing Ubuntu
 archive keys, package signatures, source suites or dependency/test requirements.
-It is restricted to disposable Linux Actions runners. macOS keeps its existing
+It is restricted to disposable x64 Ubuntu Actions runners. macOS keeps its existing
 Homebrew/native setup. Tests execute the shipped mirror-list transformation
 against isolated files, including idempotence and unsafe-target refusal.
 The updater harness, manual web verifier and x86 Linux packaging also prepare
