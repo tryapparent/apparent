@@ -27,6 +27,7 @@ pub(crate) enum Failure {
     PhoneStart,
     FinalizeCapture,
     VideoExport,
+    UpdateCheck,
     RustPanic,
     ElectronMainException,
     ElectronMainRejection,
@@ -43,6 +44,7 @@ impl Failure {
             Self::PhoneStart => "phone_start_failed",
             Self::FinalizeCapture => "capture_finalization_failed",
             Self::VideoExport => "video_export_failed",
+            Self::UpdateCheck => "update_check_failed",
             Self::RustPanic => "rust_panic",
             Self::ElectronMainException => "electron_main_exception",
             Self::ElectronMainRejection => "electron_main_rejection",
@@ -50,6 +52,14 @@ impl Failure {
             Self::ElectronChildGone => "electron_child_gone",
         }
     }
+}
+
+/// Sparkle uses completion errors for ordinary outcomes as well as failures.
+/// SUNoUpdateError (1001), installation cancellation (4007), and authorize-later
+/// (4008) are not update-check failures. The domain/code are inspected locally
+/// and never enter the report payload.
+pub(crate) fn sparkle_error_should_report(domain: &str, code: isize) -> bool {
+    !(domain == "SUSparkleErrorDomain" && matches!(code, 1001 | 4007 | 4008))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
