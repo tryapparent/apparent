@@ -1,14 +1,19 @@
+const accountStatuses = ['loading', 'signed-out', 'starting', 'approval', 'signed-in', 'failed'] as const;
+type AccountStatus = typeof accountStatuses[number];
+
 export type AccountState = {
-  status: 'loading' | 'signed-out' | 'starting' | 'approval' | 'signed-in' | 'failed';
+  status: AccountStatus;
   error: string | null;
   userCode: string | null;
   verificationUri: string | null;
 };
 const errors = new Set(['cancelled','offline','auth-required','rejected','expired','local-state','invalid-server','unavailable','browser']);
+const accountStatusSet: ReadonlySet<string> = new Set(accountStatuses);
+
 export function projectAccount(value: unknown): AccountState | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const v = value as Record<string, unknown>;
-  if (typeof v.status !== 'string' || !['loading','signed-out','starting','approval','signed-in','failed'].includes(v.status)) return null;
+  if (typeof v.status !== 'string' || !accountStatusSet.has(v.status)) return null;
   let userCode = null, verificationUri = null;
   if (v.status === 'approval') {
     if (typeof v.userCode !== 'string' || !/^[A-Za-z0-9-]{1,128}$/.test(v.userCode) || typeof v.verificationUri !== 'string' || v.verificationUri.length > 4096 || /[\s\\]/.test(v.verificationUri)) return null;
@@ -18,5 +23,5 @@ export function projectAccount(value: unknown): AccountState | null {
     } catch { return null; }
     userCode = v.userCode; verificationUri = v.verificationUri;
   }
-  return {status: v.status as AccountState['status'], error: typeof v.error === 'string' && errors.has(v.error) ? v.error : null, userCode, verificationUri};
+  return {status: v.status as AccountStatus, error: typeof v.error === 'string' && errors.has(v.error) ? v.error : null, userCode, verificationUri};
 }

@@ -11,6 +11,18 @@ test('account projection exposes only public approval data and safe failure code
   assert.equal(projectAccount({status: 'failed', error: 'expired'})?.error, 'expired');
 });
 
+test('non-approval provider state never forwards stale approval or credential fields', () => {
+  const providerState = {
+    status: 'failed', error: 'offline', userCode: 'STALE-CODE',
+    verificationUri: 'https://app.example.test/connect/device?code=STALE-CODE',
+    accessToken: 'secret-access-token', refreshToken: 'secret-refresh-token',
+    deviceCode: 'secret-device-code', authorization: 'Bearer secret',
+  };
+  assert.deepEqual(projectAccount(providerState), {
+    status: 'failed', error: 'offline', userCode: null, verificationUri: null,
+  });
+});
+
 test('malformed or unsafe approval is unavailable rather than a signed-in state', () => {
   for (const verificationUri of ['javascript:alert(1)', 'https://name:secret@example.test/', 'https://example.test/#private', 'http://remote.test/', 'https://example.test/a\nb']) {
     assert.equal(projectAccount({status: 'approval', userCode: 'TEST-CODE', verificationUri}), null);
