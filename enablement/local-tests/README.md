@@ -6,7 +6,8 @@ adapters retain native checks even without Rust source edits. Public/browser
 changes and ordinary owner prose avoid unrelated native suites. Unknown history,
 inputs and unsafe Git modes/types stay broad. Only proven concurrency-only
 workflow edits select tooling alone; execution-sensitive workflow changes retain
-integration coverage. Hosted and local execution use the same owner facts.
+integration coverage. Hosted and local execution call the same range selector and
+named suite plan; see [the CI contract](../docs/continuous-delivery.md).
 
 The audited standalone regression files `local-tests/reuse.test.ts` and
 `prerequisites/native.test.ts` select tooling alone. Both remain in the always-run
@@ -22,8 +23,8 @@ Local selections that need Rust check the existing private temporary-root contra
 before other commands. When Desktop is selected, its locked install, unit tests
 and complete Electron suite run before Rust verification. This catches missing
 Electron downloads, display/sandbox setup and renderer failures before a cold
-native build. No checks are omitted or duplicated, and no sandbox permissions or
-host configuration are changed. Repair the reported prerequisite and rerun the
+native build. Source-first policy proof remains separate from canonical Desktop
+coverage. No sandbox permissions or host configuration are changed. Repair the reported prerequisite and rerun the
 normal command; this ordering does not turn renderer checks into native proof.
 
 For native integration setup, install the locked frontend dependencies with

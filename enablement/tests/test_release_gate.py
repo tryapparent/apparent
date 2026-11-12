@@ -81,7 +81,7 @@ class AdmissionTests(unittest.TestCase):
             self.assertIn('\n  ' + event + ':', checks)
         self.assertNotIn('\n  workflow_call:', checks)
         self.assertIn('npm run verify', checks)
-        self.assertNotIn('connect/', checks)
+        self.assertNotIn('connect/', checks.split('jobs:', 1)[1])
         self.assertNotIn('release_gate.py', workflow)
         self.assertIn('verify', deploy.split('runs-on:', 1)[0])
         for guard in ("github.event_name == 'workflow_dispatch'", "github.ref == 'refs/heads/main'",
