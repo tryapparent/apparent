@@ -71,6 +71,11 @@ fn stage_transcribe_shared_objects() {
                 std::fs::create_dir_all(&dir).expect("create runtime directory");
                 let staged = dir.join(name);
                 std::fs::copy(&path, &staged).expect("stage transcribe library");
+                // Cargo snapshots watched mtimes before running this script. Keep
+                // the provider's mtime so our own copy is not a new input change.
+                let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+                std::fs::File::options().write(true).open(&staged).unwrap()
+                    .set_times(std::fs::FileTimes::new().set_modified(modified)).unwrap();
                 // Cargo may restore build-script state while pruning target outputs.
                 // Watching each copy makes a missing cached runtime invalidate this
                 // script, so a normal build restores the runtime before execution.

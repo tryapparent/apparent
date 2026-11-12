@@ -47,6 +47,12 @@ test('Cargo reruns production runtime staging after cached shared objects are pr
   const cargoRun = () => spawnSync('cargo', ['run', '--offline', '--manifest-path', manifest], { cwd: dir, env, encoding: 'utf8', timeout: 120_000 });
   const first = cargoRun();
   assert.equal(first.status, 0, first.stderr);
+  const requireFresh = () => {
+    const unchanged = cargoRun();
+    assert.equal(unchanged.status, 0, unchanged.stderr);
+    assert.doesNotMatch(unchanged.stderr, /Compiling runtime-cache-proof/, 'no-edit Cargo run must stay fresh');
+  };
+  requireFresh();
   const target = join(dir, 'target/debug');
   for (const name of ['libtranscribe.so', 'libggml_cpu.so']) {
     assert.ok(existsSync(join(target, name)), `${name} staged beside production binaries`);
@@ -60,6 +66,7 @@ test('Cargo reruns production runtime staging after cached shared objects are pr
   }
   const recovered = cargoRun();
   assert.equal(recovered.status, 0, recovered.stderr);
+  requireFresh();
   for (const name of ['libtranscribe.so', 'libggml_cpu.so']) {
     assert.ok(existsSync(join(target, name)), `${name} restaged beside production binaries`);
     assert.ok(existsSync(join(target, 'deps', name)), `${name} restaged beside Cargo test binaries`);
