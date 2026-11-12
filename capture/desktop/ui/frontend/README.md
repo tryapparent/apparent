@@ -20,6 +20,24 @@ assets and CSP rather than a less-restricted Electron development server.
 
 ## Narrow contract
 
+### Focused onboarding policy checks
+
+From this directory, `npm run test:onboarding-policy` runs the source-level
+onboarding tests with Node 22 alone. It needs no `npm ci`, Electron download,
+display, Rust toolchain or generated `dist`. It covers account projection,
+shortcut capture/protocol admission, coach geometry, state subscription and pen
+save receipts. Newly added `tests/onboarding/*.test.ts` files join automatically;
+keep that suffix for headless checks and use `*.smoke.ts` for renderer checks.
+
+After `npm ci`, `npm run typecheck:onboarding-policy` checks those tests and their
+TypeScript policy providers without building the Desktop frontend. The canonical
+`npm test` also runs this typecheck, so CI catches policy/test type errors. Neither
+command exercises React rendering or the real Rust/native providers. Continue
+to run the canonical `npm test`, `npm run test:electron` and affected native
+acceptance before delivery; their coverage and release admission are unchanged.
+These focused checks are a fast product-development loop, not an independent
+onboarding release lane.
+
 The separate installed `--controls` presentation is Linux's no-tray fallback.
 It reuses this packaged runtime and shared buttons, with four allowlisted parent-pipe
 commands: Record screen, Choose target, Latest capture and Settings. Rust owns
