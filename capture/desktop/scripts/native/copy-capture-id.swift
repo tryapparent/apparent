@@ -24,7 +24,8 @@ guard inherited["CI"] == "true", inherited["GITHUB_ACTIONS"] == "true",
 }
 let app = URL(fileURLWithPath: CommandLine.arguments[1]).standardizedFileURL
 let output = URL(fileURLWithPath: CommandLine.arguments[2]).standardizedFileURL
-let runner = URL(fileURLWithPath: inherited["RUNNER_TEMP"] ?? "/invalid").resolvingSymlinksInPath()
+let runnerPath = URL(fileURLWithPath: inherited["RUNNER_TEMP"] ?? "/invalid").standardizedFileURL
+let runner = runnerPath.resolvingSymlinksInPath()
 let deadline = Date().addingTimeInterval(150)
 var env = inherited
 var owned: Process?
@@ -75,6 +76,77 @@ func stop() throws {
     }
     try require(!child.isRunning, "Owned preview did not stop")
     owned = nil
+}
+// Read-only cleanup diagnostics for RUNNER_TEMP and this script's own fixture.
+// Walk manually with lstat so symlinks are reported but never traversed. Hard
+// limits keep a pathological fixture from consuming the native job deadline.
+func cleanupMetadata(_ url: URL) -> [String: Any] {
+    var info = stat()
+    let result = url.path.withCString { lstat($0, &info) }
+    guard result == 0 else {
+        return ["path": url.path, "available": false, "error": String(cString: strerror(errno))]
+    }
+    let isLink = (info.st_mode & S_IFMT) == S_IFLNK
+    var entry: [String: Any] = ["path": url.path, "available": true,
+        "uid": Int(info.st_uid), "gid": Int(info.st_gid), "mode": String(info.st_mode & 0o7777, radix: 8),
+        "directory": (info.st_mode & S_IFMT) == S_IFDIR,
+        "fileFlags": UInt(info.st_flags), "symlink": isLink]
+    if isLink { entry["acl"] = "notRead: symlink target is never followed" }
+    else if let acl = url.path.withCString({ acl_get_file($0, ACL_TYPE_EXTENDED) }) {
+        var length: ssize_t = 0
+        if let bytes = acl_to_text(acl, &length) {
+            let raw = String(cString: bytes)
+            // Keep ACL entry types and permissions, but omit account names.
+            let redacted = raw.split(separator: "\n", omittingEmptySubsequences: false).map { line in
+                line.replacingOccurrences(of: #"^([ \t]*\d+:[ \t]*(?:user|group):)[^:]+(:.*)$"#,
+                                          with: "$1<principal>$2", options: .regularExpression)
+            }.joined(separator: "\n")
+            entry["acl"] = String(redacted.prefix(4096))
+            if redacted.count > 4096 { entry["aclTruncated"] = true }
+            acl_free(bytes)
+        } else { entry["acl"] = "unavailable: acl_to_text failed" }
+        acl_free(acl)
+    } else {
+        let code = errno
+        entry["acl"] = code == ENOENT || code == ENOTSUP
+            ? "unavailable: filesystem does not provide extended ACLs"
+            : "unavailable: acl_get_file errno \(code)"
+    }
+    return entry
+}
+func cleanupDiagnostics(_ home: URL) -> [String: Any] {
+    let maxEntries = 160, maxDepth = 8
+    var entries: [[String: Any]] = []
+    var errors: [String] = []
+    var truncated = false
+    var truncationReason: String?
+    let diagnosticDeadline = Date().addingTimeInterval(4)
+    // RUNNER_TEMP itself is the only ancestor inspected; no parent traversal.
+    entries.append(cleanupMetadata(runnerPath))
+    entries.append(cleanupMetadata(home))
+    var errorsTruncated = false
+    let enumerator = fm.enumerator(at: home, includingPropertiesForKeys: nil, options: [], errorHandler: { url, error in
+        if errors.count < 32 { errors.append("\(url.path): \(error)") }
+        else { errorsTruncated = true }
+        return errors.count < 32
+    })
+    while Date() < diagnosticDeadline, let child = enumerator?.nextObject() as? URL {
+        if entries.count >= maxEntries { truncated = true; truncationReason = "entryLimit"; enumerator?.skipDescendants(); break }
+        let depth = child.pathComponents.count - home.pathComponents.count
+        if depth > maxDepth { truncated = true; truncationReason = "depthLimit"; enumerator?.skipDescendants(); continue }
+        let metadata = cleanupMetadata(child)
+        entries.append(metadata)
+        if metadata["directory"] as? Bool == true && depth >= maxDepth {
+            truncated = true
+            truncationReason = "depthLimit"
+            enumerator?.skipDescendants()
+        }
+    }
+    if Date() >= diagnosticDeadline { truncated = true; truncationReason = "timeLimit" }
+    return ["root": home.path, "runnerTemp": runnerPath.path, "entries": entries,
+        "enumerationErrors": errors, "enumerationErrorsTruncated": errorsTruncated,
+        "truncated": truncated, "truncationReason": truncationReason as Any? ?? NSNull(),
+        "limits": ["entries": maxEntries, "depth": maxDepth]]
 }
 struct OwnedWindow {
     let id: CGWindowID
@@ -547,8 +619,21 @@ catch { failure = failure ?? error; report["passed"] = false; report["cleanupErr
 for handle in logs { try? handle.close() }
 if let home = fixture {
     if failure == nil {
+        // Capture metadata before deletion so partial cleanup cannot erase the
+        // evidence. Collection is bounded and best-effort; it never changes the
+        // original removeItem result or pass/fail decision.
+        if deadline.timeIntervalSinceNow > 6 {
+            report["cleanupDiagnostics"] = cleanupDiagnostics(home)
+        } else {
+            report["cleanupDiagnostics"] = ["available": false,
+                "reason": "skipped to preserve cleanup deadline", "truncated": true,
+                "truncationReason": "insufficientTime"]
+        }
         do { try fm.removeItem(at: home); report["fixtureRemoved"] = true }
-        catch { failure = error; report["passed"] = false; report["cleanupError"] = String(describing: error) }
+        catch {
+            failure = error; report["passed"] = false; report["cleanupError"] = String(describing: error)
+            report["cleanupDiagnosticsFailure"] = String(describing: error)
+        }
     } else { report["retainedFixture"] = home.path }
 }
 if fm.fileExists(atPath: output.path) {
