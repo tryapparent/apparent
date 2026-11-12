@@ -87,6 +87,22 @@ for(const outcome of ['connected','waitlisted','opt-out','initial-unavailable'] 
  const page=browser.contexts()[0].pages()[0];
  let output='';child.stdout.on('data',bytes=>output+=bytes);
  child.stdin.write(JSON.stringify({type:'state',step:'welcome',rows:[],ready:true,index:0,count:5,platform:'linux',testInstance:true})+'\n');
+ async function capture(name:string){
+  if(!process.env.APPARENT_ONBOARDING_EVIDENCE)return;
+  await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE,{recursive:true});
+  for(const width of [760,320])for(const colorScheme of ['light','dark'] as const){
+   await page.setViewportSize({width,height:720});
+   await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
+   await page.evaluate(()=>document.fonts.ready);
+   await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,name+' horizontal overflow');
+   await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,name+'-'+width+'-'+colorScheme+'.png'),animations:'disabled'});
+  }
+  await page.setViewportSize({width:760,height:720});
+  await page.emulateMedia({colorScheme:'light'});
+ }
+ await expect(page.getByRole('heading',{name:'Where’s ur agent at?',exact:true})).toBeVisible();
+ if(outcome==='connected')await capture('agent-choice');
  await page.getByRole('button',{name:'Up in the cloud',exact:true}).click();
  if(outcome==='initial-unavailable'){
   await expect(page.getByRole('alert')).toBeVisible();
@@ -104,6 +120,7 @@ for(const outcome of ['connected','waitlisted','opt-out','initial-unavailable'] 
   return;
  }
  await expect(page.getByRole('button',{name:'Continue with Google',exact:true})).toBeEnabled();
+ if(outcome==='connected')await capture('connect-consent');
  assert.equal(requests.includes('allow'),false);
  await page.getByRole('button',{name:'Continue with Google',exact:true}).click();
  await expect.poll(()=>inspect(endpoints.node,'global.opened.length')).toBe(1);
@@ -117,6 +134,7 @@ for(const outcome of ['connected','waitlisted','opt-out','initial-unavailable'] 
   await expect.poll(()=>disableAttempts).toBe(2);
  }else if(outcome==='waitlisted'){
   phase='waitlisted';await expect(page.getByText(/You’re on the Connect waitlist/)).toBeVisible();
+  await capture('connect-waitlist');
   assert(!output.includes('"action":"continue"'));
   await page.getByRole('button',{name:'Continue locally',exact:true}).click();
  }else phase='connected';

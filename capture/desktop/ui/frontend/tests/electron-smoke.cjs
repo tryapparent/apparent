@@ -266,18 +266,19 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
 
   // Hold the first image decode, as on a cold launch. Save must finish first.
   await page.locator('.native-pond-frog').evaluate(img=>{const decode=img.decode.bind(img);img.decode=()=>decode().then(()=>new Promise(resolve=>{window.releasePenImage=resolve}));});
+  const penAdvancesBefore=(output.match(/"action":"continue"/g)?.length??0);
   const before=await page.locator('.native-pond-frog').boundingBox();
   await page.getByRole('button',{name:'purple pen',exact:true}).click();
   await expect.poll(()=>output).toContain('pen:purple:');
   const penSaveId=JSON.parse(output.trim().split('\n').at(-1)).action.split(':')[2];
   send({penPicker:true,penSelected:true,penRgb:[122,88,199]});
   await page.waitForTimeout(100);
-  assert.equal(output.includes('"action":"continue"'),false,'stale selection cannot acknowledge this save');
+  assert.equal((output.match(/"action":"continue"/g)?.length??0),penAdvancesBefore,'stale selection cannot acknowledge this save');
   send({penPicker:true,penSelected:true,penRgb:[122,88,199],penSaveId});
   await expect(page.locator('.native-puddle path')).toHaveCSS('fill','rgb(122, 88, 199)');
   await expect(page.getByRole('button',{name:'purple pen',exact:true})).toBeDisabled();
   await new Promise(resolve=>setTimeout(resolve,1400));
-  assert.equal(output.includes('"action":"continue"'),false,'cold image readiness must not be bypassed by a timer');
+  assert.equal((output.match(/"action":"continue"/g)?.length??0),penAdvancesBefore,'cold image readiness must not be bypassed by a timer');
   await page.evaluate(()=>window.releasePenImage());
   await expect(page.locator('.native-pond')).toHaveAttribute('data-landing','true');
   const minimum=await page.evaluate(()=>new Promise(resolve=>{
@@ -285,8 +286,8 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     function sample(){min=Math.min(min,frog.getBoundingClientRect().y);if(performance.now()-began<1000)requestAnimationFrame(sample);else resolve(min)}requestAnimationFrame(sample);
   }));
   assert.ok(minimum<before.y-25,'frog must rise visibly before landing');
-  await expect.poll(()=>output).toContain('"action":"continue"');
-  assert.equal(output.match(/"action":"continue"/g)?.length,1);
+  await expect.poll(()=>(output.match(/"action":"continue"/g)?.length??0)).toBe(penAdvancesBefore+1);
+  assert.equal(output.match(/"action":"continue"/g)?.length,penAdvancesBefore+1);
   send({step:'try-it',practice:'screen'});
   await expect(page.getByRole('heading',{name:'Choose Screen.',exact:true})).toBeVisible();
   send({step:'try-it',practice:'screen',platform:'linux'});
@@ -524,6 +525,8 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     assert.equal(await page.locator('.native-shortcut-prompt').evaluate(el=>getComputedStyle(el).animationName),'none');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await page.keyboard.press('Tab');
+    await expect(page.locator('.native-setup')).toHaveCSS('background-color',scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)');
+    await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
     if(process.env.APPARENT_ONBOARDING_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'one-more-time-320-'+scheme+'.png'),animations:'disabled'});
   }
   await page.setViewportSize({width:760,height:520});
