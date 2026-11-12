@@ -142,8 +142,8 @@ pub enum Status {
     Granted,
 }
 
-/// Permission statuses shown to the user. macOS Accessibility is checked in the recording
-/// process; other statuses come from a fresh `apparent-helper permissions`.
+/// Permission statuses shown to the user. macOS screen permission comes from a fresh
+/// recording executable, Accessibility from this process, and devices from the Swift helper.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Grants {
     pub statuses: BTreeMap<Permission, Status>,
@@ -1021,18 +1021,21 @@ fn next_session_source() -> u64 {
     NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-/// Reads what's granted now from a fresh helper, except Accessibility: the separately
-/// signed helper may not share the recording process's trust. Only once the helper says
-/// Screen Recording is granted does this process try a real ScreenCaptureKit capture.
+/// Read screen permission from a fresh recording executable and Accessibility from
+/// this process. The separately signed Swift helper supplies the remaining grants.
+/// Only a fresh screen grant permits a real ScreenCaptureKit usability check.
 pub fn read_grants() -> Option<Grants> {
     let statuses = crate::capture::desktop::helper::permissions()
         .inspect_err(|error| crate::capture::engine::runtime::apparent_log(format!("permissions: {error:#}")))
         .ok()?;
-    let statuses = if cfg!(target_os = "macos") {
-        reconcile_accessibility(statuses, crate::capture::engine::runtime::accessibility_granted())
-    } else {
-        statuses
-    };
+    #[cfg(target_os = "macos")]
+    let statuses = reconcile_native_grants(
+        statuses,
+        crate::capture::desktop::helper::screen_permission()
+            .inspect_err(|error| crate::capture::engine::runtime::apparent_log(format!("screen permission: {error:#}")))
+            .unwrap_or(false),
+        crate::capture::engine::runtime::accessibility_granted(),
+    );
     let screen = statuses.get(&Permission::ScreenRecording) == Some(&Status::Granted);
     let grants = Grants {
         statuses,
@@ -1042,10 +1045,16 @@ pub fn read_grants() -> Option<Grants> {
     Some(grants)
 }
 
-fn reconcile_accessibility(
+#[cfg(any(target_os = "macos", test))]
+fn reconcile_native_grants(
     mut statuses: BTreeMap<Permission, Status>,
+    screen: bool,
     accessibility: bool,
 ) -> BTreeMap<Permission, Status> {
+    statuses.insert(
+        Permission::ScreenRecording,
+        if screen { Status::Granted } else { Status::NotDetermined },
+    );
     statuses.insert(
         Permission::Accessibility,
         if accessibility {
@@ -3191,16 +3200,16 @@ mod tests {
     }
 
     #[test]
-    fn accessibility_matches_the_app_without_hiding_screen_revocation() {
+    fn native_grants_match_recording_identity_and_observe_screen_revocation() {
         let helper = BTreeMap::from([
             (Accessibility, Status::NotDetermined),
             (ScreenRecording, Status::NotDetermined),
             (Microphone, Status::Granted),
         ]);
-        let statuses = reconcile_accessibility(helper, true);
+        let statuses = reconcile_native_grants(helper, true, true);
         assert_eq!(statuses[&Accessibility], Status::Granted);
-        // A cached positive screen preflight is not evidence against a fresh denial.
-        assert_eq!(statuses[&ScreenRecording], Status::NotDetermined);
+        // A helper-only denial must not mask a fresh recording-executable grant.
+        assert_eq!(statuses[&ScreenRecording], Status::Granted);
         assert_eq!(statuses[&Microphone], Status::Granted);
 
         let helper = BTreeMap::from([
@@ -3208,10 +3217,10 @@ mod tests {
             (ScreenRecording, Status::Granted),
             (Microphone, Status::Granted),
         ]);
-        let statuses = reconcile_accessibility(helper, false);
+        let statuses = reconcile_native_grants(helper, false, false);
         assert_eq!(statuses[&Accessibility], Status::NotDetermined);
-        // The helper may see a new screen grant before the running app does.
-        assert_eq!(statuses[&ScreenRecording], Status::Granted);
+        // A helper grant (or cached capture success) must not mask fresh revocation.
+        assert_eq!(statuses[&ScreenRecording], Status::NotDetermined);
         assert_eq!(statuses[&Microphone], Status::Granted);
     }
 
