@@ -52,7 +52,8 @@ on run argv
   if ((nativeApp's bundleIdentifier()) as text) is not (item 5 of argv) then error "Owned Electron bundle identity differs"
   tell application "System Events"
     set owned to first application process whose unix id is targetPID
-    if (unix id of owned) is not targetPID then error "Owned AX process identifier differs"
+    set observedPID to unix id of owned
+    if observedPID is not targetPID then error "Owned AX process identifier differs; expected=" & targetPID & ";observed=" & observedPID
     tell owned
       if (count of windows) is 0 then error "Owned process has no AX windows; frontmost=" & (frontmost as text)
       set outerWindow to window 1
@@ -210,9 +211,13 @@ on run argv
 end run
 
 on ownedApplication(targetPID, expectedExecutable)
+  -- Numeric observations only, before any activation/input. A later diagnostic
+  -- can succeed after this lookup failed; retain the actual lookup argument.
+  log ("Owned AppKit lookup pid=" & targetPID)
   set nativeApp to current application's NSRunningApplication's runningApplicationWithProcessIdentifier:targetPID
-  if nativeApp is missing value then error "Owned Electron process is absent"
-  if ((nativeApp's isTerminated()) as boolean) then error "Owned Electron process exited"
+  if nativeApp is missing value then error "Owned Electron process is absent; expected=" & targetPID
+  log ("Owned AppKit result pid=" & ((nativeApp's processIdentifier()) as integer))
+  if ((nativeApp's isTerminated()) as boolean) then error "Owned Electron process exited; expected=" & targetPID
   if ((nativeApp's executableURL()'s |path|()) as text) is not expectedExecutable then error "Owned Electron executable changed"
   return nativeApp
 end ownedApplication
