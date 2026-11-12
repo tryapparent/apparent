@@ -28,11 +28,12 @@ export async function isolatePickerRuntime(sourceExecutable:string, home:string,
  }
  const nonce=randomUUID().replaceAll('-','');
  const bundleId=`com.tryapparent.storagefixture.f${nonce}`,name=`ApparentStorageFixture-${nonce}`;
- // AX window references can resolve through the process name even after a PID
- // lookup. Isolate that name too, without changing the installed source app.
- const executable=join(bundle,'Contents/MacOS',name);
+ // Both launched apps otherwise retain the executable name Electron. Isolate
+ // the copy's process name too, to avoid name-based AX reference collisions;
+ // never relax the subsequent exact-PID check.
+ const executableName=`StorageFixture-${nonce}`,executable=join(bundle,'Contents/MacOS',executableName);
  await rename(copiedExecutable,executable);
- for(const [key,value] of [['CFBundleIdentifier',bundleId],['CFBundleName',name],['CFBundleDisplayName',name],['CFBundleExecutable',name]])
+ for(const [key,value] of [['CFBundleIdentifier',bundleId],['CFBundleName',name],['CFBundleDisplayName',name],['CFBundleExecutable',executableName]])
   await run('/usr/libexec/PlistBuddy',['-c',`Set :${key} ${value}`,plist]);
  // Only the copied parent identity changed. Nested binaries keep their verified
  // signatures; preserve the parent's entitlements and flags when signing it.
