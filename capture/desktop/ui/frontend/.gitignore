@@ -9,3 +9,5 @@ test-results/
 /electron/record-completion/
 /electron/storage-owner/
 /electron/settings/*.cjs
+
+/electron/notes/presentation.cjs

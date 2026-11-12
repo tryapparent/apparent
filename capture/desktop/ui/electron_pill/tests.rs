@@ -1,10 +1,39 @@
 use super::*;
+
+#[test]
+fn child_window_exclusion_covers_initial_reset_and_late_readiness() {
+    let mut ids = vec![11];
+    restore_capture_exclusion(&mut ids, None, true);
+    assert_eq!(ids, [11]);
+    restore_capture_exclusion(&mut ids, Some(42), true);
+    restore_capture_exclusion(&mut ids, Some(42), true);
+    assert_eq!(ids, [11, 42]);
+    ids.clear(); // The real start path resets telemetry before the initial SCK filter.
+    restore_capture_exclusion(&mut ids, Some(42), true);
+    assert_eq!(ids, [42]);
+    ids.clear();
+    restore_capture_exclusion(&mut ids, Some(42), false);
+    restore_capture_exclusion(&mut ids, Some(0), true);
+    assert!(ids.is_empty()); // Explicitly visible controls and unknown IDs stay out.
+}
+
+#[test]
+fn late_child_stays_hidden_until_its_filter_receipt() {
+    assert!(!capture_exclusion_ready(Some(42), &[], true));
+    assert!(!capture_exclusion_ready(Some(42), &[11], true));
+    assert!(!capture_exclusion_ready(None, &[42], true));
+    assert!(!capture_exclusion_ready(Some(0), &[0], true));
+    assert!(capture_exclusion_ready(Some(42), &[11, 42], true));
+    // Device capture records the phone stream, not SCK's display; it has no SCK receipt.
+    assert!(capture_exclusion_ready(Some(42), &[], false));
+}
 use crate::capture::desktop::native::pill::PillStyle;
 fn snapshot(pres: Pres) -> PillSnapshot {
     PillSnapshot {
         pres,
         clock: "00:12".into(),
         mic_warning: None,
+        input_waveform: None,
         reduced_motion: false,
         style: PillStyle::Black,
     }
@@ -299,4 +328,25 @@ fn electron_pill_requires_an_explicit_capture_for_handoff() {
         view.admit(command(1, "dismiss")),
         Some(PillAction::DismissCompleted)
     ));
+}
+
+#[test]
+fn captured_level_projects_to_shared_pill_without_a_platform_gate() {
+    let mut source = snapshot(Pres::Recording { chips: false, has_iphone: false });
+    source.input_waveform = Some([0.6; 24]);
+    assert_eq!(View::new(&source, 1, false).input_waveform, Some([0.6; 24]));
+}
+
+#[test]
+fn saved_notes_are_recording_only_and_admitted_by_revision() {
+    let mut snapshot = snapshot(Pres::Recording { chips: false, has_iphone: false });
+    let view = View::new(&snapshot, 7, true).with_notes(0);
+    assert_eq!(view.note_count, 0);
+    assert_eq!(view.actions.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["cancel", "whiteboard", "finish"]);
+    assert!(!view.actions.iter().any(|a| a.id == "notes"));
+    let view = view.with_notes(12);
+    assert_eq!(view.note_count, 12);
+    assert!(matches!(view.admit(Command { revision: 7, action: "notes".into(), target: None }), Some(PillAction::Notes)));
+    snapshot.pres = Pres::Processing;
+    assert_eq!(View::new(&snapshot, 8, true).with_notes(12).note_count, 0);
 }

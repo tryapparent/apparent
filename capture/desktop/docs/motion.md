@@ -9,3 +9,38 @@ Read this before changing the capsule's animation (`capture/desktop/ui/lab.rs`, 
 `capture/desktop/scripts/perf/pill/record.sh <binary> <dir> [--time-scale 0.25] [scene…]` records each scene (trace + 60 fps screen clip) and runs motion-lint (`capture/desktop/scripts/perf/pill/motion-lint.config.json`). It records the real screen, so run it on the MacBook Pro under `/tmp/pro-gui.lock`, never on the Studio: `capture/desktop/scripts/perf/screen-guard.sh` refuses there, and nothing may wake a display (no `caffeinate -d`/`-u`); `bun ~/code/open-source/motion-lint/cli/motion-lint.ts baseline <before> <after> --config capture/desktop/scripts/perf/pill/motion-lint.config.json` diffs two runs, and `uv run capture/desktop/scripts/perf/pill/clips.py before.mov after.mov out [--slow 4] [--strip-at s]` stacks labelled before/after clips and a frame strip. Look at the frames too: an invisible capsule has no motion to flag.
 
 Springs and fades live in `motion::Tune`; `apparent tune list|set <key> <v>|preset <1-5>|reset` edits `~/.config/apparent/tune.json` (`$APPARENT_TUNE`), which dev builds, the installed app included, reload within 250 ms, and `apparent tune rust` prints the values to paste into `Tune::DEFAULT`. One animation clock (`motion::now()`, scaled by `timeScale`); springs advance to now as each capsule frame draws (`step_island`).
+
+## Recording input visualization
+
+The recording pill shows about one second of actual captured microphone history:
+24 narrow rounded strokes in a 66×28 pt region, oldest left and newest right.
+Engine reduces the existing 16 kHz mono capture PCM into overlapping 80 ms RMS
+windows at 40 ms spacing (RMS × 4, bounded to 0–1). This native signal reduction
+avoids moving raw PCM through presentation IPC. It opens no extra stream and
+changes no permission or device selection. Quiet speech uses a power-0.55 gain
+curve with a bounded 1.15 multiplier; overlapping windows give a short natural release. Silence becomes dots.
+This is an amplitude display, not a speech or microphone-health verdict.
+
+Samples older than 250 ms read as zero. A busy capture buffer is skipped rather
+than blocking capture; the pill reserves its waveform footprint and shows zero.
+Desktop TypeScript owns Electron gain/geometry and a 300 ms transport expiry in
+`ui/frontend/src/pill/meter-policy.ts`. It never appends synthetic timer samples.
+Reduced motion, from either OS media query or native readback, keeps fixed dots
+and indicates current input through opacity. The retained Mac Metal/Glass adapter
+projects the same signal history and gain into native raster geometry, with no
+additional history buffer or animation policy. Existing inline microphone
+warnings remain authoritative and independent.
+
+Mac Black controls use the shared Electron pill by default, including the saved
+notes extension. `movableRecordingControls` retains its existing dragging and
+Mac movie-inclusion behavior. That feature is on by default; an absent config key
+does not disable it. Setting `"experiments": {"movableRecordingControls": false}`
+keeps Mac controls out of capture without changing shared presentation routing.
+The child then waits for the screen worker's exclusion acknowledgement before
+replacing native controls during capture. Glass and failed/unavailable Electron
+retain native controls and the existing notes badge. Both receive the same capture history. Linux's native GPUI fallback
+retains its existing meter. Rollback is the existing native fallback; removing it
+still requires accepted Electron routing and platform proof. This slice moves
+Electron meter policy out of the Rust coordinator into Desktop TypeScript,
+without changing capture policy or preferences/persistence. Native fallback
+raster geometry remains until its Electron replacement is accepted.

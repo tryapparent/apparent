@@ -36,7 +36,7 @@ test('packaged Record result reaches the pill and survives renderer reload',asyn
  assert.deepEqual(await exit,[0,null]);
  assert.equal(completed.state.observation.clipboard,'copied');
  const view={revision:1,phase:'completed',clock:'00:04',label:completed.state.status,warning:null,notice:null,
-  reducedMotion:true,draggable:false,inputLevel:null,actions:[
+  reducedMotion:true,draggable:false,inputWaveform:null,actions:[
    {id:'paste',label:'Paste',enabled:true,selected:false,primary:true},
    {id:'inspect',label:'Inspect',enabled:true,selected:false,primary:false},
    {id:'dismiss',label:'Dismiss',enabled:true,selected:false,primary:false}]};

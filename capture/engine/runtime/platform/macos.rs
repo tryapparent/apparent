@@ -1010,6 +1010,7 @@ pub(crate) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         target: sampler_target,
         video_output_path,
         excluded_window_ids,
+        applied_excluded_window_ids,
         started_at,
         stopping: thread_stopping,
         urgent: thread_urgent,
@@ -1030,6 +1031,7 @@ pub(crate) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         &initial_excluded,
         started_at,
         &thread_offset,
+        &applied_excluded_window_ids,
     );
     crate::capture::desktop::start_metric("sck_ready_ms", started_at);
     let shot_edge = if video_path.is_some() {
@@ -1047,6 +1049,8 @@ pub(crate) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         .checked_sub(FRAME_SAMPLE_INTERVAL)
         .unwrap_or_else(Instant::now);
     let mut last_excluded = initial_excluded.clone();
+    let mut last_attempted = initial_excluded.clone();
+    let mut last_filter_attempt = Instant::now();
     let mut prompts = SystemPrompts::new(&sampler_target);
     while !thread_stopping.load(Ordering::Acquire) {
         let mut cur_excluded = excluded_window_ids
@@ -1061,19 +1065,37 @@ pub(crate) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
                 .drop_since(prompts.clear_until_ms);
         }
         cur_excluded.extend(&prompts.ids);
-        if cur_excluded != last_excluded {
-            last_excluded.clone_from(&cur_excluded);
+        let elapsed = last_filter_attempt.elapsed();
+        let unresolved = super::super::recording::recorder::exclusion_retry_due(
+            &cur_excluded,
+            &applied_excluded_window_ids.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
+            elapsed);
+        if cur_excluded != last_attempted || unresolved
+            || (cur_excluded != last_excluded && elapsed >= Duration::from_millis(250))
+        {
+            last_attempted.clone_from(&cur_excluded);
+            last_filter_attempt = Instant::now();
             prompts.hidden = sck_lists_windows(&prompts.ids);
-            if let Some((new_filter, _)) =
+            if let Some((new_filter, _, applied)) =
                 build_sck_filter_and_config(&sampler_target, &cur_excluded)
             {
                 // Keep explicit privacy exclusions consistent in movie and candidates.
-                if let Some(ref stream) = stream
-                    && let Err(error) = stream.update_content_filter(&new_filter)
-                {
-                    apparent_log(format!("Recording filter update failed: {error:?}"));
+                let updated = stream.as_ref().is_none_or(|stream| {
+                    match stream.update_content_filter(&new_filter) {
+                        Ok(()) => true,
+                        Err(error) => {
+                            apparent_log(format!("Recording filter update failed: {error:?}"));
+                            false
+                        }
+                    }
+                });
+                if updated {
+                    // Neither the receipt nor candidate filter may outrun the movie filter.
+                    filter_and_config = Some((new_filter, sck_config(&sampler_target, shot_edge)));
+                    *applied_excluded_window_ids.lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = applied;
+                    last_excluded.clone_from(&cur_excluded);
                 }
-                filter_and_config = Some((new_filter, sck_config(&sampler_target, shot_edge)));
             }
         }
         let urgent = thread_urgent.swap(false, Ordering::AcqRel);
@@ -1116,7 +1138,7 @@ pub(crate) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
 fn build_sck_filter_and_config(
     target: &TargetInfo,
     excluded_window_ids: &[u32],
-) -> Option<(SCContentFilter, SCStreamConfiguration)> {
+) -> Option<(SCContentFilter, SCStreamConfiguration, Vec<u32>)> {
     let content = match SCShareableContent::get() {
         Ok(c) => c,
         Err(err) => {
@@ -1128,6 +1150,7 @@ fn build_sck_filter_and_config(
             return None;
         }
     };
+    let mut applied = Vec::new();
     let filter = if target.mode == CaptureMode::Window && target.window_id.is_none() {
         None
     } else if let Some(window_id) = target.window_id
@@ -1161,6 +1184,7 @@ fn build_sck_filter_and_config(
             })
             .collect();
         let excluded_refs: Vec<&SCWindow> = excluded_overlays.iter().collect();
+        applied = excluded_overlays.iter().map(|window| window.window_id()).collect();
         SCContentFilter::create()
             .with_display(&display)
             .with_excluding_windows(&excluded_refs)
@@ -1177,7 +1201,8 @@ fn build_sck_filter_and_config(
     } else {
         1280.0
     };
-    Some((filter, sck_config(target, long_edge)))
+    // Only the display-filter branch applies exclusions. Window filters acknowledge none.
+    Some((filter, sck_config(target, long_edge), applied))
 }
 
 fn sck_config(target: &TargetInfo, long_edge: f64) -> SCStreamConfiguration {
@@ -1214,13 +1239,14 @@ fn setup_sck_capture(
     excluded_window_ids: &[u32],
     started_at: Instant,
     video_offset_ms: &AtomicU64,
+    applied_excluded_window_ids: &Mutex<Vec<u32>>,
 ) -> (
     Option<SCStream>,
     Option<SCRecordingOutput>,
     Option<PathBuf>,
     Option<SCContentFilter>,
 ) {
-    let Some((filter, config)) = build_sck_filter_and_config(target, excluded_window_ids) else {
+    let Some((filter, config, applied)) = build_sck_filter_and_config(target, excluded_window_ids) else {
         return (None, None, None, None);
     };
 
@@ -1238,6 +1264,8 @@ fn setup_sck_capture(
             // estimate this side of the recording delegate.
             let before = started_at.elapsed();
             if stream.start_capture().is_ok() {
+                *applied_excluded_window_ids.lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = applied;
                 let after = started_at.elapsed();
                 video_offset_ms.store(((before + after) / 2).as_millis() as u64, Ordering::Release);
                 return (
@@ -1250,6 +1278,8 @@ fn setup_sck_capture(
         }
     }
 
+    *applied_excluded_window_ids.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = applied;
     (None, None, None, Some(filter))
 }
 

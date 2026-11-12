@@ -92,17 +92,7 @@ impl Session {
             launch.arg(format!("--force-device-scale-factor={}", crate::capture::desktop::linux::x11::ui_scale()));
         }
         launch.arg(app.join("electron/pill/main.cjs"));
-        #[cfg(target_os = "linux")]
-        {
-            use std::os::unix::fs::{MetadataExt, PermissionsExt};
-            let helper = std::fs::metadata(runtime.parent().unwrap().join("chrome-sandbox"))?;
-            if helper.uid() != 0 || helper.permissions().mode() & 0o4000 == 0 {
-                // User-owned AppImages cannot provide a privileged SUID helper.
-                // Chromium must use its kernel namespace sandbox or refuse launch;
-                // this never disables renderer/seccomp sandboxing.
-                launch.arg("--disable-setuid-sandbox");
-            }
-        }
+        crate::capture::desktop::workflow::electron::configure_sandbox(&mut launch, &runtime)?;
         let mut child = launch
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -395,10 +385,10 @@ impl Session {
         }
         let mut semantic = view.clone();
         semantic.clock.clear();
-        semantic.input_level = None;
+        semantic.input_waveform = None;
         let mut previous = self.view.clone();
         previous.clock.clear();
-        previous.input_level = None;
+        previous.input_waveform = None;
         let changed =
             semantic != previous || self.generation != generation || self.selection != selection;
         if changed {
@@ -502,7 +492,7 @@ mod native_tests {
         let view = View {
             revision: 1, phase: "recording", clock: "00:01".into(), label: "Synthetic pin test".into(),
             warning: None, notice: None, reduced_motion: true,
-            draggable: false, input_level: None, actions: vec![],
+            draggable: false, input_waveform: None, note_count: 0, actions: vec![],
         };
         let mut session = Session::open(view.clone(), 1, Default::default()).unwrap();
         let deadline = Instant::now() + Duration::from_secs(8);

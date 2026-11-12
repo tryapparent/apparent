@@ -43,21 +43,36 @@ verified `_worker.js` is published with `--no-bundle`. Only that exact movie pat
 invokes the Function. The existing Free plan and fail-closed quota behavior stay
 unchanged; no separate Worker or paid service is activated.
 
-## Checks and manual publication
+## Independent continuous delivery
 
-Public checks run on relevant PRs and main pushes. **Only a manual dispatch on
-canonical `main` can publish.** Dispatch `stream-public.yml`; it runs Public's
-checks and downloads only that run's SHA-named sealed artifact into the deploy
-job. It uses the existing `website-production` environment, `WEBSITE_CD_ENABLED=true`
-gate and scoped `WEBSITE_PAGES_API_TOKEN`. No new secrets or provider configuration
+`stream-public.yml` owns direct PR, main-push and manual-dispatch entrypoints;
+`checks.yml` does not call it. A cheap PR selector reads the entire base-to-merge
+delta through the shared consumer map. Relevant Public source, README/embedded
+guides, shared UI/analytics/assets and unknown inputs run Public checks. Additions,
+deletions and both rename sides retain coverage; missing history, unsafe file
+types or failed selection cannot omit checks. Known unrelated PRs skip the browser
+job. Audited Public-only paths do not allocate the default Continuous delivery
+workflow; shared, mixed, native and unknown paths retain their actual consumers.
+
+Every main push checks the complete Public tree, so a later unrelated commit can
+carry a failed or queued website update whose older candidate is superseded.
+After successful verification, canonical-main pushes **automatically publish**
+when `WEBSITE_CD_ENABLED=true`. Manual dispatch remains a recovery entrypoint.
+Both routes download only that run's SHA-named sealed artifact into the deploy
+job, use the existing `website-production` environment and scoped
+`WEBSITE_PAGES_API_TOKEN`. PRs, forks and other event types cannot publish.
+No new secrets or provider configuration
 are required. The token's recorded expiry is **2026-11-19T10:27:38Z**; renew it
 through the existing secret workflow before expiry without printing it.
 
 Public does not require a full Linux/shared verification receipt or a Connect
-run. Publication is serialized separately from checks and cannot be cancelled by
-a new push. Immediately before upload, the publisher requires current main and
+run. Main verification/publication and manual-main recovery share one lock that
+never cancels an active publication; only PR runs may supersede each other.
+Immediately before upload, the publisher requires current main and
 refuses to overwrite an equal or newer deployed revision. A superseded candidate
-skips publication without a new receipt; dispatch current main again when needed.
+skips publication without a new receipt; the next main run verifies the complete
+tree, or dispatch current main again when needed. A disabled website gate skips
+deployment without changing the gate or provider settings.
 Readback verifies the revision and Public HTML, JS/CSS and full movie bytes at both
 the immutable deployment URL and `https://app.tryapparent.com`. Merge success alone
 is not production delivery.
@@ -71,7 +86,7 @@ legacy `/hosted` redirects and `connect.tryapparent.com` aliases retain their co
 queries there. Public uploads no Connect documents, redirects or application
 assets. No routing cutover is part of this split.
 
-`web-delivery.yml` retains Connect's existing service and cross-origin browser
+`stream-connect.yml` retains Connect's existing service and cross-origin browser
 checks and its separately gated hosted deploy job. Those integration fixtures
 still compose Public and Connect locally; they cannot publish Pages. Public's own
 checks and publication do not depend on that workflow.

@@ -14,6 +14,8 @@ test(`shipped Electron note UI focuses, saves, counts, edits, recovers drafts an
     ['--no-sandbox', `--force-device-scale-factor=${scale}`, '--remote-debugging-port=0', path.resolve(__dirname, '../../electron/notes/main.cjs'), '--capture-frame=0,0,1280,800', '--notes-profile=' + profile],
     { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(home, 'config') } });
   let browser;
+  let previousFixture;
+  let revision = 0;
   let errors = '';
   child.stderr.on('data', chunk => { errors += chunk.toString(); });
   t.after(async () => { await browser?.close(); child.kill(); await new Promise(resolve => child.exitCode !== null ? resolve() : child.once('exit', resolve)); await fs.rm(home, { recursive: true, force: true }); });
@@ -41,8 +43,21 @@ test(`shipped Electron note UI focuses, saves, counts, edits, recovers drafts an
   const popup = pages.find(p => p.url().endsWith('#notes-popup')) || pages[0];
   const badge = pages.find(p => p !== popup);
   await popup.waitForFunction(() => !!window.captureNotes);
+  await expect.poll(() => messages.some(m => m.action === 'ready')).toBe(true);
   let state = { mode: 'editor', current: 1, position: [200, 160], notes: [], drafts: [{ pin: 1, t: 123, x: .5, y: .35, text: '' }], error: null };
-  const send = () => child.stdin.write(JSON.stringify(state) + '\n');
+  const send = (events) => {
+    if (!events) {
+      events = [];
+      if (!previousFixture || previousFixture.embedded !== state.embedded) events.push({ kind: 'embedded', value: !!state.embedded });
+      if (state.badgeRect && JSON.stringify(previousFixture?.badgeRect) !== JSON.stringify(state.badgeRect)) events.push({ kind: 'badge', rect: state.badgeRect });
+      if (!previousFixture || previousFixture.mode !== state.mode) {
+        events.push(state.mode === 'editor' ? { kind: 'open', pin: state.current, position: state.position } :
+          { kind: state.mode === 'list' ? 'list' : 'dismiss' });
+      }
+    }
+    previousFixture = structuredClone(state);
+    child.stdin.write(JSON.stringify({ revision: ++revision, events, notes: state.notes, drafts: state.drafts, error: state.error }) + '\n');
+  };
   send();
   const field = popup.getByRole('textbox', { name: 'Note text' });
   await expect(field).toBeFocused();
@@ -74,6 +89,23 @@ test(`shipped Electron note UI focuses, saves, counts, edits, recovers drafts an
     const expected = [830 + 6 * scale, 36, 150 * scale, 44 * scale];
     await expect.poll(() => messages.some(m => m.action === 'surface' && JSON.stringify(m.rect) === JSON.stringify(expected))).toBe(true);
     await expect.poll(() => messages.some(m => m.action === 'surface' && m.rect[3] === 350 * scale)).toBe(true);
+    const focusedLists = () => messages.filter(m => m.action === 'surface' && m.focus && m.rect[3] === 350 * scale).length;
+    const before = focusedLists();
+    send([{ kind: 'list' }]);
+    await expect.poll(focusedLists).toBe(before + 1);
+  }
+  // The pill owns the visible count; the same editor/list remains available.
+  state.embedded = true; send();
+  if (process.platform === 'linux') {
+    const id = messages.find(m => m.action === 'surface' && m.rect[2] === 150 * scale && m.rect[3] === 44 * scale).id;
+    const mapped = () => require('node:child_process').execFileSync('xwininfo', ['-id', String(id)], {encoding:'utf8'}).includes('Map State: IsViewable');
+    await expect.poll(mapped).toBe(false);
+  }
+  await expect(popup.getByRole('button', { name: /Smaller button/ })).toBeVisible();
+  state.embedded = false; send();
+  if (process.platform === 'linux') {
+    const id = messages.find(m => m.action === 'surface' && m.rect[2] === 150 * scale && m.rect[3] === 44 * scale).id;
+    await expect.poll(() => require('node:child_process').execFileSync('xwininfo', ['-id', String(id)], {encoding:'utf8'}).includes('Map State: IsViewable')).toBe(true);
   }
   await popup.getByRole('button', { name: /Smaller button/ }).click();
   await expect.poll(() => messages.some(m => m.action === 'edit' && m.pin === 1)).toBe(true);

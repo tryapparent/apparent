@@ -6,6 +6,31 @@ pub enum FinishOutcome {
 }
 pub type FinishResult = Result<FinishOutcome, String>;
 
+/// Native input exclusion while Desktop applies an admitted popup request.
+/// Revisions prevent an older hide receipt from releasing a newer request.
+/// This tracks delivery, not editor/list/badge presentation policy.
+#[derive(Default)]
+pub(super) struct PresentationAdmission {
+    sent: u64,
+    observed: u64,
+    active: bool,
+    pending: Option<u64>,
+}
+impl PresentationAdmission {
+    pub fn requested(&mut self) { self.pending = Some(self.sent + 1); }
+    pub fn next_snapshot(&mut self) -> u64 { self.sent += 1; self.sent }
+    pub fn observe(&mut self, revision: u64, active: bool) -> bool {
+        if revision == 0 || revision > self.sent { return false; }
+        if revision >= self.observed {
+            self.observed = revision;
+            self.active = active;
+            if self.pending.is_some_and(|pending| revision >= pending) { self.pending = None; }
+        }
+        true
+    }
+    pub fn blocks_input(&self) -> bool { self.active || self.pending.is_some() }
+}
+
 #[derive(Default)]
 pub(super) struct Lifecycle {
     sealed: bool,
@@ -25,6 +50,9 @@ impl Lifecycle {
         self.admitted = true;
         true
     }
+    #[cfg(test)]
+    pub fn ready(&self) -> bool { self.ready }
+
     pub fn observed_ready(&mut self) {
         self.ready = true;
     }
@@ -70,6 +98,27 @@ impl Lifecycle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn old_hide_receipt_cannot_release_a_fresh_list_or_editor_admission() {
+        let mut state = PresentationAdmission::default();
+        state.requested();
+        assert!(state.blocks_input());
+        let first = state.next_snapshot();
+        assert!(state.observe(first, true));
+        let hide = state.next_snapshot();
+        state.requested(); // newer native list request, before the old hide arrives
+        assert!(state.observe(hide, false));
+        assert!(state.blocks_input());
+        let fresh = state.next_snapshot();
+        assert!(state.observe(fresh, true));
+        assert!(state.observe(hide, false));
+        assert!(state.blocks_input());
+        let close = state.next_snapshot();
+        assert!(state.observe(close, false));
+        assert!(!state.blocks_input());
+        assert!(!state.observe(close + 1, false));
+        assert!(!state.observe(0, false));
+    }
     #[test]
     fn startup_exit_without_admission_has_an_explicit_receipt_before_or_after_finish() {
         for finish_first in [false, true] {
