@@ -97,7 +97,7 @@ func cleanupMetadata(_ url: URL) -> [String: Any] {
         var records: [[String: Any]] = []
         var item: acl_entry_t?
         var selector = ACL_FIRST_ENTRY
-        while records.count < 32 && acl_get_entry(acl, selector, &item) == 0 {
+        while records.count < 32 && acl_get_entry(acl, Int32(selector.rawValue), &item) == 0 {
             selector = ACL_NEXT_ENTRY
             guard let item = item else { break }
             var tag = ACL_UNDEFINED_TAG
@@ -119,7 +119,7 @@ func cleanupMetadata(_ url: URL) -> [String: Any] {
         entry["acl"] = records
         entry["aclPermissionsScope"] = "selected cleanup-related permissions; no principal qualifiers"
         entry["aclPossiblyTruncated"] = records.count == 32
-        acl_free(acl)
+        acl_free(UnsafeMutableRawPointer(acl))
     } else {
         let code = errno
         entry["acl"] = code == ENOENT || code == ENOTSUP
