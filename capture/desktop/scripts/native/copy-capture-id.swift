@@ -78,8 +78,8 @@ func stop() throws {
     owned = nil
 }
 // Read-only cleanup diagnostics for RUNNER_TEMP and this script's own fixture.
-// Walk manually with lstat so symlinks are reported but never traversed. Hard
-// limits keep a pathological fixture from consuming the native job deadline.
+// The enumerator does not traverse symlinks; lstat and ACL lookup do not follow
+// them either. Entry/depth limits and a soft time bound reserve cleanup time.
 func cleanupMetadata(_ url: URL) -> [String: Any] {
     var info = stat()
     let result = url.path.withCString { lstat($0, &info) }
@@ -92,25 +92,39 @@ func cleanupMetadata(_ url: URL) -> [String: Any] {
         "directory": (info.st_mode & S_IFMT) == S_IFDIR,
         "fileFlags": UInt(info.st_flags), "symlink": isLink]
     if isLink { entry["acl"] = "notRead: symlink target is never followed" }
-    else if let acl = url.path.withCString({ acl_get_file($0, ACL_TYPE_EXTENDED) }) {
-        var length: ssize_t = 0
-        if let bytes = acl_to_text(acl, &length) {
-            let raw = String(cString: bytes)
-            // Keep ACL entry types and permissions, but omit account names.
-            let redacted = raw.split(separator: "\n", omittingEmptySubsequences: false).map { line in
-                line.replacingOccurrences(of: #"^([ \t]*\d+:[ \t]*(?:user|group):)[^:]+(:.*)$"#,
-                                          with: "$1<principal>$2", options: .regularExpression)
-            }.joined(separator: "\n")
-            entry["acl"] = String(redacted.prefix(4096))
-            if redacted.count > 4096 { entry["aclTruncated"] = true }
-            acl_free(bytes)
-        } else { entry["acl"] = "unavailable: acl_to_text failed" }
+    else if let acl = url.path.withCString({ acl_get_link_np($0, ACL_TYPE_EXTENDED) }) {
+        // Never request principal qualifiers or serialize raw ACL text.
+        var records: [[String: Any]] = []
+        var item: acl_entry_t?
+        var selector = ACL_FIRST_ENTRY
+        while records.count < 32 && acl_get_entry(acl, selector, &item) == 0 {
+            selector = ACL_NEXT_ENTRY
+            guard let item = item else { break }
+            var tag = ACL_UNDEFINED_TAG
+            var permissions: acl_permset_t?
+            var record: [String: Any] = [:]
+            if acl_get_tag_type(item, &tag) == 0 { record["type"] = String(describing: tag) }
+            if acl_get_permset(item, &permissions) == 0, let permissions = permissions {
+                let selected: [(String, acl_perm_t)] = [
+                    ("delete", ACL_DELETE), ("deleteChild", ACL_DELETE_CHILD),
+                    ("writeData", ACL_WRITE_DATA), ("appendData", ACL_APPEND_DATA),
+                    ("writeAttributes", ACL_WRITE_ATTRIBUTES),
+                    ("writeSecurity", ACL_WRITE_SECURITY), ("changeOwner", ACL_CHANGE_OWNER)]
+                for (name, permission) in selected {
+                    record[name] = acl_get_perm_np(permissions, permission)
+                }
+            } else { record["permissionsUnavailable"] = true }
+            records.append(record)
+        }
+        entry["acl"] = records
+        entry["aclPermissionsScope"] = "selected cleanup-related permissions; no principal qualifiers"
+        entry["aclPossiblyTruncated"] = records.count == 32
         acl_free(acl)
     } else {
         let code = errno
         entry["acl"] = code == ENOENT || code == ENOTSUP
             ? "unavailable: filesystem does not provide extended ACLs"
-            : "unavailable: acl_get_file errno \(code)"
+            : "unavailable: acl_get_link_np errno \(code)"
     }
     return entry
 }
@@ -127,8 +141,11 @@ func cleanupDiagnostics(_ home: URL) -> [String: Any] {
     var errorsTruncated = false
     let enumerator = fm.enumerator(at: home, includingPropertiesForKeys: nil, options: [], errorHandler: { url, error in
         if errors.count < 32 { errors.append("\(url.path): \(error)") }
-        else { errorsTruncated = true }
-        return errors.count < 32
+        if errors.count >= 32 {
+            errorsTruncated = true; truncated = true; truncationReason = "errorLimit"
+            return false
+        }
+        return true
     })
     while Date() < diagnosticDeadline, let child = enumerator?.nextObject() as? URL {
         if entries.count >= maxEntries { truncated = true; truncationReason = "entryLimit"; enumerator?.skipDescendants(); break }
