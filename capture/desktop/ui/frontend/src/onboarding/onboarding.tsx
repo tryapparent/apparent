@@ -127,7 +127,7 @@ export function NativeOnboarding(){
       if(input==='fn-unavailable'){setError('Fn is not available in this Linux shortcut recorder. Choose Copilot or another key.');return;}
       if(input==='native-copilot'){void action('resolve-copilot');return;}
       const pressed=shortcutCapture(event,state.platform);
-      if(!pressed){setError(state.platform==='linux'?'Apparent cannot use that key. Try Copilot, a letter or a number.':'Apparent cannot use that key. Choose Fn, a letter or a number.');return;}
+      if(!pressed){setError(state.platform==='linux'?'Apparent cannot use that key. Try Copilot, a letter or a number.':'Apparent cannot use that key. Choose Fn alone, a letter or a number.');return;}
       setError('');
       void action({action:'shortcut',kind:'record',...pressed,reserved:false});
       }}><p>Hold any modifiers, then press a key.</p>{state.platform==='linux'&&<p className="native-shortcut-detail">Copilot works alone or with modifiers. Linux may not receive the Fn key.</p>}<div className="native-shortcut-choices">{state.platform==='macos'&&<Button onClick={chooseFn}>Use Fn</Button>}<Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div></div>:<>
