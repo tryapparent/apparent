@@ -54,11 +54,19 @@ test('publication admission requires current main and checks deployed revision o
   assert.equal(await publicationNeeded('example/project', 'c'.repeat(40), 'b'.repeat(40), fetchCompare), true)
   assert.deepEqual(calls, ['repos/example/project/compare/' + 'c'.repeat(40) + '...main', 'repos/example/project/compare/' + 'b'.repeat(40) + '...' + 'c'.repeat(40)])
   assert.equal(await publicationNeeded('example/project', sha, sha, async () => ({ status: 'identical' })), false)
-  await assert.rejects(publicationNeeded('example/project', sha, null, async () => ({ status: 'ahead' })), /no longer current main/)
+  await assert.rejects(publicationNeeded('example/project', sha, null, async () => ({ status: 'ahead' }), () => false), /no longer current main/)
   await assert.rejects(publicationNeeded('bad repo', sha, null), /Invalid repository/)
   await assert.rejects(publicationNeeded('example/project', sha, null, async () => ({ status: 'behind' })), /no longer on main/)
   let divergeCall = 0
   await assert.rejects(publicationNeeded('example/project', sha, 'b'.repeat(40), async () => ({ status: ++divergeCall === 1 ? 'identical' : 'diverged' })), /diverge/)
+})
+
+test('unchanged Public inputs admit an exact ancestor; affected inputs still supersede it', async () => {
+  let checked = ''
+  assert.equal(await publicationNeeded('example/project', sha, null, async () => ({status: 'ahead'}), candidate => {checked = candidate; return true}), true)
+  assert.equal(checked, sha)
+  await assert.rejects(publicationNeeded('example/project', sha, null, async () => ({status: 'ahead'}), () => false), /no longer current main/)
+  await assert.rejects(publicationNeeded('example/project', sha, null, async () => ({status: 'ahead'}), () => {throw Error('history unavailable')}), /history unavailable/)
 })
 
 test('real comparison command projects status before buffering a large GitHub response', () => temp(async root => {
@@ -282,6 +290,10 @@ test('publisher CLI seals from a source path containing spaces', () => temp(root
   const metadata = join(root, 'public/site/lib/pages-video-metadata.js')
   mkdirSync(join(metadata, '..'), { recursive: true })
   writeFileSync(metadata, readFileSync(new URL('../../lib/pages-video-metadata.js', import.meta.url)))
+  const policy = join(root, 'enablement/ci/routing/streams.ts')
+  mkdirSync(join(policy, '..'), { recursive: true })
+  writeFileSync(policy, readFileSync(new URL('../../../../enablement/ci/routing/streams.ts', import.meta.url)))
+  writeFileSync(join(root, 'enablement/ci/routing/consumers.ts'), readFileSync(new URL('../../../../enablement/ci/routing/consumers.ts', import.meta.url)))
   const result = spawnSync(process.execPath, [script, 'seal', sha], { encoding: 'utf8' })
   assert.equal(result.status, 0, result.stderr)
   assert.equal(verifyArtifact(sha, join(root, '.build/website')).revision, sha)

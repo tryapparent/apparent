@@ -50,9 +50,25 @@ test('packed consumer installs and runs without Rust, compilers or source resolu
   }
   const env={...process.env,PATH:bin+path.delimiter+process.env.PATH};
   const consumer=path.join(root,'consumer');await fs.mkdir(consumer);
-  await fs.writeFile(path.join(consumer,'package.json'),'{"private":true,"type":"module"}');
+  const producer=JSON.parse(await fs.readFile(path.join(source,'package.json'),'utf8'));
+  const locked=JSON.parse(await fs.readFile(path.join(owner,'package-lock.json'),'utf8'));
+  const archive=path.join(root,result.filename);
+  const manifest={name:'packed-consumer',version:'0.0.0',private:true,type:'module',dependencies:{[producer.name]:`file:${archive}`}};
+  await fs.writeFile(path.join(consumer,'package.json'),JSON.stringify(manifest));
+  // npm ci seeds tarballs, not registry metadata. Reuse its exact runtime lock
+  // so a fresh cache can install offline without resolving dependency ranges.
+  const runtime=Object.fromEntries(Object.entries(locked.packages)
+    .filter(([name,entry])=>name!==''&&!(entry as {dev?:boolean}).dev));
+  await fs.writeFile(path.join(consumer,'package-lock.json'),JSON.stringify({
+    name:manifest.name,version:manifest.version,lockfileVersion:3,requires:true,packages:{
+      '':manifest,...runtime,[`node_modules/${producer.name}`]:{
+        version:producer.version,resolved:`file:${archive}`,integrity:result.integrity,
+        dependencies:producer.dependencies,engines:producer.engines,
+      },
+    },
+  }));
   // Scripts deliberately enabled: a hidden consumer build must fail.
-  run('npm',['install','--offline','--ignore-scripts=false','--no-audit','--no-fund',path.join(root,result.filename)],consumer,env);
+  run('npm',['ci','--offline','--ignore-scripts=false','--no-audit','--no-fund'],consumer,env);
   run(process.execPath,['--input-type=module','-e',`
     import assert from 'node:assert/strict';
     import {generateAgeIdentity,encryptAge,decryptAge,signEnvelope,verifyEnvelope} from '@apparent/connect-crypto';

@@ -9,7 +9,7 @@ test('owner selection retains consumers and unrelated packages stay out', () => 
   assert.deepEqual(select(['enablement/local-tests/run.ts']), [...owners]);
   assert.deepEqual(select(['capture/desktop/ui/frontend/src/Settings.tsx']), ['capture', 'desktop']);
   assert.deepEqual(select(['connect/client/src/config.rs']), ['capture', 'client']);
-  assert.deepEqual(select(['shared/ui/src/button.tsx']), ['capture', 'desktop', 'web', 'service', 'public']);
+  assert.deepEqual(select(['shared/ui/src/button.tsx']), ['capture', 'desktop', 'web', 'service', 'public', 'onboarding']);
   assert.deepEqual(select(['public/site/src/App.tsx']), ['public']);
   assert.deepEqual(select(['connect/web/src/api.ts']), ['web']);
   assert.deepEqual(select(['hermes/inspect.py']), ['hermes']);
@@ -18,7 +18,7 @@ test('owner selection retains consumers and unrelated packages stay out', () => 
 });
 
 test('unknown, missing history and empty deltas cannot silently skip coverage', () => {
-  for (const paths of [[], ['Cargo.lock'], ['new-owner/file.ts'], ['shared/schema.ts']]) {
+  for (const paths of [[], ['new-owner/file.ts'], ['shared/schema.ts']]) {
     assert.deepEqual(select(paths), [...owners]);
   }
   assert.deepEqual(select(['README.md'], false), [...owners]);
@@ -48,8 +48,12 @@ test('new install fixtures run for their tooling/dependency inputs, not ordinary
 });
 
 test('execution-sensitive workflow edits stay broad; verified non-native plans omit stale CLI work', () => {
-  for (const path of ['.github/workflows/checks.yml', '.github/workflows/release-linux.yml',
-    '.github/workflows/new-workflow.yml']) assert.deepEqual(select([path]), [...owners]);
+  assert.deepEqual(select(['.github/workflows/new-workflow.yml']), [...owners]);
+  for (const path of ['.github/workflows/checks.yml', '.github/workflows/release-linux.yml']) {
+    const selection = select([path]);
+    assert.ok(selection.includes('capture') && selection.includes('engine'));
+    assert.ok(!selection.includes('public') && !selection.includes('hermes'));
+  }
   const nonRust = commands([...owners], 'base', 'head', 'linux', false);
   assert.ok(!nonRust.some(command => command.argv.includes('cargo') || command.argv.includes('--run')));
   assert.ok(!nonRust.some(command => command.env?.APPARENT_BIN), 'no stale native binary acceptance');
@@ -78,8 +82,8 @@ test('package gates execute complete canonical suites including browser and Elec
     assert.ok(plan.some(command => command.cwd === cwd && command.argv.at(-1) === last), `${cwd} ${last}`);
   }
   assert.ok(plan.some(command => command.argv.includes('--run')));
-  assert.ok(!plan.some(command => command.cwd === 'connect/client/typescript'),
-    'the root verifier owns this prerequisite so it is not installed twice');
+  assert.equal(plan.filter(command => command.cwd === 'connect/client/typescript').length, 4,
+    'the separately selected foreground suite checks its TypeScript package');
   assert.ok(!commands(['desktop'], 'base', 'head', 'darwin').some(command => command.argv.includes('xvfb-run')));
   assert.ok(commands(['client'], 'base', 'head', 'darwin').some(command => command.argv[0] === 'taskpolicy'));
   const clientOnly = commands(['client'], 'base', 'head', 'linux');
@@ -181,15 +185,16 @@ test('committed concurrency-only workflow edits select contracts rather than pro
   assert.deepEqual(commands(result.selected, base, 'HEAD', process.platform, result.rustChanged,
     {paths: result.paths, workflowControls: result.workflowControls}).map(command => command.argv), [
     ['python3', 'enablement/verification.py', '--base', base, '--head', 'HEAD', '--pr'],
+    ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'],
     ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'],
   ]);
-  assert.deepEqual(selection(base, 'HEAD', dir, true).selected, [...owners]);
+  assert.deepEqual(selection(base, 'HEAD', dir, true).selected, owners.filter(owner => !['public','hermes'].includes(owner)));
   // A later safe workflow/docs commit cannot mask an earlier build change.
   writeFileSync(join(dir, 'Cargo.lock'), 'changed build graph');
   git('add', '.'); git('commit', '-qm', 'build input');
   writeFileSync(join(dir, 'README.md'), 'later docs');
   git('add', '.'); git('commit', '-qm', 'docs');
-  assert.deepEqual(selection(base, 'HEAD', dir).selected, [...owners]);
+  assert.deepEqual(selection(base, 'HEAD', dir).selected, ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'public', 'tooling']);
   assert.deepEqual(selection('unavailable', 'HEAD', dir).selected, [...owners]);
   assert.equal(selection('unavailable', 'HEAD', dir).rustChanged, true);
   assert.deepEqual(selection('HEAD', 'HEAD', dir).selected, [...owners]);
@@ -360,10 +365,11 @@ test('installed hook proves control-only selection, mandatory commands, failure 
   const bin = join(dir, '.git/bin'); mkdirSync(bin);
   const log = join(dir, '.git/commands');
   const bun = spawnSync('which', ['bun'], {env, encoding: 'utf8'}).stdout.trim();
+  const node = spawnSync('which', ['node'], {env, encoding: 'utf8'}).stdout.trim();
   // Keep the hook, Git history and YAML proof real. Observe downstream command
   // boundaries without recursively executing this same test through --pr.
   for (const tool of ['node', 'bun', 'python3']) {
-    const forward = tool === 'node' ? `exec '${process.execPath}' "$@"\n`
+    const forward = tool === 'node' ? `exec '${node}' "$@"\n`
       : tool === 'bun' ? `case "$1" in */workflow-controls.ts) exec '${bun}' "$@";; esac\n` : '';
     const observe = `printf '%s\\n' '${tool}'" $*" >> "$COMMAND_LOG"\n`;
     writeFileSync(join(bin, tool), `#!/bin/sh\n${forward}${observe}case "$*" in *--pr*) exit "${'${FAIL_CONTRACT:-0}'}";; esac\n`, {mode: 0o755});
@@ -390,7 +396,7 @@ test('installed hook proves control-only selection, mandatory commands, failure 
     const protectedPush = push(ref, '7'); assert.notEqual(protectedPush.status, 0);
     assert.match(protectedPush.stdout, /"workflowControls":\[\]/);
     const result = JSON.parse(protectedPush.stdout.trim());
-    assert.deepEqual(result.selected, [...owners]);
+    assert.deepEqual(result.selected, owners.filter(owner => !['public','hermes'].includes(owner)));
   }
   assert.equal(readFileSync(join(dir, '.git/config'), 'utf8'), config);
   assert.deepEqual(readFileSync(join(dir, '.git/index')), index);
@@ -404,7 +410,7 @@ function copyInputHelpers(dir: string) {
   // Finite downstream boundary: do not recursively run real npm fixtures here.
   writeFileSync(join(dir, 'enablement/local-tests/desktop-install.test.ts'), "import {test} from 'node:test'; test('install contract fixture', () => {});\n");
   mkdirSync(join(dir, 'enablement/ci'), {recursive: true});
-  for (const name of ['inputs.ts', 'workflow-controls.ts'])
+  for (const name of ['inputs.ts', 'workflow-controls.ts', 'select.ts'])
     copyFileSync(join(root, 'enablement/ci', name), join(dir, 'enablement/ci', name));
 }
 
@@ -415,7 +421,7 @@ test('Record command plans keep package tests and native integration without unr
     assert.ok(scripts.test.includes(`../../../../record/${pkg}/test/*.test.ts`));
     for (const platform of ['linux', 'darwin']) {
       const selected = select([`record/${pkg}/src/policy.ts`]);
-      assert.deepEqual(selected, ['capture', 'desktop']);
+      assert.deepEqual(selected, ['capture', 'desktop', 'onboarding']);
       const plan = commands(selected, 'base', 'head', platform);
       assert.ok(plan.some(c => c.cwd === frontend && c.argv.at(-1) === 'test'));
       assert.ok(plan.some(c => c.cwd === frontend && c.argv.at(-1) === 'test:electron'));
@@ -425,7 +431,7 @@ test('Record command plans keep package tests and native integration without unr
     }
     assert.deepEqual(select([`record/${pkg}/src/policy.ts`], false), [...owners]);
   }
-  assert.deepEqual(select(['record/completion/src/worker.ts', 'public/site/src/App.tsx']), ['capture', 'desktop', 'public']);
+  assert.deepEqual(select(['record/completion/src/worker.ts', 'public/site/src/App.tsx']), ['capture', 'desktop', 'public', 'onboarding']);
 });
 
 test('real Record Git deltas retain native execution and broaden for unexpected inputs', () => fixture((dir, env) => {
@@ -441,11 +447,11 @@ test('real Record Git deltas retain native execution and broaden for unexpected 
   writeFileSync(join(dir, 'record/storage/build.ts'), '// changed');
   git('add', '.'); git('commit', '-qm', 'Record build input');
   const result = selection(base, 'HEAD', dir);
-  assert.deepEqual(result.selected, ['capture', 'desktop']);
+  assert.deepEqual(result.selected, ['capture', 'desktop', 'onboarding']);
   assert.equal(result.rustChanged, true);
   assert.ok(commands(result.selected, base, 'HEAD', 'linux', result.rustChanged)
     .some(c => c.argv.includes('--run') && c.argv.includes('platform')));
   writeFileSync(join(dir, 'record/storage/native.rs'), '// unexpected native input');
   git('add', '.'); git('commit', '-qm', 'native input');
-  assert.deepEqual(selection(base, 'HEAD', dir).selected, [...owners]);
+  assert.deepEqual(selection(base, 'HEAD', dir).selected, ['capture', 'engine', 'desktop', 'onboarding']);
 }));

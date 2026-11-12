@@ -60,7 +60,7 @@ class PrePushGuardTests(unittest.TestCase):
             path = self.repo / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("import {test} from 'node:test'; test('fixture', () => {});\n")
-        for name in ("inputs.ts", "workflow-controls.ts"):
+        for name in ("inputs.ts", "workflow-controls.ts", "select.ts"):
             shutil.copy2(SELECTOR.parent / "ci" / name, self.repo / "enablement/ci" / name)
         # The real verifier now runs the shared frontend color guard. Preserve
         # its actual dependency closure in this disposable hook repository.
@@ -230,8 +230,9 @@ class PrePushGuardTests(unittest.TestCase):
 
     def test_later_document_commit_does_not_hide_source_delta(self):
         run("git", "update-ref", "refs/remotes/origin/main", self.head, cwd=self.repo)
-        (self.repo / "file.rs").write_text("// Rust source change\n")
-        run("git", "add", "file.rs", cwd=self.repo)
+        (self.repo / "composition").mkdir()
+        (self.repo / "composition/file.rs").write_text("// Rust source change\n")
+        run("git", "add", "composition/file.rs", cwd=self.repo)
         run("git", "commit", "-qm", "source", cwd=self.repo)
         (self.repo / "enablement/refactor.md").write_text("plan\n")
         run("git", "add", "enablement/refactor.md", cwd=self.repo)
