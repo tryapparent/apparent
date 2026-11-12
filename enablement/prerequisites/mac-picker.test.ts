@@ -100,6 +100,7 @@ test('runtime isolation preserves strict window identity and adds native bundle 
  assert.match(source,/getTitle\(\) !== 'Apparent — UI foundation'/);
  assert.match(panelScript,/Owned Electron bundle identity differs/);
  assert.match(panelScript,/Owned AX process identifier differs/);
+ assert.match(panelScript,/set owned to a reference to \(first application process whose unix id is targetPID\)/);
  assert.match(panelScript,/set observedPID to \(get unix id of owned\) as integer/);
  assert.match(panelScript,/if observedPID is not targetPID then error/);
  assert.match(panelScript,/;observed=/);

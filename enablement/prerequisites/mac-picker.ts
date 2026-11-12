@@ -52,7 +52,9 @@ on run argv
   set nativeApp to my ownedApplication(targetPID, expectedExecutable)
   if ((nativeApp's bundleIdentifier()) as text) is not (item 5 of argv) then error "Owned Electron bundle identity differs"
   tell application "System Events"
-    set owned to first application process whose unix id is targetPID
+    -- Retain the PID filter itself, rather than a resolved process reference
+    -- that System Events may address by a shared Electron process name.
+    set owned to a reference to (first application process whose unix id is targetPID)
     set observedPID to (get unix id of owned) as integer
     if observedPID is not targetPID then error "Owned AX process identifier differs; expected=" & targetPID & ";observed=" & observedPID
     tell owned
