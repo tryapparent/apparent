@@ -69,7 +69,12 @@ fn stage_transcribe_shared_objects() {
             count += 1;
             for dir in [profile.to_path_buf(), profile.join("deps")] {
                 std::fs::create_dir_all(&dir).expect("create runtime directory");
-                std::fs::copy(&path, dir.join(name)).expect("stage transcribe library");
+                let staged = dir.join(name);
+                std::fs::copy(&path, &staged).expect("stage transcribe library");
+                // Cargo may restore build-script state while pruning target outputs.
+                // Watching each copy makes a missing cached runtime invalidate this
+                // script, so a normal build restores the runtime before execution.
+                println!("cargo:rerun-if-changed={}", staged.display());
             }
         }
         assert!(count > 0, "No shared libraries in {}", source.display());

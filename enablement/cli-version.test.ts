@@ -4,7 +4,7 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { delimiter, dirname, isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -43,11 +43,6 @@ function identity(source: string, githubSha = ''): Record<string, string> {
 test('ordinary long version matches the compiled candidate; short version stays compatible', () => {
   const binary = process.env.APPARENT_BIN;
   assert.ok(binary && isAbsolute(binary), 'APPARENT_BIN must name the freshly built production CLI');
-  if (process.platform === 'linux') {
-    const stagedRuntime = join(dirname(binary), 'deps');
-    assert.ok(process.env.LD_LIBRARY_PATH?.split(delimiter).includes(stagedRuntime),
-      'Linux production CLI checks must include Cargo staged libraries beside target/debug/deps');
-  }
   const expected = identity(root, process.env.GITHUB_SHA);
   const outside = join(directory, 'outside');
   mkdirSync(outside);
