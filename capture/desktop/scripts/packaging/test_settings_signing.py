@@ -20,7 +20,7 @@ class SigningTests(unittest.TestCase):
             frontend = root / "capture/desktop/ui/frontend"
             for relative in ("electron/main.cjs", "electron/preload.cjs", "electron/settings.cjs",
                              "dist/settings.html", "dist/onboarding.html", "dist/src/controls/index.html",
-                             "dist/onboarding-presentation.cjs", "dist/onboarding-hyprland.cjs", "dist/onboarding-account.cjs", "dist/onboarding-selection.cjs",
+                             "dist/onboarding-presentation.cjs", "dist/onboarding-hyprland.cjs", "dist/onboarding-selection.cjs",
                              "dist/src/installer/index.html", "dist/pill/index.html",
                              "dist/assets/controls.js", "node_modules/electron/dist/electron"):
                 file = frontend / relative
@@ -52,7 +52,7 @@ class SigningTests(unittest.TestCase):
                 self.assertTrue((destination / "app" / relative).is_file(), relative)
             self.assertEqual((destination / "app/electron/installer/ui/src/installer/index.html").read_text(), "dist/src/installer/index.html")
             self.assertEqual((destination / "app/dist/pill/index.html").read_text(), "dist/pill/index.html")
-            for name in ("presentation", "hyprland", "account", "selection"):
+            for name in ("presentation", "hyprland", "selection"):
                 relative = f"dist/onboarding-{name}.cjs"
                 self.assertEqual((destination / "app" / relative).read_text(), relative)
             self.assertTrue((destination / "runtime/electron").is_file())

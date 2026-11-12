@@ -158,14 +158,29 @@ renderer JavaScript errors and hangs remain outside this slice's coverage.
 
 ## Onboarding (`capture/desktop/settings/onboarding.rs`, `capture/desktop/native/Onboarding.swift`)
 
-The shared Electron Welcome page offers Google sign-in through Connect's existing
-read-only device approval. It shows the public code and opens only the current
-native-validated approval URL on an explicit click. Cancel, leaving Welcome,
-renderer fallback and closing the session cancel pending enrollment; late replies
-cannot update a successor. Local setup remains available when offline or rejected.
-Sign-in does not enable uploads, grant upload consent or complete tour milestones.
-Connect remains the sole credential/config writer; the native onboarding adapter
-owns worker lifetime, while TypeScript owns account presentation and coach placement.
+The shared Electron Welcome page asks **Where’s ur agent at?** **Right here** opens
+the existing pen picker without account setup. **Up in the cloud** uses the shared
+Connect Settings controller. The `idk??` help page routes by whether the agent can
+open files on this computer. The illustration assets and color/type roles are the
+canonical onboarding assets and shared UI tokens.
+
+Cloud setup shows the new-capture disclosure beside **Continue with Google**. That
+action begins Connect's existing upload-consent and device-approval flow, then opens
+the validated website automatically once. The website's explicit **Allow uploads**
+action is the approval; a verified local upload connection advances directly to the
+pen picker. A confirmed waitlist receipt offers **Continue locally** without issuing
+credentials. Choosing local while a cloud request is active waits for durable upload
+disable confirmation. Browser-close, expiry, network, local-state and receipt errors
+never advance setup; automatic browser opening runs once per approval URI, and
+**Try opening browser** is an explicit recovery action.
+Connect remains the sole auth/credential/config writer, and the onboarding renderer
+receives only its validated presentation and action contract.
+
+Electron remains on the existing onboarding route. If its renderer/assets fail, the
+existing native onboarding fallback remains local-only and continues to the pen
+picker; cloud onboarding is not available in that fallback. Reverting the Electron
+entry/Connect bridge restores the prior Welcome presentation while retaining the
+existing native fallback. This change does not alter installed routing or config.
 
 On Omarchy the shortcut page shows the actual desktop chord before acceptance and
 also offers a custom shortcut. A custom choice uses the existing validated shortcut

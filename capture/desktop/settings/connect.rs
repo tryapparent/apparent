@@ -52,6 +52,10 @@ pub struct Button {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct View {
+    #[serde(default)]
+    pub phase: String,
+    #[serde(default)]
+    pub local_ready: bool,
     pub title: String,
     pub status: String,
     pub detail: String,
@@ -98,6 +102,7 @@ pub enum Health {
 /// Closed error vocabulary prevents raw protocol responses/credentials reaching UI.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SafeError {
+    Waitlisted,
     Cancelled,
     Offline,
     AuthRequired,
@@ -112,6 +117,7 @@ pub enum SafeError {
 impl SafeError {
     fn message(self) -> &'static str {
         match self {
+            Self::Waitlisted => "You’re on the Connect waitlist. Local recording still works.",
             Self::Cancelled => {
                 "Cancelled. Check the current local upload settings before reconnecting."
             }
@@ -468,6 +474,15 @@ impl Controller {
 
     pub fn view(&self) -> View {
         let mut view = View {
+            phase: if self.request.is_some() {
+                if self.disabling() { "cancelling" } else if self.approval.is_some() { "approval" } else { "starting" }
+            } else if self.error == Some(SafeError::Waitlisted) { "waitlisted" }
+            else if self.local_error.is_some() || self.error.is_some() { "failed" }
+            else if self.consent { "consent" }
+            else if self.snapshot.as_ref().is_some_and(|s| s.uploads_enabled) { "connected" }
+            else { "disconnected" }.into(),
+            local_ready: self.request.is_none() && self.retry_disable.is_none() && self.local_error.is_none()
+                && self.snapshot.as_ref().is_some_and(|s| !s.uploads_enabled),
             title: "Apparent Connect".into(),
             status: "Not connected".into(),
             detail: "Sign in to send new captures to your Connect account.".into(),

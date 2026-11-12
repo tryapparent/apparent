@@ -17,7 +17,7 @@ let reportingOutput: string;
 export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss(), {name: 'onboarding-host-policy', closeBundle() {
-    for (const name of ['presentation', 'hyprland', 'account', 'selection']) {
+    for (const name of ['presentation', 'hyprland', 'selection']) {
       const file = `electron/onboarding/${name}.ts`;
       const result = ts.transpileModule(readFileSync(file, 'utf8'), {fileName: file,
         compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}});

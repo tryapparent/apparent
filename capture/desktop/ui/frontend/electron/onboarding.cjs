@@ -2,7 +2,6 @@ const {transparentBackgroundColor}=require('@apparent/ui/window-theme');
 const {parseAction}=require('./onboarding-protocol.cjs');
 const {coachDimensions,coachPosition}=require(process.versions.electron?'../dist/onboarding-presentation.cjs':'./onboarding/presentation.ts');
 const {completedSelection}=require(process.versions.electron?'../dist/onboarding-selection.cjs':'./onboarding/selection.ts');
-const {projectAccount}=require(process.versions.electron?'../dist/onboarding-account.cjs':'./onboarding/account.ts');
 // A private, Rust-owned presentation transport. No capture commands or filesystem IPC.
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -15,7 +14,7 @@ function project(v) {
   for(const r of v.rows){if(!r||typeof r!=='object'||!['screen-recording','microphone','accessibility','speech-recognition','camera'].includes(r.permission)||!['granted','denied','not-determined'].includes(r.status))return null;rows.push({permission:r.permission,status:r.status,required:r.required===true,reopening:r.reopening===true,relaunch:r.relaunch===true});}
   const b=v.boardView;
   const boardView=b&&typeof b.id==='string'&&/^[a-zA-Z0-9-]{1,80}$/.test(b.id)&&Array.isArray(b.strokes)&&b.strokes.length<=500&&b.strokes.every(s=>Array.isArray(s)&&s.length<=2000&&s.every(p=>Array.isArray(p)&&p.length===2&&p.every(Number.isFinite)&&p[0]>=0&&p[0]<1600&&p[1]>=0&&p[1]<1100))&&Array.isArray(b.color)&&b.color.length===3&&b.color.every(n=>Number.isInteger(n)&&n>=0&&n<=255)?{id:b.id,strokes:b.strokes,color:b.color}:null;
-  return {account:projectAccount(v.account),tutorial:['skipped','watched','practiced'].includes(v.tutorial)?v.tutorial:null,step:v.step,ready:v.ready,fix:v.fix===true,rows,index:v.index,count:v.count,shortcut:typeof v.shortcut==='string'?v.shortcut.slice(0,80):'',shortcutEditing:v.shortcutEditing===true,shortcutChosen:v.shortcutChosen===true,shortcutTested:v.shortcutTested===true,shortcutSelectionReleased:v.shortcutSelectionReleased===true,boardView,
+  return {tutorial:['skipped','watched','practiced'].includes(v.tutorial)?v.tutorial:null,step:v.step,ready:v.ready,fix:v.fix===true,rows,index:v.index,count:v.count,shortcut:typeof v.shortcut==='string'?v.shortcut.slice(0,80):'',shortcutEditing:v.shortcutEditing===true,shortcutChosen:v.shortcutChosen===true,shortcutTested:v.shortcutTested===true,shortcutSelectionReleased:v.shortcutSelectionReleased===true,boardView,
     penSaveId:typeof v.penSaveId==='string'?v.penSaveId:undefined,penPicker:v.penPicker===true,penSelected:v.penSelected===true,penError:v.penError===true,penRgb:Array.isArray(v.penRgb)&&v.penRgb.length===3&&v.penRgb.every(n=>Number.isInteger(n)&&n>=0&&n<=255)?v.penRgb:[255,59,48],
     platform:v.platform==='linux'?'linux':'macos',shortcutEditor:v.shortcutEditor&&typeof v.shortcutEditor==='object'?{recording:v.shortcutEditor.recording===true,externallyManaged:v.shortcutEditor.externallyManaged===true,error:typeof v.shortcutEditor.error==='string'?v.shortcutEditor.error.slice(0,240):null}:null,
     testInstance:v.testInstance===true,practice:phases.has(v.practice)?v.practice:null,firstCaptureRequired:v.firstCaptureRequired===true,
@@ -56,6 +55,7 @@ app.setName(process.env.APPARENT_TEST_INSTANCE==='1'?'apparent onboarding previe
 app.setPath('userData',path.join(app.getPath('appData'),'apparent-onboarding'));
 if(process.env.APPARENT_UI_PROFILE)app.setPath('userData',process.env.APPARENT_UI_PROFILE);
 let window,state=null,buffer='',page,lastPlacement='',lastMode=null,closing=false,borderReady=false,borderPending=false,borderAttempts=0;
+let connect;
 const channel=parentChannel(process.stdout,error=>{
   const expected=['EPIPE','ECONNRESET','ERR_STREAM_DESTROYED','ERR_STREAM_WRITE_AFTER_END'].includes(error?.code);
   if(!expected)console.error('Onboarding parent channel failed:',error);
@@ -63,7 +63,7 @@ const channel=parentChannel(process.stdout,error=>{
 });
 function shutdown(code=0){
   if(closing)return;
-  closing=true;channel.close();
+  closing=true;channel.close();connect?.close();
   if(code)app.exit(code);else app.quit();
 }
 app.whenReady().then(()=>{
@@ -75,8 +75,28 @@ app.whenReady().then(()=>{
   window.removeMenu();page=pathToFileURL(path.join(__dirname,process.argv.includes('--native-onboarding')?'../dist/index.html':'../dist/onboarding.html')).href+(process.argv.includes('--native-onboarding')?'?nativeOnboarding':'');
   window.webContents.setWindowOpenHandler(()=>({action:'deny'}));window.webContents.on('will-navigate',e=>e.preventDefault());window.webContents.on('will-attach-webview',e=>e.preventDefault());
   const valid=e=>!window.isDestroyed()&&e.sender===window.webContents&&e.senderFrame===window.webContents.mainFrame&&e.senderFrame.url===page;
+  const {ConnectSettings}=require('./connect.cjs');
+  const {shell}=require('electron');
+  connect=new ConnectSettings(require('node:os').homedir());
+  let pendingConnect=false;
+  const connectActions=new Set(['connect','allow','cancel','disable','open-browser']);
+  ipcMain.handle('onboarding:connect',async(e,...args)=>{
+    if(!valid(e)||state?.step!=='welcome'||state.penPicker||args.length!==1||!(args[0]===null||connectActions.has(args[0])))throw Error('Forbidden Connect request');
+    if(pendingConnect)return {status:'error'};
+    pendingConnect=true;
+    try{
+      const result=await connect.request(args[0]??undefined);
+      if(closing||window.isDestroyed()||state?.step!=='welcome'||state.penPicker){connect.close();return {status:'cancelled'};}
+      if(result.openUri!==undefined)await shell.openExternal(result.openUri);
+      const {openUri,...safe}=result;return safe;
+    }catch{return {status:'error'}}finally{pendingConnect=false;}
+  });
+  ipcMain.handle('onboarding:close-connect',(e,...args)=>{if(!valid(e)||args.length)throw Error('Forbidden Connect close');connect.close();});
+  window.webContents.on('did-start-navigation',()=>connect.close());
+  window.webContents.on('render-process-gone',()=>connect.close());
   ipcMain.handle('onboarding:state',(e,...args)=>{if(!valid(e)||args.length)throw Error('Forbidden state request');return state});
   ipcMain.handle('onboarding:action',(e,...args)=>{if(!valid(e)||args.length!==1)throw Error('Forbidden onboarding action');return channel.send(parseAction(args[0]))});
+  window.webContents.on('render-process-gone',()=>shutdown(1));
   window.webContents.on('did-finish-load',()=>{if(state)present(state)});
   window.on('close',event=>{if(!closing&&state?.boardView){event.preventDefault();channel.send({action:'board',id:state.boardView.id,operation:'close'});}});
   window.on('closed',()=>{if(!closing)channel.send('close');shutdown()});

@@ -29,6 +29,8 @@ function linksUri(value: unknown) {
 function decode(value: WireReply | null, action?: ConnectAction): Reply {
   if (value?.error === 'feature_disabled') return { status: 'disabled' };
   const v = value?.connect;
+  if (v?.phase !== undefined && !['disconnected','consent','starting','approval','connected','cancelling','waitlisted','failed'].includes(v.phase)) return failed();
+  if (v?.localReady !== undefined && typeof v.localReady !== 'boolean') return failed();
   if (!v || !['title', 'status', 'detail', 'note'].every(key => text(v[key as keyof ConnectView])) ||
       !(v.server === null || text(v.server)) ||
       !(v.userCode === null || (typeof v.userCode === 'string' && /^[a-zA-Z0-9-]{1,128}$/.test(v.userCode))) ||
@@ -57,6 +59,7 @@ function decode(value: WireReply | null, action?: ConnectAction): Reply {
       action === 'open-browser' && value.openUri === v.verificationUri && browserUri(value.openUri, v.userCode) ||
       action === 'open-shared-links' && value.openUri === presentation?.sharedLinksUrl && linksUri(value.openUri))) return failed();
   return { status: 'connected', view: { title: v.title, status: v.status, detail: v.detail, note: v.note,
+    ...(v.phase === undefined ? {} : {phase:v.phase}), ...(v.localReady === undefined ? {} : {localReady:v.localReady}),
     ...(presentation === undefined ? {} : { presentation }),
     server: v.server, verificationUri: v.verificationUri, userCode: v.userCode,
     buttons: v.buttons.map(({ command, title, enabled }) => ({ command, title, enabled })) },

@@ -1762,6 +1762,7 @@ impl Client {
             )?;
             match reply["status"].as_str() {
                 Some("pending") => continue,
+                Some("waitlisted") => bail!("Connect account is waitlisted"),
                 Some("approved") => {
                     ensure!(
                         reply["scope"].as_str() == Some(scope),

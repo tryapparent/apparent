@@ -1,4 +1,4 @@
-const actions = new Set(['resolve-copilot','continue','back','later','close','settings','change-shortcut','use-desktop-shortcut','skip','watched','practiced','reset-shortcut','cancel-shortcut','practice-paste','practice-locate','practice-pasted','practice-finish','sign-in','cancel-sign-in','open-sign-in']);
+const actions = new Set(['resolve-copilot','continue','back','later','close','settings','change-shortcut','use-desktop-shortcut','skip','watched','practiced','reset-shortcut','cancel-shortcut','practice-paste','practice-locate','practice-pasted','practice-finish']);
 function parseAction(value) {
  if (typeof value === 'string') {
   if(actions.has(value)||/^pen:(coral|purple|blue|green)(:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$/.test(value)) return {action:value};

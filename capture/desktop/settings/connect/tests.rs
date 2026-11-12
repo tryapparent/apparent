@@ -146,6 +146,42 @@ fn start(controller: &mut Controller, logins: &mpsc::Receiver<LoginCall>) -> Log
 }
 
 #[test]
+fn local_opt_out_waits_for_durable_disable_and_can_retry_a_failed_write() {
+    let (mut c, backend, events, _, _, disables) = fixture();
+    let mut active = disconnected(None);
+    active.connected = true; active.uploads_enabled = true;
+    *backend.local.lock().unwrap() = Ok(active);
+    c.refresh();
+    assert!(!c.view().local_ready);
+    c.command(Command::Disable);
+    let (_, finish) = recv(&disables);
+    assert_eq!(c.view().phase, "cancelling");
+    finish.send(Err(SafeError::LocalState)).unwrap();
+    c.receive(recv(&events));
+    assert!(!c.view().local_ready);
+    c.command(Command::Disable);
+    let (_, finish) = recv(&disables);
+    *backend.local.lock().unwrap() = Ok(disconnected(None));
+    finish.send(Ok(())).unwrap();
+    c.receive(recv(&events));
+    assert!(c.view().local_ready);
+    assert_eq!(c.view().phase, "disconnected");
+}
+
+#[test]
+fn confirmed_waitlist_never_claims_upload_connection() {
+    let (mut c, _, events, logins, _, _) = fixture();
+    let login = start(&mut c, &logins);
+    login.approve.send(approval()).unwrap();
+    c.receive(recv(&events));
+    login.finish.send(Err(SafeError::Waitlisted)).unwrap();
+    c.receive(recv(&events));
+    assert_eq!(c.view().phase, "waitlisted");
+    assert!(c.view().local_ready);
+    assert_ne!(c.view().presentation.tone, Tone::Success);
+}
+
+#[test]
 fn consent_precedes_network_and_preserves_custom_server() {
     let (mut c, backend, events, logins, probes, disables) = fixture();
     *backend.local.lock().unwrap() = Ok(disconnected(Some("https://custom.example")));
