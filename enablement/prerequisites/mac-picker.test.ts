@@ -18,7 +18,7 @@ function fixture(patch: Partial<PickerDriver> = {}) {
  return {calls,driver};
 }
 test('the picker runtime gets a private distinct bundle identity without changing its source', async () => {
- const directory=await files.mkdtemp(join(tmpdir(),'picker-identity-'));
+ const directory=await files.realpath(await files.mkdtemp(join(tmpdir(),'picker-identity-')));
  try {
   const source=join(directory,'Electron.app'),home=join(directory,'home');
   await files.mkdir(join(source,'Contents/MacOS'),{recursive:true});
@@ -57,7 +57,7 @@ test('the picker runtime gets a private distinct bundle identity without changin
  } finally {await files.rm(directory,{recursive:true,force:true});}
 });
 test('a native signature failure refuses the isolated runtime instead of launching an unverified copy', async () => {
- const directory=await files.mkdtemp(join(tmpdir(),'picker-signature-'));
+ const directory=await files.realpath(await files.mkdtemp(join(tmpdir(),'picker-signature-')));
  try {
   const source=join(directory,'Electron.app'),home=join(directory,'home');
   await files.mkdir(join(source,'Contents/MacOS'),{recursive:true});await files.mkdir(home,{mode:0o700});
@@ -72,7 +72,7 @@ test('a native signature failure refuses the isolated runtime instead of launchi
  } finally {await files.rm(directory,{recursive:true,force:true});}
 });
 test('unsigned source helpers are refused before copying or changing any runtime identity', async () => {
- const directory=await files.mkdtemp(join(tmpdir(),'picker-unsigned-'));
+ const directory=await files.realpath(await files.mkdtemp(join(tmpdir(),'picker-unsigned-')));
  try {
   const source=join(directory,'Electron.app'),home=join(directory,'home');
   await files.mkdir(join(source,'Contents/MacOS'),{recursive:true});await files.mkdir(home,{mode:0o700});
