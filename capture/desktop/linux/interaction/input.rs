@@ -498,6 +498,7 @@ pub fn vk_for_evdev_code(code: u16) -> Option<u16> {
         return Some(0x41 + i as u16);
     }
     Some(match code {
+        143 => 95, // KEY_WAKEUP: the observed X1's standalone Fn.
         2..=10 => 0x31 + code - 2,
         11 => 0x30,
         59..=68 => 0x70 + code - 59,
