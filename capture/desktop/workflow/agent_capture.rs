@@ -29,6 +29,20 @@ pub struct State {
     pub capture_id: Option<String>,
 }
 
+/// Build facts from the process answering the live control request, not the CLI
+/// reading the socket or an installed app's preferences. Older clients ignore
+/// this additive envelope; Agent TypeScript owns compatibility decisions.
+pub fn state_response(state: &State) -> serde_json::Value {
+    serde_json::json!({
+        "state": state,
+        "app": {
+            "schema": 1,
+            "version": env!("CARGO_PKG_VERSION"),
+            "build": env!("APPARENT_VERSION_LABEL"),
+        },
+    })
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
     Start,
@@ -1066,6 +1080,24 @@ fn execute_with(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn live_state_preserves_capture_identity_and_adds_the_answering_build() {
+        let state = super::State {
+            phase: super::Phase::Recording,
+            capture_id: Some("owned-capture".into()),
+        };
+        let response = super::state_response(&state);
+        assert_eq!(response["state"], serde_json::json!({
+            "phase": "recording", "capture_id": "owned-capture",
+        }));
+        assert_eq!(response["app"], serde_json::json!({
+            "schema": 1,
+            "version": env!("CARGO_PKG_VERSION"),
+            "build": env!("APPARENT_VERSION_LABEL"),
+        }));
+        assert_eq!(response.as_object().unwrap().len(), 2);
+    }
+
     #[test]
     fn capture_reference_policy_checks_selection_before_any_clipboard_write() {
         use super::super::super::capture_reference_response as reply;

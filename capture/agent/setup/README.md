@@ -18,7 +18,14 @@ JSON schema version 1 contains `mode`, `ready`, `checks` and `repairs`. Each che
 has a stable `id`, `status` (`ok`, `absent`, `unknown`, `incompatible`), detail and
 optional action. Missing provider output, timeout, invalid JSON, null running or
 installed updater identity and unavailable capture control mean unknown, not idle
-or absent. `ready` requires every check to be ok; exit 1 means unresolved checks,
+or absent. A live `capture state` reply can include `app: {schema: 1, version,
+build}` from the answering GUI process. Setup compares that build label with
+the installed CLI's `--version` on both platforms, so an older running app can
+be detected even when Linux updater metadata is missing. Old apps without these
+facts remain unknown. Only clean revision labels or complete matching updater identities
+establish a build match; equal unidentified or modified labels remain unknown.
+Neither a version mismatch nor an idle state authorizes
+an automatic restart. `ready` requires every check to be ok; exit 1 means unresolved checks,
 not necessarily a failed repair. Provider stderr is intentionally omitted.
 A successful repair is rechecked and does not imply readiness or recording proof.
 
@@ -60,8 +67,22 @@ node --test capture/agent/setup/hermes.test.ts
 node capture/agent/setup/hermes.ts --check --json --profile /absolute/profile
 ```
 
-Linux registration and updater providers are platform-specific; macOS handler
-selection and running identity remain unknown here. Installed native app URL
+Linux registration and updater providers are platform-specific. On macOS, the
+read-only [LaunchServices query](https://developer.apple.com/documentation/appkit/nsworkspace/urlforapplication%28toopen%3A%29-7qkzf?language=objc)
+resolves the selected application and its executable, then compares the real
+target with this CLI. No handler returns absent; unavailable/malformed native
+output remains unknown, and a different or missing executable is incompatible.
+This lookup opens no URL, activates no app and performs no registration. Use the
+official Mac installer for repairs. Installed native app URL
 launch, actual Hermes button loading, native recording and end-to-end handoff
 require separate real platform acceptance. Synthetic fixtures establish policy
 and idempotence, not GUI or recording success. Live X1 is not a test fixture.
+
+`node --test capture/agent/setup/*.test.ts` runs the policy suite independently.
+The native fixture runs only on disposable GitHub-hosted Macs with CI's explicit
+`APPARENT_SETUP_NATIVE_FIXTURE=1` flag; it refuses ordinary or self-hosted accounts.
+It registers and selects an app for a unique synthetic URL scheme, queries the
+real OS, then unregisters the fixture app and removes its files. Selection can
+leave an OS-owned preference for that unique scheme until the disposable account
+is destroyed. The actual `apparent` handler is untouched and nothing is launched.
+Local Mac and Linux runs skip this contract; those skips are not Mac proof.
