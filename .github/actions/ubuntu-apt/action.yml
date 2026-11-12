@@ -15,7 +15,7 @@ runs:
         . /etc/os-release
         test "$ID" = ubuntu
         test -n "$VERSION_CODENAME"
-        transport_file=/etc/apt/apt.conf.d/80apparent-transport
+        transport_file=/etc/apt/apt.conf.d/zzzz-apparent-transport
         test ! -L "$transport_file"
         if test -e "$transport_file"; then test -f "$transport_file"; fi
         job=$(mktemp -d /tmp/apparent-dev-apt-XXXXXX)
@@ -28,6 +28,16 @@ runs:
         Acquire::https::Timeout "15";
         APT
         sudo install -o root -g root -m 0644 "$job/transport" "$transport_file"
+        # Runner fragments after 80-* can override identical file contents.
+        # Check the merged values through the same sudo boundary as apt-get.
+        effective=$(sudo apt-config shell apparentRetries Acquire::Retries \
+          apparentHttp Acquire::http::Timeout apparentHttps Acquire::https::Timeout)
+        expected=$(printf "%s\n" "apparentRetries='1'" "apparentHttp='15'" "apparentHttps='15'")
+        if [ "$effective" != "$expected" ]; then
+          echo 'Effective APT acquisition limits differ from required retries=1 / inactivity=15s' >&2
+          exit 1
+        fi
+        printf '%s\n' "$effective"
         mirror=$(printf 'https://mirrors.edge.kernel.org/ubuntu/\tpriority:0')
         # APT's mirror method can retry an unavailable priority-0 host for every
         # index even after another host supplied InRelease. Do not promote a
