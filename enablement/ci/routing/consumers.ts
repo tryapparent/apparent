@@ -36,8 +36,18 @@ const toolingRegressionTests = new Set([
 // Native adapters, shortcut validation and durable-save bridges are intentionally
 // absent from this exemption. New policy files/imports retain integration.
 export const onboardingPureInputs = new Set([
-  'electron/onboarding/account.ts', 'electron/onboarding/presentation.ts', 'src/onboarding/state.ts',
+  'electron/onboarding/account.ts', 'electron/onboarding/presentation.ts', 'electron/onboarding/selection.ts',
+  'src/onboarding/state.ts', 'src/onboarding/shortcut/keys.ts',
 ].map(path => 'capture/desktop/ui/frontend/' + path));
+// Explicit retirements from the reviewed Electron onboarding port. A deletion
+// keeps its consumer and platform proof, while unrelated deletions remain
+// unproven boundary changes.
+export const retiredOnboardingInputs = new Set([
+  'capture/desktop/settings/onboarding/account.rs',
+  'capture/desktop/ui/frontend/electron/onboarding/account.ts',
+  'capture/desktop/ui/frontend/src/onboarding/account.tsx',
+  'capture/desktop/ui/frontend/tests/onboarding/account.test.ts',
+]);
 export const onboardingRoots = ['capture/desktop/ui/frontend/src/onboarding/',
   'capture/desktop/ui/frontend/electron/onboarding/', 'capture/desktop/ui/frontend/tests/onboarding/'];
 export function onboardingInput(path: string): boolean {
