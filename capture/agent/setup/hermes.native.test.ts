@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { macHandler, system } from './hermes.ts';
 
@@ -12,7 +12,13 @@ test('LaunchServices resolves an owned synthetic scheme to its actual executable
   // The entire account must be disposable; refuse ordinary/self-hosted Macs.
   assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Native selection fixture requires disposable hosted CI');
   assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted', 'Native selection fixture refuses self-hosted accounts');
-  const home = mkdtempSync('/tmp/apparent-dev-handler-native-');
+  // Keep the fixture in the disposable runner's user-owned staging directory.
+  // /tmp registration returned success but exposed no candidates, even after
+  // strict signature verification. Change only location to distinguish that
+  // eligibility boundary; do not weaken the selected-handler assertions.
+  const staging = process.env.RUNNER_TEMP;
+  assert(staging && isAbsolute(staging), 'Native fixture requires hosted runner staging');
+  const home = mkdtempSync(join(staging, 'apparent-dev-handler-native-'));
   const scheme = `apparent-setup-${randomUUID().replaceAll('-', '')}`;
   const bundleId = `com.tryapparent.${scheme}`;
   const bundle = join(home, 'SetupFixture.app');
