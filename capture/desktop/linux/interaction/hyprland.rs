@@ -297,6 +297,7 @@ fn mod_names(mask: u32) -> Vec<&'static str> {
 /// Apparent's key names (`Enter`, `Backspace`) as xkb names, which Hyprland takes.
 fn key_name(key: &str) -> String {
     match key {
+        "Fn" => "XF86WakeUp".into(),
         "Enter" => "Return".into(),
         "Backspace" => "BackSpace".into(),
         // The dedicated Copilot key arrives as evdev code 201 on Omarchy. Keep its
@@ -406,8 +407,14 @@ fn external_record_live() -> Option<ShortcutConfig> {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
     let source = std::fs::read_to_string(config_home.join("hypr/bindings.lua")).ok()?;
-    let live = binds_snapshot().ok()?;
-    let (record, command) = external_record_from(&source, &live)?;
+    let live = match binds_snapshot() {
+        Ok(live)=>live,
+        Err(error)=>{crate::capture::engine::runtime::apparent_log(format!("Hyprland desktop shortcut snapshot unavailable: {error:#}"));return None;}
+    };
+    let Some((record, command)) = external_record_from(&source, &live) else {
+        crate::capture::engine::runtime::apparent_log("Hyprland desktop shortcut has no unique source/live binding");
+        return None;
+    };
     use std::os::unix::fs::PermissionsExt;
     let executable = std::fs::metadata(command).ok()?;
     if !executable.is_file() || executable.permissions().mode() & 0o111 == 0 {

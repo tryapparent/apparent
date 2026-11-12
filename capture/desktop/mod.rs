@@ -1898,6 +1898,14 @@ impl ApparentCoordinator {
 
     /// The capture shortcut went down (from Carbon, the event tap or the HID poller).
     pub fn press_shortcut(&mut self, cx: &mut Context<Self>) {
+        #[cfg(target_os="linux")]
+        if let Some(session)=self.onboarding.as_mut().filter(|session|session.editing_shortcut()) {
+            // A permanent compositor binding consumes Copilot before Electron
+            // receives it. Forward that native callback as binding metadata;
+            // the shared TypeScript recorder owns selection, never capture.
+            session.desktop_shortcut_pressed();
+            return;
+        }
         let activity = self.activity();
         if self.gate.is_pending() {
             return;
@@ -7148,6 +7156,12 @@ pub fn run_app(
                     while let Ok(ev) = ui_receiver.try_recv() {
                         loop_coord.update(cx, |coord, cx| match ev {
                             LiveOverlayEvent::CaptureShortcut => coord.press_shortcut(cx),
+                            #[cfg(target_os="linux")]
+                            LiveOverlayEvent::DesktopShortcutWhilePaused => {
+                                if let Some(session)=coord.onboarding.as_mut().filter(|session|session.editing_shortcut()) {
+                                    session.desktop_shortcut_pressed();
+                                }
+                            }
                             LiveOverlayEvent::PasteLatestShortcut => {
                                 if !coord.is_recording() && !coord.is_selecting() {
                                     coord.paste_latest(cx);
