@@ -5,11 +5,26 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
-const { spawn, execFile } = require('node:child_process');
+const { spawn, execFile, execFileSync } = require('node:child_process');
 const { promisify } = require('node:util');
 const { _electron: electron, expect } = require('@playwright/test');
 const { captureReference } = require('../electron/runtime.cjs');
 const run = promisify(execFile);
+// Keep an owned group leader alive while Rust and its Electron children run.
+const rustSupervisor = `
+set +e
+set +m
+trap ':' TERM
+"$@" &
+while :; do
+  IFS= read -r line
+  if [ "$?" -eq 1 ]; then
+    kill -TERM -- -$$ 2>/dev/null || true
+    sleep 0.2
+    kill -KILL -- -$$
+  fi
+done
+`;
 
 test('selected capture reference: real Rust selection and native clipboard', { timeout: 120000 }, async (t) => {
   const binary = process.env.APPARENT_REFERENCE_BINARY;
@@ -63,7 +78,36 @@ test('selected capture reference: real Rust selection and native clipboard', { t
     }
   }
   async function stopRust() {
-    await stopOwned(rust);
+    if (rust?.pid) {
+      const pid = rust.pid;
+      const absent = () => {
+        try { process.kill(-pid, 0); return false; }
+        catch (error) {
+          if (error.code === 'ESRCH') return true;
+          if (error.code !== 'EPERM') throw error;
+          // A denied signal probe is not proof of absence. Independently inspect
+          // the process table; any member (including a zombie) retains the gate.
+          const rows = execFileSync('/bin/ps', ['-axo', 'pgid='],
+            {encoding:'utf8', timeout:1000, maxBuffer:1024*1024}).trim().split(/\s+/);
+          assert.ok(rows.every(value => /^\d+$/.test(value)), 'Invalid process-group inventory');
+          return !rows.some(value => Number(value) === pid);
+        }
+      };
+      assert.equal(rust.exitCode, null, 'Rust supervisor exited before owned group cleanup');
+      assert.equal(rust.signalCode, null, 'Rust supervisor was signalled before owned group cleanup');
+      process.kill(-pid, 'SIGTERM');
+      const until = Date.now() + 2500;
+      while (!absent() && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 50));
+      if (!absent()) {
+        assert.equal(rust.exitCode, null, 'Refusing group escalation after supervisor exit');
+        assert.equal(rust.signalCode, null, 'Refusing group escalation after supervisor signal');
+        process.kill(-pid, 'SIGKILL');
+      }
+      const deadline = Date.now() + 1500;
+      while (!absent() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+      assert.ok(absent(), `Owned Rust process group ${pid} survived cleanup`);
+      if (rust.exitCode === null && rust.signalCode === null) await new Promise(resolve => rust.once('exit', resolve));
+    }
     await log?.close(); log = undefined;
     rust = undefined;
   }
@@ -87,16 +131,18 @@ test('selected capture reference: real Rust selection and native clipboard', { t
   for (const name of [newer, older]) {
     await run(binary, ['demo', '--out', path.join(captures, name)], { env, timeout: 20000, maxBuffer: 1048576 });
   }
-  async function startRust(name) {
+  async function startRust(name, expected = name ?? null) {
     await stopRust();
     log = await fs.open(path.join(output, `rust-${report.checks.length}.log`), 'a', 0o600);
-    rust = spawn(binary, name ? ['preview', path.join(captures, name)] : ['app'], { env, stdio: ['ignore', log.fd, log.fd] });
+    rust = spawn('/bin/bash', ['-c', rustSupervisor, 'reference-supervisor', binary,
+      ...(name ? ['preview', path.join(captures, name)] : ['app'])],
+    { env, detached: true, stdio: ['pipe', log.fd, log.fd] });
     rust.once('error', (error) => { report.launchError = error.message; });
     await expect.poll(async () => {
       assert.equal(rust.exitCode, null, 'Owned backend exited');
       const r = await captureReference(home);
       return r.status === 'connected' ? r.id : r.status;
-    }, { timeout: 15000 }).toBe(name ?? null);
+    }, { timeout: 15000 }).toBe(expected);
   }
   await startRust(newer);
   application = await electron.launch({ args: [path.join(__dirname, '..')], env });
@@ -204,9 +250,7 @@ test('selected capture reference: real Rust selection and native clipboard', { t
   await page.screenshot({ path: path.join(output, 'no-selection.png'), fullPage: true });
   await stopRust();
   await fs.writeFile(config, JSON.stringify({ onboarding: { seen: true }, experiments: { copyCaptureId: false } }));
-  log = await fs.open(path.join(output, 'rust-disabled.log'), 'a', 0o600);
-  rust = spawn(binary, ['preview', path.join(captures, older)], { env, stdio: ['ignore', log.fd, log.fd] });
-  await expect.poll(async () => (await captureReference(home)).status, { timeout: 15000 }).toBe('disabled');
+  await startRust(older, 'disabled');
   await refresh.click(); await expect(card).toHaveCount(0);
   await page.screenshot({ path: path.join(output, 'explicit-false.png'), fullPage: true });
   report.checks.push({ label: 'no selection disables copy; explicit false hides action; argument/frame guards reject' });
