@@ -35,6 +35,11 @@ test('LaunchServices resolves an owned synthetic scheme to its actual executable
 <key>CFBundleURLSchemes</key><array><string>${scheme}</string></array>
 </dict></array>
 </dict></plist>`);
+    // The copied Apple command retains its original code identity. Give this
+    // owned app bundle its own coherent ad-hoc identity before registration;
+    // never modify or sign the system executable itself.
+    assert(system.run('/usr/bin/codesign', ['--force', '--sign', '-', '--identifier', bundleId, bundle]).ok, 'Synthetic app signing failed');
+    assert(system.run('/usr/bin/codesign', ['--verify', '--strict', bundle]).ok, 'Synthetic app signature verification failed');
     assert.equal(macHandler(system, executable, scheme).status, 'absent');
     registrationAttempted = true;
     // lsregister's process exit alone did not establish registration on hosted
