@@ -43,7 +43,7 @@ test('Cargo reruns production runtime staging after cached shared objects are pr
   writeFileSync(join(dir, 'src/main.rs'), '#[link(name="transcribe")] unsafe extern "C" { fn transcribe() -> i32; }\nfn main() { assert_eq!(unsafe { transcribe() }, 42); }\n');
   writeFileSync(join(dir, 'build.rs'), `use std::path::PathBuf;\n${productionStager()}\nfn main() {\n stage_transcribe_shared_objects();\n let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());\n let profile = out.ancestors().nth(3).unwrap();\n println!("cargo:rustc-link-search=native={}", profile.join("deps").display());\n println!("cargo:rustc-link-lib=dylib=transcribe");\n println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/deps");\n}\n`);
 
-  const env = { ...process.env, DEP_TRANSCRIBE_CPP_RUNTIME_DIR: provider, DEP_TRANSCRIBE_CPP_MODULE_DIR: modules };
+  const env = { ...process.env, CARGO_TARGET_DIR: join(dir, 'target'), DEP_TRANSCRIBE_CPP_RUNTIME_DIR: provider, DEP_TRANSCRIBE_CPP_MODULE_DIR: modules };
   const cargoRun = () => spawnSync('cargo', ['run', '--offline', '--manifest-path', manifest], { cwd: dir, env, encoding: 'utf8', timeout: 120_000 });
   const first = cargoRun();
   assert.equal(first.status, 0, first.stderr);
