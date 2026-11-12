@@ -532,22 +532,22 @@ active onboarding recorder; ordinary capture/paste callbacks remain paused.
 The existing Electron route, native fallback, single config writer and rollback
 are unchanged. Removing the fallback still requires its existing acceptance gates.
 
-The default first-capture tour offers no preselected Record combination and no
-accept-current shortcut action. Save a valid combination in the existing editor,
-then press and release that combination once. Rust consumes the normal shortcut
-release as a trial: no capture, picker, microphone admission or clipboard handoff
-starts. Continue remains disabled until the trial succeeds. Changing the saved
-combination invalidates the trial. `onboarding.shortcutTestedFor` stores the exact
-effective label for restart checks; a mismatched binding returns to the trial.
-Completed users retain completion, and a desktop-managed Linux binding keeps its
-existing explicit acceptance path before the same trial.
+The Electron first-capture tour requires an explicit shortcut choice. Choosing
+and releasing the saved shortcut counts as the first practice. The host's
+TypeScript selection policy accepts the native receipt; Continue is automatic
+and the next prompt is **One more time.** The next real shortcut starts the
+capture. Changing the saved binding requires another explicit choice.
+`onboarding.shortcutTestedFor` retains the exact effective label for restart
+checks. Completed users retain completion. A desktop-managed Linux shortcut
+keeps its explicit acceptance path. The native fallback retains its legacy
+separate trial and Continue action until its replacement is accepted.
 
 Early setup shortcut presses show setup rather than ordinary recording. The same
 setup policy guards menu, picker, agent and iPhone starts; Camera permission
 checks and finishing an active capture retain their existing behavior. Closing
 an unfinished tour leaves its progress intact; a shortcut reopens it first.
-After the trial, Electron automatically shows Go again in the setup window;
-the native fallback retains Continue. The next shortcut starts the real local
+After selection, Electron automatically shows One more time in the setup window.
+The next shortcut starts the real local
 guided recording, and later presses retain normal finishing.
 The explicit first-capture opt-out retains optional legacy behavior.
 
@@ -579,7 +579,7 @@ the native adapter reconciles keyboard focus after placement for the current own
 editor request. Note positions convert native pixels to Electron DIP and back, so
 scaled editors retain their complete controls.
 
-The Electron first-capture start state keeps “Go again.” and the saved shortcut in
+The Electron first-capture start state keeps “One more time.” and the saved shortcut in
 the setup window, shortened to 520 pixels with the keys centered in its content. It becomes the floating coach only after capture selection
 begins; the next shortcut still uses the existing native recording path. Returning
 to the start state restores the setup window. Native fallback routing is unchanged.
@@ -595,3 +595,21 @@ native pen/config writer returns. Dispatch acknowledgement and earlier selected
 state do not confirm a save. Save failure or missing confirmation leaves the
 picker available to retry. The native fallback keeps its existing controls and
 writer; this change does not change routing or introduce another config writer.
+
+### Two-use shortcut setup
+
+The Electron shortcut flow counts the accepted choice as the first practice:
+choose the shortcut → **One more time.** → the next real shortcut starts capture.
+The shared TypeScript host policy (`electron/onboarding/selection.ts`) consumes
+only native selection and release facts. Its label-bound receipt is unavailable
+to renderer commands; Rust rejects stale, held or fallback receipts and retains
+the sole progress/config writer. No UI click starts a recording. The heading and
+keycap share a centre with a 16px gap; the heading pops and the keycap depresses
+on selection, with motion disabled under reduced-motion preferences.
+
+The existing native fallback retains its legacy trial policy until that separate
+surface is retired. Routing is unchanged; rolling back this slice removes the
+host receipt and restores the existing native trial. This is a bounded move of
+shortcut-practice policy into TypeScript, not independent onboarding release or
+migration of the remaining Rust journey/progress writer. Installed Mac/Linux
+shortcut release, capture-start and remembered-progress acceptance remain required.

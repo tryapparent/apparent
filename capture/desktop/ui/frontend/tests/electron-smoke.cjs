@@ -296,6 +296,9 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   assert.equal(output.match(/"action":"continue"/g)?.length,1);
   send({step:'try-it',practice:'screen'});
   await expect(page.getByRole('heading',{name:'Choose Screen.',exact:true})).toBeVisible();
+  send({step:'try-it',practice:'screen',platform:'linux'});
+  await expect(page.getByRole('heading',{name:'Choose your display.',exact:true})).toBeVisible();
+  await expect(page.locator('.native-control')).toHaveCount(0);
   send({ step:'try-it', practice:'whiteboard', anchor:[300,30,320,50] });
   await expect(page.getByRole('heading', { name:'Open Whiteboard.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(380);
@@ -340,6 +343,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:board});
   await expect(page.locator('.native-board')).toBeVisible();
   await expect(page.getByRole('status')).toHaveText('Watch this.');
+  if(process.env.APPARENT_ONBOARDING_EVIDENCE){await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE,{recursive:true});await expect.poll(()=>page.locator('.native-board-lesson path').evaluate(el=>parseFloat(getComputedStyle(el).strokeDashoffset))).toBeLessThan(.5);await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'whiteboard-demo.png')});}
   const beforeGuide=output;
   await expect(page.getByRole('status')).toHaveText('Your turn.');
   assert.equal(output,beforeGuide,'the demonstration cannot emit native input');
@@ -470,12 +474,16 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect.poll(()=>output).toContain('change-shortcut');
   assert.equal(output.includes('use-current-shortcut'),false);
   send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:false});
-  await expect(page.getByRole('heading',{name:'Try your shortcut.',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
   assert.equal(await page.getByText(/This check won’t record/).count(),0);
   await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeDisabled();
+  assert.equal(output.includes('accept-shortcut-choice:'),false,'a held choice cannot complete practice');
+  send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:false,shortcutSelectionReleased:true});
+  await expect.poll(()=>output).toContain('accept-shortcut-choice:⌃⌥⇧9');
+  assert.equal(await page.evaluate(()=>window.nativeOnboarding.action('accept-shortcut-choice:⌃⌥⇧9').then(()=>false,()=>true)),true,'renderer cannot forge a native selection receipt');
   const beforeTrialAdvance=(output.match(/"action":"continue"/g)?.length??0);
   send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
-  await expect(page.getByRole('heading',{name:'Go again.',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
   await expect.poll(()=>(output.match(/"action":"continue"/g)?.length??0)).toBe(beforeTrialAdvance+1);
   send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
   await page.waitForTimeout(100);
@@ -483,14 +491,27 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeEnabled();
   await expect(page.getByRole('button',{name:'Change shortcut',exact:true})).toBeVisible();
   send({step:'try-it',practice:'start',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
-  await expect(page.getByRole('heading',{name:'Go again.',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
   assert.equal(await page.getByText(/Press .* to start recording/).count(),0);
   await expect(page.locator('.native-setup')).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveCount(0);
   await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,520]);
   await expect(page.locator('.native-shortcut kbd')).toHaveText('⌃⌥⇧9');
   await expect(page.locator('.native-shortcut kbd')).toHaveCSS('font-size','40px');
+  await page.evaluate(()=>document.getAnimations().forEach(a=>a.finish()));
+  const heading=await page.getByRole('heading',{name:'One more time.',exact:true}).boundingBox();
   const keys=await page.locator('.native-shortcut kbd').boundingBox();
+  assert.ok(Math.abs(heading.x+heading.width/2-(keys.x+keys.width/2))<2,'heading and shortcut share a centre');
+  assert.ok(keys.y-(heading.y+heading.height)>=14&&keys.y-(heading.y+heading.height)<=18,'heading is 16px above shortcut');
+  if(process.env.APPARENT_ONBOARDING_EVIDENCE){
+    await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE,{recursive:true});
+    for(const scheme of ['light','dark']){
+      await page.emulateMedia({colorScheme:scheme});
+      await expect(page.locator('.native-setup')).toHaveCSS('background-color',scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)');
+      await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+      await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'one-more-time-'+scheme+'.png'),animations:'disabled'});
+    }
+  }
   assert.ok(Math.abs(keys.x+keys.width/2-380)<2,'keys are horizontally centered');
   assert.ok(Math.abs(keys.y+keys.height/2-260)<60,'keys are vertically centered in the compact setup');
   assert.equal(await page.locator('.native-setup section').evaluate(el=>el.scrollHeight>el.clientHeight),false);
@@ -500,8 +521,19 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.locator('.native-setup')).toHaveCount(0);
   await expect.poll(()=>page.evaluate(()=>innerWidth)).toBeLessThan(760);
   send({step:'try-it',practice:null,firstCaptureRequired:true});
-  await expect(page.getByRole('heading',{name:'Go again.',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,520]);
+  await page.setViewportSize({width:320,height:520});
+  for(const scheme of ['light','dark']){
+    await page.emulateMedia({colorScheme:scheme,reducedMotion:'reduce'});
+    await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeInViewport();
+    await expect(page.locator('.native-shortcut kbd')).toBeInViewport();
+    assert.equal(await page.locator('.native-shortcut-prompt').evaluate(el=>getComputedStyle(el).animationName),'none');
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    await page.keyboard.press('Tab');
+    if(process.env.APPARENT_ONBOARDING_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'one-more-time-320-'+scheme+'.png'),animations:'disabled'});
+  }
+  await page.setViewportSize({width:760,height:520});
   const fnChoiceStart=output.length;
   send({step:'shortcut',platform:'macos',shortcutChosen:false,shortcutEditor:{recording:false,externallyManaged:false,error:null}});
   await page.getByRole('button',{name:'Use Fn',exact:true}).click();
@@ -540,7 +572,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('alert')).toHaveCount(0);
   await screenshot('shortcut-fn-error-recovered');
   send({step:'shortcut',platform:'macos',shortcut:'Fn',shortcutChosen:true,shortcutTested:false,shortcutEditor:{recording:false,externallyManaged:false,error:null}});
-  await expect(page.getByRole('heading',{name:'Try your shortcut.',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
   await expect(page.locator('.native-shortcut kbd')).toHaveText('Fn');
   await screenshot('shortcut-accepted-fn');
   send({step:'shortcut',platform:'macos',shortcut:'Fn',shortcutChosen:true,shortcutEditor:{recording:true,externallyManaged:false,error:null}});

@@ -71,6 +71,15 @@ html.native-onboarding-shell body { background: transparent !important; margin: 
 .native-setup[data-shortcut-state=true] .native-shortcut { flex: 1; margin: 0; }
 .native-shortcut kbd { font-family: inherit; display: grid; place-items: center; min-width: 120px; min-height: 100px; max-width: 100%; overflow-wrap: anywhere; text-align: center; padding: 20px 28px; background: var(--apparent-secondary); font-size: 2.5rem; font-weight: 500; color: var(--apparent-secondary-foreground); }
 .native-shortcut [role=group] { max-width: 100%; }
+.native-setup[data-shortcut-state=true] section { justify-content:center; text-align:center; gap:16px; }
+.native-setup[data-shortcut-state=true] section > h1 { margin:0; }
+.native-setup[data-shortcut-state=true] .native-shortcut { flex:0; }
+.native-shortcut-prompt { animation:shortcut-prompt-pop 320ms ease-out; }
+.native-shortcut kbd { border-bottom:5px solid var(--apparent-primary); transform:translateY(0); transition:transform 90ms ease-out,border-color 90ms ease-out; animation:shortcut-key-press 240ms ease-out; }
+.native-shortcut kbd:active { transform:translateY(4px); border-bottom-color:transparent; }
+@keyframes shortcut-prompt-pop { 0% {transform:scale(.92)} 55% {transform:scale(1.09)} 100% {transform:scale(1)} }
+@keyframes shortcut-key-press { 0%,45% {transform:translateY(4px);border-bottom-color:transparent} 100% {transform:translateY(0)} }
+@media(prefers-reduced-motion:reduce) { .native-shortcut-prompt,.native-shortcut kbd {animation:none;transition:none;} }
 .native-coach { position: absolute; top: 56px; left: 24px; right: 24px; max-width: 332px; background: var(--apparent-surface); border: 1px solid var(--apparent-border); border-radius: 24px 24px 24px 6px; padding: 24px; }
 /* Keep the frog outside the scroll area, including at 200% text size. */
 .native-coach-content { position: relative; max-height: calc(100vh - 136px); overflow: auto; overflow-wrap: anywhere; }

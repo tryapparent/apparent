@@ -1538,6 +1538,18 @@ impl Session {
 
     /// An action string from the helper as an `Input`.
     pub fn action(&mut self, action: &str) -> Effect {
+        // TypeScript owns the choice-as-first-practice policy. This adapter
+        // admits only the current native selection after release, never capture.
+        // The existing native progress writer remains authoritative.
+        if let Some(label) = action.strip_prefix("accept-shortcut-choice:") {
+            if self.practice.is_some() && self.fallback.is_some() && !self.fallback_pending
+                && self.flow.step() == Step::Shortcut
+                && self.flow.shortcut_chosen && !self.flow.shortcut_editing
+                && !self.shortcut_choice_down && !label.is_empty() && label == self.shortcut_label
+                && !self.editor.as_ref().is_some_and(|editor| editor.recording)
+            { return self.input(Input::ShortcutTriggered); }
+            return Effect::None;
+        }
         if self.flow.step() == Step::Welcome && !self.pen_picker && matches!(action, "sign-in" | "cancel-sign-in" | "open-sign-in") {
             if let Some(account) = self.account.as_mut() {
                 match action {
@@ -1739,6 +1751,7 @@ impl Session {
         view["account"] = serde_json::to_value(self.account.as_ref().map(|a| a.view())).unwrap_or_default();
         if let Some(practice)=self.practice.as_ref() {view["practice"]=serde_json::json!(practice.stage);}
         view["shortcut"]=self.shortcut_label.clone().into();
+        view["shortcutSelectionReleased"]=(!self.shortcut_choice_down).into();
         view["platform"]=std::env::consts::OS.into();
         view["shortcutEditor"]=serde_json::json!(self.editor);
         view["anchor"]=serde_json::json!(self.anchor);
@@ -3469,4 +3482,29 @@ fn shortcut_native_process_failures_reject_without_accepting_renderer_claims() {
     assert!(query("printf invalid"));
     assert!(query("exec sleep 2"));
     assert!(query_shortcut_reservation(&mut Command::new("/nonexistent/apparent-test-helper"), Duration::from_millis(100)));
+}
+
+#[test]
+fn electron_choice_receipt_is_bound_to_the_released_native_selection() {
+    let mut session=Session::for_test(Flow::tour(Step::Shortcut,None).with_first_capture(true,true,false,false));
+    session.shortcut_label="Fn".into();
+    session.practice=Some(super::practice::Practice::default());
+    let (sender,_receiver)=flume::unbounded();
+    session.fallback=Some(Box::new(move |_|Ok(Transport::InProcess(Some(sender.clone())))));
+    session.shortcut_choice_down=true;
+    session.action("accept-shortcut-choice:Fn");
+    assert!(!session.flow.shortcut_tested,"a held choice cannot admit capture");
+    session.shortcut_selection_released(true);
+    session.action("accept-shortcut-choice:Copilot");
+    assert!(!session.flow.shortcut_tested,"stale shortcut receipt is rejected");
+    session.action("accept-shortcut-choice:Fn");
+    assert!(session.flow.shortcut_tested);
+    assert_eq!(session.flow.step(),Step::Shortcut,"receipt never starts capture");
+    session.action("continue");
+    assert_eq!(session.flow.step(),Step::TryIt);
+    assert_eq!(session.shortcut_policy(),ShortcutPolicy::Record,"next press records without another trial");
+    session.flow.step=Step::Shortcut;session.flow.shortcut_tested=false;
+    session.fallback=None;
+    session.action("accept-shortcut-choice:Fn");
+    assert!(!session.flow.shortcut_tested,"retired Electron cannot change fallback progression");
 }
