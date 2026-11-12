@@ -1,5 +1,5 @@
 // Owner facts shared by hosted admission and local pushes. Unknown inputs stay broad.
-export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'web', 'service', 'public', 'hermes', 'tooling'] as const;
+export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling'] as const;
 export type Owner = typeof owners[number];
 export const publicMarkdown = new Set([
   'README.md', 'capture/agent/skills/apparent/SKILL.md', 'capture/agent/docs/usage.md',
@@ -32,6 +32,14 @@ const toolingRegressionTests = new Set([
   'enablement/prerequisites/native.test.ts',
 ]);
 
+// This stdio policy module and its direct tests are dependency-free TypeScript.
+// Keep the group exact: package, adapter, crypto, share and unknown client
+// inputs retain the real native client/application consumers below.
+const portableForeground = new Set([
+  'connect/client/typescript/src/foreground.ts',
+  'connect/client/typescript/test/foreground.test.ts',
+]);
+
 export function consumers(path: string): readonly Owner[] {
   if (documentationOnlyPath(path)) return [];
   if (publicMarkdown.has(path) && path !== 'capture/agent/skills/apparent/SKILL.md') return ['public'];
@@ -43,6 +51,7 @@ export function consumers(path: string): readonly Owner[] {
   // packaged native application. Unknown files/packages and instructions stay broad.
   if (/^record\/(?:storage|completion)\/(?:src\/.*\.ts|test\/.*\.test\.ts|package(?:-lock)?\.json|tsconfig\.json)$/.test(path) ||
       path === 'record/storage/build.ts') return ['desktop', 'capture'];
+  if (portableForeground.has(path)) return ['client-foreground'];
   if (!native && path.startsWith('public/site/')) return webAssets.has(path) ? ['public', 'web'] : ['public'];
   if (!native && path.startsWith('connect/web/')) return ['web'];
   if (path.startsWith('connect/client/')) return ['client', 'capture'];
@@ -78,6 +87,6 @@ export function suitePlan(paths: string[] | null) {
   const selected = selectedOwners(paths);
   return {root: selected.includes('capture'), engine: selected.includes('engine'),
     desktop: selected.includes('desktop'), client: selected.includes('client'),
-    browser: selected.includes('web'), service: selected.includes('service'),
+    foreground: selected.includes('client-foreground'), browser: selected.includes('web'), service: selected.includes('service'),
     tools: selected.includes('capture-tools'), hermes: selected.includes('hermes')};
 }

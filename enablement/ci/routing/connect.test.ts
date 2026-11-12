@@ -45,6 +45,27 @@ test('Connect retains real native client/service consumers and skips native for 
   assert.equal(connectPlan(suitePlan(null)).root, true, 'unknown inputs retain integration');
 });
 
+test('only the foreground stdio policy files route to portable checks without native consumers', () => {
+  const files = ['connect/client/typescript/src/foreground.ts', 'connect/client/typescript/test/foreground.test.ts'];
+  for (const path of files) {
+    const plan = connectPlan(suitePlan([path]));
+    assert.equal(plan.foreground, true, path);
+    assert.equal(plan.root, false, path);
+    assert.equal(plan.client, false, path);
+  }
+  for (const path of ['connect/client/typescript/src/shares.ts', 'connect/client/typescript/package.json',
+    'connect/client/src/foreground.rs']) {
+    const plan = connectPlan(suitePlan([path]));
+    assert.equal(plan.foreground, false, path);
+    assert.equal(plan.root, true, path);
+    assert.equal(plan.client, true, path);
+  }
+  const mixed = connectPlan(suitePlan([files[0], 'connect/client/typescript/src/shares.ts']));
+  assert.equal(mixed.foreground, true);
+  assert.equal(mixed.root, true);
+  assert.equal(mixed.client, true);
+});
+
 test('Connect publication requires successful stream-owned gates on canonical main', () => {
   const connect = workflow('stream-connect.yml');
   assert.deepEqual(Object.keys(connect.on), ['pull_request', 'push', 'workflow_dispatch']);

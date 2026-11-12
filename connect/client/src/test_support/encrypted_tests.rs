@@ -2,6 +2,80 @@
 //! is not the Worker/service, and performs no encryption or decryption itself.
 use super::*;
 
+#[test]
+fn foreground_typescript_real_transport_has_no_queue_and_preserves_encryption() {
+    // One combined scenario owns the process-wide foreground progress channel.
+    let f = Fixture::new();
+    let server = Server::new("");
+    f.authorize(&server.url);
+    f.client.provider.set_experiment(HOSTED_SHARING, true).unwrap();
+    let bundle = f.bundle();
+    let before = fs::read(&f.client.config).unwrap();
+    let link = f.client.prepare_foreground_link(&bundle, false, &|| true).unwrap();
+    assert!(link.authorized());
+    assert!(server.state.lock().unwrap().ready);
+    assert_eq!(server.state.lock().unwrap().shares, 1);
+    let requests = server.state.lock().unwrap().requests;
+    let recopied = f.client.prepare_foreground_link(&bundle, false, &|| true).unwrap();
+    assert_eq!(recopied.text, link.text);
+    assert_eq!(server.state.lock().unwrap().requests, requests, "Recopy must not upload again");
+    assert!(f.client.jobs().unwrap().is_empty());
+    assert_eq!(fs::read(&f.client.config).unwrap(), before);
+    assert!(super::super::foreground_progress().is_none());
+    assert!(!fs::read_dir(&f.client.state).unwrap().any(|entry| entry.unwrap().file_name().to_string_lossy().starts_with("scratch-")));
+    f.client.disable(false).unwrap();
+    assert!(!link.authorized());
+
+    let encrypted_fixture = Fixture::new();
+    let encrypted_server = encryption_server("");
+    pair(&encrypted_fixture, &encrypted_server);
+    let original = encrypted_fixture.bundle();
+    let id = encrypted_fixture.client.upload_foreground(&original, &|| true).unwrap();
+    assert!(encrypted_fixture.client.jobs().unwrap().is_empty());
+    assert_eq!(encrypted_server.state.lock().unwrap().format.as_deref(), Some("apparent-encrypted-v1"));
+    assert_eq!(encrypted_server.state.lock().unwrap().shares, 0);
+    let out = encrypted_fixture.root.join("download.apparent");
+    encrypted_fixture.client.fetch(&id, &out, 0).unwrap();
+    assert_eq!(fs::read(original.join("recording.mov")).unwrap(), fs::read(out.join("recording.mov")).unwrap());
+    // No implicit plaintext public copy from ordinary Copy link.
+    assert!(encrypted_fixture.client.prepare_foreground_link(&original, false, &|| true).is_err());
+
+    let legacy = Fixture::new();
+    let legacy_server = Server::new("");
+    legacy.authorize(&legacy_server.url);
+    let legacy_bundle = legacy.bundle();
+    let queued = legacy.client.enqueue(&legacy_bundle).unwrap();
+    let queued_before = fs::read(legacy.client.state.join(format!("{queued}.job"))).unwrap();
+    assert!(legacy.client.upload_foreground(&legacy_bundle, &|| true).unwrap_err().to_string().contains("legacy_uploads_pending"));
+    assert_eq!(legacy_server.state.lock().unwrap().requests, 0);
+    assert_eq!(fs::read(legacy.client.state.join(format!("{queued}.job"))).unwrap(), queued_before);
+    assert!(legacy.client.upload_foreground(&legacy_bundle, &|| false).is_err());
+
+    // Explicit cancellation during a real media PUT cannot complete or share.
+    let cancelled = Fixture::new();
+    let cancelled_server = Server::new("");
+    cancelled.authorize(&cancelled_server.url);
+    let cancelled_bundle = cancelled.bundle();
+    let gate = Arc::new(MediaGate::default());
+    cancelled_server.state.lock().unwrap().media_gate = Some(gate.clone());
+    let active = Arc::new(AtomicBool::new(true));
+    let worker_active = active.clone();
+    let worker_client = cancelled.client.clone();
+    let worker = std::thread::spawn(move || worker_client.upload_foreground(&cancelled_bundle, &|| worker_active.load(Ordering::SeqCst)));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !gate.started.load(Ordering::SeqCst) {
+        assert!(Instant::now() < deadline, "foreground media PUT did not start");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    active.store(false, Ordering::SeqCst);
+    gate.release.store(true, Ordering::SeqCst);
+    assert!(worker.join().unwrap().is_err());
+    assert!(!cancelled_server.state.lock().unwrap().ready);
+    assert_eq!(cancelled_server.state.lock().unwrap().shares, 0);
+    assert!(cancelled.client.jobs().unwrap().is_empty());
+    assert!(super::super::foreground_progress().is_none());
+}
+
 fn encryption_server(mode: &str) -> Server {
     let server = Server::new(mode);
     server.state.lock().unwrap().encryption = Some(EncryptionState::default());

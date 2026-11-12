@@ -28,6 +28,7 @@ struct Entry {
     active: Arc<AtomicBool>,
     prepared: Option<Box<dyn ReadyLink>>,
     state: &'static str,
+    foreground: bool,
 }
 
 #[derive(Clone, Default)]
@@ -41,16 +42,17 @@ impl Controller {
         let inode = (metadata.dev(), metadata.ino());
         let id = operation_id().map_err(|_| "local_state_error")?;
         let active = Arc::new(AtomicBool::new(true));
+        let foreground = crate::connect::hosted::foreground_enabled();
         {
             let mut guard = self.0.lock().map_err(|_| "app_busy")?;
             if let Some(old) = guard.take() { old.active.store(false, Ordering::SeqCst); }
-            *guard = Some(Entry { id: id.clone(), capture, bundle: bundle.clone(), inode, generation, expires: Instant::now() + std::time::Duration::from_millis(LEASE), active: active.clone(), prepared: None, state: "preparing" });
+            *guard = Some(Entry { id: id.clone(), capture, bundle: bundle.clone(), inode, generation, expires: Instant::now() + std::time::Duration::from_millis(LEASE), active: active.clone(), prepared: None, state: "preparing", foreground });
         }
         let owner = self.clone();
         let operation = id.clone();
         std::thread::Builder::new().name("apparent-public-copy".into()).spawn(move || {
             let allowed = || active.load(Ordering::SeqCst) && owner.live(&id, generation);
-            let result = crate::connect::hosted::prepare_public_link_handoff(&bundle, &allowed);
+            let result = crate::connect::hosted::prepare_public_link_handoff(&bundle, &allowed, foreground);
             let still_allowed = allowed();
             if let Ok(mut guard) = owner.0.lock() {
                 if let Some(entry) = guard.as_mut().filter(|e| e.id == id && e.generation == generation && e.active.load(Ordering::SeqCst) && Instant::now() < e.expires) {
@@ -79,6 +81,12 @@ impl Controller {
         let entry = guard.as_mut().filter(|e| e.id == id).ok_or("no_operation")?;
         if Instant::now() >= entry.expires { entry.active.store(false, Ordering::SeqCst); entry.state = "expired"; }
         if entry.capture != capture || entry.bundle != bundle || !same_bundle(entry) || entry.generation != generation { entry.active.store(false, Ordering::SeqCst); entry.state = "cancelled"; return Err("conflict"); }
+        // A foreground upload may outlast reservation's 30-second lease. Only
+        // the same live, polling window can renew it; abandoned windows still
+        // expire and stop native I/O through the existing allowed callback.
+        if entry.foreground && entry.active.load(Ordering::SeqCst) && entry.state == "preparing" {
+            entry.expires = Instant::now() + std::time::Duration::from_millis(LEASE);
+        }
         Ok(entry.state)
     }
 
@@ -138,8 +146,20 @@ mod tests {
   std::fs::create_dir(&dir).unwrap();
   let m=std::fs::metadata(&dir).unwrap();
   let c=Controller::default();
-  *c.0.lock().unwrap()=Some(Entry{id:"a".repeat(32),capture:"same.apparent".into(),bundle:dir.clone(),inode:(m.dev(),m.ino()),generation:1,expires:Instant::now()+std::time::Duration::from_secs(10),active:Arc::new(AtomicBool::new(true)),prepared:Some(Box::new(Link(true))),state:"prepared"});
+  *c.0.lock().unwrap()=Some(Entry{id:"a".repeat(32),capture:"same.apparent".into(),bundle:dir.clone(),inode:(m.dev(),m.ino()),generation:1,expires:Instant::now()+std::time::Duration::from_secs(10),active:Arc::new(AtomicBool::new(true)),prepared:Some(Box::new(Link(true))),state:"prepared",foreground:false});
   (c,dir)
+ }
+ #[test]
+ fn only_live_matching_foreground_window_renews_upload_preparation() {
+  let (c,dir)=fixture(); let id="a".repeat(32);
+  let original = Instant::now()+std::time::Duration::from_secs(1);
+  { let mut guard=c.0.lock().unwrap(); let entry=guard.as_mut().unwrap(); entry.foreground=true; entry.state="preparing"; entry.expires=original; }
+  assert_eq!(c.read(&id,"same.apparent",&dir,1),Ok("preparing"));
+  assert!(c.0.lock().unwrap().as_ref().unwrap().expires>original);
+  c.0.lock().unwrap().as_mut().unwrap().expires=Instant::now();
+  assert_eq!(c.read(&id,"same.apparent",&dir,1),Ok("expired"));
+  assert!(!c.0.lock().unwrap().as_ref().unwrap().active.load(Ordering::SeqCst));
+  let _=std::fs::remove_dir_all(dir);
  }
  #[test]
  fn public_share_delivers_once_and_refuses_new_path_same_name() {

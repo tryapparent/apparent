@@ -672,3 +672,18 @@ The installed basic pill uses the shared React controls with a bounded Rust-auth
 bridge; Settings and onboarding routing remain independent. See
 [the pill contract](../electron_pill/README.md) for lifecycle, fallback and acceptance.
 Build includes the pill host and page; `npm run test:pill` runs synthetic Electron checks.
+
+### Foreground upload pill trial
+
+The temporary `connectForegroundUpload` config experiment routes new uploads
+through the Connect-owned TypeScript policy. The existing completed pill shows
+upload progress, Cancel upload, Retry upload and Link copied. It retains Paste
+for local handoff and the existing consent requirements. The selected backend
+never changes during an operation. `tests/pill/foreground/smoke.cts` exercises the
+built Electron renderer with synthetic parent states, light/dark themes, narrow
+workarea, keyboard retry and private action payloads; set
+`APPARENT_FOREGROUND_EVIDENCE` to a private job directory for screenshots. This is
+renderer proof, not installed native capture/upload acceptance. Native fallback
+controls retain their existing presentation and are not the accepted foreground
+control surface. Trial/rollback and native ownership debt are documented in
+`connect/docs/hosted-client.md`.

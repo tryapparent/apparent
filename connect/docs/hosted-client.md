@@ -281,3 +281,57 @@ Authorization failures do not enter readiness polling. Integrity checks, private
 destinations and atomic complete-bundle publication are unchanged. This restores
 recipient behavior without evidence-first delivery or a claim about any incident's
 exact cause.
+
+## Foreground TypeScript upload trial
+
+The explicit `experiments.connectForegroundUpload: true` setting selects the
+foreground path for new CLI uploads and Copy link requests. It is false by
+default for this temporary side-by-side trial. Edit only that key in
+`~/.config/apparent/config.json`; unrelated keys and secrets must be preserved.
+The value is read when an operation starts. Changing it does not move an active
+operation between implementations. No installed configuration is changed by a
+source update.
+
+Switch while idle: finish or explicitly cancel legacy pending/failed uploads
+first. The new path refuses those jobs rather than converting or deleting them.
+Existing legacy jobs retain their original executor. New recording completion
+saves locally and does not enqueue an automatic upload in foreground mode.
+`apparent connect upload <bundle>` uploads explicitly and prints the capture ID
+only after ready-state manifest readback. Closing the application cancels its
+in-process work; the original recording stays local. Retry is explicit and starts
+a fresh upload. There is no restart resume, persisted foreground job, timer or
+automatic fallback to the legacy uploader.
+
+In the Electron completed-recording pill, Copy link shows upload percentage and
+becomes Cancel upload. Failure/cancellation retains the recording and offers
+Retry upload; Paste remains the local handoff. A link is copied only after the
+upload completes and the server's ready manifest matches. Recopy or clipboard
+failure reuses the same authorized link in memory during this session, without
+uploading again. Restart forgets that volatile receipt. The existing sharing and
+upload consent gates remain in force: ordinary encrypted Copy link is still
+refused; only the existing explicitly disclosed public-copy action can make a
+plaintext public copy. Private CLI uploads retain endpoint encryption.
+
+The dependency-free `typescript/src/foreground.ts` owns transfer sequencing,
+manifest readback and readiness/link policy. Its bounded private stdio adapter
+uses the already packaged Electron run-as-Node runtime. This draft does not move
+execution into the pill's Electron main process: the existing pill has no private
+credential capability. Tokens, filesystem paths and ciphertext stay outside the
+renderer and command arguments. The native client remains authoritative for
+credential renewal, cancellation epochs, private snapshot/age encryption and
+HTTP execution. It creates no durable job/spool for this path; private temporary
+snapshot directories are removed on normal completion/error/cancellation.
+This is a usable workflow migration slice, not completion of Rust removal.
+
+Only the exact foreground policy source and its direct test are eligible for the
+new portable CI lane (install, tests, typecheck and build on Linux). Adapter,
+crypto, packaging, shared inputs and mixed deltas retain native consumers. Initial
+Mac/Linux installed adoption remains an open gate on this draft; selector tests
+and synthetic Electron/loopback tests do not establish native acceptance. The
+Connect workflow's existing full-main verification behavior is unchanged.
+
+Rollback selects false for subsequent operations after the active upload ends;
+no state conversion is required. Remove the legacy uploader/worker and this flag
+only after the foreground consumer is accepted on both platforms and legacy jobs
+have finished or been explicitly cancelled. No activation, deployment or release
+is included in this trial implementation.

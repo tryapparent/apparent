@@ -128,7 +128,7 @@ export function selectRange(base: string, head: string) {
   const mac = macDecision(effective, delta?.filter(change => unsupported(change) && needsPlatform([change.path])).map(change => change.path) ?? null);
   const platform = needsPlatform(effective);
   return {...select(effective), ...mac, platform, plan,
-    hermes: plan.hermes, portable: plan.browser || plan.service || plan.tools,
+    hermes: plan.hermes, portable: plan.browser || plan.service || plan.tools || plan.foreground,
     reasons: mac.reasons};
 }
 

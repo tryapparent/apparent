@@ -15,6 +15,25 @@ test('owner selection retains consumers and unrelated packages stay out', () => 
   assert.deepEqual(select(['hermes/inspect.py']), ['hermes']);
   assert.deepEqual(select(['capture/desktop/scripts/packaging/install-app.sh']), ['capture', 'engine', 'capture-tools']);
   assert.deepEqual(select(['README.md']), ['public']);
+  assert.deepEqual(select(['connect/client/typescript/src/foreground.ts']), ['client-foreground']);
+  assert.deepEqual(select(['connect/client/typescript/test/foreground.test.ts']), ['client-foreground']);
+  assert.deepEqual(select(['connect/client/typescript/src/foreground.ts', 'connect/client/typescript/package.json']),
+    ['capture', 'client', 'client-foreground']);
+});
+
+test('foreground policy selection runs the complete dependency-free TypeScript owner checks', () => {
+  for (const platform of ['linux', 'darwin']) {
+    const plan = commands(select(['connect/client/typescript/src/foreground.ts']), 'base', 'head', platform, false,
+      {paths: ['connect/client/typescript/src/foreground.ts']});
+    const packageCommands = plan.filter(command => command.cwd === 'connect/client/typescript');
+    assert.deepEqual(packageCommands.map(command => command.argv.slice(0, 3)), [
+      ['npm', 'ci', '--no-audit'], ['npm', 'test'], ['npm', 'run', 'typecheck'], ['npm', 'run', 'build'],
+    ]);
+    assert.ok(!plan.some(command => command.argv.includes('cargo') || command.argv.includes('--run')));
+  }
+  const mixed = commands(select(['connect/client/typescript/src/foreground.ts', 'connect/client/src/lib.rs']), 'base', 'head', 'linux');
+  assert.ok(mixed.some(command => command.argv.includes('cargo')));
+  assert.ok(mixed.some(command => command.argv.includes('--run')));
 });
 
 test('unknown, missing history and empty deltas cannot silently skip coverage', () => {
@@ -78,8 +97,8 @@ test('package gates execute complete canonical suites including browser and Elec
     assert.ok(plan.some(command => command.cwd === cwd && command.argv.at(-1) === last), `${cwd} ${last}`);
   }
   assert.ok(plan.some(command => command.argv.includes('--run')));
-  assert.ok(!plan.some(command => command.cwd === 'connect/client/typescript'),
-    'the root verifier owns this prerequisite so it is not installed twice');
+  assert.ok(plan.some(command => command.cwd === 'connect/client/typescript' && command.argv.at(-1) === 'test'),
+    'the foreground policy owner retains its dependency-free TypeScript suite');
   assert.ok(!commands(['desktop'], 'base', 'head', 'darwin').some(command => command.argv.includes('xvfb-run')));
   assert.ok(commands(['client'], 'base', 'head', 'darwin').some(command => command.argv[0] === 'taskpolicy'));
   const clientOnly = commands(['client'], 'base', 'head', 'linux');

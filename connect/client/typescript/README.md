@@ -81,3 +81,11 @@ declarations from `dist`; ordinary packed consumers need plain Node22.18+, not
 TypeScript loaders, Cargo or rustc. The explicit Rust interoperability lane
 requires the compiled package first; it does not belong in ordinary npm install
 or build hooks. No activation or writer cutover is included.
+
+`src/foreground.ts` supplies the dependency-free foreground upload policy. It
+requests only reserve, indexed PUT, complete, exact manifest readback and optional
+share capabilities over the existing private pipe. Native retains credential,
+filesystem and encryption enforcement; no token or local path enters this policy.
+`test/foreground.test.ts` checks sequencing, format/manifest/link rejection and
+failure-without-retry. Ordinary package commands still require no Rust tools.
+See `connect/docs/hosted-client.md` for trial routing and remaining native gates.

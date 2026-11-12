@@ -2884,6 +2884,17 @@ impl ApparentCoordinator {
     }
 
     fn tick_hosted_sharing(&mut self, cx: &mut Context<Self>) {
+        if self.share_pending.is_some() {
+            if let Some(percent) = crate::connect::hosted::foreground_progress() {
+                let note = format!("Uploading… {percent}%");
+                if self.completed_note.as_ref() != Some(&note) {
+                    self.completed_note = Some(note);
+                    self.sync_native_pill();
+                    cx.notify();
+                }
+                return;
+            }
+        }
         if !crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING)
             || !matches!(self.island_phase, IslandPhase::Completed { .. })
             || self.share_probe_at.is_some_and(|at| at.elapsed() < Duration::from_secs(5)) {
@@ -2917,6 +2928,15 @@ impl ApparentCoordinator {
     }
 
     pub fn copy_completed_link(&mut self, cx: &mut Context<Self>) {
+        if crate::connect::hosted::foreground_progress().is_some() {
+            if let Some((_, _, active)) = self.share_pending.take() {
+                active.store(false, std::sync::atomic::Ordering::SeqCst);
+                self.completed_note = Some("Upload cancelled · recording saved locally".into());
+                self.sync_native_pill();
+                cx.notify();
+            }
+            return;
+        }
         if !crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING)
             || !matches!(self.island_phase, IslandPhase::Completed { .. })
             || !self.share_online || self.share_pending.is_some() { return; }
@@ -2936,6 +2956,7 @@ impl ApparentCoordinator {
     fn reserve_completed_link(&mut self, connect: bool, cx: &mut Context<Self>) {
         let Some((bundle, generation, active)) = self.share_pending.clone() else { return };
         self.share_waiting_account = false;
+        let foreground = crate::connect::hosted::foreground_enabled();
         self.completed_note = Some(if connect { "Approve hosted upload in your browser…" } else { "Reserving link…" }.into());
         cx.spawn(async move |entity, cx| {
             let worker_bundle = bundle.clone();
@@ -2943,7 +2964,7 @@ impl ApparentCoordinator {
             let result = cx.background_executor().spawn(async move {
                 let allowed = || worker_active.load(std::sync::atomic::Ordering::SeqCst);
                 if connect { crate::connect::hosted::connect_sharing(&allowed)?; }
-                crate::connect::hosted::copy_link_handoff(&worker_bundle, &allowed)
+                crate::connect::hosted::copy_link_handoff(&worker_bundle, &allowed, foreground)
             }).await;
             let _ = entity.update(cx, |coord, cx| {
                 if !active.load(std::sync::atomic::Ordering::SeqCst)
@@ -2954,10 +2975,14 @@ impl ApparentCoordinator {
                 coord.share_pending = None;
                 coord.completed_note = Some(match result {
                     Ok(link) if link.authorized() => match crate::shared::handoff::copy_string_to_clipboard(&link.text) {
-                        Ok(()) => { coord.share_copied = Some(bundle.clone()); crate::connect::hosted::sharing_progress(&bundle) }
+                        Ok(()) => {
+                            if foreground { "Link copied".into() }
+                            else { coord.share_copied = Some(bundle.clone()); crate::connect::hosted::sharing_progress(&bundle) }
+                        }
                         Err(_) => "Copy failed · click Copy link to retry".into(),
                     },
-                    Ok(_) | Err(_) => "Sharing stopped · click Copy link to retry".into(),
+                    Ok(_) | Err(_) => if foreground { "Upload failed · recording saved locally".into() }
+                        else { "Sharing stopped · click Copy link to retry".into() },
                 });
                 coord.sync_native_pill();
                 cx.notify();

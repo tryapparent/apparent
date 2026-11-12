@@ -12,6 +12,10 @@ impl ApparentCoordinator {
         )
         .with_handoff(self.completed_dir.is_some(), self.review_bundle.is_some())
         .with_notes(self.note_ui.as_ref().map_or(0, |notes| notes.saved_count()))
+        .with_foreground_upload(
+            self.share_pending.is_some() && crate::connect::hosted::foreground_progress().is_some(),
+            self.completed_note.as_deref().is_some_and(|note| note.starts_with("Upload failed") || note.starts_with("Upload cancelled")),
+        )
     }
     fn electron_pill_selection(&self) -> super::session::Selection {
         (

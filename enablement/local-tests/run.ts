@@ -121,6 +121,13 @@ export function commands(selected: Owner[], base: string, head: string, platform
     add(['npm', 'test'], 'connect/service');
     add(['npm', 'run', 'test:recipient'], 'connect/service');
   }
+  if (selected.includes('client-foreground')) {
+    const cwd = 'connect/client/typescript';
+    add(['npm', 'ci', '--no-audit', '--no-fund'], cwd);
+    add(['npm', 'test'], cwd);
+    add(['npm', 'run', 'typecheck'], cwd);
+    add(['npm', 'run', 'build'], cwd);
+  }
   if (selected.includes('web')) {
     add(['bun', 'install', '--frozen-lockfile'], 'connect/web');
     add(['npm', 'test'], 'connect/web');

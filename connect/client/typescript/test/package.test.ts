@@ -27,7 +27,7 @@ test('build removes stale generated modules and refuses redirected output',async
   await fs.mkdir(dist);await fs.writeFile(path.join(dist,'obsolete.js'),'obsolete');
   await fs.writeFile(path.join(dist,'obsolete.d.ts'),'obsolete');
   run('npm',['run','build'],source);
-  assert.deepEqual((await fs.readdir(dist)).sort(),['handoff.d.ts','handoff.js','index.d.ts','index.js','shares.d.ts','shares.js']);
+  assert.deepEqual((await fs.readdir(dist)).sort(),['foreground.d.ts','foreground.js','handoff.d.ts','handoff.js','index.d.ts','index.js','shares.d.ts','shares.js']);
   await fs.rm(dist,{recursive:true});
   const external=path.join(root,'external');await fs.mkdir(external);
   await fs.writeFile(path.join(external,'sentinel'),'preserve');
@@ -40,7 +40,7 @@ test('packed consumer installs and runs without Rust, compilers or source resolu
   const {root,source}=await fixture(t);
   const result=JSON.parse(run('npm',['pack','--json','--pack-destination',root],source))[0];
   assert.deepEqual(result.files.map((file:{path:string})=>file.path).sort(),
-    ['README.md','dist/handoff.d.ts','dist/handoff.js','dist/index.d.ts','dist/index.js','dist/shares.d.ts','dist/shares.js','package.json']);
+    ['README.md','dist/foreground.d.ts','dist/foreground.js','dist/handoff.d.ts','dist/handoff.js','dist/index.d.ts','dist/index.js','dist/shares.d.ts','dist/shares.js','package.json']);
   const policy=path.join(source,'dist/handoff.js');
   const pointer=execFileSync(process.execPath,[policy],{input:JSON.stringify({job:{id:'a'.repeat(32),status:'pending'}})+'\n',encoding:'utf8'});
   assert.equal(JSON.parse(pointer),'apparent inspect '+'a'.repeat(32)+'\n');

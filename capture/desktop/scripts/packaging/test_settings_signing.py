@@ -36,6 +36,7 @@ class SigningTests(unittest.TestCase):
             module = "export const syntheticListing = true;\n"
             (connect / "dist/shares.js").write_text(module)
             (connect / "dist/handoff.js").write_text("synthetic handoff")
+            (connect / "dist/foreground.js").write_text("synthetic foreground")
             script = root / "capture/desktop/scripts/packaging/stage-settings.py"
             with patch.object(stage, "__file__", str(script)), \
                  patch.object(stage.sys, "argv", [str(script), str(destination)]), \
@@ -45,6 +46,7 @@ class SigningTests(unittest.TestCase):
             self.assertTrue(any(call.kwargs.get("cwd") == connect and call.args[0] == ["npm", "run", "build"] for call in build.call_args_list))
             self.assertEqual((destination / "app/connect-client/dist/shares.js").read_text(), module)
             self.assertEqual((destination / "app/connect-client/dist/handoff.js").read_text(), "synthetic handoff")
+            self.assertEqual((destination / "app/connect-client/dist/foreground.js").read_text(), "synthetic foreground")
             self.assertEqual(json.loads((destination / "app/connect-client/package.json").read_text()), {"type": "module"})
             self.assertEqual((destination / "app/dist/src/controls/index.html").read_text(), "dist/src/controls/index.html")
             for relative in ("electron/main.cjs", "electron/preload.cjs", "dist/assets/controls.js",

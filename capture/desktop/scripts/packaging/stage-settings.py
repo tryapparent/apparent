@@ -71,6 +71,7 @@ def main():
     connect_dist.mkdir(parents=True)
     shutil.copy2(connect / "dist/shares.js", connect_dist / "shares.js")
     shutil.copy2(connect / "dist/handoff.js", connect_dist / "handoff.js")
+    shutil.copy2(connect / "dist/foreground.js", connect_dist / "foreground.js")
     (connect_dist.parent / "package.json").write_text('{"type":"module"}\n')
     shutil.copytree(frontend / "electron", app / "electron")
     theme = app / "node_modules/@apparent/ui"

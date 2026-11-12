@@ -93,7 +93,7 @@ test('Hermes-only changes never start unrelated Linux packaging; mixed and unkno
  const expression=ci().jobs['release-linux'].if;
  const outputs=(paths:string[]|null)=>{
   const plan=suitePlan(paths);
-  return {hermes:String(plan.hermes),platform:String(needsPlatform(paths)),public:String(select(paths).public),portable:String(plan.browser||plan.service||plan.tools)};
+  return {hermes:String(plan.hermes),platform:String(needsPlatform(paths)),public:String(select(paths).public),portable:String(plan.browser||plan.service||plan.tools||plan.foreground)};
  };
  const allowed=(value:any)=>admitted(expression,{...parents(value),'linux-admission':{result:'success'}},'push');
  for(const path of ['hermes/desktop/controller.ts','hermes/plugin.yaml','hermes/tests/test_inspect.py','.github/workflows/hermes.yml'])assert.equal(allowed(outputs([path])),false,path);
@@ -153,6 +153,24 @@ test('Connect web is portable; service retains real integration plus its canonic
   assert.equal(service.service, true); assert.equal(service.client, true); assert.equal(service.root, true);
   assert.equal(service.browser, true);
 });
+test('foreground policy files select the Linux portable lane while all other client inputs retain native checks', () => {
+  const foreground = 'connect/client/typescript/src/foreground.ts';
+  const plan = suitePlan([foreground]);
+  assert.equal(plan.foreground, true);
+  assert.equal(plan.client || plan.root || plan.engine, false);
+  assert.equal(needsPlatform([foreground]), false);
+  assert.equal(select([foreground]).public, false);
+  assert.equal(macDecision([foreground]).macos, false);
+  for (const path of ['connect/client/typescript/src/shares.ts', 'connect/client/typescript/package.json']) {
+    const native = suitePlan([path]);
+    assert.equal(native.foreground, false, path);
+    assert.equal(native.client && native.root, true, path);
+    assert.equal(needsPlatform([path]), true, path);
+  }
+  const mixed = suitePlan([foreground, 'connect/client/src/lib.rs']);
+  assert.equal(mixed.foreground && mixed.client && mixed.root, true);
+  assert.equal(needsPlatform([foreground, 'connect/client/src/lib.rs']), true);
+});
 test('ordinary prose composes with Linux-only exemptions; shipped instructions and unknown inputs remain broad', () => {
   const linux = 'capture/desktop/linux/integration/appearance.rs';
   for (const prose of ['capture/engine/docs/capture.md', 'capture/desktop/docs/linux/linux.md', 'enablement/docs/continuous-delivery.md']) {
@@ -178,7 +196,7 @@ test('standalone Enablement regression tests select tooling while execution inpu
   const audited = ['enablement/local-tests/reuse.test.ts', 'enablement/prerequisites/native.test.ts'];
   for (const path of audited) {
     assert.deepEqual(selectedOwners([path]), ['tooling'], path);
-    assert.deepEqual(suitePlan([path]), {root:false, engine:false, desktop:false, client:false,
+    assert.deepEqual(suitePlan([path]), {root:false, engine:false, desktop:false, client:false, foreground:false,
       browser:false, service:false, tools:false, hermes:false}, path);
     assert.deepEqual(localCommands(['tooling'], 'base', 'head').map(command => command.argv), [
       ['python3', 'enablement/verification.py', '--base', 'base', '--head', 'head', '--pr'],
@@ -320,7 +338,7 @@ test('audited Record inputs retain Desktop and native platform consumers only', 
     for (const input of ['src/policy.ts', 'test/policy.test.ts', 'package.json', 'package-lock.json', 'tsconfig.json', ...(pkg === 'storage' ? ['build.ts'] : [])]) {
       const paths = [`record/${pkg}/${input}`];
       assert.deepEqual(selectedOwners(paths), ['capture', 'desktop']);
-      assert.deepEqual(suitePlan(paths), {root: true, engine: false, desktop: true, client: false,
+      assert.deepEqual(suitePlan(paths), {root: true, engine: false, desktop: true, client: false, foreground: false,
         browser: false, service: false, tools: false, hermes: false});
       assert.deepEqual(select(paths), {public: false, updater: false});
       assert.equal(needsPlatform(paths), true);
