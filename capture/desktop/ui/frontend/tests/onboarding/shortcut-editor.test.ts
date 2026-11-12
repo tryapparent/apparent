@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { fnSelectionActions, fnShortcut, shortcutCapture, shortcutInput } from '../../electron/onboarding/shortcut-editor.ts';
+import { desktopShortcutSelection, fnSelectionActions, fnShortcut, shortcutCapture, shortcutInput } from '../../electron/onboarding/shortcut-editor.ts';
 
 const require = createRequire(import.meta.url);
 const { parseAction } = require('../../electron/onboarding-protocol.cjs') as { parseAction: (value: unknown) => unknown };
@@ -39,6 +39,24 @@ test('waits for modifiers and requires native confirmation of the X1 null event'
 test('accepts an explicitly selected single ordinary key', () => {
   assert.deepEqual(shortcutCapture(event({key:'r',code:'KeyR',metaKey:false,shiftKey:false}), 'linux'), {keyCode:82,modifiers:0,key:'r'});
   assert.deepEqual(shortcutCapture(event({key:'r',code:'KeyR',metaKey:false,shiftKey:false}), 'macos'), {keyCode:15,modifiers:0,key:'r'});
+});
+test('X1 standalone Fn uses the observed Linux WakeUp identity',()=>{
+  for(const key of ['WakeUp','XF86WakeUp']){
+    const e=event({key,code:'',metaKey:false,shiftKey:false});
+    const capture=shortcutCapture(e,'linux');
+    assert.deepEqual(capture,{keyCode:95,modifiers:0,key:'Fn'});
+    const action={action:'shortcut',kind:'record',...capture,reserved:false};
+    assert.deepEqual(parseAction(action),action);
+    assert.equal(shortcutCapture({...e,ctrlKey:true},'linux'),null);
+    assert.equal(shortcutCapture(e,'macos'),null);
+  }
+});
+test('a compositor-consumed Copilot callback selects only in a current Linux recorder',()=>{
+  const value={keyCode:201,modifiers:768,key:'Copilot'};
+  const state={platform:'linux',step:'shortcut',shortcutEditor:{recording:true}};
+  assert.deepEqual(desktopShortcutSelection(state,value),{action:'shortcut',kind:'record',...value,reserved:false});
+  for(const altered of [null,{...state,platform:'macos'},{...state,step:'try-it'},{...state,shortcutEditor:{recording:false}}])assert.equal(desktopShortcutSelection(altered,value),null);
+  for(const invalid of [null,{...value,modifiers:1},{...value,keyCode:63},{...value,key:'Fn'}])assert.equal(desktopShortcutSelection(state,invalid),null);
 });
 test('accepts standalone Fn on Mac and rejects Fn with other modifiers', () => {
   assert.deepEqual(shortcutCapture(event({key:'Fn',code:'Fn',metaKey:false,shiftKey:false}), 'macos'), {keyCode:63,modifiers:0,key:'Fn'});

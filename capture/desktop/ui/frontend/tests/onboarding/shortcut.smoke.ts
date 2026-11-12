@@ -60,6 +60,12 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
   await expect.poll(()=>output).toContain('"keyCode":201,"modifiers":4608,"key":"Copilot"');
   await page.keyboard.up('Shift');await page.keyboard.up('Control');
   output='';
+  child.stdin.write(JSON.stringify({type:'desktop-shortcut',keyCode:201,modifiers:768,key:'Copilot'})+'\n');
+  await expect.poll(()=>output).toContain('"keyCode":201,"modifiers":768,"key":"Copilot"');
+  output='';
+  await recorder.dispatchEvent('keydown',{key:'WakeUp',code:''});
+  await expect.poll(()=>output).toContain('"keyCode":95,"modifiers":0,"key":"Fn"');
+  output='';
   await recorder.dispatchEvent('keydown',{key:'\u0000',code:'',metaKey:true,shiftKey:true});
   await expect.poll(()=>output).toContain('"action":"resolve-copilot"');
   assert.equal(output.includes('"keyCode"'),false,'unknown input requires native confirmation');
@@ -79,8 +85,13 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
   await page.setViewportSize({width:760,height:520});
   output='';await page.getByRole('button',{name:'Cancel',exact:true}).click();
   await expect.poll(()=>output).toContain('"action":"cancel-shortcut"');
+  output='';child.stdin.write(JSON.stringify({type:'desktop-shortcut',keyCode:201,modifiers:768,key:'Copilot'})+'\n');
+  await page.waitForTimeout(100);assert.equal(output,'','cancel blocks late offers before provider state acknowledgement');
   send('macos');
   await expect(page.getByRole('button',{name:'Use Fn',exact:true})).toBeVisible();
+  output='';
+  child.stdin.write(JSON.stringify({type:'desktop-shortcut',keyCode:201,modifiers:768,key:'Copilot'})+'\n');
+  await page.waitForTimeout(100);assert.equal(output,'','Mac does not accept Linux compositor callbacks');
   output='';await page.getByRole('button',{name:'Use Fn',exact:true}).click();
   await expect.poll(()=>output).toContain('"keyCode":63,"modifiers":0,"key":"Fn"');
   await recorder.focus();output='';

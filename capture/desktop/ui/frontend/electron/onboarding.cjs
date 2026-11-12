@@ -91,6 +91,12 @@ app.whenReady().then(()=>{
       if(v.type==='close'){shutdown();return;}
       if(v.type==='hide'){if(state?.step!=='try-it')window.hide();continue;}
       if(v.type==='show'){if(state)present(state,true);continue;}
+      if(v.type==='desktop-shortcut'){
+        if(state?.platform==='linux'&&v.keyCode===201&&v.key==='Copilot'&&Number.isInteger(v.modifiers)&&(v.modifiers&~6912)===0){
+          window.webContents.send('onboarding:desktop-shortcut',{keyCode:201,modifiers:v.modifiers,key:'Copilot'});
+        }
+        continue;
+      }
       const next=project(v);
       if(next){state=next;present(next);}
     }

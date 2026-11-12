@@ -226,7 +226,8 @@ fn prefers_app_shortcut(config: &serde_json::Value) -> bool {
             .and_then(|stored| from_stored(ShortcutKind::Record, stored))
             .is_some_and(|cfg| cfg.key_code <= 255
                 && (cfg.carbon_modifiers & (CARBON_CONTROL_KEY | CARBON_OPTION_KEY | CARBON_CMD_KEY) != 0
-                    || cfg.carbon_modifiers == 0)
+                    || cfg.carbon_modifiers == 0
+                    || cfg!(target_os = "linux") && cfg.key_code == 201)
                 && cfg.carbon_modifiers & !(CARBON_CONTROL_KEY | CARBON_OPTION_KEY | CARBON_CMD_KEY | CARBON_SHIFT_KEY) == 0)
 }
 
@@ -413,6 +414,8 @@ const KEY_ESCAPE: u32 = 53;
 
 /// The name a key is shown with: a function key, a named key, or the typed character in capitals.
 pub fn key_label(key_code: u32, typed: &str) -> Option<String> {
+    #[cfg(target_os = "linux")]
+    if key_code == 95 { return Some("Fn".to_owned()); }
     #[cfg(target_os = "macos")]
     if key_code == MACOS_FN_KEY_CODE {
         return Some("Fn".to_owned());
@@ -528,10 +531,10 @@ pub fn validate(
     let key = key_label(pressed.key_code, &pressed.key).ok_or(Rejection::UnsupportedKey)?;
     let strong = modifiers & (CARBON_CMD_KEY | CARBON_CONTROL_KEY | CARBON_OPTION_KEY) != 0;
     let copilot = cfg!(target_os = "linux") && pressed.key_code == 201;
-    let fn_only = cfg!(target_os = "macos") && kind == ShortcutKind::Record && pressed.key_code == MACOS_FN_KEY_CODE && modifiers == 0;
-    if cfg!(target_os = "macos") && pressed.key_code == MACOS_FN_KEY_CODE && (modifiers != 0 || kind != ShortcutKind::Record) {
-        return Err(Rejection::UnsupportedKey);
-    }
+    let fn_key = cfg!(target_os = "macos") && pressed.key_code == MACOS_FN_KEY_CODE
+        || cfg!(target_os = "linux") && pressed.key_code == 95;
+    let fn_only = fn_key && kind == ShortcutKind::Record && modifiers == 0;
+    if fn_key && !fn_only { return Err(Rejection::UnsupportedKey); }
     if pressed.reserved || reserved(modifiers, &key) {
         return Err(Rejection::Reserved(format!("{}{key}", modifier_symbols(modifiers))));
     }
@@ -2990,11 +2993,18 @@ mod tests {
             &ShortcutKind::Paste.default_config(),
         ).unwrap();
         assert_eq!(bare.label, "Copilot");
+        let linux_fn=validate(ShortcutKind::Record,&Pressed {key_code:95,modifiers:0,key:"Fn".into(),reserved:false},&ShortcutKind::Paste.default_config()).unwrap();
+        assert_eq!(linux_fn.label,"Fn");
+        assert_eq!(linux_fn.key_code,95);
+        assert_eq!(validate(ShortcutKind::Record,&Pressed {key_code:95,modifiers:CARBON_SHIFT_KEY,key:"Fn".into(),reserved:false},&ShortcutKind::Paste.default_config()),Err(Rejection::UnsupportedKey));
         for modifiers in [CARBON_CONTROL_KEY | CARBON_SHIFT_KEY, CARBON_SHIFT_KEY, CARBON_CMD_KEY] {
             let selected = validate(ShortcutKind::Record,
                 &Pressed { key_code:201, modifiers, key:"Copilot".into(), reserved:false },
                 &ShortcutKind::Paste.default_config()).unwrap();
             assert_eq!(selected.carbon_modifiers, modifiers);
+            save_shortcut_source_in(&path,ShortcutKind::Record,&selected,true).unwrap();
+            assert!(prefers_app_shortcut(&read_json(&path)));
+            assert_eq!(Shortcuts::load_from(&path,&dir.0.join("legacy.json")).0.record,selected);
             assert_eq!(validate(ShortcutKind::Record,
                 &Pressed { key_code:201, modifiers, key:"Copilot".into(), reserved:true },
                 &ShortcutKind::Paste.default_config()), Err(Rejection::Reserved(selected.label)));
@@ -3004,6 +3014,9 @@ mod tests {
         let saved = read_json(&path);
         assert_eq!(saved["ingestToken"], "secret");
         assert_eq!(saved["unrelated"], 7);
+        save_shortcut_source_in(&path,ShortcutKind::Record,&linux_fn,true).unwrap();
+        assert_eq!(Shortcuts::load_from(&path,&dir.0.join("legacy.json")).0.record,linux_fn);
+        assert_eq!(read_json(&path)["ingestToken"],"secret");
         let unmodified = ShortcutConfig { key_code:201, carbon_modifiers:0, label:"Copilot".into() };
         save_shortcut_source_in(&path, ShortcutKind::Record, &unmodified, true).unwrap();
         assert!(prefers_app_shortcut(&read_json(&path)));

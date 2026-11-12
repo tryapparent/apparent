@@ -4,6 +4,14 @@ export type ShortcutKeyEvent = {
 
 export type ShortcutCapture = { keyCode: number; modifiers: number; key: string };
 
+export function desktopShortcutSelection(state: {platform:string;step:string;shortcutEditor?:{recording:boolean}|null}|null, value: unknown) {
+  if(state?.platform!=='linux'||state.step!=='shortcut'||!state.shortcutEditor?.recording)return null;
+  if(!value||typeof value!=='object')return null;
+  const v=value as ShortcutCapture;
+  if(v.keyCode!==201||v.key!=='Copilot'||!Number.isInteger(v.modifiers)||(v.modifiers&~6912)!==0)return null;
+  return {action:'shortcut' as const,kind:'record' as const,keyCode:v.keyCode,modifiers:v.modifiers,key:v.key,reserved:false as const};
+}
+
 // Modifier keydowns are intermediate input, not invalid shortcuts. In particular,
 // do not end listening before a person has pressed the chord's final key.
 export function shortcutInput(event: ShortcutKeyEvent, platform: 'macos'|'linux') {
@@ -30,6 +38,12 @@ export function fnSelectionActions(platform: 'macos'|'linux', recording: boolean
 const macCodes: Record<string, number> = { a:0,s:1,d:2,f:3,h:4,g:5,z:6,x:7,c:8,v:9,b:11,q:12,w:13,e:14,r:15,y:16,t:17,'1':18,'2':19,'3':20,'4':21,'6':22,'5':23,'9':25,'7':26,'8':28,'0':29,o:31,u:32,i:34,p:35,l:37,j:38,k:40,n:45,m:46 };
 
 export function shortcutCapture(event: ShortcutKeyEvent, platform: 'macos'|'linux'): ShortcutCapture | null {
+  // The observed X1 sends KEY_WAKEUP for standalone Fn. X11 cannot
+  // distinguish that physical Fn key from a dedicated WakeUp key.
+  if(platform==='linux'&&['WakeUp','XF86WakeUp'].includes(event.key)&&
+      !event.ctrlKey&&!event.altKey&&!event.metaKey&&!event.shiftKey){
+    return {keyCode:95,modifiers:0,key:'Fn'};
+  }
   if (platform === 'macos' && (event.key === 'Fn' || event.code === 'Fn') &&
       !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
     return fnShortcut(platform);

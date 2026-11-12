@@ -114,6 +114,10 @@ mod record_target_tests {
 pub enum LiveOverlayEvent {
     /// ⌥⇧S (or the configured shortcut) went down; `shortcut::Shortcut` decides what it means.
     CaptureShortcut,
+    /// A Linux compositor's existing Record command arrived while bindings are
+    /// paused. This is input metadata for the editor, never a capture request.
+    #[cfg(target_os="linux")]
+    DesktopShortcutWhilePaused,
     PasteLatestShortcut,
     UndoStroke,
     RequestSnapshot,
