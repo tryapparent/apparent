@@ -3,12 +3,26 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import {execFileSync} from 'node:child_process';
 import {initEndpoint,fetchEndpoint} from '../dist/mcp-endpoint.js';
 import {publishBundle} from '../dist/mcp-bundle.js';
 
 test('endpoint setup refuses shared state, redirected parents and existing keys without changing permissions',async()=>{
   const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-paths-'));await fs.chmod(root,0o700);
   try {
+    const named=path.join(root,'allow');await fs.mkdir(named,{mode:0o700});
+    assert.equal((await initEndpoint(path.join(named,'reader'))).tool,'connect_relay_open',
+      'a path name must not be mistaken for a granting macOS ACL entry');
+    if(process.platform==='darwin') {
+      const acl=path.join(root,'acl');await fs.mkdir(acl,{mode:0o700});
+      try {
+        execFileSync('/bin/chmod',['+a','everyone allow read',acl]);
+        await assert.rejects(initEndpoint(path.join(acl,'reader')),/unsafe_directory_acl/);
+        execFileSync('/bin/chmod',['-N',acl]);
+        execFileSync('/bin/chmod',['+a','everyone deny delete',acl]);
+        assert.equal((await initEndpoint(path.join(acl,'reader'))).tool,'connect_relay_open');
+      } finally {execFileSync('/bin/chmod',['-N',acl]);}
+    }
     const state=path.join(root,'state');await initEndpoint(state);
     const before=await fs.readFile(path.join(state,'endpoint.json'));
     await assert.rejects(initEndpoint(state),{code:'EEXIST'});

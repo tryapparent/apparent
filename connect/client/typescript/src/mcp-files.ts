@@ -18,8 +18,10 @@ export async function trustedDirectory(directory: string, privateLeaf = false): 
     requireValue(!(stat.mode & 0o022) || !!(stat.mode & 0o1000),'unsafe_directory');
     if (privateLeaf && current === directory) requireValue(stat.uid === uid && !(stat.mode & 0o077),'private_directory_required');
     if (process.platform === 'darwin') {
-      const acl = execFileSync('/bin/ls',['-lde',current],{encoding:'utf8',maxBuffer:65536});
-      requireValue(!/\ballow\b/.test(acl),'unsafe_directory_acl');
+      const acl = execFileSync('/bin/ls',['-lde',current],{encoding:'utf8',maxBuffer:65536,env:{...process.env,LC_ALL:'C'}});
+      // The first line is file metadata, including the path. Only ACL entries
+      // determine access; a directory named "allow" does not grant a permission.
+      requireValue(!/\ballow\b/.test(acl.split('\n').slice(1).join('\n')),'unsafe_directory_acl');
     }
     const parent = path.dirname(current);
     if (parent === current) break;
