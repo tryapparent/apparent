@@ -26,6 +26,14 @@ older client/server source.
 
 ## Continuous delivery
 
+Name new workflows `<Owner> · <Plain-language purpose>` in sentence case, with
+platform qualifiers only when useful. New or changed value-stream workflows
+should follow their owner directories and actual shared/composition/build
+consumers on PRs and main pushes. Keep those dependencies covered by routing
+contracts; surface unknown ownership rather than adding an all-stream trigger.
+Preserve required-check admission and let pending affected delivery finish
+across unrelated main pushes.
+
 `stream-engine.yml` owns the new `engine/` native media producer and SDK checks
 and commit-addressed artifact publication. It consumes the same
 `enablement/ci/routing/consumers.ts` authority as the hook and other workflows;
@@ -284,6 +292,13 @@ or use a separately reviewed release sequence.
 
 ## Local verification
 
+For broad root checkpoints, use `cargo build -j 3 --offline` and
+`cargo test -j 3 --offline -- --test-threads=2`; on macOS prefix Cargo with
+`taskpolicy -c utility`. Rebuild after Rust changes before running
+`target/debug/apparent`: `cargo test` does not rebuild the application executable.
+On Clanker run each heavy command or hook-backed push once through
+`/home/simon/.local/bin/t3-build`, never nested, honoring `T3_BUILD_JOBS`.
+
 Run the commands in the checks section from the repository root (the Node commands
 from their package directories). For a no-network deployment wiring check, generate
 configuration using **synthetic** identifiers and run
@@ -335,6 +350,29 @@ capabilities and the existing canonical repository/issue budget ledger plus
 allocation/cleanup receipts. Missing receipts are not zero spend. Follow the
 native owner's existing preflight and shared queue; this command grants no
 allocation authority and establishes no GUI acceptance.
+
+## NoMac verification
+
+Use NoMac for changed macOS-specific behavior when an approved local Mac is not
+available. Shared Electron/React presentation and platform-independent policy can
+be verified on Linux; this does not replace affected native, permission, window
+integration or packaging checks, or required CI. Physical-device behavior needs
+appropriate hardware. Follow the installed NoMac testing skill for the current
+CLI, shared FIFO and provider lifecycle.
+
+The spending limits in root `AGENTS.md` govern this repository, including when a
+general-purpose skill describes broader authority. Before allocation, historical
+charges plus concurrent maximum-cost reservations must fit the canonical
+repository/issue (or standalone PR) budget in one shared private ledger. Unknown
+costs are not zero; threads, retries, derived issues and owner changes do not reset
+the budget. Additional sessions within the remaining budget need no new approval.
+Ask only for authority or budget that is actually missing; no top-up or session
+extension is included.
+
+Prepare the candidate before allocation, use the shared FIFO, and preserve exact
+session ownership, charge and provider/queue cleanup receipts. Never attach to or
+stop another worker's session. Test records distinguish actual native behavior,
+synthetic checks, reused evidence and remaining gaps.
 
 ## Advisory owner lanes
 
