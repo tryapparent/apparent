@@ -109,6 +109,51 @@ test('runtime isolation preserves strict window identity and adds native bundle 
  assert.match(panelScript,/if observedPID is not targetPID then error "Owned AX process identifier differs; expectedPID="/);
  assert.doesNotMatch(panelScript,/Apparent Settings — About/,'The unrelated Settings window is never an admitted picker parent');
 });
+test('the Storage fixture isolates onboarding presentation in its real backend environment',()=>{
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const start=source.indexOf('    env = { ...process.env, HOME: home,'),end=source.indexOf('    delete env.APPARENT_CAPTURES_DIR;',start);
+ assert.ok(start>=0&&end>start);
+ const create=new Function('process','home','config','path','report','let env;\n'+source.slice(start,end)+'\nreturn env;');
+ const report:{onboardingPresentationSuppressed?:boolean}={};
+ const env=create({env:{FIXTURE_SENTINEL:'kept'}},'/private-fixture','/private-fixture/config.json',{join},report);
+ assert.equal(env.APPARENT_NO_ONBOARDING,'1','Storage must not wait for unrelated onboarding presentation on either backend start');
+ assert.equal(env.HOME,'/private-fixture');assert.equal(env.APPARENT_CONFIG,'/private-fixture/config.json');
+ assert.equal(env.CFFIXED_USER_HOME,env.HOME);assert.equal(env.FIXTURE_SENTINEL,'kept');
+ assert.equal(report.onboardingPresentationSuppressed,true);
+});
+test('owned-window readiness uses only the bounded window query and still rejects another window or a sheet',async()=>{
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const start=source.indexOf('    report.nativeWindowReadiness ='),end=source.indexOf('    const reporting =',start);
+ assert.ok(start>=0&&end>start);
+ const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+ const readiness=new AsyncFunction('poll','panel','report','assert',source.slice(start,end));
+ const observed='depth=0;role=AXWindow;title=Apparent — UI foundation;sheets=0';
+ for(const value of [observed,'depth=0;role=AXWindow;title=Other',observed+'\ndepth=1;role=AXSheet;']) {
+  const calls:string[]=[];const report:{nativeWindowReadiness?:string}={};
+  const run=()=>readiness(async(fn:()=>Promise<string>,label:string)=>{
+   assert.equal(label,'Owned Electron AX window readiness');return fn();
+  },async(operation:string)=>{
+   calls.push(operation);
+   assert.equal(operation,'inspect-window','Readiness must not enumerate diagnostic child controls');
+   return value;
+  },report,assert);
+  if(value===observed){await run();assert.equal(report.nativeWindowReadiness,observed);}
+  else {await assert.rejects(run);assert.equal(report.nativeWindowReadiness,undefined);}
+  assert.deepEqual(calls,['inspect-window']);
+ }
+});
+test('the window query preserves ownership and modal guards without enumerating picker controls',()=>{
+ const start=panelScript.indexOf('      if operation is "inspect-window" then');
+ const end=panelScript.indexOf('      set picker to outerWindow',start);
+ assert.ok(start>=0&&end>start);
+ const query=panelScript.slice(start,end);
+ for(const guard of ['count of windows','role of outerWindow','name of outerWindow','count of sheets of outerWindow'])assert.ok(query.includes(guard),guard);
+ assert.ok(panelScript.indexOf('my ownedApplication(')<start);
+ assert.ok(panelScript.indexOf('Owned Electron bundle identity differs')<start);
+ assert.ok(panelScript.indexOf('Owned AX process identifier differs')<start);
+ assert.doesNotMatch(query,/UI elements|every button|activateOwned|set frontmost|click |key code/);
+ assert.match(query,/return "depth=0;role="/);
+});
 test('picker names use one local snapshot for missing-value checks and text conversion', () => {
  // Hosted AX traces put several seconds in the old two-read name statement.
  // This guards the remote-query contract; actual Mac execution remains required.
@@ -118,25 +163,6 @@ test('picker names use one local snapshot for missing-value checks and text conv
   const selector=script.split('\n').filter(line=>!line.trimStart().startsWith('log ("AX probe source-line=')).join('\n');
   assert.match(selector,/set (\w+) to name of picker\s+if \1 is not missing value then set panelName to \1 as text/,
    'Normalize the same materialized value that was checked');
- }
-});
-test('readiness evidence retains the original failure alongside subprocess diagnostics', async () => {
- const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
- const start=source.indexOf('  const poll ='),end=source.indexOf('  let env;',start);
- assert.ok(start>=0&&end>start);
- for(const stderr of ['', 'synthetic AX query trace']) {
-  const report:{readinessAttempts?:Record<string,Array<{detail:string}>>}={};
-  let now=0,calls=0;
-  const poll=new Function('report','budget','sleep','Date','performance','process',
-   source.slice(start,end)+'\nreturn poll;')(report,(cap:number)=>cap,
-   async()=>{now+=150;},{now:()=>now},{now:()=>now},{env:{}});
-  const original=Object.assign(new Error('Native picker command timed out; outcome unknown'),{stderr});
-  await assert.rejects(poll(async()=>{throw calls++===0?original:new Error('Picker driver is retired; no replay');},
-   'Native Change picker readiness',300),/Picker driver is retired/);
-  const attempts=report.readinessAttempts!['Native Change picker readiness'];
-  assert.ok(JSON.stringify(attempts[0]).includes(original.message),'Subprocess diagnostics must not hide the first failure');
-  if(stderr)assert.equal(attempts[0].detail,stderr,'Keep the original AX trace too');
-  assert.equal(attempts.at(-1)!.detail,'Picker driver is retired; no replay');
  }
 });
 test('native focus retains the admitted app instance and rechecks identity after servicing AppKit', () => {
@@ -208,16 +234,21 @@ test('each real Change waits for one native focus admission; failed or concurren
  assert.ok(start>0&&end>start);
  const create=new Function('assert','panel','change','budget','report',
   'let pendingNativeChange; let nativeChangeStarting=false;'+source.slice(start,end)+'return startNativeChange;');
- const focus=deferred<string>();let focuses=0,clicks=0;
- const report:{nativeChangeFocus?:string[]}={};
+ const focus=deferred<string>(),click=deferred<void>();let focuses=0,clicks=0;
+ const report:{nativeChangeFocus?:string[];nativeChangeRequests?:Array<{requestedAt:number;settledAt?:number;ok?:boolean}>}={};
  const begin=create(assert,async(operation:string)=>{assert.equal(operation,'focus-change');focuses++;return focus.promise;},
-  {click:async()=>{clicks++;}},(cap:number)=>cap,report);
+  {click:()=>{clicks++;return click.promise;}},(cap:number)=>cap,report);
  const pending=begin();await Promise.resolve();
  assert.equal(clicks,0,'CDP must not open a sheet while another app remains native-frontmost');
  await assert.rejects(async()=>begin(),/focus is already pending/);
  assert.equal(focuses,1);focus.resolve('owned native focus');await pending;
  assert.equal(clicks,1);assert.deepEqual(report.nativeChangeFocus,['owned native focus']);
+ assert.equal(report.nativeChangeRequests?.length,1);
+ const request=report.nativeChangeRequests![0];
+ assert.ok(Number.isSafeInteger(request.requestedAt));assert.equal(request.settledAt,undefined);
  await assert.rejects(async()=>begin(),/already pending/);assert.equal(clicks,1);
+ click.resolve();await Promise.resolve();
+ assert.equal(request.ok,true);assert.ok(request.settledAt!>=request.requestedAt);
  const failure=Error('owned focus refused');let refusedClicks=0;
  const refuse=create(assert,async()=>{throw failure;},{click:async()=>{refusedClicks++;}},(cap:number)=>cap,{});
  await assert.rejects(async()=>refuse(),error=>error===failure);assert.equal(refusedClicks,0);
@@ -372,6 +403,22 @@ test('the retained native receipt preserves direct and wrapped subprocess failur
   }
  }
 });
+test('readiness preserves the original transport error even when stderr is empty',async()=>{
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const start=source.indexOf('  const poll ='),end=source.indexOf('  let env;',start);
+ assert.ok(start>=0&&end>start);
+ const create=new Function('report','Date','performance','budget','sleep','process','fs',source.slice(start,end)+'\nreturn poll;');
+ let now=0;const report:any={};
+ const poll=create(report,{now:()=>now},{now:()=>now},(cap:number)=>cap,async()=>{now+=150;},{env:{}},{});
+ const failure=Object.assign(Error('Native picker command timed out; outcome unknown'),{stderr:'',signal:null});
+ await assert.rejects(poll(async()=>{now=5000;throw failure;},'Owned Electron AX window readiness',5000),
+  error=>(error as Error).cause===failure);
+ const attempts=report.readinessAttempts['Owned Electron AX window readiness'];
+ assert.equal(attempts.length,1);
+ assert.equal(attempts[0].message,failure.message);
+ assert.equal(attempts[0].detail,'','Empty native stderr remains an observation, not a fabricated trace');
+ assert.equal(attempts[0].durationMs,5000);
+});
 test('native integration retains its consent, deadlines, persistence assertions and one-shot mutation adapter',()=>{
  const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
  assert.match(source,/prepareStorageChange\(\{/);
@@ -523,7 +570,7 @@ test('bootstrap telemetry observes existing and future renderers with bounded co
  };
  const app={...emitter(),isReady:()=>true};
  const first={id:1,webContents:emitter()},second={id:2,webContents:emitter()};
- const result=observe({app,BrowserWindow:{getAllWindows:()=>[first]}});
+ const result=observe({app,BrowserWindow:{getAllWindows:()=>[first]},dialog:{showOpenDialog:()=>{throw Error('Unexpected dialog');}}});
  assert.deepEqual(result.windows,[1]);
  app.emit('browser-window-created',{},second);
  first.webContents.emit('did-fail-load',{},-7,'sensitive description','file:///private/sensitive',true);
@@ -537,6 +584,59 @@ test('bootstrap telemetry observes existing and future renderers with bounded co
  for(let i=0;i<30;i++)second.webContents.emit('did-start-loading');
  assert.equal(events.length,16);
  delete (globalThis as any).__apparentStorageWindowProbe;
+ delete (globalThis as any).__apparentStorageDialogProbe;
+});
+
+test('native dialog telemetry preserves the real call, promise and failures while recording bounded metadata',async()=>{
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const start=source.indexOf('function bootstrapObservation('),end=source.indexOf('function bootstrapFailure(',start);
+ assert.ok(start>=0&&end>start);
+ let clockFails=false;
+ const clock={now:()=>{if(clockFails)throw Error('unavailable diagnostic clock');return Date.now();}};
+ const observe=new Function('Date',source.slice(start,end)+'\nreturn bootstrapObservation;')(clock);
+ const app={once:()=>{},on:()=>{},isReady:()=>true};
+ const window={id:7},options={defaultPath:'/private/sensitive-choice'};
+ const chosen={canceled:false,filePaths:['/private/sensitive-result']};
+ const pending=deferred<typeof chosen>();
+ let result:Promise<typeof chosen>=pending.promise,calls=0,synchronousFailure:Error|undefined;
+ const dialog={showOpenDialog:function(...args:unknown[]){
+  calls++;assert.equal(this,dialog);assert.equal(args[0],window);assert.equal(args[1],options);
+  if(synchronousFailure)throw synchronousFailure;
+  return result;
+ }};
+ try {
+  observe({app,BrowserWindow:{getAllWindows:()=>[]},dialog});
+  const returned=dialog.showOpenDialog(window,options);
+  assert.equal(returned,pending.promise,'The native promise identity must be preserved');
+  const events=()=> (globalThis as any).__apparentStorageDialogProbe;
+  assert.deepEqual(events()?.map((entry:any)=>entry.kind),['entered'],'The real native entry must be observable before settlement');
+  pending.resolve(chosen);assert.equal(await returned,chosen);await Promise.resolve();
+  assert.deepEqual(events().map((entry:any)=>entry.kind),['entered','fulfilled']);
+  const failure=Error('private sensitive native error');
+  result=Promise.reject(failure);
+  assert.equal(dialog.showOpenDialog(window,options),result);
+  await assert.rejects(result,error=>error===failure);await Promise.resolve();
+  assert.deepEqual(events().slice(-2).map((entry:any)=>entry.kind),['entered','rejected']);
+  synchronousFailure=failure;
+  assert.throws(()=>dialog.showOpenDialog(window,options),error=>error===failure);
+  assert.deepEqual(events().slice(-2).map((entry:any)=>entry.kind),['entered','threw']);
+  assert.equal(calls,3,'Observation must never repeat a native chooser call');
+  synchronousFailure=undefined;result=Promise.resolve(chosen);
+  for(let i=0;i<30;i++)assert.equal(dialog.showOpenDialog(window,options),result);
+  await Promise.resolve();
+  assert.equal(events().length,16);
+  for(const entry of events()) {
+   assert.deepEqual(Object.keys(entry).sort(),['at','id','kind']);
+   assert.ok(Number.isSafeInteger(entry.at));assert.ok(Number.isSafeInteger(entry.id));
+  }
+  assert.doesNotMatch(JSON.stringify(events()),/sensitive|private/);
+  clockFails=true;
+  assert.equal(dialog.showOpenDialog(window,options),result,'A diagnostic error must not change the native result');
+  await result;
+ } finally {
+  delete (globalThis as any).__apparentStorageDialogProbe;
+  delete (globalThis as any).__apparentStorageWindowProbe;
+ }
 });
 
 import {once} from 'node:events';
@@ -657,7 +757,21 @@ test('Mac picker protocol reports absent ownership through the real interpreter 
  t.after(async()=>{await driver.close();});
  // macOS process IDs cannot reach this value. No AX lookup, focus or input is
  // reached: the existing ownedApplication guard must reject the absent PID.
- const args=['2147483647','/synthetic/café\n"quoted"','inspect','/nonexistent/picker-runtime','synthetic.bundle'];
- for(let i=0;i<2;i++)await assert.rejects(driver.request(args,5000),/Owned Electron process is absent/);
+ // The failing hosted frame was 288 bytes. Exercise a realistic first frame,
+ // not only a short sentinel, while retaining Unicode/newline framing coverage.
+ const args=['2147483647','/synthetic/café\n"quoted"'.padEnd(64,'x'),'inspect-window',
+  '/synthetic/private-home/picker-runtime-abcdef/StorageFixture.app/Contents/MacOS/StorageFixture-'+'a'.repeat(32),
+  'com.tryapparent.storagefixture.f'+'b'.repeat(32)];
+ assert.ok(Buffer.byteLength(JSON.stringify({id:1,args})+'\n')>=288);
+ for(let i=0;i<2;i++) {
+  const started=performance.now();
+  await assert.rejects(driver.request(args,5000).catch(error=>{
+   // Assertion output omits custom stderr. Emit only bounded stage metadata,
+   // on both expected refusal and failure, never raw errors or request data.
+   const stages=(String(error?.stderr??'').match(/Picker transport stage=(?:run-entered|read-ready|frame-complete|dispatch)(?: bytes=\d{1,5})? elapsedSeconds=-?\d{1,6}\b/g)??[]).slice(-8);
+   t.diagnostic(JSON.stringify({request:i+1,elapsedMs:Math.round(performance.now()-started),stages}));
+   throw error;
+  }),/Owned Electron process is absent/);
+ }
  assert.deepEqual(driver.stats,{starts:1,requests:2});
 });
