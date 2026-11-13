@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { macHandler, system } from './hermes.ts';
 
 // Native metadata proof, without opening a URL, launching an app, permissions,
 // Rust, Electron, or touching the real apparent scheme's registration.
-test('LaunchServices resolves an owned synthetic scheme to its actual executable', { skip: process.platform !== 'darwin' || process.env.APPARENT_SETUP_NATIVE_FIXTURE !== '1', timeout: 60000 }, () => {
+test('LaunchServices resolves an owned synthetic scheme to its actual executable', { skip: process.platform !== 'darwin' || process.env.APPARENT_SETUP_NATIVE_FIXTURE !== '1', timeout: 60000 }, t => {
   // Selecting a default can leave an OS-owned preference after unregistering.
   // The entire account must be disposable; refuse ordinary/self-hosted Macs.
   assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Native selection fixture requires disposable hosted CI');
@@ -25,7 +26,23 @@ test('LaunchServices resolves an owned synthetic scheme to its actual executable
   const executable = join(bundle, 'Contents/MacOS/apparent');
   const registry = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
   let registrationAttempted = false;
-  try {
+  // A failing finally assertion hid the original native failure. Report cleanup
+  // separately through the test runner, retaining the same owned-only operation
+  // and deadline. Never print subprocess output or the account's registry.
+  t.after(() => {
+    const cleanup = registrationAttempted ? spawnSync(registry, ['-u', bundle], {
+      encoding: 'utf8', timeout: 10000, maxBuffer: 256 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+    }) : undefined;
+    const ok = !cleanup || (!cleanup.error && cleanup.status === 0);
+    if (!ok) t.diagnostic(JSON.stringify({ unregister: {
+      exitCode: cleanup?.status, signal: cleanup?.signal,
+      errorCode: (cleanup?.error as NodeJS.ErrnoException | undefined)?.code ?? null,
+      stdoutBytes: Buffer.byteLength(cleanup?.stdout ?? ''),
+      stderrBytes: Buffer.byteLength(cleanup?.stderr ?? ''),
+    } }));
+    rmSync(home, { recursive: true, force: true });
+    assert(ok, 'Synthetic LaunchServices unregister failed; see bounded cleanup status');
+  });
     mkdirSync(join(bundle, 'Contents/MacOS'), { recursive: true });
     copyFileSync('/usr/bin/true', executable);
     writeFileSync(join(bundle, 'Contents/Info.plist'), `<?xml version="1.0" encoding="UTF-8"?>
@@ -104,9 +121,4 @@ function run(argv) {
     assert.equal(realpathSync(observed.evidence!.bundle!), realpathSync(bundle));
     assert.equal(macHandler(system, realpathSync(process.execPath), scheme).status, 'incompatible');
     assert.equal(readFileSync(join(bundle, 'Contents/Info.plist'), 'utf8').includes(scheme), true);
-  } finally {
-    const cleanup = registrationAttempted ? system.run(registry, ['-u', bundle]) : { ok: true };
-    rmSync(home, { recursive: true, force: true });
-    assert(cleanup.ok, 'Synthetic LaunchServices unregister failed');
-  }
 });
