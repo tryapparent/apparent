@@ -72,21 +72,22 @@ on run argv
     tell owned
       if (count of windows) is 0 then error "Owned process has no AX windows; frontmost=" & (frontmost as text)
       set outerWindow to window 1
-      if operation is "window-ready" then
-        -- Readiness is a predicate on this exact window, not a diagnostic walk
-        -- through Chromium's AX descendants. Hosted traces stalled in that
-        -- unrelated traversal before any picker interaction was attempted.
-        if (count of windows) is not 1 then error "Readiness requires one owned window"
-        if (role of outerWindow as text) is not "AXWindow" or (name of outerWindow as text) is not "Apparent — UI foundation" then error "Readiness requires Foundation"
-        if (count of sheets of outerWindow) is not 0 then error "Owned native window already has a sheet"
-        return "depth=0;role=AXWindow;title=Apparent — UI foundation;"
-      end if
       if operation is "focus-change" then
         if (count of windows) is not 1 then error "Change focus requires one owned window"
         if (role of outerWindow as text) is not "AXWindow" or (name of outerWindow as text) is not "Apparent — UI foundation" then error "Change focus requires Foundation"
         if (count of sheets of outerWindow) is not 0 then error "Change focus refuses an existing modal"
         my activateOwned(nativeApp, targetPID, expectedExecutable)
         return "native-focus-pid=" & targetPID & ";title=Apparent — UI foundation"
+      end if
+      -- Readiness needs the owned root window, not a diagnostic walk through
+      -- its children. Every extra AX query consumes the same command deadline.
+      if operation is "inspect-window" then
+        if (count of windows) is not 1 then error "Window readiness requires one owned window"
+        set windowRole to role of outerWindow as text
+        set windowTitle to name of outerWindow as text
+        if windowRole is not "AXWindow" or windowTitle is not "Apparent — UI foundation" then error "Window readiness requires Foundation"
+        if (count of sheets of outerWindow) is not 0 then error "Window readiness refuses an existing modal"
+        return "depth=0;role=" & windowRole & ";title=" & windowTitle & ";sheets=0"
       end if
       set picker to outerWindow
       set depth to 0
@@ -319,6 +320,11 @@ export const persistentPanelScript = panelScript
   current application's NSRunLoop's currentRunLoop()'s runUntilDate:(current application's NSDate's dateWithTimeIntervalSinceNow:0.001)`)
   + `
 on run argv
+  -- The first command includes interpreter startup and stdin framing. Keep
+  -- those stages visible before the existing AppKit/AX trace, without logging
+  -- request contents or changing dispatch, input or the command deadline.
+  set pickerTransportStartedAt to current date
+  log ("Picker transport stage=run-entered elapsedSeconds=" & (my axProbeElapsed(pickerTransportStartedAt)))
   set inputHandle to current application's NSFileHandle's fileHandleWithStandardInput()
   set outputHandle to current application's NSFileHandle's fileHandleWithStandardOutput()
   set newlineData to (current application's NSString's stringWithString:linefeed)'s dataUsingEncoding:(current application's NSUTF8StringEncoding)
@@ -333,14 +339,17 @@ on run argv
   if bootstrapData is missing value then error "Cannot encode picker startup"
   outputHandle's writeData:bootstrapData
   outputHandle's writeData:newlineData
+  log ("Picker transport stage=read-ready elapsedSeconds=" & (my axProbeElapsed(pickerTransportStartedAt)))
   repeat
     set nextByte to inputHandle's readDataOfLength:1
     if (nextByte's |length|() as integer) is 0 then exit repeat
     if (nextByte's isEqualToData:newlineData) as boolean then
+      log ("Picker transport stage=frame-complete bytes=" & (buffer's |length|() as integer) & " elapsedSeconds=" & (my axProbeElapsed(pickerTransportStartedAt)))
       set request to current application's NSJSONSerialization's JSONObjectWithData:buffer options:0 |error|:(missing value)
       if request is missing value then error "Invalid picker request"
       set reply to current application's NSMutableDictionary's dictionary()
       reply's setObject:(request's objectForKey:"id") forKey:"id"
+      log ("Picker transport stage=dispatch elapsedSeconds=" & (my axProbeElapsed(pickerTransportStartedAt)))
       try
         set resultText to my pickerRequest((request's objectForKey:"args") as list)
         reply's setObject:(current application's NSNumber's numberWithBool:true) forKey:"ok"

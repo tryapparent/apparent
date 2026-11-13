@@ -357,11 +357,16 @@ fn kernel_enospc_is_a_save_failure_not_successful_silence() {
     let error = write_stream(&mut full, &samples, receiver).unwrap_err();
     assert_eq!(
         error
-            .downcast_ref::<std::io::Error>()
+            .chain()
+            .find_map(|cause| cause.downcast_ref::<std::io::Error>())
             .unwrap()
             .raw_os_error(),
         Some(libc::ENOSPC)
     );
+    let failure = error.chain().find_map(|cause| {
+        cause.downcast_ref::<crate::capture::engine::runtime::recording::diagnostics::Failure>()
+    }).expect("typed native write boundary must retain the OS cause");
+    assert_eq!(serde_json::to_value(failure.stage).unwrap(), "audio_writer_write");
 }
 
 #[test]
@@ -509,6 +514,26 @@ fn interrupted_recursive_cancel_cleanup_stays_outside_recovery_namespace() {
         std::fs::read(quarantined.join("audio.wav")).unwrap(),
         before
     );
+}
+
+#[test]
+fn missing_saved_audio_retains_save_failure_category_and_read_provenance() {
+    let dir = Scratch::new("missing-audio");
+    let mut writer = Writer::start(&dir.0, Arc::default(), Arc::default()).unwrap();
+    // The real worker still owns its descriptor; only final readback lacks a
+    // pathname. This must remain a save failure, never successful empty audio.
+    std::fs::remove_file(dir.0.join("audio.wav")).unwrap();
+    let error = writer.finish().unwrap_err();
+    assert!(error.is::<SaveFailure>());
+    assert!(error.chain().any(|cause| {
+        cause.downcast_ref::<std::io::Error>()
+            .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound)
+    }));
+    let failure = error.chain().find_map(|cause| {
+        cause.downcast_ref::<crate::capture::engine::runtime::recording::diagnostics::Failure>()
+    }).expect("typed readback failure");
+    assert_eq!(serde_json::to_value(failure.stage).unwrap(), "audio_writer_read");
+    assert!(Lease::acquire(&dir.0).is_err());
 }
 
 #[test]
