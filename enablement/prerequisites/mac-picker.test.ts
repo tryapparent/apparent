@@ -4,7 +4,7 @@ import {execFileSync, spawn} from 'node:child_process';
 import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {basename, join} from 'node:path';
-import {panelScript, persistentPanelScript, PickerProcess, prepareStorageChange, type PickerDriver} from './mac-picker.ts';
+import {panelScript, persistentPanelScript, PickerProcess, prepareStorageChange, cancelStorageChange, type PickerDriver} from './mac-picker.ts';
 import {isolatePickerRuntime} from './mac-runtime.ts';
 import * as files from 'node:fs/promises';
 function deferred<T>() {
@@ -273,6 +273,32 @@ test('Storage readiness failure never issues a Change mutation',async()=>{
  await assert.rejects(prepareStorageChange(driver,'/synthetic/path'),/retention receipt/);
  assert.deepEqual(calls,{change:0,openGo:0,navigate:0,picker:0});
 });
+test('reopened picker waits for its sheet before a single Cancel',async()=>{
+ const ready=deferred<string>();
+ const calls:string[]=[];
+ const pending=cancelStorageChange({
+  storageIdle:async()=>{calls.push('idle');},
+  change:async()=>{calls.push('change');},
+  picker:()=>{calls.push('inspect');return ready.promise;},
+  cancel:async()=>{calls.push('cancel');return 'owned cancel';},
+ });
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(calls,['idle','change','inspect']);
+ ready.resolve('owned sheet with Choose and Cancel');
+ assert.equal(await pending,'owned cancel');
+ assert.deepEqual(calls,['idle','change','inspect','cancel']);
+});
+test('failed picker readiness never clicks Cancel and unknown Cancel outcome is never replayed',async()=>{
+ for(const failAt of ['idle','change','inspect','cancel']) {
+  const calls:string[]=[];
+  const operation=(name:string)=>async()=>{
+   calls.push(name);if(name===failAt)throw Error(`${name} failed`);return 'owned picker';
+  };
+  await assert.rejects(cancelStorageChange({storageIdle:async()=>{await operation('idle')();},
+   change:async()=>{await operation('change')();},picker:operation('inspect'),cancel:operation('cancel')}),new RegExp(`${failAt} failed`));
+  assert.deepEqual(calls,['idle','change','inspect','cancel'].slice(0,['idle','change','inspect','cancel'].indexOf(failAt)+1));
+ }
+});
 test('missing or ambiguous owned Go sheet fails without retrying the shortcut or entering data',async()=>{
  const receipt={};
  const {calls,driver}=fixture({goSheet:async()=>{throw Error('Owned Go to Folder sheet missing or ambiguous');}});
@@ -319,6 +345,8 @@ test('the retained native receipt preserves direct and wrapped subprocess failur
 test('native integration retains its consent, deadlines, persistence assertions and one-shot mutation adapter',()=>{
  const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
  assert.match(source,/prepareStorageChange\(\{/);
+ assert.match(source,/cancelStorageChange\(\{/);
+ assert.match(source,/picker: \(\) => poll\(\(\) => panel\('inspect'\), 'Native Cancel picker readiness'\)/);
  assert.match(source,/APPARENT_STORAGE_NATIVE_CI/);
  assert.match(source,/timeout: 120000/);assert.match(source,/Date\.now\(\) \+ 95000/);
  for(const contract of ['Saved location readback','Cancel changed config bytes','Cancel replaced config','Cancel rewrote config','Reset location readback'])assert.ok(source.includes(contract));
