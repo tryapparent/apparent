@@ -186,8 +186,8 @@ On Omarchy the shortcut page shows the actual desktop chord before acceptance an
 also offers a custom shortcut. A custom choice uses the existing validated shortcut
 writer (`shortcuts.record.source = "app"` retains that explicit preference even for
 the built-in chord). It leaves the permanent Hyprland binding available and never
-edits the user's compositor configuration. The custom chord still requires its
-non-recording trial. Linux sends mapped X11 control/whiteboard rectangles rather
+edits the user's compositor configuration. Electron confirms the custom choice through the two-use shortcut setup below;
+the native fallback retains its existing trial. Linux sends mapped X11 control/whiteboard rectangles rather
 than cached pre-compositor bounds. The coach clears those surfaces when space is
 available, defaults near the top centre without an anchor, and removes only its own
 Hyprland Lua window border. **Close guide** explains that an active recording
@@ -202,7 +202,7 @@ settings survive; omitted optional schema fields are removed. A non-object
 `onboarding` value rejects the save without replacing the existing file. This
 native durability boundary remains the sole writer while practice policy is migrated.
 
-Tour: Welcome → Permissions (one checklist of three required rows, Screen Recording first, then Microphone and Accessibility; any order works) → Shortcut → TryIt → Done. The default first-capture shortcut page starts with no selection and uses Settings' validation/save/cancel behavior. A saved combination must pass a non-recording press-and-release trial. The pen picker goes directly to permissions or shortcut choice; the demonstration page is removed. An explicit replay from Settings clears only tour milestones, requiring shortcut selection and its non-recording trial again; ordinary quit/relaunch resumes unfinished shortcut setup, but never re-enrols a user whose shortcut setup is complete. The Electron tour then advances automatically to **Go again.** The next shortcut starts the real guided capture. The native fallback retains its Continue action. The explicit optional-practice opt-out retains the legacy advance behavior. Leaving the page cancels an unfinished recording and resumes hotkeys. On Omarchy, the existing Hyprland chord can be explicitly accepted or a custom app chord chosen while preserving the permanent binding. Camera (iPhone) is never in the tour: its first use opens `Flow::fix(vec![Camera])`, the same screen with one row.
+Tour: agent choice → pen → required permissions → shortcut choice → guided capture → Done. Permissions share one checklist: Screen Recording, Microphone and Accessibility, in any order. Electron counts the accepted shortcut choice as practice one and shows **One more time.**; the next real shortcut starts capture. See [Two-use shortcut setup](#two-use-shortcut-setup) and [First-capture drawing sequence](#first-capture-drawing-sequence). The separate demonstration page is removed. An explicit replay from Settings clears tour milestones; ordinary quit/relaunch preserves completed shortcut setup. The native fallback retains its legacy trial and Continue action. Leaving unfinished shortcut recording cancels it and resumes hotkeys. Camera (iPhone) is outside the tour: its first use opens `Flow::fix(vec![Camera])` with one permission row.
 
 The legacy `how-it-works` value remains readable in saved config, but routes past the removed page in both Electron and native fallback. Back navigation and step counts exclude it.
 
@@ -231,8 +231,8 @@ First-capture onboarding is enabled by default. Set
 or reopen the tour. The opt-out restores optional shortcut choice and practice.
 Existing users who already finished setup are not forced through it again.
 
-On Shortcut, choose a valid combination in the inline recorder and test it once
-before continuing. There is no preselected default or accept-current action.
+In the native fallback, choose a valid combination in the inline recorder and
+complete its separate trial before continuing. There is no preselected default or accept-current action.
 Invalid or cancelled choices and an untested saved combination cannot advance.
 A verified desktop-owned Linux binding instead offers **Use desktop shortcut**;
 Apparent cannot rewrite that compositor setting. The next page asks the user to
@@ -241,7 +241,7 @@ then press it again to finish. This is a local practice capture, not feedback se
 to the team. Menu-started captures and cancelled or failed attempts do not finish
 the tour. A successful bundle completion advances to Done.
 
-Closing or choosing Try later before a successful shortcut trial leaves setup
+Closing before shortcut selection is confirmed leaves setup
 unfinished, so it resumes on the next launch. `onboarding.shortcutChosen` and
 `onboarding.shortcutTestedFor` persist shortcut setup; success marks `seen` and
 clears `resume` immediately. `onboarding.firstCaptureCompleted` separately tracks
@@ -506,8 +506,9 @@ installed Mac/Linux acceptance is still required before publishing these illustr
 
 During the whiteboard lesson, the Electron board view mirrors only human strokes
 from the native board. Its loose animated example is a separate, inert overlay;
-it is never sent to the capture adapter or counted as completion. Clear removes
-the real practice ink before the learner draws. Pointer cancellation and renderer
+it is never sent to the capture adapter or counted as completion. Clear removes only real practice ink; replay never clears it. Single-point
+clicks appear as round dots immediately and after native acknowledgement, matching
+the saved drawing. Pointer cancellation and renderer
 loss discard only an unfinished stroke; guide dismissal restores the native
 whiteboard with completed human ink intact. Finish keeps its saved shortcut
 keycaps and accessible close control; closing the guide leaves recording active.
