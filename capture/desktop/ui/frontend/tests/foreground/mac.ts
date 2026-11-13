@@ -4,6 +4,7 @@ import {createHash, randomBytes} from 'node:crypto';
 import {chmod, cp, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {spawn, execFileSync, type ChildProcess} from 'node:child_process';
+import {constants} from 'node:fs';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const hostEnv = {...process.env};
@@ -56,6 +57,33 @@ const footprint = (s: any) => ({reserve: s.calls['POST /v1/captures/:id'] ?? 0,
   manifest: s.calls['GET /v1/captures/:id'] ?? 0, share: s.shareCalls, bytes: s.uploadedBytes,
   putAttempts: s.putAttempts, cancelledPuts: s.cancelledPuts});
 async function jobs() { try { return (await readdir(path.join(appEnv.HOME!, '.config/apparent/hosted'))).filter(name => name.endsWith('.job')); } catch (e: any) { if (e.code === 'ENOENT') return []; throw e; } }
+// Read only the owned synthetic capture's diagnostic, after its writers stop.
+// Failed finalization has no saved bundle to copy through the success path.
+async function retainCaptureDiagnostics(captures: string, destination: string) {
+  const entries = await readdir(captures, {withFileTypes: true});
+  assert.ok(entries.length <= 4, 'Unexpected synthetic capture inventory');
+  const retained: Array<{name: string; originalBytes: number; retainedBytes: number; truncated: boolean}> = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+    const directory = path.join(captures, entry.name);
+    assert.equal(path.dirname(await realpath(directory)), captures);
+    const source = path.join(directory, 'notes-ui.log');
+    let info;
+    try { info = await lstat(source); } catch (e: any) { if (e.code === 'ENOENT') continue; throw e; }
+    assert.ok(info.isFile() && !info.isSymbolicLink() && info.uid === process.getuid!(), 'Refuse foreign capture diagnostic');
+    const handle = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const opened = await handle.stat();
+      assert.ok(opened.isFile() && opened.uid === process.getuid!() && opened.dev === info.dev && opened.ino === info.ino, 'Capture diagnostic identity changed');
+      const limit = 1024 * 1024, buffer = Buffer.alloc(Math.min(info.size, limit));
+      const {bytesRead} = await handle.read(buffer, 0, buffer.length, Math.max(0, info.size - limit));
+      const name = `capture-${retained.length}-notes-ui.log`;
+      await writeFile(path.join(destination, name), buffer.subarray(0, bytesRead), {mode: 0o600, flag: 'wx'});
+      retained.push({name, originalBytes: info.size, retainedBytes: bytesRead, truncated: info.size > limit});
+    } finally { await handle.close(); }
+  }
+  return retained;
+}
 function groupAlive(pid: number) { try { process.kill(-pid, 0); return true; } catch (e: any) { if (e.code === 'ESRCH') return false; throw e; } }
 async function stop(child: ChildProcess | undefined, name: string, group = false) {
   if (!child?.pid) return;
@@ -204,7 +232,10 @@ async function main() {
   finally {
     finishing = true;
     if (captureId && supervisor && !ended(supervisor)) {
-      try { const receipt = JSON.parse(await cli(['capture', 'inspect', captureId])); if (['starting', 'recording'].includes(receipt.status)) await cli(['capture', 'cancel', captureId]); }
+      try {
+        const {state} = JSON.parse(await cli(['capture', 'state']));
+        if (state.capture_id === captureId && ['starting', 'recording'].includes(state.phase)) await cli(['capture', 'cancel', captureId]);
+      }
       catch (error) { cleanupErrors.push('owned request: ' + redact(error)); }
     }
     for (const [child, label, group] of [[supervisor, 'installed app', true], [scene, 'synthetic scene', true], [service, 'synthetic service', false]] as const) {
@@ -212,6 +243,7 @@ async function main() {
     }
     if (root) {
       try {
+        if (primary) await evidence('capture-diagnostics', await retainCaptureDiagnostics(appEnv.APPARENT_CAPTURES_DIR!, output));
         const report = path.join(root, 'fixture-report.json'); if (service) await cp(report, path.join(output, 'fixture-report.json'));
         if (!primary && !cleanupErrors.length) await rm(root, {recursive: true});
       } catch (error) { cleanupErrors.push(redact(error)); }

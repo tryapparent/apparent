@@ -86,6 +86,11 @@ impl Lifecycle {
         } else if startup_exit && !self.ready && !self.admitted && !failed_writes && !self.startup_protocol_failed {
             Ok(FinishOutcome::UnavailableBeforeAdmission)
         } else {
+            // Preserve the actual refusal branch without note text or pipe frames.
+            crate::capture::engine::runtime::apparent_log(format!(
+                "Notes finish refused: ready={} admitted={} startup_protocol_failed={} drained={drained} failed_writes={failed_writes} startup_exit={startup_exit}",
+                self.ready, self.admitted, self.startup_protocol_failed,
+            ));
             Err("Notes did not finish saving; recording assets were retained.".into())
         };
         for waiter in self.waiters.drain(..) {
