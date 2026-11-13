@@ -47,10 +47,12 @@ class PrePushGuardTests(unittest.TestCase):
         local_tests = self.repo / "enablement/local-tests"
         local_tests.mkdir()
         shutil.copy2(SELECTOR.parent / "local-tests/run.ts", local_tests / "run.ts")
+        (local_tests / "preview").mkdir()
+        shutil.copy2(SELECTOR.parent / "local-tests/preview/explain.ts", local_tests / "preview/explain.ts")
         for name in ("service.ts", "receipt.ts", "desktop-install.ts"):
             shutil.copy2(SELECTOR.parent / "local-tests" / name, local_tests / name)
         # Finite TS contract fixtures, just like the Python fixtures above.
-        for name in ("local-tests/run.test.ts", "local-tests/reuse.test.ts", "local-tests/desktop-install.test.ts", "prerequisites/native.test.ts", "timing/command.test.ts", "timing/mac-cache.test.ts", "ci/select.test.ts"):
+        for name in ("local-tests/run.test.ts", "local-tests/reuse.test.ts", "local-tests/preview/explain.test.ts", "local-tests/desktop-install.test.ts", "prerequisites/native.test.ts", "timing/command.test.ts", "timing/mac-cache.test.ts", "ci/select.test.ts"):
             path = self.repo / "enablement" / name
             path.parent.mkdir(exist_ok=True)
             path.write_text("import {test} from 'node:test'; test('fixture', () => {});\n")
