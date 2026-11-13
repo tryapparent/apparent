@@ -15,6 +15,7 @@ permissions:
   contents: read
 
 concurrency:
+  # Distinct source runs/attempts use distinct groups; only duplicate events serialize.
   group: ${{ github.event_name == 'workflow_run' && format('pr-completion-{0}-{1}', github.event.workflow_run.id, github.event.workflow_run.run_attempt) || format('changed-tree-{0}-{1}', github.event_name, github.ref) }}
   cancel-in-progress: ${{ github.event_name != 'workflow_run' }}
 

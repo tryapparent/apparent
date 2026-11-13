@@ -31,3 +31,14 @@ test('completion notifications cover exactly the PR orchestrators, with trusted 
   assert.equal(job.steps.at(-1).env.GH_TOKEN, '${{ github.token }}');
   assert.doesNotMatch(JSON.stringify(job.steps), /download-artifact|npm |head_sha|head_branch/);
 });
+
+test('distinct completions cannot replace each other in the same concurrency group', () => {
+  const flow = read('verification.yml');
+  const expression = flow.concurrency.group.slice(3, -2);
+  const group = (id: number, attempt: number) => Function('github', 'format', `return (${expression});`)(
+    {event_name: 'workflow_run', event: {workflow_run: {id, run_attempt: attempt}}},
+    (text: string, ...values: number[]) => text.replace(/\{(\d+)\}/g, (_: string, index: string) => String(values[Number(index)])));
+  assert.equal(new Set([group(10, 1), group(11, 1), group(12, 1)]).size, 3);
+  assert.notEqual(group(10, 1), group(10, 2));
+  assert.equal(group(10, 1), group(10, 1), 'only duplicate source events serialize');
+});
