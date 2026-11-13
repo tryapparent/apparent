@@ -740,6 +740,15 @@ test('Mac picker protocol reports absent ownership through the real interpreter 
   '/synthetic/private-home/picker-runtime-abcdef/StorageFixture.app/Contents/MacOS/StorageFixture-'+'a'.repeat(32),
   'com.tryapparent.storagefixture.f'+'b'.repeat(32)];
  assert.ok(Buffer.byteLength(JSON.stringify({id:1,args})+'\n')>=288);
- for(let i=0;i<2;i++)await assert.rejects(driver.request(args,5000),/Owned Electron process is absent/);
+ for(let i=0;i<2;i++) {
+  const started=performance.now();
+  await assert.rejects(driver.request(args,5000).catch(error=>{
+   // Assertion output omits custom stderr. Emit only bounded stage metadata,
+   // on both expected refusal and failure, never raw errors or request data.
+   const stages=(String(error?.stderr??'').match(/Picker transport stage=(?:run-entered|read-ready|frame-complete|dispatch)(?: bytes=\d{1,5})? elapsedSeconds=-?\d{1,6}\b/g)??[]).slice(-8);
+   t.diagnostic(JSON.stringify({request:i+1,elapsedMs:Math.round(performance.now()-started),stages}));
+   throw error;
+  }),/Owned Electron process is absent/);
+ }
  assert.deepEqual(driver.stats,{starts:1,requests:2});
 });
