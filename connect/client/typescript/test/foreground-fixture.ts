@@ -5,7 +5,7 @@
  */
 import {createHash, randomBytes} from 'node:crypto';
 import {createServer, type IncomingMessage, type ServerResponse} from 'node:http';
-import {chmod, mkdir, readFile, stat, writeFile} from 'node:fs/promises';
+import {chmod, mkdir, readFile, realpath, stat, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {parseArgs} from 'node:util';
@@ -171,13 +171,15 @@ async function handle(req: IncomingMessage, res: ServerResponse, state: FixtureS
   }
 }
 
-function underTmp(value: string) {
-  const absolute = path.resolve(value);
-  if (!absolute.startsWith('/tmp/apparent-dev-')) throw new Error('fixture paths must stay beneath /tmp/apparent-dev-<job>-<run>/');
+async function underTmp(value: string) {
+  const absolute = await realpath(value);
+  // macOS resolves /tmp to /private/tmp; compare canonical paths on both OSes.
+  const relative = path.relative(await realpath('/tmp'), absolute);
+  if (!relative.startsWith('apparent-dev-') || relative.includes(path.sep)) throw new Error('fixture paths must stay beneath /tmp/apparent-dev-<job>-<run>/');
   return absolute;
 }
 async function makeBundle(args: Record<string, string | boolean>) {
-  const root = underTmp(String(args.root ?? ''));
+  const root = await underTmp(String(args.root ?? ''));
   const captures = path.resolve(String(args.captures ?? path.join(root, 'captures')));
   if (!captures.startsWith(root + path.sep)) throw new Error('--captures must be beneath the private fixture root');
   await mkdir(captures, {recursive: true, mode: 0o700}); await chmod(captures, 0o700);
