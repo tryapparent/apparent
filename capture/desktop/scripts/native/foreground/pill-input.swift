@@ -66,7 +66,7 @@ func exactExe(_ pid: pid_t, _ path: String) -> Bool {
     guard let app = NSRunningApplication(processIdentifier: pid), let exe = app.executableURL else { return false }
     return exe.standardizedFileURL.path == path
 }
-func pill(_ req: [String: Any]) throws -> (Pill, Set<pid_t>) {
+func ownedWindows(_ req: [String: Any]) throws -> (rows: [[String: Any]], descendants: Set<pid_t>, electron: String) {
     let app = req["app"] as! String, root = pid_t(req["rootPid"] as! Int)
     let expectedRoot = (env["HOME"] ?? "") + "/Applications/"
     let exact = expectedRoot + "Apparent-Storage-\(env["GITHUB_RUN_ID"] ?? "")-\(env["GITHUB_RUN_ATTEMPT"] ?? "").app"
@@ -76,17 +76,68 @@ func pill(_ req: [String: Any]) throws -> (Pill, Set<pid_t>) {
     let descendants = try ancestry(root)
     let electron = app + "/Contents/Resources/settings/runtime/Electron.app/Contents/MacOS/Electron"
     let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-    let matches: [Pill] = rows.compactMap { row in
-        guard let owner = row[kCGWindowOwnerPID as String] as? Int32, descendants.contains(owner),
+    return (rows.filter { descendants.contains($0[kCGWindowOwnerPID as String] as? Int32 ?? -1) }, descendants, electron)
+}
+func launchSettings(_ owned: (rows: [[String: Any]], descendants: Set<pid_t>, electron: String)) -> [[String: Any]] {
+    owned.rows.compactMap { row in
+        guard let owner = row[kCGWindowOwnerPID as String] as? Int32,
+              let title = row[kCGWindowName as String] as? String, title.hasPrefix("Apparent Settings"),
+              (row[kCGWindowAlpha as String] as? Double ?? 0) > 0,
+              let id = row[kCGWindowNumber as String] as? UInt32, exactExe(owner, owned.electron) else { return nil }
+        return ["pid": Int(owner), "windowId": Int(id), "title": String(title.prefix(128))]
+    }
+}
+func closeLaunchSettings(_ req: [String: Any]) throws -> [String: Any] {
+    let owned = try ownedWindows(req), settings = launchSettings(owned)
+    try need(settings.count == 1, "Expected one owned launch Settings window before Close")
+    let target = settings[0], pid = pid_t(target["pid"] as! Int)
+    try need(target["title"] as? String == "Apparent Settings — About" &&
+        target["pid"] as? Int == req["settingsPid"] as? Int &&
+        target["windowId"] as? Int == req["settingsWindowId"] as? Int, "Launch Settings identity changed before Close")
+    let application = AXUIElementCreateApplication(pid)
+    try need(AXUIElementSetMessagingTimeout(application, 0.2) == .success, "Could not bound Settings AX messaging")
+    var rawWindows: CFTypeRef?
+    try need(AXUIElementCopyAttributeValue(application, kAXWindowsAttribute as CFString, &rawWindows) == .success,
+        "Owned Settings AX windows unavailable")
+    guard let windows = rawWindows as? [AXUIElement], windows.count == 1 else { throw Refusal(message: "Owned Settings AX window is ambiguous") }
+    var title: CFTypeRef?, rawButton: CFTypeRef?
+    try need(AXUIElementCopyAttributeValue(windows[0], kAXTitleAttribute as CFString, &title) == .success &&
+        title as? String == "Apparent Settings — About", "Owned Settings AX title differs")
+    try need(AXUIElementCopyAttributeValue(windows[0], kAXCloseButtonAttribute as CFString, &rawButton) == .success,
+        "Owned Settings Close button unavailable")
+    guard let rawButton, CFGetTypeID(rawButton) == AXUIElementGetTypeID() else { throw Refusal(message: "Settings Close is not an AX element") }
+    let button = rawButton as! AXUIElement
+    var buttonPid: pid_t = -1
+    try need(AXUIElementGetPid(button, &buttonPid) == .success && buttonPid == pid, "Settings Close belongs to another process")
+    let fresh = try ownedWindows(req)
+    let current = launchSettings(fresh)
+    try need(current.count == 1 && current[0]["pid"] as? Int == target["pid"] as? Int &&
+        current[0]["windowId"] as? Int == target["windowId"] as? Int && current[0]["title"] as? String == target["title"] as? String &&
+        exactExe(pid, fresh.electron), "Launch Settings changed before native dismissal")
+    try withinBudget()
+    // One native Close only. An ambiguous result fails; the caller never retries.
+    try need(AXUIElementPerformAction(button, kAXPressAction as CFString) == .success, "Native Settings Close failed; outcome unknown")
+    while kill(pid, 0) == 0 {
+        try withinBudget()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.025))
+    }
+    try need(errno == ESRCH, "Could not verify owned Settings child exit")
+    try need(launchSettings(try ownedWindows(req)).isEmpty, "Settings remained visible after Close")
+    return ["closedSettings": target, "frontPid": Int(frontPID())]
+}
+func pill(_ req: [String: Any]) throws -> (Pill, Set<pid_t>) {
+    let owned = try ownedWindows(req)
+    let matches: [Pill] = owned.rows.compactMap { row in
+        guard let owner = row[kCGWindowOwnerPID as String] as? Int32,
               row[kCGWindowName as String] as? String == "Apparent recording controls",
               (row[kCGWindowAlpha as String] as? Double ?? 0) > 0,
               let id = row[kCGWindowNumber as String] as? UInt32,
               let d = row[kCGWindowBounds as String] as? [String: Any], let rect = CGRect(dictionaryRepresentation: d as CFDictionary),
-              exactExe(owner, electron) else { return nil }
+              exactExe(owner, owned.electron) else { return nil }
         return Pill(pid: owner, id: id, rect: rect)
     }
     if matches.count != 1 {
-        let candidates = rows.filter { descendants.contains($0[kCGWindowOwnerPID as String] as? Int32 ?? -1) }.prefix(12).map { row in
+        let candidates = owned.rows.prefix(12).map { row in
             ["pid": row[kCGWindowOwnerPID as String] ?? -1,
              "id": row[kCGWindowNumber as String] ?? -1,
              "title": String((row[kCGWindowName as String] as? String ?? "<unavailable>").prefix(128))] as [String: Any]
@@ -94,7 +145,7 @@ func pill(_ req: [String: Any]) throws -> (Pill, Set<pid_t>) {
         let details = String(data: try JSONSerialization.data(withJSONObject: candidates), encoding: .utf8) ?? "[]"
         throw Refusal(message: "Expected exactly one visible mapped pill; owned candidates=" + details)
     }
-    return (matches[0], descendants)
+    return (matches[0], owned.descendants)
 }
 struct Word { let text: String; let box: CGRect; let candidate: VNRecognizedText }
 func observe(_ req: [String: Any], _ png: URL) throws -> ([String: Any], [Word], Set<pid_t>) {
@@ -120,7 +171,7 @@ func main() throws {
     let rootPid = req["rootPid"] as! Int
     try need(rootPid > 1 && rootPid <= Int(Int32.max), "Invalid root PID")
     let op = req["operation"] as! String, out = URL(fileURLWithPath: req["output"] as! String).standardizedFileURL
-    try need(op == "snapshot" || op == "click", "Unknown operation")
+    try need(["snapshot", "click", "startup", "close-settings"].contains(op), "Unknown operation")
     if op == "click" { try need(["Copy link", "Cancel upload", "Retry upload"].contains(req["label"] as? String ?? ""), "Unsupported click label") }
     try safeOwnedPath(out, root: runner)
     try need(!fm.fileExists(atPath: out.path), "Output must be fresh")
@@ -128,6 +179,15 @@ func main() throws {
     var js = stat(); try need(job.path.hasPrefix(runner.path + "/") && !lstatIsLink(job.path) && job.pathComponents.count == runner.pathComponents.count + 1 && job.path.withCString({ lstat($0, &js) }) == 0 && js.st_uid == getuid() && js.st_mode & 0o777 == 0o700, "Job directory must be private, owned and directly under RUNNER_TEMP")
     try safeOwnedPath(out, root: job)
     try need(st.st_uid == getuid(), "Request file must be owned by current user")
+    if op == "startup" {
+        let settings = launchSettings(try ownedWindows(req))
+        let observed: [String: Any] = ["settings": settings, "frontPid": Int(frontPID())]
+        print(String(data: try JSONSerialization.data(withJSONObject: observed), encoding: .utf8)!); return
+    }
+    if op == "close-settings" {
+        let closed = try closeLaunchSettings(req)
+        print(String(data: try JSONSerialization.data(withJSONObject: closed), encoding: .utf8)!); return
+    }
     let (before, words, pillDescendants) = try observe(req, out)
     if op == "snapshot" { print(String(data: try JSONSerialization.data(withJSONObject: before), encoding: .utf8)!); return }
     try need(op == "click", "Unknown operation")

@@ -5,6 +5,7 @@ import {chmod, cp, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm,
 import path from 'node:path';
 import {spawn, execFileSync, type ChildProcess} from 'node:child_process';
 import {constants} from 'node:fs';
+import {prepareForegroundScene, type LaunchObservation, type LaunchWindow} from './startup.ts';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const hostEnv = {...process.env};
@@ -61,12 +62,13 @@ async function poll<T>(read: () => Promise<T>, accept: (value: T) => boolean, la
   while (Date.now() < end) { try { const value = await read(); if (accept(value)) return value; } catch (e) { last = redact(e); } await sleep(100); }
   throw Error(`${label} not observed: ${last.slice(-1000)}`);
 }
-async function native(operation: 'snapshot' | 'click', label?: string) {
+async function native(operation: 'snapshot' | 'click' | 'startup' | 'close-settings', label?: string, settings?: LaunchWindow) {
   const stem = `${++sequence}-${operation}`;
   const request = path.join(output, stem + '.request.json');
-  await writeFile(request, JSON.stringify({operation, app, rootPid: rustPid, output: path.join(output, stem + '.png'), ...(label ? {label} : {})}), {mode: 0o600, flag: 'wx'});
+  await writeFile(request, JSON.stringify({operation, app, rootPid: rustPid, output: path.join(output, stem + '.png'), ...(label ? {label} : {}),
+    ...(settings ? {settingsPid: settings.pid, settingsWindowId: settings.windowId} : {})}), {mode: 0o600, flag: 'wx'});
   const result = JSON.parse(await command(hostEnv.APPARENT_FOREGROUND_NATIVE_INPUT!, [request], {env: hostEnv}));
-  await evidence(stem, result); return result as {frontPid: number; windowId: number; words: Array<{text: string}>};
+  await evidence(stem, result); return result as LaunchObservation & {windowId: number; words: Array<{text: string}>};
 }
 const text = (snapshot: {words: Array<{text: string}>}) => snapshot.words.map(word => word.text).join(' ').toLowerCase();
 async function ui(label: string, predicate: (value: string) => boolean, scenePid: number, cap = 12_000) {
@@ -200,10 +202,17 @@ async function main() {
     rustPid = await poll(async () => Number((await readFile(pidFile, 'utf8')).trim()), value => Number.isSafeInteger(value) && value > 1, 'actual app PID');
     const state = await poll(async () => JSON.parse(await cli(['capture', 'state'])), value => value.state?.phase === 'idle', 'actual app idle');
     assert.ok(typeof state.app?.build === 'string' && state.app.build.includes(hostEnv.GITHUB_SHA!.slice(0, 7)), 'Running app source identity differs');
-    await sleep(2000);
     await evidence('app-identity', {source: hostEnv.GITHUB_SHA, supervisorPid: supervisor.pid, rustPid, app: state.app});
-    scene = spawn(hostEnv.APPARENT_FOREGROUND_SCENE!, [], {env: appEnv, detached: true, stdio: ['ignore', 'pipe', 'pipe']});
-    const generated = await readyChild(scene, 'synthetic scene'); assert.equal(generated.pid, scene.pid);
+    const generated = await prepareForegroundScene({
+      readySettings: () => poll(() => native('startup'), value => value.settings.length === 1, 'owned launch Settings'),
+      closeSettings: async window => { await native('close-settings', undefined, window); },
+      startScene: async () => {
+        scene = spawn(hostEnv.APPARENT_FOREGROUND_SCENE!, [], {env: appEnv, detached: true, stdio: ['ignore', 'pipe', 'pipe']});
+        const generated = await readyChild(scene, 'synthetic scene'); assert.equal(generated.pid, scene.pid);
+        return generated as {pid: number};
+      },
+      observe: () => native('startup'),
+    });
     captureId = randomBytes(16).toString('hex');
     await evidence('owned-request', {captureId});
     const start = await startOwnedCapture(captureId);

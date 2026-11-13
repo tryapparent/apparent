@@ -438,6 +438,11 @@ requires a disposable GitHub-hosted Mac, the exact clean workflow source and an
 effective Screen Recording grant. It never edits TCC: passive permission denial
 fails the case, and `capture start --wait` must confirm a real captured frame.
 
+Plain app launch opens About Settings asynchronously. Before starting the scene,
+the case observes that exact owned window, presses its native Close once, and
+requires its child to exit. It then verifies the scene is foreground before
+capture admission; it never restores scene focus to conceal a later failure.
+
 The case disables microphone capture, displays a generated scene, and uses the
 normal exact-ID capture lifecycle. It then observes and clicks the actual
 packaged Electron pill through progress, Cancel, Retry and Copy link. Input is
