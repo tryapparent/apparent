@@ -143,6 +143,7 @@ export function commands(selected: Owner[], base: string, head: string, platform
   if (selected.includes('service')) {
     add(['npm', 'ci', '--no-audit', '--no-fund'], 'connect/service');
     add(['npm', 'test'], 'connect/service');
+    add(['npm', 'run', 'test:mcp'], 'connect/service');
     add(['npm', 'run', 'test:recipient'], 'connect/service');
   }
   if (selected.includes('web')) {

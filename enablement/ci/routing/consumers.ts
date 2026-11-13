@@ -107,6 +107,7 @@ function directConsumers(path: string): readonly Owner[] {
       path === 'record/storage/build.ts') return ['desktop', 'capture'];
   if (path.startsWith('public/')) return webAssets.has(path) ? ['public', 'web'] : ['public'];
   if (!native && path.startsWith('connect/web/')) return ['web'];
+  if (path === 'connect/client/typescript/src/mcp-wire.ts') return ['client', 'capture', 'service'];
   if (path.startsWith('connect/client/')) return ['client', 'capture'];
   if (!native && path.startsWith('connect/service/')) return ['service', 'client', 'web', 'capture'];
   if (path.startsWith('capture/agent/setup/')) return ['capture', 'engine', 'hermes'];

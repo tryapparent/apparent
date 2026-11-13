@@ -1,5 +1,8 @@
 # Apparent Connect API (v1)
 
+The separate [encrypted MCP relay](mcp.md) carries read approval and ciphertext
+to a decrypting endpoint. It adds no server-side recording decryption or public sharing.
+
 ## Endpoint-encryption candidate extension
 
 This additive extension remains undeployed and off by default in the client. See [the selected trust and versioned content contract](hosted-encryption.md), including its explicit departure from older independent-pairing assumptions. The account service is trusted to authorize recipients; it never needs capture content keys.
