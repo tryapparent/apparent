@@ -24,10 +24,15 @@ test('LaunchServices resolves an owned synthetic scheme to its actual executable
   const bundle = join(home, 'SetupFixture.app');
   const executable = join(bundle, 'Contents/MacOS/apparent');
   const registry = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
-  let registrationAttempted = false;
+  let mayBeRegistered = false;
   try {
+    // Observe genuine absence before making a discoverable app. LaunchServices
+    // may index a valid bundle as soon as it is created/signed in runner staging;
+    // "not explicitly registered yet" does not mean absent from the real OS.
+    assert.equal(macHandler(system, executable, scheme).status, 'absent');
     mkdirSync(join(bundle, 'Contents/MacOS'), { recursive: true });
     copyFileSync('/usr/bin/true', executable);
+    mayBeRegistered = true;
     writeFileSync(join(bundle, 'Contents/Info.plist'), `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -46,8 +51,6 @@ test('LaunchServices resolves an owned synthetic scheme to its actual executable
     // never modify or sign the system executable itself.
     assert(system.run('/usr/bin/codesign', ['--force', '--sign', '-', '--identifier', bundleId, bundle]).ok, 'Synthetic app signing failed');
     assert(system.run('/usr/bin/codesign', ['--verify', '--strict', bundle]).ok, 'Synthetic app signature verification failed');
-    assert.equal(macHandler(system, executable, scheme).status, 'absent');
-    registrationAttempted = true;
     // lsregister's process exit alone did not establish registration on hosted
     // Macs. Require the native operation's actual OSStatus before selection.
     const registration = system.run('/usr/bin/osascript', ['-l', 'JavaScript', '-e', `
@@ -105,7 +108,7 @@ function run(argv) {
     assert.equal(macHandler(system, realpathSync(process.execPath), scheme).status, 'incompatible');
     assert.equal(readFileSync(join(bundle, 'Contents/Info.plist'), 'utf8').includes(scheme), true);
   } finally {
-    const cleanup = registrationAttempted ? system.run(registry, ['-u', bundle]) : { ok: true };
+    const cleanup = mayBeRegistered ? system.run(registry, ['-u', bundle]) : { ok: true };
     rmSync(home, { recursive: true, force: true });
     assert(cleanup.ok, 'Synthetic LaunchServices unregister failed');
   }

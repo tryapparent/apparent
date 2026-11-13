@@ -25,7 +25,7 @@ export function changedPaths(base: string, head: string, cwd = root): string[] {
 
 export function selection(base: string, head: string, cwd = root, _conservativeWorkflows = false) {
   const routing = selectRange(base, head, cwd, _conservativeWorkflows);
-  return {...routing, rustChanged: routing.plan.root || routing.plan.engine || routing.plan.client};
+  return {...routing, rustChanged: routing.plan.root || routing.plan.engine || routing.plan.client || routing.plan.engineMedia};
 }
 
 export function captureToolTests(cwd = root): Command[] {
@@ -102,6 +102,7 @@ export function commands(selected: Owner[], base: string, head: string, platform
   else if (selected.includes('desktop')) result.push(...installationContracts(installScope.paths, installScope.workflowControls));
   if (selected.includes('onboarding')) result.push(...onboardingCommands());
   if (selected.includes('client-foreground')) result.push(...foregroundCommands());
+  if (selected.includes('engine-media')) add(['node', '--experimental-strip-types', 'engine/tools/check.ts', ...(rustChanged ? [] : ['--sdk-only'])]);
   const tools = selected.includes('capture-tools') ? captureToolTests() : [];
   result.push(...tools.filter(command => !command.env?.APPARENT_BIN));
   if (selected.includes('hermes')) {

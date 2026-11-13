@@ -1,5 +1,5 @@
 // Owner facts shared by hosted admission and local pushes. Unknown inputs stay broad.
-export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling', 'onboarding'] as const;
+export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling', 'onboarding', 'engine-media'] as const;
 export type Owner = typeof owners[number];
 export const publicMarkdown = new Set([
   'README.md', 'capture/agent/skills/apparent/SKILL.md', 'capture/agent/docs/usage.md',
@@ -14,7 +14,7 @@ export function documentationOnlyPath(path: string): boolean {
   if (/(^|\/)(SKILL|CLAUDE|GEMINI)\.md$/i.test(path)) return false;
   return ['CONTEXT.md', 'VERIFICATION.md', 'enablement/refactor.md'].includes(path) ||
     ['capture/engine', 'capture/desktop', 'capture/agent', 'connect', 'connect/web', 'connect/client',
-      'connect/service', 'public/site', 'shared', 'enablement', 'record/storage', 'record/completion'].some(owner =>
+      'connect/service', 'public/site', 'shared', 'enablement', 'record/storage', 'record/completion', 'engine', 'engine/sdk'].some(owner =>
       path.startsWith(owner + '/docs/') || ['README', 'CHANGELOG', 'CONTRIBUTING', 'LICENSE'].some(name => path === `${owner}/${name}.md`));
 }
 export const linuxDrivers = new Set(['capture-smoke.py', 'gui-vm.py', 'gui-vm-reaper.py',
@@ -91,6 +91,12 @@ export function foregroundPortableChange(path: string, before: string, after: st
 }
 
 function directConsumers(path: string): readonly Owner[] {
+  if (documentationOnlyPath(path)) return [];
+  // This producer is not yet adopted by the app. Do not confuse its independent
+  // native/SDK closure with the staged legacy capture/engine crate. Consumer
+  // adoption must add the pinned artifact's actual app/package edges here.
+  if (path.startsWith('engine/') || path === '.github/workflows/stream-engine.yml') return ['engine-media'];
+  if (path.startsWith('enablement/ci/') || path === 'enablement/local-tests/run.ts' || path.startsWith('.github/actions/ubuntu-apt/')) return owners;
   if (portableForegroundInputs.has(path)) return ['client-foreground'];
   if (onboardingPureInputs.has(path)) return ['desktop', 'onboarding'];
   if (path.startsWith('capture/desktop/ui/frontend/tests/onboarding/') &&
@@ -102,7 +108,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (publicMarkdown.has(path) && path !== 'capture/agent/skills/apparent/SKILL.md') return ['public'];
   if (path === 'hermes/skills/recordings/SKILL.md') return ['hermes'];
   if (path === 'capture/agent/skills/apparent/SKILL.md') return ['capture', 'engine', 'public'];
-  if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)\.md$/i.test(path) && !['capture/', 'connect/', 'public/', 'hermes/', 'record/'].some(root => path.startsWith(root))) return owners;
+  if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)\.md$/i.test(path) && !['capture/', 'connect/', 'public/', 'hermes/', 'record/'].some(root => path.startsWith(root))) return owners.filter(owner => owner !== 'engine-media');
   // No extension-based native exemption: unexpected native sources in web/tool owners broaden.
   const native = /\.(rs|swift|metal|c|cc|cpp|h|mm)$/.test(path) || /(^|\/)Cargo\.(toml|lock)$/.test(path);
   // Audited headless Record packages feed Desktop's generated adapters and the
@@ -141,7 +147,12 @@ function directConsumers(path: string): readonly Owner[] {
   if (toolingRegressionTests.has(path)) return ['tooling'];
   if (path.startsWith('enablement/timing/') && !native) return ['tooling'];
   if (path.startsWith('enablement/directory-width/') && !native) return ['tooling'];
-  return owners;
+  // Existing unknown legacy inputs keep their previous conservative consumers.
+  // Engine does not consume those implementation trees. Unknown top-level
+  // ownership still selects every owner and fails the ownership contract.
+  if (path.startsWith('.github/') || path.startsWith('.githooks/')) return owners;
+  return path.includes('/') && knownDirectories.includes(path.split('/')[0])
+    ? owners.filter(owner => owner !== 'engine-media') : owners;
 }
 export function consumers(path: string): readonly Owner[] {
   const selected = [...directConsumers(path)];
@@ -158,34 +169,39 @@ export function planFromOwners(selected: readonly Owner[]) {
     desktop: selected.includes('desktop'), client: selected.includes('client'), foreground: selected.includes('client-foreground'),
     browser: selected.includes('web'), service: selected.includes('service'),
     tools: selected.includes('capture-tools'), hermes: selected.includes('hermes'),
-    public: selected.includes('public'), tooling: selected.includes('tooling'), onboarding: selected.includes('onboarding')};
+    public: selected.includes('public'), tooling: selected.includes('tooling'), onboarding: selected.includes('onboarding'),
+    engineMedia: selected.includes('engine-media')};
 }
 export function suitePlan(paths: string[] | null) {return planFromOwners(selectedOwners(paths));}
 
 const common = ['shared/**', 'composition/**', 'enablement/**', '.github/**', '.githooks/**'];
+const independentEngine = ['!.github/workflows/stream-engine.yml'];
 const native = ['Cargo.toml', 'Cargo.lock', 'build.rs', 'main.rs', '.cargo/**',
   '.github/workflows/verification-platform.yml', 'enablement/verification.py',
   'enablement/prerequisites/**', 'enablement/local-tests/**', 'enablement/native-build/**'];
 const nativeOnlyTriggers = [...nativeWorkflowPaths.map(path => '!' + path),
   '!enablement/prerequisites/**', '!enablement/native-build/**', '!enablement/verification.py', '!enablement/build_version.rs'];
 const directoryPaths = {
-  capture: [...common, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, 'capture/**', 'record/**', 'connect/**', '!connect/web/**',
+  capture: [...common, ...independentEngine, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, 'capture/**', 'record/**', 'connect/**', '!connect/web/**',
     'enablement/**', '.githooks/**', 'AGENTS.md', '.github/workflows/checks.yml',
     '.github/workflows/verification.yml',
     '.github/workflows/release-linux.yml', '.github/workflows/release-mac-preview.yml',
     '.github/workflows/linux-updater-harness.yml',
     // The app embeds this wordmark; the remaining Public tree is independent.
     'public/site/public/assets/brand/apparent-wordmark.svg'],
-  connect: [...common, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, 'connect/**', 'public/site/**',
+  connect: [...common, ...independentEngine, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, 'connect/**', 'public/site/**',
     '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'],
-  public: [...common, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',
+  public: [...common, ...independentEngine, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',
     'capture/agent/skills/apparent/SKILL.md', 'capture/agent/docs/usage.md',
     'capture/desktop/docs/guides/recording.md', 'capture/engine/docs/guides/processing.md'],
-  hermes: [...common, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/stream-public.yml', 'hermes/**', 'capture/agent/setup/**',
+  hermes: [...common, ...independentEngine, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/stream-public.yml', 'hermes/**', 'capture/agent/setup/**',
     'capture/desktop/ui/frontend/src/hermes/**', '.github/workflows/hermes.yml'],
+  engine: ['engine/**', 'enablement/ci/**', 'enablement/local-tests/**', '.githooks/**', '.github/**',
+    ...nativeWorkflowPaths.map(path => '!' + path), '!.github/workflows/hermes.yml',
+    '!.github/workflows/stream-connect.yml', '!.github/workflows/stream-public.yml', '.github/workflows/stream-engine.yml'],
 } as const;
 export type Stream = keyof typeof directoryPaths;
-const knownDirectories = ['capture', 'record', 'connect', 'public', 'hermes', 'enablement', 'shared', 'composition', '.cargo', '.github', '.githooks'];
+const knownDirectories = ['capture', 'record', 'connect', 'public', 'hermes', 'enablement', 'shared', 'composition', '.cargo', '.github', '.githooks', 'engine'];
 const knownFiles = ['AGENTS.md', 'README.md', 'Cargo.toml', 'Cargo.lock', 'build.rs', 'main.rs'];
 export const streamPaths = Object.fromEntries(Object.entries(directoryPaths).map(([stream, paths]) =>
   [stream, ['**', ...knownDirectories.map(root => '!' + root + '/**'), ...knownFiles.map(path => '!' + path), ...paths]])) as Record<Stream, string[]>;
@@ -216,12 +232,13 @@ export function routeDecision(paths: string[] | null, workflowControls: string[]
       'capture/desktop/settings/settings.rs', 'capture/desktop/settings/settings_window.rs'].includes(path));
   const streams = Object.fromEntries(Object.keys(streamPaths).map(stream => [stream, unknown || !!paths?.some(path => affectsStream(stream as Stream, path))]));
   const requiredStreams = {capture: plan.root || plan.engine || plan.desktop || plan.client || plan.tools || plan.onboarding,
-    connect: plan.browser || plan.service || plan.client || plan.foreground, public: plan.public, hermes: plan.hermes};
+    connect: plan.browser || plan.service || plan.client || plan.foreground, public: plan.public, hermes: plan.hermes,
+    engine: plan.engineMedia};
   // Verification-only inputs must not strand a pending unchanged product.
   // Native clients consume Connect, but are not inputs to its Worker payload.
   const foregroundRuntime = !!remaining?.includes('connect/client/typescript/src/foreground.ts');
   const publicationStreams = {capture: plan.root || plan.engine || plan.desktop || plan.client || foregroundRuntime,
-    connect: plan.browser || plan.service, public: plan.public, hermes: plan.hermes};
+    connect: plan.browser || plan.service, public: plan.public, hermes: plan.hermes, engine: plan.engineMedia};
   return {requiredStreams, publicationStreams, installer: publicationStreams.capture, selected: owners.filter(owner => selected.includes(owner)), plan,
     public: publicSelected, updater, streams,
     suites: plan,

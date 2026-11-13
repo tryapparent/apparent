@@ -18,9 +18,11 @@ test('owner selection retains consumers and unrelated packages stay out', () => 
 });
 
 test('unknown, missing history and empty deltas cannot silently skip coverage', () => {
-  for (const paths of [[], ['new-owner/file.ts'], ['shared/schema.ts']]) {
+  for (const paths of [[], ['new-owner/file.ts']]) {
     assert.deepEqual(select(paths), [...owners]);
   }
+  assert.deepEqual(select(['shared/schema.ts']), owners.filter(owner => owner !== 'engine-media'),
+    'the separate Engine producer does not consume legacy Shared implementation');
   assert.deepEqual(select(['README.md'], false), [...owners]);
 });
 
@@ -188,7 +190,7 @@ test('committed concurrency-only workflow edits select contracts rather than pro
     ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'],
     ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'],
   ]);
-  assert.deepEqual(selection(base, 'HEAD', dir, true).selected, owners.filter(owner => !['public','hermes'].includes(owner)));
+  assert.deepEqual(selection(base, 'HEAD', dir, true).selected, owners.filter(owner => !['public','hermes','engine-media'].includes(owner)));
   // A later safe workflow/docs commit cannot mask an earlier build change.
   writeFileSync(join(dir, 'Cargo.lock'), 'changed build graph');
   git('add', '.'); git('commit', '-qm', 'build input');
@@ -396,7 +398,7 @@ test('installed hook proves control-only selection, mandatory commands, failure 
     const protectedPush = push(ref, '7'); assert.notEqual(protectedPush.status, 0);
     assert.match(protectedPush.stdout, /"workflowControls":\[\]/);
     const result = JSON.parse(protectedPush.stdout.trim());
-    assert.deepEqual(result.selected, owners.filter(owner => !['public','hermes'].includes(owner)));
+    assert.deepEqual(result.selected, owners.filter(owner => !['public','hermes','engine-media'].includes(owner)));
   }
   assert.equal(readFileSync(join(dir, '.git/config'), 'utf8'), config);
   assert.deepEqual(readFileSync(join(dir, '.git/index')), index);

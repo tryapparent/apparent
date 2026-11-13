@@ -42,6 +42,17 @@ Minimize both stop-to-paste and stop-to-watch delays. Connect links are expected
 
 ## Ownership and layout
 
+Engine's independently delivered native capabilities and TypeScript SDK now target
+top-level `engine/`, following the accepted incremental Engine separation. Each
+slice must adopt a complete capability through its public contract, move real
+callers/tests/package inputs and remove the superseded implementation after
+verification. `capture/engine/` remains the authoritative legacy app runtime for
+capabilities not yet adopted; its physical location does not establish package
+independence. The initial standalone movie-probe producer is a compatible
+prerequisite, not installed adoption. See `engine/README.md` for its exact scope.
+This supersedes Engine's destination in the historical ownership map below;
+Record, Desktop, Agent and other owner responsibilities are unchanged.
+
 The accepted ownership target is Engine, Desktop and Agent under `capture/`, with `connect`, `public`, `shared` and `enablement` as separate owners. Record is the target headless workflow owner described above. Their dependency direction is architectural: Record, Desktop and Agent consume published Engine capabilities; Engine depends on none of their product implementations or on Connect/Public. Keep capture-internal shared mechanisms in `capture`. The current root Rust application uses ordinary modules; do not add path shims, extra crates or services to simulate ownership. Adopt independently usable TypeScript packages and native capability contracts only in scoped, verified slices.
 
 Production sources and owner materials have physically relocated: Engine code/docs/native files are in `capture/engine/`; Desktop code/docs/native files and performance tools are in `capture/desktop/`; Agent code, proof/narrator tools, skills and docs are in `capture/agent/`. `composition/` holds CLI/composition code, `shared/` cross-stream code/docs, and `enablement/` repository verification and refactor guidance. `public/site/video-demo/` holds marketing video tooling. These are physical paths within the root application, not proof that all production behavior has been adopted into an independently running Engine. Treat the ownership and dependency direction above as the target; do not claim that migration is complete.
