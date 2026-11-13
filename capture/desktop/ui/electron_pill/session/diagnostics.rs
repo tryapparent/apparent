@@ -78,21 +78,59 @@ pub(super) fn read_frame(reader: &mut impl BufRead) -> Result<Vec<u8>, ReaderSto
 }
 
 #[derive(Default)]
+struct Cadence {
+    count: u64,
+    last_active: Option<Instant>,
+    max_active_gap_ms: u64,
+}
+
+impl Cadence {
+    fn mark(&mut self, now: Instant, active: bool) {
+        self.count = self.count.saturating_add(1);
+        if active {
+            if let Some(previous) = self.last_active {
+                let gap = now.saturating_duration_since(previous).as_millis().min(u64::MAX as u128) as u64;
+                self.max_active_gap_ms = self.max_active_gap_ms.max(gap);
+            }
+            self.last_active = Some(now);
+        } else {
+            // A hidden panel has no parent-state deadline; idle time is not starvation.
+            self.last_active = None;
+        }
+    }
+
+    fn snapshot(&self) -> serde_json::Value {
+        serde_json::json!({"count":self.count,"max_active_gap_ms":self.max_active_gap_ms})
+    }
+}
+
+#[derive(Default)]
 pub(super) struct Observation {
     pub(super) reader_stop: Option<ReaderStop>,
     pub(super) writer_stop: Option<WriterStop>,
     last_state: Option<(&'static str, u64, Instant)>,
+    queued: Cadence,
+    flushed: Cadence,
 }
 
 impl Observation {
+    pub(super) fn queued_state(&mut self, phase: &str) {
+        self.queued.mark(Instant::now(), phase != "hidden");
+    }
+
     pub(super) fn wrote_state(&mut self, phase: &str, revision: u64) {
-        self.last_state = Some((known_phase(phase), revision, Instant::now()));
+        let now = Instant::now();
+        self.flushed.mark(now, phase != "hidden");
+        self.last_state = Some((known_phase(phase), revision, now));
     }
 
     pub(super) fn snapshot(&self) -> serde_json::Value {
         serde_json::json!({
             "reader_stop": self.reader_stop.map(ReaderStop::code),
             "writer_stop": self.writer_stop.map(WriterStop::code),
+            // Mailbox updates may coalesce; these are cadence observations, not acknowledgements.
+            "queued_states": self.queued.snapshot(),
+            "flushed_states": self.flushed.snapshot(),
             "last_flushed_state": self.last_state.map(|(phase, revision, at)| serde_json::json!({
                 "phase": phase, "revision": revision, "age_ms": at.elapsed().as_millis(),
             })),
@@ -129,6 +167,26 @@ pub(super) fn child_status(status: std::io::Result<Option<ExitStatus>>) -> serde
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn cadence_distinguishes_delivery_gaps_and_excludes_hidden_idle() {
+        use std::time::Duration;
+        let start = Instant::now();
+        let mut queued = Cadence::default();
+        let mut flushed = Cadence::default();
+        for ms in [0, 100, 200] {
+            queued.mark(start + Duration::from_millis(ms), true);
+        }
+        for ms in [0, 6200] {
+            flushed.mark(start + Duration::from_millis(ms), true);
+        }
+        assert_eq!(queued.snapshot()["max_active_gap_ms"], 100);
+        assert_eq!(flushed.snapshot()["max_active_gap_ms"], 6200);
+        queued.mark(start + Duration::from_secs(1), false);
+        queued.mark(start + Duration::from_secs(3600), true);
+        assert_eq!(queued.snapshot()["max_active_gap_ms"], 100);
+        assert_eq!(queued.snapshot()["count"], 5);
+    }
 
     #[test]
     fn framing_observation_preserves_the_bound_and_distinguishes_eof() {

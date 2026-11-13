@@ -442,6 +442,7 @@ impl Session {
         self.pin_admission.lock().unwrap().update(self.view.phase != "hidden", self.generation);
         let (lock, wake) = &*self.mailbox;
         lock.lock().unwrap().state = Some(serde_json::json!({"type":"state","view":self.view}));
+        self.observation.lock().unwrap().queued_state(self.view.phase);
         self.sent = Instant::now();
         wake.notify_one();
     }

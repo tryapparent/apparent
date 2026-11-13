@@ -468,6 +468,11 @@ Sharing uses explicit plaintext consent against a private loopback fixture, with
 the ordinary public-access clipboard disclosure. Encrypted transfer/decryption
 proof remains the separate installed Connect CLI test.
 
+The fixture enables `APPARENT_START_TIMINGS` to retain startup-stage durations
+without changing the captures root. Parent-health failures retain separate queued
+and flushed state counts and maximum active gaps; hidden idle time is excluded.
+Mailbox updates can coalesce, so those counts are observations, not acknowledgments.
+
 `mac-foreground-native` retains the report, owned-window screenshots, synthetic
 bundle and compiler/application logs for two days. Capture command request/result/
 failure receipts identify Start, Inspect and Stop independently; an absent native

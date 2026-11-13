@@ -192,7 +192,7 @@ async function main() {
     for (const directory of [path.dirname(configFile), temporary, path.join(root, 'captures')]) await mkdir(directory, {recursive: true, mode: 0o700});
     assert.ok(Buffer.byteLength(path.join(home, '.config/apparent/agent-control/capture.sock')) <= 103);
     appEnv = {...hostEnv, HOME: home, CFFIXED_USER_HOME: home, XDG_CONFIG_HOME: path.join(home, '.config'),
-      APPARENT_CONFIG: configFile, APPARENT_CAPTURES_DIR: path.join(root, 'captures'), TMPDIR: temporary, TMP: temporary, TEMP: temporary};
+      APPARENT_CONFIG: configFile, APPARENT_CAPTURES_DIR: path.join(root, 'captures'), APPARENT_START_TIMINGS: '1', TMPDIR: temporary, TMP: temporary, TEMP: temporary};
     delete appEnv.ELECTRON_RUN_AS_NODE;
     for (const key of Object.keys(appEnv)) if (/^(OPENCODE|CODEX|CLAUDE)_.*SESSION/.test(key)) delete appEnv[key];
     await writeFile(configFile, JSON.stringify({onboarding: {seen: true}, launchAtLogin: false, autoPasteDraft: false, microphoneEnabled: false,

@@ -3632,6 +3632,7 @@ impl ApparentCoordinator {
             _metal_overlay: metal_overlay,
             microphone_enabled,
         });
+        let stage = Instant::now();
         match workflow::notes::Session::start(&self.active_recording.as_ref().unwrap().bundle_dir, Arc::clone(&self.telemetry), self.active_recording.as_ref().unwrap().target.frame) {
             Ok(session) => self.note_ui = Some(session),
             Err(error) => {
@@ -3639,6 +3640,7 @@ impl ApparentCoordinator {
                 if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some("Typed notes unavailable · recording continues".into()); }
             },
         }
+        start_metric("notes_start_ms", stage);
         self.present_recording_island(cx);
         start_metric("recording_start_ms", started);
     }
@@ -6840,7 +6842,9 @@ fn open_review_window(coord_entity: &Entity<ApparentCoordinator>, cx: &mut App) 
 }
 
 pub(crate) fn start_metric(name: &str, started: Instant) {
-    if std::env::var_os("APPARENT_BENCH_START").is_some() {
+    if std::env::var_os("APPARENT_BENCH_START").is_some()
+        || std::env::var_os("APPARENT_START_TIMINGS").is_some()
+    {
         eprintln!(
             "START_METRIC {name}={:.6}",
             started.elapsed().as_secs_f64() * 1_000.0
