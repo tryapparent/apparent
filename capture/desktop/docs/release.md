@@ -33,7 +33,12 @@ Mac publication first requires successful Linux/shared and Mac main verification
 of the exact commit. Linux publication requires its Linux/shared receipt and does
 not wait for queued Mac runners.
 It is dispatched manually from `tryapparent/apparent`'s `main`: **Actions → Mac preview release →
-Run workflow → main**. It builds on `macos-latest`, reads the shared application version
+Run workflow → main**. It builds on `macos-latest`. The optional `source_sha` input selects an already verified
+full main commit when unrelated documentation has advanced the branch. Admission runs
+from the dispatch ref before checking out that source and still requires its exact
+Linux/shared and Mac receipts plus main ancestry. Version, PostHog build, tag target
+and feed all refer to the selected source; the historical onboarding exception cannot
+select a different commit. With no input, current main is used. It reads the shared version
 from `Cargo.toml`, and creates a GitHub prerelease with the DMG, its SHA-256 and
 a Sparkle ZIP. Mac and Linux packages and PostHog records use exactly that version;
 0.22.1 advances Linux from 0.3.13 and Mac from 0.21.1. Bump the package version
