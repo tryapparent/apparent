@@ -262,24 +262,68 @@ func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint, desce
     return nil
 }
 
+func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any]? {
+    func children(_ element: AXUIElement, _ attribute: String, limit: Int) throws -> [AXUIElement] {
+        var count: CFIndex = 0
+        let result = AXUIElementGetAttributeValueCount(element, attribute as CFString, &count)
+        if result == .attributeUnsupported || result == .noValue { return [] }
+        try need(result == .success && count >= 0 && count <= limit, "Owned accessibility tree exceeds its bound or is unavailable")
+        if count == 0 { return [] }
+        var raw: CFArray?
+        try need(AXUIElementCopyAttributeValues(element, attribute as CFString, 0, count, &raw) == .success,
+            "Could not read bounded owned accessibility children")
+        guard let values = raw as? [AXUIElement], values.count == count else { throw Refusal(message: "Invalid owned accessibility children") }
+        return values
+    }
+    let application = AXUIElementCreateApplication(expected.pid)
+    try need(AXUIElementSetMessagingTimeout(application, 0.2) == .success, "Could not bound owned accessibility tree")
+    var queue = try children(application, kAXWindowsAttribute, limit: 4).map { ($0, 0) }
+    var seen: [AXUIElement] = [], matches: [[String: Any]] = []
+    while !queue.isEmpty {
+        try withinBudget()
+        let (element, depth) = queue.removeFirst()
+        if seen.contains(where: { CFEqual($0, element) }) { continue }
+        try need(seen.count < 128 && depth <= 12, "Owned accessibility tree exceeds its traversal bound")
+        seen.append(element)
+        var pid: pid_t = -1
+        try need(AXUIElementGetPid(element, &pid) == .success && descendants.contains(pid), "Accessibility tree contains an unowned receiver")
+        try need(AXUIElementSetMessagingTimeout(element, 0.2) == .success, "Could not bound owned accessibility element")
+        var role: CFTypeRef?
+        try need(AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role) == .success, "Owned accessibility role unavailable")
+        if depth == 0 {
+            var title: CFTypeRef?, position: CFTypeRef?, size: CFTypeRef?
+            _ = AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &title)
+            guard pid == expected.pid, role as? String == (kAXWindowRole as String), title as? String == "Apparent recording controls" else { continue }
+            try need(AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &position) == .success &&
+                AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &size) == .success, "Owned pill accessibility geometry unavailable")
+            guard let position, let size, CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID() else { throw Refusal(message: "Invalid owned pill accessibility geometry") }
+            let p = position as! AXValue, s = size as! AXValue
+            var origin = CGPoint.zero, dimensions = CGSize.zero
+            try need(AXValueGetType(p) == .cgPoint && AXValueGetValue(p, .cgPoint, &origin) &&
+                AXValueGetType(s) == .cgSize && AXValueGetValue(s, .cgSize, &dimensions) &&
+                CGRect(origin: origin, size: dimensions) == expected.rect, "Owned accessibility window differs from mapped pill")
+        }
+        if role as? String == (kAXButtonRole as String),
+           let identity = try buttonIdentity(element, label: label, point: point, descendants: descendants) { matches.append(identity) }
+        let next = try children(element, kAXChildrenAttribute, limit: 128 - seen.count - queue.count)
+        try need(next.isEmpty || depth < 12, "Owned accessibility tree exceeds its depth bound")
+        queue.append(contentsOf: next.map { ($0, depth + 1) })
+    }
+    try need(matches.count <= 1, "Owned accessibility button is ambiguous")
+    return matches.first
+}
+
 func preparePillAccessibility(_ req: [String: Any], _ expected: Pill, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any] {
     _ = try currentPill(req, expected)
     let frontBefore = frontPID()
     try admitPillAccessibility(expected)
     // Electron 45 debounces this request for two seconds. A read-only bootstrap
     // uses the helper's existing eight-second budget; input keeps its 1.5s cap.
-    let system = AXUIElementCreateSystemWide()
-    try need(AXUIElementSetMessagingTimeout(system, 0.2) == .success, "Could not bound accessibility readiness")
     while true {
         try withinBudget()
-        var target: AXUIElement?
-        let result = AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &target)
-        if result == .success, let target {
-            var pid: pid_t = -1
-            let pidResult = AXUIElementGetPid(target, &pid)
-            clickTrace?.add(["stage":"accessibilityHit", "pid":Int(pid), "result":pidResult.rawValue])
-            if pidResult == .success && descendants.contains(pid),
-               let identity = try buttonIdentity(target, label: label, point: point, descendants: descendants) {
+        // Before hover the native panel is intentionally click-through. Tree
+        // readiness is not a physical-hit assertion; click checks that separately.
+        if let identity = try ownedAccessibilityButton(expected, label: label, point: point, descendants: descendants) {
                 _ = try currentPill(req, expected)
                 try need(frontPID() == frontBefore, "Foreground drift during accessibility bootstrap")
                 try withinBudget()
@@ -287,9 +331,6 @@ func preparePillAccessibility(_ req: [String: Any], _ expected: Pill, label: Str
                 clickTrace?.add(["stage":"accessibilityReady", "receiver":identity])
                 try clickTrace?.requireComplete()
                 return identity
-            }
-        } else if result != .cannotComplete && result != .noValue {
-            throw Refusal(message: "Accessibility readiness hit query failed")
         }
         Thread.sleep(forTimeInterval: 0.025)
     }

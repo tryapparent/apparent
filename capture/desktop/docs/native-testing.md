@@ -453,6 +453,10 @@ screenshot and input, and preserves the scene's foreground.
 Before any input, a separate read-only bootstrap requests Electron's documented
 [`AXManualAccessibility`](https://www.electronjs.org/docs/latest/tutorial/accessibility)
 tree for the exact verified pill process and waits for the actual named button.
+It reads the bounded owned window tree, matching its title and native geometry.
+The Mac panel is click-through before hover, so global point hit-testing is not
+a renderer-readiness test. Actual clicks still move the pointer and require the
+exact global hit receiver immediately before input.
 Electron 45 debounces this request for two seconds; the bootstrap uses the
 helper's existing eight-second budget. Subsequent input retains its 1.5-second
 hit-readiness deadline and never repeats the accessibility request. An unexposed
