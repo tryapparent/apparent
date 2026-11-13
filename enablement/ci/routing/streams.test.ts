@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {YAML} from 'bun';
 import {routeDecision, unownedPaths, routingProblems} from './consumers.ts';
-import {selectRange, requiresMacRustRange} from '../select.ts';
+import {selectRange, requiresMacRust, requiresMacRustRange} from '../select.ts';
 import {selection as localSelection, commands as localCommands, onboardingCommands} from '../../local-tests/run.ts';
 import {affectsStream, currentStream, streamPaths, type Stream} from './streams.ts';
 
@@ -32,9 +32,10 @@ test('Connect consent dependencies add onboarding proof without dropping native 
       assert.deepEqual(local.plan, hosted.plan); assert.deepEqual(local.reasons, hosted.reasons);
       assert.equal(hosted.plan.onboarding, true, path); assert.equal(hosted.plan.desktop, true, path);
       assert.equal(hosted.plan.root, true, 'real transport and persistence integration remain selected');
-      assert.equal(hosted.macos, true); assert.equal(requiresMacRustRange(base, head, cwd), true);
+      assert.equal(hosted.macos, true); assert.equal(requiresMacRust(hosted.paths, []), true);
       assert.equal(hosted.plan.public, false); assert.equal(hosted.plan.hermes, false);
     }
+    assert.equal(requiresMacRust([frontend + 'src/storage.tsx'], []), false, 'negative control for the native boundary');
     git('reset', '--hard', base); put(frontend + 'src/connect/unknown.ts', 'export const value = 1;');
     git('add', '.'); git('commit', '-qm', 'new boundary');
     const boundary = selectRange(base, git('rev-parse', 'HEAD'), cwd);
