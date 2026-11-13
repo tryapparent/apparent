@@ -35,6 +35,12 @@ held-button/identity checks, drag clamping and exact-window pinning. The child
 alone moves/remaps its Electron surface; Rust never remaps it concurrently.
 The child also reconciles its X11 input stacking without taking focus.
 The pill shows and hides immediately, without CSS animation or a spring/morph.
+Recovery samples the owned process before closing it and records pipe-stop
+codes, readiness/activation observations and the last flushed phase/revision.
+An unhealthy transport is distinct from an observed OS exit. Electron stderr
+records bounded termination reasons and relative timing, without parent frames,
+capture labels, paths or error text. These observations do not change deadlines,
+action admission or fallback.
 Each new semantic snapshot is laid out before a hidden window becomes visible.
 Clock and microphone snapshots do not request layout; a ResizeObserver handles
 actual content/font size changes. The host has no periodic layout measurement.

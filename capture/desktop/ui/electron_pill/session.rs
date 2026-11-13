@@ -1,7 +1,9 @@
 //! Bounded, parent-owned stdio transport. Rendering cannot own capture lifetime.
 use super::{Command as Action, View};
+mod diagnostics;
+use diagnostics::{Observation, ReaderStop, WriterStop};
 use std::{
-    io::{BufRead, Read, Write},
+    io::Write,
     path::PathBuf,
     process::{Command, Stdio},
     sync::{
@@ -28,6 +30,7 @@ pub struct Session {
     activation: Option<Instant>,
     actions: flume::Receiver<(Instant, Action)>,
     alive: Arc<AtomicBool>,
+    observation: Arc<Mutex<Observation>>,
     ready: Arc<AtomicBool>,
     hovered: Arc<AtomicBool>,
     moved: Arc<AtomicBool>,
@@ -38,7 +41,6 @@ pub struct Session {
     generation: u64,
     selection: Selection,
     window_id: Arc<AtomicU32>,
-    #[cfg(target_os = "linux")]
     child_pid: u32,
     #[cfg(all(test, target_os = "linux"))]
     pin: Arc<AtomicBool>,
@@ -100,9 +102,9 @@ impl Session {
             .spawn()?;
         let mut stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
-        #[cfg(target_os = "linux")]
         let child_pid = child.id();
         let alive = Arc::new(AtomicBool::new(true));
+        let observation = Arc::new(Mutex::new(Observation::default()));
         let ready = Arc::new(AtomicBool::new(false));
         let window_id = Arc::new(AtomicU32::new(0));
         let identified = window_id.clone();
@@ -111,8 +113,9 @@ impl Session {
         let mailbox = Arc::new((Mutex::new(Mailbox::default()), Condvar::new()));
         let outgoing = mailbox.clone();
         let writing = alive.clone();
+        let write_observation = observation.clone();
         std::thread::spawn(move || {
-            loop {
+            let stopped = 'writer: loop {
                 let (lock, wake) = &*outgoing;
                 let mut pending = lock.lock().unwrap();
                 while !pending.closed
@@ -124,7 +127,7 @@ impl Session {
                     pending = wake.wait(pending).unwrap();
                 }
                 if pending.closed {
-                    break;
+                    break WriterStop::OwnerClosed;
                 }
                 let state = pending.state.take();
                 let place = pending.place.take();
@@ -139,20 +142,27 @@ impl Session {
                     .into_iter())
                     .chain(state)
                     .chain(activate.then(|| serde_json::json!({"type":"activate"})));
-                let mut failed = false;
                 for message in messages {
-                    if serde_json::to_writer(&mut stdin, &message).is_err()
-                        || stdin.write_all(b"\n").is_err()
-                        || stdin.flush().is_err()
+                    if serde_json::to_writer(&mut stdin, &message).is_err() {
+                        break 'writer WriterStop::FrameWrite;
+                    }
+                    if stdin.write_all(b"\n").is_err() {
+                        break 'writer WriterStop::NewlineWrite;
+                    }
+                    if stdin.flush().is_err() {
+                        break 'writer WriterStop::Flush;
+                    }
+                    if message.get("type").and_then(|v| v.as_str()) == Some("state")
+                        && let (Some(phase), Some(revision)) = (
+                            message.pointer("/view/phase").and_then(|v| v.as_str()),
+                            message.pointer("/view/revision").and_then(|v| v.as_u64()),
+                        )
                     {
-                        failed = true;
-                        break;
+                        write_observation.lock().unwrap().wrote_state(phase, revision);
                     }
                 }
-                if failed {
-                    break;
-                }
-            }
+            };
+            write_observation.lock().unwrap().writer_stop = Some(stopped);
             writing.store(false, Ordering::Release);
         });
         let activated = Arc::new(AtomicBool::new(false));
@@ -169,27 +179,30 @@ impl Session {
         #[cfg(target_os = "linux")]
         let pin_diagnostics = pin_context.clone();
         let reading = alive.clone();
+        let read_observation = observation.clone();
         let mounted = ready.clone();
         std::thread::spawn(move || {
             let mut reader = std::io::BufReader::new(stdout);
             #[cfg(target_os = "linux")]
             let mut motion_rule = None;
-            loop {
-                let mut line = Vec::new();
-                // Bound each read before allocation; a malformed child cannot grow this queue.
-                let result = reader.by_ref().take(1025).read_until(b'\n', &mut line);
-                if !matches!(result, Ok(1..=1024)) || !line.ends_with(b"\n") {
-                    break;
-                }
+            let stopped = loop {
+                let line = match diagnostics::read_frame(&mut reader) {
+                    Ok(line) => line,
+                    Err(reason) => break reason,
+                };
                 if line == b"{\"activated\":true}\n" {
                     acknowledged.store(true, Ordering::Release);
                     continue;
                 }
-                if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&line) {
+                {
+                    let value = match serde_json::from_slice::<serde_json::Value>(&line) {
+                        Ok(value) => value,
+                        Err(_) => break ReaderStop::InvalidJson,
+                    };
                     if let Some(frame_value) = value.get("frame") {
-                        let Some(revision) = value.get("revision").and_then(|v| v.as_u64()) else { break; };
-                        let Ok(rect) = serde_json::from_value::<[f64; 4]>(frame_value.clone()) else { break; };
-                        if !rect.iter().all(|v| v.is_finite()) || rect[2] <= 0.0 || rect[3] <= 0.0 { break; }
+                        let Some(revision) = value.get("revision").and_then(|v| v.as_u64()) else { break ReaderStop::InvalidFrame; };
+                        let Ok(rect) = serde_json::from_value::<[f64; 4]>(frame_value.clone()) else { break ReaderStop::InvalidFrame; };
+                        if !rect.iter().all(|v| v.is_finite()) || rect[2] <= 0.0 || rect[3] <= 0.0 { break ReaderStop::InvalidFrame; }
                         *frame_readback.lock().unwrap() = Some((revision, rect));
                         continue;
                     }
@@ -213,7 +226,7 @@ impl Session {
                             .and_then(|v| u32::try_from(v).ok())
                             .filter(|v| *v != 0)
                         else {
-                            break;
+                            break ReaderStop::InvalidWindowId;
                         };
                         identified.store(id, Ordering::Release);
                         #[cfg(target_os = "linux")]
@@ -227,7 +240,7 @@ impl Session {
                                     crate::capture::engine::runtime::apparent_log(format!("Pill motion preparation failed: {error:#}"));
                                     // Even a partial registration must be retired.
                                     motion_rule = Some(id);
-                                    break;
+                                    break ReaderStop::PinPreparation;
                                 }
                             }
                         }
@@ -244,12 +257,15 @@ impl Session {
                     }
                 }
                 let Ok(command) = serde_json::from_slice::<Action>(&line) else {
-                    break;
+                    break ReaderStop::InvalidCommand;
                 };
-                if commands.try_send((Instant::now(), command)).is_err() {
-                    break;
+                match commands.try_send((Instant::now(), command)) {
+                    Ok(()) => {},
+                    Err(flume::TrySendError::Full(_)) => break ReaderStop::ActionQueueFull,
+                    Err(flume::TrySendError::Disconnected(_)) => break ReaderStop::ActionQueueClosed,
                 }
-            }
+            };
+            read_observation.lock().unwrap().reader_stop = Some(stopped);
             reading.store(false, Ordering::Release);
             #[cfg(target_os = "linux")]
             if let Some(id) = motion_rule {
@@ -264,6 +280,7 @@ impl Session {
             activation: None,
             actions,
             alive,
+            observation,
             ready,
             hovered,
             moved,
@@ -274,7 +291,6 @@ impl Session {
             generation,
             selection,
             window_id,
-            #[cfg(target_os = "linux")]
             child_pid,
             #[cfg(all(test, target_os = "linux"))]
             pin: pin_request.clone(),
@@ -355,6 +371,26 @@ impl Session {
             && self.activation.is_none_or(|since| {
                 self.activated.load(Ordering::Acquire) || since.elapsed() < Duration::from_secs(1)
             })
+    }
+    /// Sample before recovery drops/kills the exact owned child. These are
+    /// observations only; the existing health and dispatch gates stay authoritative.
+    pub(super) fn failure_context(&mut self) -> serde_json::Value {
+        let child = self.child.as_mut().map(|child| diagnostics::child_status(child.try_wait()));
+        serde_json::json!({
+            "pid": self.child_pid,
+            "child": child,
+            "alive": self.alive.load(Ordering::Acquire),
+            "ready": self.ready(),
+            "age_ms": self.opened.elapsed().as_millis(),
+            "activation_ack": self.activated.load(Ordering::Acquire),
+            "activation_age_ms": self.activation.map(|at| at.elapsed().as_millis()),
+            "last_queued_state": {
+                "phase": diagnostics::known_phase(self.view.phase),
+                "revision": self.view.revision,
+                "age_ms": self.sent.elapsed().as_millis(),
+            },
+            "pipe": self.observation.lock().unwrap().snapshot(),
+        })
     }
     pub fn ready(&self) -> bool {
         self.ready.load(Ordering::Acquire)

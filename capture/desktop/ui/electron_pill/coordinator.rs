@@ -85,10 +85,14 @@ impl ApparentCoordinator {
             .as_ref()
             .is_some_and(|session| !session.healthy())
         {
+            // Preserve the real transport/readiness/process state before Drop
+            // closes the pipe and starts owned-child cleanup.
+            let failure = self.electron_pill.as_mut().map(Session::failure_context);
+            apparent_log(format!("Electron recording controls unhealthy; restoring native controls: {}",
+                serde_json::json!({"failure":failure})));
             self.electron_pill.take();
             self.electron_pill_failed = true;
             self.electron_pill_routed = false;
-            apparent_log("Electron recording controls exited; restoring native controls");
             let coordinator = cx.entity().clone();
             if !matches!(self.island_phase, IslandPhase::Hidden | IslandPhase::Dismissing) {
                 cx.defer(move |cx| super::super::super::ensure_hud_pill_open(&coordinator, cx));

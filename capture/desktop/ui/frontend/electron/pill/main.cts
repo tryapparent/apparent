@@ -13,6 +13,15 @@ nativeTheme.themeSource='system';
 const page=pathToFileURL(path.join(__dirname,'../../dist/pill/index.html')).href;
 let window,current=null,buffer='',pending=false,loaded=false,placed=false,activated=false,pendingPlace=null;
 let lastInput=Date.now(),hovered=false,expected=null,rendererReady=false,readySent=false,renderDeadline=Date.now()+5000,pasteGesture=null,lastFrame='',lastRaise=0;
+const diagnostics=require('./diagnostics.cjs');
+function diagnosticSnapshot(){
+ const now=Date.now(),stateAge=current?Math.max(0,Math.min(86400000,now-lastInput)):null;
+ return {pid:process.pid,phase:current?.phase??null,revision:current?.revision??null,rendererReady,activated,loaded,
+   stateAgeMs:stateAge,renderReadinessDeadlineRemainingMs:Math.max(0,Math.min(5000,renderDeadline-now))};
+}
+function fail(reason,detail){diagnostics.writePillDiagnostic(reason,diagnosticSnapshot(),detail);app.exit(1);}
+function note(reason,detail){diagnostics.writePillDiagnostic(reason,diagnosticSnapshot(),detail);}
+process.on('uncaughtExceptionMonitor',()=>note('uncaught_exception'));
 function position(bounds){
  const next={...window.getBounds(),...bounds};
  const area=screen.getDisplayMatching(next).workArea;
@@ -55,7 +64,7 @@ function valid(event,args){
 process.stdin.setEncoding('utf8');
 process.stdin.on('data',chunk=>{
   buffer+=chunk;
-  if(Buffer.byteLength(buffer)>65536){app.exit(1);return;}
+  if(Buffer.byteLength(buffer)>65536){fail('invalid_parent_frame',{frameCode:'oversize'});return;}
   let end;
   while((end=buffer.indexOf('\n'))>=0){
     const line=buffer.slice(0,end);buffer=buffer.slice(end+1);
@@ -78,11 +87,11 @@ process.stdin.on('data',chunk=>{
           }
         }
       }else throw Error('Invalid parent message');
-    }catch{app.exit(1);}
+    }catch{fail('invalid_parent_frame',{frameCode:'malformed'});}
   }
 });
-process.stdin.on('end',()=>app.quit());
-process.stdin.on('error',()=>app.quit());
+process.stdin.on('end',()=>{if(buffer.length)note('invalid_parent_frame',{frameCode:'truncated'});else note('parent_stream_end');app.quit();});
+process.stdin.on('error',()=>{note('parent_stream_error');app.quit();});
 app.whenReady().then(()=>{
   Menu.setApplicationMenu(null);
   if(process.platform==='darwin')app.setActivationPolicy('accessory');
@@ -101,7 +110,8 @@ app.whenReady().then(()=>{
   window.webContents.on('will-navigate',event=>event.preventDefault());
   window.webContents.on('will-attach-webview',event=>event.preventDefault());
   window.webContents.on('page-title-updated',event=>event.preventDefault());
-  window.webContents.on('render-process-gone',()=>app.exit(1));
+  window.webContents.on('render-process-gone',(_event,details)=>fail('renderer_gone',{
+    rendererReason:details?.reason,exitCode:details?.exitCode}));
   window.webContents.on('did-start-loading',()=>{loaded=false;pending=false;rendererReady=false;pasteGesture=null;renderDeadline=Date.now()+5000;});
   ipcMain.handle('pill:read',(event,...args)=>{valid(event,args);return current;});
   ipcMain.handle('pill:act',(event,revision,action,drop=false,...args)=>{
@@ -130,7 +140,7 @@ app.whenReady().then(()=>{
   let appliedShape=null,visibleWidth=0;
   async function measure(revision){
     if(!loaded || window.isDestroyed())return;
-    if(current?.phase!=='hidden' && Date.now()-lastInput>5000){app.exit(1);return;}
+    if(current?.phase!=='hidden' && Date.now()-lastInput>5000){fail('parent_state_timeout');return;}
     try{
       const area=screen.getDisplayMatching(window.getBounds()).workArea;
       const size=await window.webContents.executeJavaScript(`(() => {document.documentElement.style.setProperty('--pill-limit', '${area.width}px');const element=document.querySelector('main'),rect=element?.getBoundingClientRect();return rect && {width:Math.ceil(rect.width),height:Math.ceil(rect.height),revision:Number(element.dataset.revision)};})()`);
@@ -154,11 +164,11 @@ app.whenReady().then(()=>{
         if(resized)window.webContents.invalidate();
       }
       return size.revision===current?.revision;
-    }catch{app.exit(1);}
+    }catch{fail('layout_measurement_exception');}
   }
   const watchdog=setInterval(()=>{
-    if(!rendererReady && Date.now()>renderDeadline){app.exit(1);return;}
-    if(current?.phase!=='hidden' && Date.now()-lastInput>5000)app.exit(1);
+    if(!rendererReady && Date.now()>renderDeadline){fail('render_readiness_timeout');return;}
+    if(current?.phase!=='hidden' && Date.now()-lastInput>5000)fail('parent_state_timeout');
   },500);
   ipcMain.handle('pill:layout',async(event,revision,...args)=>{
     valid(event,args);
@@ -170,7 +180,7 @@ app.whenReady().then(()=>{
       rendererReady=true;
       if(!readySent){
         const windowId=Number(window.getMediaSourceId().match(/^window:(\d+):\d+$/)?.[1]);
-        if(!Number.isSafeInteger(windowId) || windowId<=0 || windowId>0xffffffff){app.exit(1);return;}
+        if(!Number.isSafeInteger(windowId) || windowId<=0 || windowId>0xffffffff){fail('invalid_native_window_identity');return;}
         if(process.platform==='linux')window.setTitle('Apparent Recording Controls '+windowId.toString(16));
         readySent=true;emit({ready:true,windowId});
       }
@@ -206,7 +216,7 @@ app.whenReady().then(()=>{
     if(pasteGesture && Date.now()>pasteGesture.until)pasteGesture=null;
     if(process.platform==='darwin')window.setIgnoreMouseEvents(!inside && !pasteGesture,{forward:true});
   },16);
-  window.on('closed',()=>{clearInterval(watchdog);clearInterval(pointerTimer);app.quit();});
+  window.on('closed',()=>{note('window_closed');clearInterval(watchdog);clearInterval(pointerTimer);app.quit();});
   window.on('show',reportFrame);
   window.on('move',reportFrame);
   window.on('resize',reportFrame);
