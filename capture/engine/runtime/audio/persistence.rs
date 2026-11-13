@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, ensure};
+use crate::capture::engine::runtime::recording::diagnostics::{Diagnose, Stage};
 
 const RATE: usize = 16_000;
 const HISTORY: usize = 60 * RATE;
@@ -238,14 +239,15 @@ impl Writer {
         if let Some(worker) = self.worker.take() {
             worker
                 .join()
-                .map_err(|_| anyhow!("Narration writer panicked"))??;
+                .map_err(|_| anyhow!("Narration writer panicked"))
+                .stage(Stage::AudioWriterJoin)??;
         }
         Ok(())
     }
     pub fn finish(&mut self) -> Result<(Vec<u8>, Arc<Lease>)> {
         self.join().context(SaveFailure)?;
         Ok((
-            std::fs::read(&self.path).context(SaveFailure)?,
+            std::fs::read(&self.path).context(SaveFailure).stage(Stage::AudioWriterRead)?,
             Arc::clone(&self.lease),
         ))
     }
@@ -270,14 +272,16 @@ fn write_stream(
         let bytes: Vec<u8> = {
             let buffer = samples
                 .lock()
-                .map_err(|_| anyhow!("Narration buffer poisoned"))?;
-            ensure!(
-                buffer.len().saturating_sub(written) <= MAX_BACKLOG,
-                "Narration disk writer fell more than two seconds behind"
-            );
+                .map_err(|_| anyhow!("Narration buffer poisoned"))
+                .stage(Stage::AudioSampleState)?;
+            if buffer.len().saturating_sub(written) > MAX_BACKLOG {
+                return Err(anyhow!("Narration disk writer fell more than two seconds behind"))
+                    .stage(Stage::AudioWriterBacklog);
+            }
             buffer
                 .get(written..)
-                .context("Narration history expired")?
+                .context("Narration history expired")
+                .stage(Stage::AudioWriterHistory)?
                 .iter()
                 .flat_map(|&s| super::audio::pcm16(s).to_le_bytes())
                 .collect()
@@ -285,16 +289,17 @@ fn write_stream(
         let data_len = written
             .checked_mul(2)
             .and_then(|n| n.checked_add(bytes.len()))
-            .context("Narration length overflow")?;
-        ensure!(
-            data_len <= u32::MAX as usize - 36,
-            "Narration exceeds WAV size limit"
-        );
-        file.write_all(&bytes)?;
+            .context("Narration length overflow")
+            .stage(Stage::AudioWriterLength)?;
+        if data_len > u32::MAX as usize - 36 {
+            return Err(anyhow!("Narration exceeds WAV size limit"))
+                .stage(Stage::AudioWriterLength);
+        }
+        file.write_all(&bytes).map_err(anyhow::Error::from).stage(Stage::AudioWriterWrite)?;
         written += bytes.len() / 2;
         // File is unbuffered: every batch reaches the kernel, independent of header updates.
         if stopping || synced.elapsed() >= SYNC {
-            checkpoint(file, (written * 2) as u32)?;
+            checkpoint(file, (written * 2) as u32).stage(Stage::AudioWriterCheckpoint)?;
             synced = Instant::now();
         }
         if stopping {

@@ -6,6 +6,7 @@ pub(super) struct Diagnostics {
     stages: Vec<Frame>,
     io_kind: Option<&'static str>,
     os_error_code: Option<i32>,
+    wav_error_kind: Option<&'static str>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -20,6 +21,7 @@ impl Diagnostics {
         let mut stages = Vec::new();
         let mut io_kind = None;
         let mut os_error_code = None;
+        let mut wav_error_kind = None;
         // Also bound traversal for unexpected/cyclic dependency error chains.
         for cause in error.chain().take(64) {
             if let Some(failure) = cause.downcast_ref::<Failure>() {
@@ -32,8 +34,26 @@ impl Diagnostics {
                     line: failure.location.line(),
                 });
             }
+            let wav_error = cause.downcast_ref::<hound::Error>();
+            if wav_error_kind.is_none() {
+                wav_error_kind = wav_error.map(|error| match error {
+                    hound::Error::IoError(_) => "io",
+                    hound::Error::FormatError(_) => "format",
+                    hound::Error::TooWide => "too_wide",
+                    hound::Error::UnfinishedSample => "unfinished_sample",
+                    hound::Error::Unsupported => "unsupported",
+                    hound::Error::InvalidSampleFormat => "invalid_sample_format",
+                });
+            }
             if io_kind.is_none() {
-                if let Some(error) = cause.downcast_ref::<std::io::Error>() {
+                // hound 3.5 exposes its I/O cause only through legacy cause(),
+                // not source(). Preserve the structured cause without formatting
+                // the WAV error or traversing arbitrary deprecated causes.
+                let io_error = cause.downcast_ref::<std::io::Error>().or_else(|| match wav_error {
+                    Some(hound::Error::IoError(error)) => Some(error),
+                    _ => None,
+                });
+                if let Some(error) = io_error {
                     use std::io::ErrorKind;
                     io_kind = Some(match error.kind() {
                         ErrorKind::NotFound => "not_found",
@@ -58,6 +78,7 @@ impl Diagnostics {
             stages,
             io_kind,
             os_error_code,
+            wav_error_kind,
         }
     }
 

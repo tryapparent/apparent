@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use super::persistence::{Samples, Writer};
+use crate::capture::engine::runtime::recording::diagnostics::{Diagnose, Stage};
 
 const SAMPLE_RATE: u32 = 16_000;
 
@@ -388,20 +389,25 @@ impl AudioRecorder {
         let error = self
             .error
             .lock()
-            .map_err(|_| anyhow!("Microphone error lock poisoned"))?
+            .map_err(|_| anyhow!("Microphone error lock poisoned"))
+            .stage(Stage::AudioErrorState)?
             .take();
         let (wav_bytes, saved_lease) = if let Some(mut writer) = self.writer.take() {
             let (bytes, lease) = writer.finish()?;
             (bytes, Some(lease))
         } else {
-            (encode_wav_16k(self.samples.lock().map_err(|_| anyhow!("Microphone buffer lock poisoned"))?.recent())?, None)
+            let samples = self.samples.lock()
+                .map_err(|_| anyhow!("Microphone buffer lock poisoned"))
+                .stage(Stage::AudioSampleState)?;
+            (encode_wav_16k(samples.recent())?, None)
         };
         let sample_count = wav_16k_reader(&wav_bytes)?.duration() as usize;
         // Check saving even if input failed. A save failure must not become successful silence.
         if let Err(error) = input_result {
             crate::capture::engine::runtime::apparent_log(format!("Microphone unavailable: {error:#}; retaining narration ownership through finalization"));
         }
-        self.samples.lock().map_err(|_| anyhow!("Microphone buffer lock poisoned"))?.clear();
+        self.samples.lock().map_err(|_| anyhow!("Microphone buffer lock poisoned"))
+            .stage(Stage::AudioSampleState)?.clear();
         // An overload, or a device unplugged partway, keeps what was heard before it.
         if let Some(error) = error {
             crate::capture::engine::runtime::apparent_log(format!("Microphone: {error}; keeping what it heard"));
@@ -534,15 +540,17 @@ pub fn decode_wav_pcm16(wav_bytes: &[u8]) -> Result<Vec<i16>> {
 }
 
 fn wav_16k_reader(wav_bytes: &[u8]) -> Result<hound::WavReader<Cursor<&[u8]>>> {
-    let reader = hound::WavReader::new(Cursor::new(wav_bytes))?;
+    let reader = hound::WavReader::new(Cursor::new(wav_bytes))
+        .map_err(anyhow::Error::from).stage(Stage::AudioWavRead)?;
     let spec = reader.spec();
-    ensure!(
-        spec.sample_rate == SAMPLE_RATE
-            && spec.channels == 1
-            && spec.bits_per_sample == 16
-            && spec.sample_format == hound::SampleFormat::Int,
-        "Expected 16 kHz mono 16-bit audio"
-    );
+    if !(spec.sample_rate == SAMPLE_RATE
+        && spec.channels == 1
+        && spec.bits_per_sample == 16
+        && spec.sample_format == hound::SampleFormat::Int)
+    {
+        return Err(anyhow!("Expected 16 kHz mono 16-bit audio"))
+            .stage(Stage::AudioWavFormat);
+    }
     Ok(reader)
 }
 
@@ -619,13 +627,13 @@ pub fn encode_wav_16k(samples_16k: &[f32]) -> Result<Vec<u8>> {
                 bits_per_sample: 16,
                 sample_format: hound::SampleFormat::Int,
             },
-        )?;
+        ).map_err(anyhow::Error::from).stage(Stage::AudioWavEncode)?;
         let mut i16_writer = writer.get_i16_writer(samples_16k.len() as u32);
         for &sample in samples_16k {
             i16_writer.write_sample(pcm16(sample));
         }
-        i16_writer.flush()?;
-        writer.finalize()?;
+        i16_writer.flush().map_err(anyhow::Error::from).stage(Stage::AudioWavEncode)?;
+        writer.finalize().map_err(anyhow::Error::from).stage(Stage::AudioWavEncode)?;
     }
     Ok(bytes.into_inner())
 }
