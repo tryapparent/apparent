@@ -117,9 +117,15 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
     try {return /\b(?:import|require)\b|\bexport\s+[^;]*\bfrom\s*['"]/.test(git(['show', head + ':' + path], cwd));}
     catch {return true;}
   }) ?? [];
-  const toolingManifests = new Set(['package.json', 'package-lock.json'].map(name => 'capture/desktop/ui/frontend/tests/onboarding/' + name));
-  const supportedToolingAddition = (change: Change) => toolingManifests.has(change.path) && change.status === 'A' && regularFileChange(change);
-  const changedOnboardingBoundary = delta?.filter(change => change.path.startsWith('capture/desktop/') && onboardingInput(change.path) && unsupported(change) && !supportedToolingAddition(change)).map(change => change.path) ?? [];
+  const supportedOnboardingTestInputs = new Set([
+    'capture/desktop/ui/frontend/tests/onboarding/package.json',
+    'capture/desktop/ui/frontend/tests/onboarding/package-lock.json',
+    'capture/desktop/ui/frontend/tests/onboarding/renderer/window-coach.smoke.ts',
+    'capture/desktop/ui/frontend/tests/onboarding/renderer/tsconfig.json',
+  ]);
+  const supportedOnboardingTestAddition = (change: Change) => supportedOnboardingTestInputs.has(change.path) &&
+    change.status === 'A' && regularFileChange(change);
+  const changedOnboardingBoundary = delta?.filter(change => change.path.startsWith('capture/desktop/') && onboardingInput(change.path) && unsupported(change) && !supportedOnboardingTestAddition(change)).map(change => change.path) ?? [];
   const unsafe = changedOnboardingBoundary.length > 0 || (delta?.some(change => !regularFileChange(change)) ?? false) || changedPolicyImports.length > 0;
   const effective = unsafe ? null : paths;
   const workflowControls = !conservativeWorkflows && effective?.length ? workflowControlPaths(base, head, effective, cwd) : [];
