@@ -390,7 +390,9 @@ export class PickerProcess {
           this.child.stderr.on('data', chunk => { this.stderr = (this.stderr + chunk).slice(-8192); });
           this.child.on('error', error => this.abort(`Picker process failed: ${error.message}`));
           this.child.stdin.on('error', error => this.abort(`Picker input failed: ${error.message}`));
-          this.child.once('exit', () => this.abort('Picker process exited'));
+          // exit may precede the final pipe reads; close follows both streams.
+          this.child.once('close', (code, signal) => this.abort(
+            `Picker process exited (code ${code}, signal ${signal})${this.stderr.trim() ? ': ' + this.stderr.trim() : ''}`));
         }
         this.stats.requests++;
         this.child.stdin.write(frame);

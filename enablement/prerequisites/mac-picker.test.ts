@@ -527,6 +527,7 @@ rl.on('line', line => {
  const {id,args}=JSON.parse(line), op=args[2];
  if(op==='hang')return;
  if(op==='exit'){process.exit(2);return;}
+ if(op==='stderr-exit'){process.stderr.write('synthetic interpreter failure',()=>process.exit(7));return;}
  if(op==='malformed'){process.stdout.write('not json\\n');return;}
  if(op==='oversized'){process.stdout.write('x'.repeat(65537));return;}
  const reply={id:op==='bad-id'?id+1:id,ok:op!=='error',value:args[1],error:'Owned picker not ready'};
@@ -559,6 +560,12 @@ test('a native readiness error is reported without replay or interpreter restart
  await assert.rejects(driver.request(pickerArgs('error'),5000),/Owned picker not ready/);
  assert.equal(await driver.request(pickerArgs('inspect'),5000),'/synthetic/path');
  assert.deepEqual(driver.stats,{starts:1,requests:2});
+});
+test('interpreter failure retains its exit status and final stderr in the reported error',async t=>{
+ const driver=pickerTransport(t);
+ await assert.rejects(driver.request(pickerArgs('stderr-exit'),5000),/code 7.*synthetic interpreter failure/);
+ await assert.rejects(driver.request(pickerArgs('cancel'),5000),/retired/);
+ assert.equal(driver.stats.requests,1);
 });
 for(const operation of ['bad-id','malformed','oversized','exit'])test(`picker rejects ${operation} and refuses further dispatch`,async t=>{
  const driver=pickerTransport(t);
