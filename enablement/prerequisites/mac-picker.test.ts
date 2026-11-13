@@ -109,6 +109,36 @@ test('runtime isolation preserves strict window identity and adds native bundle 
  assert.match(panelScript,/if observedPID is not targetPID then error "Owned AX process identifier differs; expectedPID="/);
  assert.doesNotMatch(panelScript,/Apparent Settings — About/,'The unrelated Settings window is never an admitted picker parent');
 });
+test('picker names use one local snapshot for missing-value checks and text conversion', () => {
+ // Hosted AX traces put several seconds in the old two-read name statement.
+ // This guards the remote-query contract; actual Mac execution remains required.
+ for(const script of [panelScript,persistentPanelScript]) {
+  assert.doesNotMatch(script,/if name of picker is not missing value/,
+   'A comparison must not issue another remote name read');
+  const selector=script.split('\n').filter(line=>!line.trimStart().startsWith('log ("AX probe source-line=')).join('\n');
+  assert.match(selector,/set (\w+) to name of picker\s+if \1 is not missing value then set panelName to \1 as text/,
+   'Normalize the same materialized value that was checked');
+ }
+});
+test('readiness evidence retains the original failure alongside subprocess diagnostics', async () => {
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const start=source.indexOf('  const poll ='),end=source.indexOf('  let env;',start);
+ assert.ok(start>=0&&end>start);
+ for(const stderr of ['', 'synthetic AX query trace']) {
+  const report:{readinessAttempts?:Record<string,Array<{detail:string}>>}={};
+  let now=0,calls=0;
+  const poll=new Function('report','budget','sleep','Date','performance','process',
+   source.slice(start,end)+'\nreturn poll;')(report,(cap:number)=>cap,
+   async()=>{now+=150;},{now:()=>now},{now:()=>now},{env:{}});
+  const original=Object.assign(new Error('Native picker command timed out; outcome unknown'),{stderr});
+  await assert.rejects(poll(async()=>{throw calls++===0?original:new Error('Picker driver is retired; no replay');},
+   'Native Change picker readiness',300),/Picker driver is retired/);
+  const attempts=report.readinessAttempts!['Native Change picker readiness'];
+  assert.ok(JSON.stringify(attempts[0]).includes(original.message),'Subprocess diagnostics must not hide the first failure');
+  if(stderr)assert.equal(attempts[0].detail,stderr,'Keep the original AX trace too');
+  assert.equal(attempts.at(-1)!.detail,'Picker driver is retired; no replay');
+ }
+});
 test('native focus retains the admitted app instance and rechecks identity after servicing AppKit', () => {
  // A new factory lookup after activation returned missing for the same live PID
  // in hosted receipts. Resolve once per command; this is a source contract, not

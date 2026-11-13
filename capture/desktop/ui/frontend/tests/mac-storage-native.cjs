@@ -250,6 +250,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
           const subprocess = error.stderr !== undefined ? error : error.cause;
           history.push({ elapsedMs: Math.round(performance.now() - tick),
             durationMs: Math.round(performance.now() - attempt),
+            message: String(error.message).slice(-2048),
             detail: String(subprocess?.stderr ?? error.message).slice(-2048),
             code: subprocess?.code ?? null, signal: subprocess?.signal ?? null });
         }
