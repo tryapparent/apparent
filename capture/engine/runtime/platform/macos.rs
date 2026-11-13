@@ -609,7 +609,7 @@ static SCREEN_PROBE_OK: AtomicBool = AtomicBool::new(false);
 static SCREEN_PROBE_AT: Mutex<Option<Instant>> = Mutex::new(None);
 
 /// Whether this copy of Apparent can capture the screen now: `CGPreflightScreenCaptureAccess`, or
-/// a ScreenCaptureKit capture that already worked here. With `probe` (only once a fresh helper
+/// a ScreenCaptureKit capture that already worked here. With `probe` (only once a fresh app process
 /// says Screen Recording is granted, so no prompt can come of it, and never on the UI thread) a
 /// stale preflight is checked with a real one-frame capture, at most every 2 s. Whether a grant
 /// reaches a running process this way on macOS 26 and 27 is what the probe finds out; when it
