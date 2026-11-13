@@ -46,6 +46,9 @@ no runtime dependencies and requires no Rust toolchain or cached native outputs.
 ## Delivery and adoption
 
 Engine delivery checks Linux and Mac artifacts independently of the legacy app.
+The native packages cover Linux x64 and arm64, plus Intel and Apple silicon Mac,
+matching the architectures of the existing application packages. Each architecture
+runs the same extracted-package and real-media qualification before publication.
 Successful main builds publish a commit-addressed prerelease; consumers must pin
 an exact artifact digest and compatible SDK. Producer publication does not
 activate an installed app or move its compatibility gates.
