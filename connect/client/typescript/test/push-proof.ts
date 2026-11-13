@@ -75,7 +75,16 @@ function push(label:string){
 }
 const accepted=push('accepted');assert.equal(accepted.status,0,accepted.output);
 assert.match(accepted.output,/> @apparent\/connect-crypto@.* test/);
-assert.match(accepted.output,/# tests 21\b/,'the real package test inventory ran');
+const testHeader=/> @apparent\/connect-crypto@[^\n]* test\r?\n/.exec(accepted.output);
+assert.ok(testHeader,'the real package test command ran');
+const summary=/^# tests (\d+)\r?\n# suites \d+\r?\n# pass (\d+)\r?\n# fail (\d+)\r?\n# cancelled (\d+)\r?\n# skipped (\d+)\r?\n/m.exec(accepted.output.slice(testHeader.index));
+assert.ok(summary,'the package reported its complete test result');
+const packageResult={tests:Number(summary[1]),passed:Number(summary[2]),failed:Number(summary[3]),cancelled:Number(summary[4]),skipped:Number(summary[5])};
+assert.ok(packageResult.tests>0);
+assert.equal(packageResult.passed,packageResult.tests);
+assert.equal(packageResult.failed,0);
+assert.equal(packageResult.cancelled,0);
+assert.equal(packageResult.skipped,0);
 assert.match(accepted.output,/> tsc --noEmit/,'the real typechecker ran');
 assert.equal(run('git',['--git-dir='+remote,'rev-parse','refs/heads/policy-proof']),good);
 const test='connect/client/typescript/test/foreground.test.ts';
@@ -89,7 +98,7 @@ assert.doesNotMatch(rejected.output,/pre-push: \[connect\/client\/typescript\] n
 assert.equal(run('git',['--git-dir='+remote,'rev-parse','refs/heads/policy-proof']),good,'failed push never updates remote');
 assert.ok(!existsSync(denied),'no forbidden PATH command was observed');
 const report={sourceSha,authorityBase,base,acceptedHead:good,localSelected:local.selected,hostedPlan:hosted.plan,
-  packageCommands,acceptedMs:accepted.elapsedMs,rejectedMs:rejected.elapsedMs,rejectedRemoteUnchanged:true,
+  packageCommands,packageResult,acceptedMs:accepted.elapsedMs,rejectedMs:rejected.elapsedMs,rejectedRemoteUnchanged:true,
   forbiddenPathCommandObserved:false,scope:'isolated local Git push; synthetic accepted base; PATH guard only; no hosted CI or live portable-only PR proof',job:resolve(job)};
 writeFileSync(join(job,'report.json'),JSON.stringify(report,null,2)+'\n');
 console.log(JSON.stringify(report,null,2));
