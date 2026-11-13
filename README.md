@@ -95,6 +95,10 @@ verification details.
 and agent read approval are separate; website sign-in grants neither.
 [Setup and current limits](connect/docs/hosted-client.md).
 
+## Star history
+
+[![Star History Chart](https://api.star-history.com/svg?repos=tryapparent/apparent&type=Date)](https://www.star-history.com/#tryapparent/apparent&Date)
+
 ## License
 
 [MIT](LICENSE). With thanks to the projects credited in our
