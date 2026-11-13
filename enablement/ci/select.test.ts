@@ -6,7 +6,7 @@ import {YAML} from 'bun';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {select, changedPaths, macDecision, requiresMacRust, selectRange, documentationOnlyPath, needsPlatform, requiresMacRustRange, presentationInputs} from './select.ts';
-import {selectedOwners, suitePlan, routeDecision, publicMarkdown, linuxDrivers, owners} from './routing/consumers.ts';
+import {selectedOwners, suitePlan, routeDecision, routingProblems, publicMarkdown, linuxDrivers, owners} from './routing/consumers.ts';
 import {selection as localSelection, commands as localCommands, contractTests} from '../local-tests/run.ts';
 
 const root = new URL('../../', import.meta.url);
@@ -264,6 +264,26 @@ test('regular Public additions/deletions stay owner-local; unsafe mode/type chan
   git('checkout','--detach',edited);unlinkSync('README.md');symlinkSync('build.rs','README.md');git('add','.');git('commit','-qm','type');assert.equal(cli(edited,git('rev-parse','HEAD'),dir).platform,true);
   git('checkout','--detach',edited);git('rm','README.md');git('commit','-qm','delete');assert.equal(cli(edited,git('rev-parse','HEAD'),dir).platform,false);
 }));
+
+test('renderer onboarding test tooling additions stay Desktop plus onboarding', () => repository((git,dir) => {
+  mkdirSync('capture/desktop/ui/frontend/tests/onboarding/renderer', {recursive: true});
+  writeFileSync('capture/desktop/ui/frontend/tests/onboarding/account.test.ts', 'before');
+  git('add','.'); git('commit','-qm','base'); const base=git('rev-parse','HEAD');
+  for (const path of ['capture/desktop/ui/frontend/tests/onboarding/renderer/window-coach.smoke.ts',
+    'capture/desktop/ui/frontend/tests/onboarding/renderer/tsconfig.json']) {
+    writeFileSync(path, path.endsWith('.json') ? '{"extends":"../../tsconfig.json"}' : 'export {};');
+  }
+  git('add','.'); git('commit','-qm','approved renderer tests'); const head=git('rev-parse','HEAD');
+  const hosted=cli(base,head,dir), local=localSelection(base,head,dir);
+  for (const result of [hosted,local]) {
+    assert.equal(result.historyKnown,true); assert.equal(result.inputProofKnown,true);
+    assert.equal(result.plan.desktop,true); assert.equal(result.plan.onboarding,true);
+    for (const suite of ['root','engine','client','browser','service','tools','public','hermes','tooling'])
+      assert.equal(result.plan[suite as keyof typeof result.plan],false,suite);
+  }
+  assert.deepEqual(hosted.plan,local.plan); assert.deepEqual(hosted.reasons,local.reasons);
+  assert.deepEqual(routingProblems(hosted),[]);
+}));
 for (const path of presentationInputs) test('renderer-only proof retains Mac Electron while mixed/native and unsafe statuses retain Rust: '+path, () => repository((git,dir) => {
   mkdirSync(path.slice(0,path.lastIndexOf('/')),{recursive:true});writeFileSync(path,'before');git('add','.');git('commit','-qm','base');const base=git('rev-parse','HEAD');
   writeFileSync(path,'after');git('commit','-qam','edit');const head=git('rev-parse','HEAD');
@@ -371,6 +391,9 @@ test('Mac release admits a selected source before checkout, version resolution o
   const sha = 'a'.repeat(40);
   assert.equal(releaseWorkflow.on.workflow_dispatch.inputs.source_sha.required, false);
   assert.equal(releaseWorkflow.jobs.preview.env.RELEASE_SOURCE_SHA, '${{ inputs.source_sha || github.sha }}');
+  assert.equal(releaseWorkflow.jobs.preview.outputs.tag, '${{ steps.release.outputs.tag }}');
+  assert.equal(releaseWorkflow.jobs.preview.outputs.sha, '${{ steps.release.outputs.sha }}');
+  assert.equal(releaseWorkflow.jobs.homebrew.env.RELEASE_SHA, '${{ needs.preview.outputs.sha }}');
   const gate = steps.findIndex((s: any) => s.run?.includes('release_gate.py'));
   const checkout = steps.findIndex((s: any) => s.with?.ref === '${{ env.RELEASE_SOURCE_SHA }}');
   const version = steps.findIndex((s: any) => s.name === 'Resolve version from the admitted source');
@@ -394,5 +417,17 @@ test('Mac release admits a selected source before checkout, version resolution o
     assert.equal(invoke('refs/heads/t3/onboarding-mac-release-baseline', 'b'.repeat(40), '0').status, 0);
     assert.notEqual(invoke('refs/heads/t3/onboarding-mac-release-baseline', sha, '0').status, 0,
       'the historical exception cannot select another source');
+    // The version resolver supplies the tag; the real workflow shell must hand
+    // that tag and the admitted source (not the dispatch SHA) to Homebrew.
+    assert.equal(steps[version].id, 'release');
+    writeFileSync(join(dir, 'bin/node'), '#!/bin/sh\nprintf "APPARENT_PREVIEW_TAG=preview-mac-22-3\\n" >> "$GITHUB_ENV"\n', {mode: 0o700});
+    const output = join(dir, 'release-output');
+    const resolved = spawnSync('bash', ['-e', '-c', steps[version].run], {
+      cwd: dir, encoding: 'utf8', env: {...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH,
+        GITHUB_REF: 'refs/heads/main', GITHUB_SHA: 'b'.repeat(40), RELEASE_SOURCE_SHA: sha,
+        GITHUB_ENV: join(dir, 'env'), GITHUB_OUTPUT: output},
+    });
+    assert.equal(resolved.status, 0, resolved.stderr);
+    assert.equal(readFileSync(output, 'utf8'), `tag=preview-mac-22-3\nsha=${sha}\n`);
   } finally { rmSync(dir, {recursive: true, force: true}); }
 });
