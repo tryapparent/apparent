@@ -10,7 +10,7 @@ export function connectPlan(consumers: ReturnType<typeof suitePlan>) {
   // both platforms. Unknown inputs retain those same conservative consumers.
   return {root: consumers.root && (consumers.client || consumers.service), engine: false, desktop: false,
     client: consumers.client, foreground: consumers.foreground, browser: consumers.browser, service: consumers.service,
-    tools: false, hermes: false, public: false, tooling: false, onboarding: false};
+    tools: false, hermes: false, public: false, tooling: false, onboarding: false, engineMedia: false};
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
