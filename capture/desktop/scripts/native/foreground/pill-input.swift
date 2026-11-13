@@ -347,7 +347,9 @@ func main() throws {
     trace.add(["stage":"afterUp", "frontPid":Int(after), "receiver":finalIdentity])
     try need(after == frontBefore, "Foreground drift after input")
     try trace.requireComplete()
-    print(String(data: try JSONSerialization.data(withJSONObject: ["clicked":label,"pid":before["pid"]!,"windowId":before["windowId"]!,"bounds":b,"geometry":before["geometry"]!,"words":before["words"]!,"frontPid":after,"trace":clickTraceName!], encoding: .utf8)!)
+    let receipt: [String: Any] = ["clicked":label,"pid":before["pid"]!,"windowId":before["windowId"]!,"bounds":b,"geometry":before["geometry"]!,"words":before["words"]!,"frontPid":after,"trace":clickTraceName!]
+    let encoded = try JSONSerialization.data(withJSONObject: receipt)
+    print(String(data: encoded, encoding: .utf8)!)
 }
 do { try main() } catch {
     clickTrace?.add(["stage":"failure", "message":String(String(describing:error).prefix(240))])
