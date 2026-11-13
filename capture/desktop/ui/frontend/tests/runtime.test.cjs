@@ -341,6 +341,11 @@ test('onboarding coach avoids its board and pill on offset displays, preserves i
   assert.equal(project(state).testInstance,true);
   assert.deepEqual(project(state).practiceBoard,[0,0,700,600]);
   assert.equal(project({...state,practiceBoard:[0,0,-1,600]}).practiceBoard,undefined);
+  const boardView={id:'board-123',strokes:[[[10,20],[30,40]]],color:[217,76,68]};
+  assert.deepEqual(project({...state,boardView}).boardView,boardView);
+  assert.equal(project({...state,boardView:{...boardView,id:'../capture'}}).boardView,null);
+  assert.equal(project({...state,boardView:{...boardView,strokes:[[[Infinity,0]]]}}).boardView,null);
+  assert.equal(project({...state,boardView:{...boardView,strokes:[[[1600,0]]]}}).boardView,null);
 });
 
 test('onboarding fits a small logical work area and converts native X11 geometry', () => {
@@ -383,14 +388,14 @@ test('permission refresh keeps setup unfocused and avoids repeating native geome
   show(){this.visible=true;calls.push('show')} showInactive(){this.visible=true;calls.push('showInactive')} hide(){this.visible=false}
   setAlwaysOnTop(){calls.push('top')} setHasShadow(){calls.push('shadow')} setVisibleOnAllWorkspaces(){calls.push('spaces')}
   setMaximumSize(){calls.push('max')} setMinimumSize(){calls.push('min')} setSize(){calls.push('size')}
-  setPosition(){calls.push('position')} getBounds(){return{x:0,y:0,width:760,height:720}}
+  setPosition(x,y){calls.push('position');calls.push(['position',x,y])} getBounds(){return{x:0,y:0,width:760,height:720}} focus(){calls.push('focus')}
  }
  const area={x:0,y:0,width:1440,height:900};
- const electron={app:{setName(){},getPath(){return'/tmp'},setPath(){},whenReady(){return{then:fn=>fn()}},dock:{hide(){}},quit(){}},BrowserWindow:Window,ipcMain:{handle(){}},screen:{getCursorScreenPoint:()=>({x:0,y:0}),getDisplayNearestPoint:()=>({workArea:area})},session:{defaultSession:{setPermissionRequestHandler(){},setPermissionCheckHandler(){}}}};
+ const electron={app:{setName(){},getPath(){return'/tmp'},setPath(){},whenReady(){return{then:fn=>fn()}},dock:{hide(){}},quit(){}},BrowserWindow:Window,ipcMain:{handle(){}},screen:{getCursorScreenPoint:()=>({x:0,y:0}),getDisplayNearestPoint:()=>({workArea:area}),getDisplayMatching:()=>({workArea:area}),screenToDipPoint:p=>p},session:{defaultSession:{setPermissionRequestHandler(){},setPermissionCheckHandler(){}}}};
  // This Node fixture impersonates Electron before any bundle exists. Execute
  // the real TS policies; a cached dist directory must not be a test dependency.
  const hostRequire=require('node:module').createRequire(require.resolve('../electron/onboarding.cjs'));
- const policies=new Map(['presentation','account','hyprland'].map(name=>[`../dist/onboarding-${name}.cjs`,`./onboarding/${name}.ts`]));
+ const policies=new Map(['presentation','hyprland','selection'].map(name=>[`../dist/onboarding-${name}.cjs`,`./onboarding/${name}.ts`]));
  const load=name=>{
   if(name==='electron')return electron;
   if(name.startsWith('../dist/'))assert.ok(policies.has(name),`Map the production policy source for ${name}`);
@@ -405,4 +410,24 @@ test('permission refresh keeps setup unfocused and avoids repeating native geome
  assert.equal(calls.filter(x=>x==='position').length,1,'same mode must preserve a user-moved window');
  stdin.emit('data','{"type":"show"}\n');
  assert.equal(calls.filter(x=>x==='show').length,2,'explicit parent show may reactivate setup');
+ const boardState={type:'state',step:'try-it',rows:[],ready:true,practice:'whiteboard',practiceBoard:[100,120,720,540],boardView:{id:'board-123',strokes:[],color:[217,76,68]}};
+ stdin.emit('data',JSON.stringify(boardState)+'\n');
+ assert.ok(calls.includes('focus'),'opening the inline board view focuses its actual drawing surface');
+ assert.ok(calls.some(x=>Array.isArray(x)&&x[0]==='position'&&x[1]===100&&x[2]===120));
+});
+
+test('whiteboard bridge admits only finite human paper input and copies a minimal command',()=>{
+ const {parseAction}=require('../electron/onboarding-protocol.cjs');
+ const base={action:'board',id:'apparent-123-a',operation:'begin',point:[40,60]};
+ assert.deepEqual(parseAction({...base,strokes:[[1,2]],demo:true}),base);
+ for(const point of [[NaN,1],[Infinity,1],[-1,1],[1600,1],[1,1100],[1],['1',2]])assert.throws(()=>parseAction({...base,point}));
+ for(const operation of ['replay','complete','export','stroke'])assert.throws(()=>parseAction({...base,operation}));
+ for(const id of ['', '../capture', 'x'.repeat(81)])assert.throws(()=>parseAction({...base,id}));
+ for(const operation of ['end','cancel','undo','clear','close'])assert.deepEqual(parseAction({...base,operation}),{action:'board',id:base.id,operation});
+});
+test('saved shortcut keys retain every modifier and a literal plus key',async()=>{
+ const {recordKeys}=await import('../src/onboarding/shortcut/keys.ts');
+ assert.deepEqual(recordKeys('⌃⌥⇧⌘A'),['⌃','⌥','⇧','⌘','A']);
+ assert.deepEqual(recordKeys('Ctrl + Alt + +'),['Ctrl','Alt','+']);
+ assert.deepEqual(recordKeys('Super + Shift + S'),['Super','Shift','S']);
 });

@@ -1626,7 +1626,6 @@ impl ApparentCoordinator {
     /// Polled while the gate holds a request: shows the permissions window once ⌥⇧ is up.
     pub(in crate::capture::desktop) fn tick_onboarding_practice(&mut self,cx:&mut Context<Self>) {
         if let Some(session) = self.onboarding.as_mut() {
-            session.refresh_account();
             session.observe_shortcut_modifiers(crate::capture::engine::runtime::modifier_flags());
         }
         if !self.onboarding.as_ref().is_some_and(|s|s.practice_active()) {return;}
@@ -1643,7 +1642,10 @@ impl ApparentCoordinator {
                 .map(|rect| rect.map(|value| value as f32))
         } else { anchor };
         if let Some(session)=self.onboarding.as_mut(){session.practice_anchor(anchor);}
-        let board_frame=whiteboard::frame(cx);
+        if !self.is_recording() {self.whiteboard.borrow_mut().presentation=None;}
+        let board_frame=whiteboard::frame(&self.whiteboard,cx);
+        let board_view={let board=self.whiteboard.borrow();board.presentation.as_ref().map(|(id,_)|serde_json::json!({"id":id,"strokes":board.strokes,"color":board.color}))};
+        if let Some(session)=self.onboarding.as_mut(){session.board_view(board_view);}
         if let Some(session)=self.onboarding.as_mut(){session.practice_board(board_frame);}
         let board=self.whiteboard.borrow().strokes.iter().any(|s|s.len()>3);
         let screen=self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|s|!s.laser && s.pts.len()>9).count();
@@ -1651,7 +1653,7 @@ impl ApparentCoordinator {
         let note_saved=self.note_ui.as_ref().is_some_and(|notes|notes.has_saved_note());
         let was_desktop=self.onboarding.as_ref().unwrap().practice_desktop_stage();
         if let Some(session)=self.onboarding.as_mut() {session.practice_note_saved(note_saved);session.observe_practice(board,screen,processing,None);}
-        if !was_desktop && self.onboarding.as_ref().is_some_and(|s|s.practice_desktop_stage()) {cx.defer(whiteboard::close);}
+        if !was_desktop && self.onboarding.as_ref().is_some_and(|s|s.practice_desktop_stage()) {self.whiteboard.borrow_mut().presentation=None;cx.defer(whiteboard::close);}
     }
 
     pub fn tick_gate(&mut self) {
@@ -1712,6 +1714,16 @@ impl ApparentCoordinator {
                     .as_mut()
                     .map_or(Effect::None, |session| session.grants(grants))
             }
+            Event::Board(value) => {
+                if self.is_recording() && self.onboarding.as_ref().is_some_and(|s|s.electron_practice()) {
+                    let mut board=self.whiteboard.borrow_mut();
+                    if board.presentation.as_ref().is_some_and(|(id,_)|value["id"].as_str()==Some(id.as_str())) {
+                        board.apply_input(&value);
+                    }
+                    drop(board);if matches!(value["operation"].as_str(),Some("end"|"undo"|"clear")){self.request_immediate_frame();}
+                }
+                Effect::None
+            }
             Event::Action(action) if matches!(action.as_str(), "use-desktop-shortcut" | "use-current-shortcut") => {
                 let host = crate::capture::desktop::settings::AppHost { telemetry: &self.telemetry };
                 let editor = self.onboarding_editor.record_shortcut(&host);
@@ -1761,6 +1773,8 @@ impl ApparentCoordinator {
                 Effect::None
             }
             Event::Exited => {
+                let board_was_open=self.whiteboard.borrow_mut().detach_presentation();
+                if board_was_open && self.is_recording(){let coord=cx.entity();cx.defer(move |cx|whiteboard::open(&coord,cx));}
                 if self.onboarding.as_mut().is_some_and(|session| session.restore_native()) {
                     self.sync_onboarding_editor();
                     return;

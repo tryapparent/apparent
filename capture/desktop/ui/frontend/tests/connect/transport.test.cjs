@@ -66,6 +66,18 @@ test('Connect mutations require an observed controller and unsafe socket refuses
   assert.deepEqual(await f.client.request(), { status: 'error' });
   assert.equal(f.requests.length, 0);
 });
+for (const phase of ['disconnected', 'starting', 'failed', 'connected', 'waitlisted']) {
+  test(`Connect ${phase} projects public state without credentials or unrelated approval metadata`, async t => {
+    const expected = { ...view, phase };
+    const credentials = { accessToken: 'synthetic-access', refreshToken: 'synthetic-refresh',
+      deviceCode: 'synthetic-device', authorization: 'Bearer synthetic' };
+    const f = await fixture(t, () => ({ ...credentials,
+      connect: { ...expected, ...credentials,
+        approval: { userCode: 'STALE-CODE', verificationUri: 'https://example.test/connect/device?code=STALE-CODE' },
+        buttons: expected.buttons.map(button => ({ ...button, ...credentials })) } }));
+    assert.deepEqual(await f.client.request(), { status: 'connected', view: expected });
+  });
+}
 test('Connect close invalidates in-flight receipt, closes controller and reopen uses a fresh stream', async t => {
   let hold;
   const f = await fixture(t, (request, socket) => {
