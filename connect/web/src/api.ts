@@ -62,6 +62,10 @@ export async function device(userCode: string): Promise<Device> {
 }
 export const joinWaitlist = (csrf: string, interestedAtFiveDollars: boolean) => request("/v1/waitlist", csrf, { interestedAtFiveDollars })
 export const approveDevice = (csrf: string, userCode: string) => request("/v1/device/approve", csrf, { userCode })
+export async function reportDeviceWaitlist(csrf: string, userCode: string): Promise<void> {
+  const result = record(await request("/v1/device/waitlist", csrf, { userCode }))
+  if (result.status !== "waitlisted") throw new Error("Connect could not confirm this account’s waitlist status. Reload to check its state.")
+}
 export const logout = (csrf: string) => request("/auth/logout", csrf)
 
 export type Share = { id: string; captureId: string; title: string; status: string; createdAt: string; expiresAt: string; url?: string }
