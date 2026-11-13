@@ -9,7 +9,7 @@ export async function mcpRoutes(request: Request, env: Env, url: URL): Promise<R
   if (url.pathname !== '/mcp') return null;
   if (url.origin !== env.API_ORIGIN || url.search) fail('invalid_request');
   const origin = request.headers.get('Origin');
-  if (origin && ![env.API_ORIGIN,env.SITE_ORIGIN,'https://claude.ai'].includes(origin)) fail('forbidden',403);
+  if (origin && ![env.API_ORIGIN,env.SITE_ORIGIN,'https://claude.ai','https://chatgpt.com'].includes(origin)) fail('forbidden',403);
   if (request.method !== 'POST') return new Response(null,{status:405,headers:{Allow:'POST'}});
   const raw = await bounded(request,131072);
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';

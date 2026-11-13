@@ -21,7 +21,11 @@ installation supplies the executable. No Rust, Electron, recording permission or
 direct server connection is needed by this endpoint.
 
 After the exact Worker candidate is deployed, add its HTTPS `/mcp` URL as a
-custom web connector in Claude. Choose **No sign in**: the existing Apparent
+custom server in ChatGPT Work or a custom web connector in Claude.
+In ChatGPT, open Plugins → plus → Add custom MCP server, select **No authentication**,
+create/install the personal plugin, then select it in a new Work conversation.
+See [OpenAI's setup guide](https://developers.openai.com/plugins/quickstart).
+In Claude, choose **No sign in**. The existing Apparent
 device read approval runs inside the encrypted channel, rather than exposing
 native tokens to the connector or introducing a second OAuth implementation.
 Organization connector policies still apply.
@@ -96,8 +100,8 @@ references. Plaintext stays in a private stage until final authorization and
 publication into an exclusively reserved new destination.
 
 The current format encrypts the complete bundle. Large recordings require many
-calls; passing base64 through model context is costly. **Actual Cowork file
-delivery and practical recording-size performance remain unverified.** Cowork
+calls; passing base64 through model context is costly. **Actual ChatGPT Work/Cowork file
+delivery and practical recording-size performance remain unverified.** The host
 must persist complete sealed tool results into its execution workspace with
 direct CLI egress blocked. MCP protocol support alone does not prove that works.
 There is no plaintext fallback or service-readable copy if it fails.
@@ -113,10 +117,12 @@ state, publication and a packed consumer with native build tools denied.
 The explicit Rust interoperability lane also runs the streaming MCP parser
 against production signed multipart output; see the client README.
 
-Synthetic tests do not prove deployed Google approval, Cowork compatibility or
+Synthetic tests do not prove deployed Google approval, host compatibility or
 macOS runtime behavior. Before production acceptance, verify the exact deployed
-candidate in Cowork, real approval, byte-preserving delivery with CLI egress
+candidate in ChatGPT Work, real approval, byte-preserving delivery with CLI egress
 blocked, visual inspection and revocation. Keep the native CLI path throughout.
+ChatGPT Work is the initial human test target; a pass there does not establish
+Cowork-specific file handling or rendering, which remains separately unverified.
 Rollback removes the MCP route/package entrypoint and leaves stored formats,
 encryption defaults and consent unchanged. No schema migration, new cloud
 resource, directory listing or automatic public sharing is required.
