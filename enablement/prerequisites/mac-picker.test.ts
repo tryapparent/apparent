@@ -109,6 +109,18 @@ test('runtime isolation preserves strict window identity and adds native bundle 
  assert.match(panelScript,/if observedPID is not targetPID then error "Owned AX process identifier differs; expectedPID="/);
  assert.doesNotMatch(panelScript,/Apparent Settings — About/,'The unrelated Settings window is never an admitted picker parent');
 });
+test('the Storage fixture isolates onboarding presentation in its real backend environment',()=>{
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const start=source.indexOf('    env = { ...process.env, HOME: home,'),end=source.indexOf('    delete env.APPARENT_CAPTURES_DIR;',start);
+ assert.ok(start>=0&&end>start);
+ const create=new Function('process','home','config','path','report','let env;\n'+source.slice(start,end)+'\nreturn env;');
+ const report:{onboardingPresentationSuppressed?:boolean}={};
+ const env=create({env:{FIXTURE_SENTINEL:'kept'}},'/private-fixture','/private-fixture/config.json',{join},report);
+ assert.equal(env.APPARENT_NO_ONBOARDING,'1','Storage must not wait for unrelated onboarding presentation on either backend start');
+ assert.equal(env.HOME,'/private-fixture');assert.equal(env.APPARENT_CONFIG,'/private-fixture/config.json');
+ assert.equal(env.CFFIXED_USER_HOME,env.HOME);assert.equal(env.FIXTURE_SENTINEL,'kept');
+ assert.equal(report.onboardingPresentationSuppressed,true);
+});
 test('owned-window readiness uses only the bounded window query and still rejects another window or a sheet',async()=>{
  const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
  const start=source.indexOf('    report.nativeWindowReadiness ='),end=source.indexOf('    const reporting =',start);

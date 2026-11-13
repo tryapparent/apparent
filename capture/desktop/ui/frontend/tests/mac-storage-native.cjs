@@ -344,8 +344,12 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     await fs.writeFile(sentinel, sentinelText, { mode: 0o600, flag: 'wx' });
     await fs.writeFile(config, JSON.stringify({ experiments: { electronCaptureLocation: true },
       onboarding: { seen: true }, storageNativeFixture: unknown }), { mode: 0o600, flag: 'wx' });
+    // Match the native reference fixture: do not hold normal app presentation
+    // behind unrelated onboarding initialization. Rust still polls real grants
+    // and enforces native capture admission; this fixture exercises Storage.
     env = { ...process.env, HOME: home, APPARENT_CONFIG: config, CFFIXED_USER_HOME: home, XDG_CONFIG_HOME: path.join(home, '.config'),
-      TMPDIR: home, TMP: home, TEMP: home };
+      TMPDIR: home, TMP: home, TEMP: home, APPARENT_NO_ONBOARDING: '1' };
+    report.onboardingPresentationSuppressed = env.APPARENT_NO_ONBOARDING === '1';
     delete env.APPARENT_CAPTURES_DIR;
     // The driver may have been started using an Electron binary in Node mode.
     // GUI children must always be normal Electron, never ELECTRON_RUN_AS_NODE.
