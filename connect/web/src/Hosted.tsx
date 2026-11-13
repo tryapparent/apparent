@@ -17,7 +17,6 @@ function Account({ devicePage }: { devicePage: boolean }) {
   const [busy, setBusy] = useState(false)
   const [interested, setInterested] = useState(false)
   const [tab, setTab] = useState<"computer" | "agent">("computer")
-  const [consent, setConsent] = useState(false)
   const [now, setNow] = useState(0)
   const [dialogKind, setDialogKind] = useState<"setup" | "read">("setup")
   const dialog = useRef<HTMLDialogElement>(null)
@@ -26,7 +25,7 @@ function Account({ devicePage }: { devicePage: boolean }) {
   async function load() {
     const current = ++generation.current
     let sessionLoaded = false
-    setLoading(true); setError(""); setSessionUnavailable(false); setAccount(null); setRequest(null); setConsent(false)
+    setLoading(true); setError(""); setSessionUnavailable(false); setAccount(null); setRequest(null)
     const value = new URLSearchParams(window.location.search).get("code") ?? ""
     setCode(devicePage ? value : "")
     try {
@@ -34,11 +33,16 @@ function Account({ devicePage }: { devicePage: boolean }) {
       if (current !== generation.current) return
       sessionLoaded = true
       setAccount(result)
+      if (!result.authenticated && devicePage && /^[A-F0-9]{12}$/.test(value)) {
+        window.location.replace(api.signInUrl(true, value))
+        return
+      }
       if (result.authenticated) {
         setInterested(result.waitlist.interestedAtFiveDollars)
+        if (devicePage && !result.beta.access && /^[A-F0-9]{12}$/.test(value)) await api.reportDeviceWaitlist(result.csrfToken, value)
         if (devicePage && result.beta.access && value) {
           const preview = await api.device(value)
-          if (current === generation.current) { setNow(Date.now()); setRequest(preview); setTab(preview.scope === "upload" ? "computer" : "agent"); setConsent(false) }
+          if (current === generation.current) { setNow(Date.now()); setRequest(preview); setTab(preview.scope === "upload" ? "computer" : "agent") }
         }
       }
     } catch (e) { if (current === generation.current) { setSessionUnavailable(!sessionLoaded); setError(message(e)) } }
@@ -66,7 +70,7 @@ function Account({ devicePage }: { devicePage: boolean }) {
     setTab(next)
   }
   const approve = () => {
-    if (!authenticated || !request || !pending || (request.scope === "upload" && !consent)) return
+    if (!authenticated || !request || !pending) return
     void act(async () => {
       if (request.expiresAt && Date.parse(request.expiresAt) <= Date.now()) throw new Error("This code has expired. Request a new code.")
       await api.approveDevice(authenticated.csrfToken, code)
@@ -121,8 +125,7 @@ function Account({ devicePage }: { devicePage: boolean }) {
               <p>Captures can include screen images, recording, voice, transcript and window context.</p>
               {request.status === "approved" ? <p role="status">Approval granted. The CLI must finish connecting. This page cannot check the computer's upload setting or credential.</p> : request.status === "rejected" ? <p role="status">Nothing was approved. Start a new request in the CLI.</p> : expired ? <p role="status">Nothing was approved. Request a new code in the CLI.</p> : <>
                 <p className="hosted-quiet">Only approve a request you just started on a trusted app or agent. {request.expiresAt ? `Expires ${new Date(request.expiresAt).toLocaleString()}.` : "Codes expire ten minutes after they are requested."}</p>
-                {request.scope === "upload" && <label className="hosted-check"><input type="checkbox" checked={consent} disabled={busy} onChange={event => setConsent(event.target.checked)} /><span>I agree to share new capture contents with my Connect account.</span></label>}
-                <button className="hosted-primary" disabled={busy || (request.scope === "upload" && !consent)} onClick={approve}>{busy ? "Confirming…" : request.scope === "upload" ? "Allow uploads" : "Allow agent read access"}</button>
+                <button className="hosted-primary" disabled={busy} onClick={approve}>{busy ? "Confirming…" : request.scope === "upload" ? "Allow uploads" : "Allow agent read access"}</button>
               </>}
             </div>
           </> : <>
