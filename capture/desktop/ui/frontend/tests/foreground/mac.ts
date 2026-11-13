@@ -74,13 +74,13 @@ async function poll<T>(read: () => Promise<T>, accept: (value: T) => boolean, la
   while (Date.now() < end) { try { const value = await read(); if (accept(value)) return value; } catch (e) { last = redact(e); } await sleep(100); }
   throw Error(`${label} not observed: ${last.slice(-1000)}`);
 }
-async function native(operation: 'snapshot' | 'click' | 'startup' | 'close-settings', label?: string, settings?: LaunchWindow) {
+async function native(operation: 'snapshot' | 'prepare' | 'click' | 'startup' | 'close-settings', label?: string, settings?: LaunchWindow) {
   const stem = `${++sequence}-${operation}`;
   const request = path.join(output, stem + '.request.json');
   await writeFile(request, JSON.stringify({operation, app, rootPid: rustPid, output: path.join(output, stem + '.png'), ...(label ? {label} : {}),
     ...(settings ? {settingsPid: settings.pid, settingsWindowId: settings.windowId} : {})}), {mode: 0o600, flag: 'wx'});
   const result = JSON.parse(await command(hostEnv.APPARENT_FOREGROUND_NATIVE_INPUT!, [request], {env: hostEnv}));
-  await evidence(stem, result); return result as LaunchObservation & {windowId: number; words: Array<{text: string}>};
+  await evidence(stem, result); return result as LaunchObservation & {windowId: number; words: Array<{text: string}>; prepared?: boolean};
 }
 const text = (snapshot: {words: Array<{text: string}>}) => snapshot.words.map(word => word.text).join(' ').toLowerCase();
 async function ui(label: string, predicate: (value: string) => boolean, scenePid: number, cap = 12_000) {
@@ -243,6 +243,9 @@ async function main() {
     assert.equal(JSON.parse(await readFile(configFile, 'utf8')).microphoneEnabled, false);
     await cp(bundle, path.join(output, 'synthetic.apparent'), {recursive: true, errorOnExist: true, force: false});
     await ui('saved foreground pill', value => value.includes('copy link'), generated.pid);
+    const accessible = await native('prepare', 'Copy link');
+    assert.equal(accessible.prepared, true, 'Native accessibility bootstrap did not acknowledge an actual button');
+    assert.equal(accessible.frontPid, generated.pid, 'Accessibility bootstrap changed the foreground');
     const before = await status(); assert.equal(before.captures.length, 0); assert.equal(before.uploadedBytes, 0); assert.deepEqual(await jobs(), []);
     await native('click', 'Copy link');
     await ui('upload progress', value => value.includes('uploading') && value.includes('cancel upload'), generated.pid);

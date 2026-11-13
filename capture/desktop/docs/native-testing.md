@@ -450,11 +450,14 @@ limited to a fresh OCR target in a verified descendant of the installed app;
 the native adapter also requires the exact named accessibility button with the
 projected point inside its native bounds, verifies window geometry through
 screenshot and input, and preserves the scene's foreground.
-Before that lookup, the adapter requests Electron's documented
+Before any input, a separate read-only bootstrap requests Electron's documented
 [`AXManualAccessibility`](https://www.electronjs.org/docs/latest/tutorial/accessibility)
-tree for the exact verified pill process. It observes the actual named button
-within the existing hit-readiness deadline; an unexposed tree never authorizes
-input. This changes only the disposable verifier's accessibility admission.
+tree for the exact verified pill process and waits for the actual named button.
+Electron 45 debounces this request for two seconds; the bootstrap uses the
+helper's existing eight-second budget. Subsequent input retains its 1.5-second
+hit-readiness deadline and never repeats the accessibility request. An unexposed
+tree never authorizes input. This changes only the disposable verifier's
+accessibility admission; the overall case deadline remains unchanged.
 Sharing uses explicit plaintext consent against a private loopback fixture, with
 the ordinary public-access clipboard disclosure. Encrypted transfer/decryption
 proof remains the separate installed Connect CLI test.

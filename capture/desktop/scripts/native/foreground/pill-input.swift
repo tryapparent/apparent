@@ -261,6 +261,40 @@ func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint, desce
     }
     return nil
 }
+
+func preparePillAccessibility(_ req: [String: Any], _ expected: Pill, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any] {
+    _ = try currentPill(req, expected)
+    let frontBefore = frontPID()
+    try admitPillAccessibility(expected)
+    // Electron 45 debounces this request for two seconds. A read-only bootstrap
+    // uses the helper's existing eight-second budget; input keeps its 1.5s cap.
+    let system = AXUIElementCreateSystemWide()
+    try need(AXUIElementSetMessagingTimeout(system, 0.2) == .success, "Could not bound accessibility readiness")
+    while true {
+        try withinBudget()
+        var target: AXUIElement?
+        let result = AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &target)
+        if result == .success, let target {
+            var pid: pid_t = -1
+            let pidResult = AXUIElementGetPid(target, &pid)
+            clickTrace?.add(["stage":"accessibilityHit", "pid":Int(pid), "result":pidResult.rawValue])
+            if pidResult == .success && descendants.contains(pid),
+               let identity = try buttonIdentity(target, label: label, point: point, descendants: descendants) {
+                _ = try currentPill(req, expected)
+                try need(frontPID() == frontBefore, "Foreground drift during accessibility bootstrap")
+                try withinBudget()
+                try clickTrace?.requireComplete()
+                clickTrace?.add(["stage":"accessibilityReady", "receiver":identity])
+                try clickTrace?.requireComplete()
+                return identity
+            }
+        } else if result != .cannotComplete && result != .noValue {
+            throw Refusal(message: "Accessibility readiness hit query failed")
+        }
+        Thread.sleep(forTimeInterval: 0.025)
+    }
+}
+
 func main() throws {
     try need(env["CI"] == "true" && env["GITHUB_ACTIONS"] == "true" && env["RUNNER_ENVIRONMENT"] == "github-hosted" && env["RUNNER_OS"] == "macOS", "Refusing outside GitHub-hosted macOS CI")
     try need(args.count == 2, "Expected one JSON request path")
@@ -273,7 +307,8 @@ func main() throws {
     let rootPid = req["rootPid"] as! Int
     try need(rootPid > 1 && rootPid <= Int(Int32.max), "Invalid root PID")
     let op = req["operation"] as! String, out = URL(fileURLWithPath: req["output"] as! String).standardizedFileURL
-    try need(["snapshot", "click", "startup", "close-settings"].contains(op), "Unknown operation")
+    try need(["snapshot", "prepare", "click", "startup", "close-settings"].contains(op), "Unknown operation")
+    if op == "prepare" { try need(req["label"] as? String == "Copy link", "Unsupported accessibility bootstrap label") }
     if op == "click" { try need(["Copy link", "Cancel upload", "Retry upload"].contains(req["label"] as? String ?? ""), "Unsupported click label") }
     try safeOwnedPath(out, root: runner)
     try need(!fm.fileExists(atPath: out.path), "Output must be fresh")
@@ -290,7 +325,7 @@ func main() throws {
         let closed = try closeLaunchSettings(req)
         print(String(data: try JSONSerialization.data(withJSONObject: closed), encoding: .utf8)!); return
     }
-    if op == "click" {
+    if op == "click" || op == "prepare" {
         let traceURL = job.appendingPathComponent("pill-input-\(getpid()).log")
         try safeOwnedPath(traceURL, root: runner)
         clickTrace = try ClickTrace(traceURL)
@@ -298,7 +333,7 @@ func main() throws {
     }
     let (before, words, pillDescendants) = try observe(req, out)
     if op == "snapshot" { print(String(data: try JSONSerialization.data(withJSONObject: before), encoding: .utf8)!); return }
-    try need(op == "click", "Unknown operation")
+    try need(op == "click" || op == "prepare", "Unknown operation")
     let label = req["label"] as! String; try need(["Copy link", "Cancel upload", "Retry upload"].contains(label), "Unsupported click label")
     let matching = try words.compactMap { word -> CGRect? in guard let range = word.text.range(of: label) else { return nil }; return try word.candidate.boundingBox(for: range)?.boundingBox }
     try need(matching.count == 1, "Label OCR match is missing or ambiguous")
@@ -309,7 +344,14 @@ func main() throws {
     let initialPill = try pill(req).0
     try need(Int(initialPill.pid) == (before["pid"] as! Int) && Int(initialPill.id) == (before["windowId"] as! Int) &&
         [initialPill.rect.minX,initialPill.rect.minY,initialPill.rect.width,initialPill.rect.height] == b, "Pill changed before accessibility admission")
-    try admitPillAccessibility(initialPill)
+    if op == "prepare" {
+        try need(frontPID() == pid_t(before["frontPid"] as! Int), "Foreground drift before accessibility bootstrap")
+        let identity = try preparePillAccessibility(req, initialPill, label: label, point: point, descendants: pillDescendants)
+        let receipt: [String: Any] = ["prepared":true,"pid":Int(initialPill.pid),"windowId":Int(initialPill.id),"button":identity,"frontPid":Int(frontPID()),"trace":clickTraceName!]
+        let encoded = try JSONSerialization.data(withJSONObject: receipt)
+        print(String(data: encoded, encoding: .utf8)!)
+        return
+    }
     trace.add(["stage":"beforeMove", "frontPid":Int(frontPID()), "pillPid":Int(initialPill.pid), "windowId":Int(initialPill.id), "bounds":[initialPill.rect.minX,initialPill.rect.minY,initialPill.rect.width,initialPill.rect.height], "geometry":before["geometry"]!, "point":[point.x,point.y]])
     try trace.requireComplete()
     try need(frontPID() == pid_t(before["frontPid"] as! Int), "Foreground drift before pointer movement")
@@ -323,8 +365,9 @@ func main() throws {
     while ProcessInfo.processInfo.systemUptime - started < 1.5 {
         var target: AXUIElement?; let err = AXUIElementCopyElementAtPosition(ax, Float(point.x), Float(point.y), &target)
         if err == .success, let target {
-            var p: pid_t = -1; _ = AXUIElementGetPid(target, &p)
-            if pillDescendants.contains(p), let identity = try buttonIdentity(target, label: label, point: point, descendants: pillDescendants) {
+            var p: pid_t = -1; let pidResult = AXUIElementGetPid(target, &p)
+            trace.add(["stage":"inputHit", "pid":Int(p), "result":pidResult.rawValue])
+            if pidResult == .success && pillDescendants.contains(p), let identity = try buttonIdentity(target, label: label, point: point, descendants: pillDescendants) {
                 hitIdentity = identity; break
             }
         } else if err != .cannotComplete && err != .noValue { throw Refusal(message: "AX input hit observation failed") }
