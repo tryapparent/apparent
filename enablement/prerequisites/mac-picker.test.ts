@@ -211,16 +211,21 @@ test('each real Change waits for one native focus admission; failed or concurren
  assert.ok(start>0&&end>start);
  const create=new Function('assert','panel','change','budget','report',
   'let pendingNativeChange; let nativeChangeStarting=false;'+source.slice(start,end)+'return startNativeChange;');
- const focus=deferred<string>();let focuses=0,clicks=0;
- const report:{nativeChangeFocus?:string[]}={};
+ const focus=deferred<string>(),click=deferred<void>();let focuses=0,clicks=0;
+ const report:{nativeChangeFocus?:string[];nativeChangeRequests?:Array<{requestedAt:number;settledAt?:number;ok?:boolean}>}={};
  const begin=create(assert,async(operation:string)=>{assert.equal(operation,'focus-change');focuses++;return focus.promise;},
-  {click:async()=>{clicks++;}},(cap:number)=>cap,report);
+  {click:()=>{clicks++;return click.promise;}},(cap:number)=>cap,report);
  const pending=begin();await Promise.resolve();
  assert.equal(clicks,0,'CDP must not open a sheet while another app remains native-frontmost');
  await assert.rejects(async()=>begin(),/focus is already pending/);
  assert.equal(focuses,1);focus.resolve('owned native focus');await pending;
  assert.equal(clicks,1);assert.deepEqual(report.nativeChangeFocus,['owned native focus']);
+ assert.equal(report.nativeChangeRequests?.length,1);
+ const request=report.nativeChangeRequests![0];
+ assert.ok(Number.isSafeInteger(request.requestedAt));assert.equal(request.settledAt,undefined);
  await assert.rejects(async()=>begin(),/already pending/);assert.equal(clicks,1);
+ click.resolve();await Promise.resolve();
+ assert.equal(request.ok,true);assert.ok(request.settledAt!>=request.requestedAt);
  const failure=Error('owned focus refused');let refusedClicks=0;
  const refuse=create(assert,async()=>{throw failure;},{click:async()=>{refusedClicks++;}},(cap:number)=>cap,{});
  await assert.rejects(async()=>refuse(),error=>error===failure);assert.equal(refusedClicks,0);
@@ -526,7 +531,7 @@ test('bootstrap telemetry observes existing and future renderers with bounded co
  };
  const app={...emitter(),isReady:()=>true};
  const first={id:1,webContents:emitter()},second={id:2,webContents:emitter()};
- const result=observe({app,BrowserWindow:{getAllWindows:()=>[first]}});
+ const result=observe({app,BrowserWindow:{getAllWindows:()=>[first]},dialog:{showOpenDialog:()=>{throw Error('Unexpected dialog');}}});
  assert.deepEqual(result.windows,[1]);
  app.emit('browser-window-created',{},second);
  first.webContents.emit('did-fail-load',{},-7,'sensitive description','file:///private/sensitive',true);
@@ -540,6 +545,59 @@ test('bootstrap telemetry observes existing and future renderers with bounded co
  for(let i=0;i<30;i++)second.webContents.emit('did-start-loading');
  assert.equal(events.length,16);
  delete (globalThis as any).__apparentStorageWindowProbe;
+ delete (globalThis as any).__apparentStorageDialogProbe;
+});
+
+test('native dialog telemetry preserves the real call, promise and failures while recording bounded metadata',async()=>{
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const start=source.indexOf('function bootstrapObservation('),end=source.indexOf('function bootstrapFailure(',start);
+ assert.ok(start>=0&&end>start);
+ let clockFails=false;
+ const clock={now:()=>{if(clockFails)throw Error('unavailable diagnostic clock');return Date.now();}};
+ const observe=new Function('Date',source.slice(start,end)+'\nreturn bootstrapObservation;')(clock);
+ const app={once:()=>{},on:()=>{},isReady:()=>true};
+ const window={id:7},options={defaultPath:'/private/sensitive-choice'};
+ const chosen={canceled:false,filePaths:['/private/sensitive-result']};
+ const pending=deferred<typeof chosen>();
+ let result:Promise<typeof chosen>=pending.promise,calls=0,synchronousFailure:Error|undefined;
+ const dialog={showOpenDialog:function(...args:unknown[]){
+  calls++;assert.equal(this,dialog);assert.equal(args[0],window);assert.equal(args[1],options);
+  if(synchronousFailure)throw synchronousFailure;
+  return result;
+ }};
+ try {
+  observe({app,BrowserWindow:{getAllWindows:()=>[]},dialog});
+  const returned=dialog.showOpenDialog(window,options);
+  assert.equal(returned,pending.promise,'The native promise identity must be preserved');
+  const events=()=> (globalThis as any).__apparentStorageDialogProbe;
+  assert.deepEqual(events()?.map((entry:any)=>entry.kind),['entered'],'The real native entry must be observable before settlement');
+  pending.resolve(chosen);assert.equal(await returned,chosen);await Promise.resolve();
+  assert.deepEqual(events().map((entry:any)=>entry.kind),['entered','fulfilled']);
+  const failure=Error('private sensitive native error');
+  result=Promise.reject(failure);
+  assert.equal(dialog.showOpenDialog(window,options),result);
+  await assert.rejects(result,error=>error===failure);await Promise.resolve();
+  assert.deepEqual(events().slice(-2).map((entry:any)=>entry.kind),['entered','rejected']);
+  synchronousFailure=failure;
+  assert.throws(()=>dialog.showOpenDialog(window,options),error=>error===failure);
+  assert.deepEqual(events().slice(-2).map((entry:any)=>entry.kind),['entered','threw']);
+  assert.equal(calls,3,'Observation must never repeat a native chooser call');
+  synchronousFailure=undefined;result=Promise.resolve(chosen);
+  for(let i=0;i<30;i++)assert.equal(dialog.showOpenDialog(window,options),result);
+  await Promise.resolve();
+  assert.equal(events().length,16);
+  for(const entry of events()) {
+   assert.deepEqual(Object.keys(entry).sort(),['at','id','kind']);
+   assert.ok(Number.isSafeInteger(entry.at));assert.ok(Number.isSafeInteger(entry.id));
+  }
+  assert.doesNotMatch(JSON.stringify(events()),/sensitive|private/);
+  clockFails=true;
+  assert.equal(dialog.showOpenDialog(window,options),result,'A diagnostic error must not change the native result');
+  await result;
+ } finally {
+  delete (globalThis as any).__apparentStorageDialogProbe;
+  delete (globalThis as any).__apparentStorageWindowProbe;
+ }
 });
 
 import {once} from 'node:events';

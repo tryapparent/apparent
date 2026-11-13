@@ -81,9 +81,28 @@ async function initialRuntimeRead({ now, budget, observe, pause, refresh, connec
 // Native window creation and Playwright renderer attachment are separate facts.
 // Failure-only, read-only projection: never use these observations to admit a
 // window after firstWindow's original deadline, or inspect page/user content.
-function bootstrapObservation({ app, BrowserWindow }) {
+function bootstrapObservation({ app, BrowserWindow, dialog }) {
   const events = [];
   globalThis.__apparentStorageWindowProbe = events;
+  // Observe the real native call rather than infer dispatch from click()'s
+  // eventual acknowledgement. Keep the original arguments, promise and errors;
+  // no paths, options or chooser results enter this bounded failure telemetry.
+  const dialogEvents = [];
+  globalThis.__apparentStorageDialogProbe = dialogEvents;
+  const recordDialog = (kind, id) => {
+    try { if (dialogEvents.length < 16) dialogEvents.push({ kind, id, at: Date.now() }); } catch {}
+  };
+  const showOpenDialog = dialog.showOpenDialog;
+  let dialogId = 0;
+  dialog.showOpenDialog = function (...args) {
+    const id = ++dialogId;
+    recordDialog('entered', id);
+    let result;
+    try { result = Reflect.apply(showOpenDialog, this, args); }
+    catch (error) { recordDialog('threw', id); throw error; }
+    try { result.then(() => recordDialog('fulfilled', id), () => recordDialog('rejected', id)); } catch {}
+    return result;
+  };
   const record = value => { if (events.length < 16) events.push({ ...value, at: Date.now() }); };
   const observe = window => {
     record({ kind: 'window', id: window.id });
@@ -112,6 +131,7 @@ function bootstrapFailure({ app, BrowserWindow }) {
   return {
     pid: process.pid, at: Date.now(), ready: app.isReady(),
     events: (globalThis.__apparentStorageWindowProbe ?? []).slice(0, 16),
+    nativeDialogs: (globalThis.__apparentStorageDialogProbe ?? []).slice(0, 16),
     windowCount: BrowserWindow.getAllWindows().length,
     windows: BrowserWindow.getAllWindows().slice(0, 2).map(window => {
       const contents = window.webContents;
@@ -549,8 +569,11 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
         // AppKit can hold the input acknowledgement while its modal sheet is
         // open. Start one real click, operate the observed picker, then consume
         // that same click. Observe rejection immediately without retrying it.
+        const request = { requestedAt: Date.now() };
+        (report.nativeChangeRequests ??= []).push(request);
         pendingNativeChange = change.click({ timeout: budget(30000) }).then(
-          () => ({ ok: true }), error => ({ ok: false, error }));
+          () => { request.settledAt = Date.now(); request.ok = true; return { ok: true }; },
+          error => { request.settledAt = Date.now(); request.ok = false; return { ok: false, error }; });
       } finally { nativeChangeStarting = false; }
     };
     const settleNativeChange = async () => {
@@ -723,11 +746,14 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       // controls cannot be selected. Never expand to the display or other windows.
       if (application && Date.now() < deadline) {
         try {
-          const bounds = await within(application.evaluate(({ BrowserWindow }) => {
+          const observed = await within(application.evaluate(({ BrowserWindow }) => {
             const windows = BrowserWindow.getAllWindows();
             if (windows.length !== 1 || windows[0].getTitle() !== 'Apparent — UI foundation') throw new Error('Unknown owned window');
-            return windows[0].getBounds();
+            return { bounds: windows[0].getBounds(),
+              nativeDialogs: (globalThis.__apparentStorageDialogProbe ?? []).slice(0, 16) };
           }), budget(), 'Owned failure window bounds');
+          report.nativeDialogs = observed.nativeDialogs;
+          const bounds = observed.bounds;
           const rectangle = [bounds.x, bounds.y, bounds.width, bounds.height];
           assert.ok(rectangle.every(Number.isSafeInteger) && bounds.width > 0 && bounds.height > 0);
           await run('/usr/sbin/screencapture', ['-x', '-R', rectangle.join(','), path.join(output, 'failed-owned-window.png')],
