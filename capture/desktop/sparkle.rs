@@ -75,8 +75,17 @@ objc2::define_class!(
             &self,
             _updater: &AnyObject,
             _update_check: NSInteger,
-            _error: Option<&NSError>,
+            error: Option<&NSError>,
         ) {
+            if error.is_some_and(|error| {
+                crate::capture::desktop::workflow::error_reporting::sparkle_error_should_report(
+                    &error.domain().to_string(), error.code(),
+                )
+            }) {
+                crate::capture::desktop::workflow::error_reporting::report(
+                    crate::capture::desktop::workflow::error_reporting::Failure::UpdateCheck,
+                );
+            }
             let _ = self.ivars().compare_exchange(
                 UpdateStatus::Checking as u8,
                 UpdateStatus::Idle as u8,
