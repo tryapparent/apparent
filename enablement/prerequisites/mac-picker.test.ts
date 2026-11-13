@@ -628,6 +628,6 @@ test('Mac picker protocol reports absent ownership through the real interpreter 
  // macOS process IDs cannot reach this value. No AX lookup, focus or input is
  // reached: the existing ownedApplication guard must reject the absent PID.
  const args=['2147483647','/synthetic/café\n"quoted"','inspect','/nonexistent/picker-runtime','synthetic.bundle'];
- for(let i=0;i<2;i++)await assert.rejects(driver.request(args,5000),/Owned Electron process is absent/);
+ for(const operation of ['window-ready','inspect'])await assert.rejects(driver.request([...args.slice(0,2),operation,...args.slice(3)],5000),/Owned Electron process is absent/);
  assert.deepEqual(driver.stats,{starts:1,requests:2});
 });

@@ -71,6 +71,15 @@ on run argv
     tell owned
       if (count of windows) is 0 then error "Owned process has no AX windows; frontmost=" & (frontmost as text)
       set outerWindow to window 1
+      if operation is "window-ready" then
+        -- Readiness is a predicate on this exact window, not a diagnostic walk
+        -- through Chromium's AX descendants. Hosted traces stalled in that
+        -- unrelated traversal before any picker interaction was attempted.
+        if (count of windows) is not 1 then error "Readiness requires one owned window"
+        if (role of outerWindow as text) is not "AXWindow" or (name of outerWindow as text) is not "Apparent — UI foundation" then error "Readiness requires Foundation"
+        if (count of sheets of outerWindow) is not 0 then error "Owned native window already has a sheet"
+        return "depth=0;role=AXWindow;title=Apparent — UI foundation;"
+      end if
       if operation is "focus-change" then
         if (count of windows) is not 1 then error "Change focus requires one owned window"
         if (role of outerWindow as text) is not "AXWindow" or (name of outerWindow as text) is not "Apparent — UI foundation" then error "Change focus requires Foundation"
