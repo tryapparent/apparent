@@ -321,6 +321,7 @@ Clicks on the pill and the picker need four things, found in Hyprland's source (
 
 - Omarchy gives `no_focus` to floating XWayland windows with an empty class and title, which Hyprland's hit test skips. GPUI sets no class on these windows, so `x11::accept_pointer` gives them one.
 - For an override-redirect window of `_NET_WM_WINDOW_TYPE_NOTIFICATION` (GPUI's pop-up type), tooltip, menu, splash or utility, the hit test answers "the window in focus" instead of the window. `accept_pointer` makes them toolbar windows, which get the pointer and aren't focused when they map.
+- The Electron pill also requests Linux's toolbar type before mapping, retaining that non-activating, clickable identity through transparent-surface resizes. macOS retains its non-activating panel; neither path uses a rule that discards pointer input.
 - Hyprland takes an override-redirect window's position when it maps it and ignores later moves, so `x11::place` maps the window again when it moves on Hyprland.
 - The full-screen ink overlay is a notification window above the pill, so it shares the KDE treatment: mapped only while ⇧ is held (`hide_between_strokes`).
 

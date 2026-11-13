@@ -89,7 +89,11 @@ app.whenReady().then(()=>{
   session.defaultSession.setPermissionRequestHandler((_contents,_permission,reply)=>reply(false));
   session.defaultSession.setPermissionCheckHandler(()=>false);
   session.defaultSession.webRequest.onBeforeRequest((details,reply)=>reply({cancel:!details.url.startsWith('file:')}));
-  window=new BrowserWindow({...(process.platform==='darwin'?{type:'panel',acceptFirstMouse:true}:{focusable:false}),width:640,height:58,show:false,frame:false,transparent:true,resizable:false,
+  // A toolbar remains clickable without activation when Hyprland remaps the
+  // transparent surface after resize. no_focus rules would discard its input.
+  const nativeWindow=process.platform==='darwin'?{type:'panel',acceptFirstMouse:true}
+    :{focusable:false,...(process.platform==='linux'?{type:'toolbar'}:{})};
+  window=new BrowserWindow({...nativeWindow,width:640,height:58,show:false,frame:false,transparent:true,resizable:false,
     fullscreenable:false,skipTaskbar:true,hasShadow:false,alwaysOnTop:true,title:'Apparent recording controls',
     paintWhenInitiallyHidden:true,
     webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false,webSecurity:true,spellcheck:false,backgroundThrottling:false}});
