@@ -26,7 +26,9 @@ From this directory, `npm run test:onboarding-policy` runs the source-level
 onboarding tests with Node 22 alone. It needs no `npm ci`, Electron download,
 display, Rust toolchain or generated `dist`. It covers native-confirmed shortcut selection,
 shortcut capture/protocol admission, coach geometry, state subscription and pen
-save receipts. Newly added `tests/onboarding/*.test.ts` files join automatically;
+save receipts. It also covers the shared Connect consent admission and session
+policy used by AgentSetup and Settings, without loading React or the generic
+Desktop bridge. Newly added `tests/onboarding/*.test.ts` files join automatically;
 keep that suffix for headless checks and use `*.smoke.ts` for renderer checks.
 
 For source tests and scoped typechecking together, run from the repository root:
@@ -37,7 +39,9 @@ node --experimental-strip-types enablement/local-tests/run.ts --onboarding
 
 This is the same inventory used by the clean Node CI job: source tests first,
 then a locked install of only the onboarding TypeScript toolchain, then its
-typecheck. It needs no frontend installation, Electron, display or Rust outputs.
+typecheck and synthetic Connect hook lifecycle checks. It needs no frontend
+installation, React, Electron, display or Rust outputs. The synthetic hook adapter
+checks serialization and stale admission; it does not model real React scheduling.
 After a full frontend `npm ci`, `npm run typecheck:onboarding-policy` remains
 available; canonical `npm test` also runs that check. These policy commands do
 not exercise React rendering or the real Rust/native providers. Continue
@@ -50,6 +54,11 @@ Ordinary `git push` uses the shared range selector and executor under
 `enablement/local-tests/`; use the normal hook rather than replacing it with a
 focused command. Policy-only changes retain their Desktop/Electron consumers;
 bridge, persistence, native and mixed changes retain their integration gates.
+Connect policy dependencies add this fast suite while retaining Desktop and native
+consumers; they do not qualify for the pure onboarding native exemption. The
+Connect transport generator imports its owner DTOs directly, so its type closure
+does not acquire Record Storage through the generic Desktop bridge. Revert these
+imports and the extracted modules together to roll back; no persisted data changes.
 
 The separate installed `--controls` presentation is Linux's no-tray fallback.
 It reuses this packaged runtime and shared buttons, with four allowlisted parent-pipe

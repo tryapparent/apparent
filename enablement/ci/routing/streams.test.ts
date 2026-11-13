@@ -7,11 +7,58 @@ import {join} from 'node:path';
 import {YAML} from 'bun';
 import {routeDecision, unownedPaths, routingProblems} from './consumers.ts';
 import {selectRange, requiresMacRustRange} from '../select.ts';
-import {selection as localSelection, commands as localCommands} from '../../local-tests/run.ts';
+import {selection as localSelection, commands as localCommands, onboardingCommands} from '../../local-tests/run.ts';
 import {affectsStream, currentStream, streamPaths, type Stream} from './streams.ts';
 
 const root = new URL('../../../', import.meta.url);
 const workflows = {capture: 'checks.yml', connect: 'stream-connect.yml', public: 'stream-public.yml', hermes: 'hermes.yml', engine: 'stream-engine.yml'};
+test('Connect consent dependencies add onboarding proof without dropping native consumers', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'onboarding-connect-'));
+  const git = (...args: string[]) => execFileSync('git', args, {cwd, encoding: 'utf8'}).trim();
+  const frontend = 'capture/desktop/ui/frontend/';
+  const inputs = ['src/connect/consent.ts', 'src/connect/protocol.ts', 'src/connect/session.ts',
+    'src/connect/flow.ts', 'src/bridge.ts', 'tests/connect/flow.test.ts',
+    'tests/connect/session.test.ts', 'tests/connect/flow-hook.test.ts'];
+  const put = (path: string, text: string) => {mkdirSync(join(cwd, path, '..'), {recursive: true}); writeFileSync(join(cwd, path), text);};
+  try {
+    git('init', '-q'); git('config', 'user.name', 'Synthetic'); git('config', 'user.email', 'synthetic@example.invalid');
+    for (const path of inputs) put(frontend + path, 'export const value = 1;');
+    git('add', '.'); git('commit', '-qm', 'baseline'); const base = git('rev-parse', 'HEAD');
+    for (const path of inputs) {
+      assert.deepEqual(routeDecision([frontend + path]).selected, ['capture', 'desktop', 'onboarding'], path);
+      git('reset', '--hard', base); put(frontend + path, "import type {Contract} from './provider';\nexport const value = 2;");
+      git('add', '.'); git('commit', '-qm', 'candidate'); const head = git('rev-parse', 'HEAD');
+      const hosted = selectRange(base, head, cwd), local = localSelection(base, head, cwd);
+      assert.deepEqual(local.plan, hosted.plan); assert.deepEqual(local.reasons, hosted.reasons);
+      assert.equal(hosted.plan.onboarding, true, path); assert.equal(hosted.plan.desktop, true, path);
+      assert.equal(hosted.plan.root, true, 'real transport and persistence integration remain selected');
+      assert.equal(hosted.macos, true); assert.equal(requiresMacRustRange(base, head, cwd), true);
+      assert.equal(hosted.plan.public, false); assert.equal(hosted.plan.hermes, false);
+    }
+    git('reset', '--hard', base); put(frontend + 'src/connect/unknown.ts', 'export const value = 1;');
+    git('add', '.'); git('commit', '-qm', 'new boundary');
+    const boundary = selectRange(base, git('rev-parse', 'HEAD'), cwd);
+    assert.equal(boundary.plan.root, true); assert.equal(boundary.macos, true);
+    git('reset', '--hard', base); git('rm', frontend + inputs[0]); symlinkSync('/tmp/not-a-provider', join(cwd, frontend + inputs[0]));
+    git('add', '.'); git('commit', '-qm', 'unsafe mode');
+    const unsafe = selectRange(base, git('rev-parse', 'HEAD'), cwd);
+    assert.equal(unsafe.plan.root, true); assert.equal(unsafe.macos, true); assert.equal(unsafe.plan.onboarding, true);
+  } finally {rmSync(cwd, {recursive: true, force: true});}
+});
+
+test('one onboarding inventory keeps source tests before installation and synthetic hooks after the compiler', () => {
+  const commands = onboardingCommands();
+  assert.deepEqual(commands.map(command => command.argv), [
+    ['npm', 'run', 'test:onboarding-policy'],
+    ['npm', 'ci', '--prefix', 'tests/onboarding', '--ignore-scripts', '--no-audit', '--no-fund'],
+    ['npm', '--prefix', 'tests/onboarding', 'run', 'typecheck'],
+    ['node', '--experimental-strip-types', '--test', 'tests/connect/flow-hook.test.ts'],
+  ]);
+  assert.ok(commands.every(command => command.cwd === 'capture/desktop/ui/frontend'));
+  const script = JSON.parse(readFileSync(new URL('capture/desktop/ui/frontend/package.json', root), 'utf8')).scripts['test:onboarding-policy'];
+  assert.ok(script.includes('tests/connect/flow.test.ts')); assert.ok(script.includes('tests/connect/session.test.ts'));
+  assert.ok(!script.includes('flow-hook.test.ts'), 'source-first checks must not load the compiler');
+});
 test('both automatic events use the reviewed positive directory inventory', () => {
   for (const [stream, file] of Object.entries(workflows)) {
     const workflow = YAML.parse(readFileSync(new URL('.github/workflows/' + file, root), 'utf8'));

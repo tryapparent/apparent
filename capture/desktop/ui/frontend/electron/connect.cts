@@ -2,7 +2,7 @@
 import { lstat } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
-import type { ConnectAction, ConnectSettings as SettingsResult, ConnectView } from '../src/bridge';
+import type { ConnectAction, ConnectSettings as SettingsResult, ConnectView } from '../src/connect/protocol';
 
 type Reply = SettingsResult & { openUri?: string };
 // JSON is untrusted. decode validates every projected field before returning it;

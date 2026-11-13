@@ -54,8 +54,15 @@ const onboardingRendererTestInputs = new Set([
   'capture/desktop/ui/frontend/tests/onboarding/renderer/window-coach.smoke.ts',
   'capture/desktop/ui/frontend/tests/onboarding/renderer/tsconfig.json',
 ]);
+// Shared Connect consent/session policy is consumed by onboarding and Settings.
+// Add the fast policy suite without exempting its bridge or native consumers.
+const onboardingConnectInputs = new Set([
+  'src/connect/consent.ts', 'src/connect/protocol.ts', 'src/connect/session.ts',
+  'src/connect/flow.ts', 'src/bridge.ts', 'tests/connect/flow.test.ts',
+  'tests/connect/session.test.ts', 'tests/connect/flow-hook.test.ts',
+].map(path => 'capture/desktop/ui/frontend/' + path));
 export function onboardingInput(path: string): boolean {
-  return onboardingRoots.some(root => path.startsWith(root)) ||
+  return onboardingConnectInputs.has(path) || onboardingRoots.some(root => path.startsWith(root)) ||
     ['onboarding.html', 'electron/onboarding.cjs', 'electron/onboarding-preload.cjs', 'electron/onboarding-protocol.cjs']
       .some(file => path === 'capture/desktop/ui/frontend/' + file) ||
     path.startsWith('capture/desktop/settings/onboarding') || path.endsWith('/practice.rs') ||

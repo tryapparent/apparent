@@ -86,6 +86,7 @@ export function onboardingCommands(): Command[] {
     {argv: ['npm', 'run', 'test:onboarding-policy'], cwd},
     {argv: ['npm', 'ci', '--prefix', 'tests/onboarding', '--ignore-scripts', '--no-audit', '--no-fund'], cwd},
     {argv: ['npm', '--prefix', 'tests/onboarding', 'run', 'typecheck'], cwd},
+    {argv: ['node', '--experimental-strip-types', '--test', 'tests/connect/flow-hook.test.ts'], cwd},
   ];
 }
 
