@@ -89,9 +89,11 @@ does not claim Connect client independence.
 
 `npm run test:cli` in `connect/client/typescript` runs the real CLI against a
 synthetic local service; set `APPARENT_CONNECT_TEST_BINARY` to its absolute path.
-The automatic Mac installed-app bridge lane also runs
-`connect_shares_installed_electron_rust_roundtrip`, selecting the current CI
-run/attempt app and requiring its bundled runtime and byte-identical policy.
+It checks foreground encrypted upload, ready-manifest readback and a separately
+approved recipient's decrypted bundle bytes. The automatic Mac installed-app
+bridge test `connect_shares_installed_electron_rust_roundtrip` also runs this
+foreground integration against the current run's app bundle and requires its
+bundled runtime and byte-identical `shares.js`, `handoff.js` and `foreground.js`.
 This is installed CLI/child-runtime proof, not GUI or live-service acceptance.
 
 Provider cloud/experiment reads are fresh at every check, including after client
