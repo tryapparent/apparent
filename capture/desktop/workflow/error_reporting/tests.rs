@@ -32,7 +32,19 @@ fn finalization_audio_report_identifies_real_writer_backlog_and_retains_saved_by
         assert!(!payload.to_string().contains(private), "leaked {private}");
     }
     drop(writer);
-    assert!(Lease::acquire(&scratch.0).is_ok(), "writer teardown must release its lease");
+    // A concurrent test can fork with this open-file description; CLOEXEC
+    // closes that inherited reference at exec, not at this Writer's drop.
+    // Observe kernel availability within the original deadline, retaining the
+    // actual failure if ownership is leaked rather than assuming instant close.
+    loop {
+        match Lease::acquire(&scratch.0) {
+            Ok(_) => break,
+            Err(error) => {
+                assert!(Instant::now() < deadline, "writer teardown must release its lease: {error:#}");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+    }
 }
 
 #[test]
@@ -272,6 +284,7 @@ fn exception_names_identify_each_category_without_changing_fingerprints() {
         (Failure::PhoneStart, "phone_start_failed"),
         (Failure::FinalizeCapture, "capture_finalization_failed"),
         (Failure::VideoExport, "video_export_failed"),
+        (Failure::UpdateCheck, "update_check_failed"),
         (Failure::ElectronMainException, "electron_main_exception"),
         (Failure::ElectronMainRejection, "electron_main_rejection"),
         (Failure::ElectronRendererGone, "electron_renderer_gone"),
@@ -295,6 +308,15 @@ fn exception_names_identify_each_category_without_changing_fingerprints() {
         assert_eq!(properties["$exception_fingerprint"], format!("desktop:{code}:capture/desktop/mod.rs:42"));
         assert!(!payload.to_string().contains("private-generation"));
     }
+}
+
+#[test]
+fn sparkle_reports_only_errors_not_normal_no_update_or_user_deferrals() {
+    for code in [1001, 4007, 4008] {
+        assert!(!sparkle_error_should_report("SUSparkleErrorDomain", code));
+    }
+    assert!(sparkle_error_should_report("SUSparkleErrorDomain", 1002));
+    assert!(sparkle_error_should_report("NSURLErrorDomain", -1009));
 }
 
 #[test]

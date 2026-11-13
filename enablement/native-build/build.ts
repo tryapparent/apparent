@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, closeSync, copyFileSync, existsSync, lstatSync, mkdtempSync, openSync, readFileSync, readlinkSync, readSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const helperSources = [
@@ -90,6 +90,12 @@ function developerDirectory(selection: string) {
 export function buildNative(root: string, output: string, architecture: string) {
   root = realpathSync(root);
   output = realpathSync(output);
+  // Cargo uses build/<package>-<hash>/out or build/<package>/<hash>/out.
+  // Find the profile beside build/, rather than assuming a fixed depth.
+  const build = [resolve(output, '../..'), resolve(output, '../../..')]
+    .find(path => basename(path) === 'build');
+  if (!build || basename(output) !== 'out') throw new Error('Unexpected Cargo OUT_DIR layout');
+  const profile = dirname(build);
   const watched = new Set<string>();
   const watch = (path: string) => {
     if (!watched.has(path)) console.log(`cargo:rerun-if-changed=${path}`);
@@ -205,7 +211,6 @@ export function buildNative(root: string, output: string, architecture: string) 
 
     // Installation and runtime lookup expect this companion beside the binary.
     // Recreate it on hits too; never follow a pre-existing destination symlink.
-    const profile = resolve(output, '../../..');
     const sibling = mkdtempSync(join(profile, '.native-helper-'));
     try {
       copyFileSync(join(output, 'apparent-helper'), join(sibling, 'apparent-helper'));

@@ -144,7 +144,7 @@ omit the ID and do not register releases. Existing installed binaries and old
 events are not retroactively linked by this change.
 
 Coverage: desktop recording storage/audio/screen/phone startup, capture finalization,
-video export and Rust panics after startup. This is a synthetic call-site frame,
+video export, Linux/macOS update-check errors, and Rust panics after startup. This is a synthetic call-site frame,
 **not a full unwound stack or native crash dump**. Segfaults, forced exits,
 Swift/Objective-C crashes and failures before startup are not captured. The queue
 holds at most 16 events, with 20 attempts/minute and a two-second HTTP timeout.
