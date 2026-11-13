@@ -346,6 +346,43 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect.poll(()=>output).toContain('"operation":"clear"');
   send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{id:'apparent-test-1',strokes:[],color:[59,121,189]}});
   await expect(page.locator('.native-board-paper > svg polyline')).toHaveCount(0);
+  const boardMetrics=await context.newCDPSession(page);
+  const blue=[59,121,189,255];
+  const pointPixel=async()=>{
+    const screenshot=await page.getByLabel('Whiteboard drawing canvas').screenshot({scale:'css'});
+    return page.evaluate(async base64=>{
+      const image=new Image();image.src='data:image/png;base64,'+base64;await image.decode();
+      const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
+      const context=canvas.getContext('2d');context.drawImage(image,0,0);
+      return Array.from(context.getImageData(60,100,1,1).data);
+    },screenshot.toString('base64'));
+  };
+  try{
+    // Real Electron content at its normal size and a narrow viewport. This does
+    // not qualify native display placement or Mac input delivery.
+    for(const width of [720,320])for(const scheme of ['light','dark']){
+      await boardMetrics.send('Emulation.setDeviceMetricsOverride',{width,height:540,deviceScaleFactor:1,mobile:false});
+      await page.emulateMedia({colorScheme:scheme});
+      await page.evaluate(async()=>{
+        await new Promise(requestAnimationFrame);
+        await Promise.all(document.getAnimations().filter(animation=>animation.effect?.getTiming().iterations!==Infinity).map(animation=>animation.finished.catch(()=>{})));
+      });
+      const paper=await page.getByLabel('Whiteboard drawing canvas').boundingBox();
+      const completedBefore=(output.match(/"operation":"end"/g)||[]).length;
+      await page.mouse.click(paper.x+60,paper.y+100);
+      await expect.poll(()=>(output.match(/"operation":"end"/g)||[]).length).toBe(completedBefore+1);
+      if(process.env.APPARENT_ONBOARDING_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,`whiteboard-click-${scheme}-viewport-${width}.png`)});
+      assert.deepEqual(await pointPixel(),blue,'a click must paint immediately before native acknowledgement');
+      send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{...board,strokes:[[[60,100]]]}});
+      assert.deepEqual(await pointPixel(),blue,'the acknowledged click must remain visible');
+      await page.getByRole('button',{name:'Clear',exact:true}).click();
+      send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{...board,strokes:[]}});
+      await expect.poll(pointPixel).not.toEqual(blue);
+    }
+  }finally{
+    await boardMetrics.send('Emulation.clearDeviceMetricsOverride');await boardMetrics.detach();
+    await page.emulateMedia({colorScheme:'light'});
+  }
   const beforeReplay=output;
   await page.getByRole('button',{name:'Replay guide',exact:true}).click();
   assert.equal(output,beforeReplay,'replay cannot clear or export human ink');
