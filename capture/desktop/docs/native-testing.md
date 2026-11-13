@@ -432,14 +432,31 @@ X11 visibility, portal consent, encoder output or candidate product behavior.
 
 ## Mac test-artifact preparation
 
-The manual Mac verification workflow and its ARM64 candidate-build option have
-been retired. Automatic Mac verification remains in `checks.yml`; it does not
-produce an installed-test candidate. Prepare a candidate through the existing
-Mac installation procedure before performing native acceptance.
+The manual Mac verification workflow and its ARM64 candidate-build option remain
+retired. Automatic Mac root verification that also selects foreground policy
+retains its already-built Intel test app for two days; retaining it does not dispatch another Mac build or publish a
+release. Install an inspected candidate through the existing Mac installer
+before performing native acceptance.
 
-`native-candidate.ts` seals the exact checkout commit/tree, actual ARM64 hardware
-and runtime, native executables, archive checksum and every packaged file's bytes
-(including owner workers). It extracts and checks the archive before handoff.
+`native-candidate.ts` seals the exact checkout commit/tree, native executables,
+archive checksum and every packaged file's bytes (including owner workers). The
+existing ARM64 candidate mode still requires actual ARM64 hardware and runtime.
+The Mac root verification job also retains its already-installed Intel app in a
+two-day, run-and-attempt-named artifact; its manifest truthfully says `x64`,
+`nativeAcceptance: pending` and `releaseAdmission: false`. It does not claim
+ARM64 hardware coverage or native acceptance. The archive is extracted and
+checked before upload. For a separate native run, provide the exact expected
+source SHA and archive SHA to `install-app.sh` with
+`APPARENT_RETAINED_INSTALL=1` and `APPARENT_NO_LAUNCH=1`. The supported installer
+verifies the archive inventory and ad-hoc signature before copying into a fresh
+destination; launch that installed app normally for native checks. This path
+does not compile, create a `~/bin` link, or alter config/TCC/release state.
+Set `APPARENT_RETAINED_ARCHIVE`, `APPARENT_RETAINED_MANIFEST`,
+`APPARENT_EXPECTED_SOURCE`, `APPARENT_EXPECTED_ARCHIVE_SHA256` and
+`APPARENT_APP_DIR` explicitly. `RUNNER_TEMP` must name an owned private per-job
+temporary directory. Intel artifacts require an Intel-compatible runtime;
+execution under Rosetta must be reported and does not prove native ARM64 behavior.
+
 Before allocating a native provider, download and inspect that exact artifact:
 verify its run/source identity, archive checksum and expected owner worker bytes.
 The manifest records `nativeAcceptance: pending`. Separate installed
