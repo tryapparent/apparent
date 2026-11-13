@@ -13,7 +13,7 @@ function run(command:string,args:string[],cwd:string,env=process.env):string {
   return execFileSync(command,args,{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe']});
 }
 async function fixture(t:test.TestContext) {
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),'connect-package-'));
+  const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'connect-package-'));
   await fs.chmod(root,0o700);
   t.after(()=>fs.rm(root,{recursive:true,force:true}));
   const source=path.join(root,'source');await fs.mkdir(source);
@@ -65,7 +65,7 @@ test('packed consumer installs and runs without Rust, compilers or source resolu
     name:manifest.name,version:manifest.version,lockfileVersion:3,requires:true,packages:{
       '':manifest,...runtime,[`node_modules/${producer.name}`]:{
         version:producer.version,resolved:`file:${archive}`,integrity:result.integrity,
-        dependencies:producer.dependencies,engines:producer.engines,
+        dependencies:producer.dependencies,engines:producer.engines,bin:producer.bin,
       },
     },
   }));
@@ -83,8 +83,10 @@ test('packed consumer installs and runs without Rust, compilers or source resolu
   `],consumer,env);
   const endpointCli=path.join(consumer,'node_modules/@apparent/connect-crypto/dist/mcp-cli.js');
   assert.match(run(process.execPath,[endpointCli,'--help'],consumer,env),/endpoint runs offline/);
+  const endpointBin=path.join(consumer,'node_modules/.bin/apparent-connect-mcp');
+  assert.match(run(process.execPath,[endpointBin,'--help'],consumer,env),/endpoint runs offline/);
   const endpointState=path.join(await fs.realpath(root),'endpoint');
-  const setup=JSON.parse(run(process.execPath,[endpointCli,'init','--state',endpointState],consumer,env));
+  const setup=JSON.parse(run(process.execPath,[endpointBin,'init','--state',endpointState],consumer,env));
   assert.equal(setup.tool,'connect_relay_open');
   assert.deepEqual(Object.keys(setup.arguments.recipient).sort(),['crv','kty','x','y']);
   assert.ok(!JSON.stringify(setup).includes('AGE-SECRET-KEY'));

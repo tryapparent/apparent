@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import * as fs from 'node:fs/promises';
-import {constants} from 'node:fs';
+import {constants,realpathSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {initEndpoint,nextEndpoint,acceptEndpoint,fetchEndpoint,revokeEndpoint,cancelEndpoint} from './mcp-endpoint.js';
 
@@ -35,7 +35,13 @@ export async function main(args:string[]):Promise<void> {
   } else throw new Error('unknown_command');
   console.log(JSON.stringify(result));
 }
-if(process.argv[1]===fileURLToPath(import.meta.url))main(process.argv.slice(2)).catch((error:unknown)=>{
+// npm installs a symlink for the executable; Node resolves the module URL but
+// preserves that symlink in argv. This also handles Darwin's /tmp alias.
+function invokedAsMain(): boolean {
+  try { return !!process.argv[1] && realpathSync(process.argv[1])===fileURLToPath(import.meta.url); }
+  catch { return false; }
+}
+if(invokedAsMain())main(process.argv.slice(2)).catch((error:unknown)=>{
   // Never print raw exceptions: a provider or malformed input may contain secrets.
   const code=error instanceof Error && /^[a-z_]{1,100}$/.test(error.message)?error.message:'endpoint_operation_failed';
   console.error(`Connect MCP endpoint failed (${code}). Preserve its private state and check the command, reply, permissions and approval status. No unverified recording is ready.`);
