@@ -12,9 +12,9 @@ The Connect React UI implements the selected V4 paper-sheet composition. It uses
 | Setup, read | `apparent connect login --server <API origin> --scope read --no-browser`. Separate approval of all current and future Connect uploads; no upload/delete. |
 | Installed app compatibility | Both setup tabs explain that `apparent connect` requires an updated app. Older apps can use `apparent cloud`, retained as a compatibility alias; no installation or version is inferred by the website. |
 | API origin | Configured `VITE_HOSTED_API_ORIGIN` is used in commands. When absent, a clearly marked placeholder must be replaced with the deployment's actual API origin; the website origin is not assumed to be the API. |
-| `/connect/device?code=…` (or `/hosted/device?code=…`), signed out | Sign-in keeps only the fixed canonical approval route and its code. No visitor-supplied return URL is forwarded. |
+| `/connect/device?code=…` (or `/hosted/device?code=…`), signed out | A valid twelve-character device code starts Google sign-in automatically, retaining only the fixed canonical approval route and code. No visitor-supplied return URL is forwarded. |
 | Loading | Checking your account. No approval action. |
-| Active account + verified pending device response | The server's immutable `upload` / `read` scope chooses the tab. Tabs cannot change the request. Scope and sensitive categories are visible before explicit approval. Upload requires a consent checkbox as well as Allow uploads; read requires Allow agent read access. |
+| Active account + verified pending device response | The server's immutable `upload` / `read` scope chooses the tab. Tabs cannot change the request. Scope and sensitive categories are visible before explicit Allow uploads or Allow agent read access. |
 | Approval | One guarded POST with CSRF, then GET device readback. Both approved status and the original scope must match. Only then show Approval granted; CLI must finish. This does not establish local upload settings, token receipt, or a completed read. |
 | Already approved | Same truthful approval state, no second mutation. |
 | Rejected / expired | Nothing approved; start a new CLI request. Pending expiry is checked while the page is open and again immediately before approval. |
@@ -23,7 +23,7 @@ The Connect React UI implements the selected V4 paper-sheet composition. It uses
 | Log out | Browser session only; POST then anonymous session readback. Does not revoke independent device grants. |
 | Separate lock control | Describes independent read approval and limits. It is not a claim about an agent credential's effective state. |
 
-Account tabs support arrow keys, Home/End and roving focus; optional detail uses native disclosures. The setup dialog uses native modal focus containment, Escape and focus return. No request writes on page load, tab switch, disclosure or setup. V4 approval uses the existing API contract; `api.ts` generates fixed canonical Connect return destinations. Server validation, credential handling and CSRF boundaries still apply. The separate sharing implementation adds list/revoke API methods without changing those approval boundaries.
+Account tabs support arrow keys, Home/End and roving focus; optional detail uses native disclosures. The setup dialog uses native modal focus containment, Escape and focus return. A signed-in waitlisted device page reports eligibility with the session's CSRF token; it neither approves the request nor issues credentials. Tab switches, disclosures and setup do not write permissions. V4 approval uses the existing API contract; `api.ts` generates fixed canonical Connect return destinations. Server validation, credential handling and CSRF boundaries still apply. The separate sharing implementation adds list/revoke API methods without changing those approval boundaries.
 
 Upload and read permission disclosures retain screen images, recording, voice, transcript and context; 20-account beta, 500,000,000-byte account cap with oldest-first eviction, seven-day maximum retention, 90,000,000-byte per-file rejection of the whole bundle, and fixed 30-day grants with manual reapproval and no website renewal.
 
