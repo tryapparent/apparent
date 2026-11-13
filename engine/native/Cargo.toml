@@ -1,0 +1,11 @@
+[package]
+name = "apparent-engine-media"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+description = "Read-only local movie metadata capability"
+
+[[bin]]
+name = "apparent-engine-media"
+path = "src/main.rs"
