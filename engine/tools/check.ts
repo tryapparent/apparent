@@ -21,6 +21,7 @@ const stage = join(output, 'sdk');
 mkdirSync(stage, {recursive: true});
 const source = JSON.parse(readFileSync(join(sdk, 'package.json'), 'utf8'));
 const {scripts, devDependencies, ...metadata} = source;
+const sdkArchive = `apparent-engine-sdk-${source.version}.tgz`;
 writeFileSync(join(stage, 'package.json'), JSON.stringify(metadata, null, 2));
 cpSync(join(sdk, 'README.md'), join(stage, 'README.md'));
 cpSync(join(sdk, 'LICENSE'), join(stage, 'LICENSE'));
@@ -31,7 +32,7 @@ run('npm', ['pack', stage, '--ignore-scripts', '--pack-destination', artifacts])
 const consumer = join(output, 'consumer');
 mkdirSync(consumer, {recursive: true});
 writeFileSync(join(consumer, 'package.json'), '{"private":true,"type":"module"}');
-run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', join(artifacts, 'apparent-engine-sdk-0.1.0.tgz')], consumer);
+run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', join(artifacts, sdkArchive)], consumer);
 run(process.execPath, ['--input-type=module', '-e', `
   import {parseMovieInfo} from '@apparent/engine-sdk';
   import assert from 'node:assert/strict';
@@ -74,7 +75,7 @@ if (process.platform === 'darwin') run('otool', ['-L', join(installed, name, fil
 // Run the native check through the public package export in the clean consumer.
 cpSync(join(root, 'engine/tools/qualify.ts'), join(consumer, 'qualify.ts'));
 run(process.execPath, ['--experimental-strip-types', join(consumer, 'qualify.ts'), executable, output], consumer);
-for (const file of [name + '.tar.gz', 'apparent-engine-sdk-0.1.0.tgz']) {
+for (const file of [name + '.tar.gz', sdkArchive]) {
   writeFileSync(join(artifacts, file + '.sha256'), createHash('sha256').update(readFileSync(join(artifacts, file))).digest('hex') + '  ' + file + '\n');
 }
 console.log(`Engine artifacts: ${artifacts}`);
