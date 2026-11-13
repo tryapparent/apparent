@@ -14,7 +14,8 @@ type ManifestFile = {path: string; size: number; sha256: string};
 type Capture = {id: string; format: string; files: ManifestFile[]; data: Map<string, Buffer>; ready: boolean};
 type FixtureState = {
   origin: string; calls: Record<string, number>; captures: Map<string, Capture>;
-  approved: number; polls: number; putCount: number;
+  approved: number; polls: number; putCount: number; putAttempts: number;
+  delayFirstPutMs: number; firstPutSeen: boolean; cancelledPuts: number; shareCalls: number;
   bytesIn: number; digests: string[]; aborted: number;
   devices: Array<{grantId: string; scope: string; key: unknown}>; pendingKey: unknown; pendingScope: string;
 };
@@ -50,6 +51,7 @@ function routeLabel(method: string, url: URL) {
   const pieces = url.pathname.split('/').filter(Boolean);
   if (pieces[0] === 'v1' && pieces[1] === 'captures' && pieces[2]) {
     if (pieces[3] === 'files') return `${method} /v1/captures/:id/files/:path`;
+    if (pieces[3] === 'share') return `${method} /v1/captures/:id/share`;
     return `${method} /v1/captures/:id${pieces[3] === 'complete' ? '/complete' : ''}`;
   }
   return `${method} ${url.pathname}`;
@@ -70,7 +72,8 @@ async function handle(req: IncomingMessage, res: ServerResponse, state: FixtureS
       return json(res, 200, {calls: state.calls, approvedLogins: state.approved,
         captures: [...state.captures.values()].map(c => ({format: c.format, ready: c.ready, files: c.files.length,
           received: c.files.every(f => { const bytes = c.data.get(f.path); return !!bytes && bytes.length === f.size && sha(bytes) === f.sha256; })})),
-        uploadedBytes: state.bytesIn, syntheticOnly: true});
+        uploadedBytes: state.bytesIn, putCount: state.putCount, putAttempts: state.putAttempts,
+        cancelledPuts: state.cancelledPuts, shareCalls: state.shareCalls, syntheticOnly: true});
     }
     if (url.pathname === '/v1/device/start' && method === 'POST') {
       const value = JSON.parse((await body(req, 16_384)).toString('utf8')) as {scope?: string; encryptionKey?: unknown};
@@ -122,7 +125,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, state: FixtureS
         const value = JSON.parse((await body(req, 128 * 1024)).toString('utf8')) as {format?: string; files?: ManifestFile[]};
         if (!Array.isArray(value.files) || !value.files.length || value.files.length > 8) return json(res, 400, {error: {code: 'invalid_manifest'}});
         for (const file of value.files) {
-          if (!file || typeof file.path !== 'string' || file.path.length > 128 || !Number.isSafeInteger(file.size) || file.size < 0 || file.size > 4_194_304 || !/^[a-f0-9]{64}$/.test(file.sha256)) return json(res, 400, {error: {code: 'invalid_manifest'}});
+          if (!file || typeof file.path !== 'string' || file.path.length > 128 || !Number.isSafeInteger(file.size) || file.size < 0 || file.size > 90_000_000 || !/^[a-f0-9]{64}$/.test(file.sha256)) return json(res, 400, {error: {code: 'invalid_manifest'}});
         }
         let capture = state.captures.get(id);
         if (capture && JSON.stringify(capture.files) !== JSON.stringify(value.files)) return json(res, 409, {error: {code: 'manifest_conflict'}});
@@ -138,12 +141,22 @@ async function handle(req: IncomingMessage, res: ServerResponse, state: FixtureS
         res.writeHead(200, {'content-type': 'application/octet-stream', 'content-length': String(bytes.length), 'cache-control': 'no-store'}); return res.end(bytes);
       }
       if (fileMatch && method === 'PUT') {
+        state.putAttempts++;
         const capture = state.captures.get(id); if (!capture) return json(res, 404, {error: {code: 'not_found'}});
         const filePath = fileMatch[1]!.split('/').map(part => decodeURIComponent(part)).join('/');
         const expected = capture.files.find(file => file.path === filePath);
         if (!expected) return json(res, 404, {error: {code: 'not_found'}});
         const bytes = await body(req, Math.max(expected.size + 1, 2_100_000));
         state.putCount++;
+        if (!state.firstPutSeen) {
+          state.firstPutSeen = true;
+          if (state.delayFirstPutMs) await new Promise<void>(resolve => {
+            const closed = () => { if (!res.writableEnded) state.cancelledPuts++; clearTimeout(timer); resolve(); };
+            const timer = setTimeout(() => { res.off('close', closed); resolve(); }, state.delayFirstPutMs);
+            res.once('close', closed);
+            if (res.destroyed) { res.off('close', closed); closed(); }
+          });
+        }
         if (req.aborted || res.destroyed) return;
         if (bytes.length !== expected.size || sha(bytes) !== expected.sha256) return json(res, 409, {error: {code: 'hash_mismatch'}});
         capture.data.set(filePath, bytes); state.bytesIn += bytes.length; state.digests.push(sha(bytes));
@@ -157,6 +170,13 @@ async function handle(req: IncomingMessage, res: ServerResponse, state: FixtureS
         if (!complete) return json(res, 409, {error: {code: 'incomplete'}});
         capture.ready = true; await body(req, 16_384);
         return json(res, 200, {id, status: 'ready', ...(capture.format === 'plaintext-v1' ? {} : {format: capture.format})});
+      }
+      if (suffix === 'share' && method === 'POST') {
+        const capture = state.captures.get(id);
+        if (!capture?.ready || capture.format !== 'plaintext-v1') return json(res, 409, {error: {code: 'not_shareable'}});
+        await body(req, 16_384);
+        state.shareCalls++;
+        return json(res, 200, {id, status: 'ready', url: `${state.origin}/s/${randomBytes(32).toString('hex')}`});
       }
       if (!suffix && method === 'GET') {
         const capture = state.captures.get(id); if (!capture) return json(res, 404, {error: {code: 'not_found'}});
@@ -176,6 +196,13 @@ async function underTmp(value: string) {
   // macOS resolves /tmp to /private/tmp; compare canonical paths on both OSes.
   const relative = path.relative(await realpath('/tmp'), absolute);
   if (!relative.startsWith('apparent-dev-') || relative.includes(path.sep)) throw new Error('fixture paths must stay beneath /tmp/apparent-dev-<job>-<run>/');
+  return absolute;
+}
+async function validateJobRoot(value: string) {
+  const absolute = await underTmp(value);
+  if (path.resolve(value) !== absolute) throw new Error('fixture --root must use the canonical job-root path');
+  const info = await stat(absolute);
+  if (!info.isDirectory() || (info.mode & 0o077) !== 0) throw new Error('fixture --root must be an existing private job directory');
   return absolute;
 }
 async function makeBundle(args: Record<string, string | boolean>) {
@@ -202,13 +229,18 @@ async function makeBundle(args: Record<string, string | boolean>) {
 async function main() {
   const command = process.argv[2];
   const parsed = parseArgs({args: process.argv.slice(3), options: {
-    root: {type: 'string'}, port: {type: 'string'},
+    root: {type: 'string'}, port: {type: 'string'}, 'delay-first-put-ms': {type: 'string'},
   }}).values;
   if (command === 'bundle') return makeBundle(parsed);
-  if (command !== 'serve') throw new Error('usage: foreground-fixture.ts serve --port 0 | bundle --root /tmp/apparent-dev-...');
+  if (command !== 'serve') throw new Error('usage: foreground-fixture.ts serve --port 0 [--delay-first-put-ms 0..30000] | bundle --root /tmp/apparent-dev-...');
   const port = Number(parsed.port ?? 0);
   if (!Number.isSafeInteger(port) || port < 0 || port > 65535) throw new Error('invalid port');
-  const state: FixtureState = {origin: '', calls: {}, captures: new Map(), approved: 0, polls: 0, putCount: 0, bytesIn: 0, digests: [], aborted: 0, devices: [], pendingKey: null, pendingScope: 'upload'};
+  const delayFirstPutMs = Number(parsed['delay-first-put-ms'] ?? 0);
+  if (!Number.isSafeInteger(delayFirstPutMs) || delayFirstPutMs < 0 || delayFirstPutMs > 30_000) throw new Error('invalid --delay-first-put-ms');
+  const reportRoot = parsed.root ? await validateJobRoot(String(parsed.root)) : undefined;
+  const state: FixtureState = {origin: '', calls: {}, captures: new Map(), approved: 0, polls: 0, putCount: 0,
+    putAttempts: 0, delayFirstPutMs, firstPutSeen: false, cancelledPuts: 0, shareCalls: 0, bytesIn: 0, digests: [], aborted: 0,
+    devices: [], pendingKey: null, pendingScope: 'upload'};
   const server = createServer((req, res) => { void handle(req, res, state); });
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('server did not bind TCP');
@@ -216,7 +248,11 @@ async function main() {
   console.log(JSON.stringify({ready: true, origin: state.origin, syntheticOnly: true}));
   const stop = async () => {
     server.close();
-    console.log(JSON.stringify({syntheticOnly: true, calls: state.calls, approvedLogins: state.approved, readyCaptures: [...state.captures.values()].filter(c => c.ready).length, uploadedBytes: state.bytesIn, abortedRequests: state.aborted}));
+    const report = {syntheticOnly: true, calls: state.calls, approvedLogins: state.approved,
+      readyCaptures: [...state.captures.values()].filter(c => c.ready).length, uploadedBytes: state.bytesIn,
+      putCount: state.putCount, putAttempts: state.putAttempts, cancelledPuts: state.cancelledPuts, shareCalls: state.shareCalls, abortedRequests: state.aborted};
+    if (reportRoot) await writeFile(path.join(reportRoot, 'fixture-report.json'), JSON.stringify(report, null, 2) + '\n', {mode: 0o600, flag: 'wx'});
+    console.log(JSON.stringify(report));
     process.exit(0);
   };
   process.once('SIGINT', () => { void stop(); }); process.once('SIGTERM', () => { void stop(); });

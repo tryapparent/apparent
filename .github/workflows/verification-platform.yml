@@ -315,6 +315,7 @@ jobs:
       # Required app compilation precedes GUI assertions; the later full verifier
       # still executes its unchanged build/test inventory against this target.
       - name: Build and package the exact Mac candidate for native checks
+        id: mac_candidate_build
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
         shell: bash
         run: |
@@ -382,6 +383,40 @@ jobs:
         run: |
           export APPARENT_REFERENCE_BINARY="$HOME/Applications/Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.app/Contents/MacOS/apparent"
           node --experimental-strip-types enablement/timing/command.ts native-reference-assertions node --test capture/desktop/ui/frontend/tests/reference-native.cjs
+      - name: Installed Mac foreground capture and sharing
+        id: native_foreground
+        if: >-
+          !cancelled() && runner.os == 'macOS' && needs.select.outputs.root == 'true' &&
+          (needs.select.outputs.desktop == 'true' || needs.select.outputs.client == 'true' || needs.select.outputs.foreground == 'true') &&
+          steps.mac_candidate_build.outcome == 'success'
+        timeout-minutes: 6
+        shell: bash
+        run: |
+          evidence="$RUNNER_TEMP/apparent-foreground-native"
+          test ! -e "$evidence"
+          mkdir -m 700 "$evidence"
+          swiftc capture/desktop/scripts/native/foreground/pill-input.swift \
+            -o "$evidence/pill-input" > "$evidence/pill-input-compile.log" 2>&1
+          swiftc capture/desktop/scripts/native/foreground/scene.swift \
+            -o "$evidence/scene" > "$evidence/scene-compile.log" 2>&1
+          APPARENT_FOREGROUND_NATIVE_OUTPUT="$evidence" \
+          APPARENT_FOREGROUND_NATIVE_INPUT="$evidence/pill-input" \
+          APPARENT_FOREGROUND_SCENE="$evidence/scene" \
+            node --experimental-strip-types capture/desktop/ui/frontend/tests/foreground/mac.ts
+      - name: Retain installed Mac foreground evidence
+        if: always() && runner.os == 'macOS' && steps.native_foreground.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-foreground-native
+          path: |
+            ${{ runner.temp }}/apparent-foreground-native/**/*.json
+            ${{ runner.temp }}/apparent-foreground-native/**/*.png
+            ${{ runner.temp }}/apparent-foreground-native/**/*.log
+            ${{ runner.temp }}/apparent-foreground-native/**/summary.md
+            ${{ runner.temp }}/apparent-foreground-native/**/*.mp4
+            ${{ runner.temp }}/apparent-foreground-native/**/*.mov
+          if-no-files-found: error
+          retention-days: 2
       - name: Early Mac Electron to Rust Settings integration (not native GUI proof)
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
         shell: bash

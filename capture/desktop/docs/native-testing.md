@@ -430,6 +430,30 @@ start timeout. Their media are deliberately invalid labelled strings and their
 scene producer is replaced. They test driver wiring, **not** native execution,
 X11 visibility, portal consent, encoder output or candidate product behavior.
 
+## Hosted Mac foreground acceptance
+
+Affected Desktop/Connect native verification uses the already-installed candidate
+for a separate foreground case in `ui/frontend/tests/foreground/mac.ts`. It
+requires a disposable GitHub-hosted Mac, the exact clean workflow source and an
+effective Screen Recording grant. It never edits TCC: passive permission denial
+fails the case, and `capture start --wait` must confirm a real captured frame.
+
+The case disables microphone capture, displays a generated scene, and uses the
+normal exact-ID capture lifecycle. It then observes and clicks the actual
+packaged Electron pill through progress, Cancel, Retry and Copy link. Input is
+limited to a fresh OCR target in a verified descendant of the installed app;
+the native adapter checks hit ownership and preserves the scene's foreground.
+Sharing uses explicit plaintext consent against a private loopback fixture, with
+the ordinary public-access clipboard disclosure. Encrypted transfer/decryption
+proof remains the separate installed Connect CLI test.
+
+`mac-foreground-native` retains the report, owned-window screenshots, synthetic
+bundle and compiler/application logs for two days. Acceptance requires a passing
+report, successful owned cleanup and inspection of the actual text/images; a
+prepared adapter or permission boolean alone is not proof. Independent earlier
+native failures still fail the job. This adds no Mac job, provider rental,
+production activation, permission override or publication.
+
 ## Mac test-artifact preparation
 
 The manual Mac verification workflow and its ARM64 candidate-build option remain
