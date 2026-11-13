@@ -1336,10 +1336,16 @@ impl Panel {
             Ok("up to date") => UpdateResult::Current,
             Ok(other) => {
                 crate::capture::engine::runtime::apparent_log(format!("Unexpected update check result: {other}"));
+                crate::capture::desktop::workflow::error_reporting::report(
+                    crate::capture::desktop::workflow::error_reporting::Failure::UpdateCheck,
+                );
                 UpdateResult::Failed
             }
             Err(error) => {
                 crate::capture::engine::runtime::apparent_log(format!("Could not check for updates: {error}"));
+                crate::capture::desktop::workflow::error_reporting::report(
+                    crate::capture::desktop::workflow::error_reporting::Failure::UpdateCheck,
+                );
                 UpdateResult::Failed
             }
         });
