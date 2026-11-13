@@ -133,10 +133,12 @@ test('controlled OAuth rejects unverified email, wrong nonce/issuer/audience/exp
 });
 
 async function rejectedLogin(f,response) {
+ // Settle this callback's streamed response before advancing the local Worker
+ // through unrelated database/session requests. Keep its exact rejection body.
+ assert.equal(response.status,401);assert.deepEqual(await response.json(),{error:{code:'oauth_failed',message:'oauth failed'}});
  assert.doesNotMatch(response.headers.get('Set-Cookie')||'',/__Secure-apparent\.session_token=/);
  for(const table of ['auth_session','auth_user','auth_account','accounts'])assert.equal((await f.db.prepare('SELECT count(*) AS n FROM '+table).first()).n,0,table+' must remain empty');
  assert.equal((await(await f.call('/v1/session')).json()).authenticated,false);
- assert.equal(response.status,401);assert.deepEqual(await response.json(),{error:{code:'oauth_failed',message:'oauth failed'}});
 }
 
 for(const [name,options] of [
