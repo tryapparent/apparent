@@ -296,7 +296,8 @@ on run argv
   set inputHandle to current application's NSFileHandle's fileHandleWithStandardInput()
   set outputHandle to current application's NSFileHandle's fileHandleWithStandardOutput()
   set newlineData to (current application's NSString's stringWithString:linefeed)'s dataUsingEncoding:(current application's NSUTF8StringEncoding)
-  set buffer to current application's NSMutableData's data()
+  -- data is AppleScript terminology; use the explicit Objective-C initializer.
+  set buffer to current application's NSMutableData's alloc()'s initWithCapacity:8192
   repeat
     set nextByte to inputHandle's readDataOfLength:1
     if (nextByte's |length|() as integer) is 0 then exit repeat
