@@ -50,6 +50,46 @@ Downloads; quit that copy, move it to Applications and relaunch it there. Instal
 then check their own signed Sparkle feed
 (`preview-mac-feed/appcast.xml`), including Settings → About → Check for Updates….
 
+### Homebrew distribution
+
+Regular main releases also publish `Casks/apparent.rb` to
+[`tryapparent/homebrew-tap`](https://github.com/tryapparent/homebrew-tap). Install with
+`brew install --cask tryapparent/tap/apparent` on Apple silicon with macOS 15 or newer.
+The cask installs `Apparent Preview.app` from the same notarized DMG, preserves its
+Sparkle updater, and adds no CLI or login integration. macOS capture permissions
+still require the user's approval. Ordinary uninstall removes the app, not recordings
+or settings; the cask intentionally has no `zap` cleanup.
+
+The release's separate **Publish Homebrew cask** job runs only after the release
+and signed appcast have been published. It downloads the public DMG and checksum,
+checks the release tag against the build commit and the downloaded bytes against
+both the checksum asset and GitHub's digest, then exercises Homebrew install,
+upgrade when an older cask exists, reinstall and uninstall on a disposable Apple
+silicon runner. Signature, notarization, signing team, bundle identity, version and
+installed CLI checks must pass before the tap write credential is loaded.
+Only the cask is committed, with a fast-forward push and remote readback.
+An older version or changed checksum for an existing version is refused.
+
+Provision repository secret `HOMEBREW_TAP_SSH_KEY` with a dedicated SSH deploy key
+whose public key has write access **only** to `tryapparent/homebrew-tap`. Its `main`
+branch must exist. The normal release checks for this secret and enabled Apple
+notarization before building. Keep the private key out of Git, logs and artifacts.
+The workflow's normal `GITHUB_TOKEN` is read-only in the Homebrew job and cannot
+write the other repository.
+
+If Homebrew publication fails, rerun only the failed job; the public release and
+Sparkle feed remain available. To bootstrap the tap or repair an already published
+version, dispatch **Mac preview release** from `main` with `homebrew_tag` set to
+its exact tag, such as `preview-mac-22-2`. This skips the app build/release and runs
+the same downloaded-artifact and installation gates. Leave that input blank for
+ordinary releases. Repeating the current cask makes no new commit. Fix a bad
+release with a new numbered app release; do not overwrite an existing asset or
+downgrade the tap. Removing the deploy key/secret stops future tap writes without
+changing installed apps, recordings or the Sparkle feed. The historical onboarding
+baseline does not update the tap.
+
+### Preview signing and installation
+
 Before the first dispatch, generate a **dedicated preview** Sparkle EdDSA key pair on a Mac using
 the pinned `capture/desktop/scripts/release/setup-sparkle.sh` tools. Run its `bin/generate_keys --account apparent-preview`
 in an interactive Mac login session, then `bin/generate_keys --account apparent-preview -p` to see
@@ -156,7 +196,9 @@ or publish a Windows zip.
 5. **Site** (the Pro's checkout, where `wrangler` is signed in): fast-forward to `main`, copy the DMG,
    Sparkle zip and the new `Apparent<n>-*.delta` files into `public/site/public/assets/releases/` (also as
    `Apparent-latest-*`), then `bun run build && bunx wrangler@latest deploy`.
-6. **Homebrew:** a PR to `kitlangton/homebrew-tap` bumping `version` and `sha256` in `Casks/apparent.rb`.
+6. **Homebrew (Kit's original app only):** a PR to `kitlangton/homebrew-tap` bumping
+   `version` and `sha256` in `Casks/apparent.rb`. The fork's regular preview pipeline
+   manages its own tap automatically as described above; it does not modify Kit's tap.
 
 Keep the Sparkle tools and the updates folder under `~/.local/share/apparent-release/`, never in `target/`
 or `/tmp`: a clean or a reboot would take the tools and every earlier zip with them.
