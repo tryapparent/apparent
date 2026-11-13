@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const repository = resolve(import.meta.dirname, '../..');
 const production = join(repository, 'enablement/native-build/build.ts');
-function fixture(t: { after: (fn: () => void) => void }) {
+function fixture(t: { after: (fn: () => void) => void }, output = 'target/debug/build/native/out') {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'apparent-dev-native-build-')));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   function put(path: string, body: string) {
@@ -74,7 +74,7 @@ if [ "$tool" = swiftc ]; then chmod +x "$output"; fi
 if [ "$tool" = swiftc ]; then cp "$arg" "$FAKE_ROOT/helper-plist"; fi
 `);
   chmodSync(join(root, 'bin/xcrun'), 0o700);
-  const out = join(root, 'target/debug/build/native/out');
+  const out = join(root, output);
   mkdirSync(out, { recursive: true });
   const env = { ...process.env, PATH: join(root, 'bin') + ':' + process.env.PATH,
     FAKE_ROOT: root, FAIL_TOOL: '', DEVELOPER_DIR: developer, SDKROOT: undefined, TOOLCHAINS: undefined,
@@ -89,6 +89,33 @@ if [ "$tool" = swiftc ]; then cp "$arg" "$FAKE_ROOT/helper-plist"; fi
   };
   return { root, out, developer, otherDeveloper, env, put, run, count, select };
 }
+
+for (const layout of ['apparent-hash/out', 'apparent/hash/out']) {
+  test(`the Mac packager receives its executable helper for Cargo build/${layout}`, t => {
+    const profile = 'custom-target/aarch64-apple-darwin/release';
+    const f = fixture(t, `${profile}/build/${layout}`);
+    f.put(`${profile}/apparent`, 'application binary');
+    const helper = join(f.root, profile, 'apparent-helper');
+    const preview = { APPARENT_HELPER_BUNDLE_ID: 'dev.simonvanlaak.apparent.preview.helper' };
+    assert.equal(f.run('aarch64', preview).status, 0);
+    assert.equal(readFileSync(helper, 'utf8'), 'synthetic compiled swiftc\n');
+    assert.ok((statSync(helper).mode & 0o111) !== 0);
+    rmSync(helper);
+    assert.equal(f.run('aarch64', preview).status, 0);
+    assert.equal(f.count().length, 5, 'verified native outputs are reused');
+    assert.equal(readFileSync(helper, 'utf8'), 'synthetic compiled swiftc\n');
+    assert.ok((statSync(helper).mode & 0o111) !== 0);
+  });
+}
+
+test('an unrecognized Cargo output layout fails before native execution or receipt publication', t => {
+  const f = fixture(t, 'unrecognized/out');
+  const result = f.run();
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Unexpected Cargo OUT_DIR layout/);
+  assert.equal(f.count().length, 0);
+  assert.ok(!existsSync(join(f.out, 'native-build.json')));
+});
 
 test('native outputs: cold build, verified reuse, restaging and per-artifact invalidation', t => {
   const f = fixture(t);
@@ -257,6 +284,7 @@ test('the production Cargo adapter remains fresh on no-op and reuses native outp
     const f = cargoFixture(t), { cargo } = f;
     let r = cargo();
     assert.equal(r.status, 0, r.stderr);
+    assert.equal(readFileSync(join(f.root, 'target/debug/apparent-helper'), 'utf8'), 'synthetic compiled swiftc\n');
     assert.equal(f.count().length, 5);
     r = cargo();
     assert.equal(r.status, 0, r.stderr);

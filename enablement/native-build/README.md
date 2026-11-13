@@ -12,6 +12,9 @@ target architecture, source/plist bytes, build-tool source and relevant native
 environment values. Preview helper identity remains separate. Missing, malformed,
 incompatible or corrupt entries rebuild. Failure publishes no success receipt.
 The runtime helper is restaged beside the application even on a hit.
+Staging supports both Cargo `build/<package>-<hash>/out` and
+`build/<package>/<hash>/out` layouts, including target-specific release profiles.
+Linux's runtime-library adapter already finds the profile beside `build/`.
 
 The script emits Cargo watches for inputs, not outputs it writes. An absolute,
 canonical `DEVELOPER_DIR` matching the normalized `xcode-select -p` result omits the global
