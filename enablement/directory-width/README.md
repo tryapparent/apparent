@@ -5,7 +5,7 @@
 Only dependency/cache trees (`target`, `node_modules`, `vendor`, `third_party`, `third-party`, `.git`, `__pycache__`) and specifically generated roots `public/site/published-homepage`, `public/site/video-demo/output`, `connect/web/dist`, and `connect/web/dist-site-check` are excluded. `public/site/public` is not excluded: tracked feature-demo HTML there is first-party code. Generic `src`, `shared`, library, test, `dist`, and generated-named directories receive no blanket exemption. On violation, split changes by responsibility and stage only the intended changes; the hook never edits or stages files. Git/plumbing failures reject the commit.
 
 At root, `.cargo`, `.githooks` and `.github` are the three bounded tool-directory
-exceptions described in `AGENTS.md`. Root permits ten ordinary directories plus
+exceptions. Root permits ten ordinary directories plus
 those exact tool directories; all remain visible in the actual count. Their
 contents retain ordinary limits except `.github/workflows`: GitHub requires
 immediate workflow files, so regular `hermes.yml` gets one named extra slot

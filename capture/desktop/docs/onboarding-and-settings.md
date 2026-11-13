@@ -24,6 +24,16 @@ Explicit recording shortcuts and `app --record` keep their recording behavior.
 A bare terminal invocation still prints help. Linux tray-host loss can still show
 fallback controls when idle; an explicit app launch opens Settings instead.
 
+### Mac development installation
+
+Install and launch through `capture/desktop/scripts/packaging/install-app.sh`, or
+`install-app-remote.sh` for remote installs, rather than running a `target/`
+daemon. Cleanup can unlink a target executable and disturb its TCC identity.
+Finish captures and quit the destination app before replacement; the installers'
+process checks below still apply. Never reset Kit's real permission grants; use
+the preview identity and approved isolated test environment. Keep release signing
+and update storage outside `target/` and `/tmp`; see [release procedures](release.md).
+
 ### Electron Storage and About composition
 
 The accepted Settings design keeps the six-page sidebar and bounds the reading
