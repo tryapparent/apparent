@@ -17,8 +17,7 @@ const sdk = join(root, 'engine/sdk');
 run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], sdk);
 run('npm', ['test'], sdk);
 run('npm', ['run', 'typecheck'], sdk);
-const stage = join(output, 'sdk');
-mkdirSync(stage, {recursive: true});
+const stage = mkdtempSync(join(output, 'sdk-'));
 const source = JSON.parse(readFileSync(join(sdk, 'package.json'), 'utf8'));
 const {scripts, devDependencies, ...metadata} = source;
 const sdkArchive = `apparent-engine-sdk-${source.version}.tgz`;
@@ -27,10 +26,10 @@ cpSync(join(sdk, 'README.md'), join(stage, 'README.md'));
 cpSync(join(sdk, 'LICENSE'), join(stage, 'LICENSE'));
 run(process.execPath, [join(sdk, 'node_modules/typescript/bin/tsc'), '-p', join(sdk, 'tsconfig.json'), '--outDir', join(stage, 'dist')]);
 const artifacts = join(output, 'artifacts');
-mkdirSync(artifacts, {recursive: true});
+// An existing artifact directory must never mix a prior candidate into this run.
+mkdirSync(artifacts);
 run('npm', ['pack', stage, '--ignore-scripts', '--pack-destination', artifacts]);
-const consumer = join(output, 'consumer');
-mkdirSync(consumer, {recursive: true});
+const consumer = mkdtempSync(join(output, 'consumer-'));
 writeFileSync(join(consumer, 'package.json'), '{"private":true,"type":"module"}');
 run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', join(artifacts, sdkArchive)], consumer);
 run(process.execPath, ['--input-type=module', '-e', `
@@ -44,7 +43,7 @@ if (process.argv.includes('--sdk-only')) {
 }
 // Producer compilation is explicit and isolated; the SDK never invokes Cargo.
 const target = join(output, 'cargo');
-const native = join(root, 'engine/native'), nativeSource = join(output, 'native-source');
+const native = join(root, 'engine/native'), nativeSource = mkdtempSync(join(output, 'native-source-'));
 cpSync(native, nativeSource, {recursive: true, filter: path => path !== join(native, 'target')});
 // Cargo discovers ancestor configuration from cwd. Build the copied owner
 // outside the repo so root .cargo settings cannot silently enter this closure.

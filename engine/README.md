@@ -30,7 +30,8 @@ With Node 22.18+, Rust 1.89+, and FFmpeg installed (plus Xcode on Mac):
 node --experimental-strip-types engine/tools/check.ts /tmp/apparent-dev-engine-JOB
 ```
 
-Create a private per-job directory first. On Clanker, run this command through
+Create a fresh private per-job directory first; each output path is single-use
+so stale package output cannot enter a later candidate. On Clanker, run this command through
 `/home/simon/.local/bin/t3-build --jobs 3 -- ...`. Output includes a native runtime
 archive, SDK tarball, per-file manifest and archive digests. Qualification installs
 the tarball outside the checkout, then probes real synthetic audio/video and

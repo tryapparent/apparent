@@ -41,7 +41,7 @@ fn reader() -> Result<Command, String> {
         "-protocol_whitelist",
         "file",
         "-show_entries",
-        "format=duration:stream=index,codec_type,width,height,avg_frame_rate,duration,start_time",
+        "format=duration:stream=index,codec_type,width,height,avg_frame_rate,duration,start_time:stream_side_data=displaymatrix",
         "-of",
         "json",
         "-i",

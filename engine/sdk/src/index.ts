@@ -41,9 +41,41 @@ function rate(value: unknown): number | null {
   if (value === undefined || value === '0/0' || value === '0/1') return null;
   if (typeof value !== 'string' || !/^\d+(?:\.\d+)?\/\d+(?:\.\d+)?$/.test(value)) throw new EngineProbeError('invalid_response');
   const [num, den] = value.split('/').map(Number);
+  if (!Number.isFinite(num) || !Number.isFinite(den)) throw new EngineProbeError('invalid_response');
+  if (num === 0) return null;
   const fps = num / den;
   if (!Number.isFinite(fps) || fps < 0) throw new EngineProbeError('invalid_response');
   return fps;
+}
+
+/** Normalize native affine facts once; dimensions are display bounds on both OSes. */
+function dimensions(stream: Record<string, unknown>): {width: number; height: number} {
+  const width = integer(stream.width), height = integer(stream.height);
+  let matrix: unknown = stream.displayTransform;
+  if (matrix === undefined && stream.side_data_list !== undefined) {
+    if (!Array.isArray(stream.side_data_list)) throw new EngineProbeError('invalid_response');
+    const displays = stream.side_data_list.map(object).filter(v => v.displaymatrix !== undefined);
+    if (displays.length > 1) throw new EngineProbeError('invalid_response');
+    if (displays.length) {
+      const text = displays[0].displaymatrix;
+      if (typeof text !== 'string') throw new EngineProbeError('invalid_response');
+      const rows = text.trim().split('\n').map(line => {
+        const match = /^\s*[0-9a-f]{8}:\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s*$/i.exec(line);
+        if (!match) throw new EngineProbeError('invalid_response');
+        return match.slice(1).map(Number);
+      });
+      const flat = rows.flat();
+      if (rows.length !== 3 || !flat.every(Number.isSafeInteger) || flat[2] !== 0 || flat[5] !== 0 || flat[8] !== 1073741824)
+        throw new EngineProbeError('invalid_response');
+      matrix = [flat[0], flat[1], flat[3], flat[4]].map(n => n / 65536);
+    }
+  }
+  if (matrix === undefined) return {width, height};
+  if (!Array.isArray(matrix) || matrix.length !== 4 || !matrix.every(v => typeof v === 'number' && Number.isFinite(v)))
+    throw new EngineProbeError('invalid_response');
+  const [a, b, c, d] = matrix as number[];
+  return {width: integer(Math.round(Math.abs(a) * width + Math.abs(c) * height)),
+    height: integer(Math.round(Math.abs(b) * width + Math.abs(d) * height))};
 }
 
 /** probe-v1 normalizes native metadata; it never chooses audio or export policy. */
@@ -59,7 +91,7 @@ export function parseMovieInfo(bytes: string): MovieInfo {
       if (ids.has(streamIndex)) throw new EngineProbeError('invalid_response');
       ids.add(streamIndex);
       if (stream.codec_type === 'video' && !result.video) {
-        result.video = {...timing(stream), streamIndex, width: integer(stream.width), height: integer(stream.height), fps: rate(stream.avg_frame_rate)};
+        result.video = {...timing(stream), streamIndex, ...dimensions(stream), fps: rate(stream.avg_frame_rate)};
       } else if (stream.codec_type === 'audio') {
         let segments: TrackTiming[] | null = null;
         if (stream.segments !== undefined) {

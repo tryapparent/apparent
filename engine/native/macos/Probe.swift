@@ -25,9 +25,9 @@ struct Probe {
       ]
       if type == .video {
         let (size, transform, rate) = try await track.load(.naturalSize, .preferredTransform, .nominalFrameRate)
-        let shown = size.applying(transform)
-        item["width"] = Int(abs(shown.width).rounded())
-        item["height"] = Int(abs(shown.height).rounded())
+        item["width"] = Int(size.width.rounded())
+        item["height"] = Int(size.height.rounded())
+        item["displayTransform"] = [Double(transform.a), Double(transform.b), Double(transform.c), Double(transform.d)]
         item["avg_frame_rate"] = try number(Double(rate)) + "/1"
       } else {
         var segments: [[String: String]] = []

@@ -27,6 +27,19 @@ test('unavailable timings and audio-only media remain explicit', () => {
     {index: 3, codec_type: 'audio', duration: 'N/A'},
   ]})), {durationMs: null, video: null, audio: [{streamIndex: 3, startMs: null, durationMs: null, segments: null}]});
 });
+test('both native display matrices yield the same rotated bounds and unknown rates normalize numerically', () => {
+  const nativeMatrix = [0, -1, 1, 0];
+  const ffprobeMatrix = '\n00000000: 0 -65536 0\n00000001: 65536 0 0\n00000002: 0 0 1073741824\n';
+  for (const fields of [{displayTransform: nativeMatrix}, {side_data_list: [{displaymatrix: ffprobeMatrix}]}]) {
+    const input = {...raw, streams: [{...raw.streams[0], ...fields, avg_frame_rate: '0.000000000/1'}]};
+    const info = parseMovieInfo(JSON.stringify(input));
+    assert.equal(info.video?.width, 48);
+    assert.equal(info.video?.height, 64);
+    assert.equal(info.video?.fps, null);
+  }
+  for (const fields of [{displayTransform: [1, 0]}, {side_data_list: [{displaymatrix: 'bad matrix'}]}])
+    assert.throws(() => parseMovieInfo(JSON.stringify({...raw, streams: [{...raw.streams[0], ...fields}]})), {code: 'invalid_response'});
+});
 test('rejects malformed metadata, unsafe timings and ambiguous stream identities', () => {
   for (const value of [null, {}, {...raw, streams: {}}, {...raw, format: {duration: 'Infinity'}},
     {...raw, format: {duration: '9007199254740992'}}, {...raw, streams: [...raw.streams, raw.streams[0]]},
