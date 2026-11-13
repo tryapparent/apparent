@@ -480,7 +480,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     // otherwise the first AX request can stall with an uninspectable modal open.
     // Only read-only readiness is polled, within the existing overall deadline.
     report.nativeWindowReadiness = await poll(async () => {
-      const observed = await panel('diagnose');
+      const observed = await panel('inspect-window');
       assert.match(observed, /^depth=0;role=AXWindow;title=Apparent — UI foundation;/);
       assert.ok(!observed.includes('\ndepth=1;'), 'Owned native window already has a sheet');
       return observed;

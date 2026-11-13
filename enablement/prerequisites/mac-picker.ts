@@ -78,6 +78,16 @@ on run argv
         my activateOwned(nativeApp, targetPID, expectedExecutable)
         return "native-focus-pid=" & targetPID & ";title=Apparent — UI foundation"
       end if
+      -- Readiness needs the owned root window, not a diagnostic walk through
+      -- its children. Every extra AX query consumes the same command deadline.
+      if operation is "inspect-window" then
+        if (count of windows) is not 1 then error "Window readiness requires one owned window"
+        set windowRole to role of outerWindow as text
+        set windowTitle to name of outerWindow as text
+        if windowRole is not "AXWindow" or windowTitle is not "Apparent — UI foundation" then error "Window readiness requires Foundation"
+        if (count of sheets of outerWindow) is not 0 then error "Window readiness refuses an existing modal"
+        return "depth=0;role=" & windowRole & ";title=" & windowTitle & ";sheets=0"
+      end if
       set picker to outerWindow
       set depth to 0
       set goParent to missing value

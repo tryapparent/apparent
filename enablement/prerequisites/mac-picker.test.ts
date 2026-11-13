@@ -109,6 +109,39 @@ test('runtime isolation preserves strict window identity and adds native bundle 
  assert.match(panelScript,/if observedPID is not targetPID then error "Owned AX process identifier differs; expectedPID="/);
  assert.doesNotMatch(panelScript,/Apparent Settings — About/,'The unrelated Settings window is never an admitted picker parent');
 });
+test('owned-window readiness uses only the bounded window query and still rejects another window or a sheet',async()=>{
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const start=source.indexOf('    report.nativeWindowReadiness ='),end=source.indexOf('    const reporting =',start);
+ assert.ok(start>=0&&end>start);
+ const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+ const readiness=new AsyncFunction('poll','panel','report','assert',source.slice(start,end));
+ const observed='depth=0;role=AXWindow;title=Apparent — UI foundation;sheets=0';
+ for(const value of [observed,'depth=0;role=AXWindow;title=Other',observed+'\ndepth=1;role=AXSheet;']) {
+  const calls:string[]=[];const report:{nativeWindowReadiness?:string}={};
+  const run=()=>readiness(async(fn:()=>Promise<string>,label:string)=>{
+   assert.equal(label,'Owned Electron AX window readiness');return fn();
+  },async(operation:string)=>{
+   calls.push(operation);
+   assert.equal(operation,'inspect-window','Readiness must not enumerate diagnostic child controls');
+   return value;
+  },report,assert);
+  if(value===observed){await run();assert.equal(report.nativeWindowReadiness,observed);}
+  else {await assert.rejects(run);assert.equal(report.nativeWindowReadiness,undefined);}
+  assert.deepEqual(calls,['inspect-window']);
+ }
+});
+test('the window query preserves ownership and modal guards without enumerating picker controls',()=>{
+ const start=panelScript.indexOf('      if operation is "inspect-window" then');
+ const end=panelScript.indexOf('      set picker to outerWindow',start);
+ assert.ok(start>=0&&end>start);
+ const query=panelScript.slice(start,end);
+ for(const guard of ['count of windows','role of outerWindow','name of outerWindow','count of sheets of outerWindow'])assert.ok(query.includes(guard),guard);
+ assert.ok(panelScript.indexOf('my ownedApplication(')<start);
+ assert.ok(panelScript.indexOf('Owned Electron bundle identity differs')<start);
+ assert.ok(panelScript.indexOf('Owned AX process identifier differs')<start);
+ assert.doesNotMatch(query,/UI elements|every button|activateOwned|set frontmost|click |key code/);
+ assert.match(query,/return "depth=0;role="/);
+});
 test('native focus retains the admitted app instance and rechecks identity after servicing AppKit', () => {
  // A new factory lookup after activation returned missing for the same live PID
  // in hosted receipts. Resolve once per command; this is a source contract, not
