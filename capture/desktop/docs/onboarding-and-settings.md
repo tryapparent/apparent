@@ -95,6 +95,13 @@ and repo-relative source call site. Finalization diagnostics additionally contai
 up to eight typed native stages with repository source locations and structured
 I/O kind/OS error numbers, when available. These describe the failing boundary,
 not the original error message; an unclassified error can still need local logs.
+Schema 3 distinguishes audio state, writer backlog/history/length, writer
+join/write/checkpoint/read, and WAV encode/read/format failures on both macOS and
+Linux. `finalization.wav_error_kind` allows only `io`, `format`, `too_wide`,
+`unfinished_sample`, `unsupported` or `invalid_sample_format` (otherwise null).
+WAV-wrapped I/O failures retain their structured I/O kind and OS code. Neither
+WAV format messages nor sample data are reported. These diagnostics do not
+change the writer's backlog limit, save failure behavior or recovery guarantees.
 Finalization fingerprints include the innermost known stage so unrelated failures
 are not grouped solely by the Desktop completion call site. Historical groups
 and installed older releases retain their old reports. No raw error/panic text, logs, recordings,
