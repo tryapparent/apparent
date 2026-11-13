@@ -4,6 +4,12 @@ name: Mac preview release
 # Keep its feed separate from Kit's Developer ID signed production appcast.
 on:
   workflow_dispatch:
+    inputs:
+      homebrew_tag:
+        description: "Publish only the Homebrew cask for an existing Mac release tag (blank builds a new release)"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: write
@@ -15,9 +21,12 @@ concurrency:
 
 jobs:
   preview:
-    if: github.repository == 'tryapparent/apparent' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/t3/onboarding-mac-release-baseline')
+    if: github.repository == 'tryapparent/apparent' && inputs.homebrew_tag == '' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/t3/onboarding-mac-release-baseline')
     runs-on: macos-latest
     timeout-minutes: 90
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      sha: ${{ github.sha }}
     env:
       APPARENT_PREVIEW_NOTARIZE: ${{ vars.MAC_APPLE_SIGNING_ENABLED || 'false' }}
       APPARENT_APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
@@ -30,6 +39,7 @@ jobs:
         with:
           node-version: '22'
       - name: Require Linux/shared and Mac verification of this exact main commit
+        id: release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -45,6 +55,15 @@ jobs:
             node --experimental-strip-types capture/desktop/scripts/release/desktop-version.ts
             echo "APPARENT_PREVIEW_BUILD_NUMBER=$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
           fi
+          tag=$(sed -n 's/^APPARENT_PREVIEW_TAG=//p' "$GITHUB_ENV" | tail -n 1)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Require notarization and tap publication access for regular releases
+        if: github.ref == 'refs/heads/main'
+        env:
+          HOMEBREW_TAP_SSH_KEY: ${{ secrets.HOMEBREW_TAP_SSH_KEY }}
+        run: |
+          test "$APPARENT_PREVIEW_NOTARIZE" = true || { echo 'Regular Mac releases must be notarized for Homebrew.' >&2; exit 1; }
+          test -n "$HOMEBREW_TAP_SSH_KEY" || { echo 'Missing tap-only HOMEBREW_TAP_SSH_KEY.' >&2; exit 1; }
       - name: Prepare Developer ID credentials
         if: env.APPARENT_PREVIEW_NOTARIZE == 'true'
         env:
@@ -202,3 +221,74 @@ jobs:
           trap 'rm -rf "$directory"' EXIT
           keychain="$directory/signing.keychain-db"
           if [[ -f "$keychain" ]]; then security delete-keychain "$keychain"; fi
+
+  homebrew:
+    name: Publish Homebrew cask
+    needs: preview
+    if: >-
+      !cancelled() && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
+      (needs.preview.result == 'success' || (needs.preview.result == 'skipped' && inputs.homebrew_tag != ''))
+    runs-on: macos-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_ANALYTICS: '1'
+      RELEASE_TAG: ${{ needs.preview.outputs.tag || inputs.homebrew_tag }}
+      RELEASE_SHA: ${{ needs.preview.outputs.sha }}
+      EXPECTED_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify the published DMG and prepare the cask
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --experimental-strip-types --test capture/desktop/scripts/release/homebrew/publish.test.ts
+          node --experimental-strip-types capture/desktop/scripts/release/homebrew/publish.ts prepare \
+            "$RELEASE_TAG" "$RELEASE_SHA" "$RUNNER_TEMP/apparent.rb"
+      - name: Verify Homebrew installation on Apple silicon
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          brew tap tryapparent/tap
+          tap=$(brew --repository tryapparent/tap)
+          if [[ -f "$tap/Casks/apparent.rb" ]]; then
+            brew install --cask tryapparent/tap/apparent
+            cp "$RUNNER_TEMP/apparent.rb" "$tap/Casks/apparent.rb"
+            brew upgrade --cask --greedy tryapparent/tap/apparent
+          else
+            mkdir -p "$tap/Casks"
+            cp "$RUNNER_TEMP/apparent.rb" "$tap/Casks/apparent.rb"
+            brew install --cask tryapparent/tap/apparent
+          fi
+          brew style --cask tryapparent/tap/apparent
+          app='/Applications/Apparent Preview.app'
+          codesign --verify --deep --strict "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          test -n "$EXPECTED_TEAM_ID"
+          codesign -dv --verbose=4 "$app" 2>&1 | grep -Fx "TeamIdentifier=$EXPECTED_TEAM_ID"
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Contents/Info.plist")" = dev.simonvanlaak.apparent.preview
+          version=$(sed -n 's/^  version "\([^"]*\)"$/\1/p' "$RUNNER_TEMP/apparent.rb")
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$version"
+          "$app/Contents/MacOS/apparent" --version
+          brew reinstall --cask tryapparent/tap/apparent
+          brew uninstall --cask tryapparent/tap/apparent
+          test ! -e "$app"
+      # The tap's write credential is available only after download/install checks.
+      - uses: actions/checkout@v5
+        with:
+          repository: tryapparent/homebrew-tap
+          ref: main
+          path: homebrew-publish
+          ssh-key: ${{ secrets.HOMEBREW_TAP_SSH_KEY }}
+      - name: Publish and read back the verified cask
+        run: |
+          node --experimental-strip-types capture/desktop/scripts/release/homebrew/publish.ts publish \
+            "$GITHUB_WORKSPACE/homebrew-publish" "$RUNNER_TEMP/apparent.rb"
