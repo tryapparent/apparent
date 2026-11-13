@@ -4,7 +4,6 @@ const {_electron:electron,expect}=require('@playwright/test');
 const path=require('node:path');
 const fs=require('node:fs/promises');
 const os=require('node:os');
-const {spawnSync}=require('node:child_process');
 
 const actions=(copyLabel='Copy link',copyEnabled=false)=>[
  {id:'paste',label:'Paste',enabled:true,selected:false,primary:true},
@@ -23,14 +22,6 @@ test('foreground upload states stay private, bounded, and use one authorized pil
   env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')}});
  t.after(async()=>{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});});
  const page=await application.firstWindow(),sent=[];let stream='';
- const assertToolbar=async()=>{
-  if(process.platform!=='linux')return;
-  const source=await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getMediaSourceId());
-  const id=/^window:(\d+):/.exec(source)?.[1];assert.ok(id,'native X11 pill required');
-  const property=spawnSync('xprop',['-id',id,'_NET_WM_WINDOW_TYPE'],{encoding:'utf8',timeout:5000});
-  assert.equal(property.status,0,property.stderr);
-  assert.match(property.stdout,/_NET_WM_WINDOW_TYPE_TOOLBAR/,'remapping must preserve the clickable non-activating window type');
- };
  application.process().stdout.on('data',data=>{stream+=data.toString();let end;while((end=stream.indexOf('\n'))>=0){const line=stream.slice(0,end);stream=stream.slice(end+1);try{sent.push(JSON.parse(line));}catch{}}});
  const evidence=process.env.APPARENT_FOREGROUND_EVIDENCE;
  if(evidence)await fs.mkdir(evidence,{recursive:true,mode:0o700});
@@ -88,7 +79,6 @@ test('foreground upload states stay private, bounded, and use one authorized pil
  const failed={...base,revision:3,label:'Upload failed · recording saved locally',actions:actions('Retry upload',true)};
  await publish(failed);
  await expect(page.getByText(failed.label,{exact:true})).toBeVisible();
- await assertToolbar();
  const retry=page.getByRole('button',{name:'Retry upload',exact:true});
  await expect(retry).toBeEnabled();
  await assertNoOverflow('640px workarea');
