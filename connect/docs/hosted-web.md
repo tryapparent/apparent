@@ -6,6 +6,12 @@ The setup dialog uses `apparent connect login` and `apparent connect status`.
 It tells users to update Apparent for `connect`; older apps can use `apparent cloud`,
 retained as a compatibility alias. Publishing the website does not update the app.
 
+A valid device link starts Google sign-in automatically while signed out. An
+active account still confirms the immutable requested permission with **Allow
+uploads** or **Allow agent read access**. A waitlisted account reports only its
+eligibility to the pending request; that report issues no credentials. Local
+recording remains available.
+
 Waitlisted users see that recording/local inspection still work, plus complete-folder transfer alternatives using existing authorized SSH/SCP or another approved route. `apparent connect alternatives` owns the detailed recovery instructions; older apps get update guidance and a direct local `inspect` example. Sign-in does not grant device access, and the waitlist page never starts approval or transfer.
 
 ## Backend contract and boundaries
