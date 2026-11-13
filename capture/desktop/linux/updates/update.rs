@@ -644,6 +644,9 @@ pub fn check_now() {
         && let Err(error) = check()
     {
         crate::capture::engine::runtime::apparent_log(format!("Linux update: {error:#}"));
+        crate::capture::desktop::workflow::error_reporting::report(
+            crate::capture::desktop::workflow::error_reporting::Failure::UpdateCheck,
+        );
     }
 }
 
