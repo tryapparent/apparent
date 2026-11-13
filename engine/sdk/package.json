@@ -1,0 +1,16 @@
+{
+  "name": "@apparent/engine-sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "engines": {"node": ">=22.18"},
+  "exports": {".": {"types": "./dist/index.d.ts", "import": "./dist/index.js"}},
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {"@types/node": "22.19.0", "typescript": "5.9.3"}
+}
