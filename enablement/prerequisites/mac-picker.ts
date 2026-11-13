@@ -21,6 +21,16 @@ export type PickerPreparation = Partial<{
   beforeGo: string; openGoReturned: boolean; goSheet: string; beforeChoose: string;
   pathEntered: boolean; pathReadback: string;
 }>;
+export async function cancelStorageChange(driver: Pick<PickerDriver, 'storageIdle' | 'change' | 'picker'> & {
+  cancel: () => Promise<string>;
+}) {
+  await driver.storageIdle();
+  await driver.change();
+  // Change dispatch precedes asynchronous NSOpenPanel presentation. Observe the
+  // owned sheet before the one Cancel click; never replay a mutation on failure.
+  await driver.picker();
+  return driver.cancel();
+}
 export async function prepareStorageChange(driver: PickerDriver, path: string, receipt: PickerPreparation = {}) {
   await driver.storageIdle();
   await driver.change();
