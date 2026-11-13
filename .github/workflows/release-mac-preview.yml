@@ -5,6 +5,10 @@ name: Mac preview release
 on:
   workflow_dispatch:
     inputs:
+      source_sha:
+        description: Already verified main commit to release (defaults to current main)
+        required: false
+        type: string
       homebrew_tag:
         description: "Publish only the Homebrew cask for an existing Mac release tag (blank builds a new release)"
         required: false
@@ -26,8 +30,9 @@ jobs:
     timeout-minutes: 90
     outputs:
       tag: ${{ steps.release.outputs.tag }}
-      sha: ${{ github.sha }}
+      sha: ${{ steps.release.outputs.sha }}
     env:
+      RELEASE_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
       APPARENT_PREVIEW_NOTARIZE: ${{ vars.MAC_APPLE_SIGNING_ENABLED || 'false' }}
       APPARENT_APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
       APPARENT_APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
@@ -39,11 +44,11 @@ jobs:
         with:
           node-version: '22'
       - name: Require Linux/shared and Mac verification of this exact main commit
-        id: release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$GITHUB_REF" = refs/heads/t3/onboarding-mac-release-baseline ]; then
+            test "$RELEASE_SOURCE_SHA" = "$GITHUB_SHA"
             test "$APPARENT_PREVIEW_NOTARIZE" = true
             python3 enablement/release_gate.py --platform macos --sha "$GITHUB_SHA" --onboarding-candidate
             echo 'APPARENT_PREVIEW_VERSION=0.12.2' >> "$GITHUB_ENV"
@@ -51,12 +56,23 @@ jobs:
             echo 'APPARENT_PREVIEW_BUILD_NUMBER=12.2' >> "$GITHUB_ENV"
             echo 'APPARENT_PREVIEW_TAG=preview-mac-12-2' >> "$GITHUB_ENV"
           else
-            python3 enablement/release_gate.py --platform macos --sha "$GITHUB_SHA"
-            node --experimental-strip-types capture/desktop/scripts/release/desktop-version.ts
+            python3 enablement/release_gate.py --platform macos --sha "$RELEASE_SOURCE_SHA"
             echo "APPARENT_PREVIEW_BUILD_NUMBER=$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+          fi
+      # Admission runs from the dispatch ref before any selected source executes.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          persist-credentials: false
+      - name: Resolve version from the admitted source
+        id: release
+        run: |
+          if [ "$GITHUB_REF" = refs/heads/main ]; then
+            node --experimental-strip-types capture/desktop/scripts/release/desktop-version.ts
           fi
           tag=$(sed -n 's/^APPARENT_PREVIEW_TAG=//p' "$GITHUB_ENV" | tail -n 1)
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$RELEASE_SOURCE_SHA" >> "$GITHUB_OUTPUT"
       - name: Require notarization and tap publication access for regular releases
         if: github.ref == 'refs/heads/main'
         env:
@@ -155,11 +171,11 @@ jobs:
           fi
           # Only lightweight tags are accepted; annotated tags point at a tag
           # object and need a second dereference, which we deliberately avoid.
-          if [[ -n "$existing_sha" && ( "$tag_type" != "commit" || "$existing_sha" != "$GITHUB_SHA" ) ]]; then
+          if [[ -n "$existing_sha" && ( "$tag_type" != "commit" || "$existing_sha" != "$RELEASE_SOURCE_SHA" ) ]]; then
             echo "Tag ${tag} does not point to the run commit" >&2
             exit 1
           fi
-          tag_args=(--target "$GITHUB_SHA")
+          tag_args=(--target "$RELEASE_SOURCE_SHA")
           if [[ -n "$existing_sha" ]]; then tag_args=(--verify-tag); fi
           if [[ "$APPARENT_PREVIEW_NOTARIZE" == true ]]; then
             notes="Mac preview signed with Developer ID and notarized by Apple. Updates use the existing preview Sparkle feed and EdDSA signature. This does not update Kit's app."
@@ -185,14 +201,14 @@ jobs:
           # A moved tag must never become an update offered by the live feed.
           tag_target=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" \
             --jq '.object.type + " " + .object.sha')
-          if [[ "$tag_target" != "commit ${GITHUB_SHA}" ]]; then
+          if [[ "$tag_target" != "commit ${RELEASE_SOURCE_SHA}" ]]; then
             echo "Tag moved before appcast publication: ${tag}" >&2
             exit 1
           fi
           branch=preview-mac-feed
           if ! gh api "repos/${GITHUB_REPOSITORY}/branches/${branch}" > /dev/null 2>&1; then
             gh api -X POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-              -f ref="refs/heads/${branch}" -f sha="$GITHUB_SHA" > /dev/null
+              -f ref="refs/heads/${branch}" -f sha="$RELEASE_SOURCE_SHA" > /dev/null
           fi
           previous="$RUNNER_TEMP/previous-preview-appcast.xml"
           printf '' > "$previous"
