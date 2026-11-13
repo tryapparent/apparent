@@ -37,22 +37,40 @@ async function sender(f:any,account:any) {
   assert.equal(granted.scope,'upload');return {...granted,seed,key};
 }
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/p0AAAAASUVORK5CYII=','base64');
-async function upload(f:any,account:any,uploader:any,reader:any,captureId:string,mutate?:(inner:any)=>void) {
+async function upload(f:any,account:any,uploader:any,reader:any,captureId:string,mutate?:(inner:any)=>void,grouped=false) {
   const original=new Map<string,Buffer>([
     ['apparent.json',Buffer.from(JSON.stringify({contactSheet:'contact-sheet.png',keyframes:[{file:'frames/frame-00.png',timeMs:12000}]}))],
     ['summary.md',Buffer.from('PRIVATE TEST PHRASE: why is this in here?\n'.repeat(900))],
+    ['notes.json',Buffer.from('{"version":1,"notes":[]}')],
     ['contact-sheet.png',png],['frames/frame-00.png',png],['recording.mp4',randomBytes(18000)],
   ]);
-  const context={origin:'https://api.example',accountId:account.id,captureId,senderGrantId:uploader.grantId};
-  const inner={version:1,context,files:[...original].map(([path,bytes])=>({path,size:bytes.length,sha256:digest(bytes)}))};
-  mutate?.(inner);
-  const cipher=await encryptAge(encodeArchive(inner,[...original.values()]),[reader.key.recipient]);
-  const chunk={path:'sealed/part-000000.age',size:cipher.length,sha256:digest(cipher)};
-  const signed={version:1,context,chunks:[chunk]};
-  const envelope=Buffer.from(JSON.stringify({signed,signature:await signEnvelope(uploader.seed,signed)}));
-  const files=[{path:'envelope.json',size:envelope.length,sha256:digest(envelope)},chunk];
+  const data:Array<[{path:string;size:number;sha256:string},Uint8Array]>=[];
+  for(const group of grouped?['evidence','media'] as const:[undefined]) {
+    const context={origin:'https://api.example',accountId:account.id,captureId,senderGrantId:uploader.grantId,...(group?{group}:{})};
+    const entries=[...original].filter(([p])=>!group || ['recording.mp4','recording.mov','audio.wav'].includes(p)===(group==='media'));
+    const inner={version:1,context,files:entries.map(([path,bytes])=>({path,size:bytes.length,sha256:digest(bytes)}))};
+    mutate?.(inner);
+    const cipher=await encryptAge(encodeArchive(inner,entries.map(([,b])=>b)),[reader.key.recipient]);
+    const chunk={path:'sealed/part-000000.age',size:cipher.length,sha256:digest(cipher)};
+    const signed={version:1,context,chunks:[chunk]};
+    const envelope=Buffer.from(JSON.stringify({signed,signature:await signEnvelope(uploader.seed,signed)})),prefix=group?group+'/':'';
+    data.push([{path:prefix+'envelope.json',size:envelope.length,sha256:digest(envelope)},envelope],[{...chunk,path:prefix+chunk.path},cipher]);
+  }
+  const files=data.map(([file])=>file);
+  if(grouped) {
+    // The deployed preview already writes this layout. Seed its existing stored
+    // contract here; this slice does not add grouped uploads to main's native API.
+    const now=Date.now();
+    await f.db.prepare("INSERT INTO captures(id,account_id,status,expires_at,pending_until,manifest,bytes,format) VALUES(?,?,'ready',?,?,?,?,'apparent-encrypted-v1')")
+      .bind(captureId,account.id,now+86400000,now+86400000,JSON.stringify(files),files.reduce((n,x)=>n+x.size,0)).run();
+    for(const [file,bytes] of data) {
+      const key='synthetic-mcp/'+captureId+'/'+file.path;await f.bucket.put(key,bytes);
+      await f.db.prepare('INSERT INTO files(capture_id,path,size,sha256,object_key) VALUES(?,?,?,?,?)').bind(captureId,file.path,file.size,file.sha256,key).run();
+    }
+    return original;
+  }
   assert.equal((await f.call('/v1/captures/'+captureId,{token:uploader.accessToken,method:'POST',body:{format:'apparent-encrypted-v1',files}})).status,200);
-  for(const [file,bytes] of [[files[0],envelope],[chunk,cipher]] as const)assert.equal((await f.call(`/v1/captures/${captureId}/files/${file.path}`,{token:uploader.accessToken,method:'PUT',raw:bytes})).status,200);
+  for(const [file,bytes] of data)assert.equal((await f.call(`/v1/captures/${captureId}/files/${file.path}`,{token:uploader.accessToken,method:'PUT',raw:bytes})).status,200);
   assert.equal((await f.call(`/v1/captures/${captureId}/complete`,{token:uploader.accessToken,method:'POST'})).status,200);
   return original;
 }
@@ -81,6 +99,19 @@ test('real Worker relay: browser read approval, ciphertext ranges, offline decry
     const revoked=await acceptEndpoint(directory,await relayCall(f,await revokeEndpoint(directory)));
     assert.equal(revoked.state,'revoked');
     const peer=await f.call('/v1/encryption/peers',{token:reader.credential.accessToken});assert.equal(peer.status,401);
+  } finally {await f.close();await fs.rm(root,{recursive:true,force:true});}
+});
+
+test('deployed grouped layout relays both streams and preserves notes, frames and media in one verified output',async()=>{
+  const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-grouped-'));await fs.chmod(root,0o700);
+  const f=await fixture();try {
+    const account=await f.identity('mcp-grouped'),directory=path.join(root,'reader');
+    const reader=await endpoint(f,account,directory),uploader=await sender(f,account),id='1'.repeat(32);
+    const original=await upload(f,account,uploader,reader,id,undefined,true),out=path.join(root,'recording.apparent');
+    let call:any=await fetchEndpoint(directory,id,out),calls=0;
+    while(call.tool){call=await acceptEndpoint(directory,await relayCall(f,call));assert.ok(++calls<40);}
+    assert.equal(call.state,'ready',JSON.stringify(call));
+    for(const [file,bytes] of original)assert.deepEqual(await fs.readFile(path.join(out,file)),bytes);
   } finally {await f.close();await fs.rm(root,{recursive:true,force:true});}
 });
 

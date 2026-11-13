@@ -41,6 +41,14 @@ Granting macOS ACLs are rejected. Setup never repairs existing permissions or
 overwrites keys. `--server` selects another exact HTTPS API origin; the default
 is `https://hosted.tryapparent.com`.
 
+The existing beta gateway exposes the connector at
+`https://app.tryapparent.com/connect/mcp` after deployment, while retaining the
+legacy hosted API profile for native recording encryption and read credentials.
+The CLI's server value names that encryption profile; it makes no direct HTTP
+request. This first gateway integration supports the native app's default hosted
+profile. Captures encrypted under a custom `/connect` API-base profile still need
+the existing native reader.
+
 1. Call the printed `tool` with its exact `arguments` through the connector.
 2. Save the **complete** MCP result as JSON in the workspace, then run:
    `apparent-connect-mcp step --state /absolute/private/reader-state --reply /absolute/reply.json`.
@@ -99,6 +107,12 @@ origin/account/capture identity, recipient binding, age finality, asset paths an
 references. Plaintext stays in a private stage until final authorization and
 publication into an exclusively reserved new destination.
 
+Both single-stream captures and the deployed preview's separate evidence/media
+streams are supported, including `notes.json`. Group names are authenticated in
+each stream's context. Both groups must come from the same approved sender and
+pass complete integrity/reference checks before one ordinary bundle is published.
+An evidence-ready pending upload is still preparing for this full-bundle reader.
+
 The current format encrypts the complete bundle. Large recordings require many
 calls; passing base64 through model context is costly. **Actual ChatGPT Work/Cowork file
 delivery and practical recording-size performance remain unverified.** The host
@@ -126,3 +140,9 @@ Cowork-specific file handling or rendering, which remains separately unverified.
 Rollback removes the MCP route/package entrypoint and leaves stored formats,
 encryption defaults and consent unchanged. No schema migration, new cloud
 resource, directory listing or automatic public sharing is required.
+
+The live beta has a separately deployed mounted gateway and analytics behavior.
+Preserve its current assets, exact binding/secret profile, routes and cleanup
+schedule when adding MCP. The repository's hosted deployment template names a
+different Worker; it is not the live deployment profile. This feature does not
+activate that continuous-deployment gate or replace the published gateway.

@@ -27,5 +27,5 @@ export function transportKey(value:unknown): value is {kty:'EC';crv:'P-256';x:st
     [value.x,value.y].every(v=>typeof v==='string' && /^[A-Za-z0-9_-]{43}$/.test(v));
 }
 export function transportPath(value: unknown): value is string {
-  return typeof value === 'string' && /^(envelope\.json|sealed\/part-[0-9]{6}\.age)$/.test(value);
+  return typeof value === 'string' && /^(?:(?:evidence|media)\/)?(envelope\.json|sealed\/part-[0-9]{6}\.age)$/.test(value);
 }

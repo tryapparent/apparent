@@ -10,7 +10,7 @@
     "deploy": "npm run build && wrangler deploy",
     "build:recipient": "node scripts/build-recipient.mjs",
     "test:recipient": "node test/sharing/recipient-browser.mjs",
-    "test:mcp": "npm --prefix ../client/typescript ci --ignore-scripts --no-audit --no-fund && npm --prefix ../client/typescript run build && node --experimental-strip-types --test --test-concurrency=1 test/mcp/endpoint.integration.ts"
+    "test:mcp": "npm run build && npm --prefix ../client/typescript ci --ignore-scripts --no-audit --no-fund && npm --prefix ../client/typescript run build && node --experimental-strip-types --test --test-concurrency=1 test/mcp/endpoint.integration.ts"
   },
   "dependencies": {
     "@apparent/ui": "file:../../shared/ui",
