@@ -1,3 +1,5 @@
+import {spawn, type ChildProcessWithoutNullStreams} from 'node:child_process';
+
 // Disposable hosted-Mac CI driver, not application behavior or native proof.
 // Readiness callbacks may poll read-only state; mutation callbacks run once.
 // Hosted-Mac receipts show AppKit ownership checks taking ~3s before the first
@@ -19,6 +21,16 @@ export type PickerPreparation = Partial<{
   beforeGo: string; openGoReturned: boolean; goSheet: string; beforeChoose: string;
   pathEntered: boolean; pathReadback: string;
 }>;
+export async function cancelStorageChange(driver: Pick<PickerDriver, 'storageIdle' | 'change' | 'picker'> & {
+  cancel: () => Promise<string>;
+}) {
+  await driver.storageIdle();
+  await driver.change();
+  // Change dispatch precedes asynchronous NSOpenPanel presentation. Observe the
+  // owned sheet before the one Cancel click; never replay a mutation on failure.
+  await driver.picker();
+  return driver.cancel();
+}
 export async function prepareStorageChange(driver: PickerDriver, path: string, receipt: PickerPreparation = {}) {
   await driver.storageIdle();
   await driver.change();
@@ -276,3 +288,140 @@ on axProbeElapsed(startedAt)
   return (current date) - startedAt
 end axProbeElapsed
 `;
+
+// One owned interpreter amortizes AppKit initialization. Commands remain separate,
+// bounded and one-shot; no command is replayed after an ambiguous outcome.
+export const persistentPanelScript = panelScript
+  .replace('use scripting additions', 'use scripting additions\nproperty pickerApplication : missing value')
+  .replace('on run argv', 'on pickerRequest(argv)')
+  .replace('end run', 'end pickerRequest')
+  .replace("  set nativeApp to current application's NSRunningApplication's runningApplicationWithProcessIdentifier:targetPID",
+    `  if pickerApplication is missing value then
+    set pickerApplication to current application's NSRunningApplication's runningApplicationWithProcessIdentifier:targetPID
+  end if
+  set nativeApp to pickerApplication
+  current application's NSRunLoop's currentRunLoop()'s runUntilDate:(current application's NSDate's dateWithTimeIntervalSinceNow:0.001)`)
+  + `
+on run argv
+  set inputHandle to current application's NSFileHandle's fileHandleWithStandardInput()
+  set outputHandle to current application's NSFileHandle's fileHandleWithStandardOutput()
+  set newlineData to (current application's NSString's stringWithString:linefeed)'s dataUsingEncoding:(current application's NSUTF8StringEncoding)
+  -- data is AppleScript terminology; use the explicit Objective-C initializer.
+  set buffer to current application's NSMutableData's alloc()'s initWithCapacity:8192
+  repeat
+    set nextByte to inputHandle's readDataOfLength:1
+    if (nextByte's |length|() as integer) is 0 then exit repeat
+    if (nextByte's isEqualToData:newlineData) as boolean then
+      set request to current application's NSJSONSerialization's JSONObjectWithData:buffer options:0 |error|:(missing value)
+      if request is missing value then error "Invalid picker request"
+      set reply to current application's NSMutableDictionary's dictionary()
+      reply's setObject:(request's objectForKey:"id") forKey:"id"
+      try
+        set resultText to my pickerRequest((request's objectForKey:"args") as list)
+        reply's setObject:(current application's NSNumber's numberWithBool:true) forKey:"ok"
+        reply's setObject:(resultText as text) forKey:"value"
+      on error messageText number errorNumber
+        reply's setObject:(current application's NSNumber's numberWithBool:false) forKey:"ok"
+        reply's setObject:messageText forKey:"error"
+      end try
+      set encoded to current application's NSJSONSerialization's dataWithJSONObject:reply options:0 |error|:(missing value)
+      if encoded is missing value then error "Cannot encode picker reply"
+      outputHandle's writeData:encoded
+      outputHandle's writeData:newlineData
+      buffer's setLength:0
+    else
+      if (buffer's |length|() as integer) >= 8192 then error "Oversized picker request"
+      buffer's appendData:nextByte
+    end if
+  end repeat
+  return
+end run
+`;
+
+export class PickerProcess {
+  private child?: ChildProcessWithoutNullStreams;
+  private retired = false;
+  private serial = 0;
+  private buffer = '';
+  private stderr = '';
+  private pending?: {id: number; finish: (error: Error | null, value?: string) => void};
+  private readonly launch: () => ChildProcessWithoutNullStreams;
+  readonly stats = {starts: 0, requests: 0};
+  constructor(launch: () => ChildProcessWithoutNullStreams = () =>
+    spawn('/usr/bin/osascript', ['-e', persistentPanelScript], {stdio: 'pipe'})) { this.launch = launch; }
+
+  private abort(message: string) {
+    this.retired = true;
+    const error = Object.assign(new Error(message), {stderr: this.stderr, signal: this.child?.signalCode});
+    const pending = this.pending;
+    this.pending = undefined;
+    pending?.finish(error);
+    this.child?.kill('SIGKILL');
+  }
+  private receive(chunk: string) {
+    this.buffer += chunk;
+    if (Buffer.byteLength(this.buffer) > 65536) { this.abort('Oversized picker response'); return; }
+    while (this.buffer.includes('\n')) {
+      const end = this.buffer.indexOf('\n'), line = this.buffer.slice(0, end);
+      this.buffer = this.buffer.slice(end + 1);
+      let reply;
+      try { reply = JSON.parse(line); } catch { this.abort('Malformed picker response'); return; }
+      const pending = this.pending;
+      if (!pending || reply?.id !== pending.id || typeof reply.ok !== 'boolean' ||
+          (reply.ok ? typeof reply.value !== 'string' : typeof reply.error !== 'string')) {
+        this.abort('Unexpected picker response identity or shape'); return;
+      }
+      this.pending = undefined;
+      pending.finish(reply.ok ? null : Object.assign(new Error(reply.error), {stderr: this.stderr}), reply.value);
+    }
+    if (!this.pending && this.buffer.length) this.abort('Unsolicited picker response bytes');
+  }
+  request(args: string[], timeout: number): Promise<string> {
+    if (this.retired) return Promise.reject(new Error('Picker driver is retired; no replay'));
+    if (this.pending) return Promise.reject(new Error('Concurrent picker command refused'));
+    if (!Number.isFinite(timeout) || timeout <= 0 || timeout > pickerCommandMs ||
+        args.length !== 5 || !args.every(arg => typeof arg === 'string')) {
+      return Promise.reject(new Error('Invalid picker request or deadline'));
+    }
+    const id = ++this.serial, frame = JSON.stringify({id, args}) + '\n';
+    if (Buffer.byteLength(frame) > 8192) return Promise.reject(new Error('Oversized picker request'));
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => this.abort('Native picker command timed out; outcome unknown'), timeout);
+      this.stderr = '';
+      this.pending = {id, finish: (error, value) => {
+        clearTimeout(timer);
+        if (error) reject(error); else resolve(value!);
+      }};
+      try {
+        if (!this.child) {
+          this.child = this.launch(); this.stats.starts++;
+          this.child.stdout.setEncoding('utf8');
+          this.child.stderr.setEncoding('utf8');
+          this.child.stdout.on('data', chunk => this.receive(chunk));
+          this.child.stderr.on('data', chunk => { this.stderr = (this.stderr + chunk).slice(-8192); });
+          this.child.on('error', error => this.abort(`Picker process failed: ${error.message}`));
+          this.child.stdin.on('error', error => this.abort(`Picker input failed: ${error.message}`));
+          // exit may precede the final pipe reads; close follows both streams.
+          this.child.once('close', (code, signal) => this.abort(
+            `Picker process exited (code ${code}, signal ${signal})${this.stderr.trim() ? ': ' + this.stderr.trim() : ''}`));
+        }
+        this.stats.requests++;
+        this.child.stdin.write(frame);
+      } catch (error) { this.abort(`Cannot dispatch picker command: ${error}`); }
+    });
+  }
+  async close() {
+    this.retired = true;
+    const child = this.child;
+    if (child && child.exitCode === null && child.signalCode === null) {
+      if (this.pending) this.abort('Picker closed with an unresolved command');
+      await new Promise<void>((resolve, reject) => {
+        const kill = setTimeout(() => child.kill('SIGKILL'), 500);
+        const hard = setTimeout(() => reject(new Error('Owned picker driver did not exit')), 1500);
+        child.once('exit', () => { clearTimeout(kill); clearTimeout(hard); resolve(); });
+        child.stdin.end();
+      });
+    }
+    return {pid: child?.pid, exitCode: child?.exitCode, signalCode: child?.signalCode, ...this.stats};
+  }
+}
