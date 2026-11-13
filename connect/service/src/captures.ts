@@ -21,10 +21,11 @@ function manifest(input: unknown,format:CaptureRow['format']) {
  if(format==='apparent-encrypted-v1'&&(!seen.has('envelope.json')||files.length<2))fail('invalid_manifest');
  return {files,bytes,text:JSON.stringify(files)};
 }
-async function capture(env: Env,id: string,account: string) {
+export async function captureForAccount(env: Env,id: string,account: string) {
  const row=await stmt(env,`SELECT * FROM captures WHERE id=? AND account_id=? AND ${live}`,id,account,Date.now(),Date.now()).first<CaptureRow>();
  if(!row)fail('not_found',404);return row;
 }
+const capture = captureForAccount;
 const info = (c: CaptureRow) => ({id:c.id,status:c.status,expiresAt:new Date(c.expires_at).toISOString(),...(c.format==='plaintext-v1'?{}:{format:c.format})});
 export async function captureRoutes(request: Request,env: Env,url: URL) {
  if(url.pathname==='/v1/account'&&request.method==='GET') {const a=await bearer(request,env);return json({beta:a.beta,quotaBytes:500000000,usedBytes:await usage(env,a.account_id)});}
