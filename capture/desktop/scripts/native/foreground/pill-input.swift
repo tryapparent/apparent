@@ -203,7 +203,19 @@ func observe(_ req: [String: Any], _ png: URL) throws -> ([String: Any], [Word],
     return (["pid": Int(w.pid), "windowId": Int(w.id), "bounds": [w.rect.minX,w.rect.minY,w.rect.width,w.rect.height], "geometry": geometry, "words": words.map { ["text":$0.text,"box":[$0.box.minX,$0.box.minY,$0.box.width,$0.box.height]] as [String:Any] }, "frontPid": Int(front)], words, pillDescendants)
 }
 
-func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any] {
+func admitPillAccessibility(_ pill: Pill) throws {
+    try withinBudget()
+    let application = AXUIElementCreateApplication(pill.pid)
+    try need(AXUIElementSetMessagingTimeout(application, 0.2) == .success, "Could not bound pill accessibility admission")
+    // Electron exposes its renderer tree on demand to native assistive clients.
+    // The caller has already verified this exact owned pill and executable.
+    let result = AXUIElementSetAttributeValue(application, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+    clickTrace?.add(["stage":"accessibilityAdmission", "pid":Int(pill.pid), "windowId":Int(pill.id), "result":result.rawValue])
+    try need(result == .success, "Owned Electron accessibility admission failed")
+    try withinBudget()
+}
+
+func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any]? {
     var current = element
     for depth in 0..<5 {
         try withinBudget()
@@ -247,7 +259,7 @@ func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint, desce
               let rawParent, CFGetTypeID(rawParent) == AXUIElementGetTypeID() else { break }
         current = rawParent as! AXUIElement
     }
-    throw Refusal(message: "Input receiver has no exact requested button in its bounded parent chain")
+    return nil
 }
 func main() throws {
     try need(env["CI"] == "true" && env["GITHUB_ACTIONS"] == "true" && env["RUNNER_ENVIRONMENT"] == "github-hosted" && env["RUNNER_OS"] == "macOS", "Refusing outside GitHub-hosted macOS CI")
@@ -295,6 +307,9 @@ func main() throws {
     let point = CGPoint(x: b[0] + box.midX*b[2], y: b[1] + (1-box.midY)*b[3])
     guard let trace = clickTrace else { throw Refusal(message: "Click trace unavailable") }
     let initialPill = try pill(req).0
+    try need(Int(initialPill.pid) == (before["pid"] as! Int) && Int(initialPill.id) == (before["windowId"] as! Int) &&
+        [initialPill.rect.minX,initialPill.rect.minY,initialPill.rect.width,initialPill.rect.height] == b, "Pill changed before accessibility admission")
+    try admitPillAccessibility(initialPill)
     trace.add(["stage":"beforeMove", "frontPid":Int(frontPID()), "pillPid":Int(initialPill.pid), "windowId":Int(initialPill.id), "bounds":[initialPill.rect.minX,initialPill.rect.minY,initialPill.rect.width,initialPill.rect.height], "geometry":before["geometry"]!, "point":[point.x,point.y]])
     try trace.requireComplete()
     try need(frontPID() == pid_t(before["frontPid"] as! Int), "Foreground drift before pointer movement")
@@ -304,17 +319,18 @@ func main() throws {
     move!.post(tap: .cghidEventTap)
     trace.add(["stage":"postMove", "frontPid":Int(frontPID()), "point":[point.x,point.y]])
     let started = ProcessInfo.processInfo.systemUptime
-    var hitElement: AXUIElement?
+    var hitIdentity: [String: Any]?
     while ProcessInfo.processInfo.systemUptime - started < 1.5 {
         var target: AXUIElement?; let err = AXUIElementCopyElementAtPosition(ax, Float(point.x), Float(point.y), &target)
         if err == .success, let target {
             var p: pid_t = -1; _ = AXUIElementGetPid(target, &p)
-            if pillDescendants.contains(p) { hitElement = target; break }
+            if pillDescendants.contains(p), let identity = try buttonIdentity(target, label: label, point: point, descendants: pillDescendants) {
+                hitIdentity = identity; break
+            }
         } else if err != .cannotComplete && err != .noValue { throw Refusal(message: "AX input hit observation failed") }
         Thread.sleep(forTimeInterval: 0.025)
     }
-    guard let hitElement else { throw Refusal(message: "AX input hit is not owned by the pill renderer") }
-    let hitIdentity = try buttonIdentity(hitElement, label: label, point: point, descendants: pillDescendants)
+    guard let hitIdentity else { throw Refusal(message: "Input receiver has no exact requested button in its bounded parent chain") }
     trace.add(["stage":"ownedHit", "frontPid":Int(frontPID()), "receiver":hitIdentity])
     let frontBefore = frontPID()
     try need(frontBefore == pid_t(before["frontPid"] as! Int), "Foreground drift before input")
@@ -328,7 +344,9 @@ func main() throws {
     var finalTarget: AXUIElement?
     try need(AXUIElementCopyElementAtPosition(ax, Float(point.x), Float(point.y), &finalTarget) == .success, "Final input receiver unavailable")
     guard let finalTarget else { throw Refusal(message: "Final input receiver unavailable") }
-    let finalIdentity = try buttonIdentity(finalTarget, label: label, point: point, descendants: pillDescendants)
+    guard let finalIdentity = try buttonIdentity(finalTarget, label: label, point: point, descendants: pillDescendants) else {
+        throw Refusal(message: "Exact requested native button disappeared before click")
+    }
     try need(finalIdentity as NSDictionary == hitIdentity as NSDictionary, "Input receiver changed before click")
     let verified = try currentPill(req, initialPill)
     let preDownFront = frontPID()

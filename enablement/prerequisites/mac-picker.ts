@@ -260,8 +260,12 @@ on hasNativeFocus(nativeApp, targetPID, expectedExecutable)
   current application's NSRunLoop's currentRunLoop()'s runUntilDate:(current application's NSDate's dateWithTimeIntervalSinceNow:0.001)
   my assertOwnedApplication(nativeApp, targetPID, expectedExecutable)
   set frontApp to current application's NSWorkspace's sharedWorkspace()'s frontmostApplication()
-  if frontApp is missing value then return false
-  return ((nativeApp's isActive()) as boolean) and ((frontApp's processIdentifier()) as integer) is targetPID
+  set observedActive to (nativeApp's isActive()) as boolean
+  set observedFrontPID to -1
+  if frontApp is not missing value then set observedFrontPID to (frontApp's processIdentifier()) as integer
+  set observedAt to (current application's NSProcessInfo's processInfo()'s systemUptime()) as real
+  log ("Owned native focus sample targetPID=" & targetPID & " active=" & observedActive & " frontPID=" & observedFrontPID & " uptime=" & observedAt)
+  return observedActive and observedFrontPID is targetPID
 end hasNativeFocus
 
 on requireNativeFocus(nativeApp, targetPID, expectedExecutable)
@@ -270,7 +274,9 @@ end requireNativeFocus
 
 on activateOwned(nativeApp, targetPID, expectedExecutable)
   my assertOwnedApplication(nativeApp, targetPID, expectedExecutable)
-  if not ((nativeApp's activateWithOptions:(current application's NSApplicationActivateIgnoringOtherApps)) as boolean) then error "Owned Electron activation refused"
+  set activationAccepted to (nativeApp's activateWithOptions:(current application's NSApplicationActivateIgnoringOtherApps)) as boolean
+  log ("Owned native focus activation targetPID=" & targetPID & " accepted=" & activationAccepted)
+  if not activationAccepted then error "Owned Electron activation refused"
   set focusDeadline to ((current application's NSProcessInfo's processInfo()'s systemUptime()) as real) + 1
   repeat
     if my hasNativeFocus(nativeApp, targetPID, expectedExecutable) then return

@@ -450,6 +450,11 @@ limited to a fresh OCR target in a verified descendant of the installed app;
 the native adapter also requires the exact named accessibility button with the
 projected point inside its native bounds, verifies window geometry through
 screenshot and input, and preserves the scene's foreground.
+Before that lookup, the adapter requests Electron's documented
+[`AXManualAccessibility`](https://www.electronjs.org/docs/latest/tutorial/accessibility)
+tree for the exact verified pill process. It observes the actual named button
+within the existing hit-readiness deadline; an unexposed tree never authorizes
+input. This changes only the disposable verifier's accessibility admission.
 Sharing uses explicit plaintext consent against a private loopback fixture, with
 the ordinary public-access clipboard disclosure. Encrypted transfer/decryption
 proof remains the separate installed Connect CLI test.
@@ -464,6 +469,11 @@ report, successful owned cleanup and inspection of the actual text/images; a
 prepared adapter or permission boolean alone is not proof. Independent earlier
 native failures still fail the job. This adds no Mac job, provider rental,
 production activation, permission override or publication.
+
+Storage focus failures retain the activation result and bounded AppKit samples
+of the owned app's active flag and frontmost PID. Those observations distinguish
+the two focus predicates without changing the one-second focus allowance,
+replaying activation or dispatching Change after a failed admission.
 
 ## Mac test-artifact preparation
 
