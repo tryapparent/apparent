@@ -107,6 +107,14 @@ class PrePushGuardTests(unittest.TestCase):
         encryption_test.parent.mkdir()
         encryption_test.write_text("import {test} from 'node:test'; test('finite production CLI fixture', () => {});\n")
         (self.repo / "enablement/cli-version.test.ts").write_text(encryption_test.read_text())
+        # The independent Engine producer is a real selected command, but this
+        # finite hook fixture must not compile/package a native runtime. Observe
+        # its dispatch separately; Engine's owner check supplies real proof.
+        engine_check = self.repo / "engine/tools/check.ts"
+        engine_check.parent.mkdir(parents=True)
+        engine_check.write_text(
+            "import {appendFileSync} from 'node:fs';\n"
+            "appendFileSync(process.env.COMMAND_LOG + '.engine', 'engine producer\\n');\n")
         # Fixture directories must survive the commit/clean-tree guard.
         for directory in ("enablement/directory-width/tests", "hermes/tests"):
             (self.repo / directory / "test_fixture.py").write_text(fixture_test)
@@ -176,6 +184,19 @@ class PrePushGuardTests(unittest.TestCase):
         result = self.push(remote="refs/heads/feature")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.log.exists())
+
+    def test_independent_engine_push_runs_its_producer_without_legacy_cargo(self):
+        run("git", "update-ref", "refs/remotes/origin/main", self.head, cwd=self.repo)
+        source = self.repo / "engine/native/src/main.rs"
+        source.parent.mkdir(parents=True)
+        source.write_text("fn main() {}\n")
+        run("git", "add", ".", cwd=self.repo)
+        run("git", "commit", "-qm", "Engine capability", cwd=self.repo)
+        self.head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
+        result = self.push(remote="refs/heads/feature")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(Path(str(self.log) + ".engine").read_text(), "engine producer\n")
+        self.assertFalse(self.log.exists(), "independent Engine must not compile the legacy app")
 
     def test_new_contract_filename_is_not_silently_omitted(self):
         run("git", "update-ref", "refs/remotes/origin/main", self.head, cwd=self.repo)

@@ -25,12 +25,12 @@ test('LaunchServices resolves an owned synthetic scheme to its actual executable
   const bundle = join(home, 'SetupFixture.app');
   const executable = join(bundle, 'Contents/MacOS/apparent');
   const registry = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
-  let bundlePublished = false;
+  let mayBeRegistered = false;
   // A failing finally assertion hid the original native failure. Report cleanup
   // separately through the test runner, retaining the same owned-only operation
   // and deadline. Never print subprocess output or the account's registry.
   t.after(() => {
-    const cleanup = bundlePublished ? spawnSync(registry, ['-u', bundle], {
+    const cleanup = mayBeRegistered ? spawnSync(registry, ['-u', bundle], {
       encoding: 'utf8', timeout: 10000, maxBuffer: 256 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
     }) : undefined;
     const ok = !cleanup || (!cleanup.error && cleanup.status === 0);
@@ -43,11 +43,13 @@ test('LaunchServices resolves an owned synthetic scheme to its actual executable
     rmSync(home, { recursive: true, force: true });
     assert(ok, 'Synthetic LaunchServices unregister failed; see bounded cleanup status');
   });
-    // Publishing a valid app can make LaunchServices discover it before our
-    // explicit registration. Assert the fresh scheme is absent before creation.
+    // Observe genuine absence before making a discoverable app. LaunchServices
+    // may index a valid bundle as soon as it is created/signed in runner staging;
+    // "not explicitly registered yet" does not mean absent from the real OS.
     assert.equal(macHandler(system, executable, scheme).status, 'absent');
     mkdirSync(join(bundle, 'Contents/MacOS'), { recursive: true });
     copyFileSync('/usr/bin/true', executable);
+    mayBeRegistered = true;
     writeFileSync(join(bundle, 'Contents/Info.plist'), `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -61,9 +63,6 @@ test('LaunchServices resolves an owned synthetic scheme to its actual executable
 <key>CFBundleURLSchemes</key><array><string>${scheme}</string></array>
 </dict></array>
 </dict></plist>`);
-    // From this point the owned metadata is discoverable, even if signing or
-    // explicit registration fails. Cleanup must also cover implicit discovery.
-    bundlePublished = true;
     // The copied Apple command retains its original code identity. Give this
     // owned app bundle its own coherent ad-hoc identity before registration;
     // never modify or sign the system executable itself.

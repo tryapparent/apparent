@@ -1,0 +1,213 @@
+name: Engine · Build and publish media capabilities
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "**"
+      - "!capture/**"
+      - "!record/**"
+      - "!connect/**"
+      - "!public/**"
+      - "!hermes/**"
+      - "!enablement/**"
+      - "!shared/**"
+      - "!composition/**"
+      - "!.cargo/**"
+      - "!.github/**"
+      - "!.githooks/**"
+      - "!engine/**"
+      - "!AGENTS.md"
+      - "!README.md"
+      - "!Cargo.toml"
+      - "!Cargo.lock"
+      - "!build.rs"
+      - "!main.rs"
+      - "engine/**"
+      - "enablement/ci/**"
+      - "enablement/local-tests/**"
+      - ".githooks/**"
+      - ".github/**"
+      - "!.github/workflows/checks.yml"
+      - "!.github/workflows/linux-updater-harness.yml"
+      - "!.github/workflows/release-linux.yml"
+      - "!.github/workflows/release-mac-preview.yml"
+      - "!.github/workflows/verification-platform.yml"
+      - "!.github/workflows/verification.yml"
+      - "!.github/workflows/hermes.yml"
+      - "!.github/workflows/stream-connect.yml"
+      - "!.github/workflows/stream-public.yml"
+      - ".github/workflows/stream-engine.yml"
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+  push:
+    branches: [main]
+    paths:
+      - "**"
+      - "!capture/**"
+      - "!record/**"
+      - "!connect/**"
+      - "!public/**"
+      - "!hermes/**"
+      - "!enablement/**"
+      - "!shared/**"
+      - "!composition/**"
+      - "!.cargo/**"
+      - "!.github/**"
+      - "!.githooks/**"
+      - "!engine/**"
+      - "!AGENTS.md"
+      - "!README.md"
+      - "!Cargo.toml"
+      - "!Cargo.lock"
+      - "!build.rs"
+      - "!main.rs"
+      - "engine/**"
+      - "enablement/ci/**"
+      - "enablement/local-tests/**"
+      - ".githooks/**"
+      - ".github/**"
+      - "!.github/workflows/checks.yml"
+      - "!.github/workflows/linux-updater-harness.yml"
+      - "!.github/workflows/release-linux.yml"
+      - "!.github/workflows/release-mac-preview.yml"
+      - "!.github/workflows/verification-platform.yml"
+      - "!.github/workflows/verification.yml"
+      - "!.github/workflows/hermes.yml"
+      - "!.github/workflows/stream-connect.yml"
+      - "!.github/workflows/stream-public.yml"
+      - ".github/workflows/stream-engine.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  select:
+    runs-on: ubuntu-24.04
+    outputs:
+      selected: ${{ steps.route.outputs.selected }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - name: Select through the shared consumer authority
+        id: route
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: bun engine/tools/select.ts
+
+  sdk:
+    needs: select
+    if: needs.select.outputs.selected == 'true'
+    runs-on: ubuntu-24.04
+    container: node:22.23.0-bookworm-slim
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prove packed SDK consumption without native tools or outputs
+        run: |
+          if command -v cargo || command -v rustc; then exit 1; fi
+          proof=$(mktemp -d /tmp/apparent-dev-engine-sdk-XXXXXX)
+          echo "ENGINE_OUTPUT=$proof" >> "$GITHUB_ENV"
+          node --experimental-strip-types engine/tools/check.ts "$proof" --sdk-only
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-sdk
+          path: ${{ env.ENGINE_OUTPUT }}/artifacts/apparent-engine-sdk-*
+          if-no-files-found: error
+
+  native:
+    needs: select
+    if: >-
+      needs.select.outputs.selected == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: ./.github/actions/ubuntu-apt
+        if: runner.os == 'Linux'
+      - name: Install declared media prerequisites
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          else
+            command -v ffmpeg && command -v ffprobe || brew install ffmpeg
+          fi
+      - name: Build independent provider and qualify extracted packages
+        shell: bash
+        run: |
+          proof=$(mktemp -d /tmp/apparent-dev-engine-native-XXXXXX)
+          echo "ENGINE_OUTPUT=$proof" >> "$GITHUB_ENV"
+          node --experimental-strip-types engine/tools/check.ts "$proof"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-native-${{ matrix.runner }}
+          path: ${{ env.ENGINE_OUTPUT }}/artifacts/engine-media-*
+          if-no-files-found: error
+
+  publish:
+    needs: [select, sdk, native]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.select.outputs.selected == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - name: Verify that newer main has not changed Engine inputs
+        run: |
+          git fetch origin main
+          bun enablement/ci/routing/streams.ts engine "$GITHUB_SHA"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: engine-*
+          path: artifacts
+          merge-multiple: true
+      - name: Publish immutable commit-addressed artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          cd artifacts
+          sha256sum -c ./*.sha256
+          tag="engine-media-$GITHUB_SHA"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            draft=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+            if [ "$draft" = false ]; then
+              git fetch origin "refs/tags/$tag"
+              test "$(git rev-parse 'FETCH_HEAD^{commit}')" = "$GITHUB_SHA"
+              proof=$(mktemp -d /tmp/apparent-dev-engine-published-XXXXXX)
+              gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$proof"
+              diff -qr . "$proof"
+              exit 0
+            fi
+            test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)" = "$GITHUB_SHA"
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --draft \
+              --title "Engine media $GITHUB_SHA" \
+              --notes 'Read-only movie metadata provider and Rust-free SDK. No installed app activation. Pin exact artifact digests; app adoption remains a separate compatibility gate.'
+          fi
+          # Only the still-unpublished draft may be repaired on a retry.
+          gh release upload "$tag" ./* --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
