@@ -26,6 +26,19 @@ older client/server source.
 
 ## Continuous delivery
 
+`stream-engine.yml` owns the new `engine/` native media producer and SDK checks
+and commit-addressed artifact publication. It consumes the same
+`enablement/ci/routing/consumers.ts` authority as the hook and other workflows;
+`engine-media` / `engineMedia` is distinct from the legacy staged Engine suite.
+The Rust-free SDK check runs in a clean Node container. Ready PRs and main also
+qualify extracted Linux/Mac native packages against real synthetic media. Main
+publishes a prerelease after both gates, without activating the installed app.
+An unrelated main push cannot cancel a candidate's publication. Consumption must
+pin an exact native artifact digest and compatible SDK; adding the app's pin and
+integration/package consumers is required in the adoption slice. Until then,
+Engine-only inputs have no installed-app consumer. SDK/capability details and
+remaining adoption gates live in `engine/README.md`.
+
 `checks.yml` verifies the native application and shared integration on PRs targeting
 main and main pushes. Public and Connect have direct automatic entrypoints in
 `stream-public.yml` and `stream-connect.yml`; neither depends on a default CD run.

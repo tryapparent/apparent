@@ -11,7 +11,7 @@ import {selection as localSelection, commands as localCommands} from '../../loca
 import {affectsStream, currentStream, streamPaths, type Stream} from './streams.ts';
 
 const root = new URL('../../../', import.meta.url);
-const workflows = {capture: 'checks.yml', connect: 'stream-connect.yml', public: 'stream-public.yml', hermes: 'hermes.yml'};
+const workflows = {capture: 'checks.yml', connect: 'stream-connect.yml', public: 'stream-public.yml', hermes: 'hermes.yml', engine: 'stream-engine.yml'};
 test('both automatic events use the reviewed positive directory inventory', () => {
   for (const [stream, file] of Object.entries(workflows)) {
     const workflow = YAML.parse(readFileSync(new URL('.github/workflows/' + file, root), 'utf8'));
@@ -22,7 +22,7 @@ test('both automatic events use the reviewed positive directory inventory', () =
     }
   }
   for (const stream of Object.keys(workflows) as Stream[]) {
-    for (const path of ['shared/new/file.ts', 'composition/new/file.ts']) assert.equal(affectsStream(stream, path), true);
+    for (const path of ['shared/new/file.ts', 'composition/new/file.ts']) assert.equal(affectsStream(stream, path), stream !== 'engine');
     assert.equal(affectsStream(stream, 'unowned/new.ts'), true);
   }
   assert.equal(affectsStream('public', 'capture/desktop/ui/frontend/tests/reference-native.cjs'), false);
@@ -39,6 +39,28 @@ test('cheap contracts surface new top-level ownership instead of selecting every
   const paths = execFileSync('git', ['ls-files', '-z'], {cwd: root, encoding: 'utf8'}).split('\0').filter(Boolean);
   const unowned = unownedPaths(paths);
   assert.deepEqual(unowned, [], 'declare new directory ownership and workflow consumers');
+});
+
+test('Engine producer inputs select their real owner without acquiring legacy app or product builds', () => {
+  for (const path of ['engine/native/src/main.rs', 'engine/native/macos/Probe.swift',
+    'engine/sdk/src/index.ts', 'engine/tools/check.ts', '.github/workflows/stream-engine.yml']) {
+    const decision = routeDecision([path]);
+    assert.deepEqual(decision.selected, ['engine-media']);
+    assert.equal(decision.plan.engineMedia, true);
+    assert.equal(decision.plan.root, false);
+    assert.equal(decision.plan.engine, false, 'staged legacy Engine is not the new producer');
+    assert.deepEqual(routingProblems({paths: [path], historyKnown: true, ...decision}), []);
+    for (const stream of ['capture', 'connect', 'public', 'hermes'] as const)
+      assert.equal(affectsStream(stream, path), false, `${stream} must not start for ${path}`);
+    const commands = localCommands(decision.selected, 'base', 'head');
+    assert.ok(commands.some(command => command.argv.includes('engine/tools/check.ts')));
+    assert.ok(!commands.some(command => command.argv.includes('cargo') || command.argv.includes('--run') || /^(capture|connect|public|hermes)\//.test(command.cwd)));
+  }
+  assert.deepEqual(routeDecision(['engine/README.md']).selected, []);
+  for (const path of ['enablement/ci/routing/consumers.ts', 'enablement/local-tests/run.ts']) {
+    assert.equal(routeDecision([path]).plan.engineMedia, true, 'shared execution inputs retain Engine');
+    assert.equal(affectsStream('engine', path), true);
+  }
 });
 
 test('pending exact-candidate delivery survives unrelated main changes, but not affected, rename, deletion or divergent inputs', () => {

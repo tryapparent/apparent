@@ -24,7 +24,7 @@ function parents(outputs: any = {}, reuse: any = {}) {
 }
 test('independent stream workflows, manual diagnostics, PR integration checkout and read-only verification', () => {
   assert.deepEqual(readdirSync(new URL('.github/workflows/', root)).filter(name =>
-    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))).sort(), ['checks.yml', 'hermes.yml', 'stream-connect.yml', 'stream-public.yml']);
+    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))).sort(), ['checks.yml', 'hermes.yml', 'stream-connect.yml', 'stream-engine.yml', 'stream-public.yml']);
   assert.deepEqual(Object.keys(ci().on), ['pull_request', 'push']);
   assert.deepEqual(ci().on.pull_request.types, ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft']);
   assert.equal(ci().permissions.contents, 'read');
@@ -180,7 +180,7 @@ test('standalone Enablement regression tests select tooling while execution inpu
   for (const path of audited) {
     assert.deepEqual(selectedOwners([path]), ['tooling'], path);
     assert.deepEqual(suitePlan([path]), {root:false, engine:false, desktop:false, client:false, foreground:false,
-      browser:false, service:false, tools:false, hermes:false, public:false, tooling:true, onboarding:false}, path);
+      browser:false, service:false, tools:false, hermes:false, public:false, tooling:true, onboarding:false, engineMedia:false}, path);
     assert.deepEqual(localCommands(['tooling'], 'base', 'head').map(command => command.argv), [
       ['python3', 'enablement/verification.py', '--base', 'base', '--head', 'head', '--pr'],
       ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'],
@@ -322,7 +322,7 @@ test('audited Record inputs retain Desktop and native platform consumers only', 
       const paths = [`record/${pkg}/${input}`];
       assert.deepEqual(selectedOwners(paths), ['capture', 'desktop', 'onboarding']);
       assert.deepEqual(suitePlan(paths), {root: true, engine: false, desktop: true, client: false, foreground: false,
-        browser: false, service: false, tools: false, hermes: false, public: false, tooling: false, onboarding: true});
+        browser: false, service: false, tools: false, hermes: false, public: false, tooling: false, onboarding: true, engineMedia: false});
       assert.deepEqual(select(paths), {public: false, updater: false});
       assert.equal(needsPlatform(paths), true);
       assert.equal(macDecision(paths).macos, true);
