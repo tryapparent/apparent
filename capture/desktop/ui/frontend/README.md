@@ -24,7 +24,7 @@ assets and CSP rather than a less-restricted Electron development server.
 
 From this directory, `npm run test:onboarding-policy` runs the source-level
 onboarding tests with Node 22 alone. It needs no `npm ci`, Electron download,
-display, Rust toolchain or generated `dist`. It covers account projection,
+display, Rust toolchain or generated `dist`. It covers native-confirmed shortcut selection,
 shortcut capture/protocol admission, coach geometry, state subscription and pen
 save receipts. Newly added `tests/onboarding/*.test.ts` files join automatically;
 keep that suffix for headless checks and use `*.smoke.ts` for renderer checks.
@@ -342,7 +342,7 @@ window/coach, permissions and shortcut renderer smokes in one Electron process
 slot. The window/coach check launches the packaged `--onboarding` Electron host
 with its real preload and parent pipe, using synthetic state only; the other two
 checks keep their existing real Electron/preload paths and synthetic native
-receipts. The canonical `test:electron` still runs these same three test files
+receipts. The focused command also exercises the Connect onboarding entry and consent flow. The canonical `test:electron` runs these same four test files
 alongside the generic foundation and all other existing renderer smokes. Linux
 Xvfb runs verify renderer integration only, not native permissions or platform
 acceptance.

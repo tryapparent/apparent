@@ -59,13 +59,29 @@ fn toolbar_button(id: &'static str, label: &'static str, close: bool) -> gpui::S
 #[derive(Clone)]
 pub(in crate::capture::desktop) struct Board {
     pub color: [u8;3],
+    pub presentation: Option<(String, [f32;4])>,
     pub strokes: Vec<Vec<[f32; 2]>>,
     pub active: Option<Vec<[f32; 2]>>,
 }
 
-impl Default for Board {fn default()->Self{Self{color:[26,26,26],strokes:Vec::new(),active:None}}}
+impl Default for Board {fn default()->Self{Self{presentation:None,color:[26,26,26],strokes:Vec::new(),active:None}}}
 
 impl Board {
+    pub fn detach_presentation(&mut self) -> bool {
+        self.finish();
+        self.presentation.take().is_some()
+    }
+    /// The current renderer identity is checked by the coordinator before this native input boundary.
+    pub fn apply_input(&mut self, value: &serde_json::Value) {
+        let point=||serde_json::from_value::<[f32;2]>(value["point"].clone()).ok().filter(|p|p.iter().all(|n|n.is_finite())&&on_paper(*p));
+        match value["operation"].as_str() {
+            Some("begin")=>{if let Some(p)=point(){self.finish();self.start(p);}},
+            Some("move")=>{if let Some(p)=point(){self.extend(p);}},
+            Some("end")=>self.finish(), Some("cancel")=>self.active=None, Some("undo")=>self.undo(), Some("clear")=>self.clear(),
+            Some("close")=>{self.finish();self.presentation=None;}, _=>{}
+        }
+    }
+
     pub fn start(&mut self, point: [f32; 2]) {
         if on_paper(point) {
             self.active = Some(vec![point]);
@@ -100,6 +116,7 @@ impl Board {
 }
 
 pub(in crate::capture::desktop) fn reset_for_capture(board: &Rc<RefCell<Board>>) {
+    board.borrow_mut().presentation=None;
     board.borrow_mut().clear();
     board.borrow_mut().color=crate::shared::handoff::pen::rgb();
 }
@@ -296,6 +313,18 @@ pub(in crate::capture::desktop) fn open(coord: &Entity<ApparentCoordinator>, cx:
             return;
         }
     }
+    if coord.read(cx).onboarding.as_ref().is_some_and(|s|s.electron_practice()) {
+        let bounds = Bounds::centered(None, size(px(720.0), px(540.0)), cx);
+        coord.update(cx, |coord,_| {
+            let mut board=coord.whiteboard.borrow_mut();
+            if board.presentation.is_none() {
+                board.presentation=Some((crate::shared::ids::make_bundle_id(), [bounds.origin.x.into(),bounds.origin.y.into(),720.0,540.0]));
+            }
+            drop(board);
+            if let Some(session)=coord.onboarding.as_mut(){session.practice_whiteboard();}
+        });
+        return;
+    }
     let shared = coord.read(cx).whiteboard.clone();
     let coordinator = coord.clone();
     let bounds = Bounds::centered(None, size(px(720.0), px(540.0)), cx);
@@ -345,12 +374,15 @@ pub(in crate::capture::desktop) fn finish_snapshot(
     board: &Rc<RefCell<Board>>,
     close: impl FnOnce(),
 ) -> Board {
+    board.borrow_mut().finish();
     let snapshot = board.borrow().clone();
+    board.borrow_mut().presentation=None;
     close();
     snapshot
 }
 
-pub(in crate::capture::desktop) fn frame(cx: &mut App) -> Option<[f32;4]> {
+pub(in crate::capture::desktop) fn frame(board: &Rc<RefCell<Board>>, cx: &mut App) -> Option<[f32;4]> {
+    if let Some((_,frame))=&board.borrow().presentation {return Some(*frame);}
     for handle in cx.windows() {
         if handle.downcast::<WhiteboardWindow>().is_some() {
             if let Ok(frame) = handle.update(cx, |_, window, _| {
@@ -652,6 +684,41 @@ fn render_paper(strokes: &[Vec<[f32; 2]>], t_ms: u64, color:[u8;3]) -> crate::sh
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn renderer_input_is_human_only_and_rejects_invalid_points() {
+        let mut board=Board::default();
+        board.apply_input(&serde_json::json!({"operation":"replay"}));
+        assert!(board.strokes.is_empty());assert!(board.active.is_none());
+        for p in [[-1.0,4.0],[1600.0,2.0],[3.0,1100.0]] {
+            board.apply_input(&serde_json::json!({"operation":"begin","point":p}));
+            assert!(board.active.is_none());
+        }
+        board.apply_input(&serde_json::json!({"operation":"move","point":[20,30]}));
+        assert!(board.active.is_none());
+        board.apply_input(&serde_json::json!({"operation":"begin","point":[20,30]}));
+        board.apply_input(&serde_json::json!({"operation":"move","point":[40,50]}));
+        board.apply_input(&serde_json::json!({"operation":"end"}));
+        assert_eq!(board.strokes,vec![vec![[20.0,30.0],[40.0,50.0]]]);
+        board.apply_input(&serde_json::json!({"operation":"undo"}));assert!(board.strokes.is_empty());
+        board.apply_input(&serde_json::json!({"operation":"begin","point":[20,30]}));
+        board.apply_input(&serde_json::json!({"operation":"close"}));
+        assert_eq!(board.strokes.len(),1);assert!(board.presentation.is_none());
+    }
+
+    #[test]
+    fn cancellation_discards_only_active_human_ink_and_detach_restores_saved_strokes() {
+        let mut board=Board::default();
+        board.start([20.0,30.0]);board.extend([40.0,50.0]);board.finish();
+        board.start([80.0,90.0]);board.extend([100.0,110.0]);
+        board.apply_input(&serde_json::json!({"operation":"cancel"}));
+        assert_eq!(board.strokes,vec![vec![[20.0,30.0],[40.0,50.0]]]);
+        assert!(board.active.is_none());
+        board.presentation=Some(("board-id".into(),[0.0,0.0,720.0,540.0]));
+        assert!(board.detach_presentation());
+        assert_eq!(board.strokes.len(),1);
+        assert!(!board.detach_presentation());
+    }
 
     #[test]
     fn branded_buttons_construct_with_one_hover_style_each() {

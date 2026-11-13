@@ -71,6 +71,7 @@ fn settings_error(error: client_settings::SafeError) -> settings_controller::Saf
     use client_settings::SafeError as C;
     use settings_controller::SafeError as S;
     match error {
+        C::Waitlisted => S::Waitlisted,
         C::Cancelled => S::Cancelled,
         C::Offline => S::Offline,
         C::AuthRequired => S::AuthRequired,
