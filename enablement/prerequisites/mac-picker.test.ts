@@ -4,7 +4,7 @@ import {execFileSync, spawn} from 'node:child_process';
 import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {basename, join} from 'node:path';
-import {panelScript, prepareStorageChange, type PickerDriver} from './mac-picker.ts';
+import {panelScript, persistentPanelScript, PickerProcess, prepareStorageChange, type PickerDriver} from './mac-picker.ts';
 import {isolatePickerRuntime} from './mac-runtime.ts';
 import * as files from 'node:fs/promises';
 function deferred<T>() {
@@ -133,7 +133,7 @@ test('picker calls allow bounded AppKit startup but never exceed the original ov
   const from=source.indexOf(start),to=source.indexOf(end,from);
   assert.ok(from>=0&&to>from);return source.slice(from,to);
  };
- const create=new Function('run','Date','assert','env','deadline','electronChild','panelScript','home','electronExecutable','pickerCommandMs','fixtureRuntime',
+ const create=new Function('run','Date','assert','env','deadline','electronChild','panelScript','home','electronExecutable','pickerCommandMs','fixtureRuntime','PickerProcess',
   slice('  const budget =','  let home,')+slice('  const osa =','  const panel =')+
   slice('  const panel =','  const snapshot =')+slice('    const goPathOperation =','    const prepared =')+
   'return {osa,panel,goPathOperation};');
@@ -141,7 +141,9 @@ test('picker calls allow bounded AppKit startup but never exceed the original ov
  const calls:Array<{timeout:number;operation:string}>=[];
  const driver=create(async(_file:string,args:string[],options:{timeout:number})=>{
   calls.push({timeout:options.timeout,operation:args[4]});return {stdout:'owned picker\n'};
- },{now:()=>now},assert,{},95000,{exitCode:null,signalCode:null,pid:4801},'native script','/synthetic/home','/synthetic/electron',5000,{bundleId:'com.tryapparent.synthetic'});
+ },{now:()=>now},assert,{},95000,{exitCode:null,signalCode:null,pid:4801},'native script','/synthetic/home','/synthetic/electron',5000,{bundleId:'com.tryapparent.synthetic'},class {
+  async request(args:string[],timeout:number) {calls.push({timeout,operation:args[2]});return 'owned picker';}
+ });
  await driver.panel('cancel');
  await driver.goPathOperation('enter-go-path','/synthetic/path');
  assert.deepEqual(calls.map(call=>call.timeout),[5000,5000]);
@@ -251,7 +253,7 @@ test('query timing preserves the exact selector and stable source-line identitie
 });
 test('the actual AppKit picker adapter compiles without running UI actions',{skip:process.platform!=='darwin'},()=>{
  const directory=mkdtempSync(join(tmpdir(),'apparent-dev-picker-syntax-'));
- try {execFileSync('/usr/bin/osacompile',['-o',join(directory,'picker.scpt'),'-e',panelScript],{stdio:'pipe'});}
+ try {for(const [index,script]of[panelScript,persistentPanelScript].entries())execFileSync('/usr/bin/osacompile',['-o',join(directory,`picker-${index}.scpt`),'-e',script],{stdio:'pipe'});}
  finally {rmSync(directory,{recursive:true,force:true});}
 });
 test('the actual Storage/Retention receipt precedes Change, and Go sheet readiness precedes path entry',async()=>{
@@ -517,4 +519,87 @@ test('reference cleanup stops descendants after backend exit, survives restart, 
   for(const root of groups)if(root.exitCode===null&&root.signalCode===null)try{process.kill(-root.pid!,'SIGKILL');}catch{}
   const ended=once(foreign,'exit');foreign.kill();await ended;
  }
+});
+
+const pickerWorker = `
+const rl = require('node:readline').createInterface({input:process.stdin});
+rl.on('line', line => {
+ const {id,args}=JSON.parse(line), op=args[2];
+ if(op==='hang')return;
+ if(op==='exit'){process.exit(2);return;}
+ if(op==='stderr-exit'){process.stderr.write('synthetic interpreter failure',()=>process.exit(7));return;}
+ if(op==='malformed'){process.stdout.write('not json\\n');return;}
+ if(op==='oversized'){process.stdout.write('x'.repeat(65537));return;}
+ const reply={id:op==='bad-id'?id+1:id,ok:op!=='error',value:args[1],error:'Owned picker not ready'};
+ const bytes=Buffer.from(JSON.stringify(reply)+'\\n');
+ if(op==='split'){
+  const at=bytes.indexOf(Buffer.from('é'))+1;
+  process.stdout.write(bytes.subarray(0,at));
+  setTimeout(()=>process.stdout.write(bytes.subarray(at)),10);
+ }else process.stdout.write(bytes);
+});
+`;
+function pickerTransport(t: {after: (fn: () => Promise<unknown>) => void}) {
+ const driver=new PickerProcess(()=>spawn(process.execPath,['-e',pickerWorker],{stdio:'pipe'}));
+ t.after(()=>driver.close());
+ return driver;
+}
+const pickerArgs=(operation:string, path='/synthetic/path')=>['4811',path,operation,'/synthetic/runtime','synthetic.bundle'];
+test('one picker interpreter serves separate requests and handles split UTF-8 frames',async t=>{
+ const driver=pickerTransport(t);
+ const path='/synthetic/café\n"quoted"';
+ assert.equal(await driver.request(pickerArgs('split',path),5000),path);
+ for(let i=0;i<12;i++)assert.equal(await driver.request(pickerArgs('inspect',String(i)),5000),String(i));
+ assert.deepEqual(driver.stats,{starts:1,requests:13});
+ const closed=await driver.close();
+ assert.equal(closed.exitCode,0);
+ await assert.rejects(driver.request(pickerArgs('cancel'),5000),/retired/);
+});
+test('a native readiness error is reported without replay or interpreter restart',async t=>{
+ const driver=pickerTransport(t);
+ await assert.rejects(driver.request(pickerArgs('error'),5000),/Owned picker not ready/);
+ assert.equal(await driver.request(pickerArgs('inspect'),5000),'/synthetic/path');
+ assert.deepEqual(driver.stats,{starts:1,requests:2});
+});
+test('interpreter failure retains its exit status and final stderr in the reported error',async t=>{
+ const driver=pickerTransport(t);
+ await assert.rejects(driver.request(pickerArgs('stderr-exit'),5000),/code 7.*synthetic interpreter failure/);
+ await assert.rejects(driver.request(pickerArgs('cancel'),5000),/retired/);
+ assert.equal(driver.stats.requests,1);
+});
+for(const operation of ['bad-id','malformed','oversized','exit'])test(`picker rejects ${operation} and refuses further dispatch`,async t=>{
+ const driver=pickerTransport(t);
+ await assert.rejects(driver.request(pickerArgs(operation),5000));
+ await assert.rejects(driver.request(pickerArgs('cancel'),5000),/retired/);
+ assert.equal(driver.stats.requests,1);
+});
+test('a timed-out mutation retires the owned driver and cannot be replayed',async t=>{
+ const driver=pickerTransport(t);
+ await driver.request(pickerArgs('inspect'),5000);
+ await assert.rejects(driver.request(pickerArgs('hang'),80),/outcome unknown/);
+ await assert.rejects(driver.request(pickerArgs('cancel'),5000),/retired/);
+ const closed=await driver.close();
+ assert.ok(closed.exitCode!==null||closed.signalCode!==null);
+ assert.equal(closed.requests,2);
+});
+test('picker concurrency and invalid deadlines never issue a second command',async t=>{
+ const driver=pickerTransport(t);
+ await driver.request(pickerArgs('inspect'),5000);
+ await assert.rejects(driver.request(pickerArgs('cancel'),5001),/deadline/);
+ const pending=driver.request(pickerArgs('hang'),80);
+ await assert.rejects(driver.request(pickerArgs('cancel'),5000),/Concurrent/);
+ await assert.rejects(pending,/outcome unknown/);
+ assert.equal(driver.stats.requests,2);
+});
+
+test('Mac picker protocol reports absent ownership through the real interpreter without UI input', {
+ skip:process.platform!=='darwin'||process.env.GITHUB_ACTIONS!=='true',
+},async t=>{
+ const driver=new PickerProcess();
+ t.after(async()=>{await driver.close();});
+ // macOS process IDs cannot reach this value. No AX lookup, focus or input is
+ // reached: the existing ownedApplication guard must reject the absent PID.
+ const args=['2147483647','/synthetic/café\n"quoted"','inspect','/nonexistent/picker-runtime','synthetic.bundle'];
+ for(let i=0;i<2;i++)await assert.rejects(driver.request(args,5000),/Owned Electron process is absent/);
+ assert.deepEqual(driver.stats,{starts:1,requests:2});
 });
