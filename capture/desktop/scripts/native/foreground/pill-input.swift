@@ -283,8 +283,11 @@ func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint, d
         try withinBudget()
         let (element, depth) = queue.removeFirst()
         if seen.contains(where: { CFEqual($0, element) }) { continue }
-        try need(seen.count < 128 && depth <= 12, "Owned accessibility tree exceeds its traversal bound")
+        // The total element bound also bounds depth. Electron's native wrappers
+        // and the production renderer can put an ordinary button below level 12.
+        try need(seen.count < 128, "Owned accessibility tree exceeds its traversal bound")
         seen.append(element)
+        clickTrace?.add(["stage":"accessibilityTreeElement", "depth":depth, "visited":seen.count])
         var pid: pid_t = -1
         try need(AXUIElementGetPid(element, &pid) == .success && descendants.contains(pid), "Accessibility tree contains an unowned receiver")
         try need(AXUIElementSetMessagingTimeout(element, 0.2) == .success, "Could not bound owned accessibility element")
@@ -306,7 +309,6 @@ func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint, d
         if role as? String == (kAXButtonRole as String),
            let identity = try buttonIdentity(element, label: label, point: point, descendants: descendants) { matches.append(identity) }
         let next = try children(element, kAXChildrenAttribute, limit: 128 - seen.count - queue.count)
-        try need(next.isEmpty || depth < 12, "Owned accessibility tree exceeds its depth bound")
         queue.append(contentsOf: next.map { ($0, depth + 1) })
     }
     try need(matches.count <= 1, "Owned accessibility button is ambiguous")
