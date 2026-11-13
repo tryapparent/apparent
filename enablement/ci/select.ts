@@ -134,7 +134,10 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
   const platform = plan.root || plan.engine || plan.desktop || plan.client;
   return {...routing, paths: paths ?? [], historyKnown: paths !== null, inputProofKnown: paths !== null && !unsafe, workflowControls, ...mac, platform, plan,
     hermes: plan.hermes, portable: plan.browser || plan.service || plan.tools || plan.foreground,
-    reasons: [...routing.reasons, ...foregroundBoundaries.map(path => 'foreground:native-boundary:' + path), ...changedPolicyImports.map(path => 'fallback:onboarding-new-import:' + path), ...changedOnboardingBoundary.map(path => 'fallback:onboarding-boundary-change:' + path), ...mac.reasons]};
+    reasons: [...routing.reasons,
+      ...(delta?.filter(change => !regularFileChange(change)).map(change =>
+        `fallback:unproven-input:${change.path}:${change.status}:${change.oldMode}->${change.newMode}`) ?? []),
+      ...foregroundBoundaries.map(path => 'foreground:native-boundary:' + path), ...changedPolicyImports.map(path => 'fallback:onboarding-new-import:' + path), ...changedOnboardingBoundary.map(path => 'fallback:onboarding-boundary-change:' + path), ...mac.reasons]};
 }
 
 export function requiresMacRustRange(base: string, head: string): boolean {

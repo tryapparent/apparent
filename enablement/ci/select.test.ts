@@ -203,6 +203,21 @@ function repository(action: (git: (...args: string[]) => string, dir: string) =>
   try {git('init', '-qb', 'main');git('config', 'user.name', 'CI fixture');git('config', 'user.email', 'ci@example.invalid');action(git, dir);}
   finally {process.chdir(previous);Object.assign(process.env, inherited);rmSync(dir, {recursive: true, force: true});}
 }
+test('executable comment changes explain exactly which input prevents narrow proof', () => repository((git, dir) => {
+  mkdirSync('enablement/directory-width', {recursive:true});
+  const path = 'enablement/directory-width/check.py';
+  writeFileSync(path, '# original checker\n'); chmodSync(path, 0o755);
+  git('add', '.'); git('commit', '-qm', 'baseline');
+  const base = git('rev-parse', 'HEAD');
+  writeFileSync(path, '# documentation-only comment\n');
+  git('add', '.'); git('commit', '-qm', 'comment');
+  const head = git('rev-parse', 'HEAD');
+  const decision = selectRange(base, head, dir);
+  assert.equal(decision.inputProofKnown, false);
+  assert.ok(decision.reasons.includes(`fallback:unproven-input:${path}:M:100755->100755`));
+  assert.deepEqual(decision.plan, routeDecision(null).plan, 'Explanation does not weaken fallback');
+}));
+
 function cli(base: string, head: string, dir: string) {
   const output = dir + '/.git/selection'; writeFileSync(output, '');
   const result = JSON.parse(execFileSync(process.execPath, [new URL('enablement/ci/select.ts', root).pathname], {

@@ -9,6 +9,23 @@ workflow edits select tooling alone; execution-sensitive workflow changes retain
 integration coverage. Hosted and local execution call the same range selector and
 named suite plan; see [the CI contract](../docs/continuous-delivery.md).
 
+## Explain a candidate before pushing
+
+After committing a slice, preview the full merge-base delta with the same
+selector and command inventory used by the hook and hosted workflows:
+
+```sh
+node --experimental-strip-types enablement/local-tests/run.ts \
+  --base "$(git merge-base HEAD origin/main)" --head HEAD --explain
+```
+
+This prints paths, selection reasons and commands without running them. It reads
+commits; uncommitted edits are not included. Inspect broad fallback reasons before
+starting the push. An executable-file comment still changes an unproven executable
+input; `fallback:unproven-input` names the path, status and Git modes responsible.
+Omit `--explain` for the existing JSON output. `--run` retains normal admission
+and all required checks; the preview itself is not verification evidence.
+
 The audited standalone regression files `local-tests/reuse.test.ts` and
 `prerequisites/native.test.ts` select tooling alone. Both remain in the always-run
 contract inventory. Execution sources, unknown test files and mixed changes keep
