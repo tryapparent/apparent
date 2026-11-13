@@ -342,6 +342,26 @@ test('the retained native receipt preserves direct and wrapped subprocess failur
   }
  }
 });
+test('terminal picker readiness preserves the first timeout and never queries a retired interpreter',async()=>{
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const start=source.indexOf('  const poll ='),end=source.indexOf('  let env;',start);
+ assert.ok(start>=0&&end>start);
+ const report:{readinessAttempts?:Record<string,Array<{detail:string}>>}={};
+ let now=0,reads=0;
+ const poll=new Function('report','Date','performance','budget','sleep','process',
+  source.slice(start,end)+'return poll;')(report,{now:()=>now},{now:()=>now},(cap:number)=>cap,
+   async()=>{now+=150;},{env:{}});
+ const failure=Object.assign(Error('Native picker command timed out; outcome unknown'),{stderr:'',pickerRetired:true});
+ await assert.rejects(poll(async()=>{
+  reads++;throw reads===1?failure:Error('Picker driver is retired; no replay');
+ },'Owned Electron AX window readiness'),(error:Error & {cause?:unknown})=>{
+  assert.match(error.message,/command timed out; outcome unknown/);assert.equal(error.cause,failure);return true;
+ });
+ assert.equal(reads,1);
+ assert.equal(report.readinessAttempts!['Owned Electron AX window readiness']![0]!.detail,failure.message);
+ // A reported read-only not-ready result is still observable again.
+ assert.equal(await poll(async()=>{if(reads++===1)throw Error('Owned window not ready');return 'ready';},'ordinary readiness'),'ready');
+});
 test('native integration retains its consent, deadlines, persistence assertions and one-shot mutation adapter',()=>{
  const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
  assert.match(source,/prepareStorageChange\(\{/);
@@ -604,7 +624,11 @@ for(const operation of ['bad-id','malformed','oversized','exit'])test(`picker re
 test('a timed-out mutation retires the owned driver and cannot be replayed',async t=>{
  const driver=pickerTransport(t);
  await driver.request(pickerArgs('inspect'),5000);
- await assert.rejects(driver.request(pickerArgs('hang'),80),/outcome unknown/);
+ await assert.rejects(driver.request(pickerArgs('hang'),80),error=>{
+  assert.match(String(error),/outcome unknown/);
+  assert.equal((error as {pickerRetired?:boolean}).pickerRetired,true);
+  return true;
+ });
  await assert.rejects(driver.request(pickerArgs('cancel'),5000),/retired/);
  const closed=await driver.close();
  assert.ok(closed.exitCode!==null||closed.signalCode!==null);

@@ -361,7 +361,7 @@ export class PickerProcess {
 
   private abort(message: string) {
     this.retired = true;
-    const error = Object.assign(new Error(message), {stderr: this.stderr, signal: this.child?.signalCode});
+    const error = Object.assign(new Error(message), {stderr: this.stderr, signal: this.child?.signalCode, pickerRetired: true});
     const pending = this.pending;
     this.pending = undefined;
     pending?.finish(error);

@@ -250,9 +250,12 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
           const subprocess = error.stderr !== undefined ? error : error.cause;
           history.push({ elapsedMs: Math.round(performance.now() - tick),
             durationMs: Math.round(performance.now() - attempt),
-            detail: String(subprocess?.stderr ?? error.message).slice(-2048),
+            detail: [error.message, subprocess?.stderr].filter(Boolean).join('\n').slice(-2048),
             code: subprocess?.code ?? null, signal: subprocess?.signal ?? null });
         }
+        // A timed-out interpreter cannot answer another observation. Preserve
+        // its first failure instead of replacing it with a later retired error.
+        if (error.pickerRetired) throw new Error(`${label}: ${error.message}`, {cause: error});
       }
       await sleep();
     } while (Date.now() < until);
