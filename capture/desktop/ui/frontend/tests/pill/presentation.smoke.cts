@@ -14,7 +14,8 @@ const recording={...hidden,revision:2,phase:'recording',inputWaveform:Array(24).
 test('a warm pill waits for its current layout and performs no sizing work for telemetry',async t=>{
  const home=await fs.mkdtemp(path.join(os.tmpdir(),'pill-presentation-'));
  const application=await electron.launch({args:[path.resolve(__dirname,'host.cjs'),'--no-sandbox'],
-  env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')}});
+  env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config'),
+   ...(process.platform==='linux'?{XDG_CURRENT_DESKTOP:'Hyprland'}:{})}});
  t.after(async()=>{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});});
  const page=await application.firstWindow();
  const publish=state=>application.evaluate((_e,state)=>process.stdin.emit('data',JSON.stringify({type:'state',view:state})+'\n'),state);
@@ -56,10 +57,16 @@ test('a warm pill waits for its current layout and performs no sizing work for t
  }
  assert.equal(await application.evaluate(()=>globalThis.measurements),start,'Telemetry and idle time must not measure layout');
  assert.equal(await page.locator('.indicator').evaluate(el=>getComputedStyle(el).animationName),'none');
+ await application.evaluate(({BrowserWindow})=>{
+  globalThis.resizeHides=0;
+  BrowserWindow.getAllWindows()[0].on('hide',()=>globalThis.resizeHides++);
+ });
  await publish({...recording,revision:3,warning:'Microphone input stopped; screen recording continues'});
  await expect(page.getByRole('status')).toContainText('Microphone');
  await expect(page.getByRole('button',{name:'Finish',exact:true})).toBeInViewport();
  assert.ok(await application.evaluate(()=>globalThis.measurements)>start,'Content changes must still size the window');
+ await page.evaluate(()=>window.apparentPill.layout(3));
+ assert.equal(await application.evaluate(()=>globalThis.resizeHides),0,'Resizing a visible pill must not unmap its native surface');
  await publish({...hidden,revision:4});
  await expect.poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible())).toBe(false);
 });

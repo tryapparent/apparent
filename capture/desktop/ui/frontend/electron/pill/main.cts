@@ -142,10 +142,9 @@ app.whenReady().then(()=>{
       const height=Math.min(160,Math.max(58,Math.ceil(size.height)));
       const before=window.getBounds();
       const resized=before.width!==width || before.height!==height;
-      // Hyprland must remap a resized transparent XWayland surface, as for
-      // movement above. Otherwise old warning pixels can survive in its margin.
-      // The committed-layout handler restores visibility after shape admission.
-      if(resized && hyprland && window.isVisible())window.hide();
+      // Keep layout resizes mapped. Hyprland can lose a transparent XWayland
+      // surface during hide/setBounds/showInactive even when Electron reports
+      // it visible. Update its bounds and input shape in place, then repaint.
       if(resized)position({x:Math.round(before.x+(before.width-width)/2),y:before.y,width,height});
       visibleWidth=current.phase==='recording' && current.noteCount===0?width-72:width;
       if(process.platform==='linux'){
