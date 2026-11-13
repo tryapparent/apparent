@@ -380,6 +380,22 @@ test('the retained native receipt preserves direct and wrapped subprocess failur
   }
  }
 });
+test('readiness preserves the original transport error even when stderr is empty',async()=>{
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const start=source.indexOf('  const poll ='),end=source.indexOf('  let env;',start);
+ assert.ok(start>=0&&end>start);
+ const create=new Function('report','Date','performance','budget','sleep','process','fs',source.slice(start,end)+'\nreturn poll;');
+ let now=0;const report:any={};
+ const poll=create(report,{now:()=>now},{now:()=>now},(cap:number)=>cap,async()=>{now+=150;},{env:{}},{});
+ const failure=Object.assign(Error('Native picker command timed out; outcome unknown'),{stderr:'',signal:null});
+ await assert.rejects(poll(async()=>{now=5000;throw failure;},'Owned Electron AX window readiness',5000),
+  error=>(error as Error).cause===failure);
+ const attempts=report.readinessAttempts['Owned Electron AX window readiness'];
+ assert.equal(attempts.length,1);
+ assert.equal(attempts[0].message,failure.message);
+ assert.equal(attempts[0].detail,'','Empty native stderr remains an observation, not a fabricated trace');
+ assert.equal(attempts[0].durationMs,5000);
+});
 test('native integration retains its consent, deadlines, persistence assertions and one-shot mutation adapter',()=>{
  const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
  assert.match(source,/prepareStorageChange\(\{/);
@@ -718,7 +734,12 @@ test('Mac picker protocol reports absent ownership through the real interpreter 
  t.after(async()=>{await driver.close();});
  // macOS process IDs cannot reach this value. No AX lookup, focus or input is
  // reached: the existing ownedApplication guard must reject the absent PID.
- const args=['2147483647','/synthetic/café\n"quoted"','inspect','/nonexistent/picker-runtime','synthetic.bundle'];
+ // The failing hosted frame was 288 bytes. Exercise a realistic first frame,
+ // not only a short sentinel, while retaining Unicode/newline framing coverage.
+ const args=['2147483647','/synthetic/café\n"quoted"'.padEnd(64,'x'),'inspect-window',
+  '/synthetic/private-home/picker-runtime-abcdef/StorageFixture.app/Contents/MacOS/StorageFixture-'+'a'.repeat(32),
+  'com.tryapparent.storagefixture.f'+'b'.repeat(32)];
+ assert.ok(Buffer.byteLength(JSON.stringify({id:1,args})+'\n')>=288);
  for(let i=0;i<2;i++)await assert.rejects(driver.request(args,5000),/Owned Electron process is absent/);
  assert.deepEqual(driver.stats,{starts:1,requests:2});
 });

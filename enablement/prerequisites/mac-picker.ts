@@ -313,19 +313,27 @@ export const persistentPanelScript = panelScript
   current application's NSRunLoop's currentRunLoop()'s runUntilDate:(current application's NSDate's dateWithTimeIntervalSinceNow:0.001)`)
   + `
 on run argv
+  -- The first command includes interpreter startup and stdin framing. Keep
+  -- those stages visible before the existing AppKit/AX trace, without logging
+  -- request contents or changing dispatch, input or the command deadline.
+  set pickerTransportStartedAt to current date
+  log ("Picker transport stage=run-entered elapsedSeconds=" & (my axProbeElapsed(pickerTransportStartedAt)))
   set inputHandle to current application's NSFileHandle's fileHandleWithStandardInput()
   set outputHandle to current application's NSFileHandle's fileHandleWithStandardOutput()
   set newlineData to (current application's NSString's stringWithString:linefeed)'s dataUsingEncoding:(current application's NSUTF8StringEncoding)
   -- data is AppleScript terminology; use the explicit Objective-C initializer.
   set buffer to current application's NSMutableData's alloc()'s initWithCapacity:8192
+  log ("Picker transport stage=read-ready elapsedSeconds=" & (my axProbeElapsed(pickerTransportStartedAt)))
   repeat
     set nextByte to inputHandle's readDataOfLength:1
     if (nextByte's |length|() as integer) is 0 then exit repeat
     if (nextByte's isEqualToData:newlineData) as boolean then
+      log ("Picker transport stage=frame-complete bytes=" & (buffer's |length|() as integer) & " elapsedSeconds=" & (my axProbeElapsed(pickerTransportStartedAt)))
       set request to current application's NSJSONSerialization's JSONObjectWithData:buffer options:0 |error|:(missing value)
       if request is missing value then error "Invalid picker request"
       set reply to current application's NSMutableDictionary's dictionary()
       reply's setObject:(request's objectForKey:"id") forKey:"id"
+      log ("Picker transport stage=dispatch elapsedSeconds=" & (my axProbeElapsed(pickerTransportStartedAt)))
       try
         set resultText to my pickerRequest((request's objectForKey:"args") as list)
         reply's setObject:(current application's NSNumber's numberWithBool:true) forKey:"ok"
