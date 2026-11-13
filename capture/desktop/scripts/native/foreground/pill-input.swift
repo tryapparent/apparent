@@ -331,6 +331,7 @@ func main() throws {
         Thread.sleep(forTimeInterval: 0.025)
     }
     guard let hitIdentity else { throw Refusal(message: "Input receiver has no exact requested button in its bounded parent chain") }
+    try need(ProcessInfo.processInfo.systemUptime - started < 1.5, "Exact native button arrived after the input-readiness deadline")
     trace.add(["stage":"ownedHit", "frontPid":Int(frontPID()), "receiver":hitIdentity])
     let frontBefore = frontPID()
     try need(frontBefore == pid_t(before["frontPid"] as! Int), "Foreground drift before input")
