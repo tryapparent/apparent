@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {YAML} from 'bun';
 import {routeDecision, unownedPaths, routingProblems} from './consumers.ts';
-import {selectRange} from '../select.ts';
+import {selectRange, requiresMacRustRange} from '../select.ts';
 import {selection as localSelection, commands as localCommands} from '../../local-tests/run.ts';
 import {affectsStream, currentStream, streamPaths, type Stream} from './streams.ts';
 
@@ -170,6 +170,49 @@ test('real Git deltas give local and hosted onboarding the same suites, native b
     const missingLocal = localSelection('missing', 'HEAD', cwd), missingHosted = selectRange('missing', 'HEAD', cwd);
     assert.deepEqual(missingLocal.plan, missingHosted.plan); assert.equal(missingHosted.plan.public, true);
     assert.ok(missingHosted.reasons.some(reason => reason.startsWith('fallback:')));
+  } finally {rmSync(cwd, {recursive: true, force: true});}
+});
+
+test('renderer test tooling additions and unsafe nearby Git changes preserve shared/local routing parity', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'onboarding-renderer-routing-'));
+  const git = (...args: string[]) => execFileSync('git', args, {cwd, encoding: 'utf8'}).trim();
+  const frontend = 'capture/desktop/ui/frontend/tests/onboarding/renderer/';
+  const paths = [frontend + 'window-coach.smoke.ts', frontend + 'tsconfig.json'];
+  const put = (path: string, text = 'export {};') => {mkdirSync(join(cwd, path, '..'), {recursive: true}); writeFileSync(join(cwd, path), text);};
+  try {
+    git('init', '-q'); git('config', 'user.name', 'Synthetic'); git('config', 'user.email', 'synthetic@example.invalid');
+    put('capture/desktop/ui/frontend/tests/onboarding/account.test.ts'); git('add', '.'); git('commit', '-qm', 'base');
+    const base = git('rev-parse', 'HEAD');
+    const check = (expectedUnsafe: boolean, expectedAllBroad = expectedUnsafe, from = base) => {
+      const head = git('rev-parse', 'HEAD'), local = localSelection(from, head, cwd), hosted = selectRange(from, head, cwd);
+      assert.deepEqual(local.plan, hosted.plan); assert.deepEqual(local.reasons, hosted.reasons);
+      assert.equal(hosted.historyKnown, true); assert.equal(hosted.inputProofKnown, !expectedUnsafe);
+      assert.equal(hosted.plan.desktop, true, JSON.stringify({from, paths: hosted.paths, plan: hosted.plan}));
+      assert.equal(hosted.plan.onboarding, true, JSON.stringify({from, paths: hosted.paths, plan: hosted.plan}));
+      for (const suite of ['root','engine','client','browser','service','tools','public','hermes','tooling'])
+        if (expectedAllBroad) assert.equal(hosted.plan[suite as keyof typeof hosted.plan], true, suite);
+      if (!expectedUnsafe) assert.deepEqual(routingProblems(hosted), []);
+      return hosted;
+    };
+    for (const path of paths) put(path, path.endsWith('.json') ? '{"extends":"../../tsconfig.json"}' : 'export const smoke = true;');
+    git('add', '.'); git('commit', '-qm', 'approved renderer test additions'); const addition = git('rev-parse', 'HEAD'); check(false);
+
+    put(paths[0], 'export const smoke = false;'); git('add', '.'); git('commit', '-qm', 'regular renderer test modification'); check(false, false, addition);
+
+    git('reset', '--hard', base); put(paths[0]); put(frontend + 'window-coach.unknown.ts');
+    git('add', '.'); git('commit', '-qm', 'unknown nearby test'); check(true);
+
+    git('reset', '--hard', base); put(paths[0]); git('add', '.'); git('commit', '-qm', 'renderer test');
+    const unsafeAddition = git('rev-parse', 'HEAD'); execFileSync('chmod', ['755', paths[0]], {cwd}); git('add', '.'); git('commit', '-qm', 'unsafe renderer test mode');
+    const unsafe = selectRange(base, git('rev-parse', 'HEAD'), cwd);
+    assert.equal(unsafe.inputProofKnown, false); assert.equal(unsafe.plan.root, true); assert.equal(unsafe.plan.public, true);
+
+    git('reset', '--hard', unsafeAddition); git('mv', paths[0], frontend + 'renamed.ts'); git('commit', '-qm', 'renderer test move');
+    assert.equal(selectRange(base, git('rev-parse', 'HEAD'), cwd).inputProofKnown, false);
+
+    git('reset', '--hard', unsafeAddition); put('capture/engine/src/selection.rs'); git('add', '.'); git('commit', '-qm', 'mixed native change');
+    const mixed = check(false, false, base); assert.equal(mixed.plan.engine, true); assert.equal(mixed.plan.root, false);
+    assert.equal(mixed.macos, true); assert.equal(requiresMacRustRange(base, git('rev-parse', 'HEAD')), true);
   } finally {rmSync(cwd, {recursive: true, force: true});}
 });
 

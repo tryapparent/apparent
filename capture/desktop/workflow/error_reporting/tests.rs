@@ -3,6 +3,105 @@ use super::*;
 use std::net::{TcpListener, TcpStream};
 
 #[test]
+fn finalization_audio_report_identifies_real_writer_backlog_and_retains_saved_bytes() {
+    use crate::capture::engine::runtime::{audio::persistence::{Lease, Samples, Writer}, recording::diagnostics::{Diagnose, Stage}};
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
+    let scratch = Scratch::new();
+    // No microphone: admit more than the existing two-second writer limit in
+    // one batch, so the real writer must fail before Stop rather than race it.
+    let samples = Arc::new(Mutex::new(Samples::from(vec![0.25; 48_000])));
+    let failure = Arc::new(Mutex::new(None));
+    let mut writer = Writer::start(&scratch.0, samples, failure.clone()).unwrap();
+    let saved = std::fs::read(scratch.0.join("audio.wav")).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while failure.lock().unwrap().is_none() {
+        assert!(Instant::now() < deadline, "writer did not report its backlog failure");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let error = writer.finish().stage(Stage::AudioStop).unwrap_err();
+    assert_eq!(std::fs::read(scratch.0.join("audio.wav")).unwrap(), saved);
+    assert!(Lease::acquire(&scratch.0).is_err(), "failed Stop must retain narration ownership");
+    let payload = Report::finalization(&error, std::panic::Location::caller(), Consent { generation: "private-audio-consent".into() }).payload("phc_synthetic").unwrap();
+    assert_eq!(payload["properties"]["diagnostics_schema_version"], 3);
+    let stages = payload["properties"]["finalization"]["stages"].as_array().unwrap();
+    assert_eq!(stages.last().unwrap()["stage"], "audio_writer_backlog");
+    assert!(payload["properties"]["$exception_fingerprint"].as_str().unwrap().contains("AudioWriterBacklog"));
+    for private in [scratch.0.to_str().unwrap(), "private-audio-consent", "Narration disk writer fell"] {
+        assert!(!payload.to_string().contains(private), "leaked {private}");
+    }
+    drop(writer);
+    // A concurrent test can fork with this open-file description; CLOEXEC
+    // closes that inherited reference at exec, not at this Writer's drop.
+    // Observe kernel availability within the original deadline, retaining the
+    // actual failure if ownership is leaked rather than assuming instant close.
+    loop {
+        match Lease::acquire(&scratch.0) {
+            Ok(_) => break,
+            Err(error) => {
+                assert!(Instant::now() < deadline, "writer teardown must release its lease: {error:#}");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+    }
+}
+
+#[test]
+fn finalization_audio_report_classifies_real_wav_failures_without_error_text() {
+    use crate::capture::engine::runtime::audio::audio::decode_wav_16k;
+    for (bytes, expected_kind, expected_io) in [
+        (&b"private-wav-canary"[..], "format", Value::Null),
+        // hound 3.5 reports a short read as ErrorKind::Other, not UnexpectedEof.
+        (&b"RIFF"[..], "io", json!("other")),
+    ] {
+        let error = decode_wav_16k(bytes).unwrap_err();
+        let payload = Report::finalization(&error, std::panic::Location::caller(), Consent { generation: "initial".into() }).payload("phc_synthetic").unwrap();
+        let diagnostics = &payload["properties"]["finalization"];
+        assert_eq!(diagnostics["wav_error_kind"], expected_kind);
+        assert_eq!(diagnostics["io_kind"], expected_io);
+        assert_eq!(diagnostics["stages"].as_array().unwrap().last().unwrap()["stage"], "audio_wav_read");
+        assert!(!payload.to_string().contains("private-wav-canary"));
+        assert!(!payload.to_string().contains(&error.to_string()));
+    }
+
+    // A valid WAV with an unsupported capture spec is a different native
+    // invariant from malformed WAV data; the original bytes remain untouched.
+    let mut wav = std::io::Cursor::new(Vec::new());
+    hound::WavWriter::new(&mut wav, hound::WavSpec {
+        channels: 2, sample_rate: 48_000, bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    }).unwrap().finalize().unwrap();
+    let error = decode_wav_16k(wav.get_ref()).unwrap_err();
+    let payload = Report::finalization(&error, std::panic::Location::caller(), Consent { generation: "initial".into() }).payload("phc_synthetic").unwrap();
+    let diagnostics = &payload["properties"]["finalization"];
+    assert_eq!(diagnostics["stages"].as_array().unwrap().last().unwrap()["stage"], "audio_wav_format");
+    assert!(diagnostics["wav_error_kind"].is_null());
+    assert!(diagnostics["io_kind"].is_null());
+}
+
+#[test]
+fn finalization_audio_report_projects_wav_variants_and_wrapped_os_errors_without_formatting() {
+    for (error, expected) in [
+        (hound::Error::FormatError("private-format-canary"), "format"),
+        (hound::Error::Unsupported, "unsupported"),
+        (hound::Error::TooWide, "too_wide"),
+        (hound::Error::UnfinishedSample, "unfinished_sample"),
+        (hound::Error::InvalidSampleFormat, "invalid_sample_format"),
+        (hound::Error::IoError(std::io::Error::from_raw_os_error(libc::ENOSPC)), "io"),
+    ] {
+        let payload = Report::finalization(&anyhow::Error::new(error), std::panic::Location::caller(), Consent { generation: "initial".into() }).payload("phc_synthetic").unwrap();
+        let diagnostics = &payload["properties"]["finalization"];
+        assert_eq!(diagnostics["wav_error_kind"], expected);
+        if expected == "io" {
+            assert_eq!(diagnostics["io_kind"], "storage_full");
+            assert_eq!(diagnostics["os_error_code"], libc::ENOSPC);
+        }
+        assert!(!payload.to_string().contains("private-format-canary"));
+    }
+}
+
+#[test]
 fn finalization_report_identifies_real_empty_frame_failure_without_private_content() {
     let scratch = Scratch::new();
     let target = serde_json::from_value(json!({"mode":"display","displayId":0,"frame":{"x":0,"y":0,"width":32,"height":32,"scale":1}})).unwrap();
@@ -185,6 +284,7 @@ fn exception_names_identify_each_category_without_changing_fingerprints() {
         (Failure::PhoneStart, "phone_start_failed"),
         (Failure::FinalizeCapture, "capture_finalization_failed"),
         (Failure::VideoExport, "video_export_failed"),
+        (Failure::UpdateCheck, "update_check_failed"),
         (Failure::ElectronMainException, "electron_main_exception"),
         (Failure::ElectronMainRejection, "electron_main_rejection"),
         (Failure::ElectronRendererGone, "electron_renderer_gone"),
@@ -208,6 +308,15 @@ fn exception_names_identify_each_category_without_changing_fingerprints() {
         assert_eq!(properties["$exception_fingerprint"], format!("desktop:{code}:capture/desktop/mod.rs:42"));
         assert!(!payload.to_string().contains("private-generation"));
     }
+}
+
+#[test]
+fn sparkle_reports_only_errors_not_normal_no_update_or_user_deferrals() {
+    for code in [1001, 4007, 4008] {
+        assert!(!sparkle_error_should_report("SUSparkleErrorDomain", code));
+    }
+    assert!(sparkle_error_should_report("SUSparkleErrorDomain", 1002));
+    assert!(sparkle_error_should_report("NSURLErrorDomain", -1009));
 }
 
 #[test]

@@ -24,6 +24,16 @@ Explicit recording shortcuts and `app --record` keep their recording behavior.
 A bare terminal invocation still prints help. Linux tray-host loss can still show
 fallback controls when idle; an explicit app launch opens Settings instead.
 
+### Mac development installation
+
+Install and launch through `capture/desktop/scripts/packaging/install-app.sh`, or
+`install-app-remote.sh` for remote installs, rather than running a `target/`
+daemon. Cleanup can unlink a target executable and disturb its TCC identity.
+Finish captures and quit the destination app before replacement; the installers'
+process checks below still apply. Never reset Kit's real permission grants; use
+the preview identity and approved isolated test environment. Keep release signing
+and update storage outside `target/` and `/tmp`; see [release procedures](release.md).
+
 ### Electron Storage and About composition
 
 The accepted Settings design keeps the six-page sidebar and bounds the reading
@@ -95,6 +105,13 @@ and repo-relative source call site. Finalization diagnostics additionally contai
 up to eight typed native stages with repository source locations and structured
 I/O kind/OS error numbers, when available. These describe the failing boundary,
 not the original error message; an unclassified error can still need local logs.
+Schema 3 distinguishes audio state, writer backlog/history/length, writer
+join/write/checkpoint/read, and WAV encode/read/format failures on both macOS and
+Linux. `finalization.wav_error_kind` allows only `io`, `format`, `too_wide`,
+`unfinished_sample`, `unsupported` or `invalid_sample_format` (otherwise null).
+WAV-wrapped I/O failures retain their structured I/O kind and OS code. Neither
+WAV format messages nor sample data are reported. These diagnostics do not
+change the writer's backlog limit, save failure behavior or recovery guarantees.
 Finalization fingerprints include the innermost known stage so unrelated failures
 are not grouped solely by the Desktop completion call site. Historical groups
 and installed older releases retain their old reports. No raw error/panic text, logs, recordings,
@@ -127,7 +144,7 @@ omit the ID and do not register releases. Existing installed binaries and old
 events are not retroactively linked by this change.
 
 Coverage: desktop recording storage/audio/screen/phone startup, capture finalization,
-video export and Rust panics after startup. This is a synthetic call-site frame,
+video export, Linux/macOS update-check errors, and Rust panics after startup. This is a synthetic call-site frame,
 **not a full unwound stack or native crash dump**. Segfaults, forced exits,
 Swift/Objective-C crashes and failures before startup are not captured. The queue
 holds at most 16 events, with 20 attempts/minute and a two-second HTTP timeout.

@@ -121,7 +121,7 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
     try {return /\b(?:import|require)\b|\bexport\s+[^;]*\bfrom\s*['"]/.test(git(['show', head + ':' + path], cwd));}
     catch {return true;}
   }).map(change => change.path) ?? [];
-  const toolingManifests = new Set(['package.json', 'package-lock.json'].map(name => 'capture/desktop/ui/frontend/tests/onboarding/' + name));
+  const toolingManifests = new Set(['package.json', 'package-lock.json', 'renderer/window-coach.smoke.ts', 'renderer/tsconfig.json'].map(name => 'capture/desktop/ui/frontend/tests/onboarding/' + name));
   const supportedToolingAddition = (change: Change) => toolingManifests.has(change.path) && change.status === 'A' && regularFileChange(change);
   const supportedOnboardingAddition = (change: Change) => change.status === 'A' && regularFileChange(change) && (
     onboardingPureInputs.has(change.path) ||
