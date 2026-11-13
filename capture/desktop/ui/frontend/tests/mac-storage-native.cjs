@@ -42,7 +42,7 @@ done
 // Resolve only window 1 of the exact owned PID, then descend its sheets. Do not
 // search other processes, use coordinates, or guess which Return commits a picker.
 // Unknown AX shapes fail with bounded diagnostics from this process alone.
-const { panelScript, persistentPanelScript, PickerProcess, prepareStorageChange, pickerCommandMs } = require('../../../../../enablement/prerequisites/mac-picker.ts');
+const { panelScript, persistentPanelScript, PickerProcess, prepareStorageChange, cancelStorageChange, pickerCommandMs } = require('../../../../../enablement/prerequisites/mac-picker.ts');
 const { isolatePickerRuntime } = require('../../../../../enablement/prerequisites/mac-runtime.ts');
 const { assertReportingRead } = require('../../../../../enablement/prerequisites/reporting-read.ts');
 
@@ -645,13 +645,14 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     report.retention = await require('./native-retention.cjs')(page, { config, captures: selected, output });
     const beforeCancel = await fs.readFile(config);
     const beforeCancelStat = await fs.stat(config, { bigint: true });
-    await waitStorageIdle();
-    await startNativeChange();
-    // The owned Cancel operation performs the same PID, bundle, window and
-    // control checks immediately before its one click. A separate readiness
-    // probe repeats the expensive AppKit/AX startup without admitting a
-    // different action, and can consume the remaining native command budget.
-    report.nativeBeforeCancel = await panel('cancel');
+    report.nativeBeforeCancel = await cancelStorageChange({
+      storageIdle: waitStorageIdle,
+      change: () => startNativeChange(),
+      // The persistent driver reuses AppKit startup. Poll only observations;
+      // Cancel still revalidates ownership and controls before its single click.
+      picker: () => poll(() => panel('inspect'), 'Native Cancel picker readiness'),
+      cancel: () => panel('cancel'),
+    });
     await settleNativeChange();
     await expect(change).toBeEnabled({ timeout: budget() });
     assert.deepEqual(await fs.readFile(config), beforeCancel, 'Cancel changed config bytes');
