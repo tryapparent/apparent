@@ -14,6 +14,34 @@ func lstatIsLink(_ path: String) -> Bool {
     var s = stat(); return path.withCString { lstat($0, &s) == 0 && (s.st_mode & S_IFMT) == S_IFLNK }
 }
 var jobDir: URL?
+final class ClickTrace {
+    let fd: Int32
+    private var failure: String?
+    init(_ url: URL) throws {
+        fd = url.path.withCString { open($0, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, mode_t(0o600)) }
+        guard fd >= 0 else { throw Refusal(message: "Could not create exclusive private click trace") }
+    }
+    func add(_ fields: [String: Any]) {
+        guard failure == nil else { return }
+        guard let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]) else {
+            failure = "Could not encode private click trace"; return
+        }
+        var bytes = data + Data([10]); bytes.withUnsafeMutableBytes { ptr in
+            guard let base = ptr.baseAddress else { return }
+            var offset = 0
+            while offset < ptr.count {
+                let n = write(fd, base.advanced(by: offset), ptr.count - offset)
+                if n < 0 && errno == EINTR { continue }
+                if n <= 0 { failure = "Could not write complete private click trace"; break }
+                offset += n
+            }
+        }
+    }
+    func requireComplete() throws { if let failure { throw Refusal(message: failure) } }
+    deinit { _ = close(fd) }
+}
+var clickTrace: ClickTrace?
+var clickTraceName: String?
 let helperDeadline = ProcessInfo.processInfo.systemUptime + 8
 func withinBudget() throws { try need(ProcessInfo.processInfo.systemUptime < helperDeadline, "Adapter exceeded eight-second budget") }
 func safeOwnedPath(_ url: URL, root: URL) throws {
@@ -54,6 +82,12 @@ func frontPID() -> pid_t {
     return NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1
 }
 struct Pill { let pid: pid_t; let id: CGWindowID; let rect: CGRect }
+func currentPill(_ req: [String: Any], _ expected: Pill) throws -> Pill {
+    let (current, _) = try pill(req)
+    try need(current.pid == expected.pid && current.id == expected.id && current.rect == expected.rect,
+        "Pill window identity or bounds changed")
+    return current
+}
 func ancestry(_ root: pid_t) throws -> Set<pid_t> {
     let rows = try run("/bin/ps", ["-axo", "pid=,ppid="], 1).split(separator: "\n").prefix(4096)
     var parents: [pid_t: pid_t] = [:]
@@ -152,12 +186,68 @@ func observe(_ req: [String: Any], _ png: URL) throws -> ([String: Any], [Word],
     let (w, _) = try pill(req)
     _ = try run("/usr/sbin/screencapture", ["-x", "-o", "-l", String(w.id), png.path], 3)
     var imageStat = stat(); try need(png.path.withCString({ lstat($0, &imageStat) }) == 0 && (imageStat.st_mode & S_IFMT) == S_IFREG, "Window screenshot output is not a regular file")
+    guard let image = NSBitmapImageRep(data: try Data(contentsOf: png)), image.pixelsWide > 0, image.pixelsHigh > 0 else {
+        throw Refusal(message: "Could not read screenshot pixel dimensions")
+    }
+    let (afterShot, _) = try pill(req)
+    try need(afterShot.pid == w.pid && afterShot.id == w.id && afterShot.rect == w.rect, "Pill window changed during screenshot")
     let vr = VNRecognizeTextRequest(); vr.recognitionLevel = .accurate; vr.usesLanguageCorrection = false
     try VNImageRequestHandler(url: png).perform([vr]); try withinBudget()
     let words = (vr.results ?? []).compactMap { o -> Word? in guard let c = o.topCandidates(1).first else { return nil }; return Word(text: c.string, box: o.boundingBox, candidate: c) }
     let front = frontPID()
     let pillDescendants = try ancestry(w.pid)
-    return (["pid": Int(w.pid), "windowId": Int(w.id), "bounds": [w.rect.minX,w.rect.minY,w.rect.width,w.rect.height], "words": words.map { ["text":$0.text,"box":[$0.box.minX,$0.box.minY,$0.box.width,$0.box.height]] as [String:Any] }, "frontPid": Int(front)], words, pillDescendants)
+    let geometry: [String: Any] = ["pixelWidth": image.pixelsWide, "pixelHeight": image.pixelsHigh,
+        "windowBounds": [w.rect.minX,w.rect.minY,w.rect.width,w.rect.height],
+        "pixelToPointX": Double(w.rect.width) / Double(image.pixelsWide),
+        "pixelToPointY": Double(w.rect.height) / Double(image.pixelsHigh)]
+    return (["pid": Int(w.pid), "windowId": Int(w.id), "bounds": [w.rect.minX,w.rect.minY,w.rect.width,w.rect.height], "geometry": geometry, "words": words.map { ["text":$0.text,"box":[$0.box.minX,$0.box.minY,$0.box.width,$0.box.height]] as [String:Any] }, "frontPid": Int(front)], words, pillDescendants)
+}
+
+func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any] {
+    var current = element
+    for depth in 0..<5 {
+        try withinBudget()
+        try need(AXUIElementSetMessagingTimeout(current, 0.2) == .success, "Could not bound receiver AX messaging")
+        var pid: pid_t = -1
+        try need(AXUIElementGetPid(current, &pid) == .success && descendants.contains(pid), "Input receiver is not owned by the pill renderer")
+        var rawRole: CFTypeRef?, rawTitle: CFTypeRef?, rawDescription: CFTypeRef?
+        try need(AXUIElementCopyAttributeValue(current, kAXRoleAttribute as CFString, &rawRole) == .success,
+            "Input receiver role unavailable")
+        _ = AXUIElementCopyAttributeValue(current, kAXTitleAttribute as CFString, &rawTitle)
+        _ = AXUIElementCopyAttributeValue(current, kAXDescriptionAttribute as CFString, &rawDescription)
+        let role = rawRole as? String ?? ""
+        let title = (rawTitle as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let description = (rawDescription as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let knownLabels = ["Copy link", "Cancel upload", "Retry upload", "Paste", "Inspect"]
+        clickTrace?.add(["stage":"receiverObserved", "depth":depth, "requestedLabel":label, "pid":Int(pid), "role":String(role.prefix(80)), "title":knownLabels.contains(title) ? title : "<other>", "description":knownLabels.contains(description) ? description : "<other>"])
+        if role == (kAXButtonRole as String) && (title == label || description == label) {
+            var rawPosition: CFTypeRef?, rawSize: CFTypeRef?
+            try need(AXUIElementCopyAttributeValue(current, kAXPositionAttribute as CFString, &rawPosition) == .success &&
+                AXUIElementCopyAttributeValue(current, kAXSizeAttribute as CFString, &rawSize) == .success,
+                "Requested button geometry unavailable")
+            guard let rawPosition, let rawSize, CFGetTypeID(rawPosition) == AXValueGetTypeID(),
+                  CFGetTypeID(rawSize) == AXValueGetTypeID() else { throw Refusal(message: "Requested button geometry has invalid types") }
+            let positionValue = rawPosition as! AXValue, sizeValue = rawSize as! AXValue
+            var position = CGPoint.zero, size = CGSize.zero
+            try need(AXValueGetType(positionValue) == .cgPoint && AXValueGetValue(positionValue, .cgPoint, &position) &&
+                AXValueGetType(sizeValue) == .cgSize && AXValueGetValue(sizeValue, .cgSize, &size),
+                "Could not read requested button geometry")
+            let bounds = CGRect(origin: position, size: size)
+            clickTrace?.add(["stage":"buttonGeometry", "pid":Int(pid), "label":label,
+                "bounds":[bounds.minX,bounds.minY,bounds.width,bounds.height], "point":[point.x,point.y]])
+            // AX supplies an independent physical target check. A stable image
+            // scale alone cannot establish that OCR maps to this exact button.
+            try need(position.x.isFinite && position.y.isFinite && size.width.isFinite && size.height.isFinite &&
+                size.width > 0 && size.height > 0 && bounds.contains(point), "OCR point is outside the exact requested native button")
+            return ["pid": Int(pid), "role": role, "title": title == label ? label : "", "description": description == label ? label : "",
+                "bounds":[bounds.minX,bounds.minY,bounds.width,bounds.height]]
+        }
+        var rawParent: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(current, kAXParentAttribute as CFString, &rawParent) == .success,
+              let rawParent, CFGetTypeID(rawParent) == AXUIElementGetTypeID() else { break }
+        current = rawParent as! AXUIElement
+    }
+    throw Refusal(message: "Input receiver has no exact requested button in its bounded parent chain")
 }
 func main() throws {
     try need(env["CI"] == "true" && env["GITHUB_ACTIONS"] == "true" && env["RUNNER_ENVIRONMENT"] == "github-hosted" && env["RUNNER_OS"] == "macOS", "Refusing outside GitHub-hosted macOS CI")
@@ -188,6 +278,12 @@ func main() throws {
         let closed = try closeLaunchSettings(req)
         print(String(data: try JSONSerialization.data(withJSONObject: closed), encoding: .utf8)!); return
     }
+    if op == "click" {
+        let traceURL = job.appendingPathComponent("pill-input-\(getpid()).log")
+        try safeOwnedPath(traceURL, root: runner)
+        clickTrace = try ClickTrace(traceURL)
+        clickTraceName = traceURL.lastPathComponent
+    }
     let (before, words, pillDescendants) = try observe(req, out)
     if op == "snapshot" { print(String(data: try JSONSerialization.data(withJSONObject: before), encoding: .utf8)!); return }
     try need(op == "click", "Unknown operation")
@@ -197,22 +293,29 @@ func main() throws {
     let b = before["bounds"] as! [CGFloat], box = matching[0]
     try need(box.minX >= 0 && box.minY >= 0 && box.maxX <= 1 && box.maxY <= 1 && box.width > 0 && box.height > 0, "OCR target outside owned image")
     let point = CGPoint(x: b[0] + box.midX*b[2], y: b[1] + (1-box.midY)*b[3])
+    guard let trace = clickTrace else { throw Refusal(message: "Click trace unavailable") }
+    let initialPill = try pill(req).0
+    trace.add(["stage":"beforeMove", "frontPid":Int(frontPID()), "pillPid":Int(initialPill.pid), "windowId":Int(initialPill.id), "bounds":[initialPill.rect.minX,initialPill.rect.minY,initialPill.rect.width,initialPill.rect.height], "geometry":before["geometry"]!, "point":[point.x,point.y]])
+    try trace.requireComplete()
     try need(frontPID() == pid_t(before["frontPid"] as! Int), "Foreground drift before pointer movement")
     let ax = AXUIElementCreateSystemWide(); _ = AXUIElementSetMessagingTimeout(ax, 0.2)
     let move = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)
     try need(move != nil, "Could not create native mouse movement")
     move!.post(tap: .cghidEventTap)
+    trace.add(["stage":"postMove", "frontPid":Int(frontPID()), "point":[point.x,point.y]])
     let started = ProcessInfo.processInfo.systemUptime
-    var hit: pid_t = -1
+    var hitElement: AXUIElement?
     while ProcessInfo.processInfo.systemUptime - started < 1.5 {
         var target: AXUIElement?; let err = AXUIElementCopyElementAtPosition(ax, Float(point.x), Float(point.y), &target)
         if err == .success, let target {
-            var p: pid_t = -1; _ = AXUIElementGetPid(target, &p); hit = p
-            if pillDescendants.contains(hit) { break }
+            var p: pid_t = -1; _ = AXUIElementGetPid(target, &p)
+            if pillDescendants.contains(p) { hitElement = target; break }
         } else if err != .cannotComplete && err != .noValue { throw Refusal(message: "AX input hit observation failed") }
         Thread.sleep(forTimeInterval: 0.025)
     }
-    try need(pillDescendants.contains(hit), "AX input hit is not owned by the pill renderer")
+    guard let hitElement else { throw Refusal(message: "AX input hit is not owned by the pill renderer") }
+    let hitIdentity = try buttonIdentity(hitElement, label: label, point: point, descendants: pillDescendants)
+    trace.add(["stage":"ownedHit", "frontPid":Int(frontPID()), "receiver":hitIdentity])
     let frontBefore = frontPID()
     try need(frontBefore == pid_t(before["frontPid"] as! Int), "Foreground drift before input")
     let fresh = out.deletingLastPathComponent().appendingPathComponent("reobserve-\(getpid()).png")
@@ -220,16 +323,33 @@ func main() throws {
     let (again, _, _) = try observe(req, fresh)
     try withinBudget()
     try need((again["windowId"] as! Int) == (before["windowId"] as! Int) && (again["bounds"] as! [CGFloat]) == b, "Pill window changed before input")
+    try need((again["geometry"] as! [String: Any]) as NSDictionary == (before["geometry"] as! [String: Any]) as NSDictionary, "Screenshot geometry changed before input")
     try need((frontPID()) == frontBefore, "Foreground drift before click")
     var finalTarget: AXUIElement?
     try need(AXUIElementCopyElementAtPosition(ax, Float(point.x), Float(point.y), &finalTarget) == .success, "Final input receiver unavailable")
-    var finalPID: pid_t = -1
-    if let finalTarget { _ = AXUIElementGetPid(finalTarget, &finalPID) }
-    try need(pillDescendants.contains(finalPID), "Input receiver changed before click")
+    guard let finalTarget else { throw Refusal(message: "Final input receiver unavailable") }
+    let finalIdentity = try buttonIdentity(finalTarget, label: label, point: point, descendants: pillDescendants)
+    try need(finalIdentity as NSDictionary == hitIdentity as NSDictionary, "Input receiver changed before click")
+    let verified = try currentPill(req, initialPill)
+    let preDownFront = frontPID()
+    trace.add(["stage":"preDown", "frontPid":Int(preDownFront), "receiver":finalIdentity, "pillPid":Int(verified.pid), "windowId":Int(verified.id), "bounds":[verified.rect.minX,verified.rect.minY,verified.rect.width,verified.rect.height], "point":[point.x,point.y]])
+    try need(preDownFront == frontBefore, "Foreground drift before click")
+    try trace.requireComplete()
+    try withinBudget()
     guard let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left), let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left) else { throw Refusal(message: "Could not create native mouse events") }
-    down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
+    down.post(tap: .cghidEventTap)
+    // Release immediately: no file I/O, run-loop wait or throwing guard may
+    // strand a pressed pointer between these two native events.
+    let afterDownCached = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1
+    up.post(tap: .cghidEventTap)
     let after = frontPID()
+    trace.add(["stage":"afterDownCached", "frontPid":Int(afterDownCached), "receiver":finalIdentity])
+    trace.add(["stage":"afterUp", "frontPid":Int(after), "receiver":finalIdentity])
     try need(after == frontBefore, "Foreground drift after input")
-    print(String(data: try JSONSerialization.data(withJSONObject: ["clicked":label,"pid":before["pid"]!,"windowId":before["windowId"]!,"bounds":b,"words":before["words"]!,"frontPid":after]), encoding: .utf8)!)
+    try trace.requireComplete()
+    print(String(data: try JSONSerialization.data(withJSONObject: ["clicked":label,"pid":before["pid"]!,"windowId":before["windowId"]!,"bounds":b,"geometry":before["geometry"]!,"words":before["words"]!,"frontPid":after,"trace":clickTraceName!], encoding: .utf8)!)
 }
-do { try main() } catch { fputs("pill-input: \(error)\n", stderr); exit(1) }
+do { try main() } catch {
+    clickTrace?.add(["stage":"failure", "message":String(String(describing:error).prefix(240))])
+    fputs("pill-input: \(error)\n", stderr); exit(1)
+}

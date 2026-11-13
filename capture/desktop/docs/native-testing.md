@@ -447,13 +447,19 @@ The case disables microphone capture, displays a generated scene, and uses the
 normal exact-ID capture lifecycle. It then observes and clicks the actual
 packaged Electron pill through progress, Cancel, Retry and Copy link. Input is
 limited to a fresh OCR target in a verified descendant of the installed app;
-the native adapter checks hit ownership and preserves the scene's foreground.
+the native adapter also requires the exact named accessibility button with the
+projected point inside its native bounds, verifies window geometry through
+screenshot and input, and preserves the scene's foreground.
 Sharing uses explicit plaintext consent against a private loopback fixture, with
 the ordinary public-access clipboard disclosure. Encrypted transfer/decryption
 proof remains the separate installed Connect CLI test.
 
 `mac-foreground-native` retains the report, owned-window screenshots, synthetic
-bundle and compiler/application logs for two days. Acceptance requires a passing
+bundle and compiler/application logs for two days. Capture command request/result/
+failure receipts identify Start, Inspect and Stop independently; an absent native
+log line does not identify which command failed. The click trace records image
+dimensions, receiver identity and foreground observations before and after input,
+including when a guard fails. Acceptance requires a passing
 report, successful owned cleanup and inspection of the actual text/images; a
 prepared adapter or permission boolean alone is not proof. Independent earlier
 native failures still fail the job. This adds no Mac job, provider rental,

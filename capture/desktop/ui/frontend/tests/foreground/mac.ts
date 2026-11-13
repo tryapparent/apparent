@@ -6,6 +6,7 @@ import path from 'node:path';
 import {spawn, execFileSync, type ChildProcess} from 'node:child_process';
 import {constants} from 'node:fs';
 import {prepareForegroundScene, type LaunchObservation, type LaunchWindow} from './startup.ts';
+import {auditedControl, type ControlOperation, type ControlReceipt} from './control.ts';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const hostEnv = {...process.env};
@@ -34,7 +35,7 @@ async function command(executable: string, args: string[], options: {env?: NodeJ
 async function cli(args: string[], timeout = 8000) { return command(binary, args, {timeout}); }
 async function startOwnedCapture(id: string) {
   const deadline = Date.now() + 20_000;
-  try { return JSON.parse(await cli(['capture', 'start', '--request-id', id, '--wait', '--timeout', '20'], 26_000)); }
+  try { return await captureControl('start', id, ['capture', 'start', '--request-id', id, '--wait', '--timeout', '20'], 26_000); }
   catch (error) {
     // A missing admission reply is not evidence that Start had no effect.
     // Reconcile only this documented uncertain response, never resend Start.
@@ -46,7 +47,7 @@ async function startOwnedCapture(id: string) {
     while (Date.now() < deadline) {
       const remaining = deadline - Date.now();
       assert.ok(remaining > 0, 'Original capture start deadline exceeded');
-      const state = JSON.parse(await cli(['capture', 'inspect', id], Math.min(8000, remaining)));
+      const state = await captureControl('inspect', id, ['capture', 'inspect', id], Math.min(8000, remaining));
       assert.equal(state.capture_id, id, 'Admission reconciliation returned another capture');
       assert.ok(Date.now() < deadline, 'Original capture start deadline exceeded');
       if (state.status === 'recording') return state;
@@ -57,6 +58,17 @@ async function startOwnedCapture(id: string) {
   }
 }
 async function evidence(name: string, value: unknown) { await writeFile(path.join(output, name + '.json'), JSON.stringify(value, null, 2) + '\n', {mode: 0o600, flag: 'wx'}); }
+let controlSequence = 0;
+let lastControlEvent: Pick<ControlReceipt, 'operation' | 'captureId' | 'phase' | 'startedAt' | 'finishedAt'> | undefined;
+async function controlEvidence(entry: ControlReceipt) {
+  const {operation, captureId, phase, startedAt, finishedAt} = entry;
+  lastControlEvent = {operation, captureId, phase, startedAt, finishedAt};
+  await evidence(`capture-control-${String(++controlSequence).padStart(3, '0')}-${entry.operation}-${entry.phase}`, entry);
+}
+async function captureControl(operation: ControlOperation, id: string, args: string[], timeout: number) {
+  return auditedControl({operation, captureId: id, invoke: async () => JSON.parse(await cli(args, timeout)), record: controlEvidence,
+    describeError: error => redact(error), reportEvidenceFailure: async error => { cleanupErrors.push(`control evidence write failed: ${redact(error)}`); }});
+}
 async function poll<T>(read: () => Promise<T>, accept: (value: T) => boolean, label: string, cap = 12_000) {
   const end = Date.now() + budget(cap); let last = '';
   while (Date.now() < end) { try { const value = await read(); if (accept(value)) return value; } catch (e) { last = redact(e); } await sleep(100); }
@@ -218,7 +230,7 @@ async function main() {
     const start = await startOwnedCapture(captureId);
     assert.equal(start.capture_id, captureId); assert.equal(start.status, 'recording', 'A real captured frame is required');
     await sleep(2000);
-    const saved = JSON.parse(await cli(['capture', 'stop', captureId, '--wait', '--timeout', '45'], 51_000));
+    const saved = await captureControl('stop', captureId, ['capture', 'stop', captureId, '--wait', '--timeout', '45'], 51_000);
     assert.equal(saved.capture_id, captureId); assert.equal(saved.status, 'saved');
     const bundle = await realpath(saved.bundle_path); assert.equal(path.dirname(bundle), appEnv.APPARENT_CAPTURES_DIR);
     for (const name of ['apparent.json', 'summary.md', 'contact-sheet.png']) assert.ok((await stat(path.join(bundle, name))).size > 0);
@@ -281,7 +293,7 @@ async function main() {
         if (!primary && !cleanupErrors.length) await rm(root, {recursive: true});
       } catch (error) { cleanupErrors.push(redact(error)); }
     }
-    const report = {passed: !primary && cleanupErrors.length === 0, error: primary ? redact(primary) : undefined, cleanupErrors,
+    const report = {passed: !primary && cleanupErrors.length === 0, error: primary ? redact(primary) : undefined, cleanupErrors, lastControlEvent,
       source: hostEnv.GITHUB_SHA, nativeAcceptance: 'Only passed=true plus inspected artifacts establishes this scoped case'};
     if (output) await evidence('report', report);
     if (primary || cleanupErrors.length) { console.error(JSON.stringify(report)); process.exitCode = 1; } else console.log(JSON.stringify(report));
