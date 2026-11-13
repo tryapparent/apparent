@@ -42,7 +42,7 @@ done
 // Resolve only window 1 of the exact owned PID, then descend its sheets. Do not
 // search other processes, use coordinates, or guess which Return commits a picker.
 // Unknown AX shapes fail with bounded diagnostics from this process alone.
-const { panelScript, prepareStorageChange, pickerCommandMs } = require('../../../../../enablement/prerequisites/mac-picker.ts');
+const { panelScript, persistentPanelScript, PickerProcess, prepareStorageChange, pickerCommandMs } = require('../../../../../enablement/prerequisites/mac-picker.ts');
 const { isolatePickerRuntime } = require('../../../../../enablement/prerequisites/mac-runtime.ts');
 const { assertReportingRead } = require('../../../../../enablement/prerequisites/reporting-read.ts');
 
@@ -278,10 +278,11 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     });
     return stdout.trim();
   };
-  const panel = (operation) => {
+  const panel = async (operation, target = home) => {
     assert.equal(electronChild.exitCode, null, 'Owned Electron exited before native picker observation');
     assert.equal(electronChild.signalCode, null, 'Owned Electron was signalled before native picker observation');
-    return osa(panelScript, [String(electronChild.pid), home, operation, electronExecutable, fixtureRuntime.bundleId], pickerCommandMs);
+    panel.driver ??= new PickerProcess(() => spawn('/usr/bin/osascript', ['-e', persistentPanelScript], {env, stdio: 'pipe'}));
+    return panel.driver.request([String(electronChild.pid), target, operation, electronExecutable, fixtureRuntime.bundleId], budget(pickerCommandMs));
   };
   const snapshot = async () => {
     const runtime = await within(page.evaluate(() => window.apparent.readRuntimeState()), budget(), 'Runtime read');
@@ -594,7 +595,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     const goPathOperation = (operation, target) => {
       assert.equal(electronChild.exitCode, null, 'Owned Electron exited before picker navigation');
       assert.equal(electronChild.signalCode, null, 'Owned Electron was signalled before picker navigation');
-      return osa(panelScript, [String(electronChild.pid), target, operation, electronExecutable, fixtureRuntime.bundleId], pickerCommandMs);
+      return panel(operation, target);
     };
     const prepared = await prepareStorageChange({
       storageIdle: waitStorageIdle,
@@ -735,6 +736,10 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       }
     }
   } finally {
+    if (panel.driver) {
+      try { report.cleanup.picker = await panel.driver.close(); }
+      catch (error) { report.cleanup.picker = {error: error.message}; failure ??= error; report.passed = false; }
+    }
     if (report.electronBootstrap) report.electronBootstrap.cleanupStartedMs = Date.now();
     if (application) {
       try { await within(application.close(), 3000, 'Electron close'); }
