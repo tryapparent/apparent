@@ -573,6 +573,12 @@ Ready are delivered together at Ready. Electron main applies the generated
 entrypoint. Generated policy is excluded from Git. Repeated list requests request
 fresh popup focus even when its mode has not changed.
 
+`src/notes/lifecycle.ts` owns the child startup/Finish ordering. A Finish received
+while either document is starting stays pending until the child has announced
+Ready; only an actual finish notification can authorize its acknowledgement.
+The generated `electron/notes/lifecycle.cjs` is a required packaging input.
+Rust's existing Ready and durable-save drain checks remain authoritative.
+
 `npm run test:notes-policy` builds and tests this boundary using Node/TypeScript
 alone, without Rust tools, cached Rust output or Electron APIs/runtime. The pure
 policy tests can also run directly with Node's type stripping before npm install:

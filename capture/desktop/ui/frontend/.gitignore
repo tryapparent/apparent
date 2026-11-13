@@ -11,3 +11,4 @@ test-results/
 /electron/settings/*.cjs
 
 /electron/notes/presentation.cjs
+/electron/notes/lifecycle.cjs
