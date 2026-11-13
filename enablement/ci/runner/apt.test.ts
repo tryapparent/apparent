@@ -125,7 +125,10 @@ test('each affected hosted dependency consumer prepares transport before install
    }
    const transport=steps.findIndex((s:any)=>s.uses==='./.github/actions/ubuntu-apt' || s.uses==='tryapparent/apparent/.github/actions/ubuntu-apt@22b91130f8b1e8ed98d505e5a64241d34848e6a8');
    assert.ok(transport>=0 && transport<install,`${workflow}/${name}`);
-   assert.equal(steps[transport].if,workflow==='release-linux.yml'?"runner.os == 'Linux' && runner.arch == 'X64'":"runner.os == 'Linux'");
+   // Both native delivery matrices include ARM, whose signed Ubuntu ports
+   // use a different archive layout from the x64-only mirror helper.
+   const dualArch=workflow==='release-linux.yml' || workflow==='stream-engine.yml';
+   assert.equal(steps[transport].if,dualArch?"runner.os == 'Linux' && runner.arch == 'X64'":"runner.os == 'Linux'");
   }
  }
 });
