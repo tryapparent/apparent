@@ -32,7 +32,19 @@ fn finalization_audio_report_identifies_real_writer_backlog_and_retains_saved_by
         assert!(!payload.to_string().contains(private), "leaked {private}");
     }
     drop(writer);
-    assert!(Lease::acquire(&scratch.0).is_ok(), "writer teardown must release its lease");
+    // A concurrent test can fork with this open-file description; CLOEXEC
+    // closes that inherited reference at exec, not at this Writer's drop.
+    // Observe kernel availability within the original deadline, retaining the
+    // actual failure if ownership is leaked rather than assuming instant close.
+    loop {
+        match Lease::acquire(&scratch.0) {
+            Ok(_) => break,
+            Err(error) => {
+                assert!(Instant::now() < deadline, "writer teardown must release its lease: {error:#}");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+    }
 }
 
 #[test]
