@@ -2,7 +2,7 @@
 // All filesystem writes are confined to that test's private synthetic spool.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFile, writeFile, readdir, unlink } from 'node:fs/promises';
+import { readFile, writeFile, readdir, unlink, rm, mkdir, cp } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as ed25519 from '@noble/ed25519';
 import {
@@ -10,6 +10,7 @@ import {
   decodeArchive, encodeArchive, splitAgeStream, joinAgeParts,
 } from '../dist/index.js';
 import type { Context, Asset, Signed } from '../dist/index.js';
+import {decryptBundle} from '../dist/mcp-bundle.js';
 
 const root = process.argv[2];
 assert.ok(root?.startsWith('/'), 'requires absolute private fixture root');
@@ -37,6 +38,35 @@ for (const vector of fixture.strictCases) {
     envelope.signed, vector.signature), vector.accepted);
 }
 const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+// Exercise the actual streaming MCP endpoint parser against production Rust's
+// signed multipart output, before the primitive roundtrip below rewrites it.
+const envelopeBytes=await readFile(join(root,'spool/envelope.json'));
+let mcpSpool=join(root,'spool');
+let mcpFiles:Asset[]=[{path:'envelope.json',size:envelopeBytes.length,sha256:digest(envelopeBytes)},...envelope.signed.chunks];
+if(fixture.context.group!==undefined) {
+  assert.equal(fixture.context.group,'evidence');
+  // Pair the native codec's real multipart evidence with authenticated empty
+  // media. Publication still requires both groups and the same approved sender.
+  mcpSpool=join(root,'grouped-mcp-spool');await mkdir(mcpSpool,{mode:0o700});
+  await cp(join(root,'spool'),join(mcpSpool,'evidence'),{recursive:true});
+  mcpFiles=mcpFiles.map(f=>({...f,path:'evidence/'+f.path}));
+  const context:Context={...fixture.context,group:'media'};
+  const cipher=await encryptAge(encodeArchive({version:1,context,files:[]},[]),[fixture.readerKey.recipient]);
+  const chunk={path:'sealed/part-000000.age',size:cipher.length,sha256:digest(cipher)};
+  const signed:Signed={version:1,context,chunks:[chunk]};
+  const bytes=Buffer.from(JSON.stringify({signed,signature:await signEnvelope(senderSeed,signed)}));
+  await mkdir(join(mcpSpool,'media/sealed'),{recursive:true,mode:0o700});
+  await writeFile(join(mcpSpool,'media/envelope.json'),bytes,{mode:0o600});
+  await writeFile(join(mcpSpool,'media',chunk.path),cipher,{mode:0o600});
+  mcpFiles.push({path:'media/envelope.json',size:bytes.length,sha256:digest(bytes)},{...chunk,path:'media/'+chunk.path});
+}
+const prepared=await decryptBundle({spool:mcpSpool,files:mcpFiles,
+  identity:reader.age,origin:fixture.context.origin,captureId:fixture.context.captureId,
+  peers:{accountId:fixture.context.accountId,grantId:'interop-reader',scope:'read',devices:[{
+    grantId:fixture.context.senderGrantId,scope:'upload',key:{version:1,...fixture.senderKey}}]},out:join(root,'mcp-output.apparent')});
+for(const expected of fixture.expected)assert.equal((await readFile(join(prepared.stage,expected.path))).toString('hex'),expected.hex);
+await rm(prepared.stage,{recursive:true});
+if(mcpSpool!==join(root,'spool'))await rm(mcpSpool,{recursive:true});
 const rustParts = await Promise.all(envelope.signed.chunks.map(async (chunk: Asset) => {
   assert.match(chunk.path, /^sealed\/part-\d{6}\.age$/);
   const bytes = await readFile(join(root, 'spool', chunk.path));

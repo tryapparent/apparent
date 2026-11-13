@@ -7,11 +7,13 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 const owner=fileURLToPath(new URL('..',import.meta.url));
+const builtModules=['foreground','handoff','index','shares','mcp-wire','mcp-files','mcp-bundle','mcp-endpoint','mcp-cli'];
+const builtFiles=builtModules.flatMap(name=>[name+'.d.ts',name+'.js']).sort();
 function run(command:string,args:string[],cwd:string,env=process.env):string {
   return execFileSync(command,args,{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe']});
 }
 async function fixture(t:test.TestContext) {
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),'connect-package-'));
+  const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'connect-package-'));
   await fs.chmod(root,0o700);
   t.after(()=>fs.rm(root,{recursive:true,force:true}));
   const source=path.join(root,'source');await fs.mkdir(source);
@@ -27,7 +29,7 @@ test('build removes stale generated modules and refuses redirected output',async
   await fs.mkdir(dist);await fs.writeFile(path.join(dist,'obsolete.js'),'obsolete');
   await fs.writeFile(path.join(dist,'obsolete.d.ts'),'obsolete');
   run('npm',['run','build'],source);
-  assert.deepEqual((await fs.readdir(dist)).sort(),['foreground.d.ts','foreground.js','handoff.d.ts','handoff.js','index.d.ts','index.js','shares.d.ts','shares.js']);
+  assert.deepEqual((await fs.readdir(dist)).sort(),builtFiles);
   await fs.rm(dist,{recursive:true});
   const external=path.join(root,'external');await fs.mkdir(external);
   await fs.writeFile(path.join(external,'sentinel'),'preserve');
@@ -40,7 +42,7 @@ test('packed consumer installs and runs without Rust, compilers or source resolu
   const {root,source}=await fixture(t);
   const result=JSON.parse(run('npm',['pack','--json','--pack-destination',root],source))[0];
   assert.deepEqual(result.files.map((file:{path:string})=>file.path).sort(),
-    ['README.md','dist/foreground.d.ts','dist/foreground.js','dist/handoff.d.ts','dist/handoff.js','dist/index.d.ts','dist/index.js','dist/shares.d.ts','dist/shares.js','package.json']);
+    ['README.md',...builtFiles.map(name=>'dist/'+name),'package.json'].sort());
   const policy=path.join(source,'dist/handoff.js');
   const pointer=execFileSync(process.execPath,[policy],{input:JSON.stringify({job:{id:'a'.repeat(32),status:'pending'}})+'\n',encoding:'utf8'});
   assert.equal(JSON.parse(pointer),'apparent inspect '+'a'.repeat(32)+'\n');
@@ -63,7 +65,7 @@ test('packed consumer installs and runs without Rust, compilers or source resolu
     name:manifest.name,version:manifest.version,lockfileVersion:3,requires:true,packages:{
       '':manifest,...runtime,[`node_modules/${producer.name}`]:{
         version:producer.version,resolved:`file:${archive}`,integrity:result.integrity,
-        dependencies:producer.dependencies,engines:producer.engines,
+        dependencies:producer.dependencies,engines:producer.engines,bin:producer.bin,
       },
     },
   }));
@@ -79,6 +81,16 @@ test('packed consumer installs and runs without Rust, compilers or source resolu
     assert.equal((await signEnvelope(seed,signed)).length,128);
     assert.equal(await verifyEnvelope(new Uint8Array(32),signed,'00'.repeat(64)),false);
   `],consumer,env);
+  const endpointCli=path.join(consumer,'node_modules/@apparent/connect-crypto/dist/mcp-cli.js');
+  assert.match(run(process.execPath,[endpointCli,'--help'],consumer,env),/endpoint runs offline/);
+  const endpointBin=path.join(consumer,'node_modules/.bin/apparent-connect-mcp');
+  assert.match(run(process.execPath,[endpointBin,'--help'],consumer,env),/endpoint runs offline/);
+  const endpointState=path.join(await fs.realpath(root),'endpoint');
+  const setup=JSON.parse(run(process.execPath,[endpointBin,'init','--state',endpointState],consumer,env));
+  assert.equal(setup.tool,'connect_relay_open');
+  assert.deepEqual(Object.keys(setup.arguments.recipient).sort(),['crv','kty','x','y']);
+  assert.ok(!JSON.stringify(setup).includes('AGE-SECRET-KEY'));
+  assert.equal((await fs.stat(path.join(endpointState,'endpoint.json'))).mode&0o777,0o600);
   const installedPolicy=path.join(consumer,'node_modules/@apparent/connect-crypto/dist/handoff.js');
   for(const status of ['pending','ready','failed','expired']) {
     const output=execFileSync(process.execPath,[installedPolicy],{cwd:consumer,env,input:JSON.stringify({job:{id:'a'.repeat(32),status}})+'\n',encoding:'utf8'});

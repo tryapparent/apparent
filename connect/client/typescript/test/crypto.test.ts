@@ -40,6 +40,17 @@ test("archive framing uses Rust's big-endian descriptor length and exact file by
   assert.throws(() => decodeArchive(Uint8Array.from([...archive, 1])));
 });
 
+test('grouped streams bind the native context group in signatures and archive descriptors',async()=>{
+  const signed={version:1,context:{origin:'https://connect.test',accountId:'acct',captureId:'capture',senderGrantId:'grant',group:'evidence' as const},chunks:[]};
+  assert.match(new TextDecoder().decode(signedBytes(signed)),/"senderGrantId":"grant","group":"evidence"/);
+  const seed=new Uint8Array(32).fill(3),key=await ed25519.getPublicKeyAsync(seed);
+  const signature=await signEnvelope(seed,signed);
+  assert.equal(await verifyEnvelope(key,signed,signature),true);
+  assert.equal(await verifyEnvelope(key,{...signed,context:{...signed.context,group:'media' as const}},signature),false);
+  const inner={version:1,context:signed.context,files:[]};
+  assert.deepEqual(decodeArchive(encodeArchive(inner,[])).inner,inner);
+});
+
 test("age v1 exchange round-trips ordered multipart bytes and rejects tamper/wrong recipient", async () => {
   const recipient = await generateAgeIdentity();
   const outsider = await generateAgeIdentity();
