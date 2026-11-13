@@ -247,7 +247,8 @@ impl Writer {
     pub fn finish(&mut self) -> Result<(Vec<u8>, Arc<Lease>)> {
         self.join().context(SaveFailure)?;
         Ok((
-            std::fs::read(&self.path).context(SaveFailure).stage(Stage::AudioWriterRead)?,
+            std::fs::read(&self.path).map_err(anyhow::Error::from)
+                .stage(Stage::AudioWriterRead).context(SaveFailure)?,
             Arc::clone(&self.lease),
         ))
     }
