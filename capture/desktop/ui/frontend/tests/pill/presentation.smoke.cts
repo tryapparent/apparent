@@ -31,11 +31,11 @@ test('malformed parent frames log only a bounded failure classification',async t
  const application=await electron.launch({args:[path.resolve(__dirname,'host.cjs'),'--no-sandbox'],
   env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')}});
  t.after(async()=>{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});});
- const stderr=[];application.process().stderr.on('data',chunk=>stderr.push(chunk.toString()));
- const exit=new Promise(resolve=>application.process().once('exit',resolve));
+ const child=application.process(),stderr=[];child.stderr.on('data',chunk=>stderr.push(chunk.toString()));
+ const closed=application.waitForEvent('close',{timeout:8000});
  const secret='private-capture-path-and-frame-secret';
  await application.evaluate((_e,secret)=>setTimeout(()=>process.stdin.emit('data',`${secret}\n`),100),secret);
- assert.equal(await exit,1);
+ await closed;assert.equal(child.exitCode,1);
  const output=stderr.join('');
  assert.equal(output.includes(secret),false);
  const diagnostic=output.split('\n').map(line=>{try{return JSON.parse(line);}catch{return null;}})
@@ -57,13 +57,13 @@ test('parent-state timeout reports its accepted epoch and readiness without exte
  const application=await electron.launch({args:[path.resolve(__dirname,'host.cjs'),'--no-sandbox'],
   env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')}});
  t.after(async()=>{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});});
- const stderr=[];application.process().stderr.on('data',chunk=>stderr.push(chunk.toString()));
- const exit=new Promise(resolve=>application.process().once('exit',resolve));
+ const child=application.process(),stderr=[];child.stderr.on('data',chunk=>stderr.push(chunk.toString()));
+ const closed=application.waitForEvent('close',{timeout:8000});
  const page=await application.firstWindow();
  await application.evaluate((_e,state)=>setTimeout(()=>process.stdin.emit('data',JSON.stringify({type:'state',view:state})+'\n'+JSON.stringify({type:'activate'})+'\n'),100),recording);
  await expect(page.getByRole('button',{name:'Finish',exact:true})).toBeVisible();
  await application.evaluate(()=>{const now=Date.now;Date.now=()=>now()+6000;});
- assert.equal(await exit,1);
+ await closed;assert.equal(child.exitCode,1);
  const records=stderr.join('').split('\n').map(line=>{try{return JSON.parse(line);}catch{return null;}})
   .filter(record=>record?.kind==='apparent-pill-diagnostic');
  const diagnostic=records.find(record=>record.reason==='parent_state_timeout');

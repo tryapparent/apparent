@@ -66,13 +66,14 @@ function host(platform = 'linux') {
   vm.runInNewContext(source, {
     require: (name: string) => name === 'electron' ? electron
       : name === './protocol.cjs' ? require('./protocol.cts')
-      : name === './geometry.cjs' ? require('./geometry.cts') : require(name),
+      : name === './geometry.cjs' ? require('./geometry.cts')
+      : name === './diagnostics.cjs' ? require('./diagnostics.cts') : require(name),
     __dirname: path.dirname(filename), Buffer,
     // Timers are registered but never tick: these tests drive native events.
     setInterval() { return 1; }, clearInterval() {},
-    process: {platform, env: {}, stdin: input,
+    process: Object.assign(new EventEmitter(), {platform, pid: 321, env: {}, stdin: input,
       stdout: {write: (line: string) => messages.push(JSON.parse(line))},
-      exit: (code: number) => exits.push(code)},
+      exit: (code: number) => exits.push(code)}),
   }, {filename});
   return {
     window, messages, exits,
