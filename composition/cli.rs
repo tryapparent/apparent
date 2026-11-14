@@ -689,6 +689,18 @@ enum SetupCommand {
         json: bool,
         #[arg(long)]
         profile: Option<PathBuf>,
+        /// Set up a headless receiving profile without recorder/desktop prerequisites.
+        #[arg(long, requires = "profile")]
+        receiver: bool,
+        /// Ask Hermes to enable the installed plugin in the selected profile.
+        #[arg(long, requires = "profile", conflicts_with = "check")]
+        enable: bool,
+        /// Explicitly execute Hermes's plugin registration check; not a live-session proof.
+        #[arg(long, requires = "profile", conflicts_with = "check")]
+        verify_runtime: bool,
+        /// Use this Hermes CLI for profile-scoped setup operations.
+        #[arg(long)]
+        hermes_executable: Option<PathBuf>,
         /// Official Hermes release archive.
         #[arg(long)]
         package: Option<PathBuf>,
@@ -699,7 +711,7 @@ enum SetupCommand {
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn setup_hermes(check: bool, json: bool, profile: Option<PathBuf>, package: Option<PathBuf>, sha256: Option<String>) -> Result<()> {
+fn setup_hermes(check: bool, json: bool, profile: Option<PathBuf>, package: Option<PathBuf>, sha256: Option<String>, receiver: bool, enable: bool, verify_runtime: bool, hermes_executable: Option<PathBuf>) -> Result<()> {
     // Embed the Agent-owned policy so installed apps do not depend on a source checkout.
     // Native composition only transports argv and status; it owns no setup decisions.
     let source = concat!(include_str!("../capture/agent/setup/hermes.ts"),
@@ -710,6 +722,10 @@ fn setup_hermes(check: bool, json: bool, profile: Option<PathBuf>, package: Opti
         .unwrap_or(std::env::current_exe()?));
     if check { node.arg("--check"); }
     if json { node.arg("--json"); }
+    if receiver { node.arg("--receiver"); }
+    if enable { node.arg("--enable"); }
+    if verify_runtime { node.arg("--verify-runtime"); }
+    if let Some(hermes) = hermes_executable { node.arg("--hermes-executable").arg(hermes); }
     if let Some(profile) = profile { node.arg("--profile").arg(profile); }
     if let Some(package) = package { node.arg("--package").arg(package); }
     if let Some(sha256) = sha256 { node.arg("--sha256").arg(sha256); }
@@ -737,8 +753,8 @@ fn run_cli(cli: Cli) -> Result<()> {
     };
     match command {
         #[cfg(any(target_os = "macos", target_os = "linux"))]
-        Command::Setup { command: SetupCommand::Hermes { check, json, profile, package, sha256 } } =>
-            setup_hermes(check, json, profile, package, sha256),
+        Command::Setup { command: SetupCommand::Hermes { check, json, profile, package, sha256, receiver, enable, verify_runtime, hermes_executable } } =>
+            setup_hermes(check, json, profile, package, sha256, receiver, enable, verify_runtime, hermes_executable),
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Connect { command } => hosted::command(command),
         #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -1758,6 +1774,16 @@ fn copy_confirmation(dir: &std::path::Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn hermes_receiver_setup_preserves_explicit_activation_boundaries() {
+        let parsed = Cli::try_parse_from(["apparent", "setup", "hermes", "--receiver", "--profile", "/synthetic/profile", "--enable", "--verify-runtime", "--hermes-executable", "/synthetic/hermes"]).unwrap();
+        assert!(matches!(parsed.command, Some(Command::Setup { command: SetupCommand::Hermes { receiver: true, enable: true, verify_runtime: true, .. } })));
+        assert!(Cli::try_parse_from(["apparent", "setup", "hermes", "--receiver"]).is_err());
+        assert!(Cli::try_parse_from(["apparent", "setup", "hermes", "--receiver", "--profile", "/synthetic/profile", "--check", "--enable"]).is_err());
+        assert!(Cli::try_parse_from(["apparent", "setup", "hermes", "--receiver", "--profile", "/synthetic/profile", "--check", "--verify-runtime"]).is_err());
+    }
 
     #[test]
     fn passive_screen_permission_command_is_distinct_from_capture_probe() {
