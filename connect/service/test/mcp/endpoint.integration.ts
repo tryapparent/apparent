@@ -4,6 +4,9 @@ import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {randomBytes} from 'node:crypto';
+import {spawn} from 'node:child_process';
+import {createInterface} from 'node:readline';
+import {fileURLToPath} from 'node:url';
 import {CompactEncrypt, compactDecrypt, exportJWK, generateKeyPair, importJWK} from 'jose';
 import {fixture,digest} from '../helpers.mjs';
 import {initEndpoint,acceptEndpoint,nextEndpoint,fetchEndpoint,revokeEndpoint,cancelEndpoint} from '../../../client/typescript/dist/mcp-endpoint.js';
@@ -37,12 +40,12 @@ async function sender(f:any,account:any) {
   assert.equal(granted.scope,'upload');return {...granted,seed,key};
 }
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/p0AAAAASUVORK5CYII=','base64');
-async function upload(f:any,account:any,uploader:any,reader:any,captureId:string,mutate?:(inner:any)=>void,grouped=false) {
+async function upload(f:any,account:any,uploader:any,reader:any,captureId:string,mutate?:(inner:any)=>void,grouped=false,mediaBytes=18000) {
   const original=new Map<string,Buffer>([
-    ['apparent.json',Buffer.from(JSON.stringify({contactSheet:'contact-sheet.png',keyframes:[{file:'frames/frame-00.png',timeMs:12000}]}))],
+    ['apparent.json',Buffer.from(JSON.stringify({contactSheet:'contact-sheet.png',keyframes:[{file:'frames/frame-00.png',timeMs:12000}],video:'recording.mp4',audio:null}))],
     ['summary.md',Buffer.from('PRIVATE TEST PHRASE: why is this in here?\n'.repeat(900))],
     ['notes.json',Buffer.from('{"version":1,"notes":[]}')],
-    ['contact-sheet.png',png],['frames/frame-00.png',png],['recording.mp4',randomBytes(18000)],
+    ['contact-sheet.png',png],['frames/frame-00.png',png],['recording.mp4',randomBytes(mediaBytes)],
   ]);
   const data:Array<[{path:string;size:number;sha256:string},Uint8Array]>=[];
   for(const group of grouped?['evidence','media'] as const:[undefined]) {
@@ -51,10 +54,11 @@ async function upload(f:any,account:any,uploader:any,reader:any,captureId:string
     const inner={version:1,context,files:entries.map(([path,bytes])=>({path,size:bytes.length,sha256:digest(bytes)}))};
     mutate?.(inner);
     const cipher=await encryptAge(encodeArchive(inner,entries.map(([,b])=>b)),[reader.key.recipient]);
-    const chunk={path:'sealed/part-000000.age',size:cipher.length,sha256:digest(cipher)};
-    const signed={version:1,context,chunks:[chunk]};
+    const parts:Array<[{path:string;size:number;sha256:string},Uint8Array]>=[];
+    for(let offset=0;offset<cipher.length;offset+=33554432){const bytes=cipher.subarray(offset,offset+33554432);parts.push([{path:`sealed/part-${String(parts.length).padStart(6,'0')}.age`,size:bytes.length,sha256:digest(bytes)},bytes]);}
+    const signed={version:1,context,chunks:parts.map(([file])=>file)};
     const envelope=Buffer.from(JSON.stringify({signed,signature:await signEnvelope(uploader.seed,signed)})),prefix=group?group+'/':'';
-    data.push([{path:prefix+'envelope.json',size:envelope.length,sha256:digest(envelope)},envelope],[{...chunk,path:prefix+chunk.path},cipher]);
+    data.push([{path:prefix+'envelope.json',size:envelope.length,sha256:digest(envelope)},envelope],...parts.map(([file,bytes])=>[{...file,path:prefix+file.path},bytes] as [typeof file,Uint8Array]));
   }
   const files=data.map(([file])=>file);
   if(grouped) {
@@ -75,6 +79,59 @@ async function upload(f:any,account:any,uploader:any,reader:any,captureId:string
   return original;
 }
 
+// Model-free host bridge: only opaque requests and progress leave the reader;
+// complete, recording-sized MCP replies go directly into its stdin.
+async function pipeTransfer(t:test.TestContext,f:any,directory:string,id:string,out:string,inspection:boolean) {
+  const started=performance.now();
+  const child=spawn(process.execPath,['--experimental-strip-types','--import',fileURLToPath(new URL('./no-network.ts',import.meta.url)),fileURLToPath(new URL('../../../client/typescript/dist/mcp-cli.js',import.meta.url)),'run','--state',directory,'--id',id,'--out',out,'--mode',inspection?'inspection':'bundle'],{stdio:['pipe','pipe','pipe']});
+  t.after(()=>{if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');});
+  let stderr='';child.stderr.on('data',chunk=>{stderr+=chunk;});
+  const exited=new Promise<number|null>((resolve,reject)=>{child.once('error',reject);child.once('close',resolve);});
+  const lines=createInterface({input:child.stdout});let terminal:any,calls=0,maxReplyBytes=0,bytesTotal=0;
+  try {
+    for await(const line of lines) {
+      const call=JSON.parse(line);
+      if(!call.tool){terminal=call;continue;}
+      assert.ok(++calls<=50,'Recording-sized transfer must not require hundreds of tool calls');
+      if(call.progress)bytesTotal=call.progress.bytesTotal;
+      if(inspection) {
+        const state=JSON.parse(await fs.readFile(path.join(directory,'endpoint.json'),'utf8'));
+        if(state.pending?.operation.operation==='part')assert.ok(state.pending.operation.path.startsWith('evidence/'),'Inspection must not request media');
+      }
+      const reply=JSON.stringify(await relayCall(f,call));maxReplyBytes=Math.max(maxReplyBytes,Buffer.byteLength(reply));
+      await new Promise<void>((resolve,reject)=>child.stdin.write(reply+'\n',error=>error?reject(error):resolve()));
+    }
+    assert.equal(await exited,0,stderr);assert.match(stderr,/Reader network guard active/);assert.ok(terminal,'Reader must report terminal output');
+    const metrics={calls,maxReplyBytes,bytesTotal,elapsedMs:Math.round(performance.now()-started)};
+    t.diagnostic(JSON.stringify({inspection,...metrics}));return {terminal,...metrics};
+  } finally {lines.close();child.stdin.destroy();if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');}
+}
+
+for(const grouped of [false,true])test(`recording-sized ${grouped?'grouped':'legacy'} transfer: 33 MiB via lossless CLI pipe, with images first when independently encrypted`,async t=>{
+  const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-large-'));await fs.chmod(root,0o700);
+  const f=await fixture();try {
+    const account=await f.identity('mcp-large-'+grouped),directory=path.join(root,'reader');
+    const reader=await endpoint(f,account,directory),uploader=await sender(f,account),id='9'.repeat(32);
+    const original=await upload(f,account,uploader,reader,id,undefined,grouped,33*1024*1024);
+    if(grouped) {
+      await f.db.prepare("UPDATE captures SET status='pending' WHERE id=?").bind(id).run();
+      await f.db.prepare("UPDATE files SET object_key=NULL WHERE capture_id=? AND path LIKE 'media/%'").bind(id).run();
+      const out=path.join(root,'images');const inspected=await pipeTransfer(t,f,directory,id,out,true);
+      assert.equal(inspected.terminal.state,'inspection_ready');assert.equal(inspected.terminal.mediaDownloaded,false);
+      assert.ok(inspected.calls<=6);assert.ok(inspected.bytesTotal<100000,'Movie size must not affect evidence transfer');
+      assert.deepEqual(await fs.readFile(path.join(out,'contact-sheet.png')),png);
+      assert.deepEqual(await fs.readFile(path.join(out,'frames/frame-00.png')),png);
+      await assert.rejects(fs.stat(path.join(out,'recording.mp4')),{code:'ENOENT'});
+      await f.db.prepare("UPDATE captures SET status='ready' WHERE id=?").bind(id).run();
+      await f.db.prepare("UPDATE files SET object_key='synthetic-mcp/' || capture_id || '/' || path WHERE capture_id=? AND path LIKE 'media/%'").bind(id).run();
+    }
+    const out=path.join(root,'complete.apparent'),result=await pipeTransfer(t,f,directory,id,out,false);
+    assert.equal(result.terminal.state,'ready');assert.ok(result.calls<=42);
+    assert.ok(result.maxReplyBytes>300000,'Exercise the formerly failing reply-file/stdio size boundary');
+    for(const [name,bytes] of original)assert.deepEqual(await fs.readFile(path.join(out,name)),bytes);
+  } finally {await f.close();await fs.rm(root,{recursive:true,force:true});}
+});
+
 test('real Worker relay: browser read approval, ciphertext ranges, offline decryption, final authorization and revocation',async()=>{
   const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-roundtrip-'));await fs.chmod(root,0o700);
   const f=await fixture();try {
@@ -93,7 +150,7 @@ test('real Worker relay: browser read approval, ciphertext ranges, offline decry
       call=await acceptEndpoint(directory,result);
       assert.ok(exchanges<40,'bounded synthetic transfer');
     }
-    assert.equal(call.state,'ready');assert.ok(exchanges>5,'exercises multiple range reads');
+    assert.equal(call.state,'ready');assert.ok(exchanges>=5&&exchanges<=6,'small recordings must complete in a few exchanges; recording-sized cases exercise multiple ranges');
     for(const [file,bytes] of original)assert.deepEqual(await fs.readFile(path.join(out,file)),bytes);
     await assert.rejects(fetchEndpoint(directory,id,out),/destination_exists/);
     const revoked=await acceptEndpoint(directory,await relayCall(f,await revokeEndpoint(directory)));
@@ -153,13 +210,38 @@ test('sealed channel rejects upload authority, other accounts, plaintext capture
   } finally {await f.close();}
 });
 
-test('sender revocation after local decryption prevents publication; cancel removes only the staged transfer',async()=>{
+test('range negotiation preserves old readers and rejects invalid or oversized requests',async()=>{
+  const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-ranges-'));await fs.chmod(root,0o700);
+  const f=await fixture();try {
+    const account=await f.identity('mcp-ranges'),directory=path.join(root,'reader');
+    const reader=await endpoint(f,account,directory),uploader=await sender(f,account),id='8'.repeat(32);
+    await upload(f,account,uploader,reader,id,undefined,false,2*1024*1024);
+    const keys=await generateKeyPair('ECDH-ES',{crv:'P-256',extractable:true});
+    const opened=JSON.parse((await rpc(f,'connect_relay_open',{recipient:await exportJWK(keys.publicKey),nonce:'a'.repeat(32)})).content[0].text);
+    assert.equal(opened.maxPartBytes,1024*1024);
+    const request=async(length?:unknown)=>{
+      const value={id:'b'.repeat(32),operation:'part',accessToken:reader.credential.accessToken,captureId:id,path:'sealed/part-000000.age',offset:0,...(length===undefined?{}:{length})};
+      const sealed=await new CompactEncrypt(Buffer.from(JSON.stringify(value))).setProtectedHeader({alg:'ECDH-ES',enc:'A256GCM',typ:'apparent-mcp-request+jwe'}).encrypt(await importJWK(opened.key,'ECDH-ES'));
+      const result=JSON.parse((await rpc(f,'connect_relay',{ticket:opened.ticket,sealed})).content[0].text);
+      return JSON.parse(Buffer.from((await compactDecrypt(result.sealed,keys.privateKey)).plaintext).toString());
+    };
+    const legacy=await request(),large=await request(1024*1024);
+    assert.equal(legacy.status,200);assert.equal(Buffer.from(legacy.body.data,'base64').length,16384);
+    assert.equal(large.status,200);assert.equal(Buffer.from(large.body.data,'base64').length,1024*1024);
+    assert.equal(digest(Buffer.from(legacy.body.data,'base64')),digest(Buffer.from(large.body.data,'base64').subarray(0,16384)));
+    for(const length of [0,-1,1.5,1024*1024+1,'1048576'])assert.equal((await request(length)).status,400);
+    await f.call('/v1/token/revoke',{token:reader.credential.accessToken,method:'POST'});
+    assert.equal((await request(1024*1024)).status,401);
+  } finally {await f.close();await fs.rm(root,{recursive:true,force:true});}
+});
+
+for(const inspection of [false,true])test(`${inspection?'inspection':'full'} sender revocation after local decryption prevents publication; cancel removes only the staged transfer`,async()=>{
   const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-revoked-'));await fs.chmod(root,0o700);
   const f=await fixture();try {
     const account=await f.identity('mcp-revoked'),directory=path.join(root,'reader');
     const reader=await endpoint(f,account,directory),uploader=await sender(f,account),id='f'.repeat(32);
-    await upload(f,account,uploader,reader,id);
-    const out=path.join(root,'recording.apparent');let call:any=await fetchEndpoint(directory,id,out),stage:string|undefined;
+    await upload(f,account,uploader,reader,id,undefined,inspection);
+    const out=path.join(root,'recording.apparent');let call:any=await fetchEndpoint(directory,id,out,inspection),stage:string|undefined;
     for(let i=0;i<40;i++) {
       const state=JSON.parse(await fs.readFile(path.join(directory,'endpoint.json'),'utf8'));
       if(state.pending.kind==='final'){stage=state.capture.stage;break;}

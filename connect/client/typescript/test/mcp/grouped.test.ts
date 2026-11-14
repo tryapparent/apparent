@@ -9,7 +9,7 @@ import {generateAgeIdentity,encryptAge,encodeArchive,signEnvelope} from '../../d
 import {decryptBundle,publishBundle,transportAssets} from '../../dist/mcp-bundle.js';
 
 const hash=(b:Uint8Array)=>createHash('sha256').update(b).digest('hex');
-type Variant='valid'|'empty_media'|'reordered_json'|'wrong_group'|'different_sender'|'missing_media'|'truncated_media'|'wrong_recipient';
+type Variant='valid'|'empty_media'|'reordered_json'|'wrong_group'|'different_sender'|'missing_media'|'truncated_media'|'wrong_recipient'|'missing_frame';
 async function fixture(t:test.TestContext,variant:Variant='valid') {
   const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-groups-'));await fs.chmod(root,0o700);
   t.after(()=>fs.rm(root,{recursive:true,force:true}));
@@ -29,6 +29,7 @@ async function fixture(t:test.TestContext,variant:Variant='valid') {
     ['contact-sheet.png',Buffer.from('synthetic sheet')],['frames/frame-00.png',Buffer.from('synthetic frame')],
   ]);
   if(variant!=='empty_media'){original.set('recording.mp4',Buffer.alloc(18000,42));original.set('audio.wav',Buffer.from('synthetic audio'));}
+  if(variant==='missing_frame')original.delete('frames/frame-00.png');
   const files:Array<{path:string;size:number;sha256:string}>=[];
   for(const group of ['evidence','media'] as const) {
     const entries=[...original].filter(([p])=>['recording.mp4','recording.mov','audio.wav'].includes(p)===(group==='media'))
@@ -70,4 +71,20 @@ test('transport manifests reject mixed layouts, missing groups and unknown prefi
   assert.throws(()=>transportAssets(f.options.files.filter(x=>x.path.startsWith('evidence/'))));
   assert.throws(()=>transportAssets([...f.options.files,{...f.options.files[0]!,path:'envelope.json'}]));
   assert.throws(()=>transportAssets(f.options.files.map(x=>({...x,path:x.path.replace('media/','other/')}))));
+});
+
+test('inspection authenticates complete evidence independently of unavailable media and keeps metadata intact',async t=>{
+  const f=await fixture(t);await fs.rm(path.join(f.options.spool,'media'),{recursive:true});
+  const prepared=await decryptBundle({...f.options,inspection:true});await publishBundle(prepared.stage,f.options.out);
+  assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.options.out,'inspection.json'),'utf8')),{version:1,kind:'apparent-mcp-inspection',captureId:f.options.captureId,mediaDownloaded:false,completeRecording:false});
+  for(const [name,bytes]of f.original) {
+    if(['recording.mp4','audio.wav'].includes(name))await assert.rejects(fs.stat(path.join(f.options.out,name)),{code:'ENOENT'});
+    else assert.deepEqual(await fs.readFile(path.join(f.options.out,name)),bytes);
+  }
+});
+
+test('inspection still rejects an authenticated descriptor with a missing visual reference',async t=>{
+  const f=await fixture(t,'missing_frame');await assert.rejects(decryptBundle({...f.options,inspection:true}),/invalid_bundle_reference/);
+  await assert.rejects(fs.stat(f.options.out),{code:'ENOENT'});
+  assert.ok(!(await fs.readdir(f.root)).some(p=>p.startsWith('.apparent-mcp-')));
 });

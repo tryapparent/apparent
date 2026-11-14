@@ -13,8 +13,8 @@ export async function mcpRoutes(request: Request, env: Env, url: URL): Promise<R
   if (request.method !== 'POST') return new Response(null,{status:405,headers:{Allow:'POST'}});
   const raw = await bounded(request,131072);
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-  const server = new McpServer({name:'apparent-connect',version:'1.0.0'}, {instructions:
-    'End-to-end encrypted recording relay. Use the local Connect MCP endpoint CLI to create opaque tool arguments and consume sealed replies. Never provide private keys or tokens as tool arguments. Approve read access at the printed browser URL. This server cannot inspect images or decrypt recordings. Full bundles require multiple bounded transfers; do not treat a transcript alone as visual evidence.'});
+  const server = new McpServer({name:'apparent-connect',version:'1.1.0'}, {instructions:
+    'End-to-end encrypted recording relay. Use the updated local apparent-connect-mcp reader: prefer inspect for images, fetch only when the full movie is needed. The run JSON-lines interface lets a host tool loop exchange complete replies without putting ciphertext in model context. Never transcribe opaque replies or send private keys/tokens. Approve read access at the printed browser URL. Transfers negotiate up to 1 MiB per call; old readers keep 16 KiB. This server cannot decrypt images. Open verified output before interpreting it.'});
   const content = (value: unknown) => ({content:[{type:'text' as const,text:JSON.stringify(value)}]});
   server.registerTool('connect_relay_open',{
     description:'Open a short-lived encrypted channel to an endpoint CLI. Supply only the public recipient and nonce printed by that CLI. This grants no recording access.',
@@ -22,7 +22,7 @@ export async function mcpRoutes(request: Request, env: Env, url: URL): Promise<R
     annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false},
   },async ({recipient,nonce}) => content(await openRelay(env,recipient,nonce,ip)));
   server.registerTool('connect_relay',{
-    description:'Execute the opaque request printed by the endpoint CLI and save the entire sealed result for its next step. Read approval, polling, renewal, revocation and encrypted recording transfer only. No plaintext recording or credentials are returned.',
+    description:'Execute the opaque request printed by the updated offline reader. Feed the entire result to its run stdin or step reply file without transcription. Prefer its inspect mode to retrieve authenticated images without grouped media; fetch retrieves a full recording. New readers negotiate up to 1 MiB of ciphertext per call. Read approval, polling, renewal and revocation remain required. No plaintext recording or credentials are returned.',
     inputSchema:{ticket:z.string().min(20).max(8192),sealed:z.string().min(20).max(32768)},
     annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false},
   },async ({ticket,sealed}) => content(await relay(env,ticket,sealed,ip)));

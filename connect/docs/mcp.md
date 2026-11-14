@@ -56,7 +56,26 @@ the existing native reader.
    verification URL and explicitly approve **read** access. Run
    `apparent-connect-mcp next --state /absolute/private/reader-state` to prepare
    polling. Honor any `retryAt`; do not spin on pending approval/upload state.
-4. Once `approved`, start a download:
+4. Once `approved`, request images first:
+
+```sh
+apparent-connect-mcp inspect --state /absolute/private/reader-state \
+  --id 0123456789abcdef0123456789abcdef \
+  --out /absolute/private/inspection
+```
+
+For grouped recordings this downloads and authenticates only the complete evidence
+stream, including contact sheets, frames, notes and metadata. It can finish while
+media is still uploading. `inspection_ready` explicitly reports whether media was
+downloaded; an inspection directory without media is not a complete recording.
+Image references, signatures, hashes, age FINAL/EOF and final read/sender approval
+are still verified. Metadata is preserved, including references to omitted media.
+An `inspection.json` marker also records the artifact type and whether it contains
+the complete recording, so moving the directory does not lose that distinction.
+Legacy single-stream captures require downloading their entire encrypted stream;
+the reader reports this as `mediaDownloaded: true`. No old recording is rewritten.
+
+Use `fetch` with a different new destination when a full movie is needed:
 
 ```sh
 apparent-connect-mcp fetch --state /absolute/private/reader-state \
@@ -67,6 +86,32 @@ apparent-connect-mcp fetch --state /absolute/private/reader-state \
 Repeat tool-call/step exchanges until `ready`. Open the resulting contact sheet
 and frames visually before interpreting the transcript. Pending or partial
 transfer does not mean the agent has seen the recording.
+
+### Programmatic host bridge
+
+When the host supports calling MCP tools from code, use the reader's JSON-lines
+interface instead of exposing each ciphertext reply to the model:
+
+```sh
+apparent-connect-mcp run --state /absolute/private/reader-state \
+  --id 0123456789abcdef0123456789abcdef --out /absolute/private/inspection \
+  --mode inspection
+```
+
+`run` prints a small JSON line containing a `tool`, opaque `arguments` and transfer
+progress. The host calls that installed MCP tool and writes its **entire result**
+as one JSON line to the reader's stdin. The reader prints the next call. Continue
+until a terminal state such as `inspection_ready`, `ready`, `approval_required`,
+`waiting` or `failed`; show the model only progress and terminal results, not the
+encrypted payload. A host must preserve raw results without transcription or
+truncation. The production-worker tests exercise this bridge with the real CLI
+and recording-sized replies while Node networking APIs in the CLI are denied.
+
+`run --state <directory>` resumes the pending operation and can also drive initial
+read approval. Present `verificationUri` to the user, respect `retryAt`, and resume
+after approval or the indicated wait. `--mode bundle` selects full recording
+retrieval. The `step --reply` interface remains for hosts that save complete replies
+to files. Neither interface grants permission to bypass a host's tool policy.
 
 Credentials renew inside the channel; the endpoint opens another transport
 channel when necessary. `cancel --state <directory>` removes its tracked
@@ -101,8 +146,13 @@ cache. Captured opaque requests can be replayed until their channel expires;
 existing native polling limits, bounded refresh replay and grant revocation
 semantics still apply. No upload or other non-idempotent product writes are relayed.
 
-Each read returns at most 16 KiB of recording ciphertext and consumes existing
-storage-read budget. The endpoint verifies file/chunk hashes, sender signature,
+New readers negotiate ranges of up to 1 MiB of recording ciphertext per call;
+requests without an explicit range length retain the original 16 KiB response for
+old-reader compatibility. Old servers advertise no extension and remain usable at
+their legacy bound. A reply expands to about 1.9 MiB after nested base64/JWE encoding;
+the CLI's file and stdin readers have a matching bounded limit. Tool hosts must
+support lossless persistence at that size; protocol support alone is insufficient.
+Every read consumes the existing storage-read budget. The endpoint verifies file/chunk hashes, sender signature,
 origin/account/capture identity, recipient binding, age finality, asset paths and
 references. Plaintext stays in a private stage until final authorization and
 publication into an exclusively reserved new destination.
@@ -111,11 +161,15 @@ Both single-stream captures and the deployed preview's separate evidence/media
 streams are supported, including `notes.json`. Group names are authenticated in
 each stream's context. Both groups must come from the same approved sender and
 pass complete integrity/reference checks before one ordinary bundle is published.
-An evidence-ready pending upload is still preparing for this full-bundle reader.
+An evidence-ready pending upload can be inspected without its media; full `fetch`
+still waits for both streams and requires the same approved sender for both.
 
-The current format encrypts the complete bundle. Large recordings require many
-calls; passing base64 through model context is costly. **Actual ChatGPT Work/Cowork file
-delivery and practical recording-size performance remain unverified.** The host
+Current native single-stream recordings encrypt the complete bundle, so image-first
+transfer requires the already deployed grouped format. The representative 33 MiB
+Worker/CLI test asserts fewer than 43 calls for full retrieval and at most six for
+small grouped evidence; these are local integration bounds, not host latency claims.
+Passing ciphertext through model context is costly. **Actual updated ChatGPT
+Work/Cowork delivery remains a separate live acceptance check.** The host
 must persist complete sealed tool results into its execution workspace with
 direct CLI egress blocked. MCP protocol support alone does not prove that works.
 There is no plaintext fallback or service-readable copy if it fails.
