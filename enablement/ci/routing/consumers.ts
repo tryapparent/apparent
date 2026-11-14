@@ -127,6 +127,8 @@ function directConsumers(path: string): readonly Owner[] {
   // packaged native application. Unknown files/packages and instructions stay broad.
   if (/^record\/(?:storage|completion)\/(?:src\/.*\.ts|test\/.*\.test\.ts|package(?:-lock)?\.json|tsconfig\.json)$/.test(path) ||
       path === 'record/storage/build.ts') return ['desktop', 'capture'];
+  // This composed browser proof is executed by Connect's publication verifier.
+  if (path === 'public/site/scripts/browser-proof/test-hosted-browser.mjs') return ['public', 'web'];
   if (path.startsWith('public/')) return webAssets.has(path) ? ['public', 'web'] : ['public'];
   if (!native && path.startsWith('connect/web/')) return ['web'];
   if (path === 'connect/client/typescript/src/mcp-wire.ts') return ['client', 'capture', 'service'];
