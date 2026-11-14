@@ -47,6 +47,23 @@ test('foreground upload states stay private, bounded, and use one authorized pil
  await publish(base);
  await application.evaluate(()=>process.stdin.emit('data',JSON.stringify({type:'activate'})+'\n'));
  await expect(page.getByRole('button',{name:'Copy link',exact:true})).toBeVisible();
+ if(process.platform==='darwin'){
+  const native=await application.evaluate(({BrowserWindow},modulePath)=>{
+   const window=BrowserWindow.getAllWindows()[0];
+   const adapter=process.mainModule.require(modulePath);
+   const refused=[];
+   for(const value of [0,-1,NaN,0x100000000,'123']){
+    try{adapter.preventActivation(value);refused.push(false);}catch(error){refused.push(error.code==='APPARENT_PILL_WINDOW');}
+   }
+   const other=new BrowserWindow({show:false,type:'panel',title:'Synthetic unrelated window'});
+   try{adapter.preventActivation(Number(other.getMediaSourceId().split(':')[1]));refused.push(false);}
+   catch(error){refused.push(error.code==='APPARENT_PILL_WINDOW');}
+   finally{other.destroy();}
+   return {focusable:window.isFocusable(),refused};
+  },path.resolve(__dirname,'../../../electron/pill/native/window.node'));
+  assert.equal(native.focusable,true,'Native admission must preserve keyboard eligibility');
+  assert.deepEqual(native.refused,[true,true,true,true,true,true],'Native adapter refuses invalid IDs and other surfaces');
+ }
  await assertNoOverflow('normal workarea');
  if(evidence)await page.screenshot({path:path.join(evidence,'foreground-copy-link.png'),fullPage:true});
 

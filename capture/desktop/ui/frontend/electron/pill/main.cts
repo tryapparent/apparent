@@ -181,6 +181,11 @@ app.whenReady().then(()=>{
       if(!readySent){
         const windowId=Number(window.getMediaSourceId().match(/^window:(\d+):\d+$/)?.[1]);
         if(!Number.isSafeInteger(windowId) || windowId<=0 || windowId>0xffffffff){fail('invalid_native_window_identity');return;}
+        if(process.platform==='darwin'){
+          try{
+            if(require('./native/window.node').preventActivation(windowId)!==true)throw Error('Native window setup refused');
+          }catch{fail('native_window_setup_failed');return;}
+        }
         if(process.platform==='linux')window.setTitle('Apparent Recording Controls '+windowId.toString(16));
         readySent=true;emit({ready:true,windowId});
       }

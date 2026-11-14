@@ -74,6 +74,9 @@ def main():
     shutil.copy2(connect / "dist/foreground.js", connect_dist / "foreground.js")
     (connect_dist.parent / "package.json").write_text('{"type":"module"}\n')
     shutil.copytree(frontend / "electron", app / "electron")
+    if sys.platform != "darwin":
+        # A previous Mac build output is never a Linux runtime dependency.
+        (app / "electron/pill/native/window.node").unlink(missing_ok=True)
     theme = app / "node_modules/@apparent/ui"
     (theme / "src").mkdir(parents=True)
     for name in ("window-theme.cjs", "tokens.css"):
@@ -118,6 +121,11 @@ for (const name of ['main', 'preload']) {
             sign.append("--timestamp")
         if args.keychain:
             sign.extend(["--keychain", str(args.keychain)])
+        addon = app / "electron/pill/native/window.node"
+        if not addon.is_file() or addon.is_symlink():
+            parser.error("Missing regular Mac recording-controls adapter")
+        subprocess.run(sign + [str(addon)], check=True)
+        subprocess.run(["codesign", "--verify", "--strict", str(addon)], check=True)
         sign_runtime(runtime, sign, entitlements)
     print(f"Staged Storage Settings: {destination}")
 

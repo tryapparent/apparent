@@ -3,7 +3,7 @@
 
 const REASONS=new Set([
   'invalid_parent_frame','renderer_gone','parent_state_timeout','render_readiness_timeout',
-  'layout_measurement_exception','invalid_native_window_identity','uncaught_exception',
+  'layout_measurement_exception','invalid_native_window_identity','native_window_setup_failed','uncaught_exception',
   'parent_stream_end','parent_stream_error','window_closed'
 ]);
 const PHASES=new Set(['hidden','selecting','recording','processing','completed']);

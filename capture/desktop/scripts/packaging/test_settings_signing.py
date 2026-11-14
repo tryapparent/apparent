@@ -22,7 +22,8 @@ class SigningTests(unittest.TestCase):
                              "dist/settings.html", "dist/onboarding.html", "dist/src/controls/index.html",
                              "dist/onboarding-presentation.cjs", "dist/onboarding-hyprland.cjs", "dist/onboarding-selection.cjs",
                              "dist/src/installer/index.html", "dist/pill/index.html",
-                             "dist/assets/controls.js", "node_modules/electron/dist/electron"):
+                             "dist/assets/controls.js", "node_modules/electron/dist/electron",
+                             "electron/pill/native/window.node"):
                 file = frontend / relative
                 file.parent.mkdir(parents=True, exist_ok=True)
                 file.write_text(relative)
@@ -58,6 +59,35 @@ class SigningTests(unittest.TestCase):
                 relative = f"dist/onboarding-{name}.cjs"
                 self.assertEqual((destination / "app" / relative).read_text(), relative)
             self.assertTrue((destination / "runtime/electron").is_file())
+            self.assertFalse((destination / "app/electron/pill/native/window.node").exists())
+            for identity in ("-", "Developer ID Application: Synthetic"):
+                mac = root / ("mac-ad-hoc" if identity == "-" else "mac-release")
+                addon = mac / "app/electron/pill/native/window.node"
+                signed = []
+
+                def invoke(command, **kwargs):
+                    signed.append(command)
+
+                def runtime_signer(runtime, sign, entitlements):
+                    self.assertIn(sign + [str(addon)], signed)
+                    self.assertIn(["codesign", "--verify", "--strict", str(addon)], signed)
+                    self.assertEqual("--timestamp" in sign, identity != "-")
+
+                with patch.object(stage, "__file__", str(script)), \
+                     patch.object(stage.sys, "argv", [str(script), str(mac), "--sign", identity]), \
+                     patch.object(stage.sys, "platform", "darwin"), \
+                     patch.object(stage.subprocess, "run", side_effect=invoke), \
+                     patch.object(stage, "sign_runtime", side_effect=runtime_signer) as runtime:
+                    stage.main()
+                self.assertEqual(addon.read_text(), "electron/pill/native/window.node")
+                runtime.assert_called_once()
+            (frontend / "electron/pill/native/window.node").unlink()
+            with patch.object(stage, "__file__", str(script)), \
+                 patch.object(stage.sys, "argv", [str(script), str(root / "missing-adapter"), "--sign", "-"]), \
+                 patch.object(stage.sys, "platform", "darwin"), \
+                 patch.object(stage.subprocess, "run"):
+                with self.assertRaises(SystemExit):
+                    stage.main()
 
     def test_principal_executables_wait_for_nested_code(self):
         with tempfile.TemporaryDirectory() as temporary:

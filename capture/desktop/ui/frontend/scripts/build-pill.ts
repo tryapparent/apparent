@@ -2,6 +2,7 @@ import {readFile,writeFile} from 'node:fs/promises';
 import ts from 'typescript';
 import {mkdir} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
+import './build-pill-native.ts';
 // Record owns the source; the installed app uses its already packaged Node runtime.
 // No native compiler, Electron API or renderer is a dependency of this worker.
 const completion = new URL('../electron/record-completion/', import.meta.url);
