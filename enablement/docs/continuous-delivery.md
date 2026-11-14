@@ -255,7 +255,11 @@ inert coordination inode; there is no active capture website behind it.
 
 Affected pushes to `main` deploy Connect automatically after its selected checks
 and publication verification pass. `HOSTED_CD_ENABLED=true` enables this route;
-setting it false is the emergency delivery stop, not a per-release approval.
+setting it false stops new admissions, not an already admitted deployment.
+For manual publication/rollback, disable the gate and cancel or drain the active
+`connect-hosted-production` job first. Automatic jobs serialize under that group;
+provider readback detects a competing publisher around activation and fails for
+operator reconciliation rather than attempting a second traffic write.
 PRs never receive deployment credentials or publish. The current-stream guard
 runs before upload and again before activation, so newer affected changes
 supersede stale candidates while unrelated main advances do not strand delivery.

@@ -61,3 +61,8 @@ export function singleVersion(deployment: { versions: { version_id: string; perc
   assert.equal(deployment.versions[0].percentage, 100, 'Split traffic requires operator review')
   return deployment.versions[0].version_id
 }
+
+export function verifyActivationHistory(previous: string, deployed: string, history: { id: string }[]) {
+  assert.equal(history[0]?.id, deployed, 'Another publisher owns the active deployment')
+  assert.equal(history[1]?.id, previous, 'A competing deployment intervened during activation; operator reconciliation required')
+}

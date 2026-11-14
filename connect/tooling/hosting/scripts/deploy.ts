@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { accountId, workerName, deploymentConfig, validateProfile, sameBindings, singleVersion } from './profile.ts'
+import { accountId, workerName, deploymentConfig, validateProfile, sameBindings, singleVersion, verifyActivationHistory } from './profile.ts'
 import type { Settings } from './profile.ts'
 import { digest, verifySeal } from './seal.ts'
 
@@ -27,7 +27,7 @@ async function snapshot() {
     api(worker + '/settings'), api(worker + '/deployments'), api(worker + '/versions?per_page=2'),
     api(worker + '/schedules'), api(worker + '/subdomain'), api('/accounts/' + accountId + '/workers/domains'),
   ])
-  return { settings: settings as Settings, deployment: deployments.deployments[0], versions: versions.items, schedules, subdomain, domains }
+  return { settings: settings as Settings, deployment: deployments.deployments[0], history: deployments.deployments, versions: versions.items, schedules, subdomain, domains }
 }
 function preserve(before: Awaited<ReturnType<typeof snapshot>>, after: Awaited<ReturnType<typeof snapshot>>) {
   sameBindings(before.settings.bindings, after.settings.bindings)
@@ -80,6 +80,14 @@ const fresh = await snapshot()
 preserve(before, fresh)
 assert.equal(singleVersion(fresh.deployment), previous, 'Another deploy owns traffic')
 assert.equal(fresh.versions[0].id, candidate, 'Another owner staged a version')
+// Cloudflare's deployment API has no documented conditional-update parameter:
+// https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/deployments/methods/create/
+// Narrow the final read/write window and audit the immediate predecessor after
+// activation. Detect a competing publisher in either ordering; never race it
+// with an automatic rollback. Manual publication must first drain this job.
+const latest = (await api(worker + '/deployments')).deployments[0]
+assert.equal(latest.id, before.deployment.id, 'Another publisher changed deployment ownership')
+assert.equal(singleVersion(latest), previous)
 const deployed = await api(worker + '/deployments', {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
     strategy: 'percentage', versions: [{ version_id: candidate, percentage: 100 }],
@@ -88,6 +96,7 @@ const deployed = await api(worker + '/deployments', {
 })
 await record('active-unverified', { version: candidate, deployment: deployed.id })
 const after = await snapshot()
+verifyActivationHistory(latest.id, deployed.id, after.history)
 assert.equal(singleVersion(after.deployment), candidate, 'Exact candidate is not active')
 preserve(before, after)
 for (const file of receipt.files.filter(file => file.path.startsWith('dist/'))) {

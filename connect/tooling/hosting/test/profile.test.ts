@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { accountId, databaseId, bucketName, workerName, deploymentConfig, validateProfile, sameBindings, singleVersion } from '../scripts/profile.ts'
+import { accountId, databaseId, bucketName, workerName, deploymentConfig, validateProfile, sameBindings, singleVersion, verifyActivationHistory } from '../scripts/profile.ts'
 import type { Settings } from '../scripts/profile.ts'
 
 function profile(): Settings {
@@ -37,4 +37,9 @@ test('unexpected resources, origins, secret profiles and paid/log settings fail 
 test('split or missing active versions cannot be replaced automatically', () => {
   assert.equal(singleVersion({ versions: [{ version_id: 'old', percentage: 100 }] }), 'old')
   for (const versions of [[], [{ version_id: 'old', percentage: 50 }], [{ version_id: 'old', percentage: 50 }, { version_id: 'other', percentage: 50 }]]) assert.throws(() => singleVersion({ versions }))
+})
+test('activation readback detects competing publishers in either ordering', () => {
+  verifyActivationHistory('previous', 'ours', [{ id: 'ours' }, { id: 'previous' }])
+  assert.throws(() => verifyActivationHistory('previous', 'ours', [{ id: 'other' }, { id: 'ours' }]), /Another publisher/)
+  assert.throws(() => verifyActivationHistory('previous', 'ours', [{ id: 'ours' }, { id: 'other' }, { id: 'previous' }]), /competing deployment/)
 })
