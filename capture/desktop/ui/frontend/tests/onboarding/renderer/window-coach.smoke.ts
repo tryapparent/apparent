@@ -458,9 +458,9 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   send({penPicker:true,penSelected:true,penRgb:[59,121,189],penSaveId:blueSaveId});
   await expect.poll(()=>output.match(/"action":"continue"/g)?.length).toBe(beforeTrialAdvance+2);
   await expect(page.locator('.native-pond-frog')).toHaveCSS('animation-name','none');
-  await page.setViewportSize({width:320,height:720});
+  await page.setViewportSize({width:320,height:600});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'pen picker must reflow at 320 CSS pixels');
-  await page.setViewportSize({width:760,height:720});
+  await page.setViewportSize({width:760,height:600});
 
   // Back returns to a stable picker; an old success must never replay advance.
   const advances=()=>output.match(/"action":"continue"/g)?.length??0;
@@ -474,7 +474,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   assert.equal(advances(),beforeBack);
   for(const scheme of schemes)for(const width of [760,320]){
     await page.emulateMedia({colorScheme:scheme});
-    await page.setViewportSize({width,height:720});
+    await page.setViewportSize({width,height:600});
     await page.getByRole('button',{name:'blue pen',exact:true}).focus();
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     const back=await page.getByRole('button',{name:'Back',exact:true}).boundingBox();assert.ok(back);
@@ -494,7 +494,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('button',{name:'blue pen',exact:true})).toBeEnabled();
   assert.equal(advances(),beforeBack);
   for(const width of [760,320]){
-    await page.setViewportSize({width,height:720});
+    await page.setViewportSize({width,height:600});
     await page.locator('.native-setup section').evaluate(section=>section.scrollTop=0);
     const alert=await page.getByRole('alert').boundingBox(),section=await page.locator('.native-setup section').boundingBox();assert.ok(alert&&section);
     assert.ok(alert.y>=section.y&&alert.y+alert.height<=section.y+section.height,'save feedback must be visible above the footer without scrolling');

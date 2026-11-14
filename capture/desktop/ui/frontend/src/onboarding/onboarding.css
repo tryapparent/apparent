@@ -182,8 +182,10 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 .native-agent-art { display:block;width:100%;aspect-ratio:1.25;background-repeat:no-repeat;background-size:200% auto;background-position:left center; }
 .native-agent-art.cloud { background-position:right center; }
 .native-agent-art.local { background-position:left center; }
-.native-agent-setup > .native-agent-art { max-width:300px;margin-inline:auto; }
+.native-agent-setup > .native-agent-art { max-width:180px;margin-inline:auto; }
 
 .native-coach[data-stage=preparing] { display:none; }
 
 .native-held-keys > button {font-size:40px;line-height:1.2;min-width:96px;padding:12px 20px;}
+
+.native-held-keys + .native-shortcut-choices {margin-top:8px;}
