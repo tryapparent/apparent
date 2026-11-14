@@ -30,6 +30,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./transfer": {
+      "types": "./dist/transfer/contract.d.ts",
+      "import": "./dist/transfer/contract.js"
     }
   },
   "engines": {

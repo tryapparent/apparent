@@ -81,9 +81,9 @@ async function upload(f:any,account:any,uploader:any,reader:any,captureId:string
 
 // Model-free host bridge: only opaque requests and progress leave the reader;
 // complete, recording-sized MCP replies go directly into its stdin.
-async function pipeTransfer(t:test.TestContext,f:any,directory:string,id:string,out:string,inspection:boolean) {
+async function pipeTransfer(t:test.TestContext,f:any,directory:string,id:string,out:string,inspection:boolean,files?:string[]) {
   const started=performance.now();
-  const child=spawn(process.execPath,['--experimental-strip-types','--import',fileURLToPath(new URL('./no-network.ts',import.meta.url)),fileURLToPath(new URL('../../../client/typescript/dist/mcp-cli.js',import.meta.url)),'run','--state',directory,'--id',id,'--out',out,'--mode',inspection?'inspection':'bundle'],{stdio:['pipe','pipe','pipe']});
+  const child=spawn(process.execPath,['--experimental-strip-types','--import',fileURLToPath(new URL('./no-network.ts',import.meta.url)),fileURLToPath(new URL('../../../client/typescript/dist/mcp-cli.js',import.meta.url)),'run','--state',directory,'--id',id,'--out',out,'--mode',files?'files':inspection?'inspection':'bundle',...(files?.flatMap(name=>['--file',name])??[])],{stdio:['pipe','pipe','pipe']});
   t.after(()=>{if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');});
   let stderr='';child.stderr.on('data',chunk=>{stderr+=chunk;});
   const exited=new Promise<number|null>((resolve,reject)=>{child.once('error',reject);child.once('close',resolve);});
@@ -96,7 +96,12 @@ async function pipeTransfer(t:test.TestContext,f:any,directory:string,id:string,
       if(call.progress)bytesTotal=call.progress.bytesTotal;
       if(inspection) {
         const state=JSON.parse(await fs.readFile(path.join(directory,'endpoint.json'),'utf8'));
-        if(state.pending?.operation.operation==='part')assert.ok(state.pending.operation.path.startsWith('evidence/'),'Inspection must not request media');
+        if(state.pending?.operation.operation==='part'){
+          if(state.capture.format==='apparent-encrypted-v2'){
+            const asset=state.capture.fileIndex?.files.find((e:any)=>e.object===state.pending.operation.path);
+            if(asset)assert.ok(!['recording.mp4','recording.mov','audio.wav'].includes(asset.path),'V2 inspection must not request media');
+          }else assert.ok(state.pending.operation.path.startsWith('evidence/'),'Inspection must not request media');
+        }
       }
       const reply=JSON.stringify(await relayCall(f,call));maxReplyBytes=Math.max(maxReplyBytes,Buffer.byteLength(reply));
       await new Promise<void>((resolve,reject)=>child.stdin.write(reply+'\n',error=>error?reject(error):resolve()));
@@ -274,4 +279,58 @@ test('waitlisted readers receive eligibility guidance rather than credentials or
     const state=JSON.parse(await fs.readFile(path.join(directory,'endpoint.json'),'utf8'));
     assert.equal(state.credential,undefined);assert.equal(state.failure,'beta_required');
   } finally {await f.close();await fs.rm(root,{recursive:true,force:true});}
+});
+
+test('v2 MCP selectively retrieves transcript and image; listing and extraction never read video',async t=>{
+  const {signedFileBytes}=await import('../../../client/typescript/dist/transfer/contract.js');
+  const {signAsync}=await import('../../../client/typescript/node_modules/@noble/ed25519/index.js');
+  const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-files-'));await fs.chmod(root,0o700);
+  const f=await fixture();try{
+    const account=await f.identity('mcp-files'),directory=path.join(root,'reader');
+    const reader=await endpoint(f,account,directory),uploader=await sender(f,account),id='2'.repeat(32);
+    const original=new Map<string,Buffer>([['apparent.json',Buffer.from(JSON.stringify({contactSheet:'contact-sheet.png',video:'recording.mp4',transcript:{text:'Synthetic spoken feedback'}}))],['summary.md',Buffer.from('Synthetic summary')],['contact-sheet.png',png],['recording.mp4',randomBytes(2*1024*1024+37)]]);
+    const context={origin:'https://api.example',accountId:account.id,captureId:id,senderGrantId:uploader.grantId};
+    const entries:any[]=[],data=new Map<string,Uint8Array>();let i=0;
+    for(const [name,bytes] of original){const object=`sealed/file-${String(i++).padStart(6,'0')}.age`;entries.push({path:name,size:bytes.length,sha256:digest(bytes),object});data.set(object,await encryptAge(bytes,[reader.key.recipient]));}
+    data.set('sealed/index.age',await encryptAge(Buffer.from(JSON.stringify({version:2,context,files:entries})),[reader.key.recipient]));
+    const chunks=[...data].map(([path,bytes])=>({path,size:bytes.length,sha256:digest(bytes)})).sort((a,b)=>a.path.localeCompare(b.path));
+    const signed={version:2 as const,context,chunks},signature=Buffer.from(await signAsync(signedFileBytes(signed),uploader.seed)).toString('hex');
+    data.set('envelope.json',Buffer.from(JSON.stringify({signed,signature})));
+    const files=[...data].map(([path,bytes])=>({path,size:bytes.length,sha256:digest(bytes)}));
+    assert.equal((await f.call('/v1/captures/'+id,{token:uploader.accessToken,method:'POST',body:{format:'apparent-encrypted-v2',files}})).status,200);
+    for(const [name,bytes] of data)assert.equal((await f.call(`/v1/captures/${id}/files/${name}`,{token:uploader.accessToken,method:'PUT',raw:bytes})).status,200);
+    assert.equal((await f.call(`/v1/captures/${id}/complete`,{token:uploader.accessToken,method:'POST'})).status,200);
+    const drive=async(call:any)=>{for(let n=0;call.tool;n++){assert.ok(n<30);call=await acceptEndpoint(directory,await relayCall(f,call));}return call;};
+    const before=(await f.db.prepare('SELECT b_used FROM r2_budget').first()).b_used;
+    const listing=await drive(await fetchEndpoint(directory,id,path.join(root,'unused'),{listOnly:true}));
+    assert.equal(listing.state,'listed');assert.equal(listing.files.length,4);
+    assert.equal((await f.db.prepare('SELECT b_used FROM r2_budget').first()).b_used-before,2,'listing reads only envelope and encrypted index');
+    const out=path.join(root,'evidence'),extracted=(await pipeTransfer(t,f,directory,id,out,false,['apparent.json','contact-sheet.png'])).terminal;
+    assert.equal(extracted.state,'ready');assert.equal(extracted.completeBundle,false);assert.equal(extracted.bundle,undefined);
+    assert.equal((await f.db.prepare('SELECT b_used FROM r2_budget').first()).b_used-before,6,'exactly two index reads plus two requested files for extraction');
+    for(const name of ['apparent.json','contact-sheet.png'])assert.deepEqual(await fs.readFile(path.join(out,name)),original.get(name));
+    assert.deepEqual((await fs.readdir(out)).sort(),['.connect-extraction.json','apparent.json','contact-sheet.png']);
+    const inspectionBefore=(await f.db.prepare('SELECT b_used FROM r2_budget').first()).b_used;
+    const inspectedOut=path.join(root,'inspection'),inspected=await pipeTransfer(t,f,directory,id,inspectedOut,true);
+    assert.equal(inspected.terminal.state,'inspection_ready');assert.equal(inspected.terminal.mediaDownloaded,false);
+    assert.equal((await f.db.prepare('SELECT b_used FROM r2_budget').first()).b_used-inspectionBefore,5,'v2 inspect reads descriptors plus three evidence files, never video');
+    assert.equal(JSON.parse(await fs.readFile(path.join(inspectedOut,'inspection.json'),'utf8')).completeRecording,false);
+    await assert.rejects(fs.stat(path.join(inspectedOut,'recording.mp4')),{code:'ENOENT'});
+    const full=path.join(root,'full.apparent'),completed=await pipeTransfer(t,f,directory,id,full,false);
+    assert.equal(completed.terminal.state,'ready');assert.ok(completed.maxReplyBytes>300000,'v2 full transfer uses negotiated ranges through lossless stdio');
+    for(const [name,bytes] of original)assert.deepEqual(await fs.readFile(path.join(full,name)),bytes);
+    // Existing public capabilities must continue refusing every encrypted format.
+    assert.equal((await f.call(`/v1/captures/${id}/share`,{token:uploader.accessToken,method:'POST'})).status,409);
+    const refused=path.join(root,'revoked-selection');let call:any=await fetchEndpoint(directory,id,refused,{selection:['contact-sheet.png']}),stage:string|undefined;
+    for(let n=0;n<30;n++){
+      const state=JSON.parse(await fs.readFile(path.join(directory,'endpoint.json'),'utf8'));
+      if(state.pending?.kind==='final'){stage=state.capture.stage;break;}
+      call=await acceptEndpoint(directory,await relayCall(f,call));
+    }
+    assert.ok(stage);assert.equal((await f.call('/v1/token/revoke',{token:uploader.accessToken,method:'POST'})).status,200);
+    await assert.rejects(acceptEndpoint(directory,await relayCall(f,call)),/sender_revoked_or_unapproved/);
+    await assert.rejects(fs.stat(refused),{code:'ENOENT'});
+    assert.equal((await cancelEndpoint(directory)).state,'cancelled');await assert.rejects(fs.stat(stage!),{code:'ENOENT'});
+
+  }finally{await f.close();await fs.rm(root,{recursive:true,force:true});}
 });

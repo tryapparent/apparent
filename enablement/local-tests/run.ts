@@ -1,6 +1,6 @@
 // Local owner-level gates. Native/release proof remains separately required.
 import { spawnSync } from 'node:child_process';
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {changedPaths as inputPaths} from '../ci/inputs.ts';
@@ -64,6 +64,14 @@ export function installationContracts(paths: string[] | null, workflowControls: 
   return affected ? [{argv: ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'], cwd: '.'}] : [];
 }
 
+// Lightweight OS-specific hook/install proof: no native app or Cargo command.
+export function fixtureMacCommands(): Command[] {
+  return [
+    {argv: ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'], cwd: '.'},
+    {argv: ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/tests', '-p', 'test_pre_push_guard.py'], cwd: '.'},
+  ];
+}
+
 export function toolingCommands(): Command[] {
   return [
     {argv: ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'], cwd: '.'},
@@ -121,7 +129,7 @@ export function commands(selected: Owner[], base: string, head: string, platform
   if (selected.includes('hermes')) {
     add(['npm', 'ci', '--ignore-scripts', '--prefix', 'hermes/desktop']);
     add(['python3', '-m', 'unittest', 'discover', '-s', 'hermes/tests', '-p', 'test_*.py']);
-    add(['node', '--experimental-strip-types', '--test', 'hermes/desktop/controller.test.ts', 'hermes/desktop/plugin.test.ts', 'hermes/distribution/package.test.ts', 'hermes/distribution/consumer.test.ts', 'capture/agent/setup/hermes.test.ts', 'capture/agent/setup/hermes-receiver.test.ts',
+    add(['node', '--experimental-strip-types', '--test', 'hermes/desktop/controller.test.ts', 'hermes/desktop/plugin.test.ts', 'hermes/distribution/package.test.ts', 'hermes/distribution/consumer.test.ts', 'hermes/distribution/cache/downloads.test.ts', 'capture/agent/setup/hermes.test.ts', 'capture/agent/setup/hermes-receiver.test.ts',
       'capture/desktop/ui/frontend/src/hermes/protocol.test.ts', 'capture/desktop/ui/frontend/src/hermes/mailbox.test.ts']);
   }
   // These TypeScript/renderer checks are independent of Rust. Run their real
@@ -178,8 +186,11 @@ export function contractTests(cwd = root): Command[] {
     .filter(name => name.endsWith('.test.ts')).sort()
     .map(name => `enablement/prerequisites/${name}`);
   if (!prerequisites.length) throw Error('Native prerequisite contract inventory is empty');
+  const fixtureTests = (existsSync(resolve(cwd, 'enablement/local-tests/fixtures')) ? readdirSync(resolve(cwd, 'enablement/local-tests/fixtures')) : [])
+    .filter(name => name.endsWith('.test.ts') && name !== 'runner.test.ts').sort()
+    .map(name => `enablement/local-tests/fixtures/${name}`);
   return [
-    { argv: ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/run.test.ts', 'enablement/local-tests/reuse.test.ts',
+    { argv: ['node', '--experimental-strip-types', '--test', ...fixtureTests, 'enablement/local-tests/run.test.ts', 'enablement/local-tests/reuse.test.ts',
       'enablement/local-tests/preview/explain.test.ts',
       ...prerequisites, 'enablement/timing/command.test.ts', 'enablement/timing/mac-cache.test.ts'], cwd: '.' },
     { argv: ['bun', 'test', 'enablement/ci/'], cwd: '.' },
@@ -214,6 +225,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const args = process.argv.slice(2);
   if (args.length === 1 && args[0] === '--record-media') {
     execute(recordMediaCommands(), root, undefined, true);
+    process.exit(0);
+  }
+  if (args.length === 1 && args[0] === '--fixture-mac') {
+    execute(fixtureMacCommands());
     process.exit(0);
   }
   if (args.length === 1 && args[0] === '--tooling') {

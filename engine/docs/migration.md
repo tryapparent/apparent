@@ -2,11 +2,12 @@
 
 Active goal: complete the owner boundaries below, delivering successive usable
 PRs against current main. A verified merge advances this inventory; it does not
-finish the migration. Evidence baseline: `b89a74fecf628067d3fe1ed63aaeb9d16b44f711`.
+finish the migration. Current source baseline:
+`5e265b67c17894ae550ef8b2f7203909a151a032`.
 
 | Boundary | Implemented evidence | Remaining adoption/removal gate |
 | --- | --- | --- |
-| Engine media metadata | Independently published native reader and compiled SDK; Record export consumes checksum-pinned artifacts. #1284/#1286 passed exact-main Mac/Linux and Linux package delivery. | Replace the remaining Desktop movie probes in ingestion, recovery and retention. |
+| Engine media metadata | Independently published native reader and compiled SDK; Record export, ingestion, recovery and retention observations consume checksum-pinned artifacts. #1284/#1286/#1288 passed Mac/Linux CI and Linux package delivery; #1288 exact main is `5f4be8bc93bca2df9d0d6c9223fddf88d4d8b86e`. Replaced Desktop probes are removed. | Keep the pinned provider and package compatibility gates when adding capabilities. |
 | Engine capture and lifecycle | Root runtime owns actual capture, permissions, resource cleanup and durability. The separate `capture/engine` admission/lease crate has package proof, no production consumers. | Adopt one authoritative native capture/admission contract through live callers; align locks, receipts, cancellation, recovery and maintenance before retiring donors. |
 | Engine media operations | Root native decoders, transcription, audio, encoders and image mechanisms remain authoritative. | Independently deliver/adopt each capability with native/plugin/model inputs, safety contracts and real package proof. |
 | Record workflow | Headless completion, storage controllers and export metadata policy have real consumers. | Capture-to-handoff assembly, recovery decisions, preferences/defaults, retention planning, keyframe/transcript assembly and remaining export policy still cross Rust owners. |
@@ -15,31 +16,34 @@ finish the migration. Evidence baseline: `b89a74fecf628067d3fe1ed63aaeb9d16b44f7
 | Connect / Public | Public and hosted web/service loops are TypeScript. Connect has compiled TypeScript crypto, listing/foreground/MCP consumers alongside authoritative Rust transfer/identity/queue code. | Finish native Connect caller/persistence adoption and remove repo-owned Rust from Connect build/release inputs. Preserve encryption, consent, cancellation, retry and publication semantics. |
 | Composition / Shared / Enablement | One canonical hook/CI selector; independent Engine producer routing; existing app staging embeds explicit capability artifacts. | Remove obsolete source/build/package edges as consumers qualify. Shared must not absorb displaced policy. Prove each independence claim without Rust tools/cached native output. |
 
-## Current slice: remaining movie probes
+## Current slice: explicit-time Engine frames, then Agent zoom
 
-Record media will interpret bundle-ingestion metadata using the published SDK.
-Phone/file ingestion, orphan recovery and retention's size observation will use
-that contract on Mac/Linux. Preserve the container timeline used by assembly,
-including audio tails; export retains its separate video-clock policy. Retention
-mutation/exclusion, decoding, transcription and live phone capture stay unchanged.
-Remove both Desktop probe contracts, Linux's metadata/audio-decode probe, and the
-unused Swift helper probe command only after all callers/tests adopt the contract.
+Publish a bounded native `movie-frames/1` capability and compiled SDK first. Agent
+zoom is the named consumer: its existing sampling and crop policy will call this
+public contract through a headless adapter and checksum-pinned native artifact.
+The producer prerequisite does not switch a root caller or remove its decoder.
+Keep the root path until adoption and actual application packages are verified.
 
-Required proof: pure policy and Rust-free build, real published-provider fixtures
-(rotation, silent/audio/multiple tracks, video versus container clock, malformed
-inputs), actual ingestion/recovery and retention observations, unchanged sources,
-Mac/Linux bridge and signed/package consumers, ordinary hooks and exact-main CI.
-No physical-phone capture proof is inferred from imported synthetic movies.
-Rollback reverts this whole consumer slice; it introduces no config writer.
+The contract preserves request identity, duplicates, display orientation and
+actual presentation time in the edited movie timeline. Private caller-owned
+ephemeral output has explicit pixel/count/deadline limits and no bundle or
+publication policy. Linux uses GStreamer; Mac uses a separate AVFoundation helper.
+The existing metadata executable remains free of GStreamer linkage.
 
-Candidate findings: a rotated fixture exposed Linux decoding ignoring display
-orientation. The native frame adapter now applies that tag; the real ingestion
-test checks dimensions and red/blue orientation against independent FFmpeg output.
-The non-UTF-8 path alias also creates its directory with explicit `0700`, rather
-than inheriting permissions from a caller's umask. CLI reprocessing also creates
-its new bundle with explicit `0700`; its packaged test exercises a group-writable
-caller umask without weakening publication's ownership checks. These are bounded native
-correctness/safety prerequisites for the shared metadata contract.
+Required producer proof: clean Rust-free SDK consumption, independent native
+builds outside the app source, extracted-package real pixels and timing,
+rotation, edit-list offsets, first/last clamps, backward and duplicate requests,
+source preservation and private-output/error/cancellation checks on all four
+supported architectures. Linux local execution establishes only its own platform;
+Mac qualification remains a platform gate. No capture, permissions or physical
+phone proof is inferred from decoded synthetic movies.
+
+After publication, pin exact bytes for Agent zoom, verify real callers and output
+images on Linux/Mac, stage/sign all native inputs, compare affected latency, and
+remove only the replaced call path. Rollback reverts the consumer routing and pin
+together; the producer alone changes no config writer or installed app behavior.
+Record periodic assembly, audio, transcription, encoders, lifecycle and UI remain
+separate inventory items. No precise build savings are claimed.
 
 ## Following slices and completion
 

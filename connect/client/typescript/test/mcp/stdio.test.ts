@@ -7,7 +7,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {Readable,Writable} from 'node:stream';
 import {initEndpoint,nextEndpoint} from '../../dist/mcp-endpoint.js';
-import {runEndpoint} from '../../dist/mcp-stdio.js';
+import {runEndpoint} from '../../dist/mcp/stdio.js';
 import {MAX_RELAY_REPLY_BYTES} from '../../dist/mcp-wire.js';
 
 for(const [name,input,code]of [

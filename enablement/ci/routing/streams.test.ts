@@ -63,7 +63,17 @@ test('one onboarding inventory keeps source tests before installation and synthe
 test('both automatic events use the reviewed positive directory inventory', () => {
   for (const [stream, file] of Object.entries(workflows)) {
     const workflow = YAML.parse(readFileSync(new URL('.github/workflows/' + file, root), 'utf8'));
-    for (const event of ['push', 'pull_request']) assert.deepEqual(workflow.on[event].paths, streamPaths[stream as Stream]);
+    if (stream === 'connect') {
+      assert.deepEqual(Object.keys(workflow.on), ['workflow_dispatch', 'workflow_call']);
+      // Connect retains its consumer/publication inventory, while the union
+      // orchestrator must trigger for every input that used to start Connect.
+      const automatic = YAML.parse(readFileSync(new URL('.github/workflows/checks.yml', root), 'utf8'));
+      assert.equal(automatic.jobs.connect.uses, './.github/workflows/stream-connect.yml');
+      const inputs = execFileSync('git', ['ls-files', '-z'], {cwd: root, encoding: 'utf8'}).split('\0').filter(Boolean);
+      inputs.push('connect/web/new-source.ts', 'connect/client/new-source.rs', 'public/site/new-asset.svg', 'unowned/new.ts');
+      for (const path of inputs) if (affectsStream('connect', path))
+        assert.equal(affectsStream('capture', path), true, `combined entrypoint must cover Connect input ${path}`);
+    } else for (const event of ['push', 'pull_request']) assert.deepEqual(workflow.on[event].paths, streamPaths[stream as Stream]);
     if (stream === 'public' || stream === 'connect') {
       const job = workflow.jobs[stream === 'public' ? 'deploy' : 'hosted'];
       assert.equal(job.steps.find((step: any) => step.uses === 'actions/checkout@v4').with['fetch-depth'], 0);
@@ -76,7 +86,7 @@ test('both automatic events use the reviewed positive directory inventory', () =
   assert.equal(affectsStream('public', 'capture/desktop/ui/frontend/tests/reference-native.cjs'), false);
   assert.equal(affectsStream('public', 'enablement/prerequisites/mac-picker.test.ts'), false);
   assert.equal(affectsStream('hermes', 'public/site/src/App.tsx'), false);
-  assert.equal(affectsStream('capture', 'public/site/src/App.tsx'), false);
+  assert.equal(affectsStream('capture', 'public/site/src/App.tsx'), true, 'combined orchestrator also admits Connect inputs');
   assert.equal(affectsStream('public', 'public/new/file.ts'), true);
   assert.equal(affectsStream('capture', 'capture/desktop/new/file.ts'), true);
   assert.equal(affectsStream('connect', 'connect/new/file.ts'), true);

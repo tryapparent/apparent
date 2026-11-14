@@ -162,7 +162,7 @@ jobs:
           python -m pip install 'Pillow>=13,<14'
           python -m unittest discover -s hermes/tests -v
       - name: Routing, bridge and package installation contracts
-        run: node --experimental-strip-types --test hermes/desktop/*.test.ts hermes/distribution/package.test.ts hermes/distribution/consumer.test.ts capture/desktop/ui/frontend/src/hermes/*.test.ts capture/agent/setup/hermes.test.ts capture/agent/setup/hermes-receiver.test.ts
+        run: node --experimental-strip-types --test hermes/desktop/*.test.ts hermes/distribution/package.test.ts hermes/distribution/consumer.test.ts hermes/distribution/cache/*.test.ts capture/desktop/ui/frontend/src/hermes/*.test.ts capture/agent/setup/hermes.test.ts capture/agent/setup/hermes-receiver.test.ts
       - name: Package exact candidate without Rust or unrelated builds
         id: package
         run: |
@@ -174,25 +174,64 @@ jobs:
           HERMES_PACKAGE: ${{ steps.package.outputs.directory }}
         run: node --experimental-strip-types --test hermes/distribution/consumer.test.ts
       - uses: actions/setup-python@v5
+        id: validator-python
         with:
           python-version: '3.14'
-      - name: Install supported Hermes validator
+      - name: Prepare pinned Hermes validator and download identity
+        id: validator
+        env:
+          PYTHON_VERSION: ${{ steps.validator-python.outputs.python-version }}
         run: |
-          job=$(mktemp -d /tmp/apparent-dev-hermes-validator-XXXXXX)
+          # Hosted matrix runners are disposable. A stable snapshot path keeps
+          # Actions' path-based cache version stable; refuse any existing job.
+          job=/tmp/apparent-dev-hermes-validator-ci
+          mkdir -m 700 "$job"
           python -m pip install 'uv==0.12.13'
+          test "$(uv --version | cut -d ' ' -f 2)" = '0.12.13'
           git init "$job/runtime"
           git -C "$job/runtime" remote add origin https://github.com/NousResearch/hermes-agent.git
           git -C "$job/runtime" fetch --depth 1 origin a867bb03fb35d4727ff0e9e2c0527745d4ff27cc
           git -C "$job/runtime" checkout --detach FETCH_HEAD
+          test "$(git -C "$job/runtime" rev-parse HEAD)" = a867bb03fb35d4727ff0e9e2c0527745d4ff27cc
+          test ! -e "$job/runtime/.venv"
+          echo "job=$job" >> "$GITHUB_OUTPUT"
+          export VALIDATOR_IDENTITY="$(git -C "$job/runtime" rev-parse HEAD)|$(uv --version)|$PYTHON_VERSION|${{ runner.os }}|${{ runner.arch }}|${{ matrix.os }}"
+          node --experimental-strip-types hermes/distribution/cache/downloads.ts key "$job/runtime" .github/workflows/hermes.yml "$GITHUB_OUTPUT"
+      # Exact keys only, using Actions' ordinary PR/ref scope. A PR cache cannot
+      # seed main. Neither the runtime/.venv nor a Hermes profile is cached.
+      - uses: actions/cache/restore@v4
+        id: validator-downloads
+        with:
+          path: /tmp/apparent-dev-hermes-validator-ci/downloads
+          key: ${{ steps.validator.outputs.key }}
+      - name: Install supported Hermes validator
+        env:
+          JOB: ${{ steps.validator.outputs.job }}
+        run: |
+          mkdir -m 700 "$JOB/cache"
+          if test -d "$JOB/downloads"; then cp -R "$JOB/downloads/." "$JOB/cache/"; fi
+          test ! -e "$JOB/runtime/.venv"
           # Upstream requires Python 3.14 and its frozen uv overrides; wheels
           # omit runtime assets and ordinary pip cannot resolve that closure.
-          UV_CACHE_DIR="$job/cache" uv sync --project "$job/runtime" --python "$(command -v python)" --frozen --no-dev
-          echo "$job/runtime/.venv/bin" >> "$GITHUB_PATH"
+          # Copy mode keeps the fresh environment independent of cache objects.
+          UV_CACHE_DIR="$JOB/cache" uv sync --project "$JOB/runtime" --python "$(command -v python)" --frozen --no-dev --link-mode copy
+          echo "$JOB/runtime/.venv/bin" >> "$GITHUB_PATH"
+      - name: Snapshot downloaded PyPI wheels only
+        if: steps.validator-downloads.outputs.cache-hit != 'true'
+        env:
+          JOB: ${{ steps.validator.outputs.job }}
+        run: node --experimental-strip-types hermes/distribution/cache/downloads.ts snapshot "$JOB/cache" "$JOB/downloads"
+      - uses: actions/cache/save@v4
+        if: steps.validator-downloads.outputs.cache-hit != 'true'
+        with:
+          path: /tmp/apparent-dev-hermes-validator-ci/downloads
+          key: ${{ steps.validator.outputs.key }}
       - name: Validate installed package in an isolated profile
         env:
           PACKAGE: ${{ steps.package.outputs.directory }}
         run: |
           job=$(mktemp -d /tmp/apparent-dev-hermes-profile-XXXXXX)
+          chmod 700 "$job"
           export HERMES_HOME="$job/profile"
           mkdir "$job/extracted"
           (cd "$PACKAGE" && shasum -a 256 -c ./*.sha256)

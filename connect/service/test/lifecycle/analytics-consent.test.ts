@@ -7,7 +7,7 @@ const noticeVersion='product-analytics-v1';
 async function setup(migrate=true){
  const sent=[];
  const f=await fixture({POSTHOG_ENABLED:'true',POSTHOG_PROJECT_TOKEN:'phc_synthetic',POSTHOG_HOST:'https://eu.i.posthog.com',POSTHOG_ENVIRONMENT:'synthetic'},{outboundService:async request=>{assert.equal(new URL(request.url).hostname,'eu.i.posthog.com');sent.push(await request.json());return Response.json({status:'Ok'});}});
- if(migrate){await f.db.exec((await readFile('migrations/0006.sql','utf8')).replaceAll('\n',' '));await f.db.exec('UPDATE analytics_control SET enabled=1');}
+ if(migrate){await f.db.exec((await readFile('.generated/migrations/0006.sql','utf8')).replaceAll('\n',' '));await f.db.exec('UPDATE analytics_control SET enabled=1');}
  return {...f,sent};
 }
 const read=(f,a)=>f.call('/v1/analytics/consent',a);

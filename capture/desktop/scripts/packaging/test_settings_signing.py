@@ -42,6 +42,9 @@ class SigningTests(unittest.TestCase):
             (connect / "dist/shares.js").write_text(module)
             (connect / "dist/handoff.js").write_text("synthetic handoff")
             (connect / "dist/foreground.js").write_text("synthetic foreground")
+            (connect / "dist/transfer.js").write_text("synthetic transfer")
+            (connect / "dist/transfer").mkdir()
+            (connect / "dist/transfer/contract.js").write_text("synthetic transfer-contract")
             script = root / "capture/desktop/scripts/packaging/stage-settings.py"
             with patch.object(stage, "__file__", str(script)), \
                  patch.object(stage.sys, "argv", [str(script), str(destination)]), \
@@ -52,6 +55,8 @@ class SigningTests(unittest.TestCase):
             self.assertEqual((destination / "app/connect-client/dist/shares.js").read_text(), module)
             self.assertEqual((destination / "app/connect-client/dist/handoff.js").read_text(), "synthetic handoff")
             self.assertEqual((destination / "app/connect-client/dist/foreground.js").read_text(), "synthetic foreground")
+            self.assertEqual((destination / "app/connect-client/dist/transfer.js").read_text(), "synthetic transfer")
+            self.assertEqual((destination / "app/connect-client/dist/transfer/contract.js").read_text(), "synthetic transfer-contract")
             self.assertEqual(json.loads((destination / "app/connect-client/package.json").read_text()), {"type": "module"})
             self.assertEqual((destination / "app/dist/src/controls/index.html").read_text(), "dist/src/controls/index.html")
             for relative in ("electron/main.cjs", "electron/preload.cjs", "dist/assets/controls.js",

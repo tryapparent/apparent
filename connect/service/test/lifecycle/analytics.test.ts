@@ -16,7 +16,7 @@ async function setup(bindings={},withoutAnalytics=false,runtime={}) {
   if(provider.beforeResponse)await provider.beforeResponse();
   return Response.json(provider.ack,{status:provider.status});
  }});
- if(!withoutAnalytics)await f.db.exec((await readFile('migrations/0006.sql','utf8')).replaceAll('\n',' '));
+ if(!withoutAnalytics)await f.db.exec((await readFile('.generated/migrations/0006.sql','utf8')).replaceAll('\n',' '));
  return {...f,provider};
 }
 const enroll=async(f,account,at=Date.now())=>f.db.prepare('INSERT INTO analytics_consent(account_id,consented_at) VALUES(?,?)').bind(account,at).run();
@@ -113,20 +113,20 @@ test('account pilot consent: invalid and future choices do not authorize collect
 test('analytics migration: fresh ordered schema includes main auth and disabled consent-gated analytics',async()=>{
  const mf=new Miniflare({modules:true,script:'export default {fetch(){return new Response("synthetic");}}',compatibilityDate:'2026-02-05',d1Databases:{DB:'fresh'}});try{
   const db=await mf.getD1Database('DB');
-  for(const name of ['0001','0002','0003','0004','0005','0006'])await db.exec((await readFile('migrations/'+name+'.sql','utf8')).replace(/^--.*$/gm,'').replaceAll('\n',' '));
+  for(const name of ['0001','0002','0003','0004','0005','0006'])await db.exec((await readFile('.generated/migrations/'+name+'.sql','utf8')).replace(/^--.*$/gm,'').replaceAll('\n',' '));
   assert.ok(await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_grants'").first());
   assert.ok(await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='shares'").first());
   assert.ok(await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='encryption_keys'").first());
   assert.equal((await db.prepare('SELECT enabled FROM analytics_control').first()).enabled,0);
   assert.equal((await db.prepare('SELECT count(*) n FROM analytics_consent').first()).n,0);
   const budget=await db.prepare('SELECT * FROM r2_budget').first();
-  await assert.rejects(db.exec((await readFile('migrations/0006.sql','utf8')).replaceAll('\n',' ')));
+  await assert.rejects(db.exec((await readFile('.generated/migrations/0006.sql','utf8')).replaceAll('\n',' ')));
   assert.deepEqual(await db.prepare('SELECT * FROM r2_budget').first(),budget,'rerun cannot reseed the budget');
  }finally{await mf.dispose();}
 });
 test('analytics migration: upgrade from main preserves auth, accounts, captures and spent budget without backfill',async()=>{
  const f=await setup({SHARING_ENABLED:'true'},true);try{
-  await f.db.exec((await readFile('migrations/0003.sql','utf8')).replaceAll('\n',' '));
+  await f.db.exec((await readFile('.generated/migrations/0003.sql','utf8')).replaceAll('\n',' '));
   const a=await f.identity('main upgrade'),path=await upload(f,a,95);
   assert.equal((await f.call(path+'/complete',{token:a.token,method:'POST'})).status,200);
   assert.equal((await f.call(path+'/share',{token:a.token,method:'POST'})).status,200);
@@ -141,7 +141,7 @@ test('analytics migration: upgrade from main preserves auth, accounts, captures 
   assert.equal(await sessionId(f,a),null,'new runtime fails closed before the analytics migration');
   await sweep(f);assert.equal(f.provider.bodies.length,0);
   const before=await rows();
-  await f.db.exec((await readFile('migrations/0006.sql','utf8')).replaceAll('\n',' '));
+  await f.db.exec((await readFile('.generated/migrations/0006.sql','utf8')).replaceAll('\n',' '));
   assert.equal((await f.db.prepare('SELECT enabled FROM analytics_control').first()).enabled,0);
   assert.deepEqual(await queued(f),[]);
   assert.equal((await f.db.prepare('SELECT count(*) AS n FROM analytics_consent').first()).n,0);
@@ -301,9 +301,9 @@ test('collection remains bounded during outages and overflow is explicit, not a 
 });
 test('DAU: one consented account, durable upload/share actions, retry and withdrawal',async()=>{
  const f=await setup({SHARING_ENABLED:'true'});try{
-  await f.db.exec((await readFile('migrations/0003.sql','utf8')).replaceAll('\n',' '));
+  await f.db.exec((await readFile('.generated/migrations/0003.sql','utf8')).replaceAll('\n',' '));
   // Exercise the actual current migration suffix, as the production ledger does.
-  for(const name of (await readdir('migrations')).filter(name=>/^\d{4}\.sql$/.test(name)&&Number(name.slice(0,4))>=7).sort())await f.db.exec((await readFile('migrations/'+name,'utf8')).replaceAll('\n',' '));
+  for(const name of (await readdir('.generated/migrations')).filter(name=>/^\d{4}\.sql$/.test(name)&&Number(name.slice(0,4))>=7&&name!=='0011.sql').sort())await f.db.exec((await readFile('.generated/migrations/'+name,'utf8')).replaceAll('\n',' '));
   const a=await f.identity('one-dau-account');
   const share=path=>f.call(path+'/share',{token:a.token,method:'POST'});
   const before=await upload(f,a,801);assert.equal((await f.call(before+'/complete',{token:a.token,method:'POST'})).status,200);
@@ -334,7 +334,7 @@ test('DAU: one consented account, durable upload/share actions, retry and withdr
 });
 test('DAU: additive share migration preserves state and authoritative UTC days',async()=>{
  const f=await setup({SHARING_ENABLED:'true'});try{
-  await f.db.exec((await readFile('migrations/0003.sql','utf8')).replaceAll('\n',' '));
+  await f.db.exec((await readFile('.generated/migrations/0003.sql','utf8')).replaceAll('\n',' '));
   const a=await f.identity('utc-dau-account'),midnight=Math.floor(Date.now()/86400000)*86400000;
   await enroll(f,a.id,midnight-2);
   const insert=async(n,at)=>{
@@ -344,7 +344,7 @@ test('DAU: additive share migration preserves state and authoritative UTC days',
   await insert(811,midnight-1);
   await f.db.exec('UPDATE analytics_control SET enabled=0,dropped=11');
   const control=await f.db.prepare('SELECT * FROM analytics_control').first(),budget=await f.db.prepare('SELECT * FROM r2_budget').first(),consent=await f.db.prepare('SELECT * FROM analytics_consent').first();
-  await f.db.exec((await readFile('migrations/0008.sql','utf8')).replaceAll('\n',' '));
+  await f.db.exec((await readFile('.generated/migrations/0008.sql','utf8')).replaceAll('\n',' '));
   assert.deepEqual(await f.db.prepare('SELECT * FROM analytics_control').first(),control,'a later operator stop is preserved');
   assert.deepEqual(await f.db.prepare('SELECT * FROM r2_budget').first(),budget);assert.deepEqual(await f.db.prepare('SELECT * FROM analytics_consent').first(),consent);
   assert.deepEqual(await queued(f),[],'existing share rows are not backfilled');

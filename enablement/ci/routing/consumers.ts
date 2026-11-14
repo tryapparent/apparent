@@ -12,7 +12,7 @@ export function documentationOnlyPath(path: string): boolean {
   // skills/prompts/fixtures above still retain their actual consumers.
   if (/(^|\/)AGENTS\.md$/.test(path)) return true;
   if (/(^|\/)(SKILL|CLAUDE|GEMINI)\.md$/i.test(path)) return false;
-  return ['CONTEXT.md', 'VERIFICATION.md', 'enablement/refactor.md'].includes(path) ||
+  return ['CONTEXT.md', 'VERIFICATION.md', 'enablement/refactor.md', 'enablement/local-tests/README.md'].includes(path) ||
     ['capture/engine', 'capture/desktop', 'capture/agent', 'connect', 'connect/web', 'connect/client',
       'connect/service', 'public/site', 'shared', 'enablement', 'record/storage', 'record/completion', 'record/media', 'engine', 'engine/sdk'].some(owner =>
       path.startsWith(owner + '/docs/') || ['README', 'CHANGELOG', 'CONTRIBUTING', 'LICENSE'].some(name => path === `${owner}/${name}.md`));
@@ -131,7 +131,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (path === 'public/site/scripts/browser-proof/test-hosted-browser.mjs') return ['public', 'web'];
   if (path.startsWith('public/')) return webAssets.has(path) ? ['public', 'web'] : ['public'];
   if (!native && path.startsWith('connect/web/')) return ['web'];
-  if (path === 'connect/client/typescript/src/mcp-wire.ts') return ['client', 'capture', 'service'];
+  if (['connect/client/typescript/src/mcp-wire.ts','connect/client/typescript/src/transfer/contract.ts','connect/client/typescript/contracts.ts'].includes(path)) return ['client', 'capture', 'service'];
   if (path.startsWith('connect/client/')) return ['client', 'capture'];
   if (!native && path.startsWith('connect/service/')) return ['service', 'client', 'web', 'capture'];
   if (path.startsWith('capture/agent/setup/')) return ['capture', 'engine', 'hermes'];
@@ -197,13 +197,13 @@ const native = ['Cargo.toml', 'Cargo.lock', 'build.rs', 'main.rs', '.cargo/**',
 const nativeOnlyTriggers = [...nativeWorkflowPaths.map(path => '!' + path),
   '!enablement/prerequisites/**', '!enablement/native-build/**', '!enablement/verification.py', '!enablement/build_version.rs'];
 const directoryPaths = {
-  capture: [...common, ...independentEngine, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, 'capture/**', 'record/**', 'connect/**', '!connect/web/**',
+  capture: [...common, ...independentEngine, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, 'capture/**', 'record/**', 'connect/**',
     'enablement/**', '.githooks/**', 'AGENTS.md', '.github/workflows/checks.yml',
     '.github/workflows/verification.yml',
     '.github/workflows/release-linux.yml', '.github/workflows/release-mac-preview.yml',
     '.github/workflows/linux-updater-harness.yml',
     // The app embeds this wordmark; the remaining Public tree is independent.
-    'public/site/public/assets/brand/apparent-wordmark.svg'],
+    'public/site/**'],
   connect: [...common, ...independentEngine, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, 'connect/**', 'public/site/**',
     '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'],
   public: [...common, ...independentEngine, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',
@@ -229,10 +229,12 @@ export function affectsStream(stream: Stream, path: string): boolean {
 }
 
 // One decision feeds local commands, hosted suite gates and explainable output.
-export function routeDecision(paths: string[] | null, workflowControls: string[] = [], foregroundNative = false) {
+export function routeDecision(paths: string[] | null, workflowControls: string[] = [], foregroundNative = false, qualifiedFixtures: string[] = []) {
   const remaining = paths?.filter(path => !workflowControls.includes(path)) ?? null;
   const controlOnly = !!paths?.length && !remaining?.length && workflowControls.length > 0;
-  const selected = controlOnly ? [] : selectedOwners(remaining);
+  const unqualified = remaining?.filter(path => !qualifiedFixtures.includes(path)) ?? null;
+  const selected = controlOnly || (remaining?.length && !unqualified?.length) ? [] : selectedOwners(unqualified);
+  if (qualifiedFixtures.length && !selected.includes('tooling')) selected.push('tooling');
   if (workflowControls.length && !selected.includes('tooling')) selected.push('tooling');
   if (foregroundNative) for (const owner of ['capture', 'client'] as const) if (!selected.includes(owner)) selected.push(owner);
   const plan = planFromOwners(selected);
@@ -258,6 +260,7 @@ export function routeDecision(paths: string[] | null, workflowControls: string[]
     public: publicSelected, updater, streams,
     suites: plan,
     reasons: unknown ? ['fallback:unknown-or-empty-history'] : paths!.map(path =>
+      qualifiedFixtures.includes(path) ? 'tooling:qualified-fixture:' + path :
       workflowControls.includes(path) ? 'control:verified-concurrency:' + path :
       documentationOnlyPath(path) ? 'docs:reviewed-prose:' + path :
       'consumers:' + consumers(path).join(',') + ':' + path)};

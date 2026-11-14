@@ -4,7 +4,7 @@ import {createInterface} from 'node:readline';
 import {pathToFileURL} from 'node:url';
 
 export type Asset = {path:string; size:number; sha256:string};
-export type Upload = {id:string; server:string; format:'plaintext-v1'|'apparent-encrypted-v1'; files:Asset[]; share:boolean};
+export type Upload = {id:string; server:string; format:'plaintext-v1'|'apparent-encrypted-v1'|'apparent-encrypted-v2'; files:Asset[]; share:boolean};
 export type Operation = {operation:'reserve'|'complete'|'verify'|'share'} | {operation:'put'; index:number};
 export type Progress = {state:'uploading'|'verifying'|'ready'; uploadedBytes:number; totalBytes:number};
 export type Port = {request(operation:Operation):Promise<unknown>; progress(value:Progress):Promise<void>};
@@ -12,11 +12,11 @@ const fail = ():never => {throw new Error('upload_failed');};
 const object = (v:unknown):Record<string,unknown> => v !== null && typeof v==='object' && !Array.isArray(v) ? v as Record<string,unknown> : fail();
 
 function admission(input:Upload):Upload {
-  if (!/^[a-f0-9]{32}$/.test(input.id) || !['plaintext-v1','apparent-encrypted-v1'].includes(input.format)
+  if (!/^[a-f0-9]{32}$/.test(input.id) || !['plaintext-v1','apparent-encrypted-v1','apparent-encrypted-v2'].includes(input.format)
       || typeof input.share!=='boolean' || input.share && input.format!=='plaintext-v1') fail();
   const url = new URL(input.server);
   if (url.origin!==input.server || url.username || url.password || !(url.protocol==='https:' || url.protocol==='http:' && ['localhost','127.0.0.1'].includes(url.hostname))) fail();
-  if (!Array.isArray(input.files) || !input.files.length || input.files.length>512) fail();
+  if (!Array.isArray(input.files) || !input.files.length || input.files.length>(input.format==='apparent-encrypted-v2'?514:512)) fail();
   let total=0; const names=new Set<string>();
   const files=input.files.map(file=>{
     if (typeof file.path!=='string' || file.path.length>128 || !/^[a-zA-Z0-9./_-]+$/.test(file.path)

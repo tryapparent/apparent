@@ -72,6 +72,9 @@ def main():
     shutil.copy2(connect / "dist/shares.js", connect_dist / "shares.js")
     shutil.copy2(connect / "dist/handoff.js", connect_dist / "handoff.js")
     shutil.copy2(connect / "dist/foreground.js", connect_dist / "foreground.js")
+    shutil.copy2(connect / "dist/transfer.js", connect_dist / "transfer.js")
+    (connect_dist / "transfer").mkdir()
+    shutil.copy2(connect / "dist/transfer/contract.js", connect_dist / "transfer/contract.js")
     (connect_dist.parent / "package.json").write_text('{"type":"module"}\n')
     shutil.copytree(frontend / "electron", app / "electron")
     if sys.platform != "darwin":

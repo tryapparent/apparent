@@ -92,6 +92,13 @@ const followWindowTheme = require('@apparent/ui/window-theme');
 nativeTheme.themeSource = 'system';
 const settings = process.argv.includes('--settings-storage');
 const about = settings && process.argv.includes('--settings-about');
+const agents = settings && process.argv.includes('--settings-agents') && !about;
+const settingsHash = about ? '#about' : agents ? '#agents' : '';
+const { AgentsPreferences, skillCommand, preferenceFacts } = require('./settings/agents.cjs');
+const agentsPreferences = new AgentsPreferences(message => {
+  if (!agents || !process.argv.includes('--settings-parent')) throw new Error('Agents parent unavailable');
+  process.stdout.write(JSON.stringify(message) + '\n');
+});
 let aboutState;
 
 // Deliberately separate from the installed application's profile and identity.
@@ -174,7 +181,7 @@ app.whenReady().then(() => {
   let lastResult = { status: 'disconnected' };
   const validate = (event, args) => {
     if (window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame ||
-        event.senderFrame.url !== (about ? page + '#about' : page) || args.length !== 0) throw new Error('Forbidden bridge request');
+        event.senderFrame.url !== page + settingsHash || args.length !== 0) throw new Error('Forbidden bridge request');
   };
   const validateFoundation = (event, args) => {
     if (settings) throw new Error('Unavailable in Storage Settings');
@@ -219,19 +226,29 @@ app.whenReady().then(() => {
       throw new Error('Forbidden About action');
     process.stdout.write(`${JSON.stringify(action)}\n`);
   });
+  ipcMain.handle('apparent:agents-preference', (event, ...args) => {
+    validate(event, []);
+    if (!agents || args.length > 1 || args.length === 1 && typeof args[0] !== 'boolean') throw new Error('Forbidden Agents preference');
+    return agentsPreferences.request(...args);
+  });
+  ipcMain.handle('apparent:agents-copy-skill', (event, ...args) => {
+    validate(event, args);
+    if (!agents) throw new Error('Unavailable outside Agents');
+    clipboard.writeText(skillCommand);
+  });
   ipcMain.handle('apparent:navigate-settings', (event, ...args) => {
     validate(event, []);
-    const destinations = about ? ['general', 'recording', 'permissions', 'agents', 'storage'] : ['general', 'recording', 'permissions', 'agents', 'about'];
+    const destinations = ['general', 'recording', 'permissions', 'agents', 'storage', 'about'].filter(pane => pane !== (about ? 'about' : agents ? 'agents' : 'storage'));
     if (!settings || args.length !== 1 || !destinations.includes(args[0])) throw new Error('Forbidden Settings page');
     process.stdout.write(`${JSON.stringify({ action: 'navigate', pane: args[0] })}\n`);
   });
   ipcMain.handle('apparent:show-capture-folder', (event, ...args) => {
     validate(event, args);
-    if (!settings) throw new Error('Unavailable outside Settings');
+    if (!settings || agents) throw new Error('Unavailable outside Storage Settings');
     process.stdout.write(`${JSON.stringify({ action: 'show-captures' })}\n`);
   });
   if (settings) {
-    const closeSettings = () => { settingsClosing = true; clearTimeout(startupTimer); app.quit(); };
+    const closeSettings = () => { settingsClosing = true; agentsPreferences.close(); clearTimeout(startupTimer); app.quit(); };
     // A parent can exit before Chromium closes its child. Retire quietly when
     // its output pipe breaks instead of opening Electron's error dialog.
     process.stdout.on('error', error => { if (error.code === 'EPIPE') closeSettings(); else failSettings(); });
@@ -245,6 +262,10 @@ app.whenReady().then(() => {
           aboutState = command;
           window.webContents.send('apparent:about-state', command);
         }
+        if (agents && command.type === 'agents-result') agentsPreferences.receive(command);
+        if (agents && command.type === 'agents-state') {
+          window.webContents.send('apparent:agents-state', preferenceFacts(command.facts));
+        }
         if (command.type === 'close') closeSettings();
         if (command.type === 'show') showSettings();
       } catch { /* malformed parent message has no effect */ }
@@ -254,6 +275,7 @@ app.whenReady().then(() => {
     window.on('close', () => {
       const userDismissed = !settingsClosing && !settingsFailed;
       settingsClosing = true;
+      agentsPreferences.close();
       clearTimeout(startupTimer);
       // Failure is not user dismissal: Rust must be allowed to restore Storage.
       if (userDismissed) process.stdout.write(`${JSON.stringify({ action: 'close' })}\n`);
@@ -343,6 +365,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('apparent:read-capture-location', async (event, ...args) => {
     validate(event, args);
+    if (agents) throw new Error('Unavailable in Agents');
     const version = storageVersion;
     const result = await location.read();
     return version === storageVersion ? result : { status: 'cancelled' };
@@ -350,6 +373,7 @@ app.whenReady().then(() => {
   for (const operation of ['change', 'reset']) {
     ipcMain.handle(`apparent:${operation}-capture-location`, async (event, ...args) => {
       validate(event, args);
+      if (agents) throw new Error('Unavailable in Agents');
       if (mutation) return { status: 'error', code: 'app_busy' };
       mutation = true;
       storageVersion += 1;
@@ -389,11 +413,13 @@ app.whenReady().then(() => {
   }
   ipcMain.handle('apparent:read-retention', async (event, ...args) => {
     validate(event, args);
+    if (agents) throw new Error('Unavailable in Agents');
     const version = storageVersion;
     return retention.read(version, () => version === storageVersion);
   });
   ipcMain.handle('apparent:read-capture-usage', async (event, ...args) => {
     validate(event, args);
+    if (agents) throw new Error('Unavailable in Agents');
     const version = storageVersion;
     return retention.measure(() => version === storageVersion);
   });
@@ -401,6 +427,7 @@ app.whenReady().then(() => {
     ipcMain.handle(`apparent:${operation}-retention`, async (event, ...args) => {
       const policy = operation === 'save' ? args[0] : undefined;
       validate(event, operation === 'save' && args.length === 1 ? [] : args);
+      if (agents) throw new Error('Unavailable in Agents');
       if (operation === 'save' && !isRetentionPolicy(policy)) {
         throw new Error('Invalid retention policy');
       }
@@ -426,7 +453,7 @@ app.whenReady().then(() => {
     }).finally(() => { pending = undefined; });
     return pending;
   });
-  void window.loadURL(about ? page + '#about' : page);
+  void window.loadURL(page + settingsHash);
 });
 app.on('window-all-closed', () => app.quit());
 

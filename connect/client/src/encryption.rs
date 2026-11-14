@@ -202,7 +202,7 @@ fn strict_assets<'de, D: serde::Deserializer<'de>>(
         sha256: String,
     }
     let files = Vec::<WireAsset>::deserialize(deserializer)?;
-    if files.len() > MAX_FILES {
+    if files.len() > MAX_FILES + 2 {
         return Err(serde::de::Error::custom("too many assets"));
     }
     Ok(files
@@ -727,3 +727,5 @@ pub(super) fn unpack(
 #[cfg(test)]
 #[path = "encryption_tests.rs"]
 mod tests;
+
+pub(super) mod v2;

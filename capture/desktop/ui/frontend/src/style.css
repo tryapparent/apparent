@@ -76,3 +76,15 @@
   .settings-updates { gap:4px; }
 }
 .apparent-connect-workflow { font-family:'Connect Host Grotesk',var(--font-sans); }
+.settings-agent-preference { display:flex; align-items:flex-start; gap:16px; }
+.settings-agent-preference > div { flex:1; min-width:0; }
+.settings-agent-preference button { flex:none; min-width:54px; }
+.settings-agents button { transition:none; }
+.settings-agent-preference p { margin-top:8px; }
+.settings-agent-skill { margin-top:28px; }
+.settings-agent-skill > p { margin-top:8px; }
+.settings-agent-command { display:block; margin-top:14px; padding:12px; background:var(--color-secondary); color:var(--color-secondary-foreground); font-size:14px; line-height:1.6; overflow-wrap:anywhere; user-select:text; }
+@media (max-width:480px) {
+  .settings-agent-preference { flex-direction:column; }
+  .settings-agents button { white-space:normal; height:auto; }
+}
