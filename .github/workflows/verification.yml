@@ -5,7 +5,6 @@ on:
   workflow_run:
     workflows:
       - Continuous delivery
-      - Connect continuous delivery
       - Public — checks & deploy
       - continuous delivery hermes
       - Engine · Build and publish media capabilities

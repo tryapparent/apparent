@@ -4,8 +4,7 @@ import {readFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 
 export const workflows: Record<string, string> = {
-  '.github/workflows/checks.yml': 'Capture',
-  '.github/workflows/stream-connect.yml': 'Connect',
+  '.github/workflows/checks.yml': 'Capture/Connect',
   '.github/workflows/stream-public.yml': 'Public',
   '.github/workflows/hermes.yml': 'Hermes',
   '.github/workflows/stream-engine.yml': 'Engine',
