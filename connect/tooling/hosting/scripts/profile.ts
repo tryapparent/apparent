@@ -4,6 +4,14 @@ export const workerName = 'apparent-hosted-beta'
 export const accountId = 'a54dcebead3b8ad688f891da0ab54d1f'
 export const databaseId = 'a3083552-1d4e-45f9-abf4-02cb7be938f9'
 export const bucketName = 'apparent-hosted-beta'
+// The reviewed live API deployment predates Wrangler-owned automatic delivery.
+const adoptedVersion = 'efbfaf87-be9a-4ff1-b50c-fd998d9fb2cd'
+
+export function strictUpload(previousVersion: string, lastDeployedFrom: unknown): boolean {
+  // Wrangler otherwise refuses all API-origin deployments before comparing any
+  // settings. Only this immutable adoption baseline may cross that boundary.
+  return previousVersion !== adoptedVersion || lastDeployedFrom !== 'api'
+}
 
 export interface Binding { name: string; type: string; text?: string; id?: string; bucket_name?: string }
 export interface Settings {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { accountId, databaseId, bucketName, workerName, deploymentConfig, validateProfile, sameBindings, singleVersion, verifyActivationHistory } from '../scripts/profile.ts'
+import { accountId, databaseId, bucketName, workerName, deploymentConfig, validateProfile, sameBindings, singleVersion, verifyActivationHistory, strictUpload } from '../scripts/profile.ts'
 import type { Settings } from '../scripts/profile.ts'
 
 function profile(): Settings {
@@ -10,6 +10,16 @@ function profile(): Settings {
     ...['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'TOKEN_ENCRYPTION_KEY', 'BETTER_AUTH_SECRET'].map(name => ({ name, type: 'secret_text' })),
   ] }
 }
+test('only the exact reviewed API baseline can enter Wrangler-owned delivery without strict mode', () => {
+  const adopted = 'efbfaf87-be9a-4ff1-b50c-fd998d9fb2cd'
+  assert.equal(strictUpload(adopted, 'api'), false)
+  for (const previous of [adopted, 'new-wrangler-version', 'other-api-version']) {
+    for (const provenance of ['api', 'dash', 'wrangler', undefined]) {
+      if (previous === adopted && provenance === 'api') continue
+      assert.equal(strictUpload(previous, provenance), true)
+    }
+  }
+})
 test('deployment targets only the adopted Worker and preserves private provider credentials', () => {
   const settings = profile(), config = deploymentConfig(settings, '/synthetic/artifact')
   assert.equal(config.account_id, accountId)

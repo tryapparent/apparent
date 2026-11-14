@@ -68,4 +68,6 @@ LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy \
 node --experimental-strip-types "$root/capture/desktop/scripts/linux/appimage/nss-runtime.ts" check "$appdir/usr/lib"
 LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy --appdir "$appdir" --output appimage
 bash "$root/capture/desktop/scripts/linux/appimage/check-appimage-encoder.sh" "$out/Apparent-$arch.AppImage"
+node --experimental-strip-types "$root/record/media/test/package.ts" \
+  --binary "$out/Apparent-$arch.AppImage" --settings "$appdir/usr/share/apparent/settings"
 echo "$out/Apparent-$arch.AppImage"

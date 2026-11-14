@@ -1,21 +1,38 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
+import {spawn, type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {mkdtemp,mkdir,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {chromium,expect} from '@playwright/test';
+import {chromium,expect,type Browser} from '@playwright/test';
 import type {Batch} from '../../../electron/onboarding/practice-host.ts';
 const require=createRequire(import.meta.url);
 test('production host alone reduces admitted practice; renderer intents wait for parent admission', {timeout:45000},async t=>{
  const profile=await mkdtemp(path.join(os.tmpdir(),'practice-host-'));
+ let ownedChild:ChildProcessWithoutNullStreams|undefined;
+ let browser:Browser|undefined;
+ t.after(async()=>{
+  const owned=ownedChild;
+  try{
+   if(owned&&owned.pid&&owned.exitCode===null&&owned.signalCode===null){
+    const exited=new Promise<void>(resolve=>owned.once('exit',()=>resolve()));
+    const timer=setTimeout(()=>owned.kill('SIGKILL'),3000);
+    try{owned.stdin.end();await exited;}finally{clearTimeout(timer);}
+   }
+  }finally{
+   try{await browser?.close();}finally{
+    owned?.stdin.destroy();owned?.stdout.destroy();owned?.stderr.destroy();
+    await rm(profile,{recursive:true,force:true});
+   }
+  }
+ });
  const child=spawn(require('electron'),[fileURLToPath(new URL('../../../',import.meta.url)),'--onboarding','--no-sandbox','--remote-debugging-port=0'],{env:{...process.env,APPARENT_UI_PROFILE:profile},stdio:['pipe','pipe','pipe']});
+ ownedChild=child;
  let output='';child.stdout.on('data',b=>output+=b);
- const endpoint=await new Promise<string>((resolve,reject)=>{let log='';const timer=setTimeout(()=>reject(Error('No debugger')),10000);child.stderr.on('data',b=>{log+=b;const m=log.match(/DevTools listening on (ws:\/\/[^\s]+)/);if(m){clearTimeout(timer);resolve(m[1]);}});child.once('exit',()=>{clearTimeout(timer);reject(Error(log));});});
- const browser=await chromium.connectOverCDP(endpoint);const page=browser.contexts()[0].pages()[0];
- t.after(async()=>{child.stdin.end();await new Promise<void>(resolve=>{if(child.exitCode!==null)return resolve();child.once('exit',()=>resolve());setTimeout(()=>child.kill(),3000).unref();});await browser.close();await rm(profile,{recursive:true,force:true});});
+ const endpoint=await new Promise<string>((resolve,reject)=>{let log='';const timer=setTimeout(()=>reject(Error('No debugger')),10000);child.stderr.on('data',b=>{log+=b;const m=log.match(/DevTools listening on (ws:\/\/[^\s]+)/);if(m){clearTimeout(timer);resolve(m[1]);}});child.once('error',error=>{clearTimeout(timer);reject(error);});child.once('exit',()=>{clearTimeout(timer);reject(Error(log));});});
+ browser=await chromium.connectOverCDP(endpoint);const page=browser.contexts()[0].pages()[0];
  const send=(v:unknown)=>child.stdin.write(JSON.stringify(v)+'\n');
  send({type:'state',step:'try-it',rows:[],ready:true,platform:'linux',shortcut:'Test',practice:'start'});
  let seq=0,attempt=0;

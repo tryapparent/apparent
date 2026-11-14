@@ -126,6 +126,15 @@ for (const name of ['main', 'preload']) {
             parser.error("Missing regular Mac recording-controls adapter")
         subprocess.run(sign + [str(addon)], check=True)
         subprocess.run(["codesign", "--verify", "--strict", str(addon)], check=True)
+        # The published native provider is verified before staging, then signed
+        # as nested app code. Installed payload hashes belong to the app seal.
+        engine = app / "electron/record-media/native"
+        for name in ("apparent-engine-media", "apparent-engine-probe"):
+            binary = engine / name
+            if not binary.is_file() or binary.is_symlink():
+                parser.error("Missing regular Engine media capability")
+            subprocess.run(sign + [str(binary)], check=True)
+            subprocess.run(["codesign", "--verify", "--strict", str(binary)], check=True)
         sign_runtime(runtime, sign, entitlements)
     print(f"Staged Storage Settings: {destination}")
 

@@ -11,6 +11,7 @@ function scenario() {
   const events: string[] = [];
   return {
     events,
+    waitForRecordingControls: async () => { events.push('recording-ready'); },
     prepareRecording: async () => { events.push('prepare'); clock += 7000; ready = true; return {pid: 42}; },
     stop: async () => { events.push('stop'); savedAt = clock; return {capture_id: 'owned', status: 'saved'}; },
     interact: async (saved: {capture_id: string}, prepared: {pid: number}) => {
@@ -35,7 +36,7 @@ test('slow setup and bundle proof exceed old saved window; real orchestration ke
   await assert.rejects(old.interact(saved, prepared), /dismissed before input/);
   const current = scenario();
   assert.equal(await savedForeground(current), 1);
-  assert.deepEqual(current.events, ['prepare', 'stop', 'saved-observation', 'privacy', 'fresh-click', 'proof']);
+  assert.deepEqual(current.events, ['recording-ready', 'prepare', 'stop', 'saved-observation', 'privacy', 'fresh-click', 'proof']);
 });
 
 test('uncertain input is never replayed; private saved proof precedes failure cleanup', async () => {
@@ -68,7 +69,7 @@ test('retention failure fails success and cannot hide an input failure', async (
 });
 
 test('failed setup or Stop never admits input or invents a saved bundle', async () => {
-  for (const operation of ['prepareRecording', 'stop'] as const) {
+  for (const operation of ['waitForRecordingControls', 'prepareRecording', 'stop'] as const) {
     const current = scenario(), failure = Error(operation);
     await assert.rejects(savedForeground({...current, [operation]: async () => { throw failure; }}), e => e === failure);
     assert.ok(!current.events.includes('fresh-click'));
@@ -83,4 +84,15 @@ test('native and media failures survive secondary timing and copy failures', asy
     assert.deepEqual(reported, [secondary]);
     await assert.rejects(withRetainedEvidence(async () => 1, async () => { throw secondary; }, () => assert.fail('no first failure to preserve')), error => error === secondary);
   }
+});
+
+test('Recording controls settle before Accessibility preparation and Stop', async () => {
+  let phase = 'target-switch-reveal';
+  const current = scenario();
+  await savedForeground({
+    ...current,
+    waitForRecordingControls: async () => { await Promise.resolve(); phase = 'recording-controls'; },
+    prepareRecording: async () => { assert.equal(phase, 'recording-controls', 'Finish surface not ready'); return {pid: 42}; },
+    interact: async () => undefined,
+  });
 });

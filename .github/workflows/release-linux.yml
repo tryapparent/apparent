@@ -176,6 +176,17 @@ jobs:
           npm run build
       - name: Install build and packaging dependencies
         run: ./capture/desktop/scripts/linux/appimage/dependencies.sh
+      - name: Prepare native test inputs before release Cargo
+        timeout-minutes: 5
+        run: |
+          temporary=$(mktemp -d /tmp/apparent-dev-release-XXXXXX)
+          echo "APPARENT_RELEASE_TEST_TMP=$temporary" >> "$GITHUB_ENV"
+          echo "TMPDIR=$temporary" >> "$GITHUB_ENV"
+          export TMPDIR="$temporary"
+          python3 enablement/verification.py --base unknown --preflight
+          npm --prefix capture/desktop/ui/frontend ci --ignore-scripts --no-audit --no-fund
+          node capture/desktop/ui/frontend/node_modules/electron/install.js
+          node --experimental-strip-types enablement/prerequisites/native.ts
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
@@ -258,6 +269,12 @@ jobs:
         with:
           name: ${{ steps.package.outputs.name }}
           path: dist/*
+      - name: Clean private release test inputs
+        if: always()
+        run: |
+          if [ -n "${APPARENT_RELEASE_TEST_TMP:-}" ]; then
+            rm -rf -- "$APPARENT_RELEASE_TEST_TMP"
+          fi
 
   attach-release:
     if: needs.linux.result == 'success' && inputs.tag != '' && inputs.verify_only != true

@@ -9,84 +9,8 @@ use anyhow::{Context, Result, bail, ensure};
 use super::{Done, Plan};
 use crate::shared::model::RgbaFrame;
 
-/// Export uses FFmpeg, not the GStreamer keyframe decoder. A capture with
-/// candidate-frame fallback can still have an intact, exportable movie.
-pub(super) fn probe(movie: &Path) -> Result<crate::capture::desktop::helper::Probe> {
-    Ok(probe_with_audio(movie)?.0)
-}
-
-fn probe_with_audio(movie: &Path) -> Result<(crate::capture::desktop::helper::Probe, Option<usize>)> {
-    let output = Command::new("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration:stream=codec_type,width,height,avg_frame_rate,duration,start_time",
-            "-of",
-            "json",
-        ])
-        .arg(movie)
-        .output()
-        .context("Linux video export needs ffprobe on PATH")?;
-    ensure!(
-        output.status.success(),
-        "ffprobe could not read the movie: {}",
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).context("Invalid ffprobe result")?;
-    let streams = value["streams"]
-        .as_array()
-        .context("ffprobe returned no streams")?;
-    let video = streams
-        .iter()
-        .find(|s| s["codec_type"] == "video")
-        .context("No video track")?;
-    // Container duration can include a longer audio tail. The video timeline
-    // determines how many RGBA frames the decoder can actually provide.
-    let duration = video["duration"]
-        .as_str()
-        .or_else(|| value["format"]["duration"].as_str())
-        .and_then(|s| s.parse::<f64>().ok())
-        .context("Unknown video duration")?;
-    ensure!(
-        duration.is_finite() && duration > 0.0 && duration < u64::MAX as f64 / 1000.0,
-        "Invalid video duration"
-    );
-    let rate = video["avg_frame_rate"].as_str().unwrap_or("0/1");
-    let (num, den) = rate.split_once('/').unwrap_or((rate, "1"));
-    let fps = num.parse::<f64>().unwrap_or(0.0) / den.parse::<f64>().unwrap_or(1.0);
-    let usable_audio: Vec<usize> = streams
-        .iter()
-        .enumerate()
-        .filter_map(|(index, s)| {
-            let start = s["start_time"]
-                .as_str()
-                .and_then(|v| v.parse::<f64>().ok())
-                .unwrap_or(0.0);
-            let length = s["duration"]
-                .as_str()
-                .and_then(|v| v.parse::<f64>().ok())
-                .unwrap_or(0.0);
-            (s["codec_type"] == "audio"
-                && start.is_finite()
-                && length.is_finite()
-                && length > 0.0
-                && start < duration
-                && start + length > 0.0)
-                .then_some(index)
-        })
-        .collect();
-    Ok((
-        crate::capture::desktop::helper::Probe {
-            duration_ms: (duration * 1000.0).round() as u64,
-            width: video["width"].as_u64().unwrap_or(0) as u32,
-            height: video["height"].as_u64().unwrap_or(0) as u32,
-            audio_tracks: usable_audio.len() as u32,
-            fps: if fps.is_finite() { fps } else { 0.0 },
-        },
-        usable_audio.first().copied(),
-    ))
+pub(super) fn probe(movie: &Path) -> Result<crate::composition::media_probe::ExportProbe> {
+    crate::composition::media_probe::probe(movie)
 }
 
 fn stop(child: &mut Child) {
@@ -110,7 +34,8 @@ fn drain_stderr(child: &mut Child) -> std::thread::JoinHandle<String> {
 }
 
 pub(super) fn run(plan: &Plan<'_>, progress: &mut dyn FnMut(f32)) -> Result<Done> {
-    let (probe, embedded_audio) = probe_with_audio(plan.video)?;
+    let probe = probe(plan.video)?;
+    let embedded_audio = probe.embedded_audio;
     let source_bytes = (probe.width as usize)
         .checked_mul(probe.height as usize)
         .and_then(|n| n.checked_mul(4))

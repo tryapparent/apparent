@@ -5,7 +5,7 @@
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
-    "build": "node --experimental-strip-types scripts/build-notes.ts && node --experimental-strip-types scripts/build-storage-policy.ts && node --experimental-strip-types scripts/build-pill.ts && python3 ../../../../shared/ui/scripts/check-theme.py && tsc --noEmit && npm run typecheck:settings-native && npm run typecheck:installer && vite build && node --experimental-strip-types scripts/build-connect-transport.ts",
+    "build": "node --experimental-strip-types scripts/build-record-media.ts && node --experimental-strip-types scripts/build-notes.ts && node --experimental-strip-types scripts/build-storage-policy.ts && node --experimental-strip-types scripts/build-pill.ts && python3 ../../../../shared/ui/scripts/check-theme.py && tsc --noEmit && npm run typecheck:settings-native && npm run typecheck:installer && vite build && node --experimental-strip-types scripts/build-connect-transport.ts",
     "test:notes-policy": "node --experimental-strip-types scripts/build-notes.ts && node --experimental-strip-types --test tests/notes/*.test.cjs tests/notes/*.test.ts",
     "start": "npm run build && electron .",
     "preview": "npm run build && vite preview --host 127.0.0.1",

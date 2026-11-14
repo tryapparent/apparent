@@ -281,7 +281,11 @@ are retained from the running beta rather than the obsolete root-only template.
 Verification builds and seals the gateway, service and browser assets once.
 Publication downloads those exact bytes, stages a strict Wrangler version upload,
 then checks the full binding/secret-name profile and runtime configuration before
-activating it at 100%. Secrets stay in Cloudflare. No subscription, resource,
+activating it at 100%. The first adoption from API-origin version
+`efbfaf87-be9a-4ff1-b50c-fd998d9fb2cd` alone omits Wrangler's strict flag, which
+otherwise refuses every API-origin deployment before comparing configuration.
+All profile, artifact, staging and activation checks still apply; any other
+version or provenance requires strict mode. Secrets stay in Cloudflare. No subscription, resource,
 route, cron, database migration, budget seed or credential rotation is changed.
 Readback checks the exact version tag, every public asset hash and anonymous
 credentialed CORS on both API origins. It does not establish live Google sign-in

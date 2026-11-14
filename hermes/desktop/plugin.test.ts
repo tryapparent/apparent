@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
-import { shared } from './testing/sdk.ts';
+import { host, shared } from './testing/sdk.ts';
 import { sign } from './controller.ts';
 const hooks = registerHooks({ resolve(specifier, context, next) {
   if (['@hermes/plugin-sdk', 'react/jsx-runtime'].includes(specifier)) return { url: new URL('./testing/sdk.ts', import.meta.url).href, shortCircuit: true };
@@ -10,17 +10,17 @@ const hooks = registerHooks({ resolve(specifier, context, next) {
 const plugin = (await import(process.env.HERMES_PLUGIN_ENTRY || './plugin.ts')).default;
 hooks.deregister();
 async function until(predicate: () => unknown) {
-  const deadline = Date.now() + 1500;
-  while (!predicate()) { if (Date.now() > deadline) throw new Error('Async test condition did not settle'); await new Promise(resolve => setTimeout(resolve, 2)); }
+  const deadline = performance.now() + 1500;
+  while (!predicate()) { if (performance.now() > deadline) throw new Error('Async test condition did not settle'); await new Promise(resolve => setTimeout(resolve, 2)); }
 }
 function fixture(external = true, stored: any = null) {
-  let contribution: any, discard: any, interval: (() => void) | undefined, saved: any, launch: string | undefined;
+  let contribution: any, discard: any, interval: (() => void) | undefined, saved: any = structuredClone(stored), launch: string | undefined;
   let dispose = () => {};
   const ctx = { onDispose: (fn: () => void) => { dispose = fn; }, setInterval: (fn: () => void) => { interval = fn; return () => { interval = undefined; }; },
     storage: { get: () => stored, set: (_key: string, value: unknown) => { saved = structuredClone(value); } },
     os: { openExternal: async (url: string) => { launch = url; return external; } }, register: (c: any) => { if (c.id === 'record') contribution = c; else discard = c; } };
   plugin.register(ctx);
-  return { click: () => contribution.render().props.onClick(), discard: () => discard.data.run(), tick: () => interval?.(), saved: () => saved, launch: () => launch, watching: () => Boolean(interval), dispose: () => dispose() };
+  return { click: () => contribution.render().props.onClick(), label: () => contribution.render().props['aria-label'], discard: () => discard.data.run(), tick: () => interval?.(), saved: () => saved, launch: () => launch, watching: () => Boolean(interval), dispose: () => dispose() };
 }
 async function packet(secret: string, phase: string) {
   const payload = JSON.stringify({ phase, ...(phase === 'saved' ? { source: '/private/owned.apparent' } : {}) });
@@ -68,6 +68,85 @@ test('lost submit replies retry only original input_id and stop; no title lookup
     assert.equal((shared.submissions[0] as any).method, 'prompt.submit');
     f.tick(); assert.equal(shared.submissions.length, 2);
   } finally { shared.failSubmit = false; globalThis.fetch = originalFetch; }
+});
+test('a transient bridge failure after 30 seconds retains the original handoff for manual retry', async t => {
+  reset(); const originalFetch = globalThis.fetch; const now = Date.now();
+  let elapsed = 0; let failing = false; let reads = 0; let phase = 'recording';
+  const notices: any[] = [];
+  t.mock.method(host, 'notify', notice => { notices.push(notice); });
+  t.mock.method(Date, 'now', () => now + elapsed);
+  const f = fixture();
+  globalThis.fetch = async url => {
+    if (String(url).includes('/ack/')) return Response.json({ ok: true });
+    reads++;
+    if (failing) throw new TypeError('Temporary bridge failure');
+    return packet(shared.key, phase);
+  };
+  try {
+    f.click(); await until(() => f.launch());
+    // Complete an initial successful poll before introducing a transient failure.
+    await until(() => { f.tick(); return reads > 0; });
+    const original = f.saved(); const launch = f.launch();
+    elapsed = 35000; failing = true;
+    await until(() => { f.tick(); return !f.watching(); });
+    assert.deepEqual(f.saved(), original);
+    assert.equal(f.label(), 'Check Apparent recording handoff');
+    assert.match(notices.at(-1).message, /retry this handoff.*discard pending handoff/);
+    const stoppedReads = reads;
+    f.tick(); await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(reads, stoppedReads, 'automatic retries stop until the person retries');
+    assert.equal(shared.submissions.length, 0);
+    // A second failed explicit check must still preserve the same request.
+    f.click(); await until(() => !f.watching());
+    assert.deepEqual(f.saved(), original);
+    failing = false; phase = 'saved';
+    shared.session = 'runtime-B'; shared.owner = { connectionId: 'other-gateway', profile: 'work' };
+    f.click(); await until(() => f.saved() === null);
+    assert.equal(f.launch(), launch, 'retry never launches another recording');
+    assert.equal(shared.submissions.length, 1);
+    const call = shared.submissions[0] as any;
+    assert.equal(call.params.input_id, original.token);
+    assert.equal(call.params.session_id, original.destination.session);
+    assert.equal(call.route.connectionId, original.destination.connectionId);
+  } finally { f.dispose(); globalThis.fetch = originalFetch; reset(); }
+});
+test('a bridge outage during reload preserves recovery until explicitly discarded', async () => {
+  reset(); const originalFetch = globalThis.fetch;
+  const stored = { version: 2, token: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', port: 45000, created: Date.now() - 35000,
+    destination: { session: 'runtime-A', connectionId: 'local-A', profile: 'work', targetProfile: 'work', mode: 'local', local: true }, runtime: structuredClone(shared.runtime) };
+  globalThis.fetch = async () => { throw new TypeError('Temporary bridge failure'); };
+  const f = fixture(true, stored);
+  try {
+    await until(() => shared.keyReads.length > 0);
+    await until(() => !f.watching());
+    assert.deepEqual(f.saved(), stored);
+    assert.equal(f.label(), 'Check Apparent recording handoff');
+    assert.equal(f.launch(), undefined);
+    assert.equal(shared.submissions.length, 0);
+    await f.discard();
+    assert.equal(f.saved(), null);
+    assert.equal(f.label(), 'Record with Apparent');
+    assert.equal(f.watching(), false);
+  } finally { f.dispose(); globalThis.fetch = originalFetch; reset(); }
+});
+for (const terminal of ['cancelled', 'error', 'expired']) test(`${terminal} still clears an unsent handoff`, async () => {
+  reset(); const originalFetch = globalThis.fetch;
+  const stored = { version: 2, token: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', port: 45000,
+    created: Date.now() - (terminal === 'expired' ? 3600001 : 35000),
+    destination: { session: 'runtime-A', connectionId: 'local-A', profile: 'work', targetProfile: 'work', mode: 'local', local: true }, runtime: structuredClone(shared.runtime) };
+  let reads = 0;
+  globalThis.fetch = async url => {
+    if (String(url).includes('/ack/')) return Response.json({ ok: true });
+    reads++; return packet(shared.key, terminal);
+  };
+  const f = fixture(true, stored);
+  try {
+    await until(() => f.saved() === null);
+    assert.equal(f.label(), 'Record with Apparent');
+    assert.equal(f.watching(), false);
+    assert.equal(shared.submissions.length, 0);
+    if (terminal === 'expired') assert.equal(reads, 0, 'expired requests never contact the bridge');
+  } finally { f.dispose(); globalThis.fetch = originalFetch; reset(); }
 });
 test('a listener knowing the public launch ID cannot forge completion', async () => {
   reset(); const originalFetch = globalThis.fetch; const f = fixture(); let requested: string | undefined;

@@ -3,7 +3,19 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { select, selection, owners, changedPaths, captureToolTests, commands, contractTests, installationContracts, execute, root } from './run.ts';
+import { select, selection, owners, changedPaths, captureToolTests, commands, contractTests, installationContracts, execute, root, recordMediaCommands } from './run.ts';
+
+test('Record metadata adoption keeps its real app consumers and one headless inventory', () => {
+  const selected = select(['record/media/engine.json']);
+  assert.ok(selected.includes('capture') && selected.includes('desktop'));
+  assert.ok(!selected.includes('engine-media'), 'a pinned consumer never builds producer source');
+  const inventory = recordMediaCommands();
+  const local = commands(selected, 'base', 'head');
+  assert.deepEqual(local.filter(command => command.cwd === 'record/media'), inventory);
+  assert.ok(local.some(command => command.argv.includes('--run')), 'native export integration remains required');
+  const independent = commands(select(['engine/sdk/src/index.ts']), 'base', 'head');
+  assert.ok(!independent.some(command => command.cwd === 'record/media'), 'producer publication does not activate consumers');
+});
 
 test('owner selection retains consumers and unrelated packages stay out', () => {
   assert.deepEqual(select(['enablement/local-tests/run.ts']), [...owners]);
@@ -135,6 +147,7 @@ test('native temporary environment and Desktop gates fail before expensive Rust 
 });
 
 test('real command execution stops at temporary-root or Electron failure without reaching Rust', () => fixture((dir, env) => {
+  mkdirSync(join(dir, 'record/media'), {recursive: true});
   assert.equal(spawnSync('git', ['init', '-q'], {cwd: dir, env}).status, 0);
   const bin = join(dir, 'bin'); mkdirSync(bin);
   const trace = join(dir, 'trace');

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { accountId, workerName, deploymentConfig, validateProfile, sameBindings, singleVersion, verifyActivationHistory } from './profile.ts'
+import { accountId, workerName, deploymentConfig, validateProfile, sameBindings, singleVersion, verifyActivationHistory, strictUpload } from './profile.ts'
 import type { Settings } from './profile.ts'
 import { digest, verifySeal } from './seal.ts'
 
@@ -48,23 +48,26 @@ const before = await snapshot(), previous = singleVersion(before.deployment)
 validateProfile(before.settings)
 assert.equal(before.versions[0].id, previous, 'A separate version is already staged')
 const baselineVersion = await api(worker + '/versions/' + previous)
+const service = await api('/accounts/' + accountId + '/workers/services/' + workerName)
+const strict = strictUpload(previous, service.default_environment.script.last_deployed_from)
 const outputRoot = process.env.RUNNER_TEMP || process.env.TMPDIR
 assert.ok(outputRoot, 'A private job temporary directory is required')
 const configPath = resolve(outputRoot, 'connect-production.json')
 const receiptPath = resolve(repo, 'connect-service-receipt.json')
 const record = (phase: string, extra: Record<string, unknown> = {}) => writeFile(receiptPath,
   JSON.stringify({ sha, worker: workerName, previousVersion: previous, phase, ...extra }) + '\n')
-await record('preflight')
+await record('preflight', { strictUpload: strict })
 await writeFile(configPath, JSON.stringify(deploymentConfig(before.settings, artifact)), { mode: 0o600 })
 // Upload a version first. This command cannot apply migrations, initialize the
 // ledger, activate traffic, change routes/cron or upgrade a subscription.
 const upload = spawnSync(resolve(root, 'node_modules/.bin/wrangler'), [
-  'versions', 'upload', '--config', configPath, '--no-bundle', '--keep-vars', '--strict',
+  'versions', 'upload', '--config', configPath, '--no-bundle', '--keep-vars', ...(strict ? ['--strict'] : []),
   '--tag', sha, '--message', 'Automatic Connect delivery after passing tests: ' + sha,
 ], { cwd: root, encoding: 'utf8', timeout: 240000, maxBuffer: 4 * 1024 * 1024,
   env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: 'true' } })
 // Wrangler can print runtime variables; keep its output out of CI/artifacts.
-assert.equal(upload.status, 0, 'Worker version upload failed; traffic was not changed')
+assert.equal(upload.status, 0, 'Worker version upload failed; traffic was not changed' +
+  '; strict=' + strict + '; signal=' + upload.signal + '; processError=' + ((upload.error as NodeJS.ErrnoException | undefined)?.code ?? 'none'))
 const staged = await snapshot(), candidate = staged.versions[0].id
 assert.equal(singleVersion(staged.deployment), previous, 'Active deployment changed while staging')
 preserve(before, staged)

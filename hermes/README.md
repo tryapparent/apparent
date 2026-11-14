@@ -98,6 +98,9 @@ to titles or new chats. A lost reply gets one retry with the same `input_id` and
 text, using admission deduplication. Further failure retains the reference; the
 composer button checks/retries that same handoff. The command palette's
 **Apparent: discard pending handoff** abandons delivery without deleting a recording.
+If checking the recording fails after the initial startup grace period, automatic
+polling stops and the original handoff stays pending. Use the recording button to
+retry that request, or discard it explicitly; pending requests expire after one hour.
 Reload replays neither Start
 nor a new message identity. Native replay receipts hold only consumed tokens
 and creation times, not media or transcripts.

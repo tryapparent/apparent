@@ -233,15 +233,7 @@ pub fn export(
                 .unwrap_or_else(|| format!("This bundle has no video ({})", video.display()))
         );
     }
-    #[cfg(target_os = "linux")]
-    let probe = linux::probe(&video).context("Could not read the recording's video")?;
-    #[cfg(not(target_os = "linux"))]
-    let probe = crate::capture::desktop::helper::probe(&video).context("Could not read the recording's video")?;
-    #[cfg(target_os = "macos")]
-    let probe = crate::capture::desktop::helper::Probe {
-        duration_ms: probe.video_duration_ms.unwrap_or(probe.duration_ms),
-        ..probe
-    };
+    let probe = crate::composition::media_probe::probe(&video).context("Could not read the recording's video")?;
     ensure!(
         probe.width > 0 && probe.height > 0 && probe.duration_ms > 0,
         "The recording has no video"
@@ -282,8 +274,6 @@ pub fn export(
         .filter(|p| p.is_file());
     let generated;
     let embedded_audio_usable = probe.audio_tracks > 0;
-    #[cfg(target_os = "macos")]
-    let embedded_audio_usable = embedded_audio_usable && probe.audio_overlaps_video;
     let (audio, audio_start, audio_length) = if let AudioPolicy::Narration(script) = &options.audio {
         generated = Some(narration::render(script, probe.duration_ms)?);
         (Some(generated.as_ref().unwrap().path()), 0, probe.duration_ms)
@@ -514,6 +504,45 @@ mod tests {
             options.zoom,
             "menu and other default exports must enable auto-zoom"
         );
+    }
+
+    #[test]
+    fn published_engine_record_metadata_drives_rotated_export_with_overlapping_audio() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source.mp4");
+        let movie = root.path().join("recording.mp4");
+        let made = Command::new("ffmpeg").args([
+            "-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i", "color=c=blue:s=64x48:r=25:d=1",
+            "-itsoffset", "2", "-f", "lavfi", "-i", "sine=frequency=220:duration=1",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-map", "0:v", "-map", "1:a", "-map", "2:a",
+            "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p", "-c:a", "aac",
+        ]).arg(&source).output().unwrap();
+        assert!(made.status.success(), "{}", String::from_utf8_lossy(&made.stderr));
+        let rotated = Command::new("ffmpeg").args(["-v", "error", "-nostdin", "-y", "-display_rotation:v:0", "90", "-i"])
+            .arg(&source).args(["-map", "0", "-c", "copy"]).arg(&movie).output().unwrap();
+        assert!(rotated.status.success(), "{}", String::from_utf8_lossy(&rotated.stderr));
+        let original = std::fs::read(&movie).unwrap();
+        let probe = crate::composition::media_probe::probe(&movie).unwrap();
+        assert_eq!((probe.width, probe.height, probe.duration_ms, probe.audio_tracks), (48, 64, 1000, 1));
+        #[cfg(target_os = "linux")]
+        assert_eq!(probe.embedded_audio, Some(2), "FFmpeg must receive the overlapping provider stream ID");
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::ffi::OsStringExt;
+            let alias = root.path().join(std::ffi::OsString::from_vec(b"non-utf8-\xff.mp4".to_vec()));
+            std::fs::hard_link(&movie, &alias).unwrap();
+            assert_eq!(crate::composition::media_probe::probe(&alias).unwrap().duration_ms, 1000);
+        }
+        let mut b = bundle();
+        b.video = Some("recording.mp4".into()); b.audio = None; b.source = Some("iphone".into());
+        b.strokes.clear(); b.events.clear(); b.video_offset_ms = 0;
+        let out = root.path().join("out.mp4");
+        let result = export(root.path(), &b, &Options { out: Some(out.clone()), zoom: false,
+            ink: false, clicks: false, ..Default::default() }, &mut |_| {}).unwrap();
+        assert_eq!((result.width, result.height), (48, 64)); assert!(result.audio);
+        assert!(Command::new("ffmpeg").args(["-v", "error", "-i"]).arg(out)
+            .args(["-f", "null", "-"]).status().unwrap().success());
+        assert_eq!(std::fs::read(movie).unwrap(), original);
     }
 
     #[cfg(target_os = "linux")]
