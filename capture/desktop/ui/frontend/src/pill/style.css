@@ -5,7 +5,7 @@
 html,body,#root { margin:0;width:max-content;background:transparent;overflow:hidden; }
 body { font-family:'Host Grotesk',system-ui,sans-serif; }
 .pill { width:max-content;max-width:var(--pill-limit,1200px);color:var(--apparent-foreground); }
-.pill * { animation:none!important;transition:none!important; }
+.pill * { animation:none;transition:none!important; }
 /* Preserve the native row footprint and four-point notification gap. */
 .pill-row { box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-height:56px;width:max-content;max-width:var(--pill-limit,1200px);padding:3px;border:1px solid var(--apparent-border);border-radius:28px;background:var(--apparent-background);color:var(--apparent-foreground);user-select:none;overflow:hidden; }
 .lead { display:flex;align-items:center;gap:8px;flex-shrink:0;padding-inline:8px; }
@@ -15,6 +15,7 @@ body { font-family:'Host Grotesk',system-ui,sans-serif; }
 .controls { display:flex;align-items:center;gap:4px;flex-shrink:0; }
 .controls button { -webkit-app-region:no-drag;height:44px;min-height:44px;padding:8px 16px;gap:8px;border-radius:24px;font-size:18px;line-height:24px;font-weight:500;box-shadow:none; }
 .controls button[data-icon-only=true] { width:44px;min-width:44px;padding:0; }
+.controls button:focus-visible { outline:2px solid var(--apparent-ring);outline-offset:-3px; }
 .controls button svg { width:18px;height:18px; }
 .indicator-slot { position:relative;display:flex;align-items:center;justify-content:center;width:44px;height:44px;flex-shrink:0; }
 /* The complete target stays reserved, including before a warning arrives. */
@@ -22,6 +23,10 @@ body { font-family:'Host Grotesk',system-ui,sans-serif; }
 .indicator { width:10px;height:10px;flex-shrink:0;border-radius:50%;background:var(--apparent-muted-foreground); }
 .indicator.recording { background:var(--apparent-destructive); }
 .indicator.processing { width:20px;height:20px;border-radius:0;background:transparent;color:var(--apparent-primary); }
+@keyframes pill-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:no-preference){
+  .pill:not([data-reduced=true]) .indicator.processing { animation:pill-spin 1s linear infinite; }
+}
 .indicator.completed { width:20px;height:20px;border-radius:0;background:transparent;color:var(--apparent-success); }
 .indicator.stopped { width:20px;height:20px;border-radius:0;background:transparent;color:var(--apparent-foreground); }
 .pill[data-phase=processing] .pill-row { padding-inline:16px; }

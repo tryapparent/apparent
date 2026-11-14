@@ -52,6 +52,69 @@ const recording={...hidden,revision:2,phase:'recording',inputWaveform:Array(24).
  {id:'finish',label:'Finish',enabled:true,selected:false,primary:true},
  {id:'cancel',label:'Cancel',enabled:true,selected:false,primary:false}]};
 
+test('close stays at the trailing edge and progress rotates unless motion is reduced',async t=>{
+ const home=await fs.mkdtemp(path.join(os.tmpdir(),'pill-close-motion-'));
+ const application=await electron.launch({args:[path.resolve(__dirname,'host.cjs'),'--no-sandbox'],
+  env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')}});
+ t.after(async()=>{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});});
+ const page=await application.firstWindow();
+ let revision=0;
+ const publish=async state=>{
+  const view={...hidden,noteCount:0,...state,revision:++revision};
+  await application.evaluate((_e,view)=>process.stdin.emit('data',JSON.stringify({type:'state',view})+'\n'+JSON.stringify({type:'activate'})+'\n'),view);
+  await expect(page.locator('main')).toHaveAttribute('data-revision',String(revision));
+  await page.evaluate(()=>document.fonts.ready);
+  await page.evaluate(revision=>window.apparentPill.layout(revision),revision);
+ };
+ const control=(id,label,primary=false)=>({id,label,enabled:true,selected:false,primary});
+ const actions=[control('cancel','Cancel'),control('whiteboard','Whiteboard'),control('finish','Finish',true)];
+ for(const theme of ['light','dark']){
+  await page.emulateMedia({colorScheme:theme,reducedMotion:'no-preference'});
+  for(const width of [1200,320]){
+   // Constrain the actual Electron host's trusted work area, not a browser replica.
+   await application.evaluate(({screen},width)=>{
+    const original=screen.getDisplayMatching.bind(screen);
+    screen.getDisplayMatching=b=>({...original(b),workArea:{x:0,y:0,width,height:800}});
+   },width);
+   for(const noteCount of [0,12]){
+    await publish({...recording,actions:[...actions,...(noteCount?[control('notes','Open notes')]:[])],noteCount});
+    if(process.env.APPARENT_PILL_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_PILL_EVIDENCE,`${theme}-${width}-notes-${noteCount}.png`)});
+    assert.deepEqual(await page.locator('.controls button').evaluateAll(es=>es.map(e=>e.getAttribute('aria-label'))),['Whiteboard','Finish','Cancel']);
+    const close=await page.getByRole('button',{name:'Cancel',exact:true}).boundingBox();
+    const finish=await page.getByRole('button',{name:'Finish',exact:true}).boundingBox();
+    const row=await page.locator('.pill-row').boundingBox();
+    assert.ok(close.x>=finish.x+finish.width,'Close must follow Finish spatially');
+    assert.ok(close.x+close.width<=row.x+row.width);
+    assert.ok(row.x+row.width<=width);
+    assert.equal(close.width,44);assert.equal(close.height,44);
+   }
+  }
+  for(const phase of ['processing','completed']){
+   await publish({phase,label:phase==='processing'?'Processing recording…':'Uploading…',
+    actions:phase==='completed'?[control('copy-link','Cancel upload')]:[]});
+   const spinner=page.locator('.indicator.processing');
+   const transform=()=>spinner.evaluate(el=>getComputedStyle(el).transform);
+   const before=await transform();
+   await expect.poll(transform).not.toBe(before);
+   for(const reduced of ['system','native']){
+    await page.emulateMedia({reducedMotion:reduced==='system'?'reduce':'no-preference'});
+    if(reduced==='native')await publish({phase:'processing',label:'Processing recording…',reducedMotion:true,actions:[]});
+    assert.equal(await spinner.evaluate(el=>getComputedStyle(el).animationName),'none');
+    assert.notEqual(await page.locator('.clock').textContent(),'');
+   }
+   await page.emulateMedia({reducedMotion:'no-preference'});
+  }
+ }
+ // DOM order is keyboard order; the X keeps its visible focus ring and dispatch.
+ await publish({...recording,actions});
+ const close=page.getByRole('button',{name:'Cancel',exact:true});
+ await page.getByRole('button',{name:'Finish',exact:true}).focus();
+ await page.keyboard.press('Tab');await expect(close).toBeFocused();
+ assert.equal(await close.evaluate(el=>getComputedStyle(el).outlineStyle),'solid');
+ assert.equal(await close.evaluate(el=>getComputedStyle(el).outlineWidth),'2px');
+ await page.keyboard.press('Enter');await expect(close).toBeDisabled();
+});
+
 test('parent-state timeout reports its accepted epoch and readiness without extending the deadline',async t=>{
  const home=await fs.mkdtemp(path.join(os.tmpdir(),'pill-state-timeout-'));
  const application=await electron.launch({args:[path.resolve(__dirname,'host.cjs'),'--no-sandbox'],

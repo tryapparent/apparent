@@ -7,8 +7,10 @@ receives no bundle paths, credentials, configuration or capture contents.
 
 The row covers selection, recording, processing and completion. It reuses
 shared shadcn Button controls and Lucide icons. Cancel/dismiss uses ×; ordinary actions retain labels.
-During ordinary recording, Cancel precedes
-Whiteboard and Finish, matching the approved extension composition. Warnings and rejected actions remain inline;
+Cancel/dismiss stays at the trailing edge in visual and keyboard order; during
+ordinary recording it follows Whiteboard and Finish. Processing and foreground
+upload indicators rotate unless OS or native reduced motion is enabled.
+Warnings and rejected actions remain inline;
 there is no expandable panel or Record-package dependency.
 
 During recording, durable saved notes appear in the approved flush lilac extension
