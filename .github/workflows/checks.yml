@@ -457,6 +457,9 @@ jobs:
     if: >-
       !cancelled() && needs.select.result == 'success' &&
       needs.select.outputs.connect == 'true' && needs['native-evidence'].result == 'success'
+    permissions:
+      contents: read
+      actions: read
     uses: ./.github/workflows/stream-connect.yml
     with:
       shared_native: ${{ needs['native-evidence'].outputs.receipt }}

@@ -23,13 +23,13 @@ function fixture(runs: Run[] = [run()]) {
 }
 
 test('an early failure and later successful completions each wake through existing comments', async () => {
-  const early = run(), slow = run({id: 11, workflow_id: 2, path: '.github/workflows/stream-connect.yml', status: 'in_progress', conclusion: null});
+  const early = run(), slow = run({id: 11, workflow_id: 2, path: '.github/workflows/stream-public.yml', status: 'in_progress', conclusion: null});
   const f = fixture([early, slow]);
   assert.equal(await notify({action: 'completed', workflow_run: early}, repo, f.api), 1);
   const final = {...slow, status: 'completed', conclusion: 'success'};
   f.state.runs = [early, final];
   assert.equal(await notify({action: 'completed', workflow_run: final}, repo, f.api), 1);
-  assert.match(f.state.comments[1]!.body, /Connect workflow completed/);
+  assert.match(f.state.comments[1]!.body, /Public workflow completed/);
   assert.match(f.state.comments[1]!.body, /Other workflows may still be running/);
   assert.match(f.state.comments[1]!.body, /not test, merge or release admission/);
   assert.equal(await notify({action: 'completed', workflow_run: final}, repo, f.api), 0);

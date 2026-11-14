@@ -107,9 +107,10 @@ test('real selector composition preserves Capture-only exemptions and selects fu
   const cli = new URL('./run.ts',import.meta.url).pathname;
   try {
     git('init','-q');git('config','user.name','Synthetic');git('config','user.email','synthetic@example.invalid');
-    execFileSync('mkdir',['-p',join(dir,'capture/desktop/docs'),join(dir,'connect/web/src')]);
+    execFileSync('mkdir',['-p',join(dir,'capture/desktop/docs'),join(dir,'connect/web/src'),join(dir,'enablement/timing')]);
     const {writeFileSync} = require('node:fs');
     writeFileSync(join(dir,'capture/desktop/docs/linux.md'),'before');
+    writeFileSync(join(dir,'enablement/timing/command.ts'),'before');
     writeFileSync(join(dir,'connect/web/src/main.tsx'),'before');git('add','.');git('commit','-qm','base');
     const base = git('rev-parse','HEAD');
     const run = (event: string, capture: typeof full) => {
@@ -124,6 +125,12 @@ test('real selector composition preserves Capture-only exemptions and selects fu
     const narrow = suitePlan(['capture/desktop/docs/linux.md']);
     const capture = run('pull_request',narrow);
     assert.equal(capture.connect,'false');assert.deepEqual(JSON.parse(capture.plan),narrow,'no Connect stream must add zero suites');
+    git('reset','--hard',base);
+    writeFileSync(join(dir,'enablement/timing/command.ts'),'after');git('add','enablement');git('commit','-qm','tooling only');
+    const tooling = suitePlan(['enablement/timing/command.ts']);
+    const toolingMain = run('push',tooling);
+    assert.equal(toolingMain.connect,'false');assert.equal(toolingMain.platform,'false');
+    assert.deepEqual(JSON.parse(toolingMain.plan),tooling,'broad event filters must not add Connect consumers');
     git('reset','--hard',base);
     writeFileSync(join(dir,'connect/web/src/main.tsx'),'after');git('add','connect');git('commit','-qm','web only');
     const pr = run('pull_request',web);assert.equal(pr.connect,'true');assert.equal(pr.platform,'false');

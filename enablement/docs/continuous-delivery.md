@@ -47,9 +47,13 @@ integration/package consumers is required in the adoption slice. Until then,
 Engine-only inputs have no installed-app consumer. SDK/capability details and
 remaining adoption gates live in `engine/README.md`.
 
-`checks.yml` verifies the native application and shared integration on PRs targeting
-main and main pushes. Public and Connect have direct automatic entrypoints in
-`stream-public.yml` and `stream-connect.yml`; neither depends on a default CD run.
+`checks.yml` orchestrates Capture and Connect on PRs targeting main and main pushes.
+It verifies the union of their required Linux/Mac plans once, then calls
+`stream-connect.yml` with a receipt bound to the same SHA, tree, workflow, run and
+attempt. Connect retains its own contracts, portable checks and publication gates;
+manual dispatch retains independent platform execution when no valid shared
+receipt exists. Public keeps its direct `stream-public.yml` automatic entrypoint.
+Broad event filters do not add product consumers to a tooling-only plan.
 Automatic PR and main triggers follow directory ownership. The sole authority is
 `enablement/ci/routing/consumers.ts`: directory/consumer rules, named suites,
 workflow input inventory and admission explanations. `selectRange` reads the
@@ -131,7 +135,12 @@ agent skill embedded in the CLI retains native coverage. Public and Connect web
 source do not select Rust or Electron. Shared UI/assets retain their real web,
 service, Desktop and native consumers. Service changes retain client/root API
 integration and run the canonical service build, serial tests and recipient browser.
-Hermes inspection and complete compiled package delivery run independently in `hermes.yml` (continuous delivery hermes), on Linux and Mac for every affected PR/main candidate. Native admission does not consume Hermes results. Hermes-only changes skip automatic Linux app packaging; mixed or unknown inputs retain the existing publication gates. Audited
+Hermes inspection and complete compiled package delivery run independently in `hermes.yml` (continuous delivery hermes), on Linux and Mac for every affected PR/main candidate. Native admission does not consume Hermes results. Hermes-only changes skip automatic Linux app packaging; mixed or unknown inputs retain the existing publication gates.
+The pinned Hermes validator caches only downloaded PyPI wheel objects and their
+index. Exact cache keys bind the fetched lock/project, upstream revision,
+uv/Python, platform and install policy. Each run creates a new environment and
+isolated profile and still installs, validates and diagnoses the exact candidate.
+Profiles, installed environments and test results are never cached. Audited
 Linux drivers run launch-free contracts. Within a triggered workflow, unknown inputs/history, empty deltas, unsafe
 modes/types, embedded instructions and execution-sensitive CI retain broad checks.
 Repository `AGENTS.md` guidance runs cheap contracts only in local pushes and
@@ -552,10 +561,11 @@ checks Connect's complete tree, including native consumers, rather than allowing
 unrelated follow-up commit to hide a failed delivery. This conservative main
 coverage is intentional and is not a measured build-time reduction.
 
-`stream-connect.yml` admits its publisher only after its own successful
-contracts, portable checks and affected Linux/Mac suites, on canonical main with
-`HOSTED_CD_ENABLED`. That automatic route does not require a `checks.yml` Linux
-receipt. Manual dispatch uses the same stream-owned checks and admission; the
+`stream-connect.yml` admits its publisher only after its own successful contracts
+and portable checks plus affected Linux/Mac suites, either authenticated from the
+automatic caller's dependencies or executed by the manual entrypoint, on canonical
+main with `HOSTED_CD_ENABLED`. A failed shared producer cannot admit publication.
+Manual dispatch uses the same stream-owned checks and admission; the
 old `web-delivery.yml` entrypoint has been replaced. Worker publication retains its production environment,
 noncancelling lock, current-main check, approved bindings and version/CORS readback.
 No resource migration or disabled-service activation is included. The existing

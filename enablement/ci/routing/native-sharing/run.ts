@@ -34,7 +34,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const output = (values: object) => appendFileSync(process.env.GITHUB_OUTPUT!, Object.entries(values).map(([key, value]) => `${key}=${typeof value === 'object' ? JSON.stringify(value) : value}\n`).join(''));
   if (process.argv.includes('--plan')) {
     const range = selectRange(process.env.BASE_SHA ?? '', process.env.GITHUB_SHA ?? 'HEAD');
-    const connect = range.streams.connect;
+    // Event filters are a scheduling superset, not an extra product consumer.
+    // Verification-only inputs must not widen a tooling plan into all of Connect.
+    const connect = range.requiredStreams.connect;
     const manualOrMain = process.env.GITHUB_EVENT_NAME !== 'pull_request';
     const additional = connect ? connectPlan(manualOrMain ? suitePlan(null) : range.plan) : planFromOwners([]);
     const plan = unionPlan(parsePlan(process.env.VERIFICATION_PLAN), additional);
