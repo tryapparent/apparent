@@ -11,7 +11,6 @@ pub(crate) enum Stage {
     AudioErrorState,
     AudioSampleState,
     AudioWriterJoin,
-    AudioWriterBacklog,
     AudioWriterHistory,
     AudioWriterLength,
     AudioWriterWrite,

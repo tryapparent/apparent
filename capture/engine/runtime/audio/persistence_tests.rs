@@ -272,8 +272,8 @@ fn abrupt_process_death_repairs_only_narration_and_measures_tail() {
             tail as f64 / 16.0
         );
         assert!(
-            tail <= MAX_BACKLOG,
-            "measured tail exceeds intended backlog bound"
+            tail <= 2 * RATE,
+            "measured synthetic crash tail exceeds two seconds"
         );
         assert!(dir.0.join(recover::UNSAFE_VIDEO).exists());
         assert!(!dir.0.join("apparent.json").exists());
@@ -345,6 +345,62 @@ fn long_recording_saves_expired_history_without_growing_callback_memory() {
     }
     drop((writer, lease));
     assert!(Lease::acquire(&dir.0).is_ok());
+}
+
+#[test]
+fn delayed_writer_drains_retained_audio_including_stop_tail() {
+    // Deterministically model a writer not scheduled while input keeps arriving.
+    // This crosses the old two-second abort threshold and multiple write batches.
+    for count in [3 * RATE, HISTORY] {
+        let dir = Scratch::new(&format!("delayed-{count}"));
+        let samples = Mutex::new(Samples::from((0..count).map(tone).collect::<Vec<_>>()));
+        let allocation = samples.lock().unwrap().data.as_ptr();
+        let mut file = options().create_new(true).open(dir.0.join("audio.wav")).unwrap();
+        file.write_all(&header(0)).unwrap();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        drop(sender);
+        write_stream(&mut file, &samples, receiver).unwrap();
+        let wav = std::fs::read(dir.0.join("audio.wav")).unwrap();
+        let decoded = super::super::audio::decode_wav_16k(&wav).unwrap();
+        assert_eq!(decoded.len(), count);
+        for (at, sample) in decoded.iter().enumerate() {
+            assert!((sample - tone(at)).abs() < 0.0001);
+        }
+        assert_eq!(samples.lock().unwrap().data.as_ptr(), allocation);
+    }
+}
+
+#[test]
+fn delayed_writer_refuses_expired_audio_without_claiming_success() {
+    let dir = Scratch::new("delayed-expired");
+    let samples = Mutex::new(Samples::from(vec![0.2; HISTORY + 1]));
+    let path = dir.0.join("audio.wav");
+    let mut file = options().create_new(true).open(&path).unwrap();
+    file.write_all(&header(0)).unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    drop(sender);
+    let error = write_stream(&mut file, &samples, receiver).unwrap_err();
+    let failure = error.chain().find_map(|cause| {
+        cause.downcast_ref::<crate::capture::engine::runtime::recording::diagnostics::Failure>()
+    }).unwrap();
+    assert_eq!(serde_json::to_value(failure.stage).unwrap(), "audio_writer_history");
+    assert_eq!(std::fs::read(path).unwrap(), header(0));
+}
+
+#[test]
+fn delayed_writer_catches_up_while_input_is_still_open() {
+    let dir = Scratch::new("delayed-live");
+    let count = 5 * RATE;
+    let samples = Arc::new(Mutex::new(Samples::from((0..count).map(tone).collect::<Vec<_>>())));
+    let mut writer = Writer::start(&dir.0, samples.clone(), Arc::default()).unwrap();
+    wait_for(|| saved_prefix(&dir.0, count));
+    samples.lock().unwrap().extend((count..count + 160).map(tone));
+    let (wav, _lease) = writer.finish().unwrap();
+    let decoded = super::super::audio::decode_wav_16k(&wav).unwrap();
+    assert_eq!(decoded.len(), count + 160);
+    for (at, sample) in decoded.iter().enumerate() {
+        assert!((sample - tone(at)).abs() < 0.0001);
+    }
 }
 
 #[cfg(target_os = "linux")]

@@ -11,7 +11,8 @@ use crate::capture::engine::runtime::recording::diagnostics::{Diagnose, Stage};
 
 const RATE: usize = 16_000;
 const HISTORY: usize = 60 * RATE;
-const MAX_BACKLOG: usize = 2 * RATE;
+// Bound conversion/allocation under the callback's mutex, not recoverable lag.
+const WRITE_BATCH: usize = 2 * RATE;
 const POLL: Duration = Duration::from_millis(100);
 const SYNC: Duration = Duration::from_secs(1);
 pub const RECORDING: &str = ".audio-recording";
@@ -263,11 +264,12 @@ fn write_stream(
     samples: &Mutex<Samples>,
     receiver: std::sync::mpsc::Receiver<()>,
 ) -> Result<()> {
-    let mut written = 0;
+    let mut written: usize = 0;
     let mut synced = Instant::now();
+    let mut catching_up = false;
     loop {
         let stopping = matches!(
-            receiver.recv_timeout(POLL),
+            receiver.recv_timeout(if catching_up { Duration::ZERO } else { POLL }),
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected)
         );
         let bytes: Vec<u8> = {
@@ -275,12 +277,12 @@ fn write_stream(
                 .lock()
                 .map_err(|_| anyhow!("Narration buffer poisoned"))
                 .stage(Stage::AudioSampleState)?;
-            if buffer.len().saturating_sub(written) > MAX_BACKLOG {
-                return Err(anyhow!("Narration disk writer fell more than two seconds behind"))
-                    .stage(Stage::AudioWriterBacklog);
-            }
+            let end = buffer.len().min(written.saturating_add(WRITE_BATCH));
+            catching_up = end < buffer.len();
+            // A scheduling or sync delay is recoverable while the absolute range
+            // survives. Never skip expired samples or shift the narration clock.
             buffer
-                .get(written..)
+                .get(written..end)
                 .context("Narration history expired")
                 .stage(Stage::AudioWriterHistory)?
                 .iter()
@@ -299,11 +301,11 @@ fn write_stream(
         file.write_all(&bytes).map_err(anyhow::Error::from).stage(Stage::AudioWriterWrite)?;
         written += bytes.len() / 2;
         // File is unbuffered: every batch reaches the kernel, independent of header updates.
-        if stopping || synced.elapsed() >= SYNC {
+        if (stopping && !catching_up) || synced.elapsed() >= SYNC {
             checkpoint(file, (written * 2) as u32).stage(Stage::AudioWriterCheckpoint)?;
             synced = Instant::now();
         }
-        if stopping {
+        if stopping && !catching_up {
             return Ok(());
         }
     }
