@@ -52,10 +52,24 @@ for (const file of ${JSON.stringify(files)}) {
   mkdirSync(dirname(file), {recursive:true});
   writeFileSync(file, 'generated');
 }
+
 `);
   }
   return () => readFileSync(resolve(f.root, 'capture/desktop/ui/frontend/trace'), 'utf8');
 }
+
+test('Linux release tests prepare their real published provider before Cargo', () => {
+  const workflow = readFileSync('.github/workflows/release-linux.yml', 'utf8');
+  const preparation = workflow.indexOf('name: Prepare native test inputs before release Cargo');
+  const cargo = workflow.indexOf('cargo build --release --locked');
+  assert.ok(preparation > 0 && preparation < cargo);
+  const step = workflow.slice(preparation, workflow.indexOf('      - uses:', preparation));
+  for (const input of ['--preflight', 'ci --ignore-scripts', 'node_modules/electron/install.js', 'enablement/prerequisites/native.ts'])
+    assert.ok(step.includes(input), input);
+  assert.match(workflow, /Clean private release test inputs\n        if: always\(\)/);
+  const adapter = readFileSync('composition/media_probe.rs', 'utf8');
+  assert.match(adapter, /cfg!\(any\(test, debug_assertions\)\)/, 'release tests have prepared source assets; shipped releases do not');
+});
 
 test('one preparation entrypoint rebuilds absent native artifacts and can run again', t => {
   const f = fixture(t), trace = generators(f);
