@@ -1,21 +1,23 @@
-// Parse modules without executing candidate code. Node callers use the same Bun
-// already required by the shared selector; missing/invalid parsing fails broad.
+// Parse modules without executing candidate code. Publication-only callers need
+// Node 22, not Bun; unavailable parsing still fails broad.
 import {spawnSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
+import module from 'node:module';
+import vm from 'node:vm';
 
-declare const Bun: {Transpiler: new(options: {loader: 'ts'}) => {
-  scanImports(source: string): {path: string; kind: string}[];
-}};
 const cache = new Map<string, string[] | null>();
 export function moduleImports(source: string): string[] | null {
   if (cache.has(source)) return cache.get(source)!;
   let modules: string[] | null = null;
   try {
-    if (typeof Bun !== 'undefined') modules = new Bun.Transpiler({loader: 'ts'}).scanImports(source).map(item => item.path);
+    if (!process.versions.bun && typeof vm.SourceTextModule === 'function')
+      modules = [...new vm.SourceTextModule(module.stripTypeScriptTypes(source)).dependencySpecifiers];
     else {
-      const result = spawnSync('bun', [fileURLToPath(import.meta.url)], {input: source, encoding: 'utf8', maxBuffer: 1024 * 1024});
+      const node = process.versions.bun ? 'node' : process.execPath;
+      const result = spawnSync(node, ['--experimental-vm-modules', '--experimental-strip-types', fileURLToPath(import.meta.url)],
+        {input: source, encoding: 'utf8', maxBuffer: 1024 * 1024});
       if (!result.error && result.status === 0) {
         const value = JSON.parse(result.stdout);
         if (Array.isArray(value) && value.every(item => typeof item === 'string')) modules = value;
