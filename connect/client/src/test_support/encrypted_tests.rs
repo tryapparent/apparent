@@ -32,7 +32,7 @@ fn foreground_typescript_real_transport_has_no_queue_and_preserves_encryption() 
     let original = encrypted_fixture.bundle();
     let id = encrypted_fixture.client.upload_foreground(&original, &|| true).unwrap();
     assert!(encrypted_fixture.client.jobs().unwrap().is_empty());
-    assert_eq!(encrypted_server.state.lock().unwrap().format.as_deref(), Some("apparent-encrypted-v1"));
+    assert_eq!(encrypted_server.state.lock().unwrap().format.as_deref(), Some("apparent-encrypted-v2"));
     assert_eq!(encrypted_server.state.lock().unwrap().shares, 0);
     let out = encrypted_fixture.root.join("download.apparent");
     encrypted_fixture.client.fetch(&id, &out, 0).unwrap();
@@ -501,9 +501,9 @@ fn encrypted_roundtrip_has_only_opaque_wire_assets_and_no_plaintext_metadata() {
     }
     {
         let state = server.state.lock().unwrap();
-        assert_eq!(state.format.as_deref(), Some("apparent-encrypted-v1"));
+        assert_eq!(state.format.as_deref(), Some("apparent-encrypted-v2"));
         assert!(state.data.contains_key("envelope.json"));
-        assert!(state.data.keys().any(|p| p.starts_with("sealed/part-")));
+        assert!(state.data.keys().any(|p| p.starts_with("sealed/file-")));
         let captured = &state.encryption.as_ref().unwrap().captured;
         for (_, bytes) in captured {
             let visible = String::from_utf8_lossy(bytes);
@@ -920,4 +920,50 @@ fn public_intent_cannot_resurrect_cancelled_jobs_or_relabel_private_jobs() {
     assert_ne!(fresh.job.id, link.job.id);
     assert_eq!(f.client.enqueue(&bundle).unwrap(), private_id);
     assert_eq!(f.client.jobs().unwrap().into_iter().find(|j| j.id == private_id).unwrap().status, "pending");
+}
+
+#[test]
+fn per_file_selected_fetch_never_requests_media_and_legacy_jobs_stay_v1() {
+    let f=Fixture::new();let server=encryption_server("");let (bundle,id)=upload(&f,&server);
+    server.state.lock().unwrap().request_routes.clear();
+    let listing=f.client.files(&id).unwrap();assert!(!listing["files"].as_array().unwrap().is_empty());
+    assert_eq!(server.state.lock().unwrap().request_routes.iter().filter(|r|r.contains("/files/")).count(),2);
+    server.state.lock().unwrap().request_routes.clear();
+    let out=f.root.join("selected-evidence");
+    f.client.fetch_selected(&id,&out,0,Some(&["apparent.json".into(),"contact-sheet.png".into()])).unwrap();
+    assert_eq!(fs::read(out.join("apparent.json")).unwrap(),fs::read(bundle.join("apparent.json")).unwrap());
+    assert_eq!(fs::read(out.join("contact-sheet.png")).unwrap(),fs::read(bundle.join("contact-sheet.png")).unwrap());
+    assert!(!out.join("recording.mov").exists());
+    let state=server.state.lock().unwrap();
+    let gets:Vec<_>=state.request_routes.iter().filter(|r|r.contains("/files/")).cloned().collect();
+    drop(state);
+    assert_eq!(gets.len(),4,"only envelope, index, metadata and selected image");
+    let identity=f.client.endpoint_identity(&f.client.credential("read",&server.url).unwrap()).unwrap();
+    let current=job(&f);let spool=f.client.state.join(format!("{id}.sealed"));
+    let peers=f.client.encryption_peers(&f.client.credential("read",&server.url).unwrap(),&||true).unwrap();
+    let sender=peers.devices.iter().find(|p|p.scope=="upload").unwrap();
+    let index=encryption::v2::open_index(&spool,&current.files,&encryption::v2::context(&spool).unwrap(),&identity,sender).unwrap();
+    for media in index.files.iter().filter(|f|matches!(f.path.as_str(),"recording.mov"|"audio.wav")){assert!(!gets.iter().any(|r|r.ends_with(&media.object)));}
+    let legacy=Fixture::new();let legacy_server=encryption_server("");pair(&legacy,&legacy_server);
+    let legacy_bundle=legacy.bundle();let legacy_id=legacy.client.enqueue(&legacy_bundle).unwrap();
+    let job_path=legacy.client.state.join(format!("{legacy_id}.job"));
+    let mut wire:Value=serde_json::from_slice(&fs::read(&job_path).unwrap()).unwrap();wire.as_object_mut().unwrap().remove("encryptionVersion");atomic_json(&job_path,&wire).unwrap();
+    legacy.client.process_once().unwrap();assert_ready(&legacy);
+    assert_eq!(legacy_server.state.lock().unwrap().format.as_deref(),Some("apparent-encrypted-v1"));
+    let full=legacy.root.join("legacy.apparent");legacy.client.fetch(&legacy_id,&full,0).unwrap();assert_bundle(&legacy_bundle,&full);
+    assert!(legacy.client.fetch_selected(&legacy_id,&legacy.root.join("legacy-extract"),0,Some(&["apparent.json".into()])).is_err());
+}
+
+#[test]
+fn per_file_notes_follow_the_shared_asset_contract() {
+    let f=Fixture::new();let server=encryption_server("");pair(&f,&server);
+    let bundle=f.bundle();let notes=b"{\"version\":1,\"notes\":[\"synthetic note\"]}";
+    fs::write(bundle.join("notes.json"),notes).unwrap();
+    let id=f.client.enqueue(&bundle).unwrap();f.client.process_once().unwrap();assert_ready(&f);
+    let out=f.root.join("selected-notes");
+    f.client.fetch_selected(&id,&out,0,Some(&["notes.json".into()])).unwrap();
+    assert_eq!(fs::read(out.join("notes.json")).unwrap(),notes);
+    assert!(!out.join("recording.mov").exists());
+    let full=f.root.join("notes.apparent");f.client.fetch(&id,&full,0).unwrap();
+    assert_eq!(fs::read(full.join("notes.json")).unwrap(),notes);
 }

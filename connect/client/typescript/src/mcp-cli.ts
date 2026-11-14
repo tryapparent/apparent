@@ -2,16 +2,18 @@
 import * as fs from 'node:fs/promises';
 import {constants,realpathSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
+import path from 'node:path';
 import {initEndpoint,nextEndpoint,acceptEndpoint,fetchEndpoint,revokeEndpoint,cancelEndpoint} from './mcp-endpoint.js';
-import {runEndpoint} from './mcp-stdio.js';
+import {runEndpoint} from './mcp/stdio.js';
 import {MAX_RELAY_REPLY_BYTES} from './mcp-wire.js';
 
 export async function main(args:string[]):Promise<void> {
   if(args.includes('--help') || !args.length) {
-    console.log('apparent-connect-mcp init --state <new-private-directory> [--server <https-origin>]\napparent-connect-mcp step --state <directory> --reply <MCP-result.json>\napparent-connect-mcp next --state <directory>\napparent-connect-mcp inspect --state <directory> --id <capture-id> --out <new-absolute-inspection-path>\napparent-connect-mcp fetch --state <directory> --id <capture-id> --out <new-absolute-bundle-path>\napparent-connect-mcp run --state <directory> [--id <capture-id> --out <new-absolute-path> --mode inspection|bundle]\napparent-connect-mcp cancel --state <directory>\napparent-connect-mcp revoke --state <directory>\nThis endpoint runs offline. Prefer inspect for images. run prints opaque tool calls as JSON lines and consumes complete MCP replies from stdin; a host tool loop can transfer without sending ciphertext through model context. step remains available for hosts that save whole replies to files. Private keys and credentials stay in the private state directory.');return;
+    console.log('apparent-connect-mcp init --state <new-private-directory> [--server <https-origin>]\napparent-connect-mcp step --state <directory> --reply <MCP-result.json>\napparent-connect-mcp next --state <directory>\napparent-connect-mcp inspect --state <directory> --id <capture-id> --out <new-absolute-inspection-path>\napparent-connect-mcp fetch --state <directory> --id <capture-id> --out <new-absolute-directory> [--file <original-asset-path> ...]\napparent-connect-mcp run --state <directory> [--id <capture-id> --out <new-absolute-path> --mode inspection|bundle|files [--file <original-asset-path> ...]]\napparent-connect-mcp list --state <directory> --id <capture-id>\napparent-connect-mcp cancel --state <directory>\napparent-connect-mcp revoke --state <directory>\nThis endpoint runs offline. Prefer inspect for images. run prints opaque tool calls as JSON lines and consumes complete MCP replies from stdin; a host tool loop can transfer without sending ciphertext through model context. step remains available for hosts that save whole replies to files. Private keys and credentials stay in the private state directory.');return;
   }
-  const [command,...rest]=args,options=new Map<string,string>();
+  const [command,...rest]=args,options=new Map<string,string>(),files:string[]=[];
   for(let i=0;i<rest.length;i+=2) {
+    if(rest[i]==='--file'&&rest[i+1]){files.push(rest[i+1]!);continue;}
     if(!/^--(?:state|server|reply|id|out|mode)$/.test(rest[i]??'') || !rest[i+1] || options.has(rest[i]!))throw new Error('invalid_arguments');
     options.set(rest[i]!,rest[i+1]!);
   }
@@ -22,13 +24,18 @@ export async function main(args:string[]):Promise<void> {
   else if(command==='revoke')result=await revokeEndpoint(state);
   else if(command==='cancel')result=await cancelEndpoint(state);
   else if(command==='run') {
-    const mode=options.get('--mode')??'inspection';if(!['inspection','bundle'].includes(mode))throw new Error('invalid_arguments');
+    const mode=options.get('--mode')??'inspection';if(!['inspection','bundle','files'].includes(mode))throw new Error('invalid_arguments');
     const capture=options.get('--id'),out=options.get('--out');if(!!capture!==!!out)throw new Error('capture_and_output_required');
-    const first=capture&&out?await fetchEndpoint(state,capture,out,mode==='inspection'):await nextEndpoint(state);
+    if(files.length && (mode!=='files'||!capture) || mode==='files'&&!files.length)throw new Error('invalid_arguments');
+    const first=capture&&out?await fetchEndpoint(state,capture,out,mode==='files'?{selection:files}:mode==='inspection'):await nextEndpoint(state);
     await runEndpoint(state,first,process.stdin,process.stdout);return;
+  } else if(command==='list'){
+    if(!options.get('--id')||files.length)throw new Error('capture_required');
+    result=await fetchEndpoint(state,options.get('--id')!,path.join(state,'listing'),{listOnly:true});
   } else if(command==='fetch'||command==='inspect') {
     if(!options.get('--id')||!options.get('--out'))throw new Error('capture_and_output_required');
-    result=await fetchEndpoint(state,options.get('--id')!,options.get('--out')!,command==='inspect');
+    if(command==='inspect'&&files.length)throw new Error('invalid_arguments');
+    result=await fetchEndpoint(state,options.get('--id')!,options.get('--out')!,files.length?{selection:files}:command==='inspect');
   } else if(command==='step') {
     const reply=options.get('--reply');if(!reply)throw new Error('reply_required');
     const handle=await fs.open(reply,constants.O_RDONLY|constants.O_NOFOLLOW);

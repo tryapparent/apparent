@@ -164,8 +164,9 @@ pass complete integrity/reference checks before one ordinary bundle is published
 An evidence-ready pending upload can be inspected without its media; full `fetch`
 still waits for both streams and requires the same approved sender for both.
 
-Current native single-stream recordings encrypt the complete bundle, so image-first
-transfer requires the already deployed grouped format. The representative 33 MiB
+Legacy v1 single-stream recordings encrypt the complete bundle, so image-first
+transfer for those recordings requires the grouped format. New v2 uploads instead
+use independently encrypted files and support exact selection and inspection. The representative 33 MiB
 Worker/CLI test asserts fewer than 43 calls for full retrieval and at most six for
 small grouped evidence; these are local integration bounds, not host latency claims.
 Passing ciphertext through model context is costly. **Actual updated ChatGPT
@@ -192,10 +193,42 @@ blocked, visual inspection and revocation. Keep the native CLI path throughout.
 ChatGPT Work is the initial human test target; a pass there does not establish
 Cowork-specific file handling or rendering, which remains separately unverified.
 Rollback removes the MCP route/package entrypoint and leaves stored formats,
-encryption defaults and consent unchanged. No schema migration, new cloud
-resource, directory listing or automatic public sharing is required.
+encryption defaults and consent unchanged. The range/stdio transport extension
+requires no schema migration or new cloud resource and adds no public sharing.
+The separate v2 capture format requires migration `0011.sql`; see the encryption
+contract for deployment order and retained v1 compatibility.
 
 The mounted beta gateway is built from `connect/tooling/hosting` and automatically
 published after affected main verification. Delivery preserves its binding/secret
 profile, routes and cleanup schedule; the sealed browser assets and Worker version
 are checked after publication. See the Connect delivery section in the CI guide.
+
+### Selective v2 evidence
+
+New v2 uploads support index-first listing and exact asset selection:
+
+```
+apparent-connect-mcp list --state /absolute/private/reader --id <capture-id>
+apparent-connect-mcp fetch --state /absolute/private/reader --id <capture-id> --out /absolute/new/evidence --file apparent.json --file contact-sheet.png
+```
+
+Drive each sealed exchange with `step`/`next` as before. Listing ends in `listed`
+with authenticated asset names/sizes/hashes; it transfers no asset bytes.
+Selective fetch ends in `ready` with `extraction` and `completeBundle:false`,
+without a `bundle` field. It requests only the encrypted index/envelope and the
+chosen file objects, then rechecks sender authorization before publication.
+Use `apparent.json` for transcript and request relevant images for visual proof.
+A transcript alone is not image inspection. An extraction cannot use a
+`.apparent` destination. Full fetch remains available without `--file`, and v1
+single/grouped captures retain full-bundle compatibility. Newly enrolled readers
+still cannot decrypt history encrypted before their enrollment.
+
+V2 also supports `inspect` / `run --mode inspection`: these download all
+authenticated non-media assets, validate visual references and publish an
+`inspection_ready` directory with `inspection.json` and
+`completeRecording:false`. To pipe only named v2 files without passing ciphertext
+through model context, use `run --mode files --file apparent.json --file contact-sheet.png`
+with the existing `--state`, `--id` and `--out` arguments. The legacy boolean
+inspection API remains compatible; programmatic v2 callers may pass
+`{selection:[...]}` or `{listOnly:true}` to `fetchEndpoint`. All paths retain
+negotiated range bounds, sender checks, private stages and final authorization.

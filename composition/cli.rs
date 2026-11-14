@@ -210,10 +210,13 @@ enum Command {
         #[command(subcommand)]
         command: hosted::ConnectCommand,
     },
-    /// Retrieve and validate a complete hosted capture using a separate read credential.
+    /// Retrieve selected evidence or a complete hosted capture using a separate read credential.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     Fetch {
         id: String,
+        /// Retrieve only these original asset paths into an extraction directory (v2).
+        #[arg(long = "file")]
+        files: Vec<String>,
         #[arg(long)]
         out: PathBuf,
         #[arg(long, default_value_t = 0)]
@@ -760,7 +763,7 @@ fn run_cli(cli: Cli) -> Result<()> {
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Issue(args) => super::issues::command(args),
         #[cfg(any(target_os = "macos", target_os = "linux"))]
-        Command::Fetch { id, out, wait } => hosted::fetch(&id, &out, wait),
+        Command::Fetch { id, out, wait, files } => hosted::fetch_selected(&id, &out, wait, &files),
         #[cfg(target_os = "linux")]
         Command::LaunchHandler { command } => match command {
             LaunchHandlerCommand::Install => linux::launch_handler::install(),

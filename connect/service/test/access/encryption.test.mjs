@@ -142,7 +142,7 @@ test('format discriminator rejects unknown/mixed manifests before writes, preser
 
 test('encrypted sharing refuses mutations and every public read without R2 work or share creation',async()=>{
  const f=await fixture({SHARING_ENABLED:'true'});try{
- await f.db.exec((await readFile('migrations/0003.sql','utf8')).replaceAll('\n',' '));
+ await f.db.exec((await readFile('.generated/migrations/0003.sql','utf8')).replaceAll('\n',' '));
  const a=await f.identity('no-share'),p='/v1/captures/'+id(193);assert.equal((await reserve(f,a,193)).status,200);
  const ledger=await f.db.prepare('SELECT * FROM r2_budget').first();
  for(const suffix of ['/share','/share/progress'])await code(await f.call(p+suffix,{token:a.token,method:'POST',body:{state:'uploading'}}),409,'encrypted_sharing_unsupported');
@@ -161,7 +161,7 @@ test('encrypted sharing refuses mutations and every public read without R2 work 
 
 test('0005 preserves existing capture/grant/ledger and replay errors without resetting spent budget',async()=>{
  const mf=new Miniflare({modules:[{type:'ESModule',path:'migration.mjs',contents:'export default {}'}],d1Databases:['DB']});try{
- const db=await mf.getD1Database('DB'),migrate=async n=>db.exec((await readFile('migrations/'+n+'.sql','utf8')).replace(/^--.*$/gm,'').replaceAll('\n',' '));
+ const db=await mf.getD1Database('DB'),migrate=async n=>db.exec((await readFile('.generated/migrations/'+n+'.sql','utf8')).replace(/^--.*$/gm,'').replaceAll('\n',' '));
  for(const n of ['0001','0002','0003','0004'])await migrate(n);
  await db.prepare("INSERT INTO accounts VALUES(?,?,'active',1,123)").bind('synthetic','synthetic@example.com').run();
  await db.prepare("INSERT INTO captures(id,account_id,manifest,bytes,expires_at,pending_until) VALUES(?,'synthetic','[]',0,9999999999999,9999999999999)").bind(id(195)).run();

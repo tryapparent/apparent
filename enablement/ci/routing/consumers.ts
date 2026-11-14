@@ -131,7 +131,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (path === 'public/site/scripts/browser-proof/test-hosted-browser.mjs') return ['public', 'web'];
   if (path.startsWith('public/')) return webAssets.has(path) ? ['public', 'web'] : ['public'];
   if (!native && path.startsWith('connect/web/')) return ['web'];
-  if (path === 'connect/client/typescript/src/mcp-wire.ts') return ['client', 'capture', 'service'];
+  if (['connect/client/typescript/src/mcp-wire.ts','connect/client/typescript/src/transfer/contract.ts','connect/client/typescript/contracts.ts'].includes(path)) return ['client', 'capture', 'service'];
   if (path.startsWith('connect/client/')) return ['client', 'capture'];
   if (!native && path.startsWith('connect/service/')) return ['service', 'client', 'web', 'capture'];
   if (path.startsWith('capture/agent/setup/')) return ['capture', 'engine', 'hermes'];

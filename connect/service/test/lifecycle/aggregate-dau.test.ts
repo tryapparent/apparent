@@ -7,7 +7,7 @@ import {admitDailyActivity,cleanupDailyActivity} from '../../src/reporting/aggre
 import {setAnalyticsChoice} from '../../src/analytics.ts';
 import type {Env} from '../../src/types.ts';
 const DAY=86400000,HOUR=3600000;
-async function setup(aggregate=true){const f=await fixture({SHARING_ENABLED:'true',POSTHOG_ENABLED:'false'});for(const n of ['0003','0006','0007','0008',...aggregate?['0009','0010']:[]])await f.db.exec((await readFile('migrations/'+n+'.sql','utf8')).replaceAll('\n',' '));return f;}
+async function setup(aggregate=true){const f=await fixture({SHARING_ENABLED:'true',POSTHOG_ENABLED:'false'});for(const n of ['0003','0006','0007','0008',...aggregate?['0009','0010']:[]])await f.db.exec((await readFile('.generated/migrations/'+n+'.sql','utf8')).replaceAll('\n',' '));return f;}
 async function upload(f,a,n,headers={}){const path='/v1/captures/'+id(n);assert.equal((await f.call(path,{token:a.token,method:'POST',body:{files:[file()]}})).status,200);assert.equal((await f.call(path+'/files/summary.md',{token:a.token,method:'PUT',raw:'hello'})).status,200);assert.equal((await f.call(path+'/complete',{token:a.token,method:'POST',headers})).status,200);return path;}
 async function observed(f,n){for(let i=0;i<100;i++){const rows=(await f.db.prepare('SELECT * FROM reporting_daily_active_accounts').all()).results;if(rows.reduce((sum,r)=>sum+r.active_accounts,0)===n)return rows;await new Promise(resolve=>setTimeout(resolve,10));}assert.fail('Actual Worker background aggregation did not converge within bounded local test wait');}
 test('aggregate DAU real Worker: successes, shared account dedup, concurrency/retries, no signup or PostHog consent fabrication',async()=>{
@@ -39,7 +39,7 @@ test('local workerd D1 upgrade preserves positive choices, refusal revisions, pe
   await f.db.prepare("INSERT INTO analytics_outbox(id,account_id,event,occurred_at,consent_id) SELECT 'synthetic-pending',account_id,'connect_upload_completed',consented_at,consent_id FROM analytics_consent WHERE account_id=?").bind(a.id).run();
   await f.db.exec('UPDATE r2_budget SET a_used=17,b_used=23,physical_used=1234 WHERE id=1; UPDATE analytics_control SET enabled=0,dropped=7');
   const snapshot=async()=>Promise.all(['SELECT * FROM r2_budget','SELECT * FROM analytics_control','SELECT account_id,revision,decided_at FROM analytics_choices ORDER BY account_id','SELECT * FROM analytics_consent','SELECT * FROM analytics_outbox'].map(async sql=>(await f.db.prepare(sql).all()).results));
-  const before=await snapshot();await f.db.exec((await readFile('migrations/0009.sql','utf8')).replaceAll('\n',' '));assert.deepEqual(await snapshot(),before);
+  const before=await snapshot();await f.db.exec((await readFile('.generated/migrations/0009.sql','utf8')).replaceAll('\n',' '));assert.deepEqual(await snapshot(),before);
   assert.equal((await f.db.prepare('SELECT aggregate_objected FROM analytics_choices WHERE account_id=?').bind(b.id).first()).aggregate_objected,1);
   assert.equal((await f.db.prepare('SELECT aggregate_objected FROM analytics_choices WHERE account_id=?').bind(a.id).first()).aggregate_objected,0);
  }finally{await f.close();}
@@ -63,12 +63,12 @@ test('aggregate failures never roll back real successful upload/share or mutate 
 });
 async function sqlite(bootstrap=true){
  const db=new DatabaseSync(':memory:');let now=Math.floor(Date.now()/DAY)*DAY-1;db.function('unixepoch',{varargs:true},(...args)=>args[0]==='subsec'?now/1000:Math.floor(now/1000));
- for(const n of ['0001','0002','0004','0005','0003','0006','0007','0008'])db.exec(await readFile('migrations/'+n+'.sql','utf8'));
+ for(const n of ['0001','0002','0004','0005','0003','0006','0007','0008'])db.exec(await readFile('.generated/migrations/'+n+'.sql','utf8'));
  db.exec('UPDATE r2_budget SET a_used=17,b_used=23,physical_used=1234 WHERE id=1');
- const before={budget:db.prepare('SELECT * FROM r2_budget').all(),control:db.prepare('SELECT * FROM analytics_control').all()};db.exec(await readFile('migrations/0009.sql','utf8'));assert.deepEqual(db.prepare('SELECT * FROM r2_budget').all(),before.budget);assert.deepEqual(db.prepare('SELECT * FROM analytics_control').all(),before.control);
+ const before={budget:db.prepare('SELECT * FROM r2_budget').all(),control:db.prepare('SELECT * FROM analytics_control').all()};db.exec(await readFile('.generated/migrations/0009.sql','utf8'));assert.deepEqual(db.prepare('SELECT * FROM r2_budget').all(),before.budget);assert.deepEqual(db.prepare('SELECT * FROM analytics_control').all(),before.control);
  const prepare=(sql,params=[])=>({bind:(...values)=>prepare(sql,values),run:async()=>({meta:{changes:Number(db.prepare(sql).run(...params).changes)}}),sql,params});
  const env={DB:{prepare,batch:async items=>{db.exec('BEGIN');try{const result=[];for(const item of items)result.push(await item.run());db.exec('COMMIT');return result;}catch(error){db.exec('ROLLBACK');throw error;}}}};
- if(bootstrap)db.exec(await readFile('migrations/0010.sql','utf8'));
+ if(bootstrap)db.exec(await readFile('.generated/migrations/0010.sql','utf8'));
  const account='a'.repeat(64);db.prepare("INSERT INTO accounts(id,email,beta,created_at) VALUES(?,'synthetic@example.com','active',?)").run(account,now);
  return {db,env,account,get now(){return now;},advance:n=>{now=n;},close:()=>db.close()};
 }
@@ -82,7 +82,7 @@ test('actual SQL: additive bootstrap preserves populated activity, immutable sta
   const before=snapshot(),state=f.db.prepare('SELECT id,collection_started_at_ms,as_of_ms FROM aggregate_dau_state').all();
   const views=f.db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='view' AND name!='reporting_daily_active_accounts' ORDER BY name").all();
   const rows=f.db.prepare('SELECT * FROM reporting_daily_active_accounts').all();
-  f.db.exec(await readFile('migrations/0010.sql','utf8'));
+  f.db.exec(await readFile('.generated/migrations/0010.sql','utf8'));
   assert.deepEqual(snapshot(),before);assert.deepEqual(f.db.prepare('SELECT id,collection_started_at_ms,as_of_ms FROM aggregate_dau_state').all(),state);
   assert.deepEqual(f.db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='view' AND name!='reporting_daily_active_accounts' ORDER BY name").all(),views);
   assert.deepEqual(f.db.prepare('SELECT * FROM reporting_daily_active_accounts').all(),rows,'an existing observed total remains unchanged');

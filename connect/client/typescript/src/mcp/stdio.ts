@@ -1,6 +1,6 @@
 import {Readable,Writable} from 'node:stream';
-import {acceptEndpoint,type EndpointResult} from './mcp-endpoint.js';
-import {MAX_RELAY_REPLY_BYTES} from './mcp-wire.js';
+import {acceptEndpoint,type EndpointResult} from '../mcp-endpoint.js';
+import {MAX_RELAY_REPLY_BYTES} from '../mcp-wire.js';
 
 /** Lossless host-to-reader JSON lines. Ciphertext never goes through argv. */
 async function* replies(input:Readable):AsyncGenerator<unknown> {
