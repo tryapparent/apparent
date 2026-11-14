@@ -57,6 +57,9 @@ Phase changes retain the visible pill's horizontal center, excluding the hidden
 notes reserve. Display placement uses the same visible width. Note-count changes
 within recording keep the existing control positions; work-area clamping still
 takes priority near screen edges.
+On Linux a mapped resize paints the new surface before restoring its rounded
+native mask, preventing stale opaque corners on XWayland. Concurrent layout
+requests share that paint barrier and obsolete snapshots cannot restore a mask.
 Window move/resize/layout events publish physical geometry for the notes anchor,
 instead of the GUI thread polling X11 geometry. Hidden Linux rendering is not
 background-throttled, so preloading can finish before the first capture.
