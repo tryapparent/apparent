@@ -1,0 +1,17 @@
+{
+  "name": "@apparent/record-media",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22.18"},
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.tools.json",
+    "test": "node --experimental-strip-types --test test/policy.test.ts",
+    "test:native": "node --experimental-strip-types --test test/native.test.ts"
+  },
+  "dependencies": {
+    "@apparent/engine-sdk": "https://github.com/tryapparent/apparent/releases/download/engine-media-11d41ddd8e6f67ac0b13da3f72899ef10e9af4c7/apparent-engine-sdk-0.1.0.tgz"
+  },
+  "devDependencies": {"@types/node": "22.19.0", "typescript": "5.9.3"}
+}

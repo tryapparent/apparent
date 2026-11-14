@@ -53,9 +53,16 @@ Successful main builds publish a commit-addressed prerelease; consumers must pin
 an exact artifact digest and compatible SDK. Producer publication does not
 activate an installed app or move its compatibility gates.
 
-This is a necessary producer prerequisite, not completed production migration.
-The installed app still uses `capture/engine/` and Desktop's existing probes.
-The next dependency-complete slice must adopt a published Engine artifact in
-the real Mac/Linux callers and packaging, verify platform behavior, then remove
-the replaced probe implementation. Rollback reverts that consumer slice and its
-pin together. Keep historical migration branches and unrelated writers intact.
+Record's `record/media/` package is the first application consumer. CLI and menu
+export obtain metadata through its headless worker and this published SDK, using
+the native artifact pinned by that consumer. Application packaging stages those
+verified bytes and signs the Mac readers as nested code. No source build or
+download occurs when exporting. See `record/media/README.md` for policy, package
+proof and rollback. Linux export's superseded FFprobe parsing is removed.
+
+This is bounded adoption, not completed application separation. Capture, native
+rendering, phone import and retention still use the authoritative legacy runtime;
+the helper probe remains required by its other callers. Producer changes do not
+automatically update an installed consumer: pin/contract adoption needs its own
+tests and package verification. Revert the consumer slice and pin together for
+rollback. Preserve historical migration branches and unrelated writers.

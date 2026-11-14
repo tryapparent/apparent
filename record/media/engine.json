@@ -1,0 +1,44 @@
+{
+  "commit": "11d41ddd8e6f67ac0b13da3f72899ef10e9af4c7",
+  "sdkFiles": {
+    "dist/index.js": "4e55addf05b104b2a921763cb2fe458d069bc9fc7e12a90e770f271f57347965",
+    "dist/index.d.ts": "a5e84b89c13c3b937d1c6460cd9458b16392f9d30a5af1fdef503c41d6169a68",
+    "package.json": "c518061106996d32518d9f0da3250a450af4a61949f2820bb9c1644f0c54661c"
+  },
+  "runtimes": {
+    "darwin-arm64": {
+      "archiveSha256": "806708e4fe41dfa3cece0c9ed700636107497c3c0882c3473a9946f1304ba56b",
+      "files": {
+        "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a",
+        "apparent-engine-media": "9cfacbc29d43f3d39578d94f567787dd3c4555b3b2af363048ba6dded4d9ddc3",
+        "apparent-engine-probe": "c02ee6220caf99363995fa0b702ca280c8598d047d88bc2100993689ad652099",
+        "manifest.json": "ac1ddb30470789fa1001b1525f460721df11dee8e80422142d9d3af04bffadb8"
+      }
+    },
+    "darwin-x64": {
+      "archiveSha256": "3d787ec6fb38389cd39d8e1e8d0671bd2ddb957769c35657bbbea81a57fc9e58",
+      "files": {
+        "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a",
+        "apparent-engine-media": "ca61d3c6beb590ab34b25bca9a92eeafe5ff4e31ddc522c45fe7a10d19d9262a",
+        "apparent-engine-probe": "9d08033752705ab174fe5eb49f4a41956e6ef9818a1287c87b2f4774d88540aa",
+        "manifest.json": "f9ee995457235f8e56bcb85bca6d0a592153f52304e394ada0d165c6ac81f98f"
+      }
+    },
+    "linux-arm64": {
+      "archiveSha256": "78950ca3d314b5ddd0763386c1e96b63d1d446adbf7d788e415747611b990c2f",
+      "files": {
+        "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a",
+        "apparent-engine-media": "28ef050c791c5a847bb383fd19abd5ec49e1cc2331dd4c65f68bd3c1287e1682",
+        "manifest.json": "a793b362b86a7fb3fa9b1639439ea0c800cf4e8ef2661d98fbed0b600678d61e"
+      }
+    },
+    "linux-x64": {
+      "archiveSha256": "5b64b601f316b0f3415278844d47a8722a6690a013acac5c3a6e1ee6a52e57d5",
+      "files": {
+        "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a",
+        "apparent-engine-media": "df84cb9043b87743de856aceb40f2df2a3d3de8e228755a07de03f63df00715a",
+        "manifest.json": "2f575971c37a6d00b1492d9e5d92b489654013bee0a4055d3d0ef4715c16d56c"
+      }
+    }
+  }
+}

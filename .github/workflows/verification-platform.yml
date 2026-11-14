@@ -292,6 +292,9 @@ jobs:
           node --experimental-strip-types enablement/prerequisites/native.ts
           # Later clean packaging installs must use the archive prepared here.
           printf 'electron_config_cache=%s\n' "$electron_config_cache" >> "$GITHUB_ENV"
+      - name: Qualify Record media through the published Engine provider
+        if: needs.select.outputs.root == 'true'
+        run: npm --prefix record/media run test:native
       - name: CI-sensitive fixtures before native checks
         if: needs.select.outputs.root == 'true'
         shell: bash
@@ -326,6 +329,7 @@ jobs:
           APPARENT_NO_LAUNCH=1 node --experimental-strip-types enablement/timing/command.ts packaging bash capture/desktop/scripts/packaging/install-app.sh
           codesign --verify --deep --strict "$APPARENT_APP_DIR"
           npm --prefix capture/desktop/ui/frontend run build
+          node --experimental-strip-types record/media/test/package.ts --binary "$APPARENT_APP_DIR/Contents/MacOS/apparent" --settings "$APPARENT_APP_DIR/Contents/Resources/settings"
       - name: Retain the installed Mac CI candidate for a separate native test run
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true' && needs.select.outputs.foreground == 'true'
         shell: bash

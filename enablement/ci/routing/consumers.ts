@@ -14,7 +14,7 @@ export function documentationOnlyPath(path: string): boolean {
   if (/(^|\/)(SKILL|CLAUDE|GEMINI)\.md$/i.test(path)) return false;
   return ['CONTEXT.md', 'VERIFICATION.md', 'enablement/refactor.md'].includes(path) ||
     ['capture/engine', 'capture/desktop', 'capture/agent', 'connect', 'connect/web', 'connect/client',
-      'connect/service', 'public/site', 'shared', 'enablement', 'record/storage', 'record/completion', 'engine', 'engine/sdk'].some(owner =>
+      'connect/service', 'public/site', 'shared', 'enablement', 'record/storage', 'record/completion', 'record/media', 'engine', 'engine/sdk'].some(owner =>
       path.startsWith(owner + '/docs/') || ['README', 'CHANGELOG', 'CONTRIBUTING', 'LICENSE'].some(name => path === `${owner}/${name}.md`));
 }
 export const linuxDrivers = new Set(['capture-smoke.py', 'gui-vm.py', 'gui-vm-reaper.py',
@@ -103,9 +103,9 @@ export function foregroundPortableChange(path: string, before: string, after: st
 
 function directConsumers(path: string): readonly Owner[] {
   if (documentationOnlyPath(path)) return [];
-  // This producer is not yet adopted by the app. Do not confuse its independent
-  // native/SDK closure with the staged legacy capture/engine crate. Consumer
-  // adoption must add the pinned artifact's actual app/package edges here.
+  // Independently delivered producer; Record media consumes a pinned artifact,
+  // never this implementation tree. Consumer pin/policy/package changes retain
+  // their installed application consumers through record/ below.
   if (path.startsWith('engine/') || path === '.github/workflows/stream-engine.yml') return ['engine-media'];
   if (path.startsWith('enablement/ci/') || path === 'enablement/local-tests/run.ts' || path.startsWith('.github/actions/ubuntu-apt/')) return owners;
   if (portableForegroundInputs.has(path)) return ['client-foreground'];
