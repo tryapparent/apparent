@@ -52,7 +52,11 @@ no runtime dependencies and requires no Rust toolchain or cached native outputs.
 
 `apparent-engine-frames frames-v1 MOVIE OUTPUT MAX_EDGE TIMES_CSV` decodes finite
 MP4/QuickTime snapshots through GStreamer on Linux and a separate AVFoundation
-helper on Mac. `OUTPUT` must be a fresh, caller-owned `0700` directory. The public
+helper on Mac. Mac uses exact-time image generation; a native decode failure
+falls back to a serial reader from the beginning to retain open-GOP reference
+pictures. That path must find the exact selected sample; it cannot substitute a
+nearby frame. It can take longer and retains the same SDK deadline and limits.
+`OUTPUT` must be a fresh, caller-owned `0700` directory. The public
 SDK validates request identity, file ownership, dimensions and exact byte counts.
 See [the SDK contract](sdk/README.md#movie-frames) for clocks, limits and cleanup.
 The metadata reader stays separate and does not link GStreamer.
@@ -63,6 +67,9 @@ offsets on each supported architecture. This producer prerequisite enables Agent
 zoom adoption; it does not route an application caller or retire a root decoder.
 Sampling, cropping and bundle policy remain with consumers. Producer publication
 must precede checksum-pinned consumer adoption and its application package proof.
+Mac qualification also runs every vector with the real sequential reader forced
+by `APPARENT_ENGINE_QUALIFY_SEQUENTIAL=1`; this is an internal qualification
+control, not a consumer provisioning or workflow contract.
 
 ## Delivery and adoption
 

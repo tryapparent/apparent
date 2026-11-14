@@ -21,10 +21,11 @@ export async function qualifyFrames(executable: string, directory: string, movie
           String(options.maxEdge ?? 0), options.timesMs.join(',')], {
           encoding: 'utf8', timeout: 30_000, maxBuffer: 1024 * 1024,
         });
-        const failure = diagnostic.stderr?.match(/^Engine frames: (?:invalidRequest|unsafeOutput|decodeFailed|resourceLimit|writeFailed|preciseTiming|videoTrack|segments|mediaTime|cursor|cursorRange|sampleTime|generatorTime|rgbaContext|invalid_request|unsafe_output|decode_failed|resource_limit|write_failed|unavailable|platform_error code=-?\d+ underlying=-?\d+)$/m)?.[0] ?? 'unclassified';
+        const failure = diagnostic.stderr?.match(/^Engine frames: (?:invalidRequest|unsafeOutput|decodeFailed|resourceLimit|writeFailed|preciseTiming|videoTrack|segments|mediaTime|cursor|cursorRange|sampleTime|generatorTime|rgbaContext|sequentialReader|sequentialTime|sequentialImage|invalid_request|unsafe_output|decode_failed|resource_limit|write_failed|unavailable|platform_error code=-?\d+ underlying=-?\d+)$/m)?.[0] ?? 'unclassified';
         const timing = diagnostic.stderr?.match(/^Engine frame timing: sample=-?\d+\/\d+ actual=-?\d+\/\d+ request=\d+$/m)?.[0];
+        const reader = diagnostic.stderr?.match(/^Engine frame reader: status=\d+ code=-?\d+ underlying=-?\d+$/m)?.[0];
         console.error(JSON.stringify({frameQualificationStage: stage, nativeExit: diagnostic.status,
-          signal: diagnostic.signal, nativeFailure: failure, nativeTiming: timing}));
+          signal: diagnostic.signal, nativeFailure: failure, nativeTiming: timing, nativeReader: reader}));
       } catch {
         console.error(JSON.stringify({frameQualificationStage: stage, nativeFailure: 'diagnostic_unavailable'}));
       }
@@ -109,6 +110,7 @@ export async function qualifyFrames(executable: string, directory: string, movie
   await assert.rejects(pending, {code: 'cancelled'});
   assert.deepEqual([hash(movie), hash(rotated)], hashes);
   console.log(JSON.stringify({capability: 'movie-frames/1', platform: process.platform, arch: process.arch,
+    providerMode: process.platform === 'darwin' && process.env.APPARENT_ENGINE_QUALIFY_SEQUENTIAL === '1' ? 'sequential' : 'default',
     elapsedMs: Math.round(performance.now() - started), checks: ['packed-public-sdk', 'actual-native-decoding',
       'request-identities', 'duplicates', 'backward-seek', 'presentation-clock', 'edge-clamps', 'scale',
       'display-rotation-and-pixels', 'edit-list-offsets', 'never-upscale', 'private-files',

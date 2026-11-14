@@ -1,6 +1,8 @@
 import AVFoundation
 import CoreGraphics
+import CoreImage
 import CoreMedia
+import CoreVideo
 import Darwin
 import Foundation
 
@@ -10,6 +12,7 @@ import Foundation
 private enum Failure: String, Error, Equatable {
   case invalidRequest, unsafeOutput, decodeFailed, resourceLimit, writeFailed
   case preciseTiming, videoTrack, segments, mediaTime, cursor, cursorRange, sampleTime, generatorTime, rgbaContext
+  case sequentialReader, sequentialTime, sequentialImage
 }
 private struct Frame: Codable, Sendable {
   let requestIndex: Int
@@ -20,6 +23,68 @@ private struct Frame: Codable, Sendable {
   let file: String
 }
 private struct Reply: Codable { let version: Int; let frames: [Frame] }
+
+// Random seeking into an open GOP can omit reference pictures. On a native
+// decode failure, read from the beginning in presentation order instead. Keep
+// this rare path serial and retain no movie-sized frame cache.
+private actor SequentialFrames {
+  let asset: AVAsset
+  let track: AVAssetTrack
+  let transform: CGAffineTransform
+  lazy var context = CIContext(options: [.cacheIntermediates: false])
+  init(asset: AVAsset, track: AVAssetTrack, transform: CGAffineTransform) {
+    self.asset = asset; self.track = track; self.transform = transform
+  }
+
+  func image(at target: CMTime, edge: Int) throws -> CGImage {
+    let reader = try AVAssetReader(asset: asset)
+    defer { reader.cancelReading() }
+    let output = AVAssetReaderTrackOutput(track: track,
+      outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+    output.alwaysCopiesSampleData = false
+    guard reader.canAdd(output) else { throw Failure.sequentialReader }
+    reader.add(output)
+    guard reader.startReading() else { throw readerFailure(reader) }
+    var previous: CMTime?
+    while let sample = output.copyNextSampleBuffer() {
+      try Task.checkCancellation()
+      let time = CMSampleBufferGetOutputPresentationTimeStamp(sample)
+      guard time.seconds.isFinite,
+            previous.map({ CMTimeCompare(time, $0) >= 0 }) ?? true else { throw Failure.sequentialTime }
+      previous = time
+      if CMTimeCompare(time, target) < 0 { continue }
+      guard CMTimeCompare(time, target) == 0 else {
+        FileHandle.standardError.write(Data("Engine frame timing: sample=\(target.value)/\(target.timescale) actual=\(time.value)/\(time.timescale) request=\(CMTimeConvertScale(target, timescale: 1000, method: .roundTowardNegativeInfinity).value)\n".utf8))
+        throw Failure.sequentialTime
+      }
+      guard let buffer = CMSampleBufferGetImageBuffer(sample) else { throw Failure.sequentialImage }
+      let rawWidth = CVPixelBufferGetWidth(buffer), rawHeight = CVPixelBufferGetHeight(buffer)
+      guard rawWidth > 0, rawHeight > 0, rawWidth <= 16384, rawHeight <= 16384,
+            Int64(rawWidth) * Int64(rawHeight) <= 64 * 1024 * 1024 else { throw Failure.resourceLimit }
+      let image = CIImage(cvPixelBuffer: buffer).transformed(by: transform)
+      let bounds = image.extent
+      guard bounds.minX.isFinite, bounds.minY.isFinite, bounds.width.isFinite, bounds.height.isFinite,
+            bounds.width > 0, bounds.height > 0 else { throw Failure.sequentialImage }
+      let scale = edge > 0 ? min(1, CGFloat(edge) / max(bounds.width, bounds.height)) : 1
+      let width = max(1, (bounds.width * scale).rounded()), height = max(1, (bounds.height * scale).rounded())
+      guard width <= 16384, height <= 16384, width * height <= 64 * 1024 * 1024 else { throw Failure.resourceLimit }
+      let normalized = image.transformed(by: CGAffineTransform(translationX: -bounds.minX, y: -bounds.minY))
+        .transformed(by: CGAffineTransform(scaleX: width / bounds.width, y: height / bounds.height))
+      guard let rendered = context.createCGImage(normalized, from: CGRect(x: 0, y: 0, width: width, height: height),
+        format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!) else { throw Failure.sequentialImage }
+      return rendered
+    }
+    if reader.status == .failed { throw readerFailure(reader) }
+    throw Failure.sequentialTime
+  }
+
+  private func readerFailure(_ reader: AVAssetReader) -> Failure {
+    let native = reader.error.map { $0 as NSError }
+    let underlying = native?.userInfo[NSUnderlyingErrorKey] as? NSError
+    FileHandle.standardError.write(Data("Engine frame reader: status=\(reader.status.rawValue) code=\(native?.code ?? 0) underlying=\(underlying?.code ?? 0)\n".utf8))
+    return .sequentialReader
+  }
+}
 
 private actor Output {
   let fd: Int32
@@ -83,6 +148,10 @@ struct Frames {
     let mappings = try await track.load(.segments).filter { !$0.isEmpty }.map(\.timeMapping)
       .sorted { CMTimeCompare($0.target.start, $1.target.start) < 0 }
     guard !mappings.isEmpty else { throw Failure.segments }
+    let sequential = SequentialFrames(asset: asset, track: track, transform: try await track.load(.preferredTransform))
+    // Owning package qualification exercises the real fallback for every
+    // contract vector; this never changes source selection or output policy.
+    let qualifySequential = ProcessInfo.processInfo.environment["APPARENT_ENGINE_QUALIFY_SEQUENTIAL"] == "1"
     let output = Output(fd)
     let workers = min(6, times.count)
     let chunk = (times.count + workers - 1) / workers
@@ -113,7 +182,19 @@ struct Frames {
             let sample = CMTimeMaximum(mapping.target.start,
               CMTimeMapTimeFromRangeToRange(cursor.presentationTimeStamp, fromRange: mapping.source, toRange: mapping.target))
             guard sample.seconds.isFinite else { throw Failure.sampleTime }
-            let (image, actual) = try await generator.image(at: sample)
+            let decoded: (CGImage, CMTime)
+            if qualifySequential {
+              decoded = (try await sequential.image(at: sample, edge: edge), sample)
+            } else {
+              do { decoded = try await generator.image(at: sample) }
+              catch {
+                let native = error as NSError
+                guard native.domain == AVFoundationErrorDomain,
+                      native.code == AVError.Code.decodeFailed.rawValue else { throw error }
+                decoded = (try await sequential.image(at: sample, edge: edge), sample)
+              }
+            }
+            let (image, actual) = decoded
             guard CMTimeCompare(actual, sample) == 0 else {
               // Numeric clock facts only; SDK errors still discard native stderr.
               FileHandle.standardError.write(Data("Engine frame timing: sample=\(sample.value)/\(sample.timescale) actual=\(actual.value)/\(actual.timescale) request=\(times[index])\n".utf8))
