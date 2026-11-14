@@ -1,16 +1,18 @@
-import { useState } from 'react';
-import { Button } from '@apparent/ui/button';
 import icon from '../../../../../../shared/assets/brand/apparent-app-icon.svg';
 import './control-guide.css';
 
 /** Illustrated controls, never capture/menu actions. Rust owns real progress. */
 export function ControlGuide({ kind, screenOnly = false, directWhiteboard = false }: { kind: 'whiteboard' | 'finish' | 'locate'; screenOnly?: boolean; directWhiteboard?: boolean }) {
-  const [replay, setReplay] = useState(0);
   const label = kind === 'whiteboard' ? screenOnly ? 'Example: click Screen' : directWhiteboard ? 'Example: click Whiteboard' : 'Example: click Screen, then choose Whiteboard' :
     kind === 'finish' ? 'Example: Finish stops recording, then the handoff is copied' : 'Example: open the apparent menu, then Open Latest Capture';
   return <figure className="native-control" data-kind={kind} data-screen-only={screenOnly} data-direct-whiteboard={directWhiteboard} aria-label={label}>
-    <div key={replay} className="native-control-motion" aria-hidden="true">
-      {kind === 'whiteboard' && <svg viewBox="0 0 330 82">
+    <div className="native-control-motion" aria-hidden="true">
+      {kind === 'whiteboard' && directWhiteboard ? <svg viewBox="100 10 155 64">
+        <rect className="control-pill" x="106" y="15" width="143" height="48" rx="24"/>
+        <rect className="control-highlight" x="115" y="23" width="125" height="32" rx="16"/>
+        <text className="control-action-label" x="125" y="45">✎ Whiteboard</text>
+        <g className="control-pointer"><path d="M0 0V18L5 13 10 22 13 20 8 11H16Z"/></g>
+      </svg> : kind === 'whiteboard' && <svg viewBox="0 0 330 82">
         <rect className="control-pill" x="8" y="15" width="314" height="47" rx="24" />
         <g className="control-screen"><text x="23" y="45">⌃</text><text x="54" y="45">0:00</text><text x="114" y="45">▧ Area</text><rect className="control-highlight" x="193" y="20" width="83" height="36" rx="9"/><text x="201" y="45">▣ Screen</text><text x="300" y="45">×</text></g>
         <g className="control-board"><text x="23" y="45">0:03</text><text x="83" y="45">×</text><rect className="control-highlight" x="119" y="20" width="119" height="36" rx="18"/><text x="132" y="45">✎ Whiteboard</text><text x="259" y="45">□ Finish</text></g>
@@ -36,6 +38,5 @@ export function ControlGuide({ kind, screenOnly = false, directWhiteboard = fals
         <g className="control-pointer"><path d="M0 0V18L5 13 10 22 13 20 8 11H16Z"/></g>
       </svg>}
     </div>
-    <Button variant="ghost" size="icon" className="native-control-replay" aria-label={`Replay ${kind === 'whiteboard' ? 'Screen and Whiteboard' : kind === 'finish' ? 'Finish' : 'location'} guide`} onClick={() => setReplay(value => value + 1)}>↻</Button>
   </figure>;
 }

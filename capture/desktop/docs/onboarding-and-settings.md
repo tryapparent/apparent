@@ -679,8 +679,9 @@ its Shift-click illustration are removed; adding notes remains optional, and the
 existing notes editor, save receipts and bundle output are unchanged. Old in-memory
 practice state at the removed `note` stage maps to screen drawing and requires a
 fresh stroke, so it cannot mistake earlier screen ink for the next action.
-Whiteboard and screen ink, paste confirmation and opening the current practice
-bundle remain the actual completion evidence. The trackpad helper still appears
+Whiteboard and screen ink remain required native milestones. In Electron, Done
+after the paste illustration confirms paste and completes a successfully saved
+practice capture; opening the latest bundle is optional. The trackpad helper still appears
 during screen drawing. Installed Mac/Linux acceptance remains required for native
 focus, capture and bundle behavior; renderer simulation is not native proof.
 
@@ -723,3 +724,29 @@ host receipt and restores the existing native trial. This is a bounded move of
 shortcut-practice policy into TypeScript, not independent onboarding release or
 migration of the remaining Rust journey/progress writer. Installed Mac/Linux
 shortcut release, capture-start and remembered-progress acceptance remain required.
+
+### Onboarding review corrections
+
+The shared Electron tour listens as soon as shortcut choice opens. Fn is the
+suggested choice (macOS key 63; Linux's existing WakeUp/Fn key 95 mapping);
+pressing another supported chord selects it directly. Held modifiers appear
+until released or focus leaves the recorder. Linux hardware must expose Fn to
+the OS; the real second-press trial remains required. Existing compositor
+bindings and saved preferences are preserved until a choice is made.
+
+Setup keeps a consistent 760×600 footprint bounded by the work area. Back from
+the pen picker returns to agent choice. Transparent agent artwork follows the
+existing illustrations; its generated alpha sprite derives from local-agent.png
+and cloud-agent.png using background removal, with both illustrations in one
+asset. Ordinary controls remain shared React/shadcn components.
+
+Coaches use a corner close control. Illustrations loop without replay controls,
+stop under reduced motion, and never send input. During processing the owning
+Electron window hides, then returns inactive for copied/error recovery; the pill
+provides the processing status and a reduced-motion-aware spinner. The paste
+coach shows the platform gesture, brief tray/menu-bar guidance, and Done.
+TypeScript admits Done only after both drawing milestones and copied capture;
+the native adapter still requires the current durable completion receipt and
+performs the sole progress mutation. Early-stop and copy failure keep recovery.
+Rollback reverts this presentation/policy slice together; the native fallback
+retains its previous lesson, and the practice-host transport contract is unchanged.

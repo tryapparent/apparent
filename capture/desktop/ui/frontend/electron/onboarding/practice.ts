@@ -65,7 +65,12 @@ export function reducePractice(state: Practice, event: Event): {state: Practice;
         next = {...state, stage: 'retry'};
       break;
     case 'action':
-      if (stage === 'copied' && event.action === 'practice-paste') {
+      // Done confirms the paste directly; finding the bundle is optional.
+      // Native admission still requires this attempt's durable capture receipt.
+      if (['copied', 'paste'].includes(stage) && event.action === 'practice-finish') {
+        next = {...state, pasted: true, stage: state.boardInk && state.screenInk ? 'complete' : 'retry'};
+        accepted = next.stage === 'complete';
+      } else if (stage === 'copied' && event.action === 'practice-paste') {
         next = {...state, stage: 'paste'}; accepted = true;
       } else if (stage === 'paste' && event.action === 'practice-pasted') {
         next = {...state, pasted: true, stage: 'locate'}; accepted = true;

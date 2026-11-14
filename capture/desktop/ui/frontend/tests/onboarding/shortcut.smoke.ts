@@ -55,6 +55,7 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
   await page.keyboard.down('Control');
   await page.keyboard.down('Shift');
   await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.locator('.native-held-keys')).toHaveText('CtrlShift');
   assert.equal(output,'','modifiers do not submit or cancel');
   await recorder.dispatchEvent('keydown',{key:'F23',code:'F23',ctrlKey:true,shiftKey:true});
   await expect.poll(()=>output).toContain('"keyCode":201,"modifiers":4608,"key":"Copilot"');
@@ -70,7 +71,7 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
   await expect.poll(()=>output).toContain('"action":"resolve-copilot"');
   assert.equal(output.includes('"keyCode"'),false,'unknown input requires native confirmation');
   await recorder.dispatchEvent('keydown',{key:'Fn',code:'Fn'});
-  await expect(page.getByRole('alert')).toContainText('Fn is not available in this Linux shortcut recorder');
+  await expect(page.getByRole('alert')).toContainText('Try the Fn suggestion');
   for(const theme of ['light','dark'] as const){
     await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});
     for(const width of [760,320]){
@@ -88,11 +89,11 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
   output='';child.stdin.write(JSON.stringify({type:'desktop-shortcut',keyCode:201,modifiers:768,key:'Copilot'})+'\n');
   await page.waitForTimeout(100);assert.equal(output,'','cancel blocks late offers before provider state acknowledgement');
   send('macos');
-  await expect(page.getByRole('button',{name:'Use Fn',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true})).toBeVisible();
   output='';
   child.stdin.write(JSON.stringify({type:'desktop-shortcut',keyCode:201,modifiers:768,key:'Copilot'})+'\n');
   await page.waitForTimeout(100);assert.equal(output,'','Mac does not accept Linux compositor callbacks');
-  output='';await page.getByRole('button',{name:'Use Fn',exact:true}).click();
+  output='';await page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true}).click();
   await expect.poll(()=>output).toContain('"keyCode":63,"modifiers":0,"key":"Fn"');
   await recorder.focus();output='';
   await page.keyboard.down('Control');await page.keyboard.down('Shift');

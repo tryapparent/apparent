@@ -72,8 +72,8 @@ test('the Electron parent accepts supported keys and rejects malformed modifier 
   assert.throws(() => parseAction({action:'shortcut',kind:'record',keyCode:65,modifiers:0,key:'A',reserved:false}));
 });
 
-test('explicit Fn selection is Mac-only and uses the accepted provider contract', () => {
-  assert.equal(fnShortcut('linux'), null);
+test('explicit Fn selection uses each native provider encoding', () => {
+  assert.deepEqual(fnShortcut('linux'),{keyCode:95,modifiers:0,key:'Fn'});
   const choice=fnShortcut('macos');
   assert.deepEqual(choice, {keyCode:63,modifiers:0,key:'Fn'});
   const action={action:'shortcut',kind:'record',...choice,reserved:false};
@@ -84,6 +84,6 @@ test('Fn selection enters the provider editor before choosing and keeps its guar
   const selection={action:'shortcut',kind:'record',keyCode:63,modifiers:0,key:'Fn',reserved:false};
   assert.deepEqual(fnSelectionActions('macos',false), ['change-shortcut',selection]);
   assert.deepEqual(fnSelectionActions('macos',true), [selection]);
-  assert.deepEqual(fnSelectionActions('linux',false), []);
+  assert.deepEqual(fnSelectionActions('linux',false), ['change-shortcut',{action:'shortcut',kind:'record',keyCode:95,modifiers:0,key:'Fn',reserved:false}]);
   for(const action of fnSelectionActions('macos',false))assert.deepEqual(parseAction(action),typeof action==='string'?{action}:action);
 });

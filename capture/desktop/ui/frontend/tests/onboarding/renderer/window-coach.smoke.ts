@@ -135,7 +135,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('heading', { name:'apparent lives here.', exact:true })).toBeVisible();
   await expect(page.getByText('Click the a in your menu bar, then Open Latest Capture.', { exact:true })).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveAttribute('data-arrow','true');
-  for(const phase of ['screen','whiteboard','board-ink','screen-ink','stop','preparing','copied','paste','locate','complete','retry','copy-failed']){
+  for(const phase of ['screen','whiteboard','board-ink','screen-ink','stop','copied','paste','locate','complete','retry','copy-failed']){
     send({step:'try-it',practice:phase});
     await expect(page.locator('.native-coach')).toHaveAttribute('data-stage',phase);
     if(phase==='screen-ink'){
@@ -164,8 +164,8 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   const board={id:'apparent-test-1',strokes:[human],color:[59,121,189]};
   send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:board});
   await expect(page.locator('.native-board')).toBeVisible();
-  await expect(page.getByRole('status')).toHaveText('Watch this.');
-  if(process.env.APPARENT_ONBOARDING_EVIDENCE){await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE,{recursive:true});await expect.poll(()=>page.locator('.native-board-lesson path').evaluate(el=>parseFloat(getComputedStyle(el).strokeDashoffset))).toBeLessThan(.5);await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'whiteboard-demo.png')});}
+  await expect(page.getByRole('status')).toHaveText('Your turn.');
+  if(process.env.APPARENT_ONBOARDING_EVIDENCE){await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE,{recursive:true});await expect(page.locator('.native-board-lesson path')).toHaveCount(0);await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'whiteboard-demo.png')});}
   const beforeGuide=output;
   await expect(page.getByRole('status')).toHaveText('Your turn.');
   assert.equal(output,beforeGuide,'the demonstration cannot emit native input');
@@ -212,7 +212,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     await page.emulateMedia({colorScheme:'light'});
   }
   const beforeReplay=output;
-  await page.getByRole('button',{name:'Replay guide',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Replay guide',exact:true})).toHaveCount(0);
   assert.equal(output,beforeReplay,'replay cannot clear or export human ink');
   const canvas=await page.getByLabel('Whiteboard drawing canvas').boundingBox();assert.ok(canvas);
   await page.mouse.move(canvas.x+20,canvas.y+30);await page.mouse.down();
@@ -228,7 +228,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{id:'apparent-test-1',strokes:[human],color:[59,121,189]}});
   await expect(page.locator('.native-board')).toBeVisible();
   await page.emulateMedia({reducedMotion:'reduce'});
-  await page.getByRole('button',{name:'Replay guide',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Replay guide',exact:true})).toHaveCount(0);
   await expect(page.getByRole('status')).toHaveText('Your turn.');
   await page.getByRole('button',{name:'Close whiteboard',exact:true}).click();
   await expect.poll(()=>output).toContain('"operation":"close"');
@@ -244,7 +244,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     send({step:'try-it',practice:phase,firstCaptureRequired:true});
     await expect(page.locator('.native-control')).toHaveAttribute('data-kind',kind);
     const before=output;
-    await page.locator('.native-control button').click();
+    await expect(page.locator('.native-control button')).toHaveCount(0);
     assert.equal(output,before,'Control-guide replay must never drive the app');
   }
   send({step:'try-it',practice:'whiteboard',firstCaptureRequired:true});
@@ -260,22 +260,17 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   assert.equal(await page.getByText('Click Whiteboard in the recording controls.',{exact:true}).count(),0);
   await expect(page.getByRole('figure',{name:'Example: click Whiteboard',exact:true})).toBeVisible();
   await expect(page.locator('.control-screen')).toBeHidden();
-  await expect(page.locator('.control-board')).toHaveCSS('opacity','1');
+  await expect(page.locator('.control-action-label')).toHaveText('✎ Whiteboard');
   // Guides use the saved keys, finish once, and replay without invoking app actions.
   send({step:'try-it',practice:'retry',shortcut:'⌃⌘9',firstCaptureRequired:true});
   await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','record');
   assert.deepEqual(await page.locator('.native-gesture kbd').allTextContents(),['⌃','⌘','9']);
   const strip=await page.locator('.native-gesture').boundingBox();assert.ok(strip);
   assert.ok(strip.height<=80,'Keep the inline demonstration compact');
-  await page.locator('.native-gesture').evaluate(async el=>{
-    await Promise.all(el.getAnimations({subtree:true}).map(animation=>animation.finished));
-  });
-  assert.equal(await page.locator('.native-gesture').evaluate(el=>el.getAnimations({subtree:true}).every(animation=>animation.playState==='finished')),true);
-  await page.locator('.native-gesture-motion').evaluate(el=>{window.originalGuideNode=el;});
   const priorActions=output;
-  await page.getByRole('button',{name:'Replay shortcut guide',exact:true}).click();
-  assert.equal(await page.locator('.native-gesture-motion').evaluate(el=>el!==window.originalGuideNode),true);
-  assert.equal(output,priorActions,'Replay must never send shortcuts or advance onboarding');
+  assert.equal(await page.locator('.native-gesture').evaluate(el=>el.getAnimations({subtree:true}).every(a=>a.effect?.getTiming().iterations===Infinity)),true);
+  await expect(page.getByRole('button',{name:'Replay shortcut guide',exact:true})).toHaveCount(0);
+  assert.equal(output,priorActions,'Looping guides never drive app actions');
   send({step:'try-it',practice:'paste',platform:'linux',firstCaptureRequired:true});
   await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','paste');
   assert.deepEqual(await page.locator('.native-gesture kbd').allTextContents(),['Ctrl','V']);
@@ -294,8 +289,8 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await page.emulateMedia({colorScheme:'dark'});
   await page.locator('.native-gesture').evaluate(el=>{for(const animation of el.getAnimations({subtree:true})){animation.pause();animation.currentTime=2000}});
   await expect(page.locator('.native-gesture kbd').first()).toHaveCSS('color','rgb(2, 1, 2)');
-  await expect(page.locator('.native-gesture')).toHaveCSS('background-color','rgb(231, 224, 238)');
-  await expect(page.getByRole('button',{name:'Replay shortcut guide',exact:true})).toHaveCSS('color','rgb(2, 1, 2)');
+  await expect(page.locator('.native-gesture')).toHaveCSS('background-color','rgb(2, 1, 2)');
+
   send({step:'try-it',practice:'screen-ink',firstCaptureRequired:true});
   await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','draw');
   await page.emulateMedia({reducedMotion:'reduce',colorScheme:'dark'});
@@ -305,7 +300,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
   await expect.poll(()=>page.evaluate(()=>innerWidth)).toBe(720);
   await expect(page.locator('.native-coach')).toHaveAttribute('data-paired','true');
-  await expect(page.locator('.native-coach-content > p')).toHaveCSS('font-size','36px');
+  await expect(page.locator('.native-coach h1')).toHaveCSS('font-size','36px');
   await expect(page.locator('.native-trackpad-helper p')).toHaveCSS('font-size','36px');
   const enlargedHelper=await page.locator('.native-trackpad-helper').evaluate(el=>{const r=el.getBoundingClientRect(),content=el.querySelector<HTMLElement>('.native-trackpad-helper-content');if(!content)throw new Error('Missing trackpad helper content');return{inside:r.right<=innerWidth&&r.bottom<=innerHeight,horizontal:content.scrollWidth>content.clientWidth}});
   assert.deepEqual(enlargedHelper,{inside:true,horizontal:false});
@@ -319,8 +314,8 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
   assert.equal(await page.locator('.native-setup section > p').count(),0);
   send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:false,platform:'linux',shortcut:'Super+Shift+Copilot',shortcutEditor:{recording:false,externallyManaged:true}});
-  await expect(page.locator('.native-shortcut kbd')).toHaveText('Super+Shift+Copilot');
-  await expect(page.getByRole('button',{name:'Use Super+Shift+Copilot',exact:true})).toBeInViewport();
+  await expect(page.locator('.native-shortcut kbd')).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Choose Super+Shift+Copilot',exact:true})).toBeInViewport();
   await expect(page.getByRole('button',{name:'Choose another shortcut',exact:true})).toBeInViewport();
   await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeDisabled();
   await page.getByRole('button',{name:'Choose another shortcut',exact:true}).click();
@@ -354,10 +349,10 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   assert.equal(await page.getByText(/Press .* to start recording/).count(),0);
   await expect(page.locator('.native-setup')).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveCount(0);
-  await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,520]);
+  await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,600]);
   await expect(page.locator('.native-shortcut kbd')).toHaveText('⌃⌥⇧9');
   await expect(page.locator('.native-shortcut kbd')).toHaveCSS('font-size','40px');
-  await page.evaluate(()=>document.getAnimations().forEach(a=>a.finish()));
+  await page.evaluate(()=>document.getAnimations().filter(a=>a.effect?.getTiming().iterations!==Infinity).forEach(a=>a.finish()));
   const heading=await page.getByRole('heading',{name:'One more time.',exact:true}).boundingBox();assert.ok(heading);
   const keys=await page.locator('.native-shortcut kbd').boundingBox();assert.ok(keys);
   assert.ok(Math.abs(heading.x+heading.width/2-(keys.x+keys.width/2))<2,'heading and shortcut share a centre');
@@ -381,7 +376,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect.poll(()=>page.evaluate(()=>innerWidth)).toBeLessThan(760);
   send({step:'try-it',practice:null,firstCaptureRequired:true});
   await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
-  await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,520]);
+  await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,600]);
   await page.setViewportSize({width:320,height:520});
   for(const scheme of schemes){
     await page.emulateMedia({colorScheme:scheme,reducedMotion:'reduce'});
@@ -397,7 +392,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await page.setViewportSize({width:760,height:520});
   const fnChoiceStart=output.length;
   send({step:'shortcut',platform:'macos',shortcutChosen:false,shortcutEditor:{recording:false,externallyManaged:false,error:null}});
-  await page.getByRole('button',{name:'Use Fn',exact:true}).click();
+  await page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true}).click();
   await expect.poll(()=>output.slice(fnChoiceStart)).toContain('\"keyCode\":63');
   assert.ok(output.slice(fnChoiceStart).indexOf('change-shortcut')<output.slice(fnChoiceStart).indexOf('\"keyCode\":63'),'open the provider editor before Fn selection');
   send({step:'shortcut',shortcutEditor:{recording:true,externallyManaged:false}});
@@ -428,7 +423,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('alert')).toContainText('Fn alone');
   await screenshot('shortcut-rejected-fn-modifier');
   assert.equal((output.match(/"keyCode":63/g)||[]).length,priorFnCount,'Fn with another modifier must not be accepted');
-  await recorder.getByRole('button',{name:'Use Fn',exact:true}).click();
+  await recorder.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true}).click();
   await expect.poll(()=>output).toContain('"keyCode":63,"modifiers":0,"key":"Fn"');
   await expect(page.getByRole('alert')).toHaveCount(0);
   await screenshot('shortcut-fn-error-recovered');
@@ -444,15 +439,15 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await page.getByRole('group',{name:'Shortcut recorder'}).evaluate(element=>element.dispatchEvent(new KeyboardEvent('keydown',{key:'ß',code:'KeyS',altKey:true,bubbles:true})));
   await expect.poll(()=>output).toContain('"keyCode":1,"modifiers":2048,"key":"s"');
   await page.getByRole('group',{name:'Shortcut recorder'}).press('Tab');
-  await expect(page.getByRole('button',{name:'Use Fn',exact:true})).toBeFocused();
-  await page.getByRole('button',{name:'Use Fn',exact:true}).press('Tab');
+  await expect(page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true})).toBeFocused();
+  await page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true}).press('Tab');
   await expect(page.getByRole('button',{name:'Cancel',exact:true})).toBeFocused();
   await page.getByRole('button',{name:'Cancel',exact:true}).press('Enter');
   await expect.poll(()=>output).toContain('cancel-shortcut');
   send({step:'shortcut',platform:'linux',shortcutChosen:false,shortcutEditor:{recording:false,externallyManaged:false,error:null}});
-  await expect(page.getByRole('button',{name:'Use Fn',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true})).toHaveCount(0);
   send({shortcutEditor:{recording:true,externallyManaged:false,error:null}});
-  await expect(page.getByRole('button',{name:'Use Fn',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true})).toHaveCount(0);
 
   await page.emulateMedia({reducedMotion:'reduce'});
   send({penPicker:true,penSelected:true,penRgb:[59,121,189]});

@@ -1612,6 +1612,7 @@ impl Session {
             return Effect::None;
         }
         if self.practice.is_some() && self.flow.step()==Step::Welcome {
+            if action=="back" && self.pen_picker {self.pen_picker=false;self.sync();return Effect::None;}
             if action=="continue" && !self.pen_picker {self.pen_picker=true;self.sync();return Effect::None;}
             if let Some(name)=action.strip_prefix("pen:") {
                 if self.pen_picker {
@@ -2126,6 +2127,10 @@ mod tests {
             session.action("back");
             assert_eq!(receive()["step"], "welcome");
             assert!(session.pen_picker, "Back must return to the pen choices");
+            session.action("back");
+            assert_eq!(receive()["penPicker"], false, "Back from pens returns to agent setup");
+            session.action("continue");
+            assert_eq!(receive()["penPicker"], true);
             std::fs::write(&path, b"broken config").unwrap();
             let failed_id = "33333333-3333-4333-8333-333333333333";
             session.action(&format!("pen:blue:{failed_id}"));
@@ -2236,14 +2241,14 @@ mod tests {
         if let Some(path)=std::env::var_os(CHILD) {
             let path=std::path::PathBuf::from(path);
             assert_eq!(crate::shared::handoff::default_config_path(),path);
-            for failure in [false,true] {
+            for (failure,direct) in [(false,false),(true,false),(false,true),(true,true)] {
                 std::fs::write(&path,br#"{"secret":"synthetic","unrelated":{"nested":7},"microphoneEnabled":false}"#).unwrap();
                 let mut s=coached_session();let (tx,_rx)=flume::unbounded();s.transport=Transport::InProcess(Some(tx));
                 s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);s.practice_whiteboard();
                 s.observe_practice(true,0,false,None);s.observe_practice(false,1,false,None);
                 // Host completion alone is not native durability evidence.
                 s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
-                s.action("practice-paste");s.action("practice-pasted");s.practice_latest();
+                if !direct {s.action("practice-paste");s.action("practice-pasted");s.practice_latest();}
                 assert_eq!(s.action("practice-finish"),Effect::None);
                 assert!(!s.flow.first_capture_completed);
                 // Start another admitted real capture and provide its first native receipt.
@@ -2251,7 +2256,9 @@ mod tests {
                 s.observe_practice(true,0,false,None);s.observe_practice(false,1,false,None);
                 let bundle=Path::new("/synthetic/finished.apparent");
                 s.practice_completion(7,"capture",Some("request"),Some(bundle),Some(true));
-                s.input(Input::CaptureEnded{completed:true});s.action("practice-paste");s.action("practice-pasted");s.practice_opened_bundle(bundle);
+                s.input(Input::CaptureEnded{completed:true});
+                if !direct {s.action("practice-paste");s.action("practice-pasted");s.practice_opened_bundle(bundle);}
+                else {assert!(!s.practice.as_ref().unwrap().latest,"Done needs no locate receipt");}
                 if failure {std::fs::write(&path,b"invalid config").unwrap();}
                 assert_eq!(s.action("practice-finish"),if failure{Effect::None}else{Effect::Close});
                 assert_eq!(s.flow.first_capture_completed,!failure);

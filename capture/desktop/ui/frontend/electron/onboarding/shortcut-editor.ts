@@ -25,7 +25,7 @@ export function shortcutInput(event: ShortcutKeyEvent, platform: 'macos'|'linux'
 
 // Fn flags changes do not reliably reach the renderer as keyboard events.
 export function fnShortcut(platform: 'macos'|'linux'): ShortcutCapture | null {
-  return platform === 'macos' ? { keyCode: 63, modifiers: 0, key: 'Fn' } : null;
+  return { keyCode: platform === 'macos' ? 63 : 95, modifiers: 0, key: 'Fn' };
 }
 
 export function fnSelectionActions(platform: 'macos'|'linux', recording: boolean): Array<'change-shortcut' | ({action:'shortcut';kind:'record';reserved:false} & ShortcutCapture)> {

@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {createRequire} from 'node:module';
-import {mkdtemp,mkdir,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,rm,writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -36,13 +36,11 @@ test('production host alone reduces admitted practice; renderer intents wait for
  }
 
  await batch([{type:'ink',board:false,screen:5}]);await inspect('stop');
- await batch([{type:'ink',board:false,screen:0},{type:'processing'}]);await inspect('preparing');
+ await batch([{type:'ink',board:false,screen:0},{type:'processing'}]);await stage('preparing');await expect(page.locator('.native-coach')).toBeHidden();
  await batch([{type:'saved',copied:true}]);await inspect('copied');
- const before=output;await page.getByRole('button',{name:'Paste into your agent',exact:true}).count().then(async count=>{if(count)await page.getByRole('button',{name:'Paste into your agent',exact:true}).press('Enter');else await page.evaluate(()=>window.nativeOnboarding.action('practice-paste'));});
- await expect.poll(()=>output.slice(before.length)).toContain('practice-paste');await stage('copied');
- await batch([{type:'action',action:'practice-paste'}]);await inspect('paste');
- await batch([{type:'action',action:'practice-pasted'}]);await inspect('locate');
- await batch([{type:'opened-latest'}]);await inspect('complete');
+ const before=output;await page.getByRole('button',{name:'Done',exact:true}).press('Enter');
+ await expect.poll(()=>output.slice(before.length)).toContain('practice-finish');await stage('copied');
+ await batch([{type:'action',action:'practice-finish'}]);await inspect('complete');
  // Renderer cannot manufacture facts through its existing preload action API.
  assert.equal(await page.evaluate(async()=>{try{await window.nativeOnboarding.action({type:'saved',copied:true} as unknown as string);return false;}catch{return true;}}),true);
  await batch([{type:'reset'},{type:'started'},{type:'processing'},{type:'saved',copied:false}],true);await inspect('copy-failed');
@@ -51,4 +49,27 @@ test('production host alone reduces admitted practice; renderer intents wait for
  // A state projection cannot replace the trusted host's policy after adoption.
  send({type:'state',step:'try-it',rows:[],ready:true,practice:'complete'});await stage('whiteboard');
  child.stdin.end();await expect.poll(()=>child.exitCode).not.toBe(null);
+});
+
+test('processing unmaps the owning Electron window and copied/error restore it', {timeout:15000},async t=>{
+ const {_electron}=await import('@playwright/test');
+ const profile=await mkdtemp(path.join(os.tmpdir(),'processing-window-'));
+ const root=fileURLToPath(new URL('../../../',import.meta.url));
+ // Playwright owns stdio; a TS fixture supplies the synthetic parent stream.
+ const {default:ts}=await import('typescript');
+ const fixture=path.join(profile,'host.cjs');
+ await writeFile(fixture,ts.transpileModule(`import {PassThrough} from 'node:stream';
+Object.defineProperty(process,'stdin',{value:new PassThrough()});
+require(${JSON.stringify(path.join(root,'electron/onboarding.cjs'))});`,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText);
+ const application=await _electron.launch({args:[fixture,'--onboarding','--no-sandbox'],env:{...process.env,APPARENT_UI_PROFILE:profile}});
+ t.after(async()=>{await application.close().catch(()=>{});await rm(profile,{recursive:true,force:true});});
+ const publish=async(practice:string)=>application.evaluate((_electron,practice)=>{
+   process.stdin.emit('data',JSON.stringify({type:'state',step:'try-it',practice,rows:[],ready:true,platform:'linux',shortcut:'Fn'})+'\n');
+ },practice);
+ const visible=()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible());
+ await publish('stop');await expect.poll(visible).toBe(true);
+ await publish('preparing');await expect.poll(visible).toBe(false);
+ await publish('copied');await expect.poll(visible).toBe(true);
+ await publish('preparing');await expect.poll(visible).toBe(false);
+ await publish('copy-failed');await expect.poll(visible).toBe(true);
 });

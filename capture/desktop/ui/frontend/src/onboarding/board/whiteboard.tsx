@@ -6,12 +6,11 @@ export type BoardView={id:string;strokes:number[][][];color:number[]};
 type Action={action:'board';id:string;operation:string;point?:number[]};
 /** Only pointer input crosses the bridge. The example is a separate, inert SVG. */
 export function Whiteboard({board,action}:{board:BoardView;action:(value:Action)=>Promise<void>}){
-  const [run,setRun]=useState(0),[done,setDone]=useState(false),[draft,setDraft]=useState<number[][]>([]),[pending,setPending]=useState<{index:number;points:number[][]}[]>([]);
+  const [draft,setDraft]=useState<number[][]>([]),[pending,setPending]=useState<{index:number;points:number[][]}[]>([]);
   useEffect(()=>{setPending(list=>list.filter(stroke=>stroke.index>=board.strokes.length))},[board.strokes.length]);
   const root=useRef<HTMLElement|null>(null);
   useEffect(()=>{root.current?.focus()},[]);
   const points=useRef<number[][]>([]),pointer=useRef<number|null>(null);
-  useEffect(()=>{setDone(false);const timer=setTimeout(()=>setDone(true),window.matchMedia('(prefers-reduced-motion: reduce)').matches?1200:4200);return()=>clearTimeout(timer)},[run]);
   const send=(operation:string,ink?:number[])=>action({action:'board',id:board.id,operation,...(ink?{point:ink}:{})});
   const penStyle=({'217,76,68':'var(--apparent-pen-coral)','122,88,199':'var(--apparent-pen-purple)','59,121,189':'var(--apparent-pen-blue)','57,123,97':'var(--apparent-pen-green)'} as Record<string,string>)[board.color.join(',')]??'var(--apparent-carbon)';
   const cancelDraft=()=>{if(pointer.current!==null)void send('cancel');points.current=[];pointer.current=null;setDraft([]);setPending([]);};
@@ -28,8 +27,7 @@ export function Whiteboard({board,action}:{board:BoardView;action:(value:Action)
           ? <circle key={index} cx={stroke[0][0]} cy={stroke[0][1]} r="1.5" fill="var(--board-pen)"/>
           : <polyline key={index} points={stroke.map(p=>p.join(',')).join(' ')} fill="none" stroke="var(--board-pen)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>)}
       </svg>
-      <div className="native-board-lesson"><p role="status">{done?'Your turn.':'Watch this.'}</p>{!done&&<svg key={run} aria-hidden="true" viewBox="0 0 300 160"><path stroke="var(--board-pen)" pathLength="1" d="M34 105 C52 32 124 20 149 58 S102 142 82 101 S174 23 214 67 S240 144 184 116 Q139 93 252 44"/></svg>}</div>
-      <Button variant="ghost" className="native-board-replay" onClick={()=>setRun(value=>value+1)}>Replay guide</Button>
+      <div className="native-board-lesson"><p role="status">Your turn.</p>{board.strokes.length===0&&pending.length===0&&draft.length===0&&<svg aria-hidden="true" viewBox="0 0 300 160"><path stroke="var(--board-pen)" pathLength="1" d="M34 105 C52 32 124 20 149 58 S102 142 82 101 S174 23 214 67 S240 144 184 116 Q139 93 252 44"/></svg>}</div>
     </div>
   </main>;
 }

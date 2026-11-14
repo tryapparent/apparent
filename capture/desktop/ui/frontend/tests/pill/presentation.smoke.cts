@@ -313,6 +313,15 @@ test('a warm pill waits for its current layout and performs no sizing work for t
  assert.ok(await application.evaluate(()=>globalThis.measurements)>start,'Content changes must still size the window');
  await page.evaluate(()=>window.apparentPill.layout(3));
  assert.equal(await application.evaluate(()=>globalThis.resizeHides),0,'Resizing a visible pill must not unmap its native surface');
- await publish({...hidden,revision:4});
+ await page.emulateMedia({reducedMotion:'no-preference'});
+ await publish({...recording,revision:4,phase:'processing',actions:[]});
+ await expect(page.locator('.indicator.processing')).toBeVisible();
+ await expect(page.locator('.indicator.processing')).toHaveCSS('animation-name','pill-processing-spin');
+ const first=await page.locator('.indicator.processing').evaluate(el=>getComputedStyle(el).transform);
+ await page.waitForTimeout(100);
+ assert.notEqual(await page.locator('.indicator.processing').evaluate(el=>getComputedStyle(el).transform),first);
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await expect(page.locator('.indicator.processing')).toHaveCSS('animation-name','none');
+ await publish({...hidden,revision:5});
  await expect.poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible())).toBe(false);
 });

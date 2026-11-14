@@ -173,3 +173,17 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 .native-saved-keys kbd { min-width:76px; min-height:84px; padding:16px 24px; border-radius:6px; box-shadow:0 4px 0 var(--apparent-border); }
 
 .native-coach .native-saved-keys kbd { min-width:44px; min-height:48px; padding:8px 12px; font-size:24px; background:var(--apparent-lilac); color:var(--apparent-carbon); }
+
+/* One compact dismissal in every coach, away from the primary instruction. */
+.native-coach h1 { padding-inline-end:48px; }
+.native-coach .native-finish-close { position:absolute;right:0;top:0;padding:0;min-width:44px;min-height:44px;font-size:24px; }
+.native-held-keys { min-height:64px;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap; }
+
+.native-agent-art { display:block;width:100%;aspect-ratio:1.25;background-repeat:no-repeat;background-size:200% auto;background-position:left center; }
+.native-agent-art.cloud { background-position:right center; }
+.native-agent-art.local { background-position:left center; }
+.native-agent-setup > .native-agent-art { max-width:300px;margin-inline:auto; }
+
+.native-coach[data-stage=preparing] { display:none; }
+
+.native-held-keys > button {font-size:40px;line-height:1.2;min-width:96px;padding:12px 20px;}

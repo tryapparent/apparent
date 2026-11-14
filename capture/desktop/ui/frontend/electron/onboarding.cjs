@@ -26,7 +26,7 @@ function traceIdentity(v){const out={};for(const k of ['source','transport','att
 const {PracticeHost}=require(process.versions.electron?'../dist/onboarding-practice-host.cjs':'./onboarding/practice-host.ts');
 const {transparentBackgroundColor}=require('@apparent/ui/window-theme');
 const {parseAction}=require('./onboarding-protocol.cjs');
-const {coachDimensions,coachPosition}=require(process.versions.electron?'../dist/onboarding-presentation.cjs':'./onboarding/presentation.ts');
+const {coachDimensions,coachPosition,setupDimensions}=require(process.versions.electron?'../dist/onboarding-presentation.cjs':'./onboarding/presentation.ts');
 const {completedSelection}=require(process.versions.electron?'../dist/onboarding-selection.cjs':'./onboarding/selection.ts');
 // A private, Rust-owned presentation transport. No capture commands or filesystem IPC.
 const path = require('node:path');
@@ -48,7 +48,6 @@ function project(v) {
     ...(Array.isArray(v.anchor)&&v.anchor.length===4&&v.anchor.every(Number.isFinite)?{anchor:v.anchor}:{})};
 }
 // Screen coordinates supplied by this process's typed Whiteboard window only.
-function setupDimensions(area,shortcut){return {width:Math.min(area.width,760),height:Math.min(area.height,shortcut?520:720)};}
 function nativeRectangle(rect,toDip){
   if(!rect)return rect;
   const start=toDip({x:Math.round(rect[0]),y:Math.round(rect[1])});
@@ -206,7 +205,7 @@ function present(v,activate=false){
     if(key!==lastPlacement){(diagnosticStage='setPosition',window.setPosition).call(window,area.x+Math.max(0,Math.round((area.width-width)/2)),area.y+Math.max(0,Math.round((area.height-height)/2)),false);lastPlacement=key;}
   }
   diagnosticStage='send-state';window.webContents.send('onboarding:state',v);
-  diagnosticStage='show';if(!window.isVisible()||activate){if(coach)window.showInactive();else window.show();}
+  diagnosticStage='show';if(v.step==='try-it'&&v.practice==='preparing'){window.hide();}else if(!window.isVisible()||activate){if(coach)window.showInactive();else window.show();}
   trace.emit('present-result',()=>({bounds:(diagnosticStage='getBounds',window.getBounds).call(window,),visible:window.isVisible(),loading:window.webContents.isLoading(),crashed:window.webContents.isCrashed()}));
   if(!borderReady&&!borderPending&&borderAttempts<8){
     borderPending=true;borderAttempts++;

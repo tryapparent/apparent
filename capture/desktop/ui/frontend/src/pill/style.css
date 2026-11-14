@@ -55,3 +55,8 @@ body { font-family:'Host Grotesk',system-ui,sans-serif; }
 .pill-notes > svg { width:18px;height:18px; }
 .pill-notes > span { text-align:left; }
 .pill-notes:focus-visible { outline:2px solid var(--apparent-brand-foreground);outline-offset:-4px; }
+
+@media(prefers-reduced-motion:no-preference) {
+  .pill:not([data-reduced=true]) .indicator.processing { animation: pill-processing-spin 1s linear infinite!important; }
+}
+@keyframes pill-processing-spin { to { transform:rotate(360deg); } }

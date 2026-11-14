@@ -32,7 +32,7 @@ test('renderer_cannot_skip_real_capture_or_drawing', () => {
   p.ink(true, 1); p.stage('whiteboard'); p.send('whiteboard'); p.ink(true, 1); p.stage('screen-ink');
   p.ink(false, 1); p.stage('screen-ink'); p.ink(false, 2); p.stage('stop');
   p.send('processing'); p.send('saved', {copied: true}); p.stage('copied');
-  assert.equal(p.action('practice-finish'), false); assert(p.action('practice-paste'));
+  assert(p.action('practice-paste'));
   assert(p.action('practice-pasted')); p.send('opened-latest'); p.stage('complete'); assert(p.action('practice-finish'));
 });
 test('owned_board_visibility_reconciles_open_and_close_without_skipping_ink', () => {
@@ -88,7 +88,7 @@ const transitions: Record<string, Partial<Record<Stage, Stage>>> = {
   cancelled: {screen:'retry',whiteboard:'retry','board-ink':'retry',note:'retry','screen-ink':'retry',stop:'retry',preparing:'retry'},
   saved: {preparing:'copied'},
   'practice-paste': {copied:'paste'}, 'practice-pasted': {paste:'locate'},
-  'practice-locate': {'copy-failed':'locate'}, 'practice-finish': {complete:'complete'},
+  'practice-locate': {'copy-failed':'locate'}, 'practice-finish': {copied:'retry',paste:'retry',complete:'complete'},
 };
 test('every stage: transition admission, invalid actions and late notes', () => {
   for (const stage of stages) {
@@ -97,7 +97,7 @@ test('every stage: transition admission, invalid actions and late notes', () => 
       const action = name.startsWith('practice-');
       const accepted = action ? p.action(name) : p.send(name as Event['type'], {copied:true});
       p.stage(table[stage] ?? stage);
-      assert.equal(accepted, action && table[stage] !== undefined, `${stage}/${name}`);
+      assert.equal(accepted, action && table[stage] !== undefined && !(name==='practice-finish'&&['copied','paste'].includes(stage)), `${stage}/${name}`);
     }
     const p = practice({...initialPractice(), stage});
     const original = structuredClone(p.state);
@@ -144,4 +144,9 @@ test('all stages reconcile board visibility and ink snapshots, retaining unrelat
       assert.deepEqual(p.state,expected);
     }
   }
+});
+
+test('Done finishes after both real drawing milestones and copied capture, without opening latest',()=>{
+ const p=throughDrawing();p.send('processing');p.send('saved',{copied:true});assert(p.action('practice-finish'));p.stage('complete');assert.equal(p.state.pasted,true);assert.equal(p.state.latest,false);
+ const early=practice();early.send('started');early.send('processing');early.send('saved',{copied:true});assert.equal(early.action('practice-finish'),false);early.stage('retry');
 });
