@@ -114,6 +114,8 @@ test('actual installed pre-push hook and production runner perform one install a
   mkdirSync(join(dir, 'enablement/local-tests'), {recursive: true});
   for (const name of helpers) copyFileSync(join(root, 'enablement/local-tests', name), join(dir, 'enablement/local-tests', name));
   copyFileSync(join(root, 'enablement/local-tests/run.ts'), join(dir, 'enablement/local-tests/runner.ts'));
+  mkdirSync(join(dir, 'enablement/local-tests/preview'), {recursive: true});
+  copyFileSync(join(root, 'enablement/local-tests/preview/explain.ts'), join(dir, 'enablement/local-tests/preview/explain.ts'));
   mkdirSync(join(dir, 'enablement/ci/routing'), {recursive: true});
   for (const name of ['inputs.ts', 'workflow-controls.ts', 'select.ts']) copyFileSync(join(root, 'enablement/ci', name), join(dir, 'enablement/ci', name));
   copyFileSync(join(root, 'enablement/ci/routing/consumers.ts'), join(dir, 'enablement/ci/routing/consumers.ts'));

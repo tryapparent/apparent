@@ -1,0 +1,44 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync, readdirSync} from 'node:fs';
+import {YAML} from 'bun';
+import {workflows} from './notify.ts';
+
+const root = new URL('../../../', import.meta.url);
+const read = (name: string) => YAML.parse(readFileSync(new URL('.github/workflows/' + name, root), 'utf8'));
+test('completion notifications cover exactly the PR orchestrators, with trusted source and narrow permissions', () => {
+  const files = readdirSync(new URL('.github/workflows/', root)).filter(file => read(file).on.pull_request);
+  assert.deepEqual(files.map(file => '.github/workflows/' + file).sort(), Object.keys(workflows).sort());
+  const flow = read('verification.yml');
+  assert.deepEqual(flow.on.workflow_run.workflows.slice().sort(), files.map(file => read(file).name).sort());
+  assert.deepEqual(flow.on.workflow_run.types, ['completed']);
+  assert.deepEqual(Object.keys(flow.on), ['workflow_dispatch', 'workflow_run']);
+  assert.deepEqual(flow.permissions, {contents: 'read'});
+  assert.match(flow.concurrency.group, /workflow_run.id/);
+  assert.match(flow.concurrency.group, /workflow_run.run_attempt/);
+  assert.equal(flow.concurrency['cancel-in-progress'], "${{ github.event_name != 'workflow_run' }}");
+  assert.equal(flow.jobs.verify.if, "github.event_name == 'workflow_dispatch'");
+  assert.equal(flow.jobs.verify.uses, './.github/workflows/verification-platform.yml');
+  const job = flow.jobs.notify;
+  assert.deepEqual(job.permissions, {contents: 'read', actions: 'read', 'pull-requests': 'write'});
+  assert.match(job.if, /github.event_name == 'workflow_run'/);
+  assert.match(job.if, /workflow_run.event == 'pull_request'/);
+  assert.match(job.if, /head_repository.full_name == github.repository/);
+  const checkout = job.steps.find((step: {uses?: string}) => step.uses === 'actions/checkout@v4');
+  assert.equal(checkout.with.ref, '${{ github.workflow_sha }}');
+  assert.equal(checkout.with['persist-credentials'], false);
+  assert.equal(job.steps.at(-1).run, 'node --experimental-strip-types enablement/ci/completion/notify.ts');
+  assert.equal(job.steps.at(-1).env.GH_TOKEN, '${{ github.token }}');
+  assert.doesNotMatch(JSON.stringify(job.steps), /download-artifact|npm |head_sha|head_branch/);
+});
+
+test('distinct completions cannot replace each other in the same concurrency group', () => {
+  const flow = read('verification.yml');
+  const expression = flow.concurrency.group.slice(3, -2);
+  const group = (id: number, attempt: number) => Function('github', 'format', `return (${expression});`)(
+    {event_name: 'workflow_run', event: {workflow_run: {id, run_attempt: attempt}}},
+    (text: string, ...values: number[]) => text.replace(/\{(\d+)\}/g, (_: string, index: string) => String(values[Number(index)])));
+  assert.equal(new Set([group(10, 1), group(11, 1), group(12, 1)]).size, 3);
+  assert.notEqual(group(10, 1), group(10, 2));
+  assert.equal(group(10, 1), group(10, 1), 'only duplicate source events serialize');
+});

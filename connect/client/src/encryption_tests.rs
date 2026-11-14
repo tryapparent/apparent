@@ -755,3 +755,73 @@ fn production_typescript_crypto_interop() {
     );
     assert!(fs::read_dir(wrong_output).unwrap().next().is_none());
 }
+
+// This vector is emitted by the real packer, then consumed by both languages.
+// Keep fixture generation separate from ordinary headless TypeScript tests.
+#[test]
+#[ignore = "explicit synthetic producer-fixture generation; requires Node 22"]
+fn emit_typescript_producer_fixture() {
+    let f = Fixture::new();
+    f.pack();
+    fs::write(
+        f.root.join("context.json"),
+        serde_json::to_vec(&f.context).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        f.root.join("sender-public.json"),
+        serde_json::to_vec(&f.sender_peer()).unwrap(),
+    )
+    .unwrap();
+    let node = std::env::var_os("APPARENT_CONNECT_FIXTURE_NODE").expect("absolute Node path");
+    let script = std::env::var_os("APPARENT_CONNECT_FIXTURE_SCRIPT")
+        .expect("absolute fixture generator path");
+    assert!(Path::new(&node).is_absolute() && Path::new(&script).is_absolute());
+    assert!(
+        std::process::Command::new(node)
+            .arg(script)
+            .arg(&f.root)
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
+#[test]
+fn checked_in_producer_fixture_remains_readable_by_native_consumer() {
+    let vector: Value =
+        serde_json::from_str(include_str!("../typescript/test/fixtures/rust-v1.json")).unwrap();
+    let f = Fixture::new();
+    new_private_file(&f.root.join("vector.identity"))
+        .unwrap()
+        .write_all(&serde_json::to_vec(&vector["syntheticReaderIdentity"]).unwrap())
+        .unwrap();
+    let identity = load_or_create_identity(&f.root.join("vector.identity")).unwrap();
+    let sender: Peer = serde_json::from_value(vector["sender"].clone()).unwrap();
+    let context: Context = serde_json::from_value(vector["context"].clone()).unwrap();
+    for file in vector["transport"].as_array().unwrap() {
+        let path = file["path"].as_str().unwrap();
+        let destination = f.spool.join(path);
+        if let Some(parent) = destination.parent() {
+            private_dir(parent).unwrap();
+        }
+        new_private_file(&destination)
+            .unwrap()
+            .write_all(
+                &(0..file["hex"].as_str().unwrap().len())
+                    .step_by(2)
+                    .map(|i| {
+                        u8::from_str_radix(&file["hex"].as_str().unwrap()[i..i + 2], 16).unwrap()
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
+    }
+    unpack(&f.spool, &f.output, &context, &identity, &sender).unwrap();
+    for file in vector["expected"].as_array().unwrap() {
+        assert_eq!(
+            hex(&fs::read(f.output.join(file["path"].as_str().unwrap())).unwrap()),
+            file["hex"].as_str().unwrap()
+        );
+    }
+}

@@ -407,6 +407,8 @@ test('installed hook proves control-only selection, mandatory commands, failure 
 }));
 
 function copyInputHelpers(dir: string) {
+  mkdirSync(join(dir, 'enablement/local-tests/preview'), {recursive: true});
+  copyFileSync(join(root, 'enablement/local-tests/preview/explain.ts'), join(dir, 'enablement/local-tests/preview/explain.ts'));
   mkdirSync(join(dir, 'enablement/ci/routing'), {recursive: true});
   copyFileSync(join(root, 'enablement/ci/routing/consumers.ts'), join(dir, 'enablement/ci/routing/consumers.ts'));
   for (const name of ['service.ts', 'receipt.ts', 'desktop-install.ts'])

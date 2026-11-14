@@ -7,7 +7,7 @@
     "apparent-connect-mcp": "dist/mcp-cli.js"
   },
   "scripts": {
-    "test": "npm run build && node --experimental-strip-types --test test/*.test.ts test/mcp/*.test.ts",
+    "test": "npm run build && node --experimental-strip-types --test test/*.test.ts test/mcp/*.test.ts test/fixtures/*.test.ts",
     "test:cli": "node --experimental-strip-types --test test/cli.integration.ts test/foreground.integration.ts",
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.ts",

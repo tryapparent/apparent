@@ -126,7 +126,7 @@ test('owned-window readiness uses only the bounded window query and still reject
  const start=source.indexOf('    report.nativeWindowReadiness ='),end=source.indexOf('    const reporting =',start);
  assert.ok(start>=0&&end>start);
  const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
- const readiness=new AsyncFunction('poll','panel','report','assert',source.slice(start,end));
+ const readiness=new AsyncFunction('poll','observePanel','report','assert',source.slice(start,end));
  const observed='depth=0;role=AXWindow;title=Apparent — UI foundation;sheets=0';
  for(const value of [observed,'depth=0;role=AXWindow;title=Other',observed+'\ndepth=1;role=AXSheet;']) {
   const calls:string[]=[];const report:{nativeWindowReadiness?:string}={};
@@ -189,7 +189,8 @@ test('picker calls allow bounded AppKit startup but never exceed the original ov
   calls.push({timeout:options.timeout,operation:args[4]});return {stdout:'owned picker\n'};
  },{now:()=>now},assert,{},95000,{exitCode:null,signalCode:null,pid:4801},'native script','/synthetic/home','/synthetic/electron',5000,pickerStartupMs,{bundleId:'com.tryapparent.synthetic'},class {
   async start(timeout:number) {startupCaps.push(timeout);assert.ok(timeout<=pickerStartupMs);now+=startupDelay;}
-  async request(args:string[],timeout:number) {calls.push({timeout,operation:args[2]});return 'owned picker';}
+  async act(args:string[],timeout:number) {calls.push({timeout,operation:args[2]});return 'owned picker';}
+  async observe(args:string[],timeout:number) {calls.push({timeout,operation:args[2]});return 'owned picker';}
  });
  await driver.panel('cancel');
  await driver.goPathOperation('enter-go-path','/synthetic/path');
@@ -440,7 +441,7 @@ test('native integration retains its consent, deadlines, persistence assertions 
  const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
  assert.match(source,/prepareStorageChange\(\{/);
  assert.match(source,/cancelStorageChange\(\{/);
- assert.match(source,/picker: \(\) => poll\(\(\) => panel\('inspect'\), 'Native Cancel picker readiness'\)/);
+ assert.match(source,/picker: \(\) => poll\(\(\) => observePanel\('inspect'\), 'Native Cancel picker readiness'\)/);
  assert.match(source,/APPARENT_STORAGE_NATIVE_CI/);
  assert.match(source,/timeout: 120000/);assert.match(source,/Date\.now\(\) \+ 95000/);
  for(const contract of ['Saved location readback','Cancel changed config bytes','Cancel replaced config','Cancel rewrote config','Reset location readback'])assert.ok(source.includes(contract));
@@ -715,10 +716,10 @@ rl.on('line', line => {
  }else process.stdout.write(bytes);
 });
 `;
-async function pickerTransport(t: {after: (fn: () => Promise<unknown>) => void}) {
+async function pickerTransport(t: {after: (fn: () => Promise<unknown>) => void}, start = true) {
  const driver=new PickerProcess(()=>spawn(process.execPath,['-e',pickerWorker],{stdio:'pipe'}));
  t.after(()=>driver.close());
- await driver.start(1000);
+ if (start) await driver.start(1000);
  return driver;
 }
 const pickerArgs=(operation:string, path='/synthetic/path')=>['4811',path,operation,'/synthetic/runtime','synthetic.bundle'];
@@ -774,6 +775,18 @@ test('closing pending startup settles it and refuses concurrent startup or later
  const closed=await driver.close();await refused;
  await assert.rejects(driver.request(pickerArgs('cancel'),5000),/retired/);
  assert.equal(closed.requests,0);assert.equal(closed.starts,1);
+});
+test('readiness observations cannot dispatch input; actions cannot masquerade as observations', async t => {
+ const driver = await pickerTransport(t, false);
+ for (const operation of ['focus-change', 'open-go', 'enter-go-path', 'navigate-go', 'choose', 'cancel', 'unknown'])
+  await assert.rejects(driver.observe(pickerArgs(operation), 5000), /observation refuses/);
+ for (const operation of ['inspect-window', 'inspect', 'inspect-go', 'inspect-go-path', 'diagnose', 'unknown'])
+  await assert.rejects(driver.act(pickerArgs(operation), 5000), /action requires/);
+ assert.deepEqual(driver.stats, {starts:0, requests:0}, 'Rejected intents never start the native provider');
+ await driver.start(1000);
+ assert.equal(await driver.observe(pickerArgs('inspect'), 5000), '/synthetic/path');
+ assert.equal(await driver.act(pickerArgs('cancel'), 5000), '/synthetic/path');
+ assert.deepEqual(driver.stats, {starts:1, requests:2}, 'Allowed operations dispatch exactly once');
 });
 test('one picker interpreter serves separate requests and handles split UTF-8 frames',async t=>{
  const driver=await pickerTransport(t);

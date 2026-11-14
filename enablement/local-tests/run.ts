@@ -8,6 +8,7 @@ import {serviceTests} from './service.ts';
 import {desktopDependencies, desktopPackage} from './desktop-install.ts';
 import {owners, selectedOwners, routeDecision, routingProblems} from '../ci/routing/consumers.ts';
 import {selectRange} from '../ci/select.ts';
+import {explainSelection} from './preview/explain.ts';
 export {owners} from '../ci/routing/consumers.ts';
 import type {Admission} from './service.ts';
 
@@ -162,6 +163,7 @@ export function contractTests(cwd = root): Command[] {
   if (!prerequisites.length) throw Error('Native prerequisite contract inventory is empty');
   return [
     { argv: ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/run.test.ts', 'enablement/local-tests/reuse.test.ts',
+      'enablement/local-tests/preview/explain.test.ts',
       ...prerequisites, 'enablement/timing/command.test.ts', 'enablement/timing/mac-cache.test.ts'], cwd: '.' },
     { argv: ['bun', 'test', 'enablement/ci/'], cwd: '.' },
   ];
@@ -211,7 +213,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const paths = result.inputProofKnown ? result.paths : null;
   const plan = args.includes('--desktop-install-contracts') ? installationContracts(paths, result.workflowControls)
     : commands(result.selected, base, head, process.platform, result.rustChanged, {paths, workflowControls: result.workflowControls});
-  console.log(JSON.stringify({ ...result, commands: plan }));
+  console.log(args.includes('--explain') ? explainSelection(result, plan) : JSON.stringify({ ...result, commands: plan }));
   if (args.includes('--run')) {
     const problems = result.historyKnown ? routingProblems(result) : [];
     if (problems.length) throw Error(problems.join('\n'));

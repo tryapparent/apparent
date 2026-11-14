@@ -48,7 +48,9 @@ class AdmissionTests(unittest.TestCase):
             workflow = (root / name).read_text()
             events = workflow.split('\non:\n', 1)[1].split('\npermissions:', 1)[0]
             triggers = re.findall(r'^  ([a-z_]+):', events, re.M)
-            self.assertEqual(triggers, ['workflow_call', 'workflow_dispatch'] if name == 'release-linux.yml' else ['workflow_dispatch'], name)
+            expected = (['workflow_call', 'workflow_dispatch'] if name == 'release-linux.yml' else
+                        ['workflow_dispatch', 'workflow_run'] if name == 'verification.yml' else ['workflow_dispatch'])
+            self.assertEqual(triggers, expected, name)
         checks = (root / 'checks.yml').read_text()
         self.assertIn('  pull_request:', checks)
         self.assertIn('  push:', checks)
