@@ -884,7 +884,10 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
             .push((format!("{method} {route}"), body.to_vec()));
     }
     let mut status = 200;
-    let result: Vec<u8> = if method == "GET" && route.starts_with("/v1/captures/")
+    let result: Vec<u8> = if method == "GET" && route.starts_with("/v1/captures/") && s.mode == "fetch-network-denied" {
+        status = 403;
+        b"<html>Network egress denied: synthetic-private-proxy-detail</html>".to_vec()
+    } else if method == "GET" && route.starts_with("/v1/captures/")
         && (s.mode == "fetch-missing" || s.mode == "fetch-unauthorized"
             || (s.mode == "inspect-pending" && route.split('/').count() == 4 && s.polls == 0)
             || (route.split('/').count() == 4 && route.rsplit('/').next() != Some(s.capture_id.as_str()))) {
@@ -1409,6 +1412,49 @@ pub fn hosted_roundtrip_pending_pointer_restart_complete_and_no_overwrite() {
             .contains("secret")
     );
 }
+#[cfg_attr(test, test)]
+pub fn hosted_fetch_connection_failures_discover_mcp_without_changing_access() {
+    let f = Fixture::new();
+    let id = "a".repeat(32);
+    let out = f.root.join("unreceived.apparent");
+    let error = f.client.fetch(&id, &out, 0).unwrap_err().to_string();
+    assert!(error.starts_with("Server must use HTTPS"), "{error}");
+    assert!(error.contains("does not prove an egress block"), "{error}");
+    assert!(error.contains("https://app.tryapparent.com/connect/mcp"), "{error}");
+    assert!(!f.client.config.exists());
+    assert!(!out.exists());
+
+    // A closed local endpoint exercises the real curl transport refusal without
+    // calling a remote service or changing the machine's network policy.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let server = format!("http://{}", listener.local_addr().unwrap());
+    drop(listener);
+    f.authorize(&server);
+    let config = fs::read(&f.client.config).unwrap();
+    let credential = fs::read(f.client.state.join("read.credential")).unwrap();
+    let error = f.client.fetch(&id, &out, 0).unwrap_err().to_string();
+    assert!(error.starts_with("Hosted transport failed"), "{error}");
+    assert!(error.contains("https://app.tryapparent.com/connect/mcp"), "{error}");
+    assert!(error.contains("separate offline apparent-connect-mcp reader"), "{error}");
+    assert!(!error.contains("synthetic-read-secret"), "{error}");
+    assert_eq!(fs::read(&f.client.config).unwrap(), config);
+    assert_eq!(fs::read(f.client.state.join("read.credential")).unwrap(), credential);
+    assert!(!out.exists());
+    assert!(!fs::read_dir(&f.root).unwrap().any(|entry|
+        entry.unwrap().file_name().to_string_lossy().starts_with(".apparent-fetch-")));
+
+    let proxy = Server::new("fetch-network-denied");
+    f.authorize(&proxy.url);
+    let config = fs::read(&f.client.config).unwrap();
+    let error = f.client.fetch(&id, &out, 0).unwrap_err().to_string();
+    assert!(error.starts_with("Hosted API: http_error"), "{error}");
+    assert!(error.contains("https://app.tryapparent.com/connect/mcp"), "{error}");
+    assert!(!error.contains("synthetic-private-proxy-detail"), "{error}");
+    assert_eq!(fs::read(&f.client.config).unwrap(), config);
+    assert_eq!(proxy.state.lock().unwrap().requests, 1);
+    assert!(!out.exists());
+}
+
 #[cfg_attr(test, test)]
 pub fn hosted_fetch_before_reservation_waits_and_unavailable_is_actionable() {
     let f = Fixture::new();

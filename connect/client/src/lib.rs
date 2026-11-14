@@ -2191,12 +2191,21 @@ impl Client {
                 "Hosted API: not_found" => "unavailable",
                 message if message.starts_with("auth_required:") || matches!(message,
                     "Hosted API: unauthorized" | "Hosted API: forbidden" | "Hosted API: reauthorization_required") => "authorization",
+                "Server must use HTTPS" | "Invalid server URL" | "Invalid server host"
+                    | "Invalid server port" | "Server must be an origin without a path"
+                    | "Plain HTTP is allowed only on loopback" => "server_configuration",
+                "Hosted transport failed (network, timeout or response limit)"
+                    | "Hosted transport input failed"
+                    | "curl is required for hosted transport"
+                    | "Hosted API: http_error" => "transport",
                 _ => return error,
             };
             // Presentation stays with Connect's TypeScript handoff owner.
             Self::handoff_policy(json!({"operation":"fetchFailure","kind":kind}))
                 .ok().and_then(|value| value.as_str().map(str::to_owned))
-                .map(anyhow::Error::msg).unwrap_or(error)
+                .map(|hint| anyhow::Error::msg(if matches!(kind, "server_configuration" | "transport") {
+                    format!("{error}. {hint}")
+                } else { hint })).unwrap_or(error)
         })
     }
     fn fetch_inner(&self, id: &str, out: &Path, wait: u64) -> Result<PathBuf> {
