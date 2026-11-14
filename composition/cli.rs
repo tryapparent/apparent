@@ -210,7 +210,7 @@ enum Command {
         #[command(subcommand)]
         command: hosted::ConnectCommand,
     },
-    /// Retrieve and validate a complete hosted capture using a separate read credential.
+    /// Retrieve selected evidence or a complete hosted capture using a separate read credential.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     Fetch {
         id: String,

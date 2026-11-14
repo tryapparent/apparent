@@ -338,6 +338,7 @@ fn asset_path(path: &str) -> bool {
         [name] => matches!(
             *name,
             "summary.md"
+                | "notes.json"
                 | "apparent.json"
                 | "contact-sheet.png"
                 | "contact-sheet-full.png"

@@ -953,3 +953,17 @@ fn per_file_selected_fetch_never_requests_media_and_legacy_jobs_stay_v1() {
     let full=legacy.root.join("legacy.apparent");legacy.client.fetch(&legacy_id,&full,0).unwrap();assert_bundle(&legacy_bundle,&full);
     assert!(legacy.client.fetch_selected(&legacy_id,&legacy.root.join("legacy-extract"),0,Some(&["apparent.json".into()])).is_err());
 }
+
+#[test]
+fn per_file_notes_follow_the_shared_asset_contract() {
+    let f=Fixture::new();let server=encryption_server("");pair(&f,&server);
+    let bundle=f.bundle();let notes=b"{\"version\":1,\"notes\":[\"synthetic note\"]}";
+    fs::write(bundle.join("notes.json"),notes).unwrap();
+    let id=f.client.enqueue(&bundle).unwrap();f.client.process_once().unwrap();assert_ready(&f);
+    let out=f.root.join("selected-notes");
+    f.client.fetch_selected(&id,&out,0,Some(&["notes.json".into()])).unwrap();
+    assert_eq!(fs::read(out.join("notes.json")).unwrap(),notes);
+    assert!(!out.join("recording.mov").exists());
+    let full=f.root.join("notes.apparent");f.client.fetch(&id,&full,0).unwrap();
+    assert_eq!(fs::read(full.join("notes.json")).unwrap(),notes);
+}
