@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openConnectSession } from '../../src/connect/session.ts';
-import type { ConnectSettings } from '../../src/bridge.ts';
+import type { ConnectSettings } from '../../src/connect/protocol.ts';
 
 const saved = (check: boolean): ConnectSettings => ({ status: 'connected', view: {
   title: '', status: '', detail: '', server: null, verificationUri: null, userCode: null, note: '',

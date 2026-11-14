@@ -1,4 +1,4 @@
-import type { ConnectSettings } from '../bridge';
+import type { ConnectSettings } from './protocol.ts';
 
 // Opening Settings may renew an existing session through the native writer.
 // Polls stay local; this never starts enrollment or grants upload permission.
