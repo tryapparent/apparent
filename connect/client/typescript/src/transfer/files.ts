@@ -6,7 +6,7 @@ import {createHash} from 'node:crypto';
 import * as age from 'age-encryption';
 import {verifyAsync,Point} from '@noble/ed25519';
 import {fileTransport,validateIndex,signedFileBytes,sameContext,requireContract as check,type Asset,type FileIndex,type FileEnvelope,type FileContext,type IndexedAsset} from './contract.js';
-import {readPrivate,fileHash,trustedDirectory} from '../mcp-files.js';
+import {readPrivate,fileHash,trustedDirectory,writePrivate} from '../mcp-files.js';
 import {Cursor,validateReferences,type Peer,type Peers} from '../mcp-bundle.js';
 
 async function plaintext(spool:string,asset:Asset,identity:string):Promise<Cursor>{
@@ -41,7 +41,7 @@ export async function openFileIndex(options:{spool:string;files:Asset[];identity
     const index=validateIndex(JSON.parse(Buffer.concat(parts).toString('utf8')),context,files);return {index,sender};
   }finally{await cursor.reader.cancel().catch(()=>{});}
 }
-export async function decryptSelectedFiles(options:{spool:string;files:Asset[];identity:string;index:FileIndex;selected:IndexedAsset[];out:string;partial:boolean}):Promise<string>{
+export async function decryptSelectedFiles(options:{spool:string;files:Asset[];identity:string;index:FileIndex;selected:IndexedAsset[];out:string;partial:boolean;inspection?:boolean}):Promise<string>{
   await trustedDirectory(path.dirname(options.out));
   if(options.partial)check(path.extname(options.out)!=='.apparent','selected_evidence_requires_extraction_directory');
   const stage=await fs.mkdtemp(path.join(path.dirname(options.out),'.apparent-mcp-'));await fs.chmod(stage,0o700);
@@ -55,6 +55,10 @@ export async function decryptSelectedFiles(options:{spool:string;files:Asset[];i
     }
     if(options.partial){const file=await fs.open(path.join(stage,'.connect-extraction.json'),'wx',0o600);try{await file.writeFile(JSON.stringify({format:'apparent-extraction-v1',captureId:options.index.context.captureId,completeBundle:false,files:options.selected}));await file.sync();}finally{await file.close();}}
     else await validateReferences(stage,options.selected);
+    if(options.inspection){
+      await validateReferences(stage,options.selected,true);
+      await writePrivate(path.join(stage,'inspection.json'),{version:1,kind:'apparent-mcp-inspection',captureId:options.index.context.captureId,mediaDownloaded:false,completeRecording:false});
+    }
     for(const directory of new Set([stage,...options.selected.map(e=>path.dirname(path.join(stage,e.path)))])){const handle=await fs.open(directory,'r');try{await handle.sync();}finally{await handle.close();}}
     return stage;
   }catch(error){await fs.rm(stage,{recursive:true,force:true});throw error;}

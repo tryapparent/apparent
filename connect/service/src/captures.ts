@@ -14,7 +14,7 @@ function transportPath(path:unknown,format:CaptureRow['format'],grouped=false): 
  return grouped?/^(evidence|media)\/(envelope\.json|sealed\/part-[0-9]{6}\.age)$/.test(path):/^(envelope\.json|sealed\/part-[0-9]{6}\.age)$/.test(path);
 }
 function groupedDelivery(c:CaptureRow) {return c.format==='apparent-encrypted-v1'&&(JSON.parse(c.manifest) as ManifestFile[]).some(f=>f.path==='evidence/envelope.json');}
-async function evidenceReady(env:Env,c:CaptureRow) {
+export async function evidenceReady(env:Env,c:CaptureRow) {
  if(c.status==='ready')return true;
  const row=await stmt(env,"SELECT count(*) total,sum(CASE WHEN object_key IS NULL THEN 1 ELSE 0 END) missing FROM files WHERE capture_id=? AND path LIKE 'evidence/%'",c.id).first<{total:number;missing:number}>();
  return !!row&&row.total>=2&&row.missing===0;

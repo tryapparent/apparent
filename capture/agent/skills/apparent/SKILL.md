@@ -94,7 +94,13 @@ with the same server URL and **No sign in**.
 After selection, handle reader setup and sealed exchanges yourself, present the
 browser read-approval link to the user, and resume retrieval and visual inspection
 after approval. Use the separate offline `apparent-connect-mcp` reader described
-in `connect/docs/mcp.md`; older native CLIs do not include that command. Ask the
+in `connect/docs/mcp.md`. Prefer its `inspect` command for images; grouped captures
+need not download the movie first. On hosts with programmatic tool access, use
+`run --mode inspection` and pipe complete tool replies into stdin, exposing only
+progress/results to the model. Never transcribe ciphertext. Reuse the private
+reader state after upgrading; do not generate a replacement key just to increase
+transfer size. The `fetch` command still retrieves the complete recording.
+Older native CLIs do not include this reader. Ask the
 user for the reader if it is unavailable. Browser read approval remains required;
 a new reader key does not unlock historical captures, so a fresh encrypted handoff
 may be needed. Do not send private keys/tokens or bypass workspace network policy.
