@@ -92,7 +92,7 @@ class PrePushGuardTests(unittest.TestCase):
         # Complete owner-level fallback is intentional for unknown history.
         # Stub expensive package tools, retaining the real selector and guards.
         for directory in ("connect/client", "connect/service", "connect/web", "connect/tooling/hosting", "public/site",
-                          "capture/desktop/ui/frontend", "enablement/directory-width/tests", "hermes/tests"):
+                          "capture/desktop/ui/frontend", "record/media", "enablement/directory-width/tests", "hermes/tests"):
             (self.repo / directory).mkdir(parents=True, exist_ok=True)
         browser_tests = self.repo / "connect/web/test"
         browser_tests.mkdir()
