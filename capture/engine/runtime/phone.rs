@@ -477,7 +477,7 @@ pub fn build_movie_bundle(
         let flags_ref = &capture.flags;
         let movie_ref = &capture.movie;
         let frames = scope.spawn(move || -> Result<_> {
-            let probe = helper::probe(movie_ref)?;
+            let probe = crate::composition::media_probe::bundle_probe(movie_ref)?;
             ensure!(probe.duration_ms > 0, "The recording is empty");
             let mut target = base_target;
             if probe.width > 0 && probe.height > 0 {
@@ -664,6 +664,44 @@ pub fn finalize_live_capture(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn imported_movie_uses_published_metadata_and_preserves_its_source() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::Builder::new().permissions(std::fs::Permissions::from_mode(0o700)).tempdir().unwrap();
+        let source = root.path().join("source.mp4");
+        let movie = root.path().join("recording.mp4");
+        let made = Command::new("ffmpeg").args(["-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i",
+            "color=c=red:s=64x48:r=10:d=1,drawbox=x=32:y=0:w=32:h=48:color=blue:t=fill", "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p"])
+            .arg(&source).output().unwrap();
+        assert!(made.status.success(), "{}", String::from_utf8_lossy(&made.stderr));
+        let rotated = Command::new("ffmpeg").args(["-v", "error", "-nostdin", "-y", "-display_rotation:v:0", "90", "-i"])
+            .arg(source).args(["-map", "0", "-c", "copy"]).arg(&movie).output().unwrap();
+        assert!(rotated.status.success(), "{}", String::from_utf8_lossy(&rotated.stderr));
+        let original = std::fs::read(&movie).unwrap();
+        let reference = Command::new("ffmpeg").args(["-v", "error", "-nostdin", "-i"]).arg(&movie)
+            .args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"]).output().unwrap();
+        assert!(reference.status.success()); assert_eq!(reference.stdout.len(), 48 * 64 * 4);
+        let (_, bundle, text) = build_movie_bundle(root.path(), MovieCapture {
+            movie: movie.clone(), target: phone_target("Synthetic file", None, None, 1, 1),
+            device: serde_json::from_value(serde_json::json!({"name":"Synthetic file", "capture":"mirror", "width":1, "height":1})).unwrap(),
+            events: Vec::new(), strokes: Vec::new(), flags: Vec::new(), note: None,
+            context: BTreeMap::new(), context_changes: Vec::new(), screens: Vec::new(),
+        }).unwrap();
+        assert_eq!((bundle.target.frame.width, bundle.target.frame.height, bundle.duration_ms), (48.0, 64.0, 1000));
+        assert!(!bundle.keyframes.is_empty()); assert!(!text.is_empty());
+        assert_eq!(std::fs::read(movie).unwrap(), original);
+        for frame in &bundle.keyframes {
+            let png = std::fs::read(root.path().join(&frame.file)).unwrap();
+            let decoded = crate::capture::engine::render::decode_png(std::io::Cursor::new(png)).unwrap();
+            assert_eq!((decoded.width, decoded.height), (48, 64));
+            for y in [16, 48] {
+                let index = (y * 48 + 24) * 4;
+                assert_eq!(decoded.rgba[index] > decoded.rgba[index + 2],
+                    reference.stdout[index] > reference.stdout[index + 2], "display rotation must preserve image orientation");
+            }
+        }
+    }
 
     #[test]
     fn mirror_target_has_device_identity_without_app_bundle_id() {

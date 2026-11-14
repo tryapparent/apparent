@@ -10,8 +10,10 @@ owns video-duration fallback and overlapping embedded-audio selection; the SDK
 supplies display dimensions and native stream identities. The installed app
 provides its existing Node-capable runtime without opening an Electron window.
 Missing consumer assets fail before encoding; runtime never builds/downloads a
-provider. See `record/media/README.md` for package proof and rollback. The legacy
-helper probe remains required by phone import and retention.
+provider. Phone/file ingestion, orphan recovery and retention size observations
+use Record's separate container-clock metadata contract through the same published
+provider. The replaced Desktop/Swift probe commands are removed; native frame and
+audio decoding remain authoritative. See `record/media/README.md` for proof and rollback.
 
 `apparent export <bundle>` writes one H.264/HEVC + AAC `.mp4`; the `videoExport` setting (default on) gates **Export Last Capture as Video…** on Mac and Linux. Mac saves to `~/Movies/Apparent` with progress beside the menu bar icon; Linux asks for a destination in the desktop's Save dialog and shows progress in the tray menu. The remaining Rust planner is authoritative for picture/encoding; on Mac the helper renders its JSON plan (AVAssetReader → Core Image crop/camera → Core Graphics ink → AVAssetWriter): `crop.rs` (`--crop auto|full|x,y,w,h` — auto is `autocrop` `Scope::Whole` — even-sided output size, audio window), `ink.rs` (strokes via `sketch::freehand_outline`, laser, pins, ripples; sizes mirror `render::annotate_keyframe_in_place`), `camera.rs` (on by default, `--no-zoom` opts out: pure events → camera rects, critically damped springs, never zooms during fast cursor travel; derived from ScreenDemon's click zoom). Everything in the plan is on the video's clock (bundle time − `videoOffsetMs`); Mac `audio.wav` starts `videoOffsetMs` in, an iPhone movie uses its own audio. Output is constant frame rate (screen movies only have frames on change). Test with `cargo test export::`.
 

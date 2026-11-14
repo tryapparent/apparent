@@ -731,7 +731,7 @@ impl VideoReader {
             "video/x-raw,format=RGBA".to_owned()
         };
         let launch = format!(
-            "filesrc location=\"{}\" ! decodebin ! videoconvert ! {caps} ! appsink name=sink sync=false max-buffers=1",
+            "filesrc location=\"{}\" ! decodebin ! videoconvert ! videoflip video-direction=auto ! {caps} ! appsink name=sink sync=false max-buffers=1",
             movie.display().to_string().replace('"', "\\\"")
         );
         let pipeline = gst::parse::launch(&launch)?
@@ -897,28 +897,6 @@ pub fn frames(movie: &Path, times: FrameTimes, max_edge: u32) -> Result<Vec<Rgba
     }
     ensure!(!out.is_empty(), "No frames decoded from {}", movie.display());
     Ok(out)
-}
-
-pub fn probe(movie: &Path) -> Result<crate::capture::desktop::linux::helper::Probe> {
-    let video = VideoReader::open(movie, 0)?;
-    let caps = video
-        .sink
-        .static_pad("sink")
-        .and_then(|pad| pad.current_caps());
-    let info = caps
-        .as_ref()
-        .and_then(|caps| gstreamer_video::VideoInfo::from_caps(caps).ok());
-    let audio_tracks = audio_samples(movie).map_or(0, |(_, samples)| u32::from(!samples.is_empty()));
-    Ok(crate::capture::desktop::linux::helper::Probe {
-        duration_ms: video.duration_ms,
-        width: info.as_ref().map_or(0, gstreamer_video::VideoInfo::width),
-        height: info.as_ref().map_or(0, gstreamer_video::VideoInfo::height),
-        audio_tracks,
-        fps: info.as_ref().map_or(0.0, |i| {
-            let f = i.fps();
-            f64::from(f.numer()) / f64::from(f.denom().max(1))
-        }),
-    })
 }
 
 /// The movie's first audio track, 16 kHz mono, with silence before its first sample so audio

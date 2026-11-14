@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {parseMovieInfo} from '@apparent/engine-sdk';
-import {exportProbe} from '../src/policy.ts';
+import {bundleProbe, exportProbe} from '../src/policy.ts';
 
 // Native FFprobe wire shape, through the actual published SDK parser. Provider
 // execution and packaged caller acceptance are separate integration checks.
@@ -14,6 +14,21 @@ const movie = (audio: unknown[] = [], video: object = {}) => parseMovieInfo(JSON
 test('export uses the video duration rather than the container audio tail', () => {
   assert.equal(exportProbe(movie()).durationMs, 1000);
   assert.equal(exportProbe(movie([], {duration: undefined})).durationMs, 12000);
+});
+test('bundle assembly preserves the container clock and raw audio presence', () => {
+  const facts = movie([{index: 7, codec_type: 'audio', start_time: '5', duration: '1'}]);
+  assert.equal(bundleProbe(facts).durationMs, 12000);
+  assert.equal(bundleProbe(facts).audioTracks, 1);
+  assert.equal(exportProbe(facts).durationMs, 1000);
+  assert.equal(exportProbe(facts).audioTracks, 0);
+});
+test('bundle metadata falls back only for a missing clock and preserves SDK display bounds', () => {
+  const facts = movie([], {displayTransform: [0, 1, -1, 0]});
+  assert.deepEqual(bundleProbe({...facts, durationMs: null}), {
+    version: 1, durationMs: 1000, width: 48, height: 64, fps: 25, audioTracks: 0,
+  });
+  assert.throws(() => bundleProbe({...facts, durationMs: 0}), /no video/);
+  assert.throws(() => bundleProbe({...facts, video: null}), /no video/);
 });
 test('only actual overlapping audio can be selected; provider stream IDs survive filtering', () => {
   const result = exportProbe(movie([

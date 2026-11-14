@@ -307,7 +307,7 @@ pub fn pending(captures: &Path, now: SystemTime) -> Vec<PathBuf> {
 
 /// What an orphaned bundle's build would have been given: its whole video as a Screen capture.
 pub fn orphan_recipe(
-    video: &crate::capture::desktop::helper::Probe,
+    video: &crate::composition::media_probe::BundleProbe,
     audio_ms: Option<u64>,
 ) -> Unfinished {
     // The audio runs from the start of the capture, the movie from its first frame.
@@ -347,7 +347,7 @@ pub fn orphan_recipe(
 /// The steps that read media, swapped out in tests.
 #[derive(Clone, Copy)]
 pub struct Media {
-    pub probe: fn(&Path) -> Result<crate::capture::desktop::helper::Probe>,
+    pub probe: fn(&Path) -> Result<crate::composition::media_probe::BundleProbe>,
     pub frames:
         fn(&Path, crate::capture::desktop::helper::FrameTimes, u32) -> Result<Vec<RgbaFrame>>,
     pub transcribe: fn(
@@ -358,7 +358,7 @@ pub struct Media {
 
 impl Media {
     pub const SYSTEM: Media = Media {
-        probe: crate::capture::desktop::helper::probe,
+        probe: crate::composition::media_probe::bundle_probe,
         frames: crate::capture::desktop::helper::frames,
         transcribe: crate::capture::engine::runtime::audio::transcription::transcribe::transcribe,
     };
@@ -651,9 +651,9 @@ mod tests {
         dir
     }
 
-    fn fake_probe(_: &Path) -> Result<crate::capture::desktop::helper::Probe> {
+    fn fake_probe(_: &Path) -> Result<crate::composition::media_probe::BundleProbe> {
         Ok(serde_json::from_value(serde_json::json!({
-            "durationMs": MOVIE_MS, "width": W, "height": H,
+            "version": 1, "durationMs": MOVIE_MS, "width": W, "height": H, "fps": 0, "audioTracks": 0,
         }))?)
     }
 
@@ -849,7 +849,7 @@ mod tests {
     fn recover_tries_an_orphan_once_and_retries_only_when_asked() {
         let captures = temp_dir("once");
         let dir = orphan(&captures, "broken.apparent");
-        fn no_probe(_: &Path) -> Result<crate::capture::desktop::helper::Probe> {
+        fn no_probe(_: &Path) -> Result<crate::composition::media_probe::BundleProbe> {
             anyhow::bail!("unreadable movie")
         }
         let broken = Media {
@@ -890,10 +890,9 @@ mod tests {
                 .arg(&video)
                 .status()
                 .is_ok_and(|status| status.success());
-            if !made || crate::capture::desktop::helper::path().is_err() {
-                eprintln!("skipped: needs ffmpeg and apparent-helper");
-                return;
-            }
+            assert!(made, "Recovery provider proof requires FFmpeg to create its real fixture");
+            #[cfg(target_os = "macos")]
+            assert!(crate::capture::desktop::helper::path().is_ok(), "Mac frame decoding requires the built helper");
         }
         let media = Media {
             transcribe: fake_transcript,

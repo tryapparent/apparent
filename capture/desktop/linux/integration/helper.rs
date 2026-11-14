@@ -65,25 +65,6 @@ pub fn transcribe(audio: &Path) -> Result<TranscriptData> {
     crate::capture::engine::runtime::audio::transcription::speech::transcribe(audio)
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Probe {
-    pub duration_ms: u64,
-    #[serde(default)]
-    pub width: u32,
-    #[serde(default)]
-    pub height: u32,
-    #[serde(default)]
-    pub audio_tracks: u32,
-    /// The video track's nominal frame rate (0 when unknown).
-    #[serde(default)]
-    pub fps: f64,
-}
-
-pub fn probe(movie: &Path) -> Result<Probe> {
-    crate::capture::desktop::linux::media::probe(movie)
-}
-
 /// Re-encodes `movie` into `out` as H.264 with its long edge at most `max_edge`.
 pub fn shrink(movie: &Path, out: &Path, max_edge: u32) -> Result<crate::capture::engine::bundle::retention::Shrunk> {
     crate::capture::desktop::linux::media::shrink(movie, out, max_edge)

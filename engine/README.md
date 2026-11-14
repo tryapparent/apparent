@@ -1,5 +1,8 @@
 # Engine
 
+The ongoing application migration and remaining adoption gates are tracked in
+[the migration inventory](docs/migration.md).
+
 Engine owns native capture/media execution and resource, durability and safety
 mechanisms, its TypeScript SDK, and capability delivery. Record owns workflow,
 preferences, retention decisions and ordinary assembly/export policy; Desktop
@@ -58,11 +61,13 @@ export obtain metadata through its headless worker and this published SDK, using
 the native artifact pinned by that consumer. Application packaging stages those
 verified bytes and signs the Mac readers as nested code. No source build or
 download occurs when exporting. See `record/media/README.md` for policy, package
-proof and rollback. Linux export's superseded FFprobe parsing is removed.
+proof and rollback. Bundle ingestion/recovery and retention's size observation
+also consume Record's container-clock metadata contract. Both platforms' replaced
+Desktop probes and the Swift helper probe command are removed.
 
 This is bounded adoption, not completed application separation. Capture, native
-rendering, phone import and retention still use the authoritative legacy runtime;
-the helper probe remains required by its other callers. Producer changes do not
+rendering, phone capture, frame/audio decoding and retention mutation still use
+the authoritative legacy runtime. Producer changes do not
 automatically update an installed consumer: pin/contract adoption needs its own
 tests and package verification. Revert the consumer slice and pin together for
 rollback. Preserve historical migration branches and unrelated writers.
