@@ -299,6 +299,31 @@ test('renderer onboarding test tooling additions stay Desktop plus onboarding', 
   assert.deepEqual(hosted.plan,local.plan); assert.deepEqual(hosted.reasons,local.reasons);
   assert.deepEqual(routingProblems(hosted),[]);
 }));
+test('practice adoption additions and donor deletion retain native consumers and shared admission', () => repository((git,dir) => {
+  const donor='capture/desktop/settings/practice.rs';
+  const inputs=['capture/desktop/settings/onboarding/practice_host.rs',
+    ...['electron/onboarding/practice.ts','electron/onboarding/practice-host.ts',
+      'tests/onboarding/renderer/practice.smoke.ts','tests/onboarding/practice/practice-native.ts',
+      ...['README.md','corpus.json','generator.json','provenance.json'].map(name=>'tests/onboarding/practice/fixtures/'+name)]
+      .map(path=>'capture/desktop/ui/frontend/'+path)];
+  const put=(path:string)=>{mkdirSync(path.slice(0,path.lastIndexOf('/')),{recursive:true});writeFileSync(path,'fixture');};
+  put(donor);git('add','.');git('commit','-qm','old native donor');const base=git('rev-parse','HEAD');
+  for(const path of inputs)put(path);
+  git('rm',donor);git('add','.');git('commit','-qm','coherent adoption');const head=git('rev-parse','HEAD');
+  const hosted=cli(base,head,dir),local=localSelection(base,head,dir);
+  assert.equal(hosted.inputProofKnown,true);assert.deepEqual(hosted.plan,local.plan);assert.deepEqual(hosted.reasons,local.reasons);
+  assert.equal(hosted.plan.root,true);assert.equal(hosted.plan.desktop,true);assert.equal(hosted.plan.engine,true);assert.equal(hosted.plan.onboarding,true);
+  assert.equal(hosted.macos,true);assert.equal(hosted.mac_rust,true);assert.deepEqual(routingProblems(hosted),[]);
+  assert.equal(hosted.plan.public,false);assert.equal(hosted.plan.hermes,false);
+  for(const operation of ['executable','symlink','unknown-neighbor']){
+    git('checkout','--detach',base);put(inputs[0]);
+    if(operation==='executable')chmodSync(inputs[0],0o755);
+    if(operation==='symlink'){unlinkSync(inputs[0]);symlinkSync('../onboarding.rs',inputs[0]);}
+    if(operation==='unknown-neighbor')put('capture/desktop/settings/onboarding/other.rs');
+    git('add','.');git('commit','-qm',operation);const result=cli(base,git('rev-parse','HEAD'),dir);
+    assert.equal(result.inputProofKnown,false);assert.equal(result.plan.root,true);assert.equal(result.mac_rust,true);
+  }
+}));
 test('audited onboarding pipe addition retains native consumers and local/CI parity', () => repository((git,dir) => {
   const path='capture/desktop/settings/onboarding/pipe.rs';
   mkdirSync('capture/desktop/settings/onboarding',{recursive:true});

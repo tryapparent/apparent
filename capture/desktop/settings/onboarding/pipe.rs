@@ -19,6 +19,7 @@ struct Shared {
     stopped: AtomicBool,
     bytes: AtomicUsize,
     lost: Box<dyn Fn() + Send + Sync>,
+    deadline: Duration,
     acknowledgements: Mutex<std::collections::VecDeque<(String,Instant)>>,
 }
 impl Shared {
@@ -67,10 +68,11 @@ impl Input {
             stopped: AtomicBool::new(false),
             bytes: AtomicUsize::new(0),
             lost: Box::new(lost),
+            deadline,
             acknowledgements: Mutex::new(std::collections::VecDeque::new()),
         });
         let monitor=shared.clone();
-        std::thread::Builder::new().name("onboarding-ack".into()).spawn(move || {
+        let monitor_thread=std::thread::Builder::new().name("onboarding-ack".into()).spawn(move || {
             while !monitor.stopped.load(Ordering::Acquire) {
                 let expired=monitor.acknowledgements.lock().unwrap().front().is_some_and(|(_,time)|time.elapsed()>=deadline);
                 if expired {monitor.fail();break;}
@@ -78,7 +80,7 @@ impl Input {
             }
         })?;
         let worker = shared.clone();
-        std::thread::Builder::new()
+        let writer=std::thread::Builder::new()
             .name("onboarding-input".into())
             .spawn(move || {
                 while !worker.stopped.load(Ordering::Acquire) {
@@ -113,7 +115,12 @@ impl Input {
                         .bytes
                         .fetch_sub(message.bytes.len(), Ordering::AcqRel);
                 }
-            })?;
+            });
+        if let Err(error)=writer {
+            shared.stopped.store(true,Ordering::Release);
+            let _=monitor_thread.join();
+            return Err(error);
+        }
         Ok(Self {
             queue,
             shared,
@@ -126,10 +133,12 @@ impl Input {
         if pending.len()>=MAX_MESSAGES {drop(pending);self.shared.fail();return;}
         pending.push_back((sequence,Instant::now()));
     }
-    pub(super) fn ack(&self, sequence:&str) {
+    pub(super) fn ack(&self, sequence:&str)->bool {
         let mut pending=self.shared.acknowledgements.lock().unwrap();
-        if pending.front().is_some_and(|(id,_)|id==sequence) {pending.pop_front();}
-        else {drop(pending);self.shared.fail();}
+        if !self.shared.stopped.load(Ordering::Acquire) &&
+            pending.front().is_some_and(|(id,time)|id==sequence && time.elapsed()<self.shared.deadline) {
+            pending.pop_front();true
+        } else {drop(pending);self.shared.fail();false}
     }
 
     /// Already-serialized JSON line, including its newline. Never drop a barrier
@@ -228,9 +237,23 @@ mod tests {
     #[test]
     fn timely_ack_retires_deadline_and_wrong_ack_revokes() {
         let mut child=child("cat");let (input,lost)=input(&mut child,32,MAX_BYTES);
-        input.expect("1".into());input.ack("1");
+        input.expect("1".into());assert!(input.ack("1"));
         assert!(lost.recv_timeout(Duration::from_millis(180)).is_err());
-        input.expect("2".into());input.ack("1");lost.recv_timeout(Duration::from_secs(1)).unwrap();
+        input.expect("2".into());assert!(!input.ack("1"));lost.recv_timeout(Duration::from_secs(1)).unwrap();
+    }
+    #[test]
+    fn expired_or_failed_transport_never_admits_an_ack() {
+        for expired in [false,true] {
+            let mut child=child("cat");let (input,lost)=input(&mut child,32,MAX_BYTES);
+            input.expect("1".into());
+            if expired {
+                input.shared.acknowledgements.lock().unwrap().front_mut().unwrap().1=Instant::now()-Duration::from_secs(1);
+            } else {input.shared.fail();}
+            assert!(!input.ack("1"));
+            assert_eq!(input.shared.acknowledgements.lock().unwrap().len(),1,"rejected ack cannot retire admission evidence");
+            lost.recv_timeout(Duration::from_secs(1)).unwrap();
+            assert!(lost.try_recv().is_err(),"failure emitted once");
+        }
     }
 
     #[test]

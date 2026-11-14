@@ -40,13 +40,20 @@ impl Practice {
         #[cfg(test)] self.history.push(batch.clone());
         batch
     }
-    pub fn admit(&mut self, value:Value)->Result<(bool, String),()> {
+    fn disposition(&self, value:Value)->Result<Disposition,()> {
         let d:Disposition=serde_json::from_value(value).map_err(|_|())?;
         let b=self.pending.front().ok_or(())?;
         if d.kind!="practice-disposition"||d.version!=1||
             [&d.source,&d.transport,&d.attempt,&d.capture,&d.sequence].into_iter().zip(["source","transport","attempt","capture","sequence"])
                 .any(|(v,k)|b[k].as_str()!=Some(v.as_str())) || b["intent"]!=json!(d.intent)||b["board"]!=json!(d.board) {return Err(());}
-        let finish=d.accepted && b["events"].as_array().is_some_and(|events|events.iter().any(|e|e["action"]=="practice-finish"));
+        Ok(d)
+    }
+    pub fn acknowledgement(&self, value:&Value)->Result<String,()> {
+        Ok(self.disposition(value.clone())?.sequence)
+    }
+    pub fn admit(&mut self, value:Value)->Result<(bool, String),()> {
+        let d=self.disposition(value)?;
+        let finish=d.accepted && self.pending.front().unwrap()["events"].as_array().is_some_and(|events|events.iter().any(|e|e["action"]=="practice-finish"));
         self.pending.pop_front();
         if d.attempt==self.attempt.to_string() {
             self.stage=d.stage;self.latest=d.latest;self.locating=d.locating;self.desktop_stage=d.desktop_stage;
