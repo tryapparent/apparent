@@ -97,6 +97,12 @@ can therefore make the pill oversized; use `GPUI_X11_SCALE_FACTOR=1` for an
 unscaled XWayland presentation and restart Apparent. Explicit overrides remain
 supported rather than being silently ignored by the app.
 
+Pill content resizes update bounds and input shape while keeping the Electron
+window mapped. A hide/resize/show cycle can orphan its XWayland surface on
+Hyprland despite Electron reporting it visible, forcing native fallback. Warning,
+completion and upload-state resizes retain the same surface and repaint in place;
+the existing watchdog and native fallback still handle actual presentation failure.
+
 Without the `input` group, a capture on Wayland has no clicks, keys or ⇧ ink outside Apparent's own windows, and records only the screen and voice.
 
 ### Picker and portal limits

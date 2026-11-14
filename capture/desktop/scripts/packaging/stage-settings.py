@@ -71,8 +71,12 @@ def main():
     connect_dist.mkdir(parents=True)
     shutil.copy2(connect / "dist/shares.js", connect_dist / "shares.js")
     shutil.copy2(connect / "dist/handoff.js", connect_dist / "handoff.js")
+    shutil.copy2(connect / "dist/foreground.js", connect_dist / "foreground.js")
     (connect_dist.parent / "package.json").write_text('{"type":"module"}\n')
     shutil.copytree(frontend / "electron", app / "electron")
+    if sys.platform != "darwin":
+        # A previous Mac build output is never a Linux runtime dependency.
+        (app / "electron/pill/native/window.node").unlink(missing_ok=True)
     theme = app / "node_modules/@apparent/ui"
     (theme / "src").mkdir(parents=True)
     for name in ("window-theme.cjs", "tokens.css"):
@@ -82,7 +86,7 @@ def main():
                     ignore=shutil.ignore_patterns("foundation-*"))
     shutil.copy2(frontend / "dist/settings.html", app / "dist/settings.html")
     shutil.copy2(frontend / "dist/onboarding.html", app / "dist/onboarding.html")
-    for name in ("presentation", "hyprland", "account"):
+    for name in ("presentation", "hyprland", "selection"):
         shutil.copy2(frontend / f"dist/onboarding-{name}.cjs", app / f"dist/onboarding-{name}.cjs")
     shutil.copytree(frontend / "dist/pill", app / "dist/pill")
     installer_ui = app / "electron/installer/ui"
@@ -117,6 +121,11 @@ for (const name of ['main', 'preload']) {
             sign.append("--timestamp")
         if args.keychain:
             sign.extend(["--keychain", str(args.keychain)])
+        addon = app / "electron/pill/native/window.node"
+        if not addon.is_file() or addon.is_symlink():
+            parser.error("Missing regular Mac recording-controls adapter")
+        subprocess.run(sign + [str(addon)], check=True)
+        subprocess.run(["codesign", "--verify", "--strict", str(addon)], check=True)
         sign_runtime(runtime, sign, entitlements)
     print(f"Staged Storage Settings: {destination}")
 

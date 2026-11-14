@@ -52,8 +52,8 @@ impl Controller {
             p.tone = Tone::Success;
             p.compact = true;
         } else if snapshot.is_some_and(|s| s.connected) {
-            p.headline = "Uploads are off.".into();
-            p.detail = "You’re still signed in. New captures stay local.".into();
+            p.headline = "Connected to Apparent Connect.".into();
+            p.detail = "New captures stay on this computer until you enable uploads in Connect.".into();
             p.artwork = false;
         }
         if let Some(health) = self.health {
@@ -73,6 +73,7 @@ impl Controller {
         }
         if let Some(error) = self.error {
             let title = match error {
+                SafeError::Waitlisted => "You’re on the Connect waitlist.",
                 SafeError::Cancelled => "Connection cancelled.",
                 SafeError::Offline => "Connect is offline.",
                 SafeError::AuthRequired => "Sign in again.",

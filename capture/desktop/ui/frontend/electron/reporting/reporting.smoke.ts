@@ -9,6 +9,14 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { _electron as electron, chromium, expect } from '@playwright/test';
 
+function acceptPeerDisconnect(socket: net.Socket): void {
+  // A crash or request timeout can close the peer before the fixture replies.
+  // Required report receipts and exit assertions remain checked below.
+  socket.on('error', (error: NodeJS.ErrnoException) => {
+    assert.ok(error.code === 'EPIPE' || error.code === 'ECONNRESET', error.message);
+  });
+}
+
 // Shipped main + emitted TS policy + real same-user socket. No PostHog traffic.
 for (const settings of [false, true]) {
 test(`installed ${settings ? 'Settings' : 'foundation'} reporting observes renderer failure`, { timeout: 30000 }, async t => {
@@ -20,6 +28,7 @@ test(`installed ${settings ? 'Settings' : 'foundation'} reporting observes rende
   const sockets = new Set<net.Socket>();
   const requests: Record<string, unknown>[] = [];
   const server = net.createServer(socket => {
+    acceptPeerDisconnect(socket);
     sockets.add(socket);
     socket.once('close', () => sockets.delete(socket));
     socket.once('data', data => {
@@ -107,10 +116,13 @@ test('packaged Notes admits its renderer crash before its existing quit', { time
   const directory = path.join(home, '.config/apparent/agent-control');
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   const requests: Record<string, unknown>[] = [];
-  const server = net.createServer(socket => socket.once('data', data => {
-    requests.push(JSON.parse(data.toString()));
-    socket.end('{"accepted":true}\n');
-  }));
+  const server = net.createServer(socket => {
+    acceptPeerDisconnect(socket);
+    socket.once('data', data => {
+      requests.push(JSON.parse(data.toString()));
+      socket.end('{"accepted":true}\n');
+    });
+  });
   let child: ReturnType<typeof spawn> | undefined;
   let browser: Awaited<ReturnType<typeof chromium.connectOverCDP>> | undefined;
   t.after(async () => {

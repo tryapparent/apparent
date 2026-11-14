@@ -3,17 +3,21 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "apparent-connect-mcp": "dist/mcp-cli.js"
+  },
   "scripts": {
-    "test": "node --experimental-strip-types --test test/*.test.ts",
-    "test:cli": "node --experimental-strip-types --test test/cli.integration.ts",
+    "test": "npm run build && node --experimental-strip-types --test test/*.test.ts test/mcp/*.test.ts test/fixtures/*.test.ts",
+    "test:cli": "node --experimental-strip-types --test test/cli.integration.ts test/foreground.integration.ts",
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.ts",
     "pack": "npm pack --dry-run",
     "prepack": "npm run build"
   },
   "dependencies": {
+    "@noble/ed25519": "3.2.0",
     "age-encryption": "0.3.1",
-    "@noble/ed25519": "3.2.0"
+    "jose": "6.1.3"
   },
   "devDependencies": {
     "@types/node": "22.19.1",

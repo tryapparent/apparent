@@ -28,6 +28,9 @@ test('a narrow PR or missing plan fields cannot authorize broader main suites', 
   assert.equal(covers({} as any,web),false);
   assert.equal(check({...record,plan:web}).linux,false);
   assert.equal(check({...record,macPlan:web}).macos,false);
+  const foreground = suitePlan(['connect/client/typescript/src/foreground.ts']);
+  assert.equal(covers({...web, foreground:false}, foreground), false,
+    'portable evidence without the foreground owner cannot satisfy its new plan');
 });
 test('missing, malformed, partial and nonboolean plans retain full verification', () => {
   for (const raw of [undefined,'','null','{}','[]','{"root":false}',JSON.stringify({...full,root:'false'}),JSON.stringify({...full,extra:false})]) assert.deepEqual(parsePlan(raw),full);

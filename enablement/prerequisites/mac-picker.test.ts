@@ -4,7 +4,7 @@ import {execFileSync, spawn} from 'node:child_process';
 import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {basename, join} from 'node:path';
-import {panelScript, persistentPanelScript, PickerProcess, prepareStorageChange, cancelStorageChange, type PickerDriver} from './mac-picker.ts';
+import {panelScript, persistentPanelScript, PickerProcess, prepareStorageChange, cancelStorageChange, pickerStartupMs, type PickerDriver} from './mac-picker.ts';
 import {isolatePickerRuntime} from './mac-runtime.ts';
 import * as files from 'node:fs/promises';
 function deferred<T>() {
@@ -126,7 +126,7 @@ test('owned-window readiness uses only the bounded window query and still reject
  const start=source.indexOf('    report.nativeWindowReadiness ='),end=source.indexOf('    const reporting =',start);
  assert.ok(start>=0&&end>start);
  const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
- const readiness=new AsyncFunction('poll','panel','report','assert',source.slice(start,end));
+ const readiness=new AsyncFunction('poll','observePanel','report','assert',source.slice(start,end));
  const observed='depth=0;role=AXWindow;title=Apparent — UI foundation;sheets=0';
  for(const value of [observed,'depth=0;role=AXWindow;title=Other',observed+'\ndepth=1;role=AXSheet;']) {
   const calls:string[]=[];const report:{nativeWindowReadiness?:string}={};
@@ -189,24 +189,33 @@ test('picker calls allow bounded AppKit startup but never exceed the original ov
   const from=source.indexOf(start),to=source.indexOf(end,from);
   assert.ok(from>=0&&to>from);return source.slice(from,to);
  };
- const create=new Function('run','Date','assert','env','deadline','electronChild','panelScript','home','electronExecutable','pickerCommandMs','fixtureRuntime','PickerProcess',
+ const create=new Function('run','Date','assert','env','deadline','electronChild','panelScript','home','electronExecutable','pickerCommandMs','pickerStartupMs','fixtureRuntime','PickerProcess',
   slice('  const budget =','  let home,')+slice('  const osa =','  const panel =')+
   slice('  const panel =','  const snapshot =')+slice('    const goPathOperation =','    const prepared =')+
   'return {osa,panel,goPathOperation};');
- let now=0;
+ let now=0,startupDelay=0;
+ const startupCaps:number[]=[];
  const calls:Array<{timeout:number;operation:string}>=[];
  const driver=create(async(_file:string,args:string[],options:{timeout:number})=>{
   calls.push({timeout:options.timeout,operation:args[4]});return {stdout:'owned picker\n'};
- },{now:()=>now},assert,{},95000,{exitCode:null,signalCode:null,pid:4801},'native script','/synthetic/home','/synthetic/electron',5000,{bundleId:'com.tryapparent.synthetic'},class {
-  async request(args:string[],timeout:number) {calls.push({timeout,operation:args[2]});return 'owned picker';}
+ },{now:()=>now},assert,{},95000,{exitCode:null,signalCode:null,pid:4801},'native script','/synthetic/home','/synthetic/electron',5000,pickerStartupMs,{bundleId:'com.tryapparent.synthetic'},class {
+  async start(timeout:number) {startupCaps.push(timeout);assert.ok(timeout<=pickerStartupMs);now+=startupDelay;}
+  async act(args:string[],timeout:number) {calls.push({timeout,operation:args[2]});return 'owned picker';}
+  async observe(args:string[],timeout:number) {calls.push({timeout,operation:args[2]});return 'owned picker';}
  });
  await driver.panel('cancel');
  await driver.goPathOperation('enter-go-path','/synthetic/path');
  assert.deepEqual(calls.map(call=>call.timeout),[5000,5000]);
+ assert.deepEqual(startupCaps,[pickerStartupMs,pickerStartupMs]);
  await driver.osa('other native control');
  assert.equal(calls.at(-1)!.timeout,3500,'Unrelated native controls keep their original cap');
  now=94500;await driver.panel('choose');await driver.goPathOperation('navigate-go','/synthetic/path');
  assert.deepEqual(calls.slice(-2).map(call=>call.timeout),[500,500]);
+ assert.deepEqual(startupCaps.slice(-2),[500,500]);
+ now=94000;startupDelay=1000;const beforeStartup=calls.length;
+ await assert.rejects(driver.panel('cancel'),/overall deadline exceeded/);
+ assert.equal(startupCaps.at(-1),1000);
+ assert.equal(calls.length,beforeStartup,'Startup cannot buy a command a fresh overall deadline');
  now=95000;const before=calls.length;
  await assert.rejects(driver.panel('cancel'),/overall deadline exceeded/);
  await assert.rejects(driver.goPathOperation('navigate-go','/synthetic/path'),/overall deadline exceeded/);
@@ -403,6 +412,26 @@ test('the retained native receipt preserves direct and wrapped subprocess failur
   }
  }
 });
+test('terminal picker readiness preserves the first timeout and never queries a retired interpreter',async()=>{
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const start=source.indexOf('  const poll ='),end=source.indexOf('  let env;',start);
+ assert.ok(start>=0&&end>start);
+ const report:{readinessAttempts?:Record<string,Array<{message:string;detail:string}>>}={};
+ let now=0,reads=0;
+ const poll=new Function('report','Date','performance','budget','sleep','process',
+  source.slice(start,end)+'return poll;')(report,{now:()=>now},{now:()=>now},(cap:number)=>cap,
+   async()=>{now+=150;},{env:{}});
+ const failure=Object.assign(Error('Native picker command timed out; outcome unknown'),{stderr:'',pickerRetired:true});
+ await assert.rejects(poll(async()=>{
+  reads++;throw reads===1?failure:Error('Picker driver is retired; no replay');
+ },'Owned Electron AX window readiness'),(error:Error & {cause?:unknown})=>{
+  assert.match(error.message,/command timed out; outcome unknown/);assert.equal(error.cause,failure);return true;
+ });
+ assert.equal(reads,1);
+ assert.equal(report.readinessAttempts!['Owned Electron AX window readiness']![0]!.message,failure.message);
+ // A reported read-only not-ready result is still observable again.
+ assert.equal(await poll(async()=>{if(reads++===1)throw Error('Owned window not ready');return 'ready';},'ordinary readiness'),'ready');
+});
 test('readiness preserves the original transport error even when stderr is empty',async()=>{
  const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
  const start=source.indexOf('  const poll ='),end=source.indexOf('  let env;',start);
@@ -423,7 +452,7 @@ test('native integration retains its consent, deadlines, persistence assertions 
  const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
  assert.match(source,/prepareStorageChange\(\{/);
  assert.match(source,/cancelStorageChange\(\{/);
- assert.match(source,/picker: \(\) => poll\(\(\) => panel\('inspect'\), 'Native Cancel picker readiness'\)/);
+ assert.match(source,/picker: \(\) => poll\(\(\) => observePanel\('inspect'\), 'Native Cancel picker readiness'\)/);
  assert.match(source,/APPARENT_STORAGE_NATIVE_CI/);
  assert.match(source,/timeout: 120000/);assert.match(source,/Date\.now\(\) \+ 95000/);
  for(const contract of ['Saved location readback','Cancel changed config bytes','Cancel replaced config','Cancel rewrote config','Reset location readback'])assert.ok(source.includes(contract));
@@ -680,6 +709,7 @@ test('reference cleanup stops descendants after backend exit, survives restart, 
 });
 
 const pickerWorker = `
+process.stdout.write('{"type":"ready"}\\n');
 const rl = require('node:readline').createInterface({input:process.stdin});
 rl.on('line', line => {
  const {id,args}=JSON.parse(line), op=args[2];
@@ -697,14 +727,80 @@ rl.on('line', line => {
  }else process.stdout.write(bytes);
 });
 `;
-function pickerTransport(t: {after: (fn: () => Promise<unknown>) => void}) {
+async function pickerTransport(t: {after: (fn: () => Promise<unknown>) => void}, start = true) {
  const driver=new PickerProcess(()=>spawn(process.execPath,['-e',pickerWorker],{stdio:'pipe'}));
  t.after(()=>driver.close());
+ if (start) await driver.start(1000);
  return driver;
 }
 const pickerArgs=(operation:string, path='/synthetic/path')=>['4811',path,operation,'/synthetic/runtime','synthetic.bundle'];
+test('delayed and fragmented startup sends no command and does not consume the later command deadline',async t=>{
+ const worker=`
+ let ready=false;
+ const rl=require('node:readline').createInterface({input:process.stdin});
+ rl.on('line',line=>{
+  if(!ready){process.stderr.write('premature command');process.exit(7);}
+  const {id}=JSON.parse(line);process.stdout.write(JSON.stringify({id,ok:true,value:'owned'})+'\\n');
+ });
+ setTimeout(()=>{process.stdout.write('{"type":');setTimeout(()=>{ready=true;process.stdout.write('"ready"}\\n');},20);},1200);
+ `;
+ const driver=new PickerProcess(()=>spawn(process.execPath,['-e',worker],{stdio:'pipe'}));
+ t.after(()=>driver.close());
+ await assert.rejects(driver.request(pickerArgs('cancel'),1000),/not ready/);
+ assert.deepEqual(driver.stats,{starts:0,requests:0});
+ const starting=driver.start(3000);
+ await assert.rejects(driver.request(pickerArgs('cancel'),1000),/not ready/);
+ await starting;
+ assert.deepEqual(driver.stats,{starts:1,requests:0});
+ await driver.start(1000);
+ assert.equal(await driver.request(pickerArgs('inspect'),1000),'owned');
+ assert.deepEqual(driver.stats,{starts:1,requests:1});
+});
+for(const frame of ['not json\n','{"type":"ready","extra":true}\n','{"type":"ready"}\n{"type":"ready"}\n',
+ '{"id":1,"ok":true,"value":"unsolicited"}\n','x'.repeat(65537)])test(`invalid startup frame refuses command dispatch (${frame.slice(0,24)})`,async t=>{
+ const driver=new PickerProcess(()=>spawn(process.execPath,['-e',`process.stdin.resume();process.stdout.write(${JSON.stringify(frame)});`],{stdio:'pipe'}));
+ t.after(()=>driver.close());
+ await assert.rejects(driver.start(1000));
+ await assert.rejects(driver.request(pickerArgs('cancel'),5000),/retired/);
+ assert.equal(driver.stats.requests,0);
+});
+test('startup timeout kills the owned interpreter without dispatching a command',async t=>{
+ const driver=new PickerProcess(()=>spawn(process.execPath,['-e','process.stdin.resume();'],{stdio:'pipe'}));
+ t.after(()=>driver.close());
+ await assert.rejects(driver.start(80),/startup timed out; no command dispatched/);
+ await assert.rejects(driver.request(pickerArgs('cancel'),5000),/retired/);
+ const closed=await driver.close();
+ assert.equal(closed.requests,0);assert.ok(closed.exitCode!==null||closed.signalCode!==null);
+});
+test('startup process failure preserves final stderr and sends no command',async t=>{
+ const driver=new PickerProcess(()=>spawn(process.execPath,['-e',"process.stderr.write('synthetic bootstrap failure',()=>process.exit(7));"],{stdio:'pipe'}));
+ t.after(()=>driver.close());
+ await assert.rejects(driver.start(1000),/code 7.*synthetic bootstrap failure/);
+ assert.equal(driver.stats.requests,0);
+});
+test('closing pending startup settles it and refuses concurrent startup or later commands',async()=>{
+ const driver=new PickerProcess(()=>spawn(process.execPath,['-e','process.stdin.resume();'],{stdio:'pipe'}));
+ const starting=driver.start(1000);
+ const refused=assert.rejects(starting,/closed with unresolved startup/);
+ await assert.rejects(driver.start(1000),/Concurrent/);
+ const closed=await driver.close();await refused;
+ await assert.rejects(driver.request(pickerArgs('cancel'),5000),/retired/);
+ assert.equal(closed.requests,0);assert.equal(closed.starts,1);
+});
+test('readiness observations cannot dispatch input; actions cannot masquerade as observations', async t => {
+ const driver = await pickerTransport(t, false);
+ for (const operation of ['focus-change', 'open-go', 'enter-go-path', 'navigate-go', 'choose', 'cancel', 'unknown'])
+  await assert.rejects(driver.observe(pickerArgs(operation), 5000), /observation refuses/);
+ for (const operation of ['inspect-window', 'inspect', 'inspect-go', 'inspect-go-path', 'diagnose', 'unknown'])
+  await assert.rejects(driver.act(pickerArgs(operation), 5000), /action requires/);
+ assert.deepEqual(driver.stats, {starts:0, requests:0}, 'Rejected intents never start the native provider');
+ await driver.start(1000);
+ assert.equal(await driver.observe(pickerArgs('inspect'), 5000), '/synthetic/path');
+ assert.equal(await driver.act(pickerArgs('cancel'), 5000), '/synthetic/path');
+ assert.deepEqual(driver.stats, {starts:1, requests:2}, 'Allowed operations dispatch exactly once');
+});
 test('one picker interpreter serves separate requests and handles split UTF-8 frames',async t=>{
- const driver=pickerTransport(t);
+ const driver=await pickerTransport(t);
  const path='/synthetic/café\n"quoted"';
  assert.equal(await driver.request(pickerArgs('split',path),5000),path);
  for(let i=0;i<12;i++)assert.equal(await driver.request(pickerArgs('inspect',String(i)),5000),String(i));
@@ -714,34 +810,38 @@ test('one picker interpreter serves separate requests and handles split UTF-8 fr
  await assert.rejects(driver.request(pickerArgs('cancel'),5000),/retired/);
 });
 test('a native readiness error is reported without replay or interpreter restart',async t=>{
- const driver=pickerTransport(t);
+ const driver=await pickerTransport(t);
  await assert.rejects(driver.request(pickerArgs('error'),5000),/Owned picker not ready/);
  assert.equal(await driver.request(pickerArgs('inspect'),5000),'/synthetic/path');
  assert.deepEqual(driver.stats,{starts:1,requests:2});
 });
 test('interpreter failure retains its exit status and final stderr in the reported error',async t=>{
- const driver=pickerTransport(t);
+ const driver=await pickerTransport(t);
  await assert.rejects(driver.request(pickerArgs('stderr-exit'),5000),/code 7.*synthetic interpreter failure/);
  await assert.rejects(driver.request(pickerArgs('cancel'),5000),/retired/);
  assert.equal(driver.stats.requests,1);
 });
 for(const operation of ['bad-id','malformed','oversized','exit'])test(`picker rejects ${operation} and refuses further dispatch`,async t=>{
- const driver=pickerTransport(t);
+ const driver=await pickerTransport(t);
  await assert.rejects(driver.request(pickerArgs(operation),5000));
  await assert.rejects(driver.request(pickerArgs('cancel'),5000),/retired/);
  assert.equal(driver.stats.requests,1);
 });
 test('a timed-out mutation retires the owned driver and cannot be replayed',async t=>{
- const driver=pickerTransport(t);
+ const driver=await pickerTransport(t);
  await driver.request(pickerArgs('inspect'),5000);
- await assert.rejects(driver.request(pickerArgs('hang'),80),/outcome unknown/);
+ await assert.rejects(driver.request(pickerArgs('hang'),80),error=>{
+  assert.match(String(error),/outcome unknown/);
+  assert.equal((error as {pickerRetired?:boolean}).pickerRetired,true);
+  return true;
+ });
  await assert.rejects(driver.request(pickerArgs('cancel'),5000),/retired/);
  const closed=await driver.close();
  assert.ok(closed.exitCode!==null||closed.signalCode!==null);
  assert.equal(closed.requests,2);
 });
 test('picker concurrency and invalid deadlines never issue a second command',async t=>{
- const driver=pickerTransport(t);
+ const driver=await pickerTransport(t);
  await driver.request(pickerArgs('inspect'),5000);
  await assert.rejects(driver.request(pickerArgs('cancel'),5001),/deadline/);
  const pending=driver.request(pickerArgs('hang'),80);
@@ -755,6 +855,8 @@ test('Mac picker protocol reports absent ownership through the real interpreter 
 },async t=>{
  const driver=new PickerProcess();
  t.after(async()=>{await driver.close();});
+ await driver.start(pickerStartupMs);
+ assert.deepEqual(driver.stats,{starts:1,requests:0},'Bootstrap cannot dispatch an ownership or UI command');
  // macOS process IDs cannot reach this value. No AX lookup, focus or input is
  // reached: the existing ownedApplication guard must reject the absent PID.
  // The failing hosted frame was 288 bytes. Exercise a realistic first frame,
@@ -764,8 +866,9 @@ test('Mac picker protocol reports absent ownership through the real interpreter 
   'com.tryapparent.storagefixture.f'+'b'.repeat(32)];
  assert.ok(Buffer.byteLength(JSON.stringify({id:1,args})+'\n')>=288);
  for(let i=0;i<2;i++) {
+  const operation=i===0?'inspect-window':'inspect';
   const started=performance.now();
-  await assert.rejects(driver.request(args,5000).catch(error=>{
+  await assert.rejects(driver.request([...args.slice(0,2),operation,...args.slice(3)],5000).catch(error=>{
    // Assertion output omits custom stderr. Emit only bounded stage metadata,
    // on both expected refusal and failure, never raw errors or request data.
    const stages=(String(error?.stderr??'').match(/Picker transport stage=(?:run-entered|read-ready|frame-complete|dispatch)(?: bytes=\d{1,5})? elapsedSeconds=-?\d{1,6}\b/g)??[]).slice(-8);

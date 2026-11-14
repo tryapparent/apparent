@@ -35,7 +35,9 @@ export async function stagePopupEntries(root, destination) {
     try { await stat(source); }
     catch (error) { if (surface === 'share' && error.code === 'ENOENT') continue; throw error; }
     await stat(path.join(source, 'main.cjs'));
-    if (surface === 'notes') await stat(path.join(source, 'presentation.cjs'));
+    if (surface === 'notes') {
+      for (const policy of ['presentation', 'lifecycle']) await stat(path.join(source, `${policy}.cjs`));
+    }
     await cp(source, path.join(destination, 'electron', surface), { recursive: true, force: true });
   }
 }

@@ -16,6 +16,8 @@ use serde_json::{Value, json};
 mod renewal;
 mod encrypted_transfer;
 mod encryption;
+mod foreground;
+pub use foreground::foreground_progress;
 pub mod settings;
 
 /// Application-owned preferences and browser mechanics. Implementations must
@@ -38,18 +40,25 @@ pub trait ConfigProvider: Send + Sync {
 pub const HOSTED_SYNC: &str = "hostedSync";
 pub const HOSTED_SHARING: &str = "hostedSharing";
 pub const HOSTED_ENCRYPTION: &str = "hostedEncryption";
+pub const FOREGROUND_UPLOAD: &str = "connectForegroundUpload";
 
 /// Only the foreground caller may put this result on the clipboard. Detached
 /// workers never own clipboard access, including retries and account completion.
+#[derive(Clone)]
 pub struct PreparedLink {
     pub text: String,
     job: Job,
     client: Client,
+    foreground: bool,
+    foreground_epoch: Option<String>,
 }
 
 impl PreparedLink {
     pub fn authorized(&self) -> bool {
-        self.client.provider.experiment(HOSTED_SHARING) && self.client.share_active(&self.job)
+        self.client.provider.experiment(HOSTED_SHARING) && if self.foreground {
+            self.client.foreground_authorized(&self.job)
+                && self.client.cancellation().is_ok_and(|epoch| epoch == self.foreground_epoch)
+        } else { self.client.share_active(&self.job) }
     }
 }
 
@@ -981,6 +990,8 @@ impl Client {
     ) -> Result<PreparedLink> {
         let (url, job) = self.share_prepared_with_intent(bundle, foreground, public_copy)?;
         Ok(PreparedLink {
+            foreground: false,
+            foreground_epoch: None,
             client: self.clone(),
             job,
             text: format!(
@@ -1762,6 +1773,7 @@ impl Client {
             )?;
             match reply["status"].as_str() {
                 Some("pending") => continue,
+                Some("waitlisted") => bail!("Connect account is waitlisted"),
                 Some("approved") => {
                     ensure!(
                         reply["scope"].as_str() == Some(scope),

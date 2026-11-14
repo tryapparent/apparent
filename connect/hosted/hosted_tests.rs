@@ -377,4 +377,18 @@ fn connect_shares_installed_electron_rust_roundtrip() {
         String::from_utf8_lossy(&output.stderr)
     );
     println!("{}", String::from_utf8_lossy(&output.stdout));
+    let foreground = std::process::Command::new("node")
+        .args(["--experimental-strip-types", "--test"])
+        .arg(root.join("connect/client/typescript/test/foreground.integration.ts"))
+        .env("APPARENT_CONNECT_TEST_BINARY", app.join("Contents/MacOS/apparent"))
+        .env("APPARENT_CONNECT_TEST_INSTALLED_APP", &app)
+        .output()
+        .expect("execute Connect-owned installed foreground assertions");
+    assert!(
+        foreground.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&foreground.stdout),
+        String::from_utf8_lossy(&foreground.stderr)
+    );
+    println!("{}", String::from_utf8_lossy(&foreground.stdout));
 }

@@ -24,19 +24,41 @@ assets and CSP rather than a less-restricted Electron development server.
 
 From this directory, `npm run test:onboarding-policy` runs the source-level
 onboarding tests with Node 22 alone. It needs no `npm ci`, Electron download,
-display, Rust toolchain or generated `dist`. It covers account projection,
+display, Rust toolchain or generated `dist`. It covers native-confirmed shortcut selection,
 shortcut capture/protocol admission, coach geometry, state subscription and pen
-save receipts. Newly added `tests/onboarding/*.test.ts` files join automatically;
+save receipts. It also covers the shared Connect consent admission and session
+policy used by AgentSetup and Settings, without loading React or the generic
+Desktop bridge. Newly added `tests/onboarding/*.test.ts` files join automatically;
 keep that suffix for headless checks and use `*.smoke.ts` for renderer checks.
 
-After `npm ci`, `npm run typecheck:onboarding-policy` checks those tests and their
-TypeScript policy providers without building the Desktop frontend. The canonical
-`npm test` also runs this typecheck, so CI catches policy/test type errors. Neither
-command exercises React rendering or the real Rust/native providers. Continue
+For source tests and scoped typechecking together, run from the repository root:
+
+```sh
+node --experimental-strip-types enablement/local-tests/run.ts --onboarding
+```
+
+This is the same inventory used by the clean Node CI job: source tests first,
+then a locked install of only the onboarding TypeScript toolchain, then its
+typecheck and synthetic Connect hook lifecycle checks. It needs no frontend
+installation, React, Electron, display or Rust outputs. The synthetic hook adapter
+checks serialization and stale admission; it does not model real React scheduling.
+After a full frontend `npm ci`, `npm run typecheck:onboarding-policy` remains
+available; canonical `npm test` also runs that check. These policy commands do
+not exercise React rendering or the real Rust/native providers. Continue
 to run the canonical `npm test`, `npm run test:electron` and affected native
 acceptance before delivery; their coverage and release admission are unchanged.
 These focused checks are a fast product-development loop, not an independent
 onboarding release lane.
+
+Ordinary `git push` uses the shared range selector and executor under
+`enablement/local-tests/`; use the normal hook rather than replacing it with a
+focused command. Policy-only changes retain their Desktop/Electron consumers;
+bridge, persistence, native and mixed changes retain their integration gates.
+Connect policy dependencies add this fast suite while retaining Desktop and native
+consumers; they do not qualify for the pure onboarding native exemption. The
+Connect transport generator imports its owner DTOs directly, so its type closure
+does not acquire Record Storage through the generic Desktop bridge. Revert these
+imports and the extracted modules together to roll back; no persisted data changes.
 
 The separate installed `--controls` presentation is Linux's no-tray fallback.
 It reuses this packaged runtime and shared buttons, with four allowlisted parent-pipe
@@ -318,9 +340,23 @@ shared by both tests and concurrent first launches can race during extraction.
 npm test                    # real Unix-socket fixtures; no GUI or Rust launch
 npm run build               # strict TypeScript and production bundle
 npm run test:electron       # real Electron, synthetic socket; needs a display
+npm run test:electron:onboarding # real Electron onboarding renderer and synthetic parent state
 # On a headless Linux host:
 xvfb-run -a npm run test:electron
+xvfb-run -a npm run test:electron:onboarding
 ```
+
+`test:electron:onboarding` builds the production frontend, then runs the onboarding
+window/coach, permissions and shortcut renderer smokes in one Electron process
+slot. The window/coach check launches the packaged `--onboarding` Electron host
+with its real preload and parent pipe, using synthetic state only; the other two
+checks keep their existing real Electron/preload paths and synthetic native
+receipts. The focused command also exercises the Connect onboarding entry and consent flow. The canonical `test:electron` runs these same four test files
+alongside the generic foundation and all other existing renderer smokes. Linux
+Xvfb runs verify renderer integration only, not native permissions or platform
+acceptance.
+
+Both Electron commands run `typecheck:onboarding-renderer` before the production build. Its renderer-local strict TypeScript config checks `window-coach.smoke.ts` with the frontend Node and Playwright types, so unresolved imports and fixture typing errors fail before Electron starts. The scoped config lives under `tests/onboarding/renderer/`; the smoke still resolves `path.join(__dirname, '..')` to the frontend root. This check does not replace the renderer or native acceptance gates.
 
 The Electron smoke checks controls/keyboard use, disconnected/error/reconnect,
 renderer reload, minimum-width layout, sandbox/Node isolation, navigation/network
@@ -573,6 +609,12 @@ Ready are delivered together at Ready. Electron main applies the generated
 entrypoint. Generated policy is excluded from Git. Repeated list requests request
 fresh popup focus even when its mode has not changed.
 
+`src/notes/lifecycle.ts` owns the child startup/Finish ordering. A Finish received
+while either document is starting stays pending until the child has announced
+Ready; only an actual finish notification can authorize its acknowledgement.
+The generated `electron/notes/lifecycle.cjs` is a required packaging input.
+Rust's existing Ready and durable-save drain checks remain authoritative.
+
 `npm run test:notes-policy` builds and tests this boundary using Node/TypeScript
 alone, without Rust tools, cached Rust output or Electron APIs/runtime. The pure
 policy tests can also run directly with Node's type stripping before npm install:
@@ -672,3 +714,18 @@ The installed basic pill uses the shared React controls with a bounded Rust-auth
 bridge; Settings and onboarding routing remain independent. See
 [the pill contract](../electron_pill/README.md) for lifecycle, fallback and acceptance.
 Build includes the pill host and page; `npm run test:pill` runs synthetic Electron checks.
+
+### Foreground upload pill trial
+
+The temporary `connectForegroundUpload` config experiment routes new uploads
+through the Connect-owned TypeScript policy. The existing completed pill shows
+upload progress, Cancel upload, Retry upload and Link copied. It retains Paste
+for local handoff and the existing consent requirements. The selected backend
+never changes during an operation. `tests/pill/foreground/smoke.cts` exercises the
+built Electron renderer with synthetic parent states, light/dark themes, narrow
+workarea, keyboard retry and private action payloads; set
+`APPARENT_FOREGROUND_EVIDENCE` to a private job directory for screenshots. This is
+renderer proof, not installed native capture/upload acceptance. Native fallback
+controls retain their existing presentation and are not the accepted foreground
+control surface. Trial/rollback and native ownership debt are documented in
+`connect/docs/hosted-client.md`.

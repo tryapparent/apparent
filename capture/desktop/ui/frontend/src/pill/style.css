@@ -23,6 +23,7 @@ body { font-family:'Host Grotesk',system-ui,sans-serif; }
 .indicator.recording { background:var(--apparent-destructive); }
 .indicator.processing { width:20px;height:20px;border-radius:0;background:transparent;color:var(--apparent-primary); }
 .indicator.completed { width:20px;height:20px;border-radius:0;background:transparent;color:var(--apparent-success); }
+.indicator.stopped { width:20px;height:20px;border-radius:0;background:transparent;color:var(--apparent-foreground); }
 .pill[data-phase=processing] .pill-row { padding-inline:16px; }
 .pill[data-phase=processing] .lead { padding:0; }
 .pill[data-phase=processing] .indicator-slot { width:24px; }

@@ -73,18 +73,16 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
   await application.evaluate(({ shell }) => { global.openedUris = []; shell.openExternal = async uri => { global.openedUris.push(uri); }; });
   const page = await application.firstWindow();
   const card = page.getByRole('region', { name: 'Apparent Connect' });
-  await card.getByRole('button', { name: 'Connect', exact: true }).click();
-  await expect(card.getByText('Explicit upload consent required.')).toBeVisible();
-  assert.equal(requests.filter(r => r.command === 'allow').length, 0);
-  assert.deepEqual(await application.evaluate(() => global.openedUris), []);
-  await card.getByRole('button', { name: 'Allow & continue', exact: true }).click();
-  await expect(card.getByText('TEST-CODE', { exact: true })).toHaveCount(0);
-  assert.deepEqual(await application.evaluate(() => global.openedUris), []);
-  assert.equal((await page.evaluate(() => window.apparent.readConnectSettings())).view.privateCredential, undefined);
-  await card.getByRole('button', { name: 'Open browser', exact: true }).click();
-  await expect.poll(() => application.evaluate(() => global.openedUris.length)).toBe(1);
+  await expect(card.getByText(/Continuing requests upload access for new captures/)).toBeVisible();
+  assert.equal(requests.filter(r=>r.command==='allow').length,0);
+  assert.deepEqual(await application.evaluate(()=>global.openedUris),[]);
+  await card.getByRole('button',{name:'Continue with Google',exact:true}).click();
+  await expect.poll(()=>application.evaluate(()=>global.openedUris.length)).toBe(1);
+  assert.deepEqual(requests.filter(r=>['connect','allow','open-browser'].includes(r.command)).map(r=>r.command),['connect','allow','open-browser']);
+  await expect(card.getByText('TEST-CODE',{exact:true})).toHaveCount(0);
+  assert.equal((await page.evaluate(()=>window.apparent.readConnectSettings())).view.privateCredential,undefined);
   await card.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(card.getByRole('button', { name: 'Connect', exact: true })).toBeEnabled();
+  await expect(card.getByRole('button', { name: 'Continue with Google', exact: true })).toBeEnabled();
   assert.equal(requests.filter(r => r.command === 'cancel').length, 1);
   // Real renderer, typed semantic state, and a separate Rust confirmation command.
   stage = 'connected';
@@ -130,7 +128,7 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
   await expect(card.getByText('Uploads are off.',{exact:true})).toBeVisible();
   assert.equal(requests.filter(r=>r.command==='disable').length,1);
   stage = 'initial';
-  await expect(card.getByRole('button',{name:'Connect',exact:true})).toBeVisible();
+  await expect(card.getByRole('button',{name:'Continue with Google',exact:true})).toBeVisible();
   // All shipped Connect handlers reject extra args, wrong frames and other windows.
   assert.equal(await application.evaluate(async ({ ipcMain, BrowserWindow }, root) => {
     const owner = BrowserWindow.getAllWindows()[0].webContents;
@@ -148,20 +146,21 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
   }, path.join(__dirname, '../..')), true);
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(640, 760));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-  // A pending browser approval response cannot launch after renderer replacement.
-  await card.getByRole('button', { name: 'Connect', exact: true }).click();
-  await card.getByRole('button', { name: 'Allow & continue', exact: true }).click();
-  holdAction = 'open-browser';
-  await application.evaluate(({ ipcMain, BrowserWindow }) => {
-    const sender = BrowserWindow.getAllWindows()[0].webContents;
-    global.oldConnect = ipcMain._invokeHandlers.get('apparent:connect-open-browser')({ sender, senderFrame: sender.mainFrame });
+  // Hold the automatically opened approval request, then revoke it on reload.
+  holdAction='open-browser';
+  await application.evaluate(({ipcMain})=>{
+    const original=ipcMain._invokeHandlers.get('apparent:connect-open-browser');
+    ipcMain._invokeHandlers.set('apparent:connect-open-browser',(...args)=>{
+      global.oldConnect=original(...args);return global.oldConnect;
+    });
   });
+  await card.getByRole('button',{name:'Continue with Google',exact:true}).click();
   await expect.poll(() => typeof hold).toBe('function');
   await page.reload();
   assert.deepEqual(await application.evaluate(() => global.oldConnect), { status: 'cancelled' });
   await expect.poll(() => closes).toBe(1);
   holdAction = undefined; hold();
-  await expect(card.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Continue with Google', exact: true })).toBeVisible();
   assert.deepEqual(await application.evaluate(() => global.openedUris), ['https://example.com/device?code=TEST-CODE']);
   assert.equal(await page.getByText('synthetic-secret').count(), 0);
   // A saved session checks/renews once on opening; local polling stays local.

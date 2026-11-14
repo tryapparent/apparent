@@ -430,16 +430,92 @@ start timeout. Their media are deliberately invalid labelled strings and their
 scene producer is replaced. They test driver wiring, **not** native execution,
 X11 visibility, portal consent, encoder output or candidate product behavior.
 
+## Hosted Mac foreground acceptance
+
+Affected Desktop/Connect native verification uses the already-installed candidate
+for a separate foreground case in `ui/frontend/tests/foreground/mac.ts`. It
+requires a disposable GitHub-hosted Mac, the exact clean workflow source and an
+effective Screen Recording grant. It never edits TCC: passive permission denial
+fails the case, and `capture start --wait` must confirm a real captured frame.
+
+Plain app launch opens About Settings asynchronously. Before starting the scene,
+the case observes that exact owned window, presses its native Close once, and
+requires its child to exit. It then verifies the scene is foreground before
+capture admission; it never restores scene focus to conceal a later failure.
+
+The case disables microphone capture, displays a generated scene, and uses the
+normal exact-ID capture lifecycle. It then observes and clicks the actual
+packaged Electron pill through progress, Cancel, Retry and Copy link. Input is
+limited to a fresh OCR target in a verified descendant of the installed app;
+the native adapter also requires the exact named accessibility button with the
+projected point inside its native bounds, verifies window geometry through
+screenshot and input, and preserves the scene's foreground.
+Before any input, a separate read-only bootstrap requests Electron's documented
+[`AXManualAccessibility`](https://www.electronjs.org/docs/latest/tutorial/accessibility)
+tree for the exact verified pill process and waits for the actual named button.
+It reads the bounded owned window tree, matching its title and native geometry.
+Each lookup admits at most four window roots and 128 elements; the element limit
+also bounds nesting without assuming the renderer's accessibility depth.
+The Mac panel is click-through before hover, so global point hit-testing is not
+a renderer-readiness test. Actual clicks still move the pointer and require the
+exact global hit receiver immediately before input.
+Electron 45 debounces this request for two seconds; the bootstrap uses the
+helper's existing eight-second budget. Subsequent input retains its 1.5-second
+hit-readiness deadline and never repeats the accessibility request. An unexposed
+tree never authorizes input. This changes only the disposable verifier's
+accessibility admission; the overall case deadline remains unchanged.
+Sharing uses explicit plaintext consent against a private loopback fixture, with
+the ordinary public-access clipboard disclosure. Encrypted transfer/decryption
+proof remains the separate installed Connect CLI test.
+
+The fixture enables `APPARENT_START_TIMINGS` to retain startup-stage durations
+without changing the captures root. Parent-health failures retain separate queued
+and flushed state counts and maximum active gaps; hidden idle time is excluded.
+Mailbox updates can coalesce, so those counts are observations, not acknowledgments.
+
+`mac-foreground-native` retains the report, owned-window screenshots, synthetic
+bundle and compiler/application logs for two days. Capture command request/result/
+failure receipts identify Start, Inspect and Stop independently; an absent native
+log line does not identify which command failed. The click trace records image
+dimensions, receiver identity and foreground observations before and after input,
+including when a guard fails. Acceptance requires a passing
+report, successful owned cleanup and inspection of the actual text/images; a
+prepared adapter or permission boolean alone is not proof. Independent earlier
+native failures still fail the job. This adds no Mac job, provider rental,
+production activation, permission override or publication.
+
+Storage focus failures retain the activation result and bounded AppKit samples
+of the owned app's active flag and frontmost PID. Those observations distinguish
+the two focus predicates without changing the one-second focus allowance,
+replaying activation or dispatching Change after a failed admission.
+
 ## Mac test-artifact preparation
 
-The manual Mac verification workflow and its ARM64 candidate-build option have
-been retired. Automatic Mac verification remains in `checks.yml`; it does not
-produce an installed-test candidate. Prepare a candidate through the existing
-Mac installation procedure before performing native acceptance.
+The manual Mac verification workflow and its ARM64 candidate-build option remain
+retired. Automatic Mac root verification that also selects foreground policy
+retains its already-built Intel test app for two days; retaining it does not dispatch another Mac build or publish a
+release. Install an inspected candidate through the existing Mac installer
+before performing native acceptance.
 
-`native-candidate.ts` seals the exact checkout commit/tree, actual ARM64 hardware
-and runtime, native executables, archive checksum and every packaged file's bytes
-(including owner workers). It extracts and checks the archive before handoff.
+`native-candidate.ts` seals the exact checkout commit/tree, native executables,
+archive checksum and every packaged file's bytes (including owner workers). The
+existing ARM64 candidate mode still requires actual ARM64 hardware and runtime.
+The Mac root verification job also retains its already-installed Intel app in a
+two-day, run-and-attempt-named artifact; its manifest truthfully says `x64`,
+`nativeAcceptance: pending` and `releaseAdmission: false`. It does not claim
+ARM64 hardware coverage or native acceptance. The archive is extracted and
+checked before upload. For a separate native run, provide the exact expected
+source SHA and archive SHA to `install-app.sh` with
+`APPARENT_RETAINED_INSTALL=1` and `APPARENT_NO_LAUNCH=1`. The supported installer
+verifies the archive inventory and ad-hoc signature before copying into a fresh
+destination; launch that installed app normally for native checks. This path
+does not compile, create a `~/bin` link, or alter config/TCC/release state.
+Set `APPARENT_RETAINED_ARCHIVE`, `APPARENT_RETAINED_MANIFEST`,
+`APPARENT_EXPECTED_SOURCE`, `APPARENT_EXPECTED_ARCHIVE_SHA256` and
+`APPARENT_APP_DIR` explicitly. `RUNNER_TEMP` must name an owned private per-job
+temporary directory. Intel artifacts require an Intel-compatible runtime;
+execution under Rosetta must be reported and does not prove native ARM64 behavior.
+
 Before allocating a native provider, download and inspect that exact artifact:
 verify its run/source identity, archive checksum and expected owner worker bytes.
 The manifest records `nativeAcceptance: pending`. Separate installed

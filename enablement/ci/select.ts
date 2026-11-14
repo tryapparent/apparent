@@ -4,7 +4,7 @@ import {pathToFileURL} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
 import {changedPaths as inputPaths, workflowControlPaths} from './inputs.ts';
 
-import {portableForegroundInputs, foregroundPortableChange, routingProblems, onboardingInput, onboardingPureInputs, routeDecision, documentationOnlyPath, linuxDrivers, suitePlan} from './routing/consumers.ts';
+import {portableForegroundInputs, foregroundPortableChange, routingProblems, onboardingInput, onboardingPureInputs, retiredOnboardingInputs, routeDecision, documentationOnlyPath, linuxDrivers, suitePlan} from './routing/consumers.ts';
 export {documentationOnlyPath} from './routing/consumers.ts';
 
 export function needsPlatform(paths: string[] | null): boolean {
@@ -113,13 +113,29 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
   } catch { /* Unknown revisions retain conservative selection. */ }
   const delta = changes(base, head, cwd);
   const paths = delta?.map(change => change.path) ?? null;
-  const changedPolicyImports = paths?.filter(path => onboardingPureInputs.has(path)).filter(path => {
+  // Imports are a property of candidate content. A deleted, previously audited
+  // policy file has no candidate imports to inspect; its deletion still flows
+  // through the normal consumer and platform boundary decisions below.
+  const changedPolicyImports = delta?.filter(change => change.status !== 'D' && onboardingPureInputs.has(change.path)).filter(change => {
+    const path = change.path;
     try {return /\b(?:import|require)\b|\bexport\s+[^;]*\bfrom\s*['"]/.test(git(['show', head + ':' + path], cwd));}
     catch {return true;}
-  }) ?? [];
-  const toolingManifests = new Set(['package.json', 'package-lock.json'].map(name => 'capture/desktop/ui/frontend/tests/onboarding/' + name));
+  }).map(change => change.path) ?? [];
+  const toolingManifests = new Set(['package.json', 'package-lock.json', 'renderer/window-coach.smoke.ts', 'renderer/tsconfig.json'].map(name => 'capture/desktop/ui/frontend/tests/onboarding/' + name));
   const supportedToolingAddition = (change: Change) => toolingManifests.has(change.path) && change.status === 'A' && regularFileChange(change);
-  const changedOnboardingBoundary = delta?.filter(change => change.path.startsWith('capture/desktop/') && onboardingInput(change.path) && unsupported(change) && !supportedToolingAddition(change)).map(change => change.path) ?? [];
+  const supportedOnboardingAddition = (change: Change) => change.status === 'A' && regularFileChange(change) && (
+    // Audited native resource adapter. This admits its existing native consumers;
+    // it does not grant the pure-policy or portable renderer exemption.
+    change.path === 'capture/desktop/settings/onboarding/pipe.rs' ||
+    onboardingPureInputs.has(change.path) ||
+    (change.path.startsWith('capture/desktop/ui/frontend/src/onboarding/') && /\.(tsx|css)$/.test(change.path)) ||
+    (change.path.startsWith('capture/desktop/ui/frontend/tests/onboarding/') && /\.test\.ts$/.test(change.path))
+  );
+  const supportedOnboardingDeletion = (change: Change) => change.status === 'D' && regularFileChange(change) && retiredOnboardingInputs.has(change.path);
+  const changedOnboardingBoundary = delta?.filter(change => change.path.startsWith('capture/desktop/') && onboardingInput(change.path) &&
+    ((change.status === 'D' && !supportedOnboardingDeletion(change)) ||
+      (change.status === 'A' && !supportedOnboardingAddition(change) && !supportedToolingAddition(change)) ||
+      (change.status !== 'D' && change.status !== 'A' && unsupported(change)))).map(change => change.path) ?? [];
   const unsafe = changedOnboardingBoundary.length > 0 || (delta?.some(change => !regularFileChange(change)) ?? false) || changedPolicyImports.length > 0;
   const effective = unsafe ? null : paths;
   const workflowControls = !conservativeWorkflows && effective?.length ? workflowControlPaths(base, head, effective, cwd) : [];
@@ -134,7 +150,10 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
   const platform = plan.root || plan.engine || plan.desktop || plan.client;
   return {...routing, paths: paths ?? [], historyKnown: paths !== null, inputProofKnown: paths !== null && !unsafe, workflowControls, ...mac, platform, plan,
     hermes: plan.hermes, portable: plan.browser || plan.service || plan.tools || plan.foreground,
-    reasons: [...routing.reasons, ...foregroundBoundaries.map(path => 'foreground:native-boundary:' + path), ...changedPolicyImports.map(path => 'fallback:onboarding-new-import:' + path), ...changedOnboardingBoundary.map(path => 'fallback:onboarding-boundary-change:' + path), ...mac.reasons]};
+    reasons: [...routing.reasons,
+      ...(delta?.filter(change => !regularFileChange(change)).map(change =>
+        `fallback:unproven-input:${change.path}:${change.status}:${change.oldMode}->${change.newMode}`) ?? []),
+      ...foregroundBoundaries.map(path => 'foreground:native-boundary:' + path), ...changedPolicyImports.map(path => 'fallback:onboarding-new-import:' + path), ...changedOnboardingBoundary.map(path => 'fallback:onboarding-boundary-change:' + path), ...mac.reasons]};
 }
 
 export function requiresMacRustRange(base: string, head: string): boolean {

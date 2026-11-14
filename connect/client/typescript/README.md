@@ -1,4 +1,4 @@
-# Connect crypto compatibility primitives
+# Connect crypto primitives and encrypted MCP endpoint
 
 This package is the bounded TypeScript prerequisite for migrating Connect crypto callers. It preserves the current Rust `encryption.rs` wire rules:
 
@@ -7,7 +7,7 @@ This package is the bounded TypeScript prerequisite for migrating Connect crypto
 - `apparent-encrypted-v1\0signed-envelope\0` followed by the signed JSON in Rust struct field order;
 - strict Ed25519 verification (canonical encodings, weak public keys and small-order `R` rejected).
 
-It does not implement identity persistence, filesystem permissions, envelope/asset policy validation, service authorization, or production transfer lifecycle. Those remain migration work. In particular, this package's synthetic tests do not replace exercising the production Rust `pack`/`unpack` functions against TypeScript output.
+The exported primitives remain a migration prerequisite; they do not replace native identity, consent, queue or config writers. The separate `apparent-connect-mcp` executable owns an explicitly selected private MCP reader endpoint: local keys/state, sealed relay requests, validated streaming decryption and bundle publication. It runs without Rust or a direct server connection. See [MCP setup and limits](../../docs/mcp.md). Native transfer migration and actual Cowork acceptance remain separate gates.
 
 ## Local commands
 
@@ -35,9 +35,12 @@ TypeScript verifies Rust's signed bytes/signature, stored identities, multipart
 stream and original bytes, and publishes a newly encrypted/signed stream for
 Rust to unpack. Both sides reject wrong recipients and tampering; strict
 Ed25519 negative vectors are checked against Rust's `verify_strict` result.
-All generated identities and payloads stay in the private test fixture and are
-removed by its existing cleanup. No static private keys or large binaries are
-checked in. Run this migration-only compatibility lane from the repository root:
+That lane’s generated identities and payloads stay in its private fixture and
+are removed by its existing cleanup. Ordinary `npm test` also reads a small
+[checked-in Rust producer vector](test/fixtures/README.md), including an explicitly
+synthetic test identity. It requires no Rust toolchain and certifies only the
+current single-archive format. Run the larger migration-only compatibility lane
+from the repository root:
 
 ```sh
 APPARENT_CONNECT_INTEROP_NODE="$(command -v node)" \
@@ -81,3 +84,26 @@ declarations from `dist`; ordinary packed consumers need plain Node22.18+, not
 TypeScript loaders, Cargo or rustc. The explicit Rust interoperability lane
 requires the compiled package first; it does not belong in ordinary npm install
 or build hooks. No activation or writer cutover is included.
+
+`src/foreground.ts` supplies the dependency-free foreground upload policy. It
+requests only reserve, indexed PUT, complete, exact manifest readback and optional
+share capabilities over the existing private pipe. Native retains credential,
+filesystem and encryption enforcement; no token or local path enters this policy.
+`test/foreground.test.ts` checks sequencing, format/manifest/link rejection and
+failure-without-retry. Ordinary package commands still require no Rust tools.
+See `connect/docs/hosted-client.md` for trial routing and remaining native gates.
+
+`node --experimental-strip-types test/push-proof.ts` is an opt-in ordinary-hook
+execution proof (on Clanker, wrap it once in `t3-build`). It materializes immutable
+HEAD in a private synthetic Git repository and pushes only to a local bare
+remote. A policy-only refactor must run the real package install/tests/typecheck/
+build; an injected failing test must reject the next push without changing that
+remote. It checks local/hosted plan agreement and records timing/logs under its
+private `/tmp/apparent-dev-fgp-*` job directory. PATH guards detect attempted
+`cargo`, `rustc` and `electron` command resolution; they are not an OS sandbox.
+The fixture's accepted implementation base is synthetic: this does not prove a
+live portable-only GitHub PR or waive the initial adoption/platform gates. No
+GitHub push, workflow dispatch, installed config mutation or activation occurs.
+The proof deliberately stays outside `npm test` to avoid recursively invoking
+its own pre-push contract suite. Re-run it after adopting the shared routing
+authority; record the exact source SHA rather than reusing an older plan result.

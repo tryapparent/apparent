@@ -1,5 +1,10 @@
 Consumer selection, exact-tree PR evidence reuse and automatic Linux Main publication are documented in [continuous delivery](../docs/continuous-delivery.md). `routing/consumers.ts` owns directory triggers, named suites and shared consumer facts; local pushes and workflows both call `selectRange`. `routing/streams.ts` only compares publication inputs; native commands remain in the existing verifier adapter.
 
+[Failed-head completion receipts](completion/README.md) use GitHub workflow events
+and the existing PR comment watch, without a T3 fork or polling service. The
+`Verification support` workflow keeps manual Linux checks separate from its
+notification job; completion comments supply no acceptance or publication proof.
+
 Publication admission uses completed platform receipts even when GitHub marks
 the overall run `queued` because another platform is waiting for a runner.
 Exact main identity and successful platform/shared checks remain required.
@@ -11,6 +16,10 @@ process. Focus observations service AppKit's run loop, recheck the retained
 instance's PID/executable/termination state, and require the matching frontmost
 PID. AX/window guards, one activation, input ordering and deadlines remain intact.
 This is a Mac AppKit mechanism; Linux's owned QMP input adapter is unchanged.
+Interpreter startup has a separate, acknowledged AppKit-only preparation stage.
+It sends no target or UI command and is bounded to 15 seconds. Native commands
+retain their five-second cap; both stages consume the original 95-second test
+deadline. Failed or ambiguous startup retires the child before command dispatch.
 
 Ready-PR/manual platform verification opts into root test/build overlap. The
 verifier retains the Cargo inventory; `root.ts` starts the real app build only

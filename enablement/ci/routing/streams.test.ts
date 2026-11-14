@@ -6,12 +6,60 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {YAML} from 'bun';
 import {routeDecision, unownedPaths, routingProblems} from './consumers.ts';
-import {selectRange} from '../select.ts';
-import {selection as localSelection, commands as localCommands} from '../../local-tests/run.ts';
+import {selectRange, requiresMacRust, requiresMacRustRange} from '../select.ts';
+import {selection as localSelection, commands as localCommands, onboardingCommands} from '../../local-tests/run.ts';
 import {affectsStream, currentStream, streamPaths, type Stream} from './streams.ts';
 
 const root = new URL('../../../', import.meta.url);
 const workflows = {capture: 'checks.yml', connect: 'stream-connect.yml', public: 'stream-public.yml', hermes: 'hermes.yml', engine: 'stream-engine.yml'};
+test('Connect consent dependencies add onboarding proof without dropping native consumers', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'onboarding-connect-'));
+  const git = (...args: string[]) => execFileSync('git', args, {cwd, encoding: 'utf8'}).trim();
+  const frontend = 'capture/desktop/ui/frontend/';
+  const inputs = ['src/connect/consent.ts', 'src/connect/protocol.ts', 'src/connect/session.ts',
+    'src/connect/flow.ts', 'src/bridge.ts', 'tests/connect/flow.test.ts',
+    'tests/connect/session.test.ts', 'tests/connect/flow-hook.test.ts'];
+  const put = (path: string, text: string) => {mkdirSync(join(cwd, path, '..'), {recursive: true}); writeFileSync(join(cwd, path), text);};
+  try {
+    git('init', '-q'); git('config', 'user.name', 'Synthetic'); git('config', 'user.email', 'synthetic@example.invalid');
+    for (const path of inputs) put(frontend + path, 'export const value = 1;');
+    git('add', '.'); git('commit', '-qm', 'baseline'); const base = git('rev-parse', 'HEAD');
+    for (const path of inputs) {
+      assert.deepEqual(routeDecision([frontend + path]).selected, ['capture', 'desktop', 'onboarding'], path);
+      git('reset', '--hard', base); put(frontend + path, "import type {Contract} from './provider';\nexport const value = 2;");
+      git('add', '.'); git('commit', '-qm', 'candidate'); const head = git('rev-parse', 'HEAD');
+      const hosted = selectRange(base, head, cwd), local = localSelection(base, head, cwd);
+      assert.deepEqual(local.plan, hosted.plan); assert.deepEqual(local.reasons, hosted.reasons);
+      assert.equal(hosted.plan.onboarding, true, path); assert.equal(hosted.plan.desktop, true, path);
+      assert.equal(hosted.plan.root, true, 'real transport and persistence integration remain selected');
+      assert.equal(hosted.macos, true); assert.equal(requiresMacRust(hosted.paths, []), true);
+      assert.equal(hosted.plan.public, false); assert.equal(hosted.plan.hermes, false);
+    }
+    assert.equal(requiresMacRust([frontend + 'src/storage.tsx'], []), false, 'negative control for the native boundary');
+    git('reset', '--hard', base); put(frontend + 'src/connect/unknown.ts', 'export const value = 1;');
+    git('add', '.'); git('commit', '-qm', 'new boundary');
+    const boundary = selectRange(base, git('rev-parse', 'HEAD'), cwd);
+    assert.equal(boundary.plan.root, true); assert.equal(boundary.macos, true);
+    git('reset', '--hard', base); git('rm', frontend + inputs[0]); symlinkSync('/tmp/not-a-provider', join(cwd, frontend + inputs[0]));
+    git('add', '.'); git('commit', '-qm', 'unsafe mode');
+    const unsafe = selectRange(base, git('rev-parse', 'HEAD'), cwd);
+    assert.equal(unsafe.plan.root, true); assert.equal(unsafe.macos, true); assert.equal(unsafe.plan.onboarding, true);
+  } finally {rmSync(cwd, {recursive: true, force: true});}
+});
+
+test('one onboarding inventory keeps source tests before installation and synthetic hooks after the compiler', () => {
+  const commands = onboardingCommands();
+  assert.deepEqual(commands.map(command => command.argv), [
+    ['npm', 'run', 'test:onboarding-policy'],
+    ['npm', 'ci', '--prefix', 'tests/onboarding', '--ignore-scripts', '--no-audit', '--no-fund'],
+    ['npm', '--prefix', 'tests/onboarding', 'run', 'typecheck'],
+    ['node', '--experimental-strip-types', '--test', 'tests/connect/flow-hook.test.ts'],
+  ]);
+  assert.ok(commands.every(command => command.cwd === 'capture/desktop/ui/frontend'));
+  const script = JSON.parse(readFileSync(new URL('capture/desktop/ui/frontend/package.json', root), 'utf8')).scripts['test:onboarding-policy'];
+  assert.ok(script.includes('tests/connect/flow.test.ts')); assert.ok(script.includes('tests/connect/session.test.ts'));
+  assert.ok(!script.includes('flow-hook.test.ts'), 'source-first checks must not load the compiler');
+});
 test('both automatic events use the reviewed positive directory inventory', () => {
   for (const [stream, file] of Object.entries(workflows)) {
     const workflow = YAML.parse(readFileSync(new URL('.github/workflows/' + file, root), 'utf8'));
@@ -144,14 +192,75 @@ test('real Git deltas give local and hosted onboarding the same suites, native b
     const mixed = change([policy, 'connect/service/src/auth.ts']);
     assert.equal(mixed.hosted.plan.client, true); assert.equal(mixed.hosted.plan.service, true); assert.equal(mixed.hosted.plan.onboarding, true);
     assert.equal(change([policy], "import {execFile} from 'node:child_process';").hosted.plan.hermes, true, 'new pure-policy imports fail broad');
+    const newPolicy = change([frontend + 'electron/onboarding/selection.ts'], "import {execFile} from 'node:child_process';\nexport const choice = 1;");
+    assert.equal(newPolicy.hosted.plan.public, true, 'unexpected imports in a new audited policy path keep the conservative fallback');
+    const newNativeBoundary = change([frontend + 'electron/onboarding/new.rs']);
+    assert.equal(newNativeBoundary.hosted.plan.hermes, true, 'new native boundary inputs keep the conservative fallback');
     git('reset', '--hard', base); git('mv', policy, frontend + 'electron/moved.ts'); git('commit', '-qm', 'rename');
-    assert.equal(decision().hosted.plan.root, true); assert.equal(decision().hosted.plan.public, true);
-    assert.equal(decision().hosted.historyKnown, true); assert.equal(decision().hosted.inputProofKnown, false);
-    assert.ok(routingProblems(decision().hosted).length > 0, 'an unsafe boundary cannot silently omit filtered conservative suites');
-    git('reset', '--hard', base); git('rm', policy); git('commit', '-qm', 'delete'); assert.equal(decision().hosted.plan.root, true);
+    assert.equal(decision().hosted.plan.root, true); assert.equal(decision().hosted.plan.public, false);
+    assert.equal(decision().hosted.historyKnown, true); assert.equal(decision().hosted.inputProofKnown, true);
+    assert.deepEqual(routingProblems(decision().hosted), [], 'the source deletion and ordinary frontend addition have proven consumers');
+    git('reset', '--hard', base); git('rm', policy); git('commit', '-qm', 'delete');
+    const deletedPolicy = decision().hosted;
+    assert.equal(deletedPolicy.plan.desktop, true); assert.equal(deletedPolicy.plan.onboarding, true);
+    assert.equal(deletedPolicy.plan.root, false); assert.equal(deletedPolicy.plan.public, false);
+    assert.equal(deletedPolicy.macos, true, 'deleting a renderer-consumed policy file keeps the Mac boundary');
+    assert.equal(deletedPolicy.inputProofKnown, true); assert.deepEqual(routingProblems(deletedPolicy), []);
+    git('reset', '--hard', base); git('rm', policy);
+    put('capture/desktop/settings/onboarding/account.rs'); git('add', '.'); git('commit', '-qm', 'native ownership baseline');
+    const nativeBase = git('rev-parse', 'HEAD');
+    git('rm', 'capture/desktop/settings/onboarding/account.rs'); git('commit', '-qm', 'remove legacy native account policy');
+    const deletedNative = selectRange(nativeBase, git('rev-parse', 'HEAD'), cwd);
+    assert.equal(deletedNative.plan.desktop, true); assert.equal(deletedNative.plan.onboarding, true);
+    assert.equal(deletedNative.plan.public, false); assert.equal(deletedNative.plan.hermes, false);
+    assert.equal(deletedNative.macos, true, 'native deletion remains a Mac acceptance boundary');
+    assert.equal(deletedNative.inputProofKnown, true); assert.deepEqual(routingProblems(deletedNative), []);
     const missingLocal = localSelection('missing', 'HEAD', cwd), missingHosted = selectRange('missing', 'HEAD', cwd);
     assert.deepEqual(missingLocal.plan, missingHosted.plan); assert.equal(missingHosted.plan.public, true);
     assert.ok(missingHosted.reasons.some(reason => reason.startsWith('fallback:')));
+  } finally {rmSync(cwd, {recursive: true, force: true});}
+});
+
+test('renderer test tooling additions and unsafe nearby Git changes preserve shared/local routing parity', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'onboarding-renderer-routing-'));
+  const git = (...args: string[]) => execFileSync('git', args, {cwd, encoding: 'utf8'}).trim();
+  const frontend = 'capture/desktop/ui/frontend/tests/onboarding/renderer/';
+  const paths = [frontend + 'window-coach.smoke.ts', frontend + 'tsconfig.json'];
+  const put = (path: string, text = 'export {};') => {mkdirSync(join(cwd, path, '..'), {recursive: true}); writeFileSync(join(cwd, path), text);};
+  try {
+    git('init', '-q'); git('config', 'user.name', 'Synthetic'); git('config', 'user.email', 'synthetic@example.invalid');
+    put('capture/desktop/ui/frontend/tests/onboarding/account.test.ts'); git('add', '.'); git('commit', '-qm', 'base');
+    const base = git('rev-parse', 'HEAD');
+    const check = (expectedUnsafe: boolean, expectedAllBroad = expectedUnsafe, from = base) => {
+      const head = git('rev-parse', 'HEAD'), local = localSelection(from, head, cwd), hosted = selectRange(from, head, cwd);
+      assert.deepEqual(local.plan, hosted.plan); assert.deepEqual(local.reasons, hosted.reasons);
+      assert.equal(hosted.historyKnown, true); assert.equal(hosted.inputProofKnown, !expectedUnsafe);
+      assert.equal(hosted.plan.desktop, true, JSON.stringify({from, paths: hosted.paths, plan: hosted.plan}));
+      assert.equal(hosted.plan.onboarding, true, JSON.stringify({from, paths: hosted.paths, plan: hosted.plan}));
+      for (const suite of ['root','engine','client','browser','service','tools','public','hermes','tooling'])
+        if (expectedAllBroad) assert.equal(hosted.plan[suite as keyof typeof hosted.plan], true, suite);
+      if (!expectedUnsafe) assert.deepEqual(routingProblems(hosted), []);
+      return hosted;
+    };
+    for (const path of paths) put(path, path.endsWith('.json') ? '{"extends":"../../tsconfig.json"}' : 'export const smoke = true;');
+    git('add', '.'); git('commit', '-qm', 'approved renderer test additions'); const addition = git('rev-parse', 'HEAD'); check(false);
+
+    put(paths[0], 'export const smoke = false;'); git('add', '.'); git('commit', '-qm', 'regular renderer test modification'); check(false, false, addition);
+
+    git('reset', '--hard', base); put(paths[0]); put(frontend + 'window-coach.unknown.ts');
+    git('add', '.'); git('commit', '-qm', 'unknown nearby test'); check(true);
+
+    git('reset', '--hard', base); put(paths[0]); git('add', '.'); git('commit', '-qm', 'renderer test');
+    const unsafeAddition = git('rev-parse', 'HEAD'); execFileSync('chmod', ['755', paths[0]], {cwd}); git('add', '.'); git('commit', '-qm', 'unsafe renderer test mode');
+    const unsafe = selectRange(base, git('rev-parse', 'HEAD'), cwd);
+    assert.equal(unsafe.inputProofKnown, false); assert.equal(unsafe.plan.root, true); assert.equal(unsafe.plan.public, true);
+
+    git('reset', '--hard', unsafeAddition); git('mv', paths[0], frontend + 'renamed.ts'); git('commit', '-qm', 'renderer test move');
+    assert.equal(selectRange(base, git('rev-parse', 'HEAD'), cwd).inputProofKnown, false);
+
+    git('reset', '--hard', unsafeAddition); put('capture/engine/src/selection.rs'); git('add', '.'); git('commit', '-qm', 'mixed native change');
+    const mixed = check(false, false, base); assert.equal(mixed.plan.engine, true); assert.equal(mixed.plan.root, false);
+    assert.equal(mixed.macos, true); assert.equal(requiresMacRustRange(base, git('rev-parse', 'HEAD')), true);
   } finally {rmSync(cwd, {recursive: true, force: true});}
 });
 

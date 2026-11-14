@@ -11,18 +11,23 @@ export type Context = {
   accountId: string;
   captureId: string;
   senderGrantId: string;
+  group?: 'evidence' | 'media';
 };
 export type Signed = { version: number; context: Context; chunks: Asset[] };
 export type Inner = { version: number; context: Context; files: Asset[] };
 
 /** Rust serde_json emits struct fields in declaration order. Keep this explicit. */
-export function signedBytes(signed: Signed): Uint8Array {
-  const context: Record<string, unknown> = {
-    origin: signed.context.origin,
-    accountId: signed.context.accountId,
-    captureId: signed.context.captureId,
-    senderGrantId: signed.context.senderGrantId,
+function orderedContext(value: Context): Record<string,unknown> {
+  return {
+    origin: value.origin,
+    accountId: value.accountId,
+    captureId: value.captureId,
+    senderGrantId: value.senderGrantId,
+    ...(value.group===undefined?{}:{group:value.group}),
   };
+}
+export function signedBytes(signed: Signed): Uint8Array {
+  const context=orderedContext(signed.context);
   const ordered = {
     version: signed.version,
     context,
@@ -38,12 +43,7 @@ export function signedBytes(signed: Signed): Uint8Array {
 /** Rust's plaintext age payload: u32-BE descriptor length, ordered JSON, then file bytes. */
 export function encodeArchive(inner: Inner, fileBytes: Uint8Array[]): Uint8Array {
   if (inner.files.length !== fileBytes.length) throw new Error("invalid archive files");
-  const context: Record<string, unknown> = {
-    origin: inner.context.origin,
-    accountId: inner.context.accountId,
-    captureId: inner.context.captureId,
-    senderGrantId: inner.context.senderGrantId,
-  };
+  const context=orderedContext(inner.context);
   const descriptor = new TextEncoder().encode(JSON.stringify({
     version: inner.version,
     context,

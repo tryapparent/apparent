@@ -77,6 +77,31 @@ func stop() throws {
     try require(!child.isRunning, "Owned preview did not stop")
     owned = nil
 }
+// Preserve the entry that Foundation actually refused, without suppressing the
+// error, retrying deletion or changing permissions. Returning false is the
+// default delegate behavior. Only this synchronous owned-fixture removal uses it.
+final class CleanupFailureObserver: NSObject, FileManagerDelegate {
+    let root: URL
+    var failures: [[String: Any]] = []
+    init(root: URL) { self.root = root.standardizedFileURL }
+    func fileManager(_ fileManager: FileManager, shouldProceedAfterError error: Error,
+                     removingItemAt url: URL) -> Bool {
+        if failures.count < 8 {
+            let path = url.standardizedFileURL.path
+            let relative = path == root.path ? "." : path.hasPrefix(root.path + "/")
+                ? String(path.dropFirst(root.path.count + 1).prefix(512)) : "<outside fixture>"
+            let native = error as NSError
+            var entry: [String: Any] = ["entry": relative,
+                "domain": String(native.domain.prefix(128)), "code": native.code]
+            if let underlying = native.userInfo[NSUnderlyingErrorKey] as? NSError {
+                entry["underlyingDomain"] = String(underlying.domain.prefix(128))
+                entry["underlyingCode"] = underlying.code
+            }
+            failures.append(entry)
+        }
+        return false
+    }
+}
 // Read-only cleanup diagnostics for RUNNER_TEMP and this script's own fixture.
 // The enumerator does not traverse symlinks; lstat and ACL lookup do not follow
 // them either. Entry/depth limits and a soft time bound reserve cleanup time.
@@ -646,11 +671,18 @@ if let home = fixture {
                 "reason": "skipped to preserve cleanup deadline", "truncated": true,
                 "truncationReason": "insufficientTime"]
         }
-        do { try fm.removeItem(at: home); report["fixtureRemoved"] = true }
+        let removal = FileManager()
+        let observer = CleanupFailureObserver(root: home)
+        removal.delegate = observer
+        do { try removal.removeItem(at: home); report["fixtureRemoved"] = true }
         catch {
             failure = error; report["passed"] = false; report["cleanupError"] = String(describing: error)
             report["cleanupDiagnosticsFailure"] = String(describing: error)
+            if deadline.timeIntervalSinceNow > 6 {
+                report["cleanupRemaining"] = cleanupDiagnostics(home)
+            }
         }
+        report["cleanupRemovalFailures"] = observer.failures
     } else { report["retainedFixture"] = home.path }
 }
 if fm.fileExists(atPath: output.path) {

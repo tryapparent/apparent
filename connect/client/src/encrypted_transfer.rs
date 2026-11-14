@@ -28,6 +28,32 @@ struct StoredSpool {
 }
 
 impl Client {
+    // Ephemeral native snapshot capability. Transfer order/progress belongs to TS;
+    // no queue record or durable encrypted spool is published by this path.
+    pub(super) fn foreground_encrypted_snapshot(
+        &self, job: &mut Job, destination: &Path, allowed: &dyn Fn() -> bool,
+    ) -> Result<()> {
+        let credential = self.credential("upload", &job.server)?;
+        let identity = self.endpoint_identity(&credential)?;
+        let peers = self.encryption_peers(&credential, allowed)?;
+        let recipients: Vec<Peer> = peers.devices.iter()
+            .filter(|p| p.scope == "read" || p.grant_id == peers.grant_id).cloned().collect();
+        ensure!(recipients.iter().any(|p| p.scope == "read"), "encryption_pending_recipient");
+        let context = EncryptionContext { origin: job.server.clone(), account_id: peers.account_id,
+            capture_id: job.id.clone(), sender_grant_id: peers.grant_id };
+        let ordinary = Scratch::new(&self.state)?;
+        snapshot(&job.bundle, &ordinary.0)?;
+        ensure!(allowed(), "cancelled");
+        job.files = encryption::pack(&ordinary.0, destination, &context, &identity, &recipients)?;
+        job.encryption = Some(EncryptedJob { context, recipient_grants: recipients.iter().map(|p| p.grant_id.clone()).collect() });
+        ensure!(allowed(), "cancelled");
+        Ok(())
+    }
+
+    pub(super) fn foreground_recipients_current(&self, job: &Job, allowed: &dyn Fn() -> bool) -> Result<()> {
+        let credential = self.credential("upload", &job.server)?;
+        self.encryption_recipients_current_allowed(job, &credential, allowed)
+    }
     pub(super) fn endpoint_identity(&self, credential: &Credential) -> Result<encryption::Identity> {
         let id = credential.encryption_identity.as_deref()
             .filter(|id| valid_id(id))
@@ -88,7 +114,10 @@ impl Client {
     }
 
     fn encryption_recipients_current(&self, job: &Job, credential: &Credential) -> Result<()> {
-        let peers = self.encryption_peers(credential, &|| self.active(job))?;
+        self.encryption_recipients_current_allowed(job, credential, &|| self.active(job))
+    }
+    fn encryption_recipients_current_allowed(&self, job: &Job, credential: &Credential, allowed: &dyn Fn() -> bool) -> Result<()> {
+        let peers = self.encryption_peers(credential, allowed)?;
         let pinned = job
             .encryption
             .as_ref()

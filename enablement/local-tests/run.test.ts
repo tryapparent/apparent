@@ -84,6 +84,8 @@ test('package gates execute complete canonical suites including browser and Elec
     assert.ok(plan.some(command => command.cwd === cwd && command.argv.at(-1) === last), `${cwd} ${last}`);
   }
   assert.ok(plan.some(command => command.argv.includes('--run')));
+  assert.ok(plan.some(command=>command.cwd==='connect/service' && command.argv.at(-1)==='test:mcp'),
+    'the service gate exercises the real encrypted endpoint/Worker integration');
   assert.equal(plan.filter(command => command.cwd === 'connect/client/typescript').length, 4,
     'the separately selected foreground suite checks its TypeScript package');
   assert.ok(!commands(['desktop'], 'base', 'head', 'darwin').some(command => command.argv.includes('xvfb-run')));
@@ -405,6 +407,8 @@ test('installed hook proves control-only selection, mandatory commands, failure 
 }));
 
 function copyInputHelpers(dir: string) {
+  mkdirSync(join(dir, 'enablement/local-tests/preview'), {recursive: true});
+  copyFileSync(join(root, 'enablement/local-tests/preview/explain.ts'), join(dir, 'enablement/local-tests/preview/explain.ts'));
   mkdirSync(join(dir, 'enablement/ci/routing'), {recursive: true});
   copyFileSync(join(root, 'enablement/ci/routing/consumers.ts'), join(dir, 'enablement/ci/routing/consumers.ts'));
   for (const name of ['service.ts', 'receipt.ts', 'desktop-install.ts'])

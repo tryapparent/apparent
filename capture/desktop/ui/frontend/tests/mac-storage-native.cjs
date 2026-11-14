@@ -42,7 +42,7 @@ done
 // Resolve only window 1 of the exact owned PID, then descend its sheets. Do not
 // search other processes, use coordinates, or guess which Return commits a picker.
 // Unknown AX shapes fail with bounded diagnostics from this process alone.
-const { panelScript, persistentPanelScript, PickerProcess, prepareStorageChange, cancelStorageChange, pickerCommandMs } = require('../../../../../enablement/prerequisites/mac-picker.ts');
+const { panelScript, persistentPanelScript, PickerProcess, prepareStorageChange, cancelStorageChange, pickerCommandMs, pickerStartupMs } = require('../../../../../enablement/prerequisites/mac-picker.ts');
 const { isolatePickerRuntime } = require('../../../../../enablement/prerequisites/mac-runtime.ts');
 const { assertReportingRead } = require('../../../../../enablement/prerequisites/reporting-read.ts');
 
@@ -274,6 +274,9 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
             detail: String(subprocess?.stderr ?? error.message).slice(-2048),
             code: subprocess?.code ?? null, signal: subprocess?.signal ?? null });
         }
+        // A timed-out interpreter cannot answer another observation. Preserve
+        // its first failure instead of replacing it with a later retired error.
+        if (error.pickerRetired) throw new Error(`${label}: ${error.message}`, {cause: error});
       }
       await sleep();
     } while (Date.now() < until);
@@ -299,12 +302,15 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     });
     return stdout.trim();
   };
-  const panel = async (operation, target = home) => {
+  const dispatchPanel = async (intent, operation, target = home) => {
     assert.equal(electronChild.exitCode, null, 'Owned Electron exited before native picker observation');
     assert.equal(electronChild.signalCode, null, 'Owned Electron was signalled before native picker observation');
     panel.driver ??= new PickerProcess(() => spawn('/usr/bin/osascript', ['-e', persistentPanelScript], {env, stdio: 'pipe'}));
-    return panel.driver.request([String(electronChild.pid), target, operation, electronExecutable, fixtureRuntime.bundleId], budget(pickerCommandMs));
+    await panel.driver.start(budget(pickerStartupMs));
+    return panel.driver[intent]([String(electronChild.pid), target, operation, electronExecutable, fixtureRuntime.bundleId], budget(pickerCommandMs));
   };
+  const panel = (operation, target) => dispatchPanel('act', operation, target);
+  const observePanel = (operation, target) => dispatchPanel('observe', operation, target);
   const snapshot = async () => {
     const runtime = await within(page.evaluate(() => window.apparent.readRuntimeState()), budget(), 'Runtime read');
     assert.deepEqual(runtime, { status: 'connected', phase: 'idle' });
@@ -505,7 +511,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     // otherwise the first AX request can stall with an uninspectable modal open.
     // Only read-only readiness is polled, within the existing overall deadline.
     report.nativeWindowReadiness = await poll(async () => {
-      const observed = await panel('inspect-window');
+      const observed = await observePanel('inspect-window');
       assert.match(observed, /^depth=0;role=AXWindow;title=Apparent — UI foundation;/);
       assert.ok(!observed.includes('\ndepth=1;'), 'Owned native window already has a sheet');
       return observed;
@@ -623,14 +629,14 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     const goPathOperation = (operation, target) => {
       assert.equal(electronChild.exitCode, null, 'Owned Electron exited before picker navigation');
       assert.equal(electronChild.signalCode, null, 'Owned Electron was signalled before picker navigation');
-      return panel(operation, target);
+      return operation === 'inspect-go-path' ? observePanel(operation, target) : panel(operation, target);
     };
     const prepared = await prepareStorageChange({
       storageIdle: waitStorageIdle,
       change: () => startNativeChange(),
-      picker: () => poll(() => panel('inspect'), 'Native Change picker readiness'),
+      picker: () => poll(() => observePanel('inspect'), 'Native Change picker readiness'),
       openGo: () => panel('open-go'),
-      goSheet: () => poll(() => panel('inspect-go'), 'Owned Go to Folder readiness'),
+      goSheet: () => poll(() => observePanel('inspect-go'), 'Owned Go to Folder readiness'),
       enterPath: (target) => goPathOperation('enter-go-path', target),
       pathReady: (target) => poll(() => goPathOperation('inspect-go-path', target), 'Owned Go path readback readiness'),
       wait: async (ms) => {
@@ -678,7 +684,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       change: () => startNativeChange(),
       // The persistent driver reuses AppKit startup. Poll only observations;
       // Cancel still revalidates ownership and controls before its single click.
-      picker: () => poll(() => panel('inspect'), 'Native Cancel picker readiness'),
+      picker: () => poll(() => observePanel('inspect'), 'Native Cancel picker readiness'),
       cancel: () => panel('cancel'),
     });
     await settleNativeChange();
@@ -746,7 +752,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       } catch (diagnosticError) { report.errorReportingFailureUnavailable = diagnosticError.message; }
     }
     if (electronChild && Date.now() < deadline) {
-      try { report.failureAX = await panel('diagnose'); } catch (axError) { report.failureAXError = axError.message; }
+      try { report.failureAX = await observePanel('diagnose'); } catch (axError) { report.failureAXError = axError.message; }
       // Read-only evidence from the exact live owned window, even when its native
       // controls cannot be selected. Never expand to the display or other windows.
       if (application && Date.now() < deadline) {

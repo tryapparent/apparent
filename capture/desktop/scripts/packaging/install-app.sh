@@ -16,6 +16,17 @@ SIGN_ID="Developer ID Application: Christopher Langton (QC99C9JE59)"
 SPARKLE_PUBLIC_KEY="mIek27lttJe8cIBqVZFhh6reRKjpTx1h9ZY9OKWPtuM="
 
 cd "${REPO_DIR}"
+if [[ "${APPARENT_RETAINED_INSTALL:-0}" == "1" ]]; then
+  [[ "${APPARENT_NO_LAUNCH:-0}" == "1" ]] || { echo "retained verification install requires APPARENT_NO_LAUNCH=1" >&2; exit 1; }
+  : "${APPARENT_RETAINED_ARCHIVE:?required}"
+  : "${APPARENT_RETAINED_MANIFEST:?required}"
+  : "${APPARENT_EXPECTED_SOURCE:?required}"
+  : "${APPARENT_EXPECTED_ARCHIVE_SHA256:?required}"
+  : "${APPARENT_APP_DIR:?required}"
+  : "${RUNNER_TEMP:?required}"
+  node --experimental-strip-types capture/desktop/scripts/packaging/native-candidate.ts install-retained
+  exit 0
+fi
 chmod +x "${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh" "${REPO_DIR}/capture/desktop/scripts/release/release-app.sh" 2>/dev/null || true
 SPARKLE_DIR="$("${REPO_DIR}/capture/desktop/scripts/release/setup-sparkle.sh" 2>/dev/null || true)"
 taskpolicy -c utility cargo build -j 3
