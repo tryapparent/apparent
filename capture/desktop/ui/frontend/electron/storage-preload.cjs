@@ -34,3 +34,14 @@ contextBridge.exposeInMainWorld('apparentAbout', Object.freeze({
     return () => ipcRenderer.removeListener('apparent:about-state', listener);
   },
 }));
+
+contextBridge.exposeInMainWorld('apparentAgents', Object.freeze({
+  read: () => ipcRenderer.invoke('apparent:agents-preference'),
+  save: enabled => ipcRenderer.invoke('apparent:agents-preference', enabled),
+  copySkill: () => ipcRenderer.invoke('apparent:agents-copy-skill'),
+  subscribe: callback => {
+    const listener = (_event, facts) => callback(facts);
+    ipcRenderer.on('apparent:agents-state', listener);
+    return () => ipcRenderer.removeListener('apparent:agents-state', listener);
+  },
+}));
