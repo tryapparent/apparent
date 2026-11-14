@@ -21,7 +21,7 @@ use objc2_foundation::{NSPoint, NSRect};
 use objc2_quartz_core::CALayer;
 
 use crate::capture::engine::runtime::SharedCaptureTelemetry;
-use crate::capture::engine::sketch::{pin_pulse, slice_laser_window, smooth_ink_points, smooth_laser_points};
+use crate::capture::engine::sketch::{pin_pulse, slice_laser_window, ink_points, smooth_laser_points};
 
 const TAIL_DURATION_SEC: f32 = 0.42;
 const MAX_SEGMENTS: usize = 16_384;
@@ -509,7 +509,7 @@ impl SharedMetalOverlay {
                     .into_iter()
                     .map(|[nx, ny]| to_screen(nx, ny))
                     .collect();
-                let smoothed = smooth_ink_points(&pts);
+                let smoothed = ink_points(&pts);
                 for pair in smoothed.windows(2) {
                     segments.push(PathSegment {
                         a: pair[0].0,
@@ -1026,7 +1026,7 @@ mod tests {
                 [128.0 + 90.0 * t.cos(), 96.0 + 60.0 * t.sin()]
             })
             .collect();
-        let mut segments: Vec<PathSegment> = smooth_ink_points(&ink)
+        let mut segments: Vec<PathSegment> = ink_points(&ink)
             .windows(2)
             .map(|pair| PathSegment {
                 a: pair[0].0,
@@ -1125,7 +1125,7 @@ mod tests {
             .collect();
         let queue = device.new_command_queue();
         for samples in [big_loop, scribble] {
-            let smoothed = smooth_ink_points(&samples);
+            let smoothed = ink_points(&samples);
             let segments: Vec<PathSegment> = smoothed
                 .windows(2)
                 .skip((smoothed.len() - 1).saturating_sub(MAX_SEGMENTS))
@@ -1212,7 +1212,7 @@ mod tests {
                 [cx + rx * t.cos(), cy + ry * t.sin()]
             })
             .collect();
-        smooth_ink_points(&samples)
+        ink_points(&samples)
             .windows(2)
             .map(|pair| PathSegment {
                 a: pair[0].0,

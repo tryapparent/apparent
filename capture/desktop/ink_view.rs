@@ -13,7 +13,7 @@ use gpui::{
 };
 
 use crate::capture::engine::runtime::SharedCaptureTelemetry;
-use crate::capture::engine::sketch::{pin_pulse, slice_laser_window, smooth_ink_points, smooth_laser_points};
+use crate::capture::engine::sketch::{pin_pulse, slice_laser_window, ink_points, smooth_laser_points};
 
 const TAIL_MS: u64 = 420;
 
@@ -213,7 +213,7 @@ impl OverlayView {
                     .into_iter()
                     .map(|[nx, ny]| to_screen(nx, ny))
                     .collect();
-                let smoothed: Vec<[f32; 2]> = smooth_ink_points(&pts)
+                let smoothed: Vec<[f32; 2]> = ink_points(&pts)
                     .into_iter()
                     .map(|(p, _)| p)
                     .collect();
