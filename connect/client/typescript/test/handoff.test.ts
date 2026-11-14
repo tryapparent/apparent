@@ -22,7 +22,12 @@ test('configuration and transport recovery discover the encrypted MCP route with
   for (const text of [alternatives, fetchFailure('server_configuration')!, fetchFailure('transport')!]) {
     assert.ok(text.includes(mcpRecovery));
     assert.match(text, /https:\/\/app\.tryapparent\.com\/connect\/mcp/);
-    assert.match(text, /ask the user to add.*No authentication \/ No sign in/);
+    assert.match(text, /https:\/\/chatgpt\.com\/plugins.*plus button.*Add custom MCP server/);
+    assert.match(text, /Name: Apparent\. Server URL:/);
+    assert.match(text, /Authentication: No authentication.*risk warning.*Create as a plugin/);
+    assert.match(text, /Install Apparent, start a new Work conversation.*using @/);
+    assert.match(text, /workspace policy.*administrator; do not bypass/);
+    assert.match(text, /agent should handle reader setup.*read-approval link.*resume retrieval/);
     assert.match(text, /separate offline apparent-connect-mcp reader/);
     assert.match(text, /older native CLIs do not include this command/);
     assert.match(text, /newly approved reader cannot decrypt an older capture/);

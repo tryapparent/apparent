@@ -1,9 +1,14 @@
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
-export const mcpRecovery = `If this agent workspace blocks direct HTTPS access, use Apparent's encrypted MCP relay. Reuse an installed Apparent connector, or ask the user to add https://app.tryapparent.com/connect/mcp in ChatGPT/Claude with No authentication / No sign in and select it in this conversation.
+export const mcpRecovery = `If this agent workspace blocks direct HTTPS access, use Apparent's encrypted MCP relay. Reuse an installed Apparent connector. If it is missing, give the user these ChatGPT setup instructions instead of only asking them to add a URL:
+1. Open https://chatgpt.com/plugins, select the plus button, then Add custom MCP server.
+2. Name: Apparent. Server URL: https://app.tryapparent.com/connect/mcp .
+3. Authentication: No authentication. Review the risk warning, then select Create as a plugin.
+4. Install Apparent, start a new Work conversation, and select Apparent using @. Continue there with the capture ID.
+If custom MCP creation is unavailable under the workspace policy, ask its administrator; do not bypass the policy. Claude uses its custom connector setup with the same URL and No sign in.
 Use the separate offline apparent-connect-mcp reader to exchange sealed requests through that connector; do not retry the native fetch through the same blocked network. Setup: https://github.com/tryapparent/apparent/blob/main/connect/docs/mcp.md . If the reader is unavailable here, ask the user to provide it; older native CLIs do not include this command.
-The user must still approve read access. A newly approved reader cannot decrypt an older capture unless it was encrypted for that reader; ask the sender for a fresh encrypted handoff if needed. Keep private keys and tokens private, and inspect the delivered images before interpreting the recording.`;
+After the connector is selected, the agent should handle reader setup and sealed exchanges, show the user the browser read-approval link, and resume retrieval and image inspection after approval. A newly approved reader cannot decrypt an older capture unless it was encrypted for that reader; ask the sender for a fresh encrypted handoff if needed. Keep private keys and tokens private, and inspect the delivered images before interpreting the recording.`;
 
 export const alternatives = `Connect access is limited to 20 admitted accounts. Google sign-in alone does not grant upload or read access; waitlisted accounts cannot approve devices. Existing admitted accounts keep access when all places are occupied.
 

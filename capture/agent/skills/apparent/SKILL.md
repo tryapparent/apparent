@@ -79,10 +79,21 @@ The Settings controls for recording, shortcuts and retention use `~/.config/appa
 ### A Connect capture on another computer
 
 If direct HTTPS access is blocked in the agent workspace, check for an installed
-Apparent MCP connector before asking only for image attachments. Otherwise ask the
-user to add `https://app.tryapparent.com/connect/mcp` in ChatGPT/Claude with **No
-authentication / No sign in**, then select it in this conversation. Use the
-separate offline `apparent-connect-mcp` reader and sealed tool exchanges described
+Apparent MCP connector before asking only for image attachments. If it is missing,
+give the user actionable setup instructions, not only a server URL. For ChatGPT:
+
+1. Open [Plugins](https://chatgpt.com/plugins), select the plus button, then **Add custom MCP server**.
+2. Enter **Name: Apparent** and **Server URL: `https://app.tryapparent.com/connect/mcp`**.
+3. Choose **No authentication**, review the risk warning, then **Create as a plugin**.
+4. Install Apparent, start a new Work conversation, and select Apparent using `@`. Continue there with the capture ID.
+
+If custom MCP creation is unavailable under workspace policy, ask the workspace
+administrator; do not bypass the policy. In Claude, use its custom connector setup
+with the same server URL and **No sign in**.
+
+After selection, handle reader setup and sealed exchanges yourself, present the
+browser read-approval link to the user, and resume retrieval and visual inspection
+after approval. Use the separate offline `apparent-connect-mcp` reader described
 in `connect/docs/mcp.md`; older native CLIs do not include that command. Ask the
 user for the reader if it is unavailable. Browser read approval remains required;
 a new reader key does not unlock historical captures, so a fresh encrypted handoff
