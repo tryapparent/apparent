@@ -78,6 +78,20 @@ The Settings controls for recording, shortcuts and retention use `~/.config/appa
 
 ### A Connect capture on another computer
 
+If direct HTTPS access is blocked in the agent workspace, check for an installed
+Apparent MCP connector before asking only for image attachments. Otherwise ask the
+user to add `https://app.tryapparent.com/connect/mcp` in ChatGPT/Claude with **No
+authentication / No sign in**, then select it in this conversation. Use the
+separate offline `apparent-connect-mcp` reader and sealed tool exchanges described
+in `connect/docs/mcp.md`; older native CLIs do not include that command. Ask the
+user for the reader if it is unavailable. Browser read approval remains required;
+a new reader key does not unlock historical captures, so a fresh encrypted handoff
+may be needed. Do not send private keys/tokens or bypass workspace network policy.
+“Server must use HTTPS” instead indicates a missing/invalid receiving API setting:
+confirm the sender's HTTPS origin before login, rather than treating that message
+as proof of blocked egress. Inspect actual delivered images before interpreting
+the recording.
+
 Connect admits 20 accounts; Google sign-in alone grants no device access. A waitlisted account cannot approve upload or read access. Do not repeatedly request login for `beta_required`. Recording and local inspection still work. Use `apparent connect alternatives` for recovery instructions (update older clients if absent).
 
 A local path belongs to the recording computer. If the agent runs there, inspect that path directly. Otherwise, use an existing authorized SSH/SCP connection or another approved transfer route to copy the **complete** `.apparent` folder, including media and subdirectories, then inspect its destination path. For example, replace the host/path in `scp -r recording-host:'/absolute/path/capture.apparent' ./capture.apparent`, then run `apparent inspect ./capture.apparent`. SSH is optional; do not enable remote access, change credentials or forward private captures without permission. If no approved route exists, ask which computer/destination the person authorizes.
