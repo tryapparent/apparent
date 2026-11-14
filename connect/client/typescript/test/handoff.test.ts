@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { handoffPointer, alternatives, fetchFailure } from '../src/handoff.ts';
+import { handoffPointer, alternatives, fetchFailure, mcpRecovery } from '../src/handoff.ts';
 
 test('only pending and ready captures select Connect, never sign-in or terminal jobs', () => {
   const id = 'a'.repeat(32);
@@ -12,6 +12,28 @@ test('only pending and ready captures select Connect, never sign-in or terminal 
   }
   for (const value of [null, { authenticated: true }, { id: '../private', status: 'ready' }]) {
     assert.equal(handoffPointer(value), null);
+  }
+});
+
+test('configuration and transport recovery discover the encrypted MCP route without claiming an egress diagnosis', () => {
+  assert.match(fetchFailure('server_configuration')!, /confirmed-https-origin.*--scope read --no-browser/);
+  assert.match(fetchFailure('server_configuration')!, /does not prove an egress block/);
+  assert.match(fetchFailure('transport')!, /network restriction, timeout, response limit or unexpected HTTP response/);
+  for (const text of [alternatives, fetchFailure('server_configuration')!, fetchFailure('transport')!]) {
+    assert.ok(text.includes(mcpRecovery));
+    assert.match(text, /https:\/\/app\.tryapparent\.com\/connect\/mcp/);
+    assert.match(text, /https:\/\/chatgpt\.com\/plugins.*plus button.*Add custom MCP server/);
+    assert.match(text, /Name: Apparent\. Server URL:/);
+    assert.match(text, /Authentication: No authentication.*risk warning.*Create as a plugin/);
+    assert.match(text, /Install Apparent, start a new Work conversation.*using @/);
+    assert.match(text, /workspace policy.*administrator; do not bypass/);
+    assert.match(text, /agent should handle reader setup.*read-approval link.*resume retrieval/);
+    assert.match(text, /separate offline apparent-connect-mcp reader/);
+    assert.match(text, /older native CLIs do not include this command/);
+    assert.match(text, /newly approved reader cannot decrypt an older capture/);
+  }
+  for (const kind of ['unavailable', 'authorization', 'integrity', 'unknown']) {
+    assert.ok(!fetchFailure(kind)?.includes(mcpRecovery), kind);
   }
 });
 

@@ -1181,69 +1181,12 @@ pub fn smooth_laser_points(points: &[([f32; 2], f32)]) -> Vec<([f32; 2], f32)> {
     curve
 }
 
-/// Smooths a persistent ink stroke into `(point, pressure_scale)` samples using
-/// tldraw's streamline filter + midpoint quadratic Bezier curves + simulated velocity pressure.
-pub fn smooth_ink_points(points: &[[f32; 2]]) -> Vec<([f32; 2], f32)> {
-    if points.is_empty() {
-        return Vec::new();
-    }
-    if points.len() == 1 {
-        return vec![(points[0], 0.85)];
-    }
-    let streamline_alpha = 0.45_f32;
-    let mut filtered = Vec::with_capacity(points.len() + 1);
-    filtered.push((points[0], 0.85_f32));
-    let mut pressure = 0.85_f32;
-    for &pt in &points[1..] {
-        let prev = filtered.last().unwrap().0;
-        let next_pt = lerp(prev, pt, streamline_alpha);
-        let d = distance(prev, next_pt);
-        if d >= 0.5 {
-            let speed = (d / 14.0).clamp(0.0, 1.0);
-            let target_w = 1.08 - 0.36 * speed;
-            pressure = pressure + (target_w - pressure) * 0.32;
-            filtered.push((next_pt, pressure.clamp(0.65, 1.12)));
-        }
-    }
-    if let Some(&last) = points.last() {
-        let prev = filtered.last().unwrap().0;
-        if distance(prev, last) >= 0.5 {
-            filtered.push((last, pressure));
-        } else if let Some(slot) = filtered.last_mut() {
-            slot.0 = last;
-        }
-    }
-    if filtered.len() <= 2 {
-        return filtered;
-    }
-    let mut curve = Vec::with_capacity(filtered.len() * 4);
-    curve.push(filtered[0]);
-    for i in 1..filtered.len() - 1 {
-        let prev = filtered[i - 1];
-        let ctrl = filtered[i];
-        let next = filtered[i + 1];
-        let a = (lerp(prev.0, ctrl.0, 0.5), (prev.1 + ctrl.1) * 0.5);
-        let b = if i + 1 == filtered.len() - 1 {
-            next
-        } else {
-            (lerp(ctrl.0, next.0, 0.5), (ctrl.1 + next.1) * 0.5)
-        };
-        let steps = ((distance(a.0, ctrl.0) + distance(ctrl.0, b.0)) / 3.0)
-            .ceil()
-            .clamp(2.0, 8.0) as usize;
-        for s in 0..steps {
-            let u = s as f32 / steps as f32;
-            let inv = 1.0 - u;
-            let x = inv * inv * a.0[0] + 2.0 * inv * u * ctrl.0[0] + u * u * b.0[0];
-            let y = inv * inv * a.0[1] + 2.0 * inv * u * ctrl.0[1] + u * u * b.0[1];
-            let w = inv * inv * a.1 + 2.0 * inv * u * ctrl.1 + u * u * b.1;
-            curve.push(([x, y], w));
-        }
-    }
-    if let Some(&last) = filtered.last() {
-        curve.push(last);
-    }
-    curve
+/// Native ink geometry follows the sampled pointer exactly. Appending samples must never
+/// move an existing segment: live smoothing made fast corners bend behind the cursor.
+pub fn ink_points(points: &[[f32; 2]]) -> Vec<([f32; 2], f32)> {
+    let mut points = points.to_vec();
+    points.dedup();
+    points.into_iter().map(|point| (point, 0.85)).collect()
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -2113,13 +2056,35 @@ mod tests {
     }
 
     #[test]
+    fn ink_keeps_fast_corners_and_existing_geometry_when_extended() {
+        let points = [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]];
+        assert!(ink_points(&[]).is_empty());
+        for count in 1..=points.len() {
+            let geometry = ink_points(&points[..count]);
+            assert_eq!(
+                geometry.iter().map(|sample| sample.0).collect::<Vec<_>>(),
+                points[..count]
+            );
+            if count > 1 {
+                let previous = ink_points(&points[..count - 1]);
+                assert_eq!(&geometry[..previous.len()], previous.as_slice());
+            }
+        }
+        let retraced = [[0.0, 0.0], [100.0, 0.0], [100.0, 0.0], [0.0, 0.0]];
+        assert_eq!(
+            ink_points(&retraced).iter().map(|sample| sample.0).collect::<Vec<_>>(),
+            vec![[0.0, 0.0], [100.0, 0.0], [0.0, 0.0]]
+        );
+    }
+
+    #[test]
     fn smooth_laser_and_ink_handle_stationary_duplicate_points() {
         let stationary_laser = [([120.0, 240.0], 0.8), ([120.0, 240.0], 1.0)];
         let smoothed_laser = smooth_laser_points(&stationary_laser);
         assert_eq!(smoothed_laser.len(), 1);
 
         let stationary_ink = [[120.0, 240.0], [120.0, 240.0], [120.0, 240.0]];
-        let smoothed_ink = smooth_ink_points(&stationary_ink);
+        let smoothed_ink = ink_points(&stationary_ink);
         assert_eq!(smoothed_ink.len(), 1);
     }
 
