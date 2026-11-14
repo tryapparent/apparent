@@ -239,6 +239,11 @@ async function main() {
     assert.equal(start.capture_id, captureId); assert.equal(start.status, 'recording', 'A real captured frame is required');
     await sleep(2000);
     await savedForeground({
+      waitForRecordingControls: async () => {
+        // Mac's initial target-switch reveal folds into these controls. Wait
+        // for the real surface rather than bootstrapping during that morph.
+        await ui('recording Finish control', value => value.includes('finish'), generated.pid);
+      },
       prepareRecording: async () => {
         // Read-only: never Finish through this input adapter. Enable the real
         // Electron AX tree while Recording has no saved-dismissal deadline.
