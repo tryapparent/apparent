@@ -894,6 +894,12 @@ mod tests {
             #[cfg(target_os = "macos")]
             assert!(crate::capture::desktop::helper::path().is_ok(), "Mac frame decoding requires the built helper");
         }
+        // Match the private movie contract enforced by the published metadata provider.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&video, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
         let media = Media {
             transcribe: fake_transcript,
             ..Media::SYSTEM

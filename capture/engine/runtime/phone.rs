@@ -675,9 +675,12 @@ mod tests {
             "color=c=red:s=64x48:r=10:d=1,drawbox=x=32:y=0:w=32:h=48:color=blue:t=fill", "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p"])
             .arg(&source).output().unwrap();
         assert!(made.status.success(), "{}", String::from_utf8_lossy(&made.stderr));
+        std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o600)).unwrap();
         let rotated = Command::new("ffmpeg").args(["-v", "error", "-nostdin", "-y", "-display_rotation:v:0", "90", "-i"])
             .arg(source).args(["-map", "0", "-c", "copy"]).arg(&movie).output().unwrap();
         assert!(rotated.status.success(), "{}", String::from_utf8_lossy(&rotated.stderr));
+        // FFmpeg inherits the process umask; the provider requires a private artifact.
+        std::fs::set_permissions(&movie, std::fs::Permissions::from_mode(0o600)).unwrap();
         let original = std::fs::read(&movie).unwrap();
         let reference = Command::new("ffmpeg").args(["-v", "error", "-nostdin", "-i"]).arg(&movie)
             .args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"]).output().unwrap();
