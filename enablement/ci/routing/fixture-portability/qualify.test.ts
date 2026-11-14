@@ -16,9 +16,14 @@ test('module parsing ignores synthetic source strings but sees same-line product
   assert.deepEqual(moduleImports(`const before = 1; import './native.ts';`), ['./native.ts']);
   assert.deepEqual(moduleImports(`function before() {} /* consumer */ import './native.ts';`), ['./native.ts']);
   assert.equal(moduleImports('import {'), null);
+  assert.deepEqual(moduleImports("import type {Foo} from './native.ts'; export type {Bar} from './other.ts';"), ['./native.ts','./other.ts']);
+  assert.deepEqual(moduleImports("import typeThing from './value.ts';"), ['./value.ts']);
+  assert.equal(moduleImports("import /* unreviewed form */ type {Foo} from './native.ts';"), null);
   const files = blobs();
-  files.set('enablement/local-tests/run.ts', `const before = 1; import './fixtures/runner.ts';`);
-  assert.deepEqual(qualifyFixtures(files, [...fixtureInputs]), []);
+  for (const edge of ["const before = 1; import './fixtures/runner.ts';", "import type {Foo} from './fixtures/runner.ts';"]) {
+    files.set('enablement/local-tests/run.ts', edge);
+    assert.deepEqual(qualifyFixtures(files, [...fixtureInputs]), []);
+  }
   files.delete('enablement/local-tests/run.ts');
   files.set('capture/desktop/consumer.ts', "import '@fixtures/runner';");
   assert.deepEqual(qualifyFixtures(files, [...fixtureInputs]), []);

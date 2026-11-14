@@ -82,6 +82,10 @@ discovered fixture tests retain their actual shared contract inventory. The
 and dependency-install tests on Mac, without Cargo or the native application.
 Its own selector/executor/workflow changes also exercise that lane. Mac admission
 and shared receipts require fresh fixture success; Linux admission stays independent.
+Publication supersession uses the same candidate-blob fixture qualification: an
+unrelated tooling-only push cannot cancel pending product delivery without a
+replacement. Its parser uses Node alone, preserves type-only dependency edges and
+never executes candidate code; publisher jobs do not need an added Bun install.
 
 Unknown history, unsafe boundary changes and newly imported dependencies in the
 exact pure onboarding policy closure retain the full named plan and reasons.

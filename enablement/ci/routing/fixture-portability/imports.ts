@@ -12,12 +12,17 @@ export function moduleImports(source: string): string[] | null {
   if (cache.has(source)) return cache.get(source)!;
   let modules: string[] | null = null;
   try {
+    // Compiler-only imports are consumers too. Preserve their module edges
+    // before stripping types; unusual commented keyword forms fail broad.
+    if (/\b(?:import|export)\s*\//.test(source)) throw Error('Unsupported commented module keyword');
+    const typedEdges = source.replace(/\bimport\s+type\b(?!\s*(?:from\b|['";,]))/g, 'import')
+      .replace(/\bexport\s+type(?=\s*(?:\{|\*|\/))/g, 'export');
     if (!process.versions.bun && typeof vm.SourceTextModule === 'function')
-      modules = [...new vm.SourceTextModule(module.stripTypeScriptTypes(source)).dependencySpecifiers];
+      modules = [...new vm.SourceTextModule(module.stripTypeScriptTypes(typedEdges)).dependencySpecifiers];
     else {
       const node = process.versions.bun ? 'node' : process.execPath;
       const result = spawnSync(node, ['--experimental-vm-modules', '--experimental-strip-types', fileURLToPath(import.meta.url)],
-        {input: source, encoding: 'utf8', maxBuffer: 1024 * 1024});
+        {input: typedEdges, encoding: 'utf8', maxBuffer: 1024 * 1024});
       if (!result.error && result.status === 0) {
         const value = JSON.parse(result.stdout);
         if (Array.isArray(value) && value.every(item => typeof item === 'string')) modules = value;
