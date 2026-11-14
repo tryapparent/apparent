@@ -130,7 +130,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, macos-15, macos-15-intel]
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     steps:
@@ -142,7 +142,7 @@ jobs:
         with:
           toolchain: '1.99.1'
       - uses: ./.github/actions/ubuntu-apt
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && runner.arch == 'X64'
       - name: Install declared media prerequisites
         shell: bash
         run: |

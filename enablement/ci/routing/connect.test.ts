@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {YAML, Glob} from 'bun';
-import {suitePlan} from './consumers.ts';
+import {suitePlan, routeDecision} from './consumers.ts';
 import {connectPlan} from './connect.ts';
 
 const workflow = (name: string) => YAML.parse(readFileSync(new URL(`../../../.github/workflows/${name}`, import.meta.url), 'utf8')) as any;
@@ -33,6 +33,14 @@ test('Connect retains real native client/service consumers and skips native for 
   assert.equal(connectPlan(suitePlan(null)).root, true, 'unknown inputs retain integration');
   assert.equal(connectPlan(suitePlan(['connect/client/typescript/src/mcp-wire.ts'])).service,true,
     'the Worker consumes the endpoint wire contract');
+});
+
+test('the composed browser proof selects its Connect consumer and publication', () => {
+  const plan = connectPlan(suitePlan(['public/site/scripts/browser-proof/test-hosted-browser.mjs']));
+  assert.equal(plan.browser, true);
+  assert.equal(plan.root, false);
+  assert.equal(plan.client, false);
+  assert.equal(routeDecision(['public/site/scripts/browser-proof/test-hosted-browser.mjs']).publicationStreams.connect, true);
 });
 
 test('Connect publication requires successful stream-owned gates on canonical main', () => {

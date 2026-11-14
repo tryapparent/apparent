@@ -6,12 +6,10 @@ import { join, dirname } from 'node:path'
 import { inventory, resourceGraph, safePath, validatePreservedFiles, validatePublic } from './public.ts'
 import { preparePublic } from './prepare.ts'
 
-test('Public sealed artifact builds receive the existing EU ingestion configuration', () => {
+test('Public sealed artifact builds do not receive analytics credentials', () => {
   const workflow = readFileSync(new URL('../../../../.github/workflows/stream-public.yml', import.meta.url), 'utf8')
   const build = workflow.split('      - name: Verify Public source, browsers, shared inputs and prepared movie worker\n')[1].split('      - name: Seal')[0]
-  assert.match(build, /PUBLIC_POSTHOG_TOKEN: \$\{\{ secrets\.APPARENT_POSTHOG_TOKEN \}\}/)
-  assert.match(build, /PUBLIC_POSTHOG_HOST: https:\/\/eu\.i\.posthog\.com/)
-  assert.match(build, /PUBLIC_POSTHOG_ENVIRONMENT: production/)
+  assert.doesNotMatch(build, /POSTHOG/)
   assert.match(build, /run: npm run verify/)
 })
 

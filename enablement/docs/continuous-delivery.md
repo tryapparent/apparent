@@ -178,7 +178,8 @@ The Linux gate never waits for Mac. After Linux admission succeeds,
 existing Linux latest-Main channel. Its exact-SHA/attempt/repository admission,
 stale-main suppression, packaging checks and noncancelling publication lock remain
 required. A later main push cannot cancel an active publication. Mac publication
-and Connect activation remain separately operated; Linux success cannot admit Mac.
+remains separately operated; Connect uses its own automatic tested delivery.
+Linux success cannot admit Mac.
 Historical full main CI and existing exact-main manual receipts remain valid.
 Native/product acceptance and current-base integration remain owner obligations.
 A successful draft or aggregate workflow conclusion alone supplies no release proof.
@@ -250,45 +251,44 @@ document-product poller/deploy-control services remain in place. They must not
 be removed as capture-site cleanup. The website publication lock remains as an
 inert coordination inode; there is no active capture website behind it.
 
-## Hosted activation (separate operator gate)
+## Connect automatic delivery
 
-Complete [`../connect/service/README.md`](../connect/service/README.md)'s deployment prerequisites
-first: approved Free-plan configuration and CPU proof, existing private Standard
-R2 bucket, initialized D1/ledger, live Google/cookie/device/cron proof and security
-review. A green local workerd suite is not those proofs. Do not activate this job
-against an uninitialized database or change to Paid implicitly.
+Affected pushes to `main` deploy Connect automatically after its selected checks
+and publication verification pass. `HOSTED_CD_ENABLED=true` enables this route;
+setting it false stops new admissions, not an already admitted deployment.
+For manual publication/rollback, disable the gate and cancel or drain the active
+`connect-hosted-production` job first. Automatic jobs serialize under that group;
+provider readback detects a competing publisher around activation and fails for
+operator reconciliation rather than attempting a second traffic write.
+PRs never receive deployment credentials or publish. The current-stream guard
+runs before upload and again before activation, so newer affected changes
+supersede stale candidates while unrelated main advances do not strand delivery.
 
-Configure `hosted-production`, limited to `main`, with:
+The `hosted-production` environment is restricted to `main`, with:
 
 | Kind | Name | Meaning |
 | --- | --- | --- |
-| Variable | `CLOUDFLARE_ACCOUNT_ID` | Approved account ID |
-| Variable | `HOSTED_D1_ID` | Existing initialized database UUID |
-| Variable | `HOSTED_R2_BUCKET` | Existing private Standard bucket name |
-| Variable | `HOSTED_GOOGLE_CLIENT_ID` | Approved Google OAuth client ID (public) |
-| Secret | `CLOUDFLARE_API_TOKEN` | Least-privilege token for this Worker/deployment and binding reads |
+| Variable | `CLOUDFLARE_ACCOUNT_ID` | Existing account pinned by `connect/tooling/hosting/scripts/profile.ts` |
+| Secret | `CLOUDFLARE_API_TOKEN` | Worker version upload/deployment and configuration read access |
 
-The existing Worker's `GOOGLE_CLIENT_SECRET` and `TOKEN_ENCRYPTION_KEY` stay in
-Cloudflare. They are never supplied to Actions or rotated by CD. Restrict the token
-as far as Cloudflare permits and review its actual access before activation.
-`hosted_config.py` validates the required public identifiers and writes an ignored
-`connect/service/wrangler.cd.json` next to the existing entrypoint. The fixed production
-origins retain hosted API/auth/callback and legacy transition CORS; the UI stays
-on app. Observability, workers.dev and preview URLs remain off. No CPU override,
-resource creation command, database migration or ledger initializer is run.
+The adopted target is the existing `apparent-hosted-beta` Worker, private bucket
+and initialized database. Its API is mounted at `app.tryapparent.com/connect`;
+the historical hosted API and Google callback remain available. The gateway
+packages only the Connect documents and owned assets, preserving Public's root.
+Its mounted auth, native streaming, consent, evidence/media and recipient behavior
+are retained from the running beta rather than the obsolete root-only template.
 
-After separate approval, set repository variable `HOSTED_CD_ENABLED=true` and
-dispatch `main`. Wrangler uses strict deployment and tags the version with the
-checked SHA. Readback requires one 100%-traffic version with that exact tag and
-an anonymous `/v1/session` response with the canonical credentialed CORS headers.
-This read-only probe does not prove live Google sign-in, authenticated cookies,
-uploads or native integration. Inspect those separately before calling it live
-acceptance. A failed readback fails the job; it does **not** silently change
-traffic again or roll back a database. Disable the gate and use Cloudflare's
-reviewed Worker version rollback after investigating; record the previous version
-before the first activation. Website and Worker publication are independent, not
-a distributed transaction. Protocol changes must retain backwards compatibility
-or use a separately reviewed release sequence.
+Verification builds and seals the gateway, service and browser assets once.
+Publication downloads those exact bytes, stages a strict Wrangler version upload,
+then checks the full binding/secret-name profile and runtime configuration before
+activating it at 100%. Secrets stay in Cloudflare. No subscription, resource,
+route, cron, database migration, budget seed or credential rotation is changed.
+Readback checks the exact version tag, every public asset hash and anonymous
+credentialed CORS on both API origins. It does not establish live Google sign-in
+or authenticated recording acceptance. A failed readback fails the job without
+silently rolling traffic or data back; its receipt records the previous version
+for an investigated Worker rollback. Public and Connect publish independently;
+protocol changes must retain compatibility or use a reviewed release sequence.
 
 ## Local verification
 

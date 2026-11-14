@@ -100,7 +100,10 @@ on run argv
       repeat
         set panelName to ""
         try
-          if name of picker is not missing value then set panelName to name of picker as text
+          -- Materialize once: comparing the remote property and then reading it
+          -- again consumed most of a command's AX deadline on hosted Macs.
+          set panelNameValue to name of picker
+          if panelNameValue is not missing value then set panelName to panelNameValue as text
         end try
         set panelRole to role of picker as text
         set labels to name of every button of picker
@@ -148,7 +151,8 @@ on run argv
         set depth to depth - 1
         set panelRole to role of picker as text
         set panelName to ""
-        if name of picker is not missing value then set panelName to name of picker as text
+        set panelNameValue to name of picker
+        if panelNameValue is not missing value then set panelName to panelNameValue as text
       end if
       if depth > 0 and (name of outerWindow as text) is not "Apparent — UI foundation" then error "Picker has unexpected parent: " & trace
       if panelRole is not "AXSheet" and panelRole is not "AXWindow" then error "Unexpected picker role: " & trace

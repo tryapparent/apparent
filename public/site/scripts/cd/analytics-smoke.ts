@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-/** Build and exercise the Public homepage with enabled synthetic analytics. No Connect source or bytes are consumed. */
+/** Public never collects analytics, even with legacy config or saved consent. */
 import { createServer } from 'node:http'
 import { mkdtempSync, rmSync, symlinkSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
@@ -15,6 +15,7 @@ const packageOutput = join(root, 'public')
 const env = {
   ...process.env,
   APPARENT_PUBLIC_SITE: '1',
+  // Deliberately enabled legacy configuration must not reactivate tracking.
   PUBLIC_POSTHOG_ENABLED: 'true',
   PUBLIC_POSTHOG_TOKEN: 'phc_synthetic',
   PUBLIC_POSTHOG_HOST: 'https://eu.i.posthog.com',
@@ -38,90 +39,59 @@ try {
   const publicOrigin = 'https://app.tryapparent.com'
   server = createServer(async (request, response) => {
     const pathname = new URL(request.url!, publicOrigin).pathname
-    const relativePath = pathname === '/' ? '/index.html' : pathname
-    const file = resolve(packageOutput, `.${relativePath}`)
+    const file = resolve(packageOutput, `.${pathname === '/' ? '/index.html' : pathname}`)
     if (!file.startsWith(packageOutput + '/')) { response.writeHead(403).end(); return }
     try {
       response.setHeader('Content-Type', mime[extname(file)] || 'application/octet-stream')
       response.end(await readFile(file))
     } catch { response.writeHead(404).end() }
   })
-  await new Promise<void>(done => server.listen(0, '127.0.0.1', done))
+  await new Promise<void>(done => server!.listen(0, '127.0.0.1', done))
   const localOrigin = `http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}`
   browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || chromium.executablePath(), headless: true, args: ['--no-sandbox', '--mute-audio'] })
-  {
-    const events: Array<{ event: string; properties: Record<string, unknown>; api_key: string }> = []
-    const context = await browser.newContext()
+  for (const savedChoice of [null, 'allow', 'deny'] as const) {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const analyticsRequests: string[] = []
     await context.route('**/*', async route => {
       const request = route.request(), url = new URL(request.url())
       if (url.origin === publicOrigin) {
         const response = await route.fetch({ url: localOrigin + url.pathname + url.search, maxRedirects: 0 })
         await route.fulfill({ response }); return
       }
-      if (url.origin === 'https://eu.i.posthog.com') {
-        assert.equal(url.href, 'https://eu.i.posthog.com/capture/')
-        assert.equal(request.method(), 'POST')
-        assert.equal(request.headers().cookie, undefined, 'analytics sends omit browser cookies')
-        assert.equal(request.headers().referer, undefined, 'analytics sends omit the page referrer')
-        const event = request.postDataJSON()
-        events.push(event)
-        assert.doesNotMatch(JSON.stringify(event), /NEVER-SEND|capture-secret|userCode|csrf|@/)
-        assert.equal(event.properties.environment, 'production')
-        assert.equal(event.properties.actor, 'browser')
-        await route.fulfill({ status: 200, headers: { 'Access-Control-Allow-Origin': '*' }, body: '{}' }); return
-      }
+      if (/posthog/i.test(url.hostname)) analyticsRequests.push(url.href)
       await route.abort()
     })
+    await context.addInitScript(choice => {
+      if (choice === null) return
+      localStorage.setItem('apparent.product-analytics.v1', JSON.stringify({
+        choice, at: Date.now(), noticeVersion: 'product-analytics-v1',
+        id: 'anon:11111111-1111-4111-8111-111111111111',
+      }))
+    }, savedChoice)
     const page = await context.newPage()
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
     await page.goto(publicOrigin + '/?utm_source=NEVER-SEND#capture-secret')
     await page.locator('.pond-page').waitFor()
-    assert.equal(events.length, 0, 'analytics requires prior browser choice')
-    const pageview = page.waitForRequest(request => request.url() === 'https://eu.i.posthog.com/capture/')
-    await page.getByRole('button', { name: 'Allow analytics', exact: true }).click()
-    await pageview
-    await page.waitForFunction(() => {
-      const choice = JSON.parse(localStorage.getItem('apparent.product-analytics.v1') || 'null')
-      return choice?.choice === 'allow'
+    await page.waitForFunction(() => customElements.get('apparent-footer'))
+    await page.waitForTimeout(500)
+    assert.equal(await page.getByLabel('Analytics preferences', { exact: true }).count(), 0,
+      `no analytics notice or settings for saved choice ${savedChoice}`)
+    const before = await page.evaluate(() => localStorage.getItem('apparent.product-analytics.v1'))
+    // Exercise the actual download listener without navigating away or downloading.
+    await page.evaluate(() => {
+      const link = [...document.querySelectorAll<HTMLAnchorElement>('a')].find(a => a.href.startsWith('https://github.com/tryapparent/apparent/releases'))!
+      link.addEventListener('click', event => { event.preventDefault(); event.stopImmediatePropagation() }, { once: true })
+      link.click()
     })
-    assert(events.length > 0, 'enabled Public analytics sends after affirmative consent')
-    assert.equal(events[0].event, '$pageview')
-    assert.equal(events[0].api_key, 'phc_synthetic')
-    assert.equal(events[0].properties.page, '/')
-    assert.equal(events[0].properties.$current_url, publicOrigin + '/')
-    assert.equal(events[0].properties.$pathname, '/')
-    assert.equal(events[0].properties.$host, 'app.tryapparent.com')
-    assert.equal(events[0].properties.acquisition_source, 'other')
-    assert.equal(events[0].properties.acquisition_medium, 'unspecified')
-    assert.match(String(events[0].properties.distinct_id), /^anon:[a-f0-9-]{36}$/)
+    await page.waitForTimeout(200)
+    assert.deepEqual(analyticsRequests, [], 'no pageview, identity or download events')
+    assert.equal(await page.evaluate(() => localStorage.getItem('apparent.product-analytics.v1')), before,
+      'Public does not create or rewrite analytics preferences')
     assert.deepEqual(errors, [])
     await context.close()
-
-    const denied = await browser.newContext()
-    await denied.route('**/*', async route => {
-      const request = route.request(), url = new URL(request.url())
-      if (url.origin === publicOrigin) {
-        const response = await route.fetch({ url: localOrigin + url.pathname + url.search, maxRedirects: 0 })
-        await route.fulfill({ response }); return
-      }
-      if (url.origin === 'https://eu.i.posthog.com') {
-        assert.equal(url.href, 'https://eu.i.posthog.com/capture/')
-        events.push(request.postDataJSON())
-        await route.fulfill({ status: 200, headers: { 'Access-Control-Allow-Origin': '*' }, body: '{}' }); return
-      }
-      await route.abort()
-    })
-    const deniedPage = await denied.newPage()
-    await deniedPage.goto(publicOrigin + '/')
-    await deniedPage.locator('.pond-page').waitFor()
-    const beforeRefusal = events.length
-    await deniedPage.getByRole('button', { name: 'No thanks', exact: true }).click()
-    await deniedPage.waitForFunction(() => JSON.parse(localStorage.getItem('apparent.product-analytics.v1') || 'null')?.choice === 'deny')
-    await deniedPage.waitForTimeout(200)
-    assert.equal(events.length, beforeRefusal, 'refusal prevents analytics sends')
-    await denied.close()
   }
+  console.log('Public analytics disabled: fresh, previously allowed and denied mobile visitors pass; no tracking requests')
 } finally {
   try {
     await browser?.close()

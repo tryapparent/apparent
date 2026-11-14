@@ -20,6 +20,5 @@ const app = (
 if (root.firstElementChild) hydrateRoot(root, app)
 else createRoot(root).render(app)
 
-declare const __APPARENT_ANALYTICS_ENABLED__: boolean
-declare const __APPARENT_ANALYTICS_CONFIG__: { enabled: boolean; token: string; host: string; environment: string }
-if (__APPARENT_ANALYTICS_ENABLED__) void import("../../../shared/analytics/browser").then(({ startAnalytics }) => startAnalytics(__APPARENT_ANALYTICS_CONFIG__))
+// Marketing pages deliberately do not collect analytics or request consent.
+// Connect owns its separate account analytics and consent flow.
