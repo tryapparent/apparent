@@ -216,7 +216,8 @@ export function setup(p: Provider, exe: string, profile: string | undefined, che
       const installFailed = repairs.some(r => r.status === 'failed');
       if (installFailed || !prerequisitesReady() || checks.find(c => c.id === 'plugin-enabled')?.status !== 'absent') repairs.push({ id: 'plugin-enable', status: 'failed', detail: 'Resolve package, CLI and Hermes activation readback before enabling.' });
       else {
-        const r = p.run(hermes, ['plugins', 'enable', 'apparent', '--no-allow-tool-override'], { hermesHome: profile, timeoutMs: 180000 });
+        // Omit both override flags: Hermes preserves existing grants when unset.
+        const r = p.run(hermes, ['plugins', 'enable', 'apparent'], { hermesHome: profile, timeoutMs: 180000 });
         checks = receiverChecks(p, exe, hermes, profile, false, !check);
         const enabled = r.ok && checks.find(c => c.id === 'plugin-enabled')?.status === 'ok';
         repairs.push({ id: 'plugin-enable', status: enabled ? 'applied' : 'failed', detail: enabled ? 'Hermes confirms enablement. Python tools apply to a fresh conversation.' : 'Hermes enablement was not confirmed. Review dependency consent in Hermes; no restart was attempted.' });

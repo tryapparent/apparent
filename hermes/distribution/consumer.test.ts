@@ -72,7 +72,7 @@ test('receiver installs the real release before enabling and does not require it
     assert.equal(options?.hermesHome,profile);
     if(args[0]==='--version')return {ok:true,output:'Hermes Agent v0.23.1'};
     if(args[0]==='config')return {ok:true,output:JSON.stringify(args[2]==='plugins.enabled' && enabled?['apparent']:[])};
-    assert.deepEqual(args,['plugins','enable','apparent','--no-allow-tool-override']);
+    assert.deepEqual(args,['plugins','enable','apparent']);
     assert.ok(readFileSync(path.join(profile,'plugins/apparent/__init__.py')).length>0);
     enabled=true;enableCalls++;
     return {ok:true,output:''};

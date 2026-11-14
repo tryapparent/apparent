@@ -118,7 +118,7 @@ dependency stores. Errors stay unknown;
 missing settings are distinguished from failed reads without echoing stderr.
 
 `--enable` delegates activation to Hermes and rereads its saved state. It does
-not grant built-in tool overrides, approve Python dependency installation, log
+not alter built-in tool override grants, approve Python dependency installation, log
 in, change Connect grants, enable uploads or restart a gateway/session. If
 Hermes needs dependency consent, complete its normal setup flow interactively.
 `--verify-runtime` explicitly runs `hermes plugins doctor apparent --ci`, which

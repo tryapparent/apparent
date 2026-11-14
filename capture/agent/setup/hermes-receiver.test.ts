@@ -25,7 +25,7 @@ function fixture(platform = 'linux') {
       return { ok: true, output: state.metadata ?? JSON.stringify(args[2] === 'plugins.enabled' && state.enabled ? ['apparent'] : []) };
     }
     if (args[1] === 'enable') {
-      assert.deepEqual(args, ['plugins', 'enable', 'apparent', '--no-allow-tool-override']);
+      assert.deepEqual(args, ['plugins', 'enable', 'apparent']);
       if (!state.failed) state.enabled = true;
       return { ok: !state.failed, output: 'Human-readable activation output is not readiness evidence.' };
     }
