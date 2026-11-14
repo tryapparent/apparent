@@ -154,6 +154,17 @@ test('the window query preserves ownership and modal guards without enumerating 
  assert.doesNotMatch(query,/UI elements|every button|activateOwned|set frontmost|click |key code/);
  assert.match(query,/return "depth=0;role="/);
 });
+test('picker names use one local snapshot for missing-value checks and text conversion', () => {
+ // Hosted AX traces put several seconds in the old two-read name statement.
+ // This guards the remote-query contract; actual Mac execution remains required.
+ for(const script of [panelScript,persistentPanelScript]) {
+  assert.doesNotMatch(script,/if name of picker is not missing value/,
+   'A comparison must not issue another remote name read');
+  const selector=script.split('\n').filter(line=>!line.trimStart().startsWith('log ("AX probe source-line=')).join('\n');
+  assert.match(selector,/set (\w+) to name of picker\s+if \1 is not missing value then set panelName to \1 as text/,
+   'Normalize the same materialized value that was checked');
+ }
+});
 test('native focus retains the admitted app instance and rechecks identity after servicing AppKit', () => {
  // A new factory lookup after activation returned missing for the same live PID
  // in hosted receipts. Resolve once per command; this is a source contract, not
