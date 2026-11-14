@@ -1,3 +1,4 @@
+import {fixtureCandidate, qualifyFixtures, fixtureMacRequired, fixturePlatformBoundary} from './routing/fixture-portability/qualify.ts';
 import {execFileSync} from 'node:child_process';
 import {appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
@@ -144,11 +145,38 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
     try {return !foregroundPortableChange(change.path, git(['show', base + ':' + change.path], cwd), git(['show', head + ':' + change.path], cwd));}
     catch {return true;}
   }).map(change => change.path) ?? [];
-  const routing = routeDecision(effective, workflowControls, foregroundBoundaries.length > 0);
+  // Read exact candidate blobs and all textual references to their module names.
+  // New helpers qualify only when reachable from the finite audited test roots.
+  let qualifiedFixtures: string[] = [];
+  if (effective?.some(fixtureCandidate) && delta) {
+    try {
+      const entries = git(['ls-tree', '-r', head], cwd).trim().split('\n').map(line => {
+        const [metadata, path] = line.split('\t'); return {mode: metadata.split(' ')[0], path};
+      });
+      const fixtureEntries = entries.filter(entry => fixtureCandidate(entry.path));
+      if (fixtureEntries.some(entry => entry.mode !== '100644')) throw Error('Unsupported fixture mode');
+      const fixtures = fixtureEntries.map(entry => entry.path);
+      const patterns = [...new Set(fixtures.flatMap(path => {
+        const name = path.split('/').at(-1)!;
+        return ['/' + name, '/' + name.replace(/\.ts$/, '') + "'", '/' + name.replace(/\.ts$/, '') + '"'];
+      }))];
+      let references = '';
+      try {references = git(['grep', '-I', '-l', '-F', ...patterns.flatMap(name => ['-e', name]), head, '--'], cwd);}
+      catch (error) {if ((error as {status?: number}).status !== 1) throw error;}
+      const inputs = new Set([...fixtures, ...references.trim().split('\n').filter(Boolean).map(line => line.slice(head.length + 1))]);
+      const files = new Map([...inputs].map(path => [path, git(['show', head + ':' + path], cwd)]));
+      qualifiedFixtures = qualifyFixtures(files, effective.filter(path => delta.some(change => change.path === path &&
+        (change.status === 'M' || change.status === 'A') && regularFileChange(change) &&
+        !fixturePlatformBoundary(change.status === 'A' ? '' : git(['show', base + ':' + path], cwd), files.get(path) ?? ''))));
+    } catch { /* Unreadable candidate/consumer inventory retains every consumer. */ }
+  }
+  const routing = routeDecision(effective, workflowControls, foregroundBoundaries.length > 0, qualifiedFixtures);
   const plan = routing.plan;
-  const mac = macDecision(effective, delta?.filter(change => unsupported(change) && needsPlatform([change.path])).map(change => change.path) ?? null);
+  const mac = macDecision(effective?.filter(path => !qualifiedFixtures.includes(path)) ?? null, delta?.filter(change => unsupported(change) && !qualifiedFixtures.includes(change.path) && needsPlatform([change.path])).map(change => change.path) ?? null);
+  if (effective?.length && effective.every(path => qualifiedFixtures.includes(path))) {mac.macos = false; mac.reasons = [];}
+  const fixtureMac = fixtureMacRequired(qualifiedFixtures);
   const platform = plan.root || plan.engine || plan.desktop || plan.client;
-  return {...routing, paths: paths ?? [], historyKnown: paths !== null, inputProofKnown: paths !== null && !unsafe, workflowControls, ...mac, platform, plan,
+  return {...routing, paths: paths ?? [], historyKnown: paths !== null, inputProofKnown: paths !== null && !unsafe, workflowControls, ...mac, fixtureMac, qualifiedFixtures, platform, plan,
     hermes: plan.hermes, portable: plan.browser || plan.service || plan.tools || plan.foreground,
     reasons: [...routing.reasons,
       ...(delta?.filter(change => !regularFileChange(change)).map(change =>
@@ -157,10 +185,13 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
 }
 
 export function requiresMacRustRange(base: string, head: string): boolean {
+  const decision = selectRange(base, head);
+  if (!decision.inputProofKnown) return true;
   const delta = changes(base, head);
-  if (delta?.some(change => !regularFileChange(change))) return true;
-  return requiresMacRust(delta?.map(change => change.path) ?? null,
-    delta?.filter(change => unsupported(change) && (suitePlan([change.path]).root || suitePlan([change.path]).engine || suitePlan([change.path]).client)).map(change => change.path) ?? null);
+  const nonModifications = delta?.filter(change => unsupported(change) && !decision.qualifiedFixtures.includes(change.path) &&
+    (suitePlan([change.path]).root || suitePlan([change.path]).engine || suitePlan([change.path]).client)).map(change => change.path) ?? null;
+  return requiresMacRust(decision.paths.filter(path => !decision.qualifiedFixtures.includes(path)), nonModifications) &&
+    (decision.plan.root || decision.plan.engine || decision.plan.client);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
