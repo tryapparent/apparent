@@ -7,7 +7,10 @@ import Foundation
 // Native execution, not sampling policy. The caller supplies exact movie times.
 // A precise sample cursor selects the last presentation sample at/before a
 // request (or the first sample). ImageGenerator then decodes that exact sample.
-private enum Failure: Error, Equatable { case invalidRequest, unsafeOutput, decodeFailed, resourceLimit, writeFailed }
+private enum Failure: String, Error, Equatable {
+  case invalidRequest, unsafeOutput, decodeFailed, resourceLimit, writeFailed
+  case preciseTiming, videoTrack, segments, mediaTime, cursor, cursorRange, sampleTime, generatorTime, rgbaContext
+}
 private struct Frame: Codable, Sendable {
   let requestIndex: Int
   let requestedMs: Int64
@@ -51,7 +54,7 @@ private actor Output {
       }
       return true
     }
-    guard drawn else { throw Failure.decodeFailed }
+    guard drawn else { throw Failure.rgbaContext }
     let name = String(format: "frame-%03d.rgba", index)
     let file = name.withCString { openat(fd, $0, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600) }
     guard file >= 0 else { throw Failure.writeFailed }
@@ -75,11 +78,11 @@ struct Frames {
     guard descriptorFlags >= 0, fcntl(fd, F_SETFD, descriptorFlags | FD_CLOEXEC) == 0 else { throw Failure.unsafeOutput }
     let asset = AVURLAsset(url: URL(fileURLWithPath: movie),
       options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
-    guard try await asset.load(.providesPreciseDurationAndTiming),
-          let track = try await asset.loadTracks(withMediaType: .video).first else { throw Failure.decodeFailed }
+    guard try await asset.load(.providesPreciseDurationAndTiming) else { throw Failure.preciseTiming }
+    guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw Failure.videoTrack }
     let mappings = try await track.load(.segments).filter { !$0.isEmpty }.map(\.timeMapping)
       .sorted { CMTimeCompare($0.target.start, $1.target.start) < 0 }
-    guard !mappings.isEmpty else { throw Failure.decodeFailed }
+    guard !mappings.isEmpty else { throw Failure.segments }
     let output = Output(fd)
     let workers = min(6, times.count)
     let chunk = (times.count + workers - 1) / workers
@@ -100,19 +103,22 @@ struct Frames {
             // Cursors use sample/media time; image generation uses the edited
             // movie timeline. Keep leading gaps and edit-list offsets explicit.
             let media = CMTimeMapTimeFromRangeToRange(clamped, fromRange: mapping.target, toRange: mapping.source)
-            guard media.seconds.isFinite, let cursor = track.makeSampleCursor(presentationTimeStamp: media) else {
-              throw Failure.decodeFailed
-            }
+            guard media.seconds.isFinite else { throw Failure.mediaTime }
+            guard let cursor = track.makeSampleCursor(presentationTimeStamp: media) else { throw Failure.cursor }
             var steps = 0
             while CMTimeCompare(cursor.presentationTimeStamp, mapping.source.end) >= 0 {
-              guard steps < 1024, cursor.stepInPresentationOrder(byCount: -1) != 0 else { throw Failure.decodeFailed }
+              guard steps < 1024, cursor.stepInPresentationOrder(byCount: -1) != 0 else { throw Failure.cursorRange }
               steps += 1
             }
             let sample = CMTimeMaximum(mapping.target.start,
               CMTimeMapTimeFromRangeToRange(cursor.presentationTimeStamp, fromRange: mapping.source, toRange: mapping.target))
-            guard sample.seconds.isFinite else { throw Failure.decodeFailed }
+            guard sample.seconds.isFinite else { throw Failure.sampleTime }
             let (image, actual) = try await generator.image(at: sample)
-            guard CMTimeCompare(actual, sample) == 0 else { throw Failure.decodeFailed }
+            guard CMTimeCompare(actual, sample) == 0 else {
+              // Numeric clock facts only; SDK errors still discard native stderr.
+              FileHandle.standardError.write(Data("Engine frame timing: sample=\(sample.value)/\(sample.timescale) actual=\(actual.value)/\(actual.timescale) request=\(times[index])\n".utf8))
+              throw Failure.generatorTime
+            }
             let milliseconds = CMTimeConvertScale(sample, timescale: 1000, method: .roundTowardNegativeInfinity).value
             guard milliseconds >= -9_007_199_254_740_991, milliseconds <= 9_007_199_254_740_991 else {
               throw Failure.decodeFailed
@@ -144,8 +150,14 @@ struct Frames {
       encoder.outputFormatting = [.sortedKeys]
       FileHandle.standardOutput.write(try encoder.encode(Reply(version: 1, frames: frames)) + Data([10]))
     } catch {
-      FileHandle.standardError.write(Data("Engine could not decode the local movie\n".utf8))
-      if let failure = error as? Failure, failure == .resourceLimit { exit(72) }
+      if let failure = error as? Failure {
+        FileHandle.standardError.write(Data("Engine frames: \(failure.rawValue)\n".utf8))
+        if failure == .resourceLimit { exit(72) }
+      } else {
+        let native = error as NSError
+        let underlying = native.userInfo[NSUnderlyingErrorKey] as? NSError
+        FileHandle.standardError.write(Data("Engine frames: platform_error code=\(native.code) underlying=\(underlying?.code ?? 0)\n".utf8))
+      }
       exit(1)
     }
   }
