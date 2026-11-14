@@ -183,6 +183,7 @@ app.whenReady().then(()=>{
         const scale=screen.getDisplayMatching(window.getBounds()).scaleFactor;
         const key=JSON.stringify([visibleWidth,height,scale]);
         if(key!==appliedShape){window.setShape(geometry.shape(visibleWidth,height));appliedShape=key;}
+        if(resized)window.webContents.invalidate();
       }
       return size.revision===current?.revision;
     }catch{
