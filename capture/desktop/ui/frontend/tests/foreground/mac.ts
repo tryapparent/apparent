@@ -195,7 +195,9 @@ async function main() {
       APPARENT_CONFIG: configFile, APPARENT_CAPTURES_DIR: path.join(root, 'captures'), APPARENT_START_TIMINGS: '1', TMPDIR: temporary, TMP: temporary, TEMP: temporary};
     delete appEnv.ELECTRON_RUN_AS_NODE;
     for (const key of Object.keys(appEnv)) if (/^(OPENCODE|CODEX|CLAUDE)_.*SESSION/.test(key)) delete appEnv[key];
-    await writeFile(configFile, JSON.stringify({onboarding: {seen: true}, launchAtLogin: false, autoPasteDraft: false, microphoneEnabled: false,
+    // Login registration is outside this fixture. Omission leaves OS state alone
+    // and avoids unrelated synchronous ServiceManagement reconciliation on the GUI thread.
+    await writeFile(configFile, JSON.stringify({onboarding: {seen: true}, autoPasteDraft: false, microphoneEnabled: false,
       experiments: {hostedSharing: true, connectForegroundUpload: true, hostedEncryption: false}}), {mode: 0o600, flag: 'wx'});
     const grant = (await cli(['screen-permission-status'])).trim();
     await evidence('permission', {passiveInstalledBinaryGrant: grant});
