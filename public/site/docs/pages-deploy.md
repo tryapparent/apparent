@@ -18,7 +18,7 @@ node scripts/cd/publish-pages.ts seal "$(git rev-parse HEAD)"
 ```
 
 `verify` builds the source homepage, packages its allowlisted assets, tests the
-resource graph, browser behavior, analytics consent and shared appearance, compiles
+resource graph, browser behavior, absence of analytics and shared appearance, compiles
 and exercises the movie worker in workerd, then prepares Public-only Pages metadata
 and movie chunks. Public's theme check includes Public and shared inputs. It does
 not install or build Connect, Rust or Desktop. Shared-token changes still require
@@ -27,7 +27,7 @@ the affected consumers' own acceptance; Public's checks do not certify those pro
 The homepage includes the recovered photo layout, responsive movie, timeline and
 frog QR interaction. Simon approved publication on 2026-11-08 after comparison
 confirmed it matched the live site. No snapshot or bundle overlay replaces the
-source build. Analytics configuration and visitor consent remain unchanged.
+source build. Marketing analytics was subsequently removed; see Website analytics below.
 
 The sealed `.build/website` artifact contains only `dist-apparent`, the isolated
 Pages configuration and a revision/checksum manifest. The publisher revalidates its
@@ -173,14 +173,13 @@ human presence; do not invent accounts or approve a device for a website deploym
 
 ## Website analytics
 
-The recovered website helper preserves its own affirmative visitor choice,
-withdrawal and GPC/DNT handling. Its build uses `PUBLIC_POSTHOG_ENABLED`,
-`PUBLIC_POSTHOG_TOKEN`, `PUBLIC_POSTHOG_HOST` and `PUBLIC_POSTHOG_ENVIRONMENT`.
-Capability defaults enabled, but absent/invalid public ingestion configuration
-fails closed. Public verification builds use the existing repository ingestion
-secret `APPARENT_POSTHOG_TOKEN` with the EU host and production environment.
-Pageviews include PostHog's standard URL fields built only from approved routes;
-queries, fragments and private routes are excluded. This does not change
-Connect account analytics. Verification uses intercepted synthetic events; no
-fixture event is sent to PostHog. Production configuration and publication remain
-subject to the existing gates.
+Public marketing pages do not collect browser analytics and show no analytics
+consent banner or settings button. The Public entrypoint does not import the
+shared analytics client, and its build does not consume PostHog configuration or
+credentials. Legacy `PUBLIC_POSTHOG_*` environment variables and previously saved
+visitor consent cannot reactivate it. The browser smoke test exercises fresh,
+previously allowed and previously denied mobile visitors with enabled synthetic
+legacy config and intercepts all external requests; none is sent to PostHog.
+
+Connect account analytics and desktop error reporting remain separate and
+unchanged. Existing PostHog records are not deleted by this website change.
