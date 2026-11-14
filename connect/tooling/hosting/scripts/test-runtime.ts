@@ -118,7 +118,7 @@ try {
   // Exercise hydration against the rewritten package through the real asset binding.
   // Every nonlocal request is intercepted; no live account or telemetry is used.
   const { chromium } = createRequire(resolve(packageRoot, "../../web/package.json"))("playwright-core")
-  const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] })
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || chromium.executablePath(), headless: true, args: ["--no-sandbox"] })
   try {
     const page = await browser.newPage()
     const errors: string[] = [], unexpected: string[] = []
