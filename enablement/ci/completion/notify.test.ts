@@ -26,6 +26,7 @@ test('an early failure and later successful completions each wake through existi
   const early = run(), slow = run({id: 11, workflow_id: 2, path: '.github/workflows/stream-public.yml', status: 'in_progress', conclusion: null});
   const f = fixture([early, slow]);
   assert.equal(await notify({action: 'completed', workflow_run: early}, repo, f.api), 1);
+  assert.match(f.state.comments[0]!.body, /Capture\/Connect workflow completed/);
   const final = {...slow, status: 'completed', conclusion: 'success'};
   f.state.runs = [early, final];
   assert.equal(await notify({action: 'completed', workflow_run: final}, repo, f.api), 1);
