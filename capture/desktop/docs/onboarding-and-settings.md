@@ -595,7 +595,7 @@ During screen drawing, the existing transparent Electron coach widens to 720 px
 when space permits to show the approved trackpad helper beside the main guide.
 Narrow displays keep the same helper inline with scrolling; enlarged text remains
 reachable. It shares the existing window and disappears with the drawing phase.
-Rust owns the phase; the illustration/hint never sends keys or changes progress.
+Trusted Electron main owns the lesson phase; the illustration/hint never sends keys or changes progress.
 Native fallback routing remains available until installed acceptance; disabling
 the Electron route is the existing rollback. Real platform shortcut/permission/focus
 and packaged acceptance remain separate from renderer and state-machine tests.
@@ -609,10 +609,30 @@ write failure or a live child that stops reading sends the existing scoped
 transport-exit event; capture/finalization never waits for pipe capacity. Existing
 native fallback still defers replacement while capture is hidden, invalidates
 old transport events and retains the sole progress writer. Native permission
-helpers keep their existing transport. This bounds delivery only: trusted host
-observation acknowledgements, attempt admission and lesson-policy migration are
-still required before retiring `settings/practice.rs`. Rollback reverts the
-writer and its Session transport variant together; there is no config change.
+helpers keep their existing transport.
+
+Electron main's pure TypeScript `onboarding/practice.ts` owns lesson transitions.
+The private version-1 batch/disposition stream carries decimal native source,
+transport, attempt/capture epoch, sequence, intent and owned-board identities.
+Native Flow admits capture and renderer intents into this single ordered stream;
+preload exposes no facts, stages or acknowledgements. Native updates batch board
+visibility before ink before processing/saved. Effects compare whole-batch stages,
+so a transient ScreenInk followed by Preparing never closes a board. Deferred
+close rechecks the current session/transport/attempt, exact board and live capture.
+
+At most 32 batches await acknowledgement; each is at most 4096 bytes/eight events.
+A two-second acknowledgement deadline runs independently of stdin consumption.
+Malformed, duplicate, reordered or retired replies cannot mutate progress. Loss
+uses the existing scoped fallback, including hidden-capture deferral. Finish needs
+an explicitly admitted, host-accepted intent, native completed capture, first native
+receipt/current bundle and a successful existing Progress/config transaction.
+There is no TypeScript config writer. Capture/finalization does not wait for UI.
+
+The Rust lesson donor is removed. Flow launch/permissions and native fallback
+remain native debt; fallback does not run a parallel Electron lesson. Rollback must
+revert this complete protocol/caller/packaging adoption together, with no config
+schema change. Node policy and Linux Xvfb evidence do not establish native Mac or
+Linux provider acceptance.
 
 After a real whiteboard stroke, the whiteboard closes and the Electron coach
 continues directly to **Draw on your screen.** The person must make a later,

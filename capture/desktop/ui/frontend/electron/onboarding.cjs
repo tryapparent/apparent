@@ -1,3 +1,4 @@
+const {PracticeHost}=require(process.versions.electron?'../dist/onboarding-practice-host.cjs':'./onboarding/practice-host.ts');
 const {transparentBackgroundColor}=require('@apparent/ui/window-theme');
 const {parseAction}=require('./onboarding-protocol.cjs');
 const {coachDimensions,coachPosition}=require(process.versions.electron?'../dist/onboarding-presentation.cjs':'./onboarding/presentation.ts');
@@ -54,6 +55,8 @@ if (process.env.APPARENT_DESKTOP_REPORTING === '1') {
 app.setName(process.env.APPARENT_TEST_INSTANCE==='1'?'apparent onboarding preview':'apparent onboarding');
 app.setPath('userData',path.join(app.getPath('appData'),'apparent-onboarding'));
 if(process.env.APPARENT_UI_PROFILE)app.setPath('userData',process.env.APPARENT_UI_PROFILE);
+const practiceHost=new PracticeHost();
+let practiceEnabled=false;
 let window,state=null,buffer='',page,lastPlacement='',lastMode=null,closing=false,borderReady=false,borderPending=false,borderAttempts=0;
 let connect;
 const channel=parentChannel(process.stdout,error=>{
@@ -112,6 +115,12 @@ app.whenReady().then(()=>{
       let v;
       try{v=JSON.parse(line)}catch{console.error('Invalid onboarding parent message');shutdown(1);return;}
       if(!v||typeof v!=='object'||Array.isArray(v)){shutdown(1);return;}
+      if(v.type==='practice-batch'){
+        try{const reply=practiceHost.accept(v);practiceEnabled=true;channel.send(reply);
+          if(state){state={...state,practice:reply.stage};present(state);}}
+        catch{shutdown(1);return;}
+        continue;
+      }
       if(v.type==='close'){shutdown();return;}
       if(v.type==='hide'){if(state?.step!=='try-it')window.hide();continue;}
       if(v.type==='show'){if(state)present(state,true);continue;}
@@ -122,7 +131,7 @@ app.whenReady().then(()=>{
         continue;
       }
       const next=project(v);
-      if(next){state=next;const accepted=completedSelection(next);if(accepted)channel.send(accepted);present(next);}
+      if(next){if(practiceEnabled)next.practice=practiceHost.state.stage;state=next;const accepted=completedSelection(next);if(accepted)channel.send(accepted);present(next);}
     }
   });
   process.stdin.on('end',()=>shutdown());process.stdin.on('error',error=>{console.error('Onboarding input failed:',error);shutdown(1)});process.stdin.resume();

@@ -4,7 +4,7 @@ use std::{
     os::fd::AsRawFd,
     process::ChildStdin,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc,
     },
@@ -19,6 +19,7 @@ struct Shared {
     stopped: AtomicBool,
     bytes: AtomicUsize,
     lost: Box<dyn Fn() + Send + Sync>,
+    acknowledgements: Mutex<std::collections::VecDeque<(String,Instant)>>,
 }
 impl Shared {
     fn fail(&self) {
@@ -66,7 +67,16 @@ impl Input {
             stopped: AtomicBool::new(false),
             bytes: AtomicUsize::new(0),
             lost: Box::new(lost),
+            acknowledgements: Mutex::new(std::collections::VecDeque::new()),
         });
+        let monitor=shared.clone();
+        std::thread::Builder::new().name("onboarding-ack".into()).spawn(move || {
+            while !monitor.stopped.load(Ordering::Acquire) {
+                let expired=monitor.acknowledgements.lock().unwrap().front().is_some_and(|(_,time)|time.elapsed()>=deadline);
+                if expired {monitor.fail();break;}
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        })?;
         let worker = shared.clone();
         std::thread::Builder::new()
             .name("onboarding-input".into())
@@ -109,6 +119,17 @@ impl Input {
             shared,
             max_bytes,
         })
+    }
+
+    pub(super) fn expect(&self, sequence:String) {
+        let mut pending=self.shared.acknowledgements.lock().unwrap();
+        if pending.len()>=MAX_MESSAGES {drop(pending);self.shared.fail();return;}
+        pending.push_back((sequence,Instant::now()));
+    }
+    pub(super) fn ack(&self, sequence:&str) {
+        let mut pending=self.shared.acknowledgements.lock().unwrap();
+        if pending.front().is_some_and(|(id,_)|id==sequence) {pending.pop_front();}
+        else {drop(pending);self.shared.fail();}
     }
 
     /// Already-serialized JSON line, including its newline. Never drop a barrier
@@ -193,6 +214,23 @@ mod tests {
         )
         .unwrap();
         (input, rx)
+    }
+
+    #[test]
+    fn live_reader_without_policy_ack_expires_even_after_consuming_the_entire_line() {
+        let mut child=child("cat");let (input,lost)=input(&mut child,32,MAX_BYTES);
+        input.expect("1".into());assert!(input.send(b"fact\n".to_vec()));
+        let mut bytes=[0;5];child.0.stdout.as_mut().unwrap().read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes,b"fact\n");
+        lost.recv_timeout(Duration::from_secs(2)).expect("reading is not acknowledgement");
+        assert!(child.0.try_wait().unwrap().is_none());
+    }
+    #[test]
+    fn timely_ack_retires_deadline_and_wrong_ack_revokes() {
+        let mut child=child("cat");let (input,lost)=input(&mut child,32,MAX_BYTES);
+        input.expect("1".into());input.ack("1");
+        assert!(lost.recv_timeout(Duration::from_millis(180)).is_err());
+        input.expect("2".into());input.ack("1");lost.recv_timeout(Duration::from_secs(1)).unwrap();
     }
 
     #[test]

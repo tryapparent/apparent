@@ -24,6 +24,8 @@ use serde::{Deserialize, Serialize};
 
 #[path = "onboarding/pipe.rs"]
 mod pipe;
+#[path = "onboarding/practice_host.rs"]
+mod practice_host;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -982,6 +984,7 @@ pub fn launch_plan(progress: &Progress, grants: &Grants) -> Option<Flow> {
 #[derive(Clone, Debug)]
 pub enum Event {
     Board(serde_json::Value),
+    Practice(serde_json::Value),
     /// Grants read at launch, to decide whether onboarding opens (`launch_plan`).
     Launch(Grants),
     Grants(Grants),
@@ -1124,7 +1127,7 @@ pub struct Session {
     saved_shortcut_tested_for: Option<String>,
     saved_first_capture_completed: bool,
     clock: std::time::Instant,
-    practice: Option<super::practice::Practice>,
+    practice: Option<practice_host::Practice>,
     anchor: Option<[f32;4]>,
     practice_board: Option<[f32;4]>,
     board_view: Option<serde_json::Value>,
@@ -1275,7 +1278,7 @@ impl Session {
             saved_shortcut_tested_for: progress.shortcut_tested_for,
             saved_first_capture_completed: progress.first_capture_completed,
             clock: std::time::Instant::now(),
-            practice: shell.then(super::practice::Practice::default),
+            practice: shell.then(practice_host::Practice::default),
             anchor: None,
             practice_board: None,
             board_view: None,
@@ -1368,6 +1371,7 @@ impl Session {
                         events(Event::Board(value));
                         continue;
                     }
+                    if value["type"]=="practice-disposition" {events(Event::Practice(value));continue;}
                     let Some(action) = value.get("action").and_then(|v| v.as_str()) else {
                         continue;
                     };
@@ -1495,12 +1499,13 @@ impl Session {
         if matches!(&input, Input::ShortcutChosen) { self.shortcut_choice_down = true; }
         if self.practice.is_some() && self.flow.step()==Step::TryIt && !self.fallback_pending {
             match &input {
-                Input::CaptureSelecting => self.practice.as_mut().unwrap().selecting(),
+                Input::CaptureSelecting => {self.practice_events(vec![serde_json::json!({"type":"selecting"})], false);},
                 Input::CaptureStarted => {
                     self.practice_completed=false;
                     self.practice_bundle=None;
                     self.practice_receipt=None;
-                    self.practice=Some(super::practice::Practice::default());
+                    self.practice.as_mut().unwrap().attempt+=1;
+                    self.practice.as_mut().unwrap().close_board=None;
                 },
                 Input::CaptureEnded { completed:true } => {
                     self.practice_completed=self.flow.practice_recording;
@@ -1509,13 +1514,17 @@ impl Session {
                     self.flow.on(Input::CaptureEnded{completed:false});
                     self.sync();return Effect::None;
                 },
-                Input::CaptureEnded { completed:false } => self.practice.as_mut().unwrap().cancelled(),
+                Input::CaptureEnded { completed:false } => {self.practice_events(vec![serde_json::json!({"type":"cancelled"})],false);},
                 _=>{},
             }
         }
         let started=matches!(input,Input::CaptureStarted);
         let effect = self.flow.on(input);
-        if started && self.flow.practice_recording {if let Some(p)=self.practice.as_mut(){p.started();}}
+        if started && self.practice.is_some() && self.flow.step()==Step::TryIt {
+            let mut events=vec![serde_json::json!({"type":"reset"})];
+            if self.flow.practice_recording {events.push(serde_json::json!({"type":"started"}));}
+            self.practice_events(events,false);
+        }
         // The in-process window feeds the flow on every refresh: log only what changed.
         static LAST: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
         let line = format!("onboarding: {:?} -> {effect:?}", self.flow.step());
@@ -1608,15 +1617,9 @@ impl Session {
         }
 
         if action.starts_with("practice-") {
-            if let Some(practice)=self.practice.as_mut() {
-                if practice.action(action) && action=="practice-finish" && self.practice_completed {
-                    self.flow.first_capture_completed=true;
-                    self.flow.step=Step::Done;
-                    self.sync();
-                    return self.input(Input::Continue);
-                }
-            }
-            self.sync();return Effect::None;
+            if !["practice-paste","practice-pasted","practice-locate","practice-finish"].contains(&action)||!self.practice_active() {return Effect::None;}
+            let effect=self.practice_events(vec![serde_json::json!({"type":"action","action":action})],true);
+            self.sync();return effect;
         }
         let input = match action {
             "continue" => Input::Continue,
@@ -1712,34 +1715,30 @@ impl Session {
 
     pub fn observe_practice(&mut self, board:bool, screen:usize, processing:bool, saved:Option<bool>) {
         if self.flow.step()!=Step::TryIt {return;}
-        if let Some(practice)=self.practice.as_mut() {
-            practice.observe_ink(board,screen);
-            if processing {practice.processing();}
-            if let Some(copied)=saved {practice.saved(copied);}
-        }
-        self.sync();
+        let mut events=Vec::new();
+        if let Some(visible)=self.practice.as_mut().and_then(|p|p.visibility.take()) {events.push(serde_json::json!({"type":"whiteboard-visible","visible":visible}));}
+        events.push(serde_json::json!({"type":"ink","board":board,"screen":screen}));
+        if processing {events.push(serde_json::json!({"type":"processing"}));}
+        if let Some(copied)=saved {events.push(serde_json::json!({"type":"saved","copied":copied}));}
+        self.practice_events(events,false);self.sync();
     }
-    pub fn practice_note_saved(&mut self, saved: bool) {
-        if self.flow.step()==Step::TryIt {
-            if let Some(practice)=self.practice.as_mut() {practice.observe_note(saved);}
-        }
-    }
+    pub fn practice_note_saved(&mut self, _saved: bool) {} // Optional annotations do not gate coaching.
     pub fn practice_anchor(&mut self,anchor:Option<[f32;4]>) {self.anchor=anchor;}
     pub fn practice_board(&mut self, frame: Option<[f32;4]>) {
         self.practice_board=frame;
-        if let Some(p)=self.practice.as_mut() { p.whiteboard_visible(frame.is_some()); }
+        self.practice_events(vec![serde_json::json!({"type":"whiteboard-visible","visible":frame.is_some()})],false);
     }
     pub fn board_view(&mut self, view: Option<serde_json::Value>) { self.board_view=view; }
     pub fn electron_practice(&self)->bool { self.practice_active() && self.fallback.is_some() && !self.fallback_pending }
     pub fn practice_active(&self)->bool {self.practice.is_some() && self.flow.step()==Step::TryIt}
-    pub fn practice_locating(&self)->bool {self.practice.as_ref().is_some_and(|p|p.stage==super::practice::Stage::Locate)}
-    pub fn practice_desktop_stage(&self)->bool {self.practice.as_ref().is_some_and(|p|matches!(p.stage,super::practice::Stage::Note|super::practice::Stage::ScreenInk))}
-    pub fn practice_whiteboard(&mut self) {if let Some(p)=self.practice.as_mut(){p.whiteboard();}self.sync();}
+    pub fn practice_locating(&self)->bool {self.practice.as_ref().is_some_and(|p|p.locating)}
+    pub fn practice_desktop_stage(&self)->bool {self.practice.as_ref().is_some_and(|p|p.desktop_stage)}
+    pub fn practice_whiteboard(&mut self) {self.practice_events(vec![serde_json::json!({"type":"whiteboard"})],false);self.sync();}
     pub fn practice_saved_bundle(&mut self, path: &Path) { if self.practice_active() { self.practice_bundle=Some(path.to_owned()); } }
     /// A finalizer/clipboard observation, delivered only after the caller's native
     /// current-generation gate. Capture and request IDs retain their producer identity;
-    /// the renderer cannot manufacture this receipt. This compatible adapter feeds
-    /// the existing lesson until the headless TypeScript consumer is adopted.
+    /// the renderer cannot manufacture this receipt. Only the native-admitted raw
+    /// completion facts enter the trusted TypeScript lesson stream.
     pub(crate) fn practice_completion(
         &mut self, generation: u64, capture_id: &str, request_id: Option<&str>,
         bundle: Option<&Path>, clipboard: Option<bool>,
@@ -1756,7 +1755,48 @@ impl Session {
         }
     }
     pub fn practice_opened_bundle(&mut self, path: &Path) { if self.practice_bundle.as_deref()==Some(path) {self.practice_latest();} }
-    pub fn practice_latest(&mut self) {if let Some(p)=self.practice.as_mut(){p.opened_latest();}self.sync();}
+    pub fn practice_latest(&mut self) {self.practice_events(vec![serde_json::json!({"type":"opened-latest"})],false);self.sync();}
+
+    fn practice_events(&mut self, events:Vec<serde_json::Value>, intent:bool)->Effect {
+        if self.fallback_pending {return Effect::None;}
+        let board=self.board_view.as_ref().and_then(|v|v["id"].as_str()).map(str::to_owned);
+        let Some(p)=self.practice.as_mut() else {return Effect::None;};
+        if p.pending.len()>=32 {self.restore_native();return Effect::None;}
+        let batch=p.batch(self.source,self.transport_generation,board,events,intent);
+        #[cfg(test)]
+        if matches!(self.transport,Transport::InProcess(_)) {
+            let reply=self.practice.as_ref().unwrap().test_reply();return self.practice_disposition(reply);
+        }
+        if let Transport::Renderer {input,..}=&self.transport {input.expect(batch["sequence"].as_str().unwrap().to_owned());}
+        self.send(&batch);Effect::None
+    }
+    pub fn practice_disposition(&mut self, value:serde_json::Value)->Effect {
+        if !self.practice_active() || self.fallback_pending {return Effect::None;}
+        let result=self.practice.as_mut().unwrap().admit(value);
+        let Ok((finish,sequence))=result else {self.restore_native();return Effect::None;};
+        if let Transport::Renderer {input,..}=&self.transport {input.ack(&sequence);}
+        if finish && self.practice_completed && self.practice_receipt.is_some() && self.practice_bundle.is_some() {
+            self.flow.first_capture_completed=true;self.flow.step=Step::Done;self.sync();
+            #[cfg(test)]
+            if matches!(self.transport,Transport::InProcess(None)) {return self.input(Input::Continue);}
+            if self.saved_first_capture_completed {return self.input(Input::Continue);}
+            // A failed native config transaction leaves the lesson retryable.
+            self.flow.first_capture_completed=false;self.flow.step=Step::TryIt;
+        }
+        self.sync();Effect::None
+    }
+    pub fn take_practice_board_close(&mut self)->Option<(u64,u64,u64,String)> {
+        let p=self.practice.as_mut()?;Some((self.source,self.transport_generation,p.attempt,p.close_board.take()?))
+    }
+    pub fn current_practice_scope(&self,source:u64,transport:u64,attempt:u64)->bool {
+        self.source==source && self.transport_generation==transport && !self.fallback_pending
+            && self.practice.as_ref().is_some_and(|p|p.attempt==attempt)
+    }
+    pub fn observe_practice_batch(&mut self, frame:Option<[f32;4]>, board:bool,screen:usize,processing:bool) {
+        self.practice_board=frame;
+        if let Some(p)=self.practice.as_mut() {p.visibility=Some(frame.is_some());}
+        self.observe_practice(board,screen,processing,None);
+    }
 
     pub fn editing_shortcut(&self) -> bool {
         self.flow.step() == Step::Shortcut && self.flow.shortcut_editing
@@ -2041,7 +2081,7 @@ mod tests {
             let original: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
             assert_eq!(original, serde_json::json!({"secret":"synthetic-pen-receipt","microphoneEnabled":false}));
             let mut session = Session::for_test(Flow::tour(Step::Welcome, Some(grants(&[]))));
-            session.practice = Some(super::super::practice::Practice::default());
+            session.practice = Some(super::practice_host::Practice::default());
             session.pen_picker = true;
             let (tx, rx) = flume::unbounded();
             session.transport = Transport::InProcess(Some(tx));
@@ -2090,13 +2130,105 @@ mod tests {
         assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"), "child must execute the exact provider test");
     }
 
+    #[test]
+    fn practice_host_admission_rejects_duplicate_reordered_and_wrong_identity() {
+        for field in ["source","transport","attempt","capture","sequence","intent","board"] {
+            let mut p=practice_host::Practice::default();
+            p.batch(1,2,Some("board-a".into()),vec![serde_json::json!({"type":"selecting"})],false);
+            let mut reply=p.test_reply();reply[field]=serde_json::json!("wrong");
+            assert!(p.admit(reply).is_err(),"{field}");
+            assert_eq!(p.pending.len(),1);
+        }
+        let mut p=practice_host::Practice::default();
+        p.batch(1,2,None,vec![serde_json::json!({"type":"selecting"})],false);
+        let reply=p.test_reply();assert!(p.admit(reply.clone()).is_ok());assert!(p.admit(reply).is_err());
+    }
+
+    #[test]
+    fn real_native_adapter_matches_old_producer_policy_queries() {
+        let corpus:serde_json::Value=serde_json::from_str(include_str!("../ui/frontend/tests/onboarding/practice/fixtures/corpus.json")).unwrap();
+        let mut calls=0;
+        for trace in corpus["cases"].as_array().unwrap() {
+            let mut s=coached_session();
+            for step in trace["steps"].as_array().unwrap() {
+                let f=&step["fact"];
+                match f["method"].as_str().unwrap() {
+                    "input"=>{s.input(match f["input"].as_str().unwrap(){
+                        "ShortcutTriggered"=>Input::ShortcutTriggered,"CaptureSelecting"=>Input::CaptureSelecting,
+                        "CaptureStarted"=>Input::CaptureStarted,"CaptureEnded"=>Input::CaptureEnded{completed:f["completed"].as_bool().unwrap()},_=>panic!()});},
+                    "practice_board"=>s.practice_board(if f["frame"].is_null(){None}else{Some([10.,20.,640.,480.])}),
+                    "practice_whiteboard"=>s.practice_whiteboard(),
+                    "observe_practice"=>s.observe_practice(f["board"].as_bool().unwrap(),f["screen"].as_u64().unwrap() as usize,f["processing"].as_bool().unwrap(),f["saved"].as_bool()),
+                    "practice_note_saved"=>s.practice_note_saved(f["saved"].as_bool().unwrap()),
+                    "practice_completion"=>s.practice_completion(f["generation"].as_u64().unwrap(),f["captureId"].as_str().unwrap(),f["requestId"].as_str(),f["bundle"].as_str().map(Path::new),f["clipboard"].as_bool()),
+                    "practice_opened_bundle"=>s.practice_opened_bundle(Path::new(f["path"].as_str().unwrap())),
+                    "action"=>{s.action(f["action"].as_str().unwrap());},"sync"=>s.sync(),_=>panic!("unknown fact"),
+                }
+                let p=s.practice.as_ref().unwrap();let expected=&step["after"];
+                assert_eq!(serde_json::json!(p.stage),expected["stage"],"{} call {calls}",trace["name"]);
+                assert_eq!(p.latest,expected["latest"].as_bool().unwrap());
+                assert_eq!(s.practice_locating(),expected["locating"].as_bool().unwrap());
+                assert_eq!(s.practice_desktop_stage(),expected["desktopStage"].as_bool().unwrap());
+                assert_eq!(s.practice_completed,expected["nativeCompleted"].as_bool().unwrap());
+                assert_eq!(serde_json::json!(s.practice_receipt),expected["receipt"]);
+                assert_eq!(serde_json::json!(s.practice_bundle),expected["bundle"]);
+                calls+=1;
+            }
+        }
+        assert_eq!(calls,212);
+    }
+
+    #[test]
+    fn practice_finish_requires_native_receipt_and_successful_single_config_writer() {
+        const CHILD:&str="APPARENT_PRACTICE_FINISH_CHILD";
+        if let Some(path)=std::env::var_os(CHILD) {
+            let path=std::path::PathBuf::from(path);
+            assert_eq!(crate::shared::handoff::default_config_path(),path);
+            for failure in [false,true] {
+                std::fs::write(&path,br#"{"secret":"synthetic","unrelated":{"nested":7},"microphoneEnabled":false}"#).unwrap();
+                let mut s=coached_session();let (tx,_rx)=flume::unbounded();s.transport=Transport::InProcess(Some(tx));
+                s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);s.practice_whiteboard();
+                s.observe_practice(true,0,false,None);s.observe_practice(false,1,false,None);
+                // Host completion alone is not native durability evidence.
+                s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
+                s.action("practice-paste");s.action("practice-pasted");s.practice_latest();
+                assert_eq!(s.action("practice-finish"),Effect::None);
+                assert!(!s.flow.first_capture_completed);
+                // Start another admitted real capture and provide its first native receipt.
+                s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);s.practice_whiteboard();
+                s.observe_practice(true,0,false,None);s.observe_practice(false,1,false,None);
+                let bundle=Path::new("/synthetic/finished.apparent");
+                s.practice_completion(7,"capture",Some("request"),Some(bundle),Some(true));
+                s.input(Input::CaptureEnded{completed:true});s.action("practice-paste");s.action("practice-pasted");s.practice_opened_bundle(bundle);
+                if failure {std::fs::write(&path,b"invalid config").unwrap();}
+                assert_eq!(s.action("practice-finish"),if failure{Effect::None}else{Effect::Close});
+                assert_eq!(s.flow.first_capture_completed,!failure);
+                if failure {assert_eq!(std::fs::read(&path).unwrap(),b"invalid config");
+                    std::fs::write(&path,br#"{"secret":"synthetic","unrelated":{"nested":7},"microphoneEnabled":false}"#).unwrap();
+                    assert_eq!(s.action("practice-finish"),Effect::Close,"retry after native storage recovery");
+                }
+                else {let saved:serde_json::Value=serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                    assert_eq!(saved["secret"],"synthetic");assert_eq!(saved["unrelated"]["nested"],7);
+                    assert_eq!(saved["microphoneEnabled"],false);assert_eq!(saved["onboarding"]["firstCaptureCompleted"],true);}
+            }
+            return;
+        }
+        let dir=std::env::temp_dir().join(format!("practice-finish-{}",crate::shared::ids::make_bundle_id()));
+        std::fs::create_dir(&dir).unwrap();let config=dir.join("config.json");
+        let output=std::process::Command::new(std::env::current_exe().unwrap()).args(["--exact",
+            "capture::desktop::settings::onboarding::tests::practice_finish_requires_native_receipt_and_successful_single_config_writer","--nocapture"])
+            .env(CHILD,&config).env("APPARENT_CONFIG",&config).output().unwrap();
+        let _=std::fs::remove_dir_all(dir);
+        assert!(output.status.success(),"{}\n{}",String::from_utf8_lossy(&output.stdout),String::from_utf8_lossy(&output.stderr));
+    }
+
     fn coached_session()->Session {
         let mut session=Session::for_test(Flow::tour(Step::TryIt,Some(grants(&Permission::REQUIRED))).with_first_capture(true, true, true, false));
-        session.practice=Some(super::super::practice::Practice::default());session
+        session.practice=Some(super::practice_host::Practice::default());session
     }
     #[test]
     fn completion_adapter_preserves_identity_and_actual_clipboard_result() {
-        use super::super::practice::Stage;
+        use super::practice_host::Stage;
         for (clipboard, stage) in [(Some(true), Stage::Copied), (Some(false), Stage::CopyFailed), (None, Stage::CopyFailed)] {
             let mut session = coached_session();
             session.input(Input::ShortcutTriggered);
@@ -2113,7 +2245,7 @@ mod tests {
 
     #[test]
     fn completion_adapter_failure_does_not_invent_a_bundle_and_retry_releases_receipt() {
-        use super::super::practice::Stage;
+        use super::practice_host::Stage;
         let mut session = coached_session();
         session.input(Input::ShortcutTriggered);
         session.input(Input::CaptureStarted);
@@ -2204,7 +2336,7 @@ mod tests {
 
     #[test]
     fn whiteboard_ink_leads_to_screen_drawing_without_a_note_lesson() {
-        use super::super::practice::Stage;
+        use super::practice_host::Stage;
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
         s.practice_whiteboard();assert!(!s.practice_desktop_stage());
         s.observe_practice(true,0,false,None);
@@ -2227,7 +2359,7 @@ mod tests {
         s.observe_practice(true, 0, false, None);
         s.practice_note_saved(false);s.observe_practice(false, 0, false, None);
         s.observe_practice(false, 1, true, Some(true));
-        s.practice_saved_bundle(first);
+        s.practice_completion(7,"first",None,Some(first),Some(true));
         s.input(Input::CaptureEnded { completed: true });
         s.action("practice-paste");
         s.action("practice-pasted");
@@ -2235,7 +2367,7 @@ mod tests {
         assert!(s.practice_locating());
         assert_eq!(s.action("practice-finish"), Effect::None);
         s.practice_opened_bundle(first);
-        assert_eq!(s.practice.as_ref().unwrap().stage, super::super::practice::Stage::Complete);
+        assert_eq!(s.practice.as_ref().unwrap().stage, super::practice_host::Stage::Complete);
 
         s.input(Input::ShortcutTriggered);
         s.input(Input::CaptureStarted);
@@ -2244,7 +2376,7 @@ mod tests {
         s.observe_practice(true, 0, false, None);
         s.practice_note_saved(true);s.observe_practice(false, 0, false, None);
         s.observe_practice(false, 1, true, Some(true));
-        s.practice_saved_bundle(other);
+        s.practice_completion(8,"other",None,Some(other),Some(true));
         s.input(Input::CaptureEnded { completed: true });
         s.action("practice-paste");
         s.action("practice-pasted");
@@ -2257,7 +2389,7 @@ mod tests {
     #[test]
     fn target_selection_precedes_recording_and_partial_capture_still_reaches_the_menu_lesson() {
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureSelecting);
-        assert_eq!(s.practice.as_ref().unwrap().stage,super::super::practice::Stage::Screen);
+        assert_eq!(s.practice.as_ref().unwrap().stage,super::practice_host::Stage::Screen);
         s.input(Input::CaptureStarted);s.practice_whiteboard();s.observe_practice(true,0,true,Some(true));
         s.input(Input::CaptureEnded{completed:true});s.action("practice-paste");s.action("practice-pasted");
         assert!(s.practice_locating());s.practice_latest();assert_eq!(s.action("practice-finish"),Effect::None);
@@ -2269,6 +2401,7 @@ mod tests {
         let mut s=coached_session();
         s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
         s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(false);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
+        s.practice_completion(7,"menu",None,Some(Path::new("/synthetic/menu.apparent")),Some(true));
         s.input(Input::CaptureEnded{completed:true});
         assert!(!s.practice_locating());
         s.action("practice-paste");assert!(!s.practice_locating());
@@ -2281,7 +2414,7 @@ mod tests {
     fn coaching_finishes_after_completion_pill_dismissal() {
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
         s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_note_saved(false);
-        s.observe_practice(false,0,false,None);s.observe_practice(false,1,false,None);s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
+        s.observe_practice(false,0,false,None);s.observe_practice(false,1,false,None);s.observe_practice(false,0,true,Some(true));s.practice_completion(7,"pill",None,Some(Path::new("/synthetic/pill.apparent")),Some(true));s.input(Input::CaptureEnded{completed:true});
         assert!(!s.flow.practice_recording);assert!(!s.flow.hidden);
         s.input(Input::CaptureEnded{completed:false}); // normal 25-second pill dismissal
         s.action("practice-paste");s.action("practice-pasted");s.practice_latest();
@@ -3365,6 +3498,22 @@ mod local_practice_tests {
 mod adapter_regressions {
     use super::*;
     #[test]
+    fn renderer_that_reads_but_never_acknowledges_uses_scoped_hidden_fallback() {
+        let mut session=Session::for_test(Flow::tour(Step::TryIt,None));
+        session.flow.hidden=true;session.practice=Some(practice_host::Practice::default());
+        let generation=session.transport_generation();let source=session.source();
+        let (tx,rx)=flume::unbounded();
+        let events=Session::scope_events(source,move |e|{let _=tx.send(e);});
+        session.transport=Session::spawn_renderer_transport(&mut std::process::Command::new("cat"),generation,events).unwrap();
+        session.practice_events(vec![serde_json::json!({"type":"selecting"})],false);
+        let event=rx.recv_timeout(std::time::Duration::from_secs(5)).expect("read without ack must expire");
+        assert!(matches!(event.for_current_session(Some(source)).unwrap().for_current_transport(Some(generation)),Some(Event::Exited)));
+        let (tx,_rx)=flume::unbounded();session.fallback=Some(Box::new(move |_|Ok(Transport::InProcess(Some(tx.clone())))));
+        assert!(session.restore_native());assert!(session.fallback_pending);assert!(session.flow.hidden);
+        assert!(!session.current_practice_scope(source,generation,0));
+    }
+
+    #[test]
     fn live_renderer_nonreader_exits_through_scoped_hidden_fallback() {
         let mut session = Session::for_test(Flow::tour(Step::TryIt, None));
         session.flow.hidden = true;
@@ -3420,6 +3569,18 @@ mod adapter_regressions {
         let event = rx.recv_timeout(std::time::Duration::from_secs(15)).expect("host receipt");
         assert!(matches!(event.for_current_transport(Some(generation)),
             Some(Event::Action(action)) if action=="accept-shortcut-choice:Test"));
+        session.flow=Flow::tour(Step::TryIt,None).with_first_capture(true,true,true,false);
+        session.practice=Some(practice_host::Practice::default());
+        session.input(Input::ShortcutTriggered);session.input(Input::CaptureSelecting);session.input(Input::CaptureStarted);
+        session.board_view(Some(serde_json::json!({"id":"pipe-board"})));
+        session.practice_whiteboard();session.observe_practice(true,0,true,Some(true));
+        while !session.practice.as_ref().unwrap().pending.is_empty() {
+            match rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap().for_current_transport(Some(generation)).unwrap() {
+                Event::Practice(value)=>{session.practice_disposition(value);},other=>panic!("unexpected host event {other:?}"),
+            }
+        }
+        assert_eq!(session.practice.as_ref().unwrap().stage,practice_host::Stage::Copied);
+        assert!(session.take_practice_board_close().is_none(),"whole batch cannot close on transient ScreenInk");
         session.send(&serde_json::json!({"type":"close"}));
         assert!(matches!(rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap()
             .for_current_transport(Some(generation)), Some(Event::Exited)));
@@ -3469,7 +3630,7 @@ mod adapter_regressions {
         let mut flow=Flow::tour(Step::TryIt,None).with_first_capture(true, true, true, false);
         flow.on(Input::ShortcutTriggered);flow.on(Input::CaptureStarted);
         let mut session=Session::for_test(flow);
-        session.practice=Some(super::super::practice::Practice::default());
+        session.practice=Some(super::practice_host::Practice::default());
         let (tx,rx)=flume::unbounded();
         session.fallback=Some(Box::new(move |_|Ok(Transport::InProcess(Some(tx.clone())))));
         assert!(session.restore_native());assert!(session.fallback_pending);
@@ -3589,7 +3750,7 @@ fn shortcut_native_process_failures_reject_without_accepting_renderer_claims() {
 fn electron_choice_receipt_is_bound_to_the_released_native_selection() {
     let mut session=Session::for_test(Flow::tour(Step::Shortcut,None).with_first_capture(true,true,false,false));
     session.shortcut_label="Fn".into();
-    session.practice=Some(super::practice::Practice::default());
+    session.practice=Some(practice_host::Practice::default());
     let (sender,_receiver)=flume::unbounded();
     session.fallback=Some(Box::new(move |_|Ok(Transport::InProcess(Some(sender.clone())))));
     session.shortcut_choice_down=true;

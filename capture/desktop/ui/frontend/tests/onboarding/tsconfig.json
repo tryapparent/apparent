@@ -10,7 +10,7 @@
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["*.test.ts", "../../electron/onboarding/*.ts", "../../src/onboarding/state.ts", "../../src/onboarding/pen/save.ts",
+  "include": ["*.test.ts", "practice/*.ts", "../../electron/onboarding/*.ts", "../../src/onboarding/state.ts", "../../src/onboarding/pen/save.ts",
     "../../src/connect/protocol.ts", "../../src/connect/consent.ts", "../../src/connect/session.ts",
     "../connect/flow.test.ts", "../connect/session.test.ts", "../connect/flow-hook.test.ts"]
 }
