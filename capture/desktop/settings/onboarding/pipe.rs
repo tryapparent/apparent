@@ -23,8 +23,9 @@ struct Shared {
     acknowledgements: Mutex<std::collections::VecDeque<(String,Instant)>>,
 }
 impl Shared {
-    fn fail(&self) {
+    fn fail_reason(&self, reason: &'static str) {
         if !self.stopped.swap(true, Ordering::AcqRel) {
+            super::private_trace::failure(reason, || {let pending=self.acknowledgements.try_lock().ok();format!("bytes={} pending={:?} oldest={:?}",self.bytes.load(Ordering::Acquire),pending.as_ref().map(|p|p.len()),pending.as_ref().and_then(|p|p.front()).map(|(id,time)|(id.chars().take(20).filter(|c|c.is_ascii_digit()).collect::<String>(),time.elapsed().as_micros()))) });
             (self.lost)();
         }
     }
@@ -75,7 +76,7 @@ impl Input {
         let monitor_thread=std::thread::Builder::new().name("onboarding-ack".into()).spawn(move || {
             while !monitor.stopped.load(Ordering::Acquire) {
                 let expired=monitor.acknowledgements.lock().unwrap().front().is_some_and(|(_,time)|time.elapsed()>=deadline);
-                if expired {monitor.fail();break;}
+                if expired {monitor.fail_reason("ack-expiry");break;}
                 std::thread::sleep(Duration::from_millis(10));
             }
         })?;
@@ -92,12 +93,12 @@ impl Input {
                     while offset < message.bytes.len() && !worker.stopped.load(Ordering::Acquire) {
                         // Deadline includes queue residence, not just time inside write.
                         if message.queued.elapsed() >= deadline {
-                            worker.fail();
+                            worker.fail_reason("writer-queue-age");
                             break;
                         }
                         match pipe.write(&message.bytes[offset..]) {
                             Ok(0) => {
-                                worker.fail();
+                                worker.fail_reason("write-zero");
                                 break;
                             }
                             Ok(n) => offset += n,
@@ -105,12 +106,14 @@ impl Input {
                             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                                 std::thread::sleep(Duration::from_millis(5))
                             }
-                            Err(_) => {
-                                worker.fail();
+                            Err(error) => {
+                                super::private_trace::emit("write-error-kind",||format!("kind={:?} offset={offset}",error.kind()));
+                                worker.fail_reason("write-error");
                                 break;
                             }
                         }
                     }
+                    super::private_trace::emit("write-end",||format!("bytes={} offset={offset} ageUs={}",message.bytes.len(),message.queued.elapsed().as_micros()));
                     worker
                         .bytes
                         .fetch_sub(message.bytes.len(), Ordering::AcqRel);
@@ -130,15 +133,17 @@ impl Input {
 
     pub(super) fn expect(&self, sequence:String) {
         let mut pending=self.shared.acknowledgements.lock().unwrap();
-        if pending.len()>=MAX_MESSAGES {drop(pending);self.shared.fail();return;}
+        if pending.len()>=MAX_MESSAGES {drop(pending);self.shared.fail_reason("pending-overflow");return;}
+        super::private_trace::emit("expect",||format!("sequence={sequence} pending={}",pending.len()));
         pending.push_back((sequence,Instant::now()));
     }
     pub(super) fn ack(&self, sequence:&str)->bool {
         let mut pending=self.shared.acknowledgements.lock().unwrap();
         if !self.shared.stopped.load(Ordering::Acquire) &&
             pending.front().is_some_and(|(id,time)|id==sequence && time.elapsed()<self.shared.deadline) {
+            super::private_trace::emit("ack-admit",||format!("sequence={sequence} ageUs={}",pending.front().unwrap().1.elapsed().as_micros()));
             pending.pop_front();true
-        } else {drop(pending);self.shared.fail();false}
+        } else {let reason=if pending.front().is_some_and(|(id,_)|id!=sequence){"ack-identity"}else if pending.front().is_some_and(|(_,time)|time.elapsed()>=self.shared.deadline){"ack-late"}else{"ack-stopped-or-empty"};drop(pending);self.shared.fail_reason(reason);false}
     }
 
     /// Already-serialized JSON line, including its newline. Never drop a barrier
@@ -157,7 +162,7 @@ impl Input {
             })
             .is_err()
         {
-            self.shared.fail();
+            self.shared.fail_reason("bytes-overflow");
             return false;
         }
         if self
@@ -169,7 +174,7 @@ impl Input {
             .is_err()
         {
             self.shared.bytes.fetch_sub(len, Ordering::AcqRel);
-            self.shared.fail();
+            self.shared.fail_reason("writer-queue-overflow");
             return false;
         }
         true
@@ -178,6 +183,7 @@ impl Input {
 
 impl Drop for Input {
     fn drop(&mut self) {
+        super::private_trace::emit("input-retire",||String::new());
         self.shared.stopped.store(true, Ordering::Release);
     }
 }
@@ -248,7 +254,7 @@ mod tests {
             input.expect("1".into());
             if expired {
                 input.shared.acknowledgements.lock().unwrap().front_mut().unwrap().1=Instant::now()-Duration::from_secs(1);
-            } else {input.shared.fail();}
+            } else {input.shared.fail_reason("test-failure");}
             assert!(!input.ack("1"));
             assert_eq!(input.shared.acknowledgements.lock().unwrap().len(),1,"rejected ack cannot retire admission evidence");
             lost.recv_timeout(Duration::from_secs(1)).unwrap();
@@ -361,6 +367,7 @@ mod tests {
 
     #[test]
     fn retirement_cancels_a_stalled_writer_without_false_failure() {
+        super::super::private_trace::arm();
         let mut child = child("sleep");
         let (input, lost) = input(&mut child, 32, MAX_BYTES);
         assert!(input.send(vec![b'x'; 1024 * 1024]));
@@ -380,4 +387,22 @@ mod tests {
             "intentional retirement is not a crash"
         );
     }
+}
+
+#[cfg(test)]
+mod private_causal_tests {
+ use super::*;use std::{io::Read,process::{Command,Stdio}};
+ #[test]
+ fn timely_raw_echo_with_delayed_admission_still_expires() {
+  super::super::private_trace::arm();
+  let mut child=Command::new("cat").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+  let (tx,rx)=mpsc::channel();
+  let input=Input::with_limits(child.stdin.take().unwrap(),move||{let _=tx.send(());},32,MAX_BYTES,Duration::from_millis(100)).unwrap();
+  let started=Instant::now();input.expect("1".into());let line=b"{\"sequence\":\"1\"}\n";assert!(input.send(line.to_vec()));
+  let mut read=vec![0;line.len()];child.stdout.as_mut().unwrap().read_exact(&mut read).unwrap();assert_eq!(read,line);assert!(started.elapsed()<Duration::from_millis(100),"raw echo arrived after ACK deadline");
+  super::super::private_trace::emit("synthetic-raw-reply",||format!("sequence=1 ageUs={}",started.elapsed().as_micros()));
+  rx.recv_timeout(Duration::from_secs(1)).unwrap();
+  assert!(!input.ack("1"),"raw read never acknowledges delayed GUI admission");
+  drop(input);child.kill().unwrap();child.wait().unwrap();
+ }
 }
