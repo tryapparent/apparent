@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import {desktopDependencies, desktopInstallSnapshot, desktopPackage} from './desktop-install.ts';
 import {receiptStore} from './receipt.ts';
 import {root} from './run.ts';
+import {copyRunnerSources} from './fixtures/runner.ts';
 
 function fixture(action: (dir: string, env: NodeJS.ProcessEnv, git: (...args: string[]) => string) => void) {
   const dir = realpathSync(mkdtempSync('/tmp/apparent-dev-install-test-'));
@@ -110,15 +111,8 @@ test('CI and unsupported command/lifecycle modes stay fresh; failed checks never
 }));
 
 test('actual installed pre-push hook and production runner perform one install across two source-only pushes', () => fixture((dir, env, git) => {
-  const helpers = ['service.ts', 'receipt.ts', 'desktop-install.ts'];
-  mkdirSync(join(dir, 'enablement/local-tests'), {recursive: true});
-  for (const name of helpers) copyFileSync(join(root, 'enablement/local-tests', name), join(dir, 'enablement/local-tests', name));
-  copyFileSync(join(root, 'enablement/local-tests/run.ts'), join(dir, 'enablement/local-tests/runner.ts'));
-  mkdirSync(join(dir, 'enablement/local-tests/preview'), {recursive: true});
-  copyFileSync(join(root, 'enablement/local-tests/preview/explain.ts'), join(dir, 'enablement/local-tests/preview/explain.ts'));
-  mkdirSync(join(dir, 'enablement/ci/routing'), {recursive: true});
-  for (const name of ['inputs.ts', 'workflow-controls.ts', 'select.ts']) copyFileSync(join(root, 'enablement/ci', name), join(dir, 'enablement/ci', name));
-  copyFileSync(join(root, 'enablement/ci/routing/consumers.ts'), join(dir, 'enablement/ci/routing/consumers.ts'));
+  copyRunnerSources(dir);
+  copyFileSync(join(dir, 'enablement/local-tests/run.ts'), join(dir, 'enablement/local-tests/runner.ts'));
   writeFileSync(join(dir, 'enablement/local-tests/run.ts'), `import {execFileSync} from 'node:child_process';
     import {execute} from './runner.ts';
     const args = process.argv.slice(2), value = name => args[args.indexOf(name) + 1];
