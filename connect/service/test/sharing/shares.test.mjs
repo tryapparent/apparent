@@ -6,7 +6,7 @@ import {readFile} from 'node:fs/promises';
 async function setup(bindings={}){
  const f=await fixture({SHARING_ENABLED:'true',...bindings});
  // Baseline remains valid before this additive migration exists.
- try{await f.db.exec((await readFile('migrations/0003.sql','utf8')).replaceAll('\n',' '));}catch(e){if(e.code!=='ENOENT')throw e;}
+ try{await f.db.exec((await readFile('.generated/migrations/0003.sql','utf8')).replaceAll('\n',' '));}catch(e){if(e.code!=='ENOENT')throw e;}
  return f;
 }
 async function reserve(f,a,n=171){const p='/v1/captures/'+id(n);assert.equal((await f.call(p,{token:a.token,method:'POST',body:{files:[file()]}})).status,200);return p;}

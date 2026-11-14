@@ -825,3 +825,27 @@ fn checked_in_producer_fixture_remains_readable_by_native_consumer() {
         );
     }
 }
+
+#[test]
+fn per_file_native_producer_roundtrip_and_vector() {
+    let f=Fixture::new();
+    new_private_file(&f.stage.join("recording.mp4")).unwrap().write_all(b"synthetic video bytes").unwrap();
+    let files=v2::pack(&f.stage,&f.spool,&f.context,&f.sender,&f.recipients()).unwrap();
+    let index=v2::open_index(&f.spool,&files,&f.context,&f.reader,&f.sender_peer()).unwrap();
+    let independent=f.root.join("independent");private_dir(&independent).unwrap();
+    let independent_files=v2::pack(&f.stage,&independent,&f.context,&f.sender,&f.recipients()).unwrap();
+    assert_ne!(files[1].sha256,independent_files[1].sha256,"fresh encryptions must use fresh randomness");
+    for entry in &index.files {v2::unpack_file(&f.spool,&f.output,entry,&files,&f.reader).unwrap();assert_eq!(fs::read(f.stage.join(&entry.path)).unwrap(),fs::read(f.output.join(&entry.path)).unwrap());}
+    if let Some(destination)=std::env::var_os("APPARENT_CONNECT_V2_VECTOR") {
+        let transport:Vec<Value>=files.iter().map(|file|serde_json::json!({"path":file.path,"size":file.size,"sha256":file.sha256,"hex":hex(&fs::read(f.spool.join(&file.path)).unwrap())})).collect();
+        let expected:Vec<Value>=index.files.iter().map(|e|serde_json::json!({"path":e.path,"hex":hex(&fs::read(f.stage.join(&e.path)).unwrap())})).collect();
+        fs::write(destination,serde_json::to_vec_pretty(&serde_json::json!({"syntheticReaderIdentity":{"age":f.reader.age.to_string().expose_secret()},"reader":f.recipients()[1],"sender":f.sender_peer(),"context":f.context,"transport":transport,"expected":expected})).unwrap()).unwrap();
+    }
+    let wrong=load_or_create_identity(&f.root.join("wrong.identity")).unwrap();
+    assert!(v2::open_index(&f.spool,&files,&f.context,&wrong,&f.sender_peer()).is_err());
+    let mut wrong_context=f.context.clone();wrong_context.capture_id="a".repeat(32);
+    assert!(v2::open_index(&f.spool,&files,&wrong_context,&f.reader,&f.sender_peer()).is_err());
+    // The index authenticates unrequested media without needing its bytes.
+    let media=index.files.iter().find(|e|e.path=="recording.mp4").unwrap();fs::remove_file(f.spool.join(&media.object)).unwrap();
+    assert!(v2::open_index(&f.spool,&files,&f.context,&f.reader,&f.sender_peer()).is_ok());
+}

@@ -145,3 +145,23 @@ The mounted beta gateway is built from `connect/tooling/hosting` and automatical
 published after affected main verification. Delivery preserves its binding/secret
 profile, routes and cleanup schedule; the sealed browser assets and Worker version
 are checked after publication. See the Connect delivery section in the CI guide.
+
+### Selective v2 evidence
+
+New v2 uploads support index-first listing and exact asset selection:
+
+```
+apparent-connect-mcp list --state /absolute/private/reader --id <capture-id>
+apparent-connect-mcp fetch --state /absolute/private/reader --id <capture-id> --out /absolute/new/evidence --file apparent.json --file contact-sheet.png
+```
+
+Drive each sealed exchange with `step`/`next` as before. Listing ends in `listed`
+with authenticated asset names/sizes/hashes; it transfers no asset bytes.
+Selective fetch ends in `ready` with `extraction` and `completeBundle:false`,
+without a `bundle` field. It requests only the encrypted index/envelope and the
+chosen file objects, then rechecks sender authorization before publication.
+Use `apparent.json` for transcript and request relevant images for visual proof.
+A transcript alone is not image inspection. An extraction cannot use a
+`.apparent` destination. Full fetch remains available without `--file`, and v1
+single/grouped captures retain full-bundle compatibility. Newly enrolled readers
+still cannot decrypt history encrypted before their enrollment.

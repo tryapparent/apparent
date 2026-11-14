@@ -31,8 +31,8 @@ test('Connect retains real native client/service consumers and skips native for 
   }
   assert.equal(connectPlan(suitePlan(['capture/engine/runtime/mod.rs'])).root, false);
   assert.equal(connectPlan(suitePlan(null)).root, true, 'unknown inputs retain integration');
-  assert.equal(connectPlan(suitePlan(['connect/client/typescript/src/mcp-wire.ts'])).service,true,
-    'the Worker consumes the endpoint wire contract');
+  for(const source of ['connect/client/typescript/src/mcp-wire.ts','connect/client/typescript/contracts.ts','connect/client/typescript/src/transfer/contract.ts'])
+    assert.equal(connectPlan(suitePlan([source])).service,true,'the Worker consumes '+source);
 });
 
 test('the composed browser proof selects its Connect consumer and publication', () => {

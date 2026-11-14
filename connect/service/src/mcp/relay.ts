@@ -1,3 +1,4 @@
+import {FILE_FORMAT} from '../../../client/typescript/contracts.ts';
 import {CompactEncrypt, compactDecrypt, exportJWK, generateKeyPair, importJWK, type JWK} from 'jose';
 import {ApiError, bearer, body, bounded, envelope, fail, hash, isRecord, json, rate, stmt} from '../common.ts';
 import {authRoutes} from '../auth.ts';
@@ -52,7 +53,7 @@ async function dispatch(env: Env, value: unknown, ip: string): Promise<Response>
   if (operation === 'peers') return native(env,'/v1/encryption/peers',undefined,value.accessToken);
   if (!captureId(value.captureId) || !['manifest','part'].includes(String(operation))) fail('invalid_request');
   const capture = await captureForAccount(env,value.captureId,account.account_id);
-  if (capture.format !== CAPTURE_FORMAT) fail('encrypted_capture_required',409);
+  if (capture.format !== CAPTURE_FORMAT && capture.format !== FILE_FORMAT) fail('encrypted_capture_required',409);
   if (operation === 'manifest') return json({id:capture.id,status:capture.status,format:capture.format,
     files:JSON.parse(capture.manifest),expiresAt:new Date(capture.expires_at).toISOString()});
   if (capture.status !== 'ready') fail('not_ready',409);

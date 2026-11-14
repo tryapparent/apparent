@@ -69,7 +69,7 @@ const assetPath=(p:string)=>p.length<=128 && /^(apparent\.json|notes\.json|summa
 const mediaPath=(p:string)=>['recording.mp4','recording.mov','audio.wav'].includes(p);
 
 /** Constant-space cursor over authenticated age plaintext. */
-class Cursor {
+export class Cursor {
   reader:ReadableStreamDefaultReader<Uint8Array>; pending:Uint8Array=new Uint8Array(); offset=0;
   constructor(stream:ReadableStream<Uint8Array>) { this.reader=stream.getReader(); }
   async take(max:number):Promise<Uint8Array> {
@@ -177,7 +177,7 @@ async function decryptGroup(options:DecryptOptions & {group?:Context['group'];st
   finally {await cursor.reader.cancel().catch(()=>{});}
 }
 
-async function validateReferences(stage:string,ordinary:Asset[]):Promise<void> {
+export async function validateReferences(stage:string,ordinary:Asset[]):Promise<void> {
   const metadata=JSON.parse((await readPrivate(path.join(stage,'apparent.json'))).toString('utf8'));
   check(record(metadata),'invalid_bundle_metadata');
   const names=new Set(ordinary.map(f=>f.path));

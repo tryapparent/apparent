@@ -9,7 +9,7 @@ async function setup(bindings={}) {
  const f=await fixture({POSTHOG_PROJECT_TOKEN:'phc_synthetic',...bindings},{outboundService:async request=>{
   assert.equal(request.url,'https://eu.i.posthog.com/batch/');sent.push(await request.json());return Response.json({status:'Ok'});
  }});
- await f.db.exec((await readFile('migrations/0006.sql','utf8')).replaceAll('\n',' '));
+ await f.db.exec((await readFile('.generated/migrations/0006.sql','utf8')).replaceAll('\n',' '));
  return {...f,sent};
 }
 const read=async(f,a)=>await(await f.call('/v1/analytics/consent',a)).json();
@@ -17,7 +17,7 @@ const choose=(f,a,consented,revision)=>f.call('/v1/analytics/consent',{...a,meth
 async function device(f,a){const start=await(await f.call('/v1/device/start',{method:'POST',body:{scope:'upload'}})).json();assert.equal((await f.call('/v1/device/approve',{...a,method:'POST',body:{userCode:start.userCode}})).status,200);}
 test('configured collector defaults enabled, production and EU without implicitly enrolling accounts',async()=>{
  const f=await setup();try{
-  await f.db.exec((await readFile('migrations/0007.sql','utf8')).replaceAll('\n',' '));
+  await f.db.exec((await readFile('.generated/migrations/0007.sql','utf8')).replaceAll('\n',' '));
   const a=await f.identity('default-consenting'),b=await f.identity('default-opted-out');
   assert.deepEqual(await read(f,a),{available:true,consented:false,revision:null,noticeVersion});
   await device(f,b);await(await f.mf.getWorker()).scheduled();assert.deepEqual(f.sent,[]);
@@ -43,7 +43,7 @@ test('additive default migration preserves decisions, withdrawal tombstones and 
   await f.db.exec('UPDATE r2_budget SET a_used=17,b_used=23,physical_used=1234 WHERE id=1');
   const budget=(await f.db.prepare('SELECT * FROM r2_budget').all()).results;
   await f.db.exec('UPDATE analytics_control SET enabled=0,dropped=7');
-  await f.db.exec((await readFile('migrations/0007.sql','utf8')).replaceAll('\n',' '));
+  await f.db.exec((await readFile('.generated/migrations/0007.sql','utf8')).replaceAll('\n',' '));
   assert.deepEqual(await f.db.prepare('SELECT enabled,dropped FROM analytics_control').first(),{enabled:1,dropped:7});
   assert.deepEqual((await f.db.prepare('SELECT * FROM analytics_choices ORDER BY account_id').all()).results,before);
   assert.deepEqual((await f.db.prepare('SELECT * FROM analytics_consent').all()).results,consents);

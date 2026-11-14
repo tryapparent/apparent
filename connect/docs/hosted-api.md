@@ -104,3 +104,15 @@ Local tests include concurrent grant reuse, read-budget races across Worker inst
 Use `connect/service/package.json` scripts. Preserve the workerd build condition and `nodejs_compat`. Bind `DB` (D1) and `BUCKET` (private Standard R2). Fresh databases apply `0001`–`0004` in order; before `0002` seeds the global ledger, stop writes and verify the exact bucket is fresh and empty. SQL cannot establish R2 emptiness. Existing data requires reviewed inventory/reconciliation, never reseeding. Existing deployments already through `0003` apply **only `0004`** after backup and stopped-writes review. This adds Better Auth/provider tables and grant authorization records, then removes the old credential/state tables. It changes no account IDs, captures, shares, quotas or budget counters. Old cookies become anonymous; pre-renewal tokens return 401 `reauthorization_required`, requiring one-time login/device reapproval. Same verified Google issuer/subject retains the incumbent account; never remap by email. Coordinate Worker/client cutover and rollback from a reviewed backup.
 
 Configure API_ORIGIN, SITE_ORIGIN, GOOGLE_CLIENT_ID; secrets GOOGLE_CLIENT_SECRET, TOKEN_ENCRYPTION_KEY (32 random bytes base64), and separate high-entropy BETTER_AUTH_SECRET (at least 32 characters, no fallback). Register exact API_ORIGIN `/auth/google/callback` with Google. Discovery defaults to Google; `OAUTH_DISCOVERY_URL` is for controlled signed-provider tests only. Old individual provider endpoint overrides are retired; none are accepted from requests. Raw Better Auth registration, management, session and token handlers remain private. Login/renewal never enroll decryption keys. No real credentials are included. Parent must verify exact resource/account identity, initialized budgets, Free CPU/D1 limits, real same-site cookies, live Google and changed-backend native integration before separately authorized staging. No provisioning, plan/account change or deployment is implied.
+
+### Per-file encrypted v2
+
+Reservation also accepts `format:'apparent-encrypted-v2'` after migration `0011`.
+Its immutable manifest contains `envelope.json`, `sealed/index.age`, and
+consecutive `sealed/file-NNNNNN.age` objects, up to 514 transport objects for 512
+original assets. Original filenames/hashes and selection remain endpoint-only.
+The browser-safe Connect transfer contract validates this layout. Existing
+account ownership, read/upload scopes, readiness, retention, size/quota/spending
+and public-sharing refusal apply to v2. GET/PUT and the bounded MCP part relay
+serve individual ciphertext objects through the existing authenticated routes.
+No service decryption, new content key store or public asset URLs are introduced.

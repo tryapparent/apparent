@@ -84,7 +84,7 @@ test('installed Connect foreground adapter uploads encrypted bundle and fetches 
     const status = await statusResponse.json() as {syntheticOnly: boolean; approvedLogins: number; captures: Array<{format: string; ready: boolean; files: number; received: boolean}>; calls: Record<string, number>};
     assert.equal(status.syntheticOnly, true);
     assert.equal(status.approvedLogins, 2);
-    assert.deepEqual(status.captures, [{format: 'apparent-encrypted-v1', ready: true, files: 2, received: true}]);
+    assert.deepEqual(status.captures, [{format: 'apparent-encrypted-v2', ready: true, files: 6, received: true}]);
     assert.ok(status.calls['PUT /v1/captures/:id/files/:path'] >= 2);
     assert.equal(status.calls['POST /v1/captures/:id/complete'], 1);
     assert.ok(status.calls['GET /v1/captures/:id'] >= 1, `manifest readback must occur after upload: ${JSON.stringify(status.calls)}`);

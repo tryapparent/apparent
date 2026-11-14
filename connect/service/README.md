@@ -79,3 +79,12 @@ Budget tests first failed against the prior implementation at 516 admission stat
 Only manifest insertion and cleanup stamping had per-row SQL loops. Account usage, slot admission, quota eviction, capture expiration and auth cleanup remain set queries; file transfer and device routes use a fixed number of statements. Completion still performs one R2 head per file (at most 512), not SQL per file. The byte quota does **not** bound capture/file/attempt counts: zero-byte files and repeated uploads are legal, and tombstone metadata is retained. Statement counts are bounded independently of those cardinalities, but SQL scan time, daily D1 rows read/written, database growth and remote CPU remain unproven. No claim of a finite worst-case data volume or remote Free viability follows from this local audit.
 
 No contract limits were reduced and no multipart/queue protocol was added. Spending tests use real local D1/R2, small caps written to test D1 rows, two Worker instances sharing bindings, held-provider/stream barriers and real transaction faults. They cover cap races, retry accounting, missing/invalid state, crashes before PUT/terminal marker, late PUT after delete, terminal snapshot races, one-time release, eviction overlap and restart/migration rerun. These are local proofs, not live billing or Free CPU proof. Parent owns separate security review, exact changed-backend native integration, account configuration and any staging authorization. No provisioning, plan change or remote CPU measurement was performed here.
+
+Per-file encryption adds migration `0011.sql`. `npm run build` first stages the
+active migration sources (including `migrations/baseline/`) byte-for-byte into
+`.generated/migrations/`; Wrangler's `migrations_dir` points there. Always build
+before listing/applying migrations. D1 ledger filenames remain `0001.sql` through
+`0011.sql`, without directory prefixes, so existing migrations are not replayed.
+This source grouping changes no historical SQL or migration authority. Tests use
+the same staged artifacts. Applying migrations remains a separate authorized
+operation; building does not contact D1 or provision resources.

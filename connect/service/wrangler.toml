@@ -19,7 +19,7 @@ SHARING_ENABLED = "false" # Explicit single-capture grants are off by default.
 binding = "DB"
 database_name = "apparent-hosted"
 database_id = "00000000-0000-0000-0000-000000000000" # Replace with authorized database ID.
-migrations_dir = "migrations"
+migrations_dir = ".generated/migrations"
 
 [[r2_buckets]]
 binding = "BUCKET"

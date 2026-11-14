@@ -7,7 +7,7 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 const owner=fileURLToPath(new URL('..',import.meta.url));
-const builtModules=['foreground','handoff','index','shares','mcp-wire','mcp-files','mcp-bundle','mcp-endpoint','mcp-cli'];
+const builtModules=['transfer','transfer/contract','transfer/files','foreground','handoff','index','shares','mcp-wire','mcp-files','mcp-bundle','mcp-endpoint','mcp-cli'];
 const builtFiles=builtModules.flatMap(name=>[name+'.d.ts',name+'.js']).sort();
 function run(command:string,args:string[],cwd:string,env=process.env):string {
   return execFileSync(command,args,{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe']});
@@ -29,7 +29,7 @@ test('build removes stale generated modules and refuses redirected output',async
   await fs.mkdir(dist);await fs.writeFile(path.join(dist,'obsolete.js'),'obsolete');
   await fs.writeFile(path.join(dist,'obsolete.d.ts'),'obsolete');
   run('npm',['run','build'],source);
-  assert.deepEqual((await fs.readdir(dist)).sort(),builtFiles);
+  assert.deepEqual((await fs.readdir(dist,{recursive:true})).filter(name=>/\.(js|ts)$/.test(name)).sort(),builtFiles);
   await fs.rm(dist,{recursive:true});
   const external=path.join(root,'external');await fs.mkdir(external);
   await fs.writeFile(path.join(external,'sentinel'),'preserve');
@@ -74,6 +74,8 @@ test('packed consumer installs and runs without Rust, compilers or source resolu
   run(process.execPath,['--input-type=module','-e',`
     import assert from 'node:assert/strict';
     import {generateAgeIdentity,encryptAge,decryptAge,signEnvelope,verifyEnvelope} from '@apparent/connect-crypto';
+    import {FILE_FORMAT} from '@apparent/connect-crypto/transfer';
+    assert.equal(FILE_FORMAT,'apparent-encrypted-v2');
     const identity=await generateAgeIdentity(),original=new Uint8Array([0,1,255]);
     assert.deepEqual(await decryptAge(await encryptAge(original,[identity.recipient]),identity.identity),original);
     const seed=new Uint8Array(32).fill(7);

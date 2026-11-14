@@ -10,7 +10,7 @@ let mf:Miniflare,db:Env['DB'],otherDb:Env['DB'];
 before(async()=>{
  mf=new Miniflare({modules:[{type:'ESModule',path:'identity-fixture.js',contents:'export default {fetch(){return new Response(null)}}'}],compatibilityDate:'2026-02-05',d1Databases:['DB','OTHER']});
  db=await mf.getD1Database('DB') as unknown as Env['DB'];otherDb=await mf.getD1Database('OTHER') as unknown as Env['DB'];
- for(const target of [db,otherDb])for(const name of ['0001.sql','0002.sql','0004.sql','0005.sql'])await target.exec((await readFile('migrations/'+name,'utf8')).replace(/^--.*$/gm,'').replaceAll('\n',' '));
+ for(const target of [db,otherDb])for(const name of ['0001.sql','0002.sql','0004.sql','0005.sql'])await target.exec((await readFile('.generated/migrations/'+name,'utf8')).replace(/^--.*$/gm,'').replaceAll('\n',' '));
 });
 after(async()=>{await mf?.dispose();});
 function environment():Env {

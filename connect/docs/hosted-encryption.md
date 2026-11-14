@@ -16,7 +16,10 @@ Issue #189 originally required malicious-backend-resistant independent key enrol
 
 The old proposal has no production encryption callers to preserve. The live client is the independently packaged `connect/client/`, composed into Desktop/CLI through `connect/hosted.rs`; #253 is not a remaining implementation dependency. The merged Better Auth contract supplies immutable grant identity, explicit scopes, rotation and revocation. No donor implementation or duplicate #255 worker is introduced.
 
-## Wire and endpoint boundary
+New uploads now use the per-file v2 transport described below; the following
+v1 wire description is retained for existing captures and queued jobs.
+
+## Legacy v1 wire and endpoint boundary
 
 The candidate uses binary age v1 with X25519 recipients. The maintained `age` library owns content-key creation/wrapping and authenticated streaming, including nonce/final-block handling. An independent Ed25519 endpoint key signs a domain-separated deterministic envelope containing version, API origin, account ID, capture ID, sender grant ID and the ordered ciphertext chunk manifest. This prevents a storage-only attacker from rewriting or swapping ciphertext under another capture/context. Sender public keys come from the trusted account service, not from the unsigned envelope.
 
@@ -64,3 +67,59 @@ The first dependency scan found vulnerable `crypto-bigint 0.5.5` through the unu
 Required: public enrollment/scopes/ownership/renewal/revocation; tamper, truncation, reordered/extra/missing parts, wrong keys, context substitution, randomized independent encryptions and age finalization; durable interruption/restart/consent races; byte-identical ordinary roundtrip with no plaintext in service objects; unsupported-format and encrypted-share denial; bounded resource failures; actual changed native worker/fetch wiring on macOS and Linux. A build or synthetic auth fixture is not GUI/live-Google proof. An agent review is independent code/security review, not a professional cryptographic audit.
 
 Run normal reviewed hooks and exact CI on the final source. Service migration, deployment, account access and publication remain separate operations; the default does not grant upload consent. Reconcile tracked historical criteria with this contract rather than treating the source default as release or native verification evidence.
+
+## Per-file encrypted transport (v2)
+
+New encrypted admissions pin `apparent-encrypted-v2`. Each ordinary asset is a
+separate finalized binary age stream with independently generated content-key
+material, wrapped to the existing approved recipients. The public objects are
+`envelope.json`, `sealed/index.age` and consecutive opaque
+`sealed/file-NNNNNN.age` objects. No original filename or plaintext hash is public.
+The encrypted index contains `{version:2,context,files:[{path,size,sha256,object}]}`.
+The signed envelope retains `{signed:{version:2,context,chunks},signature}` with
+all ciphertext objects except the envelope listed in path order. Its separate
+signature domain is `apparent-encrypted-v2\0signed-envelope\0`. Context retains
+origin/account/capture/sender bindings. The encrypted index maps every asset to
+exactly one signed ciphertext object; duplicate paths/objects and unknown paths
+are refused. Index decryption and signature verification precede asset selection.
+
+TypeScript owns the v2 index/selection contract and upload sequencing for both
+the durable worker and foreground caller. Native adapters retain endpoint keys,
+filesystem validation, streaming age execution, HTTP execution and authoritative
+queue/spool mutations. The offline MCP endpoint uses the same portable index and
+selection contract with its TypeScript crypto/filesystem adapter. The Worker
+imports the browser-safe `connect/client/typescript/contracts.ts` source entry;
+packed Node consumers use `@apparent/connect-crypto/transfer`. Neither contract
+entry imports Rust, Electron or filesystem/crypto implementations.
+
+Readers can list assets using only the envelope and encrypted index, then fetch
+selected files. Every requested file passes ciphertext hash, authenticated EOF,
+plaintext length/hash and final sender-authorization checks before publication.
+Selected evidence is an extraction, marked `.connect-extraction.json` with
+`completeBundle:false`; it cannot be published under a `.apparent` directory.
+References to omitted assets do not imply those assets have been downloaded or
+inspected. Full fetch still validates all bundle references and publishes one
+ordinary bundle atomically. The service still requires complete upload readiness;
+this format does not introduce publication of individual pending assets.
+
+V2 permits 512 original assets plus two transport descriptors (514 objects).
+The existing 90,000,000-byte object and 500,000,000-byte capture limits include
+ciphertext overhead. A near-limit plaintext asset can therefore fail encryption
+with `file_too_large`; no asset is dropped or silently split. The index plaintext
+is bounded to 128 KiB, its ciphertext to 256 KiB, and the envelope to 128 KiB.
+
+Migration `0011.sql` expands the format constraint while preserving captures,
+reservation sequence, dependent rows, triggers and spending ledgers. Deploy
+readers/service support before admitting new v2 captures. Old job records without
+`encryptionVersion` retain v1 execution and identical committed ciphertext;
+new jobs pin version 2. Existing v1 captures remain full-download only, including
+the MCP evidence/media compatibility reader. Selective retrieval requires a
+fresh explicit upload of the local original. No history migration or key regrant
+occurs. Public sharing continues accepting plaintext only.
+
+Rollback must retain v2 readers/schema for already admitted captures/jobs; rolling
+back to a v1-only client cannot read them. Do not rewrite reserved manifests or
+ciphertext to roll back. Remove v1 readers/queue execution only after the retained
+v1 data and jobs no longer require them. Native capability code is retained;
+there is no claim that Connect's complete native client or installer is
+Rust-independent.

@@ -21,7 +21,7 @@ const browser=await chromium.launch({executablePath:process.env.CHROME_PATH || '
 const results=[]
 try {
  f=await fixture({SHARING_ENABLED:'true',API_ORIGIN:origin})
- await f.db.exec((await readFile('migrations/0003.sql','utf8')).replaceAll('\n',' '))
+ await f.db.exec((await readFile('.generated/migrations/0003.sql','utf8')).replaceAll('\n',' '))
  const user=await f.identity('synthetic-recipient'),capture='/v1/captures/'+id(171312)
  const assets=new Map([
   ['recording.mp4',await readFile(movie)],['frames/frame-01.png',await readFile(image)],

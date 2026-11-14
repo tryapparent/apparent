@@ -15,6 +15,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 mod renewal;
 mod encrypted_transfer;
+mod file_transfer;
+mod policy;
+use policy::*;
 mod encryption;
 mod foreground;
 pub use foreground::foreground_progress;
@@ -101,6 +104,8 @@ pub enum ConnectCommand {
     },
     /// Explicitly upload one historical capture (requires upload consent).
     Upload { bundle: PathBuf },
+    /// List original assets using only the encrypted index (v2 captures).
+    Files { id: String },
     /// Show local inspection and authorized transfer options when Connect is unavailable.
     Alternatives,
     /// List or revoke public-by-link access. IDs are management IDs, not capture IDs.
@@ -184,7 +189,11 @@ struct Job {
     encrypted: bool,
     #[serde(default)]
     encryption: Option<encrypted_transfer::EncryptedJob>,
+    #[serde(default = "legacy_encryption_version")]
+    encryption_version: u32,
 }
+
+fn legacy_encryption_version() -> u32 { 1 }
 
 #[derive(Clone)]
 pub struct Client {
@@ -317,139 +326,6 @@ fn safe_shares_policy_message(message: &str) -> bool {
         || message == "Hosted API: reauthorization_required"
 }
 
-fn shares_typescript_runtime() -> Result<(PathBuf, PathBuf, bool)> {
-    connect_typescript_runtime("shares")
-}
-
-fn connect_typescript_runtime(name: &str) -> Result<(PathBuf, PathBuf, bool)> {
-    let installed = std::env::current_exe()?
-        .parent()
-        .context("Missing application directory")?
-        .to_path_buf();
-    #[cfg(target_os = "macos")]
-    let (runtime, module) = (
-        installed.join("../Resources/settings/runtime/Electron.app/Contents/MacOS/Electron"),
-        installed.join(format!("../Resources/settings/app/connect-client/dist/{name}.js")),
-    );
-    #[cfg(target_os = "linux")]
-    let (runtime, module) = (
-        installed.join("../share/apparent/settings/runtime/electron"),
-        installed.join(format!("../share/apparent/settings/app/connect-client/dist/{name}.js")),
-    );
-    if runtime.is_file() {
-        ensure!(
-            module.is_file(),
-            "Packaged Connect shares TypeScript module is missing"
-        );
-        return Ok((runtime, module, true));
-    }
-    let development = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("typescript");
-    #[cfg(not(test))]
-    let module = development.join(format!("dist/{name}.js"));
-    #[cfg(test)]
-    let module = if development.join(format!("dist/{name}.js")).is_file() {
-        development.join(format!("dist/{name}.js"))
-    } else {
-        development.join(format!("src/{name}.ts"))
-    };
-    #[cfg(target_os = "macos")]
-    let runtime = development.join("../../../capture/desktop/ui/frontend/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron");
-    #[cfg(target_os = "linux")]
-    let runtime = development.join("../../../capture/desktop/ui/frontend/node_modules/electron/dist/electron");
-    if runtime.is_file() && module.is_file() {
-        return Ok((runtime, module, true));
-    }
-    ensure!(
-        module.is_file(),
-        "Connect shares TypeScript package is missing; build/stage the Connect client"
-    );
-    let node = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
-        .map(|path| path.join("node"))
-        .find(|path| path.is_file())
-        .context("Electron Node runtime or supported Node.js runtime is missing")?;
-    Ok((node, module, false))
-}
-
-// Native pipe mechanics only: absolute frame deadline and pre-allocation bound.
-fn shares_policy_frame(output: &mut std::process::ChildStdout) -> Result<String> {
-    shares_policy_frame_bounded(output, Duration::from_secs(30), 64 * 1024 * 1024 + 1024)
-}
-fn shares_policy_frame_bounded(output: &mut std::process::ChildStdout, timeout: Duration, limit: usize) -> Result<String> {
-    let deadline = Instant::now() + timeout;
-    let mut bytes = Vec::new();
-    loop {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        ensure!(!remaining.is_zero(), "Shares policy response timed out");
-        let mut fd = libc::pollfd { fd: output.as_raw_fd(), events: libc::POLLIN, revents: 0 };
-        let ready = unsafe { libc::poll(&mut fd, 1, remaining.as_millis().min(30_000).max(1) as i32) };
-        if ready < 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted { continue; }
-        ensure!(ready > 0, "Shares policy response timed out");
-        let mut chunk = [0u8; 8192];
-        let count = output.read(&mut chunk)?;
-        ensure!(count > 0, "Shares policy exited without a result");
-        ensure!(bytes.len() + count <= limit, "Oversized shares policy frame");
-        bytes.extend_from_slice(&chunk[..count]);
-        if let Some(end) = chunk[..count].iter().position(|b| *b == b'\n') {
-            ensure!(end == count - 1, "Compound shares policy frame");
-            return String::from_utf8(bytes).context("Invalid shares policy encoding");
-        }
-    }
-}
-fn shares_policy_write(input: &mut std::process::ChildStdin, value: &Value) -> Result<()> {
-    let mut bytes = serde_json::to_vec(value)?;
-    bytes.push(b'\n');
-    ensure!(bytes.len() <= 2_000_032, "Oversized shares transport response");
-    let flags = unsafe { libc::fcntl(input.as_raw_fd(), libc::F_GETFL) };
-    ensure!(flags >= 0 && unsafe { libc::fcntl(input.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } >= 0, "Shares pipe setup failed");
-    let deadline = Instant::now() + Duration::from_secs(30);
-    let mut offset = 0;
-    while offset < bytes.len() {
-        ensure!(Instant::now() < deadline, "Shares policy write timed out");
-        match input.write(&bytes[offset..]) {
-            Ok(0) => bail!("Shares policy input closed"),
-            Ok(count) => offset += count,
-            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => (),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                let mut fd = libc::pollfd { fd: input.as_raw_fd(), events: libc::POLLOUT, revents: 0 };
-                unsafe { libc::poll(&mut fd, 1, 20); }
-            }
-            Err(error) => return Err(error.into()),
-        }
-    }
-    Ok(())
-}
-
-fn shares_policy_exit(child: &mut std::process::Child) -> Result<std::process::ExitStatus> {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        if let Some(status) = child.try_wait()? { return Ok(status); }
-        ensure!(Instant::now() < deadline, "Shares policy exit timed out");
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
-
-struct SharesPolicyChild(std::process::Child);
-impl std::ops::Deref for SharesPolicyChild {
-    type Target = std::process::Child;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl std::ops::DerefMut for SharesPolicyChild {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-impl Drop for SharesPolicyChild {
-    fn drop(&mut self) {
-        if self.0.try_wait().ok().flatten().is_none() {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
-        }
-    }
-}
-
-// Exact allowlist: unknown files are not uploaded, and are rejected on download.
 fn asset_path(path: &str) -> bool {
     if path.len() > 128
         || !path.is_ascii()
@@ -818,14 +694,14 @@ impl Client {
         else if module.extension().is_some_and(|extension| extension == "ts") {
             command.arg("--experimental-strip-types");
         }
-        let mut child = SharesPolicyChild(command.arg(module)
+        let mut child = PolicyChild(command.arg(module)
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?);
         let mut input = child.stdin.take().context("Missing handoff policy input")?;
         let mut output = child.stdout.take().context("Missing handoff policy output")?;
-        shares_policy_write(&mut input, &request)?;
+        policy_write(&mut input, &request)?;
         drop(input);
-        let line = shares_policy_frame_bounded(&mut output, Duration::from_secs(3), 16_384)?;
-        ensure!(shares_policy_exit(&mut child)?.success(), "Connect handoff policy failed");
+        let line = policy_frame_bounded(&mut output, Duration::from_secs(3), 16_384)?;
+        ensure!(policy_exit(&mut child)?.success(), "Connect handoff policy failed");
         Ok(serde_json::from_str(&line)?)
     }
     pub fn alternatives() -> Result<String> {
@@ -847,7 +723,7 @@ impl Client {
         } else if module.extension().is_some_and(|extension| extension == "ts") {
             command.arg("--experimental-strip-types");
         }
-        let mut child = SharesPolicyChild(
+        let mut child = PolicyChild(
             command
                 .arg(module)
                 .arg(server)
@@ -860,7 +736,7 @@ impl Client {
         let mut input = child.stdin.take().context("Missing shares policy input")?;
         let mut output = child.stdout.take().context("Missing shares policy output")?;
         loop {
-            let line = shares_policy_frame(&mut output)?;
+            let line = policy_frame(&mut output)?;
             let request: Value = serde_json::from_str(&line)
                 .with_context(|| format!("Invalid shares policy JSON ({} bytes)", line.len()))?;
             match request["operation"].as_str() {
@@ -871,7 +747,7 @@ impl Client {
                         "Invalid shares policy result"
                     );
                     drop(input);
-                    let status = shares_policy_exit(&mut child)?;
+                    let status = policy_exit(&mut child)?;
                     ensure!(status.success(), "Shares policy failed");
                     return Ok(request["result"].clone());
                 }
@@ -885,7 +761,7 @@ impl Client {
                         "Invalid shares policy error"
                     );
                     drop(input);
-                    let status = shares_policy_exit(&mut child)?;
+                    let status = policy_exit(&mut child)?;
                     ensure!(
                         !status.success(),
                         "Shares policy error frame exited successfully"
@@ -926,7 +802,7 @@ impl Client {
                         Ok(body) => json!({"ok":true,"body":body}),
                         Err(error) => json!({"ok":false,"error":safe_shares_error(&error.to_string())}),
                     };
-                    shares_policy_write(&mut input, &response)?;
+                    policy_write(&mut input, &response)?;
                 }
                 _ => bail!("Invalid shares policy operation"),
             }
@@ -1257,6 +1133,7 @@ impl Client {
             && current.server == job.server
             && current.generation == job.generation
             && current.encrypted == job.encrypted
+            && current.encryption_version == job.encryption_version
             && current.public_copy == job.public_copy
             && (!current.public_copy || current.shared)
             && current.created == job.created)
@@ -1383,6 +1260,7 @@ impl Client {
             public_copy,
             encrypted: !public_copy && self.provider.experiment(HOSTED_ENCRYPTION),
             encryption: None,
+            encryption_version: 2,
         };
         self.save_job(&job)?;
         Ok(job.id)
@@ -2186,7 +2064,10 @@ impl Client {
         Ok(())
     }
     pub fn fetch(&self, id: &str, out: &Path, wait: u64) -> Result<PathBuf> {
-        self.fetch_inner(id, out, wait).map_err(|error| {
+        self.fetch_selected(id, out, wait, None)
+    }
+    pub fn fetch_selected(&self, id: &str, out: &Path, wait:u64, selection:Option<&[String]>) -> Result<PathBuf> {
+        self.fetch_inner(id, out, wait, selection).map_err(|error| {
             let kind = match error.to_string().as_str() {
                 "Hosted API: not_found" => "unavailable",
                 message if message.starts_with("auth_required:") || matches!(message,
@@ -2208,7 +2089,7 @@ impl Client {
                 } else { hint })).unwrap_or(error)
         })
     }
-    fn fetch_inner(&self, id: &str, out: &Path, wait: u64) -> Result<PathBuf> {
+    fn fetch_inner(&self, id: &str, out: &Path, wait: u64, selection:Option<&[String]>) -> Result<PathBuf> {
         ensure!(
             valid_id(id),
             "Capture ID must be 32 lowercase hexadecimal characters"
@@ -2288,13 +2169,19 @@ impl Client {
         let files: Vec<Asset> =
             serde_json::from_value(manifest["files"].clone()).context("Invalid hosted manifest")?;
         match manifest.get("format").and_then(Value::as_str).unwrap_or("plaintext-v1") {
+            "apparent-encrypted-v2" => {
+                ensure!(self.provider.experiment(HOSTED_ENCRYPTION), "encryption_required");
+                return self.fetch_files_v2(id, &server, &credential, &manifest, &stage.0, &out, &parent, selection);
+            }
             "apparent-encrypted-v1" => {
+                ensure!(selection.is_none(), "selective_fetch_requires_v2: request a fresh upload or fetch the full legacy bundle");
                 ensure!(self.provider.experiment(HOSTED_ENCRYPTION), "encryption_required: enable hostedEncryption to fetch this capture");
                 return self.fetch_encrypted(id, &server, &credential, &manifest, &stage.0, &out, &parent);
             }
             "plaintext-v1" => ensure!(!self.provider.experiment(HOSTED_ENCRYPTION), "encryption_downgrade_refused: capture is explicitly plaintext; disable the experiment only to deliberately fetch legacy content"),
             _ => bail!("unsupported_encryption_format"),
         }
+        ensure!(selection.is_none(), "selective_fetch_requires_v2");
         validate_assets(&files)?;
         for file in &files {
             let destination = stage.0.join(&file.path);
@@ -2679,11 +2566,11 @@ pub mod test_support;
 #[cfg(test)]
 mod shares_pipe_tests {
     use super::*;
-    fn probe(code: &str) -> SharesPolicyChild {
+    fn probe(code: &str) -> PolicyChild {
         let (runtime, _, electron) = shares_typescript_runtime().unwrap();
         let mut command = Command::new(runtime);
         if electron { command.env("ELECTRON_RUN_AS_NODE", "1"); }
-        SharesPolicyChild(command.args(["-e", code]).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap())
+        PolicyChild(command.args(["-e", code]).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap())
     }
     #[test]
     fn shares_pipe_refuses_unterminated_oversize_and_compound_output() {
@@ -2693,7 +2580,7 @@ mod shares_pipe_tests {
         ] {
             let mut child = probe(code);
             let mut output = child.stdout.take().unwrap();
-            let error = shares_policy_frame_bounded(&mut output, Duration::from_secs(5), limit).unwrap_err();
+            let error = policy_frame_bounded(&mut output, Duration::from_secs(5), limit).unwrap_err();
             assert!(error.to_string().contains(expected), "{error}");
         }
     }
@@ -2702,7 +2589,7 @@ mod shares_pipe_tests {
         let mut child = probe("setInterval(() => {}, 1000)");
         let mut output = child.stdout.take().unwrap();
         let started = Instant::now();
-        assert!(shares_policy_frame_bounded(&mut output, Duration::from_millis(30), 1024).unwrap_err().to_string().contains("timed out"));
+        assert!(policy_frame_bounded(&mut output, Duration::from_millis(30), 1024).unwrap_err().to_string().contains("timed out"));
         assert!(started.elapsed() < Duration::from_secs(2));
     }
 }
