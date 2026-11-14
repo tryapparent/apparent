@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync, writeFileSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
-import {parseMovieInfo, probeMovie, EngineProbeError} from '../src/index.ts';
+import {parseMovieInfo, probeMovie, EngineProbeError} from '../dist/index.js';
 
 const raw = {
   format: {duration: '3.000000'},

@@ -2,9 +2,10 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {readFileSync, writeFileSync} from 'node:fs';
-import {join, resolve} from 'node:path';
+import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {dirname, join, resolve} from 'node:path';
 import {probeMovie} from '@apparent/engine-sdk';
+import {qualifyFrames} from './qualify-frames.ts';
 
 const [executable, directory] = process.argv.slice(2).map(p => resolve(p));
 if (!executable || !directory) throw Error('Use qualify.ts <native executable> <private directory>');
@@ -35,3 +36,21 @@ await assert.rejects(probeMovie({executable, movie: broken}), {code: 'probe_fail
 await assert.rejects(probeMovie({executable, movie: join(directory, 'missing.mp4')}), {code: 'probe_failed'});
 console.log(JSON.stringify({platform: process.platform, arch: process.arch, syntheticMovie: info, inputSha256: before,
   checks: ['public-packed-sdk', 'real-native-reader', 'audio', 'rotation', 'silent', 'invalid', 'missing', 'read-only']}));
+const frames = join(dirname(executable), 'apparent-engine-frames');
+const previous = process.env.APPARENT_ENGINE_QUALIFY_SEQUENTIAL;
+if (process.platform === 'darwin') delete process.env.APPARENT_ENGINE_QUALIFY_SEQUENTIAL;
+try {
+  await qualifyFrames(frames, directory, movie, rotated);
+  if (process.platform === 'darwin') {
+    // Qualify the actual fallback for every vector, including rotation and
+    // edit-list clocks, even when the image generator handles a fixture.
+    const sequential = join(directory, 'sequential-qualification'); mkdirSync(sequential, {mode: 0o700});
+    process.env.APPARENT_ENGINE_QUALIFY_SEQUENTIAL = '1';
+    await qualifyFrames(frames, sequential, movie, rotated);
+  }
+} finally {
+  if (process.platform === 'darwin') {
+    if (previous === undefined) delete process.env.APPARENT_ENGINE_QUALIFY_SEQUENTIAL;
+    else process.env.APPARENT_ENGINE_QUALIFY_SEQUENTIAL = previous;
+  }
+}

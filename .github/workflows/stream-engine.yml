@@ -148,7 +148,7 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
             sudo apt-get update
-            sudo apt-get install -y --no-install-recommends ffmpeg
+            sudo apt-get install -y --no-install-recommends ffmpeg libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav
           else
             command -v ffmpeg && command -v ffprobe || brew install ffmpeg
           fi
@@ -206,7 +206,7 @@ jobs:
           else
             gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --draft \
               --title "Engine media $GITHUB_SHA" \
-              --notes 'Read-only movie metadata provider and Rust-free SDK. No installed app activation. Pin exact artifact digests; app adoption remains a separate compatibility gate.'
+              --notes 'Finite local movie metadata and explicit-time frame providers with a Rust-free SDK. No installed app activation. Pin exact artifact digests; app adoption remains a separate compatibility gate.'
           fi
           # Only the still-unpublished draft may be repaired on a retry.
           gh release upload "$tag" ./* --repo "$GITHUB_REPOSITORY" --clobber
