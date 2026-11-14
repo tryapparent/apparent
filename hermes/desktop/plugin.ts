@@ -64,7 +64,7 @@ export default {
         catch (error) {
           if (operation.source) state = { phase: 'saved', source: operation.source };
           else if (Date.now() - operation.created < 30000) return;
-          else { pending = null; await save(); throw error; }
+          else throw new Error(`${error instanceof Error ? error.message : 'Unable to check Apparent recording.'} Select the recording button to retry this handoff, or use Apparent: discard pending handoff in the command palette.`);
         }
         if (disposed || pending !== operation) return;
         if (state.phase === 'cancelled' || state.phase === 'error') {
@@ -105,9 +105,10 @@ export default {
         await local('ack', operation).catch(() => {});
         if (!disposed) host.notify({ kind: 'success', message: 'Recording sent to the original conversation.' });
       } catch (error) {
-        // Preserve a saved source for recovery, but stop automatic retries after a delivery error.
+        // A failed read cannot establish that capture ended. Keep the original
+        // request for explicit retry/discard; only authenticated terminal state,
+        // acknowledged delivery or expiry clears it above.
         timer?.(); timer = undefined;
-        if (!operation.source && !operation.sending && pending === operation) { pending = null; await save(); }
         report(error instanceof Error ? error.message : 'Recording delivery failed. Check the original conversation.');
       } finally { releaseRoute(); working = false; }
     }
