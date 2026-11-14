@@ -1,6 +1,7 @@
 import { useLayoutEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { About } from './about/about';
+import { Agents } from './agents/agents';
 import { Storage } from './storage';
 import './style.css';
 import wordmark from '../../../../../shared/assets/brand/apparent-wordmark.svg';
@@ -22,7 +23,7 @@ declare global {
 }
 
 function Settings() {
-  const current = location.hash === '#about' ? 'About' : 'Storage';
+  const current = location.hash === '#about' ? 'About' : location.hash === '#agents' ? 'Agents' : 'Storage';
   useLayoutEffect(() => { document.title = `Apparent Settings — ${current}`; }, [current]);
   useLayoutEffect(() => {
     // React's DOM is committed here. The preload owns the first-frame wait;
@@ -49,7 +50,7 @@ function Settings() {
     <main className="settings-content">
       <header><h1>{current}</h1></header>
       {error && <p role="alert">{error}</p>}
-      {current === 'About' ? <About /> : <Storage settings />}
+      {current === 'About' ? <About /> : current === 'Agents' ? <Agents /> : <Storage settings />}
     </main>
   </div>;
 }
