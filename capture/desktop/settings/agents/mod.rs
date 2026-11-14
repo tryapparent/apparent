@@ -48,10 +48,15 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires built frontend and Electron; Linux also requires xvfb-run"]
+    #[ignore = "requires prepared frontend dependencies and Electron; Linux also requires xvfb-run"]
     fn agents_electron_rust_roundtrip() {
         use std::io::{BufRead, Write};
         use std::process::{Command, Stdio};
+        let frontend = Path::new(env!("CARGO_MANIFEST_DIR")).join("capture/desktop/ui/frontend");
+        // Native prerequisites prepare the Node providers, not Vite's renderer
+        // assets. Build from source even when another owner selected this group.
+        assert!(Command::new("node").arg(frontend.join("node_modules/vite/bin/vite.js"))
+            .arg("build").current_dir(&frontend).status().unwrap().success());
         let dir = tempfile::tempdir().unwrap();
         let config = dir.path().join("config.json");
         std::fs::write(&config, r#"{"secret":"private","experiments":{"other":true}}"#).unwrap();
