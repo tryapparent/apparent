@@ -93,7 +93,7 @@ for (const [reject, cases] of [[true, rejected], [false, accepted]]) {
         writeFileSync(join(root, "package.json"), '{"type":"module"}')
         symlinkSync(join(site, "node_modules"), join(root, "node_modules"), "dir")
         const html = `<!doctype html><html><head><link rel="canonical" href="https://app.tryapparent.com/">${head}</head><body><h1>Tell your coding agent what to change</h1><p>We believe work should be enjoyable</p>${body}</body></html>`
-        for (const name of ["index.html", "connect", "hosted", "assets", "pond", "team", "feature-demos", "apparent-wordmark.svg", "icon.svg", "HostGrotesk-Variable.ttf", "social-preview-v1.png", "Apparent-ghost-demo-v4-lilac.mp4", "Apparent-ghost-demo-v4-lilac-poster.jpg"]) {
+        for (const name of ["index.html", "brand", "connect", "hosted", "assets", "pond", "team", "feature-demos", "apparent-wordmark.svg", "icon.svg", "HostGrotesk-Variable.ttf", "social-preview-v1.png", "Apparent-ghost-demo-v4-lilac.mp4", "Apparent-ghost-demo-v4-lilac-poster.jpg"]) {
           const path = join(root, "dist", name)
           mkdirSync(dirname(path), { recursive: true })
           writeFileSync(path, name === "index.html" ? html : "synthetic asset")

@@ -78,6 +78,11 @@ function isPublicOutputPath(name: string): boolean {
   if (name === 'wrangler.jsonc') return true
   if (!name.startsWith('dist-apparent/')) return false
   const path = name.slice('dist-apparent/'.length)
+  if (path.startsWith('brand/')) {
+    const relative = path.slice(6)
+    if (relative.split('/').some(part => !part || part === '.' || part === '..') || /[\\%?#]/.test(relative)) return false
+    return relative === 'index.html' || /^assets\/[^/]+-[\w-]+\.(?:js|css|ttf)$/.test(relative) || existsSync(join(ROOT, 'public/site/public/assets/brand-book', relative))
+  }
   if (['pond/apparent-qr.svg', 'index.html', '404.html', '_routes.json', '_worker.js', '_headers', '_redirects', 'robots.txt', 'sitemap.xml', 'icon.svg', 'apparent-wordmark.svg', 'social-preview-v1.png', 'Apparent-ghost-demo-v4-lilac-poster.jpg', 'HostGrotesk-Variable.ttf', 'footer-theatre.webp', 'frog-air-cohesive.png', 'frog-lounge-cohesive.png', 'frog-rest-cohesive.png', 'frog-wave-cohesive.png', 'lily-clean.png', 'olivia-dog-cutout.png', 'simon-cutout.png'].includes(path)) return true
   if (movie.chunks.some(chunk => path === chunkPath(chunk).slice(1))) return true
   if (/(?:^|[\/._-])(connect|hosted)(?:[\/._-]|$)/i.test(path)) return false
@@ -158,7 +163,12 @@ export async function verify(sha: string, packagePath: string, deps: PublisherDe
   const manifest = verifyArtifact(sha, resolve(packagePath, '..'))
   const paths: [string, string][] = [['index.html', '/']]
   for (const name of Object.keys(manifest.files)) if (name.startsWith('dist-apparent/assets/') && /\.(js|css)$/.test(name)) { const path = name.slice('dist-apparent/'.length); paths.push([path, '/' + path]) }
-  const origins = [...new Set([deployment.url, 'https://app.tryapparent.com'])]
+  const hasBrand = Object.hasOwn(manifest.files, 'dist-apparent/brand/index.html')
+  if (hasBrand) {
+    paths.push(['brand/index.html', '/brand/'])
+    for (const name of Object.keys(manifest.files)) if (/^dist-apparent\/brand\/assets\/[^/]+\.(?:js|css)$/.test(name)) { const path = name.slice('dist-apparent/'.length); paths.push([path, '/' + path]) }
+  }
+  const origins = [...new Set([deployment.url, 'https://app.tryapparent.com', ...(hasBrand ? ['https://tryapparent.com'] : [])])]
   for (let oi = 0; oi < origins.length; oi++) {
     const origin = origins[oi], mismatch = (message: string) => oi ? new CanonicalPropagationPending(message) : new Error(message)
     for (const [path, route] of paths) {

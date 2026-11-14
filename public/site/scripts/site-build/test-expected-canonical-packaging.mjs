@@ -25,7 +25,7 @@ function packageHomepage(html, accept) {
     // Asset contents do not participate in admission. Exercise the real packager
     // with a complete disposable asset inventory, never rewrite the built page.
     for (const name of [
-      "connect", "hosted", "assets", "pond", "team", "feature-demos", "apparent-wordmark.svg", "icon.svg", "HostGrotesk-Variable.ttf",
+      "brand", "connect", "hosted", "assets", "pond", "team", "feature-demos", "apparent-wordmark.svg", "icon.svg", "HostGrotesk-Variable.ttf",
       "social-preview-v1.png", "Apparent-ghost-demo-v4-lilac.mp4", "Apparent-ghost-demo-v4-lilac-poster.jpg",
     ]) writeFileSync(join(root, "dist", name), "fixture asset")
     mkdirSync(join(root, "dist-apparent"))

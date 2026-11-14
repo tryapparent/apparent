@@ -1,5 +1,15 @@
 # Public delivery on Cloudflare Pages
 
+The public artifact also owns `/brand/`: the recovered reading view, slide deck,
+approved downloads and agent-readable standards. Source and provenance are in
+`brand/README.md`; the homepage footer links to the route. The site and brand
+are built, packaged, admitted and published together. Brand static files must
+match the checked-in asset library; unknown paths remain denied. The fixed-color
+baseline preserves this recovered brand specimen without changing Shared tokens.
+Browser checks cover reading/navigation, downloads, slide keyboard controls and
+320/390/1440px layouts. Publication readback includes the brand HTML and bundles
+at the immutable deployment, app alias and `https://tryapparent.com/brand/`.
+
 The canonical repository is `https://github.com/tryapparent/apparent`, branch
 `main`. `.github/workflows/stream-public.yml` is the sole production publisher for
 `app.tryapparent.com`. It publishes the existing **apparent-capture** Pages project

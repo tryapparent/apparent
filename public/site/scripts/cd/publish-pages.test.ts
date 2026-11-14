@@ -10,7 +10,7 @@ import { preparePagesVideo } from '../pages/prepare-pages-video.mjs'
 
 const sha = 'a'.repeat(40)
 const approvedMovie = readFileSync(new URL('../../public/assets/media/Apparent-ghost-demo-v4-lilac.mp4', import.meta.url))
-function fixture(root: string) {
+function fixture(root: string, brand = false) {
   const files: Record<string, string> = {
     'public/site/dist-apparent/index.html': 'source homepage', 'public/site/dist-apparent/404.html': 'not found',
     'public/site/dist-apparent/_routes.json': JSON.stringify({ version: 1, include: [movie.path], exclude: [] }) + '\n', 'public/site/dist-apparent/_worker.js': 'compiled worker',
@@ -21,6 +21,7 @@ function fixture(root: string) {
     'public/site/functions/movie.js': 'source must not reach publisher', 'public/site/wrangler.pages.jsonc': '{"name":"apparent-capture"}',
     'public/site/wrangler.jsonc': 'unrelated Worker', '.env': 'private sentinel',
   }
+  if (brand) { files['public/site/dist-apparent/brand/index.html'] = 'brand reading view'; files['public/site/dist-apparent/brand/assets/index-brand.js'] = 'brand runtime' }
   for (const [name, data] of Object.entries(files)) { const path = join(root, name); mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, data) }
   const output = join(root, 'public/site/dist-apparent')
   writeFileSync(join(output, movie.path.slice(1)), approvedMovie)
@@ -149,9 +150,9 @@ test('readback binds revision before any public HTTP request', async () => {
   assert.equal(requested, false)
 })
 
-test('readback verifies Public HTML, JS, movie and both origins without requesting Connect', () => temp(async root => {
-  const artifact = fixture(root), packagePath = join(artifact, 'dist-apparent')
-  const bodies: Record<string, string> = { '/': 'index.html', '/assets/index-test.js': 'assets/index-test.js' }
+test('readback verifies Public and brand HTML/bundles at Pages, app and root without requesting Connect', () => temp(async root => {
+  const artifact = fixture(root, true), packagePath = join(artifact, 'dist-apparent')
+  const bodies: Record<string, string> = { '/': 'index.html', '/assets/index-test.js': 'assets/index-test.js', '/brand/': 'brand/index.html', '/brand/assets/index-brand.js': 'brand/assets/index-brand.js' }
   const visited = new Set<string>()
   let badPath: string | null = null, badOrigin: string | null = null, shortMovie = 0, corruptMovie = false
   const fetcher: typeof fetch = async input => {
@@ -172,7 +173,7 @@ test('readback verifies Public HTML, JS, movie and both origins without requesti
   }
   const deps: PublisherDeps = { api: async () => project(), fetch: fetcher, sleep: async () => {} }
   assert.equal((await verify(sha, packagePath, deps)).deployment_id, 'deployment')
-  assert.deepEqual(visited, new Set(['deployment.apparent-capture.pages.dev', 'app.tryapparent.com']))
+  assert.deepEqual(visited, new Set(['deployment.apparent-capture.pages.dev', 'app.tryapparent.com', 'tryapparent.com']))
   shortMovie = 1
   const sleeps: number[] = []
   assert.equal((await verifyReady(sha, packagePath, { ...deps, sleep: async ms => { sleeps.push(ms) } })).deployment_id, 'deployment')

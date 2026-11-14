@@ -15,7 +15,7 @@ export const footerMarkup = `
 <div class="footer-base">
   <a class="footer-brand" href="#top" aria-label="apparent home"><img src="/apparent-wordmark.svg" width="132" height="31" alt="apparent"></a>
   <div class="footer-credit"><span>Made</span><button type="button" class="footer-wheel" aria-label="Made with love in Berlin. Pause rotation" aria-pressed="false"><span>with love</span></button><span>in Berlin.</span></div>
-  <a class="footer-github" href="https://github.com/tryapparent/apparent">GitHub ↗</a>
+  <div class="footer-github footer-links"><a href="/brand/">Brand guidelines</a><a href="https://github.com/tryapparent/apparent">GitHub ↗</a></div>
 </div>
 <dialog class="footer-dialog" data-dialog="social" aria-labelledby="footer-social-title">
   <button type="button" class="footer-close" aria-label="Close">×</button>

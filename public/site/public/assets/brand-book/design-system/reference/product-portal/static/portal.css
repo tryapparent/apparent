@@ -1,0 +1,131 @@
+.connection-status {
+  align-items: start;
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+}
+
+.status-chip {
+  background: var(--paper);
+  border: 1px solid var(--carbon);
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+.setup-grid {
+  display: grid;
+  gap: 32px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.setup-grid > section {
+  border-top: 1px solid var(--carbon);
+  padding-top: 20px;
+}
+
+.folder-list {
+  border-top: 1px solid var(--carbon);
+  list-style: none;
+  padding: 0;
+}
+
+.folder-list li {
+  align-items: center;
+  border-bottom: 1px solid var(--carbon);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 12px 0;
+}
+
+.folder-list small {
+  color: #514b56;
+  display: block;
+}
+
+.selection-confirmation {
+  background: var(--paper);
+  border: 1px solid var(--carbon);
+  padding: 24px;
+}
+
+.empty-inline {
+  border: 1px dashed var(--carbon);
+  padding: 16px;
+}
+
+.identifier {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  --bs-btn-active-color: #fff;
+  --bs-btn-color: #fff;
+  --bs-btn-disabled-color: #fff;
+  --bs-btn-hover-color: #fff;
+}
+
+@media (max-width: 800px) {
+  .sidebar .nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sidebar .nav-link {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .workspace,
+  .table-responsive {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .responsive-records,
+  .responsive-records tbody,
+  .responsive-records tr,
+  .responsive-records th,
+  .responsive-records td {
+    display: block;
+    width: 100%;
+  }
+
+  .responsive-records thead {
+    display: none;
+  }
+
+  .responsive-records tr {
+    border: 1px solid var(--carbon);
+    margin-bottom: 16px;
+    padding: 8px 12px;
+  }
+
+  .responsive-records th,
+  .responsive-records td {
+    align-items: start;
+    border: 0;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: minmax(104px, 0.8fr) minmax(0, 1fr);
+    padding: 8px 0;
+  }
+
+  .responsive-records th::before,
+  .responsive-records td::before {
+    content: attr(data-label);
+    font-weight: 700;
+  }
+
+  .connection-status,
+  .folder-list li {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .setup-grid {
+    grid-template-columns: 1fr;
+  }
+}

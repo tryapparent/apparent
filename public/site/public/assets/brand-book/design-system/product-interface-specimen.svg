@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title description">
+  <title id="title">apparent operations overview design-system specimen</title>
+  <desc id="description">An illustrative document-processing overview with navigation, contextual metrics, classifier routing, a review queue, and recent processing states.</desc>
+  <defs>
+    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M20 0H0V20" fill="none" stroke="#020102" stroke-opacity="0.12" stroke-width="1"/>
+    </pattern>
+    <style>
+      text { font-family: "Host Grotesk", system-ui, sans-serif; fill: #020102; }
+      .meta { font-size: 14px; font-weight: 500; fill: #020102; letter-spacing: .25px; }
+      .body { font-size: 15px; font-weight: 400; }
+      .label { font-size: 14px; font-weight: 500; }
+      .section { font-size: 21px; font-weight: 700; letter-spacing: -.45px; }
+      .value { font-size: 38px; font-weight: 700; letter-spacing: -1.5px; }
+      .nav { font-size: 15px; font-weight: 500; fill: #F5F0E8; }
+      .inverse { fill: #F5F0E8; }
+      .signal { fill: #7A58C7; }
+      .rule { stroke: #020102; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <rect width="1440" height="900" fill="#F5F0E8"/>
+  <rect width="224" height="900" fill="#020102"/>
+  <text x="28" y="47" class="inverse" font-size="19" font-weight="700" letter-spacing="-.35">apparent</text>
+  <text x="28" y="71" class="meta inverse" opacity=".7">EXAMPLE WORKSPACE</text>
+
+  <g aria-label="Primary navigation">
+    <rect x="0" y="116" width="5" height="46" fill="#7A58C7"/>
+    <rect x="16" y="116" width="192" height="46" fill="#B7A5D8"/>
+    <text x="28" y="145" class="label">Overview</text>
+    <text x="28" y="204" class="nav" opacity=".7">Sources</text>
+    <text x="28" y="256" class="nav" opacity=".7">Documents</text>
+    <text x="28" y="308" class="nav" opacity=".7">Review</text>
+    <rect x="169" y="286" width="29" height="25" fill="#7A58C7"/>
+    <text x="183.5" y="303" text-anchor="middle" class="meta inverse">37</text>
+    <text x="28" y="360" class="nav" opacity=".7">Priority processing</text>
+    <text x="28" y="412" class="nav" opacity=".7">Settings</text>
+  </g>
+
+  <line x1="16" y1="815" x2="208" y2="815" stroke="#F5F0E8" stroke-opacity=".3"/>
+  <text x="28" y="845" class="nav">Example user</text>
+  <text x="28" y="868" class="meta inverse" opacity=".66">OPERATIONS ADMIN</text>
+
+  <g transform="translate(264 0)">
+    <text x="0" y="58" font-size="34" font-weight="700" letter-spacing="-1.15">Document operations</text>
+    <text x="0" y="84" class="body">What needs attention, and how today’s admitted documents are moving.</text>
+    <rect x="920" y="32" width="216" height="48" fill="#7A58C7"/>
+    <text x="1028" y="61" text-anchor="middle" class="label inverse">Process priority document</text>
+
+    <rect x="0" y="112" width="1136" height="34" fill="#E7E0EE"/>
+    <rect x="0" y="112" width="7" height="34" fill="#7A58C7"/>
+    <text x="20" y="134" class="meta">ILLUSTRATIVE DATA · TODAY · EUROPE/BERLIN · UPDATED 14:32</text>
+
+    <g transform="translate(0 170)">
+      <rect width="1136" height="118" fill="#F5F0E8" stroke="#020102"/>
+      <rect x="284" width="284" height="118" fill="#B7A5D8"/>
+      <rect x="568" width="284" height="118" fill="#E7E0EE"/>
+      <line x1="284" y1="0" x2="284" y2="118" class="rule"/>
+      <line x1="568" y1="0" x2="568" y2="118" class="rule"/>
+      <line x1="852" y1="0" x2="852" y2="118" class="rule"/>
+      <text x="16" y="28" class="meta">COMPLETED TODAY</text>
+      <text x="16" y="78" class="value">1,248</text>
+      <text x="16" y="102" class="meta">OF 1,285 ADMITTED · VIEW DOCUMENTS →</text>
+
+      <text x="300" y="28" class="meta">AWAITING REVIEW</text>
+      <text x="300" y="78" class="value">37</text>
+      <text x="300" y="102" class="meta">OLDEST 3H 14M · OPEN QUEUE →</text>
+
+      <text x="584" y="28" class="meta">END-TO-END DURATION</text>
+      <text x="584" y="78" class="value">2m 42s</text>
+      <text x="584" y="102" class="meta">P95 · 1,248 COMPLETED DOCUMENTS</text>
+
+      <text x="868" y="28" class="meta">OPERATIONAL ATTENTION</text>
+      <text x="868" y="78" class="value">12</text>
+      <text x="868" y="102" class="meta">NOT REVIEWS · INSPECT RUNS →</text>
+    </g>
+
+    <g transform="translate(0 312)">
+      <rect width="716" height="286" fill="#E7E0EE" stroke="#020102"/>
+      <rect x="20" y="19" width="27" height="27" fill="#7A58C7"/>
+      <text x="33.5" y="38" text-anchor="middle" class="meta inverse">01</text>
+      <text x="59" y="40" class="section">Classification route</text>
+      <text x="20" y="67" class="meta">COMPLETED DOCUMENTS · TODAY · LOWER-COST METHODS FIRST</text>
+
+      <rect x="20" y="88" width="676" height="148" fill="url(#grid)"/>
+      <path d="M20 88H40L37 102L42 116L38 130L43 144L39 158L42 173L37 188L41 202L38 218L42 236H20Z" fill="#F5F0E8" stroke="#020102" stroke-width="1"/>
+      <line x1="20" y1="236" x2="696" y2="236" class="rule"/>
+      <g aria-label="Classification route share bars">
+        <rect x="58" y="118" width="106" height="118" fill="#020102"/>
+        <rect x="196" y="145" width="106" height="91" fill="#B7A5D8" stroke="#020102"/>
+        <rect x="334" y="178" width="106" height="58" fill="#F5F0E8" stroke="#020102"/>
+        <rect x="472" y="198" width="106" height="38" fill="#7A58C7"/>
+        <rect x="610" y="221" width="48" height="15" fill="#F5F0E8" stroke="#020102"/>
+      </g>
+      <text x="111" y="108" text-anchor="middle" class="label">42%</text>
+      <text x="249" y="135" text-anchor="middle" class="label">32%</text>
+      <text x="387" y="168" text-anchor="middle" class="label">18%</text>
+      <text x="525" y="188" text-anchor="middle" class="label signal">7%</text>
+      <text x="634" y="211" text-anchor="middle" class="label">1%</text>
+      <text x="111" y="260" text-anchor="middle" class="meta">KEYWORD</text>
+      <text x="249" y="260" text-anchor="middle" class="meta">NEIGHBOR</text>
+      <text x="387" y="260" text-anchor="middle" class="meta">SMALL MODEL</text>
+      <text x="525" y="260" text-anchor="middle" class="meta">LARGE MODEL</text>
+      <text x="634" y="260" text-anchor="middle" class="meta">HUMAN</text>
+
+      <rect x="736" width="400" height="286" fill="#F5F0E8" stroke="#020102"/>
+      <rect x="736" width="400" height="8" fill="#7A58C7"/>
+      <text x="756" y="42" class="section">Next classification review</text>
+      <text x="756" y="65" class="meta">OLDEST UNCERTAIN DOCUMENT FIRST</text>
+      <rect x="756" y="88" width="360" height="113" fill="#B7A5D8" stroke="#020102"/>
+      <rect x="774" y="104" width="55" height="80" fill="#F5F0E8" stroke="#020102"/>
+      <line x1="785" y1="120" x2="818" y2="120" class="rule"/>
+      <line x1="785" y1="132" x2="813" y2="132" class="rule"/>
+      <line x1="785" y1="144" x2="818" y2="144" class="rule"/>
+      <rect x="785" y="157" width="24" height="7" fill="#7A58C7"/>
+      <text x="846" y="119" class="meta">UNCERTAIN · WAITING 3H 14M</text>
+      <text x="846" y="146" class="section" font-size="19">DOC-01942</text>
+      <text x="846" y="172" class="body">Proposed: rental contract</text>
+      <rect x="756" y="217" width="360" height="48" fill="#7A58C7"/>
+      <text x="936" y="247" text-anchor="middle" class="label inverse">Review next document</text>
+    </g>
+
+    <g transform="translate(0 626)">
+      <text x="0" y="27" class="section">Recent processing</text>
+      <text x="1136" y="27" text-anchor="end" class="label signal">View all documents →</text>
+      <line x1="0" y1="45" x2="1136" y2="45" class="rule"/>
+      <rect x="0" y="45" width="1136" height="34" fill="#E7E0EE"/>
+      <text x="14" y="67" class="meta">DOCUMENT</text>
+      <text x="284" y="67" class="meta">BUSINESS STATE</text>
+      <text x="590" y="67" class="meta">PROCESSING</text>
+      <text x="862" y="67" class="meta">ROUTE</text>
+      <text x="1064" y="67" class="meta">UPDATED</text>
+
+      <text x="14" y="112" class="body">DOC-01947</text>
+      <text x="284" y="112" class="label">Delivered · rental contract</text>
+      <text x="590" y="112" class="label">Completed</text>
+      <text x="862" y="112" class="label">Neighbor</text>
+      <text x="1064" y="112" class="body">14:29</text>
+      <line x1="0" y1="129" x2="1136" y2="129" stroke="#020102" stroke-opacity=".25"/>
+
+      <rect x="0" y="130" width="7" height="48" fill="#7A58C7"/>
+      <text x="14" y="160" class="body">DOC-01942</text>
+      <text x="284" y="160" class="label">Review required · uncertain</text>
+      <text x="590" y="160" class="label">Waiting for reviewer</text>
+      <text x="862" y="160" class="label signal">Large model</text>
+      <text x="1064" y="160" class="body">14:23</text>
+      <line x1="0" y1="178" x2="1136" y2="178" stroke="#020102" stroke-opacity=".25"/>
+
+      <text x="14" y="208" class="body">DOC-01939</text>
+      <text x="284" y="208" class="label">Not delivered</text>
+      <text x="590" y="208" class="label">Retrying Drive access</text>
+      <text x="862" y="208" class="label">Keyword</text>
+      <text x="1064" y="208" class="body">14:18</text>
+    </g>
+  </g>
+</svg>

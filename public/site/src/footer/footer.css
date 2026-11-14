@@ -45,3 +45,5 @@ apparent-footer { display: block; }
 @media (prefers-reduced-motion: reduce) {
   .frog-footer .footer-wheel, .frog-footer .footer-wheel > span { transition: none; }
 }
+
+.frog-footer .footer-links { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px 16px; }

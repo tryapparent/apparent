@@ -1,0 +1,24 @@
+{% extends 'shared/base.html' %}
+{% block title %}Overview{% endblock %}
+{% block heading %}Processing overview{% endblock %}
+{% block content %}
+<section aria-labelledby="current">
+  <div class="section-heading"><div><h2 id="current">Current work</h2><p>Live product records. No inferred progress is shown.</p></div><form method="get"><label class="form-label" for="range">Time range</label><div class="d-flex gap-2"><select class="form-select" id="range" name="range">{% for value, label in [('24h','Last 24 hours'),('7d','Last 7 days'),('30d','Last 30 days'),('all','All time')] %}<option value="{{ value }}"{% if range_key == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select><button class="btn btn-outline-primary" type="submit">Apply time range</button></div></form></div>
+  <div class="metric-grid">
+    {% for label, value, detail, query in metrics %}
+    <a class="metric" href="{{ url_for('documents', run_document_state=query.get('run_document_state'), range=query.get('range')) }}"><span>{{ label }}</span><strong>{{ value }}</strong><small>{{ detail }}</small></a>
+    {% endfor %}
+  </div>
+</section>
+<p class="form-text">Time zone: UTC · Last refreshed {{ refreshed_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</p>
+<section class="data-section">
+  <div class="section-heading"><h2>Recent runs</h2><a href="{{ url_for('documents') }}">View all documents</a></div>
+  {% if runs %}
+  <div class="table-responsive"><table class="table"><thead><tr><th>Run</th><th>Kind</th><th>State</th><th>Priority</th></tr></thead><tbody>
+    {% for summary in runs %}<tr><th><a href="{{ url_for('run_detail', run_id=summary.run.run_id) }}"><code class="identifier" title="{{ summary.run.run_id }}" aria-label="Run {{ summary.run.run_id }}">{{ summary.run.run_id[:8] }}</code></a></th><td>{{ summary.run.run_kind|replace('_', ' ') }}</td><td>{{ summary.run.state }}</td><td>{{ summary.run.priority_level }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}
+  <div class="empty-state"><h3>No processing runs yet</h3><p>Configure a Google Drive source or upload one PDF to begin.</p></div>
+  {% endif %}
+</section>
+{% endblock %}

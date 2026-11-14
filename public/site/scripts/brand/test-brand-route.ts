@@ -1,0 +1,66 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { createServer } from 'node:http'
+import { readFile } from 'node:fs/promises'
+import { mkdirSync, existsSync } from 'node:fs'
+import { extname, resolve, join } from 'node:path'
+import { chromium } from 'playwright-core'
+import { inventory, validatePublic } from '../artifact/public.ts'
+
+const site = resolve(import.meta.dirname, '../..')
+const root = resolve(process.env.BRAND_ARTIFACT || join(site, 'dist-apparent'))
+const proof = process.env.BRAND_PROOF_DIR
+const mime: Record<string,string> = { '.html':'text/html', '.css':'text/css', '.js':'text/javascript', '.svg':'image/svg+xml', '.ttf':'font/ttf', '.png':'image/png', '.jpg':'image/jpeg' }
+
+test('packaged brand reading view, downloads, deep links and keyboard slides work', async () => {
+  const files = inventory(root)
+  assert(files.has('brand/index.html'))
+  const canonical = inventory(join(site, 'public'))
+  validatePublic(files, canonical)
+  for (const path of ['brand/secret.txt', 'brand/assets/unreviewed.html']) {
+    const injected = new Map(files); injected.set(path, Buffer.from('not approved'))
+    assert.throws(() => validatePublic(injected, canonical), /Unexpected Public output/)
+  }
+  const server = createServer(async (req,res) => {
+    let path = new URL(req.url!, 'http://localhost').pathname
+    if (path === '/brand') { res.writeHead(308, {Location:'/brand/'}).end(); return }
+    if (path.endsWith('/')) path += 'index.html'
+    const file = resolve(root, '.' + path)
+    if (!file.startsWith(root + '/')) { res.writeHead(403).end(); return }
+    try { res.setHeader('Content-Type',mime[extname(file)] || 'text/plain');res.end(await readFile(file)) }
+    catch { res.writeHead(404).end() }
+  })
+  await new Promise<void>(done => server.listen(0,'127.0.0.1',done))
+  const origin = `http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}`
+  const browser = await chromium.launch({headless:true,args:['--no-sandbox','--mute-audio']})
+  try {
+    for (const width of [1440,390,320]) {
+      const page = await browser.newPage({viewport:{width,height:900}})
+      const errors: string[] = []
+      page.on('pageerror',e=>errors.push(e.message))
+      page.on('response',r=>{if(r.status()>=400) errors.push(`${r.status()} ${r.url()}`)})
+      assert.equal((await page.goto(origin + '/brand'))!.status(),200)
+      await page.locator('.bb-reader-document').waitFor()
+      await page.evaluate(()=>document.fonts.ready)
+      assert(await page.getByRole('heading',{name:'Brand guidelines',exact:true}).count())
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth > innerWidth),false,`overflow at ${width}: ${JSON.stringify(await page.evaluate(()=>Array.from(document.querySelectorAll('*')).filter(e=>{const r=e.getBoundingClientRect();return !e.closest('.bb-reader-sidebar') && r.right>innerWidth && getComputedStyle(e).position!=='fixed'}).slice(0,20).map(e=>({tag:e.tagName,class:e.className,width:e.getBoundingClientRect().width,text:e.textContent?.slice(0,50)}))))}`)
+      const links = await page.locator('a[href^="/brand/"]').evaluateAll(nodes=>nodes.map(n=>(n as HTMLAnchorElement).getAttribute('href')!))
+      for (const href of new Set(links)) {
+        const url = new URL(href,origin)
+        if (url.pathname === '/brand/') continue
+        assert.equal((await page.request.get(url.href)).status(),200,href)
+      }
+      await page.getByRole('navigation',{name:'Brand guideline sections'}).getByRole('link',{name:/Typeface/}).click()
+      if (proof) {mkdirSync(proof,{recursive:true});await page.screenshot({path:join(proof,`brand-typography-${width}.png`)})}
+      assert.deepEqual(errors,[])
+      await page.goto(origin + '/brand/?slides=1#slide-3')
+      await page.waitForTimeout(250)
+      await page.keyboard.press('ArrowRight')
+      await page.waitForFunction(()=>location.hash==='#slide-4')
+      assert.deepEqual(errors,[])
+      await page.close()
+    }
+    assert(existsSync(join(root,'brand/brand-guidelines.md')))
+    assert(existsSync(join(root,'brand/design-system/tokens/apparent.tokens.json')))
+  } finally { await browser.close();await new Promise<void>(done=>server.close(()=>done())) }
+})

@@ -1,0 +1,54 @@
+{% extends 'shared/base.html' %}
+{% block title %}Run details{% endblock %}
+{% block heading %}Run details{% endblock %}
+{% block content %}
+{% set summary = details.summary %}
+<p><a href="{{ url_for('documents') }}">← Back to documents and runs</a></p>
+<dl class="row border-top py-3">
+  <dt class="col-sm-3">Run ID</dt><dd class="col-sm-9"><code class="text-break">{{ summary.run.run_id }}</code></dd>
+  <dt class="col-sm-3">Kind</dt><dd class="col-sm-9">{{ summary.run.run_kind|replace('_', ' ') }}</dd>
+  <dt class="col-sm-3">State</dt><dd class="col-sm-9">{{ summary.run.state|replace('_', ' ') }}</dd>
+  <dt class="col-sm-3">Priority</dt><dd class="col-sm-9">{{ summary.run.priority_level }}</dd>
+  <dt class="col-sm-3">Started</dt><dd class="col-sm-9">{{ summary.run.started_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</dd>
+  <dt class="col-sm-3">Closed</dt><dd class="col-sm-9">{{ summary.run.closed_at.strftime('%Y-%m-%d %H:%M:%S UTC') if summary.run.closed_at else 'Still active' }}</dd>
+  <dt class="col-sm-3">Progress</dt><dd class="col-sm-9">{{ summary.completed }} completed · {{ summary.review_required }} waiting for review · {{ summary.failed }} failed · {{ summary.remaining }} remaining</dd>
+  <dt class="col-sm-3">ETA</dt><dd class="col-sm-9">{% if summary.eta %}{{ summary.eta.earliest.strftime('%Y-%m-%d %H:%M UTC') }}–{{ summary.eta.latest.strftime('%Y-%m-%d %H:%M UTC') }} from {{ summary.eta.sample_size }} completed documents{% else %}Not enough representative completed documents{% endif %}</dd>
+  {% if summary.run.last_error %}<dt class="col-sm-3">Run failure</dt><dd class="col-sm-9 text-break">{{ summary.run.last_error }}</dd>{% endif %}
+</dl>
+
+<section class="data-section">
+  <div class="section-heading"><h2>Documents</h2><p>{{ details.documents|length }} discovered</p></div>
+  {% if details.documents %}
+  <div class="accordion" id="run-documents">
+    {% for document in details.documents %}
+    <article class="accordion-item">
+      <h3 class="accordion-header" id="document-heading-{{ loop.index }}">
+        <button class="accordion-button{% if not loop.first %} collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#document-{{ loop.index }}" aria-expanded="{{ 'true' if loop.first else 'false' }}" aria-controls="document-{{ loop.index }}">
+          {{ document.source_name }} · {{ document.status|replace('_', ' ') }}
+        </button>
+      </h3>
+      <div id="document-{{ loop.index }}" class="accordion-collapse collapse{% if loop.first %} show{% endif %}" aria-labelledby="document-heading-{{ loop.index }}">
+        <div class="accordion-body">
+          <dl class="row">
+            <dt class="col-sm-4">Document ID</dt><dd class="col-sm-8"><code class="text-break">{{ document.document_id }}</code></dd>
+            <dt class="col-sm-4">Admission attempts</dt><dd class="col-sm-8">{{ document.dispatch_attempts }}</dd>
+            <dt class="col-sm-4">Classification</dt><dd class="col-sm-8">{{ document.document_family or document.outcome or 'Not available' }}</dd>
+            <dt class="col-sm-4">Review</dt><dd class="col-sm-8">{{ document.review_state|replace('_', ' ') }}</dd>
+            <dt class="col-sm-4">Delivery</dt><dd class="col-sm-8">{{ 'Delivered' if document.delivered else 'Not delivered' }}</dd>
+            <dt class="col-sm-4">Elapsed</dt><dd class="col-sm-8">{{ document.duration_seconds|string + ' seconds' if document.duration_seconds is not none else 'Not complete' }}</dd>
+            {% if document.last_error %}<dt class="col-sm-4">Latest failure</dt><dd class="col-sm-8 text-break">{{ document.last_error }}</dd>{% endif %}
+          </dl>
+          <h4 class="h6">Processing stages</h4>
+          {% if document.stages %}
+          <div class="table-responsive"><table class="table table-sm responsive-records"><thead><tr><th>Stage</th><th>Attempt</th><th>Outcome</th><th>Started</th><th>Duration</th></tr></thead><tbody>
+            {% for stage in document.stages %}<tr><th data-label="Stage">{{ stage.stage|replace('_', ' ') }}</th><td data-label="Attempt">{{ stage.attempt_number }}</td><td data-label="Outcome">{{ stage.outcome }}{% if stage.selected %} · selected{% endif %}</td><td data-label="Started">{{ stage.started_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</td><td data-label="Duration">{{ stage.duration_ms|string + ' ms' if stage.duration_ms is not none else 'In progress' }}</td></tr>{% endfor %}
+          </tbody></table></div>
+          {% else %}<p>No method stage has completed yet.</p>{% endif %}
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}<div class="empty-state"><h3>No documents discovered yet</h3><p>Discovery progress will appear here.</p></div>{% endif %}
+</section>
+{% endblock %}

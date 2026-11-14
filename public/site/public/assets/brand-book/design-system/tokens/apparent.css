@@ -1,0 +1,56 @@
+@font-face {
+  font-family: "Host Grotesk";
+  src: url("../../assets/fonts/studies/HostGrotesk-Variable.ttf") format("truetype");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400 700;
+}
+
+:root {
+  --apparent-color-paper: #F5F0E8;
+  --apparent-color-stock: #E7E0EE;
+  --apparent-color-carbon: #020102;
+  --apparent-color-lilac: #B7A5D8;
+  --apparent-color-signal: #7A58C7;
+  --apparent-color-on-dark: #F5F0E8;
+  --apparent-color-on-warning: #020102;
+  --apparent-color-status-success: #146B43;
+  --apparent-color-status-failure: #B42318;
+  --apparent-color-status-in-progress: #7A58C7;
+  --apparent-color-status-warning: #FFBE2E;
+  --apparent-color-status-destructive: #B42318;
+  --apparent-color-status-disabled: #020102;
+  --apparent-opacity-status-disabled: 0.45;
+
+  --apparent-font-family: "Host Grotesk", system-ui, sans-serif;
+  --apparent-font-weight-regular: 400;
+  --apparent-font-weight-medium: 500;
+  --apparent-font-weight-bold: 700;
+
+  --apparent-font-size-heading: 2.25rem;
+  --apparent-font-size-body: 1.125rem;
+  --apparent-font-size-metadata: 1rem;
+  --apparent-line-height-heading: 2.5rem;
+  --apparent-line-height-body: 1.6875rem;
+  --apparent-line-height-metadata: 1.5rem;
+
+  --apparent-space-half: 0.25rem;
+  --apparent-space-1: 0.5rem;
+  --apparent-space-2: 1rem;
+  --apparent-space-3: 1.5rem;
+  --apparent-space-4: 2rem;
+  --apparent-space-6: 3rem;
+  --apparent-space-8: 4rem;
+  --apparent-space-12: 6rem;
+
+  --apparent-corner: 0;
+  --apparent-border: 1px;
+  --apparent-focus-border: 2px;
+  --apparent-control-minimum: 44px;
+  --apparent-layout-gutter: 24px;
+  --apparent-layout-inset: 32px;
+  --apparent-navigation-width: 232px;
+  --apparent-motion-fast: 120ms;
+  --apparent-motion-standard: 200ms;
+  --apparent-motion-easing: cubic-bezier(0, 0, 0.2, 1);
+}
