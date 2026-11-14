@@ -48,7 +48,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires built frontend and Electron under a display; run with xvfb-run on Linux"]
+    #[ignore = "requires built frontend and Electron; Linux also requires xvfb-run"]
     fn agents_electron_rust_roundtrip() {
         use std::io::{BufRead, Write};
         use std::process::{Command, Stdio};
@@ -57,7 +57,15 @@ mod tests {
         std::fs::write(&config, r#"{"secret":"private","experiments":{"other":true}}"#).unwrap();
         let script = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("capture/desktop/ui/frontend/tests/settings/agents/native.ts");
-        let mut child = Command::new("node").arg("--experimental-strip-types").arg(script).arg(&config)
+        // The CI roundtrip group also contains headless Node-only providers.
+        // Own this renderer's display rather than relying on a caller's DISPLAY
+        // or exposing a test window on the host desktop.
+        let mut command = if cfg!(target_os = "linux") {
+            let mut command = Command::new("xvfb-run");
+            command.args(["-a", "node"]);
+            command
+        } else { Command::new("node") };
+        let mut child = command.arg("--experimental-strip-types").arg(script).arg(&config)
             .arg(super::super::settings::SKILL_COMMAND)
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn().unwrap();
         let mut input = child.stdin.take().unwrap();
